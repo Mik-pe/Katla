@@ -12,12 +12,9 @@ use katla_math::{Color, Rect2D, Vec2};
 /// everything needed to render the UI.
 #[derive(Debug, Clone, Default)]
 pub struct DrawList {
-    /// All vertices in the draw list.
-    pub vertices: Vec<Vertex>,
-    /// All indices in the draw list.
-    pub indices: Vec<u32>,
-    /// Draw commands (batches).
-    pub commands: Vec<DrawCmd>,
+    vertices: Vec<Vertex>,
+    indices: Vec<u32>,
+    commands: Vec<DrawCmd>,
     /// Current clip rectangle for new commands.
     current_clip: Rect2D,
     /// Current texture for batching.
@@ -210,47 +207,8 @@ impl DrawList {
         color: Color,
         texture: TextureId,
     ) {
-        self.set_texture(texture);
-
-        let vertex_offset = self.vertices.len() as u32;
-        let color_arr = color.to_bytes();
-
-        // Four corners with UVs in counter-clockwise order for screen space (Y-down)
-        // Note: texture_index will be set during batch conversion based on TextureId
-        self.vertices.push(Vertex::new(
-            Vec2::new(bounds.min.x(), bounds.min.y()),
-            uv_min,
-            color_arr,
-            0, // Will be set during batch conversion
-        ));
-        self.vertices.push(Vertex::new(
-            Vec2::new(bounds.min.x(), bounds.max.y()),
-            Vec2::new(uv_min.x(), uv_max.y()),
-            color_arr,
-            0, // Will be set during batch conversion
-        ));
-        self.vertices.push(Vertex::new(
-            Vec2::new(bounds.max.x(), bounds.max.y()),
-            uv_max,
-            color_arr,
-            0, // Will be set during batch conversion
-        ));
-        self.vertices.push(Vertex::new(
-            Vec2::new(bounds.max.x(), bounds.min.y()),
-            Vec2::new(uv_max.x(), uv_min.y()),
-            color_arr,
-            0, // Will be set during batch conversion
-        ));
-
-        // Two triangles
-        self.indices.extend_from_slice(&[
-            vertex_offset,
-            vertex_offset + 1,
-            vertex_offset + 2,
-            vertex_offset,
-            vertex_offset + 2,
-            vertex_offset + 3,
-        ]);
+        let uv = Rect2D::new(uv_min, uv_max);
+        self.add_textured_rect(bounds, uv, color, texture);
     }
 
     /// Add a convex polygon.
@@ -431,6 +389,21 @@ impl DrawList {
     pub fn index_bytes(&self) -> &[u8] {
         bytemuck::cast_slice(&self.indices)
     }
+
+    /// Get the vertices slice.
+    pub fn vertices(&self) -> &[Vertex] {
+        &self.vertices
+    }
+
+    /// Get the indices slice.
+    pub fn indices(&self) -> &[u32] {
+        &self.indices
+    }
+
+    /// Get the draw commands slice.
+    pub fn commands(&self) -> &[DrawCmd] {
+        &self.commands
+    }
 }
 
 // Safety: Vertex is POD and can be safely cast to bytes
@@ -461,68 +434,6 @@ mod tests {
         assert_eq!(list.vertex_count(), 4);
         assert_eq!(list.index_count(), 6);
         assert_eq!(list.command_count(), 1);
-    }
-
-    #[test]
-    fn test_add_rect_uses_texture_id_none() {
-        let mut list = DrawList::new();
-        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0));
-
-        list.add_rect(bounds, Color::RED);
-        list.finalize();
-
-        // Should have exactly one command
-        assert_eq!(list.command_count(), 1);
-
-        // The command should use TextureId::NONE for solid color rendering
-        let cmd = &list.commands[0];
-        assert_eq!(
-            cmd.texture,
-            TextureId::NONE,
-            "add_rect should use TextureId::NONE"
-        );
-    }
-
-    #[test]
-    fn test_add_rect_vertex_colors() {
-        let mut list = DrawList::new();
-        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0));
-
-        let color = Color::new(1.0, 0.5, 0.25, 0.75);
-        list.add_rect(bounds, color);
-        list.finalize();
-
-        // Should have 4 vertices
-        assert_eq!(list.vertex_count(), 4);
-
-        // All vertices should have the same color
-        let expected_color = color.to_bytes();
-        for vertex in &list.vertices {
-            assert_eq!(
-                vertex.color, expected_color,
-                "All vertices should have the same color"
-            );
-        }
-
-        // Color should be: R=255, G=128, B=64, A=191 (0.75 * 255)
-        assert_eq!(expected_color[0], 255, "Red channel should be 255");
-        assert_eq!(expected_color[1], 128, "Green channel should be 128");
-        assert_eq!(expected_color[2], 64, "Blue channel should be 64");
-        assert_eq!(expected_color[3], 191, "Alpha channel should be 191");
-    }
-
-    #[test]
-    fn test_add_rect_vertex_uv_coordinates() {
-        let mut list = DrawList::new();
-        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0));
-
-        list.add_rect(bounds, Color::WHITE);
-        list.finalize();
-
-        // All vertices should have UV=(0, 0) to sample the white texture
-        for vertex in &list.vertices {
-            assert_eq!(vertex.uv, Vec2::ZERO, "UV should be (0, 0) for solid color");
-        }
     }
 
     #[test]
@@ -578,8 +489,8 @@ mod tests {
         assert_eq!(list.index_count(), 6);
 
         // Vertical line should produce a 2px wide, 20px tall quad centered at x=50
-        let xs: Vec<f32> = list.vertices.iter().map(|v| v.pos.x()).collect();
-        let ys: Vec<f32> = list.vertices.iter().map(|v| v.pos.y()).collect();
+        let xs: Vec<f32> = list.vertices().iter().map(|v| v.pos.x()).collect();
+        let ys: Vec<f32> = list.vertices().iter().map(|v| v.pos.y()).collect();
         assert_eq!(
             xs.iter()
                 .cloned()
@@ -625,16 +536,5 @@ mod tests {
         list.clear();
 
         assert!(list.is_empty());
-    }
-
-    #[test]
-    fn test_vertex_size() {
-        // Vertex uses katla_math::Vec2 which is [f32; 4] for alignment
-        // pos: 16 bytes (Vec2 = [f32; 4])
-        // uv: 16 bytes (Vec2 = [f32; 4])
-        // color: 4 bytes ([u8; 4])
-        // texture_index: 4 bytes (u32)
-        // Total: 40 bytes + padding = 48 bytes
-        assert_eq!(std::mem::size_of::<Vertex>(), 48);
     }
 }

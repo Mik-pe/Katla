@@ -360,8 +360,8 @@ impl UiContext {
         let hovered = self.update_hover(widget_id, bounds);
         let active = self.active_id == Some(widget_id);
 
-        // Handle click using unified click behavior
-        // Note: On release, we need to use raw input check to bypass active_id blocking
+        // Handle click: on release, use raw input hover check to bypass popup blocking.
+        // This differs from click_behavior which uses the pre-computed hovered state.
         let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
             self.active_id = Some(widget_id);
             false
