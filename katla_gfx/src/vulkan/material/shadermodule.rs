@@ -98,7 +98,18 @@ impl ShaderModule {
     ) -> Result<Self, ShaderError> {
         let path = path.as_ref();
         let raw = std::fs::read_to_string(path).map_err(ShaderError::IoError)?;
+        log::info!("    from_wgsl: read {} bytes from {:?}", raw.len(), path);
         let resolved = resolve_includes(&raw, path, &mut HashSet::new())?;
+        log::info!("    from_wgsl: resolved includes, {} bytes", resolved.len());
+
+        // Dump resolved shader for debugging
+        if std::env::var("KATLA_DUMP_SHADERS").is_ok() {
+            let dump_path = path.with_extension("resolved.wgsl");
+            std::fs::write(&dump_path, &resolved).ok();
+            log::info!("    from_wgsl: dumped resolved shader to {:?}", dump_path);
+        }
+
+        log::info!("    from_wgsl: calling from_wgsl_string");
         Self::from_wgsl_string(device, &resolved, stage, entry_point)
     }
 
@@ -117,6 +128,12 @@ impl ShaderModule {
         stage: vk::ShaderStageFlags,
         entry_point: impl Into<String>,
     ) -> Result<Self, ShaderError> {
+        let entry_point = entry_point.into();
+        log::info!(
+            "    from_wgsl_string_impl: parsing {} bytes, entry={:?}",
+            wgsl_str.len(),
+            entry_point
+        );
         let wgsl_module = wgsl::parse_str(wgsl_str).map_err(ShaderError::WgslParseError)?;
 
         let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
@@ -126,8 +143,7 @@ impl ShaderModule {
         .subgroup_stages(naga::valid::ShaderStages::all())
         .subgroup_operations(naga::valid::SubgroupOperationSet::all())
         .validate(&wgsl_module)
-        .unwrap();
-        let entry_point = entry_point.into();
+        .map_err(|e| ShaderError::WgslValidationError(format!("{:?}", e)))?;
         let naga_stage = shader_stage_to_naga(stage);
 
         let options = spv::Options {
@@ -198,15 +214,24 @@ impl ShaderCache {
         let path = path.as_ref();
         let cache_key = (path.to_path_buf(), stage);
 
+        log::info!(
+            "    load_shader: checking cache for {:?} stage={:?}",
+            path,
+            stage
+        );
         if let Some(&module) = self.shaders.get(&cache_key) {
+            log::info!("    load_shader: found in cache");
             return Ok(module);
         }
 
+        log::info!("    load_shader: not in cache, loading from disk");
         if let Some(extension) = path.extension()
             && extension == "wgsl"
         {
             let entry_point = Self::get_entry_point(stage);
+            log::info!("    load_shader: compiling WGSL entry={}", entry_point);
             let shader = ShaderModule::from_wgsl(self.device.clone(), path, stage, entry_point)?;
+            log::info!("    load_shader: WGSL compiled successfully");
             let module = shader.module;
 
             // Prevent drop from destroying the module
@@ -247,6 +272,7 @@ pub enum ShaderError {
     InvalidSpirv(std::io::Error),
     CreationFailed(vk::Result),
     WgslParseError(wgsl::ParseError),
+    WgslValidationError(String),
     SpvWriteError(spv::Error),
 }
 
@@ -258,6 +284,7 @@ impl std::fmt::Display for ShaderError {
             Self::CreationFailed(e) => write!(f, "Failed to create shader module: {:?}", e),
             Self::WgslParseError(e) => write!(f, "WGSL parse error: {}", e),
             Self::SpvWriteError(e) => write!(f, "SPIR-V write error: {}", e),
+            Self::WgslValidationError(s) => write!(f, "WGSL validation error: {}", s),
         }
     }
 }

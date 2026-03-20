@@ -32,6 +32,53 @@ var<storage, read> tile_light_indices: array<u32>;
 @group(3) @binding(2)
 var<storage, read> tile_light_counts: array<u32>;
 
+fn accumulate_point_lights(
+    clip_position: vec4f,
+    world_pos: vec3f,
+    N: vec3f, V: vec3f, F0: vec3f,
+    roughness_sq: f32, kD: vec3f, diffuse: vec3f,
+) -> vec3f {
+    let tiles_x = frame_data.tiles.x;
+    let tiles_y = frame_data.tiles.y;
+    let pixel_x = max(u32(clip_position.x), 0u);
+    let pixel_y = max(u32(clip_position.y), 0u);
+    let tile = vec2<u32>(
+        pixel_x / TILE_SIZE,
+        pixel_y / TILE_SIZE
+    );
+    let tile_idx = tile.y * tiles_x + tile.x;
+
+    var Lo_point = vec3f(0.0);
+
+    if (tile.x < tiles_x && tile.y < tiles_y) {
+        let light_count = tile_light_counts[tile_idx];
+        let base_offset = tile_idx * MAX_LIGHTS_PER_TILE;
+
+        for (var i = 0u; i < light_count; i++) {
+            let light_idx = tile_light_indices[base_offset + i];
+            if (light_idx >= MAX_POINT_LIGHTS) {
+                break;
+            }
+
+            let light = point_lights[light_idx];
+            let to_light = light.position - world_pos;
+            let dist = length(to_light);
+            let L_pt = to_light / max(dist, 0.001);
+
+            if (dist > light.range) {
+                continue;
+            }
+            let attenuation = 1.0 - (dist / light.range);
+            let atten = attenuation * attenuation;
+
+            let radiance_pt = light.color * light.intensity * atten;
+            Lo_point += pbr_direct_light(N, V, L_pt, F0, roughness_sq, kD, diffuse, radiance_pt);
+        }
+    }
+
+    return Lo_point;
+}
+
 struct VertexInput {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
@@ -139,8 +186,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         in.clip_position, in.world_pos,
         final_normal, V, F0,
         roughness_sq, kD, diffuse,
-        frame_data.tiles.x, frame_data.tiles.y,
-        tile_light_counts, tile_light_indices, point_lights,
     );
 
     let Lo = Lo_sun + Lo_point;

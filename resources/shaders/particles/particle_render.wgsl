@@ -7,6 +7,7 @@
 // - Set 1: Frame uniforms (view/proj matrices) - from renderer storage descriptor set
 
 #include "common.wgsl"
+#include "../common/frame_uniforms.wgsl"
 
 // Particle data buffer (Set 0, Binding 0)
 @group(0) @binding(0)

@@ -28,10 +28,9 @@ struct Args {
 }
 
 fn main() {
-    let args = Args::parse();
-
-    // Configure logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    let args = Args::parse();
 
     info!("Katla 3D Engine starting...");
     if args.single_frame {
@@ -88,7 +87,9 @@ fn main() {
     match result {
         Ok((mut application, event_loop)) => {
             application.init();
+            info!("About to enter event loop");
             event_loop.run_app(&mut application).unwrap();
+            info!("Event loop exited");
         }
         Err(e) => {
             eprintln!("Failed to initialize application: {}", e);
