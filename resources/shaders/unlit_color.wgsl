@@ -1,36 +1,19 @@
-// Debug line shader for immediate-mode 3D debug drawing.
+// Unlit color shader for debug lines and gizmos.
 //
-// Renders colored lines for debug visualization (wireframes, gizmos, etc).
-// Unlit rendering with depth test ON, depth write OFF.
+// Renders colored primitives with no lighting.
+// Used by debug line drawing and transform gizmos.
 // Uses storage buffer with instance indexing like other materials.
 
-// Frame-level uniforms
-struct FrameUniforms {
-    view: mat4x4f,
-    proj: mat4x4f,
-    inv_view_proj: mat4x4f,
-    camera_position: vec4f,
-    light_direction: vec4f,
-    light_color: vec4f,
-    light_intensity: vec4f,
-    tiles: vec4<u32>,
-}
+#include <frame_uniforms.wgsl>
 
-// Per-object uniforms (matches ObjectUniforms in Rust)
-struct ObjectUniforms {
-    model: mat4x4f,
-    base_color: vec4f,
-    material_params: vec4f,      // Not used by debug lines
-    texture_indices: vec4<u32>,  // bindless indices (unused)
-}
-
+// Set 0: Uniforms (storage buffers)
 @group(0) @binding(0)
 var<storage, read> frame_data: FrameUniforms;
 
 @group(0) @binding(1)
 var<storage, read> objects: array<ObjectUniforms>;
 
-// Set 1: Textures (dummy - debug lines don't use textures but need the layout)
+// Set 1: Textures (dummy - not used but needed for layout compatibility)
 @group(1) @binding(0)
 var dummy_texture: texture_2d<f32>;
 
@@ -64,6 +47,5 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    // Unlit - just output the vertex color
     return vec4f(in.color, 1.0);
 }

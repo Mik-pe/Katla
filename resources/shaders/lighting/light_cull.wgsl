@@ -13,17 +13,7 @@
 //   Set 0, Binding 2: tile_light_counts (storage buffer, read_write)
 //   Set 0, Binding 3: frame_data (uniform buffer, read)
 
-const TILE_SIZE: u32 = 16u;
-const MAX_LIGHTS_PER_TILE: u32 = 128u;
-const MAX_POINT_LIGHTS: u32 = 256u;
-
-// Point light data (32 bytes, must match PointLightGPU in Rust)
-struct PointLightGPU {
-    position: vec3f,
-    range: f32,
-    color: vec3f,
-    intensity: f32,
-}
+#include "../common/lighting_types.wgsl"
 
 // Frame data for light culling (160 bytes, must match LightCullFrameData in Rust)
 struct LightCullFrameData {
@@ -50,11 +40,8 @@ var<storage, read_write> tile_light_counts: array<atomic<u32>>;
 @group(0) @binding(3)
 var<uniform> frame_data: LightCullFrameData;
 
-/// Convert clip-space XY to pixel coordinates.
-/// Handles both positive and negative w (behind camera).
 fn clip_to_pixel(clip_xy: vec2f, clip_w: f32, screen_size: vec2f) -> vec2f {
     if (clip_w <= 0.0) {
-        // Behind camera: push to screen edge
         let sign_x = select(1.0, -1.0, clip_xy.x >= 0.0);
         let sign_y = select(1.0, -1.0, clip_xy.y >= 0.0);
         return (vec2f(sign_x, sign_y) * 0.5 + 0.5) * screen_size;
@@ -63,57 +50,39 @@ fn clip_to_pixel(clip_xy: vec2f, clip_w: f32, screen_size: vec2f) -> vec2f {
     return (ndc * 0.5 + 0.5) * screen_size;
 }
 
-/// Compute the screen-space AABB of a view-space sphere.
-///
-/// Projects the view-space center and uses the analytical formula for
-/// the screen-space radius of a sphere to build an axis-aligned bounding box.
 fn project_sphere_aabb(
     view_center: vec3f,
     radius: f32,
     proj_mat: mat4x4f,
     screen_size: vec2f,
 ) -> vec4f {
-    // Project center
     let clip = proj_mat * vec4f(view_center, 1.0);
 
-    // Check if sphere potentially intersects the near plane
-    let z = view_center.z; // negative = in front of camera (Vulkan convention)
-    let intersects_near = (-z - radius) < 0.0; // sphere reaches behind camera
+    let z = view_center.z;
+    let intersects_near = (-z - radius) < 0.0;
 
     if (intersects_near) {
-        // Sphere straddles the near plane - project to cover the entire screen
-        // to be safe (conservative but correct)
         return vec4f(0.0, 0.0, screen_size.x, screen_size.y);
     }
 
     if (clip.w <= 0.0) {
-        // Center is behind camera but sphere doesn't reach near plane
-        // (shouldn't happen given the check above, but be safe)
         return vec4f(-1.0, -1.0, -1.0, -1.0);
     }
 
     let center_px = clip_to_pixel(clip.xy, clip.w, screen_size);
 
-    // Analytical screen-space radius of a sphere:
-    // Project a point offset by radius perpendicular to the view direction.
-    // We use the fact that for a symmetric perspective projection,
-    // the screen-space radius depends on the distance and the projection scale.
     let abs_z = abs(z);
     if (abs_z < 0.001) {
         return vec4f(0.0, 0.0, screen_size.x, screen_size.y);
     }
 
-    // Scale factors from the projection matrix
-    // proj_mat[0][0] = f/aspect, proj_mat[1][1] = -f (or f, depending on convention)
     let scale_x = abs(proj_mat[0][0]);
     let scale_y = abs(proj_mat[1][1]);
 
-    // Screen-space radius = (radius / abs_z) * scale * (screen_size / 2)
     let half_screen = screen_size * 0.5;
     let screen_radius_x = (radius / abs_z) * scale_x * half_screen.x;
     let screen_radius_y = (radius / abs_z) * scale_y * half_screen.y;
 
-    // Add one tile of padding to avoid missing tiles at the boundary
     let pad = f32(TILE_SIZE);
 
     let min_x = max(center_px.x - screen_radius_x - pad, 0.0);
@@ -139,13 +108,11 @@ fn cs_main(
     let tile_idx = workgroup_id.y * tiles_x + workgroup_id.x;
     let base_offset = tile_idx * MAX_LIGHTS_PER_TILE;
 
-    // Tile bounds in pixels
     let tile_min_x = f32(workgroup_id.x * TILE_SIZE);
     let tile_min_y = f32(workgroup_id.y * TILE_SIZE);
     let tile_max_x = tile_min_x + f32(TILE_SIZE);
     let tile_max_y = tile_min_y + f32(TILE_SIZE);
 
-    // Each thread tests lights with stride loop
     let threads_per_tile = TILE_SIZE * TILE_SIZE;
     for (var i = local_idx; i < light_count; i += threads_per_tile) {
         let light = point_lights[i];
@@ -156,10 +123,8 @@ fn cs_main(
             continue;
         }
 
-        // Transform to view space
         let view_pos = view_mat * vec4f(light_pos, 1.0);
 
-        // Compute screen-space AABB of the light sphere
         let aabb = project_sphere_aabb(
             view_pos.xyz,
             light_range,
@@ -167,25 +132,21 @@ fn cs_main(
             vec2f(f32(screen_width), f32(screen_height)),
         );
 
-        // Skip lights with invalid AABB (fully behind camera)
         if (aabb.x < 0.0) {
             continue;
         }
 
-        // AABB overlap test: tile rect vs light AABB
         if (tile_max_x < aabb.x || tile_min_x > aabb.z ||
             tile_max_y < aabb.y || tile_min_y > aabb.w) {
             continue;
         }
 
-        // Atomically claim a slot in the tile's light list
         let slot = atomicAdd(&tile_light_counts[tile_idx], 1u);
         if (slot < MAX_LIGHTS_PER_TILE) {
             tile_light_indices[base_offset + slot] = i;
         }
     }
 
-    // Clamp the final count (in case multiple threads exceeded MAX_LIGHTS_PER_TILE)
     if (local_idx == 0u) {
         let count = atomicLoad(&tile_light_counts[tile_idx]);
         if (count > MAX_LIGHTS_PER_TILE) {

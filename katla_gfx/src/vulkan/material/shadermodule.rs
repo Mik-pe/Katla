@@ -4,6 +4,7 @@ use naga::{
     front::wgsl,
 };
 use std::{
+    collections::HashSet,
     io::Cursor,
     path::{Path, PathBuf},
 };
@@ -20,6 +21,56 @@ fn shader_stage_to_naga(stage: vk::ShaderStageFlags) -> naga::ShaderStage {
         vk::ShaderStageFlags::COMPUTE => naga::ShaderStage::Compute,
         _ => panic!("Unsupported shader stage"),
     }
+}
+
+fn resolve_includes(
+    source: &str,
+    file_path: &Path,
+    included: &mut HashSet<PathBuf>,
+) -> Result<String, ShaderError> {
+    let canonical = file_path.canonicalize().map_err(ShaderError::IoError)?;
+
+    if !included.insert(canonical.clone()) {
+        return Ok(String::new());
+    }
+
+    let mut result = String::new();
+    let base_dir = file_path.parent().unwrap_or(Path::new("."));
+
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if let Some(path_str) = trimmed
+            .strip_prefix("//include ")
+            .or_else(|| trimmed.strip_prefix("#include "))
+        {
+            let path_str = path_str.trim();
+
+            let include_path = if let Some(quoted) =
+                path_str.strip_prefix('"').and_then(|s| s.strip_suffix('"'))
+            {
+                base_dir.join(quoted)
+            } else if let Some(bracketed) =
+                path_str.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
+            {
+                base_dir.join("common").join(bracketed)
+            } else {
+                continue;
+            };
+
+            let include_source =
+                std::fs::read_to_string(&include_path).map_err(ShaderError::IoError)?;
+            let expanded = resolve_includes(&include_source, &include_path, included)?;
+            result.push_str(&expanded);
+            result.push('\n');
+        } else {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+
+    included.remove(&canonical);
+
+    Ok(result)
 }
 
 impl ShaderModule {
@@ -45,8 +96,10 @@ impl ShaderModule {
         stage: vk::ShaderStageFlags,
         entry_point: impl Into<String>,
     ) -> Result<Self, ShaderError> {
-        let wgsl_str = std::fs::read_to_string(path.as_ref()).map_err(ShaderError::IoError)?;
-        Self::from_wgsl_string(device, &wgsl_str, stage, entry_point)
+        let path = path.as_ref();
+        let raw = std::fs::read_to_string(path).map_err(ShaderError::IoError)?;
+        let resolved = resolve_includes(&raw, path, &mut HashSet::new())?;
+        Self::from_wgsl_string(device, &resolved, stage, entry_point)
     }
 
     pub fn from_wgsl_string(
