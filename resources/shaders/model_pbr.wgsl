@@ -15,8 +15,6 @@
 #include <bindless.wgsl>
 #include <pbr.wgsl>
 #include <shadow_sampling.wgsl>
-#include <contact_shadows.wgsl>
-#include <ssao.wgsl>
 
 // Set 0: Uniforms (storage buffers)
 @group(0) @binding(0)
@@ -188,18 +186,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let view_z = -(frame_data.view * vec4f(in.world_pos, 1.0)).z;
     let shadow_visibility = sample_shadow(in.world_pos, view_z);
 
-    // Screen-space contact shadows (short-range, catches small occluders CSM misses)
-    let depth_tex_idx = u32(frame_data.light_intensity.y);
-    let contact_shadow = sample_contact_shadow(
-        in.world_pos,
-        L_sun,
-        view_z,
-        depth_tex_idx,
-    );
-
-    // Combine: use the darker of CSM and contact shadows
-    let combined_shadow = shadow_visibility * contact_shadow;
-
     // Point lights (Forward+ tile culling)
     let Lo_point = accumulate_point_lights(
         in.clip_position, in.world_pos,
@@ -207,18 +193,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         roughness_sq, kD, diffuse,
     );
 
-    let Lo = Lo_sun * combined_shadow + Lo_point;
+    let Lo = Lo_sun * shadow_visibility + Lo_point;
 
-    // Screen-space ambient occlusion
-    let screen_uv = (in.clip_position.xy * 0.5 + 0.5);
-    let view_pos = (frame_data.view * vec4f(in.world_pos, 1.0)).xyz;
-    let ssao = sample_ssaO(screen_uv, view_pos, normalize(mat3x3f(
-        frame_data.view[0].xyz,
-        frame_data.view[1].xyz,
-        frame_data.view[2].xyz,
-    ) * final_normal), depth_tex_idx);
-
-    let ambient = vec3f(0.03) * albedo * ao * ssao;
+    // Ambient (SSAO and contact shadows disabled - require separate pass for correct depth buffer layout)
+    let ambient = vec3f(0.03) * albedo * ao;
 
     var emission = vec3f(0.0);
     if (emission_idx > 0u) {
