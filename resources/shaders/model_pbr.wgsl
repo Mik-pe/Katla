@@ -185,7 +185,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let Lo_sun = pbr_direct_light(final_normal, V, L_sun, F0, roughness_sq, kD, diffuse, radiance_sun);
 
     // Shadow visibility for directional light
-    let view_z = length(frame_data.view * vec4f(in.world_pos, 1.0));
+    let view_z = -(frame_data.view * vec4f(in.world_pos, 1.0)).z;
     let shadow_visibility = sample_shadow(in.world_pos, view_z);
 
     // Screen-space contact shadows (short-range, catches small occluders CSM misses)

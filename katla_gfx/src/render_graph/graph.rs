@@ -3187,16 +3187,12 @@ impl<'a> Frame<'a> {
                         .get_mesh(draw_call.mesh)
                         .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
 
-                    // Shadow pipeline needs position(0) + normal(1) as separate SOA buffers
+                    // Shadow pipeline needs position(0) only
                     let pos_buf = mesh
                         .get_attribute_buffer(AttributeType::Position)
                         .map(|vb| vb.object())
                         .unwrap_or(vk::Buffer::null());
-                    let norm_buf = mesh
-                        .get_attribute_buffer(AttributeType::Normal)
-                        .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null());
-                    cmd.bind_vertex_buffers_at_locations(&[(0, pos_buf), (1, norm_buf)]);
+                    cmd.bind_vertex_buffers_at_locations(&[(0, pos_buf)]);
 
                     if let Some(ib) = &mesh.index_buffer {
                         cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
@@ -3264,13 +3260,9 @@ impl<'a> Frame<'a> {
                             .get_mesh(draw_call.mesh)
                             .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
 
-                        // Skinned shadow pipeline needs position(0) + normal(1) + joint_indices(4) + joint_weights(5)
+                        // Skinned shadow pipeline needs position(0) + joint_indices(4) + joint_weights(5)
                         let pos_buf = mesh
                             .get_attribute_buffer(AttributeType::Position)
-                            .map(|vb| vb.object())
-                            .unwrap_or(vk::Buffer::null());
-                        let norm_buf = mesh
-                            .get_attribute_buffer(AttributeType::Normal)
                             .map(|vb| vb.object())
                             .unwrap_or(vk::Buffer::null());
                         let joints_buf = mesh
@@ -3283,7 +3275,6 @@ impl<'a> Frame<'a> {
                             .unwrap_or(vk::Buffer::null());
                         cmd.bind_vertex_buffers_at_locations(&[
                             (0, pos_buf),
-                            (1, norm_buf),
                             (4, joints_buf),
                             (5, weights_buf),
                         ]);

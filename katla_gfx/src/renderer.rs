@@ -1005,9 +1005,15 @@ impl VulkanRenderer {
         };
         self.shadow_empty_descriptor_layout = Some(empty_descriptor_layout);
         // - Front-face culling (reduces self-shadowing)
-        // - Shader-based depth bias (normal-aware)
+        // - Hardware depth bias (slope + constant)
         // - Depth-only output (D32Sfloat, no color)
         let storage_layout = self.storage_descriptor_sets[0].layout();
+
+        let cascade_params = self
+            .shadow_csm
+            .as_ref()
+            .map(|csm| csm.params().clone())
+            .unwrap_or_default();
 
         let pipeline = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_module, frag_module)
@@ -1017,10 +1023,13 @@ impl VulkanRenderer {
                 cascade_layout,
             ])
             .with_soa_attribute(0, VertexFormat::RGB32f) // position
-            .with_soa_attribute(1, VertexFormat::RGB32f) // normal
             .with_depth_test(true, true, crate::pipeline::CompareOp::Less)
             .with_cull_mode(CullMode::Front, FrontFace::CounterClockwise)
-            .with_depth_bias(0.0, 0.0, 0.0)
+            .with_depth_bias(
+                cascade_params.depth_bias_constant,
+                cascade_params.depth_bias_slope,
+                0.0,
+            )
             .with_rendering_formats(None, Some(crate::texture::ImageFormat::D32Sfloat))
             .build_dynamic()
             .map_err(|e| {
@@ -1041,7 +1050,7 @@ impl VulkanRenderer {
         self.shadow_cascade_descriptor_pool = Some(cascade_pool);
 
         info!(
-            "Shadow depth pipeline initialized (4 cascades, front-face culled, shader-based bias)"
+            "Shadow depth pipeline initialized (4 cascades, front-face culled, hardware depth bias)"
         );
         Ok(())
     }
@@ -1166,7 +1175,6 @@ impl VulkanRenderer {
                 skeleton_layout,
             ])
             .with_soa_attribute(0, VertexFormat::RGB32f) // position
-            .with_soa_attribute(1, VertexFormat::RGB32f) // normal
             .with_soa_attribute(4, VertexFormat::RGBA16u) // joint_indices
             .with_soa_attribute(5, VertexFormat::RGBA32f) // joint_weights
             .with_depth_test(true, true, crate::pipeline::CompareOp::Less)
