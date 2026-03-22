@@ -235,24 +235,22 @@ impl ShaderCache {
         let path = path.as_ref();
         let cache_key = (path.to_path_buf(), stage);
 
-        log::info!(
-            "    load_shader: checking cache for {:?} stage={:?}",
+        log::debug!(
+            "load_shader: checking cache for {:?} stage={:?}",
             path,
             stage
         );
         if let Some(&module) = self.shaders.get(&cache_key) {
-            log::info!("    load_shader: found in cache");
             return Ok(module);
         }
 
-        log::info!("    load_shader: not in cache, loading from disk");
+        log::debug!("load_shader: loading from disk {:?}", path);
         if let Some(extension) = path.extension()
             && extension == "wgsl"
         {
             let entry_point = Self::get_entry_point(stage);
-            log::info!("    load_shader: compiling WGSL entry={}", entry_point);
             let shader = ShaderModule::from_wgsl(self.device.clone(), path, stage, entry_point)?;
-            log::info!("    load_shader: WGSL compiled successfully");
+            log::debug!("load_shader: WGSL compiled successfully");
             let module = shader.module;
 
             // Prevent drop from destroying the module
