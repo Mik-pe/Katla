@@ -232,6 +232,57 @@ impl ImageBarrier {
     }
 
     //=========================================================================
+    // Depth Buffer Synchronization
+    //=========================================================================
+
+    /// Synchronize depth buffer between consecutive render passes.
+    ///
+    /// This is required when two render passes both use the same depth buffer
+    /// (e.g., depth prepass followed by geometry pass). The Vulkan spec requires
+    /// an image memory barrier between render pass instances that access the
+    /// same attachment, even when the layout doesn't change.
+    ///
+    /// Without this barrier, depth values written by the first pass may not be
+    /// visible to the second pass, causing geometry to disappear.
+    pub fn depth_render_pass_sync(
+        cmd_buffer: &vk::CommandBuffer,
+        device: &ash::Device,
+        image: vk::Image,
+    ) {
+        let barrier = ImageMemoryBarrier2::new(VkImage::new(image))
+            .src_stage(
+                PipelineStage2Flags::EARLY_FRAGMENT_TESTS
+                    | PipelineStage2Flags::LATE_FRAGMENT_TESTS,
+            )
+            .dst_stage(
+                PipelineStage2Flags::EARLY_FRAGMENT_TESTS
+                    | PipelineStage2Flags::LATE_FRAGMENT_TESTS,
+            )
+            .src_access(
+                AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
+                    | AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
+            )
+            .dst_access(
+                AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
+                    | AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
+            )
+            .old_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+            .new_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
+                base_mip_level: 0,
+                level_count: vk::REMAINING_MIP_LEVELS,
+                base_array_layer: 0,
+                layer_count: vk::REMAINING_ARRAY_LAYERS,
+            });
+
+        let dep_info = DependencyInfo::new().add_image_barrier(barrier);
+        dep_info.build(|dep_info| unsafe {
+            device.cmd_pipeline_barrier2(*cmd_buffer, dep_info);
+        });
+    }
+
+    //=========================================================================
     // Internal Helpers
     //=========================================================================
 
@@ -387,6 +438,35 @@ impl ImageBarrier {
             );
         }
 
+        // DEPTH_STENCIL_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
+        // After rendering shadow depth, transition for sampling in lighting pass
+        if old_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+            && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+        {
+            return (
+                PipelineStage2Flags::EARLY_FRAGMENT_TESTS
+                    | PipelineStage2Flags::LATE_FRAGMENT_TESTS,
+                PipelineStage2Flags::FRAGMENT_SHADER,
+                AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
+                    | AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                AccessFlags2::SHADER_READ,
+            );
+        }
+
+        // SHADER_READ_ONLY_OPTIMAL -> DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        // Transition back for re-rendering shadow map next frame
+        if old_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+            && new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+        {
+            return (
+                PipelineStage2Flags::FRAGMENT_SHADER,
+                PipelineStage2Flags::EARLY_FRAGMENT_TESTS,
+                AccessFlags2::SHADER_READ,
+                AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
+                    | AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
+            );
+        }
+
         panic!(
             "Unsupported layout transition: {:?} -> {:?}",
             old_layout, new_layout
@@ -479,6 +559,43 @@ mod tests {
         assert_eq!(src_stage, PipelineStage2Flags::TOP_OF_PIPE);
         assert_eq!(dst_stage, PipelineStage2Flags::EARLY_FRAGMENT_TESTS);
         assert_eq!(src_access, AccessFlags2::NONE);
+        assert_eq!(
+            dst_access,
+            AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
+                | AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE
+        );
+    }
+
+    #[test]
+    fn test_deduce_depth_attachment_to_shader_read() {
+        let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
+            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        );
+
+        assert_eq!(
+            src_stage,
+            PipelineStage2Flags::EARLY_FRAGMENT_TESTS | PipelineStage2Flags::LATE_FRAGMENT_TESTS
+        );
+        assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
+        assert_eq!(
+            src_access,
+            AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
+                | AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE
+        );
+        assert_eq!(dst_access, AccessFlags2::SHADER_READ);
+    }
+
+    #[test]
+    fn test_deduce_shader_read_to_depth_attachment() {
+        let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        );
+
+        assert_eq!(src_stage, PipelineStage2Flags::FRAGMENT_SHADER);
+        assert_eq!(dst_stage, PipelineStage2Flags::EARLY_FRAGMENT_TESTS);
+        assert_eq!(src_access, AccessFlags2::SHADER_READ);
         assert_eq!(
             dst_access,
             AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ

@@ -80,26 +80,30 @@ impl CompositingDescriptorSet {
     /// This creates only the descriptor set layout that can be used when compiling
     /// pipelines. The descriptor set itself will be allocated later during frame execution.
     ///
+    /// Uses `UPDATE_AFTER_BIND` to allow safe per-frame descriptor updates without
+    /// invalidating in-flight command buffers.
+    ///
     /// # Arguments
     /// * `device` - Vulkan device
     ///
     /// # Returns
     /// The descriptor set layout handle
-    ///
-    /// # Example
-    /// ```ignore
-    /// let layout = CompositingDescriptorSet::create_layout(&device)?;
-    /// // Use layout when compiling compositing material
-    /// ```
     pub fn create_layout(device: &ash::Device) -> Result<vk::DescriptorSetLayout, RendererError> {
-        // Binding 0: texture_2d array (SAMPLED_IMAGE, count = MAX_VIEWPORTS)
         let bindings = [vk::DescriptorSetLayoutBinding::default()
             .binding(0)
             .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
             .descriptor_count(MAX_VIEWPORTS as u32)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
 
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+        let binding_flags = [vk::DescriptorBindingFlags::UPDATE_AFTER_BIND];
+
+        let mut binding_flags_info =
+            vk::DescriptorSetLayoutBindingFlagsCreateInfo::default().binding_flags(&binding_flags);
+
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::default()
+            .bindings(&bindings)
+            .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
+            .push_next(&mut binding_flags_info);
 
         unsafe {
             device
@@ -137,7 +141,6 @@ impl CompositingDescriptorSet {
         context: &Rc<VulkanContext>,
         textures: &[vk::ImageView],
     ) -> Result<Self, RendererError> {
-        // Validate viewport count
         if textures.len() > MAX_VIEWPORTS {
             return Err(RendererError::InvalidOperation(format!(
                 "Too many viewports: {} exceeds maximum of {}",
@@ -146,15 +149,21 @@ impl CompositingDescriptorSet {
             )));
         }
 
-        // Create descriptor set layout
-        // Binding 0: texture_2d array (SAMPLED_IMAGE, count = MAX_VIEWPORTS)
         let bindings = [vk::DescriptorSetLayoutBinding::default()
             .binding(0)
             .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
             .descriptor_count(MAX_VIEWPORTS as u32)
             .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
 
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+        let binding_flags = [vk::DescriptorBindingFlags::UPDATE_AFTER_BIND];
+
+        let mut binding_flags_info =
+            vk::DescriptorSetLayoutBindingFlagsCreateInfo::default().binding_flags(&binding_flags);
+
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::default()
+            .bindings(&bindings)
+            .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
+            .push_next(&mut binding_flags_info);
 
         let descriptor_layout = unsafe {
             context
@@ -162,7 +171,6 @@ impl CompositingDescriptorSet {
                 .create_descriptor_set_layout(&layout_info, None)?
         };
 
-        // Create descriptor pool
         let pool_sizes = [vk::DescriptorPoolSize::default()
             .ty(vk::DescriptorType::SAMPLED_IMAGE)
             .descriptor_count(MAX_VIEWPORTS as u32)];
@@ -170,7 +178,7 @@ impl CompositingDescriptorSet {
         let pool_info = vk::DescriptorPoolCreateInfo::default()
             .pool_sizes(&pool_sizes)
             .max_sets(1)
-            .flags(vk::DescriptorPoolCreateFlags::empty());
+            .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND);
 
         let descriptor_pool = unsafe { context.device.create_descriptor_pool(&pool_info, None)? };
 

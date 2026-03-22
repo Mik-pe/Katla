@@ -81,8 +81,20 @@ pub struct MaterialAsset {
     /// Whether this material has been fully compiled.
     /// When false, the pipeline will be compiled on-demand when first used.
     pub fully_compiled: bool,
-    /// Shader path for deferred compilation (set when fully_compiled = false).
+    /// Shader path for deferred/recompilation.
     pub shader_path: Option<std::path::PathBuf>,
+    /// Vertex type used when compiling (Pbr, Ui, Skinned, etc.).
+    /// Needed for correct recompilation when descriptor layouts change.
+    pub vertex_type: crate::vulkan::material::compiler::VertexType,
+    /// Whether this material uses compositing (requires set 2 descriptor set layout).
+    pub is_compositing: bool,
+    /// Whether alpha blending is enabled for this material.
+    /// Must be preserved during recompilation.
+    pub alpha_blended: bool,
+    /// Whether double-sided rendering is enabled.
+    pub double_sided: bool,
+    /// Whether wireframe rendering is enabled.
+    pub wireframe: bool,
     /// Vertex binding description.
     pub vertex_binding: VertexBinding,
     /// Bindless texture indices for this material.
@@ -91,6 +103,9 @@ pub struct MaterialAsset {
     pub material_descriptor_set: Option<vk::DescriptorSet>,
     /// Descriptor set layout for material uniforms (Set 1).
     pub material_descriptor_layout: Option<vk::DescriptorSetLayout>,
+    /// Color attachment format this material was compiled for.
+    /// Used for recompilation when descriptor layouts change (e.g., resize).
+    pub color_format: crate::texture::ImageFormat,
 }
 
 /// Registry for GPU assets.
@@ -211,6 +226,28 @@ impl AssetRegistry {
         self.meshes = ResourceStorage::new();
         self.materials = ResourceStorage::new();
         self.pipelines = ResourceStorage::new();
+    }
+
+    /// Invalidate all compiled materials and destroy their pipelines.
+    ///
+    /// Called after descriptor layout changes (e.g., light culling resize)
+    /// to ensure pipelines reference valid descriptor set layouts.
+    /// Deferred materials are marked for recompilation on next use.
+    pub fn invalidate_compiled_materials(&mut self) {
+        // Mark all compiled materials for recompilation and collect their pipeline handles
+        let mut pipelines_to_destroy = Vec::new();
+        for material in self.materials.iter_mut() {
+            if material.fully_compiled && material.shader_path.is_some() {
+                material.fully_compiled = false;
+                if let Some(pipeline_handle) = material.pipeline.take() {
+                    pipelines_to_destroy.push(pipeline_handle);
+                }
+            }
+        }
+        // Only destroy the specific material pipelines, not all pipelines
+        for handle in pipelines_to_destroy {
+            self.pipelines.remove(handle.index());
+        }
     }
 
     /// Destroy all registered assets and free GPU resources.

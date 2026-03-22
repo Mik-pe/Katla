@@ -45,7 +45,7 @@ pub use error::RenderGraphError;
 pub use graph::{Frame, FrameGraph, FrameGraphBuilder};
 pub use pass::{PassDesc, PassType};
 pub use passes::{
-    CompositePass, ComputePass, FullscreenPass, GeometryPass, LightType, ShadowPass,
+    CompositePass, ComputePass, DepthPrepass, FullscreenPass, GeometryPass, ShadowPass,
     TonemapOperator, TonemapParams, UIPass, ViewportPass, ViewportRect,
 };
 pub use resource::{GraphResourceDesc, GraphResourceHandle, GraphResourceType, ResourceState};

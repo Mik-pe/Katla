@@ -165,6 +165,7 @@ impl PassBuilder for UIPass {
                 },
             ),
             uses_depth: false, // UI passes don't use depth testing
+            depth_attachment: None,
         }
     }
 }

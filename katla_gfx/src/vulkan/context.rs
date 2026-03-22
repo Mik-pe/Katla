@@ -1339,7 +1339,7 @@ fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D)
         .extent(extent_3d)
         .tiling(vk::ImageTiling::OPTIMAL)
         .samples(vk::SampleCountFlags::TYPE_1)
-        .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT);
+        .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED);
 
     //https://vulkan-tutorial.com/Depth_buffering
     let (depth_image, image_memory) =
@@ -1394,9 +1394,13 @@ fn create_device(
         vec![
             ash::khr::swapchain::NAME.as_ptr(),
             ash::khr::push_descriptor::NAME.as_ptr(), // For dynamic texture binding in UI
+            ash::khr::maintenance4::NAME.as_ptr(),    // Allow destroying pipeline layouts after use
         ]
     } else {
-        vec![ash::khr::push_descriptor::NAME.as_ptr()] // Always enable for UI textures
+        vec![
+            ash::khr::push_descriptor::NAME.as_ptr(), // Always enable for UI textures
+            ash::khr::maintenance4::NAME.as_ptr(),    // Allow destroying pipeline layouts after use
+        ]
     };
 
     let mut device_layers = vec![];

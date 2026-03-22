@@ -21,7 +21,7 @@
 //!     camera_position: [x, y, z, 1.0],
 //!     light_direction: [0.3, 1.0, 0.2, 0.0],
 //!     light_color: [1.0, 0.98, 0.95, 0.0],
-//!     light_intensity: 1.0,
+//!     light_intensity: [1.0, 0.0, 0.0, 0.0],
 //! };
 //! frame.set_frame_uniforms(uniforms);
 //!
@@ -101,7 +101,7 @@ impl FrameContext {
             camera_position: *camera_position,
             light_direction: [0.3, 1.0, 0.2, 0.0], // Upward toward sun
             light_color: [1.0, 0.98, 0.95, 0.0],   // Slightly warm white
-            light_intensity: 1.0,                  // Base intensity for PBR
+            light_intensity: [1.0, 0.0, 0.0, 0.0], // Base intensity for PBR
             tiles: [0, 0, 0, 0],
         };
     }

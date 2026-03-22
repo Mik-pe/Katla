@@ -159,6 +159,11 @@ pub struct FrameGraph {
 
     /// Flag to trigger particle debug readback this frame.
     particle_debug_readback: bool,
+
+    /// Per-frame compositing descriptor sets (one per frame in flight).
+    /// Pre-allocated and reused each frame via update_textures().
+    compositing_descriptor_sets:
+        RefCell<Vec<Option<Box<crate::render_graph::descriptor_sets::CompositingDescriptorSet>>>>,
 }
 
 impl FrameGraph {
@@ -179,6 +184,7 @@ impl FrameGraph {
             particle_emit_workgroup_count: 1,
             particle_simulate_workgroup_count: 1,
             particle_debug_readback: false,
+            compositing_descriptor_sets: RefCell::new(vec![None, None]),
         }
     }
 
@@ -219,9 +225,19 @@ impl FrameGraph {
     /// compile the material for the pass's output format.
     fn resolve_materials(&mut self, renderer: &mut VulkanRenderer) -> Result<(), RenderGraphError> {
         for pass in &self.passes {
-            if let Some(material_handle) = pass.material
-                && let Some(format) = pass.output_format
-            {
+            if let Some(material_handle) = pass.material {
+                // Use pass output_format if available, otherwise use B8G8R8A8Srgb
+                // (the default for materials compiled without explicit format)
+                let format = pass
+                    .output_format
+                    .unwrap_or(crate::texture::ImageFormat::B8G8R8A8Srgb);
+
+                log::debug!(
+                    "resolve_materials: pass '{}' material={:?} format={:?}",
+                    pass.name,
+                    material_handle,
+                    format
+                );
                 renderer
                     .ensure_material_compiled(material_handle, format)
                     .map_err(|e| {
@@ -375,6 +391,10 @@ impl FrameGraph {
         let total_textures: usize = self.transient_textures.iter().map(|m| m.len()).sum();
         log::info!("  Total textures to clean up: {}", total_textures);
         self.transient_textures.clear();
+        self.compositing_descriptor_sets
+            .borrow_mut()
+            .iter_mut()
+            .for_each(|slot| *slot = None);
         log::info!("Frame graph cleanup complete");
     }
 
@@ -394,6 +414,14 @@ impl FrameGraph {
     /// Each frame has its own set of textures to prevent race conditions.
     pub fn transient_texture(&self, name: &str, frame_idx: usize) -> Option<&TransientTexture> {
         self.transient_textures.get(frame_idx)?.get(name)
+    }
+
+    /// Get the ImageView of a transient texture by name (frame 0).
+    ///
+    /// Useful for external systems that need to reference transient textures
+    /// in descriptor sets (e.g., shadow atlas).
+    pub fn transient_texture_view(&self, name: &str) -> Option<vk::ImageView> {
+        self.transient_texture(name, 0).map(|t| t.image_view.vk())
     }
 
     /// Initialize transient textures (create Vulkan resources).
@@ -447,8 +475,12 @@ impl FrameGraph {
                                 | vk::ImageUsageFlags::SAMPLED
                                 | vk::ImageUsageFlags::INPUT_ATTACHMENT
                         }
-                        super::resource::GraphResourceType::DepthAttachment { .. } => {
-                            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+                        super::resource::GraphResourceType::DepthAttachment { sampled, .. } => {
+                            let mut usage = vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
+                            if sampled {
+                                usage |= vk::ImageUsageFlags::SAMPLED;
+                            }
+                            usage
                         }
                         super::resource::GraphResourceType::SampledImage => {
                             vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST
@@ -511,6 +543,11 @@ impl FrameGraph {
             self.transient_textures.push(frame_textures);
         }
 
+        // Ensure per-frame compositing descriptor set storage matches frame count
+        while self.compositing_descriptor_sets.borrow().len() < FRAMES_IN_FLIGHT {
+            self.compositing_descriptor_sets.borrow_mut().push(None);
+        }
+
         Ok(())
     }
 
@@ -564,9 +601,12 @@ impl FrameGraph {
         self.transient_textures.clear();
 
         // Update resource descriptors with new dimensions
+        // Only resize textures that track swapchain size (skip fixed-size like shadow atlas)
         for desc in &mut self.transient_resources {
-            desc.width = new_width;
-            desc.height = new_height;
+            if desc.tracks_swapchain_size {
+                desc.width = new_width;
+                desc.height = new_height;
+            }
         }
 
         // Recreate textures with new dimensions
@@ -864,6 +904,7 @@ impl FrameGraphBuilder {
             pass.material = pass_builder.material;
             pass.output_format = pass_builder.output_format;
             pass.uses_depth = pass_builder.uses_depth;
+            pass.depth_attachment = pass_builder.depth_attachment;
 
             // Extract color attachment info from pass data (for geometry passes)
             if let Some(geom_data) = pass_data.downcast_ref::<GeometryPassData>() {
@@ -931,9 +972,9 @@ pub struct Frame<'a> {
     /// Per-frame temporary buffers (allocated during this frame, cleaned up after GPU completion).
     temporary_buffers: Vec<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
 
-    /// Compositing descriptor set for this frame (created once per frame, cleaned up on drop).
-    compositing_descriptor_set:
-        Option<Box<crate::render_graph::descriptor_sets::CompositingDescriptorSet>>,
+    /// Whether the global depth buffer has been written by a previous pass this frame.
+    /// Used to insert a synchronization barrier between depth prepass and geometry pass.
+    depth_buffer_written: bool,
 }
 
 /// Data for a single pass execution.
@@ -974,7 +1015,7 @@ impl<'a> Frame<'a> {
             pending: HashMap::new(),
             resource_states,
             temporary_buffers: Vec::new(),
-            compositing_descriptor_set: None,
+            depth_buffer_written: false,
         }
     }
 
@@ -1140,8 +1181,32 @@ impl<'a> Frame<'a> {
             // Execute pass based on type
             match pass.pass_type {
                 super::pass::PassType::Graphics => {
+                    // Check if this is a shadow pass (no material, no pipeline, no color writes,
+                    // but has depth writes via transient resources)
+                    if pass.material.is_none()
+                        && pass.pipeline.is_none()
+                        && pass.writes.iter().any(|w| {
+                            self.graph
+                                .transient_texture(w, self.current_frame())
+                                .map(|t| t.format == vk::Format::D32_SFLOAT)
+                                .unwrap_or(false)
+                        })
+                    {
+                        log::debug!("'{}' -> shadow pass (no-op, clearing atlas)", pass.name);
+                        self.execute_shadow_pass(&cmd, pass)?;
+                    }
+                    // Check if this is a depth prepass (no material, no pipeline, no color writes,
+                    // no transient depth writes — uses global depth buffer)
+                    else if pass.material.is_none()
+                        && pass.pipeline.is_none()
+                        && pass.writes.is_empty()
+                        && pass.uses_depth
+                    {
+                        log::debug!("'{}' -> depth prepass", pass.name);
+                        self.execute_depth_prepass(&cmd, pass, data)?;
+                    }
                     // Check if this is a compositing pass (has material AND compositing_viewports)
-                    if let Some(material_handle) = pass.material {
+                    else if let Some(material_handle) = pass.material {
                         if pass.compositing_viewports.is_some() && data.draw_lists.is_empty() {
                             log::debug!("'{}' -> compositing pass", pass.name);
                             self.execute_compositing_pass(&cmd, pass, material_handle)?;
@@ -1188,6 +1253,11 @@ impl<'a> Frame<'a> {
             // This ensures proper synchronization between write and read operations
             self.insert_post_pass_barriers(&cmd, index)?;
 
+            // Track depth buffer writes for synchronization with subsequent passes
+            if pass.uses_depth {
+                self.depth_buffer_written = true;
+            }
+
             // Render particles after geometry pass (before tonemap, so they get tonemapped
             // and depth-tested against the scene geometry)
             if pass.name == "geometry" {
@@ -1201,9 +1271,7 @@ impl<'a> Frame<'a> {
                             .get(frame_idx)
                             .and_then(|m| m.get("hdr_color"))
                         {
-                            if let Err(e) =
-                                self.render_particles_to_texture(&cmd, hdr_texture)
-                            {
+                            if let Err(e) = self.render_particles_to_texture(&cmd, hdr_texture) {
                                 log::error!("Failed to render particles: {}", e);
                             }
                         }
@@ -1240,6 +1308,29 @@ impl<'a> Frame<'a> {
         let cmd_vk = cmd.vk_command_buffer();
         let device = &self.renderer.context.device;
 
+        // Synchronize global depth buffer between consecutive depth-using passes.
+        // When a depth prepass writes depth followed by a geometry pass that reads it,
+        // an image memory barrier is required even though the layout stays the same.
+        if pass.uses_depth && self.depth_buffer_written {
+            let frame_idx = self.current_frame();
+            if let Some(depth_texture) = self
+                .renderer
+                .frame_context
+                .depth_render_textures
+                .get(frame_idx)
+            {
+                log::debug!(
+                    "[BARRIER] Depth render-pass sync before '{}' (previous pass wrote depth)",
+                    pass.name
+                );
+                ImageBarrier::depth_render_pass_sync(
+                    &cmd_vk,
+                    device,
+                    depth_texture.image.vk(),
+                );
+            }
+        }
+
         // Process writes first (color attachments)
         for write_name in &pass.writes {
             // Skip backbuffer - it's managed by the swapchain
@@ -1255,16 +1346,26 @@ impl<'a> Frame<'a> {
                 continue;
             };
 
+            let is_depth = transient.format == vk::Format::D32_SFLOAT;
+
             let current_state = self
                 .resource_states
                 .get(write_name)
                 .copied()
                 .unwrap_or(super::resource::ResourceState::Undefined);
 
-            let required_state = super::resource::ResourceState::ColorAttachment;
+            let required_state = if is_depth {
+                super::resource::ResourceState::DepthStencilAttachment
+            } else {
+                super::resource::ResourceState::ColorAttachment
+            };
 
             if current_state != required_state {
-                let required_layout = vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
+                let required_layout = if is_depth {
+                    vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                } else {
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+                };
 
                 // Get the ACTUAL GPU layout from the transient texture
                 // This persists across frames via RefCell
@@ -1278,14 +1379,31 @@ impl<'a> Frame<'a> {
                     required_layout
                 );
 
-                // Transition using the actual tracked old_layout
-                ImageBarrier::transition(
-                    &cmd_vk,
-                    device,
-                    transient.image,
-                    old_layout,
-                    required_layout,
-                );
+                // Use depth-specific subresource range for depth textures
+                if is_depth {
+                    ImageBarrier::transition_with_range(
+                        &cmd_vk,
+                        device,
+                        transient.image,
+                        old_layout,
+                        required_layout,
+                        vk::ImageSubresourceRange {
+                            aspect_mask: vk::ImageAspectFlags::DEPTH,
+                            base_mip_level: 0,
+                            level_count: vk::REMAINING_MIP_LEVELS,
+                            base_array_layer: 0,
+                            layer_count: vk::REMAINING_ARRAY_LAYERS,
+                        },
+                    );
+                } else {
+                    ImageBarrier::transition(
+                        &cmd_vk,
+                        device,
+                        transient.image,
+                        old_layout,
+                        required_layout,
+                    );
+                }
 
                 // Update tracked state AND GPU layout (persist to TransientTexture for next frame)
                 self.resource_states
@@ -1341,13 +1459,31 @@ impl<'a> Frame<'a> {
                 );
 
                 // Transition using the actual tracked old_layout
-                ImageBarrier::transition(
-                    &cmd_vk,
-                    device,
-                    transient.image,
-                    old_layout,
-                    required_layout,
-                );
+                let is_depth = transient.format == vk::Format::D32_SFLOAT;
+                if is_depth {
+                    ImageBarrier::transition_with_range(
+                        &cmd_vk,
+                        device,
+                        transient.image,
+                        old_layout,
+                        required_layout,
+                        vk::ImageSubresourceRange {
+                            aspect_mask: vk::ImageAspectFlags::DEPTH,
+                            base_mip_level: 0,
+                            level_count: vk::REMAINING_MIP_LEVELS,
+                            base_array_layer: 0,
+                            layer_count: vk::REMAINING_ARRAY_LAYERS,
+                        },
+                    );
+                } else {
+                    ImageBarrier::transition(
+                        &cmd_vk,
+                        device,
+                        transient.image,
+                        old_layout,
+                        required_layout,
+                    );
+                }
 
                 // Update tracked state AND GPU layout (persist to TransientTexture for next frame)
                 self.resource_states
@@ -1362,19 +1498,8 @@ impl<'a> Frame<'a> {
     /// Insert post-pass barriers to ensure proper synchronization.
     ///
     /// This method transitions textures written by the current pass to SHADER_READ_ONLY
-    /// if subsequent passes will read them. This fixes the black screen issue during
-    /// high load where the UI samples from ldr_color before it's properly transitioned.
-    ///
-    /// # Synchronization Details
-    ///
-    /// Uses an execution + memory barrier with:
-    /// - srcStage: COLOR_ATTACHMENT_OUTPUT (waits for color attachment writes)
-    /// - dstStage: FRAGMENT_SHADER (blocks shader sampling)
-    /// - srcAccess: COLOR_ATTACHMENT_WRITE (flush color attachment writes)
-    /// - dstAccess: SHADER_READ (invalidate shader read caches)
-    ///
-    /// This ensures that all color attachment writes are visible before any subsequent
-    /// fragment shader tries to sample from the texture.
+    /// only if the immediately next pass that accesses the resource will read it (not write it).
+    /// If the next pass writes to the resource, the pre-barrier will handle the transition.
     fn insert_post_pass_barriers(
         &mut self,
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
@@ -1389,7 +1514,6 @@ impl<'a> Frame<'a> {
         let cmd_vk = cmd.vk_command_buffer();
         let device = &self.renderer.context.device;
 
-        // Check if any subsequent pass reads from textures written by this pass
         for write_name in &current_pass.writes {
             // Skip backbuffer
             if write_name == BACKBUFFER_NAME {
@@ -1404,36 +1528,59 @@ impl<'a> Frame<'a> {
                 continue;
             };
 
-            // Check if any subsequent pass reads from this texture
-            let will_be_read = self.graph.passes[pass_index + 1..]
+            // Find the next pass that accesses this resource
+            let next_access = self.graph.passes[pass_index + 1..]
                 .iter()
-                .any(|pass| pass.reads.contains(write_name));
+                .find(|pass| pass.reads.contains(write_name) || pass.writes.contains(write_name));
 
-            if will_be_read {
-                let current_state = self
-                    .resource_states
-                    .get(write_name)
-                    .copied()
-                    .unwrap_or(super::resource::ResourceState::ColorAttachment);
+            // Only transition to SHADER_READ_ONLY if the next access is a read.
+            // If the next access is a write, the pre-barrier will handle it.
+            let next_is_read = match next_access {
+                Some(pass) => pass.reads.contains(write_name) && !pass.writes.contains(write_name),
+                None => true, // No more accesses, can transition for potential future sampling
+            };
 
-                // Transition to SHADER_READ_ONLY for subsequent reads
-                // Be more aggressive - transition if state is ColorAttachment OR Undefined
-                // (Undefined means it was just written and hasn't been tracked yet)
-                if current_state == super::resource::ResourceState::ColorAttachment
-                    || current_state == super::resource::ResourceState::Undefined
-                {
-                    // Get the ACTUAL GPU layout from the transient texture
-                    // This persists across frames via RefCell
-                    let old_layout = transient.current_layout();
+            if !next_is_read {
+                continue;
+            }
 
-                    log::trace!(
-                        "[PostBarrier] Pass '{}' -> subsequent reads '{}': {:?} -> SHADER_READ_ONLY",
-                        current_pass.name,
-                        write_name,
-                        old_layout
+            let current_state = self
+                .resource_states
+                .get(write_name)
+                .copied()
+                .unwrap_or(super::resource::ResourceState::ColorAttachment);
+
+            let needs_transition = current_state == super::resource::ResourceState::ColorAttachment
+                || current_state == super::resource::ResourceState::Undefined
+                || current_state == super::resource::ResourceState::DepthStencilAttachment;
+
+            if needs_transition {
+                let old_layout = transient.current_layout();
+
+                log::trace!(
+                    "[PostBarrier] Pass '{}' -> next read '{}': {:?} -> SHADER_READ_ONLY",
+                    current_pass.name,
+                    write_name,
+                    old_layout
+                );
+
+                let is_depth = transient.format == vk::Format::D32_SFLOAT;
+                if is_depth {
+                    ImageBarrier::transition_with_range(
+                        &cmd_vk,
+                        device,
+                        transient.image,
+                        old_layout,
+                        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                        vk::ImageSubresourceRange {
+                            aspect_mask: vk::ImageAspectFlags::DEPTH,
+                            base_mip_level: 0,
+                            level_count: vk::REMAINING_MIP_LEVELS,
+                            base_array_layer: 0,
+                            layer_count: vk::REMAINING_ARRAY_LAYERS,
+                        },
                     );
-
-                    // Use the tracked old_layout for correct synchronization
+                } else {
                     ImageBarrier::transition(
                         &cmd_vk,
                         device,
@@ -1441,14 +1588,13 @@ impl<'a> Frame<'a> {
                         old_layout,
                         vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                     );
-
-                    // Update tracked state AND GPU layout (persist to TransientTexture for next frame)
-                    self.resource_states.insert(
-                        write_name.clone(),
-                        super::resource::ResourceState::ShaderRead,
-                    );
-                    transient.set_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
                 }
+
+                self.resource_states.insert(
+                    write_name.clone(),
+                    super::resource::ResourceState::ShaderRead,
+                );
+                transient.set_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
             }
         }
 
@@ -1586,16 +1732,31 @@ impl<'a> Frame<'a> {
                 .get(frame_idx)
                 .map(|t| t.image_view.vk())
                 .expect("depth_render_textures must have an entry for current frame");
+
+            let (load_op, store_op, clear_depth) = pass
+                .depth_attachment
+                .map(|(lo, so, cv)| {
+                    let depth_val = match cv {
+                        crate::render_pass::ClearValue::DepthStencil { depth, .. } => depth,
+                        _ => 0.0,
+                    };
+                    (lo.into(), so.into(), depth_val)
+                })
+                .unwrap_or((
+                    vk::AttachmentLoadOp::CLEAR,
+                    vk::AttachmentStoreOp::STORE,
+                    0.0,
+                ));
+
             Some(
                 vk::RenderingAttachmentInfo::default()
                     .image_view(depth_view)
                     .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::CLEAR)
-                    .store_op(vk::AttachmentStoreOp::STORE)
+                    .load_op(load_op)
+                    .store_op(store_op)
                     .clear_value(vk::ClearValue {
                         depth_stencil: vk::ClearDepthStencilValue {
-                            // Reverse Z: clear to 0.0 (farthest)
-                            depth: 0.0,
+                            depth: clear_depth,
                             stencil: 0,
                         },
                     }),
@@ -1660,6 +1821,39 @@ impl<'a> Frame<'a> {
         let alive_count = particle_system.alive_count();
         if alive_count == 0 {
             return Ok(()); // No particles to render
+        }
+
+        // Transition hdr_color to COLOR_ATTACHMENT_OPTIMAL for particle rendering
+        // (it may be in SHADER_READ_ONLY_OPTIMAL from the geometry post-barrier)
+        let current_layout = texture.current_layout();
+        if current_layout != vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL {
+            let barrier = vk::ImageMemoryBarrier2::default()
+                .src_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
+                .src_access_mask(vk::AccessFlags2::SHADER_READ)
+                .dst_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
+                .dst_access_mask(
+                    vk::AccessFlags2::COLOR_ATTACHMENT_READ
+                        | vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                )
+                .old_layout(current_layout)
+                .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .image(texture.image)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                });
+            let dependency_info =
+                vk::DependencyInfo::default().image_memory_barriers(std::slice::from_ref(&barrier));
+            unsafe {
+                self.renderer
+                    .context
+                    .device
+                    .cmd_pipeline_barrier2(cmd.vk_command_buffer(), &dependency_info);
+            }
+            texture.set_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
         }
 
         // Create render pass begin info
@@ -1802,12 +1996,13 @@ impl<'a> Frame<'a> {
         }
 
         // Transition texture back to shader read-only for UI sampling
+        let old_layout = texture.current_layout();
         let barrier = vk::ImageMemoryBarrier2::default()
             .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
             .src_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
             .dst_stage_mask(vk::PipelineStageFlags2::FRAGMENT_SHADER)
             .dst_access_mask(vk::AccessFlags2::SHADER_SAMPLED_READ)
-            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .old_layout(old_layout)
             .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
             .image(texture.image)
             .subresource_range(vk::ImageSubresourceRange {
@@ -2244,19 +2439,44 @@ impl<'a> Frame<'a> {
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
         draw_call: &crate::renderer::types::DrawCall,
     ) -> Result<(), RenderGraphError> {
+        // Extract mesh and material info upfront to avoid borrow conflicts
+        let mesh_handle = draw_call.mesh;
+        let material_handle = draw_call.material;
+
+        let (needs_recompile, material_format) = {
+            let material = self
+                .renderer
+                .asset_registry
+                .get_material(material_handle)
+                .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
+            (!material.fully_compiled, material.color_format)
+        };
+
+        // Recompile material if invalidated (e.g., after descriptor layout change during resize)
+        if needs_recompile {
+            self.renderer
+                .ensure_material_compiled(material_handle, material_format)
+                .map_err(|e| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Material recompilation failed: {}",
+                        e
+                    ))
+                })?;
+        }
+
         // Get mesh from registry
         let mesh = self
             .renderer
             .asset_registry
-            .get_mesh(draw_call.mesh)
-            .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
+            .get_mesh(mesh_handle)
+            .ok_or(RenderGraphError::InvalidMeshHandle(mesh_handle))?;
 
-        // Get material from registry
+        // Get material from registry (may have been recompiled above)
         let material = self
             .renderer
             .asset_registry
-            .get_material(draw_call.material)
-            .ok_or(RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
+            .get_material(material_handle)
+            .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
 
         // Clone pipeline_handle to avoid holding borrow across bind_descriptor_sets
         let pipeline_handle = material
@@ -2341,6 +2561,10 @@ impl<'a> Frame<'a> {
         {
             log::warn!("Failed to push light culling fragment descriptors: {}", e);
         }
+
+        // Set 4: Shadow data (regular descriptor set when shadow system is active)
+        self.renderer
+            .bind_shadow_descriptors(cmd.vk_command_buffer(), pipeline_layout);
 
         Ok(())
     }
@@ -2706,6 +2930,393 @@ impl<'a> Frame<'a> {
         Ok(())
     }
 
+    /// Execute a shadow pass.
+    ///
+    /// Phase 1: Clears the shadow atlas depth to 1.0 (far plane).
+    /// Future phases will render actual shadow depth from the light's perspective.
+    fn execute_shadow_pass(
+        &mut self,
+        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
+        pass: &PassDesc,
+    ) -> Result<(), RenderGraphError> {
+        let frame_idx = self.current_frame();
+
+        log::debug!(
+            "[SHADOW] Pass '{}' execution: frame_idx={}, writes={:?}",
+            pass.name,
+            frame_idx,
+            pass.writes
+        );
+
+        // Find the shadow atlas depth texture
+        let shadow_atlas = pass
+            .writes
+            .iter()
+            .find_map(|w| self.graph.transient_texture(w, frame_idx))
+            .ok_or_else(|| {
+                RenderGraphError::ResourceNotFound(
+                    "Shadow pass has no depth texture to write to".to_string(),
+                )
+            })?;
+
+        let extent = shadow_atlas.extent;
+        let half_w = extent.width / 2;
+        let half_h = extent.height / 2;
+
+        // Begin rendering with depth-only attachment
+        let depth_attachment = vk::RenderingAttachmentInfo::default()
+            .image_view(shadow_atlas.image_view.vk())
+            .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .clear_value(vk::ClearValue {
+                depth_stencil: vk::ClearDepthStencilValue {
+                    depth: 1.0,
+                    stencil: 0,
+                },
+            });
+
+        let render_area = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent,
+        };
+
+        cmd.begin_rendering(&[], Some(&depth_attachment), None, render_area, 1);
+
+        // Get shadow pipeline from renderer
+        let shadow_pipeline_handle =
+            self.renderer
+                .shadow_pipeline()
+                .ok_or(RenderGraphError::InvalidConfiguration(
+                    "Shadow pipeline not initialized. Call init_shadow_pipeline() first."
+                        .to_string(),
+                ))?;
+
+        let (pipeline, layout) = self
+            .renderer
+            .asset_registry
+            .get_pipeline_vk_handles(shadow_pipeline_handle)
+            .ok_or(RenderGraphError::InvalidPipelineHandle(
+                shadow_pipeline_handle,
+            ))?;
+
+        unsafe {
+            self.renderer.context.device.cmd_bind_pipeline(
+                cmd.vk_command_buffer(),
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline,
+            );
+        }
+
+        // Bind descriptor sets:
+        // Set 0: storage uniforms (frame_data + objects) — per-frame
+        // Set 2: shadow cascades — per-frame
+        let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
+        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
+
+        if let Some(cascade_ds) = self.renderer.shadow_cascade_descriptor_set() {
+            cmd.bind_descriptor_sets(layout, 2, &[cascade_ds], &[]);
+        }
+
+        // Render geometry for each cascade.
+        // Each cascade gets its own viewport region in the 2x2 atlas.
+        // Cascade index is passed via push constants to the shadow depth shader.
+        //
+        // Atlas layout (4096x4096):
+        //   cascade 0 (near)  -> top-left:     (0, half_h, half_w, half_h)
+        //   cascade 1         -> top-right:    (half_w, half_h, half_w, half_h)
+        //   cascade 2         -> bottom-left:  (0, 0, half_w, half_h)
+        //   cascade 3 (far)   -> bottom-right: (half_w, 0, half_w, half_h)
+        //
+        // Note: Vulkan viewport Y=0 is at the TOP of the image
+        let viewports = [
+            vk::Viewport {
+                x: 0.0,
+                y: half_h as f32,
+                width: half_w as f32,
+                height: half_h as f32,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            }, // cascade 0 (top-left)
+            vk::Viewport {
+                x: half_w as f32,
+                y: half_h as f32,
+                width: half_w as f32,
+                height: half_h as f32,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            }, // cascade 1 (top-right)
+            vk::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: half_w as f32,
+                height: half_h as f32,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            }, // cascade 2 (bottom-left)
+            vk::Viewport {
+                x: half_w as f32,
+                y: 0.0,
+                width: half_w as f32,
+                height: half_h as f32,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            }, // cascade 3 (bottom-right)
+        ];
+
+        let scissors = [
+            vk::Rect2D {
+                offset: vk::Offset2D {
+                    x: 0,
+                    y: half_h as i32,
+                },
+                extent: vk::Extent2D {
+                    width: half_w,
+                    height: half_h,
+                },
+            },
+            vk::Rect2D {
+                offset: vk::Offset2D {
+                    x: half_w as i32,
+                    y: half_h as i32,
+                },
+                extent: vk::Extent2D {
+                    width: half_w,
+                    height: half_h,
+                },
+            },
+            vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: vk::Extent2D {
+                    width: half_w,
+                    height: half_h,
+                },
+            },
+            vk::Rect2D {
+                offset: vk::Offset2D {
+                    x: half_w as i32,
+                    y: 0,
+                },
+                extent: vk::Extent2D {
+                    width: half_w,
+                    height: half_h,
+                },
+            },
+        ];
+
+        // Render geometry for each cascade.
+        // Each cascade gets its own viewport region in the 2x2 atlas.
+        // Cascade index is passed via push constants to the shadow depth shader.
+        let data = self
+            .pending
+            .remove(&self.graph.pass_index(&pass.name).unwrap_or(0))
+            .unwrap_or_default();
+
+        let num_cascades: u32 = self
+            .renderer
+            .shadow_csm
+            .as_ref()
+            .map(|csm| csm.cascade_count() as u32)
+            .unwrap_or(4);
+
+        let depth_bias = self
+            .renderer
+            .shadow_csm
+            .as_ref()
+            .map(|csm| csm.params().depth_bias_constant)
+            .unwrap_or(1.5);
+
+        for cascade_idx in 0..num_cascades {
+            // Set single viewport for this cascade
+            let vp = viewports[cascade_idx as usize];
+            let sc = scissors[cascade_idx as usize];
+
+            unsafe {
+                self.renderer.context.device.cmd_set_viewport(
+                    cmd.vk_command_buffer(),
+                    0,
+                    std::slice::from_ref(&vp),
+                );
+                self.renderer.context.device.cmd_set_scissor(
+                    cmd.vk_command_buffer(),
+                    0,
+                    std::slice::from_ref(&sc),
+                );
+            }
+
+            // Set shadow params for this cascade (cascade_index + bias)
+            self.renderer
+                .set_shadow_cascade_params(cascade_idx, depth_bias);
+
+            // Draw all geometry for this cascade
+            for draw_list in &data.draw_lists {
+                for draw_call in &draw_list.draws {
+                    let mesh = self
+                        .renderer
+                        .asset_registry
+                        .get_mesh(draw_call.mesh)
+                        .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
+
+                    if let Some(vb) = &mesh.vertex_buffer {
+                        cmd.bind_vertex_buffer(vb.object(), 0);
+                    }
+
+                    if let Some(ib) = &mesh.index_buffer {
+                        cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
+                    }
+
+                    let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
+
+                    unsafe {
+                        self.renderer.context.device.cmd_draw_indexed(
+                            cmd.vk_command_buffer(),
+                            index_count,
+                            1,
+                            0,
+                            0,
+                            draw_call.instance_index,
+                        );
+                    }
+                }
+            }
+        }
+
+        cmd.end_rendering();
+
+        // Mark the shadow atlas as written for barrier tracking
+        if let Some(write_name) = pass.writes.first() {
+            self.resource_states.insert(
+                write_name.clone(),
+                super::resource::ResourceState::DepthStencilAttachment,
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Execute a depth prepass — renders only depth from the camera's perspective.
+    ///
+    /// The depth buffer is reused by the subsequent geometry pass via `LoadOp::Load`.
+    /// This enables early-Z rejection and reduces overdraw in the PBR pass.
+    fn execute_depth_prepass(
+        &mut self,
+        cmd: &crate::vulkan::commandbuffer::CommandBuffer,
+        _pass: &PassDesc,
+        data: PassExecutionData,
+    ) -> Result<(), RenderGraphError> {
+        let frame_idx = self.current_frame();
+        let extent = self.renderer.frame_context.swapchain.get_extent();
+        let render_area = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent,
+        };
+
+        log::debug!(
+            "[DEPTH_PREPASS] frame_idx={}, draw_lists={}",
+            frame_idx,
+            data.draw_lists.len()
+        );
+
+        // No color attachment — depth only
+        let depth_view = self
+            .renderer
+            .frame_context
+            .depth_render_textures
+            .get(frame_idx)
+            .map(|t| t.image_view.vk())
+            .expect("depth_render_textures must have an entry for current frame");
+
+        let depth_attachment = vk::RenderingAttachmentInfo::default()
+            .image_view(depth_view)
+            .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .clear_value(vk::ClearValue {
+                depth_stencil: vk::ClearDepthStencilValue {
+                    depth: 0.0,
+                    stencil: 0,
+                },
+            });
+
+        cmd.begin_rendering(&[], Some(&depth_attachment), None, render_area, 1);
+
+        let depth_pipeline_handle = self.renderer.depth_prepass_pipeline().ok_or(
+            RenderGraphError::InvalidConfiguration(
+                "Depth prepass pipeline not initialized".to_string(),
+            ),
+        )?;
+
+        let (pipeline, layout) = self
+            .renderer
+            .asset_registry
+            .get_pipeline_vk_handles(depth_pipeline_handle)
+            .ok_or(RenderGraphError::InvalidPipelineHandle(
+                depth_pipeline_handle,
+            ))?;
+
+        unsafe {
+            self.renderer.context.device.cmd_bind_pipeline(
+                cmd.vk_command_buffer(),
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline,
+            );
+        }
+
+        let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
+        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
+
+        cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
+            0.0,
+            0.0,
+            extent.width as f32,
+            extent.height as f32,
+        )]);
+
+        let scissor = crate::sync::Rect2D {
+            x: 0,
+            y: 0,
+            width: extent.width,
+            height: extent.height,
+        };
+        cmd.set_scissor(&[scissor]);
+
+        // Draw all geometry (depth only — same draw lists as geometry pass)
+        for draw_list in &data.draw_lists {
+            for draw_call in draw_list.iter() {
+                let mesh = self
+                    .renderer
+                    .asset_registry
+                    .get_mesh(draw_call.mesh)
+                    .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
+
+                if let Some(vb) = &mesh.vertex_buffer {
+                    cmd.bind_vertex_buffer(vb.object(), 0);
+                }
+
+                if let Some(ib) = &mesh.index_buffer {
+                    cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
+                }
+
+                let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
+
+                unsafe {
+                    self.renderer.context.device.cmd_draw_indexed(
+                        cmd.vk_command_buffer(),
+                        index_count,
+                        1,
+                        0,
+                        0,
+                        draw_call.instance_index,
+                    );
+                }
+            }
+        }
+
+        cmd.end_rendering();
+
+        Ok(())
+    }
+
     /// Execute a compositing pass (multi-viewport fullscreen pass).
     ///
     /// Compositing passes sample from multiple viewport textures and composite them
@@ -2963,20 +3574,33 @@ impl<'a> Frame<'a> {
             texture_views.push(transient.image_view.vk());
         }
 
-        // Create descriptor set and store it in the frame for cleanup
+        // Reuse existing descriptor set for this frame, or create one if needed.
+        // With UPDATE_AFTER_BIND, we can safely update descriptors while
+        // command buffers from the previous frame are still in-flight.
         let context = Rc::clone(&self.renderer.context);
-        let desc_set = Box::new(
-            CompositingDescriptorSet::new(&context, &texture_views).map_err(|e| {
+        let mut sets = self.graph.compositing_descriptor_sets.borrow_mut();
+
+        let vk_set = if let Some(ref mut existing) = sets[frame_idx] {
+            existing.update_textures(&texture_views).map_err(|e| {
                 RenderGraphError::VulkanError(format!(
-                    "Failed to create compositing descriptor set: {}",
+                    "Failed to update compositing descriptor set: {}",
                     e
                 ))
-            })?,
-        );
-
-        let vk_set = desc_set.vk_set();
-        self.compositing_descriptor_set = Some(desc_set);
-
+            })?;
+            existing.vk_set()
+        } else {
+            let desc_set = Box::new(
+                CompositingDescriptorSet::new(&context, &texture_views).map_err(|e| {
+                    RenderGraphError::VulkanError(format!(
+                        "Failed to create compositing descriptor set: {}",
+                        e
+                    ))
+                })?,
+            );
+            let vk_set = desc_set.vk_set();
+            sets[frame_idx] = Some(desc_set);
+            vk_set
+        };
         Ok(vk_set)
     }
 }

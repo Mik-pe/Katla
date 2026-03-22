@@ -13,6 +13,5 @@ pub use cube::generate_cube;
 pub use cylinder::generate_cylinder;
 pub use plane::generate_plane;
 pub use plane::generate_plane_xy;
-pub use sphere::generate_icosphere;
 pub use sphere::generate_sphere;
 pub use torus::generate_torus;

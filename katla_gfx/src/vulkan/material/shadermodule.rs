@@ -23,6 +23,20 @@ fn shader_stage_to_naga(stage: vk::ShaderStageFlags) -> naga::ShaderStage {
     }
 }
 
+fn find_common_dir(from: &Path) -> Option<PathBuf> {
+    let mut dir = from;
+    loop {
+        let candidate = dir.join("common");
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+        match dir.parent() {
+            Some(parent) => dir = parent,
+            None => return None,
+        }
+    }
+}
+
 fn resolve_includes(
     source: &str,
     file_path: &Path,
@@ -52,7 +66,16 @@ fn resolve_includes(
             } else if let Some(bracketed) =
                 path_str.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
             {
-                base_dir.join("common").join(bracketed)
+                let common_dir = find_common_dir(base_dir).ok_or_else(|| {
+                    ShaderError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!(
+                            "Could not find common/ directory searching up from {:?}",
+                            base_dir
+                        ),
+                    ))
+                })?;
+                common_dir.join(bracketed)
             } else {
                 continue;
             };
@@ -67,8 +90,6 @@ fn resolve_includes(
             result.push('\n');
         }
     }
-
-    included.remove(&canonical);
 
     Ok(result)
 }

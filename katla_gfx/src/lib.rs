@@ -151,6 +151,7 @@ pub mod material;
 pub mod particles;
 pub mod render_pass;
 pub mod renderer;
+pub mod shadow;
 pub mod texture;
 pub mod vertex;
 
@@ -233,7 +234,7 @@ pub use lighting::{LightCullFrameData, LightCullingBuffers, PointLightGPU};
 // Render graph system - minimal public API
 pub use render_graph::{
     CompositingDescriptorSet, Frame, FrameGraph, FrameGraphBuilder, FullscreenPass, GeometryPass,
-    GraphResourceDesc, GraphResourceType, LightType, RenderGraphError, ShadowPass, TonemapOperator,
+    GraphResourceDesc, GraphResourceType, RenderGraphError, ShadowPass, TonemapOperator,
     TonemapParams,
 };
 

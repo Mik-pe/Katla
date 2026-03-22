@@ -209,6 +209,11 @@ impl StorageDescriptorSet {
     pub fn vk_set(&self) -> vk::DescriptorSet {
         self.inner.vk()
     }
+
+    /// Get the descriptor set layout.
+    pub fn layout(&self) -> vk::DescriptorSetLayout {
+        self.inner.layout()
+    }
 }
 
 /// Frame-level uniforms (view and projection matrices + lighting).
@@ -377,7 +382,7 @@ impl StorageUniformManager {
             &[0.0, 0.0, 0.0, 0.0], // camera_position (will be computed from view inverse)
             &[0.3, 1.0, 0.2, 0.0], // light_direction (upward toward sun)
             &[1.0, 0.98, 0.95, 0.0], // light_color (slightly warm white)
-            3.0,                   // light_intensity (HDR - brighter for PBR)
+            [3.0, 0.0, 0.0, 0.0],  // light_intensity (HDR - brighter for PBR)
             [0, 0, 0, 0],          // tiles (no light culling by default)
         );
     }
@@ -392,7 +397,7 @@ impl StorageUniformManager {
     /// * `camera_position` - Camera position in world space
     /// * `light_direction` - Normalized direction TO the light
     /// * `light_color` - Light color (RGB)
-    /// * `light_intensity` - Light intensity multiplier
+    /// * `light_intensity` - Light intensity and screen-space params [intensity, depth_tex_idx, 0, 0]
     /// * `tiles` - Forward+ tile grid dimensions [tiles_x, tiles_y, 0, 0]
     #[allow(clippy::too_many_arguments)]
     pub fn update_frame_with_lighting(
@@ -404,7 +409,7 @@ impl StorageUniformManager {
         camera_position: &[f32; 4],
         light_direction: &[f32; 4],
         light_color: &[f32; 4],
-        light_intensity: f32,
+        light_intensity: [f32; 4],
         tiles: [u32; 4],
     ) {
         let buffer = &mut self.buffers[frame_index];
@@ -418,7 +423,7 @@ impl StorageUniformManager {
                 camera_position: *camera_position,
                 light_direction: *light_direction,
                 light_color: *light_color,
-                light_intensity: [light_intensity, 0.0, 0.0, 0.0],
+                light_intensity,
                 tiles,
                 _padding: [0u8; 48],
             };

@@ -143,8 +143,7 @@ Renders shadow maps for lighting.
 ```rust
 ShadowPass::new("shadow")
     .write_depth("shadow_map", ImageFormat::D32Sfloat)
-    .light_type(LightType::Directional)
-    .resolution(2048, 2048);
+    .resolution(4096, 4096);
 ```
 
 ## Resource Declaration

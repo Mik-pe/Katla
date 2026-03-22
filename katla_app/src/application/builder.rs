@@ -150,7 +150,8 @@ impl ApplicationBuilder {
     ) -> AppResult<katla_gfx::FrameGraph> {
         use katla_gfx::render_graph::UIPass;
         use katla_gfx::render_graph::{
-            FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
+            DepthPrepass, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
+            ShadowPass,
         };
         use katla_gfx::render_pass::{ClearValue, LoadOp, StoreOp};
         use katla_gfx::texture::ImageFormat as TextureImageFormat;
@@ -209,6 +210,41 @@ impl ApplicationBuilder {
                 message: format!("Failed to initialize light culling: {}", e),
             })?;
 
+        // Initialize shadow resources BEFORE compiling PBR materials,
+        // since PBR pipelines need Set 4 for shadow data.
+        // Shadow atlas view will be set after frame graph creates the transient texture.
+        renderer
+            .init_shadow_resources(None)
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to initialize shadow resources: {}", e),
+            })?;
+
+        // Register depth textures with bindless for screen-space effects (contact shadows, AO)
+        let depth_texture_base = renderer.register_depth_textures_bindless().map_err(|e| {
+            crate::error::AppError::Graphics {
+                message: format!("Failed to register depth textures: {}", e),
+            }
+        })?;
+        log::info!(
+            "Depth textures registered with bindless at base slot {}",
+            depth_texture_base
+        );
+
+        // Initialize shadow depth pipeline (depth-only rendering from light's perspective)
+        let shadow_shader_path = resources.shader_path("shadow/shadow_depth.wgsl");
+        renderer
+            .init_shadow_pipeline(&shadow_shader_path)
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to initialize shadow pipeline: {}", e),
+            })?;
+
+        let depth_prepass_shader_path = resources.shader_path("depth_prepass.wgsl");
+        renderer
+            .init_depth_prepass_pipeline(&depth_prepass_shader_path)
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to initialize depth prepass pipeline: {}", e),
+            })?;
+
         // Compile geometry shader for PBR model rendering
         log::info!("About to compile PBR geometry shader...");
         let geometry_shader_path = resources.shader_path("model_pbr.wgsl");
@@ -255,6 +291,7 @@ impl ApplicationBuilder {
                 format: TextureImageFormat::R16G16B16A16Sfloat,
                 width: extent.width,
                 height: extent.height,
+                tracks_swapchain_size: true,
             })
             // Create viewport texture for tonemap output (LDR, sRGB for backbuffer compatibility)
             // Use B8G8R8A8Srgb to match backbuffer format (tonemap shader expects this)
@@ -266,6 +303,19 @@ impl ApplicationBuilder {
                 format: TextureImageFormat::B8G8R8A8Srgb,
                 width: extent.width,
                 height: extent.height,
+                tracks_swapchain_size: true,
+            })
+            // Create shadow atlas (depth texture, 2x2 cascade grid)
+            .create_resource(GraphResourceDesc {
+                name: "shadow_atlas".to_string(),
+                resource_type: GraphResourceType::DepthAttachment {
+                    clear_value: 1.0,
+                    sampled: true,
+                },
+                format: TextureImageFormat::D32Sfloat,
+                width: 4096,
+                height: 4096,
+                tracks_swapchain_size: false,
             })
             // Note: Particle compute passes (emit and simulate) are executed automatically
             // by the render graph before any graphics passes. They don't need to be added here.
@@ -275,9 +325,18 @@ impl ApplicationBuilder {
                     .write("hdr_color", TextureImageFormat::R16G16B16A16Sfloat)
                     .pipeline(sky_pipeline),
             )
+            // Shadow pass: renders depth from light's perspective into 2x2 cascade atlas
+            .add_pass(
+                ShadowPass::new("shadow")
+                    .write_depth("shadow_atlas", TextureImageFormat::D32Sfloat)
+                    .resolution(4096, 4096),
+            )
+            // Depth prepass: renders scene depth from camera's perspective
+            // Populates the depth buffer before the geometry pass for early-Z rejection
+            .add_pass(DepthPrepass::new("depth_prepass"))
             // Geometry pass: renders scene to HDR color texture
             // Loads existing contents (sky pass) and writes geometry on top
-            // Note: Depth is implicit and uses the global depth buffer
+            // Reuses depth from the depth prepass (LoadOp::Load)
             .add_pass(
                 GeometryPass::new("geometry")
                     .write_color_with(
@@ -287,7 +346,16 @@ impl ApplicationBuilder {
                         StoreOp::Store,
                         ClearValue::OPAQUE_BLACK,
                     )
-                    .material(geometry_material),
+                    .depth_config(
+                        LoadOp::Load,
+                        StoreOp::Store,
+                        ClearValue::DepthStencil {
+                            depth: 0.0,
+                            stencil: 0,
+                        },
+                    )
+                    .material(geometry_material)
+                    .read("shadow_atlas"),
             )
             // Tonemap pass: samples HDR color and outputs to viewport texture
             // The viewport texture is then sampled by the UI system to display in the viewport panel
@@ -461,9 +529,6 @@ impl ApplicationBuilder {
         let font_atlas_handle =
             renderer.create_ui_font_atlas(atlas_width, atlas_height, atlas_data);
 
-        ui_context
-            .fonts
-            .set_atlas_id(katla_ui::TextureId::FONT_ATLAS);
         log::info!(
             "Uploaded font atlas texture: {}x{}, handle={:?}, handle_index={}",
             atlas_width,
@@ -473,7 +538,20 @@ impl ApplicationBuilder {
         );
 
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
-        let frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
+        let mut frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
+
+        // Initialize transient textures so we can get shadow atlas ImageView
+        frame_graph
+            .initialize_transient_textures(&renderer)
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to initialize transient textures: {}", e),
+            })?;
+
+        // Update shadow atlas view now that transient textures are created
+        if let Some(shadow_atlas_view) = frame_graph.transient_texture_view("shadow_atlas") {
+            renderer.set_shadow_atlas_view(shadow_atlas_view);
+            log::info!("Shadow atlas view set for descriptor binding");
+        }
 
         // Initialize UI renderer with font atlas bindless slot
         let mut ui_renderer = crate::ui::UIRenderer::new();

@@ -17,6 +17,9 @@ pub enum GraphResourceType {
     DepthAttachment {
         /// Clear value (0.0 = far, 1.0 = near for reverse Z).
         clear_value: f32,
+        /// Whether this depth texture will also be sampled by shaders.
+        /// When true, VK_IMAGE_USAGE_SAMPLED_BIT is added to the image usage.
+        sampled: bool,
     },
     /// Sampled image for shader reading (textures).
     SampledImage,
@@ -35,6 +38,10 @@ pub struct GraphResourceDesc {
     pub width: u32,
     /// Height in pixels.
     pub height: u32,
+    /// Whether this resource should be resized when the swapchain is recreated.
+    /// Fixed-size resources (e.g., shadow atlas at 4096x4096) should set this to false.
+    /// Default is true for backwards compatibility.
+    pub tracks_swapchain_size: bool,
 }
 
 /// Resource state for barrier tracking.

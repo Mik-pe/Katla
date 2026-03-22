@@ -25,6 +25,10 @@ pub struct PipelineBuilder {
     depth_test: bool,
     depth_write: bool,
     depth_compare_op: CompareOp,
+    depth_bias_enable: bool,
+    depth_bias_constant: f32,
+    depth_bias_slope: f32,
+    depth_bias_clamp: f32,
     blend_enable: bool,
     blend_src_color: BlendFactor,
     blend_dst_color: BlendFactor,
@@ -58,6 +62,10 @@ impl PipelineBuilder {
             depth_test: true,
             depth_write: true,
             depth_compare_op: CompareOp::Greater,
+            depth_bias_enable: false,
+            depth_bias_constant: 0.0,
+            depth_bias_slope: 0.0,
+            depth_bias_clamp: 0.0,
             blend_enable: false,
             blend_src_color: BlendFactor::SrcAlpha,
             blend_dst_color: BlendFactor::OneMinusSrcAlpha,
@@ -101,6 +109,14 @@ impl PipelineBuilder {
         self.depth_test = enable;
         self.depth_write = write;
         self.depth_compare_op = op;
+        self
+    }
+
+    pub fn with_depth_bias(mut self, constant: f32, slope: f32, clamp: f32) -> Self {
+        self.depth_bias_enable = true;
+        self.depth_bias_constant = constant;
+        self.depth_bias_slope = slope;
+        self.depth_bias_clamp = clamp;
         self
     }
 
@@ -173,7 +189,10 @@ impl PipelineBuilder {
             .line_width(self.line_width)
             .cull_mode(self.cull_mode.into())
             .front_face(self.front_face.into())
-            .depth_bias_enable(false);
+            .depth_bias_enable(self.depth_bias_enable)
+            .depth_bias_constant_factor(self.depth_bias_constant)
+            .depth_bias_slope_factor(self.depth_bias_slope)
+            .depth_bias_clamp(self.depth_bias_clamp);
 
         let multisampling = vk::PipelineMultisampleStateCreateInfo::default()
             .sample_shading_enable(false)

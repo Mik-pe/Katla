@@ -56,6 +56,14 @@ impl DescriptorSet {
     pub(crate) fn vk(&self) -> vk::DescriptorSet {
         self.set
     }
+
+    /// Get the descriptor set layout.
+    ///
+    /// Panics if the layout was not stored during creation.
+    pub(crate) fn layout(&self) -> vk::DescriptorSetLayout {
+        self.owned_layout
+            .expect("DescriptorSet layout not stored during creation")
+    }
 }
 
 impl Drop for DescriptorSet {

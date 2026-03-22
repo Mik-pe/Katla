@@ -166,6 +166,7 @@ impl PassBuilder for FullscreenPass {
                 },
             ),
             uses_depth: true,
+            depth_attachment: None,
         }
     }
 }

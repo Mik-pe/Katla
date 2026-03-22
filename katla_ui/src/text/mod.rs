@@ -236,8 +236,6 @@ pub struct FontSystem {
     atlas_resized: bool,
     /// Padding around glyphs in atlas.
     glyph_padding: u32,
-    /// Texture ID for the font atlas (set by application after registering with renderer).
-    font_atlas_id: TextureId,
 }
 
 impl FontSystem {
@@ -252,8 +250,13 @@ impl FontSystem {
 
     /// Create a new font system.
     pub fn new() -> Self {
-        let atlas_data =
-            vec![0; (Self::DEFAULT_ATLAS_WIDTH * Self::DEFAULT_ATLAS_HEIGHT * 4) as usize];
+        let pixel_count = (Self::DEFAULT_ATLAS_WIDTH * Self::DEFAULT_ATLAS_HEIGHT) as usize;
+        let mut atlas_data = vec![255u8; pixel_count * 4];
+        // Set alpha to 0 for transparent white background.
+        // Bilinear filtering between glyph pixels (white) and background (white) avoids dark fringes.
+        for i in 0..pixel_count {
+            atlas_data[i * 4 + 3] = 0;
+        }
 
         Self {
             fonts: HashMap::new(),
@@ -268,13 +271,16 @@ impl FontSystem {
             atlas_dirty: true,
             atlas_resized: false,
             glyph_padding: 1,
-            font_atlas_id: TextureId::NONE,
         }
     }
 
     /// Create a font system with a custom atlas size.
     pub fn with_atlas_size(width: u32, height: u32) -> Self {
-        let atlas_data = vec![0; (width * height * 4) as usize];
+        let pixel_count = (width * height) as usize;
+        let mut atlas_data = vec![255u8; pixel_count * 4];
+        for i in 0..pixel_count {
+            atlas_data[i * 4 + 3] = 0;
+        }
 
         Self {
             fonts: HashMap::new(),
@@ -289,20 +295,12 @@ impl FontSystem {
             atlas_dirty: true,
             atlas_resized: false,
             glyph_padding: 1,
-            font_atlas_id: TextureId::NONE,
         }
     }
 
     /// Get the font atlas texture ID.
     pub fn atlas_id(&self) -> TextureId {
-        self.font_atlas_id
-    }
-
-    /// Set the font atlas texture ID.
-    ///
-    /// This should be called after registering the atlas texture with the renderer.
-    pub fn set_atlas_id(&mut self, id: TextureId) {
-        self.font_atlas_id = id;
+        TextureId::FONT_ATLAS
     }
 
     /// Add a font from bytes (TTF/OTF data).
@@ -820,10 +818,12 @@ impl FontSystem {
             new_height
         );
 
-        // Create new larger buffer (initialized to zeros - no old data)
-        // Since we're clearing the cache and re-rasterizing, there's no point
-        // copying old data. This also avoids ghost pixels from previous glyphs.
-        let new_data = vec![0u8; (new_width * new_height * 4) as usize];
+        // Create new larger buffer (transparent white background)
+        let pixel_count = (new_width * new_height) as usize;
+        let mut new_data = vec![255u8; pixel_count * 4];
+        for i in 0..pixel_count {
+            new_data[i * 4 + 3] = 0;
+        }
 
         self.atlas_data = new_data;
         self.atlas_width = new_width;
