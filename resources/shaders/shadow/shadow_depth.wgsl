@@ -1,6 +1,7 @@
 // Depth-only shader for CSM shadow map rendering.
 // Each cascade is rendered as a separate draw with cascade_index set via a storage buffer.
 
+#include <frame_uniforms.wgsl>
 #include <shadow_cascade_data.wgsl>
 
 struct ShadowParams {

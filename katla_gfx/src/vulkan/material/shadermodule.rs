@@ -119,18 +119,14 @@ impl ShaderModule {
     ) -> Result<Self, ShaderError> {
         let path = path.as_ref();
         let raw = std::fs::read_to_string(path).map_err(ShaderError::IoError)?;
-        log::info!("    from_wgsl: read {} bytes from {:?}", raw.len(), path);
         let resolved = resolve_includes(&raw, path, &mut HashSet::new())?;
-        log::info!("    from_wgsl: resolved includes, {} bytes", resolved.len());
 
         // Dump resolved shader for debugging
         if std::env::var("KATLA_DUMP_SHADERS").is_ok() {
             let dump_path = path.with_extension("resolved.wgsl");
             std::fs::write(&dump_path, &resolved).ok();
-            log::info!("    from_wgsl: dumped resolved shader to {:?}", dump_path);
         }
 
-        log::info!("    from_wgsl: calling from_wgsl_string");
         Self::from_wgsl_string(device, &resolved, stage, entry_point)
     }
 
@@ -150,11 +146,6 @@ impl ShaderModule {
         entry_point: impl Into<String>,
     ) -> Result<Self, ShaderError> {
         let entry_point = entry_point.into();
-        log::info!(
-            "    from_wgsl_string_impl: parsing {} bytes, entry={:?}",
-            wgsl_str.len(),
-            entry_point
-        );
         let wgsl_module = wgsl::parse_str(wgsl_str).map_err(ShaderError::WgslParseError)?;
 
         let module_info: naga::valid::ModuleInfo = naga::valid::Validator::new(
