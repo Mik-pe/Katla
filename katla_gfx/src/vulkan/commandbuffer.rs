@@ -245,6 +245,31 @@ impl CommandBuffer {
         }
     }
 
+    /// Bind vertex buffers at specific binding locations.
+    ///
+    /// Unlike `bind_vertex_buffer` (which always binds at location 0), this method
+    /// binds buffers at their declared binding indices. This is needed for SOA
+    /// (Structure of Arrays) vertex layouts where each attribute has its own buffer
+    /// at a specific binding location.
+    ///
+    /// # Arguments
+    /// * `buffers` - Slice of (binding_index, buffer) pairs
+    pub fn bind_vertex_buffers_at_locations(&self, buffers: &[(u32, vk::Buffer)]) {
+        if buffers.is_empty() {
+            return;
+        }
+        let max_binding = buffers.iter().map(|(idx, _)| *idx).max().unwrap_or(0) as usize + 1;
+        let mut buffer_vec = vec![vk::Buffer::null(); max_binding];
+        let offsets = vec![0u64; max_binding];
+        for &(idx, buf) in buffers {
+            buffer_vec[idx as usize] = buf;
+        }
+        unsafe {
+            self.device
+                .cmd_bind_vertex_buffers(self.command_buffer, 0, &buffer_vec, &offsets);
+        }
+    }
+
     //=========================================================================
     // Dynamic Rendering (Vulkan 1.3)
     //=========================================================================

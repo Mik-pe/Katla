@@ -7,7 +7,7 @@ use crate::pipeline::{BlendFactor, BlendOp, CompareOp, CullMode, FrontFace, Poly
 use crate::sync::VkRenderPass;
 use crate::texture::ImageFormat;
 use crate::vulkan::pipeline_state::{DynamicState, PrimitiveTopology};
-use crate::vulkan::vertexbinding::VertexBinding;
+use crate::vulkan::vertexbinding::{VertexBinding, VertexFormat};
 
 pub struct PipelineBuilder {
     context: Rc<VulkanContext>,
@@ -92,6 +92,35 @@ impl PipelineBuilder {
         let attribute_descs = binding.get_attribute_desc(0);
         self.vertex_bindings.push(binding_desc);
         self.vertex_attributes.extend(attribute_descs);
+        self
+    }
+
+    pub fn with_vertex_binding_soa(mut self, binding: VertexBinding) -> Self {
+        let (binding_descs, attribute_descs) = binding.get_soa_descriptions();
+        self.vertex_bindings.extend(binding_descs);
+        self.vertex_attributes.extend(attribute_descs);
+        self
+    }
+
+    /// Add a single SOA vertex attribute at a specific shader location.
+    ///
+    /// Each call adds one binding at `binding = location` and one attribute
+    /// at the same location, suitable for per-attribute SOA vertex buffers.
+    pub fn with_soa_attribute(mut self, location: u32, format: VertexFormat) -> Self {
+        let stride = format.get_offset();
+        self.vertex_bindings.push(
+            vk::VertexInputBindingDescription::default()
+                .binding(location)
+                .stride(stride)
+                .input_rate(vk::VertexInputRate::VERTEX),
+        );
+        self.vertex_attributes.push(
+            vk::VertexInputAttributeDescription::default()
+                .binding(location)
+                .location(location)
+                .format(format.get_vk_format())
+                .offset(0),
+        );
         self
     }
 

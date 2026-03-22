@@ -6,8 +6,12 @@
 
 use crate::handle::MeshHandle;
 use crate::renderer::registry::{AssetRegistry, MeshAsset};
+use crate::vertex::{VertexPBR, VertexPBRSkinned};
+use crate::vulkan::vertex_attribute::AttributeType;
 use crate::vulkan::{IndexBuffer, IndexType, VertexBuffer};
 use crate::{RendererError, VulkanContext};
+use std::any::TypeId;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Mesh manager for creating meshes.
@@ -28,12 +32,14 @@ impl MeshManager {
     /// Create a mesh using the shared asset registry.
     fn create_mesh_asset(
         &self,
-        vertex_buffer: Option<VertexBuffer>,
+        attribute_buffers: HashMap<AttributeType, VertexBuffer>,
         index_buffer: Option<IndexBuffer>,
+        vertex_count: u32,
     ) -> MeshAsset {
         MeshAsset {
-            vertex_buffer,
+            attribute_buffers,
             index_buffer,
+            vertex_count,
         }
     }
 
@@ -60,15 +66,42 @@ impl MeshManager {
         T: bytemuck::Pod,
         U: bytemuck::Pod,
     {
-        // Convert vertices to bytes
-        let vertex_bytes = unsafe {
-            std::slice::from_raw_parts(
-                vertices.as_ptr() as *const u8,
-                std::mem::size_of_val(vertices),
-            )
+        let type_id = TypeId::of::<T>();
+
+        // Deinterleave known vertex types into SOA attribute buffers
+        let attribute_buffers = if type_id == TypeId::of::<VertexPBR>() {
+            self.deinterleave_pbr(unsafe {
+                std::slice::from_raw_parts(vertices.as_ptr() as *const VertexPBR, vertices.len())
+            })
+        } else if type_id == TypeId::of::<VertexPBRSkinned>() {
+            self.deinterleave_pbr_skinned(unsafe {
+                std::slice::from_raw_parts(
+                    vertices.as_ptr() as *const VertexPBRSkinned,
+                    vertices.len(),
+                )
+            })
+        } else {
+            // Fallback: store entire blob as position buffer
+            let vertex_bytes = unsafe {
+                std::slice::from_raw_parts(
+                    vertices.as_ptr() as *const u8,
+                    std::mem::size_of_val(vertices),
+                )
+            };
+            let mut map = HashMap::new();
+            if !vertex_bytes.is_empty() {
+                let mut vb = VertexBuffer::new(
+                    self.context.clone(),
+                    vertex_bytes.len() as u64,
+                    vertices.len() as u32,
+                );
+                vb.upload_data(vertex_bytes);
+                map.insert(AttributeType::Position, vb);
+            }
+            map
         };
 
-        // Convert indices to bytes
+        // Create index buffer
         let index_bytes = unsafe {
             std::slice::from_raw_parts(
                 indices.as_ptr() as *const u8,
@@ -76,7 +109,6 @@ impl MeshManager {
             )
         };
 
-        // Determine index type
         let index_type = match std::mem::size_of::<U>() {
             1 => IndexType::Uint8,
             2 => IndexType::Uint16,
@@ -84,7 +116,6 @@ impl MeshManager {
             _ => IndexType::None,
         };
 
-        // Determine index count
         let index_count = match index_type {
             IndexType::Uint8 => index_bytes.len() as u32,
             IndexType::Uint16 => (index_bytes.len() as u32) / 2,
@@ -92,20 +123,6 @@ impl MeshManager {
             IndexType::None => 0_u32,
         };
 
-        // Create vertex buffer and upload data
-        let vertex_buffer = if !vertex_bytes.is_empty() {
-            let mut vb = VertexBuffer::new(
-                self.context.clone(),
-                vertex_bytes.len() as u64,
-                vertices.len() as u32,
-            );
-            vb.upload_data(vertex_bytes);
-            Some(vb)
-        } else {
-            None
-        };
-
-        // Create index buffer and upload data
         let index_buffer = if !index_bytes.is_empty() {
             let mut ib = IndexBuffer::new(
                 self.context.clone(),
@@ -119,8 +136,92 @@ impl MeshManager {
             None
         };
 
-        let mesh_asset = self.create_mesh_asset(vertex_buffer, index_buffer);
+        let mesh_asset =
+            self.create_mesh_asset(attribute_buffers, index_buffer, vertices.len() as u32);
         registry.register_mesh(mesh_asset)
+    }
+
+    fn create_attr_buffer(&self, bytes: &[u8]) -> VertexBuffer {
+        let mut vb = VertexBuffer::new(self.context.clone(), bytes.len() as u64, 0);
+        vb.upload_data(bytes);
+        vb
+    }
+
+    fn deinterleave_pbr(&self, vertices: &[VertexPBR]) -> HashMap<AttributeType, VertexBuffer> {
+        let n = vertices.len();
+        let mut map = HashMap::new();
+
+        if n == 0 {
+            return map;
+        }
+
+        let mut positions = Vec::with_capacity(n * 12);
+        let mut normals = Vec::with_capacity(n * 12);
+        let mut tangents = Vec::with_capacity(n * 16);
+        let mut tex_coords = Vec::with_capacity(n * 8);
+
+        for v in vertices {
+            positions.extend_from_slice(bytemuck::bytes_of(&v.position));
+            normals.extend_from_slice(bytemuck::bytes_of(&v.normal));
+            tangents.extend_from_slice(bytemuck::bytes_of(&v.tangent));
+            tex_coords.extend_from_slice(bytemuck::bytes_of(&v.tex_coord0));
+        }
+
+        map.insert(AttributeType::Position, self.create_attr_buffer(&positions));
+        map.insert(AttributeType::Normal, self.create_attr_buffer(&normals));
+        map.insert(AttributeType::Tangent, self.create_attr_buffer(&tangents));
+        map.insert(
+            AttributeType::TexCoord0,
+            self.create_attr_buffer(&tex_coords),
+        );
+
+        map
+    }
+
+    fn deinterleave_pbr_skinned(
+        &self,
+        vertices: &[VertexPBRSkinned],
+    ) -> HashMap<AttributeType, VertexBuffer> {
+        let n = vertices.len();
+        let mut map = HashMap::new();
+
+        if n == 0 {
+            return map;
+        }
+
+        let mut positions = Vec::with_capacity(n * 12);
+        let mut normals = Vec::with_capacity(n * 12);
+        let mut tangents = Vec::with_capacity(n * 16);
+        let mut tex_coords = Vec::with_capacity(n * 8);
+        let mut joint_indices = Vec::with_capacity(n * 8);
+        let mut joint_weights = Vec::with_capacity(n * 16);
+
+        for v in vertices {
+            positions.extend_from_slice(bytemuck::bytes_of(&v.position));
+            normals.extend_from_slice(bytemuck::bytes_of(&v.normal));
+            tangents.extend_from_slice(bytemuck::bytes_of(&v.tangent));
+            tex_coords.extend_from_slice(bytemuck::bytes_of(&v.tex_coord0));
+            joint_indices.extend_from_slice(bytemuck::bytes_of(&v.joint_indices));
+            joint_weights.extend_from_slice(bytemuck::bytes_of(&v.joint_weights));
+        }
+
+        map.insert(AttributeType::Position, self.create_attr_buffer(&positions));
+        map.insert(AttributeType::Normal, self.create_attr_buffer(&normals));
+        map.insert(AttributeType::Tangent, self.create_attr_buffer(&tangents));
+        map.insert(
+            AttributeType::TexCoord0,
+            self.create_attr_buffer(&tex_coords),
+        );
+        map.insert(
+            AttributeType::JointIndices,
+            self.create_attr_buffer(&joint_indices),
+        );
+        map.insert(
+            AttributeType::JointWeights,
+            self.create_attr_buffer(&joint_weights),
+        );
+
+        map
     }
 
     /// Register a mesh with pre-existing buffers.
@@ -140,7 +241,61 @@ impl MeshManager {
         vertex_buffer: Option<VertexBuffer>,
         index_buffer: Option<IndexBuffer>,
     ) -> MeshHandle {
-        let mesh_asset = self.create_mesh_asset(vertex_buffer, index_buffer);
+        let attribute_buffers = vertex_buffer
+            .map(|vb| {
+                let mut map = HashMap::new();
+                map.insert(AttributeType::Position, vb);
+                map
+            })
+            .unwrap_or_default();
+
+        let vertex_count = 0;
+        let mesh_asset = self.create_mesh_asset(attribute_buffers, index_buffer, vertex_count);
+        registry.register_mesh(mesh_asset)
+    }
+
+    /// Create a mesh with separate per-attribute vertex buffers (SOA layout).
+    ///
+    /// Each attribute type (Position, Normal, Tangent, etc.) gets its own buffer.
+    /// Indices are always u32.
+    pub(crate) fn create_mesh_soa(
+        &self,
+        registry: &mut AssetRegistry,
+        attributes: &HashMap<AttributeType, Vec<u8>>,
+        vertex_count: u32,
+        indices: &[u32],
+    ) -> MeshHandle {
+        let mut attribute_buffers = HashMap::new();
+
+        for (attr_type, data) in attributes {
+            if !data.is_empty() {
+                let mut vb =
+                    VertexBuffer::new(self.context.clone(), data.len() as u64, vertex_count);
+                vb.upload_data(data);
+                attribute_buffers.insert(*attr_type, vb);
+            }
+        }
+
+        let index_buffer = if !indices.is_empty() {
+            let index_bytes = unsafe {
+                std::slice::from_raw_parts(
+                    indices.as_ptr() as *const u8,
+                    std::mem::size_of_val(indices),
+                )
+            };
+            let mut ib = IndexBuffer::new(
+                self.context.clone(),
+                index_bytes.len() as u64,
+                IndexType::Uint32,
+                indices.len() as u32,
+            );
+            ib.upload_data(index_bytes);
+            Some(ib)
+        } else {
+            None
+        };
+
+        let mesh_asset = self.create_mesh_asset(attribute_buffers, index_buffer, vertex_count);
         registry.register_mesh(mesh_asset)
     }
 
@@ -258,7 +413,15 @@ impl MeshManager {
             None
         };
 
-        let mesh_asset = self.create_mesh_asset(vertex_buffer, index_buffer);
+        let attribute_buffers = vertex_buffer
+            .map(|vb| {
+                let mut map = HashMap::new();
+                map.insert(AttributeType::Position, vb);
+                map
+            })
+            .unwrap_or_default();
+
+        let mesh_asset = self.create_mesh_asset(attribute_buffers, index_buffer, vertex_count);
         registry.register_mesh(mesh_asset)
     }
 
@@ -276,7 +439,10 @@ impl MeshManager {
             .ok_or_else(|| RendererError::NotFound("Mesh handle not found".to_string()))?;
 
         // Update vertex buffer
-        if let Some(ref mut vb) = mesh_asset.vertex_buffer {
+        if let Some(ref mut vb) = mesh_asset
+            .attribute_buffers
+            .get_mut(&AttributeType::Position)
+        {
             vb.upload_data(vertex_data);
         }
 

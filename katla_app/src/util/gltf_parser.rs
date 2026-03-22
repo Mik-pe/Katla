@@ -2,8 +2,11 @@
 //!
 //! This module provides utilities for parsing GLTF buffer data into vertex and index formats.
 
+use std::collections::HashMap;
+
 use byteorder::{ByteOrder, LittleEndian};
 use gltf::buffer::Data as BufferData;
+use katla_gfx::AttributeType;
 use katla_math::{Mat4, Quat, Sphere, Vec3, Vec4};
 
 use katla_gfx::{VertexPBR, VertexPBRSkinned};
@@ -692,6 +695,157 @@ pub fn build_skinned_vertex_data(
     };
 
     (vertex_data, sphere)
+}
+
+/// Build separate attribute arrays for SOA vertex buffers.
+///
+/// Returns (attribute_data, bounding_sphere).
+pub fn build_vertex_data_soa(
+    positions: Vec<[f32; 3]>,
+    normals: Vec<[f32; 3]>,
+    tangents: Vec<[f32; 4]>,
+    tex_coords: Vec<[f32; 2]>,
+) -> (HashMap<AttributeType, Vec<u8>>, Sphere) {
+    let sphere = if !positions.is_empty() {
+        Sphere::create_from_verts(&positions)
+    } else {
+        Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0)
+    };
+
+    let mut attributes = HashMap::new();
+
+    // Position (always present)
+    let pos_bytes = unsafe {
+        std::slice::from_raw_parts(
+            positions.as_ptr() as *const u8,
+            positions.len() * std::mem::size_of::<[f32; 3]>(),
+        )
+    };
+    attributes.insert(AttributeType::Position, pos_bytes.to_vec());
+
+    // Normal
+    if !normals.is_empty() {
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                normals.as_ptr() as *const u8,
+                normals.len() * std::mem::size_of::<[f32; 3]>(),
+            )
+        };
+        attributes.insert(AttributeType::Normal, bytes.to_vec());
+    }
+
+    // Tangent
+    if !tangents.is_empty() {
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                tangents.as_ptr() as *const u8,
+                tangents.len() * std::mem::size_of::<[f32; 4]>(),
+            )
+        };
+        attributes.insert(AttributeType::Tangent, bytes.to_vec());
+    }
+
+    // TexCoord0
+    if !tex_coords.is_empty() {
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                tex_coords.as_ptr() as *const u8,
+                tex_coords.len() * std::mem::size_of::<[f32; 2]>(),
+            )
+        };
+        attributes.insert(AttributeType::TexCoord0, bytes.to_vec());
+    }
+
+    (attributes, sphere)
+}
+
+/// Build separate attribute arrays for skinned SOA vertex buffers.
+///
+/// Falls back to default attribute data if normals, tex_coords, or joint data is missing.
+/// Returns (attribute_data, bounding_sphere).
+pub fn build_skinned_vertex_data_soa(
+    positions: Vec<[f32; 3]>,
+    normals: Vec<[f32; 3]>,
+    tex_coords: Vec<[f32; 2]>,
+    joint_indices: Vec<[u16; 4]>,
+    joint_weights: Vec<[f32; 4]>,
+) -> (HashMap<AttributeType, Vec<u8>>, Sphere) {
+    let vertex_count = positions.len();
+
+    let sphere = if !positions.is_empty() {
+        Sphere::create_from_verts(&positions)
+    } else {
+        Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0)
+    };
+
+    let mut attributes = HashMap::new();
+
+    // Position (always present)
+    let pos_bytes = unsafe {
+        std::slice::from_raw_parts(
+            positions.as_ptr() as *const u8,
+            vertex_count * std::mem::size_of::<[f32; 3]>(),
+        )
+    };
+    attributes.insert(AttributeType::Position, pos_bytes.to_vec());
+
+    // Normal (fill defaults if missing)
+    let normals = if normals.len() == vertex_count {
+        normals
+    } else {
+        vec![[0.0f32, 0.0, 0.0]; vertex_count]
+    };
+    let norm_bytes = unsafe {
+        std::slice::from_raw_parts(
+            normals.as_ptr() as *const u8,
+            vertex_count * std::mem::size_of::<[f32; 3]>(),
+        )
+    };
+    attributes.insert(AttributeType::Normal, norm_bytes.to_vec());
+
+    // TexCoord0 (fill defaults if missing)
+    let tex_coords = if tex_coords.len() == vertex_count {
+        tex_coords
+    } else {
+        vec![[0.0f32, 0.0]; vertex_count]
+    };
+    let tex_bytes = unsafe {
+        std::slice::from_raw_parts(
+            tex_coords.as_ptr() as *const u8,
+            vertex_count * std::mem::size_of::<[f32; 2]>(),
+        )
+    };
+    attributes.insert(AttributeType::TexCoord0, tex_bytes.to_vec());
+
+    // JointIndices (fill defaults if missing)
+    let joint_indices = if joint_indices.len() == vertex_count {
+        joint_indices
+    } else {
+        vec![[0u16, 0, 0, 0]; vertex_count]
+    };
+    let joints_bytes = unsafe {
+        std::slice::from_raw_parts(
+            joint_indices.as_ptr() as *const u8,
+            vertex_count * std::mem::size_of::<[u16; 4]>(),
+        )
+    };
+    attributes.insert(AttributeType::JointIndices, joints_bytes.to_vec());
+
+    // JointWeights (fill defaults if missing)
+    let joint_weights = if joint_weights.len() == vertex_count {
+        joint_weights
+    } else {
+        vec![[1.0f32, 0.0, 0.0, 0.0]; vertex_count]
+    };
+    let weights_bytes = unsafe {
+        std::slice::from_raw_parts(
+            joint_weights.as_ptr() as *const u8,
+            vertex_count * std::mem::size_of::<[f32; 4]>(),
+        )
+    };
+    attributes.insert(AttributeType::JointWeights, weights_bytes.to_vec());
+
+    (attributes, sphere)
 }
 
 /// Parsed attribute data in SoA (Structure of Arrays) format.

@@ -37,6 +37,7 @@ use crate::barrier::ImageBarrier;
 use crate::sync::COLOR_SUBRESOURCE_RANGE;
 use crate::vulkan::IndexType;
 use crate::vulkan::material::compiler::{MaterialBuilder, MaterialCompiler};
+use crate::vulkan::vertex_attribute::AttributeType;
 
 /// Per-frame UI rendering resources.
 pub(crate) struct UiFrameResources {
@@ -829,8 +830,8 @@ impl VulkanRenderer {
     ) -> Result<(), RendererError> {
         use crate::pipeline::{CullMode, FrontFace};
         use crate::shadow::cascade::ShadowCascadeGPU;
-        use crate::vertex::VertexLayout;
         use crate::vulkan::material::builder::PipelineBuilder;
+        use crate::vulkan::vertexbinding::VertexFormat;
 
         let device = &self.context.device;
 
@@ -1015,9 +1016,8 @@ impl VulkanRenderer {
                 empty_descriptor_layout,
                 cascade_layout,
             ])
-            .with_vertex_binding(crate::vulkan::vertexbinding::VertexBinding::from(
-                &VertexLayout::pbr(),
-            ))
+            .with_soa_attribute(0, VertexFormat::RGB32f) // position
+            .with_soa_attribute(1, VertexFormat::RGB32f) // normal
             .with_depth_test(true, true, crate::pipeline::CompareOp::Less)
             .with_cull_mode(CullMode::Front, FrontFace::CounterClockwise)
             .with_depth_bias(0.0, 0.0, 0.0)
@@ -1114,8 +1114,8 @@ impl VulkanRenderer {
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         use crate::pipeline::{CullMode, FrontFace};
-        use crate::vertex::VertexLayout;
         use crate::vulkan::material::builder::PipelineBuilder;
+        use crate::vulkan::vertexbinding::VertexFormat;
 
         let storage_layout = self.storage_descriptor_sets[0].layout();
         let empty_descriptor_layout = self.shadow_empty_descriptor_layout.ok_or_else(|| {
@@ -1165,9 +1165,10 @@ impl VulkanRenderer {
                 cascade_layout,
                 skeleton_layout,
             ])
-            .with_vertex_binding(crate::vulkan::vertexbinding::VertexBinding::from(
-                &VertexLayout::pbr_skinned(),
-            ))
+            .with_soa_attribute(0, VertexFormat::RGB32f) // position
+            .with_soa_attribute(1, VertexFormat::RGB32f) // normal
+            .with_soa_attribute(4, VertexFormat::RGBA16u) // joint_indices
+            .with_soa_attribute(5, VertexFormat::RGBA32f) // joint_weights
             .with_depth_test(true, true, crate::pipeline::CompareOp::Less)
             .with_cull_mode(CullMode::Front, FrontFace::CounterClockwise)
             .with_depth_bias(
@@ -1202,8 +1203,8 @@ impl VulkanRenderer {
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         use crate::pipeline::{CullMode, FrontFace};
-        use crate::vertex::VertexLayout;
         use crate::vulkan::material::builder::PipelineBuilder;
+        use crate::vulkan::vertexbinding::VertexFormat;
 
         let _device = &self.context.device;
 
@@ -1231,9 +1232,7 @@ impl VulkanRenderer {
         let pipeline = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_module, frag_module)
             .with_descriptor_layouts(vec![storage_layout])
-            .with_vertex_binding(crate::vulkan::vertexbinding::VertexBinding::from(
-                &VertexLayout::pbr(),
-            ))
+            .with_soa_attribute(0, VertexFormat::RGB32f) // position
             .with_depth_test(true, true, crate::pipeline::CompareOp::Greater)
             .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
             .with_rendering_formats(None, Some(crate::texture::ImageFormat::D32SfloatS8Uint))
@@ -1266,8 +1265,8 @@ impl VulkanRenderer {
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         use crate::pipeline::{CullMode, FrontFace};
-        use crate::vertex::VertexLayout;
         use crate::vulkan::material::builder::PipelineBuilder;
+        use crate::vulkan::vertexbinding::VertexFormat;
 
         let mut cache = self.material_compiler.shader_cache.borrow_mut();
         let vert_module = cache
@@ -1310,9 +1309,9 @@ impl VulkanRenderer {
                 empty_descriptor_layout,
                 skeleton_layout,
             ])
-            .with_vertex_binding(crate::vulkan::vertexbinding::VertexBinding::from(
-                &VertexLayout::pbr_skinned(),
-            ))
+            .with_soa_attribute(0, VertexFormat::RGB32f) // position
+            .with_soa_attribute(4, VertexFormat::RGBA16u) // joint_indices
+            .with_soa_attribute(5, VertexFormat::RGBA32f) // joint_weights
             .with_depth_test(true, true, crate::pipeline::CompareOp::Greater)
             .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
             .with_rendering_formats(None, Some(crate::texture::ImageFormat::D32SfloatS8Uint))
@@ -2424,6 +2423,32 @@ impl VulkanRenderer {
     {
         self.mesh_manager
             .create_mesh(&mut self.asset_registry, vertices, indices)
+    }
+
+    /// Create a mesh with separate per-attribute vertex buffers (SOA layout).
+    ///
+    /// Each attribute type (Position, Normal, Tangent, etc.) gets its own GPU buffer,
+    /// enabling efficient depth-only and shadow passes that only need a subset of attributes.
+    ///
+    /// # Arguments
+    /// * `attributes` - Map of attribute type to raw byte data
+    /// * `vertex_count` - Total number of vertices
+    /// * `indices` - Index data (u32)
+    ///
+    /// # Returns
+    /// A `MeshHandle` that references the registered mesh.
+    pub fn create_mesh_soa(
+        &mut self,
+        attributes: &std::collections::HashMap<AttributeType, Vec<u8>>,
+        vertex_count: u32,
+        indices: &[u32],
+    ) -> MeshHandle {
+        self.mesh_manager.create_mesh_soa(
+            &mut self.asset_registry,
+            attributes,
+            vertex_count,
+            indices,
+        )
     }
 
     /// Register a mesh with pre-existing buffers.

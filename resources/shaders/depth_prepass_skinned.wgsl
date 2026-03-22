@@ -12,9 +12,6 @@ var<storage, read> joint_matrices: array<mat4x4f>;
 
 struct VertexInput {
     @location(0) position: vec3f,
-    @location(1) normal: vec3f,
-    @location(2) vert_tangent: vec4f,
-    @location(3) vert_texcoord0: vec2f,
     @location(4) joint_indices: vec4u,
     @location(5) joint_weights: vec4f,
 }

@@ -569,13 +569,22 @@ impl MaterialCompiler {
         use crate::pipeline::{CullMode, FrontFace, PolygonMode};
         use crate::vulkan::material::builder::PipelineBuilder;
 
-        let mut builder = PipelineBuilder::new(self.context.clone())
-            .with_shaders(vert_module, frag_module)
-            .with_vertex_binding(vertex_binding.clone())
-            .with_descriptor_layouts(layouts.to_vec());
-
         // UI materials use different rendering configuration
         let is_ui = matches!(options.vertex_type, VertexType::Ui);
+
+        // SOA vertex bindings for non-UI materials (separate per-attribute buffers)
+        // UI materials keep interleaved binding for dynamic mesh updates
+        let mut builder = if is_ui {
+            PipelineBuilder::new(self.context.clone())
+                .with_shaders(vert_module, frag_module)
+                .with_vertex_binding(vertex_binding.clone())
+                .with_descriptor_layouts(layouts.to_vec())
+        } else {
+            PipelineBuilder::new(self.context.clone())
+                .with_shaders(vert_module, frag_module)
+                .with_vertex_binding_soa(vertex_binding.clone())
+                .with_descriptor_layouts(layouts.to_vec())
+        };
 
         if is_ui {
             // UI rendering: no depth buffer, SRGB color format

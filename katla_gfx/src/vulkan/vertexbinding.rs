@@ -88,4 +88,31 @@ impl VertexBinding {
             })
             .collect()
     }
+
+    pub fn get_soa_descriptions(
+        &self,
+    ) -> (
+        Vec<vk::VertexInputBindingDescription>,
+        Vec<vk::VertexInputAttributeDescription>,
+    ) {
+        let mut bindings = Vec::new();
+        let mut attributes = Vec::new();
+        for (location, format) in self.formats.iter().enumerate() {
+            let stride = format.get_offset();
+            bindings.push(
+                vk::VertexInputBindingDescription::default()
+                    .binding(location as u32)
+                    .stride(stride)
+                    .input_rate(vk::VertexInputRate::VERTEX),
+            );
+            attributes.push(
+                vk::VertexInputAttributeDescription::default()
+                    .binding(location as u32)
+                    .location(location as u32)
+                    .format(format.get_vk_format())
+                    .offset(0),
+            );
+        }
+        (bindings, attributes)
+    }
 }

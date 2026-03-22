@@ -19,6 +19,7 @@ use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
 use crate::sync::VkImageView;
 use crate::vulkan::context::VulkanContext;
+use crate::vulkan::vertex_attribute::AttributeType;
 use ash::vk;
 use gpu_allocator::vulkan::Allocation;
 
@@ -2505,10 +2506,29 @@ impl<'a> Frame<'a> {
             );
         }
 
-        // Bind vertex buffer
-        if let Some(vb) = &mesh.vertex_buffer {
-            cmd.bind_vertex_buffer(vb.object(), 0);
-        }
+        // Bind vertex buffers (SOA: position(0), normal(1), tangent(2), uv(3))
+        let pos_buf = mesh
+            .get_attribute_buffer(AttributeType::Position)
+            .map(|vb| vb.object())
+            .unwrap_or(vk::Buffer::null());
+        let norm_buf = mesh
+            .get_attribute_buffer(AttributeType::Normal)
+            .map(|vb| vb.object())
+            .unwrap_or(vk::Buffer::null());
+        let tang_buf = mesh
+            .get_attribute_buffer(AttributeType::Tangent)
+            .map(|vb| vb.object())
+            .unwrap_or(vk::Buffer::null());
+        let uv_buf = mesh
+            .get_attribute_buffer(AttributeType::TexCoord0)
+            .map(|vb| vb.object())
+            .unwrap_or(vk::Buffer::null());
+        cmd.bind_vertex_buffers_at_locations(&[
+            (0, pos_buf),
+            (1, norm_buf),
+            (2, tang_buf),
+            (3, uv_buf),
+        ]);
 
         // Bind index buffer
         if let Some(ib) = &mesh.index_buffer {
@@ -3167,9 +3187,16 @@ impl<'a> Frame<'a> {
                         .get_mesh(draw_call.mesh)
                         .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
 
-                    if let Some(vb) = &mesh.vertex_buffer {
-                        cmd.bind_vertex_buffer(vb.object(), 0);
-                    }
+                    // Shadow pipeline needs position(0) + normal(1) as separate SOA buffers
+                    let pos_buf = mesh
+                        .get_attribute_buffer(AttributeType::Position)
+                        .map(|vb| vb.object())
+                        .unwrap_or(vk::Buffer::null());
+                    let norm_buf = mesh
+                        .get_attribute_buffer(AttributeType::Normal)
+                        .map(|vb| vb.object())
+                        .unwrap_or(vk::Buffer::null());
+                    cmd.bind_vertex_buffers_at_locations(&[(0, pos_buf), (1, norm_buf)]);
 
                     if let Some(ib) = &mesh.index_buffer {
                         cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
@@ -3237,9 +3264,29 @@ impl<'a> Frame<'a> {
                             .get_mesh(draw_call.mesh)
                             .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
 
-                        if let Some(vb) = &mesh.vertex_buffer {
-                            cmd.bind_vertex_buffer(vb.object(), 0);
-                        }
+                        // Skinned shadow pipeline needs position(0) + normal(1) + joint_indices(4) + joint_weights(5)
+                        let pos_buf = mesh
+                            .get_attribute_buffer(AttributeType::Position)
+                            .map(|vb| vb.object())
+                            .unwrap_or(vk::Buffer::null());
+                        let norm_buf = mesh
+                            .get_attribute_buffer(AttributeType::Normal)
+                            .map(|vb| vb.object())
+                            .unwrap_or(vk::Buffer::null());
+                        let joints_buf = mesh
+                            .get_attribute_buffer(AttributeType::JointIndices)
+                            .map(|vb| vb.object())
+                            .unwrap_or(vk::Buffer::null());
+                        let weights_buf = mesh
+                            .get_attribute_buffer(AttributeType::JointWeights)
+                            .map(|vb| vb.object())
+                            .unwrap_or(vk::Buffer::null());
+                        cmd.bind_vertex_buffers_at_locations(&[
+                            (0, pos_buf),
+                            (1, norm_buf),
+                            (4, joints_buf),
+                            (5, weights_buf),
+                        ]);
 
                         if let Some(ib) = &mesh.index_buffer {
                             cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
@@ -3450,8 +3497,27 @@ impl<'a> Frame<'a> {
                     .get_mesh(draw_call.mesh)
                     .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
 
-                if let Some(vb) = &mesh.vertex_buffer {
-                    cmd.bind_vertex_buffer(vb.object(), 0);
+                // Depth prepass: bind SOA attribute buffers based on mesh type
+                let pos_buf = mesh
+                    .get_attribute_buffer(AttributeType::Position)
+                    .map(|vb| vb.object())
+                    .unwrap_or(vk::Buffer::null());
+                if is_skinned {
+                    let joints_buf = mesh
+                        .get_attribute_buffer(AttributeType::JointIndices)
+                        .map(|vb| vb.object())
+                        .unwrap_or(vk::Buffer::null());
+                    let weights_buf = mesh
+                        .get_attribute_buffer(AttributeType::JointWeights)
+                        .map(|vb| vb.object())
+                        .unwrap_or(vk::Buffer::null());
+                    cmd.bind_vertex_buffers_at_locations(&[
+                        (0, pos_buf),
+                        (4, joints_buf),
+                        (5, weights_buf),
+                    ]);
+                } else {
+                    cmd.bind_vertex_buffers_at_locations(&[(0, pos_buf)]);
                 }
 
                 if let Some(ib) = &mesh.index_buffer {

@@ -6,8 +6,10 @@
 use crate::handle::{MaterialHandle, MeshHandle, PipelineHandle, ResourceStorage};
 use crate::vulkan::material::builder::Pipeline;
 use crate::vulkan::material::compute_pipeline::ComputePipeline;
+use crate::vulkan::vertex_attribute::AttributeType;
 use crate::{IndexBuffer, VertexBinding, VertexBuffer};
 use ash::vk;
+use std::collections::HashMap;
 
 /// Wrapper for graphics and compute pipelines.
 ///
@@ -48,10 +50,24 @@ impl AnyPipeline {
 
 /// Mesh representation containing Vulkan buffers.
 pub struct MeshAsset {
-    /// Vertex buffer with geometry data.
-    pub vertex_buffer: Option<VertexBuffer>,
+    /// Per-attribute vertex buffers (SOA layout).
+    pub attribute_buffers: HashMap<AttributeType, VertexBuffer>,
     /// Index buffer for indexed drawing.
     pub index_buffer: Option<IndexBuffer>,
+    /// Number of vertices in this mesh.
+    pub vertex_count: u32,
+}
+
+impl MeshAsset {
+    #[inline]
+    pub fn get_attribute_buffer(&self, attr_type: AttributeType) -> Option<&VertexBuffer> {
+        self.attribute_buffers.get(&attr_type)
+    }
+
+    #[inline]
+    pub fn has_attribute(&self, attr_type: AttributeType) -> bool {
+        self.attribute_buffers.contains_key(&attr_type)
+    }
 }
 
 /// Bindless texture indices for a material.
