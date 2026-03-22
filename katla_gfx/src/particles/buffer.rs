@@ -128,7 +128,8 @@ impl ParticleBufferLayout {
 /// - Alive list ping-pong: 8 MB (2 × 4 MB for A/B swap)
 ///   Total: ~60 MB
 ///
-/// Counters, indirect draw, and emitter configs use separate buffers.
+/// Counters, indirect draw, and emitter configs use separate per-frame buffers
+/// (double-buffered to avoid races between frames-in-flight).
 pub struct GlobalParticleBuffer {
     context: Rc<VulkanContext>,
 
@@ -136,13 +137,13 @@ pub struct GlobalParticleBuffer {
     particle_buffer: vk::Buffer,
     particle_allocation: Option<Allocation>,
 
-    /// Atomic counters
-    counters_buffer: vk::Buffer,
-    counters_allocation: Option<Allocation>,
+    /// Per-frame atomic counters [frames_in_flight]
+    counters_buffers: [vk::Buffer; 2],
+    counters_allocations: [Option<Allocation>; 2],
 
-    /// Indirect draw command buffer (written by simulate shader, read by vkCmdDrawIndirect)
-    indirect_draw_buffer: vk::Buffer,
-    indirect_draw_allocation: Option<Allocation>,
+    /// Per-frame indirect draw command buffers [frames_in_flight]
+    indirect_draw_buffers: [vk::Buffer; 2],
+    indirect_draw_allocations: [Option<Allocation>; 2],
 
     /// Maximum particles
     max_particles: u32,
@@ -228,123 +229,164 @@ impl GlobalParticleBuffer {
                 .map_err(|e| format!("Failed to bind particle memory: {:?}", e))?
         }
 
-        // Create counters buffer (CPU-visible for initialization, with transfer support for readback)
+        // Create per-frame counters buffers (CPU-visible for readback, double-buffered)
         let counters_size = std::mem::size_of::<ParticleCounters>();
-        let counters_buffer_info = vk::BufferCreateInfo::default()
-            .size(counters_size as u64)
-            .usage(
-                vk::BufferUsageFlags::STORAGE_BUFFER
-                    | vk::BufferUsageFlags::UNIFORM_BUFFER
-                    | vk::BufferUsageFlags::TRANSFER_SRC
-                    | vk::BufferUsageFlags::TRANSFER_DST,
-            )
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+        let mut counters_buffers = [vk::Buffer::null(); 2];
+        let mut counters_allocations = [None, None];
 
-        let counters_buffer = unsafe {
-            context
-                .device
-                .create_buffer(&counters_buffer_info, None)
-                .map_err(|e| format!("Failed to create counters buffer: {:?}", e))?
-        };
-
-        let counters_requirements = unsafe {
-            context
-                .device
-                .get_buffer_memory_requirements(counters_buffer)
-        };
-
-        let counters_allocation = context
-            .allocator
-            .borrow_mut()
-            .allocate(&AllocationCreateDesc {
-                name: "particle_counters",
-                requirements: counters_requirements,
-                location: gpu_allocator::MemoryLocation::CpuToGpu,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate counters memory: {}", e))?;
-
-        unsafe {
-            context
-                .device
-                .bind_buffer_memory(
-                    counters_buffer,
-                    counters_allocation.memory(),
-                    counters_allocation.offset(),
+        for frame_idx in 0..2 {
+            let counters_buffer_info = vk::BufferCreateInfo::default()
+                .size(counters_size as u64)
+                .usage(
+                    vk::BufferUsageFlags::STORAGE_BUFFER
+                        | vk::BufferUsageFlags::UNIFORM_BUFFER
+                        | vk::BufferUsageFlags::TRANSFER_SRC
+                        | vk::BufferUsageFlags::TRANSFER_DST,
                 )
-                .map_err(|e| format!("Failed to bind counters memory: {:?}", e))?
-        }
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        // Initialize counters
-        if let Some(mapped) = counters_allocation.mapped_ptr() {
-            let counters = ParticleCounters {
-                alive_count: 0,
-                dead_count: max_particles,
-                emit_count: 0,
-                workgroups_finished: 0,
+            counters_buffers[frame_idx] = unsafe {
+                context
+                    .device
+                    .create_buffer(&counters_buffer_info, None)
+                    .map_err(|e| {
+                        format!("Failed to create counters buffer[{}]: {:?}", frame_idx, e)
+                    })?
             };
-            log::debug!(
-                "Initialized counters: alive={}, dead={}",
-                counters.alive_count,
-                counters.dead_count
+
+            let counters_requirements = unsafe {
+                context
+                    .device
+                    .get_buffer_memory_requirements(counters_buffers[frame_idx])
+            };
+
+            counters_allocations[frame_idx] = Some(
+                context
+                    .allocator
+                    .borrow_mut()
+                    .allocate(&AllocationCreateDesc {
+                        name: &format!("particle_counters[{}]", frame_idx),
+                        requirements: counters_requirements,
+                        location: gpu_allocator::MemoryLocation::CpuToGpu,
+                        linear: true,
+                        allocation_scheme:
+                            gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
+                    })
+                    .map_err(|e| {
+                        format!("Failed to allocate counters memory[{}]: {}", frame_idx, e)
+                    })?,
             );
+
             unsafe {
-                std::ptr::copy_nonoverlapping(
-                    &counters as *const ParticleCounters as *const u8,
-                    mapped.as_ptr() as *mut u8,
-                    std::mem::size_of::<ParticleCounters>(),
+                context
+                    .device
+                    .bind_buffer_memory(
+                        counters_buffers[frame_idx],
+                        counters_allocations[frame_idx].as_ref().unwrap().memory(),
+                        counters_allocations[frame_idx].as_ref().unwrap().offset(),
+                    )
+                    .map_err(|e| {
+                        format!("Failed to bind counters memory[{}]: {:?}", frame_idx, e)
+                    })?;
+            }
+
+            // Initialize counters
+            if let Some(mapped) = counters_allocations[frame_idx]
+                .as_ref()
+                .unwrap()
+                .mapped_ptr()
+            {
+                let counters = ParticleCounters {
+                    alive_count: 0,
+                    dead_count: max_particles,
+                    emit_count: 0,
+                    workgroups_finished: 0,
+                };
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        &counters as *const ParticleCounters as *const u8,
+                        mapped.as_ptr() as *mut u8,
+                        std::mem::size_of::<ParticleCounters>(),
+                    );
+                }
+                context.flush_mapped_memory(
+                    counters_allocations[frame_idx].as_ref().unwrap(),
+                    0,
+                    std::mem::size_of::<ParticleCounters>() as u64,
                 );
             }
-            context.flush_mapped_memory(
-                &counters_allocation,
-                0,
-                std::mem::size_of::<ParticleCounters>() as u64,
-            );
         }
 
-        // Create indirect draw command buffer (16 bytes = one VkDrawIndirectCommand).
-        // Written by simulate compute shader as STORAGE_BUFFER, read by render as INDIRECT_BUFFER.
+        // Create per-frame indirect draw command buffers (16 bytes each, double-buffered)
         let indirect_draw_size: u64 = 16;
-        let indirect_draw_buffer_info = vk::BufferCreateInfo::default()
-            .size(indirect_draw_size)
-            .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::INDIRECT_BUFFER)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+        let mut indirect_draw_buffers = [vk::Buffer::null(); 2];
+        let mut indirect_draw_allocations = [None, None];
 
-        let indirect_draw_buffer = unsafe {
-            context
-                .device
-                .create_buffer(&indirect_draw_buffer_info, None)
-                .map_err(|e| format!("Failed to create indirect draw buffer: {:?}", e))?
-        };
+        for frame_idx in 0..2 {
+            let indirect_draw_buffer_info = vk::BufferCreateInfo::default()
+                .size(indirect_draw_size)
+                .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::INDIRECT_BUFFER)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let indirect_draw_requirements = unsafe {
-            context
-                .device
-                .get_buffer_memory_requirements(indirect_draw_buffer)
-        };
+            indirect_draw_buffers[frame_idx] = unsafe {
+                context
+                    .device
+                    .create_buffer(&indirect_draw_buffer_info, None)
+                    .map_err(|e| {
+                        format!(
+                            "Failed to create indirect draw buffer[{}]: {:?}",
+                            frame_idx, e
+                        )
+                    })?
+            };
 
-        let indirect_draw_allocation = context
-            .allocator
-            .borrow_mut()
-            .allocate(&AllocationCreateDesc {
-                name: "particle_indirect_draw",
-                requirements: indirect_draw_requirements,
-                location: gpu_allocator::MemoryLocation::GpuOnly,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate indirect draw memory: {}", e))?;
+            let indirect_draw_requirements = unsafe {
+                context
+                    .device
+                    .get_buffer_memory_requirements(indirect_draw_buffers[frame_idx])
+            };
 
-        unsafe {
-            context
-                .device
-                .bind_buffer_memory(
-                    indirect_draw_buffer,
-                    indirect_draw_allocation.memory(),
-                    indirect_draw_allocation.offset(),
-                )
-                .map_err(|e| format!("Failed to bind indirect draw memory: {:?}", e))?
+            indirect_draw_allocations[frame_idx] = Some(
+                context
+                    .allocator
+                    .borrow_mut()
+                    .allocate(&AllocationCreateDesc {
+                        name: &format!("particle_indirect_draw[{}]", frame_idx),
+                        requirements: indirect_draw_requirements,
+                        location: gpu_allocator::MemoryLocation::GpuOnly,
+                        linear: true,
+                        allocation_scheme:
+                            gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
+                    })
+                    .map_err(|e| {
+                        format!(
+                            "Failed to allocate indirect draw memory[{}]: {}",
+                            frame_idx, e
+                        )
+                    })?,
+            );
+
+            unsafe {
+                context
+                    .device
+                    .bind_buffer_memory(
+                        indirect_draw_buffers[frame_idx],
+                        indirect_draw_allocations[frame_idx]
+                            .as_ref()
+                            .unwrap()
+                            .memory(),
+                        indirect_draw_allocations[frame_idx]
+                            .as_ref()
+                            .unwrap()
+                            .offset(),
+                    )
+                    .map_err(|e| {
+                        format!(
+                            "Failed to bind indirect draw memory[{}]: {:?}",
+                            frame_idx, e
+                        )
+                    })?;
+            }
         }
 
         info!(
@@ -386,10 +428,10 @@ impl GlobalParticleBuffer {
             context,
             particle_buffer,
             particle_allocation: Some(particle_allocation),
-            counters_buffer,
-            counters_allocation: Some(counters_allocation),
-            indirect_draw_buffer,
-            indirect_draw_allocation: Some(indirect_draw_allocation),
+            counters_buffers,
+            counters_allocations,
+            indirect_draw_buffers,
+            indirect_draw_allocations,
             max_particles,
             layout,
             destroyed: false,
@@ -519,91 +561,107 @@ impl GlobalParticleBuffer {
 
         self.context.end_single_time_commands(cmd);
 
-        // Initialize atomic counters
-        let cmd = self.context.begin_single_time_commands();
-        let counters_data = ParticleCounters {
-            alive_count: 0,
-            dead_count: self.max_particles,
-            emit_count: 0,
-            workgroups_finished: 0,
-        };
-        let counters_bytes: Vec<u8> = bytemuck::bytes_of(&counters_data).to_vec();
+        // Initialize atomic counters for both frames
+        for frame_idx in 0..2 {
+            let cmd = self.context.begin_single_time_commands();
+            let counters_data = ParticleCounters {
+                alive_count: 0,
+                dead_count: self.max_particles,
+                emit_count: 0,
+                workgroups_finished: 0,
+            };
+            let counters_bytes: Vec<u8> = bytemuck::bytes_of(&counters_data).to_vec();
 
-        // Create staging buffer for counters initialization
-        let staging_buffer_info = vk::BufferCreateInfo::default()
-            .size(counters_bytes.len() as u64)
-            .usage(vk::BufferUsageFlags::TRANSFER_SRC)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-        let staging_buffer = unsafe {
-            self.context
-                .device
-                .create_buffer(&staging_buffer_info, None)
-                .map_err(|e| format!("Failed to create counters staging buffer: {:?}", e))?
-        };
-        let staging_requirements = unsafe {
-            self.context
-                .device
-                .get_buffer_memory_requirements(staging_buffer)
-        };
-        let staging_allocation = self
-            .context
-            .allocator
-            .borrow_mut()
-            .allocate(&AllocationCreateDesc {
-                name: "particle_counters_staging",
-                requirements: staging_requirements,
-                location: gpu_allocator::MemoryLocation::CpuToGpu,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate counters staging memory: {}", e))?;
+            let staging_buffer_info = vk::BufferCreateInfo::default()
+                .size(counters_bytes.len() as u64)
+                .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+            let staging_buffer = unsafe {
+                self.context
+                    .device
+                    .create_buffer(&staging_buffer_info, None)
+                    .map_err(|e| {
+                        format!(
+                            "Failed to create counters staging buffer[{}]: {:?}",
+                            frame_idx, e
+                        )
+                    })?
+            };
+            let staging_requirements = unsafe {
+                self.context
+                    .device
+                    .get_buffer_memory_requirements(staging_buffer)
+            };
+            let staging_allocation = self
+                .context
+                .allocator
+                .borrow_mut()
+                .allocate(&AllocationCreateDesc {
+                    name: &format!("particle_counters_staging[{}]", frame_idx),
+                    requirements: staging_requirements,
+                    location: gpu_allocator::MemoryLocation::CpuToGpu,
+                    linear: true,
+                    allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
+                })
+                .map_err(|e| {
+                    format!(
+                        "Failed to allocate counters staging memory[{}]: {}",
+                        frame_idx, e
+                    )
+                })?;
 
-        unsafe {
-            self.context
-                .device
-                .bind_buffer_memory(
-                    staging_buffer,
-                    staging_allocation.memory(),
-                    staging_allocation.offset(),
-                )
-                .map_err(|e| format!("Failed to bind counters staging memory: {:?}", e))?
-        }
-
-        // Copy counters data to staging buffer
-        if let Some(mapped) = staging_allocation.mapped_ptr() {
             unsafe {
-                std::ptr::copy_nonoverlapping(
-                    counters_bytes.as_ptr(),
-                    mapped.as_ptr() as *mut u8,
-                    counters_bytes.len(),
+                self.context
+                    .device
+                    .bind_buffer_memory(
+                        staging_buffer,
+                        staging_allocation.memory(),
+                        staging_allocation.offset(),
+                    )
+                    .map_err(|e| {
+                        format!(
+                            "Failed to bind counters staging memory[{}]: {:?}",
+                            frame_idx, e
+                        )
+                    })?;
+            }
+
+            if let Some(mapped) = staging_allocation.mapped_ptr() {
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        counters_bytes.as_ptr(),
+                        mapped.as_ptr() as *mut u8,
+                        counters_bytes.len(),
+                    );
+                }
+                self.context.flush_mapped_memory(
+                    &staging_allocation,
+                    0,
+                    counters_bytes.len() as u64,
                 );
             }
-            self.context
-                .flush_mapped_memory(&staging_allocation, 0, counters_bytes.len() as u64);
-        }
 
-        // Copy from staging to counters buffer
-        unsafe {
-            let copy_region = vk::BufferCopy::default()
-                .src_offset(0)
-                .dst_offset(0)
-                .size(counters_bytes.len() as u64);
-            self.context.device.cmd_copy_buffer(
-                cmd.vk_command_buffer(),
-                staging_buffer,
-                self.counters_buffer,
-                std::slice::from_ref(&copy_region),
-            );
-        }
+            unsafe {
+                let copy_region = vk::BufferCopy::default()
+                    .src_offset(0)
+                    .dst_offset(0)
+                    .size(counters_bytes.len() as u64);
+                self.context.device.cmd_copy_buffer(
+                    cmd.vk_command_buffer(),
+                    self.counters_buffers[frame_idx],
+                    staging_buffer,
+                    std::slice::from_ref(&copy_region),
+                );
+            }
 
-        self.context.end_single_time_commands(cmd);
+            self.context.end_single_time_commands(cmd);
 
-        // Cleanup staging buffer
-        unsafe {
-            self.context.device.destroy_buffer(staging_buffer, None);
-        }
-        if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-            allocator.free(staging_allocation).ok();
+            unsafe {
+                self.context.device.destroy_buffer(staging_buffer, None);
+            }
+            if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+                allocator.free(staging_allocation).ok();
+            }
         }
 
         info!(
@@ -615,12 +673,13 @@ impl GlobalParticleBuffer {
         Ok(())
     }
 
-    /// Get current alive particle count.
+    /// Get alive particle count for the given frame.
     ///
     /// Invalidates mapped memory before reading to ensure GPU writes are visible.
     /// Must be called after the GPU command buffer that wrote to counters has completed.
-    pub fn get_alive_count(&self) -> Result<u32, String> {
-        if let Some(counters_allocation) = &self.counters_allocation {
+    pub fn get_alive_count(&self, frame_index: usize) -> Result<u32, String> {
+        let fi = frame_index % 2;
+        if let Some(counters_allocation) = &self.counters_allocations[fi] {
             self.context.invalidate_mapped_memory(
                 counters_allocation,
                 0,
@@ -634,12 +693,13 @@ impl GlobalParticleBuffer {
         Ok(0)
     }
 
-    /// Get current dead particle count.
+    /// Get dead particle count for the given frame.
     ///
     /// Invalidates mapped memory before reading to ensure GPU writes are visible.
     /// Must be called after the GPU command buffer that wrote to counters has completed.
-    pub fn get_dead_count(&self) -> Result<u32, String> {
-        if let Some(counters_allocation) = &self.counters_allocation {
+    pub fn get_dead_count(&self, frame_index: usize) -> Result<u32, String> {
+        let fi = frame_index % 2;
+        if let Some(counters_allocation) = &self.counters_allocations[fi] {
             self.context.invalidate_mapped_memory(
                 counters_allocation,
                 0,
@@ -671,14 +731,14 @@ impl GlobalParticleBuffer {
         self.particle_buffer
     }
 
-    /// Get the counters buffer handle (internal use only).
-    pub(crate) fn counters_buffer(&self) -> vk::Buffer {
-        self.counters_buffer
+    /// Get the counters buffer handle for the given frame (internal use only).
+    pub(crate) fn counters_buffer(&self, frame_index: usize) -> vk::Buffer {
+        self.counters_buffers[frame_index % 2]
     }
 
-    /// Get the indirect draw buffer handle (for vkCmdDrawIndirect).
-    pub(crate) fn indirect_draw_buffer(&self) -> vk::Buffer {
-        self.indirect_draw_buffer
+    /// Get the indirect draw buffer handle for the given frame (for vkCmdDrawIndirect).
+    pub(crate) fn indirect_draw_buffer(&self, frame_index: usize) -> vk::Buffer {
+        self.indirect_draw_buffers[frame_index % 2]
     }
 
     /// Destroy all resources.
@@ -690,25 +750,31 @@ impl GlobalParticleBuffer {
 
         log::info!("  buffer destroy: freeing particle allocation");
         unsafe {
-            // Free allocations first
             if let Some(alloc) = self.particle_allocation.take()
                 && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
             {
                 allocator.free(alloc).ok();
             }
-            log::info!("  buffer destroy: freeing counters allocation");
-            if let Some(alloc) = self.counters_allocation.take()
-                && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
-            {
-                allocator.free(alloc).ok();
+            for frame_idx in 0..2 {
+                log::info!(
+                    "  buffer destroy: freeing counters allocation[{}]",
+                    frame_idx
+                );
+                if let Some(alloc) = self.counters_allocations[frame_idx].take()
+                    && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
+                {
+                    allocator.free(alloc).ok();
+                }
+                log::info!(
+                    "  buffer destroy: freeing indirect draw allocation[{}]",
+                    frame_idx
+                );
+                if let Some(alloc) = self.indirect_draw_allocations[frame_idx].take()
+                    && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
+                {
+                    allocator.free(alloc).ok();
+                }
             }
-            log::info!("  buffer destroy: freeing indirect draw allocation");
-            if let Some(alloc) = self.indirect_draw_allocation.take()
-                && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
-            {
-                allocator.free(alloc).ok();
-            }
-            // Destroy buffers (only if not null)
             log::info!("  buffer destroy: destroying particle buffer");
             if self.particle_buffer != vk::Buffer::null() {
                 self.context
@@ -716,19 +782,27 @@ impl GlobalParticleBuffer {
                     .destroy_buffer(self.particle_buffer, None);
                 self.particle_buffer = vk::Buffer::null();
             }
-            log::info!("  buffer destroy: destroying counters buffer");
-            if self.counters_buffer != vk::Buffer::null() {
-                self.context
-                    .device
-                    .destroy_buffer(self.counters_buffer, None);
-                self.counters_buffer = vk::Buffer::null();
-            }
-            log::info!("  buffer destroy: destroying indirect draw buffer");
-            if self.indirect_draw_buffer != vk::Buffer::null() {
-                self.context
-                    .device
-                    .destroy_buffer(self.indirect_draw_buffer, None);
-                self.indirect_draw_buffer = vk::Buffer::null();
+            for frame_idx in 0..2 {
+                log::info!(
+                    "  buffer destroy: destroying counters buffer[{}]",
+                    frame_idx
+                );
+                if self.counters_buffers[frame_idx] != vk::Buffer::null() {
+                    self.context
+                        .device
+                        .destroy_buffer(self.counters_buffers[frame_idx], None);
+                    self.counters_buffers[frame_idx] = vk::Buffer::null();
+                }
+                log::info!(
+                    "  buffer destroy: destroying indirect draw buffer[{}]",
+                    frame_idx
+                );
+                if self.indirect_draw_buffers[frame_idx] != vk::Buffer::null() {
+                    self.context
+                        .device
+                        .destroy_buffer(self.indirect_draw_buffers[frame_idx], None);
+                    self.indirect_draw_buffers[frame_idx] = vk::Buffer::null();
+                }
             }
         }
         log::info!("  buffer destroy: done");

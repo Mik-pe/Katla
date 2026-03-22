@@ -413,6 +413,7 @@ pub fn execute_gpu_compute(
             command_buffer.vk_command_buffer(),
             asset_registry,
             emit_workgroups,
+            frame_index_for_descriptor,
         ) {
             Ok(_) => {
                 log::debug!("Emit dispatch recorded successfully");
@@ -449,6 +450,7 @@ pub fn execute_gpu_compute(
             command_buffer.vk_command_buffer(),
             asset_registry,
             simulate_workgroups,
+            frame_index_for_descriptor,
         ) {
             Ok(_) => {
                 log::debug!("Simulate dispatch recorded successfully");
@@ -544,7 +546,7 @@ fn record_render_dispatch(
         .dst_access_mask(vk::AccessFlags2::INDIRECT_COMMAND_READ)
         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .buffer(particle_system.indirect_draw_buffer())
+        .buffer(particle_system.indirect_draw_buffer(frame_index))
         .offset(0)
         .size(16);
 

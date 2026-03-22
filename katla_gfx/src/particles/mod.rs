@@ -3,15 +3,19 @@
 
 pub mod buffer;
 pub mod debug_readback;
+pub mod descriptors;
+pub mod pipeline;
 pub mod presets;
 pub mod stats;
 pub mod timing;
+pub mod types;
 pub mod validation;
 
 pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters, ParticleData};
 pub use debug_readback::{ParticleDebugData, ParticleDebugReadback};
 pub use presets::EmitterPreset;
 pub use stats::ParticleStats;
+pub use types::{Align16Vec4, EmitterConfig, EmitterHandle, EmitterShape};
 pub use validation::{
     ValidationError, validate_all_emitters, validate_counters, validate_emitter_config,
 };
@@ -20,47 +24,15 @@ use std::rc::Rc;
 
 use ash::vk;
 use log::{info, warn};
-use serde::{Deserialize, Serialize};
 
 use crate::handle::PipelineHandle;
 use crate::renderer::registry::AssetRegistry;
 use crate::sync::{
     AccessFlags2, BufferMemoryBarrier2, DependencyInfo, PipelineStage2Flags, VkBuffer,
-    VkShaderModule,
 };
 use crate::vulkan::context::VulkanContext;
-use crate::vulkan::material::compute_pipeline::ComputePipelineBuilder;
 
-/// Emitter shape for particle spawn positions.
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum EmitterShape {
-    #[default]
-    Point = 0,
-    Line = 1,
-    Circle = 2,
-    Sphere = 3,
-    Box = 4,
-}
-
-impl EmitterShape {
-    /// Convert to u32 for GPU
-    pub fn as_u32(self) -> u32 {
-        self as u32
-    }
-
-    /// Convert from u32 from GPU
-    pub fn from_u32(val: u32) -> Self {
-        match val {
-            0 => EmitterShape::Point,
-            1 => EmitterShape::Line,
-            2 => EmitterShape::Circle,
-            3 => EmitterShape::Sphere,
-            4 => EmitterShape::Box,
-            _ => EmitterShape::Point,
-        }
-    }
-}
+use types::EmitterState;
 
 /// Default maximum particles across all emitters
 pub const DEFAULT_MAX_PARTICLES: u32 = 1_048_576; // 1M particles (48MB)
@@ -73,201 +45,6 @@ pub const PARTICLE_EMIT_WORKGROUP_SIZE: u32 = 256;
 
 /// Workgroup size for particle simulate compute shader (must match @workgroup_size in particle_simulate.wgsl)
 pub const PARTICLE_SIMULATE_WORKGROUP_SIZE: u32 = 64;
-
-/// Per-emitter configuration uploaded to a GPU storage buffer.
-///
-/// Must match WGSL `EmitterConfig` exactly. WGSL `vec3f` has 16-byte alignment
-/// while Rust `[f32; 3]` has 4-byte alignment in `repr(C)`, so explicit padding
-/// fields bridge the gap.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct EmitterConfig {
-    #[serde(default = "default_position")]
-    pub position: [f32; 3],
-
-    #[serde(skip)]
-    pub _pad_position: f32,
-
-    #[serde(default)]
-    pub shape: u32,
-
-    #[serde(default = "default_emit_rate")]
-    pub emit_rate: f32,
-
-    #[serde(default = "default_base_lifetime")]
-    pub base_lifetime: f32,
-
-    /// Random variation in lifetime (±percentage)
-    #[serde(default = "default_lifetime_variation")]
-    pub lifetime_variation: f32,
-
-    #[serde(default = "default_velocity_direction")]
-    pub velocity_direction: [f32; 3],
-
-    #[serde(skip)]
-    pub _pad_velocity: f32,
-
-    #[serde(default = "default_velocity_magnitude")]
-    pub velocity_magnitude: f32,
-
-    /// Velocity spread cone angle (0 = straight, PI/2 = hemisphere)
-    #[serde(default = "default_velocity_cone_angle")]
-    pub velocity_cone_angle: f32,
-
-    #[serde(default = "default_base_scale")]
-    pub base_scale: f32,
-
-    /// Scale variation (±percentage)
-    #[serde(default = "default_scale_variation")]
-    pub scale_variation: f32,
-
-    #[serde(default = "default_color")]
-    pub color: [f32; 4],
-
-    /// Color variation (±percentage per channel)
-    #[serde(default = "default_color_variation")]
-    pub color_variation: f32,
-
-    #[serde(skip)]
-    pub _pad_color: Align16Vec4,
-
-    /// Shape parameters (length/radius for Line/Circle/Sphere, dimensions for Box)
-    #[serde(default)]
-    pub shape_params: [f32; 4],
-
-    /// Gravity acceleration applied each frame (negative = downward, 0 = none, positive = upward)
-    #[serde(default)]
-    pub gravity: f32,
-
-    /// Turbulence strength (amplitude of sinusoidal force applied perpendicular to velocity)
-    #[serde(default)]
-    pub turbulence_strength: f32,
-
-    /// Turbulence frequency (how fast the sine wave oscillates)
-    #[serde(default = "default_turbulence_frequency")]
-    pub turbulence_frequency: f32,
-}
-
-/// 16-byte aligned `[f32; 4]` to match WGSL `vec4f` alignment.
-#[repr(C, align(16))]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Align16Vec4(pub [f32; 4]);
-
-// Safety: Align16Vec4 is repr(C) with align(16), contains only f32 (Pod).
-unsafe impl bytemuck::Pod for Align16Vec4 {}
-unsafe impl bytemuck::Zeroable for Align16Vec4 {}
-
-// Safety: EmitterConfig is repr(C), all fields are Pod or padding from Align16Vec4 alignment.
-// The 12 bytes of padding between color_variation and _pad_color are never read uninitialized
-// because the struct is always created via Default or explicit field init.
-unsafe impl bytemuck::Pod for EmitterConfig {}
-unsafe impl bytemuck::Zeroable for EmitterConfig {}
-
-impl EmitterConfig {
-    /// Get the emitter shape as an enum
-    pub fn get_shape(&self) -> EmitterShape {
-        EmitterShape::from_u32(self.shape)
-    }
-
-    /// Set the emitter shape from an enum
-    pub fn set_shape(&mut self, shape: EmitterShape) {
-        self.shape = shape.as_u32();
-    }
-}
-
-// Serde default functions
-fn default_position() -> [f32; 3] {
-    [0.0; 3]
-}
-fn default_emit_rate() -> f32 {
-    50.0
-}
-fn default_base_lifetime() -> f32 {
-    5.0
-}
-fn default_lifetime_variation() -> f32 {
-    0.2
-}
-fn default_velocity_direction() -> [f32; 3] {
-    [0.0, 1.0, 0.0]
-}
-fn default_velocity_magnitude() -> f32 {
-    1.0
-}
-fn default_velocity_cone_angle() -> f32 {
-    0.5
-}
-fn default_base_scale() -> f32 {
-    0.1
-}
-fn default_scale_variation() -> f32 {
-    0.5
-}
-fn default_color() -> [f32; 4] {
-    [1.0, 1.0, 1.0, 1.0]
-}
-fn default_color_variation() -> f32 {
-    0.1
-}
-fn default_turbulence_frequency() -> f32 {
-    3.0
-}
-
-impl Default for EmitterConfig {
-    fn default() -> Self {
-        Self {
-            position: [0.0; 3],
-            _pad_position: 0.0,
-            shape: EmitterShape::Point.as_u32(),
-            emit_rate: 50.0,
-            base_lifetime: 5.0,
-            lifetime_variation: 0.2,
-            velocity_direction: [0.0, 1.0, 0.0],
-            _pad_velocity: 0.0,
-            velocity_magnitude: 1.0,
-            velocity_cone_angle: 0.5,
-            base_scale: 0.1,
-            scale_variation: 0.5,
-            color: [1.0, 1.0, 1.0, 1.0],
-            color_variation: 0.1,
-            _pad_color: Align16Vec4([0.0; 4]),
-            shape_params: [0.0; 4],
-            gravity: -9.8,
-            turbulence_strength: 0.0,
-            turbulence_frequency: 3.0,
-        }
-    }
-}
-
-/// Handle to an emitter in the global particle system.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct EmitterHandle {
-    index: u32,
-}
-
-impl EmitterHandle {
-    /// Invalid emitter handle
-    pub const NONE: Self = Self { index: u32::MAX };
-
-    /// Create a new emitter handle from index
-    pub fn new(index: u32) -> Self {
-        Self { index }
-    }
-
-    /// Get the emitter index
-    pub fn index(&self) -> u32 {
-        self.index
-    }
-}
-
-/// Per-emitter runtime state (not uploaded to GPU).
-#[derive(Clone, Default)]
-struct EmitterState {
-    /// Burst particles to emit this frame
-    burst_count: u32,
-    /// Accumulated fractional emit time for rate-based emission
-    emit_accumulator: f32,
-}
 
 /// Modern GPU-driven particle system.
 ///
@@ -319,11 +96,11 @@ pub struct GlobalParticleSystem {
     /// Cached alive particle count (for rendering)
     cached_alive_count: u32,
 
-    /// Frame data buffer for push descriptor updates
-    frame_data_buffer: Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
+    /// Per-frame data buffers for push descriptor updates [frames_in_flight]
+    frame_data_buffers: [Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>; 2],
 
-    /// Emitter configs buffer for push descriptor updates
-    emitter_configs_buffer: Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
+    /// Per-frame emitter configs buffers for push descriptor updates [frames_in_flight]
+    emitter_configs_buffers: [Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>; 2],
 
     /// Flag to prevent double destruction
     destroyed: bool,
@@ -379,8 +156,8 @@ impl GlobalParticleSystem {
             free_emitter_slots: Vec::new(),
             context: context.clone(),
             frame_count: 0,
-            frame_data_buffer: None,
-            emitter_configs_buffer: None,
+            frame_data_buffers: [None, None],
+            emitter_configs_buffers: [None, None],
             cached_alive_count: 0,
             destroyed: false,
             compute_descriptor_set: None,
@@ -497,7 +274,7 @@ impl GlobalParticleSystem {
         self.frame_count += 1;
 
         // Upload emitter configs to GPU buffer
-        self.upload_emitter_configs()?;
+        self.upload_emitter_configs(frame_index as usize)?;
 
         // Calculate total particles to emit this frame (including bursts)
         // Use calculate_emit_count to get proper rate-based emission with accumulators
@@ -530,7 +307,10 @@ impl GlobalParticleSystem {
         // via record_compute_dispatch(). This just prepares the data.
 
         // Read back alive count from counters buffer (from previous frame)
-        let alive_count = self.buffer.get_alive_count().unwrap_or(0);
+        let alive_count = self
+            .buffer
+            .get_alive_count(frame_index as usize)
+            .unwrap_or(0);
         self.cached_alive_count = alive_count;
 
         let emit_count = total_emit_count + total_burst_count;
@@ -538,7 +318,7 @@ impl GlobalParticleSystem {
         // Debug-only validation: Check counter consistency
         #[cfg(debug_assertions)]
         {
-            if let Ok(dead_count) = self.buffer.get_dead_count()
+            if let Ok(dead_count) = self.buffer.get_dead_count(frame_index as usize)
                 && let Err(e) = validate_counters(alive_count, dead_count, self.max_particles)
             {
                 log::warn!("Particle system validation error: {}", e);
@@ -561,9 +341,10 @@ impl GlobalParticleSystem {
         Ok((alive_count, emit_count))
     }
 
-    /// Upload emitter configurations to GPU buffer.
-    fn upload_emitter_configs(&self) -> Result<(), String> {
-        if let Some((_buffer, allocation)) = &self.emitter_configs_buffer {
+    /// Upload emitter configurations to GPU buffer for the given frame.
+    fn upload_emitter_configs(&self, frame_index: usize) -> Result<(), String> {
+        let fi = frame_index % 2;
+        if let Some((_buffer, allocation)) = &self.emitter_configs_buffers[fi] {
             if let Some(mapped) = allocation.mapped_ptr() {
                 let dst = mapped.as_ptr() as *mut EmitterConfig;
                 unsafe {
@@ -593,7 +374,8 @@ impl GlobalParticleSystem {
         burst_count: u32,
         frame_index: u32,
     ) -> Result<(), String> {
-        if let Some((_buffer, allocation)) = &self.frame_data_buffer {
+        let fi = (frame_index as usize) % 2;
+        if let Some((_buffer, allocation)) = &self.frame_data_buffers[fi] {
             if let Some(mapped) = allocation.mapped_ptr() {
                 // Calculate active emitter count (emitters with emit_rate > 0 or burst_count > 0)
                 let active_emitter_count = self
@@ -709,7 +491,7 @@ impl GlobalParticleSystem {
             unsafe {
                 device.cmd_draw_indirect(
                     command_buffer,
-                    self.buffer.indirect_draw_buffer(),
+                    self.buffer.indirect_draw_buffer(frame_index),
                     0,  // offset into indirect buffer
                     1,  // draw count (one VkDrawIndirectCommand)
                     16, // stride between commands (sizeof(VkDrawIndirectCommand))
@@ -726,6 +508,8 @@ impl GlobalParticleSystem {
     /// simulate reads the full list (survivors + emitted).
     /// Binding 3 (alive_list_next/write): points to alive[(frame_index+1)%2] — simulate writes
     /// survivors here, which render will then read from.
+    /// Binding 4 (counters): per-frame counters buffer.
+    /// Binding 5 (indirect draw): per-frame indirect draw buffer (compute set only).
     pub fn update_compute_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
         let device = &self.context.device;
         let descriptor_set = self
@@ -734,21 +518,30 @@ impl GlobalParticleSystem {
 
         let layout = self.buffer.layout();
         let next_frame = (frame_index + 1) % 2;
-
-        let alive_read_offset = layout.alive_frame_offset[frame_index];
-        let alive_write_offset = layout.alive_frame_offset[next_frame];
-        let alive_list_region_size = layout.alive_list_size;
+        let fi = frame_index % 2;
 
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: alive_read_offset,
-            range: alive_list_region_size,
+            offset: layout.alive_frame_offset[frame_index % 2],
+            range: layout.alive_list_size,
         }];
 
         let alive_next_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
-            offset: alive_write_offset,
-            range: alive_list_region_size,
+            offset: layout.alive_frame_offset[next_frame],
+            range: layout.alive_list_size,
+        }];
+
+        let counters_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.counters_buffer(fi),
+            offset: 0,
+            range: std::mem::size_of::<buffer::ParticleCounters>() as u64,
+        }];
+
+        let indirect_draw_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.indirect_draw_buffer(fi),
+            offset: 0,
+            range: 16,
         }];
 
         let descriptor_writes = [
@@ -764,6 +557,18 @@ impl GlobalParticleSystem {
                 .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                 .descriptor_count(1)
                 .buffer_info(&alive_next_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(4)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&counters_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(5)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&indirect_draw_info),
         ];
 
         unsafe {
@@ -785,6 +590,7 @@ impl GlobalParticleSystem {
 
         let layout = self.buffer.layout();
         let next_frame = (frame_index + 1) % 2;
+        let fi = frame_index % 2;
 
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
@@ -792,15 +598,29 @@ impl GlobalParticleSystem {
             range: layout.alive_list_size,
         }];
 
-        let descriptor_write = vk::WriteDescriptorSet::default()
-            .dst_set(descriptor_set)
-            .dst_binding(2)
-            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(1)
-            .buffer_info(&alive_list_info);
+        let counters_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.counters_buffer(fi),
+            offset: 0,
+            range: std::mem::size_of::<buffer::ParticleCounters>() as u64,
+        }];
+
+        let descriptor_writes = [
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(2)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&alive_list_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(4)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&counters_info),
+        ];
 
         unsafe {
-            device.update_descriptor_sets(std::slice::from_ref(&descriptor_write), &[]);
+            device.update_descriptor_sets(&descriptor_writes, &[]);
         }
 
         Ok(())
@@ -854,6 +674,19 @@ impl GlobalParticleSystem {
         self.simulate_pipeline
     }
 
+    /// Get render pipeline handle.
+    pub fn render_pipeline_handle(&self) -> Option<PipelineHandle> {
+        self.render_pipeline
+    }
+
+    pub fn particle_buffer(&self) -> vk::Buffer {
+        self.buffer.particle_buffer()
+    }
+
+    pub fn indirect_draw_buffer(&self, frame_index: usize) -> vk::Buffer {
+        self.buffer.indirect_draw_buffer(frame_index)
+    }
+
     /// Destroy all particle system resources.
     pub fn destroy(&mut self) {
         if self.destroyed {
@@ -865,20 +698,22 @@ impl GlobalParticleSystem {
 
         // Destroy push descriptor buffers first
         info!("  destroying push descriptor buffers");
-        if let Some((buffer, allocation)) = self.frame_data_buffer.take() {
-            unsafe {
-                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-                    allocator.free(allocation).ok();
+        for frame_idx in 0..2 {
+            if let Some((buffer, allocation)) = self.frame_data_buffers[frame_idx].take() {
+                unsafe {
+                    if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+                        allocator.free(allocation).ok();
+                    }
+                    self.context.device.destroy_buffer(buffer, None);
                 }
-                self.context.device.destroy_buffer(buffer, None);
             }
-        }
-        if let Some((buffer, allocation)) = self.emitter_configs_buffer.take() {
-            unsafe {
-                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-                    allocator.free(allocation).ok();
+            if let Some((buffer, allocation)) = self.emitter_configs_buffers[frame_idx].take() {
+                unsafe {
+                    if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
+                        allocator.free(allocation).ok();
+                    }
+                    self.context.device.destroy_buffer(buffer, None);
                 }
-                self.context.device.destroy_buffer(buffer, None);
             }
         }
 
@@ -997,699 +832,6 @@ impl GlobalParticleSystem {
         }
     }
 
-    /// Create descriptor set layouts for particle system.
-    fn create_descriptor_layouts(&mut self, context: &Rc<VulkanContext>) -> Result<(), String> {
-        // Compute layout (Set 0: static buffers only - particles, dead list, alive lists, counters, indirect draw)
-        let compute_bindings = [
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::COMPUTE),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(1)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::COMPUTE),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(2)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::COMPUTE),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(3)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::COMPUTE),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(4)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::COMPUTE),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(5)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::COMPUTE),
-        ];
-
-        // Enable UPDATE_AFTER_BIND for all bindings to allow per-frame descriptor updates
-        // without causing validation errors when command buffers are still pending
-        let compute_binding_flags = [
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 0: particles
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 1: dead_list
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 2: alive_list (critical!)
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 3: alive write target
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 4: counters
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 5: indirect draw command
-        ];
-
-        let mut compute_binding_flags_info =
-            vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
-                .binding_flags(&compute_binding_flags);
-
-        let compute_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
-            .bindings(&compute_bindings)
-            .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
-            .push_next(&mut compute_binding_flags_info);
-
-        let compute_layout = unsafe {
-            context
-                .device
-                .create_descriptor_set_layout(&compute_layout_info, None)
-                .map_err(|e| format!("Failed to create compute descriptor layout: {:?}", e))?
-        };
-
-        self.compute_descriptor_layout = Some(compute_layout);
-
-        // Compute push descriptor layout (Set 1: frame data + emitter configs)
-        // NOTE: This uses PUSH_DESCRIPTOR bit to indicate these will be pushed via cmd_push_descriptor_set
-        let compute_push_bindings = [
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::COMPUTE),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(1)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::COMPUTE),
-        ];
-
-        let compute_push_layout_create_info = vk::DescriptorSetLayoutCreateInfo::default()
-            .bindings(&compute_push_bindings)
-            .flags(vk::DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR_KHR);
-
-        let compute_push_layout = unsafe {
-            context
-                .device
-                .create_descriptor_set_layout(&compute_push_layout_create_info, None)
-                .map_err(|e| format!("Failed to create compute push descriptor layout: {:?}", e))?
-        };
-
-        self.compute_push_descriptor_layout = Some(compute_push_layout);
-
-        // Render layout (Set 0: particle data + alive lists)
-        // We reuse the compute layout since both pipelines share the same descriptor set
-        // The render shader uses binding 0 (particles) and binding 2 (alive list from simulate)
-        // All 5 bindings must match the compute layout for descriptor set compatibility
-        let render_bindings = [
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(1)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(2)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(3)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(4)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-        ];
-
-        // Enable UPDATE_AFTER_BIND for all bindings to allow per-frame descriptor updates
-        let render_binding_flags = [
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 0
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 1
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 2
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 3
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND, // Binding 4
-        ];
-
-        let mut render_binding_flags_info =
-            vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
-                .binding_flags(&render_binding_flags);
-
-        let render_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
-            .bindings(&render_bindings)
-            .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
-            .push_next(&mut render_binding_flags_info);
-
-        let render_layout = unsafe {
-            context
-                .device
-                .create_descriptor_set_layout(&render_layout_info, None)
-                .map_err(|e| format!("Failed to create render descriptor layout: {:?}", e))?
-        };
-
-        self.render_descriptor_layout = Some(render_layout);
-
-        // Render push descriptor layout (Set 1: frame data for graphics)
-        // This is similar to compute push layout but with VERTEX/FRAGMENT stages
-        let render_push_bindings = [vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
-
-        let render_push_layout_create_info = vk::DescriptorSetLayoutCreateInfo::default()
-            .bindings(&render_push_bindings)
-            .flags(vk::DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR_KHR);
-
-        let render_push_layout = unsafe {
-            context
-                .device
-                .create_descriptor_set_layout(&render_push_layout_create_info, None)
-                .map_err(|e| format!("Failed to create render push descriptor layout: {:?}", e))?
-        };
-
-        self.render_push_descriptor_layout = Some(render_push_layout);
-
-        info!("Created particle system descriptor layouts");
-        Ok(())
-    }
-
-    /// Create buffers for push descriptor updates.
-    fn create_push_descriptor_buffers(
-        &mut self,
-        context: &Rc<VulkanContext>,
-    ) -> Result<(), String> {
-        // Frame data buffer (uniform + storage, CPU-visible)
-        // Compute shaders use this as UNIFORM_BUFFER, render shaders use it as STORAGE_BUFFER
-        let frame_data_size = std::mem::size_of::<FrameData>() as u64;
-        let frame_buffer_info = vk::BufferCreateInfo::default()
-            .size(frame_data_size)
-            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER | vk::BufferUsageFlags::STORAGE_BUFFER)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let frame_buffer = unsafe {
-            context
-                .device
-                .create_buffer(&frame_buffer_info, None)
-                .map_err(|e| format!("Failed to create frame data buffer: {:?}", e))?
-        };
-
-        let frame_requirements =
-            unsafe { context.device.get_buffer_memory_requirements(frame_buffer) };
-
-        let frame_allocation = context
-            .allocator
-            .borrow_mut()
-            .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
-                name: "particle_frame_data",
-                requirements: frame_requirements,
-                location: gpu_allocator::MemoryLocation::CpuToGpu,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate frame data memory: {}", e))?;
-
-        unsafe {
-            context
-                .device
-                .bind_buffer_memory(
-                    frame_buffer,
-                    frame_allocation.memory(),
-                    frame_allocation.offset(),
-                )
-                .map_err(|e| format!("Failed to bind frame data memory: {:?}", e))?
-        }
-
-        self.frame_data_buffer = Some((frame_buffer, frame_allocation));
-
-        // Emitter configs buffer (storage, CPU-visible)
-        let emitter_size = (MAX_EMITTERS as usize * std::mem::size_of::<EmitterConfig>()) as u64;
-        let emitter_buffer_info = vk::BufferCreateInfo::default()
-            .size(emitter_size)
-            .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let emitter_buffer = unsafe {
-            context
-                .device
-                .create_buffer(&emitter_buffer_info, None)
-                .map_err(|e| format!("Failed to create emitter configs buffer: {:?}", e))?
-        };
-
-        let emitter_requirements = unsafe {
-            context
-                .device
-                .get_buffer_memory_requirements(emitter_buffer)
-        };
-
-        let emitter_allocation = context
-            .allocator
-            .borrow_mut()
-            .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
-                name: "particle_emitter_configs",
-                requirements: emitter_requirements,
-                location: gpu_allocator::MemoryLocation::CpuToGpu,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate emitter configs memory: {}", e))?;
-
-        unsafe {
-            context
-                .device
-                .bind_buffer_memory(
-                    emitter_buffer,
-                    emitter_allocation.memory(),
-                    emitter_allocation.offset(),
-                )
-                .map_err(|e| format!("Failed to bind emitter configs memory: {:?}", e))?
-        }
-
-        self.emitter_configs_buffer = Some((emitter_buffer, emitter_allocation));
-
-        // Validate push descriptor buffer alignments
-        let device_properties = unsafe {
-            context
-                .instance
-                .get_physical_device_properties(context.physical_device)
-        };
-
-        let min_storage_buffer_offset_alignment =
-            device_properties.limits.min_storage_buffer_offset_alignment;
-
-        // Push descriptor buffers start at offset 0, so alignment is automatic
-        // Just validate buffer sizes meet minimum requirements
-        let frame_data_alignment = std::mem::size_of::<FrameData>() as u64;
-        let emitter_config_alignment = std::mem::size_of::<EmitterConfig>() as u64;
-
-        if frame_data_alignment < min_storage_buffer_offset_alignment {
-            log::warn!(
-                "FrameData size ({}) is smaller than min_storage_buffer_offset_alignment ({}), \
-                 this may cause performance issues",
-                frame_data_alignment,
-                min_storage_buffer_offset_alignment
-            );
-        }
-
-        if emitter_config_alignment < min_storage_buffer_offset_alignment {
-            log::warn!(
-                "EmitterConfig size ({}) is smaller than min_storage_buffer_offset_alignment ({}), \
-                 this may cause performance issues",
-                emitter_config_alignment,
-                min_storage_buffer_offset_alignment
-            );
-        }
-
-        info!("Created particle system push descriptor buffers");
-        Ok(())
-    }
-
-    /// Create descriptor pool and allocate static descriptor set (internal helper).
-    ///
-    /// # Arguments
-    /// * `layout` - Descriptor set layout to use
-    /// * `pool_name` - Name for logging/debugging
-    /// * `validate_alignment` - Whether to validate descriptor offset alignment
-    fn create_descriptor_set_internal(
-        &mut self,
-        layout: vk::DescriptorSetLayout,
-        pool_name: &str,
-        validate_alignment: bool,
-        include_indirect_binding: bool,
-    ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
-        // Create descriptor pool
-        let descriptor_count = if include_indirect_binding { 6 } else { 5 };
-        let pool_sizes = [vk::DescriptorPoolSize::default()
-            .ty(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(descriptor_count)];
-
-        let pool_info = vk::DescriptorPoolCreateInfo::default()
-            .pool_sizes(&pool_sizes)
-            .max_sets(1)
-            .flags(
-                vk::DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET
-                    | vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND,
-            );
-
-        let descriptor_pool = unsafe {
-            self.context
-                .device
-                .create_descriptor_pool(&pool_info, None)
-                .map_err(|e| format!("Failed to create {} descriptor pool: {:?}", pool_name, e))?
-        };
-
-        // Allocate descriptor set
-        let set_info = vk::DescriptorSetAllocateInfo::default()
-            .descriptor_pool(descriptor_pool)
-            .set_layouts(std::slice::from_ref(&layout));
-
-        let descriptor_sets = unsafe {
-            self.context
-                .device
-                .allocate_descriptor_sets(&set_info)
-                .map_err(|e| format!("Failed to allocate {} descriptor sets: {:?}", pool_name, e))?
-        };
-
-        let descriptor_set = descriptor_sets[0];
-
-        // Update descriptor set with buffer views
-        let buf_layout = self.buffer.layout();
-
-        // Calculate each region's size (use unaligned sizes for descriptor ranges)
-        let particles_region_size =
-            buf_layout.max_particles * std::mem::size_of::<buffer::ParticleData>() as u64;
-        let dead_list_region_size = buf_layout.max_particles * std::mem::size_of::<u32>() as u64;
-        let alive_list_region_size = buf_layout.alive_list_size;
-
-        let particle_buffer_handle = self.buffer.particle_buffer();
-        let counters_buffer_handle = self.buffer.counters_buffer();
-        let frame_buffer_handle = self.frame_data_buffer.as_ref().map(|(b, _)| *b);
-
-        log::info!(
-            "Buffer handles - particle: {:?}, counters: {:?}, frame_data: {:?}",
-            particle_buffer_handle,
-            counters_buffer_handle,
-            frame_buffer_handle
-        );
-
-        let particle_buffer_info = [vk::DescriptorBufferInfo {
-            buffer: particle_buffer_handle,
-            offset: 0,
-            range: particles_region_size, // Use actual particle region size
-        }];
-
-        log::info!(
-            "Creating descriptor with particle buffer range: {} bytes",
-            particles_region_size
-        );
-
-        let dead_list_info = [vk::DescriptorBufferInfo {
-            buffer: self.buffer.particle_buffer(),
-            offset: buf_layout.dead_list_offset,
-            range: dead_list_region_size, // Use actual dead list size, not aligned
-        }];
-
-        // Binding 2: alive_list (read by emit/simulate)
-        // Maps to alive[0] initially, updated per-frame via update_compute_descriptor_binding
-        let alive_list_info = [vk::DescriptorBufferInfo {
-            buffer: self.buffer.particle_buffer(),
-            offset: buf_layout.alive_offset,
-            range: alive_list_region_size,
-        }];
-
-        // Binding 3: alive_list_next (written by simulate)
-        // Maps to alive[1] initially, updated per-frame via update_compute_descriptor_binding
-        let alive_list_next_info = [vk::DescriptorBufferInfo {
-            buffer: self.buffer.particle_buffer(),
-            offset: buf_layout.alive_frame_offset[1],
-            range: alive_list_region_size,
-        }];
-
-        let counters_info = [vk::DescriptorBufferInfo {
-            buffer: self.buffer.counters_buffer(),
-            offset: 0,
-            range: std::mem::size_of::<buffer::ParticleCounters>() as u64,
-        }];
-
-        // Binding 5: indirect draw command buffer (16 bytes)
-        // Written by simulate shader, read by vkCmdDrawIndirect.
-        // Only included for compute descriptor set.
-        let indirect_draw_info = if include_indirect_binding {
-            Some([vk::DescriptorBufferInfo {
-                buffer: self.buffer.indirect_draw_buffer(),
-                offset: 0,
-                range: 16,
-            }])
-        } else {
-            None
-        };
-
-        let mut descriptor_writes = vec![
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(0)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .buffer_info(&particle_buffer_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(1)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .buffer_info(&dead_list_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(2)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .buffer_info(&alive_list_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(3)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .buffer_info(&alive_list_next_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(4)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .buffer_info(&counters_info),
-        ];
-
-        if include_indirect_binding && let Some(info) = &indirect_draw_info {
-            descriptor_writes.push(
-                vk::WriteDescriptorSet::default()
-                    .dst_set(descriptor_set)
-                    .dst_binding(5)
-                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                    .descriptor_count(1)
-                    .buffer_info(info),
-            );
-        }
-
-        log::info!(
-            "Updating descriptor set {:?}: binding 0 range={} bytes",
-            descriptor_set,
-            particle_buffer_info[0].range
-        );
-        log::info!(
-            "Updating descriptor set {:?}: binding 1 range={} bytes",
-            descriptor_set,
-            dead_list_info[0].range
-        );
-
-        unsafe {
-            self.context
-                .device
-                .update_descriptor_sets(&descriptor_writes, &[]);
-        }
-
-        // Validate descriptor set offsets for alignment (optional)
-        if validate_alignment {
-            let device_properties = unsafe {
-                self.context
-                    .instance
-                    .get_physical_device_properties(self.context.physical_device)
-            };
-
-            let min_storage_buffer_offset_alignment =
-                device_properties.limits.min_storage_buffer_offset_alignment;
-
-            // Validate that all descriptor buffer offsets are properly aligned
-            let binding_offsets = [
-                (0, 0u64),                             // particle data
-                (1, buf_layout.dead_list_offset),      // dead list
-                (2, buf_layout.alive_offset),          // alive[0]
-                (3, buf_layout.alive_frame_offset[1]), // alive[1]
-            ];
-
-            for (binding, offset) in binding_offsets.iter() {
-                if offset % min_storage_buffer_offset_alignment != 0 {
-                    return Err(format!(
-                        "Descriptor set binding {} offset {} is not aligned to min_storage_buffer_offset_alignment ({})",
-                        binding, offset, min_storage_buffer_offset_alignment
-                    ));
-                }
-            }
-        }
-
-        info!(
-            "Created and allocated particle {} descriptor set",
-            pool_name
-        );
-        Ok((descriptor_set, descriptor_pool))
-    }
-
-    /// Create descriptor pool and allocate static descriptor set for compute (Set 0).
-    fn create_compute_descriptor_set(
-        &mut self,
-    ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
-        let compute_layout = self
-            .compute_descriptor_layout
-            .ok_or("Compute descriptor layout not created")?;
-
-        self.create_descriptor_set_internal(compute_layout, "compute", true, true)
-    }
-
-    /// Create descriptor pool and allocate static descriptor set for render (Set 0).
-    /// Uses VERTEX/FRAGMENT stage flags instead of COMPUTE for graphics pipeline compatibility.
-    fn create_render_descriptor_set(
-        &mut self,
-    ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
-        let render_layout = self
-            .render_descriptor_layout
-            .ok_or("Render descriptor layout not created")?;
-
-        self.create_descriptor_set_internal(render_layout, "render", false, false)
-    }
-
-    /// Create emit pipeline for particle emission.
-    pub fn create_emit_pipeline(
-        &mut self,
-        asset_registry: &mut AssetRegistry,
-        shader_module: VkShaderModule,
-    ) -> Result<(), String> {
-        let compute_layout = self
-            .compute_descriptor_layout
-            .ok_or("Compute descriptor layout not created")?;
-
-        let compute_push_layout = self
-            .compute_push_descriptor_layout
-            .ok_or("Compute push descriptor layout not created")?;
-
-        let emit_pipeline = ComputePipelineBuilder::new(self.context.clone())
-            .with_shader(shader_module)
-            .with_descriptor_layouts(vec![
-                crate::sync::VkDescriptorSetLayout(compute_layout),
-                crate::sync::VkDescriptorSetLayout(compute_push_layout),
-            ])
-            .build()
-            .map_err(|e| format!("Failed to build emit pipeline: {}", e))?;
-
-        let pipeline_handle = asset_registry.register_compute_pipeline(emit_pipeline);
-        self.emit_pipeline = Some(pipeline_handle);
-
-        info!("Created particle emit pipeline");
-        Ok(())
-    }
-
-    /// Create simulate pipeline for particle simulation.
-    pub fn create_simulate_pipeline(
-        &mut self,
-        asset_registry: &mut AssetRegistry,
-        shader_module: VkShaderModule,
-    ) -> Result<(), String> {
-        let compute_layout = self
-            .compute_descriptor_layout
-            .ok_or("Compute descriptor layout not created")?;
-
-        let compute_push_layout = self
-            .compute_push_descriptor_layout
-            .ok_or("Compute push descriptor layout not created")?;
-
-        let simulate_pipeline = ComputePipelineBuilder::new(self.context.clone())
-            .with_shader(shader_module)
-            .with_descriptor_layouts(vec![
-                crate::sync::VkDescriptorSetLayout(compute_layout),
-                crate::sync::VkDescriptorSetLayout(compute_push_layout),
-            ])
-            .build()
-            .map_err(|e| format!("Failed to build simulate pipeline: {}", e))?;
-
-        let pipeline_handle = asset_registry.register_compute_pipeline(simulate_pipeline);
-        self.simulate_pipeline = Some(pipeline_handle);
-
-        info!("Created particle simulate pipeline");
-        Ok(())
-    }
-
-    /// Create render pipeline for particle rendering.
-    ///
-    /// Note: Particle rendering uses 2 descriptor sets:
-    /// - Set 0: Particle buffers (particles, alive_list, etc.)
-    /// - Set 1: Standard renderer storage uniforms (view/proj matrices)
-    ///   The render graph will bind Set 1 automatically during particle rendering.
-    pub fn create_render_pipeline(
-        &mut self,
-        asset_registry: &mut AssetRegistry,
-        vertex_shader: VkShaderModule,
-        fragment_shader: VkShaderModule,
-    ) -> Result<(), String> {
-        use crate::pipeline::{CullMode, FrontFace};
-        use crate::vulkan::material::builder::PipelineBuilder;
-
-        let render_layout = self
-            .render_descriptor_layout
-            .ok_or("Render descriptor layout not created")?;
-
-        // Create a storage descriptor layout matching the renderer's storage uniforms
-        // This must match exactly what StorageDescriptorSet creates
-        let storage_bindings = [
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(1)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-        ];
-
-        let storage_layout_info =
-            vk::DescriptorSetLayoutCreateInfo::default().bindings(&storage_bindings);
-
-        let storage_layout = unsafe {
-            self.context
-                .device
-                .create_descriptor_set_layout(&storage_layout_info, None)
-                .map_err(|e| format!("Failed to create storage descriptor layout: {:?}", e))?
-        };
-
-        let pipeline = PipelineBuilder::new(self.context.clone())
-            .with_shaders(vertex_shader.vk(), fragment_shader.vk())
-            .with_descriptor_layouts(vec![render_layout, storage_layout])
-            .with_depth_test(true, false, crate::pipeline::CompareOp::Greater)
-            .with_alpha_blending()
-            .with_cull_mode(CullMode::None, FrontFace::CounterClockwise)
-            .with_rendering_formats(
-                Some(crate::texture::ImageFormat::R16G16B16A16Sfloat),
-                Some(crate::texture::ImageFormat::D32SfloatS8Uint),
-            );
-
-        let pipeline = pipeline
-            .build_dynamic()
-            .map_err(|e| format!("Failed to build render pipeline: {}", e))?;
-
-        let pipeline_handle = asset_registry.register_pipeline(pipeline);
-        self.render_pipeline = Some(pipeline_handle);
-
-        // Clean up the temporary layout (pipeline holds its own reference)
-        unsafe {
-            self.context
-                .device
-                .destroy_descriptor_set_layout(storage_layout, None);
-        }
-
-        info!("Created particle render pipeline");
-        Ok(())
-    }
-
-    /// Get render pipeline handle.
-    pub fn render_pipeline_handle(&self) -> Option<PipelineHandle> {
-        self.render_pipeline
-    }
-
-    pub fn particle_buffer(&self) -> vk::Buffer {
-        self.buffer.particle_buffer()
-    }
-
-    pub fn indirect_draw_buffer(&self) -> vk::Buffer {
-        self.buffer.indirect_draw_buffer()
-    }
-
     /// Reset counters for the simulate pass on the GPU.
     ///
     /// Always resets `workgroups_finished` to 0. When `emit_ran` is false (emit was
@@ -1698,9 +840,14 @@ impl GlobalParticleSystem {
     ///
     /// When emit ran, it already reset `alive_count` to 0 and set `emit_count` to
     /// `cached_alive_count` + actual_emissions, so we must not overwrite those values.
-    pub(crate) fn reset_simulate_counters(&self, command_buffer: vk::CommandBuffer, emit_ran: bool) {
+    pub(crate) fn reset_simulate_counters(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        emit_ran: bool,
+        frame_index: usize,
+    ) {
         let device = &self.context.device;
-        let counters_buffer = self.buffer.counters_buffer();
+        let counters_buffer = self.buffer.counters_buffer(frame_index);
 
         // Always reset workgroups_finished to 0 — coordinate which wg writes draw command
         let zero_bytes = 0u32.to_le_bytes();
@@ -1761,6 +908,7 @@ impl GlobalParticleSystem {
         command_buffer: vk::CommandBuffer,
         asset_registry: &AssetRegistry,
         emit_workgroups: u32,
+        frame_index: usize,
     ) -> Result<(), String> {
         let pipeline = self.emit_pipeline.ok_or("Emit pipeline not created")?;
 
@@ -1778,7 +926,7 @@ impl GlobalParticleSystem {
         // Emit will write new particles starting at cached_alive_count.
         //
         // Use vkCmdUpdateBuffer to set emit_count on the GPU during command buffer execution.
-        let counters_buffer = self.buffer.counters_buffer();
+        let counters_buffer = self.buffer.counters_buffer(frame_index);
         let emit_count_offset = 8; // emit_count is at offset 8 in ParticleCounters (alive=0, dead=4, emit=8)
         let alive_count_value = self.cached_alive_count;
         let data_bytes = alive_count_value.to_le_bytes();
@@ -1853,8 +1001,9 @@ impl GlobalParticleSystem {
         }
 
         // Update push descriptors (Set 1: frame data + emitter configs)
-        if let Some((frame_buffer, _)) = &self.frame_data_buffer
-            && let Some((emitter_buffer, _)) = &self.emitter_configs_buffer
+        let fi = frame_index % 2;
+        if let Some((frame_buffer, _)) = &self.frame_data_buffers[fi]
+            && let Some((emitter_buffer, _)) = &self.emitter_configs_buffers[fi]
         {
             let frame_data_size = std::mem::size_of::<FrameData>() as u64;
             let emitter_size =
@@ -1908,7 +1057,7 @@ impl GlobalParticleSystem {
         // Add pipeline barrier after EMIT pass to ensure memory synchronization before SIMULATE pass
         // EMIT pass writes to: particle buffers, alive list, counters
         // SIMULATE pass reads from: particle buffers, alive list, counters
-        self.emit_to_simulate_barrier(command_buffer)?;
+        self.emit_to_simulate_barrier(command_buffer, frame_index)?;
 
         Ok(())
     }
@@ -1919,6 +1068,7 @@ impl GlobalParticleSystem {
         command_buffer: vk::CommandBuffer,
         asset_registry: &AssetRegistry,
         simulate_workgroups: u32,
+        frame_index: usize,
     ) -> Result<(), String> {
         let device = &self.context.device;
 
@@ -1959,7 +1109,8 @@ impl GlobalParticleSystem {
         }
 
         // Update push descriptors (Set 1: frame data + emitter configs)
-        if let Some((frame_buffer, _)) = &self.frame_data_buffer {
+        let fi = frame_index % 2;
+        if let Some((frame_buffer, _)) = &self.frame_data_buffers[fi] {
             let frame_data_size = std::mem::size_of::<FrameData>() as u64;
             let emitter_size =
                 (MAX_EMITTERS as usize * std::mem::size_of::<EmitterConfig>()) as u64;
@@ -1969,14 +1120,15 @@ impl GlobalParticleSystem {
                 .offset(0)
                 .range(frame_data_size)];
 
-            let emitter_buffer_info = if let Some((emitter_buf, _)) = &self.emitter_configs_buffer {
-                Some([vk::DescriptorBufferInfo::default()
-                    .buffer(*emitter_buf)
-                    .offset(0)
-                    .range(emitter_size)])
-            } else {
-                None
-            };
+            let emitter_buffer_info =
+                if let Some((emitter_buf, _)) = &self.emitter_configs_buffers[fi] {
+                    Some([vk::DescriptorBufferInfo::default()
+                        .buffer(*emitter_buf)
+                        .offset(0)
+                        .range(emitter_size)])
+                } else {
+                    None
+                };
 
             let mut push_descriptor_writes = vec![
                 vk::WriteDescriptorSet::default()
@@ -2021,7 +1173,7 @@ impl GlobalParticleSystem {
         // Add pipeline barrier after SIMULATE pass to ensure memory synchronization before RENDER pass
         // SIMULATE pass writes to: particle buffers, alive list
         // RENDER pass reads from: particle buffers (for vertex attributes), alive list (for indirect drawing)
-        self.simulate_barrier(command_buffer)?;
+        self.simulate_barrier(command_buffer, frame_index)?;
 
         Ok(())
     }
@@ -2040,9 +1192,10 @@ impl GlobalParticleSystem {
     pub fn emit_to_simulate_barrier(
         &self,
         command_buffer: vk::CommandBuffer,
+        frame_index: usize,
     ) -> Result<(), String> {
         let particle_buffer = self.buffer.particle_buffer();
-        let counters_buffer = self.buffer.counters_buffer();
+        let counters_buffer = self.buffer.counters_buffer(frame_index);
         let device = &self.context.device;
 
         let total_buffer_size = self.buffer.layout().total_size;
@@ -2093,9 +1246,13 @@ impl GlobalParticleSystem {
     ///
     /// Ensures particle buffers, alive list, and indirect draw command are visible
     /// to the render pass (vertex shader + indirect draw).
-    fn simulate_barrier(&self, command_buffer: vk::CommandBuffer) -> Result<(), String> {
+    fn simulate_barrier(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        frame_index: usize,
+    ) -> Result<(), String> {
         let particle_buffer = self.buffer.particle_buffer();
-        let indirect_draw_buffer = self.buffer.indirect_draw_buffer();
+        let indirect_draw_buffer = self.buffer.indirect_draw_buffer(frame_index);
         let device = &self.context.device;
 
         let particle_buffer_size = self.buffer.layout().total_size;

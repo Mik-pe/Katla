@@ -146,8 +146,11 @@ impl Application {
                     };
 
                     if emit_workgroups == 0 && emit_count > 0 {
-                        log::warn!("Frame {}: emit_count={} but emit_workgroups=0! Particles won't be emitted!",
-                            frame_count, emit_count);
+                        log::warn!(
+                            "Frame {}: emit_count={} but emit_workgroups=0! Particles won't be emitted!",
+                            frame_count,
+                            emit_count
+                        );
                     }
 
                     // Calculate simulate workgroups (based on alive particles)
@@ -267,10 +270,16 @@ impl Application {
                             // Check specifically for the test particle at index 0
                             if !debug_data.particles.is_empty() {
                                 let test_particle = &debug_data.particles[0];
-                                log::info!("TEST PARTICLE [0]: pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2}) lifetime={:.2}",
-                                    test_particle.position[0], test_particle.position[1], test_particle.position[2],
-                                    test_particle.velocity[0], test_particle.velocity[1], test_particle.velocity[2],
-                                    test_particle.lifetime);
+                                log::info!(
+                                    "TEST PARTICLE [0]: pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2}) lifetime={:.2}",
+                                    test_particle.position[0],
+                                    test_particle.position[1],
+                                    test_particle.position[2],
+                                    test_particle.velocity[0],
+                                    test_particle.velocity[1],
+                                    test_particle.velocity[2],
+                                    test_particle.lifetime
+                                );
                             }
                         }
                         Err(e) => {

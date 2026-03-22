@@ -320,9 +320,19 @@ fn collect_particle_inspector_data(app: &mut Application) {
             compute_time_ms: 0.0,
             avg_compute_time_ms: 0.0,
             peak_compute_time_ms: 0.0,
-            emitter_counts: ps.get_emitters().iter().filter(|e| e.emit_rate > 0.0).map(|_| 0).collect(),
-            memory_used_mb: (max as f32) * 48.0 / (1024.0 * 1024.0) + (max as f32) * 12.0 / (1024.0 * 1024.0),
-            buffer_utilization: if max > 0 { alive as f32 / max as f32 } else { 0.0 },
+            emitter_counts: ps
+                .get_emitters()
+                .iter()
+                .filter(|e| e.emit_rate > 0.0)
+                .map(|_| 0)
+                .collect(),
+            memory_used_mb: (max as f32) * 48.0 / (1024.0 * 1024.0)
+                + (max as f32) * 12.0 / (1024.0 * 1024.0),
+            buffer_utilization: if max > 0 {
+                alive as f32 / max as f32
+            } else {
+                0.0
+            },
             frame_count: 0,
             total_dispatches: 0,
         }
