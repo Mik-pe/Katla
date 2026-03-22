@@ -370,7 +370,7 @@ pub fn execute_gpu_compute(
     };
 
     // Simulate processes ALL particles: old survivors + newly emitted.
-    // After emit, alive_current[frame] contains [survivors..alive_count-1] + [emitted..alive_count+emit_count-1].
+    // After emit, alive[frame] contains [survivors..alive_count-1] + [emitted..alive_count+emit_count-1].
     let total_to_simulate = alive_count + emit_count;
     let simulate_workgroups = if total_to_simulate > 0 {
         (total_to_simulate + PARTICLE_SIMULATE_WORKGROUP_SIZE - 1)
@@ -462,8 +462,11 @@ pub fn execute_gpu_compute(
             }
         }
 
-        // Record debug readback BEFORE swap to capture alive_next
-        match particle_system.record_debug_readback(command_buffer.vk_command_buffer()) {
+        // Record debug readback to capture simulate output
+        match particle_system.record_debug_readback(
+            command_buffer.vk_command_buffer(),
+            frame_index_for_descriptor,
+        ) {
             Ok(_) => {
                 log::debug!("Debug readback recorded successfully");
             }
@@ -472,17 +475,7 @@ pub fn execute_gpu_compute(
             }
         }
 
-        // CRITICAL: Swap alive lists after simulate completes
-        let next_frame_index = (frame_index_for_descriptor + 1) % 2;
-        match particle_system.swap_alive_lists(command_buffer.vk_command_buffer(), next_frame_index)
-        {
-            Ok(_) => {
-                log::debug!("Frame {}: Alive lists swapped successfully", frame);
-            }
-            Err(e) => {
-                log::warn!("Frame {}: Failed to swap alive lists: {}", frame, e);
-            }
-        }
+        // No swap needed — simulate writes to alive[(frame+1)%2] via descriptor offset flip
     }
 
     // Record render dispatch to exercise the full GPU pipeline

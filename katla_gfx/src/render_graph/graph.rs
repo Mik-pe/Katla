@@ -158,6 +158,10 @@ pub struct FrameGraph {
     /// Calculated each frame based on alive particle count.
     particle_simulate_workgroup_count: u32,
 
+    /// Whether the emit compute pass ran this frame (used by simulate to decide
+    /// whether to reset emit_count).
+    particle_emit_ran: bool,
+
     /// Flag to trigger particle debug readback this frame.
     particle_debug_readback: bool,
 
@@ -184,6 +188,7 @@ impl FrameGraph {
             particle_pipeline: None,
             particle_emit_workgroup_count: 1,
             particle_simulate_workgroup_count: 1,
+            particle_emit_ran: false,
             particle_debug_readback: false,
             compositing_descriptor_sets: RefCell::new(vec![None, None]),
         }
@@ -1108,6 +1113,13 @@ impl<'a> Frame<'a> {
 
     /// Execute all passes in order.
     fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
+        // Reset per-frame particle state
+        // SAFETY: We have exclusive access during frame execution
+        let graph_ptr = self.graph as *const FrameGraph as *mut FrameGraph;
+        unsafe {
+            (*graph_ptr).particle_emit_ran = false;
+        }
+
         // Use storage_manager.current_frame() consistently for all frame resource selection
         let frame_idx = self.current_frame();
         log::trace!(
@@ -2853,8 +2865,8 @@ impl<'a> Frame<'a> {
             // Record the appropriate dispatch based on pass name
             if pass.name.contains("emit") {
                 // Update compute descriptor bindings for EMIT pass
-                // CRITICAL: Emit needs binding 3 to point to alive_current[frame_index]
-                // so that newly emitted particles are written where simulate will read them
+                // CRITICAL: Emit needs binding 2 to point to alive[frame_index]
+                // so that newly emitted particles are appended where simulate will read them
                 particle_system
                     .update_compute_descriptor_binding(current_frame)
                     .map_err(|e| {
@@ -2875,20 +2887,16 @@ impl<'a> Frame<'a> {
                             e
                         ))
                     })?;
-
-                // Add memory barrier after emit to ensure simulate sees the writes
-                particle_system
-                    .emit_to_simulate_barrier(cmd.vk_command_buffer())
-                    .map_err(|e| {
-                        RenderGraphError::VulkanError(format!(
-                            "Particle emit barrier failed: {}",
-                            e
-                        ))
-                    })?;
+                // Mark that emit ran this frame so simulate knows not to
+                // overwrite emit_count.
+                let graph_ptr = self.graph as *const FrameGraph as *mut FrameGraph;
+                unsafe {
+                    (*graph_ptr).particle_emit_ran = true;
+                }
             } else if pass.name.contains("simulate") {
                 // Update compute descriptor bindings for SIMULATE pass
-                // CRITICAL: Simulate needs binding 3 to point to alive_next buffer
-                // so that survivors are written to the correct location for swapping
+                // CRITICAL: Simulate needs binding 3 to point to alive[(frame+1)%2]
+                // so that survivors are written to the region render will read from
                 particle_system
                     .update_compute_descriptor_binding(current_frame)
                     .map_err(|e| {
@@ -2897,6 +2905,13 @@ impl<'a> Frame<'a> {
                             e
                         ))
                     })?;
+
+                // Reset counters before simulate.
+                // When emit was skipped, alive_count and emit_count must be reset
+                // here since emit didn't do it.
+                let emit_ran = self.graph.particle_emit_ran;
+                particle_system.reset_simulate_counters(cmd.vk_command_buffer(), emit_ran);
+
                 particle_system
                     .record_simulate_dispatch(
                         cmd.vk_command_buffer(),
@@ -2910,17 +2925,9 @@ impl<'a> Frame<'a> {
                         ))
                     })?;
 
-                // Swap alive lists after simulate pass completes
-                // This copies alive_next (written by simulate) to alive_current[next_frame]
-                // so that the NEXT frame's emit/simulate reads the correct survivor list.
-                // CRITICAL: must swap to (current_frame + 1) % frames_in_flight, NOT current_frame,
-                // because emit/simulate for THIS frame already read from alive_current[current_frame].
-                let next_frame = (current_frame + 1) % 2;
-                particle_system
-                    .swap_alive_lists(cmd.vk_command_buffer(), next_frame)
-                    .map_err(|e| {
-                        RenderGraphError::VulkanError(format!("Particle buffer swap failed: {}", e))
-                    })?;
+                // No swap needed — simulate writes survivors to alive[(frame+1)%2] via
+                // descriptor offset flip in update_compute_descriptor_binding. The render
+                // pass reads from the same region via update_alive_descriptor_binding.
 
                 // Record particle debug readback if requested this frame
                 // SAFETY: We need to access the graph's debug readback flag through the Frame's graph reference
@@ -2930,7 +2937,7 @@ impl<'a> Frame<'a> {
                     if (*graph_ptr).particle_debug_readback {
                         log::info!("Recording particle debug readback after simulate pass");
                         particle_system
-                            .record_debug_readback(cmd.vk_command_buffer())
+                            .record_debug_readback(cmd.vk_command_buffer(), current_frame)
                             .map_err(|e| {
                                 RenderGraphError::VulkanError(format!(
                                     "Particle debug readback failed: {}",
