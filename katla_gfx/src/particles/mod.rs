@@ -12,7 +12,6 @@ pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters, ParticleData
 pub use debug_readback::{ParticleDebugData, ParticleDebugReadback};
 pub use presets::EmitterPreset;
 pub use stats::ParticleStats;
-pub use timing::TimestampQuery;
 pub use validation::{
     ValidationError, validate_all_emitters, validate_counters, validate_emitter_config,
 };
@@ -344,24 +343,11 @@ pub struct GlobalParticleSystem {
     /// Descriptor pool for render descriptor set
     _render_descriptor_pool: vk::DescriptorPool,
 
-    /// GPU timing queries for compute shader
-    timing_queries: Option<TimestampQuery>,
-
-    // Statistics tracking
-    /// Total particles emitted since system start
-    total_emitted: u64,
-    /// Total particles that died since system start
-    total_died: u64,
-    /// Peak compute shader execution time (milliseconds)
-    peak_compute_time: f32,
-    /// Average compute shader execution time (milliseconds)
-    avg_compute_time: f32,
-    /// History of compute times for rolling average (last 60 frames)
-    compute_time_history: Vec<f32>,
-    /// Total compute dispatches executed
-    total_dispatches: u64,
     /// Maximum particles in the system
     max_particles: u32,
+
+    /// Total particles emitted since system start
+    total_emitted: u64,
 
     /// Debug readback helper (optional, created only when debugging)
     debug_readback: Option<ParticleDebugReadback>,
@@ -401,14 +387,8 @@ impl GlobalParticleSystem {
             render_descriptor_set: None,
             _compute_descriptor_pool: vk::DescriptorPool::null(),
             _render_descriptor_pool: vk::DescriptorPool::null(),
-            timing_queries: None,
-            total_emitted: 0,
-            total_died: 0,
-            peak_compute_time: 0.0,
-            avg_compute_time: 0.0,
-            compute_time_history: Vec::with_capacity(60),
-            total_dispatches: 0,
             max_particles,
+            total_emitted: 0,
             debug_readback: None,
         };
 
@@ -429,18 +409,6 @@ impl GlobalParticleSystem {
 
         // Create push descriptor buffers
         system.create_push_descriptor_buffers(context)?;
-
-        // Create timing queries
-        match TimestampQuery::new(context) {
-            Ok(timing) => {
-                system.timing_queries = Some(timing);
-                info!("Created GPU timing queries for particle compute shader");
-            }
-            Err(e) => {
-                warn!("Failed to create timing queries: {}. Timing disabled.", e);
-                system.timing_queries = None;
-            }
-        }
 
         info!("Modern particle system initialized successfully");
         Ok(system)
@@ -585,9 +553,9 @@ impl GlobalParticleSystem {
             }
         }
 
-        // Update emission statistics
+        // Track total emitted
         if total_this_frame > 0 {
-            self.update_emission_stats(total_this_frame);
+            self.total_emitted += total_this_frame as u64;
         }
 
         Ok((alive_count, emit_count))
@@ -916,12 +884,6 @@ impl GlobalParticleSystem {
 
         info!("  destroying global particle buffer");
         self.buffer.destroy();
-
-        // Destroy timing queries
-        info!("  destroying timing queries");
-        if let Some(mut timing) = self.timing_queries.take() {
-            timing.destroy();
-        }
 
         // Destroy descriptor set layouts (we own these, pipelines just reference them)
         info!("  destroying descriptor set layouts");
@@ -1736,7 +1698,7 @@ impl GlobalParticleSystem {
     ///
     /// When emit ran, it already reset `alive_count` to 0 and set `emit_count` to
     /// `cached_alive_count` + actual_emissions, so we must not overwrite those values.
-    pub fn reset_simulate_counters(&self, command_buffer: vk::CommandBuffer, emit_ran: bool) {
+    pub(crate) fn reset_simulate_counters(&self, command_buffer: vk::CommandBuffer, emit_ran: bool) {
         let device = &self.context.device;
         let counters_buffer = self.buffer.counters_buffer();
 
@@ -1793,9 +1755,6 @@ impl GlobalParticleSystem {
         }
     }
 
-    /// Record compute dispatch with timing queries.
-    ///
-    /// Wraps the compute dispatch with timestamp queries to measure GPU execution time.
     /// Record emit pass dispatch.
     pub fn record_emit_dispatch(
         &self,
@@ -2182,224 +2141,45 @@ impl GlobalParticleSystem {
         Ok(())
     }
 
-    /// Save an emitter configuration as a preset.
-    ///
-    /// # Arguments
-    /// * `name` - Preset name (will be saved as name.json)
-    /// * `config` - Emitter configuration to save
-    ///
-    /// # Errors
-    /// Returns error if file write or serialization fails
-    pub fn save_preset(&self, name: &str, config: &EmitterConfig) -> Result<(), String> {
-        let presets_dir = std::path::Path::new("assets/particles");
-        let preset = EmitterPreset::new(name.to_string(), *config);
-        let path = presets_dir.join(format!("{}.json", name));
-
-        preset.save_to_file(&path)
+    /// Get maximum particle capacity.
+    pub fn max_particles(&self) -> u32 {
+        self.max_particles
     }
 
-    /// Load an emitter configuration from a preset.
+    /// Get a snapshot of current particle system state.
     ///
-    /// # Arguments
-    /// * `name` - Preset name (filename without .json extension)
-    ///
-    /// # Errors
-    /// Returns error if preset file not found or deserialization fails
-    pub fn load_preset(&self, name: &str) -> Result<EmitterConfig, String> {
-        let presets_dir = std::path::Path::new("assets/particles");
-        let path = presets_dir.join(format!("{}.json", name));
-
-        if !path.exists() {
-            return Err(format!("Preset '{}' not found at {}", name, path.display()));
-        }
-
-        let preset = EmitterPreset::load_from_file(&path)?;
-        Ok(preset.config)
-    }
-
-    /// Get list of available preset names.
-    ///
-    /// Scans the assets/particles/ directory for .json files.
-    ///
-    /// # Returns
-    /// Vector of preset names (filenames without .json extension)
-    pub fn get_available_presets(&self) -> Vec<String> {
-        let presets_dir = std::path::Path::new("assets/particles");
-        let mut presets = Vec::new();
-
-        if let Ok(entries) = std::fs::read_dir(presets_dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let path = entry.path();
-
-                if path.extension().and_then(|s| s.to_str()) == Some("json")
-                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-                {
-                    presets.push(stem.to_string());
-                }
-            }
-        }
-
-        presets.sort();
-        presets
-    }
-
-    /// Load all presets from the assets/particles/ directory.
-    ///
-    /// This is a convenience method that loads all available presets.
-    /// Presets can then be accessed by name via `load_preset`.
-    ///
-    /// # Errors
-    /// Returns error if presets directory doesn't exist or isn't readable
-    pub fn load_all_presets(&self) -> Result<(), String> {
-        let presets_dir = std::path::Path::new("assets/particles");
-
-        if !presets_dir.exists() {
-            std::fs::create_dir_all(presets_dir).map_err(|e| {
-                format!(
-                    "Failed to create presets directory {}: {}",
-                    presets_dir.display(),
-                    e
-                )
-            })?;
-        }
-
-        let presets = self.get_available_presets();
-        log::info!(
-            "Found {} particle presets in {}",
-            presets.len(),
-            presets_dir.display()
-        );
-
-        Ok(())
-    }
-
-    /// Get compute shader execution time in milliseconds.
-    ///
-    /// Returns the timing data from the last compute dispatch.
-    /// Returns None if timing is not available or readback failed.
-    pub fn get_compute_time_ms(&mut self) -> Option<f32> {
-        if let Some(timing) = &mut self.timing_queries {
-            match timing.get_compute_time_ms() {
-                Ok(time) => {
-                    self.update_compute_stats(time);
-                    Some(time)
-                }
-                Err(e) => {
-                    warn!("Failed to read compute timing: {}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        }
-    }
-
-    /// Get cached compute time without readback.
-    ///
-    /// Returns the last successfully measured compute time.
-    /// Returns 0.0 if no timing data is available.
-    pub fn cached_compute_time_ms(&self) -> f32 {
-        self.timing_queries
-            .as_ref()
-            .map(|t| t.cached_time_ms())
-            .unwrap_or(0.0)
-    }
-
-    /// Get comprehensive particle system statistics.
-    ///
-    /// Returns a snapshot of current system state including particle counts,
-    /// performance metrics, and memory usage.
+    /// Note: Lifetime and performance tracking fields (total_emitted, total_died,
+    /// compute timing, dispatch count) are no longer tracked and always return 0.
     pub fn get_stats(&self) -> ParticleStats {
+        let particle_data_mb = (self.max_particles as f32) * 48.0 / (1024.0 * 1024.0);
+        let index_lists_mb = (self.max_particles as f32) * 12.0 / (1024.0 * 1024.0);
+        let counters_mb = 32.0 / (1024.0 * 1024.0);
+        let configs_mb = (self.emitters.len() as f32) * 80.0 / (1024.0 * 1024.0);
+
         ParticleStats {
             max_alive_count: self.max_particles,
             current_alive_count: self.alive_count(),
             dead_count: self.max_particles - self.alive_count(),
             total_emitted: self.total_emitted,
-            total_died: self.total_died,
-            compute_time_ms: self.cached_compute_time_ms(),
-            avg_compute_time_ms: self.avg_compute_time,
-            peak_compute_time_ms: self.peak_compute_time,
-            emitter_counts: self.calculate_emitter_counts(),
-            memory_used_mb: self.calculate_memory_usage(),
+            total_died: 0,
+            compute_time_ms: 0.0,
+            avg_compute_time_ms: 0.0,
+            peak_compute_time_ms: 0.0,
+            emitter_counts: self
+                .emitters
+                .iter()
+                .filter(|e| e.emit_rate > 0.0)
+                .map(|_| 0)
+                .collect(),
+            memory_used_mb: particle_data_mb + index_lists_mb + counters_mb + configs_mb,
             buffer_utilization: if self.max_particles > 0 {
                 self.alive_count() as f32 / self.max_particles as f32
             } else {
                 0.0
             },
             frame_count: self.frame_count as u64,
-            total_dispatches: self.total_dispatches,
+            total_dispatches: 0,
         }
-    }
-
-    /// Calculate particle counts per emitter.
-    ///
-    /// Note: This is a simplified implementation that returns zeros for all emitters.
-    /// A full implementation would require GPU readback of per-emitter counters.
-    fn calculate_emitter_counts(&self) -> Vec<u32> {
-        // Simplified implementation - returns zeros for all active emitters
-        // A full implementation would require GPU readback or atomic counters per emitter
-        self.emitters
-            .iter()
-            .filter(|e| e.emit_rate > 0.0)
-            .map(|_| 0)
-            .collect()
-    }
-
-    /// Calculate total GPU memory usage in megabytes.
-    fn calculate_memory_usage(&self) -> f32 {
-        // Particle data: 48 bytes per particle
-        let particle_data_mb = (self.max_particles as f32) * 48.0 / (1024.0 * 1024.0);
-
-        // Index lists: dead + alive[0] + alive[1] (4 bytes per particle per list)
-        let index_lists_mb = (self.max_particles as f32) * 12.0 / (1024.0 * 1024.0);
-
-        // Counters: 32 bytes
-        let counters_mb = 32.0 / (1024.0 * 1024.0);
-
-        // Emitter configs: 80 bytes per emitter
-        let configs_mb = (self.emitters.len() as f32) * 80.0 / (1024.0 * 1024.0);
-
-        particle_data_mb + index_lists_mb + counters_mb + configs_mb
-    }
-
-    /// Update compute statistics with new timing data.
-    ///
-    /// Call this after each compute dispatch to update rolling averages and peak values.
-    ///
-    /// # Arguments
-    /// * `compute_time_ms` - Compute shader execution time in milliseconds
-    pub fn update_compute_stats(&mut self, compute_time_ms: f32) {
-        // Update history for rolling average
-        self.compute_time_history.push(compute_time_ms);
-        if self.compute_time_history.len() > 60 {
-            self.compute_time_history.remove(0);
-        }
-
-        // Calculate rolling average
-        if !self.compute_time_history.is_empty() {
-            self.avg_compute_time = self.compute_time_history.iter().sum::<f32>()
-                / self.compute_time_history.len() as f32;
-        }
-
-        // Update peak
-        if compute_time_ms > self.peak_compute_time {
-            self.peak_compute_time = compute_time_ms;
-        }
-    }
-
-    /// Update emission statistics.
-    ///
-    /// Call this after emitting particles to track lifetime statistics.
-    ///
-    /// # Arguments
-    /// * `emitted_count` - Number of particles emitted this frame
-    pub fn update_emission_stats(&mut self, emitted_count: u32) {
-        self.total_emitted += emitted_count as u64;
-    }
-
-    /// Get maximum particle capacity.
-    pub fn max_particles(&self) -> u32 {
-        self.max_particles
     }
 }
 

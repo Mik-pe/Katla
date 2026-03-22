@@ -1447,19 +1447,65 @@ impl Application {
     /// Set up particle emitters for the default scene.
     fn setup_particle_emitters(&mut self) {
         use crate::components::ParticleEmitterComponent;
+        use katla_gfx::particles::{EmitterConfig, EmitterShape};
 
         info!("Setting up particle emitters via ECS...");
 
         // Fire emitter near the center cube
-        let fire_emitter = ParticleEmitterComponent::fire_effect([-3.0, 1.0, -3.0]);
+        let fire_emitter = ParticleEmitterComponent::with_config(EmitterConfig {
+            position: [-3.0, 1.0, -3.0],
+            emit_rate: 400.0,
+            base_lifetime: 2.5,
+            lifetime_variation: 0.3,
+            velocity_direction: [0.0, 1.0, 0.0],
+            velocity_magnitude: 3.0,
+            velocity_cone_angle: 0.05,
+            base_scale: 0.08,
+            scale_variation: 0.2,
+            color: [1.0, 0.5, 0.0, 1.0],
+            color_variation: 0.1,
+            gravity: 0.0,
+            ..Default::default()
+        });
         self.world.spawn((fire_emitter,));
 
         // Ethereal/spiritual rising particles
-        let ethereal_emitter = ParticleEmitterComponent::ethereal_effect([3.0, 0.5, 0.0]);
+        let mut ethereal_emitter = ParticleEmitterComponent::with_config(EmitterConfig {
+            position: [3.0, 0.5, 0.0],
+            emit_rate: 200.0,
+            base_lifetime: 4.0,
+            lifetime_variation: 0.5,
+            velocity_direction: [0.0, 1.0, 0.0],
+            velocity_magnitude: 1.5,
+            velocity_cone_angle: 0.1,
+            base_scale: 0.12,
+            scale_variation: 0.4,
+            color: [0.6, 0.8, 1.0, 0.8],
+            color_variation: 0.2,
+            gravity: -0.5,
+            turbulence_strength: 4.0,
+            turbulence_frequency: 3.0,
+            ..Default::default()
+        });
+        ethereal_emitter.config.set_shape(EmitterShape::Circle);
+        ethereal_emitter.config.shape_params = [2.0, 0.0, 0.0, 0.0];
         self.world.spawn((ethereal_emitter,));
 
         // Magic sparkles emitter
-        let sparkle_emitter = ParticleEmitterComponent::sparkle_effect([0.0, 3.0, 0.0]);
+        let sparkle_emitter = ParticleEmitterComponent::with_config(EmitterConfig {
+            position: [0.0, 3.0, 0.0],
+            emit_rate: 250.0,
+            base_lifetime: 3.0,
+            lifetime_variation: 1.0,
+            velocity_direction: [0.0, -1.0, 0.0],
+            velocity_magnitude: 0.5,
+            velocity_cone_angle: 0.1,
+            base_scale: 0.1,
+            scale_variation: 0.5,
+            color: [0.8, 0.9, 1.0, 1.0],
+            color_variation: 0.3,
+            ..Default::default()
+        });
         self.world.spawn((sparkle_emitter,));
 
         info!("Particle emitters setup complete - emitters will be initialized by ParticleSystem");

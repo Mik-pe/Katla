@@ -264,7 +264,7 @@ pub fn process_editor_actions(app: &mut Application) {
 /// view of the selected emitter's config, and gathers system-wide stats.
 fn collect_particle_inspector_data(app: &mut Application) {
     use crate::components::ParticleEmitterComponent;
-    use crate::ui::{EmitterConfigView, ParticleInspectorData};
+    use crate::ui::{EmitterConfigView, ParticleInspectorData, ParticleStats};
     use katla_gfx::particles::EmitterShape;
 
     let mut emitter_entities = Vec::new();
@@ -308,11 +308,25 @@ fn collect_particle_inspector_data(app: &mut Application) {
     }
 
     // Get system-wide stats
-    let stats = app
-        .renderer
-        .particle_system
-        .as_ref()
-        .map(|ps| ps.get_stats());
+    let stats = app.renderer.particle_system.as_ref().map(|ps| {
+        let alive = ps.alive_count();
+        let max = ps.max_particles();
+        ParticleStats {
+            max_alive_count: max,
+            current_alive_count: alive,
+            dead_count: max - alive,
+            total_emitted: 0,
+            total_died: 0,
+            compute_time_ms: 0.0,
+            avg_compute_time_ms: 0.0,
+            peak_compute_time_ms: 0.0,
+            emitter_counts: ps.get_emitters().iter().filter(|e| e.emit_rate > 0.0).map(|_| 0).collect(),
+            memory_used_mb: (max as f32) * 48.0 / (1024.0 * 1024.0) + (max as f32) * 12.0 / (1024.0 * 1024.0),
+            buffer_utilization: if max > 0 { alive as f32 / max as f32 } else { 0.0 },
+            frame_count: 0,
+            total_dispatches: 0,
+        }
+    });
 
     app.editor_ui.particle_inspector_data = ParticleInspectorData {
         emitter_entities,

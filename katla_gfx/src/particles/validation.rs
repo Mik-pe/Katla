@@ -27,12 +27,6 @@ impl std::fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
-/// Validation trait for particle system components.
-pub trait Validate {
-    /// Validate this component, returning Ok(()) if valid.
-    fn validate(&self) -> Result<(), ValidationError>;
-}
-
 /// Validate particle counters for consistency.
 ///
 /// # Arguments
