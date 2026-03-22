@@ -310,7 +310,15 @@ impl MaterialCompiler {
         format: crate::texture::ImageFormat,
     ) -> Result<(), MaterialError> {
         // Get the material asset (immutable borrow)
-        let (shader_path, vertex_binding, vertex_type, is_compositing, alpha_blended, double_sided, wireframe) = {
+        let (
+            shader_path,
+            vertex_binding,
+            vertex_type,
+            is_compositing,
+            alpha_blended,
+            double_sided,
+            wireframe,
+        ) = {
             let material = registry.get_material(material_handle).ok_or_else(|| {
                 MaterialError::ShaderCompilation(format!(
                     "Material handle {:?} not found",
@@ -592,7 +600,8 @@ impl MaterialCompiler {
         // Configure render state from options
         // Disable depth test for UI passes and compositing passes (no depth attachment)
         if !is_ui && !options.is_compositing {
-            builder = builder.with_depth_test(true, true, crate::pipeline::CompareOp::GreaterOrEqual);
+            builder =
+                builder.with_depth_test(true, true, crate::pipeline::CompareOp::GreaterOrEqual);
         }
 
         if options.double_sided {

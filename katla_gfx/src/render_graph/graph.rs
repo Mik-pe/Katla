@@ -1323,11 +1323,7 @@ impl<'a> Frame<'a> {
                     "[BARRIER] Depth render-pass sync before '{}' (previous pass wrote depth)",
                     pass.name
                 );
-                ImageBarrier::depth_render_pass_sync(
-                    &cmd_vk,
-                    device,
-                    depth_texture.image.vk(),
-                );
+                ImageBarrier::depth_render_pass_sync(&cmd_vk, device, depth_texture.image.vk());
             }
         }
 
@@ -3148,9 +3144,13 @@ impl<'a> Frame<'a> {
             self.renderer
                 .set_shadow_cascade_params(cascade_idx, depth_bias);
 
-            // Draw all geometry for this cascade
+            // Draw all geometry for this cascade (skip skinned meshes — shadow pipeline uses PBR vertex layout)
             for draw_list in &data.draw_lists {
                 for draw_call in &draw_list.draws {
+                    if !draw_call.skeleton.is_none() {
+                        continue;
+                    }
+
                     let mesh = self
                         .renderer
                         .asset_registry
@@ -3280,9 +3280,13 @@ impl<'a> Frame<'a> {
         };
         cmd.set_scissor(&[scissor]);
 
-        // Draw all geometry (depth only — same draw lists as geometry pass)
+        // Draw all geometry (depth only — same draw lists as geometry pass, skip skinned meshes)
         for draw_list in &data.draw_lists {
             for draw_call in draw_list.iter() {
+                if !draw_call.skeleton.is_none() {
+                    continue;
+                }
+
                 let mesh = self
                     .renderer
                     .asset_registry

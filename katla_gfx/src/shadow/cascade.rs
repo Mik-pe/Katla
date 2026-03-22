@@ -100,7 +100,7 @@ impl CascadeShadowMap {
             let split_near = if i == 0 { near } else { split_distances[i - 1] };
             let split_far = split_distances[i];
 
-            let corners = frustum_slice_corners(&view_proj_inv, split_near, split_far);
+            let corners = frustum_slice_corners(&view_proj_inv, split_near, split_far, camera_proj);
 
             let center = frustum_center(&corners);
             let light_view = compute_light_view(&self.light_direction, &center);
@@ -194,16 +194,26 @@ fn compute_pssm_splits(near: f32, far: f32, num_cascades: usize, lambda: f32) ->
     splits
 }
 
-fn frustum_slice_corners(view_proj_inv: &[f32; 16], near: f32, far: f32) -> [[f32; 3]; 8] {
+fn frustum_slice_corners(
+    view_proj_inv: &[f32; 16],
+    near: f32,
+    far: f32,
+    proj: &[f32; 16],
+) -> [[f32; 3]; 8] {
+    // Convert view-space distances to NDC z for reverse-Z projection.
+    // In reverse-Z, NDC z=1 is near plane, z=0 is far plane.
+    let ndc_near = view_distance_to_ndc_z(near, proj);
+    let ndc_far = view_distance_to_ndc_z(far, proj);
+
     let ndc_corners: [[f32; 3]; 8] = [
-        [-1.0, -1.0, near],
-        [1.0, -1.0, near],
-        [1.0, 1.0, near],
-        [-1.0, 1.0, near],
-        [-1.0, -1.0, far],
-        [1.0, -1.0, far],
-        [1.0, 1.0, far],
-        [-1.0, 1.0, far],
+        [-1.0, -1.0, ndc_near],
+        [1.0, -1.0, ndc_near],
+        [1.0, 1.0, ndc_near],
+        [-1.0, 1.0, ndc_near],
+        [-1.0, -1.0, ndc_far],
+        [1.0, -1.0, ndc_far],
+        [1.0, 1.0, ndc_far],
+        [-1.0, 1.0, ndc_far],
     ];
 
     let mut world_corners = [[0.0f32; 3]; 8];
@@ -214,6 +224,28 @@ fn frustum_slice_corners(view_proj_inv: &[f32; 16], near: f32, far: f32) -> [[f3
         world_corners[i] = [tp[0] * w, tp[1] * w, tp[2] * w];
     }
     world_corners
+}
+
+/// Convert a view-space distance to NDC z for reverse-Z projection.
+///
+/// For infinite reverse-Z: ndc_z = near / distance
+/// For finite reverse-Z:  ndc_z = (far + near - 2*far*near/distance) / (far - near)
+fn view_distance_to_ndc_z(distance: f32, proj: &[f32; 16]) -> f32 {
+    if proj[10].abs() < 1e-8 {
+        // Infinite projection: proj[14] = near
+        let near = proj[14];
+        near / distance
+    } else {
+        // Finite projection
+        // proj[10] = -(far + near) / (far - near)
+        // proj[14] = -2 * far * near / (far - near)
+        let a = proj[10];
+        let b = proj[14];
+        // Solve: near = b / (a - 1), far = b / (a + 1)
+        let near = b / (a - 1.0);
+        let far = b / (a + 1.0);
+        (far + near - 2.0 * far * near / distance) / (far - near)
+    }
 }
 
 fn frustum_center(corners: &[[f32; 3]; 8]) -> [f32; 3] {
