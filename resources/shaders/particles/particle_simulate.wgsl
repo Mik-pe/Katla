@@ -27,7 +27,8 @@ var<storage, read_write> dead_list: array<u32, MAX_PARTICLES>;
 @group(0) @binding(2)
 var<storage, read> alive_list: array<u32, MAX_PARTICLES>;
 
-// Alive list next (write) - surviving particles written here for next frame
+// Alive list next (write) - surviving particles written here.
+// On the CPU side, binding 3 is pointed at alive[(frame+1)%2] via descriptor update.
 @group(0) @binding(3)
 var<storage, read_write> alive_list_next: array<u32, MAX_PARTICLES>;
 
@@ -88,7 +89,13 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let idx = global_id.x;
     let local_id = idx % 64u;
 
-    let total_particles = frame_data.total_simulate_count;
+    // Use emit_count from counters (set by emit pass) rather than frame_data.total_simulate_count.
+    // emit_count reflects the actual number of particles in the alive list:
+    //   - When emit ran: emit_count = cached_alive_count + actual_emissions
+    //   - When emit was skipped: emit_count = cached_alive_count (set by reset_simulate_counters)
+    // This prevents processing stale alive_list entries when the dead pool is exhausted
+    // and fewer particles were emitted than requested.
+    let total_particles = counters.emit_count;
 
     if (idx < total_particles) {
         let particle_idx = alive_list[idx];
@@ -121,7 +128,7 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
 
     if (local_id == 0u) {
         let finished = atomicAdd(&counters.workgroups_finished, 1u);
-        let total_wg = (frame_data.total_simulate_count + 63u) / 64u;
+        let total_wg = (total_particles + 63u) / 64u;
         if (finished == total_wg - 1u) {
             let total_alive = atomicLoad(&counters.alive_count);
             draw_command.vertex_count = total_alive * 6u;

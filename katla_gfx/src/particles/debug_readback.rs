@@ -302,7 +302,7 @@ impl ParticleDebugReadback {
             ReadbackStagingBuffer::new(context, particle_data_size, "particle_readback_particles")?;
 
         // Alive list staging buffer (4 bytes per index)
-        // Only need to read alive_next (where simulate writes), not all three buffers
+        // Only need to read the simulate output region, not all three buffers
         let alive_list_size = (max_particles as u64) * std::mem::size_of::<u32>() as u64;
         let alive_list_staging =
             ReadbackStagingBuffer::new(context, alive_list_size, "particle_readback_alive_list")?;
@@ -338,6 +338,7 @@ impl ParticleDebugReadback {
         &mut self,
         command_buffer: vk::CommandBuffer,
         particle_buffer: &GlobalParticleBuffer,
+        frame_index: usize,
     ) -> Result<(), String> {
         let device = &self.context.device;
         let layout = particle_buffer.layout();
@@ -421,22 +422,22 @@ impl ParticleDebugReadback {
             }
         }
 
-        // Copy alive list (with double-buffering)
-        // Layout: alive_current[0] + alive_current[1] + alive_next
-        // CRITICAL: Read from alive_next (where simulate shader writes), not alive_current[0]
+        // Copy alive list (simulate output region)
+        // Simulate writes survivors to alive[(frame_index+1)%2]
         if let Some(staging) = &self.alive_list_staging {
-            let alive_next_offset = layout.alive_next_offset;
+            let next_frame = (frame_index + 1) % 2;
+            let alive_output_offset = layout.alive_frame_offset[next_frame];
             let alive_list_size = layout.alive_list_size;
 
             let copy_region = vk::BufferCopy {
-                src_offset: alive_next_offset, // Read from alive_next, not alive_current[0]
+                src_offset: alive_output_offset,
                 dst_offset: 0,
-                size: alive_list_size, // Only copy one alive list, not all three
+                size: alive_list_size,
             };
 
             log::debug!(
                 "record_copy: copying alive_list from offset={}, size={}",
-                alive_next_offset,
+                alive_output_offset,
                 alive_list_size
             );
 
@@ -581,7 +582,7 @@ impl ParticleDebugReadback {
             Vec::new()
         };
 
-        // Read alive list (only alive_next, where simulate shader writes)
+        // Read alive list (simulate output region)
         let alive_list = if let Some(ref staging) = self.alive_list_staging {
             staging.read::<u32>(max_particles)
         } else {

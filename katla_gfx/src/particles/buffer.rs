@@ -70,58 +70,51 @@ pub struct ParticleCounters {
 /// Computed once in `GlobalParticleBuffer::new()` and stored for reuse.
 #[derive(Clone, Copy, Debug)]
 pub struct ParticleBufferLayout {
-    /// Size of the particle data region (aligned to 64 bytes)
-    pub particles_size_aligned: u64,
-    /// Size of the dead list region (aligned to 64 bytes)
-    pub dead_list_size_aligned: u64,
-    /// Size of a single alive list region (unaligned)
+    /// Size of the particle data region
+    pub particles_size: u64,
+    /// Size of the dead list region
+    pub dead_list_size: u64,
+    /// Size of a single alive list region
     pub alive_list_size: u64,
     /// Total particle buffer size
     pub total_size: u64,
     /// Byte offset where dead list begins
     pub dead_list_offset: u64,
-    /// Byte offset where alive_current[0] begins
-    pub alive_current_offset: u64,
-    /// Byte offsets for alive_current per frame (2 frames in flight)
-    pub alive_current_frame_offset: [u64; 2],
-    /// Byte offset where alive_next begins
-    pub alive_next_offset: u64,
+    /// Byte offset where alive[0] begins
+    pub alive_offset: u64,
+    /// Byte offsets for alive ping-pong regions [0] and [1]
+    pub alive_frame_offset: [u64; 2],
     /// Maximum particles
     pub max_particles: u64,
 }
 
 impl ParticleBufferLayout {
-    /// Compute buffer layout for a given particle count.
-    ///
-    /// Aligns each region to 64 bytes for `min_storage_buffer_offset_alignment` compliance.
-    /// Alive list regions are identical in size and don't need inter-region padding.
-    pub fn new(max_particles: u32) -> Self {
+    /// Compute buffer layout for a given particle count and device alignment requirement.
+    pub fn new(max_particles: u32, alignment: u64) -> Self {
         let max_particles = max_particles as u64;
         let particle_data_size = max_particles * std::mem::size_of::<ParticleData>() as u64;
-        let particles_size_aligned = (particle_data_size + 63) & !63;
+        let particles_size = particle_data_size.next_multiple_of(alignment);
 
-        let dead_list_size = max_particles * std::mem::size_of::<u32>() as u64;
-        let dead_list_size_aligned = (dead_list_size + 63) & !63;
+        let dead_list_raw = max_particles * std::mem::size_of::<u32>() as u64;
+        let dead_list_size = dead_list_raw.next_multiple_of(alignment);
 
-        let alive_list_size = max_particles * std::mem::size_of::<u32>() as u64;
+        let alive_list_raw = max_particles * std::mem::size_of::<u32>() as u64;
+        let alive_list_size = alive_list_raw.next_multiple_of(alignment);
 
-        let dead_list_offset = particles_size_aligned;
-        let alive_current_offset = dead_list_offset + dead_list_size_aligned;
-        let alive_current_frame_offset =
-            [alive_current_offset, alive_current_offset + alive_list_size];
-        let alive_next_offset = alive_current_offset + 2 * alive_list_size;
+        let dead_list_offset = particles_size;
+        let alive_offset = dead_list_offset + dead_list_size;
+        let alive_frame_offset = [alive_offset, alive_offset + alive_list_size];
 
-        let total_size = alive_next_offset + alive_list_size;
+        let total_size = alive_offset + 2 * alive_list_size;
 
         Self {
-            particles_size_aligned,
-            dead_list_size_aligned,
+            particles_size,
+            dead_list_size,
             alive_list_size,
             total_size,
             dead_list_offset,
-            alive_current_offset,
-            alive_current_frame_offset,
-            alive_next_offset,
+            alive_offset,
+            alive_frame_offset,
             max_particles,
         }
     }
@@ -132,9 +125,8 @@ impl ParticleBufferLayout {
 /// Memory layout:
 /// - Particle data: 48 MB (1M × 48 bytes)
 /// - Dead list: 4 MB (1M × 4 bytes)
-/// - Alive list current (per-frame): 8 MB (2 × 4 MB for 2 frames in flight)
-/// - Alive list next: 4 MB
-///   Total: ~64 MB
+/// - Alive list ping-pong: 8 MB (2 × 4 MB for A/B swap)
+///   Total: ~60 MB
 ///
 /// Counters, indirect draw, and emitter configs use separate buffers.
 pub struct GlobalParticleBuffer {
@@ -180,7 +172,15 @@ impl GlobalParticleBuffer {
             ));
         }
 
-        let layout = ParticleBufferLayout::new(max_particles);
+        let alignment = unsafe {
+            context
+                .instance
+                .get_physical_device_properties(context.physical_device)
+        }
+        .limits
+        .min_storage_buffer_offset_alignment as u64;
+
+        let layout = ParticleBufferLayout::new(max_particles, alignment);
 
         let particle_buffer_info = vk::BufferCreateInfo::default()
             .size(layout.total_size)
@@ -350,7 +350,7 @@ impl GlobalParticleBuffer {
         info!(
             "Created global particle buffer: {} particles ({} MB)",
             max_particles,
-            (layout.particles_size_aligned as usize
+            (layout.particles_size as usize
                 + max_particles as usize * std::mem::size_of::<u32>() * 4
                 + counters_size)
                 / (1024 * 1024)
@@ -369,8 +369,8 @@ impl GlobalParticleBuffer {
         let offsets = [
             ("particle data", 0u64),
             ("dead list", layout.dead_list_offset),
-            ("alive_current", layout.alive_current_offset),
-            ("alive_next", layout.alive_next_offset),
+            ("alive[0]", layout.alive_offset),
+            ("alive[1]", layout.alive_frame_offset[1]),
         ];
 
         for (name, offset) in offsets.iter() {
@@ -406,7 +406,7 @@ impl GlobalParticleBuffer {
                 cmd.vk_command_buffer(),
                 self.particle_buffer,
                 0,
-                self.layout.particles_size_aligned,
+                self.layout.particles_size,
                 0,
             );
         }
@@ -506,25 +506,15 @@ impl GlobalParticleBuffer {
         let cmd = self.context.begin_single_time_commands();
 
         unsafe {
-            // Fill both alive_current regions (one per frame) with zeros
             for frame_idx in 0..2 {
                 self.context.device.cmd_fill_buffer(
                     cmd.vk_command_buffer(),
                     self.particle_buffer,
-                    self.layout.alive_current_frame_offset[frame_idx],
+                    self.layout.alive_frame_offset[frame_idx],
                     self.layout.alive_list_size,
                     0,
                 );
             }
-
-            // Fill alive_next with zeros
-            self.context.device.cmd_fill_buffer(
-                cmd.vk_command_buffer(),
-                self.particle_buffer,
-                self.layout.alive_next_offset,
-                self.layout.alive_list_size,
-                0,
-            );
         }
 
         self.context.end_single_time_commands(cmd);
@@ -617,11 +607,10 @@ impl GlobalParticleBuffer {
         }
 
         info!(
-            "Initialized particle index lists: dead={}, alive_current[2]={}, alive_next={} ({} MB total)",
+            "Initialized particle index lists: dead={}, alive[2]={} ({} MB total)",
             self.max_particles,
             0,
-            0,
-            (self.layout.alive_list_size * 4) / (1024 * 1024)
+            (self.layout.alive_list_size * 2) / (1024 * 1024)
         );
         Ok(())
     }
@@ -690,116 +679,6 @@ impl GlobalParticleBuffer {
     /// Get the indirect draw buffer handle (for vkCmdDrawIndirect).
     pub(crate) fn indirect_draw_buffer(&self) -> vk::Buffer {
         self.indirect_draw_buffer
-    }
-
-    /// Swap alive_list_next to alive_list for next frame.
-    ///
-    /// This copies the content from alive_list_next (written by simulate shader)
-    /// to alive_list[frame_idx] (read by emit/render shaders next frame).
-    ///
-    /// Uses vkCmdCopyBuffer for simplicity (Option A from design doc).
-    /// A buffer barrier is inserted after the copy to ensure synchronization.
-    ///
-    /// # Arguments
-    /// * `command_buffer` - Command buffer to record the copy into
-    /// * `frame_idx` - Current frame index (for per-frame offsets to avoid race conditions)
-    ///
-    /// # Returns
-    /// Ok(()) if swap succeeded, Err otherwise
-    pub fn swap_alive_lists(
-        &self,
-        command_buffer: vk::CommandBuffer,
-        frame_idx: usize,
-    ) -> Result<(), String> {
-        let device = &self.context.device;
-
-        let alive_list_offset = self.layout.alive_current_frame_offset[frame_idx];
-        let alive_next_offset = self.layout.alive_next_offset;
-        let alive_list_size = self.layout.alive_list_size;
-
-        // CRITICAL: Insert barrier BEFORE copy to ensure SIMULATE pass writes to alive_next are visible to TRANSFER read
-        // This prevents READ_AFTER_WRITE hazards when copying from alive_next
-        let pre_copy_barrier = vk::BufferMemoryBarrier::default()
-            .src_access_mask(vk::AccessFlags::SHADER_WRITE)
-            .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .buffer(self.particle_buffer)
-            .offset(alive_next_offset)
-            .size(alive_list_size);
-
-        unsafe {
-            device.cmd_pipeline_barrier(
-                command_buffer,
-                vk::PipelineStageFlags::COMPUTE_SHADER,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[pre_copy_barrier],
-                &[],
-            );
-        }
-
-        // Copy alive_next to alive_list (per-frame offset)
-        let copy_region = vk::BufferCopy::default()
-            .src_offset(alive_next_offset)
-            .dst_offset(alive_list_offset)
-            .size(alive_list_size);
-
-        unsafe {
-            device.cmd_copy_buffer(
-                command_buffer,
-                self.particle_buffer, // Same buffer, different regions
-                self.particle_buffer,
-                std::slice::from_ref(&copy_region),
-            );
-        }
-
-        // Insert buffer barrier to ensure copy completes before next access
-        // This prevents the emit shader from reading while copy is in progress
-        // CRITICAL: Barrier must cover both source and destination regions
-        let barriers = [
-            // Barrier for source region (alive_next)
-            vk::BufferMemoryBarrier::default()
-                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                .dst_access_mask(vk::AccessFlags::SHADER_WRITE)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .buffer(self.particle_buffer)
-                .offset(alive_next_offset)
-                .size(alive_list_size),
-            // Barrier for destination region (alive_list)
-            vk::BufferMemoryBarrier::default()
-                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                .dst_access_mask(vk::AccessFlags::SHADER_WRITE | vk::AccessFlags::SHADER_READ)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .buffer(self.particle_buffer)
-                .offset(alive_list_offset)
-                .size(alive_list_size),
-        ];
-
-        unsafe {
-            // Use legacy barrier for compatibility
-            device.cmd_pipeline_barrier(
-                command_buffer,
-                vk::PipelineStageFlags::COMPUTE_SHADER | vk::PipelineStageFlags::TRANSFER,
-                vk::PipelineStageFlags::COMPUTE_SHADER | vk::PipelineStageFlags::TRANSFER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &barriers,
-                &[],
-            );
-        }
-
-        // CRITICAL FIX: We NO LONGER update alive_count here!
-        // The simulate shader has already set it correctly with the survivor count.
-        // Since we removed the reset from simulate, the count now persists through swap.
-        // The swap just copies the alive_list data, the counter is already correct.
-
-        log::debug!("Swap: alive_count preserved from simulate pass (no GPU update needed)");
-
-        Ok(())
     }
 
     /// Destroy all resources.
