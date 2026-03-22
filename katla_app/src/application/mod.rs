@@ -1101,12 +1101,19 @@ impl Application {
             vertex_count
         );
 
-        // 3. Create mesh (skinned or regular)
+        // 3. Create mesh (skinned or regular) using SOA attribute buffers
         let mesh_handle = if model.has_skinning {
-            self.renderer
-                .create_mesh(&model.skinned_vertex_data, &indices)
+            self.renderer.create_mesh_soa(
+                &model.skinned_vertex_attributes,
+                model.skinned_vertex_data.len() as u32,
+                &indices,
+            )
         } else {
-            self.renderer.create_mesh(&model.vertex_data, &indices)
+            self.renderer.create_mesh_soa(
+                &model.vertex_attributes,
+                model.vertex_data.len() as u32,
+                &indices,
+            )
         };
 
         // 4. Create material (skinned or regular)

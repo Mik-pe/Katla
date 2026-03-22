@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use gltf::buffer::Data as BufferData;
 use gltf::image::Data as ImageData;
 use gltf::Document;
+use katla_gfx::AttributeType;
 use katla_math::{Mat4, Quat, Sphere, Vec3};
 use log::{debug, warn};
 
@@ -22,6 +24,10 @@ pub struct GLTFModel {
     pub materials: Vec<GltfMaterialInfo>,
     pub vertex_data: Vec<VertexPBR>,
     pub skinned_vertex_data: Vec<VertexPBRSkinned>,
+    /// SOA vertex attributes for non-skinned meshes (separate per-attribute byte arrays).
+    pub vertex_attributes: HashMap<AttributeType, Vec<u8>>,
+    /// SOA vertex attributes for skinned meshes (separate per-attribute byte arrays).
+    pub skinned_vertex_attributes: HashMap<AttributeType, Vec<u8>>,
     pub has_skinning: bool,
     pub index_data: Vec<u8>,
     pub index_stride: u8,
@@ -79,6 +85,56 @@ impl GLTFModel {
                 ];
             }
         }
+    }
+
+    fn deinterleave_pbr(vertices: &[VertexPBR]) -> HashMap<AttributeType, Vec<u8>> {
+        let mut map = HashMap::new();
+        if vertices.is_empty() {
+            return map;
+        }
+        let mut positions = Vec::with_capacity(vertices.len() * 12);
+        let mut normals = Vec::with_capacity(vertices.len() * 12);
+        let mut tangents = Vec::with_capacity(vertices.len() * 16);
+        let mut tex_coords = Vec::with_capacity(vertices.len() * 8);
+        for v in vertices {
+            positions.extend_from_slice(bytemuck::bytes_of(&v.position));
+            normals.extend_from_slice(bytemuck::bytes_of(&v.normal));
+            tangents.extend_from_slice(bytemuck::bytes_of(&v.tangent));
+            tex_coords.extend_from_slice(bytemuck::bytes_of(&v.tex_coord0));
+        }
+        map.insert(AttributeType::Position, positions);
+        map.insert(AttributeType::Normal, normals);
+        map.insert(AttributeType::Tangent, tangents);
+        map.insert(AttributeType::TexCoord0, tex_coords);
+        map
+    }
+
+    fn deinterleave_pbr_skinned(vertices: &[VertexPBRSkinned]) -> HashMap<AttributeType, Vec<u8>> {
+        let mut map = HashMap::new();
+        if vertices.is_empty() {
+            return map;
+        }
+        let mut positions = Vec::with_capacity(vertices.len() * 12);
+        let mut normals = Vec::with_capacity(vertices.len() * 12);
+        let mut tangents = Vec::with_capacity(vertices.len() * 16);
+        let mut tex_coords = Vec::with_capacity(vertices.len() * 8);
+        let mut joint_indices = Vec::with_capacity(vertices.len() * 8);
+        let mut joint_weights = Vec::with_capacity(vertices.len() * 16);
+        for v in vertices {
+            positions.extend_from_slice(bytemuck::bytes_of(&v.position));
+            normals.extend_from_slice(bytemuck::bytes_of(&v.normal));
+            tangents.extend_from_slice(bytemuck::bytes_of(&v.tangent));
+            tex_coords.extend_from_slice(bytemuck::bytes_of(&v.tex_coord0));
+            joint_indices.extend_from_slice(bytemuck::bytes_of(&v.joint_indices));
+            joint_weights.extend_from_slice(bytemuck::bytes_of(&v.joint_weights));
+        }
+        map.insert(AttributeType::Position, positions);
+        map.insert(AttributeType::Normal, normals);
+        map.insert(AttributeType::Tangent, tangents);
+        map.insert(AttributeType::TexCoord0, tex_coords);
+        map.insert(AttributeType::JointIndices, joint_indices);
+        map.insert(AttributeType::JointWeights, joint_weights);
+        map
     }
 
     /// Parse a single GLTF node into vertex and index data.
@@ -149,7 +205,12 @@ impl GLTFModel {
             }
 
             // Build vertex data from parsed attributes
-            let (vertex_data, sphere) = build_vertex_data(positions, normals, tangents, tex_coords);
+            let (vertex_data, sphere) = build_vertex_data(
+                positions.clone(),
+                normals.clone(),
+                tangents.clone(),
+                tex_coords.clone(),
+            );
             (vertex_data, index_data, index_stride, sphere)
         } else {
             // No mesh - return empty data
@@ -349,39 +410,29 @@ impl GLTFModel {
 
         // Parse each node and apply world transforms
         for node in &all_nodes {
-            // Parse both regular and skinned vertex data
             let (mut vertex_data, index_data, index_stride, _sphere) = self.parse_node(node);
             let (skinned_data, skinned_index_data, skinned_index_stride, _, has_skinning) =
                 self.parse_node_skinned(node);
 
-            // Use skinned index data for skinned meshes
             let (final_index_data, final_index_stride) = if has_skinning {
                 (skinned_index_data, skinned_index_stride)
             } else {
                 (index_data, index_stride)
             };
 
-            // Get lengths before extending
             let vertex_count = vertex_data.len();
             let skinned_vertex_count = skinned_data.len();
 
-            debug!(
-                "parse_gltf node {} '{}': {} vertices, {} skinned vertices, {} index bytes, has_skinning={}",
-                node.index(),
-                node.name().unwrap_or("unnamed"),
-                vertex_count,
-                skinned_vertex_count,
-                final_index_data.len(),
-                has_skinning
-            );
-
             // Apply world transform to non-skinned vertices
-            // Skinned meshes use joint matrices for transformation, so we don't apply node transforms
             if !has_skinning && !vertex_data.is_empty() {
                 if let Some(world_transform) = world_transforms.get(&node.index()) {
                     Self::transform_vertex_data(&mut vertex_data, world_transform);
                 }
             }
+
+            // Build SOA attributes from the (possibly transformed) interleaved data
+            let soa_attributes = Self::deinterleave_pbr(&vertex_data);
+            let skinned_soa_attributes = Self::deinterleave_pbr_skinned(&skinned_data);
 
             // Adjust indices by the current vertex offset
             let offset = if has_skinning {
@@ -394,6 +445,20 @@ impl GLTFModel {
 
             self.vertex_data.extend(vertex_data);
             self.skinned_vertex_data.extend(skinned_data);
+
+            for (attr_type, data) in soa_attributes {
+                self.vertex_attributes
+                    .entry(attr_type)
+                    .or_default()
+                    .extend_from_slice(&data);
+            }
+            for (attr_type, data) in skinned_soa_attributes {
+                self.skinned_vertex_attributes
+                    .entry(attr_type)
+                    .or_default()
+                    .extend_from_slice(&data);
+            }
+
             if has_skinning {
                 self.has_skinning = true;
             }
@@ -475,6 +540,8 @@ impl GLTFModel {
             materials,
             vertex_data: vec![],
             skinned_vertex_data: vec![],
+            vertex_attributes: HashMap::new(),
+            skinned_vertex_attributes: HashMap::new(),
             has_skinning: false,
             index_data: vec![],
             index_stride: 0,

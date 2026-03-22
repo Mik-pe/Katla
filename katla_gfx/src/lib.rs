@@ -214,6 +214,9 @@ pub use texture::{ImageFormat, TextureDescriptor, TextureUsage};
 // Vertex types (public module for discoverability and extensibility)
 pub use vertex::{VertexPBR, VertexPBRSkinned, VertexUI};
 
+// SOA vertex attribute types
+pub use vulkan::vertex_attribute::AttributeType;
+
 // Render pass system
 pub use render_pass::{
     AttachmentInfo, AttachmentResources, BarrierKind, ClearValue, LoadOp, StoreOp,
