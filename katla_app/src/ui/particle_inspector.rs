@@ -1,7 +1,7 @@
 //! Particle inspector widget for runtime particle emitter editing.
 
 use katla_ecs::EntityId;
-use katla_gfx::particles::ParticleStats;
+use super::ParticleStats;
 use katla_math::{Rect2D, Vec2};
 use katla_ui::{
     widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle},

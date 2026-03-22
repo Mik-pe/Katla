@@ -5,6 +5,7 @@
 mod debug_overlay;
 mod editor_ui;
 mod particle_inspector;
+mod particle_stats;
 pub mod renderer;
 pub mod theme;
 
@@ -16,5 +17,6 @@ pub use particle_inspector::{
     EmitterConfigView, ParticleInspector, ParticleInspectorAction, ParticleInspectorData,
     ParticleInspectorState,
 };
+pub use particle_stats::ParticleStats;
 pub use renderer::UIRenderer;
 pub use theme::Theme;

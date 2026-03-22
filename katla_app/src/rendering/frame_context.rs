@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn test_frame_context_new() {
         let frame = FrameContext::new();
-        assert_eq!(frame.instance_count(), 0);
+        assert_eq!(frame.instance_count(), 1); // Slot 0 reserved for fullscreen passes
     }
 
     #[test]
@@ -372,26 +372,26 @@ mod tests {
     fn test_instance_allocation() {
         let mut frame = FrameContext::new();
 
-        // Each draw allocates 1 instance
-        let _ = frame.draw(MeshHandle::NONE, MaterialHandle::NONE);
-        assert_eq!(frame.instance_count(), 1);
-
+        // Each draw allocates 1 instance (starting from slot 1, slot 0 reserved)
         let _ = frame.draw(MeshHandle::NONE, MaterialHandle::NONE);
         assert_eq!(frame.instance_count(), 2);
 
         let _ = frame.draw(MeshHandle::NONE, MaterialHandle::NONE);
         assert_eq!(frame.instance_count(), 3);
+
+        let _ = frame.draw(MeshHandle::NONE, MaterialHandle::NONE);
+        assert_eq!(frame.instance_count(), 4);
     }
 
     #[test]
     fn test_instanced_allocation() {
         let mut frame = FrameContext::new();
 
-        // Instanced draw with 5 instances
+        // Instanced draw with 5 instances (starting from slot 1)
         let instances = vec![InstanceData::new(); 5];
         let _ = frame.draw_instanced(MeshHandle::NONE, MaterialHandle::NONE, instances);
 
-        assert_eq!(frame.instance_count(), 5);
+        assert_eq!(frame.instance_count(), 6);
     }
 
     #[test]
@@ -399,10 +399,10 @@ mod tests {
         let mut frame = FrameContext::new();
 
         frame.draw(MeshHandle::NONE, MaterialHandle::NONE).submit();
-        assert_eq!(frame.instance_count(), 1);
+        assert_eq!(frame.instance_count(), 2);
 
         let list = frame.take_draw_list();
-        assert_eq!(frame.instance_count(), 0);
+        assert_eq!(frame.instance_count(), 1); // Resets to 1 (slot 0 reserved)
         assert!(!list.is_empty());
     }
 
