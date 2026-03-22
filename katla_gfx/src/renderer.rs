@@ -179,6 +179,8 @@ pub struct VulkanRenderer {
     shadow_cascade_descriptor_pool: Option<vk::DescriptorPool>,
     /// Depth prepass: depth-only pipeline for camera-space depth rendering
     depth_prepass_pipeline: Option<PipelineHandle>,
+    /// Depth prepass: depth-only pipeline for skinned meshes
+    depth_prepass_skinned_pipeline: Option<PipelineHandle>,
     /// Base bindless index for per-frame depth textures.
     /// Actual index for frame N is `depth_texture_base_index + N`.
     depth_texture_base_index: Option<u32>,
@@ -341,6 +343,7 @@ impl VulkanRenderer {
             shadow_cascade_mapped_ptr: None,
             shadow_cascade_descriptor_pool: None,
             depth_prepass_pipeline: None,
+            depth_prepass_skinned_pipeline: None,
             depth_texture_base_index: None,
             first_frame_rendered: false,
         })
@@ -1160,6 +1163,69 @@ impl VulkanRenderer {
     /// Get the depth prepass pipeline handle.
     pub fn depth_prepass_pipeline(&self) -> Option<PipelineHandle> {
         self.depth_prepass_pipeline
+    }
+
+    /// Initialize the skinned depth prepass pipeline.
+    ///
+    /// Same as the regular depth prepass but uses the skinned vertex layout
+    /// (includes joint indices/weights) and binds skeleton joint matrices at Set 2.
+    pub fn init_depth_prepass_skinned_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        use crate::pipeline::{CullMode, FrontFace};
+        use crate::vertex::VertexLayout;
+        use crate::vulkan::material::builder::PipelineBuilder;
+
+        let mut cache = self.material_compiler.shader_cache.borrow_mut();
+        let vert_module = cache
+            .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to load skinned depth prepass vertex shader: {:?}",
+                    e
+                ))
+            })?;
+        let frag_module = cache
+            .load_shader(shader_path, vk::ShaderStageFlags::FRAGMENT)
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to load skinned depth prepass fragment shader: {:?}",
+                    e
+                ))
+            })?;
+        drop(cache);
+
+        let storage_layout = self.storage_descriptor_sets[0].layout();
+        let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
+
+        let pipeline = PipelineBuilder::new(self.context.clone())
+            .with_shaders(vert_module, frag_module)
+            .with_descriptor_layouts(vec![storage_layout, skeleton_layout])
+            .with_vertex_binding(crate::vulkan::vertexbinding::VertexBinding::from(
+                &VertexLayout::pbr_skinned(),
+            ))
+            .with_depth_test(true, true, crate::pipeline::CompareOp::Greater)
+            .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
+            .with_rendering_formats(None, Some(crate::texture::ImageFormat::D32SfloatS8Uint))
+            .build_dynamic()
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to build skinned depth prepass pipeline: {:?}",
+                    e
+                ))
+            })?;
+
+        let pipeline_handle = self.asset_registry.register_pipeline(pipeline);
+        self.depth_prepass_skinned_pipeline = Some(pipeline_handle);
+
+        info!("Skinned depth prepass pipeline initialized (reverse-Z, back-face culled)");
+        Ok(())
+    }
+
+    /// Get the skinned depth prepass pipeline handle.
+    pub fn depth_prepass_skinned_pipeline(&self) -> Option<PipelineHandle> {
+        self.depth_prepass_skinned_pipeline
     }
 
     /// Register per-frame depth textures with the bindless system.

@@ -116,7 +116,7 @@ impl Application {
         // Render using the frame graph
         let draw_list = frame.take_draw_list();
 
-        log::debug!(
+        log::trace!(
             "About to submit {} draw calls to geometry pass",
             draw_list.len()
         );
@@ -157,7 +157,7 @@ impl Application {
                         1 // ALWAYS run at least 1 workgroup for swap to happen
                     };
 
-                    log::debug!(
+                    log::trace!(
                         "Particle compute workgroups: emit {} particles = {} workgroups, simulate {} alive + {} emit = {} total particles = {} workgroups",
                         emit_count,
                         emit_workgroups,
@@ -210,7 +210,7 @@ impl Application {
 
         self.renderer.render(&mut self.frame_graph, |frame| {
             // Submit draw list to the geometry pass
-            log::debug!(
+            log::trace!(
                 "Inside render closure: submitting {} draw calls to geometry pass",
                 draw_list.len()
             );
@@ -218,7 +218,7 @@ impl Application {
                 frame.submit("depth_prepass", &draw_list);
                 frame.submit("geometry", &draw_list);
                 frame.submit("shadow", &draw_list);
-                log::debug!(
+                log::trace!(
                     "Submitted {} draw calls to depth_prepass, geometry, and shadow passes",
                     draw_list.len()
                 );
@@ -228,7 +228,7 @@ impl Application {
 
             // Submit UI draw list to the UI pass
             if let Some(ref ui_list) = ui_draw_list {
-                log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
+                log::trace!("Submitting {} UI draw commands", ui_list.commands.len());
                 frame.submit_ui("ui", ui_list);
             }
         });
@@ -294,7 +294,7 @@ impl Application {
         }
 
         if !lights.is_empty() {
-            log::debug!(
+            log::trace!(
                 "Uploading {} point lights to GPU for Forward+ culling",
                 lights.len()
             );
@@ -380,7 +380,7 @@ impl Application {
             drawable_count += 1;
         }
 
-        log::debug!(
+        log::trace!(
             "Submitted {} draw calls from {} entities",
             drawable_count,
             entity_count

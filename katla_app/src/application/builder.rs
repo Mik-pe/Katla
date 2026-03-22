@@ -245,6 +245,13 @@ impl ApplicationBuilder {
                 message: format!("Failed to initialize depth prepass pipeline: {}", e),
             })?;
 
+        let depth_prepass_skinned_shader_path = resources.shader_path("depth_prepass_skinned.wgsl");
+        renderer
+            .init_depth_prepass_skinned_pipeline(&depth_prepass_skinned_shader_path)
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to initialize skinned depth prepass pipeline: {}", e),
+            })?;
+
         // Compile geometry shader for PBR model rendering
         log::info!("About to compile PBR geometry shader...");
         let geometry_shader_path = resources.shader_path("model_pbr.wgsl");

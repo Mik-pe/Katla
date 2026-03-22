@@ -232,7 +232,7 @@ impl FrameGraph {
                     .output_format
                     .unwrap_or(crate::texture::ImageFormat::B8G8R8A8Srgb);
 
-                log::debug!(
+                log::trace!(
                     "resolve_materials: pass '{}' material={:?} format={:?}",
                     pass.name,
                     material_handle,
@@ -271,7 +271,7 @@ impl FrameGraph {
         // Get the frame-in-flight index (single source of truth from storage_manager)
         let frame_idx = renderer.current_frame();
 
-        log::debug!(
+        log::trace!(
             "Frame graph execute: frame_idx={}, image_index={}",
             frame_idx,
             image_index
@@ -712,7 +712,7 @@ impl FrameGraph {
 
                 // Store the slot in the texture for later updates
                 texture.bindless_slot = Some(slot);
-                log::debug!("  Frame {}: slot {}", frame_idx, slot);
+                log::trace!("  Frame {}: slot {}", frame_idx, slot);
             }
         }
 
@@ -1099,7 +1099,7 @@ impl<'a> Frame<'a> {
     fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
         // Use storage_manager.current_frame() consistently for all frame resource selection
         let frame_idx = self.current_frame();
-        log::debug!(
+        log::trace!(
             "=== execute_passes: frame_idx={}, {} passes to execute ===",
             frame_idx,
             self.graph.passes.len()
@@ -1157,11 +1157,11 @@ impl<'a> Frame<'a> {
             // This allows subsequent passes that write to backbuffer to use LOAD instead of CLEAR
             // For example: compositing pass writes to backbuffer, then UI pass should LOAD that content
             if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
-                log::debug!(
+                log::trace!(
                     "Pass '{}' will write to backbuffer, tracking state BEFORE execution",
                     pass.name
                 );
-                log::debug!(
+                log::trace!(
                     "Current resource_states: {:?}",
                     self.resource_states.keys().collect::<Vec<_>>()
                 );
@@ -1169,7 +1169,7 @@ impl<'a> Frame<'a> {
                     BACKBUFFER_NAME.to_string(),
                     super::resource::ResourceState::ColorAttachment,
                 );
-                log::debug!(
+                log::trace!(
                     "After tracking, resource_states: {:?}",
                     self.resource_states.keys().collect::<Vec<_>>()
                 );
@@ -1192,7 +1192,7 @@ impl<'a> Frame<'a> {
                                 .unwrap_or(false)
                         })
                     {
-                        log::debug!("'{}' -> shadow pass (no-op, clearing atlas)", pass.name);
+                        log::trace!("'{}' -> shadow pass (no-op, clearing atlas)", pass.name);
                         self.execute_shadow_pass(&cmd, pass)?;
                     }
                     // Check if this is a depth prepass (no material, no pipeline, no color writes,
@@ -1202,18 +1202,18 @@ impl<'a> Frame<'a> {
                         && pass.writes.is_empty()
                         && pass.uses_depth
                     {
-                        log::debug!("'{}' -> depth prepass", pass.name);
+                        log::trace!("'{}' -> depth prepass", pass.name);
                         self.execute_depth_prepass(&cmd, pass, data)?;
                     }
                     // Check if this is a compositing pass (has material AND compositing_viewports)
                     else if let Some(material_handle) = pass.material {
                         if pass.compositing_viewports.is_some() && data.draw_lists.is_empty() {
-                            log::debug!("'{}' -> compositing pass", pass.name);
+                            log::trace!("'{}' -> compositing pass", pass.name);
                             self.execute_compositing_pass(&cmd, pass, material_handle)?;
                         } else {
                             // Pass has material but is NOT compositing (e.g., UI pass)
                             // Fall through to graphics pass execution
-                            log::debug!(
+                            log::trace!(
                                 "'{}' -> graphics pass with material (draw_lists={}, ui_draw_lists={})",
                                 pass.name,
                                 data.draw_lists.len(),
@@ -1224,12 +1224,12 @@ impl<'a> Frame<'a> {
                     }
                     // Check if this is a fullscreen pass (has pipeline, no draw lists)
                     else if pass.pipeline.is_some() && data.draw_lists.is_empty() {
-                        log::debug!("'{}' -> fullscreen pass", pass.name);
+                        log::trace!("'{}' -> fullscreen pass", pass.name);
                         if let Some(pipeline) = pass.pipeline {
                             self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
                         }
                     } else {
-                        log::debug!(
+                        log::trace!(
                             "'{}' -> graphics pass (draw_lists={}, ui_draw_lists={})",
                             pass.name,
                             data.draw_lists.len(),
@@ -1240,7 +1240,7 @@ impl<'a> Frame<'a> {
                 }
                 super::pass::PassType::Compute => {
                     // Compute pass (e.g., particle simulation)
-                    log::debug!("'{}' -> compute pass", pass.name);
+                    log::trace!("'{}' -> compute pass", pass.name);
                     if let Some(pipeline) = pass.pipeline {
                         self.execute_compute_pass(&cmd, pass, pipeline)?;
                     } else {
@@ -1298,7 +1298,7 @@ impl<'a> Frame<'a> {
             return Ok(());
         };
 
-        log::debug!(
+        log::trace!(
             "[BARRIER] Pre-pass barriers for '{}': reads={:?}, writes={:?}",
             pass.name,
             pass.reads,
@@ -1319,7 +1319,7 @@ impl<'a> Frame<'a> {
                 .depth_render_textures
                 .get(frame_idx)
             {
-                log::debug!(
+                log::trace!(
                     "[BARRIER] Depth render-pass sync before '{}' (previous pass wrote depth)",
                     pass.name
                 );
@@ -1423,7 +1423,7 @@ impl<'a> Frame<'a> {
                 continue;
             };
 
-            log::debug!(
+            log::trace!(
                 "[BARRIER] Pass '{}' reading transient texture '{}': current_layout={:?}, format={:?}",
                 pass.name,
                 read_name,
@@ -1446,7 +1446,7 @@ impl<'a> Frame<'a> {
                 // This persists across frames via RefCell
                 let old_layout = transient.current_layout();
 
-                log::debug!(
+                log::trace!(
                     "[BARRIER] Pass '{}' transitioning '{}' from {:?} to {:?}",
                     pass.name,
                     read_name,
@@ -1604,7 +1604,7 @@ impl<'a> Frame<'a> {
         pass: &PassDesc,
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        log::debug!(
+        log::trace!(
             "🎨 [GRAPHICS] PASS '{}' with frame_idx={}, draw_lists={}, ui_draw_lists={}",
             pass.name,
             self.current_frame(),
@@ -1631,7 +1631,7 @@ impl<'a> Frame<'a> {
             // Check if a previous pass already wrote to the backbuffer
             let backbuffer_written = self.resource_states.contains_key(BACKBUFFER_NAME);
             let load_op = if backbuffer_written {
-                log::debug!(
+                log::trace!(
                     "✅ PASS '{}': Using LOAD for backbuffer (previous pass wrote to it)",
                     pass.name
                 );
@@ -1975,7 +1975,7 @@ impl<'a> Frame<'a> {
                         RenderGraphError::VulkanError(format!("Particle render failed: {}", e))
                     })?;
 
-                log::debug!("Drew {} particles successfully", alive_count);
+                log::trace!("Drew {} particles successfully", alive_count);
             } else {
                 log::warn!("Particle render pipeline not created, skipping particle rendering");
             }
@@ -2029,14 +2029,14 @@ impl<'a> Frame<'a> {
         cmd: &crate::vulkan::commandbuffer::CommandBuffer,
         draw_list: &DrawList,
     ) -> Result<(), RenderGraphError> {
-        log::debug!(
+        log::trace!(
             "execute_draw_list: {} draw calls to execute",
             draw_list.draws.len()
         );
 
         // Execute regular draw calls
         for draw_call in &draw_list.draws {
-            log::debug!(
+            log::trace!(
                 "Executing draw call: mesh={:?}, material={:?}",
                 draw_call.mesh,
                 draw_call.material
@@ -2044,7 +2044,7 @@ impl<'a> Frame<'a> {
             self.execute_draw_call(cmd, draw_call)?;
         }
 
-        log::debug!(
+        log::trace!(
             "execute_draw_list: completed {} draw calls",
             draw_list.draws.len()
         );
@@ -2573,7 +2573,7 @@ impl<'a> Frame<'a> {
         pipeline_handle: crate::handle::PipelineHandle,
     ) -> Result<(), RenderGraphError> {
         let current_frame = self.current_frame();
-        log::debug!(
+        log::trace!(
             "[FULLSCREEN] Pass '{}' execution: frame_idx={}, writes={:?}, reads={:?}",
             pass.name,
             current_frame,
@@ -2609,7 +2609,7 @@ impl<'a> Frame<'a> {
             // Check if this is a transient texture (fullscreen pass like tonemap)
             let frame_idx = self.current_frame();
             if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
-                log::debug!(
+                log::trace!(
                     "[FULLSCREEN] Pass '{}' writing to transient texture '{}' at frame_idx={}, format={:?}, extent={}x{}",
                     pass.name,
                     color_name,
@@ -2755,7 +2755,7 @@ impl<'a> Frame<'a> {
         pipeline_handle: crate::handle::PipelineHandle,
     ) -> Result<(), RenderGraphError> {
         let current_frame = self.current_frame();
-        log::debug!(
+        log::trace!(
             "[COMPUTE] Pass '{}' execution: frame_idx={}, pipeline={:?}",
             pass.name,
             current_frame,
@@ -2795,7 +2795,7 @@ impl<'a> Frame<'a> {
         if let Some(ref mut particle_system) = self.renderer.particle_system
             && pass.name.contains("particle")
         {
-            log::debug!("Executing particle compute pass '{}'", pass.name);
+            log::trace!("Executing particle compute pass '{}'", pass.name);
 
             // Use pre-calculated workgroup count from frame graph
             // These were calculated in renderer.rs based on current particle state
@@ -2922,7 +2922,7 @@ impl<'a> Frame<'a> {
             device.cmd_dispatch(cmd.vk_command_buffer(), 64, 1, 1);
         }
 
-        log::debug!("Compute pass '{}' executed successfully", pass.name);
+        log::trace!("Compute pass '{}' executed successfully", pass.name);
         Ok(())
     }
 
@@ -2937,7 +2937,7 @@ impl<'a> Frame<'a> {
     ) -> Result<(), RenderGraphError> {
         let frame_idx = self.current_frame();
 
-        log::debug!(
+        log::trace!(
             "[SHADOW] Pass '{}' execution: frame_idx={}, writes={:?}",
             pass.name,
             frame_idx,
@@ -3211,7 +3211,7 @@ impl<'a> Frame<'a> {
             extent,
         };
 
-        log::debug!(
+        log::trace!(
             "[DEPTH_PREPASS] frame_idx={}, draw_lists={}",
             frame_idx,
             data.draw_lists.len()
@@ -3280,11 +3280,70 @@ impl<'a> Frame<'a> {
         };
         cmd.set_scissor(&[scissor]);
 
-        // Draw all geometry (depth only — same draw lists as geometry pass, skip skinned meshes)
+        // Draw all geometry (depth only — same draw lists as geometry pass)
+        let skinned_pipeline_handle = self.renderer.depth_prepass_skinned_pipeline();
+
+        let (skinned_pipeline, skinned_layout) = if let Some(handle) = skinned_pipeline_handle {
+            self.renderer
+                .asset_registry
+                .get_pipeline_vk_handles(handle)
+                .map(|(p, l)| (Some(p), Some(l)))
+                .unwrap_or((None, None))
+        } else {
+            (None, None)
+        };
+
+        let mut current_pipeline_is_skinned = false;
+
         for draw_list in &data.draw_lists {
             for draw_call in draw_list.iter() {
-                if !draw_call.skeleton.is_none() {
+                let is_skinned = !draw_call.skeleton.is_none();
+
+                // Skip skinned meshes if the skinned pipeline is not available
+                if is_skinned && skinned_pipeline.is_none() {
                     continue;
+                }
+
+                // Bind the correct pipeline when switching between skinned and non-skinned
+                if is_skinned != current_pipeline_is_skinned {
+                    if is_skinned {
+                        unsafe {
+                            self.renderer.context.device.cmd_bind_pipeline(
+                                cmd.vk_command_buffer(),
+                                vk::PipelineBindPoint::GRAPHICS,
+                                skinned_pipeline.unwrap(),
+                            );
+                        }
+
+                        let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
+                        cmd.bind_descriptor_sets(skinned_layout.unwrap(), 0, &[storage_ds], &[]);
+                    } else {
+                        unsafe {
+                            self.renderer.context.device.cmd_bind_pipeline(
+                                cmd.vk_command_buffer(),
+                                vk::PipelineBindPoint::GRAPHICS,
+                                pipeline,
+                            );
+                        }
+
+                        let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
+                        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
+                    }
+                    current_pipeline_is_skinned = is_skinned;
+                }
+
+                // Bind skeleton descriptor set for skinned meshes
+                if is_skinned {
+                    let skeleton_ds = self
+                        .renderer
+                        .get_skeleton_descriptor(draw_call.skeleton)
+                        .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
+                    cmd.bind_descriptor_sets(
+                        skinned_layout.unwrap(),
+                        1,
+                        &[skeleton_ds.vk_set()],
+                        &[],
+                    );
                 }
 
                 let mesh = self
@@ -3345,7 +3404,7 @@ impl<'a> Frame<'a> {
                     "Compositing pass missing viewport data".to_string(),
                 ))?;
 
-        log::debug!(
+        log::trace!(
             "[COMPOSITING] Pass '{}' execution: frame_idx={}, viewport_count={}, writes={:?}",
             pass.name,
             current_frame,
@@ -3545,7 +3604,7 @@ impl<'a> Frame<'a> {
                     ))
                 })?;
 
-            log::debug!(
+            log::trace!(
                 "[COMPOSITING] Looking up viewport texture: '{}' (handle={})",
                 resource_name,
                 handle.index()
@@ -3567,7 +3626,7 @@ impl<'a> Frame<'a> {
                     ))
                 })?;
 
-            log::debug!(
+            log::trace!(
                 "[COMPOSITING] Found viewport texture '{}': format={:?}, extent={}x{}",
                 resource_name,
                 transient.format,
