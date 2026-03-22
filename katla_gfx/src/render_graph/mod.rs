@@ -34,15 +34,20 @@ mod builder;
 mod compiler;
 pub mod descriptor_sets;
 mod error;
+mod frame;
+mod frame_graph;
 mod graph;
 mod pass;
 mod passes;
 mod resource;
+mod transient_texture;
 
 // Public API - minimal surface
 pub use descriptor_sets::CompositingDescriptorSet;
 pub use error::RenderGraphError;
-pub use graph::{Frame, FrameGraph, FrameGraphBuilder};
+pub use frame::Frame;
+pub use frame_graph::{BACKBUFFER_NAME, FrameGraph, FrameGraphBuilder};
+pub use graph::TransientTexture;
 pub use pass::{PassDesc, PassType};
 pub use passes::{
     CompositePass, ComputePass, DepthPrepass, FullscreenPass, GeometryPass, ShadowPass,

@@ -6,8 +6,12 @@
 //! - `viewport` - Viewport system management (TODO: extract from lib.rs)
 //! - `ui` - UI buffer and texture management (TODO: extract from lib.rs)
 
+pub mod depth_prepass;
+pub mod light_culling;
 pub mod mesh_manager;
+pub mod particle_init;
 pub mod registry;
+pub mod shadow;
 pub mod types;
 pub mod ui_renderer;
 pub mod viewport_manager;
@@ -29,7 +33,7 @@ use crate::{
     VulkanFrameCtx, viewport::Viewport,
 };
 use ash::vk;
-use log::{error, info, warn};
+use log::{error, info};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{ffi::CString, rc::Rc};
 
@@ -144,48 +148,12 @@ pub struct VulkanRenderer {
     pub ui_renderer: ui_renderer::UIRenderer,
     /// Global particle system for GPU-driven particle effects.
     pub particle_system: Option<crate::particles::GlobalParticleSystem>,
-    /// Light culling buffers for Forward+ dynamic lighting.
-    pub light_culling: Option<crate::lighting::LightCullingBuffers>,
-    /// Light culling compute pipeline (stored directly, not in registry).
-    light_culling_pipeline: Option<crate::vulkan::material::compute_pipeline::ComputePipeline>,
-    /// Light culling compute shader path (needed to recreate pipeline on resize).
-    light_culling_shader_path: Option<std::path::PathBuf>,
-    /// Shadow system: CSM cascade computation
-    pub shadow_csm: Option<crate::shadow::CascadeShadowMap>,
-    /// Shadow system: GPU buffers (shadow data storage buffer, atlas view, sampler)
-    pub shadow_buffers: Option<crate::shadow::ShadowBuffers>,
-    /// Shadow system: descriptor set layout (Set 4, owned by renderer)
-    shadow_descriptor_layout: Option<vk::DescriptorSetLayout>,
-    /// Shadow system: comparison sampler for depth comparison
-    shadow_sampler: Option<vk::Sampler>,
-    /// Shadow system: descriptor pool for per-frame shadow descriptor sets
-    shadow_descriptor_pool: Option<vk::DescriptorPool>,
-    /// Shadow system: per-frame descriptor sets (Set 4)
-    shadow_descriptor_sets: Vec<vk::DescriptorSet>,
-    /// Shadow system: depth-only pipeline for shadow map rendering
-    shadow_pipeline: Option<PipelineHandle>,
-    /// Shadow system: depth-only pipeline for skinned mesh shadow rendering
-    shadow_pipeline_skinned: Option<PipelineHandle>,
-    /// Shadow system: empty descriptor set layout (Set 1 placeholder for shadow pipeline)
-    shadow_empty_descriptor_layout: Option<vk::DescriptorSetLayout>,
-    /// Shadow system: cascade descriptor set layout (Set 2 for shadow depth shader)
-    shadow_cascade_descriptor_layout: Option<vk::DescriptorSetLayout>,
-    /// Shadow system: per-frame cascade descriptor sets (Set 2)
-    shadow_cascade_descriptor_sets: Vec<vk::DescriptorSet>,
-    /// Shadow system: per-frame cascade storage buffers (CPU→GPU, contains ShadowCascadeGPU array)
-    shadow_cascade_buffers: Vec<vk::Buffer>,
-    /// Shadow system: per-frame cascade buffer allocations
-    shadow_cascade_allocations: Vec<gpu_allocator::vulkan::Allocation>,
-    /// Shadow system: per-frame cascade buffer mapped pointers
-    shadow_cascade_mapped_ptrs: Vec<*mut u8>,
-    /// Shadow system: cascade descriptor pool
-    shadow_cascade_descriptor_pool: Option<vk::DescriptorPool>,
-    /// Depth prepass: depth-only pipeline for camera-space depth rendering
-    depth_prepass_pipeline: Option<PipelineHandle>,
-    /// Depth prepass: depth-only pipeline for skinned meshes
-    depth_prepass_skinned_pipeline: Option<PipelineHandle>,
-    /// Depth prepass: empty descriptor set layout (Set 1 placeholder for skinned pipeline)
-    depth_prepass_skinned_empty_layout: Option<vk::DescriptorSetLayout>,
+    /// Light culling state (Forward+ dynamic lighting).
+    light_culling: light_culling::LightCullingState,
+    /// Shadow system state (CSM cascaded shadow maps).
+    pub(crate) shadow: shadow::ShadowState,
+    /// Depth prepass state (depth-only pre-pass).
+    depth_prepass: depth_prepass::DepthPrepassState,
     /// Base bindless index for per-frame depth textures.
     /// Actual index for frame N is `depth_texture_base_index + N`.
     depth_texture_base_index: Option<u32>,
@@ -330,27 +298,9 @@ impl VulkanRenderer {
             material_compiler,
             ui_renderer: ui_renderer::UIRenderer::new(&context),
             particle_system: None,
-            light_culling: None,
-            light_culling_pipeline: None,
-            light_culling_shader_path: None,
-            shadow_csm: None,
-            shadow_buffers: None,
-            shadow_descriptor_layout: None,
-            shadow_sampler: None,
-            shadow_descriptor_pool: None,
-            shadow_descriptor_sets: Vec::new(),
-            shadow_pipeline: None,
-            shadow_pipeline_skinned: None,
-            shadow_empty_descriptor_layout: None,
-            shadow_cascade_descriptor_layout: None,
-            shadow_cascade_descriptor_sets: Vec::new(),
-            shadow_cascade_buffers: Vec::new(),
-            shadow_cascade_allocations: Vec::new(),
-            shadow_cascade_mapped_ptrs: Vec::new(),
-            shadow_cascade_descriptor_pool: None,
-            depth_prepass_pipeline: None,
-            depth_prepass_skinned_pipeline: None,
-            depth_prepass_skinned_empty_layout: None,
+            light_culling: light_culling::LightCullingState::default(),
+            shadow: shadow::ShadowState::default(),
+            depth_prepass: depth_prepass::DepthPrepassState::default(),
             depth_texture_base_index: None,
             first_frame_rendered: false,
         })
@@ -366,138 +316,6 @@ impl VulkanRenderer {
     /// The caller must ensure proper synchronization when using the context.
     pub fn context(&self) -> &Rc<VulkanContext> {
         &self.context
-    }
-
-    /// Initialize particle emit pipeline (must be called after renderer is fully initialized).
-    pub fn init_particle_emit_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        if let Some(ref mut ps) = self.particle_system {
-            // Load particle emit shader
-            match self
-                .material_compiler
-                .shader_cache
-                .borrow_mut()
-                .load_shader(shader_path, vk::ShaderStageFlags::COMPUTE)
-            {
-                Ok(shader_module) => {
-                    let shader_module_wrapper = crate::sync::VkShaderModule(shader_module);
-                    ps.create_emit_pipeline(&mut self.asset_registry, shader_module_wrapper)
-                        .map_err(|e| {
-                            RendererError::InitializationFailed(format!(
-                                "Failed to create particle emit pipeline: {}",
-                                e
-                            ))
-                        })?;
-                    Ok(())
-                }
-                Err(e) => {
-                    warn!("Failed to load particle emit shader: {}", e);
-                    Err(RendererError::InitializationFailed(format!(
-                        "Failed to load particle emit shader: {}",
-                        e
-                    )))
-                }
-            }
-        } else {
-            warn!("Particle system not initialized, skipping emit pipeline creation");
-            Ok(())
-        }
-    }
-
-    /// Initialize particle simulate pipeline (must be called after renderer is fully initialized).
-    pub fn init_particle_simulate_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        if let Some(ref mut ps) = self.particle_system {
-            // Load particle simulate shader
-            match self
-                .material_compiler
-                .shader_cache
-                .borrow_mut()
-                .load_shader(shader_path, vk::ShaderStageFlags::COMPUTE)
-            {
-                Ok(shader_module) => {
-                    let shader_module_wrapper = crate::sync::VkShaderModule(shader_module);
-                    ps.create_simulate_pipeline(&mut self.asset_registry, shader_module_wrapper)
-                        .map_err(|e| {
-                            RendererError::InitializationFailed(format!(
-                                "Failed to create particle simulate pipeline: {}",
-                                e
-                            ))
-                        })?;
-                    Ok(())
-                }
-                Err(e) => {
-                    warn!("Failed to load particle simulate shader: {}", e);
-                    Err(RendererError::InitializationFailed(format!(
-                        "Failed to load particle simulate shader: {}",
-                        e
-                    )))
-                }
-            }
-        } else {
-            warn!("Particle system not initialized, skipping simulate pipeline creation");
-            Ok(())
-        }
-    }
-
-    /// Initialize particle render pipeline.
-    ///
-    /// Loads particle vertex and fragment shaders and creates the render pipeline.
-    pub fn init_particle_render_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        if let Some(ref mut ps) = self.particle_system {
-            // Load particle vertex shader
-            let vert_shader = self
-                .material_compiler
-                .shader_cache
-                .borrow_mut()
-                .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load particle vertex shader: {}",
-                        e
-                    ))
-                })?;
-
-            // Load particle fragment shader
-            let frag_shader = self
-                .material_compiler
-                .shader_cache
-                .borrow_mut()
-                .load_shader(shader_path, vk::ShaderStageFlags::FRAGMENT)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load particle fragment shader: {}",
-                        e
-                    ))
-                })?;
-
-            let vert_shader_wrapper = crate::sync::VkShaderModule(vert_shader);
-            let frag_shader_wrapper = crate::sync::VkShaderModule(frag_shader);
-
-            ps.create_render_pipeline(
-                &mut self.asset_registry,
-                vert_shader_wrapper,
-                frag_shader_wrapper,
-            )
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to create particle render pipeline: {}",
-                    e
-                ))
-            })?;
-
-            Ok(())
-        } else {
-            warn!("Particle system not initialized, skipping render pipeline creation");
-            Ok(())
-        }
     }
 
     /// Get the compositing descriptor set layout for compiling compositing materials.
@@ -523,845 +341,6 @@ impl VulkanRenderer {
     pub fn clear_compositing_descriptor_set_layout(&mut self) {
         self.material_compiler
             .clear_compositing_descriptor_set_layout();
-    }
-
-    /// Initialize the Forward+ light culling system.
-    ///
-    /// Creates GPU buffers for light data and tile culling results, compiles
-    /// the light culling compute shader, and sets the light culling descriptor
-    /// layout in the material compiler for PBR pipeline compilation.
-    ///
-    /// Must be called before compiling any PBR materials.
-    pub fn init_light_culling(
-        &mut self,
-        screen_width: u32,
-        screen_height: u32,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let light_culling_buffers = crate::lighting::LightCullingBuffers::new(
-            self.context.clone(),
-            screen_width,
-            screen_height,
-        )
-        .map_err(|e| RendererError::InitializationFailed(format!("Light culling init: {}", e)))?;
-
-        if let Some(layout) = light_culling_buffers.fragment_descriptor_layout() {
-            self.material_compiler
-                .set_light_culling_descriptor_layout(layout);
-        }
-
-        self.light_culling = Some(light_culling_buffers);
-        self.light_culling_shader_path = Some(shader_path.to_path_buf());
-        self.rebuild_light_culling_pipeline()?;
-
-        info!(
-            "Forward+ light culling initialized: {}x{}, {}x{} tiles",
-            screen_width,
-            screen_height,
-            screen_width.div_ceil(16),
-            screen_height.div_ceil(16),
-        );
-
-        Ok(())
-    }
-
-    /// Rebuild the light culling compute pipeline from the current buffers and cached shader.
-    ///
-    /// Called during init and after resize to create a compute pipeline that references
-    /// the current compute descriptor layout (owned by LightCullingBuffers).
-    fn rebuild_light_culling_pipeline(&mut self) -> Result<(), RendererError> {
-        let lc = self.light_culling.as_ref().ok_or_else(|| {
-            RendererError::InitializationFailed(
-                "Cannot rebuild light culling pipeline: buffers not initialized".to_string(),
-            )
-        })?;
-
-        let shader_path = self.light_culling_shader_path.as_ref().ok_or_else(|| {
-            RendererError::InitializationFailed(
-                "Cannot rebuild light culling pipeline: shader path not set".to_string(),
-            )
-        })?;
-
-        let compute_shader = self
-            .material_compiler
-            .shader_cache
-            .borrow_mut()
-            .load_shader(shader_path, vk::ShaderStageFlags::COMPUTE)
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to load light culling compute shader: {}",
-                    e
-                ))
-            })?;
-
-        let compute_layout = lc.compute_descriptor_layout().ok_or_else(|| {
-            RendererError::InitializationFailed(
-                "Light culling compute descriptor layout not created".to_string(),
-            )
-        })?;
-
-        let pipeline = crate::vulkan::material::compute_pipeline::ComputePipelineBuilder::new(
-            self.context.clone(),
-        )
-        .with_shader(crate::sync::VkShaderModule(compute_shader))
-        .add_descriptor_layout(crate::sync::VkDescriptorSetLayout(compute_layout))
-        .build()
-        .map_err(|e| {
-            RendererError::InitializationFailed(format!(
-                "Failed to create light culling compute pipeline: {:?}",
-                e
-            ))
-        })?;
-
-        self.light_culling_pipeline = Some(pipeline);
-        Ok(())
-    }
-
-    /// Initialize the shadow system for CSM (Cascaded Shadow Maps).
-    ///
-    /// Must be called after `init_light_culling()` and before compiling PBR materials,
-    /// because PBR pipelines need Set 4 for shadow data in their layout.
-    pub fn init_shadow_resources(
-        &mut self,
-        shadow_atlas_view: Option<vk::ImageView>,
-        params: crate::shadow::CascadeParams,
-    ) -> Result<(), RendererError> {
-        info!("Initializing shadow resources...");
-
-        let device = &self.context.device;
-
-        // Create comparison sampler for shadow depth comparison
-        let sampler_info = vk::SamplerCreateInfo::default()
-            .mag_filter(vk::Filter::LINEAR)
-            .min_filter(vk::Filter::LINEAR)
-            .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
-            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_BORDER)
-            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_BORDER)
-            .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_BORDER)
-            .compare_enable(true)
-            .compare_op(vk::CompareOp::LESS_OR_EQUAL)
-            .border_color(vk::BorderColor::FLOAT_OPAQUE_WHITE)
-            .min_lod(0.0)
-            .max_lod(1.0);
-
-        let shadow_sampler = unsafe {
-            device.create_sampler(&sampler_info, None).map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to create shadow sampler: {:?}",
-                    e
-                ))
-            })?
-        };
-
-        // Create shadow descriptor set layout (Set 4):
-        // Binding 0: storage buffer (ShadowFrameData)
-        // Binding 1: sampled image (shadow atlas depth texture)
-        // Binding 2: comparison sampler
-        let shadow_bindings = [
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(1)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(2)
-                .descriptor_type(vk::DescriptorType::SAMPLER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-        ];
-
-        let shadow_binding_flags = [
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
-        ];
-
-        let mut shadow_binding_flags_info =
-            vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
-                .binding_flags(&shadow_binding_flags);
-
-        let shadow_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
-            .bindings(&shadow_bindings)
-            .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
-            .push_next(&mut shadow_binding_flags_info);
-
-        let shadow_descriptor_layout = unsafe {
-            device
-                .create_descriptor_set_layout(&shadow_layout_info, None)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to create shadow descriptor layout: {:?}",
-                        e
-                    ))
-                })?
-        };
-
-        // Set shadow descriptor layout in material compiler so PBR pipelines include Set 4
-        self.material_compiler
-            .set_shadow_descriptor_layout(shadow_descriptor_layout);
-
-        // Create descriptor pool for per-frame shadow descriptor sets
-        let pool_sizes = [
-            vk::DescriptorPoolSize::default()
-                .ty(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(FRAMES_IN_FLIGHT as u32),
-            vk::DescriptorPoolSize::default()
-                .ty(vk::DescriptorType::SAMPLED_IMAGE)
-                .descriptor_count(FRAMES_IN_FLIGHT as u32),
-            vk::DescriptorPoolSize::default()
-                .ty(vk::DescriptorType::SAMPLER)
-                .descriptor_count(FRAMES_IN_FLIGHT as u32),
-        ];
-
-        let pool_info = vk::DescriptorPoolCreateInfo::default()
-            .max_sets(FRAMES_IN_FLIGHT as u32)
-            .pool_sizes(&pool_sizes)
-            .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND);
-
-        let shadow_descriptor_pool = unsafe {
-            device
-                .create_descriptor_pool(&pool_info, None)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to create shadow descriptor pool: {:?}",
-                        e
-                    ))
-                })?
-        };
-
-        // Allocate per-frame descriptor sets
-        let layouts: Vec<_> = (0..FRAMES_IN_FLIGHT)
-            .map(|_| shadow_descriptor_layout)
-            .collect();
-        let allocate_info = vk::DescriptorSetAllocateInfo::default()
-            .descriptor_pool(shadow_descriptor_pool)
-            .set_layouts(&layouts);
-
-        let shadow_descriptor_sets = unsafe {
-            device
-                .allocate_descriptor_sets(&allocate_info)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to allocate shadow descriptor sets: {:?}",
-                        e
-                    ))
-                })?
-        };
-
-        // Create CSM cascade computation
-        let shadow_csm = crate::shadow::CascadeShadowMap::new(params);
-
-        // Create shadow buffers (storage buffer for ShadowFrameData)
-        let shadow_buffers = crate::shadow::ShadowBuffers::new(
-            self.context.clone(),
-            shadow_atlas_view,
-            shadow_sampler,
-        )
-        .map_err(|e| {
-            RendererError::InitializationFailed(format!("Failed to create shadow buffers: {}", e))
-        })?;
-
-        self.shadow_csm = Some(shadow_csm);
-        self.shadow_buffers = Some(shadow_buffers);
-        self.shadow_descriptor_layout = Some(shadow_descriptor_layout);
-        self.shadow_sampler = Some(shadow_sampler);
-        self.shadow_descriptor_pool = Some(shadow_descriptor_pool);
-        self.shadow_descriptor_sets = shadow_descriptor_sets;
-
-        info!(
-            "Shadow resources initialized (CSM, {} cascades)",
-            crate::shadow::cascade::MAX_CASCADES
-        );
-        Ok(())
-    }
-
-    /// Update shadow cascades and upload GPU data for the current frame.
-    ///
-    /// Call this once per frame after setting frame uniforms but before rendering.
-    pub fn update_shadows(&mut self, light_direction: [f32; 3]) {
-        if let Some(ref mut csm) = self.shadow_csm {
-            csm.update(
-                light_direction,
-                &self.frame_uniforms.view_matrix,
-                &self.frame_uniforms.proj_matrix,
-            );
-
-            if let Some(ref mut buffers) = self.shadow_buffers {
-                let gpu_data = csm.gpu_data();
-                buffers.upload_shadow_data(&gpu_data);
-            }
-        }
-    }
-
-    /// Get the shadow descriptor set for the current frame.
-    pub fn shadow_descriptor_set(&self) -> Option<vk::DescriptorSet> {
-        let frame_idx = self.current_frame();
-        self.shadow_descriptor_sets.get(frame_idx).copied()
-    }
-
-    /// Update the shadow atlas image view for a specific frame (call on resize/recreation).
-    pub fn set_shadow_atlas_view(&mut self, frame_idx: usize, view: vk::ImageView) {
-        if let Some(ref mut buffers) = self.shadow_buffers {
-            buffers.set_shadow_atlas_view(frame_idx, view);
-        }
-    }
-
-    /// Get the shadow comparison sampler.
-    pub fn shadow_sampler(&self) -> Option<vk::Sampler> {
-        self.shadow_sampler
-    }
-
-    /// Initialize the shadow depth pipeline and cascade descriptor infrastructure.
-    ///
-    /// Must be called after `init_shadow_resources()` and before frame graph execution.
-    /// Creates:
-    /// - A depth-only pipeline from `shadow_depth.wgsl` (front-face culled, depth bias)
-    /// - Cascade descriptor set layout (Set 2) for the shadow depth shader
-    /// - Per-frame cascade descriptor sets
-    /// - Cascade storage buffer (CPU→GPU mapped)
-    pub fn init_shadow_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        use crate::pipeline::{CullMode, FrontFace};
-        use crate::shadow::cascade::ShadowCascadeGPU;
-        use crate::vulkan::material::builder::PipelineBuilder;
-        use crate::vulkan::vertexbinding::VertexFormat;
-
-        let device = &self.context.device;
-
-        // Create cascade descriptor set layout (Set 2):
-        // Binding 0: storage buffer (array<ShadowCascadeData, 4>)
-        // Binding 1: storage buffer (ShadowParams)
-        let cascade_bindings = [
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(1)
-                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
-        ];
-
-        let cascade_binding_flags = [
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
-            vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
-        ];
-
-        let mut cascade_binding_flags_info =
-            vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
-                .binding_flags(&cascade_binding_flags);
-
-        let cascade_layout_info = vk::DescriptorSetLayoutCreateInfo::default()
-            .bindings(&cascade_bindings)
-            .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
-            .push_next(&mut cascade_binding_flags_info);
-
-        let cascade_layout = unsafe {
-            device
-                .create_descriptor_set_layout(&cascade_layout_info, None)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to create shadow cascade descriptor layout: {:?}",
-                        e
-                    ))
-                })?
-        };
-
-        // Create descriptor pool for per-frame cascade descriptor sets (2 bindings per set)
-        let cascade_pool_sizes = [vk::DescriptorPoolSize::default()
-            .ty(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(FRAMES_IN_FLIGHT as u32 * 2)];
-
-        let cascade_pool_info = vk::DescriptorPoolCreateInfo::default()
-            .max_sets(FRAMES_IN_FLIGHT as u32)
-            .pool_sizes(&cascade_pool_sizes)
-            .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND);
-
-        let cascade_pool = unsafe {
-            device
-                .create_descriptor_pool(&cascade_pool_info, None)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to create shadow cascade descriptor pool: {:?}",
-                        e
-                    ))
-                })?
-        };
-
-        // Allocate per-frame cascade descriptor sets
-        let cascade_layouts: Vec<_> = (0..FRAMES_IN_FLIGHT).map(|_| cascade_layout).collect();
-        let cascade_allocate_info = vk::DescriptorSetAllocateInfo::default()
-            .descriptor_pool(cascade_pool)
-            .set_layouts(&cascade_layouts);
-
-        let cascade_descriptor_sets = unsafe {
-            device
-                .allocate_descriptor_sets(&cascade_allocate_info)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to allocate shadow cascade descriptor sets: {:?}",
-                        e
-                    ))
-                })?
-        };
-
-        // Create per-frame cascade storage buffers (4 x ShadowCascadeGPU + ShadowParams per frame)
-        let cascade_data_size =
-            std::mem::size_of::<ShadowCascadeGPU>() * crate::shadow::cascade::MAX_CASCADES;
-        let params_size = 16u64; // ShadowParams: cascade_index(u32) + bias(f32) + pad(vec2f)
-        let per_frame_buffer_size = cascade_data_size as u64 + params_size;
-
-        let mut cascade_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        let mut cascade_allocations = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        let mut cascade_mapped_ptrs = Vec::with_capacity(FRAMES_IN_FLIGHT);
-
-        for _frame in 0..FRAMES_IN_FLIGHT {
-            let buffer_info = vk::BufferCreateInfo::default()
-                .size(per_frame_buffer_size)
-                .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-            let (buffer, allocation) = self
-                .context
-                .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
-
-            let mapped_ptr = self.context.map_buffer(&allocation);
-            unsafe {
-                std::ptr::write_bytes(mapped_ptr, 0, per_frame_buffer_size as usize);
-            }
-
-            cascade_buffers.push(buffer);
-            cascade_allocations.push(allocation);
-            cascade_mapped_ptrs.push(mapped_ptr);
-        }
-
-        // Write descriptor sets with two bindings per frame:
-        // Binding 0: cascade array (4 x ShadowCascadeGPU)
-        // Binding 1: shadow params (ShadowParams)
-        for (frame_idx, &descriptor_set) in cascade_descriptor_sets.iter().enumerate() {
-            let cascade_buffer_info = vk::DescriptorBufferInfo::default()
-                .buffer(cascade_buffers[frame_idx])
-                .offset(0)
-                .range(cascade_data_size as u64);
-
-            let params_buffer_info = vk::DescriptorBufferInfo::default()
-                .buffer(cascade_buffers[frame_idx])
-                .offset(cascade_data_size as u64)
-                .range(params_size);
-
-            let writes = [
-                vk::WriteDescriptorSet::default()
-                    .dst_set(descriptor_set)
-                    .dst_binding(0)
-                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                    .descriptor_count(1)
-                    .buffer_info(std::slice::from_ref(&cascade_buffer_info)),
-                vk::WriteDescriptorSet::default()
-                    .dst_set(descriptor_set)
-                    .dst_binding(1)
-                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                    .descriptor_count(1)
-                    .buffer_info(std::slice::from_ref(&params_buffer_info)),
-            ];
-
-            unsafe {
-                device.update_descriptor_sets(&writes, &[]);
-            }
-        }
-
-        // Compile shadow depth shader
-        let mut cache = self.material_compiler.shader_cache.borrow_mut();
-        let vert_module = cache
-            .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to load shadow vertex shader: {:?}",
-                    e
-                ))
-            })?;
-        let frag_module = cache
-            .load_shader(shader_path, vk::ShaderStageFlags::FRAGMENT)
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to load shadow fragment shader: {:?}",
-                    e
-                ))
-            })?;
-        drop(cache);
-
-        // Build shadow depth pipeline:
-        // - Set 0: storage uniforms (frame_data + objects)
-        // - Set 1: empty placeholder (matches PBR pipeline layout numbering)
-        // - Set 2: shadow cascades
-
-        let empty_descriptor_layout = unsafe {
-            device
-                .create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default(), None)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to create empty descriptor layout for shadow pipeline: {:?}",
-                        e
-                    ))
-                })?
-        };
-        self.shadow_empty_descriptor_layout = Some(empty_descriptor_layout);
-        // - Front-face culling (reduces self-shadowing)
-        // - Hardware depth bias (slope + constant)
-        // - Depth-only output (D32Sfloat, no color)
-        let storage_layout = self.storage_descriptor_sets[0].layout();
-
-        let cascade_params = self
-            .shadow_csm
-            .as_ref()
-            .map(|csm| csm.params().clone())
-            .unwrap_or_default();
-
-        let pipeline = PipelineBuilder::new(self.context.clone())
-            .with_shaders(vert_module, frag_module)
-            .with_descriptor_layouts(vec![
-                storage_layout,
-                empty_descriptor_layout,
-                cascade_layout,
-            ])
-            .with_soa_attribute(0, VertexFormat::RGB32f) // position
-            .with_depth_test(true, true, crate::pipeline::CompareOp::Less)
-            .with_cull_mode(CullMode::Front, FrontFace::CounterClockwise)
-            .with_depth_bias(
-                cascade_params.depth_bias_constant,
-                cascade_params.depth_bias_slope,
-                0.0,
-            )
-            .with_rendering_formats(None, Some(crate::texture::ImageFormat::D32Sfloat))
-            .build_dynamic()
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to build shadow pipeline: {:?}",
-                    e
-                ))
-            })?;
-
-        let pipeline_handle = self.asset_registry.register_pipeline(pipeline);
-
-        self.shadow_pipeline = Some(pipeline_handle);
-        self.shadow_cascade_descriptor_layout = Some(cascade_layout);
-        self.shadow_cascade_descriptor_sets = cascade_descriptor_sets;
-        self.shadow_cascade_buffers = cascade_buffers;
-        self.shadow_cascade_allocations = cascade_allocations;
-        self.shadow_cascade_mapped_ptrs = cascade_mapped_ptrs;
-        self.shadow_cascade_descriptor_pool = Some(cascade_pool);
-
-        info!(
-            "Shadow depth pipeline initialized (4 cascades, front-face culled, hardware depth bias)"
-        );
-        Ok(())
-    }
-
-    /// Upload shadow cascade GPU data for the current frame.
-    ///
-    /// Call this after `update_shadows()` to upload cascade view_proj matrices
-    /// to the cascade storage buffer for the shadow depth shader.
-    pub fn upload_shadow_cascades(&mut self) {
-        if let (Some(csm), frame_idx) = (&self.shadow_csm, self.current_frame()) {
-            if frame_idx >= self.shadow_cascade_mapped_ptrs.len() {
-                return;
-            }
-            let mapped_ptr = self.shadow_cascade_mapped_ptrs[frame_idx];
-            let gpu_data = csm.gpu_data();
-            let cascade_size = std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>();
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    gpu_data.cascades.as_ptr() as *const u8,
-                    mapped_ptr,
-                    cascade_size * crate::shadow::cascade::MAX_CASCADES,
-                );
-            }
-            if frame_idx < self.shadow_cascade_allocations.len() {
-                self.context.flush_mapped_memory(
-                    &self.shadow_cascade_allocations[frame_idx],
-                    0,
-                    (cascade_size * crate::shadow::cascade::MAX_CASCADES) as u64,
-                );
-            }
-        }
-    }
-
-    /// Update shadow params for a specific cascade draw.
-    ///
-    /// Call this before each cascade draw to set the active cascade index and bias.
-    pub fn set_shadow_cascade_params(&self, cascade_index: u32, bias: f32) {
-        let frame_idx = self.current_frame();
-        if frame_idx >= self.shadow_cascade_mapped_ptrs.len() {
-            return;
-        }
-        let mapped_ptr = self.shadow_cascade_mapped_ptrs[frame_idx];
-        let cascade_size = std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>()
-            * crate::shadow::cascade::MAX_CASCADES;
-        let params_offset = cascade_size;
-        let params: [u32; 4] = [cascade_index, bias.to_bits(), 0, 0];
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                params.as_ptr() as *const u8,
-                mapped_ptr.add(params_offset),
-                16,
-            );
-        }
-        if frame_idx < self.shadow_cascade_allocations.len() {
-            self.context.flush_mapped_memory(
-                &self.shadow_cascade_allocations[frame_idx],
-                params_offset as u64,
-                16,
-            );
-        }
-    }
-
-    /// Get the shadow depth pipeline handle.
-    pub fn shadow_pipeline(&self) -> Option<PipelineHandle> {
-        self.shadow_pipeline
-    }
-
-    /// Get the skinned shadow depth pipeline handle.
-    pub fn shadow_pipeline_skinned(&self) -> Option<PipelineHandle> {
-        self.shadow_pipeline_skinned
-    }
-
-    /// Initialize the skinned shadow depth pipeline.
-    ///
-    /// Same as the regular shadow pipeline but uses the skinned vertex layout
-    /// (includes joint indices/weights) and binds skeleton joint matrices at Set 3.
-    /// Uses the same cascade descriptor sets as the regular shadow pipeline.
-    pub fn init_shadow_pipeline_skinned(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        use crate::pipeline::{CullMode, FrontFace};
-        use crate::vulkan::material::builder::PipelineBuilder;
-        use crate::vulkan::vertexbinding::VertexFormat;
-
-        let storage_layout = self.storage_descriptor_sets[0].layout();
-        let empty_descriptor_layout = self.shadow_empty_descriptor_layout.ok_or_else(|| {
-            RendererError::InitializationFailed(
-                "Shadow empty descriptor layout not initialized. Call init_shadow_pipeline() first."
-                    .to_string(),
-            )
-        })?;
-        let cascade_layout = self.shadow_cascade_descriptor_layout.ok_or_else(|| {
-            RendererError::InitializationFailed(
-                "Shadow cascade descriptor layout not initialized. Call init_shadow_pipeline() first."
-                    .to_string(),
-            )
-        })?;
-        let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
-
-        let mut cache = self.material_compiler.shader_cache.borrow_mut();
-        let vert_module = cache
-            .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to load skinned shadow vertex shader: {:?}",
-                    e
-                ))
-            })?;
-        let frag_module = cache
-            .load_shader(shader_path, vk::ShaderStageFlags::FRAGMENT)
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to load skinned shadow fragment shader: {:?}",
-                    e
-                ))
-            })?;
-        drop(cache);
-
-        let cascade_params = self
-            .shadow_csm
-            .as_ref()
-            .map(|csm| csm.params().clone())
-            .unwrap_or_default();
-
-        let pipeline = PipelineBuilder::new(self.context.clone())
-            .with_shaders(vert_module, frag_module)
-            .with_descriptor_layouts(vec![
-                storage_layout,
-                empty_descriptor_layout,
-                cascade_layout,
-                skeleton_layout,
-            ])
-            .with_soa_attribute(0, VertexFormat::RGB32f) // position
-            .with_soa_attribute(4, VertexFormat::RGBA16u) // joint_indices
-            .with_soa_attribute(5, VertexFormat::RGBA32f) // joint_weights
-            .with_depth_test(true, true, crate::pipeline::CompareOp::Less)
-            .with_cull_mode(CullMode::Front, FrontFace::CounterClockwise)
-            .with_depth_bias(
-                cascade_params.depth_bias_constant,
-                cascade_params.depth_bias_slope,
-                0.0,
-            )
-            .with_rendering_formats(None, Some(crate::texture::ImageFormat::D32Sfloat))
-            .build_dynamic()
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to build skinned shadow pipeline: {:?}",
-                    e
-                ))
-            })?;
-
-        let pipeline_handle = self.asset_registry.register_pipeline(pipeline);
-        self.shadow_pipeline_skinned = Some(pipeline_handle);
-
-        info!(
-            "Skinned shadow depth pipeline initialized (4 cascades, front-face culled, depth bias)"
-        );
-        Ok(())
-    }
-
-    /// Initialize the depth prepass pipeline.
-    ///
-    /// Creates a depth-only pipeline with color write disabled that renders
-    /// from the camera's perspective. Used before the main geometry pass.
-    pub fn init_depth_prepass_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        use crate::pipeline::{CullMode, FrontFace};
-        use crate::vulkan::material::builder::PipelineBuilder;
-        use crate::vulkan::vertexbinding::VertexFormat;
-
-        let _device = &self.context.device;
-
-        let mut cache = self.material_compiler.shader_cache.borrow_mut();
-        let vert_module = cache
-            .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to load depth prepass vertex shader: {:?}",
-                    e
-                ))
-            })?;
-        let frag_module = cache
-            .load_shader(shader_path, vk::ShaderStageFlags::FRAGMENT)
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to load depth prepass fragment shader: {:?}",
-                    e
-                ))
-            })?;
-        drop(cache);
-
-        let storage_layout = self.storage_descriptor_sets[0].layout();
-
-        let pipeline = PipelineBuilder::new(self.context.clone())
-            .with_shaders(vert_module, frag_module)
-            .with_descriptor_layouts(vec![storage_layout])
-            .with_soa_attribute(0, VertexFormat::RGB32f) // position
-            .with_depth_test(true, true, crate::pipeline::CompareOp::Greater)
-            .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
-            .with_rendering_formats(None, Some(crate::texture::ImageFormat::D32SfloatS8Uint))
-            .build_dynamic()
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to build depth prepass pipeline: {:?}",
-                    e
-                ))
-            })?;
-
-        let pipeline_handle = self.asset_registry.register_pipeline(pipeline);
-        self.depth_prepass_pipeline = Some(pipeline_handle);
-
-        info!("Depth prepass pipeline initialized (reverse-Z, back-face culled)");
-        Ok(())
-    }
-
-    /// Get the depth prepass pipeline handle.
-    pub fn depth_prepass_pipeline(&self) -> Option<PipelineHandle> {
-        self.depth_prepass_pipeline
-    }
-
-    /// Initialize the skinned depth prepass pipeline.
-    ///
-    /// Same as the regular depth prepass but uses the skinned vertex layout
-    /// (includes joint indices/weights) and binds skeleton joint matrices at Set 2.
-    pub fn init_depth_prepass_skinned_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        use crate::pipeline::{CullMode, FrontFace};
-        use crate::vulkan::material::builder::PipelineBuilder;
-        use crate::vulkan::vertexbinding::VertexFormat;
-
-        let mut cache = self.material_compiler.shader_cache.borrow_mut();
-        let vert_module = cache
-            .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to load skinned depth prepass vertex shader: {:?}",
-                    e
-                ))
-            })?;
-        let frag_module = cache
-            .load_shader(shader_path, vk::ShaderStageFlags::FRAGMENT)
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to load skinned depth prepass fragment shader: {:?}",
-                    e
-                ))
-            })?;
-        drop(cache);
-
-        let storage_layout = self.storage_descriptor_sets[0].layout();
-        let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
-
-        let empty_descriptor_layout = unsafe {
-            self.context
-                .device
-                .create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default(), None)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to create empty descriptor layout for skinned depth prepass: {:?}",
-                        e
-                    ))
-                })?
-        };
-
-        let pipeline = PipelineBuilder::new(self.context.clone())
-            .with_shaders(vert_module, frag_module)
-            .with_descriptor_layouts(vec![
-                storage_layout,
-                empty_descriptor_layout,
-                skeleton_layout,
-            ])
-            .with_soa_attribute(0, VertexFormat::RGB32f) // position
-            .with_soa_attribute(4, VertexFormat::RGBA16u) // joint_indices
-            .with_soa_attribute(5, VertexFormat::RGBA32f) // joint_weights
-            .with_depth_test(true, true, crate::pipeline::CompareOp::Greater)
-            .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
-            .with_rendering_formats(None, Some(crate::texture::ImageFormat::D32SfloatS8Uint))
-            .build_dynamic()
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to build skinned depth prepass pipeline: {:?}",
-                    e
-                ))
-            })?;
-
-        let pipeline_handle = self.asset_registry.register_pipeline(pipeline);
-        self.depth_prepass_skinned_pipeline = Some(pipeline_handle);
-        self.depth_prepass_skinned_empty_layout = Some(empty_descriptor_layout);
-
-        info!("Skinned depth prepass pipeline initialized (reverse-Z, back-face culled)");
-        Ok(())
-    }
-
-    /// Get the skinned depth prepass pipeline handle.
-    pub fn depth_prepass_skinned_pipeline(&self) -> Option<PipelineHandle> {
-        self.depth_prepass_skinned_pipeline
     }
 
     /// Register per-frame depth textures with the bindless system.
@@ -1405,212 +384,10 @@ impl VulkanRenderer {
     }
 
     /// Get the cascade descriptor set for the current frame (Set 2).
-    pub fn shadow_cascade_descriptor_set(&self) -> Option<vk::DescriptorSet> {
-        let frame_idx = self.current_frame();
-        self.shadow_cascade_descriptor_sets.get(frame_idx).copied()
-    }
 
     /// Upload shadow data and bind shadow descriptors for the current frame.
     ///
     /// Call this inside the render graph execution (after binding pipeline, before draw calls).
-    pub fn bind_shadow_descriptors(
-        &self,
-        cmd: vk::CommandBuffer,
-        pipeline_layout: vk::PipelineLayout,
-    ) {
-        let frame_idx = self.current_frame();
-
-        if let (Some(buffers), Some(&descriptor_set)) = (
-            &self.shadow_buffers,
-            self.shadow_descriptor_sets.get(frame_idx),
-        ) {
-            if let Err(e) = buffers.update_and_bind_descriptors(
-                cmd,
-                &self.context.device,
-                pipeline_layout,
-                descriptor_set,
-                frame_idx,
-            ) {
-                log::warn!("Failed to bind shadow descriptors: {}", e);
-            }
-        }
-    }
-
-    /// Upload point light data for the current frame.
-    ///
-    /// Call this once per frame before rendering to update the GPU light buffer.
-    pub fn upload_lights(&mut self, lights: &[crate::lighting::PointLightGPU]) {
-        if let Some(ref mut lc) = self.light_culling {
-            lc.upload_lights(lights);
-        }
-    }
-
-    /// Clear tile headers and dispatch the light culling compute shader.
-    ///
-    /// Call after uploading lights and before the geometry pass.
-    /// The view and proj matrices are needed for projecting light positions to screen space.
-    pub fn dispatch_light_culling(
-        &mut self,
-        cmd: vk::CommandBuffer,
-        view_matrix: &[f32; 16],
-        proj_matrix: &[f32; 16],
-    ) {
-        let lc = match self.light_culling.as_mut() {
-            Some(lc) => lc,
-            None => return,
-        };
-
-        let light_count = lc.light_count();
-        if light_count == 0 {
-            return;
-        }
-
-        // Write frame data to uniform buffer for push descriptor
-        let frame_data = crate::lighting::LightCullFrameData {
-            view_matrix: *view_matrix,
-            proj_matrix: *proj_matrix,
-            light_count,
-            tiles_x: lc.tiles_x(),
-            tiles_y: lc.tiles_y(),
-            screen_width: lc.screen_width(),
-            screen_height: lc.screen_height(),
-            _pad0: 0,
-            _pad1: 0,
-        };
-        lc.write_frame_data(&frame_data);
-
-        // Bind compute pipeline
-        let compute_pipeline = match self.light_culling_pipeline.as_ref() {
-            Some(p) => p,
-            None => return,
-        };
-
-        unsafe {
-            // Clear tile headers on the GPU (avoids CPU-GPU sync issues)
-            lc.record_clear_tile_headers(cmd);
-
-            // Memory barrier: fill -> compute shader read/write
-            let barrier = vk::MemoryBarrier::default()
-                .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE);
-            self.context.device.cmd_pipeline_barrier(
-                cmd,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::PipelineStageFlags::COMPUTE_SHADER,
-                vk::DependencyFlags::empty(),
-                &[barrier],
-                &[],
-                &[],
-            );
-
-            self.context.device.cmd_bind_pipeline(
-                cmd,
-                vk::PipelineBindPoint::COMPUTE,
-                compute_pipeline.pipeline().vk(),
-            );
-
-            // Push compute descriptors (Set 0: light/tile/frame buffers)
-            if let Err(e) =
-                lc.push_compute_descriptors(cmd, compute_pipeline.pipeline_layout().vk())
-            {
-                warn!("Failed to push light culling compute descriptors: {}", e);
-                return;
-            }
-
-            // Dispatch: one workgroup per tile
-            self.context
-                .device
-                .cmd_dispatch(cmd, lc.tiles_x(), lc.tiles_y(), 1);
-        }
-
-        // Memory barrier to ensure compute writes are visible to fragment shader
-        unsafe {
-            let barrier = vk::MemoryBarrier::default()
-                .src_access_mask(vk::AccessFlags::SHADER_WRITE)
-                .dst_access_mask(vk::AccessFlags::SHADER_READ);
-
-            self.context.device.cmd_pipeline_barrier(
-                cmd,
-                vk::PipelineStageFlags::COMPUTE_SHADER,
-                vk::PipelineStageFlags::FRAGMENT_SHADER,
-                vk::DependencyFlags::empty(),
-                &[barrier],
-                &[],
-                &[],
-            );
-        }
-    }
-
-    /// Whether the light culling system is active.
-    pub fn has_light_culling(&self) -> bool {
-        self.light_culling.is_some()
-    }
-
-    /// Get the light culling buffers for push descriptor binding during geometry pass.
-    pub fn light_culling_buffers(&self) -> Option<&crate::lighting::LightCullingBuffers> {
-        self.light_culling.as_ref()
-    }
-
-    /// Recreate light culling buffers for a new screen size.
-    ///
-    /// The compute pipeline is reused since it reads tile dimensions from
-    /// the uniform buffer at dispatch time. Only the GPU buffers are recreated.
-    /// Call this after swapchain recreation to keep tile dimensions in sync.
-    pub fn resize_light_culling(&mut self, screen_width: u32, screen_height: u32) {
-        if self.light_culling.is_none() {
-            return;
-        }
-
-        // Drop the old compute pipeline FIRST — its pipeline layout references
-        // the compute descriptor layout owned by LightCullingBuffers, which we're
-        // about to destroy. The pipeline must not outlive the layout it references.
-        self.light_culling_pipeline = None;
-
-        // Invalidate material pipelines BEFORE dropping old light culling buffers.
-        // Old material pipelines reference the old light culling descriptor set layout,
-        // so they must be destroyed first to avoid use-after-free in pipeline layout cleanup.
-        self.recompile_deferred_materials();
-
-        // Drop old buffers (destroys old descriptor layouts)
-        self.light_culling = None;
-
-        // Create new buffers with updated dimensions
-        match crate::lighting::LightCullingBuffers::new(
-            self.context.clone(),
-            screen_width,
-            screen_height,
-        ) {
-            Ok(new_buffers) => {
-                // Update the fragment descriptor layout in the material compiler
-                // so newly compiled materials use the correct layout
-                if let Some(layout) = new_buffers.fragment_descriptor_layout() {
-                    self.material_compiler
-                        .set_light_culling_descriptor_layout(layout);
-                }
-
-                self.light_culling = Some(new_buffers);
-
-                // Rebuild compute pipeline with new compute descriptor layout
-                if let Err(e) = self.rebuild_light_culling_pipeline() {
-                    error!(
-                        "Failed to rebuild light culling compute pipeline after resize: {}",
-                        e
-                    );
-                }
-
-                info!(
-                    "Light culling buffers resized to {}x{} ({}x{} tiles), invalidated compiled materials",
-                    screen_width,
-                    screen_height,
-                    screen_width.div_ceil(16),
-                    screen_height.div_ceil(16),
-                );
-            }
-            Err(e) => {
-                error!("Failed to recreate light culling buffers: {}", e);
-            }
-        }
-    }
 
     // ========================================================================
     // Texture Creation API
@@ -2280,42 +1057,43 @@ impl VulkanRenderer {
         // Drop light culling pipeline and buffers.
         // Drop order: pipeline first (doesn't own descriptor layouts),
         // then buffers (owns descriptor layouts and GPU buffers).
-        self.light_culling_pipeline = None;
-        self.light_culling = None;
+        self.light_culling.pipeline = None;
+        self.light_culling.buffers = None;
 
         // Destroy shadow system resources (buffers, samplers, pools)
-        self.shadow_csm = None;
-        self.shadow_buffers = None;
-        if let Some(sampler) = self.shadow_sampler.take() {
+        self.shadow.csm = None;
+        self.shadow.buffers = None;
+        if let Some(sampler) = self.shadow.sampler.take() {
             unsafe {
                 self.context.device.destroy_sampler(sampler, None);
             }
         }
         // Cascade descriptor resources (Set 2 for shadow depth shader)
-        if let Some(pool) = self.shadow_cascade_descriptor_pool.take() {
+        if let Some(pool) = self.shadow.cascade_descriptor_pool.take() {
             unsafe {
                 self.context.device.destroy_descriptor_pool(pool, None);
             }
         }
-        self.shadow_cascade_descriptor_sets.clear();
+        self.shadow.cascade_descriptor_sets.clear();
         for (buffer, allocation) in self
-            .shadow_cascade_buffers
+            .shadow
+            .cascade_buffers
             .drain(..)
-            .zip(self.shadow_cascade_allocations.drain(..))
+            .zip(self.shadow.cascade_allocations.drain(..))
         {
             unsafe {
                 self.context.device.destroy_buffer(buffer, None);
                 let _ = self.context.allocator.borrow_mut().free(allocation);
             }
         }
-        self.shadow_cascade_mapped_ptrs.clear();
+        self.shadow.cascade_mapped_ptrs.clear();
         // Original shadow descriptor resources (pool only, layout destroyed after pre_destroy)
-        if let Some(pool) = self.shadow_descriptor_pool.take() {
+        if let Some(pool) = self.shadow.descriptor_pool.take() {
             unsafe {
                 self.context.device.destroy_descriptor_pool(pool, None);
             }
         }
-        self.shadow_descriptor_sets.clear();
+        self.shadow.descriptor_sets.clear();
 
         // Wait for GPU to finish all in-flight work before destroying resources
         // that pipelines still reference (descriptor set layouts, etc.)
@@ -2323,28 +1101,28 @@ impl VulkanRenderer {
 
         // Destroy descriptor set layouts AFTER device_wait_idle, since pipelines
         // in asset_registry still reference them until they are dropped.
-        if let Some(layout) = self.shadow_cascade_descriptor_layout.take() {
+        if let Some(layout) = self.shadow.cascade_descriptor_layout.take() {
             unsafe {
                 self.context
                     .device
                     .destroy_descriptor_set_layout(layout, None);
             }
         }
-        if let Some(layout) = self.shadow_descriptor_layout.take() {
+        if let Some(layout) = self.shadow.descriptor_layout.take() {
             unsafe {
                 self.context
                     .device
                     .destroy_descriptor_set_layout(layout, None);
             }
         }
-        if let Some(layout) = self.shadow_empty_descriptor_layout.take() {
+        if let Some(layout) = self.shadow.empty_descriptor_layout.take() {
             unsafe {
                 self.context
                     .device
                     .destroy_descriptor_set_layout(layout, None);
             }
         }
-        if let Some(layout) = self.depth_prepass_skinned_empty_layout.take() {
+        if let Some(layout) = self.depth_prepass.skinned_empty_layout.take() {
             unsafe {
                 self.context
                     .device
@@ -3257,7 +2035,7 @@ impl VulkanRenderer {
 
         // 6. Dispatch light culling compute shader (before any render passes)
         // This must happen while we're still outside a render pass.
-        if self.light_culling.is_some() {
+        if self.light_culling.buffers.is_some() {
             let view: [f32; 16] = self.frame_uniforms.view_matrix;
             let proj: [f32; 16] = self.frame_uniforms.proj_matrix;
             self.dispatch_light_culling(cmd, &view, &proj);

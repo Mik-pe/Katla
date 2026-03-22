@@ -342,6 +342,7 @@ impl ParticleDebugReadback {
     ) -> Result<(), String> {
         let device = &self.context.device;
         let layout = particle_buffer.layout();
+        let fi = frame_index % 2;
 
         // Insert barrier to ensure compute shader writes complete before transfer reads
         // This prevents READ_AFTER_WRITE hazards
@@ -362,7 +363,7 @@ impl ParticleDebugReadback {
                 .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
                 .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
                 .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .buffer(particle_buffer.counters_buffer())
+                .buffer(particle_buffer.counters_buffer(fi))
                 .offset(0)
                 .size(std::mem::size_of::<ParticleCounters>() as u64),
         ];
@@ -518,7 +519,7 @@ impl ParticleDebugReadback {
 
         // Copy counters
         if let Some(staging) = &self.counters_staging {
-            let counters_buffer = particle_buffer.counters_buffer();
+            let counters_buffer = particle_buffer.counters_buffer(fi);
             let counters_size = std::mem::size_of::<ParticleCounters>() as u64;
 
             let copy_region = vk::BufferCopy {
