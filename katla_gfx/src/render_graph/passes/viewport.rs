@@ -239,6 +239,7 @@ impl ViewportPass {
             format,
             width,
             height,
+            tracks_swapchain_size: true,
         })
     }
 
@@ -319,6 +320,7 @@ impl PassBuilder for ViewportPass {
                 }))
             }),
             uses_depth: true, // Viewports use the global depth buffer
+            depth_attachment: None,
         }
     }
 }

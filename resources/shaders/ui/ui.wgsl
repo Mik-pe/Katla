@@ -62,5 +62,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Sample from the bindless texture array using the per-vertex index
     let texture = bindless_textures[in.texture_index];
     let tex_color = textureSample(texture, font_sampler, in.uv);
+
+    let alpha = tex_color.a * in.color.a;
     return in.color * tex_color;
 }

@@ -181,6 +181,13 @@ impl ApplicationHandler for Application {
                         }
                     }
 
+                    // Update shadow atlas view if it was recreated
+                    if let Some(shadow_atlas_view) =
+                        self.frame_graph.transient_texture_view("shadow_atlas")
+                    {
+                        self.renderer.set_shadow_atlas_view(shadow_atlas_view);
+                    }
+
                     let aspect = extent.width as f32 / extent.height as f32;
                     self.camera
                         .borrow_mut()
@@ -418,6 +425,12 @@ impl ApplicationHandler for Application {
                 debug!("Generating UI draw list...");
                 let ui_draw_list = editor::generate_ui_draw_list(self, dt);
                 debug!("UI draw list generated");
+
+                // Upload font atlas AFTER draw list generation (which rasterizes new glyphs)
+                // and BEFORE render_frame (which samples from the GPU atlas).
+                // Doing it after render_frame would cause a one-frame lag where text
+                // samples from stale GPU data.
+                editor::upload_font_atlas(self);
 
                 // Render frame to GPU (includes UI if present)
                 debug!("Rendering frame...");

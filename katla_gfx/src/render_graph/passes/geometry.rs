@@ -45,6 +45,8 @@ pub struct GeometryPass {
     reads: Vec<String>,
     /// Material handle for this pass (optional).
     material: Option<crate::handle::MaterialHandle>,
+    /// Depth attachment configuration.
+    depth_config: Option<(LoadOp, StoreOp, ClearValue)>,
 }
 
 /// Describes a color attachment output.
@@ -74,6 +76,7 @@ impl GeometryPass {
             color_outputs: Vec::new(),
             reads: Vec::new(),
             material: None,
+            depth_config: None,
         }
     }
 
@@ -162,6 +165,20 @@ impl GeometryPass {
         self
     }
 
+    /// Configure depth attachment load/store operations.
+    ///
+    /// By default, depth is cleared to 0.0 (reverse-Z far plane).
+    /// Use `depth_load(LoadOp::Load, ...)` after a depth prepass to reuse depth.
+    pub fn depth_config(
+        mut self,
+        load_op: LoadOp,
+        store_op: StoreOp,
+        clear_value: ClearValue,
+    ) -> Self {
+        self.depth_config = Some((load_op, store_op, clear_value));
+        self
+    }
+
     /// Get the pass name.
     pub fn name(&self) -> &str {
         &self.name
@@ -202,6 +219,7 @@ impl PassBuilder for GeometryPass {
         // Store pass data for the build function
         let color_outputs = self.color_outputs;
         let material = self.material;
+        let depth_config = self.depth_config;
 
         // Extract output format from first color attachment (for material format inference).
         //
@@ -246,6 +264,7 @@ impl PassBuilder for GeometryPass {
                 Ok(Box::new(GeometryPassData { colors }))
             }),
             uses_depth: true,
+            depth_attachment: depth_config,
         }
     }
 }

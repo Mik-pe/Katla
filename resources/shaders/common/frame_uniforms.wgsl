@@ -5,9 +5,9 @@ struct FrameUniforms {
     proj: mat4x4f,
     inv_view_proj: mat4x4f,
     camera_position: vec4f,
-    light_direction: vec4f,
+    light_direction: vec4f,      // xyz = direction, w = unused
     light_color: vec4f,
-    light_intensity: vec4f,
+    light_intensity: vec4f,      // x = intensity, y = depth_texture_bindless_idx
     tiles: vec4<u32>,
 }
 

@@ -37,6 +37,9 @@ pub struct PassDesc {
     pub color_attachments: Vec<(String, ImageFormat, LoadOp, StoreOp, ClearValue)>,
     /// Whether this pass uses depth testing (default true for graphics passes).
     pub uses_depth: bool,
+    /// Depth attachment load/store/clear configuration.
+    /// When None, defaults to (Clear, Store, depth=0.0) for reverse-Z.
+    pub depth_attachment: Option<(LoadOp, StoreOp, ClearValue)>,
     /// Compositing pass data: viewport textures with rectangles.
     /// Set for CompositePass, None for other pass types.
     pub compositing_viewports: Option<Vec<(GraphResourceHandle, ViewportRect)>>,
@@ -60,7 +63,8 @@ impl PassDesc {
             material: None,
             output_format: None,
             color_attachments: Vec::new(),
-            uses_depth: true, // Default to true for graphics passes
+            uses_depth: true,
+            depth_attachment: None,
             compositing_viewports: None,
         }
     }

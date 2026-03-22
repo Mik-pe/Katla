@@ -87,6 +87,7 @@ impl PassBuilder for ComputePass {
                 },
             ),
             uses_depth: false,
+            depth_attachment: None,
         }
     }
 }

@@ -88,6 +88,8 @@ pub(crate) struct MaterialCompiler {
     compositing_descriptor_set_layout: Option<vk::DescriptorSetLayout>,
     /// Light culling descriptor set layout (Set 3 for PBR materials with dynamic lights)
     light_culling_descriptor_layout: Option<vk::DescriptorSetLayout>,
+    /// Shadow descriptor set layout (Set 4 for PBR materials with shadow mapping)
+    shadow_descriptor_layout: Option<vk::DescriptorSetLayout>,
     /// Empty placeholder descriptor set layout (Set 2 for PBR materials without skeleton)
     empty_descriptor_layout: vk::DescriptorSetLayout,
     /// Flag to prevent double-free of empty descriptor layout
@@ -204,6 +206,7 @@ impl MaterialCompiler {
             skeleton_descriptor_layout,
             compositing_descriptor_set_layout: None,
             light_culling_descriptor_layout: None,
+            shadow_descriptor_layout: None,
             empty_descriptor_layout,
             empty_descriptor_layout_destroyed: false,
             skeleton_descriptor_pool,
@@ -233,10 +236,16 @@ impl MaterialCompiler {
                 pipeline: None,
                 fully_compiled: false,
                 shader_path: Some(shader_path.to_path_buf()),
+                vertex_type: options.vertex_type,
+                is_compositing: options.is_compositing,
+                alpha_blended: options.alpha_blended,
+                double_sided: options.double_sided,
+                wireframe: options.wireframe,
                 vertex_binding,
                 textures: crate::renderer::registry::MaterialTextures::default(),
                 material_descriptor_set: None,
                 material_descriptor_layout: None,
+                color_format: crate::texture::ImageFormat::B8G8R8A8Srgb,
             };
             return Ok(registry.register_material(material_asset));
         }
@@ -269,14 +278,22 @@ impl MaterialCompiler {
         log::info!("  compile: pipeline built");
 
         // 5. Register and return handle
+        // Store shader_path so invalidate_compiled_materials can recompile
+        // when descriptor layouts change (e.g., light culling resize).
         let material_asset = crate::renderer::registry::MaterialAsset {
             pipeline: Some(registry.register_pipeline(pipeline)),
             fully_compiled: true,
-            shader_path: None,
+            shader_path: Some(shader_path.to_path_buf()),
+            vertex_type: options.vertex_type,
+            is_compositing: options.is_compositing,
+            alpha_blended: options.alpha_blended,
+            double_sided: options.double_sided,
+            wireframe: options.wireframe,
             vertex_binding,
             textures: crate::renderer::registry::MaterialTextures::default(),
             material_descriptor_set: None,
             material_descriptor_layout: None,
+            color_format: options.color_format,
         };
 
         Ok(registry.register_material(material_asset))
@@ -293,7 +310,7 @@ impl MaterialCompiler {
         format: crate::texture::ImageFormat,
     ) -> Result<(), MaterialError> {
         // Get the material asset (immutable borrow)
-        let (shader_path, vertex_binding) = {
+        let (shader_path, vertex_binding, vertex_type, is_compositing, alpha_blended, double_sided, wireframe) = {
             let material = registry.get_material(material_handle).ok_or_else(|| {
                 MaterialError::ShaderCompilation(format!(
                     "Material handle {:?} not found",
@@ -306,6 +323,12 @@ impl MaterialCompiler {
                 return Ok(());
             }
 
+            log::info!(
+                "Recompiling deferred material {:?} with format {:?}",
+                material_handle,
+                format
+            );
+
             let shader_path = material
                 .shader_path
                 .as_ref()
@@ -316,7 +339,15 @@ impl MaterialCompiler {
                 })?
                 .clone();
 
-            (shader_path, material.vertex_binding.clone())
+            (
+                shader_path,
+                material.vertex_binding.clone(),
+                material.vertex_type,
+                material.is_compositing,
+                material.alpha_blended,
+                material.double_sided,
+                material.wireframe,
+            )
         };
 
         // Load shaders
@@ -329,10 +360,14 @@ impl MaterialCompiler {
             .map_err(|e| MaterialError::ShaderCompilation(format!("Fragment shader: {:?}", e)))?;
         drop(cache);
 
-        // Create options with the specified format
+        // Create options preserving original vertex_type and compositing flag
         let options = MaterialOptions {
             color_format: format,
-            ..Default::default()
+            vertex_type,
+            is_compositing,
+            alpha_blended,
+            double_sided,
+            wireframe,
         };
 
         // Build descriptor layouts
@@ -354,6 +389,7 @@ impl MaterialCompiler {
         if let Some(material) = registry.get_material_mut(material_handle) {
             material.pipeline = Some(pipeline_handle);
             material.fully_compiled = true;
+            material.color_format = format;
         }
 
         Ok(())
@@ -410,6 +446,13 @@ impl MaterialCompiler {
         // Both PBR and Skinned materials support Forward+ dynamic lighting
         if matches!(options.vertex_type, VertexType::Pbr | VertexType::Skinned)
             && let Some(layout) = self.light_culling_descriptor_layout
+        {
+            layouts.push(layout);
+        }
+
+        // Add shadow descriptor set layout (Set 4) for PBR materials
+        if matches!(options.vertex_type, VertexType::Pbr | VertexType::Skinned)
+            && let Some(layout) = self.shadow_descriptor_layout
         {
             layouts.push(layout);
         }
@@ -503,6 +546,10 @@ impl MaterialCompiler {
         self.light_culling_descriptor_layout = Some(layout);
     }
 
+    pub(crate) fn set_shadow_descriptor_layout(&mut self, layout: vk::DescriptorSetLayout) {
+        self.shadow_descriptor_layout = Some(layout);
+    }
+
     fn build_pipeline(
         &self,
         options: &MaterialOptions,
@@ -545,7 +592,7 @@ impl MaterialCompiler {
         // Configure render state from options
         // Disable depth test for UI passes and compositing passes (no depth attachment)
         if !is_ui && !options.is_compositing {
-            builder = builder.with_depth_test(true, true, crate::pipeline::CompareOp::Greater);
+            builder = builder.with_depth_test(true, true, crate::pipeline::CompareOp::GreaterOrEqual);
         }
 
         if options.double_sided {

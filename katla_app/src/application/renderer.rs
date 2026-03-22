@@ -81,7 +81,7 @@ impl Application {
             // Default lighting (sunlight)
             light_direction: [0.3, 1.0, 0.2, 0.0],
             light_color: [1.0, 0.98, 0.95, 0.0],
-            light_intensity: 1.0,
+            light_intensity: [1.0, 0.0, 0.0, 0.0],
             tiles: [tiles_x, tiles_y, 0, 0],
         };
         frame.set_frame_uniforms(frame_uniforms.clone());
@@ -92,9 +92,20 @@ impl Application {
         // Collect point lights from ECS world and upload to GPU for Forward+ culling
         self.collect_and_upload_lights();
 
-        // Apply frame uniforms to renderer
+        // Apply frame uniforms to renderer (must be before update_shadows so CSM
+        // uses the current frame's view/proj matrices)
         self.renderer
             .set_frame_uniforms(frame.frame_uniforms().clone());
+
+        // Update shadow cascades using current frame's camera matrices
+        self.renderer.update_shadows([
+            frame_uniforms.light_direction[0],
+            frame_uniforms.light_direction[1],
+            frame_uniforms.light_direction[2],
+        ]);
+
+        // Upload cascade GPU data for shadow depth shader
+        self.renderer.upload_shadow_cascades();
 
         // Execute draw calls (writes per-object data to storage buffer)
         if let Err(e) = self.renderer.execute_draw_calls(frame.draw_list()) {
@@ -204,9 +215,11 @@ impl Application {
                 draw_list.len()
             );
             if !draw_list.is_empty() {
+                frame.submit("depth_prepass", &draw_list);
                 frame.submit("geometry", &draw_list);
+                frame.submit("shadow", &draw_list);
                 log::debug!(
-                    "Submitted {} draw calls to geometry pass successfully",
+                    "Submitted {} draw calls to depth_prepass, geometry, and shadow passes",
                     draw_list.len()
                 );
             } else {

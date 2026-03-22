@@ -92,6 +92,14 @@ pub struct InternalPassBuilder {
 
     /// Whether this pass uses depth testing (default true for graphics passes).
     pub uses_depth: bool,
+
+    /// Depth attachment load/store/clear configuration.
+    /// When None, defaults to (Clear, Store, depth=0.0) for reverse-Z.
+    pub depth_attachment: Option<(
+        crate::render_pass::LoadOp,
+        crate::render_pass::StoreOp,
+        crate::render_pass::ClearValue,
+    )>,
 }
 
 #[cfg(test)]
@@ -137,6 +145,7 @@ mod tests {
                 output_format: None,
                 build_fn: Box::new(|_resource_map| Ok(Box::new(()))),
                 uses_depth: true,
+                depth_attachment: None,
             }
         }
     }

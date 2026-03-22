@@ -5,10 +5,9 @@
 //!
 //! - [`GeometryPass`] - Renders 3D geometry with color and depth outputs
 //! - [`FullscreenPass`] - Post-processing and compute-like fullscreen effects
-//! - [`ShadowPass`] - Shadow mapping for directional, point, and spot lights
+//! - [`ShadowPass`] - Cascaded shadow mapping for directional lights
 //! - [`UIPass`] - 2D UI rendering with alpha blending
 //! - [`CompositePass`] - Multi-viewport compositing with positioning
-//! - [`LightType`] - Light type enumeration for shadow passes
 //!
 //! # Example
 //!
@@ -33,6 +32,7 @@
 
 mod composite;
 mod compute;
+pub(crate) mod depth_prepass;
 mod fullscreen;
 pub(crate) mod geometry;
 mod shadow;
@@ -41,8 +41,9 @@ mod viewport;
 
 pub use composite::{CompositePass, CompositePassData, ViewportRect};
 pub use compute::ComputePass;
+pub use depth_prepass::DepthPrepass;
 pub use fullscreen::{FullscreenPass, TonemapOperator, TonemapParams};
 pub use geometry::GeometryPass;
-pub use shadow::{LightType, ShadowPass};
+pub use shadow::ShadowPass;
 pub use ui::UIPass;
 pub use viewport::ViewportPass;

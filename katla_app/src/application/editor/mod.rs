@@ -17,6 +17,32 @@ use crate::ui::{EditorAction, EntityInfo};
 
 use super::Application;
 
+/// Upload font atlas texture to GPU if it has been modified.
+///
+/// This MUST be called AFTER `generate_ui_draw_list()` (which rasterizes new glyphs
+/// into the CPU atlas) and BEFORE `render_frame()` (which samples from the GPU atlas).
+/// Calling it after render_frame causes a one-frame lag where the GPU has stale data.
+pub fn upload_font_atlas(app: &mut Application) {
+    if app.ui_context.fonts.atlas_needs_update() {
+        let (width, height) = app.ui_context.fonts.atlas_size();
+        let data = app.ui_context.fonts.atlas_data();
+
+        if app.ui_context.fonts.atlas_was_resized() {
+            app.renderer.create_ui_font_atlas(width, height, data);
+
+            if let Some(bindless_slot) = app.renderer.ui_renderer.font_atlas_bindless_slot() {
+                app.ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
+            }
+
+            app.ui_context.fonts.clear_atlas_resized();
+        } else {
+            app.renderer.update_ui_font_atlas(width, height, data);
+        }
+
+        app.ui_context.fonts.mark_atlas_updated();
+    }
+}
+
 /// Generate UI draw list for the current frame.
 ///
 /// Returns a GPU-ready UIDrawList that can be submitted to the frame graph's UI pass.
@@ -89,11 +115,13 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     }
 
     if !draw_list.is_empty() {
-        Some(ui_renderer.convert_draw_list(
+        let gpu_list = ui_renderer.convert_draw_list(
             &draw_list,
             [screen_size.x(), screen_size.y()],
             scale_factor,
-        ))
+        );
+
+        Some(gpu_list)
     } else {
         None
     }
@@ -209,34 +237,6 @@ pub fn process_editor_actions(app: &mut Application) {
                 info!("Particle system reset requested - not yet implemented");
             }
         }
-    }
-
-    // Update font atlas texture if needed (render may have added new glyphs)
-    if app.ui_context.fonts.atlas_needs_update() {
-        let (width, height) = app.ui_context.fonts.atlas_size();
-        let data = app.ui_context.fonts.atlas_data();
-
-        // Check if atlas was resized (needs new texture)
-        if app.ui_context.fonts.atlas_was_resized() {
-            // Create new texture with new size
-            app.renderer.create_ui_font_atlas(width, height, data);
-
-            // Update the bindless slot in UI renderer
-            if let Some(bindless_slot) = app.renderer.ui_renderer.font_atlas_bindless_slot() {
-                app.ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
-                log::info!(
-                    "Font atlas bindless slot updated after resize: {}",
-                    bindless_slot
-                );
-            }
-
-            app.ui_context.fonts.clear_atlas_resized();
-        } else {
-            // Update existing texture
-            app.renderer.update_ui_font_atlas(width, height, data);
-        }
-
-        app.ui_context.fonts.mark_atlas_updated();
     }
 
     // Update OS cursor based on UI request

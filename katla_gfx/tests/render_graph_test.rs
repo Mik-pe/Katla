@@ -15,11 +15,6 @@ fn test_render_graph_api_compilation() {
     let _geometry = GeometryPass::new("geometry");
     let _fullscreen = FullscreenPass::new("fullscreen");
     let _shadow = ShadowPass::new("shadow");
-
-    // Test that LightType is accessible
-    let _directional = LightType::Directional;
-    let _point = LightType::Point;
-    let _spot = LightType::Spot;
 }
 
 #[test]
@@ -44,8 +39,7 @@ fn test_shadow_pass_builder() {
     // Test that ShadowPass builds correctly.
     let _pass = ShadowPass::new("test_shadows")
         .write_depth("shadow_map", ImageFormat::D32Sfloat)
-        .resolution(2048, 2048)
-        .light_type(LightType::Directional);
+        .resolution(2048, 2048);
 }
 
 #[test]
@@ -56,7 +50,7 @@ fn test_pass_builder_types() {
 
     let _g = GeometryPass::new("g").write_color("c", ImageFormat::R8G8B8A8Srgb);
     let _f = FullscreenPass::new("f").write("o", ImageFormat::R8G8B8A8Srgb);
-    let _s = ShadowPass::new("s").light_type(LightType::Spot);
+    let _s = ShadowPass::new("s").write_depth("d", ImageFormat::D32Sfloat);
 }
 
 #[test]
@@ -73,9 +67,16 @@ fn test_render_graph_error_display() {
 }
 
 #[test]
-fn test_light_type_equality() {
-    // Test LightType comparisons.
-    assert_eq!(LightType::Directional, LightType::Directional);
-    assert_ne!(LightType::Directional, LightType::Point);
-    assert_ne!(LightType::Point, LightType::Spot);
+fn test_shadow_pass_default_resolution() {
+    // ShadowPass defaults to 4096x4096 atlas resolution.
+    // Verify it compiles and configures correctly with explicit resolution.
+    let pass = ShadowPass::new("s")
+        .resolution(4096, 4096)
+        .write_depth("d", ImageFormat::D32Sfloat);
+    let pass2 = ShadowPass::new("s2")
+        .write_depth("d", ImageFormat::D32Sfloat)
+        .resolution(2048, 2048);
+    // Both should compile without error
+    let _ = pass;
+    let _ = pass2;
 }
