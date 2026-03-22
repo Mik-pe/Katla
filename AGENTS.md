@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+When making changes to a workspace crate, read the crate's own AGENTS.md (e.g. `katla_gfx/AGENTS.md`) if it exists, as it may contain crate-specific instructions and conventions.
+
 ## Project Overview
 
 Katla is a Vulkan-based 3D render engine written in Rust 2024 edition, using ECS (Entity Component System) architecture. The project is structured as a Cargo workspace with multiple crates:
