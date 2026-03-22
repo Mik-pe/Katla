@@ -213,8 +213,9 @@ impl ApplicationBuilder {
         // Initialize shadow resources BEFORE compiling PBR materials,
         // since PBR pipelines need Set 4 for shadow data.
         // Shadow atlas view will be set after frame graph creates the transient texture.
+        use katla_gfx::shadow::CascadeParams;
         renderer
-            .init_shadow_resources(None)
+            .init_shadow_resources(None, CascadeParams::default())
             .map_err(|e| crate::error::AppError::Graphics {
                 message: format!("Failed to initialize shadow resources: {}", e),
             })?;
@@ -236,6 +237,13 @@ impl ApplicationBuilder {
             .init_shadow_pipeline(&shadow_shader_path)
             .map_err(|e| crate::error::AppError::Graphics {
                 message: format!("Failed to initialize shadow pipeline: {}", e),
+            })?;
+
+        let shadow_skinned_shader_path = resources.shader_path("shadow/shadow_depth_skinned.wgsl");
+        renderer
+            .init_shadow_pipeline_skinned(&shadow_skinned_shader_path)
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to initialize skinned shadow pipeline: {}", e),
             })?;
 
         let depth_prepass_shader_path = resources.shader_path("depth_prepass.wgsl");
@@ -554,11 +562,15 @@ impl ApplicationBuilder {
                 message: format!("Failed to initialize transient textures: {}", e),
             })?;
 
-        // Update shadow atlas view now that transient textures are created
-        if let Some(shadow_atlas_view) = frame_graph.transient_texture_view("shadow_atlas") {
-            renderer.set_shadow_atlas_view(shadow_atlas_view);
-            log::info!("Shadow atlas view set for descriptor binding");
+        // Update shadow atlas views for all frames now that transient textures are created
+        for frame_idx in 0..2 {
+            if let Some(view) =
+                frame_graph.transient_texture_view_for_frame("shadow_atlas", frame_idx)
+            {
+                renderer.set_shadow_atlas_view(frame_idx, view);
+            }
         }
+        log::info!("Shadow atlas views set for all frames");
 
         // Initialize UI renderer with font atlas bindless slot
         let mut ui_renderer = crate::ui::UIRenderer::new();

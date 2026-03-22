@@ -163,6 +163,8 @@ pub struct VulkanRenderer {
     shadow_descriptor_sets: Vec<vk::DescriptorSet>,
     /// Shadow system: depth-only pipeline for shadow map rendering
     shadow_pipeline: Option<PipelineHandle>,
+    /// Shadow system: depth-only pipeline for skinned mesh shadow rendering
+    shadow_pipeline_skinned: Option<PipelineHandle>,
     /// Shadow system: empty descriptor set layout (Set 1 placeholder for shadow pipeline)
     shadow_empty_descriptor_layout: Option<vk::DescriptorSetLayout>,
     /// Shadow system: cascade descriptor set layout (Set 2 for shadow depth shader)
@@ -181,6 +183,8 @@ pub struct VulkanRenderer {
     depth_prepass_pipeline: Option<PipelineHandle>,
     /// Depth prepass: depth-only pipeline for skinned meshes
     depth_prepass_skinned_pipeline: Option<PipelineHandle>,
+    /// Depth prepass: empty descriptor set layout (Set 1 placeholder for skinned pipeline)
+    depth_prepass_skinned_empty_layout: Option<vk::DescriptorSetLayout>,
     /// Base bindless index for per-frame depth textures.
     /// Actual index for frame N is `depth_texture_base_index + N`.
     depth_texture_base_index: Option<u32>,
@@ -335,6 +339,7 @@ impl VulkanRenderer {
             shadow_descriptor_pool: None,
             shadow_descriptor_sets: Vec::new(),
             shadow_pipeline: None,
+            shadow_pipeline_skinned: None,
             shadow_empty_descriptor_layout: None,
             shadow_cascade_descriptor_layout: None,
             shadow_cascade_descriptor_sets: Vec::new(),
@@ -344,6 +349,7 @@ impl VulkanRenderer {
             shadow_cascade_descriptor_pool: None,
             depth_prepass_pipeline: None,
             depth_prepass_skinned_pipeline: None,
+            depth_prepass_skinned_empty_layout: None,
             depth_texture_base_index: None,
             first_frame_rendered: false,
         })
@@ -617,6 +623,7 @@ impl VulkanRenderer {
     pub fn init_shadow_resources(
         &mut self,
         shadow_atlas_view: Option<vk::ImageView>,
+        params: crate::shadow::CascadeParams,
     ) -> Result<(), RendererError> {
         info!("Initializing shadow resources...");
 
@@ -746,8 +753,7 @@ impl VulkanRenderer {
         };
 
         // Create CSM cascade computation
-        let shadow_csm =
-            crate::shadow::CascadeShadowMap::new(crate::shadow::CascadeParams::default());
+        let shadow_csm = crate::shadow::CascadeShadowMap::new(params);
 
         // Create shadow buffers (storage buffer for ShadowFrameData)
         let shadow_buffers = crate::shadow::ShadowBuffers::new(
@@ -797,10 +803,10 @@ impl VulkanRenderer {
         self.shadow_descriptor_sets.get(frame_idx).copied()
     }
 
-    /// Update the shadow atlas image view (call on resize/recreation).
-    pub fn set_shadow_atlas_view(&mut self, view: vk::ImageView) {
+    /// Update the shadow atlas image view for a specific frame (call on resize/recreation).
+    pub fn set_shadow_atlas_view(&mut self, frame_idx: usize, view: vk::ImageView) {
         if let Some(ref mut buffers) = self.shadow_buffers {
-            buffers.set_shadow_atlas_view(view);
+            buffers.set_shadow_atlas_view(frame_idx, view);
         }
     }
 
@@ -998,15 +1004,9 @@ impl VulkanRenderer {
         };
         self.shadow_empty_descriptor_layout = Some(empty_descriptor_layout);
         // - Front-face culling (reduces self-shadowing)
-        // - Depth bias
+        // - Shader-based depth bias (normal-aware)
         // - Depth-only output (D32Sfloat, no color)
         let storage_layout = self.storage_descriptor_sets[0].layout();
-
-        let cascade_params = self
-            .shadow_csm
-            .as_ref()
-            .map(|csm| csm.params().clone())
-            .unwrap_or_default();
 
         let pipeline = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_module, frag_module)
@@ -1020,11 +1020,7 @@ impl VulkanRenderer {
             ))
             .with_depth_test(true, true, crate::pipeline::CompareOp::Less)
             .with_cull_mode(CullMode::Front, FrontFace::CounterClockwise)
-            .with_depth_bias(
-                cascade_params.depth_bias_constant,
-                cascade_params.depth_bias_slope,
-                0.0,
-            )
+            .with_depth_bias(0.0, 0.0, 0.0)
             .with_rendering_formats(None, Some(crate::texture::ImageFormat::D32Sfloat))
             .build_dynamic()
             .map_err(|e| {
@@ -1044,7 +1040,9 @@ impl VulkanRenderer {
         self.shadow_cascade_mapped_ptr = Some(mapped_ptr);
         self.shadow_cascade_descriptor_pool = Some(cascade_pool);
 
-        info!("Shadow depth pipeline initialized (4 cascades, front-face culled, depth bias)");
+        info!(
+            "Shadow depth pipeline initialized (4 cascades, front-face culled, shader-based bias)"
+        );
         Ok(())
     }
 
@@ -1099,6 +1097,100 @@ impl VulkanRenderer {
     /// Get the shadow depth pipeline handle.
     pub fn shadow_pipeline(&self) -> Option<PipelineHandle> {
         self.shadow_pipeline
+    }
+
+    /// Get the skinned shadow depth pipeline handle.
+    pub fn shadow_pipeline_skinned(&self) -> Option<PipelineHandle> {
+        self.shadow_pipeline_skinned
+    }
+
+    /// Initialize the skinned shadow depth pipeline.
+    ///
+    /// Same as the regular shadow pipeline but uses the skinned vertex layout
+    /// (includes joint indices/weights) and binds skeleton joint matrices at Set 3.
+    /// Uses the same cascade descriptor sets as the regular shadow pipeline.
+    pub fn init_shadow_pipeline_skinned(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        use crate::pipeline::{CullMode, FrontFace};
+        use crate::vertex::VertexLayout;
+        use crate::vulkan::material::builder::PipelineBuilder;
+
+        let storage_layout = self.storage_descriptor_sets[0].layout();
+        let empty_descriptor_layout = self.shadow_empty_descriptor_layout.ok_or_else(|| {
+            RendererError::InitializationFailed(
+                "Shadow empty descriptor layout not initialized. Call init_shadow_pipeline() first."
+                    .to_string(),
+            )
+        })?;
+        let cascade_layout = self.shadow_cascade_descriptor_layout.ok_or_else(|| {
+            RendererError::InitializationFailed(
+                "Shadow cascade descriptor layout not initialized. Call init_shadow_pipeline() first."
+                    .to_string(),
+            )
+        })?;
+        let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
+
+        let mut cache = self.material_compiler.shader_cache.borrow_mut();
+        let vert_module = cache
+            .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to load skinned shadow vertex shader: {:?}",
+                    e
+                ))
+            })?;
+        let frag_module = cache
+            .load_shader(shader_path, vk::ShaderStageFlags::FRAGMENT)
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to load skinned shadow fragment shader: {:?}",
+                    e
+                ))
+            })?;
+        drop(cache);
+
+        let cascade_params = self
+            .shadow_csm
+            .as_ref()
+            .map(|csm| csm.params().clone())
+            .unwrap_or_default();
+
+        let pipeline = PipelineBuilder::new(self.context.clone())
+            .with_shaders(vert_module, frag_module)
+            .with_descriptor_layouts(vec![
+                storage_layout,
+                empty_descriptor_layout,
+                cascade_layout,
+                skeleton_layout,
+            ])
+            .with_vertex_binding(crate::vulkan::vertexbinding::VertexBinding::from(
+                &VertexLayout::pbr_skinned(),
+            ))
+            .with_depth_test(true, true, crate::pipeline::CompareOp::Less)
+            .with_cull_mode(CullMode::Front, FrontFace::CounterClockwise)
+            .with_depth_bias(
+                cascade_params.depth_bias_constant,
+                cascade_params.depth_bias_slope,
+                0.0,
+            )
+            .with_rendering_formats(None, Some(crate::texture::ImageFormat::D32Sfloat))
+            .build_dynamic()
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to build skinned shadow pipeline: {:?}",
+                    e
+                ))
+            })?;
+
+        let pipeline_handle = self.asset_registry.register_pipeline(pipeline);
+        self.shadow_pipeline_skinned = Some(pipeline_handle);
+
+        info!(
+            "Skinned shadow depth pipeline initialized (4 cascades, front-face culled, depth bias)"
+        );
+        Ok(())
     }
 
     /// Initialize the depth prepass pipeline.
@@ -1199,9 +1291,25 @@ impl VulkanRenderer {
         let storage_layout = self.storage_descriptor_sets[0].layout();
         let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
 
+        let empty_descriptor_layout = unsafe {
+            self.context
+                .device
+                .create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default(), None)
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to create empty descriptor layout for skinned depth prepass: {:?}",
+                        e
+                    ))
+                })?
+        };
+
         let pipeline = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_module, frag_module)
-            .with_descriptor_layouts(vec![storage_layout, skeleton_layout])
+            .with_descriptor_layouts(vec![
+                storage_layout,
+                empty_descriptor_layout,
+                skeleton_layout,
+            ])
             .with_vertex_binding(crate::vulkan::vertexbinding::VertexBinding::from(
                 &VertexLayout::pbr_skinned(),
             ))
@@ -1218,6 +1326,7 @@ impl VulkanRenderer {
 
         let pipeline_handle = self.asset_registry.register_pipeline(pipeline);
         self.depth_prepass_skinned_pipeline = Some(pipeline_handle);
+        self.depth_prepass_skinned_empty_layout = Some(empty_descriptor_layout);
 
         info!("Skinned depth prepass pipeline initialized (reverse-Z, back-face culled)");
         Ok(())
@@ -1293,6 +1402,7 @@ impl VulkanRenderer {
                 &self.context.device,
                 pipeline_layout,
                 descriptor_set,
+                frame_idx,
             ) {
                 log::warn!("Failed to bind shadow descriptors: {}", e);
             }
@@ -2201,6 +2311,13 @@ impl VulkanRenderer {
             }
         }
         if let Some(layout) = self.shadow_empty_descriptor_layout.take() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(layout, None);
+            }
+        }
+        if let Some(layout) = self.depth_prepass_skinned_empty_layout.take() {
             unsafe {
                 self.context
                     .device

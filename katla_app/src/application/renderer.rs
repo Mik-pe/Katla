@@ -81,7 +81,15 @@ impl Application {
             // Default lighting (sunlight)
             light_direction: [0.3, 1.0, 0.2, 0.0],
             light_color: [1.0, 0.98, 0.95, 0.0],
-            light_intensity: [1.0, 0.0, 0.0, 0.0],
+            light_intensity: [
+                1.0,
+                self.renderer
+                    .depth_texture_base_index()
+                    .map(|base| base + self.renderer.current_frame() as u32)
+                    .unwrap_or(0) as f32,
+                0.0,
+                0.0,
+            ],
             tiles: [tiles_x, tiles_y, 0, 0],
         };
         frame.set_frame_uniforms(frame_uniforms.clone());

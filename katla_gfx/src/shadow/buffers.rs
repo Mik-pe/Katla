@@ -58,7 +58,7 @@ pub struct ShadowBuffers {
 
     shadow_data_mapped_ptr: *mut u8,
 
-    shadow_atlas_view: Option<vk::ImageView>,
+    shadow_atlas_views: Vec<Option<vk::ImageView>>,
 
     shadow_sampler: Option<vk::Sampler>,
 
@@ -94,12 +94,16 @@ impl ShadowBuffers {
             std::ptr::write_bytes(shadow_data_mapped_ptr, 0, shadow_data_size as usize);
         }
 
+        let shadow_atlas_views = (0..crate::renderer::FRAMES_IN_FLIGHT)
+            .map(|_| shadow_atlas_view)
+            .collect();
+
         Ok(Self {
             context,
             shadow_data_buffer,
             shadow_data_allocation: Some(shadow_data_allocation),
             shadow_data_mapped_ptr,
-            shadow_atlas_view,
+            shadow_atlas_views,
             shadow_sampler: Some(shadow_sampler),
             destroyed: false,
         })
@@ -127,8 +131,14 @@ impl ShadowBuffers {
         }
     }
 
-    pub fn set_shadow_atlas_view(&mut self, view: vk::ImageView) {
-        self.shadow_atlas_view = Some(view);
+    pub fn len(&self) -> usize {
+        self.shadow_atlas_views.len()
+    }
+
+    pub fn set_shadow_atlas_view(&mut self, frame_idx: usize, view: vk::ImageView) {
+        if frame_idx < self.shadow_atlas_views.len() {
+            self.shadow_atlas_views[frame_idx] = Some(view);
+        }
     }
 
     pub fn update_and_bind_descriptors(
@@ -137,9 +147,12 @@ impl ShadowBuffers {
         device: &ash::Device,
         pipeline_layout: vk::PipelineLayout,
         descriptor_set: vk::DescriptorSet,
+        frame_idx: usize,
     ) -> Result<(), String> {
         let shadow_atlas_view = self
-            .shadow_atlas_view
+            .shadow_atlas_views
+            .get(frame_idx)
+            .and_then(|v| *v)
             .filter(|v| *v != vk::ImageView::null())
             .ok_or_else(|| "Shadow atlas view not set or null".to_string())?;
         let shadow_sampler = self

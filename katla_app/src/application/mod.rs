@@ -181,11 +181,14 @@ impl ApplicationHandler for Application {
                         }
                     }
 
-                    // Update shadow atlas view if it was recreated
-                    if let Some(shadow_atlas_view) =
-                        self.frame_graph.transient_texture_view("shadow_atlas")
-                    {
-                        self.renderer.set_shadow_atlas_view(shadow_atlas_view);
+                    // Update shadow atlas views for all frames if recreated
+                    for frame_idx in 0..2 {
+                        if let Some(view) = self
+                            .frame_graph
+                            .transient_texture_view_for_frame("shadow_atlas", frame_idx)
+                        {
+                            self.renderer.set_shadow_atlas_view(frame_idx, view);
+                        }
                     }
 
                     let aspect = extent.width as f32 / extent.height as f32;

@@ -424,6 +424,16 @@ impl FrameGraph {
         self.transient_texture(name, 0).map(|t| t.image_view.vk())
     }
 
+    /// Get the ImageView of a transient texture by name for a specific frame.
+    pub fn transient_texture_view_for_frame(
+        &self,
+        name: &str,
+        frame_idx: usize,
+    ) -> Option<vk::ImageView> {
+        self.transient_texture(name, frame_idx)
+            .map(|t| t.image_view.vk())
+    }
+
     /// Initialize transient textures (create Vulkan resources).
     ///
     /// Called internally on first use. Can be called explicitly to pre-initialize
@@ -3119,8 +3129,8 @@ impl<'a> Frame<'a> {
             .renderer
             .shadow_csm
             .as_ref()
-            .map(|csm| csm.params().depth_bias_constant)
-            .unwrap_or(1.5);
+            .map(|csm| csm.params().depth_bias_slope)
+            .unwrap_or(2.0);
 
         for cascade_idx in 0..num_cascades {
             // Set single viewport for this cascade
@@ -3144,7 +3154,7 @@ impl<'a> Frame<'a> {
             self.renderer
                 .set_shadow_cascade_params(cascade_idx, depth_bias);
 
-            // Draw all geometry for this cascade (skip skinned meshes — shadow pipeline uses PBR vertex layout)
+            // --- Non-skinned meshes (regular shadow pipeline) ---
             for draw_list in &data.draw_lists {
                 for draw_call in &draw_list.draws {
                     if !draw_call.skeleton.is_none() {
@@ -3177,6 +3187,94 @@ impl<'a> Frame<'a> {
                             draw_call.instance_index,
                         );
                     }
+                }
+            }
+
+            // --- Skinned meshes (skinned shadow pipeline) ---
+            if let Some(skinned_pipeline_handle) = self.renderer.shadow_pipeline_skinned() {
+                let (skinned_pipeline, skinned_layout) = self
+                    .renderer
+                    .asset_registry
+                    .get_pipeline_vk_handles(skinned_pipeline_handle)
+                    .ok_or(RenderGraphError::InvalidPipelineHandle(
+                        skinned_pipeline_handle,
+                    ))?;
+
+                unsafe {
+                    self.renderer.context.device.cmd_bind_pipeline(
+                        cmd.vk_command_buffer(),
+                        vk::PipelineBindPoint::GRAPHICS,
+                        skinned_pipeline,
+                    );
+                }
+
+                // Re-bind descriptor sets for the skinned pipeline layout:
+                // Set 0: storage uniforms (frame_data + objects)
+                // Set 2: shadow cascades
+                let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
+                cmd.bind_descriptor_sets(skinned_layout, 0, &[storage_ds], &[]);
+
+                if let Some(cascade_ds) = self.renderer.shadow_cascade_descriptor_set() {
+                    cmd.bind_descriptor_sets(skinned_layout, 2, &[cascade_ds], &[]);
+                }
+
+                for draw_list in &data.draw_lists {
+                    for draw_call in &draw_list.draws {
+                        if draw_call.skeleton.is_none() {
+                            continue;
+                        }
+
+                        // Bind Set 3: skeleton joint matrices for this draw call
+                        let skeleton_ds = self
+                            .renderer
+                            .get_skeleton_descriptor(draw_call.skeleton)
+                            .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
+                        cmd.bind_descriptor_sets(skinned_layout, 3, &[skeleton_ds.vk_set()], &[]);
+
+                        let mesh = self
+                            .renderer
+                            .asset_registry
+                            .get_mesh(draw_call.mesh)
+                            .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
+
+                        if let Some(vb) = &mesh.vertex_buffer {
+                            cmd.bind_vertex_buffer(vb.object(), 0);
+                        }
+
+                        if let Some(ib) = &mesh.index_buffer {
+                            cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
+                        }
+
+                        let index_count =
+                            mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
+
+                        unsafe {
+                            self.renderer.context.device.cmd_draw_indexed(
+                                cmd.vk_command_buffer(),
+                                index_count,
+                                1,
+                                0,
+                                0,
+                                draw_call.instance_index,
+                            );
+                        }
+                    }
+                }
+
+                // Switch back to the regular shadow pipeline for the next cascade iteration
+                unsafe {
+                    self.renderer.context.device.cmd_bind_pipeline(
+                        cmd.vk_command_buffer(),
+                        vk::PipelineBindPoint::GRAPHICS,
+                        pipeline,
+                    );
+                }
+
+                let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
+                cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
+
+                if let Some(cascade_ds) = self.renderer.shadow_cascade_descriptor_set() {
+                    cmd.bind_descriptor_sets(layout, 2, &[cascade_ds], &[]);
                 }
             }
         }
@@ -3332,7 +3430,7 @@ impl<'a> Frame<'a> {
                     current_pipeline_is_skinned = is_skinned;
                 }
 
-                // Bind skeleton descriptor set for skinned meshes
+                // Bind skeleton descriptor set for skinned meshes (Set 2)
                 if is_skinned {
                     let skeleton_ds = self
                         .renderer
@@ -3340,7 +3438,7 @@ impl<'a> Frame<'a> {
                         .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
                     cmd.bind_descriptor_sets(
                         skinned_layout.unwrap(),
-                        1,
+                        2,
                         &[skeleton_ds.vk_set()],
                         &[],
                     );
