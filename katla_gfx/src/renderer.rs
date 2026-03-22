@@ -172,12 +172,12 @@ pub struct VulkanRenderer {
     shadow_cascade_descriptor_layout: Option<vk::DescriptorSetLayout>,
     /// Shadow system: per-frame cascade descriptor sets (Set 2)
     shadow_cascade_descriptor_sets: Vec<vk::DescriptorSet>,
-    /// Shadow system: cascade storage buffer (CPU→GPU, contains ShadowCascadeGPU array)
-    shadow_cascade_buffer: Option<vk::Buffer>,
-    /// Shadow system: cascade buffer allocation
-    shadow_cascade_allocation: Option<gpu_allocator::vulkan::Allocation>,
-    /// Shadow system: cascade buffer mapped pointer
-    shadow_cascade_mapped_ptr: Option<*mut u8>,
+    /// Shadow system: per-frame cascade storage buffers (CPU→GPU, contains ShadowCascadeGPU array)
+    shadow_cascade_buffers: Vec<vk::Buffer>,
+    /// Shadow system: per-frame cascade buffer allocations
+    shadow_cascade_allocations: Vec<gpu_allocator::vulkan::Allocation>,
+    /// Shadow system: per-frame cascade buffer mapped pointers
+    shadow_cascade_mapped_ptrs: Vec<*mut u8>,
     /// Shadow system: cascade descriptor pool
     shadow_cascade_descriptor_pool: Option<vk::DescriptorPool>,
     /// Depth prepass: depth-only pipeline for camera-space depth rendering
@@ -344,9 +344,9 @@ impl VulkanRenderer {
             shadow_empty_descriptor_layout: None,
             shadow_cascade_descriptor_layout: None,
             shadow_cascade_descriptor_sets: Vec::new(),
-            shadow_cascade_buffer: None,
-            shadow_cascade_allocation: None,
-            shadow_cascade_mapped_ptr: None,
+            shadow_cascade_buffers: Vec::new(),
+            shadow_cascade_allocations: Vec::new(),
+            shadow_cascade_mapped_ptrs: Vec::new(),
             shadow_cascade_descriptor_pool: None,
             depth_prepass_pipeline: None,
             depth_prepass_skinned_pipeline: None,
@@ -914,40 +914,50 @@ impl VulkanRenderer {
                 })?
         };
 
-        // Create cascade storage buffer (4 x ShadowCascadeGPU + ShadowParams)
+        // Create per-frame cascade storage buffers (4 x ShadowCascadeGPU + ShadowParams per frame)
         let cascade_data_size =
             std::mem::size_of::<ShadowCascadeGPU>() * crate::shadow::cascade::MAX_CASCADES;
         let params_size = 16u64; // ShadowParams: cascade_index(u32) + bias(f32) + pad(vec2f)
-        let total_buffer_size = cascade_data_size as u64 + params_size;
+        let per_frame_buffer_size = cascade_data_size as u64 + params_size;
 
-        let buffer_info = vk::BufferCreateInfo::default()
-            .size(total_buffer_size)
-            .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+        let mut cascade_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut cascade_allocations = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut cascade_mapped_ptrs = Vec::with_capacity(FRAMES_IN_FLIGHT);
 
-        let (cascade_buffer, cascade_allocation) = self
-            .context
-            .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
+        for _frame in 0..FRAMES_IN_FLIGHT {
+            let buffer_info = vk::BufferCreateInfo::default()
+                .size(per_frame_buffer_size)
+                .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let mapped_ptr = self.context.map_buffer(&cascade_allocation);
-        unsafe {
-            std::ptr::write_bytes(mapped_ptr, 0, total_buffer_size as usize);
+            let (buffer, allocation) = self
+                .context
+                .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
+
+            let mapped_ptr = self.context.map_buffer(&allocation);
+            unsafe {
+                std::ptr::write_bytes(mapped_ptr, 0, per_frame_buffer_size as usize);
+            }
+
+            cascade_buffers.push(buffer);
+            cascade_allocations.push(allocation);
+            cascade_mapped_ptrs.push(mapped_ptr);
         }
 
-        // Write descriptor sets with two bindings:
+        // Write descriptor sets with two bindings per frame:
         // Binding 0: cascade array (4 x ShadowCascadeGPU)
         // Binding 1: shadow params (ShadowParams)
-        let cascade_buffer_info = vk::DescriptorBufferInfo::default()
-            .buffer(cascade_buffer)
-            .offset(0)
-            .range(cascade_data_size as u64);
+        for (frame_idx, &descriptor_set) in cascade_descriptor_sets.iter().enumerate() {
+            let cascade_buffer_info = vk::DescriptorBufferInfo::default()
+                .buffer(cascade_buffers[frame_idx])
+                .offset(0)
+                .range(cascade_data_size as u64);
 
-        let params_buffer_info = vk::DescriptorBufferInfo::default()
-            .buffer(cascade_buffer)
-            .offset(cascade_data_size as u64)
-            .range(params_size);
+            let params_buffer_info = vk::DescriptorBufferInfo::default()
+                .buffer(cascade_buffers[frame_idx])
+                .offset(cascade_data_size as u64)
+                .range(params_size);
 
-        for &descriptor_set in &cascade_descriptor_sets {
             let writes = [
                 vk::WriteDescriptorSet::default()
                     .dst_set(descriptor_set)
@@ -1044,9 +1054,9 @@ impl VulkanRenderer {
         self.shadow_pipeline = Some(pipeline_handle);
         self.shadow_cascade_descriptor_layout = Some(cascade_layout);
         self.shadow_cascade_descriptor_sets = cascade_descriptor_sets;
-        self.shadow_cascade_buffer = Some(cascade_buffer);
-        self.shadow_cascade_allocation = Some(cascade_allocation);
-        self.shadow_cascade_mapped_ptr = Some(mapped_ptr);
+        self.shadow_cascade_buffers = cascade_buffers;
+        self.shadow_cascade_allocations = cascade_allocations;
+        self.shadow_cascade_mapped_ptrs = cascade_mapped_ptrs;
         self.shadow_cascade_descriptor_pool = Some(cascade_pool);
 
         info!(
@@ -1060,7 +1070,11 @@ impl VulkanRenderer {
     /// Call this after `update_shadows()` to upload cascade view_proj matrices
     /// to the cascade storage buffer for the shadow depth shader.
     pub fn upload_shadow_cascades(&mut self) {
-        if let (Some(csm), Some(mapped_ptr)) = (&self.shadow_csm, self.shadow_cascade_mapped_ptr) {
+        if let (Some(csm), frame_idx) = (&self.shadow_csm, self.current_frame()) {
+            if frame_idx >= self.shadow_cascade_mapped_ptrs.len() {
+                return;
+            }
+            let mapped_ptr = self.shadow_cascade_mapped_ptrs[frame_idx];
             let gpu_data = csm.gpu_data();
             let cascade_size = std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>();
             unsafe {
@@ -1070,9 +1084,9 @@ impl VulkanRenderer {
                     cascade_size * crate::shadow::cascade::MAX_CASCADES,
                 );
             }
-            if let Some(ref alloc) = self.shadow_cascade_allocation {
+            if frame_idx < self.shadow_cascade_allocations.len() {
                 self.context.flush_mapped_memory(
-                    alloc,
+                    &self.shadow_cascade_allocations[frame_idx],
                     0,
                     (cascade_size * crate::shadow::cascade::MAX_CASCADES) as u64,
                 );
@@ -1084,22 +1098,28 @@ impl VulkanRenderer {
     ///
     /// Call this before each cascade draw to set the active cascade index and bias.
     pub fn set_shadow_cascade_params(&self, cascade_index: u32, bias: f32) {
-        if let Some(mapped_ptr) = self.shadow_cascade_mapped_ptr {
-            let cascade_size = std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>()
-                * crate::shadow::cascade::MAX_CASCADES;
-            let params_offset = cascade_size;
-            let params: [u32; 4] = [cascade_index, bias.to_bits(), 0, 0];
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    params.as_ptr() as *const u8,
-                    mapped_ptr.add(params_offset),
-                    16,
-                );
-            }
-            if let Some(ref alloc) = self.shadow_cascade_allocation {
-                self.context
-                    .flush_mapped_memory(alloc, params_offset as u64, 16);
-            }
+        let frame_idx = self.current_frame();
+        if frame_idx >= self.shadow_cascade_mapped_ptrs.len() {
+            return;
+        }
+        let mapped_ptr = self.shadow_cascade_mapped_ptrs[frame_idx];
+        let cascade_size = std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>()
+            * crate::shadow::cascade::MAX_CASCADES;
+        let params_offset = cascade_size;
+        let params: [u32; 4] = [cascade_index, bias.to_bits(), 0, 0];
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                params.as_ptr() as *const u8,
+                mapped_ptr.add(params_offset),
+                16,
+            );
+        }
+        if frame_idx < self.shadow_cascade_allocations.len() {
+            self.context.flush_mapped_memory(
+                &self.shadow_cascade_allocations[frame_idx],
+                params_offset as u64,
+                16,
+            );
         }
     }
 
@@ -2278,17 +2298,17 @@ impl VulkanRenderer {
             }
         }
         self.shadow_cascade_descriptor_sets.clear();
-        if let Some((buffer, allocation)) = self
-            .shadow_cascade_buffer
-            .zip(self.shadow_cascade_allocation.take())
+        for (buffer, allocation) in self
+            .shadow_cascade_buffers
+            .drain(..)
+            .zip(self.shadow_cascade_allocations.drain(..))
         {
             unsafe {
                 self.context.device.destroy_buffer(buffer, None);
                 let _ = self.context.allocator.borrow_mut().free(allocation);
             }
-            self.shadow_cascade_buffer = None;
-            self.shadow_cascade_mapped_ptr = None;
         }
+        self.shadow_cascade_mapped_ptrs.clear();
         // Original shadow descriptor resources (pool only, layout destroyed after pre_destroy)
         if let Some(pool) = self.shadow_descriptor_pool.take() {
             unsafe {
@@ -3321,12 +3341,7 @@ impl VulkanRenderer {
         // 10. Advance to next frame
         self.swap_data.step_frame();
 
-        // 11. Read back particle timing data (after GPU work completes)
-        if let Some(ref mut ps) = self.particle_system
-            && let Some(compute_time) = ps.get_compute_time_ms()
-        {
-            log::debug!("Particle compute time: {:.3} ms", compute_time);
-        }
+        // 11. Advance to next frame
     }
 
     /// Queue an asynchronous readback of the last presented swapchain image.

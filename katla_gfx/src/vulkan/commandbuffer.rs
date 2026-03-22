@@ -258,15 +258,15 @@ impl CommandBuffer {
         if buffers.is_empty() {
             return;
         }
-        let max_binding = buffers.iter().map(|(idx, _)| *idx).max().unwrap_or(0) as usize + 1;
-        let mut buffer_vec = vec![vk::Buffer::null(); max_binding];
-        let offsets = vec![0u64; max_binding];
-        for &(idx, buf) in buffers {
-            buffer_vec[idx as usize] = buf;
-        }
-        unsafe {
-            self.device
-                .cmd_bind_vertex_buffers(self.command_buffer, 0, &buffer_vec, &offsets);
+        for &(first_binding, buf) in buffers {
+            unsafe {
+                self.device.cmd_bind_vertex_buffers(
+                    self.command_buffer,
+                    first_binding,
+                    &[buf],
+                    &[0u64],
+                );
+            }
         }
     }
 
