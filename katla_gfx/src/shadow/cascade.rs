@@ -325,16 +325,20 @@ fn snap_to_texel(
     snapped_view[13] += offset_x * light_view[1] + offset_y * light_view[5];
     snapped_view[14] += offset_x * light_view[2] + offset_y * light_view[6];
 
-    let snapped_mins = [mins[0] + offset_x, mins[1] + offset_y, mins[2]];
-    let snapped_maxs = [maxs[0] + offset_x, maxs[1] + offset_y, maxs[2]];
+    // Stabilize Z: snap the near plane to prevent depth range jittering.
+    // The Z extent (maxs[2] - mins[2]) is quantized upward to the next texel-sized step.
+    let z_range = maxs[2] - mins[2];
+    let z_units_per_texel = z_range / shadow_map_size as f32;
+    let snapped_z_range = (z_range / z_units_per_texel).ceil() * z_units_per_texel;
+    let snapped_maxs_z = mins[2] + snapped_z_range;
 
     let proj = mat4_ortho(
-        snapped_mins[0],
-        snapped_maxs[0],
-        snapped_mins[1],
-        snapped_maxs[1],
-        snapped_mins[2],
-        snapped_maxs[2],
+        mins[0] + offset_x,
+        maxs[0] + offset_x,
+        mins[1] + offset_y,
+        maxs[1] + offset_y,
+        mins[2],
+        snapped_maxs_z,
     );
 
     (proj, snapped_view)
