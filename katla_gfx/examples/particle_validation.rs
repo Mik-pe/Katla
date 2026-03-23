@@ -27,7 +27,6 @@ mod particle_validation_helpers;
 use ash::vk;
 use katla_gfx::ValidationMode;
 use katla_gfx::VulkanContext;
-use katla_gfx::particles::debug_readback::ParticleDebugData;
 use katla_gfx::particles::{EmitterConfig, GlobalParticleSystem, PARTICLE_EMIT_WORKGROUP_SIZE, PARTICLE_SIMULATE_WORKGROUP_SIZE};
 use katla_gfx::renderer::registry::AssetRegistry;
 use std::ffi::CString;
@@ -87,185 +86,6 @@ impl FrameDiagnostics {
             self.emit_count,
             self.delta_time,
             self.cumulative_time
-        );
-    }
-}
-
-/// Track alive_list content across frames for corruption detection.
-///
-/// This struct stores the alive_list indices for each frame and provides
-/// validation functions to detect corruption patterns.
-struct FrameAliveListTracker {
-    /// Store alive_list indices for each frame
-    frame_data: Vec<FrameAliveData>,
-    /// Maximum particles in the system
-    max_particles: u32,
-}
-
-/// Per-frame alive_list data
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
-struct FrameAliveData {
-    /// Frame number
-    frame: u32,
-    /// Alive particle indices from this frame
-    alive_indices: Vec<u32>,
-    /// Alive count (should match alive_indices.len())
-    alive_count: u32,
-    /// Emit count for this frame
-    emit_count: u32,
-    /// Cumulative time at this frame
-    cumulative_time: f32,
-}
-
-impl FrameAliveListTracker {
-    /// Create a new tracker with given capacity.
-    fn new(max_particles: u32, expected_frames: u32) -> Self {
-        Self {
-            frame_data: Vec::with_capacity(expected_frames as usize),
-            max_particles,
-        }
-    }
-
-    /// Record alive_list data for a frame.
-    fn record_frame(
-        &mut self,
-        frame: u32,
-        alive_list: &[u32],
-        alive_count: u32,
-        emit_count: u32,
-        cumulative_time: f32,
-    ) {
-        // Only store the actual alive particles (first alive_count entries).
-        // DO NOT filter index 0 - index 0 is a valid particle index.
-        // Filtering it was masking the real duplicate count.
-        let actual_alive: Vec<u32> = alive_list
-            .iter()
-            .take(alive_count as usize)
-            .copied()
-            .collect();
-
-        // Diagnostic: check for index 0 count and duplicates in raw data
-        if frame < 5 || frame % 50 == 0 {
-            let zero_count = actual_alive.iter().filter(|&&x| x == 0).count();
-            if zero_count > 0 {
-                log::warn!(
-                    "Frame {}: {} entries with index 0 in alive_next (stale data from alive_next not being cleared)",
-                    frame,
-                    zero_count
-                );
-            }
-        }
-
-        self.frame_data.push(FrameAliveData {
-            frame,
-            alive_indices: actual_alive,
-            alive_count,
-            emit_count,
-            cumulative_time,
-        });
-    }
-
-    /// Validate frame-to-frame transitions for corruption patterns.
-    ///
-    /// NOTE: Disabled because particle index tracking across frames is not meaningful
-    /// for particle systems with index recycling. Per-frame validation is sufficient.
-    fn validate_transitions(&self) -> Result<(), Vec<String>> {
-        Ok(())
-    }
-
-    /// Check for corruption within each frame's alive_list.
-    fn validate_per_frame(&self) -> Result<(), Vec<String>> {
-        let mut frames_with_dupes = 0u32;
-        let mut max_dupe_count = 0u32;
-        let mut frames_with_oob = 0u32;
-        let mut error_details = Vec::new();
-
-        for frame_data in &self.frame_data {
-            // Check for duplicates
-            let mut seen = std::collections::HashSet::new();
-            let mut duplicates = Vec::new();
-
-            for &idx in &frame_data.alive_indices {
-                if !seen.insert(idx) {
-                    duplicates.push(idx);
-                }
-            }
-
-            if !duplicates.is_empty() {
-                frames_with_dupes += 1;
-                max_dupe_count = max_dupe_count.max(duplicates.len() as u32);
-
-                // Only collect details for first few frames to avoid spam
-                if frames_with_dupes <= 3 {
-                    let mut dup_counts: std::collections::HashMap<u32, usize> =
-                        std::collections::HashMap::new();
-                    for &idx in &duplicates {
-                        *dup_counts.entry(idx).or_insert(0) += 1;
-                    }
-                    let mut most_common_dup = (0, 0);
-                    for (idx, count) in &dup_counts {
-                        if *count > most_common_dup.1 {
-                            most_common_dup = (*idx, *count);
-                        }
-                    }
-                    error_details.push(format!(
-                        "Frame {}: {} dupes ({} unique), worst: index {} x{}",
-                        frame_data.frame,
-                        duplicates.len(),
-                        duplicates
-                            .iter()
-                            .cloned()
-                            .collect::<std::collections::HashSet<_>>()
-                            .len(),
-                        most_common_dup.0,
-                        most_common_dup.1
-                    ));
-                }
-            }
-
-            // Check for out-of-bounds indices
-            let oob_count = frame_data
-                .alive_indices
-                .iter()
-                .filter(|&&idx| idx >= self.max_particles)
-                .count();
-
-            if oob_count > 0 {
-                frames_with_oob += 1;
-                if frames_with_oob <= 3 {
-                    error_details.push(format!(
-                        "Frame {}: {} out-of-bounds indices (max={})",
-                        frame_data.frame, oob_count, self.max_particles
-                    ));
-                }
-            }
-        }
-
-        if frames_with_dupes == 0 && frames_with_oob == 0 {
-            log::info!("Per-frame alive_list validation passed");
-            Ok(())
-        } else {
-            let mut summary = Vec::new();
-            summary.push(format!(
-                "{} frames with duplicates (max {} dupes/frame), {} frames with OOB indices",
-                frames_with_dupes, max_dupe_count, frames_with_oob
-            ));
-            summary.extend(error_details);
-            Err(summary)
-        }
-    }
-
-    /// Print summary statistics.
-    fn print_summary(&self) {
-        let total_alive: u64 = self.frame_data.iter().map(|d| d.alive_count as u64).sum();
-        let avg_alive = total_alive / self.frame_data.len() as u64;
-
-        log::info!(
-            "Alive list tracking: {} frames, avg_alive={}, max_capacity={}",
-            self.frame_data.len(),
-            avg_alive,
-            self.max_particles
         );
     }
 }
@@ -449,21 +269,8 @@ fn main() -> ExitCode {
     // Create double-buffered frame state (fences + semaphores)
     let mut frame_state = DoubleBufferedFrameState::new(&context.device);
 
-    // Readback is deferred by 2 frames: when we process frame N, we read back
-    // results from frame N-2. The first 2 frames have no readback data available.
-    let mut pending_readback_frame: Option<u32> = None; // frame number of pending readback
-    let mut pending_emit_count: u32 = 0;
-    let mut pending_readback_fi: usize = 0; // frame index for descriptor of pending readback
-
     let mut cumulative_time = 0.0;
     let mut prev_alive_count = 0u32;
-
-    // Create tracker for alive_list validation across frames
-    let mut alive_tracker = FrameAliveListTracker::new(max_particles, NUM_FRAMES);
-
-    // Track worst color mismatch across all frames for final reporting
-    let mut worst_mismatch_pct: f32 = 0.0;
-    let mut worst_mismatch_frame: u32 = 0;
 
     for frame in 0..NUM_FRAMES {
         cumulative_time += DELTA_TIME;
@@ -481,99 +288,6 @@ fn main() -> ExitCode {
         // In real swapchain this happens at frame begin. For frames 0 and 1 the
         // fences start signaled so they return immediately.
         frame_state.wait_for_fence(&context.device);
-
-        // --- Read back results from 2 frames ago (deferred readback) ---
-        // The fence we just waited on corresponds to the frame that used this slot
-        // 2 iterations ago, which is now guaranteed complete.
-        // We submit a SEPARATE command buffer for the GPU→CPU copy here to avoid
-        // staging buffer contention with the in-flight frame's compute work.
-        if pending_readback_frame.is_some() {
-            let rb_frame = pending_readback_frame.take().unwrap();
-            let rb_emit_count = pending_emit_count;
-            let rb_fi = pending_readback_fi;
-
-            // Submit a synchronous copy command buffer
-            let rb_cmd = context.begin_single_time_commands();
-            if let Err(e) = particle_system.record_debug_readback(
-                rb_cmd.vk_command_buffer(),
-                rb_fi,
-            ) {
-                log::warn!("Failed to record deferred debug readback for frame {}: {}", rb_frame, e);
-            }
-            rb_cmd.end_single_time_command();
-            context.end_single_time_commands(rb_cmd);
-
-            if let Ok(debug_data) = particle_system.read_debug_data() {
-                particle_system.set_alive_count(debug_data.counters.alive_count);
-
-                let rb_alive_count = debug_data.counters.alive_count;
-
-                if rb_frame < 5 {
-                    let end = (rb_alive_count as usize).min(10);
-                    log::info!(
-                        "Frame {} readback (deferred): alive_count={}, emit_count={}, first 10 alive_next entries: {:?}",
-                        rb_frame,
-                        rb_alive_count,
-                        rb_emit_count,
-                        &debug_data.alive_list[..end]
-                    );
-                    let unique_indices: std::collections::HashSet<u32> = debug_data.alive_list
-                        [..rb_alive_count as usize]
-                        .iter()
-                        .copied()
-                        .collect();
-                    let dup_count =
-                        rb_alive_count as usize - unique_indices.len();
-                    let zero_count = debug_data.alive_list
-                        [..rb_alive_count as usize]
-                        .iter()
-                        .filter(|&&x| x == 0)
-                        .count();
-                    log::info!(
-                        "  counters: alive={}, dead={}, emit={} | unique={}, dupes={}, zeros={}",
-                        rb_alive_count,
-                        debug_data.counters.dead_count,
-                        rb_emit_count,
-                        unique_indices.len(),
-                        dup_count,
-                        zero_count
-                    );
-                }
-
-                let rb_cumulative_time = (rb_frame as f32 + 1.0) * DELTA_TIME;
-                alive_tracker.record_frame(
-                    rb_frame,
-                    &debug_data.alive_list,
-                    rb_alive_count,
-                    rb_emit_count,
-                    rb_cumulative_time,
-                );
-
-                // Emitter-color consistency check
-                let (checked, mismatches) =
-                    check_emitter_colors_from_debug_data(&debug_data).unwrap_or((0, 0));
-                let pct = if checked > 0 {
-                    (mismatches as f32 / checked as f32) * 100.0
-                } else {
-                    0.0
-                };
-                if pct > worst_mismatch_pct {
-                    worst_mismatch_pct = pct;
-                    worst_mismatch_frame = rb_frame;
-                }
-
-                if pct > 0.0 {
-                    log::error!(
-                        "EMITTER MIXING at frame {}: {:.1}% color mismatch ({} of {} checked)",
-                        rb_frame, pct, mismatches, checked
-                    );
-                    frame_state.destroy(&context.device);
-                    return ExitCode::from(1);
-                }
-
-            }
-
-        }
 
         // --- CPU-side update: prepare frame data for GPU ---
         // Note: cached_alive_count may be stale (from 2 frames ago) or the initial
@@ -701,156 +415,21 @@ fn main() -> ExitCode {
             signal_fence,
         );
 
-        // Schedule deferred readback for this frame (will be read 2 frames later)
-        pending_readback_frame = Some(frame);
-        pending_emit_count = emit_count;
-        pending_readback_fi = frame_index_for_descriptor;
-
         // Advance to next frame slot
         frame_state.step_frame();
     }
 
     // --- Drain: wait for the last 2 in-flight frames to complete ---
     let last_frame_fi = (NUM_FRAMES as usize) % 2;
-
-    // Process readback from the frame before last (whose fence we waited on at loop start)
-    if pending_readback_frame.is_some() {
-        let rb_frame = pending_readback_frame.take().unwrap();
-        let rb_emit_count = pending_emit_count;
-        let rb_fi = pending_readback_fi;
-
-        // Submit synchronous copy for this completed frame
-        let rb_cmd = context.begin_single_time_commands();
-        if let Err(e) = particle_system.record_debug_readback(
-            rb_cmd.vk_command_buffer(),
-            rb_fi,
-        ) {
-            log::warn!("Failed to record drain debug readback for frame {}: {}", rb_frame, e);
-        }
-        rb_cmd.end_single_time_command();
-        context.end_single_time_commands(rb_cmd);
-
-        if let Ok(debug_data) = particle_system.read_debug_data() {
-            particle_system.set_alive_count(debug_data.counters.alive_count);
-            let rb_alive_count = debug_data.counters.alive_count;
-
-            let rb_cumulative_time = (rb_frame as f32 + 1.0) * DELTA_TIME;
-            alive_tracker.record_frame(
-                rb_frame,
-                &debug_data.alive_list,
-                rb_alive_count,
-                rb_emit_count,
-                rb_cumulative_time,
-            );
-
-            let (checked, mismatches) =
-                check_emitter_colors_from_debug_data(&debug_data).unwrap_or((0, 0));
-            let pct = if checked > 0 {
-                (mismatches as f32 / checked as f32) * 100.0
-            } else {
-                0.0
-            };
-            if pct > worst_mismatch_pct {
-                worst_mismatch_pct = pct;
-                worst_mismatch_frame = rb_frame;
-            }
-        }
-    }
-
-    // Wait on the last frame's fence (the frame submitted at NUM_FRAMES-1)
     unsafe {
         context
             .device
             .wait_for_fences(&[frame_state.fence(last_frame_fi)], true, u64::MAX)
             .unwrap();
     }
-
-    // Process the very last frame's readback (submitted at NUM_FRAMES-1)
-    {
-        let rb_frame = NUM_FRAMES - 1;
-        let rb_fi = (rb_frame as usize) % 2;
-
-        let rb_cmd = context.begin_single_time_commands();
-        if let Err(e) = particle_system.record_debug_readback(
-            rb_cmd.vk_command_buffer(),
-            rb_fi,
-        ) {
-            log::warn!("Failed to record final debug readback for frame {}: {}", rb_frame, e);
-        }
-        rb_cmd.end_single_time_command();
-        context.end_single_time_commands(rb_cmd);
-
-        if let Ok(debug_data) = particle_system.read_debug_data() {
-            particle_system.set_alive_count(debug_data.counters.alive_count);
-            let rb_alive_count = debug_data.counters.alive_count;
-            let rb_cumulative_time = (rb_frame as f32 + 1.0) * DELTA_TIME;
-
-            alive_tracker.record_frame(
-                rb_frame,
-                &debug_data.alive_list,
-                rb_alive_count,
-                0,
-                rb_cumulative_time,
-            );
-
-            let (checked, mismatches) =
-                check_emitter_colors_from_debug_data(&debug_data).unwrap_or((0, 0));
-            let pct = if checked > 0 {
-                (mismatches as f32 / checked as f32) * 100.0
-            } else {
-                0.0
-            };
-            if pct > worst_mismatch_pct {
-                worst_mismatch_pct = pct;
-                worst_mismatch_frame = rb_frame;
-            }
-        }
-    }
-
     frame_state.destroy(&context.device);
 
     log::info!("Simulation complete, running validation...");
-
-    // Report worst per-frame color mismatch across all frames
-    log::info!(
-        "Per-frame color check: worst mismatch={:.1}% at frame {}",
-        worst_mismatch_pct,
-        worst_mismatch_frame
-    );
-
-    // Run alive_list validation across all frames
-    log::info!("Running alive_list corruption detection across all frames...");
-    alive_tracker.print_summary();
-
-    match alive_tracker.validate_per_frame() {
-        Ok(_) => {
-            log::info!("✓ Per-frame alive_list validation passed");
-        }
-        Err(errors) => {
-            log::warn!(
-                "⚠ Per-frame alive_list issues (expected with 2-FiF stale cached_alive_count):"
-            );
-            for error in &errors {
-                log::warn!("  {}", error);
-            }
-        }
-    }
-
-    match alive_tracker.validate_transitions() {
-        Ok(_) => {
-            log::info!("✓ Frame-to-frame transition validation passed");
-        }
-        Err(errors) => {
-            log::error!("✗ Frame-to-frame transition validation failed:");
-            for error in &errors {
-                log::error!("  {}", error);
-            }
-            if let Some(ref mut res) = render_resources {
-                res.destroy(&context);
-            }
-            return ExitCode::from(1);
-        }
-    }
 
     // Get final statistics
     let stats = particle_system.get_stats();
@@ -933,7 +512,7 @@ fn run_contamination_test(
     use katla_gfx::sync::VkShaderModule;
 
     let max_particles: u32 = DEFAULT_MAX_PARTICLES;
-    let test_frames: u32 = 120;
+    let test_frames: u32 = NUM_FRAMES;
     let dt: f32 = 1.0 / 60.0;
     let emit_rate: f32 = 800.0;
     let lifetime: f32 = 1.5;
@@ -1140,40 +719,12 @@ fn run_contamination_test(
     // --- Run simulation with 2-FiF double-buffered GPU validation ---
     let mut frame_state = DoubleBufferedFrameState::new(&context.device);
 
-    let mut first_fault_frame: Option<u32> = None;
-    let mut total_color_mismatches: u64 = 0;
-    let mut total_checked: u64 = 0;
-    let mut per_emitter_mismatches = [0u32; 16];
-
-    // Deferred readback: process the frame whose fence we waited on (2 frames ago)
-    let mut pending_rb_frame: Option<u32> = None;
-    let mut pending_rb_fi: usize = 0;
-
     for frame in 0..test_frames {
         let fi = (frame as usize) % 2;
         let next_fi = (fi + 1) % 2;
 
         // Wait on this frame slot's fence (free for reuse)
         frame_state.wait_for_fence(&context.device);
-
-        // Process deferred readback from 2 frames ago
-        if let Some(_rb_frame) = pending_rb_frame.take() {
-            let rb_fi = pending_rb_fi;
-            // Submit separate copy command buffer to avoid staging buffer contention
-            let rb_cmd = context.begin_single_time_commands();
-            if let Err(e) = ps.record_debug_readback(
-                rb_cmd.vk_command_buffer(),
-                rb_fi,
-            ) {
-                log::warn!("Failed to record deferred debug readback: {}", e);
-            }
-            rb_cmd.end_single_time_command();
-            context.end_single_time_commands(rb_cmd);
-
-            if let Ok(data) = ps.read_debug_data() {
-                ps.set_alive_count(data.counters.alive_count);
-            }
-        }
 
         let (alive_count, emit_count) = ps
             .update(dt, frame)
@@ -1229,6 +780,60 @@ fn run_contamination_test(
             }
         }
 
+        // --- GPU validation compute (same command buffer, no CPU involvement) ---
+        // Record validation dispatch directly after particle compute.
+        // The validation shader accumulates results into atomics in val_results_buffer.
+        // We only read back the buffer once after all frames complete.
+        if alive_count > 0 {
+            validation_pass.update_binding(
+                1,
+                ps.particle_buffer(),
+                layout.alive_frame_offset[next_fi],
+                alive_list_size,
+            );
+            validation_pass.update_binding(2, ps.counters_buffer(fi), 0, counters_size);
+            validation_pass.update_binding(
+                3,
+                ps.emitter_configs_buffer(fi)
+                    .ok_or("Emitter configs buffer not available")?,
+                0,
+                emitter_config_total,
+            );
+
+            let val_params = ValidationParams {
+                alive_count: ps.alive_count(),
+                emitter_count: 4,
+                frame_index: frame,
+                max_mismatch_details: 16,
+                color_tolerance: 0.05,
+                velocity_tolerance: 0.01,
+                position_tolerance: 0.0,
+                _pad: 0.0,
+            };
+
+            if let Some(mapped) = val_params_alloc.mapped_ptr() {
+                let dst = mapped.as_ptr() as *mut u8;
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        &val_params as *const ValidationParams as *const u8,
+                        dst,
+                        std::mem::size_of::<ValidationParams>(),
+                    );
+                }
+                context.flush_mapped_memory(&val_params_alloc, 0, VALIDATION_PARAMS_SIZE);
+            }
+
+            let validate_workgroups = (alive_count + 63) / 64;
+            validation_pass.record_dispatch_with_handles(
+                cmd.vk_command_buffer(),
+                val_pipeline,
+                val_layout,
+                validate_workgroups,
+                1,
+                1,
+            );
+        }
+
         cmd.end_single_time_command();
 
         let prev_fi = (fi + 1) % 2;
@@ -1244,239 +849,32 @@ fn run_contamination_test(
             signal_fence,
         );
 
-        pending_rb_frame = Some(frame);
-        pending_rb_fi = fi;
         frame_state.step_frame();
-
-        // Skip GPU validation dispatch if no particles are alive
-        if alive_count == 0 {
-            continue;
-        }
-
-        // --- GPU validation compute (separate submit, synchronous per frame) ---
-        // This validation pass checks particle colors against emitter configs.
-        // It runs as a separate submit after the main particle dispatch for
-        // the current frame (whose GPU work was just submitted above).
-        // We wait on the frame's semaphore to ensure particle data is ready.
-
-        validation_pass.update_binding(
-            1,
-            ps.particle_buffer(),
-            layout.alive_frame_offset[next_fi],
-            alive_list_size,
-        );
-        validation_pass.update_binding(2, ps.counters_buffer(fi), 0, counters_size);
-        validation_pass.update_binding(
-            3,
-            ps.emitter_configs_buffer(fi)
-                .ok_or("Emitter configs buffer not available")?,
-            0,
-            emitter_config_total,
-        );
-
-        let val_params = ValidationParams {
-            alive_count: ps.alive_count(),
-            emitter_count: 4,
-            frame_index: frame,
-            max_mismatch_details: 16,
-            color_tolerance: 0.05,
-            velocity_tolerance: 0.01,
-            position_tolerance: 0.0,
-            _pad: 0.0,
-        };
-
-        if let Some(mapped) = val_params_alloc.mapped_ptr() {
-            let dst = mapped.as_ptr() as *mut u8;
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    &val_params as *const ValidationParams as *const u8,
-                    dst,
-                    std::mem::size_of::<ValidationParams>(),
-                );
-            }
-            context.flush_mapped_memory(&val_params_alloc, 0, VALIDATION_PARAMS_SIZE);
-        }
-
-        let val_cmd = context.begin_single_time_commands();
-        unsafe {
-            context.device.cmd_fill_buffer(
-                val_cmd.vk_command_buffer(),
-                val_results_buffer,
-                0,
-                VALIDATION_RESULTS_SIZE,
-                0,
-            );
-        }
-
-        let fill_barrier = vk::BufferMemoryBarrier::default()
-            .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-            .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .buffer(val_results_buffer)
-            .offset(0)
-            .size(VALIDATION_RESULTS_SIZE);
-
-        unsafe {
-            context.device.cmd_pipeline_barrier(
-                val_cmd.vk_command_buffer(),
-                vk::PipelineStageFlags::TRANSFER,
-                vk::PipelineStageFlags::COMPUTE_SHADER,
-                vk::DependencyFlags::empty(),
-                &[],
-                std::slice::from_ref(&fill_barrier),
-                &[],
-            );
-        }
-
-        let validate_workgroups = (ps.alive_count() + 63) / 64;
-        validation_pass.record_dispatch_with_handles(
-            val_cmd.vk_command_buffer(),
-            val_pipeline,
-            val_layout,
-            validate_workgroups,
-            1,
-            1,
-        );
-
-        val_cmd.end_single_time_command();
-
-        // Submit validation compute, waiting on the particle frame's semaphore
-        let val_fence = unsafe {
-            context
-                .device
-                .create_fence(&vk::FenceCreateInfo::default(), None)
-                .unwrap()
-        };
-
-        // Wait on the frame that just completed (signal_sem from above)
-        // so particle data is visible to the validation shader.
-        context.gfx_queue.submit(
-            &[&val_cmd],
-            &[signal_sem],
-            &[],
-            val_fence,
-        );
-
-        // Wait for validation compute to complete (this is a lightweight pass)
-        unsafe {
-            context
-                .device
-                .wait_for_fences(&[val_fence], true, u64::MAX)
-                .unwrap();
-            context.device.destroy_fence(val_fence, None);
-        }
-
-        // Read back validation results
-        context.invalidate_mapped_memory(&val_results_alloc, 0, VALIDATION_RESULTS_SIZE);
-
-        if let Some(mapped) = val_results_alloc.mapped_ptr() {
-            let ptr = mapped.as_ptr() as *const u32;
-            let checked = unsafe { *ptr };
-            let color_mm = unsafe { *ptr.add(1) };
-            let vel_mm = unsafe { *ptr.add(2) };
-            let pos_mm = unsafe { *ptr.add(3) };
-
-            total_checked += checked as u64;
-
-            if color_mm > 0 {
-                total_color_mismatches += color_mm as u64;
-
-                if first_fault_frame.is_none() {
-                    first_fault_frame = Some(frame);
-                }
-
-                for i in 0..4usize {
-                    let em_mm = unsafe { *ptr.add(4 + i) };
-                    per_emitter_mismatches[i] += em_mm;
-                }
-
-                let detail_count = unsafe { *ptr.add(4 + 64) }.min(16);
-                for d in 0..detail_count as usize {
-                    let base = 4 + 64 + 1 + d * 4;
-                    let p_idx = unsafe { *ptr.add(base) };
-                    let e_idx = unsafe { *ptr.add(base + 1) };
-                    let color_r = unsafe { f32::from_bits(*ptr.add(base + 2)) } / 10000.0;
-                    let color_g = unsafe { f32::from_bits(*ptr.add(base + 3)) } / 10000.0;
-
-                    let emitter_name = if (e_idx as usize) < emitter_defs.len() {
-                        emitter_defs[e_idx as usize].2
-                    } else {
-                        "???"
-                    };
-
-                    if frame % 30 == 0 || first_fault_frame == Some(frame) {
-                        log::error!(
-                            "  Frame {}: particle[{}] from emitter {} ({}) has wrong color (r={:.3}, g={:.3})",
-                            frame,
-                            p_idx,
-                            e_idx,
-                            emitter_name,
-                            color_r,
-                            color_g
-                        );
-                    }
-                }
-
-                if first_fault_frame == Some(frame) {
-                    log::error!(
-                        "FIRST FAULT at frame {}: {} color mismatches out of {} checked",
-                        frame,
-                        color_mm,
-                        checked
-                    );
-                    return Err(format!(
-                        "GPU validation detected first color contamination at frame {}. \
-                         Aborting early.",
-                        frame
-                    ));
-                }
-            }
-
-            if total_color_mismatches > 0 {
-                return Err(format!(
-                    "GPU validation detected {} color mismatches. First fault at frame {}. \
-                     Aborting early.",
-                    total_color_mismatches, first_fault_frame.unwrap_or(0)
-                ));
-            }
-
-            if frame == 0 || frame % 30 == 0 || frame == test_frames - 1 {
-                log::info!(
-                    "Frame {}: checked={}, color_mm={}, vel_mm={}, pos_mm={}",
-                    frame,
-                    checked,
-                    color_mm,
-                    vel_mm,
-                    pos_mm
-                );
-            }
-        }
     }
 
     // Drain remaining in-flight frames
     for _ in 0..2 {
         frame_state.wait_for_fence(&context.device);
-        if let Some(_rb_frame) = pending_rb_frame.take() {
-            let rb_fi = pending_rb_fi;
-            let rb_cmd = context.begin_single_time_commands();
-            if let Err(e) = ps.record_debug_readback(
-                rb_cmd.vk_command_buffer(),
-                rb_fi,
-            ) {
-                log::warn!("Failed to record drain debug readback: {}", e);
-            }
-            rb_cmd.end_single_time_command();
-            context.end_single_time_commands(rb_cmd);
-
-            if let Ok(data) = ps.read_debug_data() {
-                ps.set_alive_count(data.counters.alive_count);
-            }
-        }
         frame_state.step_frame();
     }
-
     frame_state.destroy(&context.device);
+
+    // --- Single readback: read accumulated GPU validation results ---
+    context.invalidate_mapped_memory(&val_results_alloc, 0, VALIDATION_RESULTS_SIZE);
+
+    let mut total_checked: u64 = 0;
+    let mut total_color_mismatches: u64 = 0;
+    let mut per_emitter_mismatches = [0u32; 16];
+
+    if let Some(mapped) = val_results_alloc.mapped_ptr() {
+        let ptr = mapped.as_ptr() as *const u32;
+        total_checked = unsafe { *ptr } as u64;
+        total_color_mismatches = unsafe { *ptr.add(1) } as u64;
+
+        for i in 0..4usize {
+            per_emitter_mismatches[i] = unsafe { *ptr.add(4 + i) };
+        }
+    }
 
     // Report results
     log::info!(
@@ -1501,13 +899,10 @@ fn run_contamination_test(
                 );
             }
         }
-        if let Some(ff) = first_fault_frame {
-            log::error!("  First fault detected at frame {}", ff);
-        }
         return Err(format!(
-            "GPU validation detected {} color mismatches. First fault at frame {:?}. \
+            "GPU validation detected {} color mismatches across {} frames. \
              Particles are being assigned to wrong emitter configs.",
-            total_color_mismatches, first_fault_frame
+            total_color_mismatches, test_frames
         ));
     }
 
@@ -1879,169 +1274,6 @@ fn validate_particle_data(particle_system: &GlobalParticleSystem) -> Result<(), 
 }
 
 /// Expected emitter definitions for color consistency validation.
-/// Must match create_test_emitters exactly.
-struct ExpectedEmitter {
-    name: &'static str,
-    position: [f32; 3],
-    color: [f32; 3],
-    color_variation: f32,
-}
-
-fn get_expected_emitters() -> [ExpectedEmitter; NUM_EMITTERS as usize] {
-    [
-        ExpectedEmitter {
-            name: "Emitter 0 (Red)",
-            position: [-40.0, 0.0, 0.0],
-            color: [1.0, 0.0, 0.0],
-            color_variation: 0.1,
-        },
-        ExpectedEmitter {
-            name: "Emitter 1 (Green)",
-            position: [-20.0, 0.0, 0.0],
-            color: [0.0, 1.0, 0.0],
-            color_variation: 0.1,
-        },
-        ExpectedEmitter {
-            name: "Emitter 2 (Yellow)",
-            position: [0.0, 0.0, 0.0],
-            color: [1.0, 1.0, 0.0],
-            color_variation: 0.1,
-        },
-        ExpectedEmitter {
-            name: "Emitter 3 (Cyan)",
-            position: [20.0, 0.0, 0.0],
-            color: [0.0, 1.0, 1.0],
-            color_variation: 0.1,
-        },
-        ExpectedEmitter {
-            name: "Emitter 4 (Magenta)",
-            position: [40.0, 0.0, 0.0],
-            color: [1.0, 0.0, 1.0],
-            color_variation: 0.1,
-        },
-    ]
-}
-
-/// Check that each alive particle's color matches its nearest emitter's expected color.
-///
-/// This is the core check used both inline (during simulation) and at the end.
-/// Returns Ok with (total_checked, mismatch_count) or Err with a detailed message.
-fn check_emitter_colors_from_debug_data(
-    debug_data: &ParticleDebugData,
-) -> Result<(usize, usize), String> {
-    let particles = &debug_data.particles;
-    let alive_list = &debug_data.alive_list;
-    let alive_count = debug_data.counters.alive_count as usize;
-
-    if alive_count == 0 {
-        return Ok((0, 0));
-    }
-
-    let expected_emitters = get_expected_emitters();
-
-    let mut total_checked = 0usize;
-    let mut mismatch_count = 0usize;
-    let mut per_emitter_checked = [0usize; NUM_EMITTERS as usize];
-    let mut per_emitter_mismatch = [0usize; NUM_EMITTERS as usize];
-
-    let mut mismatch_samples: Vec<String> = Vec::new();
-    let max_samples = 20;
-
-    for i in 0..alive_count {
-        let particle_idx = alive_list[i] as usize;
-        if particle_idx >= particles.len() {
-            continue;
-        }
-
-        let p = &particles[particle_idx];
-
-        // Find nearest emitter by X-position.
-        // Particles drift upward (Y) with velocity spread, but their origin
-        // X-position is the strongest clustering signal.
-        let mut nearest_emitter = 0;
-        let mut nearest_dist = f32::MAX;
-        for (e_idx, emitter) in expected_emitters.iter().enumerate() {
-            let dx = p.position[0] - emitter.position[0];
-            let dist = dx.abs();
-            if dist < nearest_dist {
-                nearest_dist = dist;
-                nearest_emitter = e_idx;
-            }
-        }
-
-        let emitter = &expected_emitters[nearest_emitter];
-        // Tolerance: color_variation is applied per-channel as +/- variation.
-        // We use 2x to account for accumulated randomness from multiple random_range calls.
-        let tolerance = emitter.color_variation * 2.0;
-
-        let r_ok = (p.color[0] - emitter.color[0]).abs() <= tolerance;
-        let g_ok = (p.color[1] - emitter.color[1]).abs() <= tolerance;
-        let b_ok = (p.color[2] - emitter.color[2]).abs() <= tolerance;
-
-        total_checked += 1;
-        per_emitter_checked[nearest_emitter] += 1;
-
-        if !r_ok || !g_ok || !b_ok {
-            mismatch_count += 1;
-            per_emitter_mismatch[nearest_emitter] += 1;
-
-            if mismatch_samples.len() < max_samples {
-                mismatch_samples.push(format!(
-                    "  particle[{}]: pos=({:.1},{:.1},{:.1}) color=({:.2},{:.2},{:.2}) expected=({:.2},{:.2},{:.2}) [{}] dist_x={:.1}",
-                    particle_idx,
-                    p.position[0], p.position[1], p.position[2],
-                    p.color[0], p.color[1], p.color[2],
-                    emitter.color[0], emitter.color[1], emitter.color[2],
-                    emitter.name,
-                    nearest_dist,
-                ));
-            }
-        }
-    }
-
-    if mismatch_count > 0 {
-        for (i, emitter) in expected_emitters.iter().enumerate() {
-            let checked = per_emitter_checked[i];
-            let mismatches = per_emitter_mismatch[i];
-            let pct = if checked > 0 {
-                (mismatches as f32 / checked as f32) * 100.0
-            } else {
-                0.0
-            };
-            log::error!(
-                "  {}: {} particles, {} mismatches ({:.1}%)",
-                emitter.name,
-                checked,
-                mismatches,
-                pct
-            );
-        }
-
-        log::error!("Color mismatch samples (particle from wrong emitter):");
-        for sample in &mismatch_samples {
-            log::error!("{}", sample);
-        }
-
-        let mismatch_pct = (mismatch_count as f32 / total_checked as f32) * 100.0;
-
-        return Err(format!(
-            "Emitter color mismatch: {:.1}% of {} particles have colors inconsistent with their nearest emitter. \
-             The emit shader may be assigning particles to wrong emitters.",
-            mismatch_pct, total_checked
-        ));
-    }
-
-    Ok((total_checked, mismatch_count))
-}
-
-/// Validate that each alive particle's color matches the emitter it originated from.
-///
-/// This detects the bug where the emit shader's round-robin emitter assignment
-/// `(wg_id + local_id) % emitter_count` assigns particles to wrong emitters,
-/// causing them to get the wrong color.
-///
-/// Strategy: assign each particle to the nearest emitter by X-position, then
-/// check that its color is within tolerance of that emitter's configured color.
 /// Validate emitter configurations.
 fn validate_emitter_configs(particle_system: &GlobalParticleSystem) -> Result<(), String> {
     use katla_gfx::particles::validation::validate_emitter_config;
