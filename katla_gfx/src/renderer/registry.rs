@@ -160,10 +160,7 @@ impl AssetRegistry {
     }
 
     /// Register a compute pipeline and return a handle.
-    pub(crate) fn register_compute_pipeline(
-        &mut self,
-        pipeline: ComputePipeline,
-    ) -> PipelineHandle {
+    pub fn register_compute_pipeline(&mut self, pipeline: ComputePipeline) -> PipelineHandle {
         let id = self.pipelines.insert(AnyPipeline::Compute(pipeline));
         PipelineHandle::new(id)
     }

@@ -726,18 +726,15 @@ impl GlobalParticleBuffer {
         &self.layout
     }
 
-    /// Get the particle buffer handle (internal use only).
-    pub(crate) fn particle_buffer(&self) -> vk::Buffer {
+    pub fn particle_buffer(&self) -> vk::Buffer {
         self.particle_buffer
     }
 
-    /// Get the counters buffer handle for the given frame (internal use only).
-    pub(crate) fn counters_buffer(&self, frame_index: usize) -> vk::Buffer {
+    pub fn counters_buffer(&self, frame_index: usize) -> vk::Buffer {
         self.counters_buffers[frame_index % 2]
     }
 
-    /// Get the indirect draw buffer handle for the given frame (for vkCmdDrawIndirect).
-    pub(crate) fn indirect_draw_buffer(&self, frame_index: usize) -> vk::Buffer {
+    pub fn indirect_draw_buffer(&self, frame_index: usize) -> vk::Buffer {
         self.indirect_draw_buffers[frame_index % 2]
     }
 

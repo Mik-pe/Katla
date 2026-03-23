@@ -33,7 +33,7 @@ impl ComputePipelineBuilder {
         }
     }
 
-    pub(crate) fn with_shader(mut self, shader: crate::sync::VkShaderModule) -> Self {
+    pub fn with_shader(mut self, shader: crate::sync::VkShaderModule) -> Self {
         self.compute_shader = Some(shader.vk());
         self
     }
@@ -45,19 +45,19 @@ impl ComputePipelineBuilder {
     }
 
     /// Set the descriptor set layouts using wrapper types.
-    pub(crate) fn with_descriptor_layouts(mut self, layouts: Vec<VkDescriptorSetLayout>) -> Self {
+    pub fn with_descriptor_layouts(mut self, layouts: Vec<VkDescriptorSetLayout>) -> Self {
         self.descriptor_layouts = layouts.into_iter().map(|l| l.into()).collect();
         self
     }
 
     /// Add a descriptor set layout using wrapper type.
-    pub(crate) fn add_descriptor_layout(mut self, layout: VkDescriptorSetLayout) -> Self {
+    pub fn add_descriptor_layout(mut self, layout: VkDescriptorSetLayout) -> Self {
         self.descriptor_layouts.push(layout.into());
         self
     }
 
     /// Set the push constant ranges.
-    pub(crate) fn with_push_constants(mut self, ranges: Vec<vk::PushConstantRange>) -> Self {
+    pub fn with_push_constants(mut self, ranges: Vec<vk::PushConstantRange>) -> Self {
         self.push_constant_ranges = ranges;
         self
     }
@@ -134,22 +134,22 @@ pub struct ComputePipeline {
 
 impl ComputePipeline {
     /// Get the pipeline handle as a wrapper type.
-    pub(crate) fn pipeline(&self) -> VkPipeline {
+    pub fn pipeline(&self) -> VkPipeline {
         VkPipeline::new(self.handle)
     }
 
     /// Get the pipeline layout as a wrapper type.
-    pub(crate) fn pipeline_layout(&self) -> VkPipelineLayout {
+    pub fn pipeline_layout(&self) -> VkPipelineLayout {
         VkPipelineLayout::new(self.layout)
     }
 
     /// Get the descriptor set layouts used when creating this pipeline.
-    pub(crate) fn descriptor_set_layouts(&self) -> &[vk::DescriptorSetLayout] {
+    pub fn descriptor_set_layouts(&self) -> &[vk::DescriptorSetLayout] {
         &self.descriptor_layouts
     }
 
     /// Destroy the pipeline resources.
-    pub(crate) fn destroy(&mut self) {
+    pub fn destroy(&mut self) {
         unsafe {
             self.device.destroy_pipeline(self.handle, None);
             self.device.destroy_pipeline_layout(self.layout, None);
