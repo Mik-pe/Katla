@@ -272,7 +272,6 @@ fn main() -> ExitCode {
     let mut frame_state = DoubleBufferedFrameState::new(&context.device);
 
     let mut cumulative_time = 0.0;
-    let mut prev_alive_count = 0u32;
 
     for frame in 0..NUM_FRAMES {
         cumulative_time += DELTA_TIME;
@@ -303,39 +302,13 @@ fn main() -> ExitCode {
             }
         };
 
-        let died_this_frame = if alive_count < prev_alive_count {
-            prev_alive_count - alive_count
-        } else {
-            0
-        };
-
         let diag =
             FrameDiagnostics::new(frame, alive_count, emit_count, DELTA_TIME, cumulative_time);
         diag.log();
 
-        if died_this_frame > 0 {
-            log::debug!("  -> {} particles died this frame", died_this_frame);
+        if frame % 1000 == 0 || is_last_frame {
+            log::info!("Frame {}/{} (emit={})", frame, NUM_FRAMES, emit_count);
         }
-
-        let expected_alive = estimate_expected_alive(frame, max_particles);
-        let diff = if alive_count as i32 > expected_alive {
-            alive_count as i32 - expected_alive
-        } else {
-            expected_alive - alive_count as i32
-        };
-
-        if frame % 50 == 0 || is_last_frame {
-            log::info!(
-                "Frame {}: alive={}, emit={}, expected~{}, diff={}",
-                frame,
-                alive_count,
-                emit_count,
-                expected_alive,
-                diff
-            );
-        }
-
-        prev_alive_count = alive_count;
 
         // --- Record and submit GPU compute dispatch ---
         let command_buffer = context.begin_single_time_commands();
@@ -412,6 +385,17 @@ fn main() -> ExitCode {
                     log::warn!("Frame {}: Failed to record render dispatch: {}", frame, e);
                 }
             }
+
+            // On the last frame, record debug readback so we can read real GPU counters
+            // after the fence wait during drain.
+            if is_last_frame {
+                if let Err(e) = particle_system.record_debug_readback(
+                    command_buffer.vk_command_buffer(),
+                    frame_index_for_descriptor,
+                ) {
+                    log::warn!("Failed to record debug readback on last frame: {}", e);
+                }
+            }
         }
 
         // End command buffer
@@ -442,13 +426,37 @@ fn main() -> ExitCode {
 
     log::info!("Simulation complete, running validation...");
 
+    // Read back actual GPU counters from the last frame
+    let gpu_alive = if particle_system.has_debug_readback() {
+        match particle_system.read_debug_data() {
+            Ok(data) => {
+                log::info!(
+                    "GPU counters: alive={}, dead={}, emit={}",
+                    data.counters.alive_count,
+                    data.counters.dead_count,
+                    data.counters.emit_count,
+                );
+                data.counters.alive_count
+            }
+            Err(e) => {
+                log::warn!("Failed to read debug data: {}", e);
+                0
+            }
+        }
+    } else {
+        0
+    };
+
     // Get final statistics
     let stats = particle_system.get_stats();
     log::info!("=== Simulation Complete ===");
     log::info!("Total frames: {}", stats.frame_count);
     log::info!("Total particles emitted: {}", stats.total_emitted);
-    log::info!("Total particles died: {}", stats.total_died);
-    log::info!("Current alive count: {}", stats.current_alive_count);
+    log::info!("GPU alive count (last frame): {}", gpu_alive);
+    log::info!(
+        "GPU dead count (last frame): {}",
+        stats.max_alive_count.saturating_sub(gpu_alive),
+    );
 
     // Validate particle data by reading back from GPU (staging buffers already populated by drain)
     match validate_particle_data(&particle_system) {
@@ -489,8 +497,6 @@ fn main() -> ExitCode {
     log::info!("Total frames simulated: {}", NUM_FRAMES);
     log::info!("Memory usage: {:.2} MB", stats.memory_used_mb);
     log::info!("Total emitted: {}", stats.total_emitted);
-    log::info!("Total died: {}", stats.total_died);
-    log::info!("Currently alive: {}", stats.current_alive_count);
 
     // Clean up render validation resources
     if let Some(ref mut res) = render_resources {
@@ -1037,24 +1043,6 @@ fn run_contamination_test(
 /// Estimate expected alive particles at a given frame.
 ///
 /// Based on emitter configurations:
-/// - NUM_EMITTERS emitters, each at emit_rate/sec (scaled to 80% capacity), lifetime LIFETIME
-/// - Capped at max_particles (dead pool exhaustion)
-fn estimate_expected_alive(frame: u32, max_particles: u32) -> i32 {
-    let time = (frame + 1) as f32 * DELTA_TIME;
-
-    let emit_rate = (0.8 * max_particles as f32) / (NUM_EMITTERS as f32 * LIFETIME);
-
-    let alive_per_emitter = if time >= LIFETIME {
-        emit_rate * LIFETIME
-    } else {
-        let ramp = time;
-        emit_rate * ramp * (1.0 - ramp / LIFETIME)
-    };
-
-    let total = (alive_per_emitter * NUM_EMITTERS as f32).min(max_particles as f32);
-    total as i32
-}
-
 /// Create test emitters with known properties for validation.
 ///
 /// Two emitters placed far apart on X-axis (+50 and -50) with very distinct

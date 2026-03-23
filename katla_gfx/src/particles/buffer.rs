@@ -574,7 +574,7 @@ impl GlobalParticleBuffer {
 
             let staging_buffer_info = vk::BufferCreateInfo::default()
                 .size(counters_bytes.len() as u64)
-                .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+                .usage(vk::BufferUsageFlags::TRANSFER_SRC | vk::BufferUsageFlags::TRANSFER_DST)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
             let staging_buffer = unsafe {
                 self.context
