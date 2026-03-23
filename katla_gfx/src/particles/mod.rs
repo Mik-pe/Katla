@@ -443,7 +443,7 @@ impl GlobalParticleSystem {
 
         // Update alive descriptor binding offset for this frame.
         // Render reads from the simulate output region: alive[(frame_index+1)%2].
-        self.update_alive_descriptor_binding(frame_index)?;
+        self.update_render_descriptor_binding(frame_index)?;
 
         // Bind static descriptor set (Set 0: particle buffers)
         // CRITICAL: Use render_descriptor_set (with VERTEX/FRAGMENT stage flags)
@@ -573,7 +573,7 @@ impl GlobalParticleSystem {
     ///
     /// Binds to alive[(frame_index+1)%2] (written by the current frame's simulate pass).
     /// The indirect draw command's vertex_count reflects the survivor count written there.
-    fn update_alive_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
+    pub fn update_render_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
         let device = &self.context.device;
         let descriptor_set = self
             .render_descriptor_set

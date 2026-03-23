@@ -1004,6 +1004,12 @@ impl<'a> Frame<'a> {
 
         if let Some(ref mut particle_system) = self.renderer.particle_system {
             if let Some(pipeline_handle) = particle_system.render_pipeline_handle() {
+                // Update render descriptor set to point to the correct frame's alive list
+                // (the one simulate just wrote survivors to)
+                if let Err(e) = particle_system.update_render_descriptor_binding(current_frame) {
+                    log::warn!("Failed to update particle render descriptor binding: {}", e);
+                }
+
                 // Get the pipeline from the registry
                 let pipeline_asset = self
                     .renderer
@@ -1897,7 +1903,7 @@ impl<'a> Frame<'a> {
 
             // Before recording dispatch
             if workgroup_count == 0 {
-                log::warn!(
+                log::debug!(
                     "Skipping particle compute pass '{}' - workgroup_count is 0",
                     pass.name
                 );
@@ -1975,7 +1981,7 @@ impl<'a> Frame<'a> {
 
                 // No swap needed — simulate writes survivors to alive[(frame+1)%2] via
                 // descriptor offset flip in update_compute_descriptor_binding. The render
-                // pass reads from the same region via update_alive_descriptor_binding.
+                // pass reads from the same region via update_render_descriptor_binding.
 
                 // Record particle debug readback if requested this frame
                 // SAFETY: We need to access the graph's debug readback flag through the Frame's graph reference

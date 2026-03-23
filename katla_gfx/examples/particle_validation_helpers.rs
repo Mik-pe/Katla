@@ -79,7 +79,6 @@ impl RenderValidationResources {
         unsafe {
             device.cmd_pipeline_barrier2(cmd.vk_command_buffer(), &dependency_info);
         }
-        cmd.end_single_time_command();
         context.end_single_time_commands(cmd);
 
         let color_image_view = unsafe {
@@ -143,7 +142,6 @@ impl RenderValidationResources {
         unsafe {
             device.cmd_pipeline_barrier2(cmd.vk_command_buffer(), &dependency_info);
         }
-        cmd.end_single_time_command();
         context.end_single_time_commands(cmd);
 
         let depth_image_view = unsafe {
@@ -505,9 +503,6 @@ pub fn execute_gpu_compute(
     }
 
     // End command buffer and submit to GPU
-    command_buffer.end_single_time_command();
-
-    // Submit and wait for GPU completion
     context.end_single_time_commands(command_buffer);
 
     Ok(())
