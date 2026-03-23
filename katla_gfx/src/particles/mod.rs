@@ -306,11 +306,11 @@ impl GlobalParticleSystem {
         // The actual compute dispatch happens during render graph execution
         // via record_compute_dispatch(). This just prepares the data.
 
-        // Read back alive count from counters buffer (from previous frame)
-        let alive_count = self
-            .buffer
-            .get_alive_count(frame_index as usize)
-            .unwrap_or(0);
+        // Read back alive count from counters buffer (from previous frame).
+        // The previous frame used (frame_index + 1) % 2 as its frame slot,
+        // so its GPU wrote the final alive_count to that counter buffer.
+        let prev_fi = (frame_index as usize + 1) % 2;
+        let alive_count = self.buffer.get_alive_count(prev_fi).unwrap_or(0);
         self.cached_alive_count = alive_count;
 
         let emit_count = total_emit_count + total_burst_count;
@@ -318,7 +318,7 @@ impl GlobalParticleSystem {
         // Debug-only validation: Check counter consistency
         #[cfg(debug_assertions)]
         {
-            if let Ok(dead_count) = self.buffer.get_dead_count(frame_index as usize)
+            if let Ok(dead_count) = self.buffer.get_dead_count(prev_fi)
                 && let Err(e) = validate_counters(alive_count, dead_count, self.max_particles)
             {
                 log::warn!("Particle system validation error: {}", e);
@@ -683,8 +683,24 @@ impl GlobalParticleSystem {
         self.buffer.particle_buffer()
     }
 
+    pub fn counters_buffer(&self, frame_index: usize) -> vk::Buffer {
+        self.buffer.counters_buffer(frame_index)
+    }
+
     pub fn indirect_draw_buffer(&self, frame_index: usize) -> vk::Buffer {
         self.buffer.indirect_draw_buffer(frame_index)
+    }
+
+    /// Get the pre-computed buffer layout offsets.
+    pub fn buffer_layout(&self) -> &buffer::ParticleBufferLayout {
+        self.buffer.layout()
+    }
+
+    /// Get the emitter configs push descriptor buffer for the given frame.
+    pub fn emitter_configs_buffer(&self, frame_index: usize) -> Option<vk::Buffer> {
+        self.emitter_configs_buffers[frame_index % 2]
+            .as_ref()
+            .map(|(buf, _)| *buf)
     }
 
     /// Destroy all particle system resources.
@@ -840,7 +856,7 @@ impl GlobalParticleSystem {
     ///
     /// When emit ran, it already reset `alive_count` to 0 and set `emit_count` to
     /// `cached_alive_count` + actual_emissions, so we must not overwrite those values.
-    pub(crate) fn reset_simulate_counters(
+    pub fn reset_simulate_counters(
         &self,
         command_buffer: vk::CommandBuffer,
         emit_ran: bool,

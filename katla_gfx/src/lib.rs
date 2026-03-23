@@ -162,6 +162,7 @@ pub(crate) mod pipeline;
 pub(crate) mod primitives;
 
 // Render graph system
+pub mod compute;
 pub mod render_graph;
 
 // Internal implementation (not public)
@@ -176,6 +177,11 @@ pub(crate) mod viewport;
 
 // Re-export ShaderCache for examples and tests
 pub use vulkan::material::shadermodule::ShaderCache;
+
+// Re-export compute pipeline types for external compute dispatch
+pub use vulkan::material::compute_pipeline::{
+    ComputePipeline, ComputePipelineBuilder, ComputePipelineError,
+};
 
 // Internal re-exports for crate-wide access
 pub(crate) use vulkan::bindless_texture::BindlessTextureManager;

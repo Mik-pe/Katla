@@ -353,6 +353,7 @@ impl RenderValidationResources {
 }
 
 /// Execute actual GPU compute dispatch for particle emit and simulate.
+#[allow(dead_code)]
 pub fn execute_gpu_compute(
     context: &VulkanContext,
     particle_system: &mut GlobalParticleSystem,
@@ -441,6 +442,15 @@ pub fn execute_gpu_compute(
             );
         }
 
+        // Reset simulate counters before simulate dispatch.
+        // This resets workgroups_finished to 0 and, when emit was skipped,
+        // resets alive_count and emit_count appropriately.
+        particle_system.reset_simulate_counters(
+            command_buffer.vk_command_buffer(),
+            emit_workgroups > 0,
+            frame_index_for_descriptor,
+        );
+
         log::debug!(
             "Recording simulate dispatch: {} workgroups ({} particles)",
             simulate_workgroups,
@@ -505,7 +515,7 @@ pub fn execute_gpu_compute(
 
 /// Record a render dispatch using dynamic rendering with 1x1 color + depth attachments.
 
-fn record_render_dispatch(
+pub fn record_render_dispatch(
     context: &VulkanContext,
     particle_system: &mut GlobalParticleSystem,
     asset_registry: &AssetRegistry,
