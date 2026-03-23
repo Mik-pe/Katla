@@ -93,9 +93,6 @@ pub struct GlobalParticleSystem {
     /// Frame counter for emission timing
     frame_count: u32,
 
-    /// Cached alive particle count (for rendering)
-    cached_alive_count: u32,
-
     /// Per-frame data buffers for push descriptor updates [frames_in_flight]
     frame_data_buffers: [Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>; 2],
 
@@ -122,6 +119,9 @@ pub struct GlobalParticleSystem {
 
     /// Maximum particles in the system
     max_particles: u32,
+
+    /// Cached upper bound on alive particles across all emitters
+    estimated_max_alive: u32,
 
     /// Total particles emitted since system start
     total_emitted: u64,
@@ -158,13 +158,13 @@ impl GlobalParticleSystem {
             frame_count: 0,
             frame_data_buffers: [None, None],
             emitter_configs_buffers: [None, None],
-            cached_alive_count: 0,
             destroyed: false,
             compute_descriptor_set: None,
             render_descriptor_set: None,
             _compute_descriptor_pool: vk::DescriptorPool::null(),
             _render_descriptor_pool: vk::DescriptorPool::null(),
             max_particles,
+            estimated_max_alive: max_particles,
             total_emitted: 0,
             debug_readback: None,
         };
@@ -220,6 +220,7 @@ impl GlobalParticleSystem {
         }
 
         self.emitters[index as usize] = config;
+        self.recompute_estimated_max_alive();
 
         // Explicitly initialize emitter state to ensure clean state
         self.emitter_states[index as usize] = EmitterState::default();
@@ -239,6 +240,7 @@ impl GlobalParticleSystem {
     pub fn update_emitter(&mut self, handle: EmitterHandle, config: EmitterConfig) {
         if handle.index() < self.emitters.len() as u32 {
             self.emitters[handle.index() as usize] = config;
+            self.recompute_estimated_max_alive();
         } else {
             warn!("Invalid emitter handle: {:?}", handle);
         }
@@ -276,6 +278,8 @@ impl GlobalParticleSystem {
         // Upload emitter configs to GPU buffer
         self.upload_emitter_configs(frame_index as usize)?;
 
+        self.recompute_estimated_max_alive();
+
         // Calculate total particles to emit this frame (including bursts)
         // Use calculate_emit_count to get proper rate-based emission with accumulators
         let total_emit_count = self.calculate_emit_count(delta_time);
@@ -306,24 +310,11 @@ impl GlobalParticleSystem {
         // The actual compute dispatch happens during render graph execution
         // via record_compute_dispatch(). This just prepares the data.
 
-        // Read back alive count from counters buffer (from previous frame).
-        // The previous frame used (frame_index + 1) % 2 as its frame slot,
-        // so its GPU wrote the final alive_count to that counter buffer.
-        let prev_fi = (frame_index as usize + 1) % 2;
-        let alive_count = self.buffer.get_alive_count(prev_fi).unwrap_or(0);
-        self.cached_alive_count = alive_count;
-
         let emit_count = total_emit_count + total_burst_count;
 
-        // Debug-only validation: Check counter consistency
+        // Debug-only validation: Check emitter configurations
         #[cfg(debug_assertions)]
         {
-            if let Ok(dead_count) = self.buffer.get_dead_count(prev_fi)
-                && let Err(e) = validate_counters(alive_count, dead_count, self.max_particles)
-            {
-                log::warn!("Particle system validation error: {}", e);
-            }
-
             // Validate all active emitters
             let validation_errors = validate_all_emitters(&self.emitters);
             if !validation_errors.is_empty() {
@@ -338,7 +329,7 @@ impl GlobalParticleSystem {
             self.total_emitted += total_this_frame as u64;
         }
 
-        Ok((alive_count, emit_count))
+        Ok((self.estimated_max_alive, emit_count))
     }
 
     /// Upload emitter configurations to GPU buffer for the given frame.
@@ -385,8 +376,8 @@ impl GlobalParticleSystem {
                     .filter(|(e, s)| e.emit_rate > 0.0 || s.burst_count > 0)
                     .count() as u32;
 
-                // total_simulate_count = previous survivors + newly emitted particles
-                let total_simulate_count = self.cached_alive_count + emit_count + burst_count;
+                // total_simulate_count = estimated max alive + newly emitted particles
+                let total_simulate_count = self.estimated_max_alive + emit_count + burst_count;
 
                 let frame_data = FrameData {
                     delta_time,
@@ -400,12 +391,12 @@ impl GlobalParticleSystem {
                 };
 
                 log::debug!(
-                    "FrameData {}: dt={:.6} emit={} burst={} cached_alive={} sim={} emitters={}",
+                    "FrameData {}: dt={:.6} emit={} burst={} max_alive={} sim={} emitters={}",
                     frame_index,
                     frame_data.delta_time,
                     frame_data.total_emit_count,
                     frame_data.burst_count,
-                    self.cached_alive_count,
+                    self.estimated_max_alive,
                     frame_data.total_simulate_count,
                     frame_data.emitter_count
                 );
@@ -487,7 +478,7 @@ impl GlobalParticleSystem {
 
         // Draw particles using GPU-driven indirect draw.
         // The simulate shader writes VkDrawIndirectCommand with vertex_count = alive_count * 6.
-        if self.cached_alive_count > 0 {
+        if self.estimated_max_alive > 0 {
             unsafe {
                 device.cmd_draw_indirect(
                     command_buffer,
@@ -626,17 +617,17 @@ impl GlobalParticleSystem {
         Ok(())
     }
 
-    /// Get current alive particle count.
+    /// Get current alive particle count (estimated upper bound).
     ///
-    /// Returns the cached value last set by `update()` or `set_alive_count()`.
-    /// For reliable GPU-read counts, use debug readback + `set_alive_count()`.
+    /// Returns `estimated_max_alive` computed from emitter configs.
+    /// This is an upper bound — the actual GPU-side count may be lower.
     pub fn alive_count(&self) -> u32 {
-        self.cached_alive_count
+        self.estimated_max_alive
     }
 
-    /// Set cached alive count from external readback (e.g., debug readback via `vkCmdCopyBuffer`).
+    /// Set alive count from external readback (e.g., debug readback via `vkCmdCopyBuffer`).
     pub fn set_alive_count(&mut self, count: u32) {
-        self.cached_alive_count = count;
+        self.estimated_max_alive = count;
     }
 
     /// Get emitter configurations (for compute dispatch).
@@ -662,6 +653,23 @@ impl GlobalParticleSystem {
         }
 
         total_emit
+    }
+
+    pub fn max_estimated_alive(&self) -> u32 {
+        self.estimated_max_alive
+    }
+
+    fn recompute_estimated_max_alive(&mut self) {
+        self.estimated_max_alive = self
+            .emitters
+            .iter()
+            .filter(|e| e.emit_rate > 0.0)
+            .map(|e| {
+                let max_alive = e.emit_rate * e.base_lifetime * (1.0 + e.lifetime_variation);
+                max_alive.ceil() as u32
+            })
+            .sum::<u32>()
+            .min(self.max_particles);
     }
 
     /// Get emit pipeline handle.
@@ -851,11 +859,13 @@ impl GlobalParticleSystem {
     /// Reset counters for the simulate pass on the GPU.
     ///
     /// Always resets `workgroups_finished` to 0. When `emit_ran` is false (emit was
-    /// skipped), also resets `alive_count` to 0 and sets `emit_count` to
-    /// `cached_alive_count` so simulate processes exactly the survivors in the alive list.
+    /// skipped), also resets `alive_count` to 0 and copies the actual survivor count
+    /// from the previous frame's counters to `emit_count` so simulate processes
+    /// the correct range of the alive list.
     ///
-    /// When emit ran, it already reset `alive_count` to 0 and set `emit_count` to
-    /// `cached_alive_count` + actual_emissions, so we must not overwrite those values.
+    /// When emit ran, it already reset `alive_count` to 0 and set `emit_count`
+    /// to the actual survivor count + actual_emissions (via vkCmdCopyBuffer),
+    /// so we must not overwrite those values.
     pub fn reset_simulate_counters(
         &self,
         command_buffer: vk::CommandBuffer,
@@ -877,7 +887,8 @@ impl GlobalParticleSystem {
         }
 
         if !emit_ran {
-            // Emit was skipped — reset alive_count and set emit_count to survivor count.
+            // Emit was skipped — reset alive_count and copy the actual survivor count
+            // from the previous frame's counters to emit_count.
             // This ensures simulate processes only valid alive_list entries.
             unsafe {
                 device.cmd_update_buffer(
@@ -886,12 +897,21 @@ impl GlobalParticleSystem {
                     0, // alive_count at offset 0
                     &zero_bytes,
                 );
-                let alive_bytes = self.cached_alive_count.to_le_bytes();
-                device.cmd_update_buffer(
+            }
+            // Copy alive_count from previous frame's counters to emit_count
+            let prev_fi = (frame_index + 1) % 2;
+            let prev_counters = self.buffer.counters_buffer(prev_fi);
+            let copy_region = vk::BufferCopy {
+                src_offset: 0, // alive_count at offset 0
+                dst_offset: 8, // emit_count at offset 8
+                size: 4,
+            };
+            unsafe {
+                device.cmd_copy_buffer(
                     command_buffer,
+                    prev_counters,
                     counters_buffer,
-                    8, // emit_count at offset 8
-                    &alive_bytes,
+                    std::slice::from_ref(&copy_region),
                 );
             }
         }
@@ -937,21 +957,38 @@ impl GlobalParticleSystem {
 
         let device = &self.context.device;
 
-        // Reset emit_count to cached_alive_count so emit appends after existing survivors.
-        // alive[frame] contains survivors at slots 0..cached_alive_count-1.
-        // Emit will write new particles starting at cached_alive_count.
+        // Copy the actual alive_count from the previous frame's counters buffer to
+        // emit_count in the current frame's counters buffer.
         //
-        // Use vkCmdUpdateBuffer to set emit_count on the GPU during command buffer execution.
+        // The previous frame (fi_prev) wrote its final alive_count to
+        // counters_buffers[fi_prev].alive_count (offset 0). The semaphore
+        // guarantees that frame's GPU work is complete before this command
+        // buffer executes, so the value is fresh and correct.
+        //
+        // We copy alive_count (4 bytes at offset 0) from the previous frame's
+        // counters to emit_count (offset 8) in the current frame's counters.
+        // The emit shader then appends new particles after the existing survivors.
+        //
+        // This replaces the old approach of using CPU-provided cached_alive_count
+        // via vkCmdUpdateBuffer, which was stale due to 2-FiF timing: the CPU
+        // reads counters before the previous frame's GPU has finished, getting
+        // a value from 2 frames ago that doesn't match the actual survivor count
+        // in the alive list.
+        let prev_fi = (frame_index + 1) % 2;
         let counters_buffer = self.buffer.counters_buffer(frame_index);
-        let emit_count_offset = 8; // emit_count is at offset 8 in ParticleCounters (alive=0, dead=4, emit=8)
-        let alive_count_value = self.cached_alive_count;
-        let data_bytes = alive_count_value.to_le_bytes();
+        let prev_counters_buffer = self.buffer.counters_buffer(prev_fi);
+
+        let copy_region = vk::BufferCopy {
+            src_offset: 0, // alive_count at offset 0 in prev counters
+            dst_offset: 8, // emit_count at offset 8 in current counters
+            size: 4,       // u32
+        };
         unsafe {
-            device.cmd_update_buffer(
+            device.cmd_copy_buffer(
                 command_buffer,
+                prev_counters_buffer,
                 counters_buffer,
-                emit_count_offset,
-                &data_bytes,
+                std::slice::from_ref(&copy_region),
             );
         }
 

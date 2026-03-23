@@ -137,7 +137,7 @@ impl Application {
         let frame_index = self.renderer.current_frame() as u32;
         if let Some(ref mut particle_system) = self.renderer.particle_system {
             match particle_system.update(delta_time, frame_index) {
-                Ok((alive_count, emit_count)) => {
+                Ok((_max_alive, emit_count)) => {
                     // Calculate emit workgroups (256 particles per workgroup)
                     let emit_workgroups = if emit_count > 0 {
                         emit_count.div_ceil(katla_gfx::particles::PARTICLE_EMIT_WORKGROUP_SIZE)
@@ -153,14 +153,13 @@ impl Application {
                         );
                     }
 
-                    // Calculate simulate workgroups (based on alive particles)
-                    // CRITICAL: Simulate pass must ALWAYS run, even with 0 particles!
-                    // - It processes newly emitted particles from the emit pass
-                    // - It updates the alive_next list
-                    // - It performs the swap to alive_current for the next frame
-                    //
-                    // The total particles to simulate = alive_count (from previous frame) + emit_count (new this frame)
-                    let total_particles_to_simulate = alive_count + emit_count;
+                    // Calculate simulate workgroups using the estimated max alive count.
+                    // This is a generous upper bound based on emitter configs:
+                    //   sum(emit_rate_i * base_lifetime_i * (1 + lifetime_variation_i))
+                    // No GPU readback needed — simulate shader self-bounds via counters.
+                    // Over-dispatching is cheap (extra workgroups exit immediately).
+                    let max_alive = particle_system.max_estimated_alive();
+                    let total_particles_to_simulate = max_alive + emit_count;
                     let simulate_workgroups = if total_particles_to_simulate > 0 {
                         total_particles_to_simulate
                             .div_ceil(katla_gfx::particles::PARTICLE_SIMULATE_WORKGROUP_SIZE)
@@ -169,10 +168,10 @@ impl Application {
                     };
 
                     log::trace!(
-                        "Particle compute workgroups: emit {} particles = {} workgroups, simulate {} alive + {} emit = {} total particles = {} workgroups",
+                        "Particle compute workgroups: emit {} particles = {} workgroups, simulate ~{} max_alive + {} emit = {} total particles = {} workgroups",
                         emit_count,
                         emit_workgroups,
-                        alive_count,
+                        max_alive,
                         emit_count,
                         total_particles_to_simulate,
                         simulate_workgroups

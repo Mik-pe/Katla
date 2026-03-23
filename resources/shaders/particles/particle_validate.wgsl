@@ -67,13 +67,20 @@ var<uniform> params: ValidationParams;
 fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let idx = global_id.x;
 
-    if (idx >= params.alive_count) { return; }
+    // Use the post-simulate alive_count from counters (written by simulate pass).
+    // params.alive_count is the pre-simulate cached count which may include stale
+    // entries from previous frames. counters.alive_count reflects actual survivors.
+    let actual_alive_count = atomicLoad(&counters.alive_count);
+    if (idx >= actual_alive_count) { return; }
 
     let particle_idx = alive_list[idx];
     if (particle_idx >= MAX_PARTICLES) { return; }
 
     let particle = particles[particle_idx];
     let emitter_idx = particle.emitter_index;
+
+    // Skip particles that were never emitted (zero lifetime means uninitialized data)
+    if (particle.lifetime <= 0.0) { return; }
 
     if (emitter_idx >= params.emitter_count) { return; }
 
@@ -100,33 +107,41 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
         }
 
         // Record mismatch detail (up to max_mismatch_details)
+        // Format: [frame_index, particle_idx, packed_color, emitter_idx_packed_alive]
         let detail_slot = atomicAdd(&results.mismatch_count, 1u);
         if (detail_slot < params.max_mismatch_details) {
             let base = detail_slot * 4u;
-            results.mismatch_details[base] = particle_idx;
-            results.mismatch_details[base + 1u] = emitter_idx;
-            // Pack color channels as integers for debugging
-            results.mismatch_details[base + 2u] = bitcast<u32>(particle.color.r * 10000.0);
-            results.mismatch_details[base + 3u] = bitcast<u32>(particle.color.g * 10000.0);
+            results.mismatch_details[base] = params.frame_index;
+            results.mismatch_details[base + 1u] = particle_idx;
+            // Pack RGB: R*1000000 + G*1000 + B (integer approximations)
+            let r = u32(particle.color.r * 10000.0);
+            let g = u32(particle.color.g * 10000.0);
+            let b = u32(particle.color.b * 10000.0);
+            results.mismatch_details[base + 2u] = r * 1000000u + g * 1000u + b;
+            // Pack: emitter_idx * 100000000 + alive_count
+            results.mismatch_details[base + 3u] = emitter_idx * 100000000u + actual_alive_count;
         }
     }
 
     // Check velocity consistency.
-    // With zero cone_angle and zero gravity, velocity should be purely in the
-    // emitter's velocity_direction. With zero turbulence, there should be no
-    // lateral drift.
+    // With zero cone_angle, zero gravity, and zero turbulence:
+    //   - velocity direction must align with emitter.velocity_direction
+    //   - velocity magnitude must match emitter.velocity_magnitude
     var velocity_ok = true;
     let vtol = params.velocity_tolerance;
 
     // Only check if velocity tolerance is set (> 0)
     if (vtol > 0.0) {
-        // Check for unexpected lateral velocity components
-        // With cone_angle=0, all velocity should be along velocity_direction
+        let expected_speed = emitter.velocity_magnitude;
+        let actual_speed = length(particle.velocity);
+        let speed_diff = abs(actual_speed - expected_speed);
+
+        // Check direction alignment (lateral drift)
         let forward = normalize(emitter.velocity_direction);
         let vel_along = dot(particle.velocity, forward);
         let lateral_sq = dot(particle.velocity, particle.velocity) - vel_along * vel_along;
 
-        if (lateral_sq > vtol * vtol) {
+        if (speed_diff > vtol || lateral_sq > vtol * vtol) {
             velocity_ok = false;
         }
     }
