@@ -1,0 +1,187 @@
+{
+  "assertionGroup": "ui-polish",
+  "testedAt": "2026-03-25T00:00:00Z",
+  "isolation": {
+    "type": "codebase-review",
+    "crate": "katla_ui",
+    "tools": ["cargo check", "cargo test", "cargo clippy", "grep", "code review"]
+  },
+  "toolsUsed": ["cargo check", "cargo test", "cargo clippy", "grep", "code review"],
+  "assertions": [
+    {
+      "id": "VAL-UI-001",
+      "title": "Edition updated to 2024",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep katla_ui/Cargo.toml for 'edition = \"2024\"'",
+          "expected": "Exactly 1 match",
+          "observed": "1 match found: edition = \"2024\""
+        }
+      ],
+      "evidence": {
+        "grep": "katla_ui/Cargo.toml contains 'edition = \"2024\"' (count=1)"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-UI-002",
+      "title": "No empty combo.rs file or mod combo reference",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep katla_ui/src/lib.rs for 'mod combo'",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        },
+        {
+          "action": "glob katla_ui/src for **/combo.rs",
+          "expected": "No files found",
+          "observed": "No files found"
+        }
+      ],
+      "evidence": {
+        "grep": "'mod combo' in katla_ui/src/lib.rs: count=0",
+        "glob": "No combo.rs files exist in katla_ui/src/"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-UI-003",
+      "title": "ClickResult has no duplicate is_clicked/as_clicked_bool",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep katla_ui/src/context/interaction.rs for 'fn is_clicked|fn as_clicked_bool'",
+          "expected": "Exactly 1 match (is_clicked only)",
+          "observed": "1 match: 'pub fn is_clicked(&self) -> bool' at line 22"
+        }
+      ],
+      "evidence": {
+        "grep": "'fn is_clicked|fn as_clicked_bool' in interaction.rs: count=1 (only is_clicked exists)"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-UI-004",
+      "title": "UiStyle themes share a base function for common colors",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Code review of katla_ui/src/style.rs",
+          "expected": "Theme functions delegate to shared base",
+          "observed": "All three theme functions (dark(), light(), classic()) start with 'let mut s = Self::default_dimensions();' followed by 's.apply_common_colors();'. default_dimensions() provides shared dimensions and placeholder colors. apply_common_colors() sets colors shared across all themes (input_border_focused = 0x4a9eff)."
+        }
+      ],
+      "evidence": {
+        "codeReview": "style.rs: dark() calls default_dimensions() + apply_common_colors(), light() calls default_dimensions() + apply_common_colors(), classic() calls default_dimensions() + apply_common_colors()"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-UI-005",
+      "title": "FontSystem::new() delegates to with_atlas_size()",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Code review of katla_ui/src/text/mod.rs",
+          "expected": "new() body calls with_atlas_size()",
+          "observed": "new() body is: 'Self::with_atlas_size(Self::DEFAULT_ATLAS_WIDTH, Self::DEFAULT_ATLAS_HEIGHT)'"
+        }
+      ],
+      "evidence": {
+        "codeReview": "text/mod.rs line: 'pub fn new() -> Self { Self::with_atlas_size(Self::DEFAULT_ATLAS_WIDTH, Self::DEFAULT_ATLAS_HEIGHT) }'"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-UI-006",
+      "title": "RadioButton follows widget trait pattern",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Code review of RadioButton builder and internal implementation",
+          "expected": "Internal method exists, builder delegates to it",
+          "observed": "Internal method: UiContext::radio_button() in context/widgets/basic.rs (pub(crate)). Builder: widgets::RadioButton in widgets/mod.rs implements Widget trait, whose ui() method calls 'ui.radio_button(self.label, self.value, self.index, self.label, self.bounds)'"
+        }
+      ],
+      "evidence": {
+        "codeReview": "widgets/mod.rs RadioButton::ui() delegates to UiContext::radio_button() in context/widgets/basic.rs (pub(crate))"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-UI-007",
+      "title": "selectable()/toggle_button() visibility is appropriate",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Check visibility of selectable() and toggle_button()",
+          "expected": "Methods are pub because called from katla_app",
+          "observed": "Both methods are 'pub fn' in context/widgets/selectable.rs. Confirmed called from katla_app: toggle_button() in editor_ui/preferences.rs (3 calls), selectable() in debug_overlay.rs (2 calls)"
+        }
+      ],
+      "evidence": {
+        "codeReview": "selectable() and toggle_button() are pub fn in context/widgets/selectable.rs, called from katla_app/src/ui/debug_overlay.rs and katla_app/src/ui/editor_ui/preferences.rs"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-UI-008",
+      "title": "UiContext fields use appropriate visibility",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Code review of katla_ui/src/context/mod.rs field visibility",
+          "expected": "pub fields accessed by katla_app, internal fields use pub(crate) or private",
+          "observed": "pub fields: input, style, fonts — all confirmed accessed from katla_app (builder.rs, editor_ui.rs, editor/mod.rs, toolbar.rs, preferences.rs). pub(crate) fields: draw_list, current_font, screen_size, scale_factor, hovered_id, active_id, focused_id, cursor, layout_stack, popup_bounds, time, last_input_time, popup_content_bounds. Private fields: font_scale, clip_stack, id_stack, id_counter, in_frame, row_height, popup_id, menu_bar_close_id, popup_position, popup_opened_this_frame, popup_consume_click, z_index, z_stack, popup_cursor, popup_width, scroll_area_bounds, scroll_area_content_bounds, scroll_area_state, scroll_area_show_scrollbar. No katla_app code accesses pub(crate) or private fields directly."
+        }
+      ],
+      "evidence": {
+        "codeReview": "3 pub fields (input, style, fonts) all accessed from katla_app. pub(crate) and private fields not accessed from katla_app."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-UI-009",
+      "title": "Slider uses explicit ID",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Code review of slider ID generation",
+          "expected": "Not a debug-formatted range string",
+          "observed": "Slider widget in widgets/mod.rs uses 'self.id.unwrap_or(\"slider\")' — a plain static string. No format!() calls with range values found anywhere in slider-related code."
+        }
+      ],
+      "evidence": {
+        "codeReview": "widgets/mod.rs Slider::ui(): 'let id = self.id.unwrap_or(\"slider\");'. No format! with range found in slider code."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-UI-010",
+      "title": "All widgets use Response::interactive() consistently",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep katla_ui/src/context/widgets/ for raw Response { construction",
+          "expected": "0 matches for 'Response { field' pattern",
+          "observed": "Grep for 'Response \\{[a-z]' returned 0 matches in context/widgets/. All interactive widgets use Response::interactive(). Non-interactive widgets (Label, Separator, Badge, Spacer, ProgressBar) use Response::new(bounds). No raw struct literal construction found."
+        }
+      ],
+      "evidence": {
+        "grep": "'Response \\{[a-z]' in katla_ui/src/context/widgets/: count=0",
+        "codeReview": "All interactive widgets use Response::interactive(). Static widgets use Response::new(bounds). No raw Response { } struct literal construction."
+      },
+      "issues": null
+    }
+  ],
+  "compilation": {
+    "cargoCheck": "pass (0 errors, 0 warnings)",
+    "cargoTest": "pass (69 unit tests passed, 51 doc tests ignored)",
+    "cargoClippy": "pass (0 warnings with -D warnings)"
+  },
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 10 assertions: 10 passed. All VAL-UI-001 through VAL-UI-010 confirmed. katla_ui compiles cleanly, all tests pass, no clippy warnings."
+}
