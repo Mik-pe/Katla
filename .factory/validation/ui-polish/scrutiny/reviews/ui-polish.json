@@ -1,0 +1,50 @@
+{
+  "featureId": "ui-polish",
+  "reviewedAt": "2026-03-25T00:45:00.000Z",
+  "commitId": "f2bafca",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The ui-polish feature is well-executed. 9 of 11 sub-tasks were fully completed with clean, correct implementations. Two sub-tasks (VAL-UI-007 and VAL-UI-008) were correctly identified as already-satisfied or impossible without breaking cross-crate consumers. The remaining widgets in the public builder layer (Label, Separator, Badge, Spacer, ToolTip, Collapsible) still use Response::new() rather than Response::interactive(), but these are either non-interactive widgets or were out of scope for this feature's definition.",
+    "issues": [
+      {
+        "file": "katla_ui/src/widgets/mod.rs",
+        "line": 916,
+        "severity": "non_blocking",
+        "description": "Collapsible widget manually constructs Response::new() then sets hovered/clicked fields, instead of using Response::interactive(). This is the only interactive widget in the public builder layer that doesn't use Response::interactive(). Non-interactive widgets (Label, Separator, Badge, Spacer, ToolTip) reasonably use Response::new() since they have no interaction state. This was not in scope for this feature's 'standardize all widgets to use Response::interactive()' task which targeted context/widgets/ internal methods."
+      },
+      {
+        "file": "katla_ui/src/style.rs",
+        "line": 360,
+        "severity": "non_blocking",
+        "description": "The apply_common_colors() shared base currently only extracts one color (input_border_focused = 0x4a9eff) which is indeed shared across all three themes. The deduplication is correct but the shared base is minimal — future theme additions may reveal more shared colors."
+      },
+      {
+        "file": "katla_ui/src/context/widgets/basic.rs",
+        "line": 381,
+        "severity": "non_blocking",
+        "description": "The radio_button internal method's first parameter 'id' is always passed the same value as 'label' (see widgets/mod.rs:723 where both are self.label). This is functionally correct since labels serve as unique IDs in this codebase, but the API has a redundant parameter."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The feature description said to change selectable()/toggle_button() from pub to pub(crate), but these methods are called from katla_app (a separate crate), making pub(crate) impossible. The worker correctly identified this and kept them as pub. This cross-crate visibility constraint is not documented in AGENTS.md and could mislead future workers.",
+      "evidence": "katla_app/src/ui/debug_overlay.rs:301 calls ui.selectable(), katla_app/src/ui/editor_ui/preferences.rs:371 calls .toggle_button(). Worker deviation documented in handoff skillFeedback.deviations."
+    },
+    {
+      "area": "conventions",
+      "observation": "The feature description said to 'tighten UiContext field visibility' (VAL-UI-008) but fields input/style/fonts were already pub because katla_app directly accesses them. The current visibility is correct. Future feature specs targeting visibility tightening should first check cross-crate usage.",
+      "evidence": "UiContext in context/mod.rs has pub input, pub style, pub fonts — all accessed from katla_app."
+    },
+    {
+      "area": "conventions",
+      "observation": "The two-layer widget architecture (public builders in widgets/mod.rs vs internal implementations in context/widgets/) is not documented in AGENTS.md or .factory/library/. Understanding this split is important for any future widget-related work. The worker correctly focused Response::interactive() standardization on the internal layer (context/widgets/) where interactive state is managed.",
+      "evidence": "katla_ui/src/context/widgets.rs documents the two-layer pattern in its module docstring, but this isn't surfaced in the project-level AGENTS.md."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The ui-polish feature passes review. All 11 sub-tasks were addressed: 9 fully implemented (combo.rs removal, ClickResult dedup, UiStyle shared base, FontSystem::new() delegation, RadioButton internal method, Slider ID fix, alpha_to_coverage removal, selectable/toggle_button is_clicked() consistency, and Response::interactive() standardization in context/widgets/). Two sub-tasks (VAL-UI-007 visibility tightening, VAL-UI-008 UiContext fields) were correctly identified as already-satisfied or blocked by cross-crate usage. The implementation is clean, tests pass (69 tests), workspace compiles, and clippy reports zero warnings. Three non-blocking observations noted for future awareness."
+}

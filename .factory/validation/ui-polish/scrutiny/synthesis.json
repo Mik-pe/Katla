@@ -1,0 +1,39 @@
+{
+  "milestone": "ui-polish",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add note about cross-crate visibility constraints: before changing any katla_ui public API to pub(crate), check katla_app for cross-crate usage. Several ui-polish sub-tasks (VAL-UI-007 selectable/toggle_button visibility, VAL-UI-008 UiContext field visibility) could not be applied because katla_app accesses these from a separate crate.",
+      "evidence": "Feature ui-polish: selectable() called from katla_app/src/ui/debug_overlay.rs:301, toggle_button() called from katla_app/src/ui/editor_ui/preferences.rs:371, UiContext fields (input/style/fonts) accessed from katla_app.",
+      "isSystemic": false
+    },
+    {
+      "target": "library",
+      "suggestion": "Document the two-layer widget architecture in .factory/library/: public builders in widgets/mod.rs vs internal implementations in context/widgets/. Understanding this split is important for widget-related work — Response::interactive() standardization correctly targets the internal layer where interactive state is managed.",
+      "evidence": "Feature ui-polish: context/widgets.rs module docstring documents the two-layer pattern but this knowledge isn't surfaced at project level.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "UiContext field visibility tightening (VAL-UI-008) was already satisfied — fields are pub because katla_app needs them.",
+      "reason": "already-documented: the review correctly identified this as already-satisfied, not an actionable observation for guidance."
+    }
+  ],
+  "previousRound": null
+}
