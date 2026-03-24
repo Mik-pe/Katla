@@ -1,0 +1,22 @@
+{
+  "milestone": "ecs-cleanup",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-ECS-001",
+    "VAL-ECS-002",
+    "VAL-ECS-003",
+    "VAL-ECS-004",
+    "VAL-ECS-005"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}

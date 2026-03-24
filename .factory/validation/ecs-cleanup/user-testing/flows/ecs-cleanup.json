@@ -1,0 +1,148 @@
+{
+  "assertionGroup": "ecs-cleanup",
+  "testedAt": "2026-03-24T00:00:00Z",
+  "isolation": {
+    "type": "local-filesystem",
+    "workingDirectory": "C:\\dev\\katla",
+    "scope": "katla_ecs crate only"
+  },
+  "toolsUsed": ["cargo", "grep"],
+  "assertions": [
+    {
+      "id": "VAL-ECS-001",
+      "title": "as_any/as_any_mut pattern deduplicated",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for fn as_any and fn as_any_mut definitions in katla_ecs/src",
+          "expected": "Definitions exist in only one trait (AnyComponentStorage)",
+          "observed": "as_any and as_any_mut are defined only in AnyComponentStorage trait (storage.rs:132,135) with a default impl (storage.rs:151,155). The Component trait (components.rs:22) does NOT define as_any/as_any_mut. No other trait or impl block defines these methods."
+        }
+      ],
+      "evidence": {
+        "grepResults": "4 hits total — 2 in AnyComponentStorage trait definition (storage.rs:132,135), 2 in impl ComponentStorage<T> (storage.rs:151,155). Component trait in components.rs has no as_any/as_any_mut."
+      },
+      "commandsRun": [
+        {
+          "command": "grep -rn 'fn as_any\\b' katla_ecs/src",
+          "exitCode": 0,
+          "observation": "Found in storage.rs:132 (trait def) and storage.rs:151 (impl def) only"
+        },
+        {
+          "command": "grep -rn 'fn as_any_mut\\b' katla_ecs/src",
+          "exitCode": 0,
+          "observation": "Found in storage.rs:135 (trait def) and storage.rs:155 (impl def) only"
+        },
+        {
+          "command": "grep -rn 'trait.*Component' katla_ecs/src",
+          "exitCode": 0,
+          "observation": "Two traits: AnyComponentStorage (storage.rs:121) and Component (components.rs:22). Only AnyComponentStorage has as_any/as_any_mut."
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-002",
+      "title": "No dead code warnings in katla_ecs",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo check -p katla_ecs and grep for dead_code warnings",
+          "expected": "Zero dead_code warnings",
+          "observed": "cargo check completed successfully (exit code 0). grep for 'dead_code' returned exit code 1 (no matches)."
+        }
+      ],
+      "evidence": {
+        "cargoCheck": "Finished `dev` profile [optimized + debuginfo] target(s) in 0.32s — exit code 0",
+        "deadCodeWarnings": "0 (grep returned no matches)"
+      },
+      "commandsRun": [
+        {
+          "command": "cargo check -p katla_ecs 2>&1",
+          "exitCode": 0,
+          "observation": "Compilation succeeded with no warnings"
+        },
+        {
+          "command": "cargo check -p katla_ecs 2>&1 | grep -i 'dead_code'",
+          "exitCode": 1,
+          "observation": "grep exit code 1 = no matches = zero dead_code warnings"
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-003",
+      "title": "Unused imports removed",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo check -p katla_ecs and grep for unused import warnings",
+          "expected": "Zero unused import warnings",
+          "observed": "grep for 'unused import' returned exit code 1 (no matches)."
+        }
+      ],
+      "evidence": {
+        "unusedImportWarnings": "0 (grep returned no matches)"
+      },
+      "commandsRun": [
+        {
+          "command": "cargo check -p katla_ecs 2>&1 | grep -i 'unused import'",
+          "exitCode": 1,
+          "observation": "grep exit code 1 = no matches = zero unused import warnings"
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-004",
+      "title": "Internal modules use pub(crate) visibility",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Check lib.rs for visibility of entity_slot, entity_allocator, sparse_set, storage modules",
+          "expected": "None of these modules are declared as 'pub mod'",
+          "observed": "entity_slot: 'mod entity_allocator' (private), entity_allocator: 'mod entity_slot' (private), sparse_set: 'mod sparse_set' (private), storage: 'pub(crate) mod storage' (crate-internal only, not pub)"
+        }
+      ],
+      "evidence": {
+        "libRsContent": "entity_slot → 'mod entity_slot' (private), entity_allocator → 'mod entity_allocator' (private), sparse_set → 'mod sparse_set' (private), storage → 'pub(crate) mod storage' (crate-internal)"
+      },
+      "commandsRun": [
+        {
+          "command": "Read katla_ecs/src/lib.rs",
+          "exitCode": 0,
+          "observation": "Confirmed: entity_slot, entity_allocator, sparse_set are 'mod' (private); storage is 'pub(crate) mod'; none are 'pub mod'"
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-005",
+      "title": "All katla_ecs tests pass",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs",
+          "expected": "All tests pass with exit code 0",
+          "observed": "95 unit tests passed, 3 doc tests passed (9 ignored), 0 failed. Exit code 0."
+        }
+      ],
+      "evidence": {
+        "unitTests": "95 passed; 0 failed; 0 ignored",
+        "docTests": "3 passed; 0 failed; 9 ignored",
+        "exitCode": 0
+      },
+      "commandsRun": [
+        {
+          "command": "cargo test -p katla_ecs 2>&1",
+          "exitCode": 0,
+          "observation": "test result: ok. 95 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out (unit tests). 3 passed; 0 failed; 9 ignored (doc tests). Overall exit code 0."
+        }
+      ],
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 5 assertions: 5 passed. as_any/as_any_mut are deduplicated into AnyComponentStorage only; zero dead_code warnings; zero unused import warnings; internal modules use private or pub(crate) visibility; all 95 unit tests and 3 doc tests pass."
+}
