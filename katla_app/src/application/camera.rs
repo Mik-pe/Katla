@@ -6,17 +6,14 @@ use crate::components::{
     ForceComponent, PerspectiveComponent, TransformComponent, VelocityComponent,
 };
 
-pub struct Camera {
+pub(crate) struct Camera {
     pub entity: EntityId,
 }
 
 impl Camera {
     pub fn new(world: &mut World) -> Self {
-        // Position camera at a reasonable height and distance
-        // Looking straight ahead (toward negative Z)
         let position = Vec3::new(0.0, 2.0, 10.0);
 
-        // Create a transform with identity rotation (looking straight ahead)
         let transform = Transform {
             position,
             rotation: katla_math::Quat::new(),
@@ -31,7 +28,7 @@ impl Camera {
             PerspectiveComponent::default(),
             FlyCameraControllerComponent::default(),
             FlyCameraLookComponent::default(),
-            EditorHidden, // Hide from editor hierarchy
+            EditorHidden,
         ));
 
         Self { entity }
@@ -64,7 +61,6 @@ impl Camera {
         let to = self.get_view_rotation(world) * fwd;
         if let Some(transform) = world.get_component::<TransformComponent>(self.entity) {
             let pos = transform.transform.position;
-            // create_lookat returns camera-to-world transform, need inverse for world-to-camera
             Mat4::create_lookat(pos, pos + to, Vec3::new(0.0, 1.0, 0.0)).inverse()
         } else {
             Mat4::identity()

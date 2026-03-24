@@ -10,11 +10,6 @@ use crate::FontSize;
 use super::super::UiContext;
 
 impl UiContext {
-    /// Get the menu item height for layout.
-    pub(crate) fn menu_item_height(&self) -> f32 {
-        self.style.menu_item_height
-    }
-
     /// Menu item with automatic positioning inside a popup.
     ///
     /// Returns true if clicked. Use inside `context_menu()`, `dropdown()`, or `modal()`.

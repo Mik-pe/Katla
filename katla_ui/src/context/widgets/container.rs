@@ -5,9 +5,6 @@
 
 use katla_math::{Rect2D, Vec2};
 
-use crate::icons::ForkAwesome;
-use crate::text::FontId;
-
 use super::super::{UiContext, WindowState};
 
 impl UiContext {
@@ -71,73 +68,6 @@ impl UiContext {
 
     /// End a window container.
     pub fn end_window(&mut self) {
-        self.pop_clip();
-    }
-
-    pub(crate) fn begin_header(
-        &mut self,
-        id: &str,
-        label: &str,
-        open: &mut bool,
-        bounds: Rect2D,
-    ) -> bool {
-        let widget_id = self.generate_id(id);
-
-        // Click to toggle
-        if self
-            .click_behavior(widget_id, self.is_hovered(bounds))
-            .is_clicked()
-        {
-            *open = !*open;
-        }
-
-        // Draw header background
-        let bg_color = if *open {
-            self.style.window_title_bg_active
-        } else {
-            self.style.window_title_bg
-        };
-        self.draw_rect(bounds, bg_color);
-
-        // Draw expand/collapse icon
-        let icon = if *open {
-            ForkAwesome::CHEVRON_DOWN
-        } else {
-            ForkAwesome::CHEVRON_RIGHT
-        };
-        let icon_size = self.style.font_size;
-        let icon_pos = Vec2::new(bounds.min.x() + 4.0, bounds.center().y() - icon_size * 0.5);
-        self.draw_icon_aligned(
-            icon,
-            icon_pos,
-            icon_size,
-            self.style.text_color,
-            FontId::DEFAULT,
-        );
-
-        // Draw label text after icon
-        let text_size = self.measure_text(label, self.style.font_size);
-        let text_pos = Vec2::new(
-            bounds.min.x() + icon_size + 8.0,
-            bounds.center().y() - text_size.y() * 0.5,
-        );
-        self.draw_text(label, text_pos, self.style.text_color, self.style.font_size);
-
-        *open
-    }
-
-    pub(crate) fn begin_child(&mut self, _id: &str, bounds: Rect2D) -> Rect2D {
-        // Draw background
-        self.draw_rect(bounds, self.style.window_bg);
-
-        // Push clip
-        self.push_clip(bounds);
-
-        // Return content area (with padding)
-        bounds.contract(self.style.window_padding)
-    }
-
-    pub(crate) fn end_child(&mut self) {
         self.pop_clip();
     }
 }

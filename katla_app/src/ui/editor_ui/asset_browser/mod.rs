@@ -15,15 +15,13 @@ use std::path::PathBuf;
 use katla_gfx::TextureHandle;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::widgets::ImageButton;
-use katla_ui::{
-    mouse_button, ForkAwesome, KeyCode, ScrollArea, ScrollAreaState, TextureId, UiContext,
-};
+use katla_ui::{mouse_button, ForkAwesome, KeyCode, ScrollArea, TextureId, UiContext};
 
 use super::FocusedPanel;
 use crate::ui::theme::Theme;
 
 pub use state::AssetBrowserState;
-pub use types::{AssetAction, AssetEntry, AssetType, ThumbnailState};
+pub use types::{AssetAction, AssetType, ThumbnailState};
 
 use types::rect_from_points;
 

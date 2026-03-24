@@ -157,13 +157,6 @@ impl UiContext {
         self.popup(Popup::new(id).at_cursor(), open, content);
     }
 
-    pub(crate) fn context_menu_at<F>(&mut self, id: &str, pos: Vec2, open: &mut bool, content: F)
-    where
-        F: FnOnce(&mut Self, &mut bool),
-    {
-        self.popup(Popup::new(id).at_position(pos), open, content);
-    }
-
     pub(crate) fn dropdown<F>(&mut self, id: &str, trigger: Rect2D, open: &mut bool, content: F)
     where
         F: FnOnce(&mut Self, &mut bool),

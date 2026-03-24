@@ -19,9 +19,7 @@ mod viewport_grid;
 use katla_ecs::EntityId;
 use katla_gfx::TextureHandle;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::widgets::PanelState;
 use katla_ui::{mouse_button, DrawList, FontSize, UiContext};
-use std::path::PathBuf;
 
 use crate::{
     resources::viewport_state::ViewportGridState,
@@ -74,7 +72,6 @@ pub struct EntityInfo {
 pub enum Panel {
     Preferences,
     ParticleInspector,
-    Editor,
 }
 
 /// Action requested from the editor UI.
@@ -83,15 +80,13 @@ pub enum EditorAction {
     /// Spawn a new model at the given position.
     SpawnModel(SpawnableModel, Vec3),
     /// Spawn a model from a specific file path.
-    SpawnModelAtPath { path: PathBuf, position: Vec3 },
+    SpawnModelAtPath,
     /// Delete an entity.
     DeleteEntity(EntityId),
     /// Duplicate an entity.
     DuplicateEntity(EntityId),
     /// Select an entity.
     SelectEntity(EntityId),
-    /// Toggle play/pause.
-    TogglePlay,
     /// Change the editor theme.
     SetTheme(String),
     /// Toggle grid visibility.
@@ -137,12 +132,8 @@ enum PanelResizeEdge {
 
 /// Game Engine Editor UI state.
 pub struct EditorUI {
-    /// Whether the editor is visible.
-    pub visible: bool,
     /// Currently selected entity.
     pub selected_entity: Option<EntityId>,
-    /// Spawn menu visibility state.
-    spawn_menu_state: PanelState,
     /// Preferences panel state (visibility, position, tab, scroll).
     preferences_panel_state: PreferencesPanelState,
     /// Session-only editor settings (not persisted).
@@ -191,9 +182,7 @@ pub struct EditorUI {
 impl EditorUI {
     pub fn new() -> Self {
         Self {
-            visible: true,
             selected_entity: None,
-            spawn_menu_state: PanelState::default(),
             preferences_panel_state: PreferencesPanelState::default(),
             editor_settings: EditorSettings::default(),
             hierarchy_state: HierarchyState::default(),
@@ -287,7 +276,6 @@ impl EditorUI {
             Panel::ParticleInspector => {
                 self.particle_inspector_state.panel.open();
             }
-            Panel::Editor => {}
         }
     }
 
@@ -314,9 +302,6 @@ impl EditorUI {
             }
             PreferencesAction::SetGridSize(value) => {
                 self.editor_settings.grid_size = value;
-            }
-            PreferencesAction::Close => {
-                self.preferences_panel_state.panel.close();
             }
         }
     }
@@ -610,17 +595,14 @@ impl EditorUI {
         for action in self.asset_browser.take_actions() {
             match action {
                 AssetAction::DragToViewport {
-                    path,
+                    path: _,
                     asset_type,
                     screen_pos,
                 } => {
                     if viewport_bounds.contains(screen_pos) {
                         match asset_type {
                             AssetType::Model => {
-                                self.pending_actions.push(EditorAction::SpawnModelAtPath {
-                                    path: path.clone(),
-                                    position: Vec3::new(0.0, 0.0, 0.0),
-                                });
+                                self.pending_actions.push(EditorAction::SpawnModelAtPath);
                             }
                             _ => {
                                 self.pending_actions.push(EditorAction::SpawnModel(
@@ -896,7 +878,7 @@ mod tests {
     use super::*;
     use crate::ui::editor_ui::hierarchy::Hierarchy;
     use crate::ui::editor_ui::preferences::PreferencesTab;
-    use katla_ui::widgets::DraggablePanelState;
+    use katla_ui::widgets::{DraggablePanelState, PanelState};
 
     /// Test that clicking a tab in the preferences panel doesn't dismiss the window.
     #[test]
@@ -960,7 +942,7 @@ mod tests {
         ui.add(panel);
 
         assert!(
-            state.visibility().is_visible(),
+            state.panel.visibility.is_visible(),
             "preferences panel should stay open after clicking tab"
         );
 
@@ -968,13 +950,6 @@ mod tests {
             state.current_tab,
             PreferencesTab::Editor,
             "tab should change to Editor after clicking it"
-        );
-
-        assert!(
-            !actions
-                .iter()
-                .any(|a| matches!(a, PreferencesAction::Close)),
-            "tab click should not trigger Close action"
         );
     }
 

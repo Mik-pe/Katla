@@ -311,17 +311,6 @@ impl AssetBrowserState {
             .collect()
     }
 
-    /// Get max scroll offset based on content.
-    pub fn max_scroll(&self, content_height: f32, visible_height: f32) -> f32 {
-        (content_height - visible_height).max(0.0)
-    }
-
-    /// Close context menu.
-    pub fn close_context_menu(&mut self) {
-        self.context_menu_open = false;
-        self.context_menu_asset = None;
-    }
-
     /// Start dragging an asset.
     pub fn start_drag(&mut self, asset_index: usize, pos: katla_math::Vec2) {
         self.drag_asset = Some(asset_index);
@@ -367,20 +356,6 @@ impl AssetBrowserState {
             self.rename_buffer = asset.name.clone();
             self.context_menu_open = false;
         }
-    }
-
-    /// Commit rename.
-    pub fn commit_rename(&mut self) -> Option<(PathBuf, String)> {
-        if let Some(idx) = self.rename_asset {
-            if let Some(asset) = self.assets.get(idx) {
-                let old_path = asset.path.clone();
-                let new_name = self.rename_buffer.clone();
-                self.cancel_rename();
-                return Some((old_path, new_name));
-            }
-        }
-        self.cancel_rename();
-        None
     }
 
     /// Cancel rename mode.

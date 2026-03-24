@@ -69,65 +69,9 @@ impl MetricsHistory {
         }
     }
 
-    /// Get the values as a slice (oldest to newest).
-    pub fn values(&self) -> (&[f32], &[f32]) {
-        let (a, b) = self.values.as_slices();
-        (a, b)
-    }
-
     /// Get all values as a contiguous Vec (for convenience).
     pub fn values_vec(&self) -> Vec<f32> {
         self.values.iter().copied().collect()
-    }
-
-    /// Get the number of values currently stored.
-    pub fn len(&self) -> usize {
-        self.values.len()
-    }
-
-    /// Check if the history is empty.
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
-    }
-
-    /// Get the minimum value in the history.
-    pub fn min(&self) -> f32 {
-        if self.values.is_empty() {
-            0.0
-        } else {
-            self.min
-        }
-    }
-
-    /// Get the maximum value in the history.
-    pub fn max(&self) -> f32 {
-        if self.values.is_empty() {
-            1.0
-        } else {
-            self.max
-        }
-    }
-
-    /// Get the mean (average) of all values.
-    pub fn mean(&self) -> f32 {
-        if self.values.is_empty() {
-            0.0
-        } else {
-            self.sum / self.values.len() as f32
-        }
-    }
-
-    /// Get the most recent value.
-    pub fn last(&self) -> Option<f32> {
-        self.values.back().copied()
-    }
-
-    /// Clear all values.
-    pub fn clear(&mut self) {
-        self.values.clear();
-        self.min = f32::MAX;
-        self.max = f32::MIN;
-        self.sum = 0.0;
     }
 }
 
@@ -136,26 +80,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_empty_history() {
-        let h = MetricsHistory::new(10);
-        assert!(h.is_empty());
-        assert_eq!(h.len(), 0);
-        assert_eq!(h.min(), 0.0);
-        assert_eq!(h.max(), 1.0);
-        assert_eq!(h.mean(), 0.0);
-    }
-
-    #[test]
     fn test_push_and_bounds() {
         let mut h = MetricsHistory::new(10);
         h.push(5.0);
         h.push(10.0);
         h.push(3.0);
 
-        assert_eq!(h.len(), 3);
-        assert_eq!(h.min(), 3.0);
-        assert_eq!(h.max(), 10.0);
-        assert!((h.mean() - 6.0).abs() < 0.001);
+        let vals = h.values_vec();
+        assert_eq!(vals, vec![5.0, 10.0, 3.0]);
     }
 
     #[test]
@@ -166,19 +98,7 @@ mod tests {
         h.push(3.0);
         h.push(4.0); // Should push out 1.0
 
-        assert_eq!(h.len(), 3);
         let vals = h.values_vec();
         assert_eq!(vals, vec![2.0, 3.0, 4.0]);
-        assert_eq!(h.min(), 2.0);
-        assert_eq!(h.max(), 4.0);
-    }
-
-    #[test]
-    fn test_clear() {
-        let mut h = MetricsHistory::new(10);
-        h.push(1.0);
-        h.push(2.0);
-        h.clear();
-        assert!(h.is_empty());
     }
 }

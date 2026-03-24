@@ -9,6 +9,7 @@
 //! - [`editor`] - UI rendering and entity management for the editor
 
 pub mod builder;
+mod camera;
 pub mod editor;
 mod renderer;
 mod spawning;
@@ -31,8 +32,8 @@ use winit::{
     window::{Window, WindowId},
 };
 
+use self::camera::Camera;
 use crate::{
-    entities::Camera,
     gui_state::GuiState,
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     preferences::Preferences,
@@ -87,8 +88,6 @@ pub struct Application {
     pub(crate) start_time: Instant,
     /// Default PBR material handle for geometry rendering
     pub(crate) default_material_handle: katla_gfx::MaterialHandle,
-    /// Pending readback data from previous frame (for async black frame checking)
-    pending_readback: Option<(usize, Vec<u8>)>,
     /// Flag to prevent double cleanup
     cleaned_up: bool,
     /// Particle system for managing particle emitters via ECS
@@ -810,28 +809,6 @@ impl Application {
                             break;
                         }
                     }
-                }
-                LoadResult::ImageLoaded {
-                    path,
-                    width,
-                    height,
-                    pixels: _,
-                    ..
-                } => {
-                    debug!("Full image loaded: {:?} ({}x{})", path, width, height);
-                    // Future: Handle full image loads (e.g., for textures, skyboxes)
-                }
-                LoadResult::ModelLoaded {
-                    path,
-                    vertices: _,
-                    indices: _,
-                    ..
-                } => {
-                    debug!("Model loaded: {:?}", path);
-                }
-                LoadResult::ShaderSourceLoaded { path, source, .. } => {
-                    debug!("Shader source loaded: {:?} ({} bytes)", path, source.len());
-                    // Future: Handle shader loads (e.g., for hot reload)
                 }
                 LoadResult::Failed { path, error, .. } => {
                     warn!("Failed to load {:?}: {}", path, error);

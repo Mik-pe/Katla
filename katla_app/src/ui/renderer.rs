@@ -4,7 +4,6 @@
 //! - Maps `TextureId` to `TextureHandle`
 //! - Converts `katla_ui::DrawList` to `katla_gfx::UIDrawList`
 
-use ash::vk;
 use std::collections::HashMap;
 
 use katla_gfx::{TextureHandle, UIDrawList, UiDrawCommand, VertexUI};
@@ -24,9 +23,6 @@ pub struct UIRenderer {
     /// White texture bindless slot index for solid color rendering.
     /// This is the default white texture from the bindless system (slot 0).
     white_texture_bindless_slot: Option<u32>,
-    /// Maps bindless indices to transient texture resources (for viewport rendering).
-    /// Stores (image_view, sampler) tuples for textures not in the texture manager.
-    transient_textures: HashMap<u32, (vk::ImageView, vk::Sampler)>,
     /// Maps TextureHandle indices to their bindless texture slots.
     /// This allows us to look up the bindless index for thumbnails and other textures.
     bindless_slots: HashMap<u32, u32>,
@@ -39,7 +35,6 @@ impl UIRenderer {
             texture_registry: HashMap::new(),
             font_atlas_bindless_slot: None,
             white_texture_bindless_slot: Some(0),
-            transient_textures: HashMap::new(),
             bindless_slots: HashMap::new(),
         }
     }
@@ -55,11 +50,6 @@ impl UIRenderer {
         self.texture_registry.insert(id, handle)
     }
 
-    /// Unregister a texture by ID.
-    pub fn unregister_texture(&mut self, id: TextureId) -> Option<TextureHandle> {
-        self.texture_registry.remove(&id)
-    }
-
     /// Set the font atlas bindless texture slot.
     ///
     /// This stores the bindless slot index allocated for the font atlas texture.
@@ -68,27 +58,7 @@ impl UIRenderer {
         self.font_atlas_bindless_slot = Some(slot);
     }
 
-    /// Get the font atlas bindless texture slot.
-    ///
-    /// Returns None if the font atlas has not been registered with the bindless system.
-    pub fn font_atlas_bindless_slot(&self) -> Option<u32> {
-        self.font_atlas_bindless_slot
-    }
-
-    /// Set the white texture bindless slot for solid color rendering.
-    ///
-    /// The default white texture is used for rendering solid color rectangles
-    /// instead of sampling from the font atlas.
-    pub fn set_white_texture_bindless_slot(&mut self, slot: u32) {
-        self.white_texture_bindless_slot = Some(slot);
-    }
-
-    /// Get the white texture bindless slot.
-    pub fn white_texture_bindless_slot(&self) -> Option<u32> {
-        self.white_texture_bindless_slot
-    }
-
-    /// Register a bindless slot for a texture handle.
+    /// Get the bindless slot for a texture handle.
     ///
     /// This tracks which bindless slot a texture was registered to,
     /// allowing lookup by handle index later.
@@ -101,51 +71,6 @@ impl UIRenderer {
     /// Returns None if the texture hasn't been registered with bindless.
     pub fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32> {
         self.bindless_slots.get(&handle.index()).copied()
-    }
-
-    /// Resolve a texture ID to a GPU handle.
-    ///
-    /// Falls back to `TextureHandle::NONE` if the texture is not registered.
-    /// Supports bindless texture IDs (encoded with high bit set).
-    pub fn resolve_texture(&self, id: TextureId) -> TextureHandle {
-        const BINDLESS_FLAG: u64 = 1 << 63;
-        const BINDLESS_OFFSET: u32 = 1000; // Bindless indices start at 1000
-
-        // Check if this is a bindless texture (high bit set)
-        if id.0 & BINDLESS_FLAG != 0 {
-            // Extract the bindless index and encode it with an offset
-            // This distinguishes bindless textures from regular texture handles
-            let bindless_index = (id.0 & !BINDLESS_FLAG) as u32;
-            return TextureHandle::new(BINDLESS_OFFSET + bindless_index);
-        }
-
-        // Check font atlas - use the registered bindless slot
-        if id == TextureId::FONT_ATLAS {
-            return TextureHandle::new(self.font_atlas_bindless_slot.unwrap_or(0));
-        }
-
-        // For TextureId::NONE, use white texture slot for solid color rendering
-        if id == TextureId::NONE {
-            return TextureHandle::new(self.white_texture_bindless_slot.unwrap_or(0));
-        }
-
-        // Look up in registry - get the handle and then look up its bindless slot
-        if let Some(handle) = self.texture_registry.get(&id) {
-            if let Some(slot) = self.get_bindless_slot(*handle) {
-                return TextureHandle::new(slot);
-            }
-            log::warn!(
-                "TextureId {} found in registry but no bindless slot tracked, falling back to white texture",
-                id.0
-            );
-            TextureHandle::new(self.white_texture_bindless_slot.unwrap_or(0))
-        } else {
-            log::warn!(
-                "TextureId {} not in registry, falling back to white texture slot 0",
-                id.0
-            );
-            TextureHandle::new(self.white_texture_bindless_slot.unwrap_or(0))
-        }
     }
 
     /// Convert a `katla_ui::DrawList` to a `katla_gfx::UIDrawList`.
@@ -296,11 +221,6 @@ impl UIRenderer {
             self.white_texture_bindless_slot.unwrap_or(0)
         }
     }
-
-    /// Clear all registered textures.
-    pub fn clear(&mut self) {
-        self.texture_registry.clear();
-    }
 }
 
 impl Default for UIRenderer {
@@ -318,26 +238,6 @@ mod tests {
         let renderer = UIRenderer::new();
         assert!(renderer.texture_registry.is_empty());
         assert!(renderer.font_atlas_bindless_slot.is_none());
-    }
-
-    #[test]
-    fn test_resolve_unregistered_texture() {
-        let renderer = UIRenderer::new();
-        let id = TextureId::new(999);
-
-        // Should fall back to white texture slot for unregistered texture
-        assert_eq!(renderer.resolve_texture(id), TextureHandle::new(0));
-    }
-
-    #[test]
-    fn test_resolve_font_atlas_when_not_set() {
-        let renderer = UIRenderer::new();
-
-        // FONT_ATLAS ID should return TextureHandle with index 0 when not set
-        assert_eq!(
-            renderer.resolve_texture(TextureId::FONT_ATLAS),
-            TextureHandle::new(0)
-        );
     }
 
     #[test]

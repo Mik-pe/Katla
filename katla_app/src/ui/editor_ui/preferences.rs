@@ -4,7 +4,7 @@
 
 use katla_math::{Rect2D, Vec2};
 use katla_ui::{
-    widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle, PanelState},
+    widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle},
     FontId, FontSize, ForkAwesome, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
 };
 
@@ -90,24 +90,6 @@ pub struct PreferencesPanelState {
     pub scroll_state: ScrollAreaState,
 }
 
-impl PreferencesPanelState {
-    pub fn visibility(&self) -> &PanelState {
-        &self.panel.visibility
-    }
-
-    pub fn visibility_mut(&mut self) -> &mut PanelState {
-        &mut self.panel.visibility
-    }
-
-    pub fn position(&self) -> Option<Vec2> {
-        self.panel.position
-    }
-
-    pub fn dragging(&self) -> bool {
-        self.panel.dragging
-    }
-}
-
 /// Actions emitted by the preferences panel.
 #[derive(Debug, Clone)]
 pub enum PreferencesAction {
@@ -118,7 +100,6 @@ pub enum PreferencesAction {
     SetSnapToGrid(bool),
     SetCameraSpeed(f32),
     SetGridSize(f32),
-    Close,
 }
 
 pub struct PreferencesPanel<'a> {

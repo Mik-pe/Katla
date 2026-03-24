@@ -162,10 +162,7 @@ pub fn process_editor_actions(app: &mut Application) {
                     }
                 }
             }
-            EditorAction::SpawnModelAtPath {
-                path: _,
-                position: _,
-            } => {
+            EditorAction::SpawnModelAtPath => {
                 //TODO: Implement
             }
             EditorAction::DeleteEntity(entity_id) => {
@@ -185,9 +182,6 @@ pub fn process_editor_actions(app: &mut Application) {
             }
             EditorAction::SelectEntity(entity_id) => {
                 info!("Selected entity {:?}", entity_id);
-            }
-            EditorAction::TogglePlay => {
-                info!("Toggle play mode");
             }
             EditorAction::SetTheme(theme_key) => {
                 if let Some(theme) = crate::ui::Theme::by_name(&theme_key) {
