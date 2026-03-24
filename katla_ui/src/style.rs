@@ -307,6 +307,7 @@ impl UiStyle {
 
             thumbnail_size: 64.0,
 
+            // Placeholder colors — must be overridden by theme functions
             window_bg: Color::BLACK,
             window_title_bg: Color::BLACK,
             window_title_bg_active: Color::BLACK,
@@ -353,9 +354,17 @@ impl UiStyle {
         }
     }
 
+    /// Apply common color defaults shared across all themes.
+    ///
+    /// Colors that are identical or follow the same pattern in dark/light/classic.
+    fn apply_common_colors(&mut self) {
+        self.input_border_focused = Color::from_rgb_hex(0x4a9eff);
+    }
+
     /// Create a dark theme style.
     pub fn dark() -> Self {
         let mut s = Self::default_dimensions();
+        s.apply_common_colors();
         s.window_bg = Color::from_rgb_hex(0x2a2a2a);
         s.window_title_bg = Color::from_rgb_hex(0x3a3a3a);
         s.window_title_bg_active = Color::from_rgb_hex(0x4a4a4a);
@@ -371,7 +380,6 @@ impl UiStyle {
         s.input_border = Color::from_rgb_hex(0x404040);
         s.input_text = Color::from_rgb_hex(0xeeeeee);
         s.input_cursor = Color::from_rgb_hex(0xffffff);
-        s.input_border_focused = Color::from_rgb_hex(0x4a9eff);
         s.input_selection = Color::new(0.3, 0.5, 0.8, 0.5);
 
         s.text_color = Color::from_rgb_hex(0xeeeeee);
@@ -417,6 +425,7 @@ impl UiStyle {
     /// Create a light theme style.
     pub fn light() -> Self {
         let mut s = Self::default_dimensions();
+        s.apply_common_colors();
         s.window_bg = Color::from_rgb_hex(0xf0f0f0);
         s.window_title_bg = Color::from_rgb_hex(0xe0e0e0);
         s.window_title_bg_active = Color::from_rgb_hex(0xd0d0d0);
@@ -432,7 +441,6 @@ impl UiStyle {
         s.input_border = Color::from_rgb_hex(0xc0c0c0);
         s.input_text = Color::from_rgb_hex(0x222222);
         s.input_cursor = Color::from_rgb_hex(0x222222);
-        s.input_border_focused = Color::from_rgb_hex(0x4a9eff);
         s.input_selection = Color::new(0.3, 0.5, 0.8, 0.3);
 
         s.text_color = Color::from_rgb_hex(0x222222);
@@ -478,6 +486,7 @@ impl UiStyle {
     /// Create a classic imgui-style theme.
     pub fn classic() -> Self {
         let mut s = Self::default_dimensions();
+        s.apply_common_colors();
         s.window_rounding = 0.0;
         s.window_padding = 6.0;
         s.button_rounding = 0.0;
@@ -516,7 +525,6 @@ impl UiStyle {
         s.input_border = Color::from_rgb_hex(0x555555);
         s.input_text = Color::from_rgb_hex(0xeeeeee);
         s.input_cursor = Color::from_rgb_hex(0xffffff);
-        s.input_border_focused = Color::from_rgb_hex(0x4a9eff);
         s.input_selection = Color::new(0.4, 0.6, 0.9, 0.4);
 
         s.text_color = Color::from_rgb_hex(0xeeeeee);

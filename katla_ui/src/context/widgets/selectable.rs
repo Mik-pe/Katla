@@ -6,8 +6,8 @@
 
 use katla_math::{Color, Rect2D, Vec2};
 
-use crate::icons::ForkAwesome;
 use crate::Response;
+use crate::icons::ForkAwesome;
 
 use super::super::UiContext;
 
@@ -28,7 +28,7 @@ impl UiContext {
         let active = self.active_id == Some(widget_id);
 
         // Handle click using consolidated helper
-        let clicked = self.click_behavior(widget_id, hovered).as_clicked_bool();
+        let clicked = self.click_behavior(widget_id, hovered).is_clicked();
 
         // Determine colors based on state
         let bg_color = if selected {
@@ -78,7 +78,7 @@ impl UiContext {
         let active = self.active_id == Some(widget_id);
 
         // Handle click using consolidated helper
-        let clicked = self.click_behavior(widget_id, hovered).as_clicked_bool();
+        let clicked = self.click_behavior(widget_id, hovered).is_clicked();
 
         // Draw background
         let bg_color = if checked {

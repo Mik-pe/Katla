@@ -45,14 +45,6 @@ pub(super) fn coverage_to_alpha(coverage: f32) -> f32 {
     coverage.powf(1.0 / GAMMA_FACTOR)
 }
 
-/// Convert alpha value back to coverage (inverse of gamma correction).
-///
-/// This is kept for completeness but not currently used.
-#[allow(dead_code)]
-fn alpha_to_coverage(alpha: f32) -> f32 {
-    alpha.powf(GAMMA_FACTOR)
-}
-
 /// A handle to a loaded font.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FontId(pub u32);
@@ -227,26 +219,7 @@ impl FontSystem {
 
     /// Create a new font system.
     pub fn new() -> Self {
-        let pixel_count = (Self::DEFAULT_ATLAS_WIDTH * Self::DEFAULT_ATLAS_HEIGHT) as usize;
-        let mut atlas_data = vec![255u8; pixel_count * 4];
-        for i in 0..pixel_count {
-            atlas_data[i * 4 + 3] = 0;
-        }
-
-        Self {
-            fonts: HashMap::new(),
-            next_font_id: 0,
-            glyph_cache: HashMap::new(),
-            atlas_width: Self::DEFAULT_ATLAS_WIDTH,
-            atlas_height: Self::DEFAULT_ATLAS_HEIGHT,
-            atlas_cursor_x: 0,
-            atlas_cursor_y: 0,
-            atlas_row_height: 0,
-            atlas_data,
-            atlas_dirty: true,
-            atlas_resized: false,
-            glyph_padding: 1,
-        }
+        Self::with_atlas_size(Self::DEFAULT_ATLAS_WIDTH, Self::DEFAULT_ATLAS_HEIGHT)
     }
 
     /// Create a font system with a custom atlas size.
@@ -543,7 +516,7 @@ mod tests {
 
         for coverage in test_cases {
             let alpha = coverage_to_alpha(coverage);
-            let recovered = alpha_to_coverage(alpha);
+            let recovered = alpha.powf(GAMMA_FACTOR);
 
             assert!(
                 (recovered - coverage).abs() < 0.001,
@@ -562,7 +535,7 @@ mod tests {
             "Forward conversion should use 1/gamma"
         );
 
-        let recovered = alpha_to_coverage(alpha);
+        let recovered = alpha.powf(GAMMA_FACTOR);
         let expected_recovered = alpha.powf(1.45);
         assert!(
             (recovered - expected_recovered).abs() < 0.001,
