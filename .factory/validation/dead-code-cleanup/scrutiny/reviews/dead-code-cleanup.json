@@ -1,0 +1,100 @@
+{
+  "featureId": "dead-code-cleanup",
+  "reviewedAt": "2026-03-24T11:43:00.000Z",
+  "commitId": "32a90d1",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "assertionsVerified": [
+    {
+      "id": "VAL-DEAD-001",
+      "status": "pass",
+      "evidence": "katla_gfx/src/rendering/ directory no longer exists. Glob search for 'katla_gfx/src/rendering/**' returns zero matches. The diff shows deletion of rendering/pipeline/fixed.rs (15 lines). No 'mod rendering' declaration found anywhere in katla_gfx/src/."
+    },
+    {
+      "id": "VAL-DEAD-002",
+      "status": "pass",
+      "evidence": "All four stub files confirmed deleted: katla_gfx/src/buffer.rs, katla_gfx/src/mesh.rs, katla_gfx/src/render_pass/passes/mod.rs, katla_app/src/systems/animation/mod.rs. Glob searches all return zero matches. Parent mod declarations removed: 'mod passes' removed from render_pass/, 'mod animation' removed from systems/mod.rs. cargo check passes."
+    },
+    {
+      "id": "VAL-DEAD-003",
+      "status": "pass",
+      "evidence": "#![allow(dead_code)] removed from katla_app/src/lib.rs (grep returns zero matches). Also removed blanket from katla_math/src/lib.rs (not in the assertion but done proactively). All 22 dead items in katla_app that were masked by the blanket suppression have been individually addressed (removed or given targeted #[allow(dead_code)] with justification). cargo check produces zero dead_code warnings."
+    },
+    {
+      "id": "VAL-DEAD-004",
+      "status": "pass",
+      "evidence": "10 #[allow(dead_code)] annotations removed from katla_math/src/sse/quat.rs (grep returns zero matches). The SSE Quat struct itself is NOT dead - it is actively used via 'pub use crate::sse::quat::Quat' in katla_math/src/quat.rs. The annotations were redundant, not the code. The handoff correctly identified this and only removed the annotations rather than the struct. katla_math/src/lib.rs retains a justified #[allow(dead_code)] on the scalar::quat module (non-x86 fallback)."
+    },
+    {
+      "id": "VAL-DEAD-005",
+      "status": "pass",
+      "evidence": "ObjectData struct and ShaderMaterialParams struct confirmed removed (grep returns zero matches in storage_uniform.rs). Dead methods removed: update_object(), update_objects_bulk(), and others. FrameUniforms and ObjectUniforms structs are KEPT because they are actively used (instantiated in update_frame_with_lighting and update_object_bindless to write GPU data). They have targeted #[allow(dead_code)] because some of their fields are only written, never read by Rust code (they're GPU layout structs). This is correct behavior - they serve as GPU buffer layout definitions. 170 lines removed from storage_uniform.rs per the diff stat."
+    },
+    {
+      "id": "VAL-DEAD-006",
+      "status": "pass",
+      "evidence": "15 dead methods/structs removed from katla_ui across 12 files: context/drawing.rs (10 methods including measure_text_sized, draw_text_sized, etc.), context/interaction.rs (is_pressed, InteractionState), context/layout.rs (newline, layout_row, columns, in_layout, etc.), context/popup/api.rs (context_menu_at), context/popup/combo.rs (combo method - 74 lines), context/popup/menu.rs (menu_item_height), context/widgets.rs (button_auto), context/widgets/basic.rs (button, separator, text_area - 405 lines), context/widgets/container.rs (begin_header, begin_child, end_child), context/widgets/utility.rs (image_bordered, Image struct). Total: 1,053 lines removed from katla_ui."
+    },
+    {
+      "id": "VAL-DEAD-007",
+      "status": "pass",
+      "evidence": "generate_icosphere and get_midpoint functions removed from katla_gfx/src/primitives/sphere.rs (grep returns zero matches). 7 associated icosphere tests also removed (test_icosphere_generation, test_icosphere_vertex_count, test_icosphere_winding, test_icosphere_too_many_subdivisions, etc.). 294 lines removed. cargo test -p katla_gfx passes (421 tests)."
+    },
+    {
+      "id": "VAL-DEAD-008",
+      "status": "pass",
+      "evidence": "ScrollAreaState and AssetEntry imports removed from katla_app/src/ui/editor_ui/asset_browser/mod.rs (grep returns zero matches). cargo check produces zero unused_imports warnings."
+    },
+    {
+      "id": "VAL-DEAD-009",
+      "status": "pass",
+      "evidence": "entities/ directory deleted (glob returns zero matches). Camera struct inlined into katla_app/src/application/camera.rs. Import paths updated: application/mod.rs now uses 'self::camera::Camera', application/builder.rs uses 'super::camera::Camera'. No remaining references to 'entities::Camera' anywhere in the codebase. 'mod entities' and 'pub use katla_gfx::renderer::FrameUniforms' removed from katla_app/src/lib.rs."
+    }
+  ],
+  "codeReview": {
+    "summary": "Thorough and well-executed dead code cleanup. The worker removed 2,171 lines across 40 files, covering all specified targets plus additional dead code discovered during the process (22 dead katla_app items, 5 dead katla_gfx items, is_persistent getter). All 1,091 tests pass with zero compiler warnings. The worker correctly identified that SSE Quat was live code (not dead) and only removed the redundant #[allow(dead_code)] annotations. The entities module was properly inlined rather than just deleted. Targeted #[allow(dead_code)] annotations were added where justified (SkeletalAnimationSystem.sample_buffer, scalar::quat module, GPU layout structs in storage_uniform.rs).",
+    "issues": [
+      {
+        "file": "katla_gfx/src/vulkan/material/storage_uniform.rs",
+        "line": 203,
+        "severity": "non_blocking",
+        "description": "FrameUniforms and ObjectUniforms structs still have #[allow(dead_code)] annotations. The validation contract says 'dead storage_uniform structs removed' but these structs are actually USED (instantiated in update_frame_with_lighting and update_object_bindless). The annotations exist because the structs are pub but their fields are only written to GPU memory, not read by Rust code. This is acceptable - they serve as GPU buffer layout definitions. The truly dead ObjectData and ShaderMaterialParams structs were correctly removed."
+      },
+      {
+        "file": "katla_gfx/src/vulkan/bda.rs",
+        "line": 27,
+        "severity": "non_blocking",
+        "description": "is_persistent field has #[allow(dead_code)] after the public getter was removed. The field is set to true in new_persistent() but never read. Consider removing the field entirely since it's always true for the only constructor. However, this is a very minor issue and the targeted annotation is acceptable."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "library",
+      "observation": "The cleanup-notes.md correctly anticipated that removing the blanket #![allow(dead_code)] from katla_app would reveal more dead_code warnings than the 17 originally visible. The worker found and fixed 22 additional dead items in katla_app beyond the 17 originally scoped. This pattern should be documented for future cleanup workers.",
+      "evidence": "cleanup-notes.md says 'may reveal many more dead_code warnings when removed. Workers should fix all of them'. Worker handoff confirms '22 dead items in katla_app (editor UI fields/variants, background_loader variants/methods, gltf_parser functions, metrics_history methods, ui/renderer methods/field)' were removed.",
+      "rationale": "This is already documented in cleanup-notes.md but worth reinforcing that the guidance was accurate and followed."
+    },
+    {
+      "area": "library",
+      "observation": "The SSE quat module was identified as potentially dead in cleanup-notes.md ('verify the entire SSE quat module is unused before removing'), but the worker correctly determined it IS used (via 'pub use crate::sse::quat::Quat') and only removed the redundant #[allow(dead_code)] annotations. This knowledge should be recorded so future workers don't waste time re-investigating.",
+      "evidence": "cleanup-notes.md: 'katla_math/src/sse/quat.rs - verify the entire SSE quat module is unused before removing'. katla_math/src/quat.rs contains 'pub use crate::sse::quat::Quat;' on x86/x86_64 targets.",
+      "rationale": "Future cleanup workers should know SSE quat is live code, not dead code."
+    },
+    {
+      "area": "skills",
+      "observation": "The cleanup-worker skill procedure doesn't mention checking for 'entities shell module' patterns or how to handle module inlining. The worker correctly inlined the Camera struct from entities/ into application/camera.rs, but this required judgment beyond what the skill procedure covers. The skill says 'If removing a file, also remove its mod declaration in the parent' which is correct, but module inlining (moving the file contents) is a pattern worth documenting.",
+      "evidence": "The entities/ directory contained only Camera re-exported via mod.rs. Worker moved camera.rs to application/ and updated all import paths. Skill procedure only mentions deletion, not inlining.",
+      "rationale": "Adding a note about module inlining as an alternative to deletion when a module is a thin wrapper around a single item would help future workers."
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker added a targeted #[allow(dead_code)] to SkeletalAnimationSystem.sample_buffer field in katla_app/src/animation/systems.rs. This field appears to be part of planned skeletal animation functionality that isn't yet implemented. The mission AGENTS.md says to avoid 'No Backwards Compatibility' but doesn't explicitly address how to handle dead code that's part of planned features vs truly obsolete code.",
+      "evidence": "katla_app/src/animation/systems.rs line 137: #[allow(dead_code)] sample_buffer: SampleBuffer. The SampleBuffer type is defined in the same file and used by SkeletalAnimationSystem.",
+      "rationale": "Consider adding guidance to AGENTS.md about when targeted #[allow(dead_code)] is acceptable (planned features) vs when code should be removed."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The dead-code-cleanup feature passes all 9 assertions. The worker executed a thorough cleanup removing 2,171 lines across 40 files. All specified targets were addressed: orphaned rendering/ directory deleted, 4 stub files removed with mod declarations cleaned, blanket allow(dead_code) removed from katla_app (and proactively from katla_math), dead SSE quat annotations removed (struct is live code), dead storage_uniform structs (ObjectData, ShaderMaterialParams) and methods removed, 15 dead katla_ui methods removed across 12 files, dead sphere functions and tests removed, unused imports removed, and entities module properly inlined. The worker also went beyond scope to remove 22 additional dead items in katla_app and 5 in katla_gfx. All 1,091 tests pass with zero compiler warnings. Two non-blocking observations about remaining #[allow(dead_code)] annotations on GPU layout structs and the is_persistent field."
+}
