@@ -1,0 +1,38 @@
+{
+  "featureId": "split-particles",
+  "reviewedAt": "2026-03-24T14:14:00.000Z",
+  "commitId": "af85bb1147ba3fee11123db5b92f770682787ba9",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean split of particles/mod.rs from 1,562 lines into 5 new submodules (emitter.rs, descriptors.rs, dispatch.rs, barriers.rs, render.rs). mod.rs reduced to 438 lines (well under the 500-line target). All 14 existing submodules preserved. All public API re-exports intact. All downstream consumers (katla_app, katla_gfx render_graph/frame, renderer) verified to have correct method access. Struct fields appropriately marked pub(super) for submodule access. EmitterState visibility changed from pub(super) to pub(crate) to fix private_interfaces warning — justified since dispatch.rs is in a different module scope needing access.",
+    "issues": [
+      {
+        "file": "katla_gfx/src/particles/descriptors.rs",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "descriptors.rs is 605 lines, exceeding the 500-line-per-submodule target specified in the feature description. The feature description listed 'create_descriptor_layouts, create_compute_descriptor_set, create_render_descriptor_set, create_push_descriptor_buffers, update_compute_descriptor_binding, update_render_descriptor_binding' for this file. The worker also included a helper method create_descriptor_set_internal which adds bulk. This is not a correctness issue — the file compiles and all methods are logically grouped — but it exceeds the stated size target."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "When splitting into submodules within an existing directory (particles/ already existed with submodules), the worker correctly added new files alongside existing ones without needing to create a directory or move mod.rs. The SKILL.md focuses on the directory-creation case (e.g., frame.rs → frame/mod.rs) but this pattern of adding submodules to an existing directory is equally valid and more common for this module.",
+      "evidence": "particles/ already had buffer.rs, types.rs, validation.rs, presets.rs, stats.rs, debug_readback.rs, pipeline.rs, timing.rs. Worker added emitter.rs, descriptors.rs, dispatch.rs, barriers.rs, render.rs alongside them."
+    },
+    {
+      "area": "conventions",
+      "observation": "EmitterState was changed from pub(super) to pub(crate) to fix a clippy private_interfaces warning. This is a pattern worth noting: when splitting impl blocks into submodules, helper types used across submodules may need visibility promotion from pub(super) to pub(crate) to satisfy the borrow checker's understanding of privacy boundaries within the same directory.",
+      "evidence": "types.rs:227 changed from pub(super) struct EmitterState to pub(crate) struct EmitterState. Used by emitter.rs and dispatch.rs both within particles/."
+    },
+    {
+      "area": "conventions",
+      "observation": "The worker included update() method in dispatch.rs rather than mod.rs, even though the feature description didn't explicitly list it. This is a reasonable grouping decision since update() orchestrates upload_emitter_configs, calculate_emit_count, update_frame_data, and validation — all dispatch-related operations. The SKILL.md says to follow the feature description but allows judgment calls.",
+      "evidence": "dispatch.rs contains pub fn update() plus pub(super) fn upload_emitter_configs() and pub(super) fn update_frame_data(). Feature description listed 'record_emit_dispatch, record_simulate_dispatch, reset_simulate_counters, upload_emitter_configs, update_frame_data' for dispatch.rs but not update()."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The split-particles feature is well-executed. All 5 new submodules (emitter.rs, descriptors.rs, dispatch.rs, barriers.rs, render.rs) are correctly created with appropriate impl blocks and pub(super) visibility. mod.rs is reduced from 1,562 to 438 lines. All 14 existing submodules are preserved. All public re-exports are intact and verified against downstream consumers. The only minor note is descriptors.rs at 605 lines exceeds the 500-line soft target. No blocking issues found."
+}

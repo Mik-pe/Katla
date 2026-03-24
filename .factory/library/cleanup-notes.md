@@ -29,6 +29,9 @@ Notes specific to the repo-wide cleanup mission.
 - The `Frame` struct in render_graph/frame.rs has many private fields accessed by methods. These need `pub(super)` visibility after splitting.
 - `particles/mod.rs` already exists as a directory - just add new files alongside existing submodules
 - `text/mod.rs` and `context/mod.rs` in katla_ui also already exist as directories
+- Struct fields that submodules need access to must be widened to `pub(super)`. This is a consistent pattern across all splits (e.g., renderer widened 3 fields: last_presented_image_index, default_material_handle, pending_readback).
+- Helper types used across submodules within the same directory may need `pub(crate)` promotion (not just `pub(super)`) to satisfy privacy boundaries. Example: `EmitterState` in particles/types.rs was promoted from `pub(super)` to `pub(crate)` because dispatch.rs needed access but the borrow checker treats submodules within the same directory as separate privacy boundaries for type visibility.
+- Feature descriptions for file splits are aspirational about what stays in mod.rs. The 500-line-per-file constraint may require moving additional types to domain submodules (e.g., vulkan/context moved ValidationMode/ValidationLevel/RenderTexture to their domain submodules to keep mod.rs under 500 lines).
 
 ## Comment Cleanup Criteria
 

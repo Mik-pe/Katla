@@ -1,0 +1,31 @@
+{
+  "featureId": "split-vulkan-context",
+  "reviewedAt": "2026-03-24T14:30:00.000Z",
+  "commitId": "c11348e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean split of vulkan/context.rs (1,552 lines) into context/ directory with 6 files: mod.rs (440), device.rs (348), validation.rs (319), swapchain.rs (241), memory.rs (160), samplers.rs (57). All files under 500 lines. The old context.rs was properly removed. Module declarations, visibility annotations, re-exports, and cross-module references are all correct. cargo check and cargo test both pass (357 + 51 tests). The worker deviated from the feature description by moving ValidationMode, ValidationLevel, ValidationSeverity, ValidationMessage, ValidationCallbackStorage to validation.rs and RenderTexture to swapchain.rs (feature said to keep them in mod.rs), but this was a justified deviation to meet the 500-line-per-file constraint — initial mod.rs would have been 685 lines otherwise.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The split-worker skill procedure says to create submodules one at a time with verification after each extraction. The worker's transcript shows they planned all submodules first then extracted them together, but still verified with cargo check/test after completion. The skill's incremental approach is advisory and the worker's batch approach worked fine for this straightforward split. No skill update needed.",
+      "evidence": "Transcript skeleton shows the worker read the source file, planned the split, then executed all changes. Handoff shows skillFeedback.followedProcedure=true with one justified deviation noted."
+    },
+    {
+      "area": "conventions",
+      "observation": "The feature description listed specific items to keep in mod.rs (ValidationMode, ValidationLevel, ValidationSeverity, ValidationMessage, ValidationCallbackStorage, RenderTexture), but the worker moved them to their respective domain submodules to meet the 500-line constraint. The validation contract's 'each submodule under 500 lines' requirement took precedence. Future feature descriptions for file splits should note that the listing is aspirational and the 500-line constraint may require adjustments.",
+      "evidence": "Handoff skillFeedback.deviations[0]: 'Moved validation types to validation.rs and RenderTexture to swapchain.rs, in addition to what the feature description specified. Also moved QueueFamilyIndices impl to device.rs while keeping struct in mod.rs.' mod.rs is 440 lines vs the 685 it would have been without these moves."
+    },
+    {
+      "area": "services",
+      "observation": "The worker used cargo check -p katla_gfx and cargo test -p katla_gfx, which are already documented in services.yaml as check-gfx and test-gfx. No services gap.",
+      "evidence": "services.yaml has check-gfx and test-gfx commands. Handoff verification shows cargo check -p katla_gfx and cargo test -p katla_gfx were run."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The split-vulkan-context feature is a clean, correct refactoring. All 6 resulting files are well under the 500-line limit. Public API is fully preserved via re-exports (VulkanContext, ValidationMode, ValidationLevel from lib.rs; VulkanFrameCtx as pub(crate)). Internal visibility (pub(super), pub(crate)) is correctly applied. The worker's justified deviation from the feature description (moving types to domain submodules) was the right call to meet the size constraint. No bugs, no broken imports, no dead code introduced."
+}

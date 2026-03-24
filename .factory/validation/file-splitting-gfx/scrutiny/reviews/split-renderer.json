@@ -1,0 +1,33 @@
+{
+  "featureId": "split-renderer",
+  "reviewedAt": "2026-03-24T14:30:00.000Z",
+  "commitId": "52f3b13",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean split of renderer.rs (2,512 lines) into renderer/mod.rs + 9 submodules. All submodules well under 500 lines (largest: readback.rs at 259 lines). mod.rs retains VulkanRenderer struct, UiFrameResources, PendingReadback, OutputRenderTarget, FRAMES_IN_FLIGHT, MAX_OBJECTS_PER_FRAME, and all core lifecycle methods (init, destroy, context, current_frame, wait_for_device, recreate_swapchain, render). Three struct fields correctly widened to pub(super) for submodule access (last_presented_image_index, default_material_handle, pending_readback). All 18 module files exist matching 18 module declarations. lib.rs exports VulkanRenderer, DrawList, UIDrawList, UiDrawCommand correctly. cargo check -p katla_gfx, cargo check -p katla_app, and cargo clippy -p katla_gfx all pass clean.",
+    "issues": [
+      {
+        "file": "katla_gfx/src/renderer/mod.rs",
+        "line": 98,
+        "severity": "non_blocking",
+        "description": "Stale doc comment 'Transpose a 4x4 matrix from row-major to column-major format.' on PendingReadback struct. This is a leftover from the original renderer.rs where a transpose function likely existed before removal. The actual doc 'Pending readback operation for async frame checking' is on the next line but separated by a blank doc line."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "When splitting files, the worker uses `pub(super)` visibility for struct fields that submodules need access to (e.g., last_presented_image_index, default_material_handle, pending_readback). This pattern is consistent across all split features and should be documented in the skill.",
+      "evidence": "katla_gfx/src/renderer/mod.rs:145-149 — three fields widened to pub(super); AGENTS.md says 'use impl blocks in submodules with pub(super) visibility' but doesn't mention struct field visibility changes."
+    },
+    {
+      "area": "conventions",
+      "observation": "The worker correctly retained the #[cfg(test)] mod tests block in mod.rs rather than moving it to a submodule. Tests test the public API and belong in mod.rs. This matches the skill's guidance.",
+      "evidence": "katla_gfx/src/renderer/mod.rs:1282-1302 — test module retained in mod.rs; SKILL.md step 5 says 'keep it in mod.rs'."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The split-renderer feature is correctly implemented. renderer.rs was split into renderer/ directory with mod.rs retaining core struct/lifecycle code and 9 focused submodules (texture_api, font_atlas, frame_lifecycle, material_api, bindless_queries, skeleton_api, readback, fullscreen_shader, compositing). All submodules are well under 500 lines. Public API is preserved, all imports resolve, and downstream crates compile cleanly. One non-blocking issue: a stale doc comment on PendingReadback referencing a non-existent transpose function."
+}
