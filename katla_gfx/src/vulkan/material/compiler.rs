@@ -438,13 +438,19 @@ impl MaterialCompiler {
             self.bindless_descriptor_layout,
         ];
 
-        // Add skeleton layout for skinned materials (Set 2)
-        // For PBR materials without skeleton, we still need a placeholder at Set 2
-        // so that light culling consistently occupies Set 3 in the pipeline layout.
-        if matches!(options.vertex_type, VertexType::Skinned) {
+        // Set 2: skeleton, compositing, or empty placeholder
+        // All three are mutually exclusive at set 2 so the pipeline layout
+        // indices are consistent for downstream descriptor set binding.
+        if options.is_compositing {
+            if let Some(layout) = self.compositing_descriptor_set_layout {
+                layouts.push(layout);
+            } else {
+                // Fallback: compositing not set up yet, use empty placeholder
+                layouts.push(self.empty_descriptor_layout);
+            }
+        } else if matches!(options.vertex_type, VertexType::Skinned) {
             layouts.push(self.skeleton_descriptor_layout);
         } else if matches!(options.vertex_type, VertexType::Pbr) {
-            // Placeholder empty layout at Set 2 to keep light culling at Set 3
             layouts.push(self.empty_descriptor_layout);
         }
 
@@ -459,13 +465,6 @@ impl MaterialCompiler {
         // Add shadow descriptor set layout (Set 4) for PBR materials
         if matches!(options.vertex_type, VertexType::Pbr | VertexType::Skinned)
             && let Some(layout) = self.shadow_descriptor_layout
-        {
-            layouts.push(layout);
-        }
-
-        // Add compositing descriptor set layout (set 2) for compositing materials
-        if options.is_compositing
-            && let Some(layout) = self.compositing_descriptor_set_layout
         {
             layouts.push(layout);
         }

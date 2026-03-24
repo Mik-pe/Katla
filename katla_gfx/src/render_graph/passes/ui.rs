@@ -8,8 +8,6 @@ use crate::handle::MaterialHandle;
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::pass::PassType;
 use crate::render_graph::resource::GraphResourceHandle;
-use crate::render_pass::{ClearValue, LoadOp, StoreOp};
-use crate::texture::ImageFormat;
 
 #[allow(dead_code)]
 /// UI render pass template.
@@ -83,30 +81,6 @@ impl UIPass {
     ///
     /// * `name` - Resource name for graph reference.
     pub fn write(mut self, name: impl Into<String>) -> Self {
-        self.color_output = Some(ColorOutput { name: name.into() });
-        self
-    }
-
-    /// Write to a color attachment.
-    ///
-    /// Alias for write() method for API consistency.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Resource name for graph reference.
-    /// * `format` - Image format (unused, kept for API compatibility).
-    /// * `load_op` - Load operation (unused, kept for API compatibility).
-    /// * `store_op` - Store operation (unused, kept for API compatibility).
-    /// * `clear_value` - Clear value (unused, kept for API compatibility).
-    #[allow(clippy::too_many_arguments)]
-    pub fn write_with(
-        mut self,
-        name: impl Into<String>,
-        _format: ImageFormat,
-        _load_op: LoadOp,
-        _store_op: StoreOp,
-        _clear_value: ClearValue,
-    ) -> Self {
         self.color_output = Some(ColorOutput { name: name.into() });
         self
     }
