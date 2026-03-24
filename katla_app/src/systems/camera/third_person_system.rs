@@ -23,12 +23,10 @@ impl ThirdPersonControlSystem {
             for &child_entity in &children.children {
                 if let Some(_camera) =
                     world.get_component::<ThirdPersonCameraComponent>(child_entity)
-                {
-                    if let Some(camera_state) =
+                    && let Some(camera_state) =
                         world.get_component::<CameraStateComponent>(child_entity)
-                    {
-                        return camera_state.yaw;
-                    }
+                {
+                    return camera_state.yaw;
                 }
             }
         }
@@ -91,25 +89,25 @@ impl System for ThirdPersonControlSystem {
             };
 
             // Apply movement force if there's input
-            if movement_dir.length_squared() > 0.01 {
-                if let Some(force) = world.get_component_mut::<ForceComponent>(player_entity) {
-                    force.force += movement_dir * speed;
-                }
+            if movement_dir.length_squared() > 0.01
+                && let Some(force) = world.get_component_mut::<ForceComponent>(player_entity)
+            {
+                force.force += movement_dir * speed;
             }
 
             // Handle jump
-            if jump && is_grounded {
-                if let Some(velocity) = world.get_component_mut::<VelocityComponent>(player_entity)
-                {
-                    velocity.velocity[1] = controller.jump_velocity;
-                }
+            if jump
+                && is_grounded
+                && let Some(velocity) = world.get_component_mut::<VelocityComponent>(player_entity)
+            {
+                velocity.velocity[1] = controller.jump_velocity;
             }
 
             // Apply gravity if not grounded
-            if !is_grounded {
-                if let Some(force) = world.get_component_mut::<ForceComponent>(player_entity) {
-                    force.force[1] -= controller.gravity;
-                }
+            if !is_grounded
+                && let Some(force) = world.get_component_mut::<ForceComponent>(player_entity)
+            {
+                force.force[1] -= controller.gravity;
             }
         }
     }

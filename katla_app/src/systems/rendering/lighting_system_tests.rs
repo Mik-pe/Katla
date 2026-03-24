@@ -1,4 +1,4 @@
-use crate::components::{DirectionalLight, PointLight, SpotLight, TransformComponent};
+use crate::components::{DirectionalLight, PointLight, TransformComponent};
 use crate::systems::{LightCollection, LightingSystem};
 use katla_ecs::{System, World};
 use katla_math::Vec3;

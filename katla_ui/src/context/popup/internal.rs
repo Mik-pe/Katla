@@ -83,10 +83,10 @@ impl UiContext {
         {
             // For dropdowns, don't close if clicking on the trigger button
             // This allows toggling the dropdown by clicking the same button
-            if let PopupPosition::BelowButton(trigger) = config.position {
-                if trigger.contains(self.input.mouse_pos) {
-                    return false;
-                }
+            if let PopupPosition::BelowButton(trigger) = config.position
+                && trigger.contains(self.input.mouse_pos)
+            {
+                return false;
             }
             return true;
         }

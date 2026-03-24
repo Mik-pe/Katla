@@ -260,20 +260,20 @@ impl UiContext {
             SubpixelBin::Zero,
         );
 
-        if let Some(glyph) = icon_glyph {
-            if glyph.size.x() > 0.0 && glyph.size.y() > 0.0 {
-                // Text centerline: position.y + text_ascent/2
-                // Icon center should match: icon_top + icon_height/2 = text_center
-                let text_center_y = position.y() + text_ascent * 0.5;
-                let icon_top_y = text_center_y - glyph.size.y() * 0.5;
+        if let Some(glyph) = icon_glyph
+            && glyph.size.x() > 0.0
+            && glyph.size.y() > 0.0
+        {
+            // Text centerline: position.y + text_ascent/2
+            // Icon center should match: icon_top + icon_height/2 = text_center
+            let text_center_y = position.y() + text_ascent * 0.5;
+            let icon_top_y = text_center_y - glyph.size.y() * 0.5;
 
-                let glyph_pos =
-                    Vec2::new((position.x() + glyph.offset_x).round(), icon_top_y.round());
-                let bounds = katla_math::Rect2D::from_origin_size(glyph_pos, glyph.size);
-                self.draw_list.set_clip(self.clip_rect());
-                self.draw_list
-                    .add_textured_rect(bounds, glyph.uv_rect, color, font_atlas);
-            }
+            let glyph_pos = Vec2::new((position.x() + glyph.offset_x).round(), icon_top_y.round());
+            let bounds = katla_math::Rect2D::from_origin_size(glyph_pos, glyph.size);
+            self.draw_list.set_clip(self.clip_rect());
+            self.draw_list
+                .add_textured_rect(bounds, glyph.uv_rect, color, font_atlas);
         }
     }
 

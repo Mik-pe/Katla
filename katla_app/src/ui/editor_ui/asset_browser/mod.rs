@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use katla_gfx::TextureHandle;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::widgets::ImageButton;
-use katla_ui::{mouse_button, ForkAwesome, KeyCode, ScrollArea, TextureId, UiContext};
+use katla_ui::{ForkAwesome, KeyCode, ScrollArea, TextureId, UiContext, mouse_button};
 
 use super::FocusedPanel;
 use crate::ui::theme::Theme;
@@ -456,52 +456,50 @@ pub fn build_asset_browser(
                     state.is_marquee_selecting = false;
                 }
 
-                if let Some(start) = state.selection_rect_start {
-                    if mouse_down {
-                        state.selection_rect_current = Some(ui.mouse_pos());
-                        let current = ui.mouse_pos();
-                        let dist = (current - start).length();
-                        if dist > state.drag_threshold {
-                            state.is_marquee_selecting = true;
-                        }
+                if let Some(start) = state.selection_rect_start
+                    && mouse_down
+                {
+                    state.selection_rect_current = Some(ui.mouse_pos());
+                    let current = ui.mouse_pos();
+                    let dist = (current - start).length();
+                    if dist > state.drag_threshold {
+                        state.is_marquee_selecting = true;
                     }
                 }
 
-                if state.is_marquee_selecting {
-                    if let (Some(start), Some(current)) =
+                if state.is_marquee_selecting
+                    && let (Some(start), Some(current)) =
                         (state.selection_rect_start, state.selection_rect_current)
-                    {
-                        let sel_rect = rect_from_points(start, current);
+                {
+                    let sel_rect = rect_from_points(start, current);
 
-                        for (i, _asset) in state.assets.iter().enumerate() {
-                            let col = i % col_count;
-                            let row = i / col_count;
-                            let item_x = bounds.min.x()
-                                + item_padding
-                                + col as f32 * (item_size + item_padding);
-                            let item_y = content_top + row as f32 * row_height - scroll_offset;
-                            let item_bounds = Rect2D::from_origin_size(
-                                Vec2::new(item_x, item_y),
-                                Vec2::new(item_size, item_size),
-                            );
-
-                            if item_bounds.min.x() <= sel_rect.max.x()
-                                && item_bounds.max.x() >= sel_rect.min.x()
-                                && item_bounds.min.y() <= sel_rect.max.y()
-                                && item_bounds.max.y() >= sel_rect.min.y()
-                            {
-                                ui.draw_rect(item_bounds, Color::new(0.3, 0.5, 0.8, 0.4));
-                            }
-                        }
-
-                        ui.draw_rect(sel_rect, Color::new(0.3, 0.5, 0.8, 0.3));
-                        ui.draw_rect_border(
-                            sel_rect,
-                            Color::new(0.3, 0.5, 0.8, 0.3),
-                            Color::new(0.4, 0.6, 0.9, 0.8),
-                            1.0,
+                    for (i, _asset) in state.assets.iter().enumerate() {
+                        let col = i % col_count;
+                        let row = i / col_count;
+                        let item_x =
+                            bounds.min.x() + item_padding + col as f32 * (item_size + item_padding);
+                        let item_y = content_top + row as f32 * row_height - scroll_offset;
+                        let item_bounds = Rect2D::from_origin_size(
+                            Vec2::new(item_x, item_y),
+                            Vec2::new(item_size, item_size),
                         );
+
+                        if item_bounds.min.x() <= sel_rect.max.x()
+                            && item_bounds.max.x() >= sel_rect.min.x()
+                            && item_bounds.min.y() <= sel_rect.max.y()
+                            && item_bounds.max.y() >= sel_rect.min.y()
+                        {
+                            ui.draw_rect(item_bounds, Color::new(0.3, 0.5, 0.8, 0.4));
+                        }
                     }
+
+                    ui.draw_rect(sel_rect, Color::new(0.3, 0.5, 0.8, 0.3));
+                    ui.draw_rect_border(
+                        sel_rect,
+                        Color::new(0.3, 0.5, 0.8, 0.3),
+                        Color::new(0.4, 0.6, 0.9, 0.8),
+                        1.0,
+                    );
                 }
 
                 if state.selection_rect_start.is_some() && ui.mouse_released(mouse_button::LEFT) {
@@ -731,10 +729,10 @@ pub fn build_asset_browser(
                             state.selected_index = state.selected_indices.iter().next().copied();
                         }
                     } else {
-                        if let Some(prev) = state.selected_index {
-                            if !state.selected_indices.contains(&prev) {
-                                state.selected_indices.insert(prev);
-                            }
+                        if let Some(prev) = state.selected_index
+                            && !state.selected_indices.contains(&prev)
+                        {
+                            state.selected_indices.insert(prev);
                         }
                         state.selected_indices.insert(index);
                         state.selected_index = Some(index);
@@ -1087,10 +1085,10 @@ pub fn build_asset_browser(
         if ui.key_pressed(KeyCode::ArrowRight) {
             state.handle_keyboard(KeyCode::ArrowRight, thumbnail_texture_handles);
         }
-        if ui.key_pressed(KeyCode::Enter) {
-            if let Some(action) = state.handle_keyboard(KeyCode::Enter, thumbnail_texture_handles) {
-                state.pending_actions.push(action);
-            }
+        if ui.key_pressed(KeyCode::Enter)
+            && let Some(action) = state.handle_keyboard(KeyCode::Enter, thumbnail_texture_handles)
+        {
+            state.pending_actions.push(action);
         }
         if ui.key_pressed(KeyCode::Backspace) {
             state.handle_keyboard(KeyCode::Backspace, thumbnail_texture_handles);

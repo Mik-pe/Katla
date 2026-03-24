@@ -124,15 +124,16 @@ impl AssetBrowserState {
         self.assets.clear();
 
         // Add parent directory entry if not at root (parent must be different from current)
-        if let Some(parent) = self.current_path.parent() {
-            if parent != self.current_path && !parent.as_os_str().is_empty() {
-                self.assets.push(AssetEntry {
-                    name: "..".to_string(),
-                    path: parent.to_path_buf(),
-                    asset_type: AssetType::Folder,
-                    thumbnail_state: ThumbnailState::Pending,
-                });
-            }
+        if let Some(parent) = self.current_path.parent()
+            && parent != self.current_path
+            && !parent.as_os_str().is_empty()
+        {
+            self.assets.push(AssetEntry {
+                name: "..".to_string(),
+                path: parent.to_path_buf(),
+                asset_type: AssetType::Folder,
+                thumbnail_state: ThumbnailState::Pending,
+            });
         }
 
         // Read directory entries

@@ -23,12 +23,11 @@ impl<'a, T1: Component, T2: Component, T3: Component, T4: Component> Iterator
         let storage4 = self.storage4.as_ref()?;
         loop {
             let (entity_id, component1) = self.iter1.next()?;
-            if let Some(component2) = storage2.get(*entity_id) {
-                if let Some(component3) = storage3.get(*entity_id) {
-                    if let Some(component4) = storage4.get(*entity_id) {
-                        return Some((*entity_id, component1, component2, component3, component4));
-                    }
-                }
+            if let Some(component2) = storage2.get(*entity_id)
+                && let Some(component3) = storage3.get(*entity_id)
+                && let Some(component4) = storage4.get(*entity_id)
+            {
+                return Some((*entity_id, component1, component2, component3, component4));
             }
         }
     }
@@ -53,12 +52,11 @@ impl<'a, T1: Component, T2: Component, T3: Component, T4: Component> Iterator
         let storage4 = self.storage4.as_ref()?;
         loop {
             let (entity_id, component1) = self.iter1.next()?;
-            if let Some(component2) = storage2.get(*entity_id) {
-                if let Some(component3) = storage3.get(*entity_id) {
-                    if let Some(component4) = storage4.get(*entity_id) {
-                        return Some((*entity_id, component1, component2, component3, component4));
-                    }
-                }
+            if let Some(component2) = storage2.get(*entity_id)
+                && let Some(component3) = storage3.get(*entity_id)
+                && let Some(component4) = storage4.get(*entity_id)
+            {
+                return Some((*entity_id, component1, component2, component3, component4));
             }
         }
     }
@@ -66,11 +64,11 @@ impl<'a, T1: Component, T2: Component, T3: Component, T4: Component> Iterator
 
 // Implement QueryData for four immutable components
 impl<
-        T1: Component + 'static,
-        T2: Component + 'static,
-        T3: Component + 'static,
-        T4: Component + 'static,
-    > QueryData for (&T1, &T2, &T3, &T4)
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+> QueryData for (&T1, &T2, &T3, &T4)
 {
     type Item<'a> = (EntityId, &'a T1, &'a T2, &'a T3, &'a T4);
     type Iter<'a> = QueryIter4<'a, T1, T2, T3, T4>;
@@ -132,11 +130,11 @@ impl<
 
 // Implement QueryData for (&mut T1, &T2, &T3, &T4)
 impl<
-        T1: Component + 'static,
-        T2: Component + 'static,
-        T3: Component + 'static,
-        T4: Component + 'static,
-    > QueryData for (&mut T1, &T2, &T3, &T4)
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+> QueryData for (&mut T1, &T2, &T3, &T4)
 {
     type Item<'a> = (EntityId, &'a mut T1, &'a T2, &'a T3, &'a T4);
     type Iter<'a> = QueryIter4MutRefRefRef<'a, T1, T2, T3, T4>;

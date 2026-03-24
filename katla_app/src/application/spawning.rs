@@ -510,57 +510,57 @@ impl super::Application {
 
         if let Some(mat) = material_info {
             // Upload albedo texture
-            if let Some(tex_idx) = mat.base_color_texture {
-                if let Some(image) = model.images.get(tex_idx) {
-                    let handle = self.upload_gltf_image(image, true);
-                    albedo_index = self.get_bindless_index(handle);
-                    debug!(
-                        "Uploaded albedo texture {} -> bindless {}",
-                        tex_idx, albedo_index
-                    );
-                }
+            if let Some(tex_idx) = mat.base_color_texture
+                && let Some(image) = model.images.get(tex_idx)
+            {
+                let handle = self.upload_gltf_image(image, true);
+                albedo_index = self.get_bindless_index(handle);
+                debug!(
+                    "Uploaded albedo texture {} -> bindless {}",
+                    tex_idx, albedo_index
+                );
             }
 
             // Upload normal texture
-            if let Some(tex_idx) = mat.normal_texture {
-                if let Some(image) = model.images.get(tex_idx) {
-                    let handle = self.upload_gltf_image(image, false);
-                    normal_index = self.get_bindless_index(handle);
-                    debug!(
-                        "Uploaded normal texture {} -> bindless {}",
-                        tex_idx, normal_index
-                    );
-                }
+            if let Some(tex_idx) = mat.normal_texture
+                && let Some(image) = model.images.get(tex_idx)
+            {
+                let handle = self.upload_gltf_image(image, false);
+                normal_index = self.get_bindless_index(handle);
+                debug!(
+                    "Uploaded normal texture {} -> bindless {}",
+                    tex_idx, normal_index
+                );
             }
 
             // Upload metallic/roughness texture
-            if let Some(tex_idx) = mat.metallic_roughness_texture {
-                if let Some(image) = model.images.get(tex_idx) {
-                    let handle = self.upload_gltf_image(image, false);
-                    mr_index = self.get_bindless_index(handle);
-                    debug!("Uploaded MR texture {} -> bindless {}", tex_idx, mr_index);
-                }
+            if let Some(tex_idx) = mat.metallic_roughness_texture
+                && let Some(image) = model.images.get(tex_idx)
+            {
+                let handle = self.upload_gltf_image(image, false);
+                mr_index = self.get_bindless_index(handle);
+                debug!("Uploaded MR texture {} -> bindless {}", tex_idx, mr_index);
             }
 
             // Upload AO texture
-            if let Some(tex_idx) = mat.occlusion_texture {
-                if let Some(image) = model.images.get(tex_idx) {
-                    let handle = self.upload_gltf_image(image, false);
-                    ao_index = self.get_bindless_index(handle);
-                    debug!("Uploaded AO texture {} -> bindless {}", tex_idx, ao_index);
-                }
+            if let Some(tex_idx) = mat.occlusion_texture
+                && let Some(image) = model.images.get(tex_idx)
+            {
+                let handle = self.upload_gltf_image(image, false);
+                ao_index = self.get_bindless_index(handle);
+                debug!("Uploaded AO texture {} -> bindless {}", tex_idx, ao_index);
             }
 
             // Upload emissive texture
-            if let Some(tex_idx) = mat.emission_texture {
-                if let Some(image) = model.images.get(tex_idx) {
-                    let handle = self.upload_gltf_image(image, false);
-                    emission_index = self.get_bindless_index(handle);
-                    debug!(
-                        "Uploaded emissive texture {} -> bindless {}",
-                        tex_idx, emission_index
-                    );
-                }
+            if let Some(tex_idx) = mat.emission_texture
+                && let Some(image) = model.images.get(tex_idx)
+            {
+                let handle = self.upload_gltf_image(image, false);
+                emission_index = self.get_bindless_index(handle);
+                debug!(
+                    "Uploaded emissive texture {} -> bindless {}",
+                    tex_idx, emission_index
+                );
             }
         }
 

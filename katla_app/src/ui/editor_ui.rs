@@ -19,23 +19,23 @@ mod viewport_grid;
 use katla_ecs::EntityId;
 use katla_gfx::TextureHandle;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::{mouse_button, DrawList, FontSize, UiContext};
+use katla_ui::{DrawList, FontSize, UiContext, mouse_button};
 
 use crate::{
+    Preferences,
     resources::viewport_state::ViewportGridState,
     ui::{
+        ParticleInspector, ParticleInspectorAction, ParticleInspectorData, ParticleInspectorState,
         editor_ui::hierarchy::HierarchyState,
         editor_ui::preferences::{
             EditorSettings, PreferencesAction, PreferencesPanel, PreferencesPanelState,
         },
         editor_ui::toolbar::{Toolbar, ToolbarState},
-        ParticleInspector, ParticleInspectorAction, ParticleInspectorData, ParticleInspectorState,
     },
-    Preferences,
 };
 
 use super::theme::Theme;
-use asset_browser::{build_asset_browser, AssetAction, AssetBrowserState, AssetType};
+use asset_browser::{AssetAction, AssetBrowserState, AssetType, build_asset_browser};
 
 pub use asset_browser::ThumbnailState;
 
@@ -347,22 +347,21 @@ impl EditorUI {
             .map(|e| e.id)
             .collect();
 
-        if ui.key_pressed(katla_ui::input::KeyCode::Delete) {
-            if let Some(entity_id) = self.selected_entity {
-                if entities.iter().any(|e| e.id == entity_id) {
-                    self.pending_actions
-                        .push(EditorAction::DeleteEntity(entity_id));
-                    self.selected_entity = None;
-                }
-            }
+        if ui.key_pressed(katla_ui::input::KeyCode::Delete)
+            && let Some(entity_id) = self.selected_entity
+            && entities.iter().any(|e| e.id == entity_id)
+        {
+            self.pending_actions
+                .push(EditorAction::DeleteEntity(entity_id));
+            self.selected_entity = None;
         }
 
         if ui.key_pressed(katla_ui::input::KeyCode::ArrowUp) {
             if let Some(current_id) = self.selected_entity {
-                if let Some(pos) = visible_entities.iter().position(|id| *id == current_id) {
-                    if pos > 0 {
-                        self.selected_entity = Some(visible_entities[pos - 1]);
-                    }
+                if let Some(pos) = visible_entities.iter().position(|id| *id == current_id)
+                    && pos > 0
+                {
+                    self.selected_entity = Some(visible_entities[pos - 1]);
                 }
             } else if !visible_entities.is_empty() {
                 self.selected_entity = Some(*visible_entities.last().unwrap());
@@ -371,35 +370,32 @@ impl EditorUI {
 
         if ui.key_pressed(katla_ui::input::KeyCode::ArrowDown) {
             if let Some(current_id) = self.selected_entity {
-                if let Some(pos) = visible_entities.iter().position(|id| *id == current_id) {
-                    if pos < visible_entities.len() - 1 {
-                        self.selected_entity = Some(visible_entities[pos + 1]);
-                    }
+                if let Some(pos) = visible_entities.iter().position(|id| *id == current_id)
+                    && pos < visible_entities.len() - 1
+                {
+                    self.selected_entity = Some(visible_entities[pos + 1]);
                 }
             } else if !visible_entities.is_empty() {
                 self.selected_entity = Some(visible_entities[0]);
             }
         }
 
-        if ui.key_pressed(katla_ui::input::KeyCode::ArrowRight) {
-            if let Some(entity_id) = self.selected_entity {
-                if !self.hierarchy_state.expanded_entities.contains(&entity_id) {
-                    self.hierarchy_state.expanded_entities.insert(entity_id);
-                }
-            }
+        if ui.key_pressed(katla_ui::input::KeyCode::ArrowRight)
+            && let Some(entity_id) = self.selected_entity
+            && !self.hierarchy_state.expanded_entities.contains(&entity_id)
+        {
+            self.hierarchy_state.expanded_entities.insert(entity_id);
         }
 
-        if ui.key_pressed(katla_ui::input::KeyCode::ArrowLeft) {
-            if let Some(entity_id) = self.selected_entity {
-                if self.hierarchy_state.expanded_entities.contains(&entity_id) {
-                    self.hierarchy_state.expanded_entities.remove(&entity_id);
-                } else {
-                    if let Some(entity) = entities.iter().find(|e| e.id == entity_id) {
-                        if let Some(parent_id) = entity.parent_id {
-                            self.selected_entity = Some(parent_id);
-                        }
-                    }
-                }
+        if ui.key_pressed(katla_ui::input::KeyCode::ArrowLeft)
+            && let Some(entity_id) = self.selected_entity
+        {
+            if self.hierarchy_state.expanded_entities.contains(&entity_id) {
+                self.hierarchy_state.expanded_entities.remove(&entity_id);
+            } else if let Some(entity) = entities.iter().find(|e| e.id == entity_id)
+                && let Some(parent_id) = entity.parent_id
+            {
+                self.selected_entity = Some(parent_id);
             }
         }
 
@@ -776,57 +772,56 @@ impl EditorUI {
             }
         }
 
-        if self.asset_browser.is_dragging {
-            if let Some(drag_idx) = self.asset_browser.drag_asset {
-                if let Some(asset) = self.asset_browser.assets.get(drag_idx) {
-                    let mouse_pos = ui.mouse_pos();
+        if self.asset_browser.is_dragging
+            && let Some(drag_idx) = self.asset_browser.drag_asset
+            && let Some(asset) = self.asset_browser.assets.get(drag_idx)
+        {
+            let mouse_pos = ui.mouse_pos();
 
-                    let preview_size = 64.0;
-                    let preview_offset = Vec2::new(preview_size * 0.5, preview_size * 0.5);
+            let preview_size = 64.0;
+            let preview_offset = Vec2::new(preview_size * 0.5, preview_size * 0.5);
 
-                    ui.with_z_index(katla_ui::z_index::TOOLTIP, |ui| {
-                        let preview_bounds = Rect2D::from_origin_size(
-                            mouse_pos - preview_offset,
-                            Vec2::new(preview_size, preview_size),
-                        );
-                        ui.draw_rect(preview_bounds, self.theme.background.with_alpha(0.9));
-                        ui.draw_rect_border(
-                            preview_bounds,
-                            self.theme.background.with_alpha(0.9),
-                            self.theme.highlight,
-                            2.0,
-                        );
+            ui.with_z_index(katla_ui::z_index::TOOLTIP, |ui| {
+                let preview_bounds = Rect2D::from_origin_size(
+                    mouse_pos - preview_offset,
+                    Vec2::new(preview_size, preview_size),
+                );
+                ui.draw_rect(preview_bounds, self.theme.background.with_alpha(0.9));
+                ui.draw_rect_border(
+                    preview_bounds,
+                    self.theme.background.with_alpha(0.9),
+                    self.theme.highlight,
+                    2.0,
+                );
 
-                        let icon_char = asset.asset_type.icon();
-                        let icon_size = preview_size * 0.4;
-                        ui.draw_icon(
-                            icon_char,
-                            Vec2::new(
-                                preview_bounds.center().x() - icon_size * 0.5,
-                                preview_bounds.center().y() - icon_size * 0.5 - 8.0,
-                            ),
-                            icon_size,
-                            self.theme.highlight,
-                        );
+                let icon_char = asset.asset_type.icon();
+                let icon_size = preview_size * 0.4;
+                ui.draw_icon(
+                    icon_char,
+                    Vec2::new(
+                        preview_bounds.center().x() - icon_size * 0.5,
+                        preview_bounds.center().y() - icon_size * 0.5 - 8.0,
+                    ),
+                    icon_size,
+                    self.theme.highlight,
+                );
 
-                        let max_chars = 12;
-                        let display_name = if asset.name.len() > max_chars {
-                            format!("{}...", &asset.name[..max_chars])
-                        } else {
-                            asset.name.clone()
-                        };
-                        ui.draw_text(
-                            &display_name,
-                            Vec2::new(
-                                preview_bounds.min.x() + 4.0,
-                                preview_bounds.min.y() + preview_size - 16.0,
-                            ),
-                            self.theme.text_primary,
-                            ui.scaled_font_size(FontSize::XSmall),
-                        );
-                    });
-                }
-            }
+                let max_chars = 12;
+                let display_name = if asset.name.len() > max_chars {
+                    format!("{}...", &asset.name[..max_chars])
+                } else {
+                    asset.name.clone()
+                };
+                ui.draw_text(
+                    &display_name,
+                    Vec2::new(
+                        preview_bounds.min.x() + 4.0,
+                        preview_bounds.min.y() + preview_size - 16.0,
+                    ),
+                    self.theme.text_primary,
+                    ui.scaled_font_size(FontSize::XSmall),
+                );
+            });
         }
     }
 
