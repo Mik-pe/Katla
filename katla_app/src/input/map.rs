@@ -155,7 +155,7 @@ impl InputMapper {
     pub fn get_bindings_for_action(&self, action: Action) -> Vec<InputBinding> {
         self.action_map
             .iter()
-            .filter(|(_, &a)| a == action)
+            .filter(|&(_, a)| *a == action)
             .map(|(binding, _)| *binding)
             .collect()
     }
