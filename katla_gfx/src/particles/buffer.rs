@@ -325,7 +325,11 @@ impl GlobalParticleBuffer {
         for frame_idx in 0..2 {
             let indirect_draw_buffer_info = vk::BufferCreateInfo::default()
                 .size(indirect_draw_size)
-                .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::INDIRECT_BUFFER)
+                .usage(
+                    vk::BufferUsageFlags::STORAGE_BUFFER
+                        | vk::BufferUsageFlags::INDIRECT_BUFFER
+                        | vk::BufferUsageFlags::TRANSFER_SRC,
+                )
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
             indirect_draw_buffers[frame_idx] = unsafe {

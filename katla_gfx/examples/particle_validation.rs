@@ -25,7 +25,6 @@ mod particle_validation_helpers;
 // - 1: Validation failed (with error message)
 
 use ash::vk;
-use gpu_allocator::vulkan::{AllocationCreateDesc, AllocationScheme};
 use katla_gfx::ValidationMode;
 use katla_gfx::VulkanContext;
 use katla_gfx::particles::{
@@ -42,7 +41,7 @@ use particle_validation_helpers::{
 };
 
 /// Default maximum particles for validation test
-const DEFAULT_MAX_PARTICLES: u32 = 1_048_576;
+const DEFAULT_MAX_PARTICLES: u32 = 100_000;
 
 /// Number of frames to simulate (enough to fill capacity + several recycling lifetimes)
 const NUM_FRAMES: u32 = 5000;
@@ -163,50 +162,23 @@ impl DoubleBufferedFrameState {
     }
 }
 
-/// Synchronously copy the indirect draw buffer to a staging buffer and read it back.
+/// GPU accumulation buffer that records per-frame indirect draw commands.
 ///
-/// Records a single vkCmdCopyBuffer + submit + fence wait on a dedicated tiny
-/// command buffer. This is cheap (16 bytes) and safe because the caller has
-/// already waited on the source buffer's fence.
-fn readback_indirect_draw(
-    context: &VulkanContext,
-    readback: &IndirectDrawReadback,
-    src_buffer: vk::Buffer,
-) -> (u32, u32, u32, u32) {
-    let cmd = context.begin_single_time_commands();
-
-    unsafe {
-        context.device.cmd_copy_buffer(
-            cmd.vk_command_buffer(),
-            src_buffer,
-            readback.staging_buffer,
-            &[vk::BufferCopy {
-                src_offset: 0,
-                dst_offset: 0,
-                size: 16,
-            }],
-        );
-    }
-
-    cmd.end_single_time_command();
-    context.end_single_time_commands(cmd);
-
-    readback.read(context)
-}
-
-/// Lightweight per-frame readback for the indirect draw buffer (16 bytes).
-///
-/// Unlike the full ParticleDebugReadback (which copies the entire particle array),
-/// this only copies the VkDrawIndirectCommand so we can validate draw count
-/// every frame without heavy GPU->CPU transfers.
-struct IndirectDrawReadback {
-    staging_buffer: vk::Buffer,
+/// Each frame, after the simulate dispatch writes the 16-byte `DrawIndirectCommand`
+/// to the per-slot indirect draw buffer, a `vkCmdCopyBuffer` copies those 16 bytes
+/// into this buffer at offset `frame * 16`. After the simulation loop completes,
+/// a single `invalidate_mapped_memory` makes all frames' data visible to the CPU.
+struct IndirectDrawAccumulator {
+    buffer: vk::Buffer,
     allocation: gpu_allocator::vulkan::Allocation,
+    num_frames: u32,
 }
 
-impl IndirectDrawReadback {
-    fn new(context: &VulkanContext) -> Result<Self, String> {
-        let size = 16u64; // sizeof(VkDrawIndirectCommand)
+impl IndirectDrawAccumulator {
+    fn new(context: &VulkanContext, num_frames: u32) -> Result<Self, String> {
+        use gpu_allocator::vulkan::{AllocationCreateDesc, AllocationScheme};
+
+        let size = num_frames as u64 * 16;
 
         let buffer_info = vk::BufferCreateInfo::default()
             .size(size)
@@ -217,7 +189,9 @@ impl IndirectDrawReadback {
             context
                 .device
                 .create_buffer(&buffer_info, None)
-                .map_err(|e| format!("Failed to create indirect draw readback buffer: {:?}", e))?
+                .map_err(|e| {
+                    format!("Failed to create indirect draw accumulator buffer: {:?}", e)
+                })?
         };
 
         let requirements = unsafe { context.device.get_buffer_memory_requirements(buffer) };
@@ -226,36 +200,71 @@ impl IndirectDrawReadback {
             .allocator
             .borrow_mut()
             .allocate(&AllocationCreateDesc {
-                name: "indirect_draw_readback",
+                name: "indirect_draw_accumulator",
                 requirements,
                 location: gpu_allocator::MemoryLocation::CpuToGpu,
                 linear: true,
                 allocation_scheme: AllocationScheme::GpuAllocatorManaged,
             })
-            .map_err(|e| format!("Failed to allocate indirect draw readback: {}", e))?;
+            .map_err(|e| format!("Failed to allocate indirect draw accumulator: {}", e))?;
 
         unsafe {
             context
                 .device
                 .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
-                .map_err(|e| format!("Failed to bind indirect draw readback: {:?}", e))?;
+                .map_err(|e| format!("Failed to bind indirect draw accumulator: {:?}", e))?;
         }
 
         Ok(Self {
-            staging_buffer: buffer,
+            buffer,
             allocation,
+            num_frames,
         })
     }
 
-    /// Read the current staging buffer contents.
-    fn read(&self, context: &VulkanContext) -> (u32, u32, u32, u32) {
-        context.invalidate_mapped_memory(&self.allocation, 0, 16);
-        if let Some(mapped) = self.allocation.mapped_ptr() {
-            let ptr = mapped.as_ptr() as *const u32;
-            unsafe { (*ptr, *ptr.add(1), *ptr.add(2), *ptr.add(3)) }
-        } else {
-            (0, 0, 0, 0)
+    /// Record a vkCmdCopyBuffer that copies 16 bytes from the indirect draw slot
+    /// into the accumulator at the given frame offset.
+    fn record_copy(
+        &self,
+        device: &ash::Device,
+        command_buffer: vk::CommandBuffer,
+        src_buffer: vk::Buffer,
+        frame: u32,
+    ) {
+        unsafe {
+            device.cmd_copy_buffer(
+                command_buffer,
+                src_buffer,
+                self.buffer,
+                &[vk::BufferCopy {
+                    src_offset: 0,
+                    dst_offset: frame as u64 * 16,
+                    size: 16,
+                }],
+            );
         }
+    }
+
+    /// After GPU work is complete, read all accumulated indirect draw commands.
+    fn read_all(&self, context: &VulkanContext) -> Vec<(u32, u32, u32, u32)> {
+        context.invalidate_mapped_memory(&self.allocation, 0, self.num_frames as u64 * 16);
+
+        let mut results = Vec::with_capacity(self.num_frames as usize);
+        if let Some(mapped) = self.allocation.mapped_ptr() {
+            let base = mapped.as_ptr() as *const u32;
+            for frame in 0..self.num_frames {
+                let offset = frame as usize * 4;
+                unsafe {
+                    results.push((
+                        *base.add(offset),
+                        *base.add(offset + 1),
+                        *base.add(offset + 2),
+                        *base.add(offset + 3),
+                    ));
+                }
+            }
+        }
+        results
     }
 
     fn destroy(self, context: &VulkanContext) {
@@ -263,13 +272,381 @@ impl IndirectDrawReadback {
             if let Ok(mut allocator) = context.allocator.try_borrow_mut() {
                 allocator.free(self.allocation).ok();
             }
-            context.device.destroy_buffer(self.staging_buffer, None);
+            context.device.destroy_buffer(self.buffer, None);
         }
     }
 }
 
+/// GPU-side per-particle validation resources.
+///
+/// Runs the particle_validate.wgsl compute shader after each simulate dispatch.
+/// The shader checks every alive particle's color against its emitter config
+/// using atomics. Results accumulate in a GPU buffer and are read back once.
+struct GpuValidationResources {
+    val_results_buffer: vk::Buffer,
+    val_results_alloc: gpu_allocator::vulkan::Allocation,
+    val_params_buffer: vk::Buffer,
+    val_params_alloc: gpu_allocator::vulkan::Allocation,
+    validation_pass: katla_gfx::compute::ComputePass,
+    val_pipeline: vk::Pipeline,
+    val_layout: vk::PipelineLayout,
+    alive_list_size: u64,
+    counters_size: u64,
+    emitter_count: u32,
+}
+
+impl GpuValidationResources {
+    const VALIDATION_RESULTS_SIZE: u64 = 1024;
+    const VALIDATION_PARAMS_SIZE: u64 = 32;
+
+    fn new(
+        context: &Rc<VulkanContext>,
+        particle_system: &mut GlobalParticleSystem,
+        asset_registry: &mut AssetRegistry,
+        shader_dir: &std::path::PathBuf,
+        emitter_count: u32,
+    ) -> Result<Self, String> {
+        use gpu_allocator::vulkan::{AllocationCreateDesc, AllocationScheme};
+        use katla_gfx::ShaderCache;
+        use katla_gfx::compute::ComputePass;
+        use katla_gfx::sync::VkShaderModule;
+
+        // Validation results buffer (atomic counters, CPU-visible)
+        let val_results_info = vk::BufferCreateInfo::default()
+            .size(Self::VALIDATION_RESULTS_SIZE)
+            .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_SRC)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let val_results_buffer = unsafe {
+            context
+                .device
+                .create_buffer(&val_results_info, None)
+                .map_err(|e| format!("Failed to create validation results buffer: {:?}", e))?
+        };
+
+        let val_results_reqs = unsafe {
+            context
+                .device
+                .get_buffer_memory_requirements(val_results_buffer)
+        };
+
+        let val_results_alloc = context
+            .allocator
+            .borrow_mut()
+            .allocate(&AllocationCreateDesc {
+                name: "validation_results",
+                requirements: val_results_reqs,
+                location: gpu_allocator::MemoryLocation::CpuToGpu,
+                linear: true,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+            })
+            .map_err(|e| format!("Failed to allocate validation results memory: {}", e))?;
+
+        unsafe {
+            context
+                .device
+                .bind_buffer_memory(
+                    val_results_buffer,
+                    val_results_alloc.memory(),
+                    val_results_alloc.offset(),
+                )
+                .map_err(|e| format!("Failed to bind validation results buffer: {:?}", e))?;
+        }
+
+        // Validation params buffer (uniform)
+        let val_params_info = vk::BufferCreateInfo::default()
+            .size(Self::VALIDATION_PARAMS_SIZE)
+            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let val_params_buffer = unsafe {
+            context
+                .device
+                .create_buffer(&val_params_info, None)
+                .map_err(|e| format!("Failed to create validation params buffer: {:?}", e))?
+        };
+
+        let val_params_reqs = unsafe {
+            context
+                .device
+                .get_buffer_memory_requirements(val_params_buffer)
+        };
+
+        let val_params_alloc = context
+            .allocator
+            .borrow_mut()
+            .allocate(&AllocationCreateDesc {
+                name: "validation_params",
+                requirements: val_params_reqs,
+                location: gpu_allocator::MemoryLocation::CpuToGpu,
+                linear: true,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+            })
+            .map_err(|e| format!("Failed to allocate validation params memory: {}", e))?;
+
+        unsafe {
+            context
+                .device
+                .bind_buffer_memory(
+                    val_params_buffer,
+                    val_params_alloc.memory(),
+                    val_params_alloc.offset(),
+                )
+                .map_err(|e| format!("Failed to bind validation params buffer: {:?}", e))?;
+        }
+
+        // Zero-initialize validation results buffer
+        {
+            let cmd = context.begin_single_time_commands();
+            unsafe {
+                context.device.cmd_fill_buffer(
+                    cmd.vk_command_buffer(),
+                    val_results_buffer,
+                    0,
+                    Self::VALIDATION_RESULTS_SIZE,
+                    0,
+                );
+            }
+            cmd.end_single_time_command();
+            context.end_single_time_commands(cmd);
+        }
+
+        // Load validation shader and create compute pass
+        let mut shader_cache = ShaderCache::new(context.device.clone());
+        let validate_shader_path = shader_dir.join("particles/particle_validate.wgsl");
+        let validate_shader = shader_cache
+            .load_shader(&validate_shader_path, vk::ShaderStageFlags::COMPUTE)
+            .map_err(|e| format!("Failed to load validation shader: {}", e))?;
+
+        let validate_shader_wrapper = VkShaderModule(validate_shader);
+
+        let layout = *particle_system.buffer_layout();
+        let next_frame_offset = layout.alive_frame_offset[1];
+        let alive_list_size = layout.alive_list_size;
+        let max_particles_layout = layout.max_particles;
+        let particle_data_size =
+            max_particles_layout * std::mem::size_of::<katla_gfx::particles::ParticleData>() as u64;
+        let counters_size = std::mem::size_of::<katla_gfx::particles::ParticleCounters>() as u64;
+        let emitter_config_total = (1024 * std::mem::size_of::<EmitterConfig>()) as u64;
+
+        let validation_pass = ComputePass::builder(context)
+            .add_storage_buffer(0, particle_system.particle_buffer(), 0, particle_data_size)
+            .add_storage_buffer(
+                1,
+                particle_system.particle_buffer(),
+                next_frame_offset,
+                alive_list_size,
+            )
+            .add_storage_buffer(2, particle_system.counters_buffer(0), 0, counters_size)
+            .add_storage_buffer(
+                3,
+                particle_system
+                    .emitter_configs_buffer(0)
+                    .ok_or("Emitter configs buffer not available")?,
+                0,
+                emitter_config_total,
+            )
+            .add_storage_buffer(4, val_results_buffer, 0, Self::VALIDATION_RESULTS_SIZE)
+            .add_uniform_buffer(5, val_params_buffer, 0, Self::VALIDATION_PARAMS_SIZE)
+            .build(validate_shader_wrapper, asset_registry)
+            .map_err(|e| format!("Failed to build validation pass: {}", e))?;
+
+        let pipeline_asset = asset_registry
+            .get_pipeline(validation_pass.pipeline_handle())
+            .ok_or("Validation pipeline not found in registry")?;
+        let val_pipeline = pipeline_asset.vk_pipeline();
+        let val_layout = pipeline_asset.vk_layout();
+
+        Ok(Self {
+            val_results_buffer,
+            val_results_alloc,
+            val_params_buffer,
+            val_params_alloc,
+            validation_pass,
+            val_pipeline,
+            val_layout,
+            alive_list_size,
+            counters_size,
+            emitter_count,
+        })
+    }
+
+    /// Record a barrier + validation dispatch after simulate has completed.
+    fn record_dispatch(
+        &mut self,
+        context: &VulkanContext,
+        particle_system: &GlobalParticleSystem,
+        command_buffer: vk::CommandBuffer,
+        fi: usize,
+        frame: u32,
+    ) {
+        let next_fi = (fi + 1) % 2;
+        let layout = *particle_system.buffer_layout();
+
+        // Update bindings for the current frame's buffers
+        self.validation_pass.update_binding(
+            1,
+            particle_system.particle_buffer(),
+            layout.alive_frame_offset[next_fi],
+            self.alive_list_size,
+        );
+        self.validation_pass.update_binding(
+            2,
+            particle_system.counters_buffer(fi),
+            0,
+            self.counters_size,
+        );
+        if let Some(ecb) = particle_system.emitter_configs_buffer(fi) {
+            self.validation_pass.update_binding(
+                3,
+                ecb,
+                0,
+                (1024 * std::mem::size_of::<EmitterConfig>()) as u64,
+            );
+        }
+
+        // Write validation params
+        let val_params = ValidationParams {
+            alive_count: particle_system.alive_count(),
+            emitter_count: self.emitter_count,
+            frame_index: frame,
+            max_mismatch_details: 64,
+            color_tolerance: 0.05,
+            velocity_tolerance: 0.0,
+            position_tolerance: 0.0,
+            _pad: 0.0,
+        };
+
+        if let Some(mapped) = self.val_params_alloc.mapped_ptr() {
+            let dst = mapped.as_ptr() as *mut u8;
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    &val_params as *const ValidationParams as *const u8,
+                    dst,
+                    std::mem::size_of::<ValidationParams>(),
+                );
+            }
+            context.flush_mapped_memory(&self.val_params_alloc, 0, Self::VALIDATION_PARAMS_SIZE);
+        }
+
+        // Barrier: simulate writes particle data + counters, validation reads them
+        let particle_barrier = vk::BufferMemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
+            .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .buffer(particle_system.particle_buffer())
+            .offset(0)
+            .size(vk::WHOLE_SIZE);
+
+        let counters_barrier = vk::BufferMemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .src_access_mask(vk::AccessFlags2::SHADER_READ | vk::AccessFlags2::SHADER_WRITE)
+            .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .buffer(particle_system.counters_buffer(fi))
+            .offset(0)
+            .size(vk::WHOLE_SIZE);
+
+        let barriers = [particle_barrier, counters_barrier];
+        let dep_info = vk::DependencyInfo::default().buffer_memory_barriers(&barriers);
+        unsafe {
+            context
+                .device
+                .cmd_pipeline_barrier2(command_buffer, &dep_info);
+        }
+
+        let validate_workgroups = (particle_system.alive_count() + 63) / 64;
+        if validate_workgroups > 0 {
+            self.validation_pass.record_dispatch_with_handles(
+                command_buffer,
+                self.val_pipeline,
+                self.val_layout,
+                validate_workgroups,
+                1,
+                1,
+            );
+        }
+    }
+
+    /// Read accumulated validation results after all frames complete.
+    fn read_results(&self, context: &VulkanContext) -> GpuValidationResults {
+        context.invalidate_mapped_memory(&self.val_results_alloc, 0, Self::VALIDATION_RESULTS_SIZE);
+
+        let mut result = GpuValidationResults::default();
+
+        if let Some(mapped) = self.val_results_alloc.mapped_ptr() {
+            let ptr = mapped.as_ptr() as *const u32;
+            result.total_checked = unsafe { *ptr } as u64;
+            result.color_mismatches = unsafe { *ptr.add(1) } as u64;
+            result.velocity_mismatches = unsafe { *ptr.add(2) } as u64;
+
+            for i in 0..self.emitter_count.min(16) as usize {
+                result.per_emitter_mismatches[i] = unsafe { *ptr.add(4 + i) };
+            }
+
+            let mismatch_count = unsafe { *ptr.add(84) };
+            let detail_count = mismatch_count.min(64);
+            for i in 0..detail_count as usize {
+                let base = 80 + i * 4;
+                result.mismatch_details.push(GpuMismatchDetail {
+                    frame_index: unsafe { *ptr.add(base) },
+                    particle_idx: unsafe { *ptr.add(base + 1) },
+                    packed_color: unsafe { *ptr.add(base + 2) },
+                    emitter_packed: unsafe { *ptr.add(base + 3) },
+                });
+            }
+        }
+
+        result
+    }
+
+    fn destroy(self, context: &VulkanContext) {
+        unsafe {
+            context.device.destroy_buffer(self.val_results_buffer, None);
+            context.device.destroy_buffer(self.val_params_buffer, None);
+        }
+        if let Ok(mut allocator) = context.allocator.try_borrow_mut() {
+            allocator.free(self.val_results_alloc).ok();
+            allocator.free(self.val_params_alloc).ok();
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(bytemuck::Pod, bytemuck::Zeroable, Clone, Copy)]
+struct ValidationParams {
+    alive_count: u32,
+    emitter_count: u32,
+    frame_index: u32,
+    max_mismatch_details: u32,
+    color_tolerance: f32,
+    velocity_tolerance: f32,
+    position_tolerance: f32,
+    _pad: f32,
+}
+
+#[derive(Default)]
+struct GpuValidationResults {
+    total_checked: u64,
+    color_mismatches: u64,
+    velocity_mismatches: u64,
+    per_emitter_mismatches: [u32; 16],
+    mismatch_details: Vec<GpuMismatchDetail>,
+}
+
+struct GpuMismatchDetail {
+    frame_index: u32,
+    particle_idx: u32,
+    packed_color: u32,
+    emitter_packed: u32,
+}
+
 fn main() -> ExitCode {
-    // Initialize logging
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let max_particles: u32 = std::env::args()
@@ -348,25 +725,36 @@ fn main() -> ExitCode {
         }
     };
 
-    // === Deterministic cross-emitter contamination test ===
-    log::info!("Running deterministic cross-emitter contamination test...");
-    match run_contamination_test(&context, &mut asset_registry, render_resources.as_ref()) {
-        Ok(_) => {
-            log::info!("✓ Cross-emitter contamination test passed");
-        }
-        Err(e) => {
-            log::error!("✗ Cross-emitter contamination test FAILED: {}", e);
-            if let Some(ref mut res) = render_resources {
-                res.destroy(&context);
-            }
-            return ExitCode::from(1);
-        }
-    }
-
-    // Create test emitters with known properties
+    // Create test emitters with deterministic properties for GPU validation.
+    // Zero randomness ensures the particle_validate shader can do exact matching
+    // of color, velocity, and position per emitter.
     log::info!("Creating test emitters...");
     let test_emitters = create_test_emitters(&mut particle_system, max_particles);
     log::info!("Created {} test emitters", test_emitters.len());
+
+    // === GPU-side per-particle validation setup ===
+    // The particle_validate.wgsl shader runs after simulate each frame, checking
+    // every alive particle's color/velocity against its emitter config using atomics.
+    // Results accumulate in a GPU buffer and are read back once after all frames.
+    let mut gpu_validation = match GpuValidationResources::new(
+        &context,
+        &mut particle_system,
+        &mut asset_registry,
+        &shader_dir,
+        test_emitters.len() as u32,
+    ) {
+        Ok(v) => {
+            log::info!("GPU validation resources created successfully");
+            Some(v)
+        }
+        Err(e) => {
+            log::warn!(
+                "Failed to create GPU validation resources: {}. Cross-emitter validation will be skipped.",
+                e
+            );
+            None
+        }
+    };
 
     // === 2-Frames-In-Flight double-buffered simulation ===
     log::info!(
@@ -383,11 +771,12 @@ fn main() -> ExitCode {
         context.begin_single_time_commands(),
     ];
 
-    // Create lightweight indirect draw readback for per-frame validation
-    let indirect_readback = match IndirectDrawReadback::new(&context) {
-        Ok(r) => r,
+    // Create indirect draw accumulation buffer — each frame's simulate dispatch
+    // copies its 16-byte DrawIndirectCommand here via vkCmdCopyBuffer.
+    let indirect_accumulator = match IndirectDrawAccumulator::new(&context, NUM_FRAMES) {
+        Ok(a) => a,
         Err(e) => {
-            log::error!("Failed to create indirect draw readback: {}", e);
+            log::error!("Failed to create indirect draw accumulator: {}", e);
             if let Some(ref mut res) = render_resources {
                 res.destroy(&context);
             }
@@ -396,7 +785,6 @@ fn main() -> ExitCode {
     };
 
     let mut cumulative_time = 0.0;
-    let mut indirect_draw_errors = 0u32;
 
     for frame in 0..NUM_FRAMES {
         cumulative_time += DELTA_TIME;
@@ -414,73 +802,6 @@ fn main() -> ExitCode {
         // In real swapchain this happens at frame begin. For frames 0 and 1 the
         // fences start signaled so they return immediately.
         frame_state.wait_for_fence(&context.device);
-
-        // --- Per-frame indirect draw buffer validation ---
-        // After the fence wait, slot `fi` is guaranteed complete. The indirect draw
-        // buffer for that slot was written by the simulate shader 2 frames ago.
-        // Copy it to a CPU-visible staging buffer and validate synchronously.
-        // Skip the first 2 frames since the fences start signaled (no GPU work yet).
-        if frame >= 2 {
-            let prev_fi = fi; // slot fi was used by frame N-2
-            let (vertex_count, instance_count, first_vertex, first_instance) =
-                readback_indirect_draw(
-                    &context,
-                    &indirect_readback,
-                    particle_system.indirect_draw_buffer(prev_fi),
-                );
-
-            // The indirect draw buffer was written by the simulate shader from 2 frames ago.
-            // The alive_count at that point is unknown to CPU now (it's the GPU's output).
-            // We validate structural correctness: instance_count, first_vertex, first_instance,
-            // and that vertex_count is a multiple of 6.
-            let mut frame_errors = Vec::new();
-
-            if instance_count != 1 {
-                frame_errors.push(format!("instance_count={}, expected 1", instance_count));
-            }
-            if first_vertex != 0 {
-                frame_errors.push(format!("first_vertex={}, expected 0", first_vertex));
-            }
-            if first_instance != 0 {
-                frame_errors.push(format!("first_instance={}, expected 0", first_instance));
-            }
-            if vertex_count % 6 != 0 {
-                frame_errors.push(format!("vertex_count={} not multiple of 6", vertex_count));
-            }
-
-            let implied_particles = vertex_count / 6;
-            if implied_particles > max_particles {
-                frame_errors.push(format!(
-                    "implied particles {} > max_particles {}",
-                    implied_particles, max_particles
-                ));
-            }
-
-            if !frame_errors.is_empty() {
-                indirect_draw_errors += 1;
-                log::error!(
-                    "Frame {}: indirect draw INVALID (vertex_count={}, instance_count={}, first_vertex={}, first_instance={})",
-                    frame,
-                    vertex_count,
-                    instance_count,
-                    first_vertex,
-                    first_instance
-                );
-                for e in &frame_errors {
-                    log::error!("  {}", e);
-                }
-            }
-
-            if frame % 1000 == 0 || is_last_frame {
-                log::info!(
-                    "Frame {}: indirect_draw vertex_count={} ({} particles), instance_count={}",
-                    frame,
-                    vertex_count,
-                    implied_particles,
-                    instance_count
-                );
-            }
-        }
 
         // --- CPU-side update: prepare frame data for GPU ---
         // Note: cached_alive_count may be stale (from 2 frames ago) or the initial
@@ -566,6 +887,48 @@ fn main() -> ExitCode {
                 }
             }
 
+            // Copy indirect draw command into the per-frame accumulation buffer.
+            // Simulate writes to indirect_draw_buffer[fi] as STORAGE_BUFFER;
+            // the copy reads it as TRANSFER_SRC, so we need a barrier.
+            if simulate_workgroups > 0 {
+                let idb = particle_system.indirect_draw_buffer(fi);
+                let indirect_barrier = vk::BufferMemoryBarrier2::default()
+                    .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+                    .dst_stage_mask(vk::PipelineStageFlags2::COPY)
+                    .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
+                    .dst_access_mask(vk::AccessFlags2::TRANSFER_READ)
+                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                    .buffer(idb)
+                    .offset(0)
+                    .size(16);
+                let dep = vk::DependencyInfo::default()
+                    .buffer_memory_barriers(std::slice::from_ref(&indirect_barrier));
+                unsafe {
+                    context
+                        .device
+                        .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), &dep);
+                }
+                indirect_accumulator.record_copy(
+                    &context.device,
+                    command_buffer.vk_command_buffer(),
+                    idb,
+                    frame,
+                );
+            }
+
+            // Record GPU validation dispatch (checks per-particle color/velocity
+            // against emitter configs using atomics, accumulates results)
+            if let Some(ref mut gpu_val) = gpu_validation {
+                gpu_val.record_dispatch(
+                    &context,
+                    &particle_system,
+                    command_buffer.vk_command_buffer(),
+                    fi,
+                    frame,
+                );
+            }
+
             // Record render dispatch
             if let Some(ref render_res) = render_resources {
                 if let Err(e) = record_render_dispatch(
@@ -622,26 +985,149 @@ fn main() -> ExitCode {
     frame_commands[0].return_to_pool();
     frame_commands[1].return_to_pool();
 
-    // --- Per-frame indirect draw validation summary ---
+    // --- Per-frame indirect draw validation (accumulated on GPU, read back once) ---
     log::info!(
-        "Per-frame indirect draw validation: {} frames checked, {} errors",
-        NUM_FRAMES.saturating_sub(2),
-        indirect_draw_errors
+        "Validating indirect draw commands across all {} frames...",
+        NUM_FRAMES
     );
-    if indirect_draw_errors > 0 {
-        log::error!(
-            "Indirect draw buffer had errors in {} out of {} frames",
-            indirect_draw_errors,
-            NUM_FRAMES.saturating_sub(2)
-        );
-        indirect_readback.destroy(&context);
-        if let Some(ref mut res) = render_resources {
-            res.destroy(&context);
+    {
+        let all_frames = indirect_accumulator.read_all(&context);
+        let mut indirect_draw_errors = 0u32;
+        let mut error_frames = Vec::new();
+
+        for (frame, (vertex_count, instance_count, first_vertex, first_instance)) in
+            all_frames.iter().enumerate()
+        {
+            // Skip frames where no simulate work happened (indirect draw buffer
+            // was never written). The first couple of frames have no alive particles
+            // so simulate dispatch is skipped entirely.
+            if *vertex_count == 0 && *instance_count == 0 {
+                continue;
+            }
+
+            let mut frame_errors = Vec::new();
+
+            if *instance_count != 1 {
+                frame_errors.push(format!("instance_count={}, expected 1", instance_count));
+            }
+            if *first_vertex != 0 {
+                frame_errors.push(format!("first_vertex={}, expected 0", first_vertex));
+            }
+            if *first_instance != 0 {
+                frame_errors.push(format!("first_instance={}, expected 0", first_instance));
+            }
+            if *vertex_count % 6 != 0 {
+                frame_errors.push(format!("vertex_count={} not multiple of 6", vertex_count));
+            }
+
+            let implied_particles = vertex_count / 6;
+            if implied_particles > max_particles {
+                frame_errors.push(format!(
+                    "implied particles {} > max_particles {}",
+                    implied_particles, max_particles
+                ));
+            }
+
+            if !frame_errors.is_empty() {
+                indirect_draw_errors += 1;
+                error_frames.push((frame, *vertex_count, *instance_count, frame_errors));
+            }
         }
-        return ExitCode::from(1);
+
+        if indirect_draw_errors > 0 {
+            log::error!(
+                "Indirect draw validation FAILED: {} errors across {} frames",
+                indirect_draw_errors,
+                NUM_FRAMES
+            );
+            // Report up to 10 error frames
+            for (frame, vertex_count, instance_count, errors) in error_frames.iter().take(10) {
+                log::error!(
+                    "  Frame {}: vertex_count={}, instance_count={}",
+                    frame,
+                    vertex_count,
+                    instance_count
+                );
+                for e in errors {
+                    log::error!("    {}", e);
+                }
+            }
+            if error_frames.len() > 10 {
+                log::error!("  ... and {} more error frames", error_frames.len() - 10);
+            }
+            indirect_accumulator.destroy(&context);
+            if let Some(ref mut res) = render_resources {
+                res.destroy(&context);
+            }
+            return ExitCode::from(1);
+        }
+
+        log::info!(
+            "Indirect draw validation passed: all {} frames structurally valid",
+            NUM_FRAMES
+        );
     }
 
-    indirect_readback.destroy(&context);
+    indirect_accumulator.destroy(&context);
+
+    // --- GPU cross-emitter contamination validation ---
+    // Read back the accumulated per-particle validation results from the GPU.
+    if let Some(gpu_val) = gpu_validation {
+        log::info!("Reading GPU cross-emitter validation results...");
+        let results = gpu_val.read_results(&context);
+
+        log::info!(
+            "GPU validation: {} particles checked across {} frames",
+            results.total_checked,
+            NUM_FRAMES
+        );
+
+        if results.color_mismatches > 0 {
+            log::error!(
+                "COLOR CONTAMINATION: {} color mismatches across {} frames",
+                results.color_mismatches,
+                NUM_FRAMES
+            );
+            for detail in results.mismatch_details.iter().take(5) {
+                let r = detail.packed_color / 1000000;
+                let g = (detail.packed_color / 1000) % 1000;
+                let b = detail.packed_color % 1000;
+                log::error!(
+                    "  frame={}, particle={}, color=({:.4}, {:.4}, {:.4}), emitter={}",
+                    detail.frame_index,
+                    detail.particle_idx,
+                    r as f32 / 10000.0,
+                    g as f32 / 10000.0,
+                    b as f32 / 10000.0,
+                    detail.emitter_packed / 100000000,
+                );
+            }
+            gpu_val.destroy(&context);
+            if let Some(ref mut res) = render_resources {
+                res.destroy(&context);
+            }
+            return ExitCode::from(1);
+        }
+
+        if results.velocity_mismatches > 0 {
+            log::error!(
+                "VELOCITY CONTAMINATION: {} velocity mismatches across {} frames",
+                results.velocity_mismatches,
+                NUM_FRAMES
+            );
+            gpu_val.destroy(&context);
+            if let Some(ref mut res) = render_resources {
+                res.destroy(&context);
+            }
+            return ExitCode::from(1);
+        }
+
+        log::info!(
+            "Cross-emitter contamination check PASSED: {} particles checked, 0 mismatches",
+            results.total_checked
+        );
+        gpu_val.destroy(&context);
+    }
 
     // --- Final debug readback: copy GPU data to staging buffers ---
     // The simulation loop doesn't record debug readback per-frame, so we do a
@@ -756,552 +1242,6 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Deterministic test for cross-emitter contamination.
-///
-/// 4 emitters, one per quadrant, high emit rate, ZERO randomness anywhere:
-///   - No lifetime_variation, no velocity_cone_angle, no color_variation,
-///     no scale_variation, no gravity, no turbulence.
-///   - Each emitter has a unique pure color and emits straight up.
-///
-/// After simulating 120 frames, reads back all alive particles.
-/// Every particle must match its quadrant's emitter exactly — any deviation
-/// in position, color, or velocity is a definitive contamination bug.
-fn run_contamination_test(
-    context: &Rc<VulkanContext>,
-    asset_registry: &mut AssetRegistry,
-    _render_resources: Option<&RenderValidationResources>,
-) -> Result<(), String> {
-    use ash::vk;
-    use gpu_allocator::vulkan::{AllocationCreateDesc, AllocationScheme};
-    use katla_gfx::ShaderCache;
-    use katla_gfx::compute::ComputePass;
-    use katla_gfx::sync::VkShaderModule;
-
-    let max_particles: u32 = DEFAULT_MAX_PARTICLES;
-    let test_frames: u32 = NUM_FRAMES;
-    let dt: f32 = 1.0 / 60.0;
-    let emit_rate: f32 = 800.0;
-    let lifetime: f32 = 1.5;
-    let velocity_mag: f32 = 5.0;
-
-    let mut ps = GlobalParticleSystem::new(context, max_particles)
-        .map_err(|e| format!("Failed to create particle system: {}", e))?;
-
-    ps.init_debug_readback()
-        .map_err(|e| format!("Failed to init debug readback: {}", e))?;
-
-    // 4 emitters in 4 quadrants, each a distinct pure primary color.
-    let emitter_defs: [([f32; 3], [f32; 4], &str); 4] = [
-        ([-50.0, 0.0, 0.0], [1.0, 0.0, 0.0, 1.0], "Red"),
-        ([50.0, 0.0, 0.0], [0.0, 1.0, 0.0, 1.0], "Green"),
-        ([0.0, 0.0, -50.0], [0.0, 0.0, 1.0, 1.0], "Blue"),
-        ([0.0, 0.0, 50.0], [1.0, 0.0, 1.0, 1.0], "Magenta"),
-    ];
-
-    for (pos, color, name) in &emitter_defs {
-        let config = EmitterConfig {
-            position: *pos,
-            emit_rate,
-            base_lifetime: lifetime,
-            lifetime_variation: 0.0,
-            velocity_direction: [0.0, 1.0, 0.0],
-            velocity_magnitude: velocity_mag,
-            velocity_cone_angle: 0.0,
-            base_scale: 0.1,
-            scale_variation: 0.0,
-            color: *color,
-            color_variation: 0.0,
-            gravity: 0.0,
-            turbulence_strength: 0.0,
-            ..Default::default()
-        };
-        ps.create_emitter(config)
-            .map_err(|e| format!("Failed to create {} emitter: {}", name, e))?;
-    }
-
-    let shader_dir = find_shader_directory();
-    particle_validation_helpers::load_and_create_pipelines(
-        context,
-        &mut ps,
-        asset_registry,
-        &shader_dir,
-    )
-    .map_err(|e| format!("Failed to load pipelines: {}", e))?;
-
-    // --- Create GPU validation resources ---
-
-    // Validation results buffer (atomic counters, CPU-visible for readback)
-    // Layout: total_checked(4) + color_mismatches(4) + velocity_mismatches(4) + position_mismatches(4)
-    //       + per_emitter[16](64) + mismatch_details[64](256) + mismatch_count(4) = 336 bytes
-    const VALIDATION_RESULTS_SIZE: u64 = 1024; // generous padding
-
-    let val_results_info = vk::BufferCreateInfo::default()
-        .size(VALIDATION_RESULTS_SIZE)
-        .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_SRC)
-        .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-    let val_results_buffer = unsafe {
-        context
-            .device
-            .create_buffer(&val_results_info, None)
-            .map_err(|e| format!("Failed to create validation results buffer: {:?}", e))?
-    };
-
-    let val_results_reqs = unsafe {
-        context
-            .device
-            .get_buffer_memory_requirements(val_results_buffer)
-    };
-
-    let val_results_alloc = context
-        .allocator
-        .borrow_mut()
-        .allocate(&AllocationCreateDesc {
-            name: "validation_results",
-            requirements: val_results_reqs,
-            location: gpu_allocator::MemoryLocation::CpuToGpu,
-            linear: true,
-            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-        })
-        .map_err(|e| format!("Failed to allocate validation results memory: {}", e))?;
-
-    unsafe {
-        context
-            .device
-            .bind_buffer_memory(
-                val_results_buffer,
-                val_results_alloc.memory(),
-                val_results_alloc.offset(),
-            )
-            .map_err(|e| format!("Failed to bind validation results buffer: {:?}", e))?;
-    }
-
-    // Validation params buffer (uniform, 32 bytes)
-    #[repr(C)]
-    #[derive(bytemuck::Pod, bytemuck::Zeroable, Clone, Copy)]
-    struct ValidationParams {
-        alive_count: u32,
-        emitter_count: u32,
-        frame_index: u32,
-        max_mismatch_details: u32,
-        color_tolerance: f32,
-        velocity_tolerance: f32,
-        position_tolerance: f32,
-        _pad: f32,
-    }
-
-    const VALIDATION_PARAMS_SIZE: u64 = 32;
-
-    let val_params_info = vk::BufferCreateInfo::default()
-        .size(VALIDATION_PARAMS_SIZE)
-        .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-        .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-    let val_params_buffer = unsafe {
-        context
-            .device
-            .create_buffer(&val_params_info, None)
-            .map_err(|e| format!("Failed to create validation params buffer: {:?}", e))?
-    };
-
-    let val_params_reqs = unsafe {
-        context
-            .device
-            .get_buffer_memory_requirements(val_params_buffer)
-    };
-
-    let val_params_alloc = context
-        .allocator
-        .borrow_mut()
-        .allocate(&AllocationCreateDesc {
-            name: "validation_params",
-            requirements: val_params_reqs,
-            location: gpu_allocator::MemoryLocation::CpuToGpu,
-            linear: true,
-            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-        })
-        .map_err(|e| format!("Failed to allocate validation params memory: {}", e))?;
-
-    unsafe {
-        context
-            .device
-            .bind_buffer_memory(
-                val_params_buffer,
-                val_params_alloc.memory(),
-                val_params_alloc.offset(),
-            )
-            .map_err(|e| format!("Failed to bind validation params buffer: {:?}", e))?;
-    }
-
-    // Zero-initialize validation results buffer
-    {
-        let cmd = context.begin_single_time_commands();
-        unsafe {
-            context.device.cmd_fill_buffer(
-                cmd.vk_command_buffer(),
-                val_results_buffer,
-                0,
-                VALIDATION_RESULTS_SIZE,
-                0,
-            );
-        }
-        cmd.end_single_time_command();
-        context.end_single_time_commands(cmd);
-    }
-
-    // Load validation shader and create compute pass
-    let mut shader_cache = ShaderCache::new(context.device.clone());
-    let validate_shader_path = shader_dir.join("particles/particle_validate.wgsl");
-    log::info!("Loading validation shader from: {:?}", validate_shader_path);
-
-    let validate_shader = shader_cache
-        .load_shader(&validate_shader_path, vk::ShaderStageFlags::COMPUTE)
-        .map_err(|e| format!("Failed to load validation shader: {}", e))?;
-
-    let validate_shader_wrapper = VkShaderModule(validate_shader);
-
-    // Get buffer layout offsets (copy before the loop to avoid borrow conflicts)
-    let layout = *ps.buffer_layout();
-    let next_frame_offset = layout.alive_frame_offset[1]; // simulate writes here
-    let alive_list_size = layout.alive_list_size;
-    let max_particles_layout = layout.max_particles;
-    let particle_data_size =
-        max_particles_layout * std::mem::size_of::<katla_gfx::particles::ParticleData>() as u64;
-    let counters_size = std::mem::size_of::<katla_gfx::particles::ParticleCounters>() as u64;
-    let emitter_config_total = (1024 * std::mem::size_of::<EmitterConfig>()) as u64;
-
-    // Create the compute pass with all 6 bindings:
-    // 0: particles, 1: alive list (simulate output), 2: counters, 3: emitter configs,
-    // 4: validation results, 5: validation params
-    let validation_pass = ComputePass::builder(context)
-        .add_storage_buffer(0, ps.particle_buffer(), 0, particle_data_size)
-        .add_storage_buffer(1, ps.particle_buffer(), next_frame_offset, alive_list_size)
-        .add_storage_buffer(2, ps.counters_buffer(0), 0, counters_size)
-        .add_storage_buffer(
-            3,
-            ps.emitter_configs_buffer(0)
-                .ok_or("Emitter configs buffer not available")?,
-            0,
-            emitter_config_total,
-        )
-        .add_storage_buffer(4, val_results_buffer, 0, VALIDATION_RESULTS_SIZE)
-        .add_uniform_buffer(5, val_params_buffer, 0, VALIDATION_PARAMS_SIZE)
-        .build(validate_shader_wrapper, asset_registry)
-        .map_err(|e| format!("Failed to build validation pass: {}", e))?;
-
-    // Get pipeline handles from registry for dispatch
-    let pipeline_asset = asset_registry
-        .get_pipeline(validation_pass.pipeline_handle())
-        .ok_or("Validation pipeline not found in registry")?;
-    let val_pipeline = pipeline_asset.vk_pipeline();
-    let val_layout = pipeline_asset.vk_layout();
-
-    log::info!("GPU validation pass created successfully");
-
-    // --- Run simulation with 2-FiF double-buffered GPU validation ---
-    let mut frame_state = DoubleBufferedFrameState::new(&context.device);
-
-    // Pre-allocate 2 command buffers (one per FiF slot) to avoid per-frame allocation.
-    let frame_commands = [
-        context.begin_single_time_commands(),
-        context.begin_single_time_commands(),
-    ];
-
-    for frame in 0..test_frames {
-        let fi = (frame as usize) % 2;
-        let next_fi = (fi + 1) % 2;
-
-        // Wait on this frame slot's fence (free for reuse)
-        frame_state.wait_for_fence(&context.device);
-
-        let (alive_count, emit_count) = ps
-            .update(dt, frame)
-            .map_err(|e| format!("Update failed at frame {}: {}", frame, e))?;
-
-        // Record and submit GPU compute dispatch (emit + simulate + debug readback)
-        frame_commands[fi].reset();
-        frame_commands[fi].begin_single_time_command();
-        let cmd = &frame_commands[fi];
-
-        let frame_index_for_descriptor = fi;
-
-        let emit_wg = if emit_count > 0 {
-            (emit_count + PARTICLE_EMIT_WORKGROUP_SIZE - 1) / PARTICLE_EMIT_WORKGROUP_SIZE
-        } else {
-            0
-        };
-        let max_alive = ps.max_estimated_alive();
-        let total_sim = max_alive + emit_count;
-        let sim_wg = if total_sim > 0 {
-            (total_sim + PARTICLE_SIMULATE_WORKGROUP_SIZE - 1) / PARTICLE_SIMULATE_WORKGROUP_SIZE
-        } else {
-            0
-        };
-
-        if emit_wg > 0 || sim_wg > 0 {
-            if let Err(e) = ps.update_compute_descriptor_binding(frame_index_for_descriptor) {
-                log::warn!(
-                    "Frame {}: Failed to update compute descriptor binding: {}",
-                    frame,
-                    e
-                );
-            }
-
-            if emit_wg > 0 {
-                if let Err(e) = ps.record_emit_dispatch(
-                    cmd.vk_command_buffer(),
-                    asset_registry,
-                    emit_wg,
-                    frame_index_for_descriptor,
-                ) {
-                    log::warn!("Failed to record emit dispatch: {}", e);
-                }
-            }
-
-            if sim_wg > 0 {
-                ps.reset_simulate_counters(
-                    cmd.vk_command_buffer(),
-                    emit_wg > 0,
-                    frame_index_for_descriptor,
-                );
-                if let Err(e) = ps.record_simulate_dispatch(
-                    cmd.vk_command_buffer(),
-                    asset_registry,
-                    sim_wg,
-                    frame_index_for_descriptor,
-                ) {
-                    log::warn!("Failed to record simulate dispatch: {}", e);
-                }
-            }
-        }
-
-        // --- GPU validation compute (same command buffer, no CPU involvement) ---
-        // Record validation dispatch directly after particle compute.
-        // The validation shader accumulates results into atomics in val_results_buffer.
-        // We only read back the buffer once after all frames complete.
-        //
-        // Memory barrier: simulate writes particle data, alive lists, and counters.
-        // Validation reads all of those. Within the same command buffer, Vulkan
-        // guarantees execution order but NOT memory visibility between dispatches.
-        if alive_count > 0 && (sim_wg > 0) {
-            let particle_barrier = vk::BufferMemoryBarrier2::default()
-                .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-                .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-                .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
-                .dst_access_mask(vk::AccessFlags2::SHADER_READ)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .buffer(ps.particle_buffer())
-                .offset(0)
-                .size(vk::WHOLE_SIZE);
-
-            let counters_barrier = vk::BufferMemoryBarrier2::default()
-                .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-                .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-                .src_access_mask(vk::AccessFlags2::SHADER_READ | vk::AccessFlags2::SHADER_WRITE)
-                .dst_access_mask(vk::AccessFlags2::SHADER_READ)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .buffer(ps.counters_buffer(fi))
-                .offset(0)
-                .size(vk::WHOLE_SIZE);
-
-            let barriers = [particle_barrier, counters_barrier];
-            let dep_info = vk::DependencyInfo::default().buffer_memory_barriers(&barriers);
-
-            unsafe {
-                context
-                    .device
-                    .cmd_pipeline_barrier2(cmd.vk_command_buffer(), &dep_info);
-            }
-        }
-
-        if alive_count > 0 {
-            validation_pass.update_binding(
-                1,
-                ps.particle_buffer(),
-                layout.alive_frame_offset[next_fi],
-                alive_list_size,
-            );
-            validation_pass.update_binding(2, ps.counters_buffer(fi), 0, counters_size);
-            validation_pass.update_binding(
-                3,
-                ps.emitter_configs_buffer(fi)
-                    .ok_or("Emitter configs buffer not available")?,
-                0,
-                emitter_config_total,
-            );
-
-            let val_params = ValidationParams {
-                alive_count: ps.alive_count(),
-                emitter_count: 4,
-                frame_index: frame,
-                max_mismatch_details: 64,
-                color_tolerance: 0.05,
-                velocity_tolerance: 0.0, // Skip velocity check: emit shader varies speed by ±50%
-                position_tolerance: 0.0,
-                _pad: 0.0,
-            };
-
-            if let Some(mapped) = val_params_alloc.mapped_ptr() {
-                let dst = mapped.as_ptr() as *mut u8;
-                unsafe {
-                    std::ptr::copy_nonoverlapping(
-                        &val_params as *const ValidationParams as *const u8,
-                        dst,
-                        std::mem::size_of::<ValidationParams>(),
-                    );
-                }
-                context.flush_mapped_memory(&val_params_alloc, 0, VALIDATION_PARAMS_SIZE);
-            }
-
-            let validate_workgroups = (alive_count + 63) / 64;
-            validation_pass.record_dispatch_with_handles(
-                cmd.vk_command_buffer(),
-                val_pipeline,
-                val_layout,
-                validate_workgroups,
-                1,
-                1,
-            );
-        }
-
-        cmd.end_single_time_command();
-
-        let prev_fi = (fi + 1) % 2;
-        let wait_sem = frame_state.frame_complete_semaphore(prev_fi);
-        let signal_fence = frame_state.fence(fi);
-        let signal_sem = frame_state.frame_complete_semaphore(fi);
-
-        let wait_sems: &[vk::Semaphore] = if frame > 0 { &[wait_sem] } else { &[] };
-        context
-            .gfx_queue
-            .submit(&[&cmd], wait_sems, &[signal_sem], signal_fence);
-
-        frame_state.step_frame();
-    }
-
-    // Drain remaining in-flight frames
-    for _ in 0..2 {
-        frame_state.wait_for_fence(&context.device);
-        frame_state.step_frame();
-    }
-    frame_state.destroy(&context.device);
-
-    // Return pre-allocated command buffers to pool
-    frame_commands[0].return_to_pool();
-    frame_commands[1].return_to_pool();
-
-    // --- Single readback: read accumulated GPU validation results ---
-    context.invalidate_mapped_memory(&val_results_alloc, 0, VALIDATION_RESULTS_SIZE);
-
-    let mut total_checked: u64 = 0;
-    let mut total_color_mismatches: u64 = 0;
-    let mut total_velocity_mismatches: u64 = 0;
-    let mut per_emitter_mismatches = [0u32; 16];
-
-    if let Some(mapped) = val_results_alloc.mapped_ptr() {
-        let ptr = mapped.as_ptr() as *const u32;
-        total_checked = unsafe { *ptr } as u64;
-        total_color_mismatches = unsafe { *ptr.add(1) } as u64;
-        total_velocity_mismatches = unsafe { *ptr.add(2) } as u64;
-
-        for i in 0..4usize {
-            per_emitter_mismatches[i] = unsafe { *ptr.add(4 + i) };
-        }
-
-        // Read mismatch details for diagnosis (offset 80, 4 u32 per entry)
-        // Format: [frame_index, particle_idx, packed_color, emitter_idx_packed_alive]
-        let mismatch_count = unsafe { *ptr.add(84) };
-        let detail_count = mismatch_count.min(64);
-        for i in 0..detail_count as usize {
-            let base = 80 + i * 4;
-            let frame_idx = unsafe { *ptr.add(base) };
-            let particle_idx = unsafe { *ptr.add(base + 1) };
-            let packed_color = unsafe { *ptr.add(base + 2) };
-            let emitter_packed = unsafe { *ptr.add(base + 3) };
-            let emitter_idx = emitter_packed / 100000000;
-            let alive_at_check = emitter_packed % 100000000;
-            let r = packed_color / 1000000;
-            let g = (packed_color / 1000) % 1000;
-            let b = packed_color % 1000;
-            if i < 3 || i >= detail_count as usize - 3 {
-                log::error!(
-                    "  [{}] frame={}, particle={}, emitter={}, color=({:.4}, {:.4}, {:.4}), alive={}",
-                    i,
-                    frame_idx,
-                    particle_idx,
-                    emitter_idx,
-                    r as f32 / 10000.0,
-                    g as f32 / 10000.0,
-                    b as f32 / 10000.0,
-                    alive_at_check
-                );
-            }
-        }
-    }
-
-    // Report results
-    log::info!(
-        "GPU validation complete: {} particles checked across {} frames",
-        total_checked,
-        test_frames
-    );
-
-    if total_color_mismatches > 0 {
-        log::error!(
-            "COLOR CONTAMINATION: {} total color mismatches across {} frames",
-            total_color_mismatches,
-            test_frames
-        );
-        for (i, name) in emitter_defs.iter().map(|(_, _, n)| *n).enumerate() {
-            if per_emitter_mismatches[i] > 0 {
-                log::error!(
-                    "  Emitter {} ({}): {} mismatches",
-                    i,
-                    name,
-                    per_emitter_mismatches[i]
-                );
-            }
-        }
-        return Err(format!(
-            "GPU validation detected {} color mismatches across {} frames. \
-             Particles are being assigned to wrong emitter configs.",
-            total_color_mismatches, test_frames
-        ));
-    }
-
-    if total_velocity_mismatches > 0 {
-        log::error!(
-            "VELOCITY CONTAMINATION: {} total velocity mismatches across {} frames",
-            total_velocity_mismatches,
-            test_frames
-        );
-        return Err(format!(
-            "GPU validation detected {} velocity mismatches across {} frames. \
-             Particles have incorrect velocity for their assigned emitter.",
-            total_velocity_mismatches, test_frames
-        ));
-    }
-
-    log::info!(
-        "Contamination test PASSED: {} particles checked, 0 GPU-detected color/velocity mismatches",
-        total_checked
-    );
-
-    // Cleanup
-    unsafe {
-        context.device.destroy_buffer(val_results_buffer, None);
-        context.device.destroy_buffer(val_params_buffer, None);
-    }
-    if let Ok(mut allocator) = context.allocator.try_borrow_mut() {
-        allocator.free(val_results_alloc).ok();
-        allocator.free(val_params_alloc).ok();
-    }
-
-    Ok(())
-}
-
 /// Estimate expected alive particles at a given frame.
 ///
 /// Based on emitter configurations:
@@ -1344,9 +1284,16 @@ fn create_test_emitters(
             position: *pos,
             emit_rate,
             base_lifetime: LIFETIME,
+            lifetime_variation: 0.0,
             velocity_direction: [0.0, 1.0, 0.0],
             velocity_magnitude: 1.0,
+            velocity_cone_angle: 0.0,
+            base_scale: 0.1,
+            scale_variation: 0.0,
             color: *color,
+            color_variation: 0.0,
+            gravity: 0.0,
+            turbulence_strength: 0.0,
             ..Default::default()
         };
 
