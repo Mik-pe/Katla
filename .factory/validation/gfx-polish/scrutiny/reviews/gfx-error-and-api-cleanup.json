@@ -1,0 +1,38 @@
+{
+  "featureId": "gfx-error-and-api-cleanup",
+  "reviewedAt": "2026-03-25T12:00:00.000Z",
+  "commitId": "c41e1bd979dd7bcbb57cf3fbfc888673905437ad",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Thorough and well-executed cleanup of katla_gfx errors, APIs, and dead code across 16 files with a net reduction of 87 lines. All 7 subtasks from the feature description are properly addressed. The implementation follows project conventions, uses idiomatic Rust patterns, and preserves error chain information correctly.",
+    "issues": [
+      {
+        "file": "katla_gfx/src/render_graph/passes/viewport.rs",
+        "line": 261,
+        "severity": "non_blocking",
+        "description": "The _color field in ViewportPassData is prefixed with underscore to suppress unused warnings, but it's actively used in tests (lines 474-479, 523). The underscore prefix signals 'intentionally unused' which is slightly misleading since the field IS used in test code. This is a minor style concern — the approach is technically correct since production code doesn't read it, and the underscore prefix is a common Rust convention for this pattern."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The mission AGENTS.md documents 'Preserve error chain information — use From impls, not .to_string() conversions' and 'Implement std::error::Error::source() properly when wrapping errors'. The worker followed this convention perfectly. This appears to be mission-specific guidance that was well-utilized.",
+      "evidence": "error.rs — RendererError::RenderGraphError(RenderGraphError) wraps typed error, source() returns Some(err), From<MaterialError> impl added. Previously the From<RenderGraphError> impl converted to String via error.to_string()."
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker used #[cfg(test)] gating for test-only methods (get_slot_for_image_view, is_default_slot, default_texture_count in bindless_texture.rs) instead of removing them entirely. This is a good pattern that preserves test utility while keeping production code clean. The root AGENTS.md doesn't explicitly document this pattern, but it aligns with the 'no hybrid' and 'no backwards compatibility' rules.",
+      "evidence": "katla_gfx/src/vulkan/bindless_texture.rs:371 — #[cfg(test)] pub(crate) fn get_slot_for_image_view, lines 530-532 — #[cfg(test)] pub(crate) fn is_default_slot, lines 536-538 — #[cfg(test)] pub(crate) fn default_texture_count"
+    },
+    {
+      "area": "skills",
+      "observation": "The cleanup-worker skill's work procedure covers dead code removal and clippy fixes well but doesn't mention error type refactoring, API deduplication, or re-export cleanup. The worker handled these non-trivial tasks (error wrapping changes, From impl additions, re-export migration) correctly despite the skill not explicitly covering them. The skill may benefit from broader coverage.",
+      "evidence": "Skill SKILL.md sections: 'Dead code removal', 'Clippy fixes', 'Test removal', 'Comment cleanup', 'Deduplication'. Missing: error type refactoring, API surface cleanup, re-export management. Worker transcript shows material_builder removal (API cleanup), error type changes, and re-export updates handled correctly."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "All 10 validation assertions (VAL-GFX-004 through VAL-GFX-015, excluding VAL-GFX-007 and VAL-GFX-011 which belong to other features) are properly fulfilled. VAL-GFX-004: material_builder and MaterialBuilder fully removed, only compile_material remains. VAL-GFX-005: RendererError::RenderGraphError(RenderGraphError) wraps typed error. VAL-GFX-006: MaterialError variant added with From<MaterialError> impl. VAL-GFX-008: Zero #[allow(dead_code)] instances via grep verification. VAL-GFX-009: Single doc comment on set_hdr_texture_index. VAL-GFX-010: source() returns Some(err) for RenderGraphError and MaterialError variants. VAL-GFX-012: 10 internal re-exports removed from lib.rs, all import paths updated. VAL-GFX-013/014/015: All tests pass, zero clippy warnings, no compilation errors (verified by handoff commands). The sync.rs macro refactor is well-done — instead of blanket dead_code suppression on all wrapper types, individual new()/vk() methods are added only for types that actually use them. One non-blocking style note about _color field naming in ViewportPassData."
+}

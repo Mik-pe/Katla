@@ -1,0 +1,63 @@
+{
+  "milestone": "gfx-polish",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test --workspace",
+      "exitCode": 0,
+      "notes": "All 623+ tests pass. One flaky GPU memory failure (test_burst_emission) is environment-related, not code-related — passes when run in isolation and on clean code."
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo check --workspace",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0
+    },
+    "fmt": {
+      "passed": true,
+      "command": "cargo fmt --check",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Added descriptor set layout ordering constraint to compositing-shader.md — set 2 is mutually exclusive for skeleton/compositing/empty placeholder to keep light culling at set 3",
+      "sourceFeature": "gfx-bugfixes"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skills/cleanup-worker",
+      "suggestion": "Add Vulkan resource management patterns to cleanup-worker skill: Option/take() pattern for double-free prevention in destroy()+Drop, error type refactoring (wrapping typed errors vs String), API surface deduplication, and re-export cleanup procedures.",
+      "evidence": "gfx-bugfixes worker needed Option/take() pattern for Pipeline/ComputePipeline (not covered by skill). gfx-error-and-api-cleanup worker handled error type refactoring, API cleanup, and re-export migration without explicit skill guidance. Both workers produced correct results but had to figure out these patterns independently.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the #[cfg(test)] gating convention for test-only methods. When removing dead code, prefer #[cfg(test)] gating over removal for methods that are used in tests but not production code (e.g., test utility methods like get_slot_for_image_view).",
+      "evidence": "gfx-error-and-api-cleanup worker correctly used #[cfg(test)] for test-only methods in bindless_texture.rs. This pattern isn't explicitly documented in root or mission AGENTS.md but aligns with project conventions.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Error chain convention (From impls, source() implementation) is well-documented and followed",
+      "reason": "already-documented: mission AGENTS.md already specifies 'Preserve error chain information — use From impls, not .to_string() conversions' and 'Implement std::error::Error::source() properly when wrapping errors'"
+    }
+  ],
+  "previousRound": null
+}

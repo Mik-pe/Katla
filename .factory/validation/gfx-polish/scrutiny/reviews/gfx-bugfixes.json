@@ -1,0 +1,26 @@
+{
+  "featureId": "gfx-bugfixes",
+  "reviewedAt": "2026-03-25T00:30:00.000Z",
+  "commitId": "95c8474",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All 5 bug fixes are correctly implemented. The commit is clean, focused, and each fix directly addresses its corresponding assertion. No bugs, edge cases, or error states were missed.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The cleanup-worker skill doesn't mention the Option/take() pattern for Vulkan resource cleanup, which is a standard pattern the worker needed to apply. The skill focuses on dead code removal and clippy fixes but doesn't cover Vulkan-specific resource management patterns. The vulkan-descriptor-patterns.md library file documents RAII cleanup but not the double-free prevention pattern with Option/take.",
+      "evidence": "cleanup-worker SKILL.md has no mention of Option/take or double-free patterns. The worker applied this pattern correctly to both Pipeline and ComputePipeline. .factory/library/vulkan-descriptor-patterns.md documents RAII cleanup but not the specific Option+take() double-free guard."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The compositing descriptor set layout ordering constraint (set 2) is a critical Vulkan pipeline layout invariant — skeleton, compositing, and empty placeholder are mutually exclusive at set 2 to keep light culling at set 3. This knowledge isn't captured in .factory/library/vulkan-descriptor-patterns.md or compositing-shader.md.",
+      "evidence": "compiler.rs now has a clear comment: 'Set 2: skeleton, compositing, or empty placeholder — All three are mutually exclusive at set 2 so the pipeline layout indices are consistent for downstream descriptor set binding.' This ordering constraint is non-obvious and easy to break when adding new descriptor sets."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. All 5 assertions (VAL-GFX-001, VAL-GFX-002, VAL-GFX-003, VAL-GFX-007, VAL-GFX-011) are correctly fulfilled.\n\n**VAL-GFX-001**: Rg8Unorm now correctly maps to R8G8_UNORM (format.rs:29). Previously mapped to R8_UNORM which is a single-channel format — a clear bug.\n\n**VAL-GFX-002**: Reverse TryFrom mapping added at format.rs:48 — R8G8_UNORM now maps back to Rg8Unorm.\n\n**VAL-GFX-003**: Both Pipeline (builder.rs) and ComputePipeline (compute_pipeline.rs) now use Option<vk::Pipeline>/Option<vk::PipelineLayout> with take() pattern. destroy() is &mut self, safe to call multiple times. Drop delegates to destroy(). No external callers of destroy() exist, so the signature change is safe. The null-handle fallbacks in vk_pipeline()/vk_layout() are appropriate safety nets.\n\n**VAL-GFX-007**: UIPass::write_with() entirely removed along with its 4 unused parameters and associated imports. No callers remain in the codebase.\n\n**VAL-GFX-011**: MaterialCompiler now places compositing descriptor set layout at set 2 (mutually exclusive with skeleton/empty placeholder) instead of appending after light_culling/shadow. This ensures pipeline layout indices match shader binding points. The conditional structure is clear and the fallback to empty_descriptor_layout when compositing isn't set up is sensible.\n\nCode quality is good: clean diff, proper comments, consistent patterns, no AI slop. 357 tests passing, workspace compiles cleanly."
+}
