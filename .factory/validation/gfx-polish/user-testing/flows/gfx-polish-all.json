@@ -1,0 +1,121 @@
+{
+  "groupId": "gfx-polish-all",
+  "milestone": "gfx-polish",
+  "testedAt": "2026-03-25T12:00:00Z",
+  "isolation": {
+    "type": "rust-codebase",
+    "workingDirectory": "C:\\dev\\katla",
+    "maxConcurrency": 1
+  },
+  "toolsUsed": ["cargo", "grep", "read"],
+  "assertions": [
+    {
+      "id": "VAL-GFX-001",
+      "title": "Rg8Unorm maps to R8G8_UNORM (not R8_UNORM)",
+      "status": "pass",
+      "evidence": "grep found 'Rg8Unorm => vk::Format::R8G8_UNORM' at line 29 of format.rs (1 match). No 'Rg8Unorm.*R8_UNORM' mapping found.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-002",
+      "title": "Rg8Unorm has reverse TryFrom mapping",
+      "status": "pass",
+      "evidence": "grep found 'vk::Format::R8G8_UNORM => Ok(ImageFormat::Rg8Unorm)' at line 48 of format.rs (1 match).",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-003",
+      "title": "Pipeline has no double-free risk",
+      "status": "pass",
+      "evidence": "Code review of katla_gfx/src/vulkan/material/builder.rs: destroy() method at line 387 uses Option::take() for both handle and layout, preventing double-free. Drop impl at line 401 calls self.destroy(), making it safe to call explicitly or via drop. The take() method sets Option to None after first call, so subsequent calls are no-ops.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-004",
+      "title": "Only one material creation API",
+      "status": "pass",
+      "evidence": "Grep for material creation function names found only 'pub fn compile_material' at renderer/material_api.rs:51. No other public material creation APIs (create_material, new_material, register_material) exist in the public API. The single compile_material method is the sole entry point.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-005",
+      "title": "RendererError::RenderGraphError wraps typed error",
+      "status": "pass",
+      "evidence": "grep found 0 matches for 'RenderGraphError(String)' in error.rs. Instead, error.rs line 30 defines 'RenderGraphError(RenderGraphError)' which wraps the typed crate::render_graph::RenderGraphError enum. A typed From<RenderGraphError> impl exists at line 122.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-006",
+      "title": "MaterialError unified into RendererError",
+      "status": "pass",
+      "evidence": "grep found 'impl From<MaterialError> for RendererError' at line 99 of error.rs (1 match). RendererError has a MaterialError(MaterialError) variant at line 33, and Display/source implementations handle it properly.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-007",
+      "title": "UIPass::write_with has no misleading unused parameters",
+      "status": "pass",
+      "evidence": "grep found 0 matches for 'write_with' anywhere in katla_gfx/src/. The problematic write_with method has been removed entirely. The UIPass now uses a clean write() method with a single 'name' parameter that is properly used. Code review of katla_gfx/src/render_graph/passes/ui.rs confirms all struct fields and method parameters are used.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-008",
+      "title": "No #[allow(dead_code)] instances",
+      "status": "pass",
+      "evidence": "grep found 0 matches for '#[allow(dead_code)]' in katla_gfx/src/.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-009",
+      "title": "No duplicate doc comments on set_hdr_texture_index",
+      "status": "pass",
+      "evidence": "grep found exactly 1 match for '/// Set the HDR texture index' at line 103 of material_api.rs.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-010",
+      "title": "RendererError::source() chains errors properly",
+      "status": "pass",
+      "evidence": "grep found 0 matches for 'fn source().*-> Option.*None' in error.rs. The actual source() implementation returns Some(err) for RenderGraphError and MaterialError variants, properly chaining error sources.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-011",
+      "title": "MaterialCompiler layout ordering correct for compositing",
+      "status": "pass",
+      "evidence": "Code review of katla_gfx/src/vulkan/material/compiler.rs build_descriptor_layouts(): Set 0 = storage_descriptor_layout, Set 1 = bindless_descriptor_layout, Set 2 = compositing/skeleton/empty placeholder (mutually exclusive with clear comments), Set 3 = light_culling (for PBR/Skinned), Set 4 = shadow (for PBR/Skinned). For compositing materials (is_compositing=true), the compositing descriptor set layout is placed at Set 2, which is correct. Comments explicitly document the layout ordering.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-012",
+      "title": "Internal type re-exports cleaned up in lib.rs",
+      "status": "pass",
+      "evidence": "Code review of katla_gfx/src/lib.rs: Internal modules use pub(crate) visibility (pipeline, primitives, vulkan, barrier, viewport). Public re-exports are intentional and well-organized: RendererError, handles, material types (MaterialOptions, VertexType), texture types, vertex types, render pass types, render graph types, and VulkanContext as documented escape hatch. No internal Vulkan types are leaked to the public API.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-013",
+      "title": "cargo test -p katla_gfx passes",
+      "status": "pass",
+      "evidence": "cargo test -p katla_gfx exited with code 0. 357 unit tests passed, 0 failed. Integration tests: 11 bindless_api_test, 5 headless_context, 6 particle_preset, 13 particle_stress, 7 render_graph_test, 9 viewport_pass_test — all passed. Doc-tests: 4 passed, 103 ignored.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-014",
+      "title": "cargo clippy -p katla_gfx has no new warnings",
+      "status": "pass",
+      "evidence": "cargo clippy -p katla_gfx -- -D warnings exited with code 0. No warnings produced.",
+      "reason": null
+    },
+    {
+      "id": "VAL-GFX-015",
+      "title": "No compilation errors in katla_gfx",
+      "status": "pass",
+      "evidence": "cargo check -p katla_gfx exited with code 0. Finished successfully with no errors.",
+      "reason": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 15 assertions: 15 passed, 0 failed. All grep-based checks, code reviews, and cargo commands confirmed the gfx-polish milestone requirements are met."
+}
