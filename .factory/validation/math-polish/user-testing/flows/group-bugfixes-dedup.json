@@ -1,0 +1,158 @@
+{
+  "groupId": "group-bugfixes-dedup",
+  "testedAt": "2026-03-24T12:00:00Z",
+  "isolation": {
+    "type": "rust-workspace",
+    "path": "C:\\dev\\katla",
+    "scope": "katla_math crate source code review and grep-based assertions"
+  },
+  "toolsUsed": ["ripgrep", "file-read"],
+  "assertions": [
+    {
+      "id": "VAL-MATH-013",
+      "title": "Plane::transform uses inverse transpose for normals",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Read katla_math/src/plane.rs and review transform method",
+          "expected": "Method body calls matrix inverse transpose for normal transformation",
+          "observed": "Line 122: `let inv_transpose = matrix.to_mat3().inverse().map(|m| m.transpose());` followed by `match inv_transpose { Some(m) => m * self.normal, None => self.normal }`"
+        }
+      ],
+      "evidence": {
+        "description": "The transform method correctly computes the inverse transpose of the 3x3 portion of the matrix to transform the plane normal. Falls back to the original normal if the matrix inverse doesn't exist. This correctly handles non-uniform scaling.",
+        "sourceFile": "katla_math/src/plane.rs",
+        "relevantLines": "117-131"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MATH-014",
+      "title": "Frustum::intersect_three_planes returns Option<Vec3>",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep for fn intersect_three_planes.*-> Option<Vec3> in katla_math/src/frustum.rs",
+          "expected": "Exactly 1 match",
+          "observed": "1 match found at line 254: `fn intersect_three_planes(p1: &Plane, p2: &Plane, p3: &Plane) -> Option<Vec3>`"
+        }
+      ],
+      "evidence": {
+        "description": "The method returns Option<Vec3> and handles degenerate cases by returning None when the denominator (n1.dot(n2.cross(n3))) is near zero (abs < 1e-6).",
+        "sourceFile": "katla_math/src/frustum.rs",
+        "relevantLines": "254-271",
+        "grepPattern": "fn intersect_three_planes.*-> Option<Vec3>",
+        "expectedCount": 1,
+        "actualCount": 1
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MATH-015",
+      "title": "Ray::intersects_aabb returns actual face normals",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Read katla_math/src/ray.rs and review intersects_aabb method",
+          "expected": "Normal computed from the actual AABB face hit, not a placeholder",
+          "observed": "The slab method tracks `hit_axis` (0, 1, or 2) and `hit_sign` (+1.0 or -1.0) during the ray-AABB intersection loop. After the loop, the normal is computed as: axis 0 -> Vec3(hit_sign, 0, 0), axis 1 -> Vec3(0, hit_sign, 0), axis 2 -> Vec3(0, 0, hit_sign). The sign is negated when the exit point is used (t_min < 0)."
+        }
+      ],
+      "evidence": {
+        "description": "The normal is dynamically computed from the slab intersection algorithm, tracking which axis was the last to update t_min and the direction of the hit. No placeholder values like Vec3::new(0,1,0) are used.",
+        "sourceFile": "katla_math/src/ray.rs",
+        "relevantLines": "82-142"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MATH-016",
+      "title": "Shared bounds computation extracted from AABB and Sphere",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Read katla_math/src/aabb.rs and katla_math/src/sphere.rs",
+          "expected": "Both use a shared helper function for min/max bounds computation",
+          "observed": "aabb.rs line 1: `use crate::{Vec3, compute_bounds};`, create_from_verts calls `compute_bounds(verts)`. sphere.rs line 1: `use crate::{Vec3, compute_bounds};`, create_from_verts converts verts to Vec3 then calls `compute_bounds(&vec3s)`. The shared helper `compute_bounds` is defined in utils.rs."
+        }
+      ],
+      "evidence": {
+        "description": "Both AABB::create_from_verts and Sphere::create_from_verts delegate to the shared `compute_bounds(verts: &[Vec3]) -> (Vec3, Vec3)` function in katla_math/src/utils.rs. No duplicated min/max loop exists.",
+        "sourceFiles": ["katla_math/src/aabb.rs", "katla_math/src/sphere.rs", "katla_math/src/utils.rs"],
+        "helperLocation": "katla_math/src/utils.rs:23"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MATH-017",
+      "title": "Quat make_mat4/to_mat3 deduplicated",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Read katla_math/src/scalar/quat.rs and katla_math/src/sse/quat.rs",
+          "expected": "make_mat4 and to_mat3 share common rotation matrix computation",
+          "observed": "Both scalar and SSE backends have a private `rotation_matrix_elements(&self) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32)` method. Both `make_mat4()` and `to_mat3()` delegate to this shared helper."
+        }
+      ],
+      "evidence": {
+        "description": "In scalar/quat.rs: `make_mat4` (line 236) and `to_mat3` (line 245) both call `self.rotation_matrix_elements()`. In sse/quat.rs: `make_mat4` (line 247) and `to_mat3` (line 257) both call `self.rotation_matrix_elements()`. The core rotation matrix computation is in one place per backend.",
+        "sourceFiles": ["katla_math/src/scalar/quat.rs", "katla_math/src/sse/quat.rs"],
+        "scalarHelperLine": "253",
+        "sseHelperLine": "264"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MATH-018",
+      "title": "Mat4::decompose and From<Mat3> for Quat deduplicated",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep for impl From<Mat3> for Quat in katla_math/src/",
+          "expected": "Present in scalar and SSE quat files (separate backends) but algorithm not duplicated with decompose",
+          "observed": "Found in both scalar/quat.rs (line 280) and sse/quat.rs (line 307). These are separate backend implementations, which is expected."
+        },
+        {
+          "action": "grep for fn decompose in katla_math/src/sse/mat4.rs",
+          "expected": "0 matches (decompose only in mat4.rs)",
+          "observed": "0 matches confirmed. decompose exists only in mat4.rs (line 321)."
+        },
+        {
+          "action": "Code review of Mat4::decompose in mat4.rs",
+          "expected": "decompose delegates to From<Mat3> for Quat, not reimplementing the algorithm",
+          "observed": "decompose extracts the 3x3 rotation matrix, normalizes by scale, then calls `crate::Quat::from(mat3)` — delegating to the From<Mat3> implementation. No duplicated quaternion-from-matrix algorithm."
+        }
+      ],
+      "evidence": {
+        "description": "Mat4::decompose (mat4.rs:321) delegates to Quat::from(mat3) at line 355, avoiding duplication of the quaternion-from-rotation-matrix algorithm. fn decompose is absent from sse/mat4.rs (expected_count=0 met). From<Mat3> for Quat exists in both scalar and SSE backends (expected for separate implementations).",
+        "sourceFiles": ["katla_math/src/mat4.rs", "katla_math/src/scalar/quat.rs", "katla_math/src/sse/quat.rs"],
+        "decomposeLine": 321,
+        "decomposeDelegationLine": 355
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MATH-019",
+      "title": "core::f32::consts used consistently",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep for std::f32::consts in katla_math/src/",
+          "expected": "0 matches",
+          "observed": "0 matches found. All usage of float constants in katla_math uses core::f32::consts (e.g., core::f32::consts::PI in scalar/quat.rs to_euler and sse/quat.rs to_euler)."
+        }
+      ],
+      "evidence": {
+        "description": "ripgrep found zero occurrences of `std::f32::consts` across all files in katla_math/src/. The codebase consistently uses `core::f32::consts` instead.",
+        "grepPattern": "std::f32::consts",
+        "searchPath": "katla_math/src/",
+        "expectedCount": 0,
+        "actualCount": 0
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 7 assertions (VAL-MATH-013 through VAL-MATH-019): all 7 passed. Plane::transform correctly uses inverse transpose, frustum intersection returns Option<Vec3>, ray-AABB normals are computed from actual face hits, bounds computation is shared via compute_bounds(), quat mat4/mat3 generation is deduplicated via rotation_matrix_elements(), decompose delegates to From<Mat3> without algorithm duplication, and core::f32::consts is used consistently (zero std::f32::consts references)."
+}

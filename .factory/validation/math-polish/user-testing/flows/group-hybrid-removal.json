@@ -1,0 +1,191 @@
+{
+  "groupId": "group-hybrid-removal",
+  "testedAt": "2026-03-24T00:00:00Z",
+  "isolation": {
+    "type": "local-rust-workspace",
+    "path": "C:\\dev\\katla",
+    "noExternalServices": true
+  },
+  "toolsUsed": ["ripgrep"],
+  "assertions": [
+    {
+      "id": "VAL-MATH-001",
+      "title": "Mat4::new() removed (only identity() exists)",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep katla_math/src/mat4.rs for 'pub fn new\\(\\)'",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        },
+        {
+          "action": "grep katla_math/src/sse/mat4.rs for 'pub fn new\\(\\)'",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        }
+      ],
+      "evidence": {
+        "checks": [
+          {"file": "katla_math/src/mat4.rs", "pattern": "pub fn new\\(\\)", "expectedCount": 0, "actualCount": 0},
+          {"file": "katla_math/src/sse/mat4.rs", "pattern": "pub fn new\\(\\)", "expectedCount": 0, "actualCount": 0}
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MATH-002",
+      "title": "Mat3::new() removed (only identity() exists)",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep katla_math/src/mat3.rs for 'pub fn new\\(\\)'",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        },
+        {
+          "action": "grep katla_math/src/sse/mat3.rs for 'pub fn new\\(\\)'",
+          "expected": "0 matches (file does not exist)",
+          "observed": "File does not exist — no SSE mat3 implementation, which is acceptable"
+        }
+      ],
+      "evidence": {
+        "checks": [
+          {"file": "katla_math/src/mat3.rs", "pattern": "pub fn new\\(\\)", "expectedCount": 0, "actualCount": 0},
+          {"file": "katla_math/src/sse/mat3.rs", "pattern": "pub fn new\\(\\)", "expectedCount": 0, "actualCount": 0, "note": "File does not exist — no SSE mat3 module"}
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MATH-004",
+      "title": "Transform::from_position() removed (only new_from_position() exists)",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep katla_math/src/transform.rs for 'pub fn from_position\\('",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        }
+      ],
+      "evidence": {
+        "checks": [
+          {"file": "katla_math/src/transform.rs", "pattern": "pub fn from_position\\(", "expectedCount": 0, "actualCount": 0}
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MATH-008",
+      "title": "No duplicate Vec::zero()/Vec::ZERO (only const associated constants)",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep katla_math/src/scalar/vec2.rs for 'pub fn zero\\(\\)'",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        },
+        {
+          "action": "grep katla_math/src/scalar/vec3.rs for 'pub fn zero\\(\\)'",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        },
+        {
+          "action": "grep katla_math/src/scalar/vec4.rs for 'pub fn zero\\(\\)'",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        }
+      ],
+      "evidence": {
+        "checks": [
+          {"file": "katla_math/src/scalar/vec2.rs", "pattern": "pub fn zero\\(\\)", "expectedCount": 0, "actualCount": 0},
+          {"file": "katla_math/src/scalar/vec3.rs", "pattern": "pub fn zero\\(\\)", "expectedCount": 0, "actualCount": 0},
+          {"file": "katla_math/src/scalar/vec4.rs", "pattern": "pub fn zero\\(\\)", "expectedCount": 0, "actualCount": 0}
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MATH-009",
+      "title": "Quat::new() renamed to identity(), new_from_xyzw() renamed to new()",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep katla_math/src/scalar/quat.rs for 'pub fn identity\\(\\)'",
+          "expected": "1 match",
+          "observed": "1 match (line 43)"
+        },
+        {
+          "action": "grep katla_math/src/sse/quat.rs for 'pub fn identity\\(\\)'",
+          "expected": "1 match",
+          "observed": "1 match (line 50)"
+        },
+        {
+          "action": "grep katla_math/src/scalar/quat.rs for 'pub fn new\\(\\)' (no-arg version should not exist)",
+          "expected": "0 matches",
+          "observed": "0 matches for empty-arg new()"
+        },
+        {
+          "action": "grep katla_math/src/scalar/quat.rs for 'pub fn new\\(' (with xyzw params)",
+          "expected": "1 match",
+          "observed": "1 match (line 53): pub fn new(x: f32, y: f32, z: f32, w: f32) -> Quat"
+        },
+        {
+          "action": "grep katla_math/src/sse/quat.rs for 'pub fn new\\(' (with xyzw params)",
+          "expected": "1 match",
+          "observed": "1 match (line 55): pub fn new(x: f32, y: f32, z: f32, w: f32) -> Quat"
+        }
+      ],
+      "evidence": {
+        "checks": [
+          {"file": "katla_math/src/scalar/quat.rs", "pattern": "pub fn identity\\(\\)", "expectedCount": 1, "actualCount": 1},
+          {"file": "katla_math/src/sse/quat.rs", "pattern": "pub fn identity\\(\\)", "expectedCount": 1, "actualCount": 1},
+          {"file": "katla_math/src/scalar/quat.rs", "pattern": "pub fn new\\(\\)", "expectedCount": 0, "actualCount": 0},
+          {"file": "katla_math/src/sse/quat.rs", "pattern": "pub fn new\\(\\)", "expectedCount": 0, "actualCount": 0},
+          {"file": "katla_math/src/scalar/quat.rs", "pattern": "pub fn new\\(", "expectedCount": 1, "actualCount": 1, "note": "accepts xyzw parameters"},
+          {"file": "katla_math/src/sse/quat.rs", "pattern": "pub fn new\\(", "expectedCount": 1, "actualCount": 1, "note": "accepts xyzw parameters"}
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MATH-020",
+      "title": "Color conversions use only From trait impls",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep katla_math/src/color.rs for 'fn from_vec4|fn to_vec4'",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        },
+        {
+          "action": "grep katla_math/src/color.rs for 'impl From<Color> for Vec4'",
+          "expected": "1 match",
+          "observed": "1 match (line 462)"
+        },
+        {
+          "action": "grep katla_math/src/color.rs for 'impl From<Vec4> for Color'",
+          "expected": "1 match",
+          "observed": "1 match (line 469)"
+        }
+      ],
+      "evidence": {
+        "checks": [
+          {"file": "katla_math/src/color.rs", "pattern": "fn from_vec4|fn to_vec4", "expectedCount": 0, "actualCount": 0},
+          {"file": "katla_math/src/color.rs", "pattern": "impl From<Color> for Vec4", "expectedCount": 1, "actualCount": 1},
+          {"file": "katla_math/src/color.rs", "pattern": "impl From<Vec4> for Color", "expectedCount": 1, "actualCount": 1}
+        ]
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "VAL-MATH-002 references katla_math/src/sse/mat3.rs which does not exist (no SSE mat3 module in the project). The assertion still passes since there is no file to contain a duplicate.",
+      "resolved": true,
+      "resolution": "Confirmed file does not exist, treated as 0 matches which satisfies expected_count=0",
+      "affectedAssertions": ["VAL-MATH-002"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 6 assertions: all 6 passed. All hybrid/duplicate constructors have been removed from katla_math. Mat4/Mat3::new() gone (only identity()), Transform::from_position() gone (only new_from_position()), Vec::zero() methods gone (only const ZERO), Quat::new() correctly renamed to identity() with new xyzw-accepting new(), and Color conversions use only From trait impls."
+}
