@@ -10,6 +10,21 @@ use crate::vulkan::context::VulkanContext;
 
 use super::buffer::{GlobalParticleBuffer, ParticleCounters, ParticleData};
 
+/// Indirect draw command data read back from GPU.
+///
+/// Mirrors the VkDrawIndirectCommand struct written by the simulate shader.
+#[derive(Debug, Clone, Copy, Default)]
+#[repr(C)]
+pub struct IndirectDrawCommandData {
+    pub vertex_count: u32,
+    pub instance_count: u32,
+    pub first_vertex: u32,
+    pub first_instance: u32,
+}
+
+unsafe impl bytemuck::Pod for IndirectDrawCommandData {}
+unsafe impl bytemuck::Zeroable for IndirectDrawCommandData {}
+
 /// Debug readback data for particle system.
 #[derive(Debug, Clone)]
 pub struct ParticleDebugData {
@@ -21,6 +36,8 @@ pub struct ParticleDebugData {
     pub dead_list: Vec<u32>,
     /// Atomic counters
     pub counters: ParticleCounters,
+    /// Indirect draw command from the last readback frame
+    pub indirect_draw: Option<IndirectDrawCommandData>,
 }
 
 impl ParticleDebugData {
@@ -36,6 +53,7 @@ impl ParticleDebugData {
                 emit_count: 0,
                 workgroups_finished: 0,
             },
+            indirect_draw: None,
         }
     }
 
@@ -287,6 +305,7 @@ pub struct ParticleDebugReadback {
     alive_list_staging: Option<ReadbackStagingBuffer>,
     dead_list_staging: Option<ReadbackStagingBuffer>,
     counters_staging: Option<ReadbackStagingBuffer>,
+    indirect_draw_staging: Option<ReadbackStagingBuffer>,
     context: Rc<VulkanContext>,
 }
 
@@ -317,11 +336,19 @@ impl ParticleDebugReadback {
         let counters_staging =
             ReadbackStagingBuffer::new(context, counters_size, "particle_readback_counters")?;
 
+        // Indirect draw command staging buffer (16 bytes = sizeof(VkDrawIndirectCommand))
+        let indirect_draw_staging = ReadbackStagingBuffer::new(
+            context,
+            std::mem::size_of::<IndirectDrawCommandData>() as u64,
+            "particle_readback_indirect_draw",
+        )?;
+
         Ok(Self {
             particle_staging: Some(particle_staging),
             alive_list_staging: Some(alive_list_staging),
             dead_list_staging: Some(dead_list_staging),
             counters_staging: Some(counters_staging),
+            indirect_draw_staging: Some(indirect_draw_staging),
             context: context.clone(),
         })
     }
@@ -366,6 +393,15 @@ impl ParticleDebugReadback {
                 .buffer(particle_buffer.counters_buffer(fi))
                 .offset(0)
                 .size(std::mem::size_of::<ParticleCounters>() as u64),
+            // Barrier for indirect draw buffer
+            vk::BufferMemoryBarrier::default()
+                .src_access_mask(vk::AccessFlags::SHADER_WRITE)
+                .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .buffer(particle_buffer.indirect_draw_buffer(fi))
+                .offset(0)
+                .size(16),
         ];
 
         unsafe {
@@ -538,6 +574,27 @@ impl ParticleDebugReadback {
             }
         }
 
+        // Copy indirect draw command
+        if let Some(staging) = &self.indirect_draw_staging {
+            let indirect_draw_buffer = particle_buffer.indirect_draw_buffer(fi);
+            let indirect_draw_size = std::mem::size_of::<IndirectDrawCommandData>() as u64;
+
+            let copy_region = vk::BufferCopy {
+                src_offset: 0,
+                dst_offset: 0,
+                size: indirect_draw_size,
+            };
+
+            unsafe {
+                device.cmd_copy_buffer(
+                    command_buffer,
+                    indirect_draw_buffer,
+                    staging.buffer.vk(),
+                    &[copy_region],
+                );
+            }
+        }
+
         log::debug!("Recorded particle debug readback copies");
         Ok(())
     }
@@ -615,11 +672,25 @@ impl ParticleDebugReadback {
             }
         };
 
+        // Read indirect draw command
+        let indirect_draw = if let Some(ref staging) = self.indirect_draw_staging {
+            self.context.invalidate_mapped_memory(
+                &staging.allocation,
+                0,
+                std::mem::size_of::<IndirectDrawCommandData>() as u64,
+            );
+            let data = staging.read::<IndirectDrawCommandData>(1);
+            data.into_iter().next()
+        } else {
+            None
+        };
+
         Ok(ParticleDebugData {
             particles,
             alive_list,
             dead_list,
             counters,
+            indirect_draw,
         })
     }
 
@@ -635,6 +706,9 @@ impl ParticleDebugReadback {
             staging.destroy(&self.context);
         }
         if let Some(staging) = self.counters_staging.take() {
+            staging.destroy(&self.context);
+        }
+        if let Some(staging) = self.indirect_draw_staging.take() {
             staging.destroy(&self.context);
         }
     }
