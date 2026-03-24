@@ -14,8 +14,16 @@
 //   Binding 3: Storage buffer (emitter configurations)
 //   Binding 4: Storage buffer (validation results — atomic fault counters)
 //   Binding 5: Uniform buffer (validation params)
+//   Binding 6: Storage buffer (indirect draw command — written by simulate)
 
 #include "common.wgsl"
+
+struct DrawIndirectCommand {
+    vertex_count: u32,
+    instance_count: u32,
+    first_vertex: u32,
+    first_instance: u32,
+}
 
 // Validation result counters (atomic, 32 bytes)
 struct ValidationResults {
@@ -31,6 +39,11 @@ struct ValidationResults {
     // packed_velocity: sign(Vx)<<31 | abs(Vx)*1000<<20 | sign(Vy)<<15 | Vy*1000<<5 | sign(Vz)<<4 | Vz*1000
     mismatch_details: array<u32, 64>,
     mismatch_count: atomic<u32>,
+    // Indirect draw validation (one check per dispatch, in local_id==0)
+    indirect_draw_mismatches: atomic<u32>,
+    // Per-frame indirect draw details: [frame_index, expected_vertex_count, actual_vertex_count]
+    indirect_draw_details: array<u32, 192>, // 64 frames * 3 u32
+    indirect_draw_detail_count: atomic<u32>,
 }
 
 // Validation parameters (32 bytes)
@@ -63,14 +76,35 @@ var<storage, read_write> results: ValidationResults;
 @group(0) @binding(5)
 var<uniform> params: ValidationParams;
 
+@group(0) @binding(6)
+var<storage, read> draw_command: DrawIndirectCommand;
+
 @compute @workgroup_size(64)
 fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let idx = global_id.x;
+    let local_id = global_id.x % 64u;
 
     // Use the post-simulate alive_count from counters (written by simulate pass).
     // params.alive_count is the pre-simulate cached count which may include stale
     // entries from previous frames. counters.alive_count reflects actual survivors.
     let actual_alive_count = atomicLoad(&counters.alive_count);
+
+    // Indirect draw validation (once per dispatch, in first thread of first workgroup)
+    if (local_id == 0u) {
+        let expected_vc = actual_alive_count * 6u;
+        let actual_vc = draw_command.vertex_count;
+        if (actual_vc != expected_vc) {
+            atomicAdd(&results.indirect_draw_mismatches, 1u);
+            let slot = atomicAdd(&results.indirect_draw_detail_count, 1u);
+            if (slot < 64u) {
+                let base = slot * 3u;
+                results.indirect_draw_details[base] = params.frame_index;
+                results.indirect_draw_details[base + 1u] = expected_vc;
+                results.indirect_draw_details[base + 2u] = actual_vc;
+            }
+        }
+    }
+
     if (idx >= actual_alive_count) { return; }
 
     let particle_idx = alive_list[idx];
