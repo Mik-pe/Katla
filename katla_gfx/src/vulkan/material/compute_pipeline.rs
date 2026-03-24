@@ -113,8 +113,8 @@ impl ComputePipelineBuilder {
         .map_err(|e| ComputePipelineError::CreationFailed(e.1))?[0];
 
         Ok(ComputePipeline {
-            handle: pipeline,
-            layout: pipeline_layout,
+            handle: Some(pipeline),
+            layout: Some(pipeline_layout),
             descriptor_layouts: self.descriptor_layouts,
             device: self.context.device.clone(),
         })
@@ -124,9 +124,9 @@ impl ComputePipelineBuilder {
 /// A Vulkan compute pipeline.
 pub struct ComputePipeline {
     /// The Vulkan pipeline handle.
-    handle: vk::Pipeline,
+    handle: Option<vk::Pipeline>,
     /// The pipeline layout.
-    layout: vk::PipelineLayout,
+    layout: Option<vk::PipelineLayout>,
     /// Descriptor set layouts (owned, for cleanup).
     descriptor_layouts: Vec<vk::DescriptorSetLayout>,
     device: ash::Device,
@@ -135,12 +135,12 @@ pub struct ComputePipeline {
 impl ComputePipeline {
     /// Get the pipeline handle as a wrapper type.
     pub fn pipeline(&self) -> VkPipeline {
-        VkPipeline::new(self.handle)
+        VkPipeline::new(self.handle.unwrap_or(vk::Pipeline::null()))
     }
 
     /// Get the pipeline layout as a wrapper type.
     pub fn pipeline_layout(&self) -> VkPipelineLayout {
-        VkPipelineLayout::new(self.layout)
+        VkPipelineLayout::new(self.layout.unwrap_or(vk::PipelineLayout::null()))
     }
 
     /// Get the descriptor set layouts used when creating this pipeline.
@@ -149,14 +149,23 @@ impl ComputePipeline {
     }
 
     /// Destroy the pipeline resources.
+    ///
+    /// Uses `take()` to prevent double-free when called explicitly
+    /// before Drop runs. Safe to call multiple times.
     pub fn destroy(&mut self) {
-        unsafe {
-            self.device.destroy_pipeline(self.handle, None);
-            self.device.destroy_pipeline_layout(self.layout, None);
-            // Note: Descriptor set layouts are NOT destroyed here since they may be shared
-            // between multiple pipelines (e.g., particle emit and simulate pipelines share layouts).
-            // The caller who created the layouts is responsible for their cleanup.
+        if let Some(handle) = self.handle.take() {
+            unsafe {
+                self.device.destroy_pipeline(handle, None);
+            }
         }
+        if let Some(layout) = self.layout.take() {
+            unsafe {
+                self.device.destroy_pipeline_layout(layout, None);
+            }
+        }
+        // Note: Descriptor set layouts are NOT destroyed here since they may be shared
+        // between multiple pipelines (e.g., particle emit and simulate pipelines share layouts).
+        // The caller who created the layouts is responsible for their cleanup.
     }
 }
 

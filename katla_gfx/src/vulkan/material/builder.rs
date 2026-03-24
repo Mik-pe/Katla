@@ -337,8 +337,8 @@ impl PipelineBuilder {
         let descriptor_set_layouts = self.descriptor_layouts.clone();
 
         Ok(Pipeline {
-            handle: pipeline,
-            layout: pipeline_layout,
+            handle: Some(pipeline),
+            layout: Some(pipeline_layout),
             device: self.context.device.clone(),
             descriptor_set_layouts,
         })
@@ -355,8 +355,8 @@ impl PipelineBuilder {
 }
 
 pub struct Pipeline {
-    handle: vk::Pipeline,
-    layout: vk::PipelineLayout,
+    handle: Option<vk::Pipeline>,
+    layout: Option<vk::PipelineLayout>,
     device: ash::Device,
     /// Descriptor set layouts used when creating this pipeline.
     /// These must be used when allocating descriptor sets for this pipeline.
@@ -366,12 +366,12 @@ pub struct Pipeline {
 impl Pipeline {
     /// Get the raw Vulkan pipeline handle.
     pub(crate) fn vk_pipeline(&self) -> vk::Pipeline {
-        self.handle
+        self.handle.unwrap_or(vk::Pipeline::null())
     }
 
     /// Get the raw Vulkan pipeline layout.
     pub(crate) fn vk_layout(&self) -> vk::PipelineLayout {
-        self.layout
+        self.layout.unwrap_or(vk::PipelineLayout::null())
     }
 
     /// Get the descriptor set layouts used when creating this pipeline.
@@ -380,25 +380,27 @@ impl Pipeline {
         &self.descriptor_set_layouts
     }
 
-    pub fn destroy(&self) {
-        unsafe {
-            self.device.destroy_pipeline(self.handle, None);
-            self.device.destroy_pipeline_layout(self.layout, None);
-            // Note: Descriptor set layouts are managed by the material compiler
-            // and will be cleaned up separately
+    /// Destroy the pipeline and layout.
+    ///
+    /// Uses `take()` to prevent double-free when called explicitly
+    /// before Drop runs. Safe to call multiple times.
+    pub fn destroy(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            unsafe {
+                self.device.destroy_pipeline(handle, None);
+            }
+        }
+        if let Some(layout) = self.layout.take() {
+            unsafe {
+                self.device.destroy_pipeline_layout(layout, None);
+            }
         }
     }
 }
 
 impl Drop for Pipeline {
     fn drop(&mut self) {
-        unsafe {
-            self.device.destroy_pipeline(self.handle, None);
-            self.device.destroy_pipeline_layout(self.layout, None);
-            // Note: descriptor_set_layouts are managed by MaterialCompiler
-            // and will be cleaned up there. We don't clean them up here to avoid
-            // double-free for shared layouts used by multiple pipelines.
-        }
+        self.destroy();
     }
 }
 
