@@ -27,9 +27,4 @@ impl ClickResult {
     pub fn is_active(&self) -> bool {
         matches!(self, Self::Pressed | Self::Clicked)
     }
-
-    /// Get the clicked state as a bool.
-    pub fn as_clicked_bool(&self) -> bool {
-        matches!(self, Self::Clicked)
-    }
 }

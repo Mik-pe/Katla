@@ -7,7 +7,7 @@
 use katla_math::{Color, Rect2D, Vec2};
 
 use crate::icons::ForkAwesome;
-use crate::input::{mouse_button, KeyCode};
+use crate::input::{KeyCode, mouse_button};
 use crate::response::Response;
 
 use super::super::UiContext;
@@ -374,6 +374,74 @@ impl UiContext {
 
         let mut response = Response::interactive(false, hovered, focused, bounds, &self.input);
         response.changed = changed;
+        response
+    }
+
+    /// Draw a radio button (internal - use `widgets::RadioButton` instead).
+    pub(crate) fn radio_button(
+        &mut self,
+        id: &str,
+        value: &mut usize,
+        index: usize,
+        label: &str,
+        bounds: Rect2D,
+    ) -> Response {
+        let is_selected = *value == index;
+        let widget_id = self.generate_id(id);
+        let hovered = self.update_hover(widget_id, bounds);
+        let active = self.active_id == Some(widget_id);
+
+        // Draw radio circle as a rectangle border + fill (simplified)
+        let center_x = bounds.min.x() + 10.0;
+        let center_y = bounds.center().y();
+        let radius = 8.0;
+
+        // Outer circle (border rect)
+        let outer_bounds = Rect2D::from_origin_size(
+            Vec2::new(center_x - radius, center_y - radius),
+            Vec2::new(radius * 2.0, radius * 2.0),
+        );
+        self.draw_rect_border(
+            outer_bounds,
+            Color::TRANSPARENT,
+            if is_selected {
+                self.style.checkbox_check
+            } else if hovered {
+                self.style.text_color
+            } else {
+                self.style.checkbox_border
+            },
+            1.0,
+        );
+
+        // Inner circle (filled when selected)
+        if is_selected {
+            let inner_radius = radius * 0.5;
+            let inner_bounds = Rect2D::from_origin_size(
+                Vec2::new(center_x - inner_radius, center_y - inner_radius),
+                Vec2::new(inner_radius * 2.0, inner_radius * 2.0),
+            );
+            self.draw_rect(inner_bounds, self.style.checkbox_check);
+        }
+
+        // Label
+        let label_pos = Vec2::new(center_x + radius + 8.0, bounds.min.y());
+        self.draw_text(
+            label,
+            label_pos,
+            self.style.text_color,
+            self.style.font_size,
+        );
+
+        let clicked = self.click_behavior(widget_id, hovered).is_clicked();
+
+        let mut response = Response::interactive(clicked, hovered, active, bounds, &self.input);
+        response.changed = clicked && !is_selected;
+
+        if response.changed {
+            *value = index;
+        }
+
         response
     }
 }

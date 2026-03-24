@@ -332,12 +332,9 @@ impl<'a> Slider<'a> {
 
 impl<'a> crate::Widget for Slider<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let id = self
-            .id
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| format!("slider_{:?}", self.range));
+        let id = self.id.unwrap_or("slider");
         ui.slider(
-            &id,
+            id,
             self.value,
             *self.range.start(),
             *self.range.end(),
@@ -723,69 +720,7 @@ impl<'a> RadioButton<'a> {
 
 impl<'a> crate::Widget for RadioButton<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let is_selected = *self.value == self.index;
-        let hovered = ui.is_hovered(self.bounds);
-
-        // Generate ID before any mutable borrows
-        let id = ui.generate_id(self.label);
-
-        // Draw radio circle as a rectangle border + fill (simplified)
-        let center_x = self.bounds.min.x() + 10.0;
-        let center_y = self.bounds.center().y();
-        let radius = 8.0;
-
-        // Outer circle (border rect)
-        let outer_bounds = Rect2D::from_origin_size(
-            Vec2::new(center_x - radius, center_y - radius),
-            Vec2::new(radius * 2.0, radius * 2.0),
-        );
-        ui.draw_rect_border(
-            outer_bounds,
-            Color::TRANSPARENT,
-            if is_selected {
-                ui.style.checkbox_check
-            } else if hovered {
-                ui.style.text_color
-            } else {
-                ui.style.checkbox_border
-            },
-            1.0,
-        );
-
-        // Inner circle (filled when selected)
-        if is_selected {
-            let inner_radius = radius * 0.5;
-            let inner_bounds = Rect2D::from_origin_size(
-                Vec2::new(center_x - inner_radius, center_y - inner_radius),
-                Vec2::new(inner_radius * 2.0, inner_radius * 2.0),
-            );
-            ui.draw_rect(inner_bounds, ui.style.checkbox_check);
-        }
-
-        // Label
-        let label_pos = Vec2::new(center_x + radius + 8.0, self.bounds.min.y());
-        ui.draw_text(
-            self.label,
-            label_pos,
-            ui.style.text_color,
-            ui.style.font_size,
-        );
-
-        // Handle clicks
-        let clicked = ui
-            .click_behavior(id, ui.is_hovered(self.bounds))
-            .is_clicked();
-
-        let mut response = Response::new(self.bounds);
-        response.clicked = clicked;
-        response.hovered = hovered;
-        response.changed = clicked && !is_selected;
-
-        if response.changed {
-            *self.value = self.index;
-        }
-
-        response
+        ui.radio_button(self.label, self.value, self.index, self.label, self.bounds)
     }
 }
 
