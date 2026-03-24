@@ -224,7 +224,7 @@ impl EmitterHandle {
 
 /// Per-emitter runtime state (not uploaded to GPU).
 #[derive(Clone, Default)]
-pub(super) struct EmitterState {
+pub(crate) struct EmitterState {
     /// Burst particles to emit this frame
     pub burst_count: u32,
     /// Accumulated fractional emit time for rate-based emission

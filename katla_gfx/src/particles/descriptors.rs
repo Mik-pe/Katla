@@ -578,4 +578,116 @@ impl GlobalParticleSystem {
 
         self.create_descriptor_set_internal(render_layout, "render", false, false)
     }
+
+    pub fn update_compute_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
+        let device = &self.context.device;
+        let descriptor_set = self
+            .compute_descriptor_set
+            .ok_or("Compute descriptor set not allocated")?;
+
+        let layout = self.buffer.layout();
+        let next_frame = (frame_index + 1) % 2;
+        let fi = frame_index % 2;
+
+        let alive_list_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.particle_buffer(),
+            offset: layout.alive_frame_offset[frame_index % 2],
+            range: layout.alive_list_size,
+        }];
+
+        let alive_next_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.particle_buffer(),
+            offset: layout.alive_frame_offset[next_frame],
+            range: layout.alive_list_size,
+        }];
+
+        let counters_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.counters_buffer(fi),
+            offset: 0,
+            range: std::mem::size_of::<buffer::ParticleCounters>() as u64,
+        }];
+
+        let indirect_draw_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.indirect_draw_buffer(fi),
+            offset: 0,
+            range: 16,
+        }];
+
+        let descriptor_writes = [
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(2)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&alive_list_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(3)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&alive_next_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(4)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&counters_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(5)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&indirect_draw_info),
+        ];
+
+        unsafe {
+            device.update_descriptor_sets(&descriptor_writes, &[]);
+        }
+
+        Ok(())
+    }
+
+    pub fn update_render_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
+        let device = &self.context.device;
+        let descriptor_set = self
+            .render_descriptor_set
+            .ok_or("Render descriptor set not allocated")?;
+
+        let layout = self.buffer.layout();
+        let next_frame = (frame_index + 1) % 2;
+        let fi = frame_index % 2;
+
+        let alive_list_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.particle_buffer(),
+            offset: layout.alive_frame_offset[next_frame],
+            range: layout.alive_list_size,
+        }];
+
+        let counters_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.counters_buffer(fi),
+            offset: 0,
+            range: std::mem::size_of::<buffer::ParticleCounters>() as u64,
+        }];
+
+        let descriptor_writes = [
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(2)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&alive_list_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(descriptor_set)
+                .dst_binding(4)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&counters_info),
+        ];
+
+        unsafe {
+            device.update_descriptor_sets(&descriptor_writes, &[]);
+        }
+
+        Ok(())
+    }
 }
