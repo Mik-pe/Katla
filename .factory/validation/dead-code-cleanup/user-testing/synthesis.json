@@ -1,0 +1,26 @@
+{
+  "milestone": "dead-code-cleanup",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 9,
+    "passed": 9,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-DEAD-001",
+    "VAL-DEAD-002",
+    "VAL-DEAD-003",
+    "VAL-DEAD-004",
+    "VAL-DEAD-005",
+    "VAL-DEAD-006",
+    "VAL-DEAD-007",
+    "VAL-DEAD-008",
+    "VAL-DEAD-009"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}
