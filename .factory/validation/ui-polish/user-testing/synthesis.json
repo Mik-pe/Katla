@@ -1,0 +1,32 @@
+{
+  "milestone": "ui-polish",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-UI-001",
+    "VAL-UI-002",
+    "VAL-UI-003",
+    "VAL-UI-004",
+    "VAL-UI-005",
+    "VAL-UI-006",
+    "VAL-UI-007",
+    "VAL-UI-008",
+    "VAL-UI-009",
+    "VAL-UI-010"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "validationDetails": {
+    "compilation": "pass (cargo check -p katla_ui: 0 errors, 0 warnings)",
+    "tests": "pass (69 unit tests passed, 51 doc tests ignored)",
+    "clippy": "pass (0 warnings with -D warnings)"
+  }
+}
