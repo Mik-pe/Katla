@@ -2,6 +2,7 @@ commands:
   install: cargo build
   typecheck: cargo check
   build: cargo build
+  build-lib: cargo build --workspace --lib
   test: cargo test --workspace
   test-math: cargo test -p katla_math
   test-ecs: cargo test -p katla_ecs
