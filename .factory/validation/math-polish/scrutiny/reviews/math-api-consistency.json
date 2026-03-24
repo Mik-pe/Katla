@@ -1,0 +1,61 @@
+{
+  "featureId": "math-api-consistency",
+  "milestone": "math-polish",
+  "reviewedAt": "2026-03-24T23:15:00.000Z",
+  "commitId": "8ca7e556294cb1f78f52b3c65a7fbd5bd7215fdf",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "assertions": [
+    {
+      "id": "VAL-MATH-003",
+      "status": "pass",
+      "evidence": "Both scalar/quat.rs:184 and sse/quat.rs:170 have 'pub fn inverse(&self) -> Self { self.conjugate() }' — a single-line delegation with no duplicate logic. The conjugate implementations are distinct (scalar negates fields, SSE uses XOR mask) but inverse is correctly unified in both backends."
+    },
+    {
+      "id": "VAL-MATH-005",
+      "status": "pass",
+      "evidence": "All Vec types use by-value parameter passing for dot, cross, distance, distance_squared, and angle_between: Vec2 (scalar/vec2.rs) uses dot(self, other: Vec2), cross(self, other: Vec2), distance(self, other: Vec2); Vec3 (scalar/vec3.rs) uses dot(self, b: Vec3), cross(self, b: Vec3), distance(self, other: Vec3), angle_between(self, other: Vec3); Vec4 scalar (scalar/vec4.rs) uses dot(self, other: Vec4); Vec4 SSE (sse/vec4.rs) uses dot(self, other: Vec4). No Vec3 SSE backend exists. Convention is consistent."
+    },
+    {
+      "id": "VAL-MATH-006",
+      "status": "pass",
+      "evidence": "All Vec::lerp methods use &self calling convention: Vec2 (scalar/vec2.rs) 'pub fn lerp(&self, other: Vec2, t: f32)', Vec3 (scalar/vec3.rs) 'pub fn lerp(&self, other: Vec3, t: f32)', Vec4 scalar (scalar/vec4.rs) 'pub fn lerp(&self, other: Vec4, t: f32)', Vec4 SSE (sse/vec4.rs) 'pub fn lerp(&self, other: Vec4, t: f32)'. All second parameters are by-value (not by-reference)."
+    },
+    {
+      "id": "VAL-MATH-007",
+      "status": "pass",
+      "evidence": "Vec3::ONE constant defined at scalar/vec3.rs:20 as 'pub const ONE: Vec3 = Vec3([1.0, 1.0, 1.0, 0.0])'. No SSE Vec3 backend exists, so scalar-only is correct."
+    },
+    {
+      "id": "VAL-MATH-010",
+      "status": "pass",
+      "evidence": "Mat4 at mat4.rs:14 derives Copy via '#[derive(Debug, Clone, Copy, PartialEq)]'. The commit also removed .clone() calls on Mat4 in downstream files (frustum.rs, plane.rs, ray.rs, skin.rs, renderer.rs, modelcache.rs) since Copy now handles implicit copying."
+    },
+    {
+      "id": "VAL-MATH-011",
+      "status": "pass",
+      "evidence": "Mat2 at mat2.rs:6 derives PartialEq via '#[derive(Debug, Copy, Clone, PartialEq)]'. The commit replaced a manual PartialEq impl with the derive macro."
+    },
+    {
+      "id": "VAL-MATH-012",
+      "status": "pass",
+      "evidence": "Sphere at sphere.rs:3 derives '#[derive(Debug, Clone, Copy, PartialEq)]', covering all three required traits (Debug, PartialEq, Copy). Previously only Clone was derived."
+    }
+  ],
+  "codeReview": {
+    "summary": "The feature comprehensively standardizes katla_math API conventions across all Vec types and both scalar/SSE backends where applicable. All 7 assertions are satisfied. The implementation correctly updated all downstream call sites (19 files touched) to match the new API conventions. Tests pass (350+ tests), workspace compiles, and clippy reports zero warnings.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The project has a consistent pattern where Vec3 and Vec2 use scalar-only implementations while Vec4 and Quat have both scalar and SSE backends. This is worth documenting so future workers know which types need dual-backend changes.",
+      "evidence": "katla_math/src/sse/ directory contains only vec4.rs, quat.rs, and mat4.rs — no vec2.rs or vec3.rs exists.",
+      "suggestedTarget": "library",
+      "suggestedContent": "Add to .factory/library/ noting that only Vec4, Quat, and Mat4 have SSE backends; Vec2 and Vec3 are scalar-only. API standardization work only needs dual-backend changes for Vec4/Quat/Mat4."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "All 7 assertions pass. The math-api-consistency feature correctly standardizes Vec parameter passing (by-value for dot/cross/distance), Vec::lerp (&self convention), Quat::inverse (delegates to conjugate), and adds required derives (Copy on Mat4/Sphere, PartialEq on Mat2/Sphere, Debug on Sphere). Vec2::PartialOrd was removed. No bugs or edge cases found. One non-blocking shared state observation about SSE backend coverage."
+}

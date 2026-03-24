@@ -18,10 +18,28 @@ Architectural decisions, patterns, and conventions for the Katla engine.
 ```
 katla_math  ← (nothing)
 katla_gfx   ← (nothing)
-katla_ecs   ← (nothing)
+katla_ecs   ← (nothing) — NOTE: previously violated by katla_math dep, fixed in cleanup mission
 katla_ui    ← katla_math, katla_gfx
 katla_app   ← katla_math, katla_gfx, katla_ecs, katla_ui
 ```
+
+## Workspace Dependencies
+
+All shared dependencies are centralized in root `Cargo.toml` under `[workspace.dependencies]`. Crates reference them with `{ workspace = true }`. No wildcard `"*"` versions allowed.
+
+## katla_math Specifics
+
+### SSE Backend Coverage
+
+Only `Vec4`, `Quat`, and `Mat4` have SSE backends (`katla_math/src/sse/`). `Vec2` and `Vec3` are scalar-only. API standardization work only needs dual-backend changes for `Vec4`/`Quat`/`Mat4`.
+
+### SSE Vec4 Const Limitation
+
+`Vec4` on x86_64 uses SSE intrinsics (`__m128`) which cannot be used in `const` contexts. Therefore `Vec4::ZERO`/`ONE` etc exist only as const associated constants on the scalar implementation, while the SSE implementation provides `fn zero()`/`fn one()` methods. Tests targeting `Vec4` must use method calls since x86_64 uses the SSE path.
+
+### AABB vs Sphere create_from_verts Input Types
+
+`AABB::create_from_verts` accepts `&[Vec3]` while `Sphere::create_from_verts` accepts `&[f32; 3]`. This API inconsistency limits shared helper dedup without allocation (Sphere currently heap-allocates a `Vec<Vec3>` to call the shared `compute_bounds` helper).
 
 ## Code Conventions
 
