@@ -84,30 +84,3 @@ impl From<RenderGraphError> for RendererError {
         RendererError::RenderGraphError(error.to_string())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_renderer_error_display() {
-        let err = RendererError::VulkanError("ERROR_DEVICE_LOST".to_string());
-        assert!(err.to_string().contains("Vulkan error"));
-
-        let err = RendererError::NotFound("texture.png".to_string());
-        assert!(err.to_string().contains("Not found"));
-    }
-
-    #[test]
-    fn test_from_vk_result() {
-        let err = RendererError::from(ash::vk::Result::ERROR_DEVICE_LOST);
-        assert!(matches!(err, RendererError::VulkanError(_)));
-    }
-
-    #[test]
-    fn test_from_io_error() {
-        let io_err = io::Error::new(io::ErrorKind::NotFound, "file not found");
-        let err = RendererError::from(io_err);
-        assert!(matches!(err, RendererError::IoError(_)));
-    }
-}

@@ -330,15 +330,6 @@ impl StorageUniformManager {
         Ok(Self { buffers })
     }
 
-    /// Update frame uniforms (view, projection, and lighting).
-    ///
-    /// This writes the frame data to the start of the specified frame's buffer
-    /// (offset 0, 320 bytes total). Should be called once per frame.
-    ///
-    /// # Arguments
-    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
-    /// * `view` - View matrix (world-to-camera)
-    /// * `proj` - Projection matrix (camera-to-clip)
     /// Update frame uniforms with full lighting parameters.
     ///
     /// # Arguments
@@ -407,42 +398,6 @@ impl StorageUniformManager {
         );
     }
 
-    /// Update object uniforms at specific index.
-    ///
-    /// Writes per-object data (model matrix + color) to the object array.
-    /// Automatically handles object index lookup and offset calculation.
-    ///
-    /// # Arguments
-    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
-    /// * `index` - Object index (0-255)
-    /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
-    /// * `color` - Color tint (RGBA)
-    ///
-    /// # Panics
-    /// Panics if index >= 256
-    /// Update object uniforms with PBR material parameters.
-    ///
-    /// # Arguments
-    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
-    /// * `index` - Object index (0-255)
-    /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
-    /// * `color` - Base color tint (RGBA)
-    /// * `metallic` - Metallic factor (0.0 = dielectric, 1.0 = metal)
-    /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
-    /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
-    #[allow(clippy::too_many_arguments)]
-    /// Update object uniforms with full PBR material parameters including normal scale.
-    ///
-    /// # Arguments
-    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
-    /// * `index` - Object index (0-255)
-    /// * `model` - Model matrix (object-to-world) - column-major [f32; 16]
-    /// * `color` - Base color tint (RGBA)
-    /// * `metallic` - Metallic factor (0.0 = dielectric, 1.0 = metal)
-    /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
-    /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
-    /// * `emission_idx` - Emission texture index for bindless (0 = no emission)
-    #[allow(clippy::too_many_arguments)]
     /// Update object uniforms with bindless texture indices.
     ///
     /// # Arguments

@@ -6,7 +6,7 @@
 //!
 //! # Example
 //! ```ignore
-//! let pass = ComputePass::new(context)
+//! let pass = ComputePass::builder(context)
 //!     .add_storage_buffer(0, buffer, offset, size)
 //!     .add_uniform_buffer(1, uniform_buf, 0, 64)
 //!     .build(shader, &mut asset_registry)?;
@@ -59,8 +59,8 @@ pub struct ComputePass {
 }
 
 impl ComputePass {
-    /// Create a new compute pass builder with regular descriptor sets.
-    pub fn new(context: &Rc<VulkanContext>) -> ComputePassBuilder {
+    /// Create a compute pass builder with regular descriptor sets.
+    pub fn builder(context: &Rc<VulkanContext>) -> ComputePassBuilder {
         ComputePassBuilder {
             context: context.clone(),
             bindings: Vec::new(),

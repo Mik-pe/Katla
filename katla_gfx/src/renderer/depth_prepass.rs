@@ -3,6 +3,7 @@ use crate::handle::PipelineHandle;
 use ash::vk;
 use log::info;
 
+#[derive(Default)]
 /// Bundles all depth prepass state from VulkanRenderer.
 pub(crate) struct DepthPrepassState {
     /// Depth-only pipeline for camera-space depth rendering
@@ -11,16 +12,6 @@ pub(crate) struct DepthPrepassState {
     pub pipeline_skinned: Option<PipelineHandle>,
     /// Empty descriptor set layout (Set 1 placeholder for skinned pipeline)
     pub skinned_empty_layout: Option<vk::DescriptorSetLayout>,
-}
-
-impl Default for DepthPrepassState {
-    fn default() -> Self {
-        Self {
-            pipeline: None,
-            pipeline_skinned: None,
-            skinned_empty_layout: None,
-        }
-    }
 }
 
 impl super::VulkanRenderer {

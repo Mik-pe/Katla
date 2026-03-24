@@ -122,7 +122,7 @@ impl ShadowBuffers {
             );
         }
 
-        if let Some(ref alloc) = self.shadow_data_allocation.as_ref() {
+        if let Some(alloc) = self.shadow_data_allocation.as_ref() {
             self.context.flush_mapped_memory(
                 alloc,
                 0,
@@ -133,6 +133,10 @@ impl ShadowBuffers {
 
     pub fn len(&self) -> usize {
         self.shadow_atlas_views.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.shadow_atlas_views.is_empty()
     }
 
     pub fn set_shadow_atlas_view(&mut self, frame_idx: usize, view: vk::ImageView) {

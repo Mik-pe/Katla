@@ -383,12 +383,6 @@ impl VulkanRenderer {
         self.depth_texture_base_index
     }
 
-    /// Get the cascade descriptor set for the current frame (Set 2).
-
-    /// Upload shadow data and bind shadow descriptors for the current frame.
-    ///
-    /// Call this inside the render graph execution (after binding pipeline, before draw calls).
-
     // ========================================================================
     // Texture Creation API
     // ========================================================================

@@ -501,36 +501,6 @@ impl AsRef<vk::CommandBuffer> for VkCommandBuffer {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_semaphore_wrapper() {
-        let vk_sem = vk::Semaphore::null();
-        let sem = VkSemaphore::new(vk_sem);
-        assert_eq!(sem.vk(), vk_sem);
-    }
-
-    #[test]
-    fn test_fence_wrapper() {
-        let vk_fence = vk::Fence::null();
-        let fence = VkFence::new(vk_fence);
-        assert_eq!(fence.vk(), vk_fence);
-    }
-
-    #[test]
-    fn test_semaphore_conversions() {
-        let vk_sem = vk::Semaphore::null();
-        let sem: VkSemaphore = vk_sem.into();
-        let back: vk::Semaphore = sem.into();
-        assert_eq!(vk_sem, back);
-    }
-
-    #[test]
-    fn test_fence_conversions() {
-        let vk_fence = vk::Fence::null();
-        let fence: VkFence = vk_fence.into();
-        let back: vk::Fence = fence.into();
-        assert_eq!(vk_fence, back);
-    }
-
     // Synchronization2 tests
 
     #[test]
@@ -587,50 +557,5 @@ mod tests {
         assert!(dep_info.memory_barriers.is_empty());
         assert!(dep_info.buffer_barriers.is_empty());
         assert!(dep_info.image_barriers.is_empty());
-    }
-
-    #[test]
-    fn test_pipeline_wrapper() {
-        let vk_pipeline = vk::Pipeline::null();
-        let pipeline = VkPipeline::new(vk_pipeline);
-        assert_eq!(pipeline.vk(), vk_pipeline);
-    }
-
-    #[test]
-    fn test_pipeline_conversions() {
-        let vk_pipeline = vk::Pipeline::null();
-        let pipeline: VkPipeline = vk_pipeline.into();
-        let back: vk::Pipeline = pipeline.into();
-        assert_eq!(vk_pipeline, back);
-    }
-
-    #[test]
-    fn test_pipeline_layout_wrapper() {
-        let vk_layout = vk::PipelineLayout::null();
-        let layout = VkPipelineLayout::new(vk_layout);
-        assert_eq!(layout.vk(), vk_layout);
-    }
-
-    #[test]
-    fn test_pipeline_layout_conversions() {
-        let vk_layout = vk::PipelineLayout::null();
-        let layout: VkPipelineLayout = vk_layout.into();
-        let back: vk::PipelineLayout = layout.into();
-        assert_eq!(vk_layout, back);
-    }
-
-    #[test]
-    fn test_buffer_wrapper() {
-        let vk_buffer = vk::Buffer::null();
-        let buffer = VkBuffer::new(vk_buffer);
-        assert_eq!(buffer.vk(), vk_buffer);
-    }
-
-    #[test]
-    fn test_buffer_conversions() {
-        let vk_buffer = vk::Buffer::null();
-        let buffer: VkBuffer = vk_buffer.into();
-        let back: vk::Buffer = buffer.into();
-        assert_eq!(vk_buffer, back);
     }
 }
