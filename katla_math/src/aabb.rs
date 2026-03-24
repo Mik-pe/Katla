@@ -1,4 +1,4 @@
-use crate::Vec3;
+use crate::{Vec3, compute_bounds};
 
 #[derive(Clone, Debug)]
 pub struct AABB {
@@ -24,31 +24,7 @@ impl AABB {
 
     // This is a helper function to create an AABB from a list of vertices.
     pub fn create_from_verts(verts: &[Vec3]) -> Self {
-        let mut min = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
-        let mut max = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
-
-        //Bruteforcing is ok sometimes!
-        for vert in verts {
-            if vert[0] > max[0] {
-                max[0] = vert[0];
-            }
-            if vert[1] > max[1] {
-                max[1] = vert[1];
-            }
-            if vert[2] > max[2] {
-                max[2] = vert[2];
-            }
-
-            if vert[0] < min[0] {
-                min[0] = vert[0];
-            }
-            if vert[1] < min[1] {
-                min[1] = vert[1];
-            }
-            if vert[2] < min[2] {
-                min[2] = vert[2];
-            }
-        }
+        let (min, max) = compute_bounds(verts);
         let extent = (max - min).mul(0.5);
         Self {
             center: min + extent,
