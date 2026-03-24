@@ -45,14 +45,10 @@
 //! let storage_descriptor = storage_manager.create_descriptor_set(&context, desc_layout)?;
 //!
 //! // Update frame uniforms (once per frame)
-//! storage_manager.update_frame(&view_matrix, &proj_matrix);
+//! storage_manager.update_frame_with_lighting(frame_idx, &view_matrix, &proj_matrix, ...);
 //!
 //! // Update object uniforms (per draw call)
-//! let object_index = 0;
-//! storage_manager.update_object(object_index, &model_matrix, &[1.0, 0.0, 0.0, 1.0]);
-//!
-//! // Or with PBR material params
-//! storage_manager.update_object_with_material(index, &model, &color, 0.5, 0.3, 1.0);
+//! storage_manager.update_object_bindless(frame_idx, 0, &model_matrix, &[1.0, 0.0, 0.0, 1.0], ...);
 //!
 //! // Bind in render loop - object index comes from first_instance in draw call
 //! pipeline.bind_with_storage(command_buffer, storage_descriptor.set());
@@ -64,25 +60,6 @@ use std::rc::Rc;
 use super::super::context::VulkanContext;
 use crate::RendererError;
 use crate::vulkan::bda::DeviceAddressBuffer;
-
-/// Object data for bulk storage buffer updates.
-///
-/// Used by `update_objects_bulk` to efficiently write multiple objects at once.
-/// Matches the layout of InstanceData but without exposing Vulkan types.
-#[derive(Clone, Copy, Debug)]
-#[allow(dead_code)]
-pub struct ObjectData {
-    /// Model matrix (object to world) - column-major [f32; 16]
-    pub model_matrix: [f32; 16],
-    /// Base color tint (RGBA)
-    pub color: [f32; 4],
-    /// PBR metallic factor (0.0 = dielectric, 1.0 = metal)
-    pub metallic: f32,
-    /// PBR roughness factor (0.0 = smooth, 1.0 = rough)
-    pub roughness: f32,
-    /// Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
-    pub ao: f32,
-}
 
 /// Storage buffer descriptor set for uniform buffers.
 ///
@@ -223,7 +200,7 @@ impl StorageDescriptorSet {
 /// Padded to 320 to ensure OBJECT_ARRAY_OFFSET is a multiple of 64
 /// (minStorageBufferOffsetAlignment).
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)] // NB: Dead code since we only use this for sizes
+#[allow(dead_code)]
 pub struct FrameUniforms {
     /// View matrix (world-to-camera transform) - column-major.
     pub view: [f32; 16],
@@ -258,7 +235,7 @@ pub struct FrameUniforms {
 ///
 /// Total: 112 bytes (1 × mat4x4 + 3 × vec4).
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)] // NB: Dead code since we only use this for sizes
+#[allow(dead_code)]
 pub struct ObjectUniforms {
     /// Model matrix (object-to-world transform) - column-major.
     pub model: [f32; 16],
@@ -325,7 +302,6 @@ pub struct StorageUniformManager {
     buffers: Vec<DeviceAddressBuffer>,
 }
 
-#[allow(dead_code)]
 impl StorageUniformManager {
     /// Create a new storage uniform manager with per-frame buffers.
     ///
@@ -354,11 +330,6 @@ impl StorageUniformManager {
         Ok(Self { buffers })
     }
 
-    /// Get the number of frames in flight.
-    pub fn frames_in_flight(&self) -> usize {
-        self.buffers.len()
-    }
-
     /// Update frame uniforms (view, projection, and lighting).
     ///
     /// This writes the frame data to the start of the specified frame's buffer
@@ -368,25 +339,6 @@ impl StorageUniformManager {
     /// * `frame_index` - Frame index (0 to frames_in_flight-1)
     /// * `view` - View matrix (world-to-camera)
     /// * `proj` - Projection matrix (camera-to-clip)
-    pub fn update_frame(&mut self, frame_index: usize, view: &[f32; 16], proj: &[f32; 16]) {
-        // Default inverse VP (identity - won't work correctly for sky)
-        let default_inv_vp = [0.0f32; 16];
-
-        // Use default lighting when only view/proj provided
-        // Light direction points TO the light (upward for sun/sky)
-        self.update_frame_with_lighting(
-            frame_index,
-            view,
-            proj,
-            &default_inv_vp,
-            &[0.0, 0.0, 0.0, 0.0], // camera_position (will be computed from view inverse)
-            &[0.3, 1.0, 0.2, 0.0], // light_direction (upward toward sun)
-            &[1.0, 0.98, 0.95, 0.0], // light_color (slightly warm white)
-            [3.0, 0.0, 0.0, 0.0],  // light_intensity (HDR - brighter for PBR)
-            [0, 0, 0, 0],          // tiles (no light culling by default)
-        );
-    }
-
     /// Update frame uniforms with full lighting parameters.
     ///
     /// # Arguments
@@ -468,16 +420,6 @@ impl StorageUniformManager {
     ///
     /// # Panics
     /// Panics if index >= 256
-    pub fn update_object(
-        &mut self,
-        frame_index: usize,
-        index: usize,
-        model: &[f32; 16],
-        color: &[f32; 4],
-    ) {
-        // Use default PBR material params
-        self.update_object_with_material(frame_index, index, model, color, 0.0, 0.5, 1.0);
-    }
     /// Update object uniforms with PBR material parameters.
     ///
     /// # Arguments
@@ -489,29 +431,6 @@ impl StorageUniformManager {
     /// * `roughness` - Roughness factor (0.0 = smooth, 1.0 = rough)
     /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
     #[allow(clippy::too_many_arguments)]
-    pub fn update_object_with_material(
-        &mut self,
-        frame_index: usize,
-        index: usize,
-        model: &[f32; 16],
-        color: &[f32; 4],
-        metallic: f32,
-        roughness: f32,
-        ao: f32,
-    ) {
-        // Default normal_scale to 1.0
-        self.update_object_with_material_full(
-            frame_index,
-            index,
-            model,
-            color,
-            metallic,
-            roughness,
-            ao,
-            1.0,
-        );
-    }
-
     /// Update object uniforms with full PBR material parameters including normal scale.
     ///
     /// # Arguments
@@ -524,31 +443,6 @@ impl StorageUniformManager {
     /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
     /// * `emission_idx` - Emission texture index for bindless (0 = no emission)
     #[allow(clippy::too_many_arguments)]
-    pub fn update_object_with_material_full(
-        &mut self,
-        frame_index: usize,
-        index: usize,
-        model: &[f32; 16],
-        color: &[f32; 4],
-        metallic: f32,
-        roughness: f32,
-        ao: f32,
-        emission_idx: f32,
-    ) {
-        // Default texture indices (0 = no texture / use default)
-        self.update_object_bindless(
-            frame_index,
-            index,
-            model,
-            color,
-            metallic,
-            roughness,
-            ao,
-            emission_idx,
-            [0, 0, 0, 0], // albedo, normal, mr, ao indices
-        );
-    }
-
     /// Update object uniforms with bindless texture indices.
     ///
     /// # Arguments
@@ -596,62 +490,6 @@ impl StorageUniformManager {
         }
         // Flush object data to make CPU writes visible to GPU
         buffer.flush(offset as u64, std::mem::size_of::<ObjectUniforms>() as u64);
-    }
-
-    /// Bulk update multiple objects at once for efficient instancing.
-    ///
-    /// This is more efficient than calling `update_object_bindless` multiple times
-    /// because it maps the buffer only once and writes all data in a batch.
-    ///
-    /// # Arguments
-    /// * `frame_index` - Frame index (0 to frames_in_flight-1)
-    /// * `start_index` - First object index to update
-    /// * `objects` - Slice of object data to write (must fit within MAX_OBJECTS)
-    ///
-    /// # Panics
-    /// Panics if start_index + objects.len() >= MAX_OBJECTS
-    pub fn update_objects_bulk(
-        &mut self,
-        frame_index: usize,
-        start_index: usize,
-        objects: &[ObjectData],
-    ) {
-        let end_index = start_index + objects.len();
-        assert!(
-            end_index <= StorageUniformLayout::MAX_OBJECTS,
-            "Bulk update exceeds MAX_OBJECTS"
-        );
-
-        // Map buffer once and write all objects
-        let buffer = &mut self.buffers[frame_index];
-        unsafe {
-            let mapped = buffer.map();
-            let base_ptr = mapped.as_ptr() as usize + StorageUniformLayout::OBJECT_ARRAY_OFFSET;
-
-            for (i, obj) in objects.iter().enumerate() {
-                let offset = i * StorageUniformLayout::OBJECT_STRIDE;
-                let object_ptr = (base_ptr + offset) as *mut ObjectUniforms;
-                *object_ptr = ObjectUniforms {
-                    model: obj.model_matrix,
-                    base_color: obj.color,
-                    material_params: [obj.metallic, obj.roughness, obj.ao, 0.0],
-                    texture_indices: [0, 1, 2, 3], // albedo, normal, mr, ao
-                };
-            }
-        }
-    }
-
-    /// Get the maximum number of objects supported.
-    #[inline]
-    pub fn max_objects(&self) -> usize {
-        StorageUniformLayout::MAX_OBJECTS
-    }
-
-    /// Check if buffers are persistently mapped.
-    #[inline]
-    #[allow(dead_code)]
-    pub fn is_persistent(&self) -> bool {
-        self.buffers.first().is_some_and(|b| b.is_persistent())
     }
 
     /// Get buffer handle for a specific frame (for descriptor set initialization).

@@ -10,9 +10,10 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::ModifiersState;
 use winit::window::Window;
 
+use super::camera::Camera;
+
 use crate::{
     application::{Application, ApplicationInfo},
-    entities::Camera,
     error::AppResult,
     gui_state::GuiState,
     input::InputMapper,
@@ -619,7 +620,6 @@ impl ApplicationBuilder {
             thumbnail_texture_handles: HashMap::new(),
             start_time: Instant::now(),
             default_material_handle: katla_gfx::MaterialHandle::NONE,
-            pending_readback: None,
             cleaned_up: false,
             particle_system: crate::systems::ParticleSystem::new(),
             particle_readback_pending: false,

@@ -110,12 +110,6 @@ impl DeviceAddressBuffer {
         }
     }
 
-    /// Check if this buffer is persistently mapped.
-    #[inline]
-    pub fn is_persistent(&self) -> bool {
-        self.is_persistent
-    }
-
     /// Flush a range of mapped memory to make CPU writes visible to the GPU.
     ///
     /// # Arguments

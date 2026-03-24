@@ -200,11 +200,6 @@ impl UiContext {
         self.font_scale = scale.clamp(0.5, 3.0);
     }
 
-    /// Get the current font scale multiplier.
-    pub(crate) fn font_scale(&self) -> f32 {
-        self.font_scale
-    }
-
     /// Convert a FontSize to scaled pixels using current font_scale.
     pub fn scaled_font_size(&self, size: crate::style::FontSize) -> f32 {
         size.to_pixels_scaled(self.font_scale)
@@ -280,12 +275,6 @@ impl UiContext {
     #[inline]
     pub fn scale_factor(&self) -> f32 {
         self.scale_factor
-    }
-
-    /// Scale a logical pixel value to physical pixels.
-    #[inline]
-    pub(crate) fn scale(&self, logical: f32) -> f32 {
-        logical * self.scale_factor
     }
 
     /// Set the mouse cursor type.

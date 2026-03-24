@@ -19,7 +19,6 @@
 //! ```
 
 mod api;
-mod combo;
 mod internal;
 mod menu;
 mod types;

@@ -12,22 +12,17 @@ use core::arch::x86::*;
 use crate::{Mat3, Mat4, Vec3, Vec4};
 use core::{f32, ops::Index, ops::Mul};
 
-#[allow(dead_code)]
 const QUAT_NORMALIZED_THRESHOLD: f32 = 0.001;
 
 // SSE shuffle control masks - _mm_shuffle_ps(dest, src, mask)
 // Mask format: [dest[3] dest[2] src[1] src[0]] where each nibble selects an element
-#[allow(dead_code)]
 const SHUFFLE_Y: i32 = 0b01_01_01_01; // Broadcast element 1 (y)
-#[allow(dead_code)]
 const SHUFFLE_Z: i32 = 0b10_10_10_10; // Broadcast element 2 (z)
-#[allow(dead_code)]
 const SHUFFLE_W: i32 = 0b11_11_11_11; // Broadcast element 3 (w)
 
 /// Quaternion - SSE implementation
 #[derive(Debug, Clone, Copy)]
 #[repr(C, align(16))]
-#[allow(dead_code)]
 pub struct Quat(pub __m128);
 
 impl Index<usize> for Quat {
@@ -50,7 +45,6 @@ impl Default for Quat {
     }
 }
 
-#[allow(dead_code)]
 impl Quat {
     #[inline]
     pub fn new() -> Quat {
@@ -68,13 +62,11 @@ impl Quat {
     }
 
     #[inline]
-    #[allow(dead_code)]
     fn x(&self) -> f32 {
         unsafe { _mm_cvtss_f32(self.0) }
     }
 
     #[inline]
-    #[allow(dead_code)]
     fn y(&self) -> f32 {
         unsafe {
             let swapped = _mm_shuffle_ps(self.0, self.0, SHUFFLE_Y);
@@ -83,7 +75,6 @@ impl Quat {
     }
 
     #[inline]
-    #[allow(dead_code)]
     fn z(&self) -> f32 {
         unsafe {
             let swapped = _mm_shuffle_ps(self.0, self.0, SHUFFLE_Z);
@@ -92,7 +83,6 @@ impl Quat {
     }
 
     #[inline]
-    #[allow(dead_code)]
     fn w(&self) -> f32 {
         unsafe {
             let swapped = _mm_shuffle_ps(self.0, self.0, SHUFFLE_W);

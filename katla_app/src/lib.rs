@@ -1,9 +1,6 @@
-#![allow(dead_code)]
-
 pub mod animation;
 pub mod application;
 pub mod components;
-pub mod entities;
 pub mod error;
 pub mod gui_state;
 pub mod input;
@@ -17,7 +14,6 @@ mod util;
 
 pub use error::{AppError, AppResult};
 pub use gui_state::GuiState;
-pub use katla_gfx::renderer::FrameUniforms;
 
 pub use preferences::Preferences;
 pub use rendering::FrameContext;

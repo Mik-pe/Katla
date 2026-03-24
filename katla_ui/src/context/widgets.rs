@@ -2,25 +2,20 @@
 //!
 //! This module provides:
 //! - **Interaction helpers**: `click_behavior()`, `is_hovered()`, `update_hover()`
-//! - **Convenience methods**: `button_auto()` for auto-layout
 //! - **Internal implementations**: Organized into submodules by widget category
 //!
 //! # Architecture
 //!
-//! ## Three-Layer Widget System
+//! ## Two-Layer Widget System
 //!
 //! 1. **Public Builder Widgets** (`crate::widgets`)
 //!    - User-facing builder pattern: `Button::new("Click").bounds(my_bounds)`
 //!    - Ergonomic, composable, discoverable API
 //!
 //! 2. **Internal Implementations** (submodules here)
-//!    - Actual rendering logic: `UiContext::button()`, `UiContext::checkbox()`
+//!    - Actual rendering logic: `UiContext::button_with_colors()`, `UiContext::checkbox()`
 //!    - Private implementation details
 //!    - Called by builder widgets via the `Widget` trait
-//!
-//! 3. **Convenience Methods** (here)
-//!    - Auto-layout helpers: `UiContext::button_auto()`
-//!    - Simplified common patterns
 //!
 //! # Example Flow
 //!
@@ -30,9 +25,6 @@
 //!
 //! // Button::ui() calls (layer 2)
 //! ui.button_with_colors("Click", my_bounds, None, None)
-//!
-//! // Or convenience method (layer 3)
-//! ui.button_auto("Click")
 //! ```
 
 mod basic;
@@ -105,21 +97,6 @@ impl UiContext {
     // -------------------------------------------------------------------------
     // Convenience Widget Methods (Auto-Layout)
     // -------------------------------------------------------------------------
-
-    pub(crate) fn button_auto(&mut self, text: &str) -> crate::Response {
-        use crate::widgets::Button;
-        let bounds = Rect2D::from_origin_size(
-            self.cursor(),
-            katla_math::Vec2::new(100.0, self.style.button_height_medium),
-        );
-        let response = self.add(Button::new(text).bounds(bounds));
-        // Advance cursor
-        self.cursor = katla_math::Vec2::new(
-            self.cursor.x(),
-            self.cursor.y() + self.style.button_height_medium + self.style.item_spacing,
-        );
-        response
-    }
 
     /// Add a button with custom width at the current cursor position.
     ///

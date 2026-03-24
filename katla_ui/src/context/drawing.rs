@@ -6,7 +6,6 @@ use crate::types::TextureId;
 use katla_math::{Color, Rect2D, Vec2};
 
 use crate::text::{FontId, SubpixelBin};
-use crate::FontSize;
 
 use super::UiContext;
 
@@ -174,11 +173,6 @@ impl UiContext {
             .measure_text(self.current_font, text, size, self.scale_factor)
     }
 
-    /// Measure text dimensions using a predefined font size.
-    pub(crate) fn measure_text_sized(&self, text: &str, size: FontSize) -> Vec2 {
-        self.measure_text(text, size.to_pixels())
-    }
-
     /// Get the font ascent (baseline to font top) in logical pixels.
     ///
     /// This is needed for proper text positioning.
@@ -189,11 +183,6 @@ impl UiContext {
             .unwrap_or(size * 0.75) // Fallback heuristic
     }
 
-    /// Get the font ascent using a predefined font size.
-    pub(crate) fn font_ascent_sized(&self, size: FontSize) -> f32 {
-        self.font_ascent(size.to_pixels())
-    }
-
     /// Get the line height for a font size (ascent - descent + small gap).
     ///
     /// This is used for multiline text spacing.
@@ -202,17 +191,6 @@ impl UiContext {
             .get_font_metrics(self.current_font, size, self.scale_factor)
             .map(|(ascent, descent, line_gap)| ascent - descent + line_gap)
             .unwrap_or(size * 1.2) // Fallback heuristic
-    }
-
-    /// Draw text using a predefined font size.
-    pub(crate) fn draw_text_sized(
-        &mut self,
-        text: &str,
-        position: Vec2,
-        color: Color,
-        size: FontSize,
-    ) {
-        self.draw_text(text, position, color, size.to_pixels())
     }
 
     /// Draw an icon from an icon font (like ForkAwesome).
@@ -320,26 +298,8 @@ impl UiContext {
         self.current_font = prev_font;
     }
 
-    /// Measure an icon's dimensions.
-    pub(crate) fn measure_icon(&mut self, icon: char, size: f32) -> Vec2 {
-        let prev_font = self.current_font;
-        self.current_font = FontId::ICON;
-
-        let mut buf = [0u8; 4];
-        let icon_str = icon.encode_utf8(&mut buf);
-        let dims = self.measure_text(icon_str, size);
-
-        self.current_font = prev_font;
-        dims
-    }
-
     pub fn set_font(&mut self, font_id: FontId) {
         self.current_font = font_id;
-    }
-
-    /// Get the current font ID.
-    pub(crate) fn current_font(&self) -> FontId {
-        self.current_font
     }
 
     // -------------------------------------------------------------------------
@@ -365,93 +325,7 @@ impl UiContext {
         text_x + self.measure_text(text, text_size).x()
     }
 
-    /// Draw an icon with text centered horizontally within bounds.
-    ///
-    /// Returns the y position after the content (for chaining vertically).
-    pub(crate) fn draw_icon_text_centered(
-        &mut self,
-        icon: char,
-        text: &str,
-        bounds: Rect2D,
-        icon_size: f32,
-        font_size: f32,
-        color: Color,
-    ) -> f32 {
-        let text_measure = self.measure_text(text, font_size);
-        let total_width = icon_size + 4.0 + text_measure.x();
-        let start_x = bounds.center().x() - total_width * 0.5;
-        let text_y = bounds.center().y() - text_measure.y() * 0.5;
-
-        self.draw_icon(icon, Vec2::new(start_x, text_y), icon_size, color);
-        self.draw_text(
-            text,
-            Vec2::new(start_x + icon_size + 4.0, text_y),
-            color,
-            font_size,
-        );
-
-        text_y + text_measure.y()
-    }
-
     // -------------------------------------------------------------------------
     // Widget Size Query Helpers
     // -------------------------------------------------------------------------
-
-    /// Calculate the size needed for a button with the given text.
-    ///
-    /// Returns the size including padding.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let btn_size = ui.button_size("Save Changes");
-    /// let bounds = Rect2D::from_origin_size(cursor, btn_size);
-    /// ui.add(Button::new("Save Changes").bounds(bounds));
-    /// ```
-    pub(crate) fn button_size(&self, text: &str) -> Vec2 {
-        let text_size = self.measure_text(text, self.style.font_size);
-        let padding = self.style.text_input_padding * 2.0;
-        Vec2::new(
-            text_size.x() + padding + 16.0, // extra space for aesthetics
-            self.style.button_height_medium,
-        )
-    }
-
-    /// Calculate the size needed for a checkbox with label.
-    ///
-    /// Returns the size including the checkbox box and label text.
-    pub(crate) fn checkbox_size(&self, label: &str) -> Vec2 {
-        let text_size = self.measure_text(label, self.style.font_size);
-        Vec2::new(
-            self.style.checkbox_size + 8.0 + text_size.x(),
-            self.style.checkbox_size.max(text_size.y()),
-        )
-    }
-
-    /// Calculate the size needed for a text input with placeholder.
-    ///
-    /// Returns the size that would fit the placeholder text or minimum width.
-    pub(crate) fn text_input_size(&self, placeholder: &str, min_width: f32) -> Vec2 {
-        let text_size = self.measure_text(placeholder, self.style.font_size);
-        let width = text_size.x() + self.style.text_input_padding * 2.0 + 8.0;
-        Vec2::new(width.max(min_width), self.style.button_height_medium)
-    }
-
-    /// Calculate the size needed for a label.
-    ///
-    /// Returns the size of the text.
-    pub(crate) fn label_size(&self, text: &str) -> Vec2 {
-        self.measure_text(text, self.style.font_size)
-    }
-
-    /// Calculate the size needed for a labeled separator.
-    ///
-    /// Returns the size including the separator line and label.
-    pub(crate) fn separator_size(&self, label: Option<&str>, width: f32) -> Vec2 {
-        let height = if label.is_some() {
-            self.scaled_font_size(crate::FontSize::Small) + 8.0
-        } else {
-            8.0
-        };
-        Vec2::new(width, height)
-    }
 }

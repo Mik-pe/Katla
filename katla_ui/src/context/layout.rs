@@ -61,15 +61,6 @@ impl UiContext {
             .unwrap_or(self.cursor)
     }
 
-    /// Move cursor to next line.
-    pub(crate) fn newline(&mut self) {
-        self.cursor = Vec2::new(
-            0.0,
-            self.cursor.y() + self.row_height + self.style.item_spacing,
-        );
-        self.row_height = 0.0;
-    }
-
     /// Get bounds for the next item in a horizontal layout.
     pub(crate) fn next_item(&mut self, size: Vec2) -> Rect2D {
         let bounds = Rect2D::from_origin_size(self.cursor, size);
@@ -79,11 +70,6 @@ impl UiContext {
         );
         self.row_height = self.row_height.max(size.y());
         bounds
-    }
-
-    /// Begin a horizontal layout row.
-    pub(crate) fn layout_row(&mut self, height: f32) {
-        self.row_height = height;
     }
 
     /// Add a spacer of the given width (in horizontal layout) or height (in vertical layout).
@@ -219,39 +205,6 @@ impl UiContext {
         );
     }
 
-    /// Begin a columned layout.
-    ///
-    /// Divides the available width into `count` columns and calls the closure
-    /// for each column with the column index.
-    ///
-    /// # Example
-    /// ```ignore
-    /// ui.columns(3, |ui, col| {
-    ///     match col {
-    ///         0 => ui.label("Column 1", bounds),
-    ///         1 => ui.label("Column 2", bounds),
-    ///         2 => ui.label("Column 3", bounds),
-    ///         _ => {}
-    ///     }
-    /// });
-    /// ```
-    pub(crate) fn columns<F>(&mut self, count: usize, mut f: F)
-    where
-        F: FnMut(&mut Self, usize),
-    {
-        let start_cursor = self.cursor;
-        let available_width = self.screen_size.x() - start_cursor.x();
-        let column_width = available_width / count as f32;
-
-        for i in 0..count {
-            self.cursor = Vec2::new(start_cursor.x() + i as f32 * column_width, start_cursor.y());
-            f(self, i);
-        }
-
-        // Reset cursor to below all columns
-        self.cursor = Vec2::new(start_cursor.x(), start_cursor.y() + self.row_height);
-    }
-
     /// Get bounds for the next item in the current layout (if any).
     ///
     /// Returns bounds with automatic position based on layout direction.
@@ -286,40 +239,9 @@ impl UiContext {
         }
     }
 
-    /// Check if we're inside a layout container.
-    pub(crate) fn in_layout(&self) -> bool {
-        !self.layout_stack.is_empty()
-    }
-
-    /// Get the current layout direction (if any).
-    pub(crate) fn layout_direction(&self) -> Option<LayoutDirection> {
-        self.layout_stack.last().map(|l| l.direction)
-    }
-
     // -------------------------------------------------------------------------
     // Convenience Layout Helpers
     // -------------------------------------------------------------------------
-
-    /// Move cursor back to continue on the same line.
-    ///
-    /// After calling `newline()` or adding vertical widgets, this moves
-    /// the cursor back up to continue adding widgets horizontally.
-    ///
-    /// # Example
-    /// ```ignore
-    /// ui.label("Name:", bounds1);
-    /// ui.same_line();
-    /// ui.text_input("name", &mut name, bounds2);
-    /// ```
-    pub(crate) fn same_line(&mut self) {
-        if self.row_height > 0.0 {
-            // Move cursor back up to the current row
-            self.cursor = Vec2::new(
-                self.cursor.x(),
-                self.cursor.y() - self.row_height - self.style.item_spacing,
-            );
-        }
-    }
 
     /// Add spacing in the current layout direction.
     ///
@@ -346,62 +268,6 @@ impl UiContext {
             // Default to vertical spacing when no layout is active
             self.cursor = Vec2::new(self.cursor.x(), self.cursor.y() + amount);
         }
-    }
-
-    /// Indent the cursor by a given amount (horizontal offset).
-    ///
-    /// Useful for creating hierarchical UIs or nested content.
-    ///
-    /// # Example
-    /// ```ignore
-    /// ui.indent(20.0);
-    /// ui.label("Nested content", bounds);
-    /// ```
-    pub(crate) fn indent(&mut self, amount: f32) {
-        if let Some(layout) = self.layout_stack.last_mut() {
-            layout.cursor = Vec2::new(layout.cursor.x() + amount, layout.cursor.y());
-        } else {
-            self.cursor = Vec2::new(self.cursor.x() + amount, self.cursor.y());
-        }
-    }
-
-    /// Unindent the cursor by a given amount (horizontal offset).
-    ///
-    /// Moves the cursor left by the specified amount.
-    pub(crate) fn unindent(&mut self, amount: f32) {
-        if let Some(layout) = self.layout_stack.last_mut() {
-            layout.cursor = Vec2::new(layout.cursor.x() - amount, layout.cursor.y());
-        } else {
-            self.cursor = Vec2::new(self.cursor.x() - amount, self.cursor.y());
-        }
-    }
-
-    /// Execute a closure with an indented cursor, automatically restoring after.
-    ///
-    /// This is an RAII-style helper that ensures the cursor is restored
-    /// even if the closure panics.
-    ///
-    /// # Example
-    /// ```ignore
-    /// ui.with_indent(20.0, |ui| {
-    ///     ui.label("Nested item 1", bounds1);
-    ///     ui.label("Nested item 2", bounds2);
-    /// }); // cursor automatically restored
-    /// ```
-    pub(crate) fn with_indent<F, R>(&mut self, amount: f32, f: F) -> R
-    where
-        F: FnOnce(&mut Self) -> R,
-    {
-        let original_x = self.cursor().x();
-        self.indent(amount);
-        let result = f(self);
-        // Restore: move back by amount from current position
-        if let Some(layout) = self.layout_stack.last_mut() {
-            layout.cursor = Vec2::new(original_x, layout.cursor.y());
-        } else {
-            self.cursor = Vec2::new(original_x, self.cursor.y());
-        }
-        result
     }
 
     /// Begin a horizontal row layout from the current cursor position.
@@ -586,41 +452,5 @@ impl UiContext {
                 layout.cursor.y() + item_height + layout.spacing,
             );
         }
-    }
-
-    /// Grid layout with automatic column calculation based on available width.
-    ///
-    /// This is a convenience wrapper that creates a grid with as many columns
-    /// as fit in the available width.
-    ///
-    /// # Arguments
-    /// * `item_width` - Width of each grid item
-    /// * `item_height` - Height of each grid item
-    /// * `spacing` - Spacing between items
-    /// * `available_width` - Total width available for the grid
-    ///
-    /// # Returns
-    /// The number of columns that fit
-    ///
-    /// # Example
-    /// ```ignore
-    /// let cols = ui.auto_grid(64.0, 24.0, 8.0, 400.0);
-    /// for item in items {
-    ///     let bounds = ui.grid_item(Vec2::new(64.0, 24.0));
-    ///     ui.add(Button::new(item.name).bounds(bounds));
-    /// }
-    /// ui.end_grid();
-    /// ```
-    pub(crate) fn auto_grid(
-        &mut self,
-        item_width: f32,
-        item_height: f32,
-        spacing: f32,
-        available_width: f32,
-    ) -> usize {
-        let item_with_spacing = item_width + spacing;
-        let columns = ((available_width + spacing) / item_with_spacing).max(1.0) as usize;
-        self.begin_grid(columns, item_width, item_height, spacing);
-        columns
     }
 }

@@ -135,6 +135,7 @@ impl AnimationUpdateSystem {
 
 #[derive(Default)]
 pub struct SkeletalAnimationSystem {
+    #[allow(dead_code)]
     sample_buffer: SampleBuffer,
 }
 
