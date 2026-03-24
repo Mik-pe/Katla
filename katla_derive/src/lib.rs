@@ -37,15 +37,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics Component for #name #ty_generics #where_clause {
-            fn as_any(&self) -> &dyn ::std::any::Any {
-                self
-            }
-
-            fn as_any_mut(&mut self) -> &mut dyn ::std::any::Any {
-                self
-            }
-        }
+        impl #impl_generics Component for #name #ty_generics #where_clause {}
     };
 
     TokenStream::from(expanded)

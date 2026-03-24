@@ -4,7 +4,7 @@ pub mod input;
 pub mod query;
 pub mod resource;
 pub mod spawn;
-pub mod storage;
+pub(crate) mod storage;
 pub mod system;
 pub mod world;
 

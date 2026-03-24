@@ -68,15 +68,6 @@ where
         }
     }
 
-    /// Creates a new SparseSet with the specified capacity.
-    #[allow(dead_code)]
-    pub fn with_capacity(dense_capacity: usize, sparse_capacity: usize) -> Self {
-        Self {
-            dense: Vec::with_capacity(dense_capacity),
-            sparse: HashMap::with_capacity(sparse_capacity),
-        }
-    }
-
     /// Inserts or updates a key-value pair.
     ///
     /// If the key already exists, the value is updated.
@@ -200,18 +191,6 @@ where
                 i += 1;
             }
         }
-    }
-
-    /// Returns the capacity of the dense array.
-    #[allow(dead_code)]
-    pub fn dense_capacity(&self) -> usize {
-        self.dense.capacity()
-    }
-
-    /// Returns the capacity of the sparse HashMap.
-    #[allow(dead_code)]
-    pub fn sparse_capacity(&self) -> usize {
-        self.sparse.capacity()
     }
 }
 
@@ -435,14 +414,6 @@ mod tests {
     }
 
     #[test]
-    fn test_sparse_set_with_capacity() {
-        let set: SparseSet<usize, i32> = SparseSet::with_capacity(10, 10);
-        assert!(set.is_empty());
-        assert!(set.dense_capacity() >= 10);
-        assert!(set.sparse_capacity() >= 10);
-    }
-
-    #[test]
     fn test_sparse_set_iteration_order_after_removal() {
         let mut set = SparseSet::new();
         set.insert(0, 10);
@@ -456,16 +427,6 @@ mod tests {
         // Last element was moved to position 1
         assert_eq!(items[0], (0, 10));
         assert_eq!(items[1], (2, 30));
-    }
-
-    #[test]
-    fn test_sparse_set_capacity_methods() {
-        let mut set = SparseSet::new();
-        set.insert(0, 10);
-        set.insert(1, 20);
-
-        assert!(set.dense_capacity() >= 2);
-        assert!(set.sparse_capacity() >= 2);
     }
 
     #[test]

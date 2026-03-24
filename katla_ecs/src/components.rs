@@ -19,10 +19,4 @@ pub use katla_derive::Component;
 ///     max: f32,
 /// }
 /// ```
-pub trait Component: Any {
-    /// Converts the component to an Any reference for downcasting.
-    fn as_any(&self) -> &dyn Any;
-
-    /// Converts the component to a mutable Any reference for downcasting.
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-}
+pub trait Component: Any {}
