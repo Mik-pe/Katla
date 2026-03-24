@@ -5,24 +5,24 @@ authors = ["Mik-pe <mikael.pettersson201@gmail.com>"]
 edition = "2021"
 
 [dependencies]
-katla_math = { path = "../katla_math" }
-katla_gfx = { path = "../katla_gfx" }
-katla_ecs = { path = "../katla_ecs" }
-katla_ui = { path = "../katla_ui" }
-katla_derive = { path = "../katla_derive" }
-ash = "0.38"
-bytemuck = { version = "*", features = ["derive"] }
-byteorder = "1.3"
-winit = "^0.30"
-image = "^0.25"
-env_logger = "^0.11"
-gltf = { version = "^1.4", features = ["KHR_materials_pbrSpecularGlossiness"] }
-notify = "7.0"
-itertools = "0.14.0"
-approx = "0.5"
-log = "0.4"
-clap = { version = "4.5", features = ["derive"] }
-dirs = "6.0.0"
-png = "0.18.1"
-serde = { version = "*", features = ["derive"] }
-serde_json = "*"
+katla_math = { workspace = true }
+katla_gfx = { workspace = true }
+katla_ecs = { workspace = true }
+katla_ui = { workspace = true }
+katla_derive = { workspace = true }
+ash = { workspace = true }
+bytemuck = { workspace = true }
+byteorder = { workspace = true }
+winit = { workspace = true }
+image = { workspace = true }
+env_logger = { workspace = true }
+gltf = { workspace = true }
+notify = { workspace = true }
+itertools = { workspace = true }
+approx = { workspace = true }
+log = { workspace = true }
+clap = { workspace = true }
+dirs = { workspace = true }
+png = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
