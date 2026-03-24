@@ -52,6 +52,8 @@ impl Ray {
         // Slab method for ray-AABB intersection
         let mut t_min = f32::NEG_INFINITY;
         let mut t_max = f32::INFINITY;
+        let mut hit_axis = 0usize;
+        let mut hit_sign = 1.0f32;
 
         let inv_dir = Vec3::new(
             if self.direction.x() != 0.0 {
@@ -107,9 +109,17 @@ impl Ray {
             let t1 = (min - origin) * inv_d;
             let t2 = (max - origin) * inv_d;
 
-            let (t_near, t_far) = if t1 < t2 { (t1, t2) } else { (t2, t1) };
+            let (t_near, t_far, sign) = if t1 < t2 {
+                (t1, t2, 1.0)
+            } else {
+                (t2, t1, -1.0)
+            };
 
-            t_min = t_min.max(t_near);
+            if t_near > t_min {
+                t_min = t_near;
+                hit_axis = i;
+                hit_sign = sign;
+            }
             t_max = t_max.min(t_far);
 
             if t_min > t_max {
@@ -117,21 +127,26 @@ impl Ray {
             }
         }
 
+        let normal = match hit_axis {
+            0 => Vec3::new(hit_sign, 0.0, 0.0),
+            1 => Vec3::new(0.0, hit_sign, 0.0),
+            _ => Vec3::new(0.0, 0.0, hit_sign),
+        };
+
         if t_min < 0.0 {
             if t_max < 0.0 {
                 return None;
             }
-            // Inside the box
             Some(RayIntersection {
                 point: self.at(t_max),
                 distance: t_max,
-                normal: Vec3::new(0.0, 1.0, 0.0), // Simplified
+                normal: -normal,
             })
         } else {
             Some(RayIntersection {
                 point: self.at(t_min),
                 distance: t_min,
-                normal: Vec3::new(0.0, 1.0, 0.0), // Simplified
+                normal,
             })
         }
     }

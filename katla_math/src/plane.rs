@@ -131,9 +131,13 @@ impl Plane {
         let point_on_plane = self.normal * self.distance;
         let transformed_point = *matrix * point_on_plane;
 
-        // Transform the normal (using inverse transpose for correct transformation)
-        let normal = self.normal; // This will be transformed correctly below
-        let transformed_normal = matrix.to_mat3() * normal;
+        // Transform the normal using the inverse transpose of the matrix
+        // This correctly handles non-uniform scaling
+        let inv_transpose = matrix.to_mat3().inverse().map(|m| m.transpose());
+        let transformed_normal = match inv_transpose {
+            Some(m) => m * self.normal,
+            None => self.normal,
+        };
 
         Plane::from_point_normal(transformed_point, transformed_normal)
     }

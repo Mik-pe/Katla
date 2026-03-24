@@ -218,6 +218,25 @@ impl Quat {
     }
 
     pub fn make_mat4(&self) -> Mat4 {
+        let (m00, m01, m02, m10, m11, m12, m20, m21, m22) = self.rotation_matrix_elements();
+
+        Mat4([
+            Vec4::new(m00, m01, m02, 0.0),
+            Vec4::new(m10, m11, m12, 0.0),
+            Vec4::new(m20, m21, m22, 0.0),
+            Vec4::new(0.0, 0.0, 0.0, 1.0),
+        ])
+    }
+
+    pub fn to_mat3(self) -> Mat3 {
+        let (m00, m01, m02, m10, m11, m12, m20, m21, m22) = self.rotation_matrix_elements();
+
+        Mat3::from_elements(m00, m01, m02, m10, m11, m12, m20, m21, m22)
+    }
+
+    /// Compute the 9 elements of the 3x3 rotation matrix from this quaternion.
+    /// Returns (m00, m01, m02, m10, m11, m12, m20, m21, m22).
+    fn rotation_matrix_elements(&self) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32) {
         let x = self.x();
         let y = self.y();
         let z = self.z();
@@ -237,45 +256,17 @@ impl Quat {
         let wy = w * y2;
         let wz = w * z2;
 
-        Mat4([
-            Vec4::new(1.0 - (yy + zz), xy + wz, xz - wy, 0.0),
-            Vec4::new(xy - wz, 1.0 - (xx + zz), yz + wx, 0.0),
-            Vec4::new(xz + wy, yz - wx, 1.0 - (xx + yy), 0.0),
-            Vec4::new(0.0, 0.0, 0.0, 1.0),
-        ])
-    }
+        let m00 = 1.0 - (yy + zz);
+        let m01 = xy + wz;
+        let m02 = xz - wy;
+        let m10 = xy - wz;
+        let m11 = 1.0 - (xx + zz);
+        let m12 = yz + wx;
+        let m20 = xz + wy;
+        let m21 = yz - wx;
+        let m22 = 1.0 - (xx + yy);
 
-    pub fn to_mat3(self) -> Mat3 {
-        let x = self[0];
-        let y = self[1];
-        let z = self[2];
-        let w = self[3];
-
-        let x2 = x + x;
-        let y2 = y + y;
-        let z2 = z + z;
-
-        let xx = x * x2;
-        let xy = x * y2;
-        let xz = x * z2;
-        let yy = y * y2;
-        let yz = y * z2;
-        let zz = z * z2;
-        let wx = w * x2;
-        let wy = w * y2;
-        let wz = w * z2;
-
-        Mat3::from_elements(
-            1.0 - (yy + zz),
-            xy + wz,
-            xz - wy,
-            xy - wz,
-            1.0 - (xx + zz),
-            yz + wx,
-            xz + wy,
-            yz - wx,
-            1.0 - (xx + yy),
-        )
+        (m00, m01, m02, m10, m11, m12, m20, m21, m22)
     }
 
     pub fn from_euler(pitch: f32, yaw: f32, roll: f32) -> Quat {
@@ -299,7 +290,7 @@ impl Quat {
         // Pitch (y-axis rotation)
         let sinp = 2.0 * (w * y - z * x);
         let pitch = if f32::abs(sinp) >= 1.0 {
-            std::f32::consts::PI / 2.0 * sinp.copysign(1.0)
+            core::f32::consts::PI / 2.0 * sinp.copysign(1.0)
         } else {
             f32::asin(sinp)
         };

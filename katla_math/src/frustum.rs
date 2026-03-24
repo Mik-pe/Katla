@@ -252,25 +252,29 @@ impl Frustum {
 
     /// Get the 8 corner points of the frustum
     pub fn corners(&self) -> [Vec3; 8] {
-        // Find intersections of the 3 plane triples
+        let origin = Vec3::new(0.0, 0.0, 0.0);
         // Near plane corners
-        let ntl = Self::intersect_three_planes(&self.left, &self.top, &self.near);
-        let ntr = Self::intersect_three_planes(&self.right, &self.top, &self.near);
-        let nbl = Self::intersect_three_planes(&self.left, &self.bottom, &self.near);
-        let nbr = Self::intersect_three_planes(&self.right, &self.bottom, &self.near);
+        let ntl = Self::intersect_three_planes(&self.left, &self.top, &self.near).unwrap_or(origin);
+        let ntr =
+            Self::intersect_three_planes(&self.right, &self.top, &self.near).unwrap_or(origin);
+        let nbl =
+            Self::intersect_three_planes(&self.left, &self.bottom, &self.near).unwrap_or(origin);
+        let nbr =
+            Self::intersect_three_planes(&self.right, &self.bottom, &self.near).unwrap_or(origin);
 
         // Far plane corners
-        let ftl = Self::intersect_three_planes(&self.left, &self.top, &self.far);
-        let ftr = Self::intersect_three_planes(&self.right, &self.top, &self.far);
-        let fbl = Self::intersect_three_planes(&self.left, &self.bottom, &self.far);
-        let fbr = Self::intersect_three_planes(&self.right, &self.bottom, &self.far);
+        let ftl = Self::intersect_three_planes(&self.left, &self.top, &self.far).unwrap_or(origin);
+        let ftr = Self::intersect_three_planes(&self.right, &self.top, &self.far).unwrap_or(origin);
+        let fbl =
+            Self::intersect_three_planes(&self.left, &self.bottom, &self.far).unwrap_or(origin);
+        let fbr =
+            Self::intersect_three_planes(&self.right, &self.bottom, &self.far).unwrap_or(origin);
 
         [ntl, ntr, nbl, nbr, ftl, ftr, fbl, fbr]
     }
 
     /// Find the intersection point of three planes
-    fn intersect_three_planes(p1: &Plane, p2: &Plane, p3: &Plane) -> Vec3 {
-        // Using Cramer's rule to solve the system of 3 plane equations
+    fn intersect_three_planes(p1: &Plane, p2: &Plane, p3: &Plane) -> Option<Vec3> {
         let n1 = p1.normal;
         let n2 = p2.normal;
         let n3 = p3.normal;
@@ -282,12 +286,11 @@ impl Frustum {
         let denom = n1.dot(n2.cross(n3));
 
         if denom.abs() < 1e-6 {
-            // Planes are parallel or intersect in a line
-            return Vec3::new(0.0, 0.0, 0.0);
+            return None;
         }
 
         let num = d1 * n2.cross(n3) + n1 * d2 * n3.cross(n1) + n1.cross(n2) * d3;
-        num / denom
+        Some(num / denom)
     }
 
     /// Calculate the center point of the frustum
