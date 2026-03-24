@@ -57,6 +57,8 @@ pub struct GlobalParticleSystem {
 
     pub(super) simulate_pipeline: Option<PipelineHandle>,
 
+    pub(super) draw_command_pipeline: Option<PipelineHandle>,
+
     pub(super) render_pipeline: Option<PipelineHandle>,
 
     pub(super) compute_descriptor_layout: Option<vk::DescriptorSetLayout>,
@@ -86,13 +88,18 @@ pub struct GlobalParticleSystem {
 
     pub(super) destroyed: bool,
 
-    pub(super) compute_descriptor_set: Option<vk::DescriptorSet>,
+    pub(super) compute_descriptor_sets: [Option<vk::DescriptorSet>; 2],
 
-    pub(super) render_descriptor_set: Option<vk::DescriptorSet>,
+    pub(super) draw_command_descriptor_set: Option<vk::DescriptorSet>,
+    pub(super) draw_command_descriptor_layout: Option<vk::DescriptorSetLayout>,
 
-    pub(super) _compute_descriptor_pool: vk::DescriptorPool,
+    pub(super) render_descriptor_sets: [Option<vk::DescriptorSet>; 2],
 
-    pub(super) _render_descriptor_pool: vk::DescriptorPool,
+    pub(super) _compute_descriptor_pools: [vk::DescriptorPool; 2],
+
+    pub(super) _draw_command_descriptor_pool: vk::DescriptorPool,
+
+    pub(super) _render_descriptor_pools: [vk::DescriptorPool; 2],
 
     pub(super) max_particles: u32,
 
@@ -117,6 +124,7 @@ impl GlobalParticleSystem {
             buffer,
             emit_pipeline: None,
             simulate_pipeline: None,
+            draw_command_pipeline: None,
             render_pipeline: None,
             compute_descriptor_layout: None,
             render_descriptor_layout: None,
@@ -131,10 +139,13 @@ impl GlobalParticleSystem {
             frame_data_buffers: [None, None],
             emitter_configs_buffers: [None, None],
             destroyed: false,
-            compute_descriptor_set: None,
-            render_descriptor_set: None,
-            _compute_descriptor_pool: vk::DescriptorPool::null(),
-            _render_descriptor_pool: vk::DescriptorPool::null(),
+            compute_descriptor_sets: [None, None],
+            draw_command_descriptor_set: None,
+            draw_command_descriptor_layout: None,
+            render_descriptor_sets: [None, None],
+            _compute_descriptor_pools: [vk::DescriptorPool::null(), vk::DescriptorPool::null()],
+            _draw_command_descriptor_pool: vk::DescriptorPool::null(),
+            _render_descriptor_pools: [vk::DescriptorPool::null(), vk::DescriptorPool::null()],
             max_particles,
             estimated_max_alive: max_particles,
             total_emitted: 0,
@@ -145,13 +156,25 @@ impl GlobalParticleSystem {
 
         system.create_descriptor_layouts(context)?;
 
-        let (compute_descriptor_set, compute_pool) = system.create_compute_descriptor_set()?;
-        system.compute_descriptor_set = Some(compute_descriptor_set);
-        system._compute_descriptor_pool = compute_pool;
+        let mut compute_descriptor_sets = [None, None];
+        let mut compute_descriptor_pools = [vk::DescriptorPool::null(), vk::DescriptorPool::null()];
+        for fi in 0..2 {
+            let (ds, pool) = system.create_compute_descriptor_set()?;
+            compute_descriptor_sets[fi] = Some(ds);
+            compute_descriptor_pools[fi] = pool;
+        }
+        system.compute_descriptor_sets = compute_descriptor_sets;
+        system._compute_descriptor_pools = compute_descriptor_pools;
 
-        let (render_descriptor_set, render_pool) = system.create_render_descriptor_set()?;
-        system.render_descriptor_set = Some(render_descriptor_set);
-        system._render_descriptor_pool = render_pool;
+        let mut render_descriptor_sets = [None, None];
+        let mut render_descriptor_pools = [vk::DescriptorPool::null(), vk::DescriptorPool::null()];
+        for fi in 0..2 {
+            let (ds, pool) = system.create_render_descriptor_set()?;
+            render_descriptor_sets[fi] = Some(ds);
+            render_descriptor_pools[fi] = pool;
+        }
+        system.render_descriptor_sets = render_descriptor_sets;
+        system._render_descriptor_pools = render_descriptor_pools;
 
         system.create_push_descriptor_buffers(context)?;
 
@@ -275,21 +298,23 @@ impl GlobalParticleSystem {
         self.free_emitter_slots.clear();
 
         info!("  destroying descriptor pools");
-        if self._compute_descriptor_pool != vk::DescriptorPool::null() {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_pool(self._compute_descriptor_pool, None);
+        for fi in 0..2 {
+            if self._compute_descriptor_pools[fi] != vk::DescriptorPool::null() {
+                unsafe {
+                    self.context
+                        .device
+                        .destroy_descriptor_pool(self._compute_descriptor_pools[fi], None);
+                }
+                self._compute_descriptor_pools[fi] = vk::DescriptorPool::null();
             }
-            self._compute_descriptor_pool = vk::DescriptorPool::null();
-        }
-        if self._render_descriptor_pool != vk::DescriptorPool::null() {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_pool(self._render_descriptor_pool, None);
+            if self._render_descriptor_pools[fi] != vk::DescriptorPool::null() {
+                unsafe {
+                    self.context
+                        .device
+                        .destroy_descriptor_pool(self._render_descriptor_pools[fi], None);
+                }
+                self._render_descriptor_pools[fi] = vk::DescriptorPool::null();
             }
-            self._render_descriptor_pool = vk::DescriptorPool::null();
         }
 
         info!("  destroying debug readback");

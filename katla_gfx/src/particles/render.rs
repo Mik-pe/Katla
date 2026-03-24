@@ -18,7 +18,7 @@ impl GlobalParticleSystem {
 
         self.update_render_descriptor_binding(frame_index)?;
 
-        if let Some(descriptor_set) = self.render_descriptor_set {
+        if let Some(descriptor_set) = self.render_descriptor_sets[frame_index % 2] {
             unsafe {
                 device.cmd_bind_descriptor_sets(
                     command_buffer,

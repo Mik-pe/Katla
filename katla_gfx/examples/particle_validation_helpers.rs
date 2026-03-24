@@ -688,6 +688,23 @@ pub fn load_and_create_pipelines(
 
     log::info!("Simulate pipeline created successfully");
 
+    // Load draw command shader
+    let draw_cmd_shader_path = shader_dir.join("particles/particle_draw_command.wgsl");
+    log::info!(
+        "Loading draw command shader from: {:?}",
+        draw_cmd_shader_path
+    );
+
+    let draw_cmd_shader = shader_cache
+        .load_shader(&draw_cmd_shader_path, vk::ShaderStageFlags::COMPUTE)
+        .map_err(|e| format!("Failed to load draw command shader: {}", e))?;
+
+    particle_system
+        .create_draw_command_pipeline(asset_registry, VkShaderModule(draw_cmd_shader))
+        .map_err(|e| format!("Failed to create draw command pipeline: {}", e))?;
+
+    log::info!("Draw command pipeline created successfully");
+
     // Load render shaders (vertex + fragment from same WGSL file)
     let render_shader_path = shader_dir.join("particles/particle_render.wgsl");
     log::info!("Loading render shader from: {:?}", render_shader_path);

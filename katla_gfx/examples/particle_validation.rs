@@ -313,7 +313,7 @@ impl GpuValidationResources {
         let counters_size = std::mem::size_of::<katla_gfx::particles::ParticleCounters>() as u64;
         let emitter_config_total = (1024 * std::mem::size_of::<EmitterConfig>()) as u64;
 
-        let validation_pass = ComputePass::builder(context)
+        let validation_pass = ComputePass::with_push_descriptors(context)
             .add_storage_buffer(0, particle_system.particle_buffer(), 0, particle_data_size)
             .add_storage_buffer(
                 1,
@@ -389,15 +389,15 @@ impl GpuValidationResources {
                 (1024 * std::mem::size_of::<EmitterConfig>()) as u64,
             );
         }
-        self.validation_pass
-            .update_binding(6, particle_system.indirect_draw_buffer(fi), 0, 16);
+        let idb = particle_system.indirect_draw_buffer(fi);
+        self.validation_pass.update_binding(6, idb, 0, 16);
 
         // Write validation params
         let val_params = ValidationParams {
             alive_count: particle_system.alive_count(),
             emitter_count: self.emitter_count,
             frame_index: frame,
-            max_mismatch_details: 64,
+            max_mismatch_details: 16,
             color_tolerance: 0.05,
             velocity_tolerance: 0.0,
             position_tolerance: 0.0,
@@ -439,10 +439,16 @@ impl GpuValidationResources {
             .offset(0)
             .size(vk::WHOLE_SIZE);
 
+        // Barrier: render used indirect_draw_buffer at DRAW_INDIRECT stage,
+        // validation reads it at COMPUTE stage. Match real draw timing.
         let indirect_draw_barrier = vk::BufferMemoryBarrier2::default()
-            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .src_stage_mask(
+                vk::PipelineStageFlags2::DRAW_INDIRECT | vk::PipelineStageFlags2::COMPUTE_SHADER,
+            )
             .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
+            .src_access_mask(
+                vk::AccessFlags2::INDIRECT_COMMAND_READ | vk::AccessFlags2::SHADER_WRITE,
+            )
             .dst_access_mask(vk::AccessFlags2::SHADER_READ)
             .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
             .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
@@ -482,7 +488,7 @@ impl GpuValidationResources {
             GpuValidationResultsRaw::default()
         };
 
-        let mismatch_count = raw.mismatch_count.min(64) as usize;
+        let mismatch_count = raw.mismatch_count.min(16) as usize;
         let mismatch_details: Vec<_> = (0..mismatch_count)
             .map(|i| {
                 let base = i * 4;
@@ -507,14 +513,41 @@ impl GpuValidationResources {
             })
             .collect();
 
+        let zero_alive_frames = raw.zero_alive_frames as u64;
+        let zero_alive_with_emit = raw.zero_alive_with_emit as u64;
+        let min_alive_count = raw.min_alive_count;
+        let max_alive_count = raw.max_alive_count;
+        let total_alive_sum = raw.total_alive_sum as u64;
+        let total_frames_checked = raw.total_frames_checked as u64;
+
+        let anomaly_count = raw.anomaly_count.min(16) as usize;
+        let anomaly_details: Vec<FrameAnomaly> = (0..anomaly_count)
+            .map(|i| {
+                let base = i * 5;
+                FrameAnomaly {
+                    frame_index: raw.anomaly_details[base],
+                    alive_count: raw.anomaly_details[base + 1],
+                    emit_count: raw.anomaly_details[base + 2],
+                    dead_count: raw.anomaly_details[base + 3],
+                    vertex_count: raw.anomaly_details[base + 4],
+                }
+            })
+            .collect();
+
         GpuValidationResults {
             total_checked: raw.total_checked as u64,
             color_mismatches: raw.color_mismatches as u64,
             velocity_mismatches: raw.velocity_mismatches as u64,
-            per_emitter_mismatches: raw.per_emitter_mismatches,
             mismatch_details: mismatch_details,
             indirect_draw_mismatches: raw.indirect_draw_mismatches as u64,
             indirect_draw_details: id_details,
+            zero_alive_frames,
+            zero_alive_with_emit,
+            min_alive_count,
+            max_alive_count,
+            total_alive_sum,
+            total_frames_checked,
+            anomaly_details,
         }
     }
 
@@ -545,6 +578,15 @@ struct GpuValidationResultsRaw {
     indirect_draw_mismatches: u32,
     indirect_draw_details: [u32; 192],
     indirect_draw_detail_count: u32,
+    // Frame-level counter-consistency tracking (offset 1116+)
+    zero_alive_frames: u32,
+    zero_alive_with_emit: u32,
+    min_alive_count: u32,
+    max_alive_count: u32,
+    total_alive_sum: u32,
+    total_frames_checked: u32,
+    anomaly_details: [u32; 80], // 16 entries x 5 u32
+    anomaly_count: u32,
 }
 
 impl Default for GpuValidationResultsRaw {
@@ -560,6 +602,14 @@ impl Default for GpuValidationResultsRaw {
             indirect_draw_mismatches: 0,
             indirect_draw_details: [0; 192],
             indirect_draw_detail_count: 0,
+            zero_alive_frames: 0,
+            zero_alive_with_emit: 0,
+            min_alive_count: 0,
+            max_alive_count: 0,
+            total_alive_sum: 0,
+            total_frames_checked: 0,
+            anomaly_details: [0; 80],
+            anomaly_count: 0,
         }
     }
 }
@@ -577,15 +627,29 @@ struct ValidationParams {
     _pad: f32,
 }
 
+struct FrameAnomaly {
+    frame_index: u32,
+    alive_count: u32,
+    emit_count: u32,
+    dead_count: u32,
+    vertex_count: u32,
+}
+
 #[derive(Default)]
 struct GpuValidationResults {
     total_checked: u64,
     color_mismatches: u64,
     velocity_mismatches: u64,
-    per_emitter_mismatches: [u32; 16],
     mismatch_details: Vec<GpuMismatchDetail>,
     indirect_draw_mismatches: u64,
     indirect_draw_details: Vec<IndirectDrawMismatch>,
+    zero_alive_frames: u64,
+    zero_alive_with_emit: u64,
+    min_alive_count: u32,
+    max_alive_count: u32,
+    total_alive_sum: u64,
+    total_frames_checked: u64,
+    anomaly_details: Vec<FrameAnomaly>,
 }
 
 struct GpuMismatchDetail {
@@ -827,20 +891,16 @@ fn main() -> ExitCode {
                 ) {
                     log::warn!("Failed to record simulate dispatch: {}", e);
                 }
-            }
 
-            // Copy indirect draw command into the per-frame accumulation buffer.
-            if simulate_workgroups > 0 {
-                // Record GPU validation dispatch (checks per-particle color/velocity
-                // against emitter configs + indirect draw consistency, accumulates results)
-                if let Some(ref mut gpu_val) = gpu_validation {
-                    gpu_val.record_dispatch(
-                        &context,
-                        &particle_system,
-                        command_buffer.vk_command_buffer(),
-                        fi,
-                        frame,
-                    );
+                // Write indirect draw command after simulate (1-workgroup dispatch
+                // with barrier ensures correct alive_count visibility).
+                // Push descriptors are recorded inline by record_draw_command_dispatch.
+                if let Err(e) = particle_system.record_draw_command_dispatch(
+                    command_buffer.vk_command_buffer(),
+                    &asset_registry,
+                    frame_index_for_descriptor,
+                ) {
+                    log::warn!("Failed to record draw command dispatch: {}", e);
                 }
             }
 
@@ -855,6 +915,20 @@ fn main() -> ExitCode {
                     frame_index_for_descriptor,
                 ) {
                     log::warn!("Frame {}: Failed to record render dispatch: {}", frame, e);
+                }
+            }
+
+            // Record GPU validation dispatch AFTER render so it runs with
+            // the same barrier timing as the real draw path.
+            if simulate_workgroups > 0 {
+                if let Some(ref mut gpu_val) = gpu_validation {
+                    gpu_val.record_dispatch(
+                        &context,
+                        &particle_system,
+                        command_buffer.vk_command_buffer(),
+                        fi,
+                        frame,
+                    );
                 }
             }
         }
@@ -901,7 +975,6 @@ fn main() -> ExitCode {
     frame_commands[0].return_to_pool();
     frame_commands[1].return_to_pool();
 
-    // --- Per-frame indirect draw validation (accumulated on GPU, read back once) ---
     // --- GPU validation readback (single read of all accumulated results) ---
     if let Some(gpu_val) = gpu_validation {
         log::info!("Reading GPU validation results...");
@@ -909,14 +982,13 @@ fn main() -> ExitCode {
 
         // Indirect draw validation: check that vertex_count == alive_count * 6
         // every frame. Accumulated by the GPU validation shader.
-        log::info!(
-            "Indirect draw validation: {} mismatches across {} frames",
-            results.indirect_draw_mismatches,
-            NUM_FRAMES
-        );
         if results.indirect_draw_mismatches > 0 {
-            log::error!("Indirect draw validation FAILED:");
-            for detail in results.indirect_draw_details.iter().take(10) {
+            log::error!(
+                "INDIRECT DRAW: {} mismatches across {} frames",
+                results.indirect_draw_mismatches,
+                NUM_FRAMES
+            );
+            for detail in results.indirect_draw_details.iter().take(3) {
                 log::error!(
                     "  frame={}: expected vc={}, got vc={}",
                     detail.frame_index,
@@ -930,10 +1002,42 @@ fn main() -> ExitCode {
             }
             return ExitCode::from(1);
         }
+
         log::info!(
             "Indirect draw validation PASSED: all {} frames valid",
             NUM_FRAMES
         );
+
+        // Frame-level counter-consistency stats
+        if results.total_frames_checked > 0 {
+            let avg_alive = results.total_alive_sum as f64 / results.total_frames_checked as f64;
+            log::info!(
+                "Frame stats: {} frames checked, alive min={} max={} avg={:.1}",
+                results.total_frames_checked,
+                results.min_alive_count,
+                results.max_alive_count,
+                avg_alive,
+            );
+        }
+
+        if results.zero_alive_frames > 0 {
+            log::warn!(
+                "ZERO-ALIVE FRAMES: {} frames with alive_count=0 ({} had emit_count>0)",
+                results.zero_alive_frames,
+                results.zero_alive_with_emit,
+            );
+            for detail in results.anomaly_details.iter().take(10) {
+                if detail.alive_count == 0 {
+                    log::warn!(
+                        "  frame={}: alive=0 emit={} dead={} vc={}",
+                        detail.frame_index,
+                        detail.emit_count,
+                        detail.dead_count,
+                        detail.vertex_count,
+                    );
+                }
+            }
+        }
 
         // Cross-emitter contamination validation
         log::info!(
@@ -997,11 +1101,23 @@ fn main() -> ExitCode {
         match particle_system.read_debug_data() {
             Ok(data) => {
                 log::info!(
-                    "GPU counters: alive={}, dead={}, emit={}",
+                    "GPU counters: alive={}, dead={}, emit={}, wgf={}",
                     data.counters.alive_count,
                     data.counters.dead_count,
                     data.counters.emit_count,
+                    data.counters.workgroups_finished,
                 );
+                if let Some(idc) = data.indirect_draw {
+                    log::info!(
+                        "GPU indirect draw: vc={}, ic={}, fv={}, fi={}",
+                        idc.vertex_count,
+                        idc.instance_count,
+                        idc.first_vertex,
+                        idc.first_instance,
+                    );
+                } else {
+                    log::info!("GPU indirect draw: not available");
+                }
                 data.counters.alive_count
             }
             Err(e) => {

@@ -278,7 +278,7 @@ impl GlobalParticleSystem {
             device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
         }
 
-        if let Some(descriptor_set) = self.compute_descriptor_set {
+        if let Some(descriptor_set) = self.compute_descriptor_sets[frame_index % 2] {
             log::debug!(
                 "Emit dispatch: Set 0 descriptor={:?}, particle_buffer={:?}",
                 descriptor_set,
@@ -379,7 +379,7 @@ impl GlobalParticleSystem {
             device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
         }
 
-        if let Some(descriptor_set) = self.compute_descriptor_set {
+        if let Some(descriptor_set) = self.compute_descriptor_sets[frame_index % 2] {
             unsafe {
                 device.cmd_bind_descriptor_sets(
                     command_buffer,
@@ -454,7 +454,148 @@ impl GlobalParticleSystem {
             device.cmd_dispatch(command_buffer, simulate_workgroups, 1, 1);
         }
 
-        self.simulate_barrier(command_buffer, frame_index)?;
+        Ok(())
+    }
+
+    /// Record a 1-workgroup dispatch that writes the indirect draw command.
+    ///
+    /// This must be called AFTER `record_simulate_dispatch`. Uses push
+    /// descriptors so bindings are recorded inline in the command buffer.
+    /// A compute-to-compute barrier ensures the simulate's alive_count
+    /// writes are visible before reading, and the draw command write is
+    /// visible to subsequent compute reads (e.g. validation shader).
+    pub fn record_draw_command_dispatch(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        asset_registry: &AssetRegistry,
+        frame_index: usize,
+    ) -> Result<(), String> {
+        let device = &self.context.device;
+        let fi = frame_index % 2;
+
+        let pipeline = self
+            .draw_command_pipeline
+            .ok_or("Draw command pipeline not created")?;
+
+        let compute_pipeline = asset_registry
+            .get_pipeline(pipeline)
+            .ok_or("Failed to get draw command pipeline from registry")?;
+
+        let vk_pipeline = compute_pipeline.vk_pipeline();
+        let vk_layout = compute_pipeline.vk_layout();
+
+        // Barrier: simulate wrote counters (alive_count), draw command reads them
+        let counters_barrier = vk::BufferMemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
+            .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .buffer(self.buffer.counters_buffer(fi))
+            .offset(0)
+            .size(std::mem::size_of::<buffer::ParticleCounters>() as u64);
+
+        // Barrier: draw command will write indirect draw buffer
+        let indirect_draw_barrier = vk::BufferMemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
+            .dst_access_mask(vk::AccessFlags2::SHADER_WRITE)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .buffer(self.buffer.indirect_draw_buffer(fi))
+            .offset(0)
+            .size(16);
+
+        let barriers = [counters_barrier, indirect_draw_barrier];
+        let dep_info = vk::DependencyInfo::default().buffer_memory_barriers(&barriers);
+
+        unsafe {
+            device.cmd_pipeline_barrier2(command_buffer, &dep_info);
+        }
+
+        unsafe {
+            device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
+        }
+
+        // Push descriptors inline in the command buffer
+        let counters_size = std::mem::size_of::<buffer::ParticleCounters>() as u64;
+        let counters_buffer_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.counters_buffer(fi),
+            offset: 0,
+            range: counters_size,
+        }];
+        let draw_buffer_info = [vk::DescriptorBufferInfo {
+            buffer: self.buffer.indirect_draw_buffer(fi),
+            offset: 0,
+            range: 16,
+        }];
+
+        let push_descriptor_writes = [
+            vk::WriteDescriptorSet::default()
+                .dst_binding(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&counters_buffer_info),
+            vk::WriteDescriptorSet::default()
+                .dst_binding(1)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&draw_buffer_info),
+        ];
+
+        let push_ext = self
+            .context
+            .push_descriptor_khr
+            .as_ref()
+            .ok_or("Push descriptor extension not available")?;
+
+        unsafe {
+            push_ext.cmd_push_descriptor_set(
+                command_buffer,
+                vk::PipelineBindPoint::COMPUTE,
+                vk_layout,
+                0,
+                &push_descriptor_writes,
+            );
+        }
+
+        unsafe {
+            device.cmd_dispatch(command_buffer, 1, 1, 1);
+        }
+
+        // Barrier: make draw command write visible to subsequent compute reads
+        // (e.g. validation shader). The render pass handles its own
+        // COMPUTE→DRAW_INDIRECT transition.
+        let draw_read_barrier = vk::BufferMemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
+            .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .buffer(self.buffer.indirect_draw_buffer(fi))
+            .offset(0)
+            .size(16);
+
+        let particle_barrier = vk::BufferMemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
+            .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .buffer(self.buffer.particle_buffer())
+            .offset(0)
+            .size(self.buffer.layout().total_size);
+
+        let post_barriers = [draw_read_barrier, particle_barrier];
+        let post_dep_info = vk::DependencyInfo::default().buffer_memory_barriers(&post_barriers);
+
+        unsafe {
+            device.cmd_pipeline_barrier2(command_buffer, &post_dep_info);
+        }
 
         Ok(())
     }

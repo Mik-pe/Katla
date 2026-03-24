@@ -188,12 +188,13 @@ impl ComputePass {
     ///
     /// Use this for per-frame buffer swaps (e.g., double-buffered counters).
     /// Only valid for regular (non-push) descriptor sets.
-    pub fn update_binding(&self, binding_index: usize, buffer: vk::Buffer, offset: u64, size: u64) {
-        if self.push_descriptor_layout.is_some() {
-            log::warn!("Cannot update binding on push descriptor pass");
-            return;
-        }
-
+    pub fn update_binding(
+        &mut self,
+        binding_index: usize,
+        buffer: vk::Buffer,
+        offset: u64,
+        size: u64,
+    ) {
         let binding = match self.bindings.get(binding_index) {
             Some(b) => b,
             None => {
@@ -205,6 +206,19 @@ impl ComputePass {
                 return;
             }
         };
+
+        // For push descriptor passes, update the internal binding so it gets
+        // pushed during the next record_dispatch_with_handles call.
+        if self.push_descriptor_layout.is_some() {
+            self.bindings[binding_index] = BufferBinding {
+                binding: binding.binding,
+                descriptor_type: binding.descriptor_type,
+                buffer,
+                offset,
+                size,
+            };
+            return;
+        }
 
         let buffer_info = [vk::DescriptorBufferInfo {
             buffer,
