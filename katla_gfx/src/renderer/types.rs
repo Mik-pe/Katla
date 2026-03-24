@@ -485,9 +485,7 @@ pub fn compute_distance_from_camera(model_matrix: &[f32; 16], camera_position: [
     (dx * dx + dy * dy + dz * dz).sqrt()
 }
 
-//=============================================================================
 // UI Rendering Types
-//=============================================================================
 
 /// A single draw command for UI rendering.
 ///

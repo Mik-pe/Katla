@@ -21,7 +21,6 @@ impl Application {
         // in the RedrawRequested handler to ensure the UI samples from the
         // correct per-frame transient texture.
 
-        // Update camera aspect ratio based on viewport panel size
         let (viewport_width, viewport_height) = self.editor_ui.viewport_size();
         let viewport_aspect = if viewport_height > 0 {
             viewport_width as f32 / viewport_height as f32
@@ -32,17 +31,14 @@ impl Application {
             .borrow_mut()
             .aspect_ratio_changed(&mut self.world, viewport_aspect);
 
-        // Create frame context for this frame
         let mut frame = FrameContext::new();
 
-        // Get camera view/projection matrices
         let camera = self.camera.borrow();
         let view_mat = camera.get_view_mat(&self.world);
         let proj_mat = camera.get_proj_mat(&self.world);
         let camera_entity = camera.entity;
-        drop(camera); // Release transform borrow
+        drop(camera);
 
-        // Get camera position from transform component
         use crate::components::TransformComponent;
         let cam_pos = if let Some(transform) = self
             .world
@@ -58,15 +54,13 @@ impl Application {
             [0.0, 0.0, 0.0, 1.0]
         };
 
-        // Compute inverse view-projection for sky rendering
         let inv_view_proj = (proj_mat.clone() * view_mat.clone()).inverse();
 
-        // Set frame uniforms (uses katla_gfx public type directly)
         // Wait for the current frame's previous GPU submission to complete
         // before writing to per-frame storage buffers.
         self.renderer.wait_for_frame();
 
-        // Compute tile grid dimensions for Forward+ light culling
+        // Tile grid dimensions for Forward+ light culling.
         // Must match the render target (swapchain) size, NOT the editor viewport panel size,
         // because clip_position in the fragment shader covers the full render target.
         let extent = self.renderer.swapchain_extent();
@@ -78,7 +72,7 @@ impl Application {
             proj_matrix: proj_mat.to_array(),
             inv_view_proj_matrix: inv_view_proj.to_array(),
             camera_position: cam_pos,
-            // Default lighting (sunlight)
+            // Sunlight defaults
             light_direction: [0.3, 1.0, 0.2, 0.0],
             light_color: [1.0, 0.98, 0.95, 0.0],
             light_intensity: [
@@ -97,31 +91,26 @@ impl Application {
         // Collect draw calls from ECS world using FrameContext
         self.collect_draws_with_context(&mut frame);
 
-        // Collect point lights from ECS world and upload to GPU for Forward+ culling
+        // Collect point lights for Forward+ culling
         self.collect_and_upload_lights();
 
-        // Apply frame uniforms to renderer (must be before update_shadows so CSM
-        // uses the current frame's view/proj matrices)
+        // Must be before update_shadows so CSM uses the current frame's view/proj matrices
         self.renderer
             .set_frame_uniforms(frame.frame_uniforms().clone());
 
-        // Update shadow cascades using current frame's camera matrices
         self.renderer.update_shadows([
             frame_uniforms.light_direction[0],
             frame_uniforms.light_direction[1],
             frame_uniforms.light_direction[2],
         ]);
 
-        // Upload cascade GPU data for shadow depth shader
         self.renderer.upload_shadow_cascades();
 
-        // Execute draw calls (writes per-object data to storage buffer)
         if let Err(e) = self.renderer.execute_draw_calls(frame.draw_list()) {
             log::error!("Failed to execute draw calls: {}", e);
             return; // Skip rendering this frame
         }
 
-        // Render using the frame graph
         let draw_list = frame.take_draw_list();
 
         log::trace!(
@@ -129,20 +118,17 @@ impl Application {
             draw_list.len()
         );
 
-        // Set delta time and frame count for particle simulation
         self.frame_graph.set_delta_time(delta_time);
         self.frame_graph.set_frame_count(frame_count);
 
-        // Update particle system simulation and calculate workgroup count
         let frame_index = self.renderer.current_frame() as u32;
         if let Some(ref mut particle_system) = self.renderer.particle_system {
             match particle_system.update(delta_time, frame_index) {
                 Ok((_max_alive, emit_count)) => {
-                    // Calculate emit workgroups (256 particles per workgroup)
                     let emit_workgroups = if emit_count > 0 {
                         emit_count.div_ceil(katla_gfx::particles::PARTICLE_EMIT_WORKGROUP_SIZE)
                     } else {
-                        0 // No particles to emit
+                        0
                     };
 
                     if emit_workgroups == 0 && emit_count > 0 {
@@ -153,8 +139,7 @@ impl Application {
                         );
                     }
 
-                    // Calculate simulate workgroups using the estimated max alive count.
-                    // This is a generous upper bound based on emitter configs:
+                    // Simulate workgroups use a generous upper bound based on emitter configs:
                     //   sum(emit_rate_i * base_lifetime_i * (1 + lifetime_variation_i))
                     // No GPU readback needed — simulate shader self-bounds via counters.
                     // Over-dispatching is cheap (extra workgroups exit immediately).
@@ -219,7 +204,6 @@ impl Application {
         }
 
         self.renderer.render(&mut self.frame_graph, |frame| {
-            // Submit draw list to the geometry pass
             log::trace!(
                 "Inside render closure: submitting {} draw calls to geometry pass",
                 draw_list.len()
@@ -236,14 +220,12 @@ impl Application {
                 log::warn!("No draw calls to submit to geometry pass!");
             }
 
-            // Submit UI draw list to the UI pass
             if let Some(ref ui_list) = ui_draw_list {
                 log::trace!("Submitting {} UI draw commands", ui_list.commands.len());
                 frame.submit_ui("ui", ui_list);
             }
         });
 
-        // Perform particle debug readback if pending (after GPU has finished the frame)
         #[cfg(debug_assertions)]
         {
             if self.particle_readback_pending {
@@ -328,9 +310,7 @@ impl Application {
         let entity_count = self.world.entity_ids().count();
         let mut drawable_count = 0;
 
-        // Collect drawable components
         for entity_id in self.world.entity_ids() {
-            // Get drawable and transform components
             let drawable = match self.world.get_component::<DrawableComponent>(entity_id) {
                 Some(d) => d,
                 None => continue,
@@ -340,7 +320,6 @@ impl Application {
                 None => continue,
             };
 
-            // Get mesh and material handles
             let mesh_handle = drawable.mesh_handle;
             if mesh_handle.is_none() {
                 continue;
@@ -351,42 +330,34 @@ impl Application {
                 continue;
             }
 
-            // Check for skeleton - upload if present
             if !drawable.skeleton_handle.is_none() {
-                // Get Skeleton component and upload joint matrices
                 if let Some(skeleton) = self.world.get_component::<Skeleton>(entity_id) {
-                    // Convert Mat4 to [f32; 16] format for GPU
                     let matrices: Vec<[f32; 16]> = skeleton
                         .joint_transforms
                         .iter()
                         .map(|m| m.to_array())
                         .collect();
 
-                    // Upload to GPU
                     self.renderer
                         .update_skeleton(drawable.skeleton_handle, &matrices);
                 }
             }
 
-            // Submit draw via FrameContext (instance allocation is automatic)
             let mut draw = frame
                 .draw(mesh_handle, material_handle)
                 .with_transform(transform.transform.make_mat4().to_array());
 
-            // Add skeleton if present (for skinned meshes)
+            // Skeleton for skinned meshes
             if !drawable.skeleton_handle.is_none() {
                 draw = draw.with_skeleton(drawable.skeleton_handle);
             }
 
-            // Add color if present
             if let Some(color) = drawable.color {
                 draw = draw.with_color(color.to_array());
             }
 
-            // Add PBR material parameters
             draw = draw.with_pbr(drawable.metallic, drawable.roughness, drawable.ao);
 
-            // Add emission texture index if present
             if drawable.emission > 0.0 {
                 draw = draw.with_emission(drawable.emission);
             }

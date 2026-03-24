@@ -67,7 +67,6 @@ impl<'a> Frame<'a> {
         image_index: u32,
         _frame_idx: usize,
     ) -> Self {
-        // Initialize all transient resources as Undefined
         let resource_states: HashMap<String, ResourceState> = graph
             .transient_resources
             .iter()
@@ -159,7 +158,6 @@ impl<'a> Frame<'a> {
 
     /// Execute all passes in order.
     pub(super) fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
-        // Reset per-frame particle state
         // SAFETY: We have exclusive access during frame execution
         let graph_ptr = self.graph as *const FrameGraph as *mut FrameGraph;
         unsafe {
@@ -242,10 +240,8 @@ impl<'a> Frame<'a> {
                 );
             }
 
-            // Insert pre-pass barriers
             self.insert_barriers(&cmd, index)?;
 
-            // Execute pass based on type
             match pass.pass_type {
                 super::pass::PassType::Graphics => {
                     // Check if this is a shadow pass (no material, no pipeline, no color writes,
@@ -388,14 +384,12 @@ impl<'a> Frame<'a> {
             }
         }
 
-        // Process writes first (color attachments)
         for write_name in &pass.writes {
             // Skip backbuffer - it's managed by the swapchain
             if write_name == BACKBUFFER_NAME {
                 continue;
             }
 
-            // Check if this is a transient texture
             let Some(transient) = self
                 .graph
                 .transient_texture(write_name, self.current_frame())
@@ -469,14 +463,12 @@ impl<'a> Frame<'a> {
             }
         }
 
-        // Process reads (shader resources)
         for read_name in &pass.reads {
             // Skip backbuffer - not read by shaders
             if read_name == BACKBUFFER_NAME {
                 continue;
             }
 
-            // Check if this is a transient texture
             let Some(transient) = self
                 .graph
                 .transient_texture(read_name, self.current_frame())
@@ -515,7 +507,6 @@ impl<'a> Frame<'a> {
                     required_layout
                 );
 
-                // Transition using the actual tracked old_layout
                 let is_depth = transient.format == vk::Format::D32_SFLOAT;
                 if is_depth {
                     ImageBarrier::transition_with_range(
@@ -577,7 +568,6 @@ impl<'a> Frame<'a> {
                 continue;
             }
 
-            // Check if this is a transient texture
             let Some(transient) = self
                 .graph
                 .transient_texture(write_name, self.current_frame())
@@ -683,11 +673,9 @@ impl<'a> Frame<'a> {
         // 3. Use load_op from pass.color_attachments if available, otherwise default to CLEAR
         //    For backbuffer: use LOAD if a previous pass already wrote to it
         let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
-            // Explicit backbuffer write - use swapchain
             let swapchain_view =
                 self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
 
-            // Check if a previous pass already wrote to the backbuffer
             let backbuffer_written = self.resource_states.contains_key(BACKBUFFER_NAME);
             let load_op = if backbuffer_written {
                 log::trace!(
@@ -714,12 +702,10 @@ impl<'a> Frame<'a> {
                     },
                 })
         } else if let Some(color_name) = pass.writes.first() {
-            // Check if this is a transient texture
             if let Some(transient) = self
                 .graph
                 .transient_texture(color_name, self.current_frame())
             {
-                // Check if pass specified load/store ops for this attachment
                 let (load_op, store_op, clear_value) = pass
                     .color_attachments
                     .iter()
@@ -820,7 +806,6 @@ impl<'a> Frame<'a> {
             None
         };
 
-        // Begin dynamic rendering
         cmd.begin_rendering(
             &[color_attachment],
             depth_attachment.as_ref(),
@@ -829,7 +814,6 @@ impl<'a> Frame<'a> {
             1,
         );
 
-        // Set viewport and scissor
         cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
             0.0,
             0.0,
@@ -841,17 +825,14 @@ impl<'a> Frame<'a> {
             extent.height,
         )]);
 
-        // Execute draw lists
         for draw_list in &data.draw_lists {
             self.execute_draw_list(cmd, draw_list)?;
         }
 
-        // Execute UI draw lists
         for ui_draw_list in &data.ui_draw_lists {
             self.execute_ui_draw_list(cmd, pass, ui_draw_list)?;
         }
 
-        // End rendering
         cmd.end_rendering();
 
         Ok(())
@@ -872,7 +853,6 @@ impl<'a> Frame<'a> {
             RenderGraphError::InvalidConfiguration("Particle system not initialized".to_string())
         })?;
 
-        // Check if there are any particles to render
         let alive_count = particle_system.alive_count();
         if alive_count == 0 {
             return Ok(()); // No particles to render
@@ -911,7 +891,6 @@ impl<'a> Frame<'a> {
             texture.set_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
         }
 
-        // Create render pass begin info
         let color_attachment = vk::RenderingAttachmentInfo::default()
             .image_view(texture.image_view.vk())
             .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
@@ -958,7 +937,6 @@ impl<'a> Frame<'a> {
                 .cmd_begin_rendering(cmd.vk_command_buffer(), &rendering_info);
         }
 
-        // Set viewport and scissor
         let viewport = vk::Viewport {
             x: 0.0,
             y: 0.0,
@@ -985,7 +963,6 @@ impl<'a> Frame<'a> {
             );
         }
 
-        // Render particles using the particle system
         // Get storage descriptor set first to avoid borrow conflicts
         let storage_descriptor_set = if self.renderer.particle_system.is_some() {
             Some(self.renderer.storage_descriptor_sets[self.renderer.current_frame()].vk_set())
@@ -993,7 +970,6 @@ impl<'a> Frame<'a> {
             None
         };
 
-        // Get current frame index before mutable borrow
         let current_frame = self.current_frame();
 
         if let Some(ref mut particle_system) = self.renderer.particle_system {
@@ -1004,7 +980,6 @@ impl<'a> Frame<'a> {
                     log::warn!("Failed to update particle render descriptor binding: {}", e);
                 }
 
-                // Get the pipeline from the registry
                 let pipeline_asset = self
                     .renderer
                     .asset_registry
@@ -1019,14 +994,12 @@ impl<'a> Frame<'a> {
                 let vk_pipeline = pipeline_asset.vk_pipeline();
                 let vk_layout = pipeline_asset.vk_layout();
 
-                // Get the storage descriptor set (Set 1) from renderer for FrameUniforms
                 let storage_ds = storage_descriptor_set.ok_or_else(|| {
                     RenderGraphError::InvalidConfiguration(
                         "Storage descriptor set not available".to_string(),
                     )
                 })?;
 
-                // Call particle system render method
                 particle_system
                     .render(
                         cmd.vk_command_buffer(),
@@ -1048,7 +1021,6 @@ impl<'a> Frame<'a> {
             log::warn!("Particle system not available, skipping particle rendering");
         }
 
-        // End render pass
         unsafe {
             self.renderer
                 .context
@@ -1056,7 +1028,7 @@ impl<'a> Frame<'a> {
                 .cmd_end_rendering(cmd.vk_command_buffer());
         }
 
-        // Transition texture back to shader read-only for UI sampling
+        // Transition texture back to SHADER_READ_ONLY_OPTIMAL for subsequent sampling (e.g., UI)
         let old_layout = texture.current_layout();
         let barrier = vk::ImageMemoryBarrier2::default()
             .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
@@ -1099,7 +1071,6 @@ impl<'a> Frame<'a> {
             draw_list.draws.len()
         );
 
-        // Execute regular draw calls
         for draw_call in &draw_list.draws {
             log::trace!(
                 "Executing draw call: mesh={:?}, material={:?}",
@@ -1124,24 +1095,20 @@ impl<'a> Frame<'a> {
         pass: &PassDesc,
         ui_draw_list: &UIDrawList,
     ) -> Result<(), RenderGraphError> {
-        // Early exit if empty
         if ui_draw_list.is_empty() {
             return Ok(());
         }
 
-        // Get the UI material from the pass
         let material_handle = pass.material.ok_or(RenderGraphError::InvalidConfiguration(
             "UI pass has no material specified. Use .material() on UIPass.".to_string(),
         ))?;
 
-        // Get material asset from registry
         let material = self
             .renderer
             .asset_registry
             .get_material(material_handle)
             .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
 
-        // Get pipeline handle from material
         let pipeline_handle = material
             .pipeline
             .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
@@ -1160,19 +1127,15 @@ impl<'a> Frame<'a> {
             );
         }
 
-        // Get or create per-frame UI buffers and upload data
         let frame_idx = self.renderer.current_frame();
         let (vertex_buffer, index_buffer) =
             self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
 
-        // Bind vertex and index buffers
         cmd.bind_vertex_buffer(vertex_buffer.0, 0);
         cmd.bind_index_buffer(index_buffer, 0, vk::IndexType::UINT32);
 
-        // Get swapchain extent for scissor (physical pixels)
         let extent = self.renderer.frame_context.swapchain.get_extent();
 
-        // Check font atlas is available
         if self.renderer.ui_renderer.font_atlas_handle().is_none() {
             return Err(RenderGraphError::InvalidConfiguration(
                 "UI font atlas not initialized".to_string(),
@@ -1190,9 +1153,7 @@ impl<'a> Frame<'a> {
             ui_draw_list.screen_size,
         )?;
 
-        // Execute each draw command with scissor clipping
         for draw_cmd in &ui_draw_list.commands {
-            // Set scissor for clipping (if specified)
             // clip_rect is in logical pixels, convert to physical pixels for Vulkan scissor
             if let Some([x, y, width, height]) = draw_cmd.clip_rect {
                 let scale = ui_draw_list.scale_factor;
@@ -1204,7 +1165,6 @@ impl<'a> Frame<'a> {
                 );
                 cmd.set_scissor(&[scissor]);
             } else {
-                // No clipping - reset to full screen
                 cmd.set_scissor(&[crate::sync::Rect2D::from_extent(
                     extent.width,
                     extent.height,
@@ -1224,7 +1184,6 @@ impl<'a> Frame<'a> {
             }
         }
 
-        // Reset scissor to full screen for next pass
         cmd.set_scissor(&[crate::sync::Rect2D::from_extent(
             extent.width,
             extent.height,
@@ -1245,15 +1204,12 @@ impl<'a> Frame<'a> {
         let vertex_bytes = bytemuck::cast_slice(&ui_draw_list.vertices);
         let index_bytes = bytemuck::cast_slice(&ui_draw_list.indices);
 
-        // Access UI resources through UIRenderer
         let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
 
-        // Update vertex buffer
         let vb = &mut ui_resources.vertex_buffers[frame_idx];
         vb.upload_data(vertex_bytes);
         let vb_handle = (vb.object(), vb.count());
 
-        // Update index buffer
         let ib = &mut ui_resources.index_buffers[frame_idx];
         ib.upload_data(index_bytes);
         let ib_handle = ib.object();
@@ -1295,7 +1251,6 @@ impl<'a> Frame<'a> {
         // Bind descriptor set 0 (sampler, uniforms)
         cmd.bind_descriptor_sets(pipeline_layout, 0, &[descriptor_set], &[]);
 
-        // Bind descriptor set 1 (bindless texture array - shared with 3D materials)
         let bindless_descriptor_set = self.renderer.bindless_manager.descriptor_set();
         cmd.bind_descriptor_sets(pipeline_layout, 1, &[bindless_descriptor_set.vk()], &[]);
 
@@ -1309,7 +1264,6 @@ impl<'a> Frame<'a> {
         layout: vk::DescriptorSetLayout,
         screen_size: [f32; 2],
     ) -> Result<vk::DescriptorSet, RenderGraphError> {
-        // Check if we already have a descriptor set for this frame with the same layout
         let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
 
         // Ensure we have storage for this frame
@@ -1317,7 +1271,6 @@ impl<'a> Frame<'a> {
             ui_resources.descriptor_sets.push(None);
         }
 
-        // Check if we already have a descriptor set for this frame
         let descriptor_set_handle = ui_resources.descriptor_sets[frame_idx]
             .as_ref()
             .map(|ds| ds.vk());
@@ -1325,12 +1278,10 @@ impl<'a> Frame<'a> {
         let _ = ui_resources; // Release borrow before calling update
 
         if let Some(ds_handle) = descriptor_set_handle {
-            // Update uniform buffer with new screen size
             self.update_ui_descriptor_set(ds_handle, screen_size)?;
             return Ok(ds_handle);
         }
 
-        // Create new descriptor set pool and descriptor set
         let pool_sizes = [
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::SAMPLED_IMAGE)
@@ -1395,7 +1346,6 @@ impl<'a> Frame<'a> {
         }
         let _ = ui_resources;
 
-        // Update descriptor set with resources
         self.update_ui_descriptor_set(descriptor_set, screen_size)?;
 
         Ok(descriptor_set)
@@ -1407,18 +1357,14 @@ impl<'a> Frame<'a> {
         descriptor_set: vk::DescriptorSet,
         screen_size: [f32; 2],
     ) -> Result<(), RenderGraphError> {
-        // Get shared sampler from bindless manager
         let sampler = self.renderer.bindless_manager.shared_sampler();
 
-        // Create or update uniform buffer for screen size
         let uniform_data = [screen_size[0], screen_size[1], 0.0, 0.0];
         let uniform_bytes = bytemuck::cast_slice(&uniform_data);
 
-        // Access UI resources through RefCell
         let uniform_buffer = {
             let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
 
-            // Create or reuse uniform buffer
             if ui_resources.uniform_buffer.is_none() {
                 let uniform_buffer_info = vk::BufferCreateInfo::default()
                     .size(uniform_bytes.len() as vk::DeviceSize)
@@ -1432,11 +1378,10 @@ impl<'a> Frame<'a> {
                 ui_resources.uniform_buffer = Some((uniform_buffer, uniform_allocation));
             }
 
-            // Get uniform buffer handle (vk::Buffer is Copy)
+            // vk::Buffer is Copy, so this is fine to return from the borrow
             ui_resources.uniform_buffer.as_ref().unwrap().0
         };
 
-        // Now get the allocation for mapping
         let uniform_ptr = {
             let allocation = &self
                 .renderer
@@ -1449,12 +1394,10 @@ impl<'a> Frame<'a> {
             self.renderer.context.map_buffer(allocation)
         };
 
-        // Update uniform data
         unsafe {
             std::ptr::copy_nonoverlapping(uniform_bytes.as_ptr(), uniform_ptr, uniform_bytes.len());
         }
 
-        // Prepare descriptor writes
         let buffer_info = vk::DescriptorBufferInfo::default()
             .buffer(uniform_buffer)
             .offset(0)
@@ -1500,7 +1443,6 @@ impl<'a> Frame<'a> {
         cmd: &CommandBuffer,
         draw_call: &DrawCall,
     ) -> Result<(), RenderGraphError> {
-        // Extract mesh and material info upfront to avoid borrow conflicts
         let mesh_handle = draw_call.mesh;
         let material_handle = draw_call.material;
 
@@ -1525,7 +1467,6 @@ impl<'a> Frame<'a> {
                 })?;
         }
 
-        // Get mesh from registry
         let mesh = self
             .renderer
             .asset_registry
@@ -1544,7 +1485,6 @@ impl<'a> Frame<'a> {
             .pipeline
             .ok_or(RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
 
-        // Get pipeline handles from registry
         let (pipeline, layout) = self
             .renderer
             .asset_registry
@@ -1584,21 +1524,17 @@ impl<'a> Frame<'a> {
             (3, uv_buf),
         ]);
 
-        // Bind index buffer
         if let Some(ib) = &mesh.index_buffer {
             cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
         }
 
-        // Extract needed data before borrows end
         let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
 
         // Material borrow ends here, allowing &mut self call below
         let _ = material;
 
-        // Bind descriptor sets
         self.bind_descriptor_sets(cmd, layout, draw_call)?;
 
-        // Draw indexed (instance_index is used instead of push constants)
         cmd.draw_indexed(index_count, 1, 0, 0, draw_call.instance_index);
 
         Ok(())
@@ -1676,7 +1612,6 @@ impl<'a> Frame<'a> {
         // 2. If pass writes to a transient texture, use that (frame-indexed)
         // 3. Use load_op from pass.color_attachments if available, otherwise default to CLEAR
         let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
-            // Explicit backbuffer write - use swapchain
             let swapchain_view =
                 self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
             vk::RenderingAttachmentInfo::default()
@@ -1690,7 +1625,6 @@ impl<'a> Frame<'a> {
                     },
                 })
         } else if let Some(color_name) = pass.writes.first() {
-            // Check if this is a transient texture (fullscreen pass like tonemap)
             let frame_idx = self.current_frame();
             if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
                 log::trace!(
@@ -1703,7 +1637,6 @@ impl<'a> Frame<'a> {
                     transient.extent.height
                 );
 
-                // Check if pass specified load/store ops for this attachment
                 let (load_op, store_op, clear_value) = pass
                     .color_attachments
                     .iter()
@@ -1759,7 +1692,6 @@ impl<'a> Frame<'a> {
             ));
         };
 
-        // Begin dynamic rendering
         cmd.begin_rendering(
             &[color_attachment],
             None, // No depth attachment for fullscreen passes
@@ -1768,7 +1700,6 @@ impl<'a> Frame<'a> {
             1,
         );
 
-        // Set viewport and scissor
         cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
             0.0,
             0.0,
@@ -1780,7 +1711,6 @@ impl<'a> Frame<'a> {
             extent.height,
         )]);
 
-        // Get pipeline from registry
         let (pipeline, layout) = self
             .renderer
             .asset_registry
@@ -1796,7 +1726,6 @@ impl<'a> Frame<'a> {
             );
         }
 
-        // Bind descriptor sets (storage uniforms + bindless textures) - use per-frame descriptor set
         let storage_ds =
             self.renderer.storage_descriptor_sets[self.renderer.current_frame()].vk_set();
         cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
@@ -1816,7 +1745,6 @@ impl<'a> Frame<'a> {
             cmd.draw_array(3, 1, 0, 0);
         }
 
-        // End rendering
         cmd.end_rendering();
 
         Ok(())
@@ -1848,7 +1776,6 @@ impl<'a> Frame<'a> {
 
         let device = &self.renderer.context.device;
 
-        // Get compute pipeline from registry
         let compute_pipeline = self
             .renderer
             .asset_registry
@@ -1862,7 +1789,6 @@ impl<'a> Frame<'a> {
 
         let vk_pipeline = compute_pipeline.vk_pipeline();
 
-        // Bind compute pipeline
         unsafe {
             device.cmd_bind_pipeline(
                 cmd.vk_command_buffer(),
@@ -1871,7 +1797,6 @@ impl<'a> Frame<'a> {
             );
         }
 
-        // Get current frame index before any mutable borrows
         let current_frame = self.current_frame();
 
         // Bind descriptor sets if particle system is active
@@ -2029,7 +1954,6 @@ impl<'a> Frame<'a> {
             pass.writes
         );
 
-        // Find the shadow atlas depth texture
         let shadow_atlas = pass
             .writes
             .iter()
@@ -2044,7 +1968,6 @@ impl<'a> Frame<'a> {
         let half_w = extent.width / 2;
         let half_h = extent.height / 2;
 
-        // Begin rendering with depth-only attachment
         let depth_attachment = vk::RenderingAttachmentInfo::default()
             .image_view(shadow_atlas.image_view.vk())
             .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
@@ -2064,7 +1987,6 @@ impl<'a> Frame<'a> {
 
         cmd.begin_rendering(&[], Some(&depth_attachment), None, render_area, 1);
 
-        // Get shadow pipeline from renderer
         let shadow_pipeline_handle =
             self.renderer
                 .shadow_pipeline()
@@ -2210,7 +2132,6 @@ impl<'a> Frame<'a> {
             .unwrap_or(2.0);
 
         for cascade_idx in 0..num_cascades {
-            // Set single viewport for this cascade
             let vp = viewports[cascade_idx as usize];
             let sc = scissors[cascade_idx as usize];
 
@@ -2227,7 +2148,6 @@ impl<'a> Frame<'a> {
                 );
             }
 
-            // Set shadow params for this cascade (cascade_index + bias)
             self.renderer
                 .set_shadow_cascade_params(cascade_idx, depth_bias);
 
@@ -2376,7 +2296,6 @@ impl<'a> Frame<'a> {
 
         cmd.end_rendering();
 
-        // Mark the shadow atlas as written for barrier tracking
         if let Some(write_name) = pass.writes.first() {
             self.resource_states
                 .insert(write_name.clone(), ResourceState::DepthStencilAttachment);
@@ -2490,12 +2409,10 @@ impl<'a> Frame<'a> {
             for draw_call in draw_list.iter() {
                 let is_skinned = !draw_call.skeleton.is_none();
 
-                // Skip skinned meshes if the skinned pipeline is not available
                 if is_skinned && skinned_pipeline.is_none() {
                     continue;
                 }
 
-                // Bind the correct pipeline when switching between skinned and non-skinned
                 if is_skinned != current_pipeline_is_skinned {
                     if is_skinned {
                         unsafe {
@@ -2629,7 +2546,6 @@ impl<'a> Frame<'a> {
         let viewport_count = viewports.len() as u32;
         let screen_size = [extent.width as f32, extent.height as f32];
 
-        // Get viewport texture bindless index
         // With per-frame transient textures, the actual index is base + frame_idx
         let viewport_bindless_idx = if let Some(base_idx) = self.graph.get_ldr_texture_base_index()
         {
@@ -2670,15 +2586,12 @@ impl<'a> Frame<'a> {
         let compositing_desc_set =
             self.get_or_create_compositing_descriptor_set(viewports, current_frame)?;
 
-        // Get swapchain extent for rendering
         let render_area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent,
         };
 
-        // Determine color attachment (backbuffer or transient texture)
         let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
-            // Write to backbuffer
             let swapchain_view =
                 self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
             vk::RenderingAttachmentInfo::default()
@@ -2692,7 +2605,6 @@ impl<'a> Frame<'a> {
                     },
                 })
         } else if let Some(color_name) = pass.writes.first() {
-            // Write to transient texture
             let frame_idx = self.current_frame();
             if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
                 vk::RenderingAttachmentInfo::default()
@@ -2717,7 +2629,6 @@ impl<'a> Frame<'a> {
             ));
         };
 
-        // Begin dynamic rendering
         cmd.begin_rendering(
             &[color_attachment],
             None, // No depth attachment for compositing
@@ -2726,7 +2637,6 @@ impl<'a> Frame<'a> {
             1,
         );
 
-        // Set viewport and scissor
         cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
             0.0,
             0.0,
@@ -2738,7 +2648,6 @@ impl<'a> Frame<'a> {
             extent.height,
         )]);
 
-        // Get material and pipeline from registry
         let material = self
             .renderer
             .asset_registry
@@ -2764,7 +2673,6 @@ impl<'a> Frame<'a> {
             );
         }
 
-        // Bind descriptor sets
         // Set 0: Storage uniforms (frame_data + objects array)
         let storage_ds = self.renderer.storage_descriptor_sets[current_frame].vk_set();
         cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
@@ -2776,7 +2684,6 @@ impl<'a> Frame<'a> {
         // Set 2: Compositing descriptor set (viewport texture array)
         cmd.bind_descriptor_sets(layout, 2, &[compositing_desc_set], &[]);
 
-        // Draw fullscreen triangle (3 vertices)
         cmd.draw_array(3, 1, 0, 0);
 
         // End rendering
@@ -2797,10 +2704,8 @@ impl<'a> Frame<'a> {
         use crate::render_graph::descriptor_sets::CompositingDescriptorSet;
         use std::rc::Rc;
 
-        // Collect viewport texture image views
         let mut texture_views = Vec::with_capacity(viewports.len());
         for (handle, _rect) in viewports {
-            // Find the texture resource name from the handle
             let resource_name = self
                 .graph
                 .resource_names
@@ -2820,7 +2725,6 @@ impl<'a> Frame<'a> {
                 handle.index()
             );
 
-            // Get the transient texture
             let transient = self
                 .graph
                 .transient_texture(&resource_name, frame_idx)
@@ -2880,7 +2784,6 @@ impl<'a> Frame<'a> {
 
 impl<'a> Drop for Frame<'a> {
     fn drop(&mut self) {
-        // Clean up temporary buffers created during this frame
         for (buffer, allocation) in self.temporary_buffers.drain(..) {
             unsafe {
                 self.renderer.context.device.destroy_buffer(buffer, None);

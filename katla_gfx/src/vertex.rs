@@ -9,9 +9,7 @@
 //! All vertex types use raw arrays (`[f32; N]`) instead of math types to avoid dependencies
 //! on `katla_math` and maintain compatibility with GPU memory layouts.
 
-//=============================================================================
 // Vertex Attribute Format
-//=============================================================================
 
 /// Describes the format of a single vertex attribute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -56,9 +54,7 @@ impl VertexAttributeFormat {
     }
 }
 
-//=============================================================================
 // Vertex Layout
-//=============================================================================
 
 /// Describes the layout of vertex attributes in a buffer.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -169,9 +165,7 @@ impl VertexLayout {
     }
 }
 
-//=============================================================================
 // Vertex Layout Conversion Implementations
-//=============================================================================
 
 impl From<VertexAttributeFormat> for crate::vulkan::vertexbinding::VertexFormat {
     fn from(format: VertexAttributeFormat) -> Self {
@@ -204,9 +198,7 @@ impl From<&VertexLayout> for crate::vulkan::vertexbinding::VertexBinding {
     }
 }
 
-//=============================================================================
 // Vertex Trait
-//=============================================================================
 
 /// Trait for vertex types that can be used in mesh creation.
 ///
@@ -217,9 +209,7 @@ pub trait Vertex: bytemuck::Pod + bytemuck::Zeroable {
     fn layout() -> VertexLayout;
 }
 
-//=============================================================================
 // Standard Vertex Types
-//=============================================================================
 
 /// Standard PBR vertex format with position, normal, tangent, and UV.
 ///
@@ -536,9 +526,7 @@ impl Vertex for VertexUI {
     }
 }
 
-//=============================================================================
 // Tests
-//=============================================================================
 
 #[cfg(test)]
 mod tests {

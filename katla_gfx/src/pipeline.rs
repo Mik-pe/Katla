@@ -26,9 +26,7 @@
 //!
 //! For vertex layout types, see the [`vertex`] module.
 
-//=============================================================================
 // Katla-native Pipeline State Enums
-//=============================================================================
 
 /// Compare operation for depth/stencil testing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -211,9 +209,7 @@ impl ShaderStageFlags {
     }
 }
 
-//=============================================================================
 // Vulkan Conversion Implementations
-//=============================================================================
 
 impl From<CompareOp> for ash::vk::CompareOp {
     #[inline]
@@ -317,9 +313,7 @@ impl From<ShaderStageFlags> for ash::vk::ShaderStageFlags {
     }
 }
 
-//=============================================================================
 // Tests
-//=============================================================================
 
 #[cfg(test)]
 mod tests {
