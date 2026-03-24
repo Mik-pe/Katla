@@ -5,5 +5,5 @@ authors = ["Mik-pe <mikael.pettersson201@gmail.com>"]
 edition = "2021"
 
 [dependencies]
-katla_derive = { path = "../katla_derive" }
-katla_math = { path = "../katla_math" }
+katla_derive = { workspace = true }
+katla_math = { workspace = true }

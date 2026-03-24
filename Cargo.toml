@@ -3,6 +3,44 @@ members = ["katla_math", "katla_gfx", "katla_app", "katla_ecs", "katla_derive", 
 default-members = ["game"]
 resolver = "2"
 
+[workspace.dependencies]
+ab_glyph = "0.2"
+approx = "0.5"
+ash = "0.38"
+ash-window = "0.13"
+bitflags = "2.6"
+bytemuck = { version = "1.21", features = ["derive"] }
+byteorder = "1.5"
+clap = { version = "4.5", features = ["derive"] }
+dirs = "6.0"
+env_logger = "0.11"
+gltf = { version = "1.4", features = ["KHR_materials_pbrSpecularGlossiness"] }
+gpu-allocator = "0.28"
+image = "0.25"
+itertools = "0.14"
+libc = "0.2"
+log = "0.4"
+naga = { version = "28.0.0", features = ["wgsl-in", "spv-out"] }
+notify = "7.0"
+png = "0.18"
+proc-macro2 = "1.0"
+quote = "1.0"
+rand = "0.8"
+raw-window-handle = "0.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+syn = { version = "2.0", features = ["full"] }
+toml = "1.0"
+winit = "0.30"
+
+# Internal workspace crates
+katla_derive = { path = "katla_derive" }
+katla_ecs = { path = "katla_ecs" }
+katla_math = { path = "katla_math" }
+katla_gfx = { path = "katla_gfx" }
+katla_ui = { path = "katla_ui" }
+katla_app = { path = "katla_app" }
+
 # Faster dev builds with some optimizations
 [profile.dev]
 opt-level = 1               # Basic optimizations

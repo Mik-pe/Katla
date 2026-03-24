@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-katla_math = { path = "../katla_math" }
-log = "0.4"
-bitflags = "2.6"
-bytemuck = { version = "1.21", features = ["derive"] }
+katla_math = { workspace = true }
+log = { workspace = true }
+bitflags = { workspace = true }
+bytemuck = { workspace = true }
 
 # Font handling
-ab_glyph = "0.2"
+ab_glyph = { workspace = true }
 
 [dev-dependencies]
