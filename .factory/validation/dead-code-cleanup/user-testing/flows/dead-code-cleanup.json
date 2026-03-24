@@ -1,0 +1,65 @@
+{
+  "flowId": "dead-code-cleanup",
+  "description": "Verify all dead code has been removed from the dead-code-cleanup milestone",
+  "assertions": [
+    "VAL-DEAD-001",
+    "VAL-DEAD-002",
+    "VAL-DEAD-003",
+    "VAL-DEAD-004",
+    "VAL-DEAD-005",
+    "VAL-DEAD-006",
+    "VAL-DEAD-007",
+    "VAL-DEAD-008",
+    "VAL-DEAD-009"
+  ],
+  "results": [
+    {
+      "assertionId": "VAL-DEAD-001",
+      "status": "pass",
+      "evidence": "katla_gfx/src/rendering/ directory does not exist; rg 'mod rendering' katla_gfx/src/ returns zero matches"
+    },
+    {
+      "assertionId": "VAL-DEAD-002",
+      "status": "pass",
+      "evidence": "All 4 stub files not found: katla_gfx/src/buffer.rs, katla_gfx/src/mesh.rs, katla_gfx/src/render_pass/passes/mod.rs, katla_app/src/systems/animation/mod.rs; cargo check passes"
+    },
+    {
+      "assertionId": "VAL-DEAD-003",
+      "status": "pass",
+      "evidence": "rg '#!\\[allow(dead_code)\\]' katla_app/src/lib.rs returns zero matches; cargo check -p katla_app passes with no dead_code warnings"
+    },
+    {
+      "assertionId": "VAL-DEAD-004",
+      "status": "pass",
+      "evidence": "rg 'allow(dead_code)' katla_math/src/sse/quat.rs returns zero matches; cargo check -p katla_math passes"
+    },
+    {
+      "assertionId": "VAL-DEAD-005",
+      "status": "pass",
+      "evidence": "ObjectData and ShaderMaterialParams structs (annotated 'only used for sizes') have been removed. FrameUniforms and ObjectUniforms retain #[allow(dead_code)] but are actively used: written to GPU memory at lines 370-371 and 483-484, used for size_of calculations in constants and tests. These are legitimate GPU staging structs, not dead code. cargo check -p katla_gfx passes with no dead_code warnings."
+    },
+    {
+      "assertionId": "VAL-DEAD-006",
+      "status": "pass",
+      "evidence": "cargo check -p katla_ui produces zero dead_code warnings; only one #[allow(dead_code)] remains in text/mod.rs line 45 which is a legitimate constant"
+    },
+    {
+      "assertionId": "VAL-DEAD-007",
+      "status": "pass",
+      "evidence": "rg 'generate_icosphere|get_midpoint' katla_gfx/src/primitives/sphere.rs returns zero matches; cargo check -p katla_gfx passes"
+    },
+    {
+      "assertionId": "VAL-DEAD-008",
+      "status": "pass",
+      "evidence": "rg 'ScrollAreaState|AssetEntry' katla_app/src/ui/editor_ui/asset_browser/mod.rs returns zero matches; cargo check -p katla_app passes with no unused_imports warnings"
+    },
+    {
+      "assertionId": "VAL-DEAD-009",
+      "status": "pass",
+      "evidence": "katla_app/src/entities/ directory does not exist; mod entities removed from katla_app/src/lib.rs; cargo check -p katla_app passes"
+    }
+  ],
+  "toolsUsed": ["cargo check", "rg (ripgrep)"],
+  "frictions": [],
+  "blockers": []
+}
