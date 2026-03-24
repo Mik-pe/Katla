@@ -35,17 +35,6 @@ var<storage, read_write> alive_list_next: array<u32, MAX_PARTICLES>;
 @group(0) @binding(4)
 var<storage, read_write> counters: ParticleCounters;
 
-// Indirect draw command (written by simulate, read by render via vkCmdDrawIndirect)
-struct DrawIndirectCommand {
-    vertex_count: u32,
-    instance_count: u32,
-    first_vertex: u32,
-    first_instance: u32,
-}
-
-@group(0) @binding(5)
-var<storage, read_write> draw_command: DrawIndirectCommand;
-
 // Per-frame data (Set 1: updated via push descriptors)
 @group(1) @binding(0)
 var<uniform> frame_data: FrameData;
@@ -127,14 +116,6 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     storageBarrier();
 
     if (local_id == 0u) {
-        let finished = atomicAdd(&counters.workgroups_finished, 1u);
-        let total_wg = (total_particles + 63u) / 64u;
-        if (finished == total_wg - 1u) {
-            let total_alive = atomicLoad(&counters.alive_count);
-            draw_command.vertex_count = total_alive * 6u;
-            draw_command.instance_count = 1u;
-            draw_command.first_vertex = 0u;
-            draw_command.first_instance = 0u;
-        }
+        atomicAdd(&counters.workgroups_finished, 1u);
     }
 }

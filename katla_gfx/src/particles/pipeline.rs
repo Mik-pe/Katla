@@ -71,6 +71,63 @@ impl GlobalParticleSystem {
         Ok(())
     }
 
+    /// Create draw command finalization pipeline.
+    ///
+    /// This pipeline reads the post-simulate alive_count and writes the
+    /// indirect draw command. It must be dispatched as a single 1x1x1
+    /// workgroup AFTER the simulate dispatch with a pipeline barrier.
+    pub fn create_draw_command_pipeline(
+        &mut self,
+        asset_registry: &mut AssetRegistry,
+        shader_module: VkShaderModule,
+    ) -> Result<(), String> {
+        use crate::vulkan::material::compute_pipeline::ComputePipelineBuilder;
+
+        let device = &self.context.device;
+
+        // Descriptor layout: 2 storage buffer bindings (push descriptors)
+        // Binding 0: counters (ParticleCounters)
+        // Binding 1: indirect draw command (DrawIndirectCommand, 16 bytes)
+        let bindings = [
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::COMPUTE),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(1)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::COMPUTE),
+        ];
+
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::default()
+            .bindings(&bindings)
+            .flags(vk::DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR_KHR);
+
+        let descriptor_layout = unsafe {
+            device
+                .create_descriptor_set_layout(&layout_info, None)
+                .map_err(|e| format!("Failed to create draw command descriptor layout: {:?}", e))?
+        };
+
+        let pipeline = ComputePipelineBuilder::new(self.context.clone())
+            .with_shader(shader_module)
+            .with_descriptor_layouts(vec![crate::sync::VkDescriptorSetLayout(descriptor_layout)])
+            .build()
+            .map_err(|e| format!("Failed to build draw command pipeline: {}", e))?;
+
+        self.draw_command_descriptor_set = None;
+        self.draw_command_descriptor_layout = Some(descriptor_layout);
+        self._draw_command_descriptor_pool = vk::DescriptorPool::null();
+
+        let pipeline_handle = asset_registry.register_compute_pipeline(pipeline);
+        self.draw_command_pipeline = Some(pipeline_handle);
+
+        info!("Created particle draw command pipeline (push descriptors)");
+        Ok(())
+    }
+
     /// Create render pipeline for particle rendering.
     ///
     /// Note: Particle rendering uses 2 descriptor sets:

@@ -14,7 +14,7 @@
 //   Binding 3: Storage buffer (emitter configurations)
 //   Binding 4: Storage buffer (validation results — atomic fault counters)
 //   Binding 5: Uniform buffer (validation params)
-//   Binding 6: Storage buffer (indirect draw command — written by simulate)
+//   Binding 6: Storage buffer (indirect draw command — written by draw_command shader)
 
 #include "common.wgsl"
 
@@ -44,6 +44,19 @@ struct ValidationResults {
     // Per-frame indirect draw details: [frame_index, expected_vertex_count, actual_vertex_count]
     indirect_draw_details: array<u32, 192>, // 64 frames * 3 u32
     indirect_draw_detail_count: atomic<u32>,
+    // Frame-level counter-consistency tracking (offset 1116+)
+    // Catches anomalies like 0-alive frames, counter corruption, draw command mismatches
+    zero_alive_frames: atomic<u32>,          // frames where alive_count == 0
+    zero_alive_with_emit: atomic<u32>,       // frames where alive_count == 0 but emit_count > 0 (BUG)
+    min_alive_count: atomic<u32>,            // minimum alive_count seen (use atomicMin)
+    max_alive_count: atomic<u32>,            // maximum alive_count seen (use atomicMax)
+    total_alive_sum: atomic<u32>,           // sum of alive_count across all frames (for avg)
+    total_frames_checked: atomic<u32>,      // total frames validated
+    counter_corruption: atomic<u32>,        // frames where alive_count + dead_count > emit_count
+    // Anomaly details (16 entries x 5 u32 = 320 bytes)
+    // Format: [frame_index, alive_count, emit_count, dead_count, vertex_count]
+    anomaly_details: array<u32, 80>,
+    anomaly_count: atomic<u32>,
 }
 
 // Validation parameters (32 bytes)
@@ -89,8 +102,8 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     // entries from previous frames. counters.alive_count reflects actual survivors.
     let actual_alive_count = atomicLoad(&counters.alive_count);
 
-    // Indirect draw validation (once per dispatch, in first thread of first workgroup)
-    if (local_id == 0u) {
+    // Indirect draw validation and frame stats (once per dispatch, in first thread)
+    if (idx == 0u) {
         let expected_vc = actual_alive_count * 6u;
         let actual_vc = draw_command.vertex_count;
         if (actual_vc != expected_vc) {
@@ -101,6 +114,44 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
                 results.indirect_draw_details[base] = params.frame_index;
                 results.indirect_draw_details[base + 1u] = expected_vc;
                 results.indirect_draw_details[base + 2u] = actual_vc;
+            }
+        }
+
+        // Frame-level stats tracking
+        atomicAdd(&results.total_frames_checked, 1u);
+        atomicAdd(&results.total_alive_sum, actual_alive_count);
+
+        atomicMin(&results.min_alive_count, actual_alive_count);
+        atomicMax(&results.max_alive_count, actual_alive_count);
+
+        let emit_count = atomicLoad(&counters.emit_count);
+        let dead_count = atomicLoad(&counters.dead_count);
+
+        // Zero-alive frame detection
+        if (actual_alive_count == 0u) {
+            atomicAdd(&results.zero_alive_frames, 1u);
+            if (emit_count > 0u) {
+                atomicAdd(&results.zero_alive_with_emit, 1u);
+            }
+        }
+
+        // Record anomaly details for any anomalous frame (up to 16)
+        var is_anomaly = false;
+        if (actual_alive_count == 0u && emit_count > 0u) {
+            is_anomaly = true;
+        }
+        if (actual_vc != expected_vc) {
+            is_anomaly = true;
+        }
+        if (is_anomaly) {
+            let slot = atomicAdd(&results.anomaly_count, 1u);
+            if (slot < 16u) {
+                let base = slot * 5u;
+                results.anomaly_details[base] = params.frame_index;
+                results.anomaly_details[base + 1u] = actual_alive_count;
+                results.anomaly_details[base + 2u] = emit_count;
+                results.anomaly_details[base + 3u] = dead_count;
+                results.anomaly_details[base + 4u] = actual_vc;
             }
         }
     }

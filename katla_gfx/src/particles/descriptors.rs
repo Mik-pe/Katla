@@ -581,13 +581,12 @@ impl GlobalParticleSystem {
 
     pub fn update_compute_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
         let device = &self.context.device;
-        let descriptor_set = self
-            .compute_descriptor_set
-            .ok_or("Compute descriptor set not allocated")?;
+        let fi = frame_index % 2;
+        let descriptor_set =
+            self.compute_descriptor_sets[fi].ok_or("Compute descriptor set not allocated")?;
 
         let layout = self.buffer.layout();
         let next_frame = (frame_index + 1) % 2;
-        let fi = frame_index % 2;
 
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
@@ -649,13 +648,12 @@ impl GlobalParticleSystem {
 
     pub fn update_render_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
         let device = &self.context.device;
-        let descriptor_set = self
-            .render_descriptor_set
-            .ok_or("Render descriptor set not allocated")?;
+        let fi = frame_index % 2;
+        let descriptor_set =
+            self.render_descriptor_sets[fi].ok_or("Render descriptor set not allocated")?;
 
         let layout = self.buffer.layout();
         let next_frame = (frame_index + 1) % 2;
-        let fi = frame_index % 2;
 
         let alive_list_info = [vk::DescriptorBufferInfo {
             buffer: self.buffer.particle_buffer(),
