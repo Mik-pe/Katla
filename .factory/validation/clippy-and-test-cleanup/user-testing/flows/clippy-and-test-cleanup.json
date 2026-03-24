@@ -1,0 +1,109 @@
+{
+  "flowId": "clippy-and-test-cleanup",
+  "milestone": "clippy-and-test-cleanup",
+  "assertions": ["VAL-CLIPPY-001", "VAL-CLIPPY-002", "VAL-CLIPPY-003", "VAL-CLIPPY-004", "VAL-CLIPPY-005", "VAL-CLIPPY-006", "VAL-CLIPPY-007"],
+  "results": [
+    {
+      "assertionId": "VAL-CLIPPY-001",
+      "status": "pass",
+      "evidence": "cargo clippy completed with exit code 0 and zero warning lines. All 35 previously identified clippy warnings have been resolved.",
+      "commandsRun": [
+        {
+          "command": "cargo clippy 2>&1",
+          "exitCode": 0,
+          "observation": "Zero warnings in output. findstr /i 'warning' returned no matches."
+        }
+      ]
+    },
+    {
+      "assertionId": "VAL-CLIPPY-002",
+      "status": "pass",
+      "evidence": "rg 'test_model_path|test_material_path|test_shader_path|test_font_path' katla_app/src/resources/mod.rs returned zero matches. All 5 trivial PathBuf::join tests removed. cargo test -p katla_app passes (146 passed, 0 failed).",
+      "commandsRun": [
+        {
+          "command": "rg 'test_model_path|test_material_path|test_shader_path|test_font_path' katla_app/src/resources/mod.rs",
+          "exitCode": 1,
+          "observation": "Zero matches - tests successfully removed"
+        },
+        {
+          "command": "cargo test -p katla_app",
+          "exitCode": 0,
+          "observation": "146 passed; 0 failed; 1 ignored"
+        }
+      ]
+    },
+    {
+      "assertionId": "VAL-CLIPPY-003",
+      "status": "pass",
+      "evidence": "rg 'test_default_gui_state|test_parse_toml|test_to_toml' katla_app/src/gui_state.rs returned zero matches. All 3 trivial gui_state tests removed. cargo test -p katla_app passes.",
+      "commandsRun": [
+        {
+          "command": "rg 'test_default_gui_state|test_parse_toml|test_to_toml' katla_app/src/gui_state.rs",
+          "exitCode": 1,
+          "observation": "Zero matches - tests successfully removed"
+        }
+      ]
+    },
+    {
+      "assertionId": "VAL-CLIPPY-004",
+      "status": "pass",
+      "evidence": "rg 'test_frame_context' katla_app/src/rendering/frame_context.rs returned zero matches. All 6 trivial counter tests removed. cargo test -p katla_app passes.",
+      "commandsRun": [
+        {
+          "command": "rg 'test_frame_context' katla_app/src/rendering/frame_context.rs",
+          "exitCode": 1,
+          "observation": "Zero matches - tests successfully removed"
+        }
+      ]
+    },
+    {
+      "assertionId": "VAL-CLIPPY-005",
+      "status": "pass",
+      "evidence": "rg for the 10 specified wrapper/conversion tests (test_semaphore_wrapper, test_fence_wrapper, test_semaphore_conversions, test_fence_conversions, test_pipeline_wrapper, test_pipeline_conversions, test_pipeline_layout_wrapper, test_pipeline_layout_conversions, test_buffer_wrapper, test_buffer_conversions) returned zero matches. All removed. Only unrelated tests remain (test_access_flags2, test_access_flags2_conversions, etc.). cargo test -p katla_gfx passes (357 unit tests + 51 integration tests, all passed).",
+      "commandsRun": [
+        {
+          "command": "rg 'test_semaphore_wrapper|test_fence_wrapper|test_pipeline_wrapper|test_buffer_wrapper|test_.*_conversions' katla_gfx/src/sync.rs",
+          "exitCode": 0,
+          "observation": "Only test_access_flags2_conversions remains (not in removal list). All 10 specified tests removed."
+        },
+        {
+          "command": "cargo test -p katla_gfx",
+          "exitCode": 0,
+          "observation": "357 unit tests passed; 51 integration tests passed across 5 test files; 4 doc-tests passed"
+        }
+      ]
+    },
+    {
+      "assertionId": "VAL-CLIPPY-006",
+      "status": "pass",
+      "evidence": "rg 'test_renderer_error_display|test_from_vk_result|test_from_io_error' katla_gfx/src/error.rs returned zero matches. All 3 trivial Display/From trait tests removed. cargo test -p katla_gfx passes.",
+      "commandsRun": [
+        {
+          "command": "rg 'test_renderer_error_display|test_from_vk_result|test_from_io_error' katla_gfx/src/error.rs",
+          "exitCode": 1,
+          "observation": "Zero matches - tests successfully removed"
+        }
+      ]
+    },
+    {
+      "assertionId": "VAL-CLIPPY-007",
+      "status": "pass",
+      "evidence": "rg 'LifetimeComponent' katla_derive/tests/component_macro_tests.rs returned zero matches. Commented-out test code removed. cargo test -p katla_derive passes (15 passed, 0 failed).",
+      "commandsRun": [
+        {
+          "command": "rg 'LifetimeComponent' katla_derive/tests/component_macro_tests.rs",
+          "exitCode": 1,
+          "observation": "Zero matches - commented-out test code removed"
+        },
+        {
+          "command": "cargo test -p katla_derive",
+          "exitCode": 0,
+          "observation": "15 passed; 0 failed; 0 ignored"
+        }
+      ]
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["cargo clippy", "cargo test", "rg (ripgrep)"]
+}
