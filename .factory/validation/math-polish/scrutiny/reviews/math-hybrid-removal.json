@@ -1,0 +1,46 @@
+{
+  "featureId": "math-hybrid-removal",
+  "milestone": "math-polish",
+  "status": "pass",
+  "assertions": [
+    {
+      "id": "VAL-MATH-001",
+      "status": "pass",
+      "evidence": "Grep for 'Mat4::new()' across entire codebase returns no matches in .rs files. mat4.rs has no fn new() method. Only Mat4::identity() remains as the zero-argument constructor. cargo check --workspace passes."
+    },
+    {
+      "id": "VAL-MATH-002",
+      "status": "pass",
+      "evidence": "Grep for 'Mat3::new()' across entire codebase returns no matches in .rs files. mat3.rs has no fn new() method. Only Mat3::identity() remains. cargo check --workspace passes."
+    },
+    {
+      "id": "VAL-MATH-004",
+      "status": "pass",
+      "evidence": "Grep for 'Transform::from_position' across codebase shows only 'from_position_rotation_scale' (a different, legitimate method). transform.rs has no fn from_position() — only new_from_position() exists at line 43. cargo check --workspace passes."
+    },
+    {
+      "id": "VAL-MATH-008",
+      "status": "pass",
+      "evidence": "Scalar vec2.rs, vec3.rs, vec4.rs have no fn zero()/fn one()/fn x_axis() etc methods. All use const associated constants (ZERO, ONE, X_AXIS, etc.). Vec4 tests and SSE vec4.rs still use method calls (Vec4::zero() etc) which is correct — SSE __m128 cannot be const-constructible, so methods remain on the SSE implementation. Vec3::ZERO and Vec3::ONE constants were added. cargo check --workspace passes."
+    },
+    {
+      "id": "VAL-MATH-009",
+      "status": "pass",
+      "evidence": "Grep for 'Quat::new()' (zero-argument) returns no matches. All identity-creation call sites use Quat::identity() (16 occurrences across katla_math and katla_app). Grep for 'new_from_xyzw' returns no matches. Both scalar and SSE quat.rs have pub fn identity() and pub fn new(x, y, z, w). cargo check --workspace passes."
+    },
+    {
+      "id": "VAL-MATH-020",
+      "status": "pass",
+      "evidence": "Grep for 'to_clearcolor_value', 'Color::from_vec4', '.from_vec4(', '.to_vec4()' returns no matches in .rs files. color.rs has only From<Color> for Vec4 and From<Vec4> for Color trait impls (lines 462-473) for Vec4 conversion. No standalone conversion methods remain. cargo check --workspace passes."
+    }
+  ],
+  "issues": [],
+  "sharedStateObservations": [
+    {
+      "observation": "SSE Vec4 cannot have const associated constants (ZERO, ONE, etc.) because __m128 is not const-constructible. The worker correctly kept fn zero()/fn one() methods on the SSE implementation while removing them from the scalar implementation. This platform difference between scalar and SSE vec types is a known codebase quirk that should be documented.",
+      "suggestedTarget": "library",
+      "suggestedContent": "Add to .factory/library/architecture.md: Vec4 on x86_64 uses SSE intrinsics (__m128) which cannot be used in const contexts. Therefore Vec4::ZERO/ONE etc exist only as const associated constants on the scalar implementation, while the SSE implementation provides fn zero()/fn one() methods. Tests targeting Vec4 must use method calls since x86_64 uses the SSE path."
+    }
+  ],
+  "summary": "Thorough review of math-hybrid-removal feature confirms all 6 validation assertions pass. The worker removed all hybrid/duplicate constructors across 29 files (-272/+149 lines): Mat4::new(), Mat3::new(), Transform::from_position(), Quat::new()→identity() and new_from_xyzw()→new(), Vec method removal (keeping const constants), and Color conversion method removal (keeping From trait impls). All call sites across katla_math and katla_app were updated. cargo check, cargo test, and cargo clippy all pass cleanly. The SSE Vec4 const limitation was handled correctly with justified deviation. No issues found."
+}

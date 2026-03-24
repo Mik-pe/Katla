@@ -1,0 +1,76 @@
+{
+  "featureId": "math-bugfixes-and-dedup",
+  "milestone": "math-polish",
+  "reviewedAt": "2026-03-24T23:30:00.000Z",
+  "commitId": "6e4a9447e7969f6836bb006c0ae2589834f86907",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All 7 sub-tasks correctly implemented: 3 bug fixes (Plane::transform inverse transpose, Frustum::intersect_three_planes Option return, Ray::intersects_aabb face normals), 3 deduplication extractions (shared compute_bounds, Quat rotation_matrix_elements, Mat4::decompose delegating to From<Mat3>), and 1 std->core migration. Code is clean, tests pass (369), workspace compiles. One minor non-blocking observation about Sphere::create_from_verts heap allocation.",
+    "issues": [
+      {
+        "file": "katla_math/src/sphere.rs",
+        "line": 40,
+        "severity": "non_blocking",
+        "description": "Sphere::create_from_verts now heap-allocates a Vec<Vec3> to convert &[f32; 3] to &[Vec3] for the shared compute_bounds helper. The original code iterated directly without allocation. For a math utility that may be called in hot paths (e.g., mesh processing), this introduces unnecessary allocation. Could be resolved by making compute_bounds generic over an iterator, or by having a separate compute_bounds_f32 variant. Not blocking since the dedup benefit outweighs the minor perf cost, and no callers were observed in hot paths."
+      },
+      {
+        "file": "katla_math/src/plane.rs",
+        "line": 138,
+        "severity": "non_blocking",
+        "description": "Plane::transform falls back to the original (untransformed) normal when the inverse transpose computation fails (singular matrix). This is a reasonable fallback but silently ignores the transformation. The caller has no way to know the normal wasn't actually transformed. Not blocking since this only occurs for degenerate matrices."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "observation": "Sphere::create_from_verts accepts &[f32; 3] while AABB::create_from_verts accepts &[Vec3]. The deduplication via compute_bounds (which takes &[Vec3]) forced a heap allocation in Sphere. This API inconsistency between AABB and Sphere could be documented in library/ to inform future dedup work.",
+      "suggestedTarget": "library",
+      "suggestedContent": "Add to architecture.md or a new katla_math.md: Note that AABB and Sphere create_from_verts have different input types (&[Vec3] vs &[f32; 3]), which limits shared helper dedup without allocation."
+    },
+    {
+      "observation": "Worker followed the cleanup-worker skill procedure correctly: read affected files, made changes, formatted, verified with cargo check/test, and committed. No deviations from procedure.",
+      "suggestedTarget": null,
+      "suggestedContent": null
+    }
+  ],
+  "assertions": [
+    {
+      "id": "VAL-MATH-013",
+      "status": "pass",
+      "evidence": "plane.rs:133-141 now calls matrix.to_mat3().inverse().map(|m| m.transpose()) and uses the result to transform the normal. Falls back to original normal if inverse doesn't exist. Verified correct inverse-transpose pattern for normal transformation."
+    },
+    {
+      "id": "VAL-MATH-014",
+      "status": "pass",
+      "evidence": "frustum.rs:277 — intersect_three_planes now returns Option<Vec3>. Returns None when denom.abs() < 1e-6. All 8 callers in corners() (lines 257-271) updated to use .unwrap_or(origin). No other callers exist in the codebase."
+    },
+    {
+      "id": "VAL-MATH-015",
+      "status": "pass",
+      "evidence": "ray.rs:55-128 — tracks hit_axis and hit_sign during slab iteration. Constructs actual face normal from hit_axis/hit_sign (line 130-134) instead of placeholder Vec3::new(0,1,0). Also negates normal for inside-box case (line 140). Correct implementation of slab method face normal computation."
+    },
+    {
+      "id": "VAL-MATH-016",
+      "status": "pass",
+      "evidence": "utils.rs:23-49 — compute_bounds function extracts axis-aligned min/max from &[Vec3]. aabb.rs:27 uses it directly. sphere.rs:40-43 converts &[f32; 3] to Vec<Vec3> then calls compute_bounds. No duplicate bounds computation remains (verified via grep for f32::MAX pattern)."
+    },
+    {
+      "id": "VAL-MATH-017",
+      "status": "pass",
+      "evidence": "Both scalar/quat.rs:217 (rotation_matrix_elements) and sse/quat.rs:239 (rotation_matrix_elements) extract the shared 9-element computation. make_mat4 and to_mat3 in both implementations now call rotation_matrix_elements(). No duplicate rotation matrix code remains."
+    },
+    {
+      "id": "VAL-MATH-018",
+      "status": "pass",
+      "evidence": "mat4.rs:347-356 — decompose() now constructs a Mat3 from the scaled 3x3 elements and delegates to Quat::from(mat3) instead of inline trace-based algorithm. The From<Mat3> for Quat implementation in scalar/quat.rs:280 and sse/quat.rs:307 remains the canonical algorithm."
+    },
+    {
+      "id": "VAL-MATH-019",
+      "status": "pass",
+      "evidence": "Grep for 'std::f32::consts' in katla_math/src/ returns 0 matches. Both scalar/quat.rs:266 and sse/quat.rs:293 now use core::f32::consts::PI. constants.rs already used core::f32::consts throughout."
+    }
+  ],
+  "summary": "Feature math-bugfixes-and-dedup passes review. All 7 assertions verified against actual code. Three bug fixes are mathematically correct (inverse transpose for normals, Option for degenerate plane intersections, slab method face normals). Three deduplication extractions are complete with no remaining duplicate code. The std->core migration is complete. Two non-blocking observations noted: Sphere::create_from_verts heap allocation from dedup, and silent fallback in Plane::transform for singular matrices."
+}
