@@ -20,7 +20,7 @@ Notes specific to the repo-wide cleanup mission.
 
 - When removing dead code from katla_ui, many items are in the `context/` submodule tree. Check both the method definition AND the struct/impl it belongs to.
 - The `katla_app/src/lib.rs` blanket `#![allow(dead_code)]` may reveal many more dead_code warnings when removed. Workers should fix all of them, not just the 17 currently visible.
-- `katla_math/src/sse/quat.rs` - verify the entire SSE quat module is unused before removing. Check if `from_axis_angle` or matrix operations are called from anywhere.
+- `katla_math/src/sse/quat.rs` - SSE Quat is LIVE CODE. It's re-exported via `pub use crate::sse::quat::Quat` in `katla_math/src/quat.rs` on x86/x86_64 targets. Do NOT remove the module. The `#[allow(dead_code)]` annotations were already removed in the dead-code-cleanup milestone.
 
 ## File Splitting Notes
 
