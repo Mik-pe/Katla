@@ -377,6 +377,12 @@ fn main() -> ExitCode {
     // Create double-buffered frame state (fences + semaphores)
     let mut frame_state = DoubleBufferedFrameState::new(&context.device);
 
+    // Pre-allocate 2 command buffers (one per FiF slot) to avoid per-frame allocation.
+    let frame_commands = [
+        context.begin_single_time_commands(),
+        context.begin_single_time_commands(),
+    ];
+
     // Create lightweight indirect draw readback for per-frame validation
     let indirect_readback = match IndirectDrawReadback::new(&context) {
         Ok(r) => r,
@@ -497,7 +503,9 @@ fn main() -> ExitCode {
         }
 
         // --- Record and submit GPU compute dispatch ---
-        let command_buffer = context.begin_single_time_commands();
+        frame_commands[fi].reset();
+        frame_commands[fi].begin_single_time_command();
+        let command_buffer = &frame_commands[fi];
 
         let frame_index_for_descriptor = fi;
 
@@ -609,6 +617,10 @@ fn main() -> ExitCode {
             .unwrap();
     }
     frame_state.destroy(&context.device);
+
+    // Return pre-allocated command buffers to pool
+    frame_commands[0].return_to_pool();
+    frame_commands[1].return_to_pool();
 
     // --- Per-frame indirect draw validation summary ---
     log::info!(
@@ -934,6 +946,7 @@ fn run_contamination_test(
             );
         }
         cmd.end_single_time_command();
+        context.end_single_time_commands(cmd);
     }
 
     // Load validation shader and create compute pass
@@ -988,6 +1001,12 @@ fn run_contamination_test(
     // --- Run simulation with 2-FiF double-buffered GPU validation ---
     let mut frame_state = DoubleBufferedFrameState::new(&context.device);
 
+    // Pre-allocate 2 command buffers (one per FiF slot) to avoid per-frame allocation.
+    let frame_commands = [
+        context.begin_single_time_commands(),
+        context.begin_single_time_commands(),
+    ];
+
     for frame in 0..test_frames {
         let fi = (frame as usize) % 2;
         let next_fi = (fi + 1) % 2;
@@ -1000,7 +1019,9 @@ fn run_contamination_test(
             .map_err(|e| format!("Update failed at frame {}: {}", frame, e))?;
 
         // Record and submit GPU compute dispatch (emit + simulate + debug readback)
-        let cmd = context.begin_single_time_commands();
+        frame_commands[fi].reset();
+        frame_commands[fi].begin_single_time_command();
+        let cmd = &frame_commands[fi];
 
         let frame_index_for_descriptor = fi;
 
@@ -1166,6 +1187,10 @@ fn run_contamination_test(
         frame_state.step_frame();
     }
     frame_state.destroy(&context.device);
+
+    // Return pre-allocated command buffers to pool
+    frame_commands[0].return_to_pool();
+    frame_commands[1].return_to_pool();
 
     // --- Single readback: read accumulated GPU validation results ---
     context.invalidate_mapped_memory(&val_results_alloc, 0, VALIDATION_RESULTS_SIZE);
