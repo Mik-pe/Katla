@@ -1,0 +1,155 @@
+{
+  "flowId": "ui-splitting",
+  "testedAt": "2026-03-24T15:10:00Z",
+  "isolation": {
+    "type": "rust-toolchain",
+    "workingDirectory": "C:\\dev\\katla_agents\\controller",
+    "package": "katla_ui"
+  },
+  "toolsUsed": ["cargo", "powershell"],
+  "assertions": [
+    {
+      "id": "VAL-SPLIT-UI-001",
+      "title": "text/mod.rs split into submodules",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Check katla_ui/src/text/ directory exists with submodule files",
+          "expected": "Directory exists with mod.rs, atlas.rs, font_loading.rs, measurement.rs, rasterization.rs",
+          "observed": "Directory exists with all 5 expected files: mod.rs (941 lines), atlas.rs (185 lines), font_loading.rs (43 lines), measurement.rs (138 lines), rasterization.rs (154 lines)"
+        },
+        {
+          "action": "Verify each submodule is under 500 lines",
+          "expected": "All submodule files < 500 lines",
+          "observed": "atlas.rs=185, font_loading.rs=43, measurement.rs=138, rasterization.rs=154 — all under 500"
+        },
+        {
+          "action": "Verify mod.rs declares all submodules",
+          "expected": "mod atlas, mod font_loading, mod measurement, mod rasterization",
+          "observed": "All four mod declarations present at lines 18-21"
+        },
+        {
+          "action": "Verify public exports (FontSystem, CachedGlyph, FontId, SubpixelBin, FontError) accessible",
+          "expected": "All 5 types are pub and defined in mod.rs",
+          "observed": "FontSystem (line 190, pub struct), CachedGlyph (line 173, pub struct), FontId (line 58, pub struct), SubpixelBin (line 75, pub enum), FontError (line 290, pub enum) — all present"
+        },
+        {
+          "action": "Run cargo check -p katla_ui",
+          "expected": "Compilation succeeds",
+          "observed": "Finished dev profile in 0.21s — no errors or warnings"
+        },
+        {
+          "action": "Run cargo test -p katla_ui",
+          "expected": "All tests pass",
+          "observed": "69 tests passed, 0 failed; 51 doc-tests ignored (no failures)"
+        }
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "command": "powershell -Command \"(Get-Content 'katla_ui/src/text/mod.rs').Count; (Get-Content 'katla_ui/src/text/atlas.rs').Count; (Get-Content 'katla_ui/src/text/font_loading.rs').Count; (Get-Content 'katla_ui/src/text/measurement.rs').Count; (Get-Content 'katla_ui/src/text/rasterization.rs').Count\"",
+          "output": "941\\n185\\n43\\n138\\n154",
+          "exitCode": 0
+        },
+        {
+          "type": "command",
+          "command": "rg \"^pub mod|^mod \" katla_ui/src/text/mod.rs",
+          "output": "18:mod atlas;\\n19:mod font_loading;\\n20:mod measurement;\\n21:mod rasterization;\\n315:mod tests {",
+          "exitCode": 0
+        },
+        {
+          "type": "command",
+          "command": "rg \"FontSystem|CachedGlyph|FontId|SubpixelBin|FontError\" katla_ui/src/text/mod.rs",
+          "output": "FontSystem at line 190, CachedGlyph at line 173, FontId at line 58, SubpixelBin at line 75, FontError at line 290 — all pub",
+          "exitCode": 0
+        },
+        {
+          "type": "command",
+          "command": "cargo check -p katla_ui",
+          "output": "Finished dev profile [optimized + debuginfo] target(s) in 0.21s",
+          "exitCode": 0
+        },
+        {
+          "type": "command",
+          "command": "cargo test -p katla_ui",
+          "output": "test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out",
+          "exitCode": 0
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-SPLIT-UI-002",
+      "title": "context/mod.rs split into submodules",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Check katla_ui/src/context/ directory for new submodule files",
+          "expected": "frame.rs, input.rs, id.rs, clipping.rs, z_index.rs present",
+          "observed": "All 5 new submodules present: frame.rs (2258 bytes), input.rs (2026 bytes), id.rs (1517 bytes), clipping.rs (1183 bytes), z_index.rs (2168 bytes)"
+        },
+        {
+          "action": "Verify existing submodules preserved",
+          "expected": "drawing.rs, interaction.rs, layout.rs, popup.rs, widgets.rs, helpers.rs still present",
+          "observed": "All 6 existing submodules present: drawing.rs, interaction.rs, layout.rs, popup.rs, widgets.rs, helpers.rs"
+        },
+        {
+          "action": "Verify mod.rs declares all submodules",
+          "expected": "mod declarations for all 11 submodules plus tests",
+          "observed": "mod clipping (line 6), mod drawing (7), mod frame (8), mod helpers (9), mod id (10), mod input (11), mod interaction (12), mod layout (13), mod popup (14), mod widgets (15), pub mod z_index (16), mod tests (297)"
+        },
+        {
+          "action": "Count lines in context/mod.rs",
+          "expected": "Under 800 lines",
+          "observed": "297 lines — well under 800"
+        },
+        {
+          "action": "Run cargo check -p katla_ui",
+          "expected": "Compilation succeeds",
+          "observed": "Finished dev profile in 0.21s — no errors or warnings"
+        },
+        {
+          "action": "Run cargo test -p katla_ui",
+          "expected": "All tests pass",
+          "observed": "69 tests passed, 0 failed; 51 doc-tests ignored (no failures)"
+        }
+      ],
+      "evidence": [
+        {
+          "type": "command",
+          "command": "ls katla_ui/src/context/",
+          "output": "clipping.rs, drawing.rs, frame.rs, helpers.rs, id.rs, input.rs, interaction.rs, layout.rs, mod.rs, popup.rs, tests.rs, widgets.rs, z_index.rs, popup/, widgets/",
+          "exitCode": 0
+        },
+        {
+          "type": "command",
+          "command": "powershell -Command \"(Get-Content 'katla_ui/src/context/mod.rs').Count\"",
+          "output": "297",
+          "exitCode": 0
+        },
+        {
+          "type": "command",
+          "command": "rg \"^pub mod|^mod \" katla_ui/src/context/mod.rs",
+          "output": "6:mod clipping;\\n7:mod drawing;\\n8:mod frame;\\n9:mod helpers;\\n10:mod id;\\n11:mod input;\\n12:mod interaction;\\n13:mod layout;\\n14:mod popup;\\n15:mod widgets;\\n16:pub mod z_index;\\n297:mod tests;",
+          "exitCode": 0
+        },
+        {
+          "type": "command",
+          "command": "cargo check -p katla_ui",
+          "output": "Finished dev profile [optimized + debuginfo] target(s) in 0.21s",
+          "exitCode": 0
+        },
+        {
+          "type": "command",
+          "command": "cargo test -p katla_ui",
+          "output": "test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out",
+          "exitCode": 0
+        }
+      ],
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 2 assertions: 2 passed. VAL-SPLIT-UI-001 confirmed text/mod.rs split into text/ directory with 4 submodules (atlas=185, font_loading=43, measurement=138, rasterization=154 lines — all under 500). VAL-SPLIT-UI-002 confirmed context/mod.rs split with 5 new submodules (frame, input, id, clipping, z_index) added alongside 6 preserved existing submodules, with mod.rs reduced to 297 lines. Both assertions pass cargo check and cargo test."
+}
