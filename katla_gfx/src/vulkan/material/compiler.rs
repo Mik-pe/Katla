@@ -3,13 +3,13 @@
 //! This module handles the compilation of WGSL shaders into SPIR-V and
 //! the creation of Vulkan graphics pipelines for rendering.
 
-use crate::StorageDescriptorSet;
 use crate::texture::ImageFormat;
 use crate::vulkan::bindless_texture::BindlessTextureManager;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::shadermodule::ShaderCache;
+use crate::vulkan::material::storage_uniform::StorageDescriptorSet;
 use ash::vk;
-use std::{cell::RefCell, path::Path, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, path::Path, rc::Rc};
 
 /// Error types for material compilation.
 #[derive(Debug)]
@@ -685,61 +685,5 @@ impl MaterialCompiler {
 impl Drop for MaterialCompiler {
     fn drop(&mut self) {
         self.destroy();
-    }
-}
-
-/// Builder for materials with custom configuration.
-pub struct MaterialBuilder<'a> {
-    renderer: &'a mut crate::renderer::VulkanRenderer,
-    shader_path: PathBuf,
-    options: MaterialOptions,
-}
-
-impl<'a> MaterialBuilder<'a> {
-    pub(crate) fn new(
-        renderer: &'a mut crate::renderer::VulkanRenderer,
-        shader_path: PathBuf,
-    ) -> Self {
-        Self {
-            renderer,
-            shader_path,
-            options: MaterialOptions::default(),
-        }
-    }
-
-    /// Enable alpha blending.
-    pub fn alpha_blended(mut self) -> Self {
-        self.options.alpha_blended = true;
-        self
-    }
-
-    /// Disable backface culling.
-    pub fn double_sided(mut self) -> Self {
-        self.options.double_sided = true;
-        self
-    }
-
-    /// Enable wireframe mode.
-    pub fn wireframe(mut self) -> Self {
-        self.options.wireframe = true;
-        self
-    }
-
-    /// Set custom vertex type.
-    pub fn with_vertex_type(mut self, vertex_type: VertexType) -> Self {
-        self.options.vertex_type = vertex_type;
-        self
-    }
-
-    /// Set color attachment format.
-    pub fn with_color_format(mut self, format: ImageFormat) -> Self {
-        self.options.color_format = format;
-        self
-    }
-
-    /// Build the material.
-    pub fn build(self) -> Result<crate::handle::MaterialHandle, crate::RendererError> {
-        self.renderer
-            .compile_material(&self.shader_path, self.options)
     }
 }

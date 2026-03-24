@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Compute pipeline builder for Vulkan 1.3.
 //!
 //! Provides a builder pattern for creating compute pipelines, similar to

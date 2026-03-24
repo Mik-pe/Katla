@@ -68,9 +68,7 @@ impl VulkanRenderer {
                 material_type,
                 options,
             )
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!("Material compilation failed: {}", e))
-            })
+            .map_err(RendererError::from)
     }
 
     /// Ensure a material is compiled for a specific format.
@@ -86,9 +84,7 @@ impl VulkanRenderer {
     ) -> Result<(), RendererError> {
         self.material_compiler
             .compile_deferred_material(&mut self.asset_registry, material, format)
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!("Material compilation failed: {}", e))
-            })
+            .map_err(RendererError::from)
     }
 
     /// Invalidate all compiled materials, forcing recompilation on next use.
@@ -106,15 +102,7 @@ impl VulkanRenderer {
 
     /// Set the HDR texture index for tonemapping.
     ///
-    /// Sets object[0].texture_indices.x to the HDR texture bindless index.
-    /// The tonemap shader reads from objects[0] to get the HDR texture index.
-    ///
-    /// # Arguments
-    /// * `hdr_texture_index` - Bindless texture index for HDR color attachment
-    ///
-    /// Set the HDR texture index for tonemapping.
-    ///
-    /// This method sets up object[0] in the storage buffer to pass the HDR texture index
+    /// Sets up object[0] in the storage buffer to pass the HDR texture index
     /// to fullscreen shaders (like the tonemap pass). The tonemap shader reads from
     /// `objects[0].texture_indices.x` to get the bindless texture slot.
     ///
@@ -153,40 +141,6 @@ impl VulkanRenderer {
             0.0, // emission index (not used)
             [hdr_texture_index, 0, 0, 0], // HDR texture index in x
         );
-    }
-
-    /// Create a material with custom options using the builder pattern.
-    ///
-    /// This is the advanced API for materials requiring custom configuration
-    /// (alpha blending, double-sided rendering, wireframe mode, etc.).
-    ///
-    /// # Arguments
-    /// * `shader_path` - Path to WGSL shader file
-    ///
-    /// # Returns
-    /// A MaterialBuilder for configuring the material.
-    ///
-    /// # When to use this
-    ///
-    /// Most applications should use `compile_material()` with `MaterialOptions`.
-    /// This method is intended for:
-    /// - GLTF model loaders that need custom vertex types (Skinned)
-    /// - Advanced material configuration beyond PBR defaults
-    /// - Custom render targets with specific color formats
-    ///
-    /// # Example (GLTF loading with skinned meshes)
-    /// ```ignore
-    /// let material = renderer
-    ///     .material_builder(&shader_path)
-    ///     .with_vertex_type(VertexType::Skinned)
-    ///     .with_color_format(ImageFormat::R16G16B16A16Sfloat)
-    ///     .build()?;
-    /// ```
-    pub fn material_builder(
-        &mut self,
-        shader_path: impl AsRef<std::path::Path>,
-    ) -> MaterialBuilder<'_> {
-        MaterialBuilder::new(self, shader_path.as_ref().to_path_buf())
     }
 
     /// Set texture indices for a material.

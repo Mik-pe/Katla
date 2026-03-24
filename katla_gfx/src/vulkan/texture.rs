@@ -1,8 +1,8 @@
 use super::context::VulkanContext;
-use crate::VulkanFrameCtx;
 use crate::barrier::ImageBarrier;
 use crate::sync::{VkDescriptorSet, VkImage, VkImageView, VkSampler};
 use crate::texture::ImageFormat;
+use crate::vulkan::context::VulkanFrameCtx;
 
 use std::mem::ManuallyDrop;
 use std::rc::Rc;

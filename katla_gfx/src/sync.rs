@@ -24,20 +24,6 @@ pub(crate) const COLOR_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageS
     layer_count: 1,
 };
 
-/// Standard depth-stencil subresource range for depth buffers.
-///
-/// Use this for depth attachment operations.
-#[allow(dead_code)]
-pub(crate) const DEPTH_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageSubresourceRange {
-    aspect_mask: vk::ImageAspectFlags::from_raw(
-        vk::ImageAspectFlags::DEPTH.as_raw() | vk::ImageAspectFlags::STENCIL.as_raw(),
-    ),
-    base_mip_level: 0,
-    level_count: 1,
-    base_array_layer: 0,
-    layer_count: 1,
-};
-
 macro_rules! define_vk_wrapper {
     ($name:ident, $vk_type:ty) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -45,18 +31,6 @@ macro_rules! define_vk_wrapper {
 
         unsafe impl Send for $name {}
         unsafe impl Sync for $name {}
-
-        impl $name {
-            #[allow(dead_code)]
-            pub fn new(handle: $vk_type) -> Self {
-                Self(handle)
-            }
-
-            #[allow(dead_code)]
-            pub(crate) fn vk(&self) -> $vk_type {
-                self.0
-            }
-        }
 
         impl From<$vk_type> for $name {
             fn from(handle: $vk_type) -> Self {
@@ -98,6 +72,73 @@ define_vk_wrapper!(VkPipeline, vk::Pipeline, default);
 define_vk_wrapper!(VkPipelineLayout, vk::PipelineLayout, default);
 define_vk_wrapper!(VkBuffer, vk::Buffer, default);
 define_vk_wrapper!(VkShaderModule, vk::ShaderModule);
+
+// Add new() constructor and vk() accessor only for types that are actually used
+impl VkSampler {
+    pub fn new(handle: vk::Sampler) -> Self {
+        Self(handle)
+    }
+
+    pub(crate) fn vk(&self) -> vk::Sampler {
+        self.0
+    }
+}
+
+impl VkDescriptorSet {
+    pub fn new(handle: vk::DescriptorSet) -> Self {
+        Self(handle)
+    }
+
+    pub(crate) fn vk(&self) -> vk::DescriptorSet {
+        self.0
+    }
+}
+
+impl VkDescriptorSetLayout {
+    pub fn new(handle: vk::DescriptorSetLayout) -> Self {
+        Self(handle)
+    }
+
+    pub(crate) fn vk(&self) -> vk::DescriptorSetLayout {
+        self.0
+    }
+}
+
+impl VkPipeline {
+    pub fn new(handle: vk::Pipeline) -> Self {
+        Self(handle)
+    }
+
+    pub(crate) fn vk(&self) -> vk::Pipeline {
+        self.0
+    }
+}
+
+impl VkPipelineLayout {
+    pub fn new(handle: vk::PipelineLayout) -> Self {
+        Self(handle)
+    }
+
+    pub(crate) fn vk(&self) -> vk::PipelineLayout {
+        self.0
+    }
+}
+
+impl VkBuffer {
+    pub fn new(handle: vk::Buffer) -> Self {
+        Self(handle)
+    }
+
+    pub(crate) fn vk(&self) -> vk::Buffer {
+        self.0
+    }
+}
+
+impl VkShaderModule {
+    pub(crate) fn vk(&self) -> vk::ShaderModule {
+        self.0
+    }
+}
 
 // Crate-local wrapper types (not public API)
 

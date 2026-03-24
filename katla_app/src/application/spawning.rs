@@ -394,25 +394,21 @@ impl super::Application {
             self.resources.shader_path("model_pbr.wgsl")
         };
 
-        let material_handle = if model.has_skinning {
-            self.renderer
-                .material_builder(&shader_path)
-                .with_vertex_type(katla_gfx::VertexType::Skinned)
-                .with_color_format(katla_gfx::ImageFormat::R16G16B16A16Sfloat)
-                .build()
-                .ok()?
-        } else {
-            self.renderer
-                .compile_material(
-                    &shader_path,
-                    katla_gfx::MaterialOptions {
-                        vertex_type: katla_gfx::VertexType::Pbr,
-                        color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
-                        ..Default::default()
+        let material_handle = self
+            .renderer
+            .compile_material(
+                &shader_path,
+                katla_gfx::MaterialOptions {
+                    vertex_type: if model.has_skinning {
+                        katla_gfx::VertexType::Skinned
+                    } else {
+                        katla_gfx::VertexType::Pbr
                     },
-                )
-                .ok()?
-        };
+                    color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
+                    ..Default::default()
+                },
+            )
+            .ok()?;
 
         // 5. Upload textures and set texture indices
         let texture_indices = self.upload_gltf_textures(&model);

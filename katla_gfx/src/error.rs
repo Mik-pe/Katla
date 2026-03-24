@@ -8,6 +8,7 @@ use std::fmt;
 use std::io;
 
 use crate::render_graph::RenderGraphError;
+use crate::vulkan::material::compiler::MaterialError;
 
 /// Unified error type for the Vulkan renderer.
 ///
@@ -34,7 +35,10 @@ pub enum RendererError {
     SwapchainError(String),
 
     /// Render graph error.
-    RenderGraphError(String),
+    RenderGraphError(RenderGraphError),
+
+    /// Material compilation error.
+    MaterialError(MaterialError),
 
     /// Exceeded maximum objects per frame limit.
     ObjectLimitExceeded { index: usize, limit: usize },
@@ -47,9 +51,12 @@ impl fmt::Display for RendererError {
             RendererError::IoError(msg) => write!(f, "IO error: {}", msg),
             RendererError::NotFound(msg) => write!(f, "Not found: {}", msg),
             RendererError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
-            RendererError::InitializationFailed(msg) => write!(f, "Initialization failed: {}", msg),
+            RendererError::InitializationFailed(msg) => {
+                write!(f, "Initialization failed: {}", msg)
+            }
             RendererError::SwapchainError(msg) => write!(f, "Swapchain error: {}", msg),
-            RendererError::RenderGraphError(msg) => write!(f, "Render graph error: {}", msg),
+            RendererError::RenderGraphError(err) => write!(f, "Render graph error: {}", err),
+            RendererError::MaterialError(err) => write!(f, "Material error: {}", err),
             RendererError::ObjectLimitExceeded { index, limit } => {
                 write!(
                     f,
@@ -63,7 +70,11 @@ impl fmt::Display for RendererError {
 
 impl std::error::Error for RendererError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
+        match self {
+            RendererError::RenderGraphError(err) => Some(err),
+            RendererError::MaterialError(err) => Some(err),
+            _ => None,
+        }
     }
 }
 
@@ -81,6 +92,12 @@ impl From<io::Error> for RendererError {
 
 impl From<RenderGraphError> for RendererError {
     fn from(error: RenderGraphError) -> Self {
-        RendererError::RenderGraphError(error.to_string())
+        RendererError::RenderGraphError(error)
+    }
+}
+
+impl From<MaterialError> for RendererError {
+    fn from(error: MaterialError) -> Self {
+        RendererError::MaterialError(error)
     }
 }
