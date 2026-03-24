@@ -34,6 +34,17 @@ impl CommandBuffer {
         self.command_buffer
     }
 
+    /// Reset the command buffer to initial state.
+    ///
+    /// The command pool must have been created with `RESET_COMMAND_BUFFER` flag.
+    pub fn reset(&self) {
+        unsafe {
+            self.device
+                .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())
+                .expect("Failed to reset command buffer");
+        }
+    }
+
     pub fn begin_single_time_command(&self) {
         let begin_info = vk::CommandBufferBeginInfo::default()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
