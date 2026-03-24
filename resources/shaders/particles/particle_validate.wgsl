@@ -113,12 +113,10 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
             let base = detail_slot * 4u;
             results.mismatch_details[base] = params.frame_index;
             results.mismatch_details[base + 1u] = particle_idx;
-            // Pack RGB: R*1000000 + G*1000 + B (integer approximations)
             let r = u32(particle.color.r * 10000.0);
             let g = u32(particle.color.g * 10000.0);
             let b = u32(particle.color.b * 10000.0);
             results.mismatch_details[base + 2u] = r * 1000000u + g * 1000u + b;
-            // Pack: emitter_idx * 100000000 + alive_count
             results.mismatch_details[base + 3u] = emitter_idx * 100000000u + actual_alive_count;
         }
     }

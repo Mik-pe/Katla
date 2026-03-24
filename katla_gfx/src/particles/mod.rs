@@ -898,20 +898,28 @@ impl GlobalParticleSystem {
                     &zero_bytes,
                 );
             }
-            // Copy alive_count from previous frame's counters to emit_count
+            // Copy alive_count → emit_count and dead_count → dead_count
+            // from previous frame's counters (dead list is shared, see record_emit_dispatch).
             let prev_fi = (frame_index + 1) % 2;
             let prev_counters = self.buffer.counters_buffer(prev_fi);
-            let copy_region = vk::BufferCopy {
-                src_offset: 0, // alive_count at offset 0
-                dst_offset: 8, // emit_count at offset 8
-                size: 4,
-            };
+            let copy_regions = [
+                vk::BufferCopy {
+                    src_offset: 0, // alive_count at offset 0
+                    dst_offset: 8, // emit_count at offset 8
+                    size: 4,
+                },
+                vk::BufferCopy {
+                    src_offset: 4, // dead_count at offset 4
+                    dst_offset: 4, // dead_count at offset 4
+                    size: 4,
+                },
+            ];
             unsafe {
                 device.cmd_copy_buffer(
                     command_buffer,
                     prev_counters,
                     counters_buffer,
-                    std::slice::from_ref(&copy_region),
+                    &copy_regions,
                 );
             }
         }
@@ -978,17 +986,27 @@ impl GlobalParticleSystem {
         let counters_buffer = self.buffer.counters_buffer(frame_index);
         let prev_counters_buffer = self.buffer.counters_buffer(prev_fi);
 
-        let copy_region = vk::BufferCopy {
-            src_offset: 0, // alive_count at offset 0 in prev counters
-            dst_offset: 8, // emit_count at offset 8 in current counters
-            size: 4,       // u32
-        };
+        // Copy alive_count → emit_count and dead_count → dead_count.
+        // dead_count must be synchronized because the dead list is shared across
+        // frames but counters are double-buffered.
+        let copy_regions = [
+            vk::BufferCopy {
+                src_offset: 0, // alive_count at offset 0 in prev counters
+                dst_offset: 8, // emit_count at offset 8 in current counters
+                size: 4,
+            },
+            vk::BufferCopy {
+                src_offset: 4, // dead_count at offset 4 in prev counters
+                dst_offset: 4, // dead_count at offset 4 in current counters
+                size: 4,
+            },
+        ];
         unsafe {
             device.cmd_copy_buffer(
                 command_buffer,
                 prev_counters_buffer,
                 counters_buffer,
-                std::slice::from_ref(&copy_region),
+                &copy_regions,
             );
         }
 
@@ -1494,6 +1512,7 @@ mod tests {
             gravity: -9.8,
             turbulence_strength: 0.0,
             turbulence_frequency: 3.0,
+            _pad_forces: 0.0,
         };
 
         let json = serde_json::to_string(&config).unwrap();

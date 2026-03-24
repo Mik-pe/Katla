@@ -112,6 +112,10 @@ pub struct EmitterConfig {
     /// Turbulence frequency (how fast the sine wave oscillates)
     #[serde(default = "default_turbulence_frequency")]
     pub turbulence_frequency: f32,
+
+    /// Padding to match WGSL struct layout (must be present for correct GPU buffer alignment).
+    #[serde(skip)]
+    pub _pad_forces: f32,
 }
 
 // Safety: EmitterConfig is repr(C), all fields are Pod or padding from Align16Vec4 alignment.
@@ -192,6 +196,7 @@ impl Default for EmitterConfig {
             gravity: -9.8,
             turbulence_strength: 0.0,
             turbulence_frequency: 3.0,
+            _pad_forces: 0.0,
         }
     }
 }
