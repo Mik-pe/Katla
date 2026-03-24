@@ -1,0 +1,42 @@
+{
+  "milestone": "math-polish",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 20,
+    "passed": 20,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-MATH-001",
+    "VAL-MATH-002",
+    "VAL-MATH-003",
+    "VAL-MATH-004",
+    "VAL-MATH-005",
+    "VAL-MATH-006",
+    "VAL-MATH-007",
+    "VAL-MATH-008",
+    "VAL-MATH-009",
+    "VAL-MATH-010",
+    "VAL-MATH-011",
+    "VAL-MATH-012",
+    "VAL-MATH-013",
+    "VAL-MATH-014",
+    "VAL-MATH-015",
+    "VAL-MATH-016",
+    "VAL-MATH-017",
+    "VAL-MATH-018",
+    "VAL-MATH-019",
+    "VAL-MATH-020"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "flowReports": [
+    ".factory/validation/math-polish/user-testing/flows/group-hybrid-removal.json",
+    ".factory/validation/math-polish/user-testing/flows/group-api-consistency.json",
+    ".factory/validation/math-polish/user-testing/flows/group-bugfixes-dedup.json"
+  ]
+}
