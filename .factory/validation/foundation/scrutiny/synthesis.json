@@ -1,59 +1,52 @@
 {
   "milestone": "foundation",
-  "round": 1,
-  "status": "fail",
+  "round": 2,
+  "status": "pass",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
     "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
-    "lint": { "passed": false, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 1 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
     "fmt": { "passed": true, "command": "cargo fmt --check", "exitCode": 0 }
   },
   "reviewsSummary": {
-    "total": 0,
-    "passed": 0,
+    "total": 1,
+    "passed": 1,
     "failed": 0,
     "failedFeatures": []
   },
-  "blockingIssues": [
-    {
-      "featureId": "foundation-edition-upgrade",
-      "severity": "blocking",
-      "description": "cargo clippy --workspace -- -D warnings fails with 44+ collapsible_if errors in katla_ecs/src/query/ (iter3.rs through iter8.rs) and 5 collapsible_if errors in katla_ui. The edition 2024 upgrade enables let_chains, making clippy enforce collapsing nested if-let statements. katla_ecs has deeply nested if-let chains in query iterators (iter3-iter8) that need to be collapsed using let chains (if let X && let Y pattern). katla_ui has 5 instances across drawing.rs, popup/internal.rs, widgets/graph.rs, and widgets.rs.",
-      "suggestedFix": "Collapse nested if-let statements in katla_ecs query iterators (iter3-iter8) and katla_ui files using let chains syntax (if let ... && let ...). This is a straightforward mechanical fix enabled by edition 2024's let_chains feature."
-    }
-  ],
-  "nonBlockingIssues": [
-    {
-      "featureId": "foundation-ecs-dep-fix",
-      "severity": "non_blocking",
-      "description": "Unused import warnings remain in katla_app/src/systems/culling_system.rs (unused AABB import), katla_app/src/systems/particle_system.rs (unused super::* import), and katla_app/src/systems/rendering/lighting_system_tests.rs (unused SpotLight import). These are warnings only (not errors with -D warnings), but suggest incomplete cleanup."
-    }
-  ],
+  "blockingIssues": [],
+  "nonBlockingIssues": [],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
+      "target": "skills",
+      "suggestion": "Update cleanup-worker SKILL.md collapsible_if guidance: for edition 2024+ codebases, use let chain syntax (e.g., if let Some(x) = a && let Some(y) = b) instead of merging nested if conditions.",
+      "evidence": "fix-clippy-collapsible-if review: SKILL.md says 'merge nested if conditions' but edition 2024 requires let chain syntax, which is a distinct pattern. Worker noted the feature description underestimated error counts (49 vs 80+ actual).",
+      "isSystemic": false,
+      "sourceFeature": "fix-clippy-collapsible-if"
+    },
+    {
+      "target": "skills",
+      "suggestion": "Add to cleanup-worker SKILL.md: For bulk clippy fixes, consider using 'cargo clippy --fix --workspace --allow-dirty --allow-staged' followed by 'cargo fmt' to auto-fix remaining issues after manual edits.",
+      "evidence": "fix-clippy-collapsible-if transcript: worker used cargo clippy --fix to resolve 17 remaining errors after manual edits, followed by cargo fmt. This is a useful technique for bulk fixes.",
+      "isSystemic": false,
+      "sourceFeature": "fix-clippy-collapsible-if"
+    },
+    {
       "target": "AGENTS.md",
-      "suggestion": "Add to coding conventions: When upgrading Rust edition, always run cargo clippy --workspace -- -D warnings after edition changes. The 2024 edition enables let_chains which makes clippy enforce collapsible_if on nested if-let statements — ensure all nested if-let chains are collapsed before completing.",
-      "evidence": "foundation-edition-upgrade upgraded to edition 2024 but did not collapse nested if-let chains in katla_ecs query iterators or katla_ui, causing 49 clippy errors.",
-      "isSystemic": true
+      "suggestion": "Add guidance that clippy-fixing features should run cargo clippy first to get exact error counts and file lists before writing the feature description.",
+      "evidence": "fix-clippy-collapsible-if: feature description said 49 errors but there were 80+. Additional errors were in katla_app which the feature description didn't fully cover.",
+      "isSystemic": false,
+      "sourceFeature": "fix-clippy-collapsible-if"
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add to coding conventions: When upgrading Rust edition, always run cargo clippy --workspace -- -D warnings after edition changes. The 2024 edition enables let_chains which makes clippy enforce collapsible_if on nested if-let statements.",
+      "evidence": "foundation-edition-upgrade upgraded to edition 2024 but did not collapse nested if-let chains in katla_ecs query iterators or katla_ui, causing 49+ clippy errors (carried forward from round 1).",
+      "isSystemic": true,
+      "sourceFeature": "foundation-edition-upgrade"
     }
   ],
   "rejectedObservations": [],
-  "previousRound": null,
-  "lintErrorDetails": {
-    "totalErrors": 49,
-    "byFile": {
-      "katla_ecs/src/query/iter3.rs": 4,
-      "katla_ecs/src/query/iter4.rs": 8,
-      "katla_ecs/src/query/iter5.rs": 12,
-      "katla_ecs/src/query/iter6.rs": 10,
-      "katla_ecs/src/query/iter7.rs": 10,
-      "katla_ecs/src/query/iter8.rs": 10,
-      "katla_ui/src/context/drawing.rs": 1,
-      "katla_ui/src/context/popup/internal.rs": 1,
-      "katla_ui/src/context/widgets/graph.rs": 2,
-      "katla_ui/src/context/widgets.rs": 1
-    },
-    "rootCause": "Edition 2024 upgrade enables let_chains feature, making clippy's collapsible_if lint trigger on nested if-let statements that can now be collapsed using let chain syntax (if let X && let Y { ... })"
-  }
+  "previousRound": ".factory/validation/foundation/scrutiny/synthesis-round1.json"
 }
