@@ -162,121 +162,6 @@ impl DoubleBufferedFrameState {
     }
 }
 
-/// GPU accumulation buffer that records per-frame indirect draw commands.
-///
-/// Each frame, after the simulate dispatch writes the 16-byte `DrawIndirectCommand`
-/// to the per-slot indirect draw buffer, a `vkCmdCopyBuffer` copies those 16 bytes
-/// into this buffer at offset `frame * 16`. After the simulation loop completes,
-/// a single `invalidate_mapped_memory` makes all frames' data visible to the CPU.
-struct IndirectDrawAccumulator {
-    buffer: vk::Buffer,
-    allocation: gpu_allocator::vulkan::Allocation,
-    num_frames: u32,
-}
-
-impl IndirectDrawAccumulator {
-    fn new(context: &VulkanContext, num_frames: u32) -> Result<Self, String> {
-        use gpu_allocator::vulkan::{AllocationCreateDesc, AllocationScheme};
-
-        let size = num_frames as u64 * 16;
-
-        let buffer_info = vk::BufferCreateInfo::default()
-            .size(size)
-            .usage(vk::BufferUsageFlags::TRANSFER_DST)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let buffer = unsafe {
-            context
-                .device
-                .create_buffer(&buffer_info, None)
-                .map_err(|e| {
-                    format!("Failed to create indirect draw accumulator buffer: {:?}", e)
-                })?
-        };
-
-        let requirements = unsafe { context.device.get_buffer_memory_requirements(buffer) };
-
-        let allocation = context
-            .allocator
-            .borrow_mut()
-            .allocate(&AllocationCreateDesc {
-                name: "indirect_draw_accumulator",
-                requirements,
-                location: gpu_allocator::MemoryLocation::CpuToGpu,
-                linear: true,
-                allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate indirect draw accumulator: {}", e))?;
-
-        unsafe {
-            context
-                .device
-                .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
-                .map_err(|e| format!("Failed to bind indirect draw accumulator: {:?}", e))?;
-        }
-
-        Ok(Self {
-            buffer,
-            allocation,
-            num_frames,
-        })
-    }
-
-    /// Record a vkCmdCopyBuffer that copies 16 bytes from the indirect draw slot
-    /// into the accumulator at the given frame offset.
-    fn record_copy(
-        &self,
-        device: &ash::Device,
-        command_buffer: vk::CommandBuffer,
-        src_buffer: vk::Buffer,
-        frame: u32,
-    ) {
-        unsafe {
-            device.cmd_copy_buffer(
-                command_buffer,
-                src_buffer,
-                self.buffer,
-                &[vk::BufferCopy {
-                    src_offset: 0,
-                    dst_offset: frame as u64 * 16,
-                    size: 16,
-                }],
-            );
-        }
-    }
-
-    /// After GPU work is complete, read all accumulated indirect draw commands.
-    fn read_all(&self, context: &VulkanContext) -> Vec<(u32, u32, u32, u32)> {
-        context.invalidate_mapped_memory(&self.allocation, 0, self.num_frames as u64 * 16);
-
-        let mut results = Vec::with_capacity(self.num_frames as usize);
-        if let Some(mapped) = self.allocation.mapped_ptr() {
-            let base = mapped.as_ptr() as *const u32;
-            for frame in 0..self.num_frames {
-                let offset = frame as usize * 4;
-                unsafe {
-                    results.push((
-                        *base.add(offset),
-                        *base.add(offset + 1),
-                        *base.add(offset + 2),
-                        *base.add(offset + 3),
-                    ));
-                }
-            }
-        }
-        results
-    }
-
-    fn destroy(self, context: &VulkanContext) {
-        unsafe {
-            if let Ok(mut allocator) = context.allocator.try_borrow_mut() {
-                allocator.free(self.allocation).ok();
-            }
-            context.device.destroy_buffer(self.buffer, None);
-        }
-    }
-}
-
 /// GPU-side per-particle validation resources.
 ///
 /// Runs the particle_validate.wgsl compute shader after each simulate dispatch.
@@ -296,7 +181,7 @@ struct GpuValidationResources {
 }
 
 impl GpuValidationResources {
-    const VALIDATION_RESULTS_SIZE: u64 = 1024;
+    const VALIDATION_RESULTS_SIZE: u64 = 2048;
     const VALIDATION_PARAMS_SIZE: u64 = 32;
 
     fn new(
@@ -407,7 +292,6 @@ impl GpuValidationResources {
                     0,
                 );
             }
-            cmd.end_single_time_command();
             context.end_single_time_commands(cmd);
         }
 
@@ -448,6 +332,7 @@ impl GpuValidationResources {
             )
             .add_storage_buffer(4, val_results_buffer, 0, Self::VALIDATION_RESULTS_SIZE)
             .add_uniform_buffer(5, val_params_buffer, 0, Self::VALIDATION_PARAMS_SIZE)
+            .add_storage_buffer(6, particle_system.indirect_draw_buffer(0), 0, 16)
             .build(validate_shader_wrapper, asset_registry)
             .map_err(|e| format!("Failed to build validation pass: {}", e))?;
 
@@ -504,6 +389,8 @@ impl GpuValidationResources {
                 (1024 * std::mem::size_of::<EmitterConfig>()) as u64,
             );
         }
+        self.validation_pass
+            .update_binding(6, particle_system.indirect_draw_buffer(fi), 0, 16);
 
         // Write validation params
         let val_params = ValidationParams {
@@ -552,7 +439,18 @@ impl GpuValidationResources {
             .offset(0)
             .size(vk::WHOLE_SIZE);
 
-        let barriers = [particle_barrier, counters_barrier];
+        let indirect_draw_barrier = vk::BufferMemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
+            .dst_access_mask(vk::AccessFlags2::SHADER_READ)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .buffer(particle_system.indirect_draw_buffer(fi))
+            .offset(0)
+            .size(16);
+
+        let barriers = [particle_barrier, counters_barrier, indirect_draw_barrier];
         let dep_info = vk::DependencyInfo::default().buffer_memory_barriers(&barriers);
         unsafe {
             context
@@ -577,32 +475,47 @@ impl GpuValidationResources {
     fn read_results(&self, context: &VulkanContext) -> GpuValidationResults {
         context.invalidate_mapped_memory(&self.val_results_alloc, 0, Self::VALIDATION_RESULTS_SIZE);
 
-        let mut result = GpuValidationResults::default();
+        let raw: GpuValidationResultsRaw = if let Some(mapped) = self.val_results_alloc.mapped_ptr()
+        {
+            unsafe { std::ptr::read_unaligned(mapped.as_ptr() as *const GpuValidationResultsRaw) }
+        } else {
+            GpuValidationResultsRaw::default()
+        };
 
-        if let Some(mapped) = self.val_results_alloc.mapped_ptr() {
-            let ptr = mapped.as_ptr() as *const u32;
-            result.total_checked = unsafe { *ptr } as u64;
-            result.color_mismatches = unsafe { *ptr.add(1) } as u64;
-            result.velocity_mismatches = unsafe { *ptr.add(2) } as u64;
+        let mismatch_count = raw.mismatch_count.min(64) as usize;
+        let mismatch_details: Vec<_> = (0..mismatch_count)
+            .map(|i| {
+                let base = i * 4;
+                GpuMismatchDetail {
+                    frame_index: raw.mismatch_details[base],
+                    particle_idx: raw.mismatch_details[base + 1],
+                    packed_color: raw.mismatch_details[base + 2],
+                    emitter_packed: raw.mismatch_details[base + 3],
+                }
+            })
+            .collect();
 
-            for i in 0..self.emitter_count.min(16) as usize {
-                result.per_emitter_mismatches[i] = unsafe { *ptr.add(4 + i) };
-            }
+        let id_detail_count = raw.indirect_draw_detail_count.min(64) as usize;
+        let id_details: Vec<_> = (0..id_detail_count)
+            .map(|i| {
+                let base = i * 3;
+                IndirectDrawMismatch {
+                    frame_index: raw.indirect_draw_details[base],
+                    expected_vertex_count: raw.indirect_draw_details[base + 1],
+                    actual_vertex_count: raw.indirect_draw_details[base + 2],
+                }
+            })
+            .collect();
 
-            let mismatch_count = unsafe { *ptr.add(84) };
-            let detail_count = mismatch_count.min(64);
-            for i in 0..detail_count as usize {
-                let base = 80 + i * 4;
-                result.mismatch_details.push(GpuMismatchDetail {
-                    frame_index: unsafe { *ptr.add(base) },
-                    particle_idx: unsafe { *ptr.add(base + 1) },
-                    packed_color: unsafe { *ptr.add(base + 2) },
-                    emitter_packed: unsafe { *ptr.add(base + 3) },
-                });
-            }
+        GpuValidationResults {
+            total_checked: raw.total_checked as u64,
+            color_mismatches: raw.color_mismatches as u64,
+            velocity_mismatches: raw.velocity_mismatches as u64,
+            per_emitter_mismatches: raw.per_emitter_mismatches,
+            mismatch_details: mismatch_details,
+            indirect_draw_mismatches: raw.indirect_draw_mismatches as u64,
+            indirect_draw_details: id_details,
         }
-
-        result
     }
 
     fn destroy(self, context: &VulkanContext) {
@@ -613,6 +526,40 @@ impl GpuValidationResources {
         if let Ok(mut allocator) = context.allocator.try_borrow_mut() {
             allocator.free(self.val_results_alloc).ok();
             allocator.free(self.val_params_alloc).ok();
+        }
+    }
+}
+
+/// Mirrors the WGSL ValidationResults struct layout exactly.
+/// Offsets must match particle_validate.wgsl.
+/// Not using bytemuck derive due to [u32; 192] exceeding bytemuck's array limit.
+#[repr(C)]
+struct GpuValidationResultsRaw {
+    total_checked: u32,
+    color_mismatches: u32,
+    velocity_mismatches: u32,
+    position_mismatches: u32,
+    per_emitter_mismatches: [u32; 16],
+    mismatch_details: [u32; 64],
+    mismatch_count: u32,
+    indirect_draw_mismatches: u32,
+    indirect_draw_details: [u32; 192],
+    indirect_draw_detail_count: u32,
+}
+
+impl Default for GpuValidationResultsRaw {
+    fn default() -> Self {
+        Self {
+            total_checked: 0,
+            color_mismatches: 0,
+            velocity_mismatches: 0,
+            position_mismatches: 0,
+            per_emitter_mismatches: [0; 16],
+            mismatch_details: [0; 64],
+            mismatch_count: 0,
+            indirect_draw_mismatches: 0,
+            indirect_draw_details: [0; 192],
+            indirect_draw_detail_count: 0,
         }
     }
 }
@@ -637,6 +584,8 @@ struct GpuValidationResults {
     velocity_mismatches: u64,
     per_emitter_mismatches: [u32; 16],
     mismatch_details: Vec<GpuMismatchDetail>,
+    indirect_draw_mismatches: u64,
+    indirect_draw_details: Vec<IndirectDrawMismatch>,
 }
 
 struct GpuMismatchDetail {
@@ -644,6 +593,12 @@ struct GpuMismatchDetail {
     particle_idx: u32,
     packed_color: u32,
     emitter_packed: u32,
+}
+
+struct IndirectDrawMismatch {
+    frame_index: u32,
+    expected_vertex_count: u32,
+    actual_vertex_count: u32,
 }
 
 fn main() -> ExitCode {
@@ -771,19 +726,6 @@ fn main() -> ExitCode {
         context.begin_single_time_commands(),
     ];
 
-    // Create indirect draw accumulation buffer — each frame's simulate dispatch
-    // copies its 16-byte DrawIndirectCommand here via vkCmdCopyBuffer.
-    let indirect_accumulator = match IndirectDrawAccumulator::new(&context, NUM_FRAMES) {
-        Ok(a) => a,
-        Err(e) => {
-            log::error!("Failed to create indirect draw accumulator: {}", e);
-            if let Some(ref mut res) = render_resources {
-                res.destroy(&context);
-            }
-            return ExitCode::from(1);
-        }
-    };
-
     let mut cumulative_time = 0.0;
 
     for frame in 0..NUM_FRAMES {
@@ -888,45 +830,18 @@ fn main() -> ExitCode {
             }
 
             // Copy indirect draw command into the per-frame accumulation buffer.
-            // Simulate writes to indirect_draw_buffer[fi] as STORAGE_BUFFER;
-            // the copy reads it as TRANSFER_SRC, so we need a barrier.
             if simulate_workgroups > 0 {
-                let idb = particle_system.indirect_draw_buffer(fi);
-                let indirect_barrier = vk::BufferMemoryBarrier2::default()
-                    .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-                    .dst_stage_mask(vk::PipelineStageFlags2::COPY)
-                    .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
-                    .dst_access_mask(vk::AccessFlags2::TRANSFER_READ)
-                    .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                    .buffer(idb)
-                    .offset(0)
-                    .size(16);
-                let dep = vk::DependencyInfo::default()
-                    .buffer_memory_barriers(std::slice::from_ref(&indirect_barrier));
-                unsafe {
-                    context
-                        .device
-                        .cmd_pipeline_barrier2(command_buffer.vk_command_buffer(), &dep);
+                // Record GPU validation dispatch (checks per-particle color/velocity
+                // against emitter configs + indirect draw consistency, accumulates results)
+                if let Some(ref mut gpu_val) = gpu_validation {
+                    gpu_val.record_dispatch(
+                        &context,
+                        &particle_system,
+                        command_buffer.vk_command_buffer(),
+                        fi,
+                        frame,
+                    );
                 }
-                indirect_accumulator.record_copy(
-                    &context.device,
-                    command_buffer.vk_command_buffer(),
-                    idb,
-                    frame,
-                );
-            }
-
-            // Record GPU validation dispatch (checks per-particle color/velocity
-            // against emitter configs using atomics, accumulates results)
-            if let Some(ref mut gpu_val) = gpu_validation {
-                gpu_val.record_dispatch(
-                    &context,
-                    &particle_system,
-                    command_buffer.vk_command_buffer(),
-                    fi,
-                    frame,
-                );
             }
 
             // Record render dispatch
@@ -940,17 +855,6 @@ fn main() -> ExitCode {
                     frame_index_for_descriptor,
                 ) {
                     log::warn!("Frame {}: Failed to record render dispatch: {}", frame, e);
-                }
-            }
-
-            // On the last frame, record debug readback so we can read real GPU counters
-            // after the fence wait during drain.
-            if is_last_frame {
-                if let Err(e) = particle_system.record_debug_readback(
-                    command_buffer.vk_command_buffer(),
-                    frame_index_for_descriptor,
-                ) {
-                    log::warn!("Failed to record debug readback on last frame: {}", e);
                 }
             }
         }
@@ -972,13 +876,25 @@ fn main() -> ExitCode {
     }
 
     // --- Drain: wait for the last 2 in-flight frames to complete ---
-    let last_frame_fi = (NUM_FRAMES as usize) % 2;
     unsafe {
         context
             .device
-            .wait_for_fences(&[frame_state.fence(last_frame_fi)], true, u64::MAX)
+            .wait_for_fences(&frame_state.fences, true, u64::MAX)
             .unwrap();
     }
+
+    // --- Synchronous debug readback: copy last frame's GPU data to staging buffers ---
+    // All GPU work is complete (both fences waited above). Do the readback before
+    // destroying fences/command buffers to avoid any potential resource conflicts.
+    let last_fi = (NUM_FRAMES as usize - 1) % 2;
+    {
+        let cmd = context.begin_single_time_commands();
+        if let Err(e) = particle_system.record_debug_readback(cmd.vk_command_buffer(), last_fi) {
+            log::warn!("Failed to record debug readback: {}", e);
+        }
+        context.end_single_time_commands(cmd);
+    }
+
     frame_state.destroy(&context.device);
 
     // Return pre-allocated command buffers to pool
@@ -986,96 +902,40 @@ fn main() -> ExitCode {
     frame_commands[1].return_to_pool();
 
     // --- Per-frame indirect draw validation (accumulated on GPU, read back once) ---
-    log::info!(
-        "Validating indirect draw commands across all {} frames...",
-        NUM_FRAMES
-    );
-    {
-        let all_frames = indirect_accumulator.read_all(&context);
-        let mut indirect_draw_errors = 0u32;
-        let mut error_frames = Vec::new();
+    // --- GPU validation readback (single read of all accumulated results) ---
+    if let Some(gpu_val) = gpu_validation {
+        log::info!("Reading GPU validation results...");
+        let results = gpu_val.read_results(&context);
 
-        for (frame, (vertex_count, instance_count, first_vertex, first_instance)) in
-            all_frames.iter().enumerate()
-        {
-            // Skip frames where no simulate work happened (indirect draw buffer
-            // was never written). The first couple of frames have no alive particles
-            // so simulate dispatch is skipped entirely.
-            if *vertex_count == 0 && *instance_count == 0 {
-                continue;
-            }
-
-            let mut frame_errors = Vec::new();
-
-            if *instance_count != 1 {
-                frame_errors.push(format!("instance_count={}, expected 1", instance_count));
-            }
-            if *first_vertex != 0 {
-                frame_errors.push(format!("first_vertex={}, expected 0", first_vertex));
-            }
-            if *first_instance != 0 {
-                frame_errors.push(format!("first_instance={}, expected 0", first_instance));
-            }
-            if *vertex_count % 6 != 0 {
-                frame_errors.push(format!("vertex_count={} not multiple of 6", vertex_count));
-            }
-
-            let implied_particles = vertex_count / 6;
-            if implied_particles > max_particles {
-                frame_errors.push(format!(
-                    "implied particles {} > max_particles {}",
-                    implied_particles, max_particles
-                ));
-            }
-
-            if !frame_errors.is_empty() {
-                indirect_draw_errors += 1;
-                error_frames.push((frame, *vertex_count, *instance_count, frame_errors));
-            }
-        }
-
-        if indirect_draw_errors > 0 {
-            log::error!(
-                "Indirect draw validation FAILED: {} errors across {} frames",
-                indirect_draw_errors,
-                NUM_FRAMES
-            );
-            // Report up to 10 error frames
-            for (frame, vertex_count, instance_count, errors) in error_frames.iter().take(10) {
+        // Indirect draw validation: check that vertex_count == alive_count * 6
+        // every frame. Accumulated by the GPU validation shader.
+        log::info!(
+            "Indirect draw validation: {} mismatches across {} frames",
+            results.indirect_draw_mismatches,
+            NUM_FRAMES
+        );
+        if results.indirect_draw_mismatches > 0 {
+            log::error!("Indirect draw validation FAILED:");
+            for detail in results.indirect_draw_details.iter().take(10) {
                 log::error!(
-                    "  Frame {}: vertex_count={}, instance_count={}",
-                    frame,
-                    vertex_count,
-                    instance_count
+                    "  frame={}: expected vc={}, got vc={}",
+                    detail.frame_index,
+                    detail.expected_vertex_count,
+                    detail.actual_vertex_count,
                 );
-                for e in errors {
-                    log::error!("    {}", e);
-                }
             }
-            if error_frames.len() > 10 {
-                log::error!("  ... and {} more error frames", error_frames.len() - 10);
-            }
-            indirect_accumulator.destroy(&context);
+            gpu_val.destroy(&context);
             if let Some(ref mut res) = render_resources {
                 res.destroy(&context);
             }
             return ExitCode::from(1);
         }
-
         log::info!(
-            "Indirect draw validation passed: all {} frames structurally valid",
+            "Indirect draw validation PASSED: all {} frames valid",
             NUM_FRAMES
         );
-    }
 
-    indirect_accumulator.destroy(&context);
-
-    // --- GPU cross-emitter contamination validation ---
-    // Read back the accumulated per-particle validation results from the GPU.
-    if let Some(gpu_val) = gpu_validation {
-        log::info!("Reading GPU cross-emitter validation results...");
-        let results = gpu_val.read_results(&context);
-
+        // Cross-emitter contamination validation
         log::info!(
             "GPU validation: {} particles checked across {} frames",
             results.total_checked,
@@ -1129,24 +989,10 @@ fn main() -> ExitCode {
         gpu_val.destroy(&context);
     }
 
-    // --- Final debug readback: copy GPU data to staging buffers ---
-    // The simulation loop doesn't record debug readback per-frame, so we do a
-    // single synchronous copy+readback after all GPU work is complete.
-    log::info!("Recording final debug readback...");
-    {
-        let cmd = context.begin_single_time_commands();
-        if let Err(e) =
-            particle_system.record_debug_readback(cmd.vk_command_buffer(), last_frame_fi)
-        {
-            log::warn!("Failed to record final debug readback: {}", e);
-        }
-        cmd.end_single_time_command();
-        context.end_single_time_commands(cmd);
-    }
-
     log::info!("Simulation complete, running validation...");
 
-    // Read back actual GPU counters from the last frame
+    // Read back actual GPU counters from the last frame (recorded during the
+    // simulation loop on the last frame, fences already waited above).
     let gpu_alive = if particle_system.has_debug_readback() {
         match particle_system.read_debug_data() {
             Ok(data) => {
@@ -1185,21 +1031,6 @@ fn main() -> ExitCode {
         }
         Err(e) => {
             log::error!("✗ Particle data validation failed: {}", e);
-            if let Some(ref mut res) = render_resources {
-                res.destroy(&context);
-            }
-            return ExitCode::from(1);
-        }
-    }
-
-    // Validate indirect draw buffer data
-    log::info!("Validating indirect draw buffer...");
-    match validate_indirect_draw(&particle_system) {
-        Ok(_) => {
-            log::info!("✓ Indirect draw buffer validation passed");
-        }
-        Err(e) => {
-            log::error!("✗ Indirect draw buffer validation failed: {}", e);
             if let Some(ref mut res) = render_resources {
                 res.destroy(&context);
             }
@@ -1579,124 +1410,6 @@ fn validate_particle_data(particle_system: &GlobalParticleSystem) -> Result<(), 
 
     Ok(())
 }
-
-/// Expected emitter definitions for color consistency validation.
-/// Validate emitter configurations.
-/// Validate the VkDrawIndirectCommand written by the simulate shader.
-///
-/// The simulate shader writes a single VkDrawIndirectCommand (16 bytes) to a
-/// per-frame buffer that the render pass consumes via vkCmdDrawIndirect.
-///
-/// Expected layout:
-///   vertex_count    = alive_count * 6  (2 triangles per particle quad)
-///   instance_count  = 1
-///   first_vertex    = 0
-///   first_instance  = 0
-fn validate_indirect_draw(particle_system: &GlobalParticleSystem) -> Result<(), String> {
-    let debug_data = match particle_system.read_debug_data() {
-        Ok(data) => data,
-        Err(e) => {
-            return Err(format!(
-                "Failed to read debug data for indirect draw validation: {}",
-                e
-            ));
-        }
-    };
-
-    let indirect_draw = match debug_data.indirect_draw {
-        Some(cmd) => cmd,
-        None => {
-            return Err(
-                "Indirect draw command data not available (readback may not have been recorded)"
-                    .to_string(),
-            );
-        }
-    };
-
-    let alive_count = debug_data.counters.alive_count;
-
-    log::info!(
-        "Indirect draw command: vertex_count={}, instance_count={}, first_vertex={}, first_instance={}",
-        indirect_draw.vertex_count,
-        indirect_draw.instance_count,
-        indirect_draw.first_vertex,
-        indirect_draw.first_instance
-    );
-    log::info!(
-        "Expected: vertex_count={}, instance_count=1, first_vertex=0, first_instance=0 (alive_count={})",
-        alive_count * 6,
-        alive_count
-    );
-
-    let expected_vertex_count = alive_count * 6;
-
-    let mut errors = Vec::new();
-
-    if indirect_draw.vertex_count != expected_vertex_count {
-        errors.push(format!(
-            "vertex_count mismatch: got {}, expected {} (alive_count={})",
-            indirect_draw.vertex_count, expected_vertex_count, alive_count
-        ));
-    }
-
-    if indirect_draw.instance_count != 1 {
-        errors.push(format!(
-            "instance_count mismatch: got {}, expected 1",
-            indirect_draw.instance_count
-        ));
-    }
-
-    if indirect_draw.first_vertex != 0 {
-        errors.push(format!(
-            "first_vertex mismatch: got {}, expected 0",
-            indirect_draw.first_vertex
-        ));
-    }
-
-    if indirect_draw.first_instance != 0 {
-        errors.push(format!(
-            "first_instance mismatch: got {}, expected 0",
-            indirect_draw.first_instance
-        ));
-    }
-
-    // Sanity: vertex_count must be a multiple of 6 (quads)
-    if indirect_draw.vertex_count % 6 != 0 {
-        errors.push(format!(
-            "vertex_count {} is not a multiple of 6 (each particle is a 6-vertex quad)",
-            indirect_draw.vertex_count
-        ));
-    }
-
-    // Sanity: implied particle count from vertex_count must not exceed max particles
-    let implied_particles = indirect_draw.vertex_count / 6;
-    let max_particles = particle_system.max_particles();
-    if implied_particles > max_particles {
-        errors.push(format!(
-            "implied particle count {} from vertex_count exceeds max_particles {}",
-            implied_particles, max_particles
-        ));
-    }
-
-    if !errors.is_empty() {
-        for e in &errors {
-            log::error!("  {}", e);
-        }
-        return Err(format!(
-            "Indirect draw buffer validation failed with {} error(s)",
-            errors.len()
-        ));
-    }
-
-    log::info!(
-        "Indirect draw buffer OK: {} vertices ({} particles), instance_count=1",
-        indirect_draw.vertex_count,
-        implied_particles
-    );
-
-    Ok(())
-}
-
 fn validate_emitter_configs(particle_system: &GlobalParticleSystem) -> Result<(), String> {
     use katla_gfx::particles::validation::validate_emitter_config;
 
