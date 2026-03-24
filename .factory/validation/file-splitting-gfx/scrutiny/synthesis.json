@@ -1,0 +1,85 @@
+{
+  "milestone": "file-splitting-gfx",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "split-renderer",
+      "severity": "non_blocking",
+      "description": "Stale doc comment 'Transpose a 4x4 matrix from row-major to column-major format.' on PendingReadback struct in renderer/mod.rs:98. Leftover from original file.",
+      "file": "katla_gfx/src/renderer/mod.rs",
+      "line": 98
+    },
+    {
+      "featureId": "split-particles",
+      "severity": "non_blocking",
+      "description": "descriptors.rs is 605 lines, exceeding the 500-line-per-submodule target. Not a correctness issue — all methods are logically grouped.",
+      "file": "katla_gfx/src/particles/descriptors.rs",
+      "line": 1
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Updated cleanup-notes.md with struct field visibility pattern (pub(super) for submodule access) and EmitterState pub(crate) promotion pattern for cross-submodule type access within existing directories.",
+      "sourceFeature": "split-renderer,split-particles"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skills/split-worker",
+      "suggestion": "The skill says to extract submodules one at a time verifying each, but workers consistently deviate by creating all files at once then fixing compilation in batch. Consider updating the skill to allow batch extraction when the split is straightforward (uniform import fixes only), while keeping incremental extraction for complex cases.",
+      "evidence": "split-render-graph-frame and split-vulkan-context workers both deviated from step-6 ('verify after EACH submodule extraction') by creating all files at once. Both succeeded with zero compilation issues.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention: when splitting files, struct fields that submodules need access to should be widened to pub(super). Helper types used across submodules within the same directory may need pub(crate) promotion to satisfy privacy boundaries (e.g., EmitterState in particles/).",
+      "evidence": "split-renderer widened 3 fields to pub(super); split-particles promoted EmitterState from pub(super) to pub(crate) to fix clippy private_interfaces warning. Both patterns are consistent across all 4 split features.",
+      "isSystemic": true
+    },
+    {
+      "target": "skills/split-worker",
+      "suggestion": "Update the skill's example handoff test count from '432 katla_gfx tests' to the actual count (~357) to avoid misleading workers about expected test counts.",
+      "evidence": "split-render-graph-frame review noted the skill example references '432 katla_gfx tests' but actual count is 357.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add note for feature descriptions involving file splits: the listing of items to keep in mod.rs is aspirational. The 500-line-per-file constraint may require moving additional types to domain submodules.",
+      "evidence": "split-vulkan-context moved ValidationMode, ValidationLevel, ValidationSeverity, ValidationMessage, ValidationCallbackStorage to validation.rs and RenderTexture to swapchain.rs (feature said keep in mod.rs) because mod.rs would have been 685 lines otherwise.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Submodules use fully qualified paths (crate::...) instead of use super::* as the skill recommends",
+      "reason": "already-documented: cleanup-notes.md already notes the splitting conventions and both patterns work correctly. This is a style preference, not an issue."
+    },
+    {
+      "observation": "Worker used cargo check -p katla_gfx and cargo test -p katla_gfx which are in services.yaml",
+      "reason": "already-documented: services.yaml already has these commands. No gap to address."
+    },
+    {
+      "observation": "Tests kept in mod.rs rather than moved to submodules",
+      "reason": "already-documented: cleanup-notes.md and skill procedure both already specify keeping tests in mod.rs."
+    },
+    {
+      "observation": "Adding submodules to existing directory (particles/) without creating directory",
+      "reason": "already-documented: cleanup-notes.md line 30 already notes 'particles/mod.rs already exists as a directory - just add new files alongside existing submodules'."
+    }
+  ],
+  "previousRound": null
+}
