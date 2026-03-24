@@ -56,10 +56,11 @@ impl UiContext {
         if self.popup_consume_click {
             return false;
         }
-        if let Some(popup_bounds) = self.popup_bounds {
-            if popup_bounds.contains(self.input.mouse_pos) && self.z_index < super::z_index::POPUP {
-                return false;
-            }
+        if let Some(popup_bounds) = self.popup_bounds
+            && popup_bounds.contains(self.input.mouse_pos)
+            && self.z_index < super::z_index::POPUP
+        {
+            return false;
         }
         self.input.is_hovered(bounds) && self.active_id.is_none()
     }

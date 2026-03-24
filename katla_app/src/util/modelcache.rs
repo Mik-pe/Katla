@@ -1,17 +1,17 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use gltf::Document;
 use gltf::buffer::Data as BufferData;
 use gltf::image::Data as ImageData;
-use gltf::Document;
 use katla_gfx::AttributeType;
 use katla_math::{Mat4, Quat, Sphere, Vec3};
 use log::{debug, warn};
 
 use crate::util::gltf_material::GltfMaterialInfo;
 use crate::util::gltf_parser::{
-    build_skinned_vertex_data, build_vertex_data, generate_smooth_normals, AttributeParser,
-    ParsedAttributes,
+    AttributeParser, ParsedAttributes, build_skinned_vertex_data, build_vertex_data,
+    generate_smooth_normals,
 };
 use katla_gfx::{VertexPBR, VertexPBRSkinned};
 
@@ -180,11 +180,11 @@ impl GLTFModel {
                     }
                 }
 
-                if let Some(indices) = primitive.indices() {
-                    if let Some((indices_data, stride)) = parser.parse_indices(indices) {
-                        index_data = indices_data;
-                        index_stride = stride;
-                    }
+                if let Some(indices) = primitive.indices()
+                    && let Some((indices_data, stride)) = parser.parse_indices(indices)
+                {
+                    index_data = indices_data;
+                    index_stride = stride;
                 }
             }
 
@@ -253,11 +253,11 @@ impl GLTFModel {
                     }
                 }
 
-                if let Some(indices) = primitive.indices() {
-                    if let Some((indices_data, stride)) = parser.parse_indices(indices) {
-                        index_data = indices_data;
-                        index_stride = stride;
-                    }
+                if let Some(indices) = primitive.indices()
+                    && let Some((indices_data, stride)) = parser.parse_indices(indices)
+                {
+                    index_data = indices_data;
+                    index_stride = stride;
                 }
             }
 
@@ -398,10 +398,11 @@ impl GLTFModel {
             let skinned_vertex_count = skinned_data.len();
 
             // Apply world transform to non-skinned vertices
-            if !has_skinning && !vertex_data.is_empty() {
-                if let Some(world_transform) = world_transforms.get(&node.index()) {
-                    Self::transform_vertex_data(&mut vertex_data, world_transform);
-                }
+            if !has_skinning
+                && !vertex_data.is_empty()
+                && let Some(world_transform) = world_transforms.get(&node.index())
+            {
+                Self::transform_vertex_data(&mut vertex_data, world_transform);
             }
 
             let soa_attributes = Self::deinterleave_pbr(&vertex_data);
@@ -559,11 +560,11 @@ impl GLTFModel {
     /// Returns None if the model has no mesh or no primitives.
     pub fn parsed_attributes(&self) -> Option<ParsedAttributes> {
         for node in self.document.nodes() {
-            if let Some(mesh) = node.mesh() {
-                if let Some(primitive) = mesh.primitives().next() {
-                    let parser = AttributeParser::new(&self.buffers);
-                    return Some(ParsedAttributes::from_gltf(&primitive, &parser));
-                }
+            if let Some(mesh) = node.mesh()
+                && let Some(primitive) = mesh.primitives().next()
+            {
+                let parser = AttributeParser::new(&self.buffers);
+                return Some(ParsedAttributes::from_gltf(&primitive, &parser));
             }
         }
         None

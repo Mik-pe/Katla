@@ -208,22 +208,21 @@ pub fn process_editor_actions(app: &mut Application) {
                 app.editor_ui.open_panel(panel);
             }
             EditorAction::ToggleParticleEmitter => {
-                if let Some(entity_id) = app.editor_ui.selected_particle_emitter {
-                    if let Some(emitter) = app
+                if let Some(entity_id) = app.editor_ui.selected_particle_emitter
+                    && let Some(emitter) = app
                         .world
                         .get_component_mut::<crate::components::ParticleEmitterComponent>(entity_id)
-                    {
-                        emitter.active = !emitter.active;
-                        info!(
-                            "Particle emitter {:?} {}",
-                            entity_id,
-                            if emitter.active {
-                                "enabled"
-                            } else {
-                                "disabled"
-                            }
-                        );
-                    }
+                {
+                    emitter.active = !emitter.active;
+                    info!(
+                        "Particle emitter {:?} {}",
+                        entity_id,
+                        if emitter.active {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        }
+                    );
                 }
             }
             EditorAction::ResetParticleSystem => {

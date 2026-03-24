@@ -102,7 +102,7 @@ impl System for CullingSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use katla_math::{Vec3, AABB};
+    use katla_math::Vec3;
 
     #[test]
     fn test_culling_system_visible() {

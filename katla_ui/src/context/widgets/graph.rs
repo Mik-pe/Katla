@@ -76,18 +76,19 @@ impl UiContext {
         }
 
         // 3. Draw grid lines (horizontal)
-        if let Some(grid_color) = opts.grid_color {
-            if graph_bounds.height() > 0.0 && opts.grid_lines > 0 {
-                for i in 1..opts.grid_lines {
-                    let t = i as f32 / opts.grid_lines as f32;
-                    let y = graph_bounds.max.y() - t * graph_bounds.height();
-                    self.draw_line(
-                        Vec2::new(graph_bounds.min.x(), y),
-                        Vec2::new(graph_bounds.max.x(), y),
-                        grid_color,
-                        1.0,
-                    );
-                }
+        if let Some(grid_color) = opts.grid_color
+            && graph_bounds.height() > 0.0
+            && opts.grid_lines > 0
+        {
+            for i in 1..opts.grid_lines {
+                let t = i as f32 / opts.grid_lines as f32;
+                let y = graph_bounds.max.y() - t * graph_bounds.height();
+                self.draw_line(
+                    Vec2::new(graph_bounds.min.x(), y),
+                    Vec2::new(graph_bounds.max.x(), y),
+                    grid_color,
+                    1.0,
+                );
             }
         }
 
@@ -152,16 +153,16 @@ impl UiContext {
         self.pop_clip();
 
         // 7. Draw current value text
-        if opts.show_value {
-            if let Some(&last_val) = values.last() {
-                let value_text = format!("{:.1}", last_val);
-                let text_size = self.measure_text(&value_text, self.style.font_size);
-                let text_pos = Vec2::new(
-                    graph_bounds.max.x() - text_size.x() - 5.0,
-                    graph_bounds.min.y() + 2.0,
-                );
-                self.draw_text(&value_text, text_pos, opts.line_color, self.style.font_size);
-            }
+        if opts.show_value
+            && let Some(&last_val) = values.last()
+        {
+            let value_text = format!("{:.1}", last_val);
+            let text_size = self.measure_text(&value_text, self.style.font_size);
+            let text_pos = Vec2::new(
+                graph_bounds.max.x() - text_size.x() - 5.0,
+                graph_bounds.min.y() + 2.0,
+            );
+            self.draw_text(&value_text, text_pos, opts.line_color, self.style.font_size);
         }
     }
 }

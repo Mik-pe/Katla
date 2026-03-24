@@ -27,16 +27,16 @@ pub struct QueryIter8<
 }
 
 impl<
-        'a,
-        T1: Component,
-        T2: Component,
-        T3: Component,
-        T4: Component,
-        T5: Component,
-        T6: Component,
-        T7: Component,
-        T8: Component,
-    > Iterator for QueryIter8<'a, T1, T2, T3, T4, T5, T6, T7, T8>
+    'a,
+    T1: Component,
+    T2: Component,
+    T3: Component,
+    T4: Component,
+    T5: Component,
+    T6: Component,
+    T7: Component,
+    T8: Component,
+> Iterator for QueryIter8<'a, T1, T2, T3, T4, T5, T6, T7, T8>
 {
     type Item = (
         EntityId,
@@ -60,24 +60,18 @@ impl<
         let storage8 = self.storage8.as_ref()?;
         loop {
             let (entity_id, component1) = self.iter1.next()?;
-            if let Some(component2) = storage2.get(*entity_id) {
-                if let Some(component3) = storage3.get(*entity_id) {
-                    if let Some(component4) = storage4.get(*entity_id) {
-                        if let Some(component5) = storage5.get(*entity_id) {
-                            if let Some(component6) = storage6.get(*entity_id) {
-                                if let Some(component7) = storage7.get(*entity_id) {
-                                    if let Some(component8) = storage8.get(*entity_id) {
-                                        return Some((
-                                            *entity_id, component1, component2, component3,
-                                            component4, component5, component6, component7,
-                                            component8,
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            if let Some(component2) = storage2.get(*entity_id)
+                && let Some(component3) = storage3.get(*entity_id)
+                && let Some(component4) = storage4.get(*entity_id)
+                && let Some(component5) = storage5.get(*entity_id)
+                && let Some(component6) = storage6.get(*entity_id)
+                && let Some(component7) = storage7.get(*entity_id)
+                && let Some(component8) = storage8.get(*entity_id)
+            {
+                return Some((
+                    *entity_id, component1, component2, component3, component4, component5,
+                    component6, component7, component8,
+                ));
             }
         }
     }
@@ -106,16 +100,16 @@ pub struct QueryIter8MutRefRefRefRefRefRefRef<
 }
 
 impl<
-        'a,
-        T1: Component,
-        T2: Component,
-        T3: Component,
-        T4: Component,
-        T5: Component,
-        T6: Component,
-        T7: Component,
-        T8: Component,
-    > Iterator for QueryIter8MutRefRefRefRefRefRefRef<'a, T1, T2, T3, T4, T5, T6, T7, T8>
+    'a,
+    T1: Component,
+    T2: Component,
+    T3: Component,
+    T4: Component,
+    T5: Component,
+    T6: Component,
+    T7: Component,
+    T8: Component,
+> Iterator for QueryIter8MutRefRefRefRefRefRefRef<'a, T1, T2, T3, T4, T5, T6, T7, T8>
 {
     type Item = (
         EntityId,
@@ -139,24 +133,18 @@ impl<
         let storage8 = self.storage8.as_ref()?;
         loop {
             let (entity_id, component1) = self.iter1.next()?;
-            if let Some(component2) = storage2.get(*entity_id) {
-                if let Some(component3) = storage3.get(*entity_id) {
-                    if let Some(component4) = storage4.get(*entity_id) {
-                        if let Some(component5) = storage5.get(*entity_id) {
-                            if let Some(component6) = storage6.get(*entity_id) {
-                                if let Some(component7) = storage7.get(*entity_id) {
-                                    if let Some(component8) = storage8.get(*entity_id) {
-                                        return Some((
-                                            *entity_id, component1, component2, component3,
-                                            component4, component5, component6, component7,
-                                            component8,
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            if let Some(component2) = storage2.get(*entity_id)
+                && let Some(component3) = storage3.get(*entity_id)
+                && let Some(component4) = storage4.get(*entity_id)
+                && let Some(component5) = storage5.get(*entity_id)
+                && let Some(component6) = storage6.get(*entity_id)
+                && let Some(component7) = storage7.get(*entity_id)
+                && let Some(component8) = storage8.get(*entity_id)
+            {
+                return Some((
+                    *entity_id, component1, component2, component3, component4, component5,
+                    component6, component7, component8,
+                ));
             }
         }
     }
@@ -164,15 +152,15 @@ impl<
 
 // Implement QueryData for eight immutable components
 impl<
-        T1: Component + 'static,
-        T2: Component + 'static,
-        T3: Component + 'static,
-        T4: Component + 'static,
-        T5: Component + 'static,
-        T6: Component + 'static,
-        T7: Component + 'static,
-        T8: Component + 'static,
-    > QueryData for (&T1, &T2, &T3, &T4, &T5, &T6, &T7, &T8)
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+    T5: Component + 'static,
+    T6: Component + 'static,
+    T7: Component + 'static,
+    T8: Component + 'static,
+> QueryData for (&T1, &T2, &T3, &T4, &T5, &T6, &T7, &T8)
 {
     type Item<'a> = (
         EntityId,
@@ -368,15 +356,15 @@ impl<
 
 // Implement QueryData for (&mut T1, &T2, &T3, &T4, &T5, &T6, &T7, &T8)
 impl<
-        T1: Component + 'static,
-        T2: Component + 'static,
-        T3: Component + 'static,
-        T4: Component + 'static,
-        T5: Component + 'static,
-        T6: Component + 'static,
-        T7: Component + 'static,
-        T8: Component + 'static,
-    > QueryData for (&mut T1, &T2, &T3, &T4, &T5, &T6, &T7, &T8)
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+    T5: Component + 'static,
+    T6: Component + 'static,
+    T7: Component + 'static,
+    T8: Component + 'static,
+> QueryData for (&mut T1, &T2, &T3, &T4, &T5, &T6, &T7, &T8)
 {
     type Item<'a> = (
         EntityId,

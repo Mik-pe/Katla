@@ -330,17 +330,17 @@ impl Application {
                 continue;
             }
 
-            if !drawable.skeleton_handle.is_none() {
-                if let Some(skeleton) = self.world.get_component::<Skeleton>(entity_id) {
-                    let matrices: Vec<[f32; 16]> = skeleton
-                        .joint_transforms
-                        .iter()
-                        .map(|m| m.to_array())
-                        .collect();
+            if !drawable.skeleton_handle.is_none()
+                && let Some(skeleton) = self.world.get_component::<Skeleton>(entity_id)
+            {
+                let matrices: Vec<[f32; 16]> = skeleton
+                    .joint_transforms
+                    .iter()
+                    .map(|m| m.to_array())
+                    .collect();
 
-                    self.renderer
-                        .update_skeleton(drawable.skeleton_handle, &matrices);
-                }
+                self.renderer
+                    .update_skeleton(drawable.skeleton_handle, &matrices);
             }
 
             let mut draw = frame

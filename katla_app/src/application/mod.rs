@@ -113,14 +113,14 @@ impl ApplicationHandler for Application {
         _device_id: DeviceId,
         event: DeviceEvent,
     ) {
-        if let DeviceEvent::MouseMotion { delta } = event {
-            if self.world.get_input().is_action_pressed(Action::LookEnable) {
-                let current_delta = self.world.get_input().mouse_delta;
-                self.world.get_input_mut().mouse_delta = (
-                    current_delta.0 + delta.0 as f32,
-                    current_delta.1 + delta.1 as f32,
-                );
-            }
+        if let DeviceEvent::MouseMotion { delta } = event
+            && self.world.get_input().is_action_pressed(Action::LookEnable)
+        {
+            let current_delta = self.world.get_input().mouse_delta;
+            self.world.get_input_mut().mouse_delta = (
+                current_delta.0 + delta.0 as f32,
+                current_delta.1 + delta.1 as f32,
+            );
         }
     }
 
@@ -266,11 +266,11 @@ impl ApplicationHandler for Application {
                     }
 
                     // Handle text input from key event (for UI text fields)
-                    if event.state == ElementState::Pressed {
-                        if let Some(text) = &event.text {
-                            for c in text.chars() {
-                                self.ui_context.input.add_char(c);
-                            }
+                    if event.state == ElementState::Pressed
+                        && let Some(text) = &event.text
+                    {
+                        for c in text.chars() {
+                            self.ui_context.input.add_char(c);
                         }
                     }
 
@@ -323,50 +323,48 @@ impl ApplicationHandler for Application {
                 // DEBUG: Test particle readback at frame 10
                 #[cfg(debug_assertions)]
                 {
-                    if self.frame_count == 10 {
-                        if let Some(ref particle_system) = self.renderer.particle_system {
-                            log::info!(
-                                "=== Attempting Particle Debug Readback at frame {} ===",
-                                self.frame_count
-                            );
+                    if self.frame_count == 10
+                        && let Some(ref particle_system) = self.renderer.particle_system
+                    {
+                        log::info!(
+                            "=== Attempting Particle Debug Readback at frame {} ===",
+                            self.frame_count
+                        );
 
-                            // Read debug data from staging buffers
-                            match particle_system.read_debug_data() {
-                                Ok(debug_data) => {
-                                    log::info!("Particle Summary: {}", debug_data.summary());
+                        // Read debug data from staging buffers
+                        match particle_system.read_debug_data() {
+                            Ok(debug_data) => {
+                                log::info!("Particle Summary: {}", debug_data.summary());
 
-                                    // Print first 10 particles
-                                    log::info!("=== First 10 Particles ===");
-                                    for (i, p) in debug_data.particles.iter().take(10).enumerate() {
-                                        log::info!(
-                                            "Particle {}: pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2}) lifetime={:.2} scale={:.3} color=({:.2},{:.2},{:.2},{:.2})",
-                                            i,
-                                            p.position[0],
-                                            p.position[1],
-                                            p.position[2],
-                                            p.velocity[0],
-                                            p.velocity[1],
-                                            p.velocity[2],
-                                            p.lifetime,
-                                            p.scale,
-                                            p.color[0],
-                                            p.color[1],
-                                            p.color[2],
-                                            p.color[3]
-                                        );
-                                    }
-
-                                    // Print alive particle indices
-                                    log::info!("=== First 10 Alive Particle Indices ===");
-                                    for (i, idx) in
-                                        debug_data.alive_list.iter().take(10).enumerate()
-                                    {
-                                        log::info!("Alive[{}] = {}", i, idx);
-                                    }
+                                // Print first 10 particles
+                                log::info!("=== First 10 Particles ===");
+                                for (i, p) in debug_data.particles.iter().take(10).enumerate() {
+                                    log::info!(
+                                        "Particle {}: pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2}) lifetime={:.2} scale={:.3} color=({:.2},{:.2},{:.2},{:.2})",
+                                        i,
+                                        p.position[0],
+                                        p.position[1],
+                                        p.position[2],
+                                        p.velocity[0],
+                                        p.velocity[1],
+                                        p.velocity[2],
+                                        p.lifetime,
+                                        p.scale,
+                                        p.color[0],
+                                        p.color[1],
+                                        p.color[2],
+                                        p.color[3]
+                                    );
                                 }
-                                Err(e) => {
-                                    log::warn!("Failed to read particle debug data: {}", e);
+
+                                // Print alive particle indices
+                                log::info!("=== First 10 Alive Particle Indices ===");
+                                for (i, idx) in debug_data.alive_list.iter().take(10).enumerate() {
+                                    log::info!("Alive[{}] = {}", i, idx);
                                 }
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to read particle debug data: {}", e);
                             }
                         }
                     }

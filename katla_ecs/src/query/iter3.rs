@@ -19,10 +19,10 @@ impl<'a, T1: Component, T2: Component, T3: Component> Iterator for QueryIter3<'a
         let storage3 = self.storage3.as_ref()?;
         loop {
             let (entity_id, component1) = self.iter1.next()?;
-            if let Some(component2) = storage2.get(*entity_id) {
-                if let Some(component3) = storage3.get(*entity_id) {
-                    return Some((*entity_id, component1, component2, component3));
-                }
+            if let Some(component2) = storage2.get(*entity_id)
+                && let Some(component3) = storage3.get(*entity_id)
+            {
+                return Some((*entity_id, component1, component2, component3));
             }
         }
     }
@@ -45,10 +45,10 @@ impl<'a, T1: Component, T2: Component, T3: Component> Iterator
         let storage3 = self.storage3.as_ref()?;
         loop {
             let (entity_id, component1) = self.iter1.next()?;
-            if let Some(component2) = storage2.get(*entity_id) {
-                if let Some(component3) = storage3.get(*entity_id) {
-                    return Some((*entity_id, component1, component2, component3));
-                }
+            if let Some(component2) = storage2.get(*entity_id)
+                && let Some(component3) = storage3.get(*entity_id)
+            {
+                return Some((*entity_id, component1, component2, component3));
             }
         }
     }
@@ -71,10 +71,10 @@ impl<'a, T1: Component, T2: Component, T3: Component> Iterator
         let storage3 = self.storage3.as_ref()?;
         loop {
             let (entity_id, component2) = self.iter2.next()?;
-            if let Some(component1) = storage1.get(*entity_id) {
-                if let Some(component3) = storage3.get(*entity_id) {
-                    return Some((*entity_id, component1, component2, component3));
-                }
+            if let Some(component1) = storage1.get(*entity_id)
+                && let Some(component3) = storage3.get(*entity_id)
+            {
+                return Some((*entity_id, component1, component2, component3));
             }
         }
     }
@@ -97,10 +97,10 @@ impl<'a, T1: Component, T2: Component, T3: Component> Iterator
         let storage2 = self.storage2.as_ref()?;
         loop {
             let (entity_id, component3) = self.iter3.next()?;
-            if let Some(component1) = storage1.get(*entity_id) {
-                if let Some(component2) = storage2.get(*entity_id) {
-                    return Some((*entity_id, component1, component2, component3));
-                }
+            if let Some(component1) = storage1.get(*entity_id)
+                && let Some(component2) = storage2.get(*entity_id)
+            {
+                return Some((*entity_id, component1, component2, component3));
             }
         }
     }

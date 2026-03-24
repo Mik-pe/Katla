@@ -127,10 +127,10 @@ impl ApplicationBuilder {
         #[cfg(debug_assertions)]
         {
             info!("Initializing particle debug readback");
-            if let Some(ref mut particle_system) = renderer.particle_system {
-                if let Err(e) = particle_system.init_debug_readback() {
-                    warn!("Failed to initialize particle debug readback: {}", e);
-                }
+            if let Some(ref mut particle_system) = renderer.particle_system
+                && let Err(e) = particle_system.init_debug_readback()
+            {
+                warn!("Failed to initialize particle debug readback: {}", e);
             }
         }
 

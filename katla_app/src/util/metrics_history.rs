@@ -37,10 +37,10 @@ impl MetricsHistory {
     /// If the buffer is full, the oldest value is removed.
     pub fn push(&mut self, value: f32) {
         // If at capacity, remove oldest value first
-        if self.values.len() == self.capacity {
-            if let Some(old) = self.values.pop_front() {
-                self.sum -= old;
-            }
+        if self.values.len() == self.capacity
+            && let Some(old) = self.values.pop_front()
+        {
+            self.sum -= old;
         }
 
         // Add new value

@@ -122,7 +122,6 @@ impl Default for ParticleSystem {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use katla_gfx::particles::EmitterConfig;
 
     #[test]

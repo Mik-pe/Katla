@@ -22,15 +22,8 @@ pub struct QueryIter6<
     iter1: std::slice::Iter<'a, (EntityId, T1)>,
 }
 
-impl<
-        'a,
-        T1: Component,
-        T2: Component,
-        T3: Component,
-        T4: Component,
-        T5: Component,
-        T6: Component,
-    > Iterator for QueryIter6<'a, T1, T2, T3, T4, T5, T6>
+impl<'a, T1: Component, T2: Component, T3: Component, T4: Component, T5: Component, T6: Component>
+    Iterator for QueryIter6<'a, T1, T2, T3, T4, T5, T6>
 {
     type Item = (EntityId, &'a T1, &'a T2, &'a T3, &'a T4, &'a T5, &'a T6);
 
@@ -42,19 +35,16 @@ impl<
         let storage6 = self.storage6.as_ref()?;
         loop {
             let (entity_id, component1) = self.iter1.next()?;
-            if let Some(component2) = storage2.get(*entity_id) {
-                if let Some(component3) = storage3.get(*entity_id) {
-                    if let Some(component4) = storage4.get(*entity_id) {
-                        if let Some(component5) = storage5.get(*entity_id) {
-                            if let Some(component6) = storage6.get(*entity_id) {
-                                return Some((
-                                    *entity_id, component1, component2, component3, component4,
-                                    component5, component6,
-                                ));
-                            }
-                        }
-                    }
-                }
+            if let Some(component2) = storage2.get(*entity_id)
+                && let Some(component3) = storage3.get(*entity_id)
+                && let Some(component4) = storage4.get(*entity_id)
+                && let Some(component5) = storage5.get(*entity_id)
+                && let Some(component6) = storage6.get(*entity_id)
+            {
+                return Some((
+                    *entity_id, component1, component2, component3, component4, component5,
+                    component6,
+                ));
             }
         }
     }
@@ -78,15 +68,8 @@ pub struct QueryIter6MutRefRefRefRefRef<
     iter1: std::slice::IterMut<'a, (EntityId, T1)>,
 }
 
-impl<
-        'a,
-        T1: Component,
-        T2: Component,
-        T3: Component,
-        T4: Component,
-        T5: Component,
-        T6: Component,
-    > Iterator for QueryIter6MutRefRefRefRefRef<'a, T1, T2, T3, T4, T5, T6>
+impl<'a, T1: Component, T2: Component, T3: Component, T4: Component, T5: Component, T6: Component>
+    Iterator for QueryIter6MutRefRefRefRefRef<'a, T1, T2, T3, T4, T5, T6>
 {
     type Item = (EntityId, &'a mut T1, &'a T2, &'a T3, &'a T4, &'a T5, &'a T6);
 
@@ -98,19 +81,16 @@ impl<
         let storage6 = self.storage6.as_ref()?;
         loop {
             let (entity_id, component1) = self.iter1.next()?;
-            if let Some(component2) = storage2.get(*entity_id) {
-                if let Some(component3) = storage3.get(*entity_id) {
-                    if let Some(component4) = storage4.get(*entity_id) {
-                        if let Some(component5) = storage5.get(*entity_id) {
-                            if let Some(component6) = storage6.get(*entity_id) {
-                                return Some((
-                                    *entity_id, component1, component2, component3, component4,
-                                    component5, component6,
-                                ));
-                            }
-                        }
-                    }
-                }
+            if let Some(component2) = storage2.get(*entity_id)
+                && let Some(component3) = storage3.get(*entity_id)
+                && let Some(component4) = storage4.get(*entity_id)
+                && let Some(component5) = storage5.get(*entity_id)
+                && let Some(component6) = storage6.get(*entity_id)
+            {
+                return Some((
+                    *entity_id, component1, component2, component3, component4, component5,
+                    component6,
+                ));
             }
         }
     }
@@ -118,13 +98,13 @@ impl<
 
 // Implement QueryData for six immutable components
 impl<
-        T1: Component + 'static,
-        T2: Component + 'static,
-        T3: Component + 'static,
-        T4: Component + 'static,
-        T5: Component + 'static,
-        T6: Component + 'static,
-    > QueryData for (&T1, &T2, &T3, &T4, &T5, &T6)
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+    T5: Component + 'static,
+    T6: Component + 'static,
+> QueryData for (&T1, &T2, &T3, &T4, &T5, &T6)
 {
     type Item<'a> = (EntityId, &'a T1, &'a T2, &'a T3, &'a T4, &'a T5, &'a T6);
     type Iter<'a> = QueryIter6<'a, T1, T2, T3, T4, T5, T6>;
@@ -239,13 +219,13 @@ impl<
 
 // Implement QueryData for (&mut T1, &T2, &T3, &T4, &T5, &T6)
 impl<
-        T1: Component + 'static,
-        T2: Component + 'static,
-        T3: Component + 'static,
-        T4: Component + 'static,
-        T5: Component + 'static,
-        T6: Component + 'static,
-    > QueryData for (&mut T1, &T2, &T3, &T4, &T5, &T6)
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+    T5: Component + 'static,
+    T6: Component + 'static,
+> QueryData for (&mut T1, &T2, &T3, &T4, &T5, &T6)
 {
     type Item<'a> = (EntityId, &'a mut T1, &'a T2, &'a T3, &'a T4, &'a T5, &'a T6);
     type Iter<'a> = QueryIter6MutRefRefRefRefRef<'a, T1, T2, T3, T4, T5, T6>;
