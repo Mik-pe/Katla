@@ -20,7 +20,7 @@ use log::{debug, info, warn};
 use winit::keyboard::ModifiersState;
 
 pub use builder::*;
-use katla_ecs::{input::Action, World};
+use katla_ecs::{World, input::Action};
 use katla_gfx::renderer::VulkanRenderer;
 use katla_math::Vec2;
 
@@ -116,9 +116,9 @@ impl ApplicationHandler for Application {
         if let DeviceEvent::MouseMotion { delta } = event {
             if self.world.get_input().is_action_pressed(Action::LookEnable) {
                 let current_delta = self.world.get_input().mouse_delta;
-                self.world.get_input_mut().mouse_delta = Vec2::new(
-                    current_delta.x() + delta.0 as f32,
-                    current_delta.y() + delta.1 as f32,
+                self.world.get_input_mut().mouse_delta = (
+                    current_delta.0 + delta.0 as f32,
+                    current_delta.1 + delta.1 as f32,
                 );
             }
         }
@@ -614,6 +614,14 @@ impl Application {
         self.renderer
             .init_particle_simulate_pipeline(&particle_simulate_shader_path)
             .expect("Failed to initialize particle simulate pipeline");
+
+        // Initialize particle draw command pipeline (writes indirect draw buffer after simulate)
+        let particle_draw_command_shader_path = self
+            .resources
+            .shader_path("particles/particle_draw_command.wgsl");
+        self.renderer
+            .init_particle_draw_command_pipeline(&particle_draw_command_shader_path)
+            .expect("Failed to initialize particle draw command pipeline");
 
         // Add particle compute passes to frame graph
         // These must be added after particle pipelines are initialized

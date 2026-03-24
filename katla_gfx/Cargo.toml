@@ -12,10 +12,8 @@ ash-window = { workspace = true }
 gpu-allocator = { workspace = true }
 naga = { workspace = true }
 bytemuck = { workspace = true }
-toml = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-notify = { workspace = true }
 log = { workspace = true }
 bitflags = { workspace = true }
 

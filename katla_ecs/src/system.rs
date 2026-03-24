@@ -91,7 +91,6 @@ mod tests {
     use crate::Component;
 
     use super::*;
-    use crate::entity::EntityId;
 
     #[derive(Component)]
     struct TestComponent {}

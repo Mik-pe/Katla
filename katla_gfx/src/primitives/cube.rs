@@ -314,7 +314,7 @@ mod tests {
 
         let mut vertex_idx = 0;
         for (view_dir, corners) in test_cases {
-            for corner in corners {
+            for _corner in corners {
                 let v = &vertices[vertex_idx];
                 let normal_dot_view = v.normal[0] * view_dir[0]
                     + v.normal[1] * view_dir[1]

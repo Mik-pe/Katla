@@ -69,6 +69,7 @@ where
     }
 
     /// Creates a new SparseSet with the specified capacity.
+    #[allow(dead_code)]
     pub fn with_capacity(dense_capacity: usize, sparse_capacity: usize) -> Self {
         Self {
             dense: Vec::with_capacity(dense_capacity),
@@ -202,11 +203,13 @@ where
     }
 
     /// Returns the capacity of the dense array.
+    #[allow(dead_code)]
     pub fn dense_capacity(&self) -> usize {
         self.dense.capacity()
     }
 
     /// Returns the capacity of the sparse HashMap.
+    #[allow(dead_code)]
     pub fn sparse_capacity(&self) -> usize {
         self.sparse.capacity()
     }

@@ -6,4 +6,3 @@ edition = "2024"
 
 [dependencies]
 katla_derive = { workspace = true }
-katla_math = { workspace = true }
