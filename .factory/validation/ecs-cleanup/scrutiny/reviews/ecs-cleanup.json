@@ -1,0 +1,31 @@
+{
+  "featureId": "ecs-cleanup",
+  "reviewedAt": "2026-03-24T23:45:00.000Z",
+  "commitId": "869be83",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation thoroughly covers all four aspects of the feature description: (1) Deduplicated as_any/as_any_mut by removing them from the Component trait and derive macro, keeping only the AnyComponentStorage versions which are the ones actually used for type-erased storage downcasting. (2) Fixed all dead code warnings — removed unused ActionState enum, unused AnyComponentStorage methods (contains_entity, len, is_empty, entity_ids), and unused SparseSet methods (with_capacity, dense_capacity, sparse_capacity) along with their tests. (3) Unused imports were already cleaned in the prior foundation-ecs-dep-fix feature (EntityId in system.rs, ActionState reference in input.rs tests). (4) Changed pub mod storage to pub(crate) mod storage in lib.rs. The other internal modules (entity_slot, entity_allocator, sparse_set) were already private. The derive macro was simplified to generate an empty impl block, and integration tests were updated to remove all as_any/as_any_mut usage while still verifying the Component trait works correctly with Any bounds and TypeId distinctions.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The foundation-ecs-dep-fix feature left item-level #[allow(dead_code)] on SparseSet methods (with_capacity, dense_capacity, sparse_capacity) as a temporary measure. The ecs-cleanup worker correctly identified these as dead code and removed them entirely rather than leaving the suppressions. This pattern of 'previous feature leaves item-level allows, next feature removes the dead code' should be documented as a known workflow pattern for cleanup missions.",
+      "evidence": "foundation-ecs-dep-fix commit 0c75101 added #[allow(dead_code)] on sparse_set.rs methods; ecs-cleanup commit 869be83 removed those methods entirely."
+    },
+    {
+      "area": "conventions",
+      "observation": "The ecs-cleanup worker correctly identified that ActionState in actions.rs was dead code despite the feature description saying 'Remove unused imports (ActionState in input.rs)'. The feature description was slightly misleading — ActionState was a type definition, not just an import. The worker correctly removed the type definition rather than hunting for an import that didn't exist. This suggests the feature descriptions in features.json could be more precise about whether items are imports vs definitions.",
+      "evidence": "Feature description says 'Remove unused imports (ActionState in input.rs, EntityId in system.rs)' but ActionState was defined in input/actions.rs as an enum, not imported elsewhere. Worker removed the enum definition correctly."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The AnyComponentStorage trait in storage.rs still has as_any/as_any_mut methods (the ones that are actually used), while Component trait is now an empty marker trait bounded by Any. This means Component: Any already provides the ability to downcast via Any — the derive macro generates 'impl<T: Any> Component for T {}' which is effectively a no-op since T: Any is already implied. The derive macro's only value now is the ergonomic #[derive(Component)] syntax. This is worth noting for future reference if someone questions why the macro exists.",
+      "evidence": "katla_ecs/src/components.rs: pub trait Component: Any {}; katla_derive/src/lib.rs generates: impl<T> Component for T {} — the impl is empty."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The ecs-cleanup feature is correctly implemented. The worker made 184 lines of deletions and 31 lines of additions across 7 files, cleanly removing the as_any/as_any_mut duplication from the Component trait and derive macro, removing dead code (ActionState enum, unused AnyComponentStorage trait methods, unused SparseSet methods and their tests), and tightening storage module visibility to pub(crate). All 95 katla_ecs tests pass, 14 katla_derive integration tests pass, the workspace compiles cleanly, and clippy reports zero warnings for katla_ecs. The implementation follows all project conventions: no backwards compatibility maintained, no hybrid implementations, no AI slop comments added, and pub(crate) used for internal modules."
+}
