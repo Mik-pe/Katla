@@ -1,0 +1,22 @@
+{
+  "featureId": "split-text",
+  "reviewedAt": "2026-03-24T15:30:00.000Z",
+  "commitId": "1602fbd",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean split of katla_ui/src/text/mod.rs (1,669 lines) into text/ directory with mod.rs (941 lines) and 4 submodules: rasterization.rs (154 lines), atlas.rs (185 lines), measurement.rs (138 lines), font_loading.rs (43 lines). All public types (FontId, SubpixelBin, CachedGlyph, FontSystem, FontError) remain accessible from the text module. Tests stay in mod.rs. cargo check -p katla_ui and cargo test -p katla_ui pass. Downstream crate katla_app compiles cleanly.",
+    "issues": [
+      {
+        "file": "katla_ui/src/text/atlas.rs",
+        "line": 5,
+        "severity": "non_blocking",
+        "description": "atlas.rs imports RasterizedGlyph via absolute path 'crate::text::rasterization::RasterizedGlyph' while all other cross-module references in the text submodules use 'super::*' and impl blocks. A 'use super::rasterization::RasterizedGlyph;' would be more consistent with the pattern used in the rest of the text module. Functionally correct either way."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "The split-text feature cleanly splits the 1,669-line text/mod.rs into 5 files with all submodules well under 500 lines. The public API is fully preserved, all 69 tests pass, and downstream crates compile without issues. One minor inconsistency in import style within atlas.rs (absolute vs relative path) is non-blocking."
+}

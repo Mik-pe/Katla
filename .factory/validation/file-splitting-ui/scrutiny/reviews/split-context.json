@@ -1,0 +1,33 @@
+{
+  "featureId": "split-context",
+  "reviewedAt": "2026-03-24T15:00:00.000Z",
+  "commitId": "81fedb908fa764cdf9c6fd9289309ebce5a4d0de",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean extraction of katla_ui/src/context/mod.rs from 1,581 lines into 277 lines across 6 new files. All method implementations moved to appropriate submodules (frame.rs, input.rs, id.rs, clipping.rs, z_index.rs, tests.rs) using impl blocks with super::UiContext. Struct fields appropriately scoped with pub(super) for submodule access. Public API fully preserved. All 69 tests pass, full workspace compiles clean.",
+    "issues": [
+      {
+        "file": "katla_ui/src/context/mod.rs",
+        "line": 136,
+        "severity": "non_blocking",
+        "description": "The Z-Index Management section comment (line 136) is now orphaned — it was previously above z-index methods that have been moved to z_index.rs. The comment block is empty and adds no value. Consider removing it or replacing with a note pointing to the z_index submodule."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Worker deviated from feature description in two justified ways: (1) Made z_index a pub module file instead of keeping it inline in mod.rs, because Rust doesn't allow both file-based and inline modules with the same name. (2) Extracted tests to tests.rs via #[path] pattern because mod.rs would have been 1,256 lines without test extraction, exceeding the 800-line target. Both deviations are sensible and the skill should document these patterns as standard options for file-splitting work.",
+      "evidence": "Handoff skillFeedback.deviations field documents both deviations with rationale. Feature description said 'keep z_index module in mod.rs' and 'tests stay in mod.rs', but neither was feasible given constraints."
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker added set_font_scale and scaled_font_size to frame.rs, which were not mentioned in the feature description's frame.rs scope (begin, end, set_time only). This is a good addition since these are frame-lifecycle-related methods, but the feature description could have been more complete.",
+      "evidence": "frame.rs lines 12-23 contain set_font_scale and scaled_font_size. Feature description listed only 'begin, end, set_time' for frame.rs."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The split-context feature is a clean, well-executed file split that reduces mod.rs from 1,581 to 277 lines (well under the 800-line target). All 5 new submodules (frame.rs, input.rs, id.rs, clipping.rs, z_index.rs) plus a tests.rs file are properly structured with impl blocks. The public API is fully preserved — katla_ui::z_index:: constants remain accessible, all UiContext methods are in the same places, and downstream crate katla_app compiles without changes. Two justified deviations from the feature description (pub mod z_index as file, test extraction via #[path]) were necessary to meet the line target. One minor non-blocking issue: an orphaned section comment in mod.rs. VAL-SPLIT-UI-002 and VAL-CROSS-002 assertions are both satisfied."
+}
