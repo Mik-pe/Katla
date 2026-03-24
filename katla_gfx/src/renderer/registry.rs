@@ -7,7 +7,8 @@ use crate::handle::{MaterialHandle, MeshHandle, PipelineHandle, ResourceStorage}
 use crate::vulkan::material::builder::Pipeline;
 use crate::vulkan::material::compute_pipeline::ComputePipeline;
 use crate::vulkan::vertex_attribute::AttributeType;
-use crate::{IndexBuffer, VertexBinding, VertexBuffer};
+use crate::vulkan::vertexbinding::VertexBinding;
+use crate::vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
 use ash::vk;
 use std::collections::HashMap;
 

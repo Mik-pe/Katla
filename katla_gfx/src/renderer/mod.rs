@@ -28,19 +28,22 @@ pub mod viewport_manager;
 pub use crate::handle::{
     Handle, MaterialHandle, MeshHandle, PipelineHandle, SkeletonHandle, TextureHandle,
 };
-use crate::viewport::{ViewportBuilder, ViewportHandle};
+use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 pub use crate::vulkan::context::ValidationMode;
 pub use registry::AssetRegistry;
 pub use types::{DrawCall, DrawList, FrameUniforms, InstanceData, UIDrawList, UiDrawCommand};
 
+use crate::error::RendererError;
 use crate::handle::ResourceStorage;
 use crate::texture::{TextureDescriptor, TextureManager};
+use crate::vulkan::bindless_texture::{BindlessTextureManager, MAX_BINDLESS_TEXTURES};
 use crate::vulkan::context::VulkanContext;
-use crate::{
-    BindlessTextureManager, IndexBuffer, MAX_BINDLESS_TEXTURES, RendererError, SkeletonBuffer,
-    SkeletonDescriptorSet, StorageDescriptorSet, StorageUniformManager, SwapData, VertexBuffer,
-    VulkanFrameCtx, viewport::Viewport,
-};
+use crate::vulkan::context::VulkanFrameCtx;
+use crate::vulkan::material::SkeletonDescriptorSet;
+use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
+use crate::vulkan::skeleton_buffer::SkeletonBuffer;
+use crate::vulkan::swapdata::SwapData;
+use crate::vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
 use ash::vk;
 use log::{error, info};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -49,7 +52,7 @@ use std::{ffi::CString, rc::Rc};
 use crate::barrier::ImageBarrier;
 use crate::sync::COLOR_SUBRESOURCE_RANGE;
 use crate::vulkan::IndexType;
-use crate::vulkan::material::compiler::{MaterialBuilder, MaterialCompiler};
+use crate::vulkan::material::compiler::MaterialCompiler;
 use crate::vulkan::vertex_attribute::AttributeType;
 
 /// Per-frame UI rendering resources.

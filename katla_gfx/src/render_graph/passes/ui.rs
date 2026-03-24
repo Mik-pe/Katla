@@ -9,7 +9,6 @@ use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::pass::PassType;
 use crate::render_graph::resource::GraphResourceHandle;
 
-#[allow(dead_code)]
 /// UI render pass template.
 ///
 /// Renders 2D UI geometry with alpha blending and optional clipping.

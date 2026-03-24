@@ -181,18 +181,6 @@ pub use vulkan::material::compute_pipeline::{
     ComputePipeline, ComputePipelineBuilder, ComputePipelineError,
 };
 
-// Internal re-exports for crate-wide access
-pub(crate) use vulkan::bindless_texture::BindlessTextureManager;
-pub(crate) use vulkan::bindless_texture::MAX_BINDLESS_TEXTURES;
-pub(crate) use vulkan::context::VulkanFrameCtx;
-pub(crate) use vulkan::material::SkeletonDescriptorSet;
-pub(crate) use vulkan::material::storage_uniform::StorageDescriptorSet;
-pub(crate) use vulkan::material::storage_uniform::StorageUniformManager;
-pub(crate) use vulkan::skeleton_buffer::SkeletonBuffer;
-pub(crate) use vulkan::swapdata::SwapData;
-pub(crate) use vulkan::vertexbinding::VertexBinding;
-pub(crate) use vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
-
 // Size type (Katla-native)
 mod size;
 
@@ -210,7 +198,7 @@ pub use handle::{
 pub use material::MaterialDomain;
 
 // Material creation API (used by application layer)
-pub use vulkan::material::compiler::{MaterialBuilder, MaterialOptions, VertexType};
+pub use vulkan::material::compiler::{MaterialOptions, VertexType};
 
 // Texture management
 pub use texture::{ImageFormat, TextureDescriptor, TextureUsage};

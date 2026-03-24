@@ -40,8 +40,7 @@ pub struct DeviceAddressBuffer {
     /// Size of the buffer in bytes.
     pub size: u64,
     /// Whether this buffer is persistently mapped.
-    #[allow(dead_code)]
-    is_persistent: bool,
+    _is_persistent: bool,
     /// Persistent mapping pointer (if is_persistent is true).
     mapped_ptr: Option<*mut u8>,
     /// Vulkan context reference.
@@ -87,7 +86,7 @@ impl DeviceAddressBuffer {
             buffer,
             allocation,
             size,
-            is_persistent: true,
+            _is_persistent: true,
             mapped_ptr: Some(mapped_ptr),
             context,
         })

@@ -200,32 +200,32 @@ impl StorageDescriptorSet {
 /// Padded to 320 to ensure OBJECT_ARRAY_OFFSET is a multiple of 64
 /// (minStorageBufferOffsetAlignment).
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-pub struct FrameUniforms {
+#[repr(C)]
+pub(crate) struct FrameUniforms {
     /// View matrix (world-to-camera transform) - column-major.
-    pub view: [f32; 16],
+    view: [f32; 16],
 
     /// Projection matrix (camera-to-clip transform) - column-major.
-    pub proj: [f32; 16],
+    proj: [f32; 16],
 
     /// Inverse view-projection matrix (clip-to-world transform) - column-major.
     /// Used for sky rendering to convert screen coords to world rays.
-    pub inv_view_proj: [f32; 16],
+    inv_view_proj: [f32; 16],
 
     /// Camera position in world space (for specular calculations).
-    pub camera_position: [f32; 4], // vec4 for alignment
+    camera_position: [f32; 4], // vec4 for alignment
 
     /// Light direction (normalized, points TO the light).
-    pub light_direction: [f32; 4], // vec4 for alignment
+    light_direction: [f32; 4], // vec4 for alignment
 
     /// Light color (RGB).
-    pub light_color: [f32; 4], // vec4 for alignment
+    light_color: [f32; 4], // vec4 for alignment
 
     /// Light intensity.
-    pub light_intensity: [f32; 4], // single f32 + padding
+    light_intensity: [f32; 4], // single f32 + padding
 
     /// Forward+ tile grid dimensions: [tiles_x, tiles_y, 0, 0].
-    pub tiles: [u32; 4],
+    tiles: [u32; 4],
 
     /// Padding to align OBJECT_ARRAY_OFFSET to 64 bytes (minStorageBufferOffsetAlignment).
     _padding: [u8; 48],
@@ -235,21 +235,21 @@ pub struct FrameUniforms {
 ///
 /// Total: 112 bytes (1 × mat4x4 + 3 × vec4).
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-pub struct ObjectUniforms {
+#[repr(C)]
+pub(crate) struct ObjectUniforms {
     /// Model matrix (object-to-world transform) - column-major.
-    pub model: [f32; 16],
+    model: [f32; 16],
 
     /// Base color tint for the object (RGBA).
-    pub base_color: [f32; 4],
+    base_color: [f32; 4],
 
     /// PBR material parameters.
     /// x = metallic, y = roughness, z = ambient occlusion, w = emission texture index
-    pub material_params: [f32; 4],
+    material_params: [f32; 4],
 
     /// Bindless texture indices (stored as u32, interpreted as vec4<u32> in WGSL).
     /// x = albedo index, y = normal index, z = metallic/roughness index, w = ao index
-    pub texture_indices: [u32; 4],
+    texture_indices: [u32; 4],
 }
 
 /// Storage uniform buffer layout constants.

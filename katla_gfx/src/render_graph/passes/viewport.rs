@@ -258,8 +258,7 @@ impl ViewportPass {
 #[derive(Debug)]
 pub(crate) struct ViewportPassData {
     /// Color attachment with resolved handle.
-    #[allow(dead_code)]
-    pub(crate) color: (
+    pub(crate) _color: (
         GraphResourceHandle,
         ImageFormat,
         LoadOp,
@@ -316,7 +315,7 @@ impl PassBuilder for ViewportPass {
                 };
 
                 Ok(Box::new(ViewportPassData {
-                    color: (handle, format, load_op, store_op, clear_value),
+                    _color: (handle, format, load_op, store_op, clear_value),
                 }))
             }),
             uses_depth: true, // Viewports use the global depth buffer
@@ -472,12 +471,12 @@ mod tests {
         let data = result.unwrap();
         let pass_data = data.downcast_ref::<ViewportPassData>().unwrap();
 
-        assert_eq!(pass_data.color.0.index(), 0);
-        assert_eq!(pass_data.color.1, ImageFormat::R16G16B16A16Sfloat);
-        assert_eq!(pass_data.color.2, LoadOp::Clear);
-        assert_eq!(pass_data.color.3, StoreOp::Store);
+        assert_eq!(pass_data._color.0.index(), 0);
+        assert_eq!(pass_data._color.1, ImageFormat::R16G16B16A16Sfloat);
+        assert_eq!(pass_data._color.2, LoadOp::Clear);
+        assert_eq!(pass_data._color.3, StoreOp::Store);
 
-        match pass_data.color.4 {
+        match pass_data._color.4 {
             ClearValue::Color(color) => assert_eq!(color, [0.2, 0.3, 0.4, 1.0]),
             _ => panic!("Expected Color clear value"),
         }
@@ -521,7 +520,7 @@ mod tests {
         let pass_data = data.downcast_ref::<ViewportPassData>().unwrap();
 
         // Should default to HDR format
-        assert_eq!(pass_data.color.1, ImageFormat::R16G16B16A16Sfloat);
+        assert_eq!(pass_data._color.1, ImageFormat::R16G16B16A16Sfloat);
     }
 
     #[test]
