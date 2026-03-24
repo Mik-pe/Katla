@@ -163,6 +163,14 @@ This shader fulfills the following validation contract assertions:
 
 These will be addressed in the compositing pass implementation.
 
+## Descriptor Set Layout Ordering Constraint
+
+The compositing descriptor set layout must be placed at **set 2** (not appended after light_culling/shadow). This is because skeleton, compositing, and the empty placeholder descriptor sets are mutually exclusive at set 2, which keeps light culling consistently at set 3 for pipeline layout index stability.
+
+This constraint is enforced in `katla_gfx/src/vulkan/material/compiler.rs`. When adding new descriptor sets to the pipeline layout, do NOT append them after light_culling/shadow — they must go at set 2 if they are mutually exclusive with skeleton/compositing.
+
+**Discovered During:** gfx-bugfixes feature (milestone: gfx-polish)
+
 ## References
 
 - **CompositingDescriptorSet**: `katla_gfx/src/render_graph/descriptor_sets/compositing.rs`
