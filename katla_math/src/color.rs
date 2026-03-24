@@ -112,23 +112,6 @@ impl Color {
         [self.r, self.g, self.b, self.a]
     }
 
-    /// Converts the Color to a Vec4.
-    #[inline]
-    pub fn to_vec4(&self) -> crate::Vec4 {
-        crate::Vec4::new(self.r, self.g, self.b, self.a)
-    }
-
-    /// Creates a Color from a Vec4.
-    #[inline]
-    pub fn from_vec4(v: crate::Vec4) -> Self {
-        Self {
-            r: v[0],
-            g: v[1],
-            b: v[2],
-            a: v[3],
-        }
-    }
-
     /// Linear interpolation between two colors.
     ///
     /// # Examples
@@ -307,12 +290,6 @@ impl Color {
             && self.b <= 1.0
             && self.a >= 0.0
             && self.a <= 1.0
-    }
-
-    /// Converts to a clear color value array for Vulkan.
-    #[inline]
-    pub fn to_clearcolor_value(&self) -> [f32; 4] {
-        [self.r, self.g, self.b, self.a]
     }
 
     // Named color constants

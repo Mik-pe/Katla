@@ -12,15 +12,6 @@ use std::ops::Index;
 pub struct Mat4(pub [Vec4; 4]);
 
 impl Mat4 {
-    pub fn new() -> Self {
-        Self([
-            Vec4::new(1.0, 0.0, 0.0, 0.0),
-            Vec4::new(0.0, 1.0, 0.0, 0.0),
-            Vec4::new(0.0, 0.0, 1.0, 0.0),
-            Vec4::new(0.0, 0.0, 0.0, 1.0),
-        ])
-    }
-
     pub fn from_translation(pos: [f32; 3]) -> Self {
         Self([
             Vec4::new(1.0, 0.0, 0.0, 0.0),
@@ -309,9 +300,9 @@ impl Mat4 {
     }
 
     pub fn from_euler_angles(pitch: f32, yaw: f32, roll: f32) -> Self {
-        let q = crate::Quat::from_axis_angle(crate::Vec3::x_axis(), pitch)
-            * crate::Quat::from_axis_angle(crate::Vec3::y_axis(), yaw)
-            * crate::Quat::from_axis_angle(crate::Vec3::z_axis(), roll);
+        let q = crate::Quat::from_axis_angle(crate::Vec3::X_AXIS, pitch)
+            * crate::Quat::from_axis_angle(crate::Vec3::Y_AXIS, yaw)
+            * crate::Quat::from_axis_angle(crate::Vec3::Z_AXIS, roll);
         let m = q.make_mat4();
         Self(m.0)
     }
@@ -356,28 +347,28 @@ impl Mat4 {
             let x = (m12 - m21) / s;
             let y = (m20 - m02) / s;
             let z = (m01 - m10) / s;
-            crate::Quat::new_from_xyzw(x, y, z, w)
+            crate::Quat::new(x, y, z, w)
         } else if (m00 > m11) && (m00 > m22) {
             let s = f32::sqrt(1.0 + m00 - m11 - m22) * 2.0;
             let w = (m12 - m21) / s;
             let x = 0.25 * s;
             let y = (m01 + m10) / s;
             let z = (m02 + m20) / s;
-            crate::Quat::new_from_xyzw(x, y, z, w)
+            crate::Quat::new(x, y, z, w)
         } else if m11 > m22 {
             let s = f32::sqrt(1.0 + m11 - m00 - m22) * 2.0;
             let w = (m20 - m02) / s;
             let x = (m01 + m10) / s;
             let y = 0.25 * s;
             let z = (m12 + m21) / s;
-            crate::Quat::new_from_xyzw(x, y, z, w)
+            crate::Quat::new(x, y, z, w)
         } else {
             let s = f32::sqrt(1.0 + m22 - m00 - m11) * 2.0;
             let w = (m01 - m10) / s;
             let x = (m02 + m20) / s;
             let y = (m12 + m21) / s;
             let z = 0.25 * s;
-            crate::Quat::new_from_xyzw(x, y, z, w)
+            crate::Quat::new(x, y, z, w)
         };
 
         crate::Transform {
@@ -426,7 +417,7 @@ impl Mat4 {
 
 impl Default for Mat4 {
     fn default() -> Self {
-        Self::new()
+        Self::identity()
     }
 }
 

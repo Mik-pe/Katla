@@ -218,7 +218,7 @@ impl System for SkeletalAnimationSystem {
                                 Mat4::from_trs(t_vec, decomposed.rotation, decomposed.scale)
                             }
                             (ChannelPath::Rotation, SampledValue::Quat(q)) => {
-                                let q_quat = Quat::new_from_xyzw(q[0], q[1], q[2], q[3]);
+                                let q_quat = Quat::new(q[0], q[1], q[2], q[3]);
                                 Mat4::from_trs(decomposed.position, q_quat, decomposed.scale)
                             }
                             (ChannelPath::Scale, SampledValue::Vec3(s)) => {

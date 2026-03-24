@@ -32,7 +32,7 @@ impl super::Application {
 
         let entity_id = self.world.spawn((
             TransformComponent {
-                transform: katla_math::Transform::from_position(Vec3::new(
+                transform: katla_math::Transform::new_from_position(Vec3::new(
                     position[0],
                     position[1],
                     position[2],
@@ -78,7 +78,7 @@ impl super::Application {
 
         let entity_id = self.world.spawn((
             TransformComponent {
-                transform: katla_math::Transform::from_position(Vec3::new(
+                transform: katla_math::Transform::new_from_position(Vec3::new(
                     position[0],
                     position[1],
                     position[2],
@@ -116,7 +116,7 @@ impl super::Application {
 
         self.world.spawn((
             TransformComponent {
-                transform: katla_math::Transform::from_position(Vec3::new(
+                transform: katla_math::Transform::new_from_position(Vec3::new(
                     position[0],
                     position[1],
                     position[2],
@@ -215,7 +215,7 @@ impl super::Application {
 
         let entity_id = self.world.spawn((
             TransformComponent {
-                transform: katla_math::Transform::from_position(Vec3::new(
+                transform: katla_math::Transform::new_from_position(Vec3::new(
                     position[0],
                     position[1],
                     position[2],
@@ -259,7 +259,7 @@ impl super::Application {
 
         let entity_id = self.world.spawn((
             TransformComponent {
-                transform: katla_math::Transform::from_position(Vec3::new(
+                transform: katla_math::Transform::new_from_position(Vec3::new(
                     position[0],
                     position[1],
                     position[2],
@@ -316,7 +316,7 @@ impl super::Application {
 
         let entity_id = self.world.spawn((
             TransformComponent {
-                transform: katla_math::Transform::from_position(Vec3::new(
+                transform: katla_math::Transform::new_from_position(Vec3::new(
                     position[0],
                     position[1],
                     position[2],
@@ -431,7 +431,7 @@ impl super::Application {
         // 6. Spawn entity with emission texture index
         let entity = self.world.spawn((
             TransformComponent {
-                transform: katla_math::Transform::from_position(Vec3::new(
+                transform: katla_math::Transform::new_from_position(Vec3::new(
                     position[0],
                     position[1],
                     position[2],
@@ -801,7 +801,7 @@ impl super::Application {
         let warm_light = self.world.spawn((
             PointLight::new([1.0, 0.6, 0.2], 15.0, 12.0),
             TransformComponent {
-                transform: katla_math::Transform::from_position(katla_math::Vec3::new(
+                transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
                     -5.0, 3.0, -3.0,
                 )),
             },
@@ -812,7 +812,7 @@ impl super::Application {
         let cool_light = self.world.spawn((
             PointLight::new([0.3, 0.5, 1.0], 12.0, 10.0),
             TransformComponent {
-                transform: katla_math::Transform::from_position(katla_math::Vec3::new(
+                transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
                     -7.0, 2.0, -4.0,
                 )),
             },
@@ -823,7 +823,7 @@ impl super::Application {
         let magenta_light = self.world.spawn((
             PointLight::new([1.0, 0.2, 0.8], 14.0, 10.0),
             TransformComponent {
-                transform: katla_math::Transform::from_position(katla_math::Vec3::new(
+                transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
                     5.0, 2.5, -3.0,
                 )),
             },
@@ -834,7 +834,7 @@ impl super::Application {
         let green_light = self.world.spawn((
             PointLight::new([0.3, 1.0, 0.4], 10.0, 8.0),
             TransformComponent {
-                transform: katla_math::Transform::from_position(katla_math::Vec3::new(
+                transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
                     7.0, 1.5, -1.0,
                 )),
             },
@@ -845,7 +845,7 @@ impl super::Application {
         let overhead_light = self.world.spawn((
             PointLight::new([0.9, 0.85, 0.8], 8.0, 15.0),
             TransformComponent {
-                transform: katla_math::Transform::from_position(katla_math::Vec3::new(
+                transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
                     0.0, 6.0, -3.0,
                 )),
             },

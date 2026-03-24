@@ -179,7 +179,7 @@ fn test_scale_accumulation() {
             transform: Transform {
                 position: Vec3::new(0.0, 0.0, 0.0),
                 scale: Vec3::new(2.0, 2.0, 2.0),
-                rotation: Quat::new(),
+                rotation: Quat::identity(),
             },
         },
     );
@@ -194,7 +194,7 @@ fn test_scale_accumulation() {
             transform: Transform {
                 position: Vec3::new(1.0, 0.0, 0.0),
                 scale: Vec3::new(1.0, 1.0, 1.0),
-                rotation: Quat::new(),
+                rotation: Quat::identity(),
             },
         },
     );

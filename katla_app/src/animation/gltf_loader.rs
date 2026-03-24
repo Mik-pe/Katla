@@ -155,8 +155,7 @@ pub fn build_skeleton_local_transforms(
             let transform = node.transform();
             let (translation, rotation, scale) = transform.decomposed();
             let t = katla_math::Vec3::new(translation[0], translation[1], translation[2]);
-            let r =
-                katla_math::Quat::new_from_xyzw(rotation[0], rotation[1], rotation[2], rotation[3]);
+            let r = katla_math::Quat::new(rotation[0], rotation[1], rotation[2], rotation[3]);
             let s = katla_math::Vec3::new(scale[0], scale[1], scale[2]);
             local_transforms.push(katla_math::Mat4::from_trs(t, r, s));
         } else {
@@ -220,7 +219,7 @@ fn build_world_transforms(
         let transform = node.transform();
         let (translation, rotation, scale) = transform.decomposed();
         let t = katla_math::Vec3::new(translation[0], translation[1], translation[2]);
-        let r = katla_math::Quat::new_from_xyzw(rotation[0], rotation[1], rotation[2], rotation[3]);
+        let r = katla_math::Quat::new(rotation[0], rotation[1], rotation[2], rotation[3]);
         let s = katla_math::Vec3::new(scale[0], scale[1], scale[2]);
         let local_matrix = katla_math::Mat4::from_trs(t, r, s);
 
@@ -309,7 +308,7 @@ mod tests {
                     let (t, r, s) = node.transform().decomposed();
                     katla_math::Mat4::from_trs(
                         katla_math::Vec3::new(t[0], t[1], t[2]),
-                        katla_math::Quat::new_from_xyzw(r[0], r[1], r[2], r[3]),
+                        katla_math::Quat::new(r[0], r[1], r[2], r[3]),
                         katla_math::Vec3::new(s[0], s[1], s[2]),
                     )
                 };
@@ -426,22 +425,46 @@ mod tests {
 
                             // Check for unreasonably large values
                             let max_reasonable = 1000.0;
-                            assert!(v[0].abs() < max_reasonable && v[1].abs() < max_reasonable && v[2].abs() < max_reasonable,
+                            assert!(
+                                v[0].abs() < max_reasonable
+                                    && v[1].abs() < max_reasonable
+                                    && v[2].abs() < max_reasonable,
                                 "Animation '{}' at t={:.2}: node {} {:?} has suspiciously large value {:?}",
-                                clip.name, time, node_idx, path, v);
+                                clip.name,
+                                time,
+                                node_idx,
+                                path,
+                                v
+                            );
                         }
                         crate::animation::clips::SampledValue::Quat(q) => {
                             // Check for NaN/Inf
-                            assert!(q[0].is_finite() && q[1].is_finite() && q[2].is_finite() && q[3].is_finite(),
+                            assert!(
+                                q[0].is_finite()
+                                    && q[1].is_finite()
+                                    && q[2].is_finite()
+                                    && q[3].is_finite(),
                                 "Animation '{}' at t={:.2}: node {} {:?} has non-finite quaternion {:?}",
-                                clip.name, time, node_idx, path, q);
+                                clip.name,
+                                time,
+                                node_idx,
+                                path,
+                                q
+                            );
 
                             // Check quaternion is normalized (within tolerance)
                             let len =
                                 (q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt();
-                            assert!((len - 1.0).abs() < 0.1,
+                            assert!(
+                                (len - 1.0).abs() < 0.1,
                                 "Animation '{}' at t={:.2}: node {} {:?} has non-unit quaternion {:?} (len={:.3})",
-                                clip.name, time, node_idx, path, q, len);
+                                clip.name,
+                                time,
+                                node_idx,
+                                path,
+                                q,
+                                len
+                            );
                         }
                         crate::animation::clips::SampledValue::Float(f) => {
                             assert!(
@@ -605,8 +628,7 @@ mod tests {
                                 )
                             }
                             (crate::animation::ChannelPath::Rotation, SampledValue::Quat(q)) => {
-                                let q_quat =
-                                    katla_math::Quat::new_from_xyzw(q[0], q[1], q[2], q[3]);
+                                let q_quat = katla_math::Quat::new(q[0], q[1], q[2], q[3]);
                                 katla_math::Mat4::from_trs(
                                     decomposed.position,
                                     q_quat,

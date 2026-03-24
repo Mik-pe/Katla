@@ -118,12 +118,12 @@ mod tests {
     fn test_joint_transform_lerp_scale() {
         let start = JointTransform {
             translation: [0.0, 0.0, 0.0],
-            rotation: Quat::new(),
+            rotation: Quat::identity(),
             scale: [1.0, 1.0, 1.0],
         };
         let end = JointTransform {
             translation: [0.0, 0.0, 0.0],
-            rotation: Quat::new(),
+            rotation: Quat::identity(),
             scale: [2.0, 2.0, 2.0],
         };
 
@@ -136,11 +136,11 @@ mod tests {
     fn test_joint_transform_lerp_rotation() {
         let start = JointTransform {
             translation: [0.0, 0.0, 0.0],
-            rotation: Quat::new(),
+            rotation: Quat::identity(),
             scale: [1.0, 1.0, 1.0],
         };
 
-        let end_quat = Quat::new_from_xyzw(0.0, 0.0, 0.707, 0.707);
+        let end_quat = Quat::new(0.0, 0.0, 0.707, 0.707);
         let end = JointTransform {
             translation: [0.0, 0.0, 0.0],
             rotation: end_quat,

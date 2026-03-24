@@ -75,9 +75,9 @@ fn test_normalize() {
 
 #[test]
 fn test_normalize_zero() {
-    let v = Vec2::zero();
+    let v = Vec2::ZERO;
     let normalized = v.normalize();
-    assert_eq!(normalized, Vec2::zero());
+    assert_eq!(normalized, Vec2::ZERO);
 }
 
 #[test]
@@ -91,8 +91,8 @@ fn test_is_normalized() {
 
 #[test]
 fn test_is_zero() {
-    assert!(Vec2::zero().is_zero());
-    assert!(!Vec2::one().is_zero());
+    assert!(Vec2::ZERO.is_zero());
+    assert!(!Vec2::ONE.is_zero());
     assert!(!Vec2::new(0.0, 1.0).is_zero());
 }
 
@@ -252,5 +252,5 @@ fn test_swizzle_yy() {
 
 #[test]
 fn test_one_constant() {
-    assert_eq!(Vec2::one(), Vec2::new(1.0, 1.0));
+    assert_eq!(Vec2::ONE, Vec2::new(1.0, 1.0));
 }

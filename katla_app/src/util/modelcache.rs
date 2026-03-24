@@ -330,7 +330,7 @@ impl GLTFModel {
                 let transform = node.transform();
                 let (t, r, s) = transform.decomposed();
                 let translation = Vec3::new(t[0], t[1], t[2]);
-                let rotation = Quat::new_from_xyzw(r[0], r[1], r[2], r[3]);
+                let rotation = Quat::new(r[0], r[1], r[2], r[3]);
                 let scale = Vec3::new(s[0], s[1], s[2]);
                 let local_matrix = Mat4::from_trs(translation, rotation, scale);
 
@@ -368,7 +368,7 @@ impl GLTFModel {
                 let transform = node.transform();
                 let (t, r, s) = transform.decomposed();
                 let translation = Vec3::new(t[0], t[1], t[2]);
-                let rotation = Quat::new_from_xyzw(r[0], r[1], r[2], r[3]);
+                let rotation = Quat::new(r[0], r[1], r[2], r[3]);
                 let scale = Vec3::new(s[0], s[1], s[2]);
                 root_transform *= Mat4::from_trs(translation, rotation, scale);
 
@@ -731,7 +731,7 @@ mod tests {
             let transform = node.transform();
             let (t, r, s) = transform.decomposed();
             let translation = Vec3::new(t[0], t[1], t[2]);
-            let rotation = Quat::new_from_xyzw(r[0], r[1], r[2], r[3]);
+            let rotation = Quat::new(r[0], r[1], r[2], r[3]);
             let scale = Vec3::new(s[0], s[1], s[2]);
             let local_matrix = Mat4::from_trs(translation, rotation, scale);
 

@@ -417,7 +417,7 @@ impl<'a> AttributeParser<'a> {
         Some(
             vec4s
                 .into_iter()
-                .map(|v| Quat::new_from_xyzw(v[0], v[1], v[2], v[3]))
+                .map(|v| Quat::new(v[0], v[1], v[2], v[3]))
                 .collect(),
         )
     }

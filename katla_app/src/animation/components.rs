@@ -196,7 +196,7 @@ impl JointTransform {
     pub fn identity() -> Self {
         Self {
             translation: [0.0, 0.0, 0.0],
-            rotation: Quat::new(),
+            rotation: Quat::identity(),
             scale: [1.0, 1.0, 1.0],
         }
     }
@@ -204,7 +204,7 @@ impl JointTransform {
     pub fn from_translation(translation: [f32; 3]) -> Self {
         Self {
             translation,
-            rotation: Quat::new(),
+            rotation: Quat::identity(),
             scale: [1.0, 1.0, 1.0],
         }
     }
@@ -214,18 +214,8 @@ impl JointTransform {
     }
 
     pub fn lerp_arrays(a: &Self, b: &Self, t: f32) -> Self {
-        let qa = katla_math::Quat::new_from_xyzw(
-            a.rotation[0],
-            a.rotation[1],
-            a.rotation[2],
-            a.rotation[3],
-        );
-        let qb = katla_math::Quat::new_from_xyzw(
-            b.rotation[0],
-            b.rotation[1],
-            b.rotation[2],
-            b.rotation[3],
-        );
+        let qa = katla_math::Quat::new(a.rotation[0], a.rotation[1], a.rotation[2], a.rotation[3]);
+        let qb = katla_math::Quat::new(b.rotation[0], b.rotation[1], b.rotation[2], b.rotation[3]);
         let q_result = katla_math::Quat::slerp(qa, qb, t);
 
         let one_minus_t = 1.0 - t;
