@@ -1,0 +1,86 @@
+{
+  "groupId": "group-cargo-edition",
+  "testedAt": "2026-03-24T12:00:00Z",
+  "isolation": {
+    "type": "read-only-codebase",
+    "path": "C:\\dev\\katla",
+    "description": "Read-only grep checks against workspace Cargo.toml files"
+  },
+  "toolsUsed": ["grep", "rg"],
+  "assertions": [
+    {
+      "id": "VAL-FOUND-001",
+      "title": "Workspace dependencies centralized — no wildcard versions",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep(pattern='version = \"*\"', glob='**/Cargo.toml')",
+          "expected": "0 matches",
+          "observed": "0 matches — no wildcard version entries found"
+        }
+      ],
+      "evidence": "grep returned no matches for 'version = \"*\"' across all Cargo.toml files",
+      "details": null
+    },
+    {
+      "id": "VAL-FOUND-002",
+      "title": "All non-proc-macro crates use edition 2024",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep(pattern='edition = \"2021\"', glob='**/Cargo.toml')",
+          "expected": "1 match (only katla_derive)",
+          "observed": "1 match: katla_derive/Cargo.toml line 5"
+        }
+      ],
+      "evidence": "grep found exactly 1 occurrence of 'edition = \"2021\"' in katla_derive/Cargo.toml (proc-macro crate, expected exception)",
+      "details": null
+    },
+    {
+      "id": "VAL-FOUND-003",
+      "title": "katla_ecs has no katla_math dependency",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep(pattern='katla_math', file='katla_ecs/Cargo.toml')",
+          "expected": "0 matches",
+          "observed": "0 matches — katla_math not listed in katla_ecs dependencies"
+        }
+      ],
+      "evidence": "grep returned no matches for 'katla_math' in katla_ecs/Cargo.toml",
+      "details": null
+    },
+    {
+      "id": "VAL-FOUND-005",
+      "title": "No dead dependencies",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "grep(pattern='^notify', file='katla_gfx/Cargo.toml')",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        },
+        {
+          "action": "grep(pattern='^notify', file='katla_app/Cargo.toml')",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        },
+        {
+          "action": "grep(pattern='^toml', file='katla_gfx/Cargo.toml')",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        },
+        {
+          "action": "grep(pattern='^rand', file='game/Cargo.toml')",
+          "expected": "0 matches",
+          "observed": "0 matches"
+        }
+      ],
+      "evidence": "All four grep checks returned 0 matches: notify absent from katla_gfx and katla_app, toml absent from katla_gfx, rand absent from game",
+      "details": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 4 assertions: 4 passed. All workspace Cargo.toml files have pinned versions, all non-proc-macro crates use edition 2024, katla_ecs has no katla_math dependency, and all specified dead dependencies have been removed."
+}

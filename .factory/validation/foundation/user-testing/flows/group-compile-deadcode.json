@@ -1,0 +1,56 @@
+{
+  "groupId": "group-compile-deadcode",
+  "testedAt": "2026-03-24T22:35:00Z",
+  "isolation": {
+    "codebase": "C:\\dev\\katla",
+    "method": "grep and cargo commands (read-only)"
+  },
+  "toolsUsed": ["grep", "cargo check", "cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-FOUND-004",
+      "title": "No blanket #![allow(dead_code)] in katla_ecs",
+      "status": "pass",
+      "evidence": "Read katla_ecs/src/lib.rs — file contains no #![allow(dead_code)] attribute at crate level. The file contains only module declarations and re-exports.",
+      "details": "Full file content verified: no match for pattern ^#!\\[allow\\(dead_code\\)\\]"
+    },
+    {
+      "id": "VAL-FOUND-006",
+      "title": "katla_gfx compiles without errors",
+      "status": "pass",
+      "evidence": "cargo check -p katla_gfx exited with code 0. Output: 'Finished `dev` profile [optimized + debuginfo] target(s) in 0.41s'",
+      "details": "Clean compilation with no errors or warnings."
+    },
+    {
+      "id": "VAL-FOUND-007",
+      "title": "No unused import warnings in katla_ecs",
+      "status": "pass",
+      "evidence": "cargo check -p katla_ecs exited with code 0 and no output containing 'unused import'. findstr for 'unused import' in cargo check output returned exit code 1 (no matches).",
+      "details": "Clean check — no warnings of any kind emitted for katla_ecs."
+    },
+    {
+      "id": "VAL-FOUND-008",
+      "title": "No unused variable warnings in katla_gfx",
+      "status": "pass",
+      "evidence": "cargo check -p katla_gfx exited with code 0 and no output containing 'unused variable'. findstr for 'unused variable' in cargo check output returned exit code 1 (no matches).",
+      "details": "Clean check — no warnings of any kind emitted for katla_gfx."
+    },
+    {
+      "id": "VAL-FOUND-009",
+      "title": "cargo check --workspace succeeds with no errors",
+      "status": "pass",
+      "evidence": "cargo check --workspace exited with code 0. Output: 'Finished `dev` profile [optimized + debuginfo] target(s) in 0.50s'",
+      "details": "Full workspace compiles cleanly with no errors."
+    },
+    {
+      "id": "VAL-FOUND-010",
+      "title": "cargo test --workspace passes all tests",
+      "status": "pass",
+      "evidence": "cargo test --workspace exited with code 0. All unit tests passed (147 tests ran, 1 ignored). All doctests passed across katla_gfx, katla_math, katla_ui, and katla_app.",
+      "details": "Note: Some warnings were emitted during test compilation (unused variables in katla_app and dead_code in katla_gfx tests/katla_app), but these are not in the scope of VAL-FOUND-007/008 which target katla_ecs and katla_gfx respectively. The test binaries compiled and all tests passed."
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 6 assertions: all 6 passed. katla_ecs has no blanket dead_code allow, katla_gfx and the full workspace compile cleanly, no unused import warnings in katla_ecs, no unused variable warnings in katla_gfx, and all workspace tests pass."
+}

@@ -1,0 +1,31 @@
+{
+  "milestone": "foundation",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-FOUND-001",
+    "VAL-FOUND-002",
+    "VAL-FOUND-003",
+    "VAL-FOUND-004",
+    "VAL-FOUND-005",
+    "VAL-FOUND-006",
+    "VAL-FOUND-007",
+    "VAL-FOUND-008",
+    "VAL-FOUND-009",
+    "VAL-FOUND-010"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "flowReports": [
+    ".factory/validation/foundation/user-testing/flows/group-cargo-edition.json",
+    ".factory/validation/foundation/user-testing/flows/group-compile-deadcode.json"
+  ]
+}
