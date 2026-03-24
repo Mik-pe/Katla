@@ -1,0 +1,41 @@
+{
+  "milestone": "verification",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy", "exitCode": 0 },
+    "fmt": { "passed": true, "command": "cargo fmt --check", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "services.yaml",
+      "description": "Added 'build-lib' command (cargo build --workspace --lib) for verification workflows where the game binary has a pre-existing linker issue.",
+      "sourceFeature": "final-verification"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document that 'cargo build' may fail due to a pre-existing game binary linker error (LNK2019 for LLVM bitcode externals). Workers verifying builds should use 'cargo build --workspace --lib' to verify library crates. The game binary issue is an environment/toolchain problem unrelated to code changes.",
+      "evidence": "final-verification worker had to deviate from procedure by using cargo build --workspace --lib instead of cargo build due to pre-existing MSVC linker error.",
+      "isSystemic": true
+    },
+    {
+      "target": "library",
+      "suggestion": "Document that test-only warnings (in #[cfg(test)] code) are not caught by cargo check or cargo clippy on library code. These warnings only appear when running cargo test. Currently ~13 test-only warnings exist across katla_ecs (2), katla_gfx (4), and katla_app (7).",
+      "evidence": "cargo check and cargo clippy produce zero warnings on library code. cargo test shows warnings only in test-only code blocks.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}
