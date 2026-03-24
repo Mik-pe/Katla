@@ -92,12 +92,12 @@ impl Vec3 {
     }
 
     #[inline]
-    pub fn dot(&self, b: Vec3) -> f32 {
+    pub fn dot(self, b: Vec3) -> f32 {
         self.0[0] * b.0[0] + self.0[1] * b.0[1] + self.0[2] * b.0[2]
     }
 
     #[inline]
-    pub fn cross(&self, b: Vec3) -> Self {
+    pub fn cross(self, b: Vec3) -> Self {
         Vec3([
             self.0[1] * b.0[2] - self.0[2] * b.0[1],
             self.0[2] * b.0[0] - self.0[0] * b.0[2],
@@ -107,8 +107,8 @@ impl Vec3 {
     }
 
     #[inline]
-    pub fn lerp(a: Vec3, b: Vec3, ratio: f32) -> Self {
-        a + ((b - a) * ratio)
+    pub fn lerp(&self, other: Vec3, t: f32) -> Self {
+        *self + ((other - *self) * t)
     }
 
     #[inline]
@@ -127,19 +127,19 @@ impl Vec3 {
     }
 
     #[inline]
-    pub fn distance(&self, other: &Vec3) -> f32 {
-        (*self - *other).length()
+    pub fn distance(self, other: Vec3) -> f32 {
+        (self - other).length()
     }
 
     #[inline]
-    pub fn distance_squared(&self, other: &Vec3) -> f32 {
-        (*self - *other).length_squared()
+    pub fn distance_squared(self, other: Vec3) -> f32 {
+        (self - other).length_squared()
     }
 
     #[inline]
-    pub fn angle_between(&self, other: &Vec3) -> f32 {
-        let dot = self.dot(*other);
-        let cross = self.cross(*other);
+    pub fn angle_between(self, other: Vec3) -> f32 {
+        let dot = self.dot(other);
+        let cross = self.cross(other);
         let cross_len = cross.length();
         f32::atan2(cross_len, dot)
     }

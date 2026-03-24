@@ -58,7 +58,7 @@ impl GLTFModel {
         for vertex in vertices.iter_mut() {
             let pos = vertex.position;
             let pos_vec = Vec4::new(pos[0], pos[1], pos[2], 1.0);
-            let transformed_pos = world_transform.clone() * pos_vec;
+            let transformed_pos = *world_transform * pos_vec;
             vertex.position = [
                 transformed_pos.x(),
                 transformed_pos.y(),
@@ -67,7 +67,7 @@ impl GLTFModel {
 
             let normal = vertex.normal;
             let normal_vec = Vec4::new(normal[0], normal[1], normal[2], 0.0);
-            let transformed_normal = world_transform.clone() * normal_vec;
+            let transformed_normal = *world_transform * normal_vec;
             let len = (transformed_normal.x() * transformed_normal.x()
                 + transformed_normal.y() * transformed_normal.y()
                 + transformed_normal.z() * transformed_normal.z())
@@ -336,7 +336,7 @@ impl GLTFModel {
 
                 let world_matrix = if let Some(Some(parent_index)) = parent_map.get(&node_index) {
                     if let Some(parent_transform) = world_transforms.get(parent_index) {
-                        parent_transform.clone() * local_matrix
+                        *parent_transform * local_matrix
                     } else {
                         local_matrix
                     }

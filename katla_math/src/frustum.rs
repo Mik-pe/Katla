@@ -32,7 +32,7 @@ impl Frustum {
 
     /// Create a frustum from a projection and view matrix
     pub fn from_projection_view_matrix(proj: &Mat4, view: &Mat4) -> Self {
-        let combined = proj.clone() * view.clone();
+        let combined = *proj * *view;
 
         // Extract planes from the combined matrix
         // When normalizing the plane normal, we must also scale the distance

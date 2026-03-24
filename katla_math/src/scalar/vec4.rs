@@ -96,7 +96,7 @@ impl Vec4 {
     }
 
     #[inline]
-    pub fn dot(&self, other: &Vec4) -> f32 {
+    pub fn dot(self, other: Vec4) -> f32 {
         self.0[0] * other.0[0]
             + self.0[1] * other.0[1]
             + self.0[2] * other.0[2]
@@ -104,7 +104,7 @@ impl Vec4 {
     }
 
     #[inline]
-    pub fn lerp(&self, other: &Vec4, t: f32) -> Vec4 {
+    pub fn lerp(&self, other: Vec4, t: f32) -> Vec4 {
         Vec4([
             self.0[0] + (other.0[0] - self.0[0]) * t,
             self.0[1] + (other.0[1] - self.0[1]) * t,

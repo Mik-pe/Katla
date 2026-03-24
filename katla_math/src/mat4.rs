@@ -8,7 +8,7 @@ use crate::Vec4;
 use core::ops::{Mul, MulAssign};
 use std::ops::Index;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Mat4(pub [Vec4; 4]);
 
 impl Mat4 {
@@ -60,28 +60,28 @@ impl Mat4 {
     pub fn mul(&self, rhs: &Self) -> Self {
         Self([
             Vec4::new(
-                Vec4::dot(&self.extract_row(0), &rhs[0]),
-                Vec4::dot(&self.extract_row(1), &rhs[0]),
-                Vec4::dot(&self.extract_row(2), &rhs[0]),
-                Vec4::dot(&self.extract_row(3), &rhs[0]),
+                Vec4::dot(self.extract_row(0), rhs[0]),
+                Vec4::dot(self.extract_row(1), rhs[0]),
+                Vec4::dot(self.extract_row(2), rhs[0]),
+                Vec4::dot(self.extract_row(3), rhs[0]),
             ),
             Vec4::new(
-                Vec4::dot(&self.extract_row(0), &rhs[1]),
-                Vec4::dot(&self.extract_row(1), &rhs[1]),
-                Vec4::dot(&self.extract_row(2), &rhs[1]),
-                Vec4::dot(&self.extract_row(3), &rhs[1]),
+                Vec4::dot(self.extract_row(0), rhs[1]),
+                Vec4::dot(self.extract_row(1), rhs[1]),
+                Vec4::dot(self.extract_row(2), rhs[1]),
+                Vec4::dot(self.extract_row(3), rhs[1]),
             ),
             Vec4::new(
-                Vec4::dot(&self.extract_row(0), &rhs[2]),
-                Vec4::dot(&self.extract_row(1), &rhs[2]),
-                Vec4::dot(&self.extract_row(2), &rhs[2]),
-                Vec4::dot(&self.extract_row(3), &rhs[2]),
+                Vec4::dot(self.extract_row(0), rhs[2]),
+                Vec4::dot(self.extract_row(1), rhs[2]),
+                Vec4::dot(self.extract_row(2), rhs[2]),
+                Vec4::dot(self.extract_row(3), rhs[2]),
             ),
             Vec4::new(
-                Vec4::dot(&self.extract_row(0), &rhs[3]),
-                Vec4::dot(&self.extract_row(1), &rhs[3]),
-                Vec4::dot(&self.extract_row(2), &rhs[3]),
-                Vec4::dot(&self.extract_row(3), &rhs[3]),
+                Vec4::dot(self.extract_row(0), rhs[3]),
+                Vec4::dot(self.extract_row(1), rhs[3]),
+                Vec4::dot(self.extract_row(2), rhs[3]),
+                Vec4::dot(self.extract_row(3), rhs[3]),
             ),
         ])
     }
@@ -475,10 +475,10 @@ impl Mul<Vec4> for Mat4 {
         let row2 = self.extract_row(2);
         let row3 = self.extract_row(3);
         Vec4::new(
-            Vec4::dot(&row0, &rhs),
-            Vec4::dot(&row1, &rhs),
-            Vec4::dot(&row2, &rhs),
-            Vec4::dot(&row3, &rhs),
+            Vec4::dot(row0, rhs),
+            Vec4::dot(row1, rhs),
+            Vec4::dot(row2, rhs),
+            Vec4::dot(row3, rhs),
         )
     }
 }
@@ -492,10 +492,10 @@ impl Mul<&Vec4> for &Mat4 {
         let row2 = self.extract_row(2);
         let row3 = self.extract_row(3);
         Vec4::new(
-            Vec4::dot(&row0, rhs),
-            Vec4::dot(&row1, rhs),
-            Vec4::dot(&row2, rhs),
-            Vec4::dot(&row3, rhs),
+            Vec4::dot(row0, *rhs),
+            Vec4::dot(row1, *rhs),
+            Vec4::dot(row2, *rhs),
+            Vec4::dot(row3, *rhs),
         )
     }
 }
@@ -534,7 +534,7 @@ impl Mul<&Mat4> for &Mat4 {
 
 impl MulAssign for Mat4 {
     fn mul_assign(&mut self, rhs: Self) {
-        *self = self.clone().mul(&rhs);
+        *self = (*self).mul(&rhs);
     }
 }
 
