@@ -44,8 +44,8 @@ impl System for FlyCameraLookSystem {
             )>()
             .map(|(entity, ctrl, look, transform)| {
                 if should_look {
-                    look.yaw -= ctrl.sensitivity * delta.x();
-                    look.pitch -= ctrl.sensitivity * delta.y();
+                    look.yaw -= ctrl.sensitivity * delta.0;
+                    look.pitch -= ctrl.sensitivity * delta.1;
 
                     let limit = ctrl.pitch_limit.max(0.0);
                     look.pitch = look.pitch.clamp(-limit, limit);

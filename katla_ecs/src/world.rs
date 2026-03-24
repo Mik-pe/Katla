@@ -1,5 +1,3 @@
-use katla_math::Vec2;
-
 use crate::components::Component;
 use crate::entity::EntityId;
 use crate::entity_allocator::EntityAllocator;
@@ -226,7 +224,7 @@ impl World {
         self.systems = systems;
 
         // Clear per-frame mouse delta after the tick.
-        self.input_state.mouse_delta = Vec2::zero();
+        self.input_state.mouse_delta = (0.0, 0.0);
     }
 
     /// Returns the number of entities in the world.

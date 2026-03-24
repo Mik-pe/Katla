@@ -17,7 +17,6 @@ winit = { workspace = true }
 image = { workspace = true }
 env_logger = { workspace = true }
 gltf = { workspace = true }
-notify = { workspace = true }
 itertools = { workspace = true }
 approx = { workspace = true }
 log = { workspace = true }

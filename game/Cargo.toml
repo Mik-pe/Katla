@@ -14,4 +14,3 @@ katla_ecs = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
-rand = { workspace = true }

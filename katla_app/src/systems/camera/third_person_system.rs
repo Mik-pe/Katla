@@ -142,8 +142,8 @@ impl System for ThirdPersonCameraSystem {
             // Update yaw/pitch from mouse input
             let mut updated_state = camera_state;
             if should_look {
-                updated_state.yaw -= camera.sensitivity * mouse_delta.x();
-                updated_state.pitch -= camera.sensitivity * mouse_delta.y();
+                updated_state.yaw -= camera.sensitivity * mouse_delta.0;
+                updated_state.pitch -= camera.sensitivity * mouse_delta.1;
 
                 // Clamp pitch
                 updated_state.pitch = updated_state

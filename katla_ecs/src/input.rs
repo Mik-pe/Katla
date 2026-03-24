@@ -2,7 +2,6 @@ pub mod actions;
 pub mod mouse;
 
 pub use actions::Action;
-use katla_math::Vec2;
 pub use mouse::MouseButton;
 
 pub enum ModifierKey {
@@ -19,8 +18,8 @@ pub enum ButtonState {
 }
 
 pub struct InputState {
-    pub mouse_position: Vec2,
-    pub mouse_delta: Vec2,
+    pub mouse_position: (f32, f32),
+    pub mouse_delta: (f32, f32),
     pub mouse_wheel_delta: f32,
     pub mouse_buttons: [ButtonState; 5],
     pub keyboard_keys: [bool; Action::COUNT],
@@ -35,8 +34,8 @@ impl Default for InputState {
 impl InputState {
     pub fn new() -> Self {
         InputState {
-            mouse_position: Vec2::zero(),
-            mouse_delta: Vec2::zero(),
+            mouse_position: (0.0, 0.0),
+            mouse_delta: (0.0, 0.0),
             mouse_wheel_delta: 0.0,
             mouse_buttons: [ButtonState::Released; 5],
             keyboard_keys: [false; Action::COUNT],
@@ -56,22 +55,21 @@ impl InputState {
     }
 
     pub fn set_mouse_position(&mut self, x: f32, y: f32) {
-        self.mouse_delta = Vec2::new(x - self.mouse_position.x(), y - self.mouse_position.y());
-        self.mouse_position = Vec2::new(x, y);
+        self.mouse_delta = (x - self.mouse_position.0, y - self.mouse_position.1);
+        self.mouse_position = (x, y);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input::actions::ActionState;
 
     #[test]
     fn test_input_state_new() {
         let state = InputState::new();
 
-        assert_eq!(state.mouse_position, Vec2::zero());
-        assert_eq!(state.mouse_delta, Vec2::zero());
+        assert_eq!(state.mouse_position, (0.0, 0.0));
+        assert_eq!(state.mouse_delta, (0.0, 0.0));
         assert_eq!(state.mouse_wheel_delta, 0.0);
 
         // All mouse buttons should be released
@@ -88,7 +86,7 @@ mod tests {
     #[test]
     fn test_input_state_default() {
         let state = InputState::default();
-        assert_eq!(state.mouse_position, Vec2::zero());
+        assert_eq!(state.mouse_position, (0.0, 0.0));
     }
 
     #[test]
@@ -177,12 +175,12 @@ mod tests {
         let mut state = InputState::new();
 
         state.set_mouse_position(100.0, 200.0);
-        assert_eq!(state.mouse_position, Vec2::new(100.0, 200.0));
-        assert_eq!(state.mouse_delta, Vec2::new(100.0, 200.0));
+        assert_eq!(state.mouse_position, (100.0, 200.0));
+        assert_eq!(state.mouse_delta, (100.0, 200.0));
 
         state.set_mouse_position(150.0, 250.0);
-        assert_eq!(state.mouse_position, Vec2::new(150.0, 250.0));
-        assert_eq!(state.mouse_delta, Vec2::new(50.0, 50.0));
+        assert_eq!(state.mouse_position, (150.0, 250.0));
+        assert_eq!(state.mouse_delta, (50.0, 50.0));
     }
 
     #[test]
@@ -190,13 +188,13 @@ mod tests {
         let mut state = InputState::new();
 
         state.set_mouse_position(10.0, 20.0);
-        assert_eq!(state.mouse_delta, Vec2::new(10.0, 20.0));
+        assert_eq!(state.mouse_delta, (10.0, 20.0));
 
         state.set_mouse_position(15.0, 30.0);
-        assert_eq!(state.mouse_delta, Vec2::new(5.0, 10.0));
+        assert_eq!(state.mouse_delta, (5.0, 10.0));
 
         state.set_mouse_position(15.0, 30.0);
-        assert_eq!(state.mouse_delta, Vec2::new(0.0, 0.0));
+        assert_eq!(state.mouse_delta, (0.0, 0.0));
     }
 
     #[test]
@@ -259,11 +257,11 @@ mod tests {
 
         for (i, (x, y)) in positions.iter().enumerate() {
             state.set_mouse_position(*x, *y);
-            assert_eq!(state.mouse_position, Vec2::new(*x, *y));
+            assert_eq!(state.mouse_position, (*x, *y));
 
             if i > 0 {
                 let (prev_x, prev_y) = positions[i - 1];
-                assert_eq!(state.mouse_delta, Vec2::new(*x - prev_x, *y - prev_y));
+                assert_eq!(state.mouse_delta, (*x - prev_x, *y - prev_y));
             }
         }
     }
