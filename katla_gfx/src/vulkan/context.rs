@@ -1026,12 +1026,11 @@ impl VulkanContext {
             // rather than the actual descriptor range. Core validation catches real OOB errors.
             // This is confirmed absent in single-pass GPU-AV (e.g. particle_validation example).
             // Ref: https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/7737
-            if is_gpu_av {
-                if let Some(ref vuid) = msg.vuid {
-                    if vuid.contains("storageBuffers-06936") {
-                        return false;
-                    }
-                }
+            if is_gpu_av
+                && let Some(ref vuid) = msg.vuid
+                && vuid.contains("storageBuffers-06936")
+            {
+                return false;
             }
 
             let prefix = if let Some(ref vuid) = msg.vuid {

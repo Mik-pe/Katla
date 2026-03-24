@@ -973,7 +973,7 @@ fn run_contamination_test(
     // Create the compute pass with all 6 bindings:
     // 0: particles, 1: alive list (simulate output), 2: counters, 3: emitter configs,
     // 4: validation results, 5: validation params
-    let validation_pass = ComputePass::new(context)
+    let validation_pass = ComputePass::builder(context)
         .add_storage_buffer(0, ps.particle_buffer(), 0, particle_data_size)
         .add_storage_buffer(1, ps.particle_buffer(), next_frame_offset, alive_list_size)
         .add_storage_buffer(2, ps.counters_buffer(0), 0, counters_size)

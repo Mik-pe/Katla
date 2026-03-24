@@ -2,6 +2,7 @@ use crate::RendererError;
 use ash::vk;
 use log::{error, info, warn};
 
+#[derive(Default)]
 /// Bundles all light culling state from VulkanRenderer.
 pub(crate) struct LightCullingState {
     /// Light culling buffers for Forward+ dynamic lighting.
@@ -10,16 +11,6 @@ pub(crate) struct LightCullingState {
     pub pipeline: Option<crate::vulkan::material::compute_pipeline::ComputePipeline>,
     /// Light culling compute shader path (needed to recreate pipeline on resize).
     pub shader_path: Option<std::path::PathBuf>,
-}
-
-impl Default for LightCullingState {
-    fn default() -> Self {
-        Self {
-            buffers: None,
-            pipeline: None,
-            shader_path: None,
-        }
-    }
 }
 
 impl super::VulkanRenderer {

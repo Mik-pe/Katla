@@ -100,6 +100,7 @@ pub struct DraggablePanel;
 impl DraggablePanel {
     const TITLE_BAR_HEIGHT: f32 = 32.0;
 
+    #[allow(clippy::too_many_arguments)]
     pub fn begin(
         ui: &mut UiContext,
         id: &str,

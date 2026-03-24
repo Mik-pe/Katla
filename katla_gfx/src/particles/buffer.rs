@@ -179,7 +179,7 @@ impl GlobalParticleBuffer {
                 .get_physical_device_properties(context.physical_device)
         }
         .limits
-        .min_storage_buffer_offset_alignment as u64;
+        .min_storage_buffer_offset_alignment;
 
         let layout = ParticleBufferLayout::new(max_particles, alignment);
 

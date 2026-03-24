@@ -4,6 +4,7 @@ use crate::handle::PipelineHandle;
 use ash::vk;
 use log::info;
 
+#[derive(Default)]
 /// Bundles all shadow-related state from VulkanRenderer.
 pub(crate) struct ShadowState {
     /// CSM cascade computation
@@ -36,28 +37,6 @@ pub(crate) struct ShadowState {
     pub cascade_mapped_ptrs: Vec<*mut u8>,
     /// Cascade descriptor pool
     pub cascade_descriptor_pool: Option<vk::DescriptorPool>,
-}
-
-impl Default for ShadowState {
-    fn default() -> Self {
-        Self {
-            csm: None,
-            buffers: None,
-            descriptor_layout: None,
-            sampler: None,
-            descriptor_pool: None,
-            descriptor_sets: Vec::new(),
-            pipeline: None,
-            pipeline_skinned: None,
-            empty_descriptor_layout: None,
-            cascade_descriptor_layout: None,
-            cascade_descriptor_sets: Vec::new(),
-            cascade_buffers: Vec::new(),
-            cascade_allocations: Vec::new(),
-            cascade_mapped_ptrs: Vec::new(),
-            cascade_descriptor_pool: None,
-        }
-    }
 }
 
 impl super::VulkanRenderer {
@@ -687,16 +666,14 @@ impl super::VulkanRenderer {
         if let (Some(buffers), Some(&descriptor_set)) = (
             &self.shadow.buffers,
             self.shadow.descriptor_sets.get(frame_idx),
+        ) && let Err(e) = buffers.update_and_bind_descriptors(
+            cmd,
+            &self.context.device,
+            pipeline_layout,
+            descriptor_set,
+            frame_idx,
         ) {
-            if let Err(e) = buffers.update_and_bind_descriptors(
-                cmd,
-                &self.context.device,
-                pipeline_layout,
-                descriptor_set,
-                frame_idx,
-            ) {
-                log::warn!("Failed to bind shadow descriptors: {}", e);
-            }
+            log::warn!("Failed to bind shadow descriptors: {}", e);
         }
     }
 }

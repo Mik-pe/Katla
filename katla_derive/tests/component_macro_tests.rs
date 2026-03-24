@@ -45,14 +45,6 @@ struct NestedComponent {
     count: usize,
 }
 
-// Commented out - lifetime components require 'static bound on the lifetime
-// which defeats the purpose. Components with non-'static references aren't
-// supported by the current Component trait design.
-// #[derive(Component)]
-// struct LifetimeComponent<'a> {
-//     reference: &'a str,
-// }
-
 #[derive(Component)]
 struct WithBoundsComponent<T: Clone + Send + Sync + 'static> {
     item: T,
@@ -160,18 +152,6 @@ fn test_nested_component() {
     assert_eq!(downcast.inner.value, 10);
     assert_eq!(downcast.count, 5);
 }
-
-// Test commented out - see note above about lifetime components
-// #[test]
-// fn test_lifetime_component() {
-//     let s = "hello";
-//     let comp = LifetimeComponent { reference: s };
-//     assert!(comp.as_any().is::<LifetimeComponent>());
-//
-//     let any = comp.as_any();
-//     let downcast = any.downcast_ref::<LifetimeComponent>().unwrap();
-//     assert_eq!(downcast.reference, "hello");
-// }
 
 #[test]
 fn test_with_bounds_component() {

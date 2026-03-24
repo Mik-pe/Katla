@@ -13,6 +13,12 @@ pub struct LightOrbitSystem {
     elapsed: f32,
 }
 
+impl Default for LightOrbitSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LightOrbitSystem {
     pub fn new() -> Self {
         Self { elapsed: 0.0 }

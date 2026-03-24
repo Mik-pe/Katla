@@ -327,23 +327,17 @@ impl<'a> Frame<'a> {
 
             // Render particles after geometry pass (before tonemap, so they get tonemapped
             // and depth-tested against the scene geometry)
-            if pass.name == "geometry" {
-                if let Some(ref particle_system) = self.renderer.particle_system {
-                    let alive_count = particle_system.alive_count();
-
-                    if alive_count > 0 {
-                        if let Some(hdr_texture) = self
-                            .graph
-                            .transient_textures
-                            .get(frame_idx)
-                            .and_then(|m| m.get("hdr_color"))
-                        {
-                            if let Err(e) = self.render_particles_to_texture(&cmd, hdr_texture) {
-                                log::error!("Failed to render particles: {}", e);
-                            }
-                        }
-                    }
-                }
+            if pass.name == "geometry"
+                && let Some(ref particle_system) = self.renderer.particle_system
+                && particle_system.alive_count() > 0
+                && let Some(hdr_texture) = self
+                    .graph
+                    .transient_textures
+                    .get(frame_idx)
+                    .and_then(|m| m.get("hdr_color"))
+                && let Err(e) = self.render_particles_to_texture(&cmd, hdr_texture)
+            {
+                log::error!("Failed to render particles: {}", e);
             }
         }
 
