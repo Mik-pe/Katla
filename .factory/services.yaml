@@ -3,9 +3,19 @@ commands:
   typecheck: cargo check
   build: cargo build
   test: cargo test --workspace
+  test-math: cargo test -p katla_math
+  test-ecs: cargo test -p katla_ecs
+  test-gfx: cargo test -p katla_gfx
+  test-app: cargo test -p katla_app
+  test-ui: cargo test -p katla_ui
+  test-derive: cargo test -p katla_derive
   lint: cargo clippy
+  lint-fix: cargo clippy --fix
   fmt: cargo fmt
   fmt-check: cargo fmt --check
+  check-gfx: cargo check -p katla_gfx
+  check-app: cargo check -p katla_app
+  check-ui: cargo check -p katla_ui
   run-limited: cargo run -- -s
 
 services: {}
