@@ -47,3 +47,7 @@ Notes specific to the repo-wide cleanup mission.
 - TODOs with actionable intent
 - Public API documentation (`///`)
 - Comments explaining non-obvious constraints or invariants
+
+## Feature Interaction Patterns
+
+- In multi-feature cleanup milestones, earlier features may leave `#[allow(dead_code)]` on items as a temporary measure when removing a blanket `#![allow(dead_code)]`. Later features in the same milestone should remove those items entirely rather than keeping the suppressions. Example: foundation-ecs-dep-fix left `#[allow(dead_code)]` on SparseSet methods; ecs-cleanup removed those methods.

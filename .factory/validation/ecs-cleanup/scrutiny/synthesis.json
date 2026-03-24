@@ -1,0 +1,40 @@
+{
+  "milestone": "ecs-cleanup",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
+    "fmt": { "passed": true, "command": "cargo fmt --check", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Added ECS Component trait architecture note to architecture.md — explains Component is a marker trait, derive macro's value is ergonomic syntax only, as_any/as_any_mut live on AnyComponentStorage",
+      "sourceFeature": "ecs-cleanup"
+    },
+    {
+      "target": "library",
+      "description": "Added feature interaction pattern to cleanup-notes.md — earlier features may leave item-level #[allow(dead_code)], later features should remove items entirely",
+      "sourceFeature": "ecs-cleanup"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "mission-planning",
+      "suggestion": "Feature descriptions should distinguish between imports and type definitions. The ecs-cleanup feature said 'Remove unused imports (ActionState in input.rs)' but ActionState was a type definition in input/actions.rs, not an import. Workers can adapt, but precise descriptions reduce ambiguity.",
+      "evidence": "ecs-cleanup feature description mentioned 'Remove unused imports (ActionState in input.rs)' but ActionState was defined as an enum in input/actions.rs. Worker correctly removed the definition instead of hunting for a non-existent import.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

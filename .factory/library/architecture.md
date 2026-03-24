@@ -41,6 +41,14 @@ Only `Vec4`, `Quat`, and `Mat4` have SSE backends (`katla_math/src/sse/`). `Vec2
 
 `AABB::create_from_verts` accepts `&[Vec3]` while `Sphere::create_from_verts` accepts `&[f32; 3]`. This API inconsistency limits shared helper dedup without allocation (Sphere currently heap-allocates a `Vec<Vec3>` to call the shared `compute_bounds` helper).
 
+## ECS Component Trait
+
+The `Component` trait in `katla_ecs` is a marker trait bounded by `Any`:
+```rust
+pub trait Component: Any {}
+```
+The `#[derive(Component)]` macro generates an empty `impl<T> Component for T {}`. The derive macro's only value is ergonomic `#[derive(Component)]` syntax — the trait bound `T: Any` is what enables type-erased downcasting via `AnyComponentStorage`. The `as_any`/`as_any_mut` methods live on `AnyComponentStorage`, not on `Component`.
+
 ## Code Conventions
 
 - Visibility: `pub(crate)` by default, `pub` only when necessary
