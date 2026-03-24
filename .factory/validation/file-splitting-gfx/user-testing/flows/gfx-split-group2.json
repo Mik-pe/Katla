@@ -1,0 +1,129 @@
+{
+  "groupId": "gfx-split-group2",
+  "testedAt": "2026-03-24T15:30:00Z",
+  "isolation": {
+    "type": "local-rust-toolchain",
+    "workingDirectory": "C:\\dev\\katla_agents\\controller",
+    "tools": ["cargo check", "cargo test", "file inspection"]
+  },
+  "toolsUsed": ["cargo check", "cargo test", "file inspection"],
+  "assertions": [
+    {
+      "id": "VAL-SPLIT-GFX-003",
+      "title": "vulkan/context.rs split into submodules",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Check katla_gfx/src/vulkan/context/ directory exists",
+          "expected": "Directory exists with mod.rs and submodule files",
+          "observed": "Directory exists with 6 files: mod.rs, device.rs, memory.rs, samplers.rs, swapchain.rs, validation.rs"
+        },
+        {
+          "action": "Verify expected submodules exist",
+          "expected": "memory.rs, validation.rs, device.rs, samplers.rs, swapchain.rs all present",
+          "observed": "All 5 expected submodules present: memory.rs=True, validation.rs=True, device.rs=True, samplers.rs=True, swapchain.rs=True"
+        },
+        {
+          "action": "Check each submodule file is under 500 lines",
+          "expected": "All files under 500 lines",
+          "observed": "mod.rs=390, device.rs=304, memory.rs=140, samplers.rs=52, swapchain.rs=213, validation.rs=283 — all under 500"
+        },
+        {
+          "action": "Run cargo check -p katla_gfx",
+          "expected": "Compilation succeeds",
+          "observed": "Finished dev profile [optimized + debuginfo] target(s) in 1.05s — exit code 0"
+        },
+        {
+          "action": "Run cargo test -p katla_gfx",
+          "expected": "All tests pass",
+          "observed": "357 unit tests passed, 51 integration tests passed, 4 doc-tests passed, 0 failed — exit code 0"
+        }
+      ],
+      "evidence": [
+        "Directory listing shows 6 .rs files in katla_gfx/src/vulkan/context/",
+        "Line counts: mod.rs(390), device.rs(304), memory.rs(140), samplers.rs(52), swapchain.rs(213), validation.rs(283)",
+        "cargo check -p katla_gfx: exit 0",
+        "cargo test -p katla_gfx: all tests pass (357 + 51 + 4 = 412 total)"
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-SPLIT-GFX-004",
+      "title": "particles/mod.rs split into submodules",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Check katla_gfx/src/particles/ directory structure",
+          "expected": "Directory includes new submodules and preserved existing ones",
+          "observed": "14 .rs files present: mod.rs + 13 submodules"
+        },
+        {
+          "action": "Verify expected new submodules exist",
+          "expected": "emitter.rs, descriptors.rs, dispatch.rs, barriers.rs, render.rs",
+          "observed": "All 5 new submodules present: emitter.rs=True, descriptors.rs=True, dispatch.rs=True, barriers.rs=True, render.rs=True"
+        },
+        {
+          "action": "Verify existing submodules preserved",
+          "expected": "buffer.rs, types.rs, validation.rs, presets.rs, stats.rs, debug_readback.rs",
+          "observed": "All 6 preserved submodules present: buffer.rs=True, types.rs=True, validation.rs=True, presets.rs=True, stats.rs=True, debug_readback.rs=True"
+        },
+        {
+          "action": "Check main mod.rs is under 500 lines",
+          "expected": "mod.rs under 500 lines",
+          "observed": "mod.rs = 438 lines — under 500"
+        },
+        {
+          "action": "Run cargo check -p katla_gfx",
+          "expected": "Compilation succeeds",
+          "observed": "Finished dev profile [optimized + debuginfo] target(s) in 1.05s — exit code 0"
+        },
+        {
+          "action": "Run cargo test -p katla_gfx",
+          "expected": "All tests pass",
+          "observed": "357 unit tests passed, 51 integration tests passed, 4 doc-tests passed, 0 failed — exit code 0"
+        }
+      ],
+      "evidence": [
+        "Directory listing shows 14 .rs files in katla_gfx/src/particles/",
+        "New submodules: emitter.rs(88), descriptors.rs(605), dispatch.rs(400), barriers.rs(87), render.rs(54)",
+        "Preserved submodules: buffer.rs(758), types.rs(197), validation.rs(364), presets.rs(97), stats.rs(80), debug_readback.rs(638)",
+        "mod.rs line count: 438",
+        "cargo check -p katla_gfx: exit 0",
+        "cargo test -p katla_gfx: all tests pass"
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-002",
+      "title": "File splitting preserves module exports",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo check (full workspace)",
+          "expected": "No import errors across workspace",
+          "observed": "Finished dev profile [optimized + debuginfo] target(s) in 1.09s — exit code 0, no errors"
+        },
+        {
+          "action": "Run cargo check -p katla_app (downstream consumer of katla_gfx)",
+          "expected": "No import errors in downstream crate",
+          "observed": "Finished dev profile [optimized + debuginfo] target(s) in 2.04s — exit code 0, no errors"
+        },
+        {
+          "action": "Verify pub use and re-export paths continue to work",
+          "expected": "All existing module paths resolve correctly",
+          "observed": "Both cargo check (workspace) and cargo check -p katla_app pass without errors, confirming all re-exports are intact"
+        }
+      ],
+      "evidence": [
+        "cargo check (workspace): exit 0, no warnings related to imports",
+        "cargo check -p katla_app: exit 0, no errors",
+        "cargo check -p katla_gfx: exit 0, no errors",
+        "cargo test -p katla_gfx: all 412 tests pass, confirming module structure is correct"
+      ],
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 3 assertions: all passed. VAL-SPLIT-GFX-003 confirmed vulkan/context.rs split into 5 submodules all under 500 lines. VAL-SPLIT-GFX-004 confirmed particles/mod.rs split with 5 new submodules and 6 preserved submodules, mod.rs at 438 lines. VAL-CROSS-002 confirmed all module exports preserved — cargo check passes across entire workspace including downstream katla_app crate."
+}

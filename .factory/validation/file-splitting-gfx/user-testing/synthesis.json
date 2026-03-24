@@ -1,0 +1,39 @@
+{
+  "milestone": "file-splitting-gfx",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-SPLIT-GFX-001",
+    "VAL-SPLIT-GFX-002",
+    "VAL-SPLIT-GFX-003",
+    "VAL-SPLIT-GFX-004",
+    "VAL-CROSS-002"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "details": {
+    "VAL-SPLIT-GFX-001": {
+      "summary": "render_graph/frame.rs split into frame/ directory with mod.rs + 8 submodules (barriers, graphics_pass, shadow_pass, depth_prepass, particle_rendering, ui_rendering, draw_calls, compositing). All files under 500 lines. cargo check and cargo test pass. Frame exported via pub use in render_graph/mod.rs."
+    },
+    "VAL-SPLIT-GFX-002": {
+      "summary": "renderer.rs split into renderer/ directory with mod.rs + 9 submodules (texture_api, font_atlas, frame_lifecycle, material_api, bindless_queries, skeleton_api, readback, fullscreen_shader, compositing). All submodules under 500 lines. VulkanRenderer, DrawList, UIDrawList, UiFrameCommand exported via pub use in lib.rs."
+    },
+    "VAL-SPLIT-GFX-003": {
+      "summary": "vulkan/context.rs split into context/ directory with mod.rs + 5 submodules (memory, validation, device, samplers, swapchain). All files under 500 lines. cargo check and cargo test pass."
+    },
+    "VAL-SPLIT-GFX-004": {
+      "summary": "particles/mod.rs split with 5 new submodules (emitter, descriptors, dispatch, barriers, render) added to existing 6 submodules (buffer, types, validation, presets, stats, debug_readback). mod.rs is 438 lines (under 500). cargo check and cargo test pass."
+    },
+    "VAL-CROSS-002": {
+      "summary": "Module exports preserved. cargo check (full workspace) and cargo check -p katla_app pass with zero errors. All pub use re-exports from parent modules continue to resolve correctly."
+    }
+  }
+}
