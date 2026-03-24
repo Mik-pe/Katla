@@ -1,0 +1,40 @@
+{
+  "featureId": "fix-clippy-collapsible-if",
+  "milestone": "foundation",
+  "reviewedAt": "2026-03-24T22:35:00.000Z",
+  "commitId": "0f40e01",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix adequately addresses all collapsible_if clippy errors and unused import warnings identified in the prior failure. The worker correctly converted nested if-let chains to let chain syntax across 25 files in katla_ecs, katla_ui, and katla_app. All 3 unused import warnings in katla_app were fixed. The scope was broader than the feature description indicated (80+ errors vs the described 49), but the worker handled all of them correctly. cargo clippy --workspace -- -D warnings passes with exit code 0, and all 147+ tests pass.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The cleanup-worker SKILL.md lists collapsible_if fix as 'merge nested if conditions' but with edition 2024, the correct approach is to use let chain syntax (if let ... && let ...). The skill description is misleading for edition 2024+ codebases.",
+      "evidence": "SKILL.md says 'For collapsible_if: merge nested if conditions' but the actual fix required converting to let chain syntax, which is a distinct pattern enabled by edition 2024.",
+      "suggestedTarget": "skills",
+      "suggestedContent": "Update cleanup-worker SKILL.md collapsible_if guidance: 'For collapsible_if: use let chain syntax (e.g., if let Some(x) = a && let Some(y) = b) for edition 2024+ codebases'"
+    },
+    {
+      "area": "conventions",
+      "observation": "Feature descriptions for clippy fixes should run clippy first to get exact error counts rather than estimating. The feature said 49 errors but there were 80+.",
+      "evidence": "Worker skillFeedback noted: 'The feature description underestimated the number of collapsible_if errors (said 49, actual was 80+).' The additional errors were in katla_app which the feature description didn't fully cover.",
+      "suggestedTarget": "AGENTS.md",
+      "suggestedContent": "Add guidance that clippy-fixing features should run cargo clippy first to get exact error counts and file lists before writing the feature description."
+    },
+    {
+      "area": "knowledge",
+      "observation": "cargo clippy --fix --allow-dirty --allow-staged was used to auto-fix 17 remaining errors after manual fixes. This is a useful technique for bulk clippy fixes that should be documented.",
+      "evidence": "Transcript shows worker ran 'cargo clippy --fix --workspace --allow-dirty --allow-staged' to resolve remaining errors after manual edits, followed by cargo fmt.",
+      "suggestedTarget": "skills",
+      "suggestedContent": "Add to cleanup-worker SKILL.md: For bulk clippy fixes, consider using 'cargo clippy --fix --workspace --allow-dirty --allow-staged' followed by 'cargo fmt' to auto-fix remaining issues."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "originalFailedFeature": "foundation-edition-upgrade",
+  "fixAdequacy": "adequate",
+  "summary": "The fix fully addresses the original failure. All collapsible_if clippy errors across katla_ecs (iter3-iter8.rs), katla_ui (drawing.rs, popup/internal.rs, widgets.rs, graph.rs), and katla_app (14 additional files) have been correctly converted from nested if-let chains to let chain syntax. The 3 unused import warnings in katla_app (AABB, super::*, SpotLight) were removed. cargo clippy --workspace -- -D warnings exits with code 0 and all tests pass. No regressions introduced."
+}
