@@ -120,12 +120,5 @@ impl Queue {
             .wait_semaphores(signal_semaphores)
             .swapchains(swapchains)
             .image_indices(image_indices);
-
-        // unsafe {
-        //     self.context
-        //         .swapchain_loader
-        //         .queue_present(self.queue, &present_info)
-        // }
-        // .unwrap();
     }
 }

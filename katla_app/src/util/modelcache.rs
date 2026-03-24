@@ -56,7 +56,6 @@ impl GLTFModel {
         use katla_math::Vec4;
 
         for vertex in vertices.iter_mut() {
-            // Transform position: extend to vec4, multiply, extract xyz
             let pos = vertex.position;
             let pos_vec = Vec4::new(pos[0], pos[1], pos[2], 1.0);
             let transformed_pos = world_transform.clone() * pos_vec;
@@ -66,13 +65,9 @@ impl GLTFModel {
                 transformed_pos.z(),
             ];
 
-            // Transform normal: use upper 3x3 of the matrix (no translation)
-            // For proper non-uniform scale handling, we'd use inverse-transpose,
-            // but this works for uniform scale and rotation.
             let normal = vertex.normal;
             let normal_vec = Vec4::new(normal[0], normal[1], normal[2], 0.0);
             let transformed_normal = world_transform.clone() * normal_vec;
-            // Renormalize to handle any scaling
             let len = (transformed_normal.x() * transformed_normal.x()
                 + transformed_normal.y() * transformed_normal.y()
                 + transformed_normal.z() * transformed_normal.z())
@@ -161,7 +156,6 @@ impl GLTFModel {
                     prim_idx,
                     primitive.indices().is_some()
                 );
-                // Parse attributes using the new parser
                 for (semantic, accessor) in primitive.attributes() {
                     match semantic {
                         gltf::mesh::Semantic::Positions => {
@@ -186,7 +180,6 @@ impl GLTFModel {
                     }
                 }
 
-                // Parse indices
                 if let Some(indices) = primitive.indices() {
                     if let Some((indices_data, stride)) = parser.parse_indices(indices) {
                         index_data = indices_data;
@@ -195,7 +188,6 @@ impl GLTFModel {
                 }
             }
 
-            // Generate normals if missing (worth warning about)
             if normals.is_empty() {
                 warn!(
                     "Mesh '{}' has no normals, generating smooth normals from geometry",
@@ -204,7 +196,6 @@ impl GLTFModel {
                 normals = generate_smooth_normals(&positions, &index_data, index_stride);
             }
 
-            // Build vertex data from parsed attributes
             let (vertex_data, sphere) = build_vertex_data(
                 positions.clone(),
                 normals.clone(),
@@ -213,7 +204,6 @@ impl GLTFModel {
             );
             (vertex_data, index_data, index_stride, sphere)
         } else {
-            // No mesh - return empty data
             (
                 vec![],
                 vec![],
@@ -240,7 +230,6 @@ impl GLTFModel {
 
         if let Some(mesh) = node.mesh() {
             for primitive in mesh.primitives() {
-                // Parse all attributes including skinning
                 for (semantic, accessor) in primitive.attributes() {
                     match semantic {
                         gltf::mesh::Semantic::Positions => {
@@ -264,7 +253,6 @@ impl GLTFModel {
                     }
                 }
 
-                // Parse indices
                 if let Some(indices) = primitive.indices() {
                     if let Some((indices_data, stride)) = parser.parse_indices(indices) {
                         index_data = indices_data;
@@ -273,7 +261,6 @@ impl GLTFModel {
                 }
             }
 
-            // Generate normals if missing
             if normals.is_empty() {
                 normals = generate_smooth_normals(&positions, &index_data, index_stride);
             }
@@ -301,9 +288,7 @@ impl GLTFModel {
     fn parse_gltf(&mut self) {
         use std::collections::{HashMap, VecDeque};
 
-        // Helper to build world transforms for all nodes using BFS
         fn build_world_transforms(nodes: &[gltf::Node]) -> HashMap<usize, Mat4> {
-            // Build parent map
             let mut parent_map: HashMap<usize, Option<usize>> = HashMap::new();
             for node in nodes {
                 parent_map.entry(node.index()).or_insert(None);
@@ -312,7 +297,6 @@ impl GLTFModel {
                 }
             }
 
-            // Build children map
             let mut children_map: HashMap<usize, Vec<usize>> = HashMap::new();
             for node in nodes {
                 children_map.entry(node.index()).or_default();
@@ -324,11 +308,9 @@ impl GLTFModel {
                 }
             }
 
-            // Build node lookup
             let node_by_index: HashMap<usize, &gltf::Node> =
                 nodes.iter().map(|n| (n.index(), n)).collect();
 
-            // Find root nodes (no parent)
             let mut queue: VecDeque<usize> = VecDeque::new();
             for node in nodes {
                 if parent_map.get(&node.index()) == Some(&None) {
@@ -345,7 +327,6 @@ impl GLTFModel {
                     None => continue,
                 };
 
-                // Compute local transform
                 let transform = node.transform();
                 let (t, r, s) = transform.decomposed();
                 let translation = Vec3::new(t[0], t[1], t[2]);
@@ -353,7 +334,6 @@ impl GLTFModel {
                 let scale = Vec3::new(s[0], s[1], s[2]);
                 let local_matrix = Mat4::from_trs(translation, rotation, scale);
 
-                // Get parent transform (already computed due to topological order)
                 let world_matrix = if let Some(Some(parent_index)) = parent_map.get(&node_index) {
                     if let Some(parent_transform) = world_transforms.get(parent_index) {
                         parent_transform.clone() * local_matrix
@@ -366,7 +346,6 @@ impl GLTFModel {
 
                 world_transforms.insert(node_index, world_matrix);
 
-                // Queue children for processing
                 if let Some(children) = children_map.get(&node_index) {
                     for child_index in children {
                         queue.push_back(*child_index);
@@ -377,7 +356,6 @@ impl GLTFModel {
             world_transforms
         }
 
-        // Collect all nodes in the scene
         let mut all_nodes = vec![];
         let mut root_transform = Mat4::identity();
 
@@ -387,7 +365,6 @@ impl GLTFModel {
             .or_else(|| self.document.scenes().next())
         {
             for node in scene.nodes() {
-                // Accumulate root transform (for backwards compatibility)
                 let transform = node.transform();
                 let (t, r, s) = transform.decomposed();
                 let translation = Vec3::new(t[0], t[1], t[2]);
@@ -395,20 +372,17 @@ impl GLTFModel {
                 let scale = Vec3::new(s[0], s[1], s[2]);
                 root_transform *= Mat4::from_trs(translation, rotation, scale);
 
-                // Collect this node and all its descendants
                 collect_all_nodes(&node, &mut all_nodes);
             }
         }
         self.root_transform = root_transform;
 
-        // Build world transforms for all nodes
         let world_transforms = build_world_transforms(&all_nodes);
 
         // Track vertex offset for index adjustment when combining nodes
         let mut vertex_offset: u32 = 0;
         let mut skinned_vertex_offset: u32 = 0;
 
-        // Parse each node and apply world transforms
         for node in &all_nodes {
             let (mut vertex_data, index_data, index_stride, _sphere) = self.parse_node(node);
             let (skinned_data, skinned_index_data, skinned_index_stride, _, has_skinning) =
@@ -430,11 +404,9 @@ impl GLTFModel {
                 }
             }
 
-            // Build SOA attributes from the (possibly transformed) interleaved data
             let soa_attributes = Self::deinterleave_pbr(&vertex_data);
             let skinned_soa_attributes = Self::deinterleave_pbr_skinned(&skinned_data);
 
-            // Adjust indices by the current vertex offset
             let offset = if has_skinning {
                 skinned_vertex_offset
             } else {
@@ -467,12 +439,10 @@ impl GLTFModel {
                 self.index_stride = final_index_stride;
             }
 
-            // Update offsets for next node
             vertex_offset += vertex_count as u32;
             skinned_vertex_offset += skinned_vertex_count as u32;
         }
 
-        // Recalculate bounds from transformed vertices
         if !self.vertex_data.is_empty() {
             let mut min_pos = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
             let mut max_pos = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
@@ -522,7 +492,6 @@ impl GLTFModel {
     {
         let (document, buffers, images) = gltf::import(path)?;
 
-        // Parse materials from the GLTF document
         let materials: Vec<GltfMaterialInfo> = document
             .materials()
             .map(|m| GltfMaterialInfo::from_gltf(&m))
@@ -589,10 +558,8 @@ impl GLTFModel {
     ///
     /// Returns None if the model has no mesh or no primitives.
     pub fn parsed_attributes(&self) -> Option<ParsedAttributes> {
-        // Find the first mesh node
         for node in self.document.nodes() {
             if let Some(mesh) = node.mesh() {
-                // Get the first primitive
                 if let Some(primitive) = mesh.primitives().next() {
                     let parser = AttributeParser::new(&self.buffers);
                     return Some(ParsedAttributes::from_gltf(&primitive, &parser));
@@ -614,12 +581,10 @@ impl GLTFModel {
 
         match index_stride {
             2 => {
-                // 16-bit indices
                 let mut result = Vec::with_capacity(index_data.len());
                 for chunk in index_data.chunks(2) {
                     let index = u16::from_le_bytes([chunk[0], chunk[1]]);
                     let adjusted = index as u32 + offset;
-                    // Check for overflow
                     if adjusted > u16::MAX as u32 {
                         warn!(
                             "Index overflow when adjusting indices: {} + {} = {}",
@@ -632,7 +597,6 @@ impl GLTFModel {
                 result
             }
             4 => {
-                // 32-bit indices
                 let mut result = Vec::with_capacity(index_data.len());
                 for chunk in index_data.chunks(4) {
                     let index = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
@@ -642,7 +606,6 @@ impl GLTFModel {
                 result
             }
             1 => {
-                // 8-bit indices (rare, but handle it)
                 let mut result = Vec::with_capacity(index_data.len());
                 for &byte in index_data {
                     let adjusted = byte as u32 + offset;
@@ -726,7 +689,6 @@ mod tests {
     fn build_node_world_transforms(document: &Document) -> std::collections::HashMap<usize, Mat4> {
         use std::collections::{HashMap, VecDeque};
 
-        // Build parent map
         let mut parent_map: HashMap<usize, Option<usize>> = HashMap::new();
         let nodes: Vec<_> = document.nodes().collect();
         for node in &nodes {
@@ -736,7 +698,6 @@ mod tests {
             }
         }
 
-        // Build children map
         let mut children_map: HashMap<usize, Vec<usize>> = HashMap::new();
         for node in &nodes {
             children_map.entry(node.index()).or_default();
@@ -748,11 +709,9 @@ mod tests {
             }
         }
 
-        // Build node lookup
         let node_by_index: HashMap<usize, &gltf::Node> =
             nodes.iter().map(|n| (n.index(), n)).collect();
 
-        // Find root nodes (no parent)
         let mut queue: VecDeque<usize> = VecDeque::new();
         for node in &nodes {
             if parent_map.get(&node.index()) == Some(&None) {
@@ -762,14 +721,12 @@ mod tests {
 
         let mut world_transforms: HashMap<usize, Mat4> = HashMap::new();
 
-        // Process in topological order
         while let Some(node_index) = queue.pop_front() {
             let node = match node_by_index.get(&node_index) {
                 Some(n) => n,
                 None => continue,
             };
 
-            // Compute local transform
             let transform = node.transform();
             let (t, r, s) = transform.decomposed();
             let translation = Vec3::new(t[0], t[1], t[2]);
@@ -777,7 +734,6 @@ mod tests {
             let scale = Vec3::new(s[0], s[1], s[2]);
             let local_matrix = Mat4::from_trs(translation, rotation, scale);
 
-            // Get parent transform
             let world_matrix = if let Some(Some(parent_index)) = parent_map.get(&node_index) {
                 if let Some(parent_transform) = world_transforms.get(parent_index) {
                     parent_transform.clone() * local_matrix
@@ -790,7 +746,6 @@ mod tests {
 
             world_transforms.insert(node_index, world_matrix);
 
-            // Queue children
             if let Some(children) = children_map.get(&node_index) {
                 for child_index in children {
                     queue.push_back(*child_index);
@@ -827,11 +782,8 @@ mod tests {
 
         let model = GLTFModel::new(&model_path).expect("Failed to load Lantern.glb");
 
-        // Build world transforms for all nodes
         let world_transforms = build_node_world_transforms(&model.document);
 
-        // Find the lantern mesh node (node index 2) - it should have vertices
-        // around y=18 in world space (after transform is applied)
         let lantern_node = model
             .document
             .nodes()
@@ -844,13 +796,11 @@ mod tests {
             }
         };
 
-        // Get the world transform for the lantern node
         let world_transform = world_transforms
             .get(&lantern_node.index())
             .cloned()
             .unwrap_or_else(Mat4::identity);
 
-        // Extract translation from world transform (column 3)
         let world_translation = Vec3::new(
             world_transform[3].x(),
             world_transform[3].y(),
@@ -874,7 +824,6 @@ mod tests {
         // If the bug exists, vertex Y positions will be near 0 (local space)
         // If fixed, vertex Y positions should be around 18 (world space)
 
-        // Find min/max Y of all vertices
         let min_y = model
             .vertex_data
             .iter()
@@ -907,7 +856,6 @@ mod tests {
 
         assert!(!model.has_skinning, "This test assumes non-skinned model");
 
-        // Check that root_transform is identity matrix
         let is_identity = (model.root_transform[0].x() - 1.0).abs() < 0.001
             && model.root_transform[0].y().abs() < 0.001
             && model.root_transform[0].z().abs() < 0.001
@@ -950,10 +898,8 @@ mod tests {
 
         let model = GLTFModel::new(&model_path).expect("Failed to load Lantern.glb");
 
-        // Build world transforms for all nodes
         let world_transforms = build_node_world_transforms(&model.document);
 
-        // Collect all nodes in the scene
         let mut all_nodes = vec![];
         if let Some(scene) = model
             .document
@@ -984,12 +930,9 @@ mod tests {
             println!("  World transform:\n{:?}", world);
         }
 
-        // Find nodes with meshes
         let mesh_nodes: Vec<_> = all_nodes.iter().filter(|n| n.mesh().is_some()).collect();
         println!("\n=== Nodes with meshes: {} ===", mesh_nodes.len());
 
-        // The key test: verify that vertex bounds respect world transforms
-        // If child node transforms are not applied, vertices will be in wrong positions
         for node in &mesh_nodes {
             let world = world_transforms
                 .get(&node.index())
@@ -1003,15 +946,11 @@ mod tests {
             );
         }
 
-        // If there are multiple mesh nodes, they should NOT all be at the same position
-        // (unless that's what the model actually specifies)
         if mesh_nodes.len() > 1 {
-            // Get the translation component from world transforms
             let translations: Vec<Vec3> = mesh_nodes
                 .iter()
                 .filter_map(|n| {
                     let world = world_transforms.get(&n.index())?;
-                    // Extract translation from 4x4 matrix (column 3, the translation column)
                     Some(Vec3::new(world[3].x(), world[3].y(), world[3].z()))
                 })
                 .collect();

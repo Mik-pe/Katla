@@ -169,13 +169,11 @@ impl GlobalParticleSystem {
             debug_readback: None,
         };
 
-        // Initialize index lists (all particles start dead, alive lists are empty)
+        // All particles start dead, alive lists are empty
         system.buffer.initialize_index_lists()?;
 
-        // Create descriptor set layouts
         system.create_descriptor_layouts(context)?;
 
-        // Create and allocate static descriptor sets
         let (compute_descriptor_set, compute_pool) = system.create_compute_descriptor_set()?;
         system.compute_descriptor_set = Some(compute_descriptor_set);
         system._compute_descriptor_pool = compute_pool;
@@ -184,7 +182,6 @@ impl GlobalParticleSystem {
         system.render_descriptor_set = Some(render_descriptor_set);
         system._render_descriptor_pool = render_pool;
 
-        // Create push descriptor buffers
         system.create_push_descriptor_buffers(context)?;
 
         info!("Modern particle system initialized successfully");
@@ -209,7 +206,6 @@ impl GlobalParticleSystem {
             self.next_emitter_slot = index + 1;
         }
 
-        // Ensure vectors have space
         if self.emitters.len() <= index as usize {
             self.emitters
                 .resize(index as usize + 1, EmitterConfig::default());
@@ -275,13 +271,11 @@ impl GlobalParticleSystem {
     pub fn update(&mut self, delta_time: f32, frame_index: u32) -> Result<(u32, u32), String> {
         self.frame_count += 1;
 
-        // Upload emitter configs to GPU buffer
         self.upload_emitter_configs(frame_index as usize)?;
 
         self.recompute_estimated_max_alive();
 
-        // Calculate total particles to emit this frame (including bursts)
-        // Use calculate_emit_count to get proper rate-based emission with accumulators
+        // Use calculate_emit_count for proper rate-based emission with accumulators
         let total_emit_count = self.calculate_emit_count(delta_time);
 
         let total_burst_count: u32 = self
@@ -299,10 +293,8 @@ impl GlobalParticleSystem {
             total_this_frame
         );
 
-        // Update frame data buffer
         self.update_frame_data(delta_time, total_emit_count, total_burst_count, frame_index)?;
 
-        // Clear burst counts after processing
         for state in &mut self.emitter_states {
             state.burst_count = 0;
         }
@@ -312,10 +304,8 @@ impl GlobalParticleSystem {
 
         let emit_count = total_emit_count + total_burst_count;
 
-        // Debug-only validation: Check emitter configurations
         #[cfg(debug_assertions)]
         {
-            // Validate all active emitters
             let validation_errors = validate_all_emitters(&self.emitters);
             if !validation_errors.is_empty() {
                 for error in &validation_errors {
@@ -324,7 +314,6 @@ impl GlobalParticleSystem {
             }
         }
 
-        // Track total emitted
         if total_this_frame > 0 {
             self.total_emitted += total_this_frame as u64;
         }
@@ -436,7 +425,6 @@ impl GlobalParticleSystem {
     ) -> Result<(), String> {
         let device = &self.context.device;
 
-        // Bind graphics pipeline
         unsafe {
             device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, pipeline);
         }
@@ -445,7 +433,7 @@ impl GlobalParticleSystem {
         // Render reads from the simulate output region: alive[(frame_index+1)%2].
         self.update_render_descriptor_binding(frame_index)?;
 
-        // Bind static descriptor set (Set 0: particle buffers)
+        // Set 0: particle buffers
         // CRITICAL: Use render_descriptor_set (with VERTEX/FRAGMENT stage flags)
         // NOT compute_descriptor_set (with COMPUTE stage flags)
         if let Some(descriptor_set) = self.render_descriptor_set {
@@ -463,8 +451,7 @@ impl GlobalParticleSystem {
             return Err("Particle render descriptor set not allocated".to_string());
         }
 
-        // Bind storage descriptor set (Set 1: FrameUniforms from renderer)
-        // This provides view/proj matrices for camera transformation
+        // Set 1: FrameUniforms from renderer (view/proj matrices)
         unsafe {
             device.cmd_bind_descriptor_sets(
                 command_buffer,
@@ -476,8 +463,7 @@ impl GlobalParticleSystem {
             );
         }
 
-        // Draw particles using GPU-driven indirect draw.
-        // The simulate shader writes VkDrawIndirectCommand with vertex_count = alive_count * 6.
+        // Simulate shader writes VkDrawIndirectCommand with vertex_count = alive_count * 6
         if self.estimated_max_alive > 0 {
             unsafe {
                 device.cmd_draw_indirect(
@@ -641,10 +627,8 @@ impl GlobalParticleSystem {
 
         for (emitter, state) in self.emitters.iter().zip(self.emitter_states.iter_mut()) {
             if emitter.emit_rate > 0.0 {
-                // Accumulate fractional particles
                 state.emit_accumulator += emitter.emit_rate * delta_time;
 
-                // Extract whole particles to emit this frame
                 let to_emit = state.emit_accumulator as u32;
                 state.emit_accumulator -= to_emit as f32;
 
@@ -720,7 +704,6 @@ impl GlobalParticleSystem {
 
         info!("Destroying particle system");
 
-        // Destroy push descriptor buffers first
         info!("  destroying push descriptor buffers");
         for frame_idx in 0..2 {
             if let Some((buffer, allocation)) = self.frame_data_buffers[frame_idx].take() {
@@ -779,7 +762,6 @@ impl GlobalParticleSystem {
         self.next_emitter_slot = 0;
         self.free_emitter_slots.clear();
 
-        // Destroy descriptor pools
         info!("  destroying descriptor pools");
         if self._compute_descriptor_pool != vk::DescriptorPool::null() {
             unsafe {
@@ -798,7 +780,6 @@ impl GlobalParticleSystem {
             self._render_descriptor_pool = vk::DescriptorPool::null();
         }
 
-        // Destroy debug readback if present
         info!("  destroying debug readback");
         if let Some(mut readback) = self.debug_readback.take() {
             readback.destroy();
@@ -1045,12 +1026,11 @@ impl GlobalParticleSystem {
             );
         }
 
-        // Bind emit pipeline
         unsafe {
             device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
         }
 
-        // Bind static descriptor set (Set 0: particle buffers)
+        // Set 0: particle buffers
         if let Some(descriptor_set) = self.compute_descriptor_set {
             log::debug!(
                 "Emit dispatch: Set 0 descriptor={:?}, particle_buffer={:?}",
@@ -1120,7 +1100,6 @@ impl GlobalParticleSystem {
             }
         }
 
-        // Dispatch emit shader
         unsafe {
             device.cmd_dispatch(command_buffer, emit_workgroups, 1, 1);
         }
@@ -1158,12 +1137,11 @@ impl GlobalParticleSystem {
         let vk_pipeline = compute_pipeline.vk_pipeline();
         let vk_layout = compute_pipeline.vk_layout();
 
-        // Bind simulate pipeline
         unsafe {
             device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
         }
 
-        // Bind static descriptor set (Set 0: particle buffers)
+        // Set 0: particle buffers
         if let Some(descriptor_set) = self.compute_descriptor_set {
             unsafe {
                 device.cmd_bind_descriptor_sets(
@@ -1179,7 +1157,6 @@ impl GlobalParticleSystem {
             return Err("Compute descriptor set not allocated".to_string());
         }
 
-        // Update push descriptors (Set 1: frame data + emitter configs)
         let fi = frame_index % 2;
         if let Some((frame_buffer, _)) = &self.frame_data_buffers[fi] {
             let frame_data_size = std::mem::size_of::<FrameData>() as u64;
@@ -1236,7 +1213,6 @@ impl GlobalParticleSystem {
             }
         }
 
-        // Dispatch simulate shader
         unsafe {
             device.cmd_dispatch(command_buffer, simulate_workgroups, 1, 1);
         }
@@ -1273,7 +1249,6 @@ impl GlobalParticleSystem {
 
         let counters_size = std::mem::size_of::<buffer::ParticleCounters>() as u64;
 
-        // Create buffer memory barrier for entire particle buffer
         // EMIT pass writes to particle data, dead list, and alive list
         let particle_barrier = BufferMemoryBarrier2 {
             src_stage_mask: PipelineStage2Flags::COMPUTE_SHADER,
@@ -1287,7 +1262,6 @@ impl GlobalParticleSystem {
             size: total_buffer_size, // Cover entire buffer
         };
 
-        // Create buffer memory barrier for counters buffer
         // EMIT pass reads/writes atomic counters
         let counters_barrier = BufferMemoryBarrier2 {
             src_stage_mask: PipelineStage2Flags::COMPUTE_SHADER,
@@ -1301,7 +1275,6 @@ impl GlobalParticleSystem {
             size: counters_size,
         };
 
-        // Build and execute dependency info
         let dep_info = DependencyInfo::new()
             .add_buffer_barrier2(particle_barrier)
             .add_buffer_barrier2(counters_barrier);
@@ -1357,7 +1330,6 @@ impl GlobalParticleSystem {
             size: 16,
         };
 
-        // Build and execute dependency info
         let dep_info = DependencyInfo::new()
             .add_buffer_barrier2(particle_barrier)
             .add_buffer_barrier2(indirect_draw_barrier);

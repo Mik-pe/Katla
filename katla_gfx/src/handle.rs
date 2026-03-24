@@ -21,9 +21,7 @@
 
 use std::marker::PhantomData;
 
-//=============================================================================
 // Generic Handle Type
-//=============================================================================
 
 /// Opaque handle to a GPU resource.
 ///
@@ -69,9 +67,7 @@ impl<T> Default for Handle<T> {
     }
 }
 
-//=============================================================================
 // Public Marker Types (Application Layer)
-//=============================================================================
 
 /// Marker type for mesh handles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -93,9 +89,7 @@ pub struct SkeletonMarker;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EmitterMarker;
 
-//=============================================================================
 // Public Handle Type Aliases (Application Layer)
-//=============================================================================
 
 /// Handle to a mesh resource.
 pub type MeshHandle = Handle<MeshMarker>;
@@ -112,9 +106,7 @@ pub type SkeletonHandle = Handle<SkeletonMarker>;
 /// Handle to a particle emitter resource.
 pub type EmitterHandle = Handle<EmitterMarker>;
 
-//=============================================================================
 // Internal Marker Types (Render Layer)
-//=============================================================================
 
 /// Marker type for buffer handles.
 #[derive(Debug, Clone, Copy)]
@@ -136,9 +128,7 @@ pub struct PipelineLayoutMarker;
 #[derive(Debug, Clone, Copy)]
 pub struct DescriptorSetMarker;
 
-//=============================================================================
 // Internal Handle Type Aliases (Render Layer)
-//=============================================================================
 
 /// Handle to a buffer resource.
 pub type BufferHandle = Handle<BufferMarker>;
@@ -159,9 +149,7 @@ pub type PipelineLayoutHandle = Handle<PipelineLayoutMarker>;
 /// Handle to a descriptor set resource.
 pub type DescriptorSetHandle = Handle<DescriptorSetMarker>;
 
-//=============================================================================
 // Resource Storage
-//=============================================================================
 
 /// Central storage for GPU resources.
 ///
@@ -243,9 +231,7 @@ impl<T> Default for ResourceStorage<T> {
     }
 }
 
-//=============================================================================
 // Tests
-//=============================================================================
 
 #[cfg(test)]
 mod tests {

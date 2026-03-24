@@ -11,9 +11,7 @@ pub(crate) use ash::vk::AccessFlags2;
 /// Type alias for Vulkan pipeline stage flags 2.
 pub(crate) type PipelineStage2Flags = ash::vk::PipelineStageFlags2;
 
-//=============================================================================
 // Common Subresource Range Constants
-//=============================================================================
 
 /// Standard color subresource range for single-layer images.
 ///
@@ -101,9 +99,7 @@ define_vk_wrapper!(VkPipelineLayout, vk::PipelineLayout, default);
 define_vk_wrapper!(VkBuffer, vk::Buffer, default);
 define_vk_wrapper!(VkShaderModule, vk::ShaderModule);
 
-//=============================================================================
 // Crate-local wrapper types (not public API)
-//=============================================================================
 
 /// Wrapper for Vulkan image handle (crate-local).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -163,9 +159,7 @@ impl From<VkImageView> for vk::ImageView {
     }
 }
 
-//=============================================================================
 // Dynamic Rendering Types (Vulkan 1.3)
-//=============================================================================
 
 /// Wrapper for Vulkan 1.3 Viewport.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -249,9 +243,7 @@ impl From<Rect2D> for vk::Rect2D {
     }
 }
 
-//=============================================================================
 // Synchronization2 Wrapper Types (Vulkan 1.3)
-//=============================================================================
 
 /// Image memory barrier 2 for Vulkan 1.3 synchronization.
 ///

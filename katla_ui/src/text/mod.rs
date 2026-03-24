@@ -84,7 +84,6 @@ impl SubpixelBin {
     /// For example, `new(10.3)` returns `(10, SubpixelBin::One)`.
     #[inline]
     pub fn new(pos: f32) -> (i32, Self) {
-        // Handle negative positions correctly
         let floor = pos.floor() as i32;
         let frac = pos - pos.floor();
 
@@ -311,8 +310,6 @@ impl FontSystem {
     /// This is intentional - fonts are typically loaded once and live for the
     /// application lifetime, so the leak is acceptable.
     pub fn add_font(&mut self, bytes: &[u8]) -> Result<FontId, FontError> {
-        // FontRef requires 'static lifetime. We leak the bytes since fonts
-        // are expected to live for the entire application lifetime.
         let bytes: &'static [u8] = Box::leak(bytes.to_vec().into_boxed_slice());
 
         let font = FontRef::try_from_slice(bytes)
@@ -364,7 +361,6 @@ impl FontSystem {
         let size_key = FontSizeKey::from_f32(logical_size);
         let scale_key = ScaleFactorKey::from_f32(scale_factor);
 
-        // Check cache first (now includes subpixel bin in key)
         if let Some(cached) = self
             .glyph_cache
             .get(&(font_id, c, size_key, scale_key, subpixel_bin))
@@ -374,26 +370,19 @@ impl FontSystem {
 
         let font = self.fonts.get(&font_id)?;
 
-        // Calculate physical pixel size for rasterization
         let physical_size = logical_size * scale_factor;
 
-        // Rasterize the glyph using ab_glyph at physical resolution
         let scaled_font = font.as_scaled(PxScale::from(physical_size));
 
-        // Get glyph ID for character
         let glyph_id = font.glyph_id(c);
 
-        // Get font metrics for baseline alignment (physical pixels)
         let ascender = scaled_font.ascent();
 
-        // Calculate advance width (physical pixels)
         let advance = scaled_font.h_advance(glyph_id);
 
-        // Get subpixel offset for this bin (in physical pixels)
         let subpixel_offset = subpixel_bin.as_offset() * scale_factor;
 
-        // Get outline glyph (may be None for whitespace, control chars)
-        // Apply subpixel offset to position for crisp fractional rendering
+        // May be None for whitespace, control chars
         let glyph = Glyph {
             id: glyph_id,
             scale: PxScale::from(physical_size),
@@ -403,7 +392,6 @@ impl FontSystem {
         let outlined = match font.outline_glyph(glyph) {
             Some(o) => o,
             None => {
-                // No outline (whitespace, control chars) - still cache with advance width
                 let cached = CachedGlyph {
                     uv_rect: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)),
                     size: Vec2::new(0.0, 0.0),
@@ -418,31 +406,26 @@ impl FontSystem {
             }
         };
 
-        // Get pixel bounds (in physical pixels) - this changes with subpixel offset
         let bounds = outlined.px_bounds();
 
-        // IMPORTANT: Get CONSISTENT metrics from unshifted glyph.
-        // This ensures all subpixel bins have the same size, preventing
-        // visual "jumps" when switching between bins.
+        // Get CONSISTENT metrics from unshifted glyph to prevent
+        // visual "jumps" when switching between subpixel bins.
         let glyph_for_metrics = Glyph {
             id: glyph_id,
             scale: PxScale::from(physical_size),
-            position: ab_glyph::point(0.0, 0.0), // No subpixel offset for metrics
+            position: ab_glyph::point(0.0, 0.0),
         };
         let metrics_bounds = font
             .outline_glyph(glyph_for_metrics)
             .map(|g| g.px_bounds())
             .unwrap_or(bounds);
 
-        // Use consistent metrics for offset_x, top_offset, AND size
         let offset_x = metrics_bounds.min.x / scale_factor;
         let top_offset = -metrics_bounds.min.y / scale_factor;
 
-        // Consistent size from unshifted bounds (in physical pixels)
         let width = metrics_bounds.width().ceil() as usize;
         let height = metrics_bounds.height().ceil() as usize;
 
-        // Handle empty glyph bounds (shouldn't happen if outline exists, but be safe)
         if width == 0 || height == 0 {
             let cached = CachedGlyph {
                 uv_rect: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)),
@@ -457,9 +440,6 @@ impl FontSystem {
             return Some(cached);
         }
 
-        // Draw glyph to pixel buffer
-        // Note: The pixel data is from the shifted outline, but we use consistent
-        // size from unshifted bounds. Pixels outside the buffer are clipped.
         let mut pixels = vec![0u8; width * height];
         outlined.draw(|x, y, coverage| {
             let px = x as usize;
@@ -476,18 +456,14 @@ impl FontSystem {
             pixels,
             width,
             height,
-            // Consistent horizontal offset (NOT affected by subpixel positioning)
             offset_x,
-            // Consistent vertical offset (NOT affected by subpixel positioning)
             top_offset,
             ascender: ascender / scale_factor,
             advance: advance / scale_factor,
         };
 
-        // Place in atlas (uses physical pixels for crisp rendering)
         let cached = self.place_in_atlas(&rasterized, scale_factor)?;
 
-        // Cache the result (includes subpixel bin in key)
         self.glyph_cache
             .insert((font_id, c, size_key, scale_key, subpixel_bin), cached);
 
@@ -504,7 +480,6 @@ impl FontSystem {
         glyph: &RasterizedGlyph,
         scale_factor: f32,
     ) -> Option<CachedGlyph> {
-        // Handle empty glyphs (like spaces) - they don't need atlas space
         if glyph.width == 0 || glyph.height == 0 {
             return Some(CachedGlyph {
                 uv_rect: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)),
@@ -520,14 +495,12 @@ impl FontSystem {
         let glyph_w = glyph.width as u32 + padding * 2;
         let glyph_h = glyph.height as u32 + padding * 2;
 
-        // Check if we need a new row
         if self.atlas_cursor_x + glyph_w > self.atlas_width {
             self.atlas_cursor_x = 0;
             self.atlas_cursor_y += self.atlas_row_height;
             self.atlas_row_height = 0;
         }
 
-        // Check if we have space - grow atlas if needed
         if self.atlas_cursor_y + glyph_h > self.atlas_height && !self.grow_atlas() {
             log::warn!(
                 "Font atlas full at max size! Glyph '{}' ({}x{}) doesn't fit.",
@@ -541,7 +514,6 @@ impl FontSystem {
         let x = self.atlas_cursor_x + padding;
         let y = self.atlas_cursor_y + padding;
 
-        // Copy glyph pixels to atlas (as RGBA with white color)
         for (gy, row) in glyph.pixels.chunks(glyph.width).enumerate() {
             for (gx, &alpha) in row.iter().enumerate() {
                 let px = x as usize + gx;
@@ -549,7 +521,6 @@ impl FontSystem {
                 let idx = (py * self.atlas_width as usize + px) * 4;
 
                 if idx + 3 < self.atlas_data.len() {
-                    // White glyph with alpha
                     self.atlas_data[idx] = 255;
                     self.atlas_data[idx + 1] = 255;
                     self.atlas_data[idx + 2] = 255;
@@ -558,19 +529,16 @@ impl FontSystem {
             }
         }
 
-        // Advance cursor
         self.atlas_cursor_x += glyph_w;
         self.atlas_row_height = self.atlas_row_height.max(glyph_h);
         self.atlas_dirty = true;
 
-        // Calculate UV coordinates (normalized - scale-independent)
         // The padding around glyphs prevents bleeding from neighboring glyphs
         let uv_min_x = x as f32 / self.atlas_width as f32;
         let uv_min_y = y as f32 / self.atlas_height as f32;
         let uv_max_x = (x as usize + glyph.width) as f32 / self.atlas_width as f32;
         let uv_max_y = (y as usize + glyph.height) as f32 / self.atlas_height as f32;
 
-        // Convert physical pixel size to logical pixels for UI positioning
         let logical_width = glyph.width as f32 / scale_factor;
         let logical_height = glyph.height as f32 / scale_factor;
 
@@ -589,9 +557,7 @@ impl FontSystem {
     /// This pre-caches all 4 subpixel bins for each character for optimal
     /// rendering performance at any position.
     pub fn precache_ascii(&mut self, font_id: FontId, size: f32, scale_factor: f32) {
-        // ASCII printable range
         for c in ' '..='~' {
-            // Cache all 4 subpixel bins
             for bin in [
                 SubpixelBin::Zero,
                 SubpixelBin::One,
@@ -635,7 +601,6 @@ impl FontSystem {
         let physical_size = size * scale_factor;
         let scaled_font = font.as_scaled(PxScale::from(physical_size));
 
-        // Convert from physical to logical pixels
         Some((
             scaled_font.ascent() / scale_factor,
             scaled_font.descent() / scale_factor,
@@ -662,22 +627,15 @@ impl FontSystem {
             return 0.0;
         };
 
-        // Get unscaled kerning from the font's kern table
         let left_id = font.glyph_id(left);
         let right_id = font.glyph_id(right);
         let unscaled_kern = font.kern_unscaled(left_id, right_id);
 
-        // Scale to physical pixels, then convert to logical
         let physical_size = size * scale_factor;
         let scaled_kern = unscaled_kern * physical_size / font.units_per_em().unwrap_or(1.0);
         scaled_kern / scale_factor
     }
 
-    /// Measure text dimensions without rendering.
-    ///
-    /// Returns dimensions in logical pixels.
-    /// Note: This uses SubpixelBin::Zero for cache lookup since advance width
-    /// is the same regardless of subpixel position.
     /// Measure text dimensions without rendering.
     ///
     /// Returns dimensions in logical pixels.
@@ -694,11 +652,9 @@ impl FontSystem {
         let size_key = FontSizeKey::from_f32(size);
         let scale_key = ScaleFactorKey::from_f32(scale_factor);
 
-        // Use physical size for font scaling, then convert back to logical
         let physical_size = size * scale_factor;
         let scaled_font = font.as_scaled(PxScale::from(physical_size));
 
-        // Get line height (font height for consistent line spacing)
         let line_height = scaled_font.height() / scale_factor;
 
         let mut line_width = 0.0f32;
@@ -707,7 +663,6 @@ impl FontSystem {
         let mut prev_char: Option<char> = None;
 
         for c in text.chars() {
-            // Handle newlines
             if c == '\n' {
                 max_width = max_width.max(line_width);
                 line_count += 1;
@@ -716,12 +671,10 @@ impl FontSystem {
                 continue;
             }
 
-            // Apply kerning between previous and current character
             if let Some(prev) = prev_char {
                 line_width += self.get_kerning(font_id, prev, c, size, scale_factor);
             }
 
-            // Check cache first (metrics are stored in logical pixels)
             // Use SubpixelBin::Zero since advance width is independent of subpixel position
             if let Some(cached) =
                 self.glyph_cache
@@ -729,7 +682,6 @@ impl FontSystem {
             {
                 line_width += cached.advance;
             } else {
-                // Use font metrics directly (convert physical to logical)
                 let glyph_id = font.glyph_id(c);
                 line_width += scaled_font.h_advance(glyph_id) / scale_factor;
             }
@@ -737,10 +689,8 @@ impl FontSystem {
             prev_char = Some(c);
         }
 
-        // Account for the last line
         max_width = max_width.max(line_width);
 
-        // Total height is line count * line height
         let total_height = line_count as f32 * line_height;
 
         Vec2::new(max_width, total_height)
@@ -794,11 +744,9 @@ impl FontSystem {
     /// Returns true if the atlas was grown, false if already at max size.
     fn grow_atlas(&mut self) -> bool {
         let (new_width, new_height) = if self.atlas_width < Self::MAX_ATLAS_WIDTH {
-            // Grow width first (double until max)
             let new_width = (self.atlas_width * 2).min(Self::MAX_ATLAS_WIDTH);
             (new_width, self.atlas_height)
         } else if self.atlas_height < Self::MAX_ATLAS_HEIGHT {
-            // Width at max, grow height
             let new_height = (self.atlas_height * 2).min(Self::MAX_ATLAS_HEIGHT);
             (self.atlas_width, new_height)
         } else {
@@ -818,7 +766,6 @@ impl FontSystem {
             new_height
         );
 
-        // Create new larger buffer (transparent white background)
         let pixel_count = (new_width * new_height) as usize;
         let mut new_data = vec![255u8; pixel_count * 4];
         for i in 0..pixel_count {
@@ -832,10 +779,8 @@ impl FontSystem {
         self.atlas_resized = true;
 
         // Invalidate glyph cache since UV coordinates changed
-        // We need to re-rasterize everything with correct UVs
         self.glyph_cache.clear();
 
-        // Reset cursor to start
         self.atlas_cursor_x = 0;
         self.atlas_cursor_y = 0;
         self.atlas_row_height = 0;
