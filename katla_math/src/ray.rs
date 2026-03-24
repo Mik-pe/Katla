@@ -205,7 +205,7 @@ impl Ray {
 
     /// Transform the ray by a matrix
     pub fn transform(&self, matrix: &Mat4) -> Ray {
-        let origin = matrix.clone() * self.origin;
+        let origin = *matrix * self.origin;
         let direction: Vec3 = matrix.to_mat3() * self.direction;
         Ray {
             origin,

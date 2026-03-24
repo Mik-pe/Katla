@@ -130,10 +130,10 @@ impl Skeleton {
         // Process joints in order - since parents come before children in GLTF,
         // we can compute world transforms in a single pass
         for i in 0..self.world_transforms.len() {
-            let local = self.local_transforms[i].clone();
+            let local = self.local_transforms[i];
             if let Some(Some(parent_idx)) = self.parent_indices.get(i) {
                 if *parent_idx < self.world_transforms.len() {
-                    self.world_transforms[i] = self.world_transforms[*parent_idx].clone() * local;
+                    self.world_transforms[i] = self.world_transforms[*parent_idx] * local;
                 } else {
                     self.world_transforms[i] = local;
                 }

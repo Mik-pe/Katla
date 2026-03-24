@@ -59,7 +59,7 @@ fn test_dot_and_cross() {
 fn test_lerp() {
     let a = Vec3::new(0.0, 0.0, 0.0);
     let b = Vec3::new(10.0, -5.0, 2.0);
-    let mid = Vec3::lerp(a, b, 0.5);
+    let mid = a.lerp(b, 0.5);
     assert_eq!(mid, Vec3::new(5.0, -2.5, 1.0));
 }
 
@@ -121,11 +121,11 @@ fn test_lerp_edge_cases() {
     let b = Vec3::new(10.0, -5.0, 2.0);
 
     // Test lerp at boundaries
-    assert_eq!(Vec3::lerp(a, b, 0.0), a);
-    assert_eq!(Vec3::lerp(a, b, 1.0), b);
+    assert_eq!(a.lerp(b, 0.0), a);
+    assert_eq!(a.lerp(b, 1.0), b);
 
     // Test lerp with negative factor (should extrapolate)
-    let extrapolated = Vec3::lerp(a, b, -0.5);
+    let extrapolated = a.lerp(b, -0.5);
     assert_eq!(extrapolated, Vec3::new(-5.0, 2.5, -1.0));
 }
 
@@ -227,8 +227,8 @@ fn test_lerp_is_linear() {
     let a = Vec3::new(0.0, 0.0, 0.0);
     let b = Vec3::new(10.0, 20.0, 30.0);
 
-    let quarter = Vec3::lerp(a, b, 0.25);
-    let half = Vec3::lerp(a, b, 0.5);
+    let quarter = a.lerp(b, 0.25);
+    let half = a.lerp(b, 0.5);
 
     assert_relative_eq!(half.x(), quarter.x() * 2.0);
     assert_relative_eq!(half.y(), quarter.y() * 2.0);
@@ -350,14 +350,14 @@ fn test_project_plus_reject_equals_original() {
 fn test_distance() {
     let a = Vec3::new(1.0, 0.0, 0.0);
     let b = Vec3::new(4.0, 0.0, 0.0);
-    assert!((a.distance(&b) - 3.0).abs() < 1e-5);
+    assert!((a.distance(b) - 3.0).abs() < 1e-5);
 }
 
 #[test]
 fn test_distance_squared() {
     let a = Vec3::new(1.0, 0.0, 0.0);
     let b = Vec3::new(4.0, 0.0, 0.0);
-    assert!((a.distance_squared(&b) - 9.0).abs() < 1e-5);
+    assert!((a.distance_squared(b) - 9.0).abs() < 1e-5);
 }
 
 #[test]
@@ -365,8 +365,8 @@ fn test_distance_squared_less_expensive() {
     let a = Vec3::new(1.0, 2.0, 3.0);
     let b = Vec3::new(4.0, 6.0, 9.0);
 
-    let dist_sq = a.distance_squared(&b);
-    let dist = a.distance(&b);
+    let dist_sq = a.distance_squared(b);
+    let dist = a.distance(b);
 
     assert!((dist_sq - dist * dist).abs() < 1e-5);
 }
@@ -375,7 +375,7 @@ fn test_distance_squared_less_expensive() {
 fn test_angle_between_parallel() {
     let a = Vec3::new(1.0, 0.0, 0.0);
     let b = Vec3::new(2.0, 0.0, 0.0);
-    let angle = a.angle_between(&b);
+    let angle = a.angle_between(b);
 
     assert!(angle.abs() < 1e-5);
 }
@@ -384,7 +384,7 @@ fn test_angle_between_parallel() {
 fn test_angle_between_perpendicular() {
     let a = Vec3::new(1.0, 0.0, 0.0);
     let b = Vec3::new(0.0, 1.0, 0.0);
-    let angle = a.angle_between(&b);
+    let angle = a.angle_between(b);
 
     assert!((angle - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
 }
@@ -393,7 +393,7 @@ fn test_angle_between_perpendicular() {
 fn test_angle_between_opposite() {
     let a = Vec3::new(1.0, 0.0, 0.0);
     let b = Vec3::new(-1.0, 0.0, 0.0);
-    let angle = a.angle_between(&b);
+    let angle = a.angle_between(b);
 
     assert!((angle - std::f32::consts::PI).abs() < 1e-5);
 }
@@ -481,8 +481,8 @@ fn test_triangle_inequality() {
     let c = Vec3::new(0.0, 0.0, 0.0);
 
     // Distance from a to b via c should be >= direct distance
-    let direct = a.distance(&b);
-    let via_c = a.distance(&c) + c.distance(&b);
+    let direct = a.distance(b);
+    let via_c = a.distance(c) + c.distance(b);
 
     assert!(via_c >= direct);
 }

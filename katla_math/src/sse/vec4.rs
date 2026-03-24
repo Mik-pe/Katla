@@ -132,7 +132,7 @@ impl Vec4 {
     }
 
     #[inline]
-    pub fn dot(&self, other: &Vec4) -> f32 {
+    pub fn dot(self, other: Vec4) -> f32 {
         // Simplified implementation using horizontal add
         unsafe {
             let mul = _mm_mul_ps(self.0, other.0);
@@ -144,7 +144,7 @@ impl Vec4 {
     }
 
     #[inline]
-    pub fn lerp(&self, other: &Vec4, t: f32) -> Vec4 {
+    pub fn lerp(&self, other: Vec4, t: f32) -> Vec4 {
         unsafe {
             let t_vec = _mm_set_ps1(t);
             let diff = _mm_sub_ps(other.0, self.0);

@@ -164,11 +164,7 @@ impl Quat {
     }
 
     pub fn inverse(&self) -> Self {
-        unsafe {
-            // Negate x, y, z but keep w positive
-            let mask = _mm_set_ps(0.0, -0.0, -0.0, -0.0); // w, z, y, x
-            Quat(_mm_xor_ps(self.0, mask))
-        }
+        self.conjugate()
     }
 
     pub fn conjugate(&self) -> Self {

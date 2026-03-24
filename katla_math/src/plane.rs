@@ -129,7 +129,7 @@ impl Plane {
     pub fn transform(&self, matrix: &Mat4) -> Plane {
         // Transform a point on the plane
         let point_on_plane = self.normal * self.distance;
-        let transformed_point = matrix.clone() * point_on_plane;
+        let transformed_point = *matrix * point_on_plane;
 
         // Transform the normal (using inverse transpose for correct transformation)
         let normal = self.normal; // This will be transformed correctly below

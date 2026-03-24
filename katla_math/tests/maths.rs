@@ -38,7 +38,7 @@ fn test_cross() {
 fn test_lerp() {
     let a = Vec3::new(0.0, 1.0, 0.0);
     let b = Vec3::new(1.0, 1.0, 0.0);
-    let c = Vec3::lerp(a, b, 1.0);
+    let c = a.lerp(b, 1.0);
     assert_abs_diff_eq!(c[0], b[0], epsilon = 0.0001);
     assert_abs_diff_eq!(c[1], b[1], epsilon = 0.0001);
     assert_abs_diff_eq!(c[2], b[2], epsilon = 0.0001);

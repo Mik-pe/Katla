@@ -140,12 +140,7 @@ impl Quat {
     }
 
     pub fn inverse(&self) -> Self {
-        Self {
-            x: -self.x,
-            y: -self.y,
-            z: -self.z,
-            w: self.w,
-        }
+        self.conjugate()
     }
 
     pub fn conjugate(&self) -> Self {

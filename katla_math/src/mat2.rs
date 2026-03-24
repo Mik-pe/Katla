@@ -3,7 +3,7 @@ use core::{
     ops::{Add, Div, Index, Mul, Neg, Sub},
 };
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Mat2(pub [Vec2; 2]);
 
 // Import Vec2 for use in Mat2
@@ -213,14 +213,5 @@ impl Neg for Mat2 {
 impl Default for Mat2 {
     fn default() -> Self {
         Self::identity()
-    }
-}
-
-impl PartialEq for Mat2 {
-    fn eq(&self, other: &Self) -> bool {
-        self[0][0] == other[0][0]
-            && self[0][1] == other[0][1]
-            && self[1][0] == other[1][0]
-            && self[1][1] == other[1][1]
     }
 }

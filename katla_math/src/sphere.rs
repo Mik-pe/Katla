@@ -2,7 +2,7 @@ use crate::Vec3;
 
 const KINDA_SMALL_NUMBER: f32 = 0.00001f32;
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Sphere {
     pub center: Vec3,
     pub radius: f32,

@@ -54,7 +54,7 @@ impl Application {
             [0.0, 0.0, 0.0, 1.0]
         };
 
-        let inv_view_proj = (proj_mat.clone() * view_mat.clone()).inverse();
+        let inv_view_proj = (proj_mat * view_mat).inverse();
 
         // Wait for the current frame's previous GPU submission to complete
         // before writing to per-frame storage buffers.

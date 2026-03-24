@@ -7,7 +7,6 @@ use core::{
     f32,
     ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
 };
-use std::cmp::Ordering;
 
 /// 2-dimensional vector - scalar implementation
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -65,12 +64,12 @@ impl Vec2 {
     }
 
     #[inline]
-    pub fn dot(&self, other: &Vec2) -> f32 {
+    pub fn dot(self, other: Vec2) -> f32 {
         self.0[0] * other.0[0] + self.0[1] * other.0[1]
     }
 
     #[inline]
-    pub fn lerp(&self, other: &Vec2, t: f32) -> Vec2 {
+    pub fn lerp(&self, other: Vec2, t: f32) -> Vec2 {
         Vec2::new(
             self.0[0] + (other.0[0] - self.0[0]) * t,
             self.0[1] + (other.0[1] - self.0[1]) * t,
@@ -78,7 +77,7 @@ impl Vec2 {
     }
 
     #[inline]
-    pub fn cross(&self, other: &Vec2) -> f32 {
+    pub fn cross(self, other: Vec2) -> f32 {
         self.0[0] * other.0[1] - self.0[1] * other.0[0]
     }
 
@@ -98,13 +97,13 @@ impl Vec2 {
     }
 
     #[inline]
-    pub fn distance(&self, other: &Vec2) -> f32 {
-        (*self - *other).length()
+    pub fn distance(self, other: Vec2) -> f32 {
+        (self - other).length()
     }
 
     #[inline]
-    pub fn distance_squared(&self, other: &Vec2) -> f32 {
-        (*self - *other).length_squared()
+    pub fn distance_squared(self, other: Vec2) -> f32 {
+        (self - other).length_squared()
     }
 
     #[inline]
@@ -220,12 +219,5 @@ impl DivAssign<f32> for Vec2 {
     fn div_assign(&mut self, scalar: f32) {
         self.0[0] /= scalar;
         self.0[1] /= scalar;
-    }
-}
-
-impl PartialOrd for Vec2 {
-    #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.length().partial_cmp(&other.length())
     }
 }

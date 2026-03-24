@@ -54,13 +54,6 @@ fn test_ne() {
 }
 
 #[test]
-fn test_ord() {
-    let a = Vec2::new(1.0, 2.0);
-    let b = Vec2::new(2.0, 3.0);
-    assert!(a < b);
-}
-
-#[test]
 fn test_length_squared() {
     let v = Vec2::new(3.0, 4.0);
     assert_eq!(v.length_squared(), 25.0);
@@ -100,21 +93,21 @@ fn test_is_zero() {
 fn test_dot() {
     let v1 = Vec2::new(1.0, 2.0);
     let v2 = Vec2::new(3.0, 4.0);
-    assert_eq!(v1.dot(&v2), 11.0); // 1*3 + 2*4
+    assert_eq!(v1.dot(v2), 11.0); // 1*3 + 2*4
 }
 
 #[test]
 fn test_dot_commutative() {
     let v1 = Vec2::new(1.0, 2.0);
     let v2 = Vec2::new(3.0, 4.0);
-    assert_eq!(v1.dot(&v2), v2.dot(&v1));
+    assert_eq!(v1.dot(v2), v2.dot(v1));
 }
 
 #[test]
 fn test_lerp() {
     let a = Vec2::new(0.0, 0.0);
     let b = Vec2::new(10.0, 10.0);
-    let result = a.lerp(&b, 0.5);
+    let result = a.lerp(b, 0.5);
     assert_eq!(result, Vec2::new(5.0, 5.0));
 }
 
@@ -123,8 +116,8 @@ fn test_lerp_boundaries() {
     let a = Vec2::new(0.0, 0.0);
     let b = Vec2::new(10.0, 10.0);
 
-    assert_eq!(a.lerp(&b, 0.0), a);
-    assert_eq!(a.lerp(&b, 1.0), b);
+    assert_eq!(a.lerp(b, 0.0), a);
+    assert_eq!(a.lerp(b, 1.0), b);
 }
 
 #[test]
@@ -132,7 +125,7 @@ fn test_cross() {
     // 2D cross product gives the z-component of 3D cross product
     let i = Vec2::new(1.0, 0.0); // X-axis
     let j = Vec2::new(0.0, 1.0); // Y-axis
-    let cross = i.cross(&j);
+    let cross = i.cross(j);
 
     // In 3D: (1,0,0) × (0,1,0) = (0,0,1), so z = 1
     assert!((cross - 1.0).abs() < 1e-5);
@@ -142,7 +135,7 @@ fn test_cross() {
 fn test_cross_anti_commutative() {
     let a = Vec2::new(1.0, 2.0);
     let b = Vec2::new(3.0, 4.0);
-    assert!((a.cross(&b) + b.cross(&a)).abs() < 1e-5);
+    assert!((a.cross(b) + b.cross(a)).abs() < 1e-5);
 }
 
 #[test]
@@ -155,7 +148,7 @@ fn test_perpendicular() {
     assert!((perp.y() - 1.0).abs() < 1e-5);
 
     // Should be perpendicular (dot product = 0)
-    assert!((v.dot(&perp)).abs() < 1e-5);
+    assert!((v.dot(perp)).abs() < 1e-5);
 }
 
 #[test]
@@ -209,22 +202,22 @@ fn test_from_angle_round_trip() {
 fn test_distance() {
     let a = Vec2::new(1.0, 0.0);
     let b = Vec2::new(4.0, 0.0);
-    assert!((a.distance(&b) - 3.0).abs() < 1e-5);
+    assert!((a.distance(b) - 3.0).abs() < 1e-5);
 }
 
 #[test]
 fn test_distance_squared() {
     let a = Vec2::new(1.0, 0.0);
     let b = Vec2::new(4.0, 0.0);
-    assert!((a.distance_squared(&b) - 9.0).abs() < 1e-5);
+    assert!((a.distance_squared(b) - 9.0).abs() < 1e-5);
 }
 
 #[test]
 fn test_distance_vs_distance_squared() {
     let a = Vec2::new(1.0, 2.0);
     let b = Vec2::new(4.0, 5.0);
-    let dist = a.distance(&b);
-    let dist_sq = a.distance_squared(&b);
+    let dist = a.distance(b);
+    let dist_sq = a.distance_squared(b);
 
     assert!((dist_sq - dist * dist).abs() < 1e-5);
 }
