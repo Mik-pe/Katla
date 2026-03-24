@@ -1,0 +1,241 @@
+use std::rc::Rc;
+
+use ash::{Device, vk};
+use gpu_allocator::{MemoryLocation, vulkan::Allocation};
+
+use crate::{
+    barrier::ImageBarrier,
+    sync::{VkImage, VkImageView},
+};
+
+use super::*;
+
+pub struct RenderTexture {
+    pub(crate) image_view: VkImageView,
+    pub(crate) image: VkImage,
+    pub image_memory: Option<Allocation>,
+    pub context: Rc<VulkanContext>,
+}
+
+impl RenderTexture {
+    fn destroy(&mut self) {
+        unsafe {
+            self.context
+                .device
+                .destroy_image_view(self.image_view.vk(), None);
+        }
+        let image_memory = self.image_memory.take();
+
+        self.context.free_image(self.image, image_memory.unwrap());
+    }
+}
+
+impl Drop for RenderTexture {
+    fn drop(&mut self) {
+        self.destroy();
+    }
+}
+
+impl VulkanFrameCtx {
+    pub fn create_image_view(
+        device: &Device,
+        image: vk::Image,
+        format: vk::Format,
+        aspect_mask: vk::ImageAspectFlags,
+    ) -> vk::ImageView {
+        let subresource_range = vk::ImageSubresourceRange::default()
+            .aspect_mask(aspect_mask)
+            .base_mip_level(0)
+            .level_count(1)
+            .base_array_layer(0)
+            .layer_count(1);
+        let create_info = vk::ImageViewCreateInfo::default()
+            .image(image)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(format)
+            .components(vk::ComponentMapping {
+                r: vk::ComponentSwizzle::IDENTITY,
+                g: vk::ComponentSwizzle::IDENTITY,
+                b: vk::ComponentSwizzle::IDENTITY,
+                a: vk::ComponentSwizzle::IDENTITY,
+            })
+            .subresource_range(subresource_range);
+        unsafe { device.create_image_view(&create_info, None) }.unwrap()
+    }
+
+    pub fn init(context: &Rc<VulkanContext>) -> Self {
+        let swapchain_loader = context
+            .swapchain_loader
+            .as_ref()
+            .expect("Swapchain loader required for VulkanFrameCtx::init");
+        let surface_loader = context
+            .surface_loader
+            .as_ref()
+            .expect("Surface loader required for VulkanFrameCtx::init");
+        let surface = context
+            .surface
+            .expect("Surface required for VulkanFrameCtx::init");
+
+        let swapchain = super::super::Swapchain::create_swapchain(
+            swapchain_loader.clone(),
+            surface_loader,
+            context.physical_device,
+            surface,
+            None,
+        );
+
+        let swapchain_images = swapchain.get_swapchain_images();
+
+        let swapchain_image_views: Vec<VkImageView> = swapchain_images
+            .iter()
+            .map(|swapchain_image| {
+                VkImageView::new(Self::create_image_view(
+                    &context.device,
+                    *swapchain_image,
+                    swapchain.format.format,
+                    vk::ImageAspectFlags::COLOR,
+                ))
+            })
+            .collect();
+        let swapchain_images_wrapped: Vec<VkImage> = swapchain_images
+            .iter()
+            .map(|img| VkImage::new(*img))
+            .collect();
+
+        const FRAMES_IN_FLIGHT: usize = 2;
+        let depth_render_textures: Vec<RenderTexture> = (0..FRAMES_IN_FLIGHT)
+            .map(|_| create_depth_render_texture(context.clone(), swapchain.get_extent()))
+            .collect();
+
+        let command_buffers = context
+            .gfx_cmdpool
+            .create_command_buffers(swapchain_image_views.len() as _);
+
+        Self {
+            context: context.clone(),
+            swapchain,
+            swapchain_image_views,
+            swapchain_images: swapchain_images_wrapped,
+            depth_render_textures,
+            command_buffers,
+        }
+    }
+
+    pub fn recreate_swapchain(&mut self) {
+        let swapchain_loader = self
+            .context
+            .swapchain_loader
+            .as_ref()
+            .expect("Swapchain loader required for recreate_swapchain");
+        let surface_loader = self
+            .context
+            .surface_loader
+            .as_ref()
+            .expect("Surface loader required for recreate_swapchain");
+        let surface = self
+            .context
+            .surface
+            .expect("Surface required for recreate_swapchain");
+
+        let swapchain = super::super::Swapchain::create_swapchain(
+            swapchain_loader.clone(),
+            surface_loader,
+            self.context.physical_device,
+            surface,
+            Some(self.swapchain.swapchain),
+        );
+        self.destroy();
+        self.swapchain = swapchain;
+
+        self.swapchain_images = self
+            .swapchain
+            .get_swapchain_images()
+            .iter()
+            .map(|img| VkImage::new(*img))
+            .collect();
+
+        self.swapchain_image_views = self
+            .swapchain
+            .get_swapchain_images()
+            .iter()
+            .map(|swapchain_image| {
+                VkImageView::new(Self::create_image_view(
+                    &self.context.device,
+                    *swapchain_image,
+                    self.swapchain.format.format,
+                    vk::ImageAspectFlags::COLOR,
+                ))
+            })
+            .collect();
+        const FRAMES_IN_FLIGHT: usize = 2;
+        self.depth_render_textures = (0..FRAMES_IN_FLIGHT)
+            .map(|_| create_depth_render_texture(self.context.clone(), self.swapchain.get_extent()))
+            .collect();
+    }
+
+    pub fn destroy(&mut self) {
+        unsafe {
+            for image_view in &self.swapchain_image_views {
+                self.context
+                    .device
+                    .destroy_image_view(image_view.vk(), None);
+            }
+            self.swapchain.destroy();
+        }
+    }
+}
+
+fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D) -> RenderTexture {
+    let depth_format = context.find_depth_format();
+    let extent_3d = vk::Extent3D {
+        width: extent.width,
+        height: extent.height,
+        depth: 1,
+    };
+    let create_info = vk::ImageCreateInfo::default()
+        .image_type(vk::ImageType::TYPE_2D)
+        .mip_levels(1)
+        .array_layers(1)
+        .format(depth_format)
+        .extent(extent_3d)
+        .tiling(vk::ImageTiling::OPTIMAL)
+        .samples(vk::SampleCountFlags::TYPE_1)
+        .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED);
+
+    let (depth_image, image_memory) = context.create_image(create_info, MemoryLocation::GpuOnly);
+
+    let image_view = VulkanFrameCtx::create_image_view(
+        &context.device,
+        depth_image,
+        depth_format,
+        vk::ImageAspectFlags::DEPTH,
+    );
+
+    let cmd_buffer = context.begin_single_time_commands();
+    let cmd = cmd_buffer.vk_command_buffer();
+
+    let depth_range = vk::ImageSubresourceRange {
+        aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
+        base_mip_level: 0,
+        level_count: 1,
+        base_array_layer: 0,
+        layer_count: 1,
+    };
+
+    ImageBarrier::transition_from_undefined_with_range(
+        &cmd,
+        &context.device,
+        depth_image,
+        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        depth_range,
+    );
+
+    context.end_single_time_commands(cmd_buffer);
+
+    RenderTexture {
+        image_view: VkImageView::new(image_view),
+        image: VkImage::new(depth_image),
+        image_memory: Some(image_memory),
+        context,
+    }
+}
