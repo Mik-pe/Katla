@@ -12,7 +12,7 @@ pub mod types;
 pub mod validation;
 
 pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters, ParticleData};
-pub use debug_readback::{ParticleDebugData, ParticleDebugReadback};
+pub use debug_readback::{IndirectDrawCommandData, ParticleDebugData, ParticleDebugReadback};
 pub use presets::EmitterPreset;
 pub use stats::ParticleStats;
 pub use types::{Align16Vec4, EmitterConfig, EmitterHandle, EmitterShape};
