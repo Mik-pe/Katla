@@ -20,11 +20,3 @@ pub enum Action {
 impl Action {
     pub const COUNT: usize = 15;
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum ActionState {
-    Pressed,
-    Released,
-    Held,
-}

@@ -122,23 +122,11 @@ pub trait AnyComponentStorage: Any {
     /// Removes a component for the given entity.
     fn remove_entity(&mut self, entity_id: EntityId);
 
-    /// Returns true if the entity has a component in this storage.
-    fn contains_entity(&self, entity_id: EntityId) -> bool;
-
-    /// Returns the number of components stored.
-    fn len(&self) -> usize;
-
-    /// Returns true if no components are stored.
-    fn is_empty(&self) -> bool;
-
     /// Clears all components.
     fn clear(&mut self);
 
     /// Removes all components for entities not in the given set.
     fn retain_entities(&mut self, valid_entities: &std::collections::HashSet<EntityId>);
-
-    /// Returns an iterator over entity IDs that have this component.
-    fn entity_ids(&self) -> Box<dyn Iterator<Item = EntityId> + '_>;
 
     /// Returns a reference to self as `Any` for downcasting.
     fn as_any(&self) -> &dyn Any;
@@ -152,28 +140,12 @@ impl<T: Component> AnyComponentStorage for ComponentStorage<T> {
         self.remove(entity_id);
     }
 
-    fn contains_entity(&self, entity_id: EntityId) -> bool {
-        self.contains(entity_id)
-    }
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.is_empty()
-    }
-
     fn clear(&mut self) {
         self.clear();
     }
 
     fn retain_entities(&mut self, valid_entities: &std::collections::HashSet<EntityId>) {
         self.retain_entities(valid_entities);
-    }
-
-    fn entity_ids(&self) -> Box<dyn Iterator<Item = EntityId> + '_> {
-        Box::new(self.entity_ids())
     }
 
     fn as_any(&self) -> &dyn Any {

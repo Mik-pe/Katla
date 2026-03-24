@@ -4,15 +4,11 @@
 //! the Component trait for various struct types.
 
 use katla_ecs::Component;
-use std::any::Any;
+use std::any::{Any, TypeId};
 
 // ============================================================================
 // Test Components - Basic struct types
 // ============================================================================
-
-// Note: Components with lifetime parameters require special handling
-// since Component extends Any which requires 'static.
-// We'll test these separately with static lifetime bounds.
 
 #[derive(Component)]
 struct SimpleComponent {
@@ -46,6 +42,7 @@ struct NestedComponent {
 }
 
 #[derive(Component)]
+#[allow(dead_code)]
 struct WithBoundsComponent<T: Clone + Send + Sync + 'static> {
     item: T,
 }
@@ -61,32 +58,10 @@ fn test_simple_component_implements_component() {
 }
 
 #[test]
-fn test_simple_component_as_any() {
+fn test_simple_component_satisfies_any_bound() {
+    fn requires_any(_: &dyn Any) {}
     let comp = SimpleComponent { value: 100 };
-
-    // Test as_any returns reference that can be downcast
-    let any: &dyn Any = comp.as_any();
-    assert!(any.is::<SimpleComponent>());
-
-    let downcast = any.downcast_ref::<SimpleComponent>();
-    assert!(downcast.is_some());
-    assert_eq!(downcast.unwrap().value, 100);
-}
-
-#[test]
-fn test_simple_component_as_any_mut() {
-    let mut comp = SimpleComponent { value: 50 };
-
-    // Test as_any_mut returns mutable reference that can be downcast
-    let any_mut: &mut dyn Any = comp.as_any_mut();
-    assert!(any_mut.is::<SimpleComponent>());
-
-    let downcast = any_mut.downcast_mut::<SimpleComponent>();
-    assert!(downcast.is_some());
-
-    // Modify through downcast
-    downcast.unwrap().value = 999;
-    assert_eq!(comp.value, 999);
+    requires_any(&comp);
 }
 
 #[test]
@@ -97,70 +72,45 @@ fn test_multi_field_component() {
         c: vec![1, 2, 3],
         d: true,
     };
-
-    let any = comp.as_any();
-    assert!(any.is::<MultiFieldComponent>());
-
-    let downcast = any.downcast_ref::<MultiFieldComponent>();
-    assert!(downcast.is_some());
-    let comp_ref = downcast.unwrap();
-
-    assert_eq!(comp_ref.a, 1.5);
-    assert_eq!(comp_ref.b, "test");
-    assert_eq!(comp_ref.c, vec![1, 2, 3]);
-    assert!(comp_ref.d);
+    assert_eq!(comp.a, 1.5);
+    assert_eq!(comp.b, "test");
+    assert_eq!(comp.c, vec![1, 2, 3]);
+    assert!(comp.d);
 }
 
 #[test]
 fn test_generic_component() {
-    let comp_int = GenericComponent { data: 42 };
-    assert!(comp_int.as_any().is::<GenericComponent<i32>>());
+    let _comp_int = GenericComponent { data: 42i32 };
 
-    let comp_string = GenericComponent {
+    let _comp_string = GenericComponent {
         data: "hello".to_string(),
     };
-    assert!(comp_string.as_any().is::<GenericComponent<String>>());
 }
 
 #[test]
 fn test_tuple_struct_component() {
     let comp = TupleStructComponent(123, 456.7, "test".to_string());
-    assert!(comp.as_any().is::<TupleStructComponent>());
-
-    let any = comp.as_any();
-    let downcast = any.downcast_ref::<TupleStructComponent>().unwrap();
-    assert_eq!(downcast.0, 123);
-    assert_eq!(downcast.1, 456.7);
-    assert_eq!(downcast.2, "test");
+    assert_eq!(comp.0, 123);
+    assert_eq!(comp.1, 456.7);
+    assert_eq!(comp.2, "test");
 }
 
 #[test]
 fn test_unit_component() {
-    let comp = UnitComponent;
-    assert!(comp.as_any().is::<UnitComponent>());
+    let _comp = UnitComponent;
 }
 
 #[test]
 fn test_nested_component() {
     let inner = SimpleComponent { value: 10 };
     let comp = NestedComponent { inner, count: 5 };
-
-    assert!(comp.as_any().is::<NestedComponent>());
-
-    let any = comp.as_any();
-    let downcast = any.downcast_ref::<NestedComponent>().unwrap();
-    assert_eq!(downcast.inner.value, 10);
-    assert_eq!(downcast.count, 5);
+    assert_eq!(comp.inner.value, 10);
+    assert_eq!(comp.count, 5);
 }
 
 #[test]
 fn test_with_bounds_component() {
-    let comp = WithBoundsComponent { item: 42 };
-    assert!(comp.as_any().is::<WithBoundsComponent<i32>>());
-
-    let any = comp.as_any();
-    let downcast = any.downcast_ref::<WithBoundsComponent<i32>>().unwrap();
-    assert_eq!(downcast.item, 42);
+    let _comp = WithBoundsComponent { item: 42 };
 }
 
 // ============================================================================
@@ -172,8 +122,7 @@ struct ZeroSizedComponent;
 
 #[test]
 fn test_zero_sized_component() {
-    let comp = ZeroSizedComponent;
-    assert!(comp.as_any().is::<ZeroSizedComponent>());
+    let _comp = ZeroSizedComponent;
     assert!(std::mem::size_of::<ZeroSizedComponent>() == 0);
 }
 
@@ -185,8 +134,7 @@ struct LargeArrayComponent {
 
 #[test]
 fn test_large_array_component() {
-    let comp = LargeArrayComponent { data: [0u8; 1024] };
-    assert!(comp.as_any().is::<LargeArrayComponent>());
+    let _comp = LargeArrayComponent { data: [0u8; 1024] };
 }
 
 #[derive(Component)]
@@ -200,10 +148,10 @@ fn test_option_field_component() {
     let comp_with_some = OptionComponent {
         optional: Some("value".to_string()),
     };
-    assert!(comp_with_some.as_any().is::<OptionComponent>());
+    assert!(comp_with_some.optional.is_some());
 
     let comp_with_none = OptionComponent { optional: None };
-    assert!(comp_with_none.as_any().is::<OptionComponent>());
+    assert!(comp_with_none.optional.is_none());
 }
 
 #[derive(Component)]
@@ -216,11 +164,7 @@ fn test_vec_field_component_modification() {
     let mut comp = VecFieldComponent {
         items: vec![1, 2, 3],
     };
-
-    let any_mut = comp.as_any_mut();
-    let downcast = any_mut.downcast_mut::<VecFieldComponent>().unwrap();
-    downcast.items.push(4);
-
+    comp.items.push(4);
     assert_eq!(comp.items, vec![1, 2, 3, 4]);
 }
 
@@ -252,26 +196,21 @@ struct NameComponent {
 
 #[test]
 fn test_multiple_components_coexist() {
-    let pos = PositionComponent {
+    let _pos = PositionComponent {
         x: 1.0,
         y: 2.0,
         z: 3.0,
     };
-    let vel = VelocityComponent {
+    let _vel = VelocityComponent {
         dx: 0.5,
         dy: 0.5,
         dz: 0.5,
     };
-    let name = NameComponent {
+    let _name = NameComponent {
         name: "Entity1".to_string(),
     };
 
-    assert!(pos.as_any().is::<PositionComponent>());
-    assert!(vel.as_any().is::<VelocityComponent>());
-    assert!(name.as_any().is::<NameComponent>());
-
     // Verify type IDs are distinct
-    use std::any::TypeId;
     assert_ne!(
         TypeId::of::<PositionComponent>(),
         TypeId::of::<VelocityComponent>()
@@ -298,16 +237,13 @@ struct ConstGenericComponent<const N: usize> {
 
 #[test]
 fn test_const_generic_component() {
-    let comp3 = ConstGenericComponent::<3> { data: [1, 2, 3] };
-    assert!(comp3.as_any().is::<ConstGenericComponent<3>>());
+    let _comp3 = ConstGenericComponent::<3> { data: [1, 2, 3] };
 
-    let comp5 = ConstGenericComponent::<5> {
+    let _comp5 = ConstGenericComponent::<5> {
         data: [1, 2, 3, 4, 5],
     };
-    assert!(comp5.as_any().is::<ConstGenericComponent<5>>());
 
     // Different const generics create different types
-    use std::any::TypeId;
     assert_ne!(
         TypeId::of::<ConstGenericComponent<3>>(),
         TypeId::of::<ConstGenericComponent<5>>()
