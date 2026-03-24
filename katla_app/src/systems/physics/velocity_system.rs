@@ -34,7 +34,7 @@ mod tests {
         );
         world.add_component(
             entity_id,
-            TransformComponent::new(Transform::from_position(Vec3::new(0.0, 0.0, 0.0))),
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0))),
         );
 
         world.update(1.0);
@@ -61,7 +61,7 @@ mod tests {
         );
         world.add_component(
             entity1,
-            TransformComponent::new(Transform::from_position(Vec3::new(0.0, 0.0, 0.0))),
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0))),
         );
 
         world.add_component(
@@ -70,7 +70,7 @@ mod tests {
         );
         world.add_component(
             entity2,
-            TransformComponent::new(Transform::from_position(Vec3::new(10.0, 5.0, 0.0))),
+            TransformComponent::new(Transform::new_from_position(Vec3::new(10.0, 5.0, 0.0))),
         );
 
         world.update(1.0);

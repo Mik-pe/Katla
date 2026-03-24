@@ -27,36 +27,6 @@ impl Vec4 {
     }
 
     #[inline]
-    pub fn zero() -> Vec4 {
-        Vec4::ZERO
-    }
-
-    #[inline]
-    pub fn one() -> Vec4 {
-        Vec4::ONE
-    }
-
-    #[inline]
-    pub fn x_axis() -> Vec4 {
-        Vec4::X_AXIS
-    }
-
-    #[inline]
-    pub fn y_axis() -> Vec4 {
-        Vec4::Y_AXIS
-    }
-
-    #[inline]
-    pub fn z_axis() -> Vec4 {
-        Vec4::Z_AXIS
-    }
-
-    #[inline]
-    pub fn w_axis() -> Vec4 {
-        Vec4::W_AXIS
-    }
-
-    #[inline]
     pub fn from_xyz(x: f32, y: f32, z: f32) -> Vec4 {
         Vec4::new(x, y, z, 1.0)
     }

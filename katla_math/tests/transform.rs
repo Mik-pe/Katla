@@ -144,7 +144,7 @@ fn test_transform_lerp() {
     let t1 = Transform {
         position: Vec3::new(0.0, 0.0, 0.0),
         scale: Vec3::new(1.0, 1.0, 1.0),
-        rotation: Quat::new(),
+        rotation: Quat::identity(),
     };
 
     let t2 = Transform {

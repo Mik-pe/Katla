@@ -264,13 +264,13 @@ fn test_zero_vector_properties() {
 
 #[test]
 fn test_unit_axes() {
-    assert_eq!(Vec3::x_axis(), Vec3::new(1.0, 0.0, 0.0));
-    assert_eq!(Vec3::y_axis(), Vec3::new(0.0, 1.0, 0.0));
-    assert_eq!(Vec3::z_axis(), Vec3::new(0.0, 0.0, 1.0));
+    assert_eq!(Vec3::X_AXIS, Vec3::new(1.0, 0.0, 0.0));
+    assert_eq!(Vec3::Y_AXIS, Vec3::new(0.0, 1.0, 0.0));
+    assert_eq!(Vec3::Z_AXIS, Vec3::new(0.0, 0.0, 1.0));
 
-    assert!(Vec3::x_axis().is_normalized());
-    assert!(Vec3::y_axis().is_normalized());
-    assert!(Vec3::z_axis().is_normalized());
+    assert!(Vec3::X_AXIS.is_normalized());
+    assert!(Vec3::Y_AXIS.is_normalized());
+    assert!(Vec3::Z_AXIS.is_normalized());
 }
 
 #[test]

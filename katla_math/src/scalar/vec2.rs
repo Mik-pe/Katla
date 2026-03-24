@@ -26,26 +26,6 @@ impl Vec2 {
     }
 
     #[inline]
-    pub fn zero() -> Vec2 {
-        Vec2::ZERO
-    }
-
-    #[inline]
-    pub fn one() -> Vec2 {
-        Vec2::ONE
-    }
-
-    #[inline]
-    pub fn x_axis() -> Vec2 {
-        Vec2::X_AXIS
-    }
-
-    #[inline]
-    pub fn y_axis() -> Vec2 {
-        Vec2::Y_AXIS
-    }
-
-    #[inline]
     pub fn x(&self) -> f32 {
         self.0[0]
     }

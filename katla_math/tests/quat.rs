@@ -66,16 +66,16 @@ fn test_new_from_yaw_pitch() {
 
 #[test]
 fn test_is_normalized() {
-    let q = Quat::new();
+    let q = Quat::identity();
     assert!(q.is_normalized());
 
-    let q2 = Quat::new_from_xyzw(1.0, 2.0, 3.0, 4.0);
+    let q2 = Quat::new(1.0, 2.0, 3.0, 4.0);
     assert!(!q2.is_normalized());
 }
 
 #[test]
 fn test_normalize() {
-    let mut q = Quat::new_from_xyzw(1.0, 2.0, 3.0, 4.0);
+    let mut q = Quat::new(1.0, 2.0, 3.0, 4.0);
     q.normalize();
     assert!(q.is_normalized());
 }
@@ -96,7 +96,7 @@ fn test_inverse() {
 
 #[test]
 fn test_conjugate() {
-    let q = Quat::new_from_xyzw(1.0, 2.0, 3.0, 4.0);
+    let q = Quat::new(1.0, 2.0, 3.0, 4.0);
     let conj = q.conjugate();
 
     let (x, y, z, w) = conj.xyzw();
@@ -123,16 +123,16 @@ fn test_conjugate_unit() {
 
 #[test]
 fn test_dot() {
-    let q1 = Quat::new_from_xyzw(1.0, 2.0, 3.0, 4.0);
-    let q2 = Quat::new_from_xyzw(5.0, 6.0, 7.0, 8.0);
+    let q1 = Quat::new(1.0, 2.0, 3.0, 4.0);
+    let q2 = Quat::new(5.0, 6.0, 7.0, 8.0);
     let dot = q1.dot(q2);
     assert_eq!(dot, 1.0 * 5.0 + 2.0 * 6.0 + 3.0 * 7.0 + 4.0 * 8.0);
 }
 
 #[test]
 fn test_dot_commutative() {
-    let q1 = Quat::new_from_xyzw(1.0, 2.0, 3.0, 4.0);
-    let q2 = Quat::new_from_xyzw(5.0, 6.0, 7.0, 8.0);
+    let q1 = Quat::new(1.0, 2.0, 3.0, 4.0);
+    let q2 = Quat::new(5.0, 6.0, 7.0, 8.0);
     assert_eq!(q1.dot(q2), q2.dot(q1));
 }
 
@@ -149,7 +149,7 @@ fn test_rotate_vec3() {
 
 #[test]
 fn test_slerp() {
-    let q1 = Quat::new();
+    let q1 = Quat::identity();
     let q2 = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), std::f32::consts::FRAC_PI_2);
 
     // t=0 should give q1
@@ -177,7 +177,7 @@ fn test_slerp() {
 
 #[test]
 fn test_slerp_same() {
-    let q1 = Quat::new();
+    let q1 = Quat::identity();
     let result = Quat::slerp(q1, q1, 0.5);
     let (x, y, z, w) = result.xyzw();
     let (x1, y1, z1, w1) = q1.xyzw();
@@ -423,7 +423,7 @@ fn test_to_euler() {
 
 #[test]
 fn test_to_euler_identity() {
-    let q = Quat::new();
+    let q = Quat::identity();
     let (pitch, yaw, roll) = q.to_euler();
 
     assert!(pitch.abs() < 1e-5);

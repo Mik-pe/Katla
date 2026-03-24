@@ -14,6 +14,8 @@ use core::{
 pub struct Vec3(pub [f32; 4]); // Use 4 elements for consistent alignment
 
 impl Vec3 {
+    pub const ZERO: Vec3 = Vec3([0.0, 0.0, 0.0, 0.0]);
+    pub const ONE: Vec3 = Vec3([1.0, 1.0, 1.0, 0.0]);
     pub const X_AXIS: Vec3 = Vec3([1.0, 0.0, 0.0, 0.0]);
     pub const Y_AXIS: Vec3 = Vec3([0.0, 1.0, 0.0, 0.0]);
     pub const Z_AXIS: Vec3 = Vec3([0.0, 0.0, 1.0, 0.0]);
@@ -21,26 +23,6 @@ impl Vec3 {
     #[inline]
     pub fn new(x: f32, y: f32, z: f32) -> Vec3 {
         Vec3([x, y, z, 0.0])
-    }
-
-    #[inline]
-    pub fn zero() -> Vec3 {
-        Vec3([0.0, 0.0, 0.0, 0.0])
-    }
-
-    #[inline]
-    pub fn x_axis() -> Vec3 {
-        Vec3::X_AXIS
-    }
-
-    #[inline]
-    pub fn y_axis() -> Vec3 {
-        Vec3::Y_AXIS
-    }
-
-    #[inline]
-    pub fn z_axis() -> Vec3 {
-        Vec3::Z_AXIS
     }
 
     #[inline]

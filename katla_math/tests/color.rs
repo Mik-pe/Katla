@@ -70,13 +70,6 @@ fn test_to_array() {
 }
 
 #[test]
-fn test_to_clearcolor_value() {
-    let c = Color::new(0.1, 0.2, 0.3, 0.4);
-    let clear = c.to_clearcolor_value();
-    assert_eq!(clear, [0.1, 0.2, 0.3, 0.4]);
-}
-
-#[test]
 fn test_indexing() {
     let c = Color::new(0.1, 0.2, 0.3, 0.4);
     assert_eq!(c[0], 0.1);
@@ -306,29 +299,20 @@ fn test_hex_parsing() {
 fn test_vec4_conversion() {
     let c = Color::new(0.1, 0.2, 0.3, 0.4);
 
-    // Color -> Vec4
-    let v = c.to_vec4();
+    // Color -> Vec4 via From trait
+    let v: Vec4 = c.into();
     assert_eq!(v[0], 0.1);
     assert_eq!(v[1], 0.2);
     assert_eq!(v[2], 0.3);
     assert_eq!(v[3], 0.4);
 
-    // Vec4 -> Color
+    // Vec4 -> Color via From trait
     let v = Vec4::new(0.5, 0.6, 0.7, 0.8);
-    let c = Color::from_vec4(v);
+    let c: Color = v.into();
     assert_eq!(c.r, 0.5);
     assert_eq!(c.g, 0.6);
     assert_eq!(c.b, 0.7);
     assert_eq!(c.a, 0.8);
-
-    // Test From trait
-    let c = Color::new(0.1, 0.2, 0.3, 0.4);
-    let v: Vec4 = c.into();
-    assert_eq!(v[0], 0.1);
-
-    let v = Vec4::new(0.5, 0.6, 0.7, 0.8);
-    let c: Color = v.into();
-    assert_eq!(c.r, 0.5);
 }
 
 #[test]

@@ -35,15 +35,6 @@ impl Default for Mat3 {
 }
 
 impl Mat3 {
-    /// Create a new 3x3 identity matrix
-    pub fn new() -> Mat3 {
-        Mat3([
-            Vec3::new(1.0, 0.0, 0.0),
-            Vec3::new(0.0, 1.0, 0.0),
-            Vec3::new(0.0, 0.0, 1.0),
-        ])
-    }
-
     /// Create a 3x3 identity matrix
     pub fn identity() -> Mat3 {
         Mat3([
@@ -75,9 +66,9 @@ impl Mat3 {
 
     /// Create a 3x3 rotation matrix from Euler angles (pitch, yaw, roll)
     pub fn from_euler_angles(pitch: f32, yaw: f32, roll: f32) -> Self {
-        let q = Quat::from_axis_angle(Vec3::x_axis(), pitch)
-            * Quat::from_axis_angle(Vec3::y_axis(), yaw)
-            * Quat::from_axis_angle(Vec3::z_axis(), roll);
+        let q = Quat::from_axis_angle(Vec3::X_AXIS, pitch)
+            * Quat::from_axis_angle(Vec3::Y_AXIS, yaw)
+            * Quat::from_axis_angle(Vec3::Z_AXIS, roll);
         Self::from_rotation(q)
     }
 

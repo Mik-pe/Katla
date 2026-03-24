@@ -55,7 +55,7 @@ fn test_vec4_into() {
 
 #[test]
 fn test_mat4_into() {
-    let mat = Mat4::new();
+    let mat = Mat4::identity();
     {
         let mat: [[f32; 4]; 4] = mat.into();
         assert_eq!(

@@ -377,13 +377,13 @@ impl AnimationSampler {
             ];
             SampledValue::Vec3(result)
         } else if let Some(ref rotations) = self.rotations {
-            let q0 = katla_math::Quat::new_from_xyzw(
+            let q0 = katla_math::Quat::new(
                 rotations[index0][0],
                 rotations[index0][1],
                 rotations[index0][2],
                 rotations[index0][3],
             );
-            let q1 = katla_math::Quat::new_from_xyzw(
+            let q1 = katla_math::Quat::new(
                 rotations[index1][0],
                 rotations[index1][1],
                 rotations[index1][2],

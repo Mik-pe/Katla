@@ -104,7 +104,7 @@ mod tests {
         let entity = world.create_entity();
         world.add_component(
             entity,
-            TransformComponent::new(Transform::from_position(Vec3::new(0.0, 0.0, 0.0))),
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0))),
         );
         world.add_component(
             entity,
@@ -128,7 +128,7 @@ mod tests {
         let entity = world.create_entity();
         world.add_component(
             entity,
-            TransformComponent::new(Transform::from_position(Vec3::new(0.0, 0.0, 0.0))),
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0))),
         );
         world.add_component(
             entity,
@@ -162,7 +162,7 @@ mod tests {
         let entity = world.create_entity();
         world.add_component(
             entity,
-            TransformComponent::new(Transform::from_position(Vec3::new(0.0, 100.0, 0.0))),
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 100.0, 0.0))),
         );
         world.add_component(
             entity,
@@ -195,7 +195,7 @@ mod tests {
         let entity = world.create_entity();
         world.add_component(
             entity,
-            TransformComponent::new(Transform::from_position(Vec3::new(0.0, 0.0, 0.0))),
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0))),
         );
         world.add_component(
             entity,
@@ -246,7 +246,7 @@ mod tests {
 
         world.add_component(
             entity,
-            TransformComponent::new(Transform::from_position(Vec3::new(0.0, 0.0, 0.0))),
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0))),
         );
         world.add_component(
             entity,
@@ -293,7 +293,7 @@ mod tests {
         // Entity 1: moving right
         world.add_component(
             entity1,
-            TransformComponent::new(Transform::from_position(Vec3::new(0.0, 0.0, 0.0))),
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0))),
         );
         world.add_component(
             entity1,
@@ -303,7 +303,7 @@ mod tests {
         // Entity 2: moving left
         world.add_component(
             entity2,
-            TransformComponent::new(Transform::from_position(Vec3::new(10.0, 0.0, 0.0))),
+            TransformComponent::new(Transform::new_from_position(Vec3::new(10.0, 0.0, 0.0))),
         );
         world.add_component(
             entity2,
@@ -326,7 +326,7 @@ mod tests {
         let entity = world.create_entity();
         world.add_component(
             entity,
-            TransformComponent::new(Transform::from_position(Vec3::new(0.0, 0.0, 0.0))),
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0))),
         );
         world.add_component(
             entity,

@@ -183,7 +183,7 @@ impl System for ThirdPersonCameraSystem {
 
             // Calculate camera rotation to look at player
             let forward = (player_pos - camera_pos).normalize();
-            let camera_rotation = Transform::look_direction(forward, Vec3::y_axis()).rotation;
+            let camera_rotation = Transform::look_direction(forward, Vec3::Y_AXIS).rotation;
 
             // Update camera transform and state
             if let Some(transform) = world.get_component_mut::<TransformComponent>(camera_entity) {

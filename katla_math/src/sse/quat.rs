@@ -41,18 +41,18 @@ impl Index<usize> for Quat {
 impl Default for Quat {
     #[inline]
     fn default() -> Self {
-        Self::new()
+        Self::identity()
     }
 }
 
 impl Quat {
     #[inline]
-    pub fn new() -> Quat {
+    pub fn identity() -> Quat {
         Quat(unsafe { _mm_set_ps(1.0, 0.0, 0.0, 0.0) }) // w, z, y, x
     }
 
     #[inline]
-    pub fn new_from_xyzw(x: f32, y: f32, z: f32, w: f32) -> Quat {
+    pub fn new(x: f32, y: f32, z: f32, w: f32) -> Quat {
         Quat(unsafe { _mm_set_ps(w, z, y, x) })
     }
 
@@ -99,7 +99,7 @@ impl Quat {
         let z = axis.z() * factor;
         let w = f32::cos(angle / 2.0);
 
-        let mut quat = Quat::new_from_xyzw(x, y, z, w);
+        let mut quat = Quat::new(x, y, z, w);
         quat.normalize();
 
         quat
@@ -111,20 +111,20 @@ impl Quat {
 
         let dot = from.dot(to);
         if dot >= 0.99999 {
-            return Quat::new();
+            return Quat::identity();
         }
 
         // Vectors are opposite - pick an arbitrary perpendicular axis
         if dot <= -0.99999 {
-            let mut axis = Vec3::x_axis().cross(from);
+            let mut axis = Vec3::X_AXIS.cross(from);
             let len_sq = axis.x() * axis.x() + axis.y() * axis.y() + axis.z() * axis.z();
 
             if len_sq < 0.0001 {
-                axis = Vec3::y_axis().cross(from);
+                axis = Vec3::Y_AXIS.cross(from);
             }
 
             axis = axis.normalize();
-            return Quat::new_from_xyzw(axis.x(), axis.y(), axis.z(), 0.0);
+            return Quat::new(axis.x(), axis.y(), axis.z(), 0.0);
         }
 
         let angle = f32::acos(dot);
@@ -133,8 +133,8 @@ impl Quat {
     }
 
     pub fn new_from_yaw_pitch(yaw: f32, pitch: f32) -> Quat {
-        let yaw_rotation = Quat::from_axis_angle(Vec3::y_axis(), yaw);
-        let pitch_rotation = Quat::from_axis_angle(Vec3::x_axis(), pitch);
+        let yaw_rotation = Quat::from_axis_angle(Vec3::Y_AXIS, yaw);
+        let pitch_rotation = Quat::from_axis_angle(Vec3::X_AXIS, pitch);
         yaw_rotation * pitch_rotation
     }
 
@@ -200,7 +200,7 @@ impl Quat {
 
         let cs = a.dot(b);
         let angle = f32::acos(cs);
-        let mut out = Self::new();
+        let mut out = Self::identity();
 
         if f32::abs(angle) >= 0.001 {
             let inv_sin = 1.0f32 / f32::sin(angle);
@@ -283,9 +283,9 @@ impl Quat {
     }
 
     pub fn from_euler(pitch: f32, yaw: f32, roll: f32) -> Quat {
-        let pitch_rotation = Quat::from_axis_angle(Vec3::x_axis(), pitch);
-        let yaw_rotation = Quat::from_axis_angle(Vec3::y_axis(), yaw);
-        let roll_rotation = Quat::from_axis_angle(Vec3::z_axis(), roll);
+        let pitch_rotation = Quat::from_axis_angle(Vec3::X_AXIS, pitch);
+        let yaw_rotation = Quat::from_axis_angle(Vec3::Y_AXIS, yaw);
+        let roll_rotation = Quat::from_axis_angle(Vec3::Z_AXIS, roll);
         yaw_rotation * pitch_rotation * roll_rotation
     }
 
@@ -351,7 +351,7 @@ impl From<Mat3> for Quat {
             (x, y, z, w)
         };
 
-        let mut q = Quat::new_from_xyzw(x, y, z, w);
+        let mut q = Quat::new(x, y, z, w);
         q.normalize();
         q
     }
@@ -386,7 +386,7 @@ impl Mul for Quat {
         let z2 = other[2];
         let w2 = other[3];
 
-        Quat::new_from_xyzw(
+        Quat::new(
             w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
             w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
             w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,

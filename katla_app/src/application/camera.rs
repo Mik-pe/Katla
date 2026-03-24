@@ -16,7 +16,7 @@ impl Camera {
 
         let transform = Transform {
             position,
-            rotation: katla_math::Quat::new(),
+            rotation: katla_math::Quat::identity(),
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
 
