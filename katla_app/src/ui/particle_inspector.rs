@@ -4,8 +4,8 @@ use super::ParticleStats;
 use katla_ecs::EntityId;
 use katla_math::{Rect2D, Vec2};
 use katla_ui::{
-    widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle},
     FontSize, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
+    widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle},
 };
 
 use crate::ui::Theme;
@@ -344,7 +344,7 @@ fn render_emitter_config(
         )
     );
 
-    if let Some(ref stats) = stats {
+    if let Some(stats) = stats {
         heading!("Statistics");
         row!(
             "Alive Particles:",
