@@ -1,0 +1,47 @@
+{
+  "milestone": "file-splitting-ui",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "split-text",
+      "file": "katla_ui/src/text/atlas.rs",
+      "line": 5,
+      "description": "atlas.rs imports RasterizedGlyph via absolute path 'crate::text::rasterization::RasterizedGlyph' while other cross-module references use 'super::*'. A 'use super::rasterization::RasterizedGlyph;' would be more consistent."
+    },
+    {
+      "featureId": "split-context",
+      "file": "katla_ui/src/context/mod.rs",
+      "line": 136,
+      "description": "Orphaned 'Z-Index Management' section comment — methods moved to z_index.rs but comment remains. Should be removed or replaced with pointer to submodule."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skills",
+      "suggestion": "Document in split-worker skill that: (1) When a feature description says to keep an inline module alongside a file-based module with the same name, the file-based approach takes precedence since Rust doesn't allow both. (2) When extracting tests would cause mod.rs to exceed the line target, extracting tests to a tests.rs file via #[path = \"tests.rs\"] is a valid approach.",
+      "evidence": "split-context worker encountered both situations: z_index module couldn't stay inline (Rust restriction), and keeping tests in mod.rs would have exceeded 800-line target (1,256 lines).",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Worker added set_font_scale and scaled_font_size to frame.rs beyond the feature description scope",
+      "reason": "This is a sensible implementation detail — these methods are frame-lifecycle-related and belong in frame.rs. The feature description was incomplete, not the implementation wrong."
+    }
+  ],
+  "previousRound": null
+}
