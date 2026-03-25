@@ -38,7 +38,7 @@ use crate::{
     input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
     preferences::Preferences,
     resources::ResourceManager,
-    util::{BackgroundLoader, FileCache, GLTFModel, Timer},
+    util::{BackgroundLoader, GltfCache, Timer},
 };
 
 pub struct ApplicationInfo {
@@ -55,8 +55,7 @@ pub struct Application {
     /// Frame graph for rendering (built once at startup)
     pub(crate) frame_graph: katla_gfx::FrameGraph,
     pub(crate) camera: Rc<RefCell<Camera>>,
-    #[allow(clippy::type_complexity)]
-    pub(crate) gltf_cache: FileCache<GLTFModel, Box<dyn Fn(&PathBuf) -> GLTFModel>>,
+    pub(crate) gltf_cache: GltfCache,
     pub(crate) timer: Timer,
     pub(crate) info: ApplicationInfo,
     pub(crate) world: World,
@@ -89,8 +88,10 @@ pub struct Application {
     /// Particle system for managing particle emitters via ECS
     pub(crate) particle_system: crate::systems::ParticleSystem,
     /// Flag to trigger particle debug readback at frame 10
+    #[cfg(debug_assertions)]
     pub(crate) particle_readback_pending: bool,
     /// Flag to ensure particle debug readback only happens once
+    #[cfg(debug_assertions)]
     pub(crate) particle_readback_done: bool,
 }
 
@@ -258,15 +259,6 @@ impl ApplicationHandler for Application {
                         match event.state {
                             ElementState::Pressed => self.ui_context.input.add_key_press(key),
                             ElementState::Released => self.ui_context.input.add_key_release(key),
-                        }
-                    }
-
-                    // Handle text input from key event (for UI text fields)
-                    if event.state == ElementState::Pressed
-                        && let Some(text) = &event.text
-                    {
-                        for c in text.chars() {
-                            self.ui_context.input.add_char(c);
                         }
                     }
 
@@ -570,8 +562,11 @@ impl Application {
 
 impl Application {
     pub fn init(&mut self) {
-        // Logger is now initialized in main() before building the application
-        println!("Application::init() called");
+        info!("Application::init() called");
+
+        // Register scene resources
+        self.world
+            .insert_resource(crate::resources::AmbientLight::default());
 
         // Initialize default PBR material
         let shader_path = self.resources.shader_path("model_pbr.wgsl");
@@ -688,7 +683,7 @@ impl Application {
         // Set up default test scene
         self.setup_default_scene();
 
-        println!("Application::init() completed");
+        info!("Application::init() completed");
     }
 
     /// Get the default PBR material handle.
