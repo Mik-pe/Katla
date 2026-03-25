@@ -69,7 +69,11 @@ impl<'a> Hierarchy<'a> {
 
 impl<'a> Widget for Hierarchy<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        if ui.is_hovered(self.bounds) && ui.mouse_clicked(mouse_button::LEFT) {
+        if ui.is_hovered(self.bounds)
+            && (ui.mouse_down(mouse_button::LEFT)
+                || ui.mouse_down(mouse_button::RIGHT)
+                || ui.mouse_down(mouse_button::MIDDLE))
+        {
             *self.focused_panel = FocusedPanel::Hierarchy;
         }
 

@@ -137,8 +137,12 @@ impl<'a> Widget for ViewportGrid<'a> {
             }
         }
 
-        // Handle focus on click
-        if ui.is_hovered(self.bounds) && ui.mouse_clicked(mouse_button::LEFT) {
+        // Handle focus on any click (left, right, middle)
+        if ui.is_hovered(self.bounds)
+            && (ui.mouse_down(mouse_button::LEFT)
+                || ui.mouse_down(mouse_button::RIGHT)
+                || ui.mouse_down(mouse_button::MIDDLE))
+        {
             *self.focused_panel = FocusedPanel::Viewport;
         }
 
