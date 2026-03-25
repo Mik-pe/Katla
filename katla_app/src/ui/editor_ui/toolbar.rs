@@ -34,7 +34,6 @@ pub struct ToolbarState {
     pub edit_menu_open: bool,
     pub view_menu_open: bool,
     pub create_menu_open: bool,
-    pub help_menu_open: bool,
     pub pending_actions: Vec<EditorAction>,
 }
 
@@ -100,16 +99,20 @@ impl<'a> Widget for Toolbar<'a> {
             &mut self.state.file_menu_open,
             |ui, open| {
                 if ui.menu_item_clicked("New Scene") {
+                    self.state.pending_actions.push(EditorAction::NewScene);
                     *open = false;
                 }
                 if ui.menu_item_clicked("Open...") {
+                    self.state.pending_actions.push(EditorAction::OpenScene);
                     *open = false;
                 }
                 if ui.menu_item_clicked("Save") {
+                    self.state.pending_actions.push(EditorAction::SaveScene);
                     *open = false;
                 }
                 ui.menu_separator();
                 if ui.menu_item_clicked("Quit") {
+                    self.state.pending_actions.push(EditorAction::Quit);
                     *open = false;
                 }
             },
@@ -124,13 +127,6 @@ impl<'a> Widget for Toolbar<'a> {
             edit_bounds,
             &mut self.state.edit_menu_open,
             |ui, open| {
-                if ui.menu_item_clicked("Undo") {
-                    *open = false;
-                }
-                if ui.menu_item_clicked("Redo") {
-                    *open = false;
-                }
-                ui.menu_separator();
                 if ui.menu_item_clicked("Preferences...") {
                     self.state
                         .pending_actions
@@ -188,20 +184,6 @@ impl<'a> Widget for Toolbar<'a> {
             },
         );
         ui.spacing(60.0 + padding);
-
-        let help_bounds =
-            Rect2D::from_origin_size(ui.cursor(), Vec2::new(menu_item_width, button_height));
-        ui.menu_bar_dropdown(
-            "help_menu",
-            "Help",
-            help_bounds,
-            &mut self.state.help_menu_open,
-            |ui, open| {
-                if ui.menu_item_clicked("About") {
-                    *open = false;
-                }
-            },
-        );
 
         ui.end_row();
 

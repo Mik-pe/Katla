@@ -88,6 +88,14 @@ pub enum EditorAction {
     DeleteEntity(EntityId),
     /// Duplicate an entity.
     DuplicateEntity(EntityId),
+    /// Save the current scene to the default path.
+    SaveScene,
+    /// Open a scene from a file dialog.
+    OpenScene,
+    /// Create a new empty scene.
+    NewScene,
+    /// Quit the application.
+    Quit,
     /// Select an entity.
     SelectEntity(EntityId),
     /// Change the editor theme.
@@ -328,6 +336,46 @@ impl EditorUI {
             ParticleInspectorAction::Close => {
                 self.particle_inspector_state.panel.close();
             }
+        }
+    }
+
+    /// Eagerly update focused panel based on click position.
+    ///
+    /// Called during `window_event` (before UI build) so that the first click
+    /// on a panel both sets focus AND is forwarded to the correct input handler
+    /// without a one-frame delay.
+    pub fn update_focused_panel_from_click(&mut self, mouse_pos: Vec2) {
+        let toolbar_height = 32.0;
+        if mouse_pos.y() < toolbar_height {
+            return;
+        }
+
+        if self.last_viewport_bounds.contains(mouse_pos) {
+            self.focused_panel = FocusedPanel::Viewport;
+            return;
+        }
+
+        let left_bounds = Rect2D::from_origin_size(
+            Vec2::new(0.0, toolbar_height),
+            Vec2::new(self.left_panel_width, self.last_viewport_bounds.height()),
+        );
+        if left_bounds.contains(mouse_pos) {
+            self.focused_panel = FocusedPanel::Hierarchy;
+            return;
+        }
+
+        let right_panel_x = self.last_viewport_bounds.max.x();
+        let right_bounds = Rect2D::from_origin_size(
+            Vec2::new(right_panel_x, toolbar_height),
+            Vec2::new(self.right_panel_width, self.last_viewport_bounds.height()),
+        );
+        if right_bounds.contains(mouse_pos) {
+            self.focused_panel = FocusedPanel::Inspector;
+            return;
+        }
+
+        if mouse_pos.y() >= self.last_viewport_bounds.max.y() {
+            self.focused_panel = FocusedPanel::AssetBrowser;
         }
     }
 
