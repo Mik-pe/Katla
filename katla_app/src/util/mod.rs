@@ -3,13 +3,11 @@ pub mod cache;
 pub mod config;
 pub mod gltf_material;
 pub mod gltf_parser;
-pub mod metrics_history;
 pub mod modelcache;
 pub mod timer;
 
 pub use background_loader::*;
 pub use cache::*;
 pub use config::*;
-pub use metrics_history::MetricsHistory;
 pub use modelcache::*;
 pub use timer::*;

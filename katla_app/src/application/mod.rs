@@ -68,12 +68,8 @@ pub struct Application {
     pub(crate) ui_context: katla_ui::UiContext,
     /// UI renderer for converting UI draw lists to GPU format
     pub(crate) ui_renderer: crate::ui::UIRenderer,
-    /// Debug overlay UI (simplified stats)
-    pub(crate) debug_overlay: crate::ui::DebugOverlay,
     /// Game engine editor UI
     pub(crate) editor_ui: crate::ui::EditorUI,
-    /// Use editor UI mode (vs simple debug overlay)
-    pub(crate) use_editor_ui: bool,
     /// User preferences (theme, settings)
     pub(crate) preferences: Preferences,
     /// GUI layout state (panel sizes, positions)
