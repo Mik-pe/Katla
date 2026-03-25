@@ -174,7 +174,7 @@ pub fn build_skeleton_local_transforms(
 ///
 /// Returns a map: node_index -> world_transform
 #[cfg(test)]
-fn build_world_transforms(
+fn compute_world_transforms_from_parent_map(
     nodes: &[gltf::Node],
     parent_map: &std::collections::HashMap<usize, Option<usize>>,
 ) -> std::collections::HashMap<usize, katla_math::Mat4> {
@@ -286,7 +286,7 @@ mod tests {
         }
 
         // Use the optimized function
-        let transforms = build_world_transforms(&nodes, &parent_map);
+        let transforms = compute_world_transforms_from_parent_map(&nodes, &parent_map);
 
         // Verify all nodes have transforms
         for node in &nodes {
