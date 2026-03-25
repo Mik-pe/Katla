@@ -23,5 +23,6 @@ log = { workspace = true }
 clap = { workspace = true }
 dirs = { workspace = true }
 png = { workspace = true }
+ron = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

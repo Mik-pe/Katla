@@ -4,10 +4,10 @@ pub mod components;
 pub mod error;
 pub mod gui_state;
 pub mod input;
-
 pub mod preferences;
 pub mod rendering;
 pub mod resources;
+pub mod scene;
 pub mod systems;
 mod ui;
 mod util;

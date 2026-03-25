@@ -2,6 +2,7 @@ use katla_gfx::TextureHandle;
 use log::{debug, info};
 
 use crate::components::TransformComponent;
+use crate::scene::entity_source::EntitySource;
 
 impl super::Application {
     /// Spawn a primitive entity with a specific color using the default material.
@@ -12,6 +13,7 @@ impl super::Application {
         position: [f32; 3],
         color: katla_math::Color,
         mesh_handle: katla_gfx::MeshHandle,
+        source: EntitySource,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_math::Vec3;
@@ -19,7 +21,7 @@ impl super::Application {
         let material_handle = self.default_material();
         let linear_color = color.to_linear();
 
-        self.world.spawn((
+        let entity = self.world.spawn((
             TransformComponent {
                 transform: katla_math::Transform::new_from_position(Vec3::new(
                     position[0],
@@ -28,7 +30,10 @@ impl super::Application {
                 )),
             },
             DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
-        ))
+        ));
+
+        self.world.add_component(entity, source);
+        entity
     }
 
     /// Spawn a test cube entity with the default material.
@@ -46,7 +51,7 @@ impl super::Application {
     ) -> katla_ecs::EntityId {
         let mesh_handle = self.renderer.create_cube_mesh(size);
         info!("Spawned test cube at {:?} with size {:?}", position, size);
-        self.spawn_primitive_with_color(position, color, mesh_handle)
+        self.spawn_primitive_with_color(position, color, mesh_handle, EntitySource::Cube { size })
     }
 
     /// Spawn a sphere entity with the default material.
@@ -72,7 +77,16 @@ impl super::Application {
     ) -> katla_ecs::EntityId {
         let mesh_handle = self.renderer.create_sphere_mesh(radius, segments, rings);
         info!("Spawned sphere at {:?} with radius {}", position, radius);
-        self.spawn_primitive_with_color(position, color, mesh_handle)
+        self.spawn_primitive_with_color(
+            position,
+            color,
+            mesh_handle,
+            EntitySource::Sphere {
+                radius,
+                segments,
+                rings,
+            },
+        )
     }
 
     /// Spawn a sphere entity with PBR material properties.
@@ -178,7 +192,16 @@ impl super::Application {
     ) -> katla_ecs::EntityId {
         let mesh_handle = self.renderer.create_cylinder_mesh(height, radius, segments);
         info!("Spawned cylinder at {:?}", position);
-        self.spawn_primitive_with_color(position, color, mesh_handle)
+        self.spawn_primitive_with_color(
+            position,
+            color,
+            mesh_handle,
+            EntitySource::Cylinder {
+                height,
+                radius,
+                segments,
+            },
+        )
     }
 
     /// Spawn a plane entity with the default material.
@@ -202,7 +225,12 @@ impl super::Application {
     ) -> katla_ecs::EntityId {
         let mesh_handle = self.renderer.create_plane_mesh(width, height);
         info!("Spawned plane at {:?}", position);
-        self.spawn_primitive_with_color(position, color, mesh_handle)
+        self.spawn_primitive_with_color(
+            position,
+            color,
+            mesh_handle,
+            EntitySource::Plane { width, height },
+        )
     }
 
     /// Spawn a torus entity with the default material.
@@ -239,7 +267,17 @@ impl super::Application {
             self.renderer
                 .create_torus_mesh(radius, tube_radius, segments, tube_segments);
         info!("Spawned torus at {:?}", position);
-        self.spawn_primitive_with_color(position, color, mesh_handle)
+        self.spawn_primitive_with_color(
+            position,
+            color,
+            mesh_handle,
+            EntitySource::Torus {
+                radius,
+                tube_radius,
+                segments,
+                tube_segments,
+            },
+        )
     }
 
     /// Spawn a GLTF model from file. Handles both static and skinned meshes.
@@ -348,6 +386,13 @@ impl super::Application {
             },
             DrawableComponent::with_handles(mesh_handle, material_handle),
         ));
+
+        self.world.add_component(
+            entity,
+            EntitySource::GltfModel {
+                path: path.as_ref().to_string_lossy().to_string(),
+            },
+        );
 
         // Set emission texture index on drawable component
         if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(entity) {
@@ -642,7 +687,9 @@ impl super::Application {
             gravity: 0.0,
             ..Default::default()
         });
-        self.world.spawn((fire_emitter,));
+        let fire_entity = self.world.spawn((fire_emitter,));
+        self.world
+            .add_component(fire_entity, EntitySource::ParticleEmitter);
 
         // Ethereal/spiritual rising particles
         let mut ethereal_emitter = ParticleEmitterComponent::with_config(EmitterConfig {
@@ -664,7 +711,9 @@ impl super::Application {
         });
         ethereal_emitter.config.set_shape(EmitterShape::Circle);
         ethereal_emitter.config.shape_params = [2.0, 0.0, 0.0, 0.0];
-        self.world.spawn((ethereal_emitter,));
+        let ethereal_entity = self.world.spawn((ethereal_emitter,));
+        self.world
+            .add_component(ethereal_entity, EntitySource::ParticleEmitter);
 
         // Magic sparkles emitter
         let sparkle_emitter = ParticleEmitterComponent::with_config(EmitterConfig {
@@ -681,7 +730,9 @@ impl super::Application {
             color_variation: 0.3,
             ..Default::default()
         });
-        self.world.spawn((sparkle_emitter,));
+        let sparkle_entity = self.world.spawn((sparkle_emitter,));
+        self.world
+            .add_component(sparkle_entity, EntitySource::ParticleEmitter);
 
         info!("Particle emitters setup complete - emitters will be initialized by ParticleSystem");
     }
@@ -716,6 +767,7 @@ impl super::Application {
             },
             make_indicator(katla_math::Color::rgb(1.0, 0.6, 0.2)),
         ));
+        self.world.add_component(warm_light, EntitySource::Light);
 
         // Cool blue light near the sphere
         let cool_light = self.world.spawn((
@@ -727,6 +779,7 @@ impl super::Application {
             },
             make_indicator(katla_math::Color::rgb(0.3, 0.5, 1.0)),
         ));
+        self.world.add_component(cool_light, EntitySource::Light);
 
         // Magenta light near the cylinder
         let magenta_light = self.world.spawn((
@@ -738,6 +791,7 @@ impl super::Application {
             },
             make_indicator(katla_math::Color::rgb(1.0, 0.2, 0.8)),
         ));
+        self.world.add_component(magenta_light, EntitySource::Light);
 
         // Green light near the torus
         let green_light = self.world.spawn((
@@ -749,6 +803,7 @@ impl super::Application {
             },
             make_indicator(katla_math::Color::rgb(0.3, 1.0, 0.4)),
         ));
+        self.world.add_component(green_light, EntitySource::Light);
 
         // White overhead light for general illumination
         let overhead_light = self.world.spawn((
@@ -760,6 +815,8 @@ impl super::Application {
             },
             make_indicator(katla_math::Color::rgb(0.9, 0.85, 0.8)),
         ));
+        self.world
+            .add_component(overhead_light, EntitySource::Light);
 
         // Name them for the editor hierarchy
         use crate::components::NameComponent;
