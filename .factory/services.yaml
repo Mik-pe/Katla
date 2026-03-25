@@ -10,7 +10,7 @@ commands:
   test-app: cargo test -p katla_app
   test-ui: cargo test -p katla_ui
   test-derive: cargo test -p katla_derive
-  lint: cargo clippy
+  lint: cargo clippy --workspace -- -D warnings
   lint-fix: cargo clippy --fix
   fmt: cargo fmt
   fmt-check: cargo fmt --check

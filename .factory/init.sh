@@ -21,8 +21,4 @@ else
     exit 1
 fi
 
-# Verify project compiles
-echo "Checking project compiles..."
-cargo check
-
 echo "Environment setup complete!"
