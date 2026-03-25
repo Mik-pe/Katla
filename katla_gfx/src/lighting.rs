@@ -12,9 +12,10 @@ use std::rc::Rc;
 
 use ash::vk;
 use bytemuck::{Pod, Zeroable};
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc};
+use gpu_allocator::vulkan::Allocation;
 use log::info;
 
+use crate::gpu_buffer::create_buffer;
 use crate::vulkan::context::VulkanContext;
 
 /// Maximum number of point lights supported.
@@ -97,6 +98,9 @@ pub struct LightCullingBuffers {
     /// Number of lights currently uploaded.
     light_count: u32,
 
+    /// Number of lights uploaded in the previous frame.
+    prev_light_count: u32,
+
     /// Persistent mapping for light buffer (CPU writes).
     light_mapped_ptr: *mut u8,
 
@@ -111,49 +115,6 @@ pub struct LightCullingBuffers {
 
 unsafe impl Send for LightCullingBuffers {}
 unsafe impl Sync for LightCullingBuffers {}
-
-fn create_buffer(
-    context: &Rc<VulkanContext>,
-    name: &str,
-    size: u64,
-    usage: vk::BufferUsageFlags,
-    location: gpu_allocator::MemoryLocation,
-) -> Result<(vk::Buffer, Allocation), String> {
-    let buffer_info = vk::BufferCreateInfo::default()
-        .size(size)
-        .usage(usage)
-        .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-    let buffer = unsafe {
-        context
-            .device
-            .create_buffer(&buffer_info, None)
-            .map_err(|e| format!("Failed to create buffer '{}': {:?}", name, e))?
-    };
-
-    let requirements = unsafe { context.device.get_buffer_memory_requirements(buffer) };
-
-    let allocation = context
-        .allocator
-        .borrow_mut()
-        .allocate(&AllocationCreateDesc {
-            name,
-            requirements,
-            location,
-            linear: true,
-            allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-        })
-        .map_err(|e| format!("Failed to allocate '{}': {}", name, e))?;
-
-    unsafe {
-        context
-            .device
-            .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
-            .map_err(|e| format!("Failed to bind buffer '{}': {:?}", name, e))?;
-    }
-
-    Ok((buffer, allocation))
-}
 
 impl LightCullingBuffers {
     pub fn new(
@@ -306,6 +267,7 @@ impl LightCullingBuffers {
             screen_width,
             screen_height,
             light_count: 0,
+            prev_light_count: 0,
             light_mapped_ptr,
             compute_descriptor_layout: Some(compute_descriptor_layout),
             fragment_descriptor_layout: Some(fragment_descriptor_layout),
@@ -315,7 +277,8 @@ impl LightCullingBuffers {
 
     /// Upload point light data to the GPU.
     pub fn upload_lights(&mut self, lights: &[PointLightGPU]) {
-        self.light_count = lights.len().min(MAX_POINT_LIGHTS as usize) as u32;
+        let new_count = lights.len().min(MAX_POINT_LIGHTS as usize) as u32;
+        self.light_count = new_count;
 
         if !self.light_mapped_ptr.is_null() {
             let dst = unsafe {
@@ -324,22 +287,35 @@ impl LightCullingBuffers {
                     MAX_POINT_LIGHTS as usize,
                 )
             };
-            for item in dst.iter_mut() {
-                *item = PointLightGPU {
-                    position: [0.0; 3],
-                    range: 0.0,
-                    color: [0.0; 3],
-                    intensity: 0.0,
-                };
+
+            // Zero stale entries beyond new count if shrinking
+            if new_count < self.prev_light_count {
+                let stale_start = new_count as usize;
+                let stale_end = self.prev_light_count as usize;
+                for item in dst.iter_mut().take(stale_end).skip(stale_start) {
+                    *item = PointLightGPU {
+                        position: [0.0; 3],
+                        range: 0.0,
+                        color: [0.0; 3],
+                        intensity: 0.0,
+                    };
+                }
             }
-            dst[..self.light_count as usize].copy_from_slice(&lights[..self.light_count as usize]);
+
+            // Copy active lights
+            dst[..new_count as usize].copy_from_slice(&lights[..new_count as usize]);
         }
 
+        // Flush only the range that was potentially modified
         if let Some(ref alloc) = self.light_allocation {
-            let flush_size =
-                (MAX_POINT_LIGHTS as usize * std::mem::size_of::<PointLightGPU>()) as u64;
-            self.context.flush_mapped_memory(alloc, 0, flush_size);
+            let dirty_count = new_count.max(self.prev_light_count);
+            let flush_size = (dirty_count as usize * std::mem::size_of::<PointLightGPU>()) as u64;
+            if flush_size > 0 {
+                self.context.flush_mapped_memory(alloc, 0, flush_size);
+            }
         }
+
+        self.prev_light_count = new_count;
     }
 
     /// Write frame data to the uniform buffer.

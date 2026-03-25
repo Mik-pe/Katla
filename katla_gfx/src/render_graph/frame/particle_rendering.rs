@@ -98,6 +98,13 @@ impl<'a> Frame<'a> {
             .color_attachments(std::slice::from_ref(&color_attachment))
             .depth_attachment(&depth_attachment);
 
+        // Issue compute-to-graphics buffer barriers BEFORE entering dynamic rendering.
+        // Buffer/image memory barriers are not allowed inside cmd_begin_rendering/end_rendering
+        // without VK_KHR_dynamic_rendering_local_read.
+        if let Some(ref particle_system) = self.renderer.particle_system {
+            particle_system.pre_render_barriers(cmd.vk_command_buffer(), frame_idx);
+        }
+
         unsafe {
             self.renderer
                 .context
