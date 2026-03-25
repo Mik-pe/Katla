@@ -36,6 +36,97 @@ pub struct GLTFModel {
     pub root_transform: Mat4,
 }
 
+/// Extract common PBR vertex attributes (position, normal, tangent, tex_coord0)
+/// from pre-collected per-attribute byte buffers into a SOA map.
+fn deinterleave_pbr_attributes(
+    positions: &[u8],
+    normals: &[u8],
+    tangents: &[u8],
+    tex_coords: &[u8],
+) -> HashMap<AttributeType, Vec<u8>> {
+    let mut map = HashMap::new();
+    if positions.is_empty() {
+        return map;
+    }
+    map.insert(AttributeType::Position, positions.to_vec());
+    map.insert(AttributeType::Normal, normals.to_vec());
+    map.insert(AttributeType::Tangent, tangents.to_vec());
+    map.insert(AttributeType::TexCoord0, tex_coords.to_vec());
+    map
+}
+
+/// Build world transforms for all nodes in topological order (BFS).
+///
+/// Returns a map: node_index -> world_transform.
+/// Processes parent nodes before children so each node accumulates its parent's transform.
+pub fn build_world_transforms(nodes: &[gltf::Node]) -> HashMap<usize, Mat4> {
+    use std::collections::{HashMap, VecDeque};
+
+    let mut parent_map: HashMap<usize, Option<usize>> = HashMap::new();
+    for node in nodes {
+        parent_map.entry(node.index()).or_insert(None);
+        for child in node.children() {
+            parent_map.insert(child.index(), Some(node.index()));
+        }
+    }
+
+    let mut children_map: HashMap<usize, Vec<usize>> = HashMap::new();
+    for node in nodes {
+        children_map.entry(node.index()).or_default();
+        for child in node.children() {
+            children_map
+                .entry(node.index())
+                .or_default()
+                .push(child.index());
+        }
+    }
+
+    let node_by_index: HashMap<usize, &gltf::Node> = nodes.iter().map(|n| (n.index(), n)).collect();
+
+    let mut queue: VecDeque<usize> = VecDeque::new();
+    for node in nodes {
+        if parent_map.get(&node.index()) == Some(&None) {
+            queue.push_back(node.index());
+        }
+    }
+
+    let mut world_transforms: HashMap<usize, Mat4> = HashMap::new();
+
+    while let Some(node_index) = queue.pop_front() {
+        let node = match node_by_index.get(&node_index) {
+            Some(n) => n,
+            None => continue,
+        };
+
+        let transform = node.transform();
+        let (t, r, s) = transform.decomposed();
+        let translation = Vec3::new(t[0], t[1], t[2]);
+        let rotation = Quat::new(r[0], r[1], r[2], r[3]);
+        let scale = Vec3::new(s[0], s[1], s[2]);
+        let local_matrix = Mat4::from_trs(translation, rotation, scale);
+
+        let world_matrix = if let Some(Some(parent_index)) = parent_map.get(&node_index) {
+            if let Some(parent_transform) = world_transforms.get(parent_index) {
+                *parent_transform * local_matrix
+            } else {
+                local_matrix
+            }
+        } else {
+            local_matrix
+        };
+
+        world_transforms.insert(node_index, world_matrix);
+
+        if let Some(children) = children_map.get(&node_index) {
+            for child_index in children {
+                queue.push_back(*child_index);
+            }
+        }
+    }
+
+    world_transforms
+}
+
 fn collect_all_nodes<'a>(node: &gltf::Node<'a>, nodes: &mut Vec<gltf::Node<'a>>) {
     nodes.push(node.clone());
     for child in node.children() {
@@ -83,50 +174,30 @@ impl GLTFModel {
     }
 
     fn deinterleave_pbr(vertices: &[VertexPBR]) -> HashMap<AttributeType, Vec<u8>> {
-        let mut map = HashMap::new();
-        if vertices.is_empty() {
-            return map;
-        }
-        let mut positions = Vec::with_capacity(vertices.len() * 12);
-        let mut normals = Vec::with_capacity(vertices.len() * 12);
-        let mut tangents = Vec::with_capacity(vertices.len() * 16);
-        let mut tex_coords = Vec::with_capacity(vertices.len() * 8);
-        for v in vertices {
-            positions.extend_from_slice(bytemuck::bytes_of(&v.position));
-            normals.extend_from_slice(bytemuck::bytes_of(&v.normal));
-            tangents.extend_from_slice(bytemuck::bytes_of(&v.tangent));
-            tex_coords.extend_from_slice(bytemuck::bytes_of(&v.tex_coord0));
-        }
-        map.insert(AttributeType::Position, positions);
-        map.insert(AttributeType::Normal, normals);
-        map.insert(AttributeType::Tangent, tangents);
-        map.insert(AttributeType::TexCoord0, tex_coords);
-        map
+        deinterleave_pbr_attributes(
+            bytemuck::cast_slice(&vertices.iter().map(|v| v.position).collect::<Vec<_>>()),
+            bytemuck::cast_slice(&vertices.iter().map(|v| v.normal).collect::<Vec<_>>()),
+            bytemuck::cast_slice(&vertices.iter().map(|v| v.tangent).collect::<Vec<_>>()),
+            bytemuck::cast_slice(&vertices.iter().map(|v| v.tex_coord0).collect::<Vec<_>>()),
+        )
     }
 
     fn deinterleave_pbr_skinned(vertices: &[VertexPBRSkinned]) -> HashMap<AttributeType, Vec<u8>> {
-        let mut map = HashMap::new();
+        let mut map = deinterleave_pbr_attributes(
+            bytemuck::cast_slice(&vertices.iter().map(|v| v.position).collect::<Vec<_>>()),
+            bytemuck::cast_slice(&vertices.iter().map(|v| v.normal).collect::<Vec<_>>()),
+            bytemuck::cast_slice(&vertices.iter().map(|v| v.tangent).collect::<Vec<_>>()),
+            bytemuck::cast_slice(&vertices.iter().map(|v| v.tex_coord0).collect::<Vec<_>>()),
+        );
         if vertices.is_empty() {
             return map;
         }
-        let mut positions = Vec::with_capacity(vertices.len() * 12);
-        let mut normals = Vec::with_capacity(vertices.len() * 12);
-        let mut tangents = Vec::with_capacity(vertices.len() * 16);
-        let mut tex_coords = Vec::with_capacity(vertices.len() * 8);
         let mut joint_indices = Vec::with_capacity(vertices.len() * 8);
         let mut joint_weights = Vec::with_capacity(vertices.len() * 16);
         for v in vertices {
-            positions.extend_from_slice(bytemuck::bytes_of(&v.position));
-            normals.extend_from_slice(bytemuck::bytes_of(&v.normal));
-            tangents.extend_from_slice(bytemuck::bytes_of(&v.tangent));
-            tex_coords.extend_from_slice(bytemuck::bytes_of(&v.tex_coord0));
             joint_indices.extend_from_slice(bytemuck::bytes_of(&v.joint_indices));
             joint_weights.extend_from_slice(bytemuck::bytes_of(&v.joint_weights));
         }
-        map.insert(AttributeType::Position, positions);
-        map.insert(AttributeType::Normal, normals);
-        map.insert(AttributeType::Tangent, tangents);
-        map.insert(AttributeType::TexCoord0, tex_coords);
         map.insert(AttributeType::JointIndices, joint_indices);
         map.insert(AttributeType::JointWeights, joint_weights);
         map
@@ -286,76 +357,6 @@ impl GLTFModel {
     }
 
     fn parse_gltf(&mut self) {
-        use std::collections::{HashMap, VecDeque};
-
-        fn build_world_transforms(nodes: &[gltf::Node]) -> HashMap<usize, Mat4> {
-            let mut parent_map: HashMap<usize, Option<usize>> = HashMap::new();
-            for node in nodes {
-                parent_map.entry(node.index()).or_insert(None);
-                for child in node.children() {
-                    parent_map.insert(child.index(), Some(node.index()));
-                }
-            }
-
-            let mut children_map: HashMap<usize, Vec<usize>> = HashMap::new();
-            for node in nodes {
-                children_map.entry(node.index()).or_default();
-                for child in node.children() {
-                    children_map
-                        .entry(node.index())
-                        .or_default()
-                        .push(child.index());
-                }
-            }
-
-            let node_by_index: HashMap<usize, &gltf::Node> =
-                nodes.iter().map(|n| (n.index(), n)).collect();
-
-            let mut queue: VecDeque<usize> = VecDeque::new();
-            for node in nodes {
-                if parent_map.get(&node.index()) == Some(&None) {
-                    queue.push_back(node.index());
-                }
-            }
-
-            let mut world_transforms: HashMap<usize, Mat4> = HashMap::new();
-
-            // Process in topological order (parents before children)
-            while let Some(node_index) = queue.pop_front() {
-                let node = match node_by_index.get(&node_index) {
-                    Some(n) => n,
-                    None => continue,
-                };
-
-                let transform = node.transform();
-                let (t, r, s) = transform.decomposed();
-                let translation = Vec3::new(t[0], t[1], t[2]);
-                let rotation = Quat::new(r[0], r[1], r[2], r[3]);
-                let scale = Vec3::new(s[0], s[1], s[2]);
-                let local_matrix = Mat4::from_trs(translation, rotation, scale);
-
-                let world_matrix = if let Some(Some(parent_index)) = parent_map.get(&node_index) {
-                    if let Some(parent_transform) = world_transforms.get(parent_index) {
-                        *parent_transform * local_matrix
-                    } else {
-                        local_matrix
-                    }
-                } else {
-                    local_matrix
-                };
-
-                world_transforms.insert(node_index, world_matrix);
-
-                if let Some(children) = children_map.get(&node_index) {
-                    for child_index in children {
-                        queue.push_back(*child_index);
-                    }
-                }
-            }
-
-            world_transforms
-        }
-
         let mut all_nodes = vec![];
         let mut root_transform = Mat4::identity();
 
@@ -688,73 +689,8 @@ mod tests {
     /// Build world transforms for all nodes in topological order (BFS).
     /// Returns a map: node_index -> world_transform
     fn build_node_world_transforms(document: &Document) -> std::collections::HashMap<usize, Mat4> {
-        use std::collections::{HashMap, VecDeque};
-
-        let mut parent_map: HashMap<usize, Option<usize>> = HashMap::new();
         let nodes: Vec<_> = document.nodes().collect();
-        for node in &nodes {
-            parent_map.entry(node.index()).or_insert(None);
-            for child in node.children() {
-                parent_map.insert(child.index(), Some(node.index()));
-            }
-        }
-
-        let mut children_map: HashMap<usize, Vec<usize>> = HashMap::new();
-        for node in &nodes {
-            children_map.entry(node.index()).or_default();
-            for child in node.children() {
-                children_map
-                    .entry(node.index())
-                    .or_default()
-                    .push(child.index());
-            }
-        }
-
-        let node_by_index: HashMap<usize, &gltf::Node> =
-            nodes.iter().map(|n| (n.index(), n)).collect();
-
-        let mut queue: VecDeque<usize> = VecDeque::new();
-        for node in &nodes {
-            if parent_map.get(&node.index()) == Some(&None) {
-                queue.push_back(node.index());
-            }
-        }
-
-        let mut world_transforms: HashMap<usize, Mat4> = HashMap::new();
-
-        while let Some(node_index) = queue.pop_front() {
-            let node = match node_by_index.get(&node_index) {
-                Some(n) => n,
-                None => continue,
-            };
-
-            let transform = node.transform();
-            let (t, r, s) = transform.decomposed();
-            let translation = Vec3::new(t[0], t[1], t[2]);
-            let rotation = Quat::new(r[0], r[1], r[2], r[3]);
-            let scale = Vec3::new(s[0], s[1], s[2]);
-            let local_matrix = Mat4::from_trs(translation, rotation, scale);
-
-            let world_matrix = if let Some(Some(parent_index)) = parent_map.get(&node_index) {
-                if let Some(parent_transform) = world_transforms.get(parent_index) {
-                    parent_transform.clone() * local_matrix
-                } else {
-                    local_matrix
-                }
-            } else {
-                local_matrix
-            };
-
-            world_transforms.insert(node_index, world_matrix);
-
-            if let Some(children) = children_map.get(&node_index) {
-                for child_index in children {
-                    queue.push_back(*child_index);
-                }
-            }
-        }
-
-        world_transforms
+        build_world_transforms(&nodes)
     }
 
     #[test]

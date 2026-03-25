@@ -1,15 +1,8 @@
 //! GUI layout state with persistent storage.
-//!
-//! Stores UI layout (panel sizes, positions) in an OS-appropriate location:
-//! - Windows: `C:\Users\<user>\AppData\Roaming\katla\gui_state.toml`
-//! - macOS: `~/Library/Application Support/katla/gui_state.toml`
-//! - Linux: `~/.config/katla/gui_state.toml`
 
-use std::fs;
-use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::io;
 
-use log::{debug, info, warn};
+use log::{debug, warn};
 
 /// GUI layout state that persists between sessions.
 #[derive(Debug, Clone)]
@@ -33,63 +26,22 @@ impl Default for GuiState {
 }
 
 impl GuiState {
-    /// Get the GUI state file path.
-    pub fn file_path() -> Option<PathBuf> {
-        crate::util::katla_config_file("gui_state.toml")
-    }
-
     /// Load GUI state from disk, or return defaults if not found.
     pub fn load() -> Self {
-        let path = match Self::file_path() {
-            Some(p) => p,
+        let content = match crate::util::load_config_file("gui_state.toml") {
+            Some(c) => c,
             None => {
-                warn!("Could not determine GUI state file path");
+                warn!("Could not load GUI state file");
                 return Self::default();
             }
         };
-
-        if !path.exists() {
-            debug!("GUI state file not found, using defaults");
-            return Self::default();
-        }
-
-        let mut content = String::new();
-        if let Err(e) = fs::File::open(&path).and_then(|mut f| f.read_to_string(&mut content)) {
-            warn!("Failed to read GUI state file: {}", e);
-            return Self::default();
-        }
 
         Self::parse_toml(&content)
     }
 
     /// Save GUI state to disk.
     pub fn save(&self) -> io::Result<()> {
-        let config_dir = crate::util::katla_config_dir().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                "Could not determine config directory",
-            )
-        })?;
-
-        // Create the config directory if it doesn't exist
-        if !config_dir.exists() {
-            fs::create_dir_all(&config_dir)?;
-            info!("Created config directory: {:?}", config_dir);
-        }
-
-        let path = Self::file_path().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                "Could not determine GUI state file path",
-            )
-        })?;
-
-        let content = self.to_toml();
-        let mut file = fs::File::create(&path)?;
-        file.write_all(content.as_bytes())?;
-
-        debug!("Saved GUI state to {:?}", path);
-        Ok(())
+        crate::util::save_config_file("gui_state.toml", &self.to_toml())
     }
 
     /// Parse GUI state from TOML content.
