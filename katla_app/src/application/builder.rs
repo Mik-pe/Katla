@@ -600,7 +600,6 @@ impl ApplicationBuilder {
             resources,
             ui_context,
             ui_renderer,
-            debug_overlay: crate::ui::DebugOverlay::new(),
             editor_ui: {
                 let mut editor = crate::ui::EditorUI::with_theme(theme);
                 editor.show_grid = preferences.show_grid;
@@ -612,7 +611,6 @@ impl ApplicationBuilder {
                 editor.asset_browser.panel_height = gui_state.asset_browser_height;
                 editor
             },
-            use_editor_ui: true, // Default to editor UI mode
             preferences,
             gui_state,
             scale_factor: 1.0, // Will be updated when window is created

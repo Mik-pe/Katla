@@ -59,7 +59,7 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
 
     // Calculate stats
     let fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
-    let entity_count = app.world.entity_count();
+    let _entity_count = app.world.entity_count();
 
     // Collect entity info for editor UI
     let entity_info = collect_entity_info(app);
@@ -68,14 +68,10 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     app.ui_context
         .set_time(app.start_time.elapsed().as_secs_f64());
 
-    // Render UI (editor or debug overlay based on mode)
-    let scale_factor = app.scale_factor;
-    let use_editor = app.use_editor_ui;
-
     // Store viewport texture ID before rendering (to avoid borrow issues)
     let viewport_texture_id = app.editor_ui.viewport_texture_ids[0];
 
-    let draw_list = if use_editor {
+    let draw_list = {
         // Collect particle inspector data before rendering
         collect_particle_inspector_data(app);
 
@@ -90,17 +86,6 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
                 app.frame_count,
                 &mut app.background_loader,
                 &app.thumbnail_texture_handles,
-            )
-            .clone()
-    } else {
-        app.debug_overlay
-            .render(
-                &mut app.ui_context,
-                screen_size,
-                scale_factor,
-                fps,
-                app.frame_count,
-                entity_count,
             )
             .clone()
     };
@@ -131,11 +116,7 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
 ///
 /// Should be called after generate_ui_draw_list to extract any editor actions.
 pub fn process_editor_actions(app: &mut Application) {
-    let editor_actions = if app.use_editor_ui {
-        app.editor_ui.take_actions()
-    } else {
-        Vec::new()
-    };
+    let editor_actions = app.editor_ui.take_actions();
 
     // Process editor actions
     for action in editor_actions {
