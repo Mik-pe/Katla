@@ -4,10 +4,34 @@ use log::{debug, info};
 use crate::components::TransformComponent;
 
 impl super::Application {
-    /// Spawn a test cube entity with the default material.
+    /// Spawn a primitive entity with a specific color using the default material.
     ///
-    /// Creates a cube mesh and spawns an entity with DrawableComponent and TransformComponent.
-    /// Returns the entity ID of the spawned cube.
+    /// Color is expected in sRGB (perceptual) space and converted to linear for PBR.
+    fn spawn_primitive_with_color(
+        &mut self,
+        position: [f32; 3],
+        color: katla_math::Color,
+        mesh_handle: katla_gfx::MeshHandle,
+    ) -> katla_ecs::EntityId {
+        use crate::components::{DrawableComponent, TransformComponent};
+        use katla_math::Vec3;
+
+        let material_handle = self.default_material();
+        let linear_color = color.to_linear();
+
+        self.world.spawn((
+            TransformComponent {
+                transform: katla_math::Transform::new_from_position(Vec3::new(
+                    position[0],
+                    position[1],
+                    position[2],
+                )),
+            },
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
+        ))
+    }
+
+    /// Spawn a test cube entity with the default material.
     pub fn spawn_test_cube(&mut self, position: [f32; 3], size: [f32; 3]) -> katla_ecs::EntityId {
         self.spawn_test_cube_with_color(position, size, katla_math::Color::WHITE)
     }
@@ -20,29 +44,9 @@ impl super::Application {
         size: [f32; 3],
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        use crate::components::{DrawableComponent, TransformComponent};
-
-        use katla_math::Vec3;
-
         let mesh_handle = self.renderer.create_cube_mesh(size);
-        let material_handle = self.default_material();
-
-        // Convert sRGB to linear for correct PBR rendering
-        let linear_color = color.to_linear();
-
-        let entity_id = self.world.spawn((
-            TransformComponent {
-                transform: katla_math::Transform::new_from_position(Vec3::new(
-                    position[0],
-                    position[1],
-                    position[2],
-                )),
-            },
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
-        ));
-
         info!("Spawned test cube at {:?} with size {:?}", position, size);
-        entity_id
+        self.spawn_primitive_with_color(position, color, mesh_handle)
     }
 
     /// Spawn a sphere entity with the default material.
@@ -66,29 +70,9 @@ impl super::Application {
         rings: u32,
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        use crate::components::{DrawableComponent, TransformComponent};
-
-        use katla_math::Vec3;
-
         let mesh_handle = self.renderer.create_sphere_mesh(radius, segments, rings);
-        let material_handle = self.default_material();
-
-        // Convert sRGB to linear for correct PBR rendering
-        let linear_color = color.to_linear();
-
-        let entity_id = self.world.spawn((
-            TransformComponent {
-                transform: katla_math::Transform::new_from_position(Vec3::new(
-                    position[0],
-                    position[1],
-                    position[2],
-                )),
-            },
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
-        ));
-
         info!("Spawned sphere at {:?} with radius {}", position, radius);
-        entity_id
+        self.spawn_primitive_with_color(position, color, mesh_handle)
     }
 
     /// Spawn a sphere entity with PBR material properties.
@@ -105,13 +89,10 @@ impl super::Application {
         roughness: f32,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
-
         use katla_math::Vec3;
 
         let mesh_handle = self.renderer.create_sphere_mesh(radius, segments, rings);
         let material_handle = self.default_material();
-
-        // Convert sRGB to linear for correct PBR rendering
         let linear_color = color.to_linear();
 
         self.world.spawn((
@@ -128,18 +109,12 @@ impl super::Application {
                 Some(linear_color),
                 metallic,
                 roughness,
-                1.0, // ao
+                1.0,
             ),
         ))
     }
 
     /// Spawn a grid of spheres showcasing PBR material properties.
-    ///
-    /// Creates a grid where:
-    /// - X-axis: Roughness (0.0 → 1.0)
-    /// - Y-axis: Metallic (0.0 → 1.0)
-    ///
-    /// This is the standard PBR material showcase pattern used by most engines.
     pub fn spawn_pbr_material_grid(
         &mut self,
         center: [f32; 3],
@@ -160,8 +135,6 @@ impl super::Application {
                 let pos_y = center[1] + (y as f32 - half_grid) * spacing;
                 let pos_z = center[2];
 
-                // Cool blue color - shifts to cyan for metals
-                // spawn_sphere_with_material expects sRGB and converts to linear internally
                 let base_color = Color::rgb(0.4 + metallic * 0.2, 0.6 + metallic * 0.2, 1.0);
 
                 self.spawn_sphere_with_material(
@@ -203,29 +176,9 @@ impl super::Application {
         segments: u32,
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        use crate::components::{DrawableComponent, TransformComponent};
-
-        use katla_math::Vec3;
-
         let mesh_handle = self.renderer.create_cylinder_mesh(height, radius, segments);
-        let material_handle = self.default_material();
-
-        // Convert sRGB to linear for correct PBR rendering
-        let linear_color = color.to_linear();
-
-        let entity_id = self.world.spawn((
-            TransformComponent {
-                transform: katla_math::Transform::new_from_position(Vec3::new(
-                    position[0],
-                    position[1],
-                    position[2],
-                )),
-            },
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
-        ));
-
         info!("Spawned cylinder at {:?}", position);
-        entity_id
+        self.spawn_primitive_with_color(position, color, mesh_handle)
     }
 
     /// Spawn a plane entity with the default material.
@@ -247,29 +200,9 @@ impl super::Application {
         height: f32,
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        use crate::components::{DrawableComponent, TransformComponent};
-
-        use katla_math::Vec3;
-
         let mesh_handle = self.renderer.create_plane_mesh(width, height);
-        let material_handle = self.default_material();
-
-        // Convert sRGB to linear for correct PBR rendering
-        let linear_color = color.to_linear();
-
-        let entity_id = self.world.spawn((
-            TransformComponent {
-                transform: katla_math::Transform::new_from_position(Vec3::new(
-                    position[0],
-                    position[1],
-                    position[2],
-                )),
-            },
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
-        ));
-
         info!("Spawned plane at {:?}", position);
-        entity_id
+        self.spawn_primitive_with_color(position, color, mesh_handle)
     }
 
     /// Spawn a torus entity with the default material.
@@ -302,31 +235,11 @@ impl super::Application {
         tube_segments: u32,
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        use crate::components::{DrawableComponent, TransformComponent};
-
-        use katla_math::Vec3;
-
         let mesh_handle =
             self.renderer
                 .create_torus_mesh(radius, tube_radius, segments, tube_segments);
-        let material_handle = self.default_material();
-
-        // Convert sRGB to linear for correct PBR rendering
-        let linear_color = color.to_linear();
-
-        let entity_id = self.world.spawn((
-            TransformComponent {
-                transform: katla_math::Transform::new_from_position(Vec3::new(
-                    position[0],
-                    position[1],
-                    position[2],
-                )),
-            },
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
-        ));
-
         info!("Spawned torus at {:?}", position);
-        entity_id
+        self.spawn_primitive_with_color(position, color, mesh_handle)
     }
 
     /// Spawn a GLTF model from file. Handles both static and skinned meshes.
