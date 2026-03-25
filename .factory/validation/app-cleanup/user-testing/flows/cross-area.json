@@ -1,0 +1,94 @@
+{
+  "assertionGroup": "cross-area",
+  "testedAt": "2026-03-25T01:37:00Z",
+  "isolation": {
+    "type": "codebase-only",
+    "workingDirectory": "C:\\dev\\katla"
+  },
+  "toolsUsed": ["cargo", "grep"],
+  "assertions": [
+    {
+      "id": "VAL-CROSS-001",
+      "title": "cargo check --workspace succeeds",
+      "status": "pass",
+      "command": "cargo check --workspace",
+      "exitCode": 0,
+      "evidence": "Finished `dev` profile [optimized + debuginfo] target(s) in 0.59s. Exit code 0.",
+      "steps": [
+        {
+          "action": "Run cargo check --workspace",
+          "expected": "Compilation succeeds with exit code 0",
+          "observed": "Finished `dev` profile [optimized + debuginfo] target(s) in 0.59s, exit code 0"
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-002",
+      "title": "cargo test --workspace passes",
+      "status": "pass",
+      "command": "cargo test --workspace",
+      "exitCode": 0,
+      "evidence": "All unit tests and doctests passed across all workspace crates. No FAILED messages. Test results: katla_derive (0 tests), katla_ecs (test result: ok), katla_app (127 tests passed, 1 ignored), katla_gfx (4 doctests passed, 103 ignored), katla_math (3 doctests passed), katla_ui (0 doctests passed, 51 ignored). Warnings present (unused variables) but no failures.",
+      "steps": [
+        {
+          "action": "Run cargo test --workspace",
+          "expected": "All tests pass with exit code 0, no FAILED messages",
+          "observed": "All test result lines show 'ok'. No 'FAILED' in output. Exit code 0."
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-003",
+      "title": "cargo clippy --workspace has no warnings",
+      "status": "pass",
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0,
+      "evidence": "Finished `dev` profile [optimized + debuginfo] target(s) in 0.69s. No clippy warnings emitted. Exit code 0.",
+      "steps": [
+        {
+          "action": "Run cargo clippy --workspace -- -D warnings",
+          "expected": "Zero warnings with exit code 0",
+          "observed": "No warnings produced, exit code 0"
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-004",
+      "title": "cargo fmt --check passes",
+      "status": "pass",
+      "command": "cargo fmt --check",
+      "exitCode": 0,
+      "evidence": "Command completed successfully with no output (no formatting differences found). Exit code 0.",
+      "steps": [
+        {
+          "action": "Run cargo fmt --check",
+          "expected": "All code formatted correctly, exit code 0",
+          "observed": "No output (clean), exit code 0"
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-005",
+      "title": "No blanket dead_code suppressions in any crate",
+      "status": "pass",
+      "command": "Grep for #![allow(dead_code)] in katla_*/src/**/*.rs",
+      "exitCode": 0,
+      "evidence": "Grep found 0 matches for pattern '^#!\\[allow\\(dead_code\\)\\]' across all katla_*/src/ directories.",
+      "steps": [
+        {
+          "action": "Search katla_*/src/**/*.rs for ^#!\\[allow\\(dead_code\\)\\]",
+          "expected": "0 matches",
+          "observed": "No matches found"
+        }
+      ],
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "All 5 cross-area assertions passed: workspace compiles, all tests pass, clippy clean, formatting clean, no blanket dead_code suppressions."
+}
