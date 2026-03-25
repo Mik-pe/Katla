@@ -517,6 +517,14 @@ impl LightCullingBuffers {
         self.light_count
     }
 
+    pub fn tile_index_buffer(&self) -> vk::Buffer {
+        self.tile_index_buffer
+    }
+
+    pub fn tile_header_buffer(&self) -> vk::Buffer {
+        self.tile_header_buffer
+    }
+
     pub fn destroy(&mut self) {
         if self.destroyed {
             return;

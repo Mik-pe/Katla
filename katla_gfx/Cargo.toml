@@ -22,3 +22,11 @@ env_logger = { workspace = true }
 
 [[example]]
 name = "particle_validation"
+
+
+
+[[example]]
+name = "animation_validation"
+
+[[example]]
+name = "light_shadow_validation"

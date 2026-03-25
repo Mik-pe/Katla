@@ -166,7 +166,11 @@ pub mod compute;
 pub mod render_graph;
 
 // Internal implementation (not public)
+pub mod animation;
 pub(crate) mod vulkan;
+
+// Re-export animation types for katla_app GPU animation pipeline
+pub use animation::{AnimChannelInfo, AnimClipHeader, JointInfo, SkeletonAnimParams};
 
 // Internal modules (implementation details)
 pub(crate) mod barrier;
@@ -181,6 +185,10 @@ pub use vulkan::material::shadermodule::ShaderCache;
 pub use vulkan::material::compute_pipeline::{
     ComputePipeline, ComputePipelineBuilder, ComputePipelineError,
 };
+
+// Re-export for validation examples and advanced compute usage
+pub use vulkan::commandbuffer::CommandBuffer;
+pub use vulkan::pipeline_state::ShaderStages;
 
 // Size type (Katla-native)
 mod size;
