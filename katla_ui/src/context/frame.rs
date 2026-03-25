@@ -1,6 +1,6 @@
 use katla_math::Vec2;
 
-use super::{z_index, UiContext};
+use super::{UiContext, z_index};
 
 impl UiContext {
     /// Set the current time in seconds (for animations like cursor blink).

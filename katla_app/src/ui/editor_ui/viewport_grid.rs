@@ -5,7 +5,7 @@
 
 use crate::resources::viewport_state::{ViewportGridState, ViewportLayout};
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::{mouse_button, Response, TextureId, UiContext, Widget};
+use katla_ui::{Response, TextureId, UiContext, Widget, mouse_button};
 
 use super::{FocusedPanel, Theme};
 

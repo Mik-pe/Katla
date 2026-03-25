@@ -190,7 +190,9 @@ impl UIRenderer {
         if id == TextureId::FONT_ATLAS {
             let slot = self.font_atlas_bindless_slot.unwrap_or(0);
             if self.font_atlas_bindless_slot.is_none() {
-                log::error!("Font atlas bindless slot is None! Text will sample from white texture (slot 0) instead.");
+                log::error!(
+                    "Font atlas bindless slot is None! Text will sample from white texture (slot 0) instead."
+                );
             }
             return slot;
         }

@@ -2,10 +2,10 @@
 
 use katla_math::{Rect2D, Vec2};
 
+use crate::FontSize;
 use crate::icons::ForkAwesome;
 use crate::input::mouse_button;
 use crate::text::FontId;
-use crate::FontSize;
 
 use super::super::UiContext;
 

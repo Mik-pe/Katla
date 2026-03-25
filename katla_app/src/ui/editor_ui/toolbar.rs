@@ -2,8 +2,8 @@ use katla_math::{Color, Rect2D, Vec2, Vec3};
 use katla_ui::{FontSize, Response, Widget};
 
 use crate::{
-    ui::{editor_ui::Panel, EditorAction, SpawnableModel, Theme},
     Preferences,
+    ui::{EditorAction, SpawnableModel, Theme, editor_ui::Panel},
 };
 
 impl SpawnableModel {

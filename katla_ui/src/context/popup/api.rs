@@ -5,7 +5,7 @@
 
 use katla_math::{Color, Rect2D, Vec2};
 
-use super::super::{z_index, UiContext};
+use super::super::{UiContext, z_index};
 use super::{Popup, PopupPosition, PopupStyle};
 
 impl UiContext {
