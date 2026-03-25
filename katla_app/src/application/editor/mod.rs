@@ -6,7 +6,7 @@ use log::info;
 
 use katla_ecs::EntityId;
 use katla_gfx::renderer::UIDrawList;
-use katla_math::{Vec2, Vec3};
+use katla_math::{Vec2, Vec3, Vec4};
 
 use crate::components::{
     Children, DirectionalLight, DrawableComponent, EditorHidden, NameComponent, Parent, PointLight,
@@ -143,8 +143,18 @@ pub fn process_editor_actions(app: &mut Application) {
                     }
                 }
             }
-            EditorAction::SpawnModelAtPath => {
-                //TODO: Implement
+            EditorAction::SpawnModelAtPath { path, screen_pos } => {
+                let world_pos = unproject_to_ground_plane(app, screen_pos);
+                info!(
+                    "Spawning model '{}' at screen ({:.0}, {:.0}) -> world ({:.1}, {:.1}, {:.1})",
+                    path.display(),
+                    screen_pos.x(),
+                    screen_pos.y(),
+                    world_pos.x(),
+                    world_pos.y(),
+                    world_pos.z()
+                );
+                app.spawn_gltf_model(&path, [world_pos.x(), world_pos.y(), world_pos.z()], None);
             }
             EditorAction::DeleteEntity(entity_id) => {
                 // Cascade delete: collect all children first, then delete in reverse order
@@ -492,5 +502,312 @@ pub fn collect_children_recursive(
             result.push(*child_id);
             collect_children_recursive(app, *child_id, result);
         }
+    }
+}
+
+/// Unproject a screen position to a world position on the y=0 ground plane.
+///
+/// Pure function taking view/projection matrices, camera position, viewport
+/// bounds, and screen position. Suitable for unit testing.
+fn unproject_to_ground_plane_impl(
+    view_mat: katla_math::Mat4,
+    proj_mat: katla_math::Mat4,
+    cam_pos: Vec3,
+    viewport: katla_math::Rect2D,
+    screen_pos: Vec2,
+) -> Vec3 {
+    // Convert screen position to normalized device coordinates (-1 to 1)
+    let ndc_x = ((screen_pos.x() - viewport.min.x()) / viewport.width()) * 2.0 - 1.0;
+    let ndc_y = -(((screen_pos.y() - viewport.min.y()) / viewport.height()) * 2.0 - 1.0);
+
+    let vp = proj_mat * view_mat;
+    let inv_vp = vp.inverse();
+
+    // Unproject two points at different depths to get the ray direction.
+    // Reverse-Z infinite projection: ndc_z=1 is near plane, ndc_z=0 is infinity.
+    // Use ndc_z=1 (near) and ndc_z=0.5 (mid-range) for two distinct world-space points.
+    let near_clip = inv_vp * Vec4::new(ndc_x, ndc_y, 1.0, 1.0);
+    let far_clip = inv_vp * Vec4::new(ndc_x, ndc_y, 0.5, 1.0);
+
+    // Perspective divide
+    let near = Vec3::new(
+        near_clip.x() / near_clip.w(),
+        near_clip.y() / near_clip.w(),
+        near_clip.z() / near_clip.w(),
+    );
+    let far = Vec3::new(
+        far_clip.x() / far_clip.w(),
+        far_clip.y() / far_clip.w(),
+        far_clip.z() / far_clip.w(),
+    );
+
+    // Ray origin is the unprojected near point, direction toward far point
+    let ray_origin = near;
+    let ray_dir = (far - near).normalize();
+
+    // Intersect ray with y=0 plane: t = -ray_origin.y / ray_dir.y
+    if ray_dir.y().abs() < 1e-6 {
+        return Vec3::new(cam_pos.x(), 0.0, cam_pos.z());
+    }
+
+    let t = -ray_origin.y() / ray_dir.y();
+    let t = if t < 0.0 { 10.0 } else { t };
+
+    ray_origin + ray_dir * t
+}
+
+/// Unproject a screen position to a world position on the y=0 ground plane.
+///
+/// Takes the mouse position in logical screen coordinates and the current viewport
+/// panel bounds, then raycasts from the camera through that pixel to find where
+/// the ray intersects the ground plane.
+fn unproject_to_ground_plane(app: &Application, screen_pos: Vec2) -> Vec3 {
+    let viewport = app.editor_ui.last_viewport_bounds;
+
+    let camera = app.camera.borrow();
+    let view_mat = camera.get_view_mat(&app.world);
+    let proj_mat = camera.get_proj_mat(&app.world);
+    let cam_entity = camera.entity;
+    drop(camera);
+
+    let cam_pos = app
+        .world
+        .get_component::<crate::components::TransformComponent>(cam_entity)
+        .map(|t| t.transform.position)
+        .unwrap_or(Vec3::new(0.0, 2.0, 10.0));
+
+    unproject_to_ground_plane_impl(view_mat, proj_mat, cam_pos, viewport, screen_pos)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use katla_math::{Mat4, Quat, Rect2D, Vec3};
+
+    /// Build a view matrix matching what Camera::get_view_mat does:
+    /// camera-to-world from a position + rotation, then inverted.
+    fn make_view_matrix(position: Vec3, pitch: f32, yaw: f32) -> Mat4 {
+        let rotation = Quat::from_euler(pitch, yaw, 0.0);
+        let rotation_mat = rotation.make_mat4();
+        let fwd = rotation_mat * Vec3::new(0.0, 0.0, -1.0);
+        Mat4::create_lookat(position, position + fwd, Vec3::new(0.0, 1.0, 0.0)).inverse()
+    }
+
+    fn make_proj(fov: f32, aspect: f32, near: f32) -> Mat4 {
+        Mat4::create_proj(fov, aspect, near)
+    }
+
+    fn viewport(w: f32, h: f32) -> Rect2D {
+        Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(w, h))
+    }
+
+    /// Camera looking straight down (-Y) from y=10. Center of viewport should hit origin.
+    #[test]
+    fn test_unproject_camera_straight_down() {
+        let cam_pos = Vec3::new(0.0, 10.0, 0.0);
+        let view = make_view_matrix(cam_pos, -std::f32::consts::FRAC_PI_2, 0.0);
+        let proj = make_proj(60.0, 16.0 / 9.0, 0.001);
+        let vp = viewport(1600.0, 900.0);
+
+        let center = unproject_to_ground_plane_impl(
+            view, proj, cam_pos, vp, Vec2::new(800.0, 450.0),
+        );
+
+        assert!(
+            !center.x().is_nan() && !center.y().is_nan() && !center.z().is_nan(),
+            "center should not be NaN, got ({:.3}, {:.3}, {:.3})",
+            center.x(), center.y(), center.z()
+        );
+        assert!(
+            (center.x().abs() < 0.1) && (center.z().abs() < 0.1),
+            "looking straight down at center should hit near origin, got ({:.3}, {:.3}, {:.3})",
+            center.x(), center.y(), center.z()
+        );
+        assert!(
+            (center.y() - 0.0).abs() < 0.01,
+            "should be on ground plane, y={:.3}",
+            center.y()
+        );
+    }
+
+    /// Camera angled down 45 degrees from height 10 at origin, looking along -Z.
+    /// Center of viewport should hit (0, 0, -10) on the ground.
+    #[test]
+    fn test_unproject_camera_angled_down_45() {
+        let cam_pos = Vec3::new(0.0, 10.0, 0.0);
+        // Pitch -45 deg = looking 45 degrees below horizontal
+        let view = make_view_matrix(cam_pos, -std::f32::consts::FRAC_PI_4, 0.0);
+        let proj = make_proj(60.0, 16.0 / 9.0, 0.001);
+        let vp = viewport(1600.0, 900.0);
+
+        let center = unproject_to_ground_plane_impl(
+            view, proj, cam_pos, vp, Vec2::new(800.0, 450.0),
+        );
+
+        assert!(
+            !center.x().is_nan() && !center.y().is_nan() && !center.z().is_nan(),
+            "should not be NaN, got ({:.3}, {:.3}, {:.3})",
+            center.x(), center.y(), center.z()
+        );
+        // Looking 45 deg down from height 10 -> ground hit is 10 units away in Z
+        assert!(
+            (center.z() - (-10.0)).abs() < 1.0,
+            "looking 45 deg down should hit ~z=-10, got z={:.3}",
+            center.z()
+        );
+        assert!(
+            (center.y()).abs() < 0.01,
+            "should be on ground plane, y={:.3}",
+            center.y()
+        );
+    }
+
+    /// Camera at (5, 5, 5) looking at origin. Center viewport should hit near origin.
+    #[test]
+    fn test_unproject_camera_offset_position() {
+        let cam_pos = Vec3::new(5.0, 5.0, 5.0);
+        // Look toward origin: yaw ~225 deg (toward -X, -Z), pitch ~-35 deg (downward)
+        let yaw = std::f32::consts::FRAC_PI_4 + std::f32::consts::FRAC_PI_4; // 135 deg
+        let pitch = -35.0_f32.to_radians();
+        let view = make_view_matrix(cam_pos, pitch, yaw);
+        let proj = make_proj(60.0, 16.0 / 9.0, 0.001);
+        let vp = viewport(1600.0, 900.0);
+
+        let center = unproject_to_ground_plane_impl(
+            view, proj, cam_pos, vp, Vec2::new(800.0, 450.0),
+        );
+
+        assert!(
+            !center.x().is_nan() && !center.y().is_nan() && !center.z().is_nan(),
+            "should not be NaN, got ({:.3}, {:.3}, {:.3})",
+            center.x(), center.y(), center.z()
+        );
+        assert!(
+            (center.y()).abs() < 0.01,
+            "should be on ground plane, y={:.3}",
+            center.y()
+        );
+        // Should be somewhere between camera and origin on the ground
+        assert!(
+            center.x() < cam_pos.x() && center.z() < cam_pos.z(),
+            "should be between camera and origin, got ({:.3}, {:.3}, {:.3})",
+            center.x(), center.y(), center.z()
+        );
+    }
+
+    /// Dragging to different positions within the viewport should give different results.
+    #[test]
+    fn test_unproject_different_viewport_positions() {
+        let cam_pos = Vec3::new(0.0, 10.0, 0.0);
+        let view = make_view_matrix(cam_pos, -std::f32::consts::FRAC_PI_4, 0.0);
+        let proj = make_proj(60.0, 16.0 / 9.0, 0.001);
+        let vp = viewport(1600.0, 900.0);
+
+        let top_left = unproject_to_ground_plane_impl(
+            view, proj, cam_pos, vp, Vec2::new(100.0, 100.0),
+        );
+        let center = unproject_to_ground_plane_impl(
+            view, proj, cam_pos, vp, Vec2::new(800.0, 450.0),
+        );
+        let bottom_right = unproject_to_ground_plane_impl(
+            view, proj, cam_pos, vp, Vec2::new(1500.0, 800.0),
+        );
+
+        // All should be on ground plane
+        for p in [top_left, center, bottom_right] {
+            assert!(
+                !p.x().is_nan() && !p.y().is_nan() && !p.z().is_nan(),
+                "should not be NaN"
+            );
+            assert!((p.y()).abs() < 0.01, "should be on ground plane, y={:.3}", p.y());
+        }
+
+        // All three positions should be distinct
+        assert!(
+            (top_left - center).length() > 0.1,
+            "top-left and center should be different positions"
+        );
+        assert!(
+            (center - bottom_right).length() > 0.1,
+            "center and bottom-right should be different positions"
+        );
+    }
+
+    /// Viewport offset: viewport at (200, 32) to (1200, 632). Center of that should
+    /// still unproject correctly.
+    #[test]
+    fn test_unproject_offset_viewport() {
+        let cam_pos = Vec3::new(0.0, 10.0, 0.0);
+        let view = make_view_matrix(cam_pos, -std::f32::consts::FRAC_PI_4, 0.0);
+        let proj = make_proj(60.0, 16.0 / 9.0, 0.001);
+        // Viewport panel at (200, 32) with size 1000x600
+        let vp = Rect2D::new(Vec2::new(200.0, 32.0), Vec2::new(1200.0, 632.0));
+
+        let center = unproject_to_ground_plane_impl(
+            view, proj, cam_pos, vp, Vec2::new(700.0, 332.0),
+        );
+
+        assert!(
+            !center.x().is_nan() && !center.y().is_nan() && !center.z().is_nan(),
+            "should not be NaN, got ({:.3}, {:.3}, {:.3})",
+            center.x(), center.y(), center.z()
+        );
+        assert!(
+            (center.y()).abs() < 0.01,
+            "should be on ground plane, y={:.3}",
+            center.y()
+        );
+    }
+
+    /// Camera looking straight ahead (horizontal). Should still produce valid results
+    /// (will fall back to camera XZ position for parallel-to-ground rays).
+    #[test]
+    fn test_unproject_camera_horizontal() {
+        let cam_pos = Vec3::new(0.0, 10.0, 10.0);
+        let view = make_view_matrix(cam_pos, 0.0, 0.0);
+        let proj = make_proj(60.0, 16.0 / 9.0, 0.001);
+        let vp = viewport(1600.0, 900.0);
+
+        // Looking straight ahead, center viewport ray is nearly parallel to ground
+        let result = unproject_to_ground_plane_impl(
+            view, proj, cam_pos, vp, Vec2::new(800.0, 450.0),
+        );
+
+        assert!(
+            !result.x().is_nan() && !result.y().is_nan() && !result.z().is_nan(),
+            "horizontal camera should not produce NaN, got ({:.3}, {:.3}, {:.3})",
+            result.x(), result.y(), result.z()
+        );
+    }
+
+    /// Default camera (0, 2, 10) looking along -Z with slight downward pitch.
+    /// Matches the initial editor camera setup.
+    #[test]
+    fn test_unproject_default_editor_camera() {
+        let cam_pos = Vec3::new(0.0, 2.0, 10.0);
+        let view = make_view_matrix(cam_pos, -10.0_f32.to_radians(), 0.0);
+        let proj = make_proj(60.0, 16.0 / 9.0, 0.001);
+        let vp = viewport(1600.0, 900.0);
+
+        let center = unproject_to_ground_plane_impl(
+            view, proj, cam_pos, vp, Vec2::new(800.0, 450.0),
+        );
+
+        assert!(
+            !center.x().is_nan() && !center.y().is_nan() && !center.z().is_nan(),
+            "default camera should not produce NaN, got ({:.3}, {:.3}, {:.3})",
+            center.x(), center.y(), center.z()
+        );
+        assert!(
+            (center.y()).abs() < 0.01,
+            "should be on ground plane, y={:.3}",
+            center.y()
+        );
+        // Should be somewhere ahead of camera on the ground
+        assert!(
+            center.z() < cam_pos.z(),
+            "should be in front of camera, got z={:.3} vs cam z={:.3}",
+            center.z(), cam_pos.z()
+        );
     }
 }
