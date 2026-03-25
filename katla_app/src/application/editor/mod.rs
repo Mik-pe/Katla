@@ -609,19 +609,22 @@ mod tests {
         let proj = make_proj(60.0, 16.0 / 9.0, 0.001);
         let vp = viewport(1600.0, 900.0);
 
-        let center = unproject_to_ground_plane_impl(
-            view, proj, cam_pos, vp, Vec2::new(800.0, 450.0),
-        );
+        let center =
+            unproject_to_ground_plane_impl(view, proj, cam_pos, vp, Vec2::new(800.0, 450.0));
 
         assert!(
             !center.x().is_nan() && !center.y().is_nan() && !center.z().is_nan(),
             "center should not be NaN, got ({:.3}, {:.3}, {:.3})",
-            center.x(), center.y(), center.z()
+            center.x(),
+            center.y(),
+            center.z()
         );
         assert!(
             (center.x().abs() < 0.1) && (center.z().abs() < 0.1),
             "looking straight down at center should hit near origin, got ({:.3}, {:.3}, {:.3})",
-            center.x(), center.y(), center.z()
+            center.x(),
+            center.y(),
+            center.z()
         );
         assert!(
             (center.y() - 0.0).abs() < 0.01,
@@ -640,14 +643,15 @@ mod tests {
         let proj = make_proj(60.0, 16.0 / 9.0, 0.001);
         let vp = viewport(1600.0, 900.0);
 
-        let center = unproject_to_ground_plane_impl(
-            view, proj, cam_pos, vp, Vec2::new(800.0, 450.0),
-        );
+        let center =
+            unproject_to_ground_plane_impl(view, proj, cam_pos, vp, Vec2::new(800.0, 450.0));
 
         assert!(
             !center.x().is_nan() && !center.y().is_nan() && !center.z().is_nan(),
             "should not be NaN, got ({:.3}, {:.3}, {:.3})",
-            center.x(), center.y(), center.z()
+            center.x(),
+            center.y(),
+            center.z()
         );
         // Looking 45 deg down from height 10 -> ground hit is 10 units away in Z
         assert!(
@@ -673,14 +677,15 @@ mod tests {
         let proj = make_proj(60.0, 16.0 / 9.0, 0.001);
         let vp = viewport(1600.0, 900.0);
 
-        let center = unproject_to_ground_plane_impl(
-            view, proj, cam_pos, vp, Vec2::new(800.0, 450.0),
-        );
+        let center =
+            unproject_to_ground_plane_impl(view, proj, cam_pos, vp, Vec2::new(800.0, 450.0));
 
         assert!(
             !center.x().is_nan() && !center.y().is_nan() && !center.z().is_nan(),
             "should not be NaN, got ({:.3}, {:.3}, {:.3})",
-            center.x(), center.y(), center.z()
+            center.x(),
+            center.y(),
+            center.z()
         );
         assert!(
             (center.y()).abs() < 0.01,
@@ -691,7 +696,9 @@ mod tests {
         assert!(
             center.x() < cam_pos.x() && center.z() < cam_pos.z(),
             "should be between camera and origin, got ({:.3}, {:.3}, {:.3})",
-            center.x(), center.y(), center.z()
+            center.x(),
+            center.y(),
+            center.z()
         );
     }
 
@@ -703,15 +710,12 @@ mod tests {
         let proj = make_proj(60.0, 16.0 / 9.0, 0.001);
         let vp = viewport(1600.0, 900.0);
 
-        let top_left = unproject_to_ground_plane_impl(
-            view, proj, cam_pos, vp, Vec2::new(100.0, 100.0),
-        );
-        let center = unproject_to_ground_plane_impl(
-            view, proj, cam_pos, vp, Vec2::new(800.0, 450.0),
-        );
-        let bottom_right = unproject_to_ground_plane_impl(
-            view, proj, cam_pos, vp, Vec2::new(1500.0, 800.0),
-        );
+        let top_left =
+            unproject_to_ground_plane_impl(view, proj, cam_pos, vp, Vec2::new(100.0, 100.0));
+        let center =
+            unproject_to_ground_plane_impl(view, proj, cam_pos, vp, Vec2::new(800.0, 450.0));
+        let bottom_right =
+            unproject_to_ground_plane_impl(view, proj, cam_pos, vp, Vec2::new(1500.0, 800.0));
 
         // All should be on ground plane
         for p in [top_left, center, bottom_right] {
@@ -719,7 +723,11 @@ mod tests {
                 !p.x().is_nan() && !p.y().is_nan() && !p.z().is_nan(),
                 "should not be NaN"
             );
-            assert!((p.y()).abs() < 0.01, "should be on ground plane, y={:.3}", p.y());
+            assert!(
+                (p.y()).abs() < 0.01,
+                "should be on ground plane, y={:.3}",
+                p.y()
+            );
         }
 
         // All three positions should be distinct
@@ -743,14 +751,15 @@ mod tests {
         // Viewport panel at (200, 32) with size 1000x600
         let vp = Rect2D::new(Vec2::new(200.0, 32.0), Vec2::new(1200.0, 632.0));
 
-        let center = unproject_to_ground_plane_impl(
-            view, proj, cam_pos, vp, Vec2::new(700.0, 332.0),
-        );
+        let center =
+            unproject_to_ground_plane_impl(view, proj, cam_pos, vp, Vec2::new(700.0, 332.0));
 
         assert!(
             !center.x().is_nan() && !center.y().is_nan() && !center.z().is_nan(),
             "should not be NaN, got ({:.3}, {:.3}, {:.3})",
-            center.x(), center.y(), center.z()
+            center.x(),
+            center.y(),
+            center.z()
         );
         assert!(
             (center.y()).abs() < 0.01,
@@ -769,14 +778,15 @@ mod tests {
         let vp = viewport(1600.0, 900.0);
 
         // Looking straight ahead, center viewport ray is nearly parallel to ground
-        let result = unproject_to_ground_plane_impl(
-            view, proj, cam_pos, vp, Vec2::new(800.0, 450.0),
-        );
+        let result =
+            unproject_to_ground_plane_impl(view, proj, cam_pos, vp, Vec2::new(800.0, 450.0));
 
         assert!(
             !result.x().is_nan() && !result.y().is_nan() && !result.z().is_nan(),
             "horizontal camera should not produce NaN, got ({:.3}, {:.3}, {:.3})",
-            result.x(), result.y(), result.z()
+            result.x(),
+            result.y(),
+            result.z()
         );
     }
 
@@ -789,14 +799,15 @@ mod tests {
         let proj = make_proj(60.0, 16.0 / 9.0, 0.001);
         let vp = viewport(1600.0, 900.0);
 
-        let center = unproject_to_ground_plane_impl(
-            view, proj, cam_pos, vp, Vec2::new(800.0, 450.0),
-        );
+        let center =
+            unproject_to_ground_plane_impl(view, proj, cam_pos, vp, Vec2::new(800.0, 450.0));
 
         assert!(
             !center.x().is_nan() && !center.y().is_nan() && !center.z().is_nan(),
             "default camera should not produce NaN, got ({:.3}, {:.3}, {:.3})",
-            center.x(), center.y(), center.z()
+            center.x(),
+            center.y(),
+            center.z()
         );
         assert!(
             (center.y()).abs() < 0.01,
@@ -807,7 +818,8 @@ mod tests {
         assert!(
             center.z() < cam_pos.z(),
             "should be in front of camera, got z={:.3} vs cam z={:.3}",
-            center.z(), cam_pos.z()
+            center.z(),
+            cam_pos.z()
         );
     }
 }
