@@ -36,3 +36,18 @@ pub enum EntitySource {
     ParticleEmitter,
     Light,
 }
+
+impl EntitySource {
+    /// Returns `true` if this source is a mesh primitive that can be spawned
+    /// through the generic mesh creation path.
+    pub fn is_mesh_primitive(&self) -> bool {
+        matches!(
+            self,
+            Self::Cube { .. }
+                | Self::Sphere { .. }
+                | Self::Plane { .. }
+                | Self::Cylinder { .. }
+                | Self::Torus { .. }
+        )
+    }
+}

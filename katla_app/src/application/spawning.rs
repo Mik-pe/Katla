@@ -109,7 +109,7 @@ impl super::Application {
         let material_handle = self.default_material();
         let linear_color = color.to_linear();
 
-        self.world.spawn((
+        let entity = self.world.spawn((
             TransformComponent {
                 transform: katla_math::Transform::new_from_position(Vec3::new(
                     position[0],
@@ -125,7 +125,18 @@ impl super::Application {
                 roughness,
                 1.0,
             ),
-        ))
+        ));
+
+        self.world.add_component(
+            entity,
+            EntitySource::Sphere {
+                radius,
+                segments,
+                rings,
+            },
+        );
+
+        entity
     }
 
     /// Spawn a grid of spheres showcasing PBR material properties.
@@ -687,7 +698,14 @@ impl super::Application {
             gravity: 0.0,
             ..Default::default()
         });
-        let fire_entity = self.world.spawn((fire_emitter,));
+        let fire_entity = self.world.spawn((
+            TransformComponent {
+                transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
+                    -3.0, 1.0, -3.0,
+                )),
+            },
+            fire_emitter,
+        ));
         self.world
             .add_component(fire_entity, EntitySource::ParticleEmitter);
 
@@ -711,7 +729,14 @@ impl super::Application {
         });
         ethereal_emitter.config.set_shape(EmitterShape::Circle);
         ethereal_emitter.config.shape_params = [2.0, 0.0, 0.0, 0.0];
-        let ethereal_entity = self.world.spawn((ethereal_emitter,));
+        let ethereal_entity = self.world.spawn((
+            TransformComponent {
+                transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
+                    3.0, 0.5, 0.0,
+                )),
+            },
+            ethereal_emitter,
+        ));
         self.world
             .add_component(ethereal_entity, EntitySource::ParticleEmitter);
 
@@ -730,7 +755,14 @@ impl super::Application {
             color_variation: 0.3,
             ..Default::default()
         });
-        let sparkle_entity = self.world.spawn((sparkle_emitter,));
+        let sparkle_entity = self.world.spawn((
+            TransformComponent {
+                transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
+                    0.0, 3.0, 0.0,
+                )),
+            },
+            sparkle_emitter,
+        ));
         self.world
             .add_component(sparkle_entity, EntitySource::ParticleEmitter);
 

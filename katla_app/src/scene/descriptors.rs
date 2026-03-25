@@ -44,7 +44,7 @@ pub struct ParticleEmitterDescriptor {
     pub gravity: f32,
     pub turbulence_strength: f32,
     pub turbulence_frequency: f32,
-    pub shape: u32,
+    pub shape: katla_gfx::particles::EmitterShape,
     pub shape_params: [f32; 4],
     pub active: bool,
 }
@@ -57,6 +57,45 @@ pub struct AnimationDescriptor {
     pub loop_animation: bool,
     pub speed: f32,
     pub time: f32,
+    #[serde(default)]
+    pub duration: f32,
+    #[serde(default)]
+    pub blending: bool,
+    #[serde(default)]
+    pub target_clip: Option<String>,
+    #[serde(default)]
+    pub blend_weight: f32,
+    #[serde(default)]
+    pub blend_time: f32,
+    #[serde(default)]
+    pub blend_duration: f32,
+    #[serde(default)]
+    pub target_time: f32,
+    #[serde(default)]
+    pub target_duration: f32,
+    #[serde(default)]
+    pub loop_count: u32,
+}
+
+impl Default for AnimationDescriptor {
+    fn default() -> Self {
+        Self {
+            current_clip: None,
+            playing: false,
+            loop_animation: false,
+            speed: 1.0,
+            time: 0.0,
+            duration: 0.0,
+            blending: false,
+            target_clip: None,
+            blend_weight: 1.0,
+            blend_time: 0.0,
+            blend_duration: 0.0,
+            target_time: 0.0,
+            target_duration: 0.0,
+            loop_count: 0,
+        }
+    }
 }
 
 /// Velocity data for serialization.
@@ -95,6 +134,14 @@ pub struct Scene {
     #[serde(default)]
     pub version: u32,
     pub name: String,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub modified_at: Option<String>,
+    #[serde(default)]
+    pub engine_version: Option<String>,
     pub entities: Vec<EntityDescriptor>,
 }
 
@@ -104,6 +151,10 @@ impl Scene {
         Self {
             version: 1,
             name: name.into(),
+            author: None,
+            created_at: None,
+            modified_at: None,
+            engine_version: None,
             entities: Vec::new(),
         }
     }
