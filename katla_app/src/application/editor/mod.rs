@@ -2,15 +2,15 @@
 
 use std::collections::{HashMap, HashSet};
 
-use log::info;
+use log::{info, warn};
 
 use katla_ecs::EntityId;
 use katla_gfx::renderer::UIDrawList;
 use katla_math::{Vec2, Vec3, Vec4};
 
 use crate::components::{
-    Children, DirectionalLight, DrawableComponent, EditorHidden, NameComponent, Parent, PointLight,
-    TransformComponent,
+    Children, DirectionalLight, DrawableComponent, EditorHidden, NameComponent, Parent,
+    ParticleEmitterComponent, PointLight, TransformComponent,
 };
 
 use crate::ui::{EditorAction, EntityInfo};
@@ -161,6 +161,20 @@ pub fn process_editor_actions(app: &mut Application) {
                 let mut to_delete = vec![entity_id];
                 collect_children_recursive(app, entity_id, &mut to_delete);
 
+                // Clean up particle emitters before destroying entities
+                for id in &to_delete {
+                    if let Some(emitter) =
+                        app.world.get_component_mut::<ParticleEmitterComponent>(*id)
+                    {
+                        if let Some(handle) = emitter.emitter_handle.take() {
+                            if let Some(ps) = &mut app.renderer.particle_system {
+                                ps.destroy_emitter(handle);
+                                info!("Destroyed particle emitter for deleted entity {:?}", id);
+                            }
+                        }
+                    }
+                }
+
                 // Delete in reverse order (children before parents)
                 for id in to_delete.into_iter().rev() {
                     app.world.destroy_entity(id);
@@ -170,6 +184,55 @@ pub fn process_editor_actions(app: &mut Application) {
             EditorAction::DuplicateEntity(entity_id) => {
                 // TODO: Implement entity duplication with all components
                 info!("Duplicate entity {:?} - not yet implemented", entity_id);
+            }
+            EditorAction::SaveScene => {
+                let path = std::path::PathBuf::from("assets/scenes/default.katla");
+                match crate::scene::SceneManager::save_to_file(app, &path) {
+                    Ok(()) => info!("Scene saved to {:?}", path),
+                    Err(e) => log::error!("Failed to save scene: {}", e),
+                }
+            }
+            EditorAction::OpenScene => {
+                let path = std::path::PathBuf::from("assets/scenes/default.katla");
+                match crate::scene::SceneManager::load_from_file(app, &path) {
+                    Ok(()) => {
+                        app.editor_ui.selected_entity = None;
+                        info!("Scene loaded from {:?}", path);
+                    }
+                    Err(e) => log::error!("Failed to load scene: {}", e),
+                }
+            }
+            EditorAction::NewScene => {
+                warn!(
+                    "Clearing entities without releasing GPU resources (renderer API not available)"
+                );
+                let to_remove: Vec<EntityId> = app
+                    .world
+                    .entity_ids()
+                    .filter(|id| app.world.get_component::<EditorHidden>(*id).is_none())
+                    .collect();
+
+                // Clean up particle emitters before destroying entities
+                for id in &to_remove {
+                    if let Some(emitter) =
+                        app.world.get_component_mut::<ParticleEmitterComponent>(*id)
+                    {
+                        if let Some(handle) = emitter.emitter_handle.take() {
+                            if let Some(ps) = &mut app.renderer.particle_system {
+                                ps.destroy_emitter(handle);
+                            }
+                        }
+                    }
+                }
+
+                for id in to_remove {
+                    app.world.destroy_entity(id);
+                }
+                app.editor_ui.selected_entity = None;
+                info!("New scene created");
+            }
+            EditorAction::Quit => {
+                app.quit_requested = true;
             }
             EditorAction::SelectEntity(entity_id) => {
                 info!("Selected entity {:?}", entity_id);

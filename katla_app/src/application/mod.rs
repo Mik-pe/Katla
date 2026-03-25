@@ -83,10 +83,15 @@ pub struct Application {
     pub(crate) start_time: Instant,
     /// Default PBR material handle for geometry rendering
     pub(crate) default_material_handle: katla_gfx::MaterialHandle,
+    /// Whether the application should exit (set by editor actions, checked in window_event)
+    pub(crate) quit_requested: bool,
     /// Flag to prevent double cleanup
     cleaned_up: bool,
     /// Particle system for managing particle emitters via ECS
     pub(crate) particle_system: crate::systems::ParticleSystem,
+    /// GPU animation system for pose evaluation (ECS queries only, GPU resources on renderer)
+    pub(crate) gpu_animation_system:
+        Option<crate::systems::gpu_animation_system::GpuAnimationSystem>,
     /// Flag to trigger particle debug readback at frame 10
     #[cfg(debug_assertions)]
     pub(crate) particle_readback_pending: bool,
@@ -127,9 +132,19 @@ impl ApplicationHandler for Application {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        if self.quit_requested {
+            event_loop.exit();
+            return;
+        }
+
         if let WindowEvent::MouseInput { state, button, .. } = &event {
             let mouse_combo = MouseCombo::with_modifiers(*button, self.current_modifiers);
             let binding = InputBinding::Mouse(mouse_combo);
+
+            if let ElementState::Pressed = state {
+                let mouse_pos = self.ui_context.input.mouse_pos;
+                self.editor_ui.update_focused_panel_from_click(mouse_pos);
+            }
 
             if let Some(action) = self.input_mapper.get_action(&binding) {
                 // Only send mouse input to game when viewport is focused
@@ -304,6 +319,37 @@ impl ApplicationHandler for Application {
                     &mut self.renderer.particle_system,
                     dt,
                 );
+
+                // Update GPU animation: prepare data and upload per-frame params
+                if let (Some(gpu_anim), Some(pipeline), Some(buffers)) = (
+                    &mut self.gpu_animation_system,
+                    &mut self.renderer.animation_pipeline,
+                    &mut self.renderer.animation_buffers,
+                ) {
+                    gpu_anim.prepare(&mut self.world, pipeline, buffers);
+                    gpu_anim.update_params(&mut self.world, buffers);
+                    self.frame_graph
+                        .set_animation_skeleton_count(gpu_anim.skeleton_count() as u32);
+
+                    // Build per-entity skeleton copy commands:
+                    // (skeleton_handle_index, joint_offset, joint_count)
+                    use crate::components::DrawableComponent;
+                    let mut copy_cmds = Vec::new();
+                    for entity in gpu_anim.entities() {
+                        if let Some(drawable) =
+                            self.world.get_component::<DrawableComponent>(entity)
+                        {
+                            if let Some(info) = gpu_anim.entity_info(entity) {
+                                copy_cmds.push((
+                                    drawable.skeleton_handle.index(),
+                                    info.joint_offset,
+                                    info.joint_count,
+                                ));
+                            }
+                        }
+                    }
+                    self.frame_graph.set_skeleton_copy_commands(copy_cmds);
+                }
 
                 // Poll background loader for completed asset loads
                 self.poll_background_loader();
@@ -760,6 +806,78 @@ impl Application {
             );
 
             info!("Added particle compute passes to frame graph");
+        }
+
+        // Initialize animation pose evaluation pipeline
+        let anim_shader_path = self
+            .resources
+            .shader_path("compute/animation/pose_eval.wgsl");
+        if let Err(e) = self.renderer.init_animation_pipeline(&anim_shader_path) {
+            warn!("Failed to initialize animation pipeline: {}", e);
+        } else {
+            info!("Animation pose evaluation pipeline initialized");
+        }
+
+        // Create GPU animation system (ECS queries only, GPU resources on renderer)
+        self.gpu_animation_system =
+            Some(crate::systems::gpu_animation_system::GpuAnimationSystem::new());
+
+        // Add animation compute pass to frame graph (after particle passes)
+        if let Some(pipeline_handle) = self.renderer.animation_pipeline_handle() {
+            use katla_gfx::render_graph::{PassDesc, PassType, RenderGraphError};
+            self.frame_graph.insert_pass(
+                0,
+                PassDesc::new("animation_pose_eval", PassType::Compute, vec![], vec![])
+                    .with_pipeline(pipeline_handle)
+                    .with_compute_fn(|frame, cmd, _pipeline_handle| {
+                        let skeleton_count = frame.animation_skeleton_count();
+                        if skeleton_count == 0 {
+                            return Ok(());
+                        }
+
+                        let copy_cmds = frame.skeleton_copy_commands().to_vec();
+                        let renderer = frame.renderer_mut();
+
+                        let pipeline = match renderer.animation_pipeline.as_ref() {
+                            Some(p) => p,
+                            None => return Ok(()),
+                        };
+                        let buffers = match renderer.animation_buffers.as_ref() {
+                            Some(b) => b,
+                            None => return Ok(()),
+                        };
+
+                        pipeline.record_dispatch(
+                            cmd.vk_command_buffer(),
+                            &renderer.asset_registry,
+                            skeleton_count,
+                        );
+
+                        // Barrier: compute write → copy read
+                        pipeline.add_output_barrier(
+                            cmd.vk_command_buffer(),
+                            buffers,
+                            ash::vk::PipelineStageFlags2::COPY,
+                            ash::vk::AccessFlags2::TRANSFER_READ,
+                        );
+
+                        // Copy per-entity joint matrices from output buffer to SkeletonBuffers
+                        let output_buf = buffers.output_buffer();
+                        for (handle_idx, joint_offset, joint_count) in copy_cmds {
+                            let handle = katla_gfx::SkeletonHandle::new(handle_idx);
+                            renderer.copy_skeleton_from_compute_output(
+                                cmd.vk_command_buffer(),
+                                handle,
+                                output_buf,
+                                joint_offset,
+                                joint_count,
+                            );
+                        }
+
+                        Ok::<(), RenderGraphError>(())
+                    }),
+            );
+            info!("Added animation pose evaluation compute pass to frame graph");
         }
 
         // Add light culling compute pass to frame graph.

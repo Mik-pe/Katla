@@ -619,7 +619,9 @@ impl ApplicationBuilder {
             start_time: Instant::now(),
             default_material_handle: katla_gfx::MaterialHandle::NONE,
             cleaned_up: false,
+            quit_requested: false,
             particle_system: crate::systems::ParticleSystem::new(),
+            gpu_animation_system: None,
             #[cfg(debug_assertions)]
             particle_readback_pending: false,
             #[cfg(debug_assertions)]
