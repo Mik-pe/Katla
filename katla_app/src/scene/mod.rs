@@ -278,11 +278,12 @@ impl SceneManager {
             if let Some(ref name) = desc.name {
                 if name_to_entity.contains_key(name) {
                     warn!(
-                        "Duplicate entity name '{}' on load -- parent resolution may be incorrect",
+                        "Duplicate entity name '{}' on load -- keeping first occurrence for parent resolution",
                         name
                     );
+                } else {
+                    name_to_entity.insert(name.clone(), entity_id);
                 }
-                name_to_entity.insert(name.clone(), entity_id);
             }
         }
 
