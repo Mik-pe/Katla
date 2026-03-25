@@ -26,6 +26,7 @@ struct LightCullFrameData {
     screen_height: u32,
     _pad0: u32,
     _pad1: u32,
+    _pad2: u32,
 }
 
 @group(0) @binding(0)
