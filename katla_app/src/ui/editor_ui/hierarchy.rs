@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::{
-    input::mouse_button, FontId, FontSize, ForkAwesome, Response, ScrollArea, ScrollAreaState,
-    UiContext, Widget,
+    FontId, FontSize, ForkAwesome, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
+    input::mouse_button,
 };
 
 use super::{EditorAction, EntityInfo, FocusedPanel, Theme};

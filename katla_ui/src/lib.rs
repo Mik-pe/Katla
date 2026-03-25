@@ -53,12 +53,12 @@ mod widget;
 pub mod widgets;
 
 pub use context::{
-    z_index, CloseBehavior, GraphOptions, Popup, PopupPosition, PopupStyle, ScrollArea,
-    ScrollAreaState, UiContext, WindowState,
+    CloseBehavior, GraphOptions, Popup, PopupPosition, PopupStyle, ScrollArea, ScrollAreaState,
+    UiContext, WindowState, z_index,
 };
 pub use draw_list::DrawList;
 pub use icons::ForkAwesome;
-pub use input::{mouse_button, KeyCode, MouseCursor, UiInputState};
+pub use input::{KeyCode, MouseCursor, UiInputState, mouse_button};
 pub use response::Response;
 pub use style::{FontSize, UiStyle};
 pub use text::FontId;

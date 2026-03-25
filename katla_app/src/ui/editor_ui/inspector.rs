@@ -1,6 +1,6 @@
 use katla_ecs::EntityId;
 use katla_math::{Rect2D, Vec2};
-use katla_ui::{mouse_button, widgets::Button, FontSize, Response, UiContext, Widget};
+use katla_ui::{FontSize, Response, UiContext, Widget, mouse_button, widgets::Button};
 
 use super::{EditorAction, EntityInfo, FocusedPanel, Theme};
 

@@ -37,8 +37,8 @@
 //! ```
 
 use katla_gfx::{
-    renderer::{DrawCall, DrawList, FrameUniforms, InstanceData},
     MaterialHandle, MeshHandle, SkeletonHandle,
+    renderer::{DrawCall, DrawList, FrameUniforms, InstanceData},
 };
 
 /// Per-frame context for submitting draws with automatic instance allocation.

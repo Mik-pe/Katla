@@ -4,8 +4,8 @@
 
 use katla_math::{Rect2D, Vec2};
 use katla_ui::{
-    widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle},
     FontId, FontSize, ForkAwesome, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
+    widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle},
 };
 
 use crate::Preferences;

@@ -1,6 +1,6 @@
 use katla_math::{Rect2D, Vec2};
 
-use crate::input::{mouse_button, UiInputState};
+use crate::input::{UiInputState, mouse_button};
 
 /// Response from a widget interaction.
 ///
