@@ -1,0 +1,31 @@
+{
+  "featureId": "app-polish",
+  "reviewedAt": "2026-03-25T12:00:00.000Z",
+  "commitId": "eb9e43c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All 6 subtasks of the app-polish feature are correctly implemented. The commit is clean, well-scoped, and touches exactly the right files. println! calls replaced with info!(), AmbientLight moved to resources module and registered as ECS resource, debug-only particle fields properly gated with #[cfg(debug_assertions)], GltfCache type alias eliminates clippy::type_complexity suppression, and duplicate text input handling correctly removed. Workspace compiles and clippy passes with zero warnings.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "winit 0.30 removed the `text` field from `KeyboardInput` struct. Text input is exclusively handled through `Ime::Commit` events. This is important knowledge for any future work on keyboard/text input handling in katla_app.",
+      "evidence": "The duplicate text input fix removed `event.text` processing from KeyboardInput handler; verified winit 0.30 in root Cargo.toml line 34."
+    },
+    {
+      "area": "knowledge",
+      "observation": "Pre-existing: katla_app/src/components/rendering/lighting.rs:160 still uses `std::f32::consts::FRAC_PI_4` instead of `core::f32::consts::FRAC_PI_4`. The math-bugfixes-and-dedup feature established `core::f32::consts` as the convention but this file was not updated.",
+      "evidence": "katla_app/src/components/rendering/lighting.rs:160 — `std::f32::consts::FRAC_PI_4`"
+    },
+    {
+      "area": "knowledge",
+      "observation": "Pre-existing: 4 warnings in katla_app test code (unused variables anim_idx, joints, expected_vertical_gap, and dead_code create_test_grid). These are in test modules only, not production code. Worker documented these in discoveredIssues.",
+      "evidence": "Handoff discoveredIssues[0]: 'Pre-existing: 4 warnings in katla_app test code'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The app-polish feature is fully implemented and correctly addresses all 6 subtasks. (1) println! → info!(): Two println! calls in Application::init() replaced with info!(). No remaining println!/eprintln! in production code (only in test modules and doc comments). (2) EditorHidden: Already in correct location at components/scene/editor_hidden.rs — no move needed. (3) AmbientLight: Moved from components/rendering/lighting.rs to resources/ambient_light.rs, re-exported via resources/mod.rs, registered as ECS resource via world.insert_resource() in Application::init(). Old location fully cleaned. (4) Debug fields: particle_readback_pending and particle_readback_done gated with #[cfg(debug_assertions)] on both the struct definition in mod.rs and initialization in builder.rs. All usage sites in renderer.rs also properly gated. (5) GltfCache type alias: Created in util/mod.rs as `pub type GltfCache = FileCache<GLTFModel, Box<dyn Fn(&PathBuf) -> GLTFModel>>`, replacing the inline type and removing #[allow(clippy::type_complexity)]. Used consistently in mod.rs and builder.rs. (6) Duplicate text input: Removed redundant event.text handler from KeyboardInput processing. winit 0.30 exclusively uses Ime::Commit for text input, making the old handler a source of double input. All verifications pass: cargo check --workspace (exit 0), cargo clippy -p katla_app -- -D warnings (exit 0)."
+}

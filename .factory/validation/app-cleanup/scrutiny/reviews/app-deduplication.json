@@ -1,0 +1,44 @@
+{
+  "featureId": "app-deduplication",
+  "reviewedAt": "2026-03-25T12:00:00.000Z",
+  "commitId": "3e04db4",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All 6 deduplication items from the feature description were implemented correctly. The worker extracted shared TOML persistence helpers (load_config_file/save_config_file) used by both Preferences and GuiState, created spawn_primitive_with_color to deduplicate 5 primitive spawning methods, extracted compute_movement_direction() from FlyCameraLookSystem, deduplicated deinterleave_pbr/deinterleave_pbr_skinned with a shared deinterleave_pbr_attributes helper, and extracted build_world_transforms as a shared public function. Material creation was already consistent (compile_material everywhere). Net result: -185 lines across 6 files. Workspace compiles cleanly.",
+    "issues": [
+      {
+        "file": "katla_app/src/animation/gltf_loader.rs",
+        "line": 177,
+        "severity": "non_blocking",
+        "description": "There is still a #[cfg(test)]-only duplicate of build_world_transforms in animation/gltf_loader.rs with a slightly different signature (takes an extra parent_map parameter). This could reuse the shared build_world_transforms from modelcache.rs, but the test constructs parent_map externally. Minor residual duplication in test code only."
+      },
+      {
+        "file": "katla_app/src/util/modelcache.rs",
+        "line": 62,
+        "severity": "non_blocking",
+        "description": "build_world_transforms is defined with 'use std::collections::{HashMap, VecDeque}' inside the function body, even though HashMap is already imported at the module level. This is not a bug but could be cleaned up for consistency."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker correctly followed the 'no hybrids' convention — when extracting shared helpers, the old duplicated code in consumers was fully removed rather than left alongside the new helpers. This is consistent with AGENTS.md guidelines.",
+      "evidence": "gui_state.rs and preferences.rs both removed their full file I/O implementations, replacing them with calls to shared load_config_file/save_config_file. No hybrid state remains."
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker maintained proper visibility: spawn_primitive_with_color is fn (private) since it's an internal implementation detail, while the public API (spawn_test_cube, spawn_sphere, etc.) remains pub. build_world_transforms is pub since it's used by tests in modelcache.rs. This follows the pub(crate) default convention.",
+      "evidence": "spawning.rs:11 - fn spawn_primitive_with_color (no pub), modelcache.rs:62 - pub fn build_world_transforms"
+    },
+    {
+      "area": "conventions",
+      "observation": "The feature noted pre-existing warnings (unused variables in gltf_loader.rs, unused variable in ui/renderer.rs, dead code in viewport_grid.rs) that were NOT fixed as part of this feature. These may need to be tracked for future cleanup.",
+      "evidence": "Handoff discoveredIssues lists: unused variables in gltf_loader.rs (anim_idx, joints), unused variable in ui/renderer.rs (expected_vertical_gap), dead code in viewport_grid.rs (create_test_grid)"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The app-deduplication feature was implemented correctly and completely. All 6 deduplication targets were addressed: TOML persistence helpers, primitive spawning, material creation consistency (already consistent), camera movement direction extraction, deinterleave deduplication, and build_world_transforms extraction. The net result is -185 lines of code with no functionality changes. Workspace compiles cleanly. Two minor non-blocking issues noted: a test-only duplicate of build_world_transforms in gltf_loader.rs and a redundant use statement inside the shared build_world_transforms function."
+}

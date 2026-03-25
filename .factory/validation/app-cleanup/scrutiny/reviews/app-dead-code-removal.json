@@ -1,0 +1,26 @@
+{
+  "featureId": "app-dead-code-removal",
+  "reviewedAt": "2026-03-25T02:30:00.000Z",
+  "commitId": "5ebea9c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Thorough and complete removal of 1,852 lines of dead code across 28 files. All specified items were removed: InputComponent, ActiveComponent, TagComponent, BoundingVolume/Visible/CullingSystem, ViewportCamera/ViewportCameraMatrices, ThirdPersonControllerComponent and related components/systems, DebugOverlay/RenderMode/QualityLevel, LightOrbitSystem, LightingSystem/LightCollection and related data types. Worker also correctly removed cascading orphans (MetricsHistory, use_editor_ui field) and proactively moved EditorHidden to its own module before deleting tag.rs. All mod declarations, use imports, re-exports, and test files were cleaned up. Workspace compiles cleanly with zero warnings.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker proactively moved EditorHidden from tag.rs to scene/editor_hidden.rs before deleting tag.rs, since EditorHidden was co-located but actively used. The AGENTS.md mission file said to remove TagComponent entirely but didn't mention EditorHidden relocation. The worker correctly identified this dependency and handled it, which was later also specified in the app-polish feature but done here as a precondition.",
+      "evidence": "Handoff deviation: 'Moved EditorHidden from tag.rs to dedicated scene/editor_hidden.rs before deleting tag.rs, since EditorHidden is actively used by the application'. The feature description for app-polish later included 'Move EditorHidden from scene/tag.rs to appropriate location'."
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker also removed MetricsHistory and use_editor_ui field which were cascading orphans from the DebugOverlay removal. This is good practice but wasn't explicitly listed in the feature description. The mission AGENTS.md says 'No hybrids' and to keep code clean, which justifies this.",
+      "evidence": "Handoff: 'Also removed MetricsHistory (util/metrics_history.rs) which was only consumed by the removed DebugOverlay, and removed use_editor_ui field from Application since DebugOverlay was the only consumer of the fallback path'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Clean pass. The worker completed a thorough dead code removal of all specified items (9 categories of unused code) plus cascading orphans. All 28 files were modified/deleted correctly, all mod declarations and imports cleaned up, workspace compiles cleanly, all tests pass, clippy is clean. The two deviations from the skill procedure (moving EditorHidden early, removing cascading orphans) were both justified and high-quality decisions that prevented broken builds. No issues found."
+}

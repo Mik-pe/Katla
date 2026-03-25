@@ -1,0 +1,76 @@
+{
+  "milestone": "app-cleanup",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
+    "fmt": { "passed": true, "command": "cargo fmt --check", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "app-deduplication",
+      "file": "katla_app/src/animation/gltf_loader.rs",
+      "description": "Test-only duplicate of build_world_transforms with slightly different signature (extra parent_map parameter). Could reuse shared function but test constructs parent_map externally.",
+      "severity": "non_blocking"
+    },
+    {
+      "featureId": "app-deduplication",
+      "file": "katla_app/src/util/modelcache.rs",
+      "description": "build_world_transforms has 'use std::collections::{HashMap, VecDeque}' inside the function body even though HashMap is already imported at module level.",
+      "severity": "non_blocking"
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Added winit 0.30 text input convention to environment.md: Ime::Commit is the exclusive text input path, KeyboardInput.text field was removed.",
+      "sourceFeature": "app-polish"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "orchestrator",
+      "suggestion": "Consider creating a fix feature to address 4 pre-existing warnings in katla_app test code: unused variables anim_idx (gltf_loader.rs:391), joints (gltf_loader.rs:509), expected_vertical_gap (ui/renderer.rs:486), and dead_code create_test_grid (viewport_grid.rs). These are test-only and do not affect production code.",
+      "evidence": "Discovered by both app-deduplication and app-polish workers in their handoffs.",
+      "isSystemic": false
+    },
+    {
+      "target": "orchestrator",
+      "suggestion": "katla_app/src/components/rendering/lighting.rs:160 still uses std::f32::consts::FRAC_PI_4 instead of core::f32::consts::FRAC_PI_4. The math-bugfixes-and-dedup feature established core::f32::consts as the convention. Consider a small fix to align this file.",
+      "evidence": "Discovered by app-polish reviewer in shared state observation.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Worker proactively moved EditorHidden before deleting tag.rs",
+      "reason": "already-handled: This was the correct action and is documented in the feature handoff. No guidance update needed."
+    },
+    {
+      "observation": "Worker removed cascading orphans (MetricsHistory, use_editor_ui)",
+      "reason": "already-handled: Consistent with 'no hybrids' convention already in AGENTS.md. No update needed."
+    },
+    {
+      "observation": "Worker followed no-hybrids convention when extracting shared helpers",
+      "reason": "already-documented: The 'no hybrids' convention is already established in AGENTS.md."
+    },
+    {
+      "observation": "Worker maintained proper visibility (fn vs pub) for extracted helpers",
+      "reason": "already-documented: The pub(crate) default convention is already in AGENTS.md."
+    },
+    {
+      "observation": "Pre-existing test warnings (duplicate report from app-deduplication reviewer)",
+      "reason": "duplicate: Already captured from app-deduplication review and included in suggestedGuidanceUpdates."
+    }
+  ],
+  "previousRound": null
+}
