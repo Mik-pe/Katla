@@ -20,7 +20,7 @@ use crate::{
     preferences::Preferences,
     resources::ResourceManager,
     ui::Theme,
-    util::{BackgroundLoader, FileCache, GLTFModel, Timer},
+    util::{BackgroundLoader, GLTFModel, GltfCache, Timer},
 };
 
 /// Default font sizes for UI text (in pixels)
@@ -590,7 +590,7 @@ impl ApplicationBuilder {
             renderer,
             frame_graph,
             camera,
-            gltf_cache: FileCache::new(gltf_loader),
+            gltf_cache: GltfCache::new(gltf_loader),
             timer: Timer::new(100),
             info,
             world,
@@ -620,7 +620,9 @@ impl ApplicationBuilder {
             default_material_handle: katla_gfx::MaterialHandle::NONE,
             cleaned_up: false,
             particle_system: crate::systems::ParticleSystem::new(),
+            #[cfg(debug_assertions)]
             particle_readback_pending: false,
+            #[cfg(debug_assertions)]
             particle_readback_done: false,
         };
 

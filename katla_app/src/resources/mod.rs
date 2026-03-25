@@ -3,8 +3,11 @@
 //! This module provides centralized resource path discovery and management,
 //! as well as ECS resources for the editor.
 
+pub mod ambient_light;
 pub mod selection;
 pub mod viewport_state;
+
+pub use ambient_light::*;
 
 // Resource path management (legacy)
 
