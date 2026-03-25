@@ -44,7 +44,7 @@ katla_app = { path = "katla_app" }
 # Faster dev builds with some optimizations
 [profile.dev]
 opt-level = 1               # Basic optimizations
-debug = true                # Keep debug symbols
+debug = 1                   # Line tables only (faster builds)
 debug-assertions = true     # Keep debug assertions
 overflow-checks = true      # Keep overflow checks
 
