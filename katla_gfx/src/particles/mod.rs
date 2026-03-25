@@ -292,6 +292,13 @@ impl GlobalParticleSystem {
                     .destroy_descriptor_set_layout(layout, None);
             }
         }
+        if let Some(layout) = self.draw_command_descriptor_layout.take() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(layout, None);
+            }
+        }
 
         self.emitters.clear();
         self.next_emitter_slot = 0;

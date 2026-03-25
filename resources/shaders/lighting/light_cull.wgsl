@@ -142,6 +142,10 @@ fn cs_main(
             continue;
         }
 
+        if (atomicLoad(&tile_light_counts[tile_idx]) >= MAX_LIGHTS_PER_TILE) {
+            break;
+        }
+
         let slot = atomicAdd(&tile_light_counts[tile_idx], 1u);
         if (slot < MAX_LIGHTS_PER_TILE) {
             tile_light_indices[base_offset + slot] = i;
