@@ -45,7 +45,8 @@ pub struct PointLightGPU {
 /// Frame data for the light culling compute shader.
 ///
 /// Must match WGSL `LightCullFrameData` exactly.
-/// Total: 64 + 64 + 4*8 = 160 bytes.
+/// std140 rules: struct size must be a multiple of the largest member alignment (mat4x4f = 16).
+/// Total: 64 + 64 + 7*4 + 4 pad = 160 bytes.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct LightCullFrameData {
@@ -58,6 +59,7 @@ pub struct LightCullFrameData {
     pub screen_height: u32,
     pub _pad0: u32,
     pub _pad1: u32,
+    pub _pad2: u32,
 }
 
 /// GPU buffers for the light culling system.

@@ -134,4 +134,47 @@ impl super::VulkanRenderer {
             Ok(())
         }
     }
+
+    /// Initialize particle draw command pipeline.
+    ///
+    /// Loads the draw_command compute shader that writes the indirect draw
+    /// buffer (vertex_count = alive_count * 6) after simulate completes.
+    pub fn init_particle_draw_command_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        if let Some(ref mut ps) = self.particle_system {
+            match self
+                .material_compiler
+                .shader_cache
+                .borrow_mut()
+                .load_shader(shader_path, vk::ShaderStageFlags::COMPUTE)
+            {
+                Ok(shader_module) => {
+                    let shader_module_wrapper = crate::sync::VkShaderModule(shader_module);
+                    ps.create_draw_command_pipeline(
+                        &mut self.asset_registry,
+                        shader_module_wrapper,
+                    )
+                    .map_err(|e| {
+                        RendererError::InitializationFailed(format!(
+                            "Failed to create particle draw command pipeline: {}",
+                            e
+                        ))
+                    })?;
+                    Ok(())
+                }
+                Err(e) => {
+                    warn!("Failed to load particle draw command shader: {}", e);
+                    Err(RendererError::InitializationFailed(format!(
+                        "Failed to load particle draw command shader: {}",
+                        e
+                    )))
+                }
+            }
+        } else {
+            warn!("Particle system not initialized, skipping draw command pipeline creation");
+            Ok(())
+        }
+    }
 }
