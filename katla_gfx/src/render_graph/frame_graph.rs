@@ -51,9 +51,6 @@ pub struct FrameGraph {
     /// Global frame counter for this frame (used as random seed for particle simulation).
     pub(super) frame_count: usize,
 
-    /// Particle rendering pipeline handle.
-    particle_pipeline: Option<crate::handle::PipelineHandle>,
-
     /// Particle emit workgroup count for this frame.
     /// Calculated each frame based on particles to emit.
     pub(super) particle_emit_workgroup_count: u32,
@@ -61,10 +58,6 @@ pub struct FrameGraph {
     /// Particle simulate workgroup count for this frame.
     /// Calculated each frame based on alive particle count.
     pub(super) particle_simulate_workgroup_count: u32,
-
-    /// Whether the emit compute pass ran this frame (used by simulate to decide
-    /// whether to reset emit_count).
-    pub(super) particle_emit_ran: bool,
 
     /// Flag to trigger particle debug readback this frame.
     pub(super) particle_debug_readback: bool,
@@ -89,10 +82,8 @@ impl FrameGraph {
             ldr_texture_base_index: None,
             delta_time: 0.0,
             frame_count: 0,
-            particle_pipeline: None,
             particle_emit_workgroup_count: 1,
             particle_simulate_workgroup_count: 1,
-            particle_emit_ran: false,
             particle_debug_readback: false,
             compositing_descriptor_sets: RefCell::new(vec![None, None]),
         }
@@ -103,6 +94,17 @@ impl FrameGraph {
         let index = self.passes.len();
         self.pass_names.insert(pass.name.clone(), index);
         self.passes.push(pass);
+        self.compiled = false;
+        self.execution_plan = None;
+    }
+
+    /// Insert a pass at a specific index, reindexing all subsequent passes.
+    pub fn insert_pass(&mut self, index: usize, pass: PassDesc) {
+        self.passes.insert(index, pass);
+        self.pass_names.clear();
+        for (i, p) in self.passes.iter().enumerate() {
+            self.pass_names.insert(p.name.clone(), i);
+        }
         self.compiled = false;
         self.execution_plan = None;
     }
@@ -260,11 +262,6 @@ impl FrameGraph {
     /// Set the global frame counter for this frame (used for particle simulation).
     pub fn set_frame_count(&mut self, frame_count: usize) {
         self.frame_count = frame_count;
-    }
-
-    /// Set the particle rendering pipeline.
-    pub fn set_particle_pipeline(&mut self, pipeline: crate::handle::PipelineHandle) {
-        self.particle_pipeline = Some(pipeline);
     }
 
     /// Set the particle emit workgroup count for this frame.

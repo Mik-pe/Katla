@@ -1084,15 +1084,7 @@ impl VulkanRenderer {
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
         );
 
-        // 6. Dispatch light culling compute shader (before any render passes)
-        // This must happen while we're still outside a render pass.
-        if self.light_culling.buffers.is_some() {
-            let view: [f32; 16] = self.frame_uniforms.view_matrix;
-            let proj: [f32; 16] = self.frame_uniforms.proj_matrix;
-            self.dispatch_light_culling(cmd, &view, &proj);
-        }
-
-        // 7. Execute frame graph (records commands into the command buffer)
+        // 6. Execute frame graph (records commands into the command buffer)
         frame_graph
             .execute(self, image_index, f)
             .expect("Frame graph execution failed");
@@ -1115,7 +1107,7 @@ impl VulkanRenderer {
                 .expect("Failed to end command buffer");
         }
 
-        // 9. Submit command buffer with synchronization
+        // 8. Submit command buffer with synchronization
         let render_finished_semaphore = self.swap_data.render_finished_semaphore(image_index);
         let frame_complete_semaphore = self.swap_data.frame_complete_semaphore();
         let signal_semaphores = [render_finished_semaphore, frame_complete_semaphore];

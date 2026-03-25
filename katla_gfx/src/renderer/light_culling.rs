@@ -146,6 +146,7 @@ impl super::VulkanRenderer {
             screen_height: lc.screen_height(),
             _pad0: 0,
             _pad1: 0,
+            _pad2: 0,
         };
         lc.write_frame_data(&frame_data);
 

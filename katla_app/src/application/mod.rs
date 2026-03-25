@@ -624,20 +624,162 @@ impl Application {
 
             use katla_gfx::render_graph::PassDesc;
             use katla_gfx::render_graph::PassType;
+            use katla_gfx::render_graph::RenderGraphError;
 
-            // Add particle emit pass
-            self.frame_graph.add_pass(
-                PassDesc::new("particle_emit", PassType::Compute, vec![], vec![])
-                    .with_pipeline(emit_pipeline),
+            // Insert particle compute passes at the beginning of the frame graph.
+            // Vulkan requires compute dispatches to run outside render passes, and the
+            // particle render pass (inline after geometry) reads their output, so these
+            // must execute before any graphics passes.
+            self.frame_graph.insert_pass(
+                0,
+                PassDesc::new("particle_simulate", PassType::Compute, vec![], vec![])
+                    .with_pipeline(simulate_pipeline)
+                    .with_compute_fn(|frame, cmd, _pipeline_handle| {
+                        let workgroup_count = frame.particle_simulate_workgroup_count();
+                        let emit_ran = frame.particle_emit_ran;
+                        let debug_readback = frame.particle_debug_readback;
+
+                        {
+                            let renderer = frame.renderer_mut();
+                            let current_frame = renderer.current_frame();
+                            let particle_system = match renderer.particle_system.as_mut() {
+                                Some(ps) => ps,
+                                None => return Ok(()),
+                            };
+
+                            if workgroup_count == 0 {
+                                log::debug!("Skipping particle simulate - workgroup_count is 0");
+                                return Ok(());
+                            }
+
+                            particle_system
+                                .update_compute_descriptor_binding(current_frame)
+                                .map_err(|e| {
+                                    RenderGraphError::VulkanError(format!(
+                                        "Failed to update particle compute descriptor binding: {}",
+                                        e
+                                    ))
+                                })?;
+
+                            particle_system.reset_simulate_counters(
+                                cmd.vk_command_buffer(),
+                                emit_ran,
+                                current_frame,
+                            );
+
+                            particle_system
+                                .record_simulate_dispatch(
+                                    cmd.vk_command_buffer(),
+                                    &renderer.asset_registry,
+                                    workgroup_count,
+                                    current_frame,
+                                )
+                                .map_err(|e| {
+                                    RenderGraphError::VulkanError(format!(
+                                        "Particle simulate dispatch failed: {}",
+                                        e
+                                    ))
+                                })?;
+
+                            if let Err(e) = particle_system.record_draw_command_dispatch(
+                                cmd.vk_command_buffer(),
+                                &renderer.asset_registry,
+                                current_frame,
+                            ) {
+                                log::warn!("Failed to record draw command dispatch: {}", e);
+                            }
+
+                            if debug_readback {
+                                log::info!("Recording particle debug readback after simulate pass");
+                                particle_system
+                                    .record_debug_readback(cmd.vk_command_buffer(), current_frame)
+                                    .map_err(|e| {
+                                        RenderGraphError::VulkanError(format!(
+                                            "Particle debug readback failed: {}",
+                                            e
+                                        ))
+                                    })?;
+                            }
+                        }
+
+                        if debug_readback {
+                            frame.particle_debug_readback = false;
+                        }
+
+                        Ok(())
+                    }),
             );
 
-            // Add particle simulate pass
-            self.frame_graph.add_pass(
-                PassDesc::new("particle_simulate", PassType::Compute, vec![], vec![])
-                    .with_pipeline(simulate_pipeline),
+            self.frame_graph.insert_pass(
+                0,
+                PassDesc::new("particle_emit", PassType::Compute, vec![], vec![])
+                    .with_pipeline(emit_pipeline)
+                    .with_compute_fn(|frame, cmd, _pipeline_handle| {
+                        let workgroup_count = frame.particle_emit_workgroup_count();
+
+                        {
+                            let renderer = frame.renderer_mut();
+                            let current_frame = renderer.current_frame();
+                            let particle_system = match renderer.particle_system.as_mut() {
+                                Some(ps) => ps,
+                                None => return Ok(()),
+                            };
+
+                            if workgroup_count == 0 {
+                                log::debug!("Skipping particle emit - workgroup_count is 0");
+                                return Ok(());
+                            }
+
+                            particle_system
+                                .update_compute_descriptor_binding(current_frame)
+                                .map_err(|e| {
+                                    RenderGraphError::VulkanError(format!(
+                                        "Failed to update particle compute descriptor binding: {}",
+                                        e
+                                    ))
+                                })?;
+
+                            particle_system
+                                .record_emit_dispatch(
+                                    cmd.vk_command_buffer(),
+                                    &renderer.asset_registry,
+                                    workgroup_count,
+                                    current_frame,
+                                )
+                                .map_err(|e| {
+                                    RenderGraphError::VulkanError(format!(
+                                        "Particle emit dispatch failed: {}",
+                                        e
+                                    ))
+                                })?;
+                        }
+
+                        frame.particle_emit_ran = true;
+                        Ok(())
+                    }),
             );
 
             info!("Added particle compute passes to frame graph");
+        }
+
+        // Add light culling compute pass to frame graph.
+        // This must run before geometry passes so culling results are available for PBR shading.
+        // Insert at position 0 to run before particle compute passes as well.
+        if self.renderer.has_light_culling() {
+            use katla_gfx::render_graph::{PassDesc, PassType, RenderGraphError};
+            self.frame_graph.insert_pass(
+                0,
+                PassDesc::new("light_culling", PassType::Compute, vec![], vec![]).with_compute_fn(
+                    |frame, cmd, _pipeline_handle| {
+                        let renderer = frame.renderer_mut();
+                        let view = renderer.frame_uniforms().view_matrix;
+                        let proj = renderer.frame_uniforms().proj_matrix;
+                        renderer.dispatch_light_culling(cmd.vk_command_buffer(), &view, &proj);
+                        Ok::<(), RenderGraphError>(())
+                    },
+                ),
+            );
+            info!("Added light culling compute pass to frame graph");
         }
 
         // Initialize transient textures and register with bindless system

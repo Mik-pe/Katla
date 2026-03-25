@@ -52,6 +52,11 @@ impl VulkanRenderer {
         self.frame_uniforms = uniforms;
     }
 
+    /// Get the current frame uniforms (view/proj matrices, camera, lighting).
+    pub fn frame_uniforms(&self) -> &FrameUniforms {
+        &self.frame_uniforms
+    }
+
     /// Execute draw calls from FrameContext and prepare them for rendering.
     ///
     /// This method writes all per-object data from draw calls to the storage buffer.

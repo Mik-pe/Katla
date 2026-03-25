@@ -29,6 +29,10 @@ pub struct Frame<'a> {
     pub(super) resource_states: HashMap<String, ResourceState>,
     pub(super) temporary_buffers: Vec<(vk::Buffer, Allocation)>,
     pub(super) depth_buffer_written: bool,
+    /// Whether the particle emit compute pass ran this frame.
+    pub particle_emit_ran: bool,
+    /// Whether to trigger particle debug readback this frame.
+    pub particle_debug_readback: bool,
 }
 
 /// Data for a single pass execution.
@@ -69,6 +73,8 @@ impl<'a> Frame<'a> {
             resource_states,
             temporary_buffers: Vec::new(),
             depth_buffer_written: false,
+            particle_emit_ran: false,
+            particle_debug_readback: graph.particle_debug_readback,
         }
     }
 
@@ -76,6 +82,21 @@ impl<'a> Frame<'a> {
     /// This is the authoritative source for which frame's resources to use.
     fn current_frame(&self) -> usize {
         self.renderer.current_frame()
+    }
+
+    /// Get mutable access to the renderer.
+    pub fn renderer_mut(&mut self) -> &mut VulkanRenderer {
+        self.renderer
+    }
+
+    /// Get the particle emit workgroup count for this frame.
+    pub fn particle_emit_workgroup_count(&self) -> u32 {
+        self.graph.particle_emit_workgroup_count
+    }
+
+    /// Get the particle simulate workgroup count for this frame.
+    pub fn particle_simulate_workgroup_count(&self) -> u32 {
+        self.graph.particle_simulate_workgroup_count
     }
 
     /// Submit a draw list to a pass.
@@ -146,11 +167,7 @@ impl<'a> Frame<'a> {
 
     /// Execute all passes in order.
     pub(super) fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
-        // SAFETY: We have exclusive access during frame execution
-        let graph_ptr = self.graph as *const FrameGraph as *mut FrameGraph;
-        unsafe {
-            (*graph_ptr).particle_emit_ran = false;
-        }
+        self.particle_emit_ran = false;
 
         // Use storage_manager.current_frame() consistently for all frame resource selection
         let frame_idx = self.current_frame();
@@ -171,13 +188,11 @@ impl<'a> Frame<'a> {
         // Clone the command buffer to avoid borrowing issues
         let cmd = self.renderer.frame_context.command_buffers[frame_idx].clone();
 
-        // === PHASE 1: Execute compute dispatches (BEFORE any render passes) ===
-        // Vulkan doesn't allow compute dispatches inside a render pass, so we must
-        // execute all particle simulation compute shaders before beginning any rendering.
-        // NOTE: Particle compute is now handled by the render graph via ComputePass.
-        // The particle_compute pass executes before all graphics passes automatically.
-
-        // === PHASE 2: Execute graphics passes ===
+        // === Execute all passes in order ===
+        // Compute passes must be placed before graphics passes when building the frame
+        // graph, since Vulkan doesn't allow compute dispatches inside a render pass.
+        // The particle render pass (inline after geometry) reads compute output, so
+        // particle compute passes are inserted at position 0 during frame graph setup.
         for (index, pass) in self.graph.passes.iter().enumerate() {
             let data = self.pending.remove(&index).unwrap_or_default();
 
@@ -290,12 +305,24 @@ impl<'a> Frame<'a> {
                     }
                 }
                 super::pass::PassType::Compute => {
-                    // Compute pass (e.g., particle simulation)
+                    // Compute pass (e.g., particle simulation, light culling)
                     log::trace!("'{}' -> compute pass", pass.name);
-                    if let Some(pipeline) = pass.pipeline {
+                    if let Some(ref compute_fn) = pass.compute_fn {
+                        // Custom compute dispatch via closure (e.g., light culling)
+                        // The closure handles pipeline binding and dispatch internally
+                        compute_fn(
+                            self,
+                            &cmd,
+                            pass.pipeline
+                                .unwrap_or(crate::handle::PipelineHandle::default()),
+                        )?;
+                    } else if let Some(pipeline) = pass.pipeline {
                         self.execute_compute_pass(&cmd, pass, pipeline)?;
                     } else {
-                        log::warn!("Compute pass '{}' has no pipeline", pass.name);
+                        log::warn!(
+                            "Compute pass '{}' has no pipeline and no compute_fn",
+                            pass.name
+                        );
                     }
                 }
             }
