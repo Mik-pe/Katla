@@ -44,8 +44,12 @@ pub fn build_asset_browser(
     // Panel background
     ui.draw_rect(bounds, theme.panel_bg);
 
-    // Focus this panel when clicked
-    if ui.is_hovered(bounds) && ui.mouse_clicked(mouse_button::LEFT) {
+    // Focus this panel when clicked (any button)
+    if ui.is_hovered(bounds)
+        && (ui.mouse_down(mouse_button::LEFT)
+            || ui.mouse_down(mouse_button::RIGHT)
+            || ui.mouse_down(mouse_button::MIDDLE))
+    {
         *focused_panel = FocusedPanel::AssetBrowser;
     }
 
