@@ -48,6 +48,21 @@ impl SceneManager {
     pub fn save_scene(app: &Application) -> Scene {
         let mut scene = Scene::new("Untitled");
         scene.version = SCENE_VERSION;
+        let timestamp = {
+            use std::time::SystemTime;
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_secs().to_string())
+        };
+        scene.created_at = timestamp.clone();
+        scene.modified_at = timestamp;
+        scene.engine_version = Some(env!("CARGO_PKG_VERSION").to_string());
+        // Note: save_scene creates a fresh Scene each time, so created_at always
+        // equals modified_at. To preserve the original created_at across save/load,
+        // callers should pass the loaded Scene through and only update modified_at.
+
+        let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for entity_id in app.world.entity_ids() {
             let Some(transform) = app.world.get_component::<TransformComponent>(entity_id) else {
@@ -67,6 +82,15 @@ impl SceneManager {
                 .world
                 .get_component::<NameComponent>(entity_id)
                 .map(|n| n.name.clone());
+
+            if let Some(ref n) = name
+                && !seen_names.insert(n.clone())
+            {
+                warn!(
+                    "Duplicate entity name '{}' -- parent resolution may be incorrect",
+                    n
+                );
+            }
 
             // Parent relationship (by name lookup)
             let parent = app
@@ -88,19 +112,22 @@ impl SceneManager {
                 scale: [t.scale.x(), t.scale.y(), t.scale.z()],
             };
 
-            let source = app
-                .world
-                .get_component::<EntitySource>(entity_id)
-                .cloned()
-                .unwrap_or(EntitySource::Cube {
-                    size: [1.0, 1.0, 1.0],
-                });
+            let Some(source) = app.world.get_component::<EntitySource>(entity_id).cloned() else {
+                warn!(
+                    "Entity {:?} has no EntitySource -- skipping (cannot round-trip without knowing origin)",
+                    entity_id
+                );
+                continue;
+            };
 
             let drawable = app
                 .world
                 .get_component::<DrawableComponent>(entity_id)
                 .map(|d| DrawableDescriptor {
-                    color: d.color.map(|c| [c.r, c.g, c.b, c.a]),
+                    color: d.color.map(|c| {
+                        let srgb = c.to_srgb();
+                        [srgb.r, srgb.g, srgb.b, srgb.a]
+                    }),
                     metallic: d.metallic,
                     roughness: d.roughness,
                     ao: d.ao,
@@ -133,7 +160,7 @@ impl SceneManager {
                     gravity: p.config.gravity,
                     turbulence_strength: p.config.turbulence_strength,
                     turbulence_frequency: p.config.turbulence_frequency,
-                    shape: p.config.shape,
+                    shape: p.config.get_shape(),
                     shape_params: p.config.shape_params,
                     active: p.active,
                 });
@@ -147,6 +174,15 @@ impl SceneManager {
                     loop_animation: a.loop_animation,
                     speed: a.speed,
                     time: a.time,
+                    duration: a.duration,
+                    blending: a.blending,
+                    target_clip: a.target_clip.clone(),
+                    blend_weight: a.blend_weight,
+                    blend_time: a.blend_time,
+                    blend_duration: a.blend_duration,
+                    target_time: a.target_time,
+                    target_duration: a.target_duration,
+                    loop_count: a.loop_count,
                 });
 
             let velocity = app
@@ -224,39 +260,52 @@ impl SceneManager {
         );
 
         // Clear existing world state
+        // TODO: Release GPU resources (meshes, textures, materials, skeletons) before clearing.
+        // The renderer does not yet expose per-resource destroy APIs, so GPU memory will leak
+        // across scene loads.
+        warn!("Clearing entities without releasing GPU resources (renderer API not available)");
         app.world.clear_entities();
 
         // Build a name -> entity_id mapping for parent resolution
         let mut name_to_entity: std::collections::HashMap<String, katla_ecs::EntityId> =
             std::collections::HashMap::new();
 
-        // First pass: spawn all entities
+        // First pass: spawn all entities, track by index and name
+        let mut spawned_ids: Vec<katla_ecs::EntityId> = Vec::with_capacity(scene.entities.len());
         for desc in &scene.entities {
             let entity_id = Self::spawn_entity(app, desc)?;
+            spawned_ids.push(entity_id);
             if let Some(ref name) = desc.name {
+                if name_to_entity.contains_key(name) {
+                    warn!(
+                        "Duplicate entity name '{}' on load -- parent resolution may be incorrect",
+                        name
+                    );
+                }
                 name_to_entity.insert(name.clone(), entity_id);
             }
         }
 
-        // Second pass: resolve parent relationships
-        for desc in &scene.entities {
+        // Second pass: resolve parent relationships.
+        // All entities are already spawned in the first pass, so entity ordering
+        // in the scene file does not matter for parent resolution.
+        // Uses index-based lookup for children so unnamed entities can have parents.
+        for (idx, desc) in scene.entities.iter().enumerate() {
+            let child_id = spawned_ids[idx];
             if let Some(ref parent_name) = desc.parent {
                 if let Some(&parent_id) = name_to_entity.get(parent_name) {
-                    if let Some(&child_id) = desc.name.as_ref().and_then(|n| name_to_entity.get(n))
+                    app.world
+                        .add_component(child_id, crate::components::Parent::new(parent_id));
+                    if let Some(children) = app
+                        .world
+                        .get_component_mut::<crate::components::Children>(parent_id)
                     {
-                        app.world
-                            .add_component(child_id, crate::components::Parent::new(parent_id));
-                        if let Some(children) = app
-                            .world
-                            .get_component_mut::<crate::components::Children>(parent_id)
-                        {
-                            children.children.push(child_id);
-                        } else {
-                            app.world.add_component(
-                                parent_id,
-                                crate::components::Children::new(vec![child_id]),
-                            );
-                        }
+                        children.children.push(child_id);
+                    } else {
+                        app.world.add_component(
+                            parent_id,
+                            crate::components::Children::new(vec![child_id]),
+                        );
                     }
                 } else {
                     warn!(
@@ -293,93 +342,109 @@ impl SceneManager {
             desc.transform.scale[2],
         );
 
-        let entity_id = match &desc.source {
-            EntitySource::Cube { size } => {
-                app.spawn_test_cube_with_color(pos, *size, color_from_desc(&desc.drawable))
-            }
-            EntitySource::Sphere {
-                radius,
-                segments,
-                rings,
-            } => app.spawn_sphere_with_color(
-                pos,
-                *radius,
-                *segments,
-                *rings,
-                color_from_desc(&desc.drawable),
-            ),
-            EntitySource::Plane { width, height } => {
-                app.spawn_plane_with_color(pos, *width, *height, color_from_desc(&desc.drawable))
-            }
-            EntitySource::Cylinder {
-                height,
-                radius,
-                segments,
-            } => app.spawn_cylinder_with_color(
-                pos,
-                *height,
-                *radius,
-                *segments,
-                color_from_desc(&desc.drawable),
-            ),
-            EntitySource::Torus {
-                radius,
-                tube_radius,
-                segments,
-                tube_segments,
-            } => app.spawn_torus_with_color(
-                pos,
-                *radius,
-                *tube_radius,
-                *segments,
-                *tube_segments,
-                color_from_desc(&desc.drawable),
-            ),
-            EntitySource::GltfModel { path } => app
-                .spawn_gltf_model(path, pos, None)
-                .ok_or(format!("Failed to load GLTF model: {}", path))?,
-            EntitySource::ParticleEmitter => {
-                let config = katla_gfx::particles::EmitterConfig {
-                    position: desc
-                        .particle_emitter
-                        .as_ref()
-                        .map(|p| p.position)
-                        .unwrap_or(pos),
-                    ..Default::default()
-                };
-                let mut emitter = ParticleEmitterComponent::with_config(config);
-                if let Some(ref pe) = desc.particle_emitter {
-                    emitter.active = pe.active;
+        let entity_id = if desc.source.is_mesh_primitive() {
+            let mesh_handle = match &desc.source {
+                EntitySource::Cube { size } => app.renderer.create_cube_mesh(*size),
+                EntitySource::Sphere {
+                    radius,
+                    segments,
+                    rings,
+                    ..
+                } => app.renderer.create_sphere_mesh(*radius, *segments, *rings),
+                EntitySource::Plane { width, height } => {
+                    app.renderer.create_plane_mesh(*width, *height)
                 }
-                app.world.spawn((emitter,))
-            }
-            EntitySource::Light => {
-                // Light entities need a visual indicator sphere + the PointLight component
-                let mesh_handle = app.renderer.create_sphere_mesh(0.2, 16, 12);
-                let material_handle = app.default_material();
-                let color = color_from_desc(&desc.drawable);
-                let drawable = DrawableComponent::with_handles_and_material(
-                    mesh_handle,
-                    material_handle,
-                    Some(color),
-                    0.0,
-                    1.0,
-                    1.0,
-                );
+                EntitySource::Cylinder {
+                    height,
+                    radius,
+                    segments,
+                    ..
+                } => app
+                    .renderer
+                    .create_cylinder_mesh(*height, *radius, *segments),
+                EntitySource::Torus {
+                    radius,
+                    tube_radius,
+                    segments,
+                    tube_segments,
+                    ..
+                } => {
+                    app.renderer
+                        .create_torus_mesh(*radius, *tube_radius, *segments, *tube_segments)
+                }
+                _ => unreachable!(),
+            };
 
-                let point_light = desc
-                    .point_light
-                    .as_ref()
-                    .map(|pl| PointLight::new(pl.color, pl.intensity, pl.range))
-                    .unwrap_or_default();
+            let material_handle = app.default_material();
+            let srgb_color = color_from_desc(&desc.drawable);
+            let linear_color = srgb_color.to_linear();
 
-                let transform = TransformComponent {
+            app.world.spawn((
+                TransformComponent {
                     transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
                         pos[0], pos[1], pos[2],
                     )),
-                };
+                },
+                DrawableComponent::with_handles_and_color(
+                    mesh_handle,
+                    material_handle,
+                    linear_color,
+                ),
+            ))
+        } else {
+            match &desc.source {
+                EntitySource::GltfModel { path } => app
+                    .spawn_gltf_model(path, pos, None)
+                    .ok_or(format!("Failed to load GLTF model: {}", path))?,
+                EntitySource::ParticleEmitter => {
+                    let config = katla_gfx::particles::EmitterConfig {
+                        position: desc
+                            .particle_emitter
+                            .as_ref()
+                            .map(|p| p.position)
+                            .unwrap_or(pos),
+                        ..Default::default()
+                    };
+                    let mut emitter = ParticleEmitterComponent::with_config(config);
+                    if let Some(ref pe) = desc.particle_emitter {
+                        emitter.active = pe.active;
+                    }
+                    let transform = TransformComponent {
+                        transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
+                            pos[0], pos[1], pos[2],
+                        )),
+                    };
+                    app.world.spawn((transform, emitter))
+                }
+                EntitySource::Light => {
+                    // Light entities need a visual indicator sphere + the PointLight component
+                    let mesh_handle = app.renderer.create_sphere_mesh(0.2, 16, 12);
+                    let material_handle = app.default_material();
+                    let color = color_from_desc(&desc.drawable);
+                    let drawable = DrawableComponent::with_handles_and_material(
+                        mesh_handle,
+                        material_handle,
+                        Some(color),
+                        0.0,
+                        1.0,
+                        1.0,
+                    );
 
-                app.world.spawn((transform, drawable, point_light))
+                    let point_light = desc
+                        .point_light
+                        .as_ref()
+                        .map(|pl| PointLight::new(pl.color, pl.intensity, pl.range))
+                        .unwrap_or_default();
+
+                    let transform = TransformComponent {
+                        transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
+                            pos[0], pos[1], pos[2],
+                        )),
+                    };
+
+                    app.world.spawn((transform, drawable, point_light))
+                }
+                _ => return Err(format!("Unknown entity source: {:?}", desc.source)),
             }
         };
 
@@ -390,53 +455,86 @@ impl SceneManager {
         }
 
         // Apply drawable material overrides
-        if let Some(ref drawable_desc) = desc.drawable {
-            if let Some(drawable) = app.world.get_component_mut::<DrawableComponent>(entity_id) {
-                drawable.metallic = drawable_desc.metallic;
-                drawable.roughness = drawable_desc.roughness;
-                drawable.ao = drawable_desc.ao;
-                if let Some(c) = drawable_desc.color {
-                    drawable.color = Some(katla_math::Color::new(c[0], c[1], c[2], c[3]));
-                }
+        if let Some(ref drawable_desc) = desc.drawable
+            && let Some(drawable) = app.world.get_component_mut::<DrawableComponent>(entity_id)
+        {
+            drawable.metallic = drawable_desc.metallic;
+            drawable.roughness = drawable_desc.roughness;
+            drawable.ao = drawable_desc.ao;
+            if let Some(c) = drawable_desc.color {
+                let srgb = katla_math::Color::new(c[0], c[1], c[2], c[3]);
+                drawable.color = Some(srgb.to_linear());
             }
         }
 
         // Apply particle emitter config overrides
-        if let Some(ref pe_desc) = desc.particle_emitter {
-            if let Some(emitter) = app
+        if let Some(ref pe_desc) = desc.particle_emitter
+            && let Some(emitter) = app
                 .world
                 .get_component_mut::<ParticleEmitterComponent>(entity_id)
-            {
-                emitter.config.position = pe_desc.position;
-                emitter.config.emit_rate = pe_desc.emit_rate;
-                emitter.config.base_lifetime = pe_desc.base_lifetime;
-                emitter.config.lifetime_variation = pe_desc.lifetime_variation;
-                emitter.config.velocity_direction = pe_desc.velocity_direction;
-                emitter.config.velocity_magnitude = pe_desc.velocity_magnitude;
-                emitter.config.velocity_cone_angle = pe_desc.velocity_cone_angle;
-                emitter.config.base_scale = pe_desc.base_scale;
-                emitter.config.scale_variation = pe_desc.scale_variation;
-                emitter.config.color = pe_desc.color;
-                emitter.config.color_variation = pe_desc.color_variation;
-                emitter.config.gravity = pe_desc.gravity;
-                emitter.config.turbulence_strength = pe_desc.turbulence_strength;
-                emitter.config.turbulence_frequency = pe_desc.turbulence_frequency;
-                emitter.config.shape = pe_desc.shape;
-                emitter.config.shape_params = pe_desc.shape_params;
-                emitter.active = pe_desc.active;
-            }
+        {
+            emitter.config.position = pe_desc.position;
+            emitter.config.emit_rate = pe_desc.emit_rate;
+            emitter.config.base_lifetime = pe_desc.base_lifetime;
+            emitter.config.lifetime_variation = pe_desc.lifetime_variation;
+            emitter.config.velocity_direction = pe_desc.velocity_direction;
+            emitter.config.velocity_magnitude = pe_desc.velocity_magnitude;
+            emitter.config.velocity_cone_angle = pe_desc.velocity_cone_angle;
+            emitter.config.base_scale = pe_desc.base_scale;
+            emitter.config.scale_variation = pe_desc.scale_variation;
+            emitter.config.color = pe_desc.color;
+            emitter.config.color_variation = pe_desc.color_variation;
+            emitter.config.gravity = pe_desc.gravity;
+            emitter.config.turbulence_strength = pe_desc.turbulence_strength;
+            emitter.config.turbulence_frequency = pe_desc.turbulence_frequency;
+            emitter.config.set_shape(pe_desc.shape);
+            emitter.config.shape_params = pe_desc.shape_params;
+            emitter.active = pe_desc.active;
         }
 
         // Apply animation state
         if let Some(ref anim_desc) = desc.animation {
+            // For GLTF models, spawn_gltf_model only creates AnimationPlayer when
+            // default_animation is Some. Ensure the component exists before restoring.
+            if app
+                .world
+                .get_component::<AnimationPlayer>(entity_id)
+                .is_none()
+            {
+                let player = if let Some(ref clip) = anim_desc.current_clip {
+                    AnimationPlayer::new(clip.clone())
+                } else {
+                    AnimationPlayer::stopped()
+                };
+                app.world.add_component(entity_id, player);
+            }
+
             if let Some(player) = app.world.get_component_mut::<AnimationPlayer>(entity_id) {
                 if let Some(ref clip) = anim_desc.current_clip {
-                    player.set_clip(clip.clone(), player.duration);
+                    let duration = if anim_desc.duration > 0.0 {
+                        anim_desc.duration
+                    } else {
+                        player.duration
+                    };
+                    player.set_clip(clip.clone(), duration);
                 }
                 player.playing = anim_desc.playing;
                 player.loop_animation = anim_desc.loop_animation;
                 player.speed = anim_desc.speed;
                 player.time = anim_desc.time;
+                player.duration = anim_desc.duration;
+                player.loop_count = anim_desc.loop_count;
+                if anim_desc.blending
+                    && let Some(ref target) = anim_desc.target_clip
+                {
+                    player.target_clip = Some(target.clone());
+                    player.blending = true;
+                    player.blend_weight = anim_desc.blend_weight;
+                    player.blend_time = anim_desc.blend_time;
+                    player.blend_duration = anim_desc.blend_duration;
+                    player.target_time = anim_desc.target_time;
+                    player.target_duration = anim_desc.target_duration;
+                }
             }
         }
 
@@ -683,7 +781,7 @@ mod tests {
                 gravity: 0.0,
                 turbulence_strength: 0.0,
                 turbulence_frequency: 3.0,
-                shape: 0,
+                shape: katla_gfx::particles::EmitterShape::Point,
                 shape_params: [0.0; 4],
                 active: true,
             }),
@@ -722,6 +820,7 @@ mod tests {
                 loop_animation: true,
                 speed: 1.0,
                 time: 0.5,
+                ..Default::default()
             }),
             velocity: None,
         };
@@ -998,6 +1097,7 @@ EntityDescriptor(
                 loop_animation: true,
                 speed: 1.0,
                 time: 0.0,
+                ..Default::default()
             }),
             velocity: None,
         });
@@ -1055,7 +1155,7 @@ EntityDescriptor(
                 gravity: 0.0,
                 turbulence_strength: 0.0,
                 turbulence_frequency: 3.0,
-                shape: 0,
+                shape: katla_gfx::particles::EmitterShape::Point,
                 shape_params: [0.0; 4],
                 active: true,
             }),
