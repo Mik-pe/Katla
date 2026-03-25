@@ -8,7 +8,7 @@ When making changes to a workspace crate, read the crate's own AGENTS.md (e.g. `
 
 Katla is a Vulkan-based 3D render engine written in Rust 2024 edition, using ECS (Entity Component System) architecture. The project is structured as a Cargo workspace with multiple crates:
 
-- **katla_math** - Custom math library (vectors, matrices, quaternions) - SIMD planned (see katla_math/PLAN.md)
+- **katla_math** - Custom math library (vectors, matrices, quaternions) with SIMD
 - **katla_gfx** - Katla high-level graphics API layer
 - **katla_app** - Application framework, components, and systems
 - **katla_ecs** - Custom Entity Component System framework

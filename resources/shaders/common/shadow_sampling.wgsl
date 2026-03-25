@@ -76,9 +76,10 @@ fn sample_shadow_pcf(world_pos: vec3f, cascade_idx: u32) -> f32 {
     let light_space = cascade.view_proj * vec4f(world_pos, 1.0);
     let proj = light_space.xyz / light_space.w;
 
-    // Map from [-1,1] to [0,1]
+    // Map from NDC [-1,1] to texture [0,1]
     var uv = proj.xy * 0.5 + 0.5;
-    let depth = proj.z;
+    // Map depth from NDC [-1,1] to depth buffer [0,1] for comparison
+    let depth = proj.z * 0.5 + 0.5;
 
     // Out-of-bounds check: if UV is outside [0,1], fragment is outside the
     // light frustum for this cascade — return fully lit (1.0).
