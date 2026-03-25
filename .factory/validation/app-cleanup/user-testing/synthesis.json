@@ -1,0 +1,47 @@
+{
+  "milestone": "app-cleanup",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 25,
+    "passed": 25,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-APP-001",
+    "VAL-APP-002",
+    "VAL-APP-003",
+    "VAL-APP-004",
+    "VAL-APP-005",
+    "VAL-APP-006",
+    "VAL-APP-007",
+    "VAL-APP-008",
+    "VAL-APP-009",
+    "VAL-APP-010",
+    "VAL-APP-011",
+    "VAL-APP-012",
+    "VAL-APP-013",
+    "VAL-APP-014",
+    "VAL-APP-015",
+    "VAL-APP-016",
+    "VAL-APP-017",
+    "VAL-APP-018",
+    "VAL-APP-019",
+    "VAL-APP-020",
+    "VAL-CROSS-001",
+    "VAL-CROSS-002",
+    "VAL-CROSS-003",
+    "VAL-CROSS-004",
+    "VAL-CROSS-005"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "flowReports": [
+    ".factory/validation/app-cleanup/user-testing/flows/app-dead-code.json",
+    ".factory/validation/app-cleanup/user-testing/flows/app-dedup-polish.json",
+    ".factory/validation/app-cleanup/user-testing/flows/cross-area.json"
+  ]
+}

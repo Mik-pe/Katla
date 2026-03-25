@@ -1,0 +1,82 @@
+{
+  "assertionGroup": "app-dead-code",
+  "testedAt": "2026-03-25T00:00:00Z",
+  "assertions": [
+    {
+      "id": "VAL-APP-001",
+      "title": "InputComponent removed entirely",
+      "status": "pass",
+      "evidence": "grep for 'InputComponent' in katla_app/src/ returned 0 matches",
+      "command": "grep -r 'InputComponent' katla_app/src/",
+      "actualCount": 0
+    },
+    {
+      "id": "VAL-APP-002",
+      "title": "ActiveComponent removed entirely",
+      "status": "pass",
+      "evidence": "grep for 'ActiveComponent' in katla_app/src/ returned 0 matches",
+      "command": "grep -r 'ActiveComponent' katla_app/src/",
+      "actualCount": 0
+    },
+    {
+      "id": "VAL-APP-003",
+      "title": "TagComponent removed entirely",
+      "status": "pass",
+      "evidence": "grep for 'TagComponent' in katla_app/src/ returned 0 matches",
+      "command": "grep -r 'TagComponent' katla_app/src/",
+      "actualCount": 0
+    },
+    {
+      "id": "VAL-APP-004",
+      "title": "BoundingVolume and CullingSystem removed entirely",
+      "status": "pass",
+      "evidence": "grep for 'BoundingVolume' returned 0 matches; grep for 'CullingSystem' returned 0 matches",
+      "command": "grep -r 'BoundingVolume' katla_app/src/ && grep -r 'CullingSystem' katla_app/src/",
+      "actualCount": 0
+    },
+    {
+      "id": "VAL-APP-005",
+      "title": "ViewportCamera and ViewportCameraMatrices removed entirely",
+      "status": "pass",
+      "evidence": "grep for 'ViewportCamera' in katla_app/src/ returned 0 matches",
+      "command": "grep -r 'ViewportCamera' katla_app/src/",
+      "actualCount": 0
+    },
+    {
+      "id": "VAL-APP-006",
+      "title": "ThirdPersonControllerComponent and system removed entirely",
+      "status": "pass",
+      "evidence": "grep for 'ThirdPersonController' in katla_app/src/ returned 0 matches",
+      "command": "grep -r 'ThirdPersonController' katla_app/src/",
+      "actualCount": 0
+    },
+    {
+      "id": "VAL-APP-007",
+      "title": "DebugOverlay removed entirely",
+      "status": "pass",
+      "evidence": "grep for 'DebugOverlay' in katla_app/src/ returned 0 matches",
+      "command": "grep -r 'DebugOverlay' katla_app/src/",
+      "actualCount": 0
+    },
+    {
+      "id": "VAL-APP-008",
+      "title": "LightOrbitSystem removed entirely",
+      "status": "pass",
+      "evidence": "grep for 'LightOrbitSystem' in katla_app/src/ returned 0 matches",
+      "command": "grep -r 'LightOrbitSystem' katla_app/src/",
+      "actualCount": 0
+    },
+    {
+      "id": "VAL-APP-009",
+      "title": "LightingSystem and LightCollection removed entirely",
+      "status": "pass",
+      "evidence": "grep for 'LightingSystem' returned 0 matches; grep for 'LightCollection' returned 0 matches",
+      "command": "grep -r 'LightingSystem' katla_app/src/ && grep -r 'LightCollection' katla_app/src/",
+      "actualCount": 0
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["grep"],
+  "summary": "All 9 assertions passed. Every dead code pattern (InputComponent, ActiveComponent, TagComponent, BoundingVolume, CullingSystem, ViewportCamera, ThirdPersonController, DebugOverlay, LightOrbitSystem, LightingSystem, LightCollection) has been fully removed from katla_app/src/ with zero remaining references."
+}

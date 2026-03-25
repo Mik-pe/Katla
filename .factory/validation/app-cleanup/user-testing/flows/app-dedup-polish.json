@@ -1,0 +1,103 @@
+{
+  "groupId": "app-dedup-polish",
+  "testedAt": "2026-03-25T12:00:00Z",
+  "isolation": {
+    "type": "codebase-only",
+    "workingDirectory": "C:\\dev\\katla",
+    "scope": "katla_app/src/"
+  },
+  "toolsUsed": ["grep", "code-review"],
+  "assertions": [
+    {
+      "id": "VAL-APP-010",
+      "title": "TOML persistence deduplicated",
+      "status": "pass",
+      "evidence": "Shared helper functions exist in katla_app/src/util/config.rs: load_config_file() and save_config_file(). Preferences (preferences.rs) calls crate::util::load_config_file(\"preferences.toml\") and crate::util::save_config_file(\"preferences.toml\", ...). GuiState (gui_state.rs) calls crate::util::load_config_file(\"gui_state.toml\") and crate::util::save_config_file(\"gui_state.toml\", ...). Both use the shared helper for file I/O while keeping their own parse_toml/to_toml for type-specific serialization.",
+      "command": "grep(path='katla_app/src/', pattern='toml') + code review of util/config.rs, preferences.rs, gui_state.rs",
+      "actualCount": null
+    },
+    {
+      "id": "VAL-APP-011",
+      "title": "Spawning primitives deduplicated",
+      "status": "pass",
+      "evidence": "A single generic fn spawn_primitive_with_color(position, color, mesh_handle) exists at katla_app/src/application/spawning.rs:10. All typed spawning functions (spawn_test_cube_with_color, spawn_sphere_with_color, spawn_cylinder_with_color, spawn_plane_with_color, spawn_torus_with_color) delegate to this single function. No duplicate spawning logic exists.",
+      "command": "grep(path='katla_app/src/', pattern='spawn_primitive') + code review of spawning.rs",
+      "actualCount": null
+    },
+    {
+      "id": "VAL-APP-012",
+      "title": "Material creation API consistent",
+      "status": "pass",
+      "evidence": "All 4 material creation sites in katla_app use the same API: renderer.compile_material(&shader_path, katla_gfx::MaterialOptions { ... }). Found in: spawning.rs:312, application/mod.rs:581, builder.rs:193, builder.rs:268. No MaterialBuilder or material_builder usage found. Only one API pattern is used throughout.",
+      "command": "grep(path='katla_app/src/', pattern='compile_material|material_builder|MaterialBuilder') + code review",
+      "actualCount": null
+    },
+    {
+      "id": "VAL-APP-013",
+      "title": "compute_movement_direction extracted from camera systems",
+      "status": "pass",
+      "evidence": "Exactly 1 definition of fn compute_movement_direction found at katla_app/src/systems/camera/fly_camera_systems.rs:14. It is called once at line 35 within FlyCameraMovementSystem::run(). The function is properly extracted and shared.",
+      "command": "grep(path='katla_app/src/', pattern='fn compute_movement_direction')",
+      "actualCount": 1
+    },
+    {
+      "id": "VAL-APP-014",
+      "title": "No println! in production code",
+      "status": "pass",
+      "evidence": "All println!/eprintln! occurrences in katla_app/src/ are inside #[cfg(test)] blocks: util/modelcache.rs (all in mod tests starting at line 629), animation/gltf_loader.rs (all in #[cfg(test)] blocks starting at lines 176 and 251). The animation/mod.rs references are inside doc comments (//! ...), not executable code. Zero println!/eprintln! in non-test production code.",
+      "command": "grep(path='katla_app/src/', pattern='println!\\(|eprintln!\\(') + code review to verify all within #[cfg(test)]",
+      "actualCount": 0
+    },
+    {
+      "id": "VAL-APP-015",
+      "title": "EditorHidden moved to appropriate location",
+      "status": "pass",
+      "evidence": "EditorHidden is defined in katla_app/src/components/scene/editor_hidden.rs as a marker component with doc comment 'Marker component to hide an entity from the editor hierarchy.' It is in the scene components module alongside NameComponent and relationship components, which is logically appropriate for its purpose. It is NOT in a tag module. It is used in application/camera.rs (to hide editor camera) and application/editor/mod.rs (to filter hidden entities from hierarchy).",
+      "command": "grep(path='katla_app/src/', pattern='EditorHidden') + code review of components/scene/editor_hidden.rs",
+      "actualCount": null
+    },
+    {
+      "id": "VAL-APP-016",
+      "title": "AmbientLight properly placed as resource",
+      "status": "pass",
+      "evidence": "AmbientLight is defined in katla_app/src/resources/ambient_light.rs with doc comment 'This is an ECS resource, not a component, since there's typically one ambient light per scene.' It is registered as a resource via world.insert_resource(crate::resources::AmbientLight::default()) in application/mod.rs:569. It is re-exported from resources/mod.rs via pub use ambient_light::*.",
+      "command": "grep(path='katla_app/src/', pattern='AmbientLight') + code review of resources/ambient_light.rs",
+      "actualCount": null
+    },
+    {
+      "id": "VAL-APP-017",
+      "title": "Debug-only fields gated with #[cfg(debug_assertions)]",
+      "status": "pass",
+      "evidence": "Debug-only fields particle_readback_pending and particle_readback_done in Application struct (application/mod.rs:91,94) are both gated with #[cfg(debug_assertions)]. The debug readback logic in application/renderer.rs:166 and 229 is also gated with #[cfg(debug_assertions)]. Additional cfg gates found in application/builder.rs:127,623,625 and application/mod.rs:312 for debug-only code paths.",
+      "command": "grep(path='katla_app/src/', pattern='#\\[cfg\\(debug_assertions\\)\\]') + code review",
+      "actualCount": null
+    },
+    {
+      "id": "VAL-APP-018",
+      "title": "gltf_cache type simplified",
+      "status": "pass",
+      "evidence": "The gltf_cache field at application/mod.rs:58 is typed as GltfCache (a simple named type alias). No #[allow(clippy::type_complexity)] attribute found anywhere in application/mod.rs. The type has been simplified so clippy no longer complains about complexity.",
+      "command": "grep(file='katla_app/src/application/mod.rs', pattern='clippy::type_complexity')",
+      "actualCount": 0
+    },
+    {
+      "id": "VAL-APP-019",
+      "title": "deinterleave_pbr and deinterleave_pbr_skinned deduplicated",
+      "status": "pass",
+      "evidence": "A shared fn deinterleave_pbr_attributes(positions, normals, tangents, tex_coords) exists at util/modelcache.rs:41 as a free function. Both deinterleave_pbr (line 176) and deinterleave_pbr_skinned (line 185) are impl methods on GLTFModel that delegate to deinterleave_pbr_attributes for the common PBR attributes. deinterleave_pbr_skinned additionally adds joint_indices and joint_weights after calling the shared helper.",
+      "command": "grep(path='katla_app/src/', pattern='deinterleave') + code review of util/modelcache.rs",
+      "actualCount": null
+    },
+    {
+      "id": "VAL-APP-020",
+      "title": "build_world_transforms extracted from parse_gltf",
+      "status": "pass",
+      "evidence": "fn build_world_transforms is defined once in production code at util/modelcache.rs:62 as pub fn. It is used at modelcache.rs:381 and modelcache.rs:693 (within #[cfg(test)]). A second definition exists in animation/gltf_loader.rs:177 but is gated with #[cfg(test)] only, so production code has exactly 1 definition. The production function is used by the GLTF loader (parse_gltf) and by tests.",
+      "command": "grep(path='katla_app/src/', pattern='fn build_world_transforms') + code review",
+      "actualCount": 1
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 11 assertions: 11 passed. All deduplication, cleanup, and code organization assertions for the app-cleanup milestone are confirmed."
+}
