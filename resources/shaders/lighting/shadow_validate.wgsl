@@ -3,10 +3,14 @@
 // Validates the shadow cascade data and depth texture by performing
 // a manual shadow comparison (equivalent to textureSampleCompare).
 //
-// Note: This shader does NOT use the shared sample_shadow() function
-// because textureSampleCompare is forbidden in compute shaders.
-// Instead, it manually performs the cascade selection and depth
-// comparison that sample_shadow() would do.
+// Divergences from production shadow_sampling.wgsl (compute shader
+// restrictions prevent full parity):
+//   - Single-point textureLoad instead of 16-sample PCF Poisson disc.
+//     PCF requires textureSampleCompare which is fragment-only.
+//   - No cascade blending at split boundaries. The production shader
+//     blends visibility across a 5% blend zone at cascade seams.
+//   - These divergences are acceptable for validating the core depth
+//     comparison and cascade selection logic.
 //
 // Descriptor layout:
 //   @group(0) @binding(0)  shadow_data: storage buffer (ShadowFrameData)

@@ -46,6 +46,7 @@ fn find_shader_directory() -> PathBuf {
 
     for path in possible_paths {
         if path.exists() {
+            log::info!("Found shader directory at: {:?}", path);
             return path;
         }
     }
@@ -153,21 +154,6 @@ impl StagingBuffer {
             allocation,
             size,
         })
-    }
-
-    #[allow(dead_code)]
-    fn read_f32_slice(&self, context: &VulkanContext, count: usize) -> Result<Vec<f32>, String> {
-        context.invalidate_mapped_memory(&self.allocation, 0, self.size);
-        let mut result = vec![0.0f32; count];
-        if let Some(mapped) = self.allocation.mapped_ptr() {
-            let src = mapped.as_ptr() as *const f32;
-            unsafe {
-                std::ptr::copy_nonoverlapping(src, result.as_mut_ptr(), count);
-            }
-        } else {
-            return Err("Staging buffer not mapped".to_string());
-        }
-        Ok(result)
     }
 
     fn read_u32_slice(&self, context: &VulkanContext, count: usize) -> Result<Vec<u32>, String> {
@@ -443,6 +429,13 @@ fn validate_cascade_camera_movement() -> Result<(), String> {
 struct LightCullingTestResources {
     lc_buffers: LightCullingBuffers,
     compute_pipeline: ComputePipeline,
+}
+
+impl LightCullingTestResources {
+    fn destroy(mut self, _context: &VulkanContext) {
+        self.lc_buffers.destroy();
+        self.compute_pipeline.destroy();
+    }
 }
 
 fn create_light_culling_resources(
@@ -810,23 +803,52 @@ fn test_multiple_lights_overlapping(
 // ---------------------------------------------------------------------------
 
 struct ShadowValidateResources {
-    // Storage buffer for ShadowFrameData
     shadow_data_buffer: vk::Buffer,
     shadow_data_allocation: Option<Allocation>,
-    // 1x1 depth texture (shadow atlas)
     depth_image: vk::Image,
     #[allow(dead_code)]
     depth_allocation: Option<Allocation>,
-    #[allow(dead_code)]
     depth_image_view: vk::ImageView,
-    // Output buffer (readback)
     output_buffer: vk::Buffer,
     output_allocation: Option<Allocation>,
-    // Test params uniform buffer
     test_params_buffer: vk::Buffer,
     test_params_allocation: Option<Allocation>,
-    // Compute pipeline
     pipeline: ComputePipeline,
+}
+
+impl ShadowValidateResources {
+    fn destroy(mut self, context: &VulkanContext) {
+        unsafe {
+            context.device.destroy_buffer(self.shadow_data_buffer, None);
+            context.device.destroy_buffer(self.output_buffer, None);
+            context.device.destroy_buffer(self.test_params_buffer, None);
+            context
+                .device
+                .destroy_image_view(self.depth_image_view, None);
+            context.device.destroy_image(self.depth_image, None);
+        }
+        if let Some(alloc) = self.shadow_data_allocation {
+            if let Ok(mut a) = context.allocator.try_borrow_mut() {
+                a.free(alloc).ok();
+            }
+        }
+        if let Some(alloc) = self.output_allocation {
+            if let Ok(mut a) = context.allocator.try_borrow_mut() {
+                a.free(alloc).ok();
+            }
+        }
+        if let Some(alloc) = self.test_params_allocation {
+            if let Ok(mut a) = context.allocator.try_borrow_mut() {
+                a.free(alloc).ok();
+            }
+        }
+        if let Some(alloc) = self.depth_allocation {
+            if let Ok(mut a) = context.allocator.try_borrow_mut() {
+                a.free(alloc).ok();
+            }
+        }
+        self.pipeline.destroy();
+    }
 }
 
 fn create_shadow_validate_resources(
@@ -1089,8 +1111,11 @@ fn clear_depth_to(
     res: &ShadowValidateResources,
     depth: f32,
 ) -> Result<(), String> {
-    let cmd = context.begin_single_time_commands();
-    let barrier = vk::ImageMemoryBarrier2::default()
+    let cmd_buf = context.begin_single_time_commands();
+    let vk_cmd = cmd_buf.vk_command_buffer();
+
+    // Transition SHADER_READ -> TRANSFER_DST
+    let to_dst = vk::ImageMemoryBarrier2::default()
         .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
         .src_access_mask(vk::AccessFlags2::SHADER_READ)
         .dst_stage_mask(vk::PipelineStageFlags2::TRANSFER)
@@ -1105,17 +1130,14 @@ fn clear_depth_to(
             base_array_layer: 0,
             layer_count: 1,
         });
-    let img_barriers = [barrier];
-    let dep_info = vk::DependencyInfo::default().image_memory_barriers(&img_barriers);
     unsafe {
-        context
-            .device
-            .cmd_pipeline_barrier2(cmd.vk_command_buffer(), &dep_info);
+        context.device.cmd_pipeline_barrier2(
+            vk_cmd,
+            &vk::DependencyInfo::default().image_memory_barriers(&[to_dst]),
+        );
     }
-    context.end_single_time_commands(cmd);
 
-    // Clear the entire 2x2 atlas using vkCmdClearDepthImage
-    let cmd = context.begin_single_time_commands();
+    // Clear the entire 2x2 atlas
     let clear_value = vk::ClearDepthStencilValue { depth, stencil: 0 };
     let range = vk::ImageSubresourceRange {
         aspect_mask: vk::ImageAspectFlags::DEPTH,
@@ -1126,18 +1148,16 @@ fn clear_depth_to(
     };
     unsafe {
         context.device.cmd_clear_depth_stencil_image(
-            cmd.vk_command_buffer(),
+            vk_cmd,
             res.depth_image,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             &clear_value,
             &[range],
         );
     }
-    context.end_single_time_commands(cmd);
 
-    // Transition back to SHADER_READ
-    let cmd = context.begin_single_time_commands();
-    let barrier = vk::ImageMemoryBarrier2::default()
+    // Transition TRANSFER_DST -> SHADER_READ
+    let to_read = vk::ImageMemoryBarrier2::default()
         .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
         .src_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
         .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
@@ -1152,15 +1172,14 @@ fn clear_depth_to(
             base_array_layer: 0,
             layer_count: 1,
         });
-    let img_barriers2 = [barrier];
-    let dep_info = vk::DependencyInfo::default().image_memory_barriers(&img_barriers2);
     unsafe {
-        context
-            .device
-            .cmd_pipeline_barrier2(cmd.vk_command_buffer(), &dep_info);
+        context.device.cmd_pipeline_barrier2(
+            vk_cmd,
+            &vk::DependencyInfo::default().image_memory_barriers(&[to_read]),
+        );
     }
-    context.end_single_time_commands(cmd);
 
+    submit_and_wait(context, &cmd_buf)?;
     Ok(())
 }
 
@@ -1177,6 +1196,26 @@ fn dispatch_shadow_validate(
 
     let cmd_buf = context.begin_single_time_commands();
     let cmd = cmd_buf.vk_command_buffer();
+
+    // Write test params to uniform buffer before recording commands
+    if let Some(ref alloc) = res.test_params_allocation {
+        if let Some(mapped) = alloc.mapped_ptr() {
+            let mut params_data = [0u8; 32];
+            let world_pos = [
+                test_world_pos[0],
+                test_world_pos[1],
+                test_world_pos[2],
+                test_view_z,
+            ];
+            let world_pos_bytes: &[u8] = bytemuck::cast_slice(&world_pos);
+            params_data[..16].copy_from_slice(world_pos_bytes);
+            params_data[16..20].copy_from_slice(&test_index.to_le_bytes());
+            unsafe {
+                std::ptr::copy_nonoverlapping(params_data.as_ptr(), mapped.as_ptr() as *mut u8, 32);
+            }
+            context.flush_mapped_memory(alloc, 0, 32);
+        }
+    }
 
     unsafe {
         device.cmd_bind_pipeline(
@@ -1240,24 +1279,6 @@ fn dispatch_shadow_validate(
             0,
             &writes,
         );
-
-        // Write test params to uniform buffer
-        if let Some(ref alloc) = res.test_params_allocation {
-            if let Some(mapped) = alloc.mapped_ptr() {
-                let mut params_data = [0u8; 32];
-                let world_pos = [
-                    test_world_pos[0],
-                    test_world_pos[1],
-                    test_world_pos[2],
-                    test_view_z,
-                ];
-                let world_pos_bytes: &[u8] = bytemuck::cast_slice(&world_pos);
-                params_data[..16].copy_from_slice(world_pos_bytes);
-                params_data[16..20].copy_from_slice(&test_index.to_le_bytes());
-                std::ptr::copy_nonoverlapping(params_data.as_ptr(), mapped.as_ptr() as *mut u8, 32);
-                context.flush_mapped_memory(alloc, 0, 32);
-            }
-        }
 
         // Barrier: output buffer needs to be writable
         let output_barrier = vk::BufferMemoryBarrier2::default()
@@ -1374,6 +1395,123 @@ fn test_shadow_fully_shadowed(
         ));
     }
     log::info!("  PASSED: visibility = {:.4} (fully shadowed)", visibility);
+    Ok(())
+}
+
+fn test_shadow_out_of_bounds(
+    context: &VulkanContext,
+    res: &ShadowValidateResources,
+) -> Result<(), String> {
+    log::info!("Testing shadow sampling: out-of-bounds UV returns 1.0...");
+
+    clear_depth_to(context, res, 0.0)?;
+
+    // VP that maps world (100, 0, 0) to NDC (50, 0, 0.5) — far outside [0,1].
+    let vp: [f32; 16] = [
+        0.5, 0.0, 0.0, 0.0, 0.0, -0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.0,
+    ];
+    let gpu_data = ShadowFrameData {
+        cascades: [ShadowCascadeGPU {
+            view_proj: vp,
+            split_distance: 10.0,
+            texel_size: 0.5,
+            _pad: [0.0, 0.0],
+        }; 4],
+        light_direction: [0.0, -1.0, 0.0, 4.0],
+        shadow_bias: [0.0, 0.0, 0.0, 0.0],
+    };
+    upload_shadow_data(context, res, &gpu_data);
+
+    // world (100, 0, 0): light_space.x = 0.5*100 + 0 = 50, uv.x = 50*0.5+0.5 = 25.5 -> out of bounds
+    let visibility = dispatch_shadow_validate(context, res, [100.0, 0.0, 0.0], 1.0, 2)?;
+
+    log::info!("  visibility = {:.4}", visibility);
+    if visibility < 0.95 {
+        return Err(format!(
+            "Expected visibility = 1.0 for out-of-bounds position, got {:.4}",
+            visibility
+        ));
+    }
+    log::info!("  PASSED: out-of-bounds position returns 1.0");
+    Ok(())
+}
+
+fn test_shadow_constant_bias(
+    context: &VulkanContext,
+    res: &ShadowValidateResources,
+) -> Result<(), String> {
+    log::info!("Testing shadow sampling: constant bias shifts comparison...");
+
+    clear_depth_to(context, res, 0.5)?;
+
+    // Same VP as fully_lit/shadowed tests: world (0,0,0) -> depth = 0.75
+    // Without bias: compare_depth = 0.75 > 0.5 stored -> shadowed
+    // With bias 0.3: compare_depth = 0.75 - 0.3 = 0.45 <= 0.5 stored -> lit
+    let vp: [f32; 16] = [
+        0.5, 0.0, 0.0, 0.0, 0.0, -0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.0,
+    ];
+    let gpu_data = ShadowFrameData {
+        cascades: [ShadowCascadeGPU {
+            view_proj: vp,
+            split_distance: 10.0,
+            texel_size: 0.5,
+            _pad: [0.0, 0.0],
+        }; 4],
+        light_direction: [0.0, -1.0, 0.0, 4.0],
+        shadow_bias: [0.3, 0.0, 0.0, 0.0],
+    };
+    upload_shadow_data(context, res, &gpu_data);
+
+    let visibility = dispatch_shadow_validate(context, res, [0.0, 0.0, 0.0], 1.0, 3)?;
+
+    log::info!("  visibility = {:.4}", visibility);
+    if visibility < 0.95 {
+        return Err(format!(
+            "Expected visibility >= 0.95 with bias 0.0 flipping result, got {:.4}",
+            visibility
+        ));
+    }
+    log::info!("  PASSED: constant bias correctly shifts comparison depth");
+    Ok(())
+}
+
+fn test_shadow_negative_view_z(
+    context: &VulkanContext,
+    res: &ShadowValidateResources,
+) -> Result<(), String> {
+    log::info!("Testing shadow sampling: negative view_z (real convention)...");
+
+    clear_depth_to(context, res, 1.0)?;
+
+    // The real app computes view_z = -(view * world_pos).z which is negative for
+    // objects in front of the camera. Cascade selection uses view_z <= split_distance,
+    // so negative view_z should always select cascade 0 (first cascade).
+    let vp: [f32; 16] = [
+        0.5, 0.0, 0.0, 0.0, 0.0, -0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.0,
+    ];
+    let gpu_data = ShadowFrameData {
+        cascades: [ShadowCascadeGPU {
+            view_proj: vp,
+            split_distance: 10.0,
+            texel_size: 0.5,
+            _pad: [0.0, 0.0],
+        }; 4],
+        light_direction: [0.0, -1.0, 0.0, 4.0],
+        shadow_bias: [0.0, 0.0, 0.0, 0.0],
+    };
+    upload_shadow_data(context, res, &gpu_data);
+
+    // view_z = -5.0 (5 units in front of camera) — should select cascade 0
+    let visibility = dispatch_shadow_validate(context, res, [0.0, 0.0, 0.0], -5.0, 4)?;
+
+    log::info!("  visibility = {:.4}", visibility);
+    if visibility < 0.95 {
+        return Err(format!(
+            "Expected visibility >= 0.95 with negative view_z, got {:.4}",
+            visibility
+        ));
+    }
+    log::info!("  PASSED: negative view_z selects cascade 0 and returns lit");
     Ok(())
 }
 
@@ -1514,12 +1652,26 @@ fn main() -> ExitCode {
         for (name, result) in [
             ("fully_lit", test_shadow_fully_lit(&context, res)),
             ("fully_shadowed", test_shadow_fully_shadowed(&context, res)),
+            ("out_of_bounds", test_shadow_out_of_bounds(&context, res)),
+            ("constant_bias", test_shadow_constant_bias(&context, res)),
+            (
+                "negative_view_z",
+                test_shadow_negative_view_z(&context, res),
+            ),
         ] {
             if let Err(e) = result {
                 log::error!("FAIL: {}: {}", name, e);
                 failed = true;
             }
         }
+    }
+
+    // Cleanup
+    if let Some(res) = shadow_res {
+        res.destroy(&context);
+    }
+    if let Some(res) = lc_resources {
+        res.destroy(&context);
     }
 
     if failed {
