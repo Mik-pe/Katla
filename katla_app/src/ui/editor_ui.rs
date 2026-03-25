@@ -79,8 +79,11 @@ pub enum Panel {
 pub enum EditorAction {
     /// Spawn a new model at the given position.
     SpawnModel(SpawnableModel, Vec3),
-    /// Spawn a model from a specific file path.
-    SpawnModelAtPath,
+    /// Spawn a model from a specific file path at the given screen position.
+    SpawnModelAtPath {
+        path: std::path::PathBuf,
+        screen_pos: Vec2,
+    },
     /// Delete an entity.
     DeleteEntity(EntityId),
     /// Duplicate an entity.
@@ -158,6 +161,8 @@ pub struct EditorUI {
     pub pending_actions: Vec<EditorAction>,
     /// Last known viewport panel size (width, height) in pixels.
     last_viewport_size: (u32, u32),
+    /// Last known viewport panel bounds in logical screen coordinates.
+    pub(crate) last_viewport_bounds: Rect2D,
 
     toolbar_state: ToolbarState,
     /// Current color theme.
@@ -195,6 +200,7 @@ impl EditorUI {
             font_scale: 1.0,
             pending_actions: Vec::new(),
             last_viewport_size: (800, 600),
+            last_viewport_bounds: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(800.0, 600.0)),
             toolbar_state: ToolbarState::default(),
             theme: Theme::catppuccin(),
             asset_browser: AssetBrowserState::new(),
@@ -554,6 +560,7 @@ impl EditorUI {
             viewport_bounds.width().max(1.0) as u32,
             viewport_bounds.height().max(1.0) as u32,
         );
+        self.last_viewport_bounds = viewport_bounds;
 
         let grid_response = ui.add(viewport_grid::ViewportGrid::new(
             viewport_bounds,
@@ -591,14 +598,15 @@ impl EditorUI {
         for action in self.asset_browser.take_actions() {
             match action {
                 AssetAction::DragToViewport {
-                    path: _,
+                    path,
                     asset_type,
                     screen_pos,
                 } => {
                     if viewport_bounds.contains(screen_pos) {
                         match asset_type {
                             AssetType::Model => {
-                                self.pending_actions.push(EditorAction::SpawnModelAtPath);
+                                self.pending_actions
+                                    .push(EditorAction::SpawnModelAtPath { path, screen_pos });
                             }
                             _ => {
                                 self.pending_actions.push(EditorAction::SpawnModel(
