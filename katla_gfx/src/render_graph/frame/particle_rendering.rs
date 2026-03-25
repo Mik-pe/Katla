@@ -1,6 +1,5 @@
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
-use crate::render_graph::frame_graph::FrameGraph;
 use crate::render_graph::pass::PassDesc;
 use crate::render_graph::transient_texture::TransientTexture;
 use crate::vulkan::commandbuffer::CommandBuffer;
@@ -231,15 +230,6 @@ impl<'a> Frame<'a> {
     }
 
     /// Execute a compute pass (GPU compute work).
-    ///
-    /// Compute passes perform general-purpose GPU computation without rendering to attachments.
-    /// Used for particle simulation, physics, and other compute-intensive tasks.
-    ///
-    /// # Compute-Specific Behavior
-    ///
-    /// 1. **Bind compute pipeline**: Set pipeline for compute work
-    /// 2. **Bind descriptor sets**: Set 0 (static buffers) + Set 1 (push descriptors if needed)
-    /// 3. **Dispatch compute shader**: Execute with specified workgroup count
     pub(super) fn execute_compute_pass(
         &mut self,
         cmd: &CommandBuffer,
@@ -254,8 +244,13 @@ impl<'a> Frame<'a> {
             pipeline_handle
         );
 
-        let device = &self.renderer.context.device;
+        // If the pass has a custom compute callback, use it
+        if let Some(ref compute_fn) = pass.compute_fn {
+            return compute_fn(self, cmd, pipeline_handle);
+        }
 
+        // Generic compute dispatch: bind pipeline and dispatch
+        let device = &self.renderer.context.device;
         let compute_pipeline = self
             .renderer
             .asset_registry
@@ -277,142 +272,25 @@ impl<'a> Frame<'a> {
             );
         }
 
-        let current_frame = self.current_frame();
+        // Use dispatch data if provided, otherwise use a default
+        let data = self
+            .pending
+            .get(&self.graph.pass_index(&pass.name).unwrap_or(0))
+            .cloned()
+            .unwrap_or_default();
+        let (x, y, z) = data.dispatch.unwrap_or((64, 1, 1));
 
-        // Bind descriptor sets if particle system is active
-        // Note: Particle system manages its own descriptor sets
-        if let Some(ref mut particle_system) = self.renderer.particle_system
-            && pass.name.contains("particle")
-        {
-            log::trace!("Executing particle compute pass '{}'", pass.name);
-
-            // Use pre-calculated workgroup count from frame graph
-            // These were calculated in renderer.rs based on current particle state
-            let workgroup_count = if pass.name.contains("emit") {
-                self.graph.particle_emit_workgroup_count
-            } else if pass.name.contains("simulate") {
-                self.graph.particle_simulate_workgroup_count
-            } else {
-                log::warn!(
-                    "Unknown particle compute pass '{}', using default workgroup count",
-                    pass.name
-                );
-                1
-            };
-
-            // Before recording dispatch
-            if workgroup_count == 0 {
-                log::debug!(
-                    "Skipping particle compute pass '{}' - workgroup_count is 0",
-                    pass.name
-                );
-                return Ok(()); // Skip dispatch
-            }
-
-            // Record the appropriate dispatch based on pass name
-            if pass.name.contains("emit") {
-                // Update compute descriptor bindings for EMIT pass
-                // CRITICAL: Emit needs binding 2 to point to alive[frame_index]
-                // so that newly emitted particles are appended where simulate will read them
-                particle_system
-                    .update_compute_descriptor_binding(current_frame)
-                    .map_err(|e| {
-                        RenderGraphError::VulkanError(format!(
-                            "Failed to update particle compute descriptor binding: {}",
-                            e
-                        ))
-                    })?;
-                particle_system
-                    .record_emit_dispatch(
-                        cmd.vk_command_buffer(),
-                        &self.renderer.asset_registry,
-                        workgroup_count,
-                        current_frame,
-                    )
-                    .map_err(|e| {
-                        RenderGraphError::VulkanError(format!(
-                            "Particle emit dispatch failed: {}",
-                            e
-                        ))
-                    })?;
-                // Mark that emit ran this frame so simulate knows not to
-                // overwrite emit_count.
-                let graph_ptr = self.graph as *const FrameGraph as *mut FrameGraph;
-                unsafe {
-                    (*graph_ptr).particle_emit_ran = true;
-                }
-            } else if pass.name.contains("simulate") {
-                // Update compute descriptor bindings for SIMULATE pass
-                // CRITICAL: Simulate needs binding 3 to point to alive[(frame+1)%2]
-                // so that survivors are written to the region render will read from
-                particle_system
-                    .update_compute_descriptor_binding(current_frame)
-                    .map_err(|e| {
-                        RenderGraphError::VulkanError(format!(
-                            "Failed to update particle compute descriptor binding: {}",
-                            e
-                        ))
-                    })?;
-
-                // Reset counters before simulate.
-                // When emit was skipped, alive_count and emit_count must be reset
-                // here since emit didn't do it.
-                let emit_ran = self.graph.particle_emit_ran;
-                particle_system.reset_simulate_counters(
-                    cmd.vk_command_buffer(),
-                    emit_ran,
-                    current_frame,
-                );
-
-                particle_system
-                    .record_simulate_dispatch(
-                        cmd.vk_command_buffer(),
-                        &self.renderer.asset_registry,
-                        workgroup_count,
-                        current_frame,
-                    )
-                    .map_err(|e| {
-                        RenderGraphError::VulkanError(format!(
-                            "Particle simulate dispatch failed: {}",
-                            e
-                        ))
-                    })?;
-
-                // No swap needed — simulate writes survivors to alive[(frame+1)%2] via
-                // descriptor offset flip in update_compute_descriptor_binding. The render
-                // pass reads from the same region via update_render_descriptor_binding.
-
-                // Record particle debug readback if requested this frame
-                // SAFETY: We need to access the graph's debug readback flag through the Frame's graph reference
-                // This is safe because we're in the middle of frame execution and have exclusive access
-                let graph_ptr = self.graph as *const FrameGraph as *mut FrameGraph;
-                unsafe {
-                    if (*graph_ptr).particle_debug_readback {
-                        log::info!("Recording particle debug readback after simulate pass");
-                        particle_system
-                            .record_debug_readback(cmd.vk_command_buffer(), current_frame)
-                            .map_err(|e| {
-                                RenderGraphError::VulkanError(format!(
-                                    "Particle debug readback failed: {}",
-                                    e
-                                ))
-                            })?;
-                        // Reset flag after recording
-                        (*graph_ptr).particle_debug_readback = false;
-                    }
-                }
-            }
-
-            return Ok(());
-        }
-
-        // Generic compute dispatch for non-particle compute passes
-        // TODO: Calculate workgroup count based on work size
         unsafe {
-            device.cmd_dispatch(cmd.vk_command_buffer(), 64, 1, 1);
+            device.cmd_dispatch(cmd.vk_command_buffer(), x, y, z);
         }
 
-        log::trace!("Compute pass '{}' executed successfully", pass.name);
+        log::trace!(
+            "Compute pass '{}' dispatched ({}, {}, {})",
+            pass.name,
+            x,
+            y,
+            z
+        );
         Ok(())
     }
 }

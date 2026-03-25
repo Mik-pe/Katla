@@ -31,7 +31,6 @@
 //! Names are resolved to handles at graph build time with zero runtime overhead.
 
 mod composite;
-mod compute;
 pub(crate) mod depth_prepass;
 mod fullscreen;
 pub(crate) mod geometry;
@@ -40,7 +39,6 @@ mod ui;
 mod viewport;
 
 pub use composite::{CompositePass, CompositePassData, ViewportRect};
-pub use compute::ComputePass;
 pub use depth_prepass::DepthPrepass;
 pub use fullscreen::{FullscreenPass, TonemapOperator, TonemapParams};
 pub use geometry::GeometryPass;

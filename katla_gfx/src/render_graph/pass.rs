@@ -5,6 +5,18 @@ use crate::render_graph::resource::GraphResourceHandle;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
 
+/// Callback for custom compute dispatch logic.
+///
+/// Receives mutable access to the frame (and thus the renderer),
+/// the command buffer, and the pipeline handle assigned to the pass.
+pub type ComputeFn = Box<
+    dyn Fn(
+        &mut super::frame::Frame,
+        &crate::vulkan::commandbuffer::CommandBuffer,
+        crate::handle::PipelineHandle,
+    ) -> Result<(), super::error::RenderGraphError>,
+>;
+
 /// Type of render pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum PassType {
@@ -43,6 +55,9 @@ pub struct PassDesc {
     /// Compositing pass data: viewport textures with rectangles.
     /// Set for CompositePass, None for other pass types.
     pub compositing_viewports: Option<Vec<(GraphResourceHandle, ViewportRect)>>,
+    /// Optional compute dispatch callback for compute passes.
+    /// When set, this closure is called instead of a generic dispatch.
+    pub compute_fn: Option<ComputeFn>,
 }
 
 impl PassDesc {
@@ -66,12 +81,27 @@ impl PassDesc {
             uses_depth: true,
             depth_attachment: None,
             compositing_viewports: None,
+            compute_fn: None,
         }
     }
 
     /// Set the pipeline for this pass.
     pub fn with_pipeline(mut self, pipeline: crate::handle::PipelineHandle) -> Self {
         self.pipeline = Some(pipeline);
+        self
+    }
+
+    /// Attach a compute dispatch callback to this pass.
+    pub fn with_compute_fn(
+        mut self,
+        f: impl Fn(
+            &mut super::frame::Frame,
+            &crate::vulkan::commandbuffer::CommandBuffer,
+            crate::handle::PipelineHandle,
+        ) -> Result<(), super::error::RenderGraphError>
+        + 'static,
+    ) -> Self {
+        self.compute_fn = Some(Box::new(f));
         self
     }
 }
