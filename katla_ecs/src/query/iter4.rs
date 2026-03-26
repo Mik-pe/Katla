@@ -126,6 +126,19 @@ impl<
             }
         }
     }
+
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![
+            TypeId::of::<T1>(),
+            TypeId::of::<T2>(),
+            TypeId::of::<T3>(),
+            TypeId::of::<T4>(),
+        ]
+    }
+
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
+    }
 }
 
 // Implement QueryData for (&mut T1, &T2, &T3, &T4)
@@ -197,5 +210,18 @@ impl<
                 }
             }
         }
+    }
+
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![
+            TypeId::of::<T1>(),
+            TypeId::of::<T2>(),
+            TypeId::of::<T3>(),
+            TypeId::of::<T4>(),
+        ]
+    }
+
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
     }
 }
