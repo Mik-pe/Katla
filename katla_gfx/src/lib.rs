@@ -158,6 +158,9 @@ pub mod vertex;
 // Internal modules (pipeline state is implementation detail)
 pub(crate) mod pipeline;
 
+// Re-export pipeline state types for validation examples
+pub use pipeline::{CompareOp, CullMode, FrontFace};
+
 // Internal implementation (primitive mesh generators - use VulkanRenderer::create_*_mesh instead)
 pub(crate) mod primitives;
 
@@ -185,6 +188,11 @@ pub use vulkan::material::shadermodule::ShaderCache;
 pub use vulkan::material::compute_pipeline::{
     ComputePipeline, ComputePipelineBuilder, ComputePipelineError,
 };
+
+// Re-export pipeline builder and types for validation examples
+pub use vulkan::material::builder::Pipeline;
+pub use vulkan::material::builder::PipelineBuilder;
+pub use vulkan::vertexbinding::VertexFormat;
 
 // Re-export for validation examples and advanced compute usage
 pub use vulkan::commandbuffer::CommandBuffer;

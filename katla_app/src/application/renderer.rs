@@ -203,11 +203,28 @@ impl Application {
             log::warn!("⚠️ No particle system in renderer!");
         }
 
+        // Collect selected entity instance indices before the render closure
+        // to avoid borrowing self while self.renderer is mutably borrowed.
+        let selected_outline_indices = self
+            .editor_ui
+            .selected_entity
+            .map(|entity| self.collect_selected_instance_indices(entity));
+
+        let outline_draw_list = selected_outline_indices.as_ref().map(|indices| {
+            let draws = draw_list
+                .iter()
+                .filter(|dc| indices.contains(&dc.instance_index))
+                .cloned()
+                .collect::<Vec<_>>();
+            katla_gfx::renderer::DrawList { draws }
+        });
+
         self.renderer.render(&mut self.frame_graph, |frame| {
             log::trace!(
                 "Inside render closure: submitting {} draw calls to geometry pass",
                 draw_list.len()
             );
+
             if !draw_list.is_empty() {
                 frame.submit("depth_prepass", &draw_list);
                 frame.submit("geometry", &draw_list);
@@ -218,6 +235,17 @@ impl Application {
                 );
             } else {
                 log::warn!("No draw calls to submit to geometry pass!");
+            }
+
+            if let Some(ref outline_dl) = outline_draw_list
+                && !outline_dl.is_empty()
+            {
+                frame.submit("outline", outline_dl);
+                frame.submit("stencil_indicator", outline_dl);
+                log::trace!(
+                    "Submitted {} selected draw calls to outline + stencil_indicator passes",
+                    outline_dl.len()
+                );
             }
 
             if let Some(ref ui_list) = ui_draw_list {
@@ -307,8 +335,9 @@ impl Application {
     fn collect_draws_with_context(&mut self, frame: &mut FrameContext) {
         use crate::components::{DrawableComponent, TransformComponent};
 
-        // Clear the entity-instance map for this frame
+        // Clear the entity-instance maps for this frame
         self.entity_instance_map.clear();
+        self.entity_to_instance_indices.clear();
 
         let entity_count = self.world.entity_ids().count();
         let mut drawable_count = 0;
@@ -365,6 +394,10 @@ impl Application {
             draw.submit();
 
             self.entity_instance_map.insert(instance_index, entity_id);
+            self.entity_to_instance_indices
+                .entry(entity_id)
+                .or_default()
+                .push(instance_index);
 
             drawable_count += 1;
         }
@@ -374,5 +407,34 @@ impl Application {
             drawable_count,
             entity_count
         );
+    }
+
+    /// Collect instance indices for the selected entity and all its children.
+    ///
+    /// Used to build the filtered draw list for the outline pass.
+    fn collect_selected_instance_indices(&self, root_entity: katla_ecs::EntityId) -> Vec<u32> {
+        use crate::components::Children;
+
+        let mut entity_set = std::collections::HashSet::new();
+        entity_set.insert(root_entity);
+
+        let mut queue = vec![root_entity];
+        while let Some(entity) = queue.pop() {
+            if let Some(children) = self.world.get_component::<Children>(entity) {
+                for &child in &children.children {
+                    if entity_set.insert(child) {
+                        queue.push(child);
+                    }
+                }
+            }
+        }
+
+        let mut indices = Vec::new();
+        for entity_id in &entity_set {
+            if let Some(entity_indices) = self.entity_to_instance_indices.get(entity_id) {
+                indices.extend_from_slice(entity_indices);
+            }
+        }
+        indices
     }
 }
