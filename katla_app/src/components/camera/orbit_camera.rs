@@ -17,10 +17,10 @@ pub struct OrbitCameraControllerComponent {
 impl Default for OrbitCameraControllerComponent {
     fn default() -> Self {
         Self {
-            target: katla_math::Vec3::new(0.0, 1.0, 0.0),
-            distance: 10.0,
-            yaw: 0.0,
-            pitch: 0.3,
+            target: katla_math::Vec3::new(0.0, 0.5, -3.0),
+            distance: 12.0,
+            yaw: -0.5,
+            pitch: -0.45,
             fov: 60.0,
             sensitivity: 0.005,
             zoom_speed: 1.0,
