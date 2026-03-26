@@ -4,18 +4,20 @@
 //! release GPU resources (meshes, materials, textures, skeletons) when they
 //! are no longer referenced.
 
+use std::any::TypeId;
+
 use crate::components::DrawableComponent;
 use crate::gpu_resource_tracker::GpuResourceTracker;
 
-/// Process ECS entity destruction events and release GPU resources.
+/// Process ECS entity destruction and component removal events to release GPU resources.
 ///
 /// Called each frame after `world.update()` while events are still accessible.
-/// Iterates over `EntityEvent::Destroyed` events and releases any GPU resources
-/// held by the destroyed entity's `DrawableComponent`.
 ///
-/// Shared resources (mesh/material used by multiple entities) are only destroyed
-/// when the last entity referencing them is destroyed, thanks to the reference
-/// counting in `GpuResourceTracker`.
+/// - `EntityEvent::Destroyed`: Releases GPU resources for the destroyed entity's
+///   `DrawableComponent` (components already removed by `destroy_entity`).
+/// - `ComponentEvent::Removed` for `DrawableComponent`: Handles standalone component
+///   removal (entity still alive). Skips entities that were destroyed this frame
+///   since their resources are already cleaned up via the destruction path.
 pub fn process_gpu_cleanup_events(
     world: &katla_ecs::World,
     tracker: &mut GpuResourceTracker,
@@ -33,7 +35,30 @@ pub fn process_gpu_cleanup_events(
         })
         .collect();
 
+    let drawable_type_id = TypeId::of::<DrawableComponent>();
+
+    let component_removed_entities: Vec<_> = world
+        .component_events()
+        .iter()
+        .filter_map(|event| {
+            if let katla_ecs::events::ComponentEvent::Removed(id, type_id) = event {
+                if *type_id == drawable_type_id {
+                    Some(*id)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .filter(|id| !destroyed_entities.contains(id))
+        .collect();
+
     for entity_id in destroyed_entities {
+        release_entity_gpu_resources(world, tracker, renderer, entity_id);
+    }
+
+    for entity_id in component_removed_entities {
         release_entity_gpu_resources(world, tracker, renderer, entity_id);
     }
 }

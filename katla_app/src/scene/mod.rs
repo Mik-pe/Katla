@@ -1962,7 +1962,9 @@ EntityDescriptor(
 
     #[test]
     fn test_component_remove_gpu_cleanup() {
-        // Verify that removing a DrawableComponent releases its GPU resources
+        // Verify that removing a DrawableComponent releases its GPU resources.
+        // This tests the GpuResourceTracker integration that gpu_cleanup uses
+        // when processing ComponentEvent::Removed for DrawableComponent.
         use crate::gpu_resource_tracker::GpuResourceTracker;
         use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
 
@@ -1971,14 +1973,130 @@ EntityDescriptor(
 
         let mesh = MeshHandle::new(1);
         let mat = MaterialHandle::new(2);
+        let skeleton = SkeletonHandle::new(3);
 
+        tracker.track_drawable(mesh, mat, skeleton);
+
+        // Simulate what gpu_cleanup does on ComponentEvent::Removed for DrawableComponent
+        let to_destroy = tracker.release_drawable(mesh, mat, skeleton);
+
+        assert_eq!(
+            to_destroy.meshes.len(),
+            1,
+            "Mesh should be marked for destruction"
+        );
+        assert_eq!(
+            to_destroy.materials.len(),
+            1,
+            "Material should be marked for destruction"
+        );
+        assert_eq!(
+            to_destroy.skeletons.len(),
+            1,
+            "Skeleton should be marked for destruction"
+        );
+        assert_eq!(
+            tracker.mesh_count(),
+            0,
+            "Tracker should be empty after release"
+        );
+        assert_eq!(
+            tracker.material_count(),
+            0,
+            "Tracker should be empty after release"
+        );
+    }
+
+    #[test]
+    fn test_component_remove_emits_correct_event() {
+        // Verify that removing DrawableComponent emits a ComponentEvent::Removed
+        // that gpu_cleanup can detect via TypeId matching
+        use crate::components::DrawableComponent;
+        use katla_ecs::events::ComponentEvent;
+        use std::any::TypeId;
+
+        let mut world = katla_ecs::World::new();
+        let entity = world.create_entity();
+        world.add_component(
+            entity,
+            DrawableComponent::with_handles(
+                katla_gfx::MeshHandle::new(1),
+                katla_gfx::MaterialHandle::new(2),
+            ),
+        );
+
+        world.remove_component::<DrawableComponent>(entity);
+
+        let drawable_type_id = TypeId::of::<DrawableComponent>();
+        let removed_events: Vec<_> = world
+            .component_events()
+            .iter()
+            .filter(|e| matches!(e, ComponentEvent::Removed(id, tid) if *id == entity && *tid == drawable_type_id))
+            .collect();
+
+        assert_eq!(
+            removed_events.len(),
+            1,
+            "Exactly one DrawableComponent Removed event should be emitted"
+        );
+    }
+
+    #[test]
+    fn test_gltf_texture_tracking() {
+        // Verify that GLTF texture tracking via track_texture() works correctly
+        // and that release_all() returns tracked textures for destruction
+        use crate::gpu_resource_tracker::GpuResourceTracker;
+        use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
+
+        let protected = MaterialHandle::new(100);
+        let mut tracker = GpuResourceTracker::new(protected);
+
+        // Simulate what spawn_gltf_model does: track drawable + textures
+        let mesh = MeshHandle::new(1);
+        let mat = MaterialHandle::new(2);
         tracker.track_drawable(mesh, mat, SkeletonHandle::NONE);
 
-        // Simulate component removal
-        let to_destroy = tracker.release_drawable(mesh, mat, SkeletonHandle::NONE);
+        // Track textures (albedo, normal, mr, ao, emission)
+        let albedo = TextureHandle::new(10);
+        let normal = TextureHandle::new(11);
+        let mr = TextureHandle::new(12);
+        let ao = TextureHandle::new(13);
+        let emission = TextureHandle::new(14);
 
-        assert_eq!(to_destroy.meshes.len(), 1);
-        assert_eq!(to_destroy.materials.len(), 1);
+        tracker.track_texture(albedo);
+        tracker.track_texture(normal);
+        tracker.track_texture(mr);
+        tracker.track_texture(ao);
+        tracker.track_texture(emission);
+
+        // Verify textures are tracked
+        assert_eq!(
+            tracker.texture_count(),
+            5,
+            "All 5 textures should be tracked"
+        );
+
+        // release_all should return both drawable and texture resources
+        let to_destroy = tracker.release_all();
+        assert_eq!(
+            to_destroy.textures.len(),
+            5,
+            "All 5 textures should be in destroy list"
+        );
+        assert_eq!(to_destroy.meshes.len(), 1, "Mesh should be in destroy list");
+        assert_eq!(
+            to_destroy.materials.len(),
+            1,
+            "Material should be in destroy list"
+        );
+
+        // Verify texture handles are correct
+        let texture_indices: Vec<u32> = to_destroy.textures.iter().map(|h| h.index()).collect();
+        assert!(texture_indices.contains(&10));
+        assert!(texture_indices.contains(&11));
+        assert!(texture_indices.contains(&12));
+        assert!(texture_indices.contains(&13));
+        assert!(texture_indices.contains(&14));
     }
 
     #[test]

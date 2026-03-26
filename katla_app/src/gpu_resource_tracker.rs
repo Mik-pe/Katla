@@ -149,6 +149,11 @@ impl GpuResourceTracker {
         self.material_refs.len()
     }
 
+    /// Get the number of tracked texture references.
+    pub fn texture_count(&self) -> usize {
+        self.texture_refs.len()
+    }
+
     /// Get the reference count for a specific mesh.
     pub fn mesh_ref_count(&self, handle: MeshHandle) -> u32 {
         *self.mesh_refs.get(&handle.index()).unwrap_or(&0)
