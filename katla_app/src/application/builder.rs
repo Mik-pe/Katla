@@ -152,7 +152,7 @@ impl ApplicationBuilder {
         use katla_gfx::render_graph::UIPass;
         use katla_gfx::render_graph::{
             DepthPrepass, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
-            OutlinePass, ShadowPass,
+            OutlinePass, ShadowPass, StencilIndicatorPass,
         };
         use katla_gfx::render_pass::{ClearValue, LoadOp, StoreOp};
         use katla_gfx::texture::ImageFormat as TextureImageFormat;
@@ -184,7 +184,8 @@ impl ApplicationBuilder {
             exposure: 0.4,
             gamma: 2.2,
             mode: katla_gfx::TonemapOperator::Aces,
-            hdr_texture_index: None, // Will be set after registration
+            hdr_texture_index: None,       // Will be set after registration
+            stencil_indicator_index: None, // Will be set after registration
         };
 
         // Compile UI shader for editor UI rendering
@@ -268,19 +269,28 @@ impl ApplicationBuilder {
         let outline_draw_shader_path = resources.shader_path("outline/outline_draw.wgsl");
         let outline_draw_skinned_shader_path =
             resources.shader_path("outline/outline_draw_skinned.wgsl");
-        let overlay_shader_path = resources.shader_path("outline/overlay.wgsl");
-        let overlay_skinned_shader_path = resources.shader_path("outline/overlay_skinned.wgsl");
         renderer
             .init_outline_pipelines(
                 &stencil_mark_shader_path,
                 &stencil_mark_skinned_shader_path,
                 &outline_draw_shader_path,
                 &outline_draw_skinned_shader_path,
-                &overlay_shader_path,
-                &overlay_skinned_shader_path,
             )
             .map_err(|e| crate::error::AppError::Graphics {
                 message: format!("Failed to initialize outline pipelines: {}", e),
+            })?;
+
+        // Initialize stencil indicator pipeline for wallhack overlay
+        let stencil_indicator_shader_path = resources.shader_path("outline/stencil_indicator.wgsl");
+        let stencil_indicator_skinned_shader_path =
+            resources.shader_path("outline/stencil_indicator_skinned.wgsl");
+        renderer
+            .init_stencil_indicator_pipelines(
+                &stencil_indicator_shader_path,
+                &stencil_indicator_skinned_shader_path,
+            )
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to initialize stencil indicator pipelines: {}", e),
             })?;
 
         // Compile geometry shader for PBR model rendering
@@ -366,6 +376,19 @@ impl ApplicationBuilder {
                 height: extent.height,
                 tracks_swapchain_size: true,
             })
+            // Create stencil indicator texture (R8, for wallhack overlay).
+            // Written by the stencil indicator pass after the outline pass.
+            // Sampled by the tonemap shader to apply orange tint over occluded selected objects.
+            .create_resource(GraphResourceDesc {
+                name: "stencil_indicator".to_string(),
+                resource_type: GraphResourceType::ColorAttachment {
+                    clear_value: Some([0.0, 0.0, 0.0, 0.0]),
+                },
+                format: TextureImageFormat::R8Unorm,
+                width: extent.width,
+                height: extent.height,
+                tracks_swapchain_size: true,
+            })
             // Note: Particle compute passes (emit and simulate) are executed automatically
             // by the render graph before any graphics passes. They don't need to be added here.
             // Sky pass: renders procedural sky (depth=1.0 so geometry appears in front)
@@ -414,11 +437,18 @@ impl ApplicationBuilder {
                 OutlinePass::new("outline")
                     .write_color("hdr_color", TextureImageFormat::R16G16B16A16Sfloat),
             )
+            // Stencil indicator pass: writes R8 mask where selected objects are occluded.
+            // Sampled by the tonemap shader to apply wallhack overlay tint in-shader.
+            .add_pass(
+                StencilIndicatorPass::new("stencil_indicator")
+                    .write_color("stencil_indicator", TextureImageFormat::R8Unorm),
+            )
             // Tonemap pass: samples HDR color and outputs to viewport texture
             // The viewport texture is then sampled by the UI system to display in the viewport panel
             .add_pass(
                 FullscreenPass::new("tonemap")
                     .read("hdr_color")
+                    .read("stencil_indicator")
                     .write("viewport_0", TextureImageFormat::B8G8R8A8Srgb)
                     .pipeline(tonemap_pipeline)
                     .tonemap(tonemap_params),
@@ -433,7 +463,8 @@ impl ApplicationBuilder {
                         exposure: 1.0,
                         gamma: 1.0,
                         mode: katla_gfx::TonemapOperator::Aces,
-                        hdr_texture_index: None, // No HDR texture, will output black
+                        hdr_texture_index: None,
+                        stencil_indicator_index: None,
                     }),
             )
             // UI pass: draws editor UI to backbuffer
@@ -668,7 +699,13 @@ impl ApplicationBuilder {
             #[cfg(debug_assertions)]
             particle_readback_done: false,
             entity_instance_map: std::collections::HashMap::new(),
+            entity_to_instance_indices: std::collections::HashMap::new(),
             pending_pick: None,
+            stencil_indicator_bindless_index: None,
+            minimized: false,
+            gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(
+                katla_gfx::MaterialHandle::NONE,
+            ),
         };
 
         Ok((app, event_loop))

@@ -20,6 +20,14 @@ impl super::Application {
         let material_handle = self.default_material();
         let linear_color = color.to_linear();
 
+        let drawable =
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color);
+        self.gpu_resource_tracker.track_drawable(
+            mesh_handle,
+            material_handle,
+            drawable.skeleton_handle,
+        );
+
         let entity = self.world.spawn((
             TransformComponent {
                 transform: katla_math::Transform::new_from_position(Vec3::new(
@@ -28,7 +36,7 @@ impl super::Application {
                     position[2],
                 )),
             },
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color),
+            drawable,
         ));
 
         self.world.add_component(entity, source);
@@ -108,6 +116,20 @@ impl super::Application {
         let material_handle = self.default_material();
         let linear_color = color.to_linear();
 
+        let drawable = DrawableComponent::with_handles_and_material(
+            mesh_handle,
+            material_handle,
+            Some(linear_color),
+            metallic,
+            roughness,
+            1.0,
+        );
+        self.gpu_resource_tracker.track_drawable(
+            mesh_handle,
+            material_handle,
+            drawable.skeleton_handle,
+        );
+
         let entity = self.world.spawn((
             TransformComponent {
                 transform: katla_math::Transform::new_from_position(Vec3::new(
@@ -116,14 +138,7 @@ impl super::Application {
                     position[2],
                 )),
             },
-            DrawableComponent::with_handles_and_material(
-                mesh_handle,
-                material_handle,
-                Some(linear_color),
-                metallic,
-                roughness,
-                1.0,
-            ),
+            drawable,
         ));
 
         self.world.add_component(
@@ -412,6 +427,15 @@ impl super::Application {
             }
         } else {
             info!("Spawned static model '{}'", path.as_ref().display());
+        }
+
+        // Track drawable GPU resources for cleanup on entity destruction
+        if let Some(drawable) = self.world.get_component::<DrawableComponent>(entity) {
+            self.gpu_resource_tracker.track_drawable(
+                drawable.mesh_handle,
+                drawable.material_handle,
+                drawable.skeleton_handle,
+            );
         }
 
         Some(entity)
