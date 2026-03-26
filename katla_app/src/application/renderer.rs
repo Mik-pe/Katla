@@ -303,9 +303,12 @@ impl Application {
     /// Collect drawable components from the ECS world and submit to FrameContext.
     ///
     /// This automatically allocates instance indices and builds the draw list.
+    /// Also populates entity_instance_map for GPU picking resolution.
     fn collect_draws_with_context(&mut self, frame: &mut FrameContext) {
-        use crate::animation::Skeleton;
         use crate::components::{DrawableComponent, TransformComponent};
+
+        // Clear the entity-instance map for this frame
+        self.entity_instance_map.clear();
 
         let entity_count = self.world.entity_ids().count();
         let mut drawable_count = 0;
@@ -330,18 +333,15 @@ impl Application {
                 continue;
             }
 
-            if !drawable.skeleton_handle.is_none()
-                && let Some(skeleton) = self.world.get_component::<Skeleton>(entity_id)
-            {
-                let matrices: Vec<[f32; 16]> = skeleton
-                    .joint_transforms
-                    .iter()
-                    .map(|m| m.to_array())
-                    .collect();
-
-                self.renderer
-                    .update_skeleton(drawable.skeleton_handle, &matrices);
+            if !drawable.skeleton_handle.is_none() {
+                // Skeleton matrices are computed on the GPU via the animation
+                // pose evaluation compute pass and copied to the per-entity
+                // SkeletonBuffer. No CPU upload needed.
             }
+
+            // Get instance_index before creating the draw builder (which borrows frame mutably).
+            // instance_count() returns the next index that will be allocated by draw().
+            let instance_index = frame.instance_count();
 
             let mut draw = frame
                 .draw(mesh_handle, material_handle)
@@ -363,6 +363,8 @@ impl Application {
             }
 
             draw.submit();
+
+            self.entity_instance_map.insert(instance_index, entity_id);
 
             drawable_count += 1;
         }

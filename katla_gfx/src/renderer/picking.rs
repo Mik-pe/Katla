@@ -1,0 +1,266 @@
+use crate::RendererError;
+use ash::vk;
+use gpu_allocator::vulkan::Allocation;
+
+/// Pending picking readback operation.
+pub struct PickingReadback {
+    /// The frame number when the pick was triggered.
+    pub frame: usize,
+    /// Fence for GPU completion.
+    pub fence: vk::Fence,
+    /// Command buffer used for the copy.
+    pub command_buffer: crate::vulkan::commandbuffer::CommandBuffer,
+    /// Staging buffer for the 4-byte pixel readback.
+    pub staging_buffer: vk::Buffer,
+    /// Staging buffer allocation.
+    pub staging_allocation: Allocation,
+}
+
+impl super::VulkanRenderer {
+    /// Queue a picking readback for a specific pixel in the object-ID texture.
+    ///
+    /// Copies a single 4-byte pixel from the object-ID texture at (x, y) to a
+    /// staging buffer. The result is available on the next frame via `check_picking_readback()`.
+    ///
+    /// # Arguments
+    /// * `frame` - Current frame number for tracking
+    /// * `object_id_image` - The Vulkan image containing object IDs (R32Uint)
+    /// * `x` - Pixel x coordinate (physical pixels)
+    /// * `y` - Pixel y coordinate (physical pixels)
+    pub fn queue_picking_readback(
+        &mut self,
+        frame: usize,
+        object_id_image: vk::Image,
+        x: u32,
+        y: u32,
+    ) -> Result<(), RendererError> {
+        let buffer_size = 4u64; // single u32 pixel
+
+        let buffer_info = vk::BufferCreateInfo::default()
+            .size(buffer_size)
+            .usage(vk::BufferUsageFlags::TRANSFER_DST)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let (staging_buffer, staging_allocation) = self
+            .context
+            .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
+
+        let fence_info = vk::FenceCreateInfo::default();
+        let fence = unsafe {
+            self.context
+                .device
+                .create_fence(&fence_info, None)
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to create picking fence: {}",
+                        e
+                    ))
+                })?
+        };
+
+        let command_buffer = crate::vulkan::commandbuffer::CommandBuffer::new(
+            &self.context.device,
+            &crate::vulkan::commandpool::CommandPool {
+                device: self.context.device.clone(),
+                command_pool: self.context.transfer_command_pool,
+            },
+        );
+
+        command_buffer.begin_single_time_command();
+
+        // Transition object-ID image from COLOR_ATTACHMENT to TRANSFER_SRC
+        let barrier = vk::ImageMemoryBarrier::default()
+            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(object_id_image)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            });
+
+        unsafe {
+            self.context.device.cmd_pipeline_barrier(
+                command_buffer.vk_command_buffer(),
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier],
+            );
+        }
+
+        // Copy single pixel to staging buffer
+        let buffer_image_copy = vk::BufferImageCopy::default()
+            .buffer_offset(0)
+            .image_subresource(vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .image_offset(vk::Offset3D {
+                x: x as i32,
+                y: y as i32,
+                z: 0,
+            })
+            .image_extent(vk::Extent3D {
+                width: 1,
+                height: 1,
+                depth: 1,
+            });
+
+        unsafe {
+            self.context.device.cmd_copy_image_to_buffer(
+                command_buffer.vk_command_buffer(),
+                object_id_image,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                staging_buffer,
+                &[buffer_image_copy],
+            );
+        }
+
+        // Transition back to COLOR_ATTACHMENT_OPTIMAL for next frame
+        let barrier_back = vk::ImageMemoryBarrier::default()
+            .src_access_mask(vk::AccessFlags::TRANSFER_READ)
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(object_id_image)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            });
+
+        unsafe {
+            self.context.device.cmd_pipeline_barrier(
+                command_buffer.vk_command_buffer(),
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier_back],
+            );
+        }
+
+        command_buffer.end_single_time_command();
+
+        unsafe {
+            let command_buffers = [command_buffer.vk_command_buffer()];
+            let submit_info = vk::SubmitInfo::default().command_buffers(&command_buffers);
+
+            self.context
+                .device
+                .queue_submit(self.context.gfx_queue.vk_queue(), &[submit_info], fence)
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to submit picking readback: {}",
+                        e
+                    ))
+                })?;
+        }
+
+        // Store pending readback
+        self.pending_picking_readback = Some(PickingReadback {
+            frame,
+            fence,
+            command_buffer,
+            staging_buffer,
+            staging_allocation,
+        });
+
+        Ok(())
+    }
+
+    /// Check if the pending picking readback is complete.
+    ///
+    /// Returns `Ok(Some((frame, instance_index)))` where instance_index is 1-based
+    /// (0 = no object, background was clicked).
+    /// Returns `Ok(None)` if no readback is pending or it's not ready yet.
+    pub fn check_picking_readback(&mut self) -> Result<Option<(usize, u32)>, RendererError> {
+        if let Some(readback) = self.pending_picking_readback.take() {
+            let frame = readback.frame;
+            unsafe {
+                match self.context.device.get_fence_status(readback.fence) {
+                    Ok(true) => {
+                        let mapped_ptr = self.context.map_buffer(&readback.staging_allocation);
+                        let data = std::ptr::read(mapped_ptr as *const u32);
+
+                        readback.command_buffer.return_to_pool();
+                        self.context.device.destroy_fence(readback.fence, None);
+                        self.context
+                            .free_buffer(readback.staging_buffer, readback.staging_allocation);
+
+                        if data == 0 {
+                            Ok(None)
+                        } else {
+                            Ok(Some((frame, data)))
+                        }
+                    }
+                    Ok(false) => {
+                        // Not ready yet — put it back
+                        self.pending_picking_readback = Some(readback);
+                        Ok(None)
+                    }
+                    Err(e) => {
+                        // Error — put it back
+                        self.pending_picking_readback = Some(readback);
+                        Err(RendererError::InitializationFailed(format!(
+                            "Failed to check picking fence: {}",
+                            e
+                        )))
+                    }
+                }
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Wait for the pending picking readback to complete (blocking).
+    pub fn wait_for_picking_readback(&mut self) -> Result<Option<(usize, u32)>, RendererError> {
+        if let Some(readback) = self.pending_picking_readback.take() {
+            let frame = readback.frame;
+            unsafe {
+                let _ = self
+                    .context
+                    .device
+                    .wait_for_fences(&[readback.fence], true, u64::MAX);
+
+                let mapped_ptr = self.context.map_buffer(&readback.staging_allocation);
+                let data = std::ptr::read(mapped_ptr as *const u32);
+
+                readback.command_buffer.return_to_pool();
+                self.context.device.destroy_fence(readback.fence, None);
+                self.context
+                    .free_buffer(readback.staging_buffer, readback.staging_allocation);
+
+                if data == 0 {
+                    Ok(None)
+                } else {
+                    Ok(Some((frame, data)))
+                }
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Check if a picking readback is currently pending.
+    pub fn has_pending_picking_readback(&self) -> bool {
+        self.pending_picking_readback.is_some()
+    }
+}

@@ -851,11 +851,27 @@ impl FrameGraphBuilder {
             pass.uses_depth = pass_builder.uses_depth;
             pass.depth_attachment = pass_builder.depth_attachment;
 
-            // Extract color attachment info from pass data (for geometry passes)
+            // Extract color attachment info from pass data (for geometry and depth prepass passes)
             if let Some(geom_data) = pass_data.downcast_ref::<GeometryPassData>() {
                 // Convert resolved handles back to resource names for color attachments
                 for (handle, format, load_op, store_op, clear_value) in &geom_data.colors {
-                    // Find the resource name for this handle
+                    for (name, candidate_handle) in &global_resource_map {
+                        if *candidate_handle == *handle {
+                            pass.color_attachments.push((
+                                name.clone(),
+                                *format,
+                                *load_op,
+                                *store_op,
+                                *clear_value,
+                            ));
+                            break;
+                        }
+                    }
+                }
+            } else if let Some(dp_data) =
+                pass_data.downcast_ref::<crate::render_graph::passes::depth_prepass::DepthPrepassData>()
+            {
+                for (handle, format, load_op, store_op, clear_value) in &dp_data.colors {
                     for (name, candidate_handle) in &global_resource_map {
                         if *candidate_handle == *handle {
                             pass.color_attachments.push((
@@ -895,14 +911,19 @@ impl Default for FrameGraphBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::pass::PassType;
+    use super::*;
 
     #[test]
     fn test_frame_graph_add_and_index_passes() {
         let mut graph = FrameGraph::new();
         let p1 = PassDesc::new("a", PassType::Graphics, vec![], vec!["r1".to_string()]);
-        let p2 = PassDesc::new("b", PassType::Graphics, vec!["r1".to_string()], vec!["r2".to_string()]);
+        let p2 = PassDesc::new(
+            "b",
+            PassType::Graphics,
+            vec!["r1".to_string()],
+            vec!["r2".to_string()],
+        );
 
         graph.add_pass(p1);
         graph.add_pass(p2);
@@ -919,7 +940,10 @@ mod tests {
         graph.add_pass(PassDesc::new("a", PassType::Graphics, vec![], vec![]));
         graph.add_pass(PassDesc::new("b", PassType::Graphics, vec![], vec![]));
 
-        graph.insert_pass(1, PassDesc::new("inserted", PassType::Graphics, vec![], vec![]));
+        graph.insert_pass(
+            1,
+            PassDesc::new("inserted", PassType::Graphics, vec![], vec![]),
+        );
 
         assert_eq!(graph.pass_count(), 3);
         assert_eq!(graph.pass_index("a"), Some(0));
@@ -941,8 +965,7 @@ mod tests {
 
     #[test]
     fn test_frame_graph_builder_with_resources() {
-        let builder = FrameGraphBuilder::new()
-            .import_resource("ext", GraphResourceHandle::new(42));
+        let builder = FrameGraphBuilder::new().import_resource("ext", GraphResourceHandle::new(42));
 
         assert_eq!(builder.resources.len(), 1);
     }

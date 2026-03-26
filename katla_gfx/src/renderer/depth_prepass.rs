@@ -54,7 +54,10 @@ impl super::VulkanRenderer {
             .with_soa_attribute(0, VertexFormat::RGB32f) // position
             .with_depth_test(true, true, crate::pipeline::CompareOp::Greater)
             .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
-            .with_rendering_formats(None, Some(crate::texture::ImageFormat::D32SfloatS8Uint))
+            .with_rendering_formats(
+                Some(crate::texture::ImageFormat::R32Uint),
+                Some(crate::texture::ImageFormat::D32SfloatS8Uint),
+            )
             .build_dynamic()
             .map_err(|e| {
                 RendererError::InitializationFailed(format!(
@@ -133,7 +136,10 @@ impl super::VulkanRenderer {
             .with_soa_attribute(5, VertexFormat::RGBA32f) // joint_weights
             .with_depth_test(true, true, crate::pipeline::CompareOp::Greater)
             .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
-            .with_rendering_formats(None, Some(crate::texture::ImageFormat::D32SfloatS8Uint))
+            .with_rendering_formats(
+                Some(crate::texture::ImageFormat::R32Uint),
+                Some(crate::texture::ImageFormat::D32SfloatS8Uint),
+            )
             .build_dynamic()
             .map_err(|e| {
                 RendererError::InitializationFailed(format!(

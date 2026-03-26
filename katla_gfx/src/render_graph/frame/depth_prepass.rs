@@ -6,14 +6,15 @@ use crate::vulkan::vertex_attribute::AttributeType;
 use ash::vk;
 
 impl<'a> Frame<'a> {
-    /// Execute a depth prepass — renders only depth from the camera's perspective.
+    /// Execute a depth prepass — renders depth and object IDs from the camera's perspective.
     ///
-    /// The depth buffer is reused by the subsequent geometry pass via `LoadOp::Load`.
-    /// This enables early-Z rejection and reduces overdraw in the PBR pass.
+    /// Outputs:
+    /// - Depth buffer: reused by the geometry pass via `LoadOp::Load` (early-Z rejection)
+    /// - Object-ID texture (R32Uint): instance_index + 1 for GPU-based entity picking
     pub(super) fn execute_depth_prepass(
         &mut self,
         cmd: &CommandBuffer,
-        _pass: &PassDesc,
+        pass: &PassDesc,
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
         let frame_idx = self.current_frame();
@@ -29,7 +30,58 @@ impl<'a> Frame<'a> {
             data.draw_lists.len()
         );
 
-        // No color attachment — depth only
+        // Color attachment: R32Uint object-ID texture (cleared to 0 = no object)
+        let color_attachments: Vec<vk::RenderingAttachmentInfo> = pass
+            .writes
+            .iter()
+            .filter_map(|color_name| {
+                self.graph
+                    .transient_texture(color_name, frame_idx)
+                    .map(|transient| {
+                        let (load_op, store_op, clear_value) = pass
+                            .color_attachments
+                            .iter()
+                            .find(|(name, ..)| name == color_name)
+                            .map(|(_, _, load_op, store_op, clear_value)| {
+                                (
+                                    match load_op {
+                                        crate::render_pass::LoadOp::Load => vk::AttachmentLoadOp::LOAD,
+                                        crate::render_pass::LoadOp::Clear => vk::AttachmentLoadOp::CLEAR,
+                                        crate::render_pass::LoadOp::DontCare => {
+                                            vk::AttachmentLoadOp::NONE_EXT
+                                        }
+                                    },
+                                    match store_op {
+                                        crate::render_pass::StoreOp::Store => vk::AttachmentStoreOp::STORE,
+                                        crate::render_pass::StoreOp::DontCare => {
+                                            vk::AttachmentStoreOp::NONE_EXT
+                                        }
+                                    },
+                                    match clear_value {
+                                        crate::render_pass::ClearValue::Color(c) => {
+                                            vk::ClearColorValue { uint32: [c[0] as u32, 0, 0, 0] }
+                                        }
+                                        _ => vk::ClearColorValue { uint32: [0, 0, 0, 0] },
+                                    },
+                                )
+                            })
+                            .unwrap_or((
+                                vk::AttachmentLoadOp::CLEAR,
+                                vk::AttachmentStoreOp::STORE,
+                                vk::ClearColorValue { uint32: [0, 0, 0, 0] },
+                            ));
+
+                        vk::RenderingAttachmentInfo::default()
+                            .image_view(transient.image_view.vk())
+                            .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                            .load_op(load_op)
+                            .store_op(store_op)
+                            .clear_value(vk::ClearValue { color: clear_value })
+                    })
+            })
+            .collect();
+
+        // Depth attachment
         let depth_view = self
             .renderer
             .frame_context
@@ -50,7 +102,13 @@ impl<'a> Frame<'a> {
                 },
             });
 
-        cmd.begin_rendering(&[], Some(&depth_attachment), None, render_area, 1);
+        cmd.begin_rendering(
+            &color_attachments,
+            Some(&depth_attachment),
+            None,
+            render_area,
+            1,
+        );
 
         let depth_pipeline_handle = self.renderer.depth_prepass_pipeline().ok_or(
             RenderGraphError::InvalidConfiguration(

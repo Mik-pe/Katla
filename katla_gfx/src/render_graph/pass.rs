@@ -120,7 +120,12 @@ mod tests {
 
     #[test]
     fn test_pass_desc_defaults() {
-        let desc = PassDesc::new("test", PassType::Graphics, vec!["r".to_string()], vec!["w".to_string()]);
+        let desc = PassDesc::new(
+            "test",
+            PassType::Graphics,
+            vec!["r".to_string()],
+            vec!["w".to_string()],
+        );
         assert!(desc.pipeline.is_none());
         assert!(desc.tonemap_params.is_none());
         assert!(desc.material.is_none());

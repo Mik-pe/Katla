@@ -333,6 +333,17 @@ impl ApplicationBuilder {
                 height: 4096,
                 tracks_swapchain_size: false,
             })
+            // Create object-ID picking texture (R32Uint, for GPU picking)
+            .create_resource(GraphResourceDesc {
+                name: "object_id".to_string(),
+                resource_type: GraphResourceType::ColorAttachment {
+                    clear_value: Some([0.0, 0.0, 0.0, 0.0]),
+                },
+                format: TextureImageFormat::R32Uint,
+                width: extent.width,
+                height: extent.height,
+                tracks_swapchain_size: true,
+            })
             // Note: Particle compute passes (emit and simulate) are executed automatically
             // by the render graph before any graphics passes. They don't need to be added here.
             // Sky pass: renders procedural sky (depth=1.0 so geometry appears in front)
@@ -347,9 +358,13 @@ impl ApplicationBuilder {
                     .write_depth("shadow_atlas", TextureImageFormat::D32Sfloat)
                     .resolution(4096, 4096),
             )
-            // Depth prepass: renders scene depth from camera's perspective
-            // Populates the depth buffer before the geometry pass for early-Z rejection
-            .add_pass(DepthPrepass::new("depth_prepass"))
+            // Depth prepass: renders scene depth from camera's perspective.
+            // Also outputs object IDs to a R32Uint texture for GPU-based entity picking.
+            // Populates the depth buffer before the geometry pass for early-Z rejection.
+            .add_pass(
+                DepthPrepass::new("depth_prepass")
+                    .write_object_id("object_id"),
+            )
             // Geometry pass: renders scene to HDR color texture
             // Loads existing contents (sky pass) and writes geometry on top
             // Reuses depth from the depth prepass (LoadOp::Load)
@@ -626,6 +641,8 @@ impl ApplicationBuilder {
             particle_readback_pending: false,
             #[cfg(debug_assertions)]
             particle_readback_done: false,
+            entity_instance_map: std::collections::HashMap::new(),
+            pending_pick: None,
         };
 
         Ok((app, event_loop))

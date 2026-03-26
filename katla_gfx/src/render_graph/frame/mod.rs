@@ -271,11 +271,10 @@ impl<'a> Frame<'a> {
                         log::trace!("'{}' -> shadow pass (no-op, clearing atlas)", pass.name);
                         self.execute_shadow_pass(&cmd, pass)?;
                     }
-                    // Check if this is a depth prepass (no material, no pipeline, no color writes,
-                    // no transient depth writes — uses global depth buffer)
+                    // Check if this is a depth prepass (no material, no pipeline,
+                    // uses depth — may also write object IDs to a R32Uint texture)
                     else if pass.material.is_none()
                         && pass.pipeline.is_none()
-                        && pass.writes.is_empty()
                         && pass.uses_depth
                     {
                         log::trace!("'{}' -> depth prepass", pass.name);
