@@ -1,5 +1,6 @@
 pub mod components;
 pub mod entity;
+pub mod events;
 pub mod input;
 pub mod query;
 pub mod resource;
@@ -16,6 +17,7 @@ mod sparse_set;
 // Re-export commonly used types for convenience
 pub use components::Component;
 pub use entity::EntityId;
+pub use events::{ComponentEvent, EntityEvent};
 pub use input::InputState;
 pub use query::QueryData;
 pub use resource::Resource;
