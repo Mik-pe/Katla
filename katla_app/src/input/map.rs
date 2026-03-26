@@ -126,6 +126,13 @@ impl Default for InputMapper {
             InputBinding::Mouse(MouseCombo::button(MouseButton::Left)),
             Action::Interact,
         );
+        action_map.insert(
+            InputBinding::Mouse(MouseCombo::with_modifiers(
+                MouseButton::Right,
+                ModifiersState::CONTROL,
+            )),
+            Action::PanEnable,
+        );
 
         Self { action_map }
     }
