@@ -1,9 +1,9 @@
 use katla_ecs::{EntityId, World};
-use katla_math::{Mat4, Transform, Vec3};
+use katla_math::{Mat4, Quat, Transform, Vec3};
 
 use crate::components::{
-    DragComponent, EditorHidden, FlyCameraControllerComponent, FlyCameraLookComponent,
-    ForceComponent, PerspectiveComponent, TransformComponent, VelocityComponent,
+    DragComponent, EditorHidden, OrbitCameraControllerComponent, PerspectiveComponent,
+    TransformComponent, VelocityComponent,
 };
 
 pub(crate) struct Camera {
@@ -12,26 +12,31 @@ pub(crate) struct Camera {
 
 impl Camera {
     pub fn new(world: &mut World) -> Self {
-        let position = Vec3::new(0.0, 2.0, 10.0);
+        let orbit = OrbitCameraControllerComponent::default();
+        let position = Self::compute_position(&orbit);
 
         let transform = Transform {
             position,
-            rotation: katla_math::Quat::identity(),
+            rotation: Quat::new_from_yaw_pitch(orbit.yaw, orbit.pitch),
             scale: Vec3::new(1.0, 1.0, 1.0),
         };
 
         let entity = world.spawn((
             TransformComponent::new(transform),
             VelocityComponent::default(),
-            ForceComponent::default(),
             DragComponent::new(0.25),
             PerspectiveComponent::default(),
-            FlyCameraControllerComponent::default(),
-            FlyCameraLookComponent::default(),
+            orbit,
             EditorHidden,
         ));
 
         Self { entity }
+    }
+
+    fn compute_position(orbit: &OrbitCameraControllerComponent) -> Vec3 {
+        let rotation = Quat::new_from_yaw_pitch(orbit.yaw, orbit.pitch);
+        let offset = rotation.rotate_vec3(Vec3::new(0.0, 0.0, orbit.distance));
+        orbit.target + offset
     }
 
     pub fn aspect_ratio_changed(&mut self, world: &mut World, aspect_ratio: f32) {
