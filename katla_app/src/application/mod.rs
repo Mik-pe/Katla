@@ -9,7 +9,7 @@
 //! - [`editor`] - UI rendering and entity management for the editor
 
 pub mod builder;
-mod camera;
+pub(crate) mod camera;
 pub mod editor;
 mod renderer;
 mod spawning;

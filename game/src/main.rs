@@ -2,9 +2,9 @@ use clap::Parser;
 use katla_app::application::ApplicationBuilder;
 use log::info;
 
-use katla_app::animation::{AnimationUpdateSystem, SkeletalAnimationSystem};
+use katla_app::animation::AnimationUpdateSystem;
 use katla_app::systems::{
-    FlyCameraLookSystem, PhysicsSystem, TransformHierarchySystem, VelocitySystem,
+    OrbitCameraSystem, PhysicsSystem, TransformHierarchySystem, VelocitySystem,
 };
 use katla_ecs::SystemExecutionOrder;
 
@@ -53,11 +53,7 @@ fn main() {
             Box::new(AnimationUpdateSystem),
             SystemExecutionOrder::NORMAL,
         )
-        .with_system(
-            Box::new(SkeletalAnimationSystem::default()),
-            SystemExecutionOrder::NORMAL,
-        )
-        .with_system(Box::new(FlyCameraLookSystem), SystemExecutionOrder::NORMAL)
+        .with_system(Box::new(OrbitCameraSystem), SystemExecutionOrder::NORMAL)
         .with_system(Box::new(PhysicsSystem), SystemExecutionOrder::NORMAL)
         .with_system(Box::new(VelocitySystem), SystemExecutionOrder::LATE);
 
