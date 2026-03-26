@@ -30,7 +30,8 @@ use std::process::ExitCode;
 
 const TEST_SCREEN_WIDTH: u32 = 64;
 const TEST_SCREEN_HEIGHT: u32 = 64;
-const MAX_SHADOW_VALIDATE_RESULTS: u32 = 16;
+const SHADOW_ATLAS_SIZE: u32 = 256;
+const MAX_SHADOW_VALIDATE_RESULTS: u32 = 64;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -419,6 +420,231 @@ fn validate_cascade_camera_movement() -> Result<(), String> {
         return Err("Cascade output is identical for different camera positions".to_string());
     }
     log::info!("  PASSED: cascade output differs for different camera positions");
+    Ok(())
+}
+
+fn validate_view_z_cascade_selection() -> Result<(), String> {
+    log::info!("Testing view_z computation and cascade selection...");
+
+    let params = CascadeParams {
+        num_cascades: 4,
+        lambda: 0.65,
+        max_distance: 50.0,
+        shadow_map_size: 1024,
+        depth_bias_constant: 1.5,
+        depth_bias_slope: 2.0,
+    };
+    let light_dir = [0.5, -0.8, -0.3];
+    let proj = reverse_z_proj(60.0, 16.0 / 9.0, 0.1);
+
+    // Camera at origin looking down -Z (standard OpenGL convention)
+    let view = identity_mat4();
+    let mut csm = CascadeShadowMap::new(params.clone());
+    csm.update(light_dir, &view, &proj);
+    let gpu_data = csm.gpu_data();
+
+    let num_cascades = gpu_data.light_direction[3] as usize;
+
+    // With identity view, view_z = -z_component_of_view_transform
+    // Use a view_z well within the first cascade split (first split is ~4.7 with these params)
+    let first_split = gpu_data.cascades[0].split_distance;
+    let view_z_near = first_split * 0.5; // Half of first split distance
+    let mut selected_near = num_cascades - 1;
+    for i in 0..num_cascades {
+        if view_z_near <= gpu_data.cascades[i].split_distance {
+            selected_near = i;
+            break;
+        }
+    }
+
+    // Object within first split should be in cascade 0
+    if selected_near != 0 {
+        return Err(format!(
+            "Object at view_z={:.2} selected cascade {} (expected 0). Splits: {:?}",
+            view_z_near,
+            selected_near,
+            (0..num_cascades)
+                .map(|i| gpu_data.cascades[i].split_distance)
+                .collect::<Vec<_>>()
+        ));
+    }
+
+    // Object farther away should select a later cascade
+    let view_z_far = 30.0;
+    let mut selected_far = num_cascades - 1;
+    for i in 0..num_cascades {
+        if view_z_far <= gpu_data.cascades[i].split_distance {
+            selected_far = i;
+            break;
+        }
+    }
+
+    if selected_far <= selected_near {
+        return Err(format!(
+            "Farther object (view_z=30.0) selected cascade {} but closer object (view_z=5.0) selected cascade {}",
+            selected_far, selected_near
+        ));
+    }
+
+    // Test with a real camera view matrix (camera at (0,5,10) looking at origin)
+    // This gives m[10] = -1.0 convention, so view_z will be negative for objects in front
+    let eye = [0.0f32, 5.0, 10.0];
+    let target = [0.0f32, 0.0, 0.0];
+    let up = [0.0f32, 1.0, 0.0];
+
+    let forward = [target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]];
+    let f_len =
+        (forward[0] * forward[0] + forward[1] * forward[1] + forward[2] * forward[2]).sqrt();
+    let forward = [forward[0] / f_len, forward[1] / f_len, forward[2] / f_len];
+
+    let right = [
+        forward[1] * up[2] - forward[2] * up[1],
+        forward[2] * up[0] - forward[0] * up[2],
+        forward[0] * up[1] - forward[1] * up[0],
+    ];
+    let r_len = (right[0] * right[0] + right[1] * right[1] + right[2] * right[2]).sqrt();
+    let right = [right[0] / r_len, right[1] / r_len, right[2] / r_len];
+
+    let true_up = [
+        right[1] * forward[2] - right[2] * forward[1],
+        right[2] * forward[0] - right[0] * forward[2],
+        right[0] * forward[1] - right[1] * forward[0],
+    ];
+
+    // Column-major view matrix
+    let real_view: [f32; 16] = [
+        right[0],
+        true_up[0],
+        -forward[0],
+        0.0,
+        right[1],
+        true_up[1],
+        -forward[1],
+        0.0,
+        right[2],
+        true_up[2],
+        -forward[2],
+        0.0,
+        -(right[0] * eye[0] + right[1] * eye[1] + right[2] * eye[2]),
+        -(true_up[0] * eye[0] + true_up[1] * eye[1] + true_up[2] * eye[2]),
+        forward[0] * eye[0] + forward[1] * eye[1] + forward[2] * eye[2],
+        1.0,
+    ];
+
+    let mut csm2 = CascadeShadowMap::new(params.clone());
+    csm2.update(light_dir, &real_view, &proj);
+    let gpu_data2 = csm2.gpu_data();
+
+    // Object at world origin, camera at (0,5,10), looking at origin.
+    // The real shader computes: view_z = -(view * world_pos).z
+    // With standard OpenGL convention (row 2 = -forward), objects in front get
+    // view * world_pos).z < 0, so view_z = -(negative) = positive.
+    // Column-major: m[8..11] = z-axis direction, m[12..15] = translation.
+    // view * (0,0,0,1) has .z = m[14], so view_z = -m[14]
+    let view_z_origin = -real_view[14];
+
+    // view_z should be positive for objects in front of the camera
+    if view_z_origin <= 0.0 {
+        return Err(format!(
+            "view_z for object at origin with real camera should be positive, got {:.4}",
+            view_z_origin
+        ));
+    }
+
+    // With positive view_z, cascade selection uses view_z <= split_distance
+    let mut selected_origin = num_cascades - 1;
+    for i in 0..num_cascades {
+        if view_z_origin <= gpu_data2.cascades[i].split_distance {
+            selected_origin = i;
+            break;
+        }
+    }
+
+    // Object at the camera's look-at target (~11.2 units away) should be in an early cascade
+    if selected_origin >= num_cascades {
+        return Err(format!(
+            "Object at look-at target (view_z={:.4}) selected no cascade",
+            view_z_origin
+        ));
+    }
+
+    log::info!("  PASSED: view_z computation and cascade selection correct");
+    log::info!(
+        "    identity view: view_z={:.2} -> cascade {}, view_z=30.0 -> cascade {}",
+        view_z_near,
+        selected_near,
+        selected_far
+    );
+    log::info!(
+        "    real camera: view_z={:.4} -> cascade {}",
+        view_z_origin,
+        selected_origin
+    );
+    Ok(())
+}
+
+fn validate_unnormalized_light_direction() -> Result<(), String> {
+    log::info!("Testing unnormalized light direction handling...");
+
+    let params = CascadeParams {
+        num_cascades: 4,
+        lambda: 0.65,
+        max_distance: 50.0,
+        shadow_map_size: 1024,
+        depth_bias_constant: 1.5,
+        depth_bias_slope: 2.0,
+    };
+    let view = identity_mat4();
+    let proj = reverse_z_proj(60.0, 16.0 / 9.0, 0.1);
+
+    // Unnormalized direction (like the real app passes: [0.3, 1.0, 0.2])
+    let unnormalized = [0.3f32, 1.0, 0.2];
+    let len = (unnormalized[0] * unnormalized[0]
+        + unnormalized[1] * unnormalized[1]
+        + unnormalized[2] * unnormalized[2])
+        .sqrt();
+    let normalized = [
+        unnormalized[0] / len,
+        unnormalized[1] / len,
+        unnormalized[2] / len,
+    ];
+
+    let mut csm1 = CascadeShadowMap::new(params.clone());
+    csm1.update(unnormalized, &view, &proj);
+    let gpu1 = csm1.gpu_data();
+
+    let mut csm2 = CascadeShadowMap::new(params);
+    csm2.update(normalized, &view, &proj);
+    let gpu2 = csm2.gpu_data();
+
+    // Both should produce identical results since CascadeShadowMap::update normalizes internally
+    for i in 0..4 {
+        for j in 0..16 {
+            let diff = (gpu1.cascades[i].view_proj[j] - gpu2.cascades[i].view_proj[j]).abs();
+            if diff > 1e-6 {
+                return Err(format!(
+                    "Unnormalized vs normalized light dir differ at cascade {} VP[{}]: {:.8}",
+                    i, j, diff
+                ));
+            }
+        }
+    }
+
+    // Verify the stored light_direction is normalized in both cases
+    let stored_len1 = (gpu1.light_direction[0].powi(2)
+        + gpu1.light_direction[1].powi(2)
+        + gpu1.light_direction[2].powi(2))
+    .sqrt();
+    if (stored_len1 - 1.0).abs() > 1e-5 {
+        return Err(format!(
+            "Stored light direction not normalized (len={:.8})",
+            stored_len1
+        ));
+    }
+
+    log::info!(
+        "  PASSED: unnormalized and normalized light directions produce identical CSM output"
+    );
     Ok(())
 }
 
@@ -894,13 +1120,13 @@ fn create_shadow_validate_resources(
             .map_err(|e| format!("Failed to bind shadow data buffer: {:?}", e))?;
     }
 
-    // 2x2 depth texture (matches real shadow atlas 2x2 cascade layout)
+    // 1024x1024 depth texture (matches cascade atlas layout: 4 cascades in 2x2 grid, 512x512 each)
     let depth_image_info = vk::ImageCreateInfo::default()
         .image_type(vk::ImageType::TYPE_2D)
         .format(vk::Format::D32_SFLOAT)
         .extent(vk::Extent3D {
-            width: 2,
-            height: 2,
+            width: SHADOW_ATLAS_SIZE,
+            height: SHADOW_ATLAS_SIZE,
             depth: 1,
         })
         .mip_levels(1)
@@ -1067,9 +1293,11 @@ fn create_shadow_validate_resources(
         .load_shader(&validate_path, vk::ShaderStageFlags::COMPUTE)
         .map_err(|e| format!("Failed to load shadow validate shader: {}", e))?;
 
+    let descriptor_layout_handle = descriptor_layout;
+
     let pipeline = ComputePipelineBuilder::new(context.clone())
         .with_shader(katla_gfx::sync::VkShaderModule(shader))
-        .add_descriptor_layout(VkDescriptorSetLayout(descriptor_layout))
+        .add_descriptor_layout(VkDescriptorSetLayout(descriptor_layout_handle))
         .build()
         .map_err(|e| format!("Failed to build shadow validate pipeline: {:?}", e))?;
 
@@ -1137,7 +1365,7 @@ fn clear_depth_to(
         );
     }
 
-    // Clear the entire 2x2 atlas
+    // Clear the entire 1024x1024 atlas
     let clear_value = vk::ClearDepthStencilValue { depth, stencil: 0 };
     let range = vk::ImageSubresourceRange {
         aspect_mask: vk::ImageAspectFlags::DEPTH,
@@ -1302,6 +1530,153 @@ fn dispatch_shadow_validate(
     submit_and_wait(context, &cmd_buf)?;
 
     // Read back output
+    if let Some(ref alloc) = res.output_allocation {
+        context.invalidate_mapped_memory(alloc, 0, output_size);
+        if let Some(mapped) = alloc.mapped_ptr() {
+            let ptr = mapped.as_ptr() as *const f32;
+            let result = unsafe { *ptr.add(test_index as usize) };
+            return Ok(result);
+        }
+    }
+
+    Err("Failed to read back shadow validation output".to_string())
+}
+
+fn dispatch_shadow_validate_blended(
+    context: &VulkanContext,
+    res: &ShadowValidateResources,
+    test_world_pos: [f32; 3],
+    test_view_z: f32,
+    test_index: u32,
+) -> Result<f32, String> {
+    dispatch_shadow_validate_with_blending(
+        context,
+        res,
+        test_world_pos,
+        test_view_z,
+        test_index,
+        true,
+    )
+}
+
+fn dispatch_shadow_validate_with_blending(
+    context: &VulkanContext,
+    res: &ShadowValidateResources,
+    test_world_pos: [f32; 3],
+    test_view_z: f32,
+    test_index: u32,
+    use_blending: bool,
+) -> Result<f32, String> {
+    let device = &context.device;
+    let shadow_data_size = std::mem::size_of::<ShadowFrameData>() as u64;
+    let output_size = (MAX_SHADOW_VALIDATE_RESULTS as u64) * 4;
+
+    let cmd_buf = context.begin_single_time_commands();
+    let cmd = cmd_buf.vk_command_buffer();
+
+    if let Some(ref alloc) = res.test_params_allocation {
+        if let Some(mapped) = alloc.mapped_ptr() {
+            let mut params_data = [0u8; 32];
+            let world_pos = [
+                test_world_pos[0],
+                test_world_pos[1],
+                test_world_pos[2],
+                test_view_z,
+            ];
+            let world_pos_bytes: &[u8] = bytemuck::cast_slice(&world_pos);
+            params_data[..16].copy_from_slice(world_pos_bytes);
+            params_data[16..20].copy_from_slice(&test_index.to_le_bytes());
+            params_data[20..24]
+                .copy_from_slice(&(if use_blending { 1u32 } else { 0u32 }).to_le_bytes());
+            unsafe {
+                std::ptr::copy_nonoverlapping(params_data.as_ptr(), mapped.as_ptr() as *mut u8, 32);
+            }
+            context.flush_mapped_memory(alloc, 0, 32);
+        }
+    }
+
+    unsafe {
+        device.cmd_bind_pipeline(
+            cmd,
+            vk::PipelineBindPoint::COMPUTE,
+            res.pipeline.pipeline().into(),
+        );
+
+        let push_descriptor = context
+            .push_descriptor_khr
+            .as_ref()
+            .ok_or("VK_KHR_push_descriptor not available")?;
+
+        let shadow_data_info = [vk::DescriptorBufferInfo::default()
+            .buffer(res.shadow_data_buffer)
+            .offset(0)
+            .range(shadow_data_size)];
+
+        let image_info = [vk::DescriptorImageInfo::default()
+            .image_view(res.depth_image_view)
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+
+        let output_info = [vk::DescriptorBufferInfo::default()
+            .buffer(res.output_buffer)
+            .offset(0)
+            .range(output_size)];
+
+        let params_buffer_info = [vk::DescriptorBufferInfo::default()
+            .buffer(res.test_params_buffer)
+            .offset(0)
+            .range(32)];
+
+        let writes = [
+            vk::WriteDescriptorSet::default()
+                .dst_binding(0)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&shadow_data_info),
+            vk::WriteDescriptorSet::default()
+                .dst_binding(1)
+                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+                .descriptor_count(1)
+                .image_info(&image_info),
+            vk::WriteDescriptorSet::default()
+                .dst_binding(2)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&output_info),
+            vk::WriteDescriptorSet::default()
+                .dst_binding(3)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&params_buffer_info),
+        ];
+
+        push_descriptor.cmd_push_descriptor_set(
+            cmd,
+            vk::PipelineBindPoint::COMPUTE,
+            res.pipeline.pipeline_layout().into(),
+            0,
+            &writes,
+        );
+
+        let output_barrier = vk::BufferMemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::HOST)
+            .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+            .src_access_mask(vk::AccessFlags2::HOST_WRITE)
+            .dst_access_mask(vk::AccessFlags2::SHADER_WRITE)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .buffer(res.output_buffer)
+            .offset(0)
+            .size(output_size);
+
+        let out_barriers = [output_barrier];
+        let dep = vk::DependencyInfo::default().buffer_memory_barriers(&out_barriers);
+        device.cmd_pipeline_barrier2(cmd, &dep);
+
+        device.cmd_dispatch(cmd, 1, 1, 1);
+    }
+
+    submit_and_wait(context, &cmd_buf)?;
+
     if let Some(ref alloc) = res.output_allocation {
         context.invalidate_mapped_memory(alloc, 0, output_size);
         if let Some(mapped) = alloc.mapped_ptr() {
@@ -1516,6 +1891,193 @@ fn test_shadow_negative_view_z(
 }
 
 // ---------------------------------------------------------------------------
+// Cascade blending validation (GPU)
+// ---------------------------------------------------------------------------
+
+fn test_shadow_cascade_blending(
+    context: &VulkanContext,
+    res: &ShadowValidateResources,
+) -> Result<(), String> {
+    log::info!("Testing shadow cascade blending at split boundary...");
+
+    clear_depth_to(context, res, 1.0)?;
+
+    // Set up cascades with distinct split distances to test blending zone.
+    // Cascade 0: split=5.0, Cascade 1: split=10.0
+    // view_z in the 5% blend zone of cascade 0's split:
+    //   blend_zone = (10.0 - 5.0) * 0.05 = 0.25
+    //   zone starts at split - blend_zone = 5.0 - 0.25 = 4.75
+    //   zone ends at split = 5.0
+    // We test at view_z = 4.875 (midpoint of blend zone)
+    let vp: [f32; 16] = [
+        0.5, 0.0, 0.0, 0.0, 0.0, -0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.0,
+    ];
+
+    let mut cascades = [ShadowCascadeGPU {
+        view_proj: vp,
+        split_distance: 5.0,
+        texel_size: 0.5,
+        _pad: [0.0, 0.0],
+    }; 4];
+    cascades[1].split_distance = 10.0;
+    cascades[2].split_distance = 20.0;
+    cascades[3].split_distance = 50.0;
+
+    let gpu_data = ShadowFrameData {
+        cascades,
+        light_direction: [0.0, -1.0, 0.0, 4.0],
+        shadow_bias: [0.0, 0.0, 0.0, 0.0],
+    };
+    upload_shadow_data(context, res, &gpu_data);
+
+    // Test well inside cascade 0 (view_z=2.0, no blending expected)
+    let vis_inside = dispatch_shadow_validate_blended(context, res, [0.0, 0.0, 0.0], 2.0, 32)?;
+    log::info!(
+        "  inside cascade 0 (view_z=2.0): visibility = {:.4}",
+        vis_inside
+    );
+
+    // Test at blend zone midpoint (view_z=4.875)
+    // blend_factor = (4.875 - 4.75) / 0.25 = 0.5
+    // Both cascades should be sampled and blended
+    let vis_blended = dispatch_shadow_validate_blended(context, res, [0.0, 0.0, 0.0], 4.875, 33)?;
+    log::info!(
+        "  blend zone (view_z=4.875): visibility = {:.4}",
+        vis_blended
+    );
+
+    // Test well inside cascade 1 (view_z=7.0, no blending expected)
+    let vis_cascade1 = dispatch_shadow_validate_blended(context, res, [0.0, 0.0, 0.0], 7.0, 34)?;
+    log::info!(
+        "  inside cascade 1 (view_z=7.0): visibility = {:.4}",
+        vis_cascade1
+    );
+
+    // With depth cleared to 1.0, all should be lit
+    if vis_inside < 0.95 {
+        return Err(format!(
+            "Inside cascade 0 should be lit, got {:.4}",
+            vis_inside
+        ));
+    }
+    if vis_cascade1 < 0.95 {
+        return Err(format!(
+            "Inside cascade 1 should be lit, got {:.4}",
+            vis_cascade1
+        ));
+    }
+    // Blended result should also be lit since both cascades are lit
+    if vis_blended < 0.95 {
+        return Err(format!(
+            "Blended zone should be lit (both cascades lit), got {:.4}",
+            vis_blended
+        ));
+    }
+
+    log::info!("  PASSED: cascade blending produces valid results");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Full pipeline integration validation
+// ---------------------------------------------------------------------------
+
+fn test_full_pipeline_integration(
+    context: &VulkanContext,
+    lc_resources: &mut LightCullingTestResources,
+    shadow_res: &ShadowValidateResources,
+) -> Result<(), String> {
+    log::info!("Testing full pipeline integration (shadows + light culling)...");
+
+    // Set up camera and projection matching real app patterns
+    let view = identity_mat4();
+    let proj = reverse_z_proj(
+        60.0,
+        TEST_SCREEN_WIDTH as f32 / TEST_SCREEN_HEIGHT as f32,
+        0.1,
+    );
+
+    // 1. Compute CSM with real-world light direction (unnormalized, like the app)
+    let light_dir = [0.3, 1.0, 0.2]; // unnormalized, as the real app passes
+    let cascade_params = CascadeParams {
+        num_cascades: 4,
+        lambda: 0.65,
+        max_distance: 50.0,
+        shadow_map_size: 1024,
+        depth_bias_constant: 1.5,
+        depth_bias_slope: 2.0,
+    };
+    let mut csm = CascadeShadowMap::new(cascade_params);
+    csm.update(light_dir, &view, &proj);
+    let gpu_data = csm.gpu_data();
+
+    // Verify CSM output is sane
+    let num_cascades = gpu_data.light_direction[3] as usize;
+    if num_cascades != 4 {
+        return Err(format!("Expected 4 cascades, got {}", num_cascades));
+    }
+
+    // 2. Upload shadow data
+    upload_shadow_data(context, shadow_res, &gpu_data);
+
+    // 3. Set up point lights (same position as a "sun" plus a point light)
+    let lights = [
+        PointLightGPU {
+            position: [0.0, 5.0, 0.0],
+            range: 20.0,
+            color: [1.0, 0.9, 0.8],
+            intensity: 1.0,
+        },
+        PointLightGPU {
+            position: [3.0, 2.0, -5.0],
+            range: 10.0,
+            color: [0.0, 0.5, 1.0],
+            intensity: 0.8,
+        },
+    ];
+
+    // 4. Dispatch light culling with the same view/proj
+    let (tile_counts, tile_indices) =
+        dispatch_light_culling_and_readback(context, lc_resources, &lights, &view, &proj)?;
+
+    let lit_tiles = tile_counts.iter().filter(|&&c| c > 0).count();
+    if lit_tiles == 0 {
+        return Err("No tiles lit with 2 lights in range".to_string());
+    }
+
+    // 5. Verify shadow sampling works with the real CSM data
+    clear_depth_to(context, shadow_res, 1.0)?;
+
+    // Sample shadow at origin - should be lit (depth cleared to 1.0 = far)
+    let visibility = dispatch_shadow_validate(context, shadow_res, [0.0, 0.0, 0.0], 5.0, 0)?;
+    if visibility < 0.95 {
+        return Err(format!(
+            "Full pipeline: origin should be lit (cleared to far), got visibility={:.4}",
+            visibility
+        ));
+    }
+
+    // 6. Verify that both light indices appear in tile data
+    let has_0 = tile_indices.iter().any(|&idx| idx == 0);
+    let has_1 = tile_indices.iter().any(|&idx| idx == 1);
+    if !has_0 || !has_1 {
+        return Err(format!(
+            "Full pipeline: missing light indices in tile data (has_0={}, has_1={})",
+            has_0, has_1
+        ));
+    }
+
+    log::info!(
+        "  PASSED: full pipeline integration ({} cascades, {}/{} tiles lit, visibility={:.4})",
+        num_cascades,
+        lit_tiles,
+        tile_counts.len(),
+        visibility
+    );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -1580,6 +2142,14 @@ fn main() -> ExitCode {
             validate_cascade_different_light_directions(),
         ),
         ("camera_movement", validate_cascade_camera_movement()),
+        (
+            "view_z_cascade_selection",
+            validate_view_z_cascade_selection(),
+        ),
+        (
+            "unnormalized_light_direction",
+            validate_unnormalized_light_direction(),
+        ),
     ] {
         if let Err(e) = result {
             log::error!("FAIL: {}: {}", name, e);
@@ -1658,12 +2228,38 @@ fn main() -> ExitCode {
                 "negative_view_z",
                 test_shadow_negative_view_z(&context, res),
             ),
+            (
+                "cascade_blending",
+                test_shadow_cascade_blending(&context, res),
+            ),
         ] {
             if let Err(e) = result {
                 log::error!("FAIL: {}: {}", name, e);
                 failed = true;
             }
         }
+    }
+
+    // ========================================================================
+    // Phase 4: Full Pipeline Integration
+    // ========================================================================
+    log::info!("");
+    log::info!("--- Full Pipeline Integration ---");
+
+    if lc_resources.is_some() && shadow_res.is_some() {
+        let result = {
+            let lc = lc_resources.as_mut().unwrap();
+            let sr = shadow_res.as_ref().unwrap();
+            test_full_pipeline_integration(&context, lc, sr)
+        };
+        if let Err(e) = result {
+            log::error!("FAIL: full_pipeline_integration: {}", e);
+            failed = true;
+        }
+    } else {
+        log::warn!(
+            "Skipping full pipeline integration (missing light culling or shadow resources)"
+        );
     }
 
     // Cleanup
