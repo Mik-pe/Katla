@@ -6,6 +6,7 @@
 //! - `viewport` - Viewport system management (TODO: extract from lib.rs)
 //! - `ui` - UI buffer and texture management (TODO: extract from lib.rs)
 
+pub mod animation_init;
 pub mod bindless_queries;
 pub mod compositing;
 pub mod depth_prepass;
@@ -16,6 +17,7 @@ pub mod light_culling;
 pub mod material_api;
 pub mod mesh_manager;
 pub mod particle_init;
+pub mod picking;
 pub mod readback;
 pub mod registry;
 pub mod shadow;
@@ -160,12 +162,18 @@ pub struct VulkanRenderer {
     pub ui_renderer: ui_renderer::UIRenderer,
     /// Global particle system for GPU-driven particle effects.
     pub particle_system: Option<crate::particles::GlobalParticleSystem>,
+    /// GPU animation pose evaluation pipeline.
+    pub animation_pipeline: Option<crate::animation::PoseComputePipeline>,
+    /// GPU animation buffers for pose evaluation.
+    pub animation_buffers: Option<crate::animation::PoseComputeBuffers>,
     /// Light culling state (Forward+ dynamic lighting).
     light_culling: light_culling::LightCullingState,
     /// Shadow system state (CSM cascaded shadow maps).
     pub(crate) shadow: shadow::ShadowState,
     /// Depth prepass state (depth-only pre-pass).
     depth_prepass: depth_prepass::DepthPrepassState,
+    /// Pending picking readback operation.
+    pending_picking_readback: Option<picking::PickingReadback>,
     /// Base bindless index for per-frame depth textures.
     /// Actual index for frame N is `depth_texture_base_index + N`.
     depth_texture_base_index: Option<u32>,
@@ -310,9 +318,12 @@ impl VulkanRenderer {
             material_compiler,
             ui_renderer: ui_renderer::UIRenderer::new(&context),
             particle_system: None,
+            animation_pipeline: None,
+            animation_buffers: None,
             light_culling: light_culling::LightCullingState::default(),
             shadow: shadow::ShadowState::default(),
             depth_prepass: depth_prepass::DepthPrepassState::default(),
+            pending_picking_readback: None,
             depth_texture_base_index: None,
             first_frame_rendered: false,
         })
@@ -559,6 +570,13 @@ impl VulkanRenderer {
             info!("Destroying particle system");
             particle_system.destroy();
         }
+
+        // Destroy animation pipeline and buffers
+        if let Some(mut pipeline) = self.animation_pipeline.take() {
+            info!("Destroying animation pose compute pipeline");
+            pipeline.destroy();
+        }
+        self.animation_buffers = None; // Drop handles cleanup via Drop impl
 
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
