@@ -287,6 +287,16 @@ impl ApplicationHandler for Application {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
             }
+            WindowEvent::Occluded(occluded) => {
+                if occluded && !self.minimized {
+                    self.minimized = true;
+                    debug!("Window occluded, skipping rendering");
+                } else if !occluded && self.minimized {
+                    self.minimized = false;
+                    info!("Window unoccluded, resuming rendering");
+                    let _ = self.renderer.recreate_swapchain(&mut self.frame_graph);
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(keycode) = event.physical_key {
                     let key_combo = KeyCombo::with_modifiers(keycode, self.current_modifiers);
@@ -325,12 +335,13 @@ impl ApplicationHandler for Application {
                         );
                     }
 
-                    // Save scene with Ctrl+S
+                    // Save scene with Ctrl+S (suppressed when TextInput or modal is focused)
                     if event.state == ElementState::Pressed
                         && keycode == KeyCode::KeyS
                         && self.current_modifiers.control_key()
                         && !self.current_modifiers.shift_key()
                         && !self.current_modifiers.alt_key()
+                        && !self.editor_ui.prev_want_capture_keyboard
                     {
                         self.editor_ui
                             .pending_actions
@@ -508,6 +519,12 @@ impl ApplicationHandler for Application {
                 debug!("Generating UI draw list...");
                 let ui_draw_list = editor::generate_ui_draw_list(self, dt);
                 debug!("UI draw list generated");
+
+                // Save keyboard capture state for next frame's Ctrl+S suppression.
+                // Must happen after generate_ui_draw_list (which sets the flag) and
+                // before process_editor_actions (which calls clear_frame_state).
+                self.editor_ui.prev_want_capture_keyboard =
+                    self.ui_context.input.want_capture_keyboard;
 
                 // Upload font atlas AFTER draw list generation (which rasterizes new glyphs)
                 // and BEFORE render_frame (which samples from the GPU atlas).
