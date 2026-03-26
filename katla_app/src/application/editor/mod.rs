@@ -401,16 +401,11 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
     let mut children_map: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
     let mut root_entities: HashSet<EntityId> = HashSet::new();
 
-    for entity_id in app.world.entity_ids() {
+    for (entity_id, transform) in app.world.query_ref::<&TransformComponent>() {
         // Skip entities marked as hidden from editor
         if app.world.get_component::<EditorHidden>(entity_id).is_some() {
             continue;
         }
-
-        let transform = match app.world.get_component::<TransformComponent>(entity_id) {
-            Some(t) => t,
-            None => continue,
-        };
 
         let name = app
             .world
@@ -426,14 +421,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         // Collect all component names for this entity
         let mut components: Vec<String> = Vec::new();
 
-        // Check for each component type and add friendly names
-        if app
-            .world
-            .get_component::<TransformComponent>(entity_id)
-            .is_some()
-        {
-            components.push("Transform".to_string());
-        }
+        components.push("Transform".to_string());
         if app
             .world
             .get_component::<NameComponent>(entity_id)
@@ -580,8 +568,10 @@ fn unproject_to_ground_plane_impl(
     screen_pos: Vec2,
 ) -> Vec3 {
     // Convert screen position to normalized device coordinates (-1 to 1)
+    // Screen space: (0,0) = top-left, Y increases downward
+    // Vulkan NDC on Windows (top-down swapchain): Y=-1 at top, Y=+1 at bottom
     let ndc_x = ((screen_pos.x() - viewport.min.x()) / viewport.width()) * 2.0 - 1.0;
-    let ndc_y = -(((screen_pos.y() - viewport.min.y()) / viewport.height()) * 2.0 - 1.0);
+    let ndc_y = ((screen_pos.y() - viewport.min.y()) / viewport.height()) * 2.0 - 1.0;
 
     let vp = proj_mat * view_mat;
     let inv_vp = vp.inverse();

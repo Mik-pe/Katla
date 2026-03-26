@@ -64,11 +64,7 @@ impl SceneManager {
 
         let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-        for entity_id in app.world.entity_ids() {
-            let Some(transform) = app.world.get_component::<TransformComponent>(entity_id) else {
-                continue;
-            };
-
+        for (entity_id, transform) in app.world.query_ref::<&TransformComponent>() {
             // Skip editor-hidden entities (camera, etc.)
             if app
                 .world
