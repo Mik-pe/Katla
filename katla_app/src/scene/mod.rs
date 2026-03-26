@@ -1,5 +1,6 @@
 pub mod descriptors;
 pub mod entity_source;
+pub mod migration;
 
 use descriptors::{
     AnimationDescriptor, DrawableDescriptor, EntityDescriptor, ParticleEmitterDescriptor,
@@ -20,7 +21,7 @@ use crate::application::Application;
 use ron::extensions::Extensions;
 
 /// Current scene format version.
-const SCENE_VERSION: u32 = 1;
+pub const SCENE_VERSION: u32 = 1;
 
 /// RON serialization extensions configuration.
 ///
@@ -232,7 +233,8 @@ impl SceneManager {
     /// Load a scene from a RON file and populate the world.
     ///
     /// Clears existing entities and replays each entity descriptor through
-    /// the appropriate spawn functions.
+    /// the appropriate spawn functions. Runs format migrations if the scene
+    /// version is older than [`SCENE_VERSION`].
     pub fn load_from_file(app: &mut Application, path: &Path) -> Result<(), String> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| format!("Failed to read scene file {:?}: {}", path, e))?;
@@ -246,12 +248,25 @@ impl SceneManager {
     /// Load a scene descriptor into the world.
     ///
     /// Clears existing entities and replays each entity descriptor through
-    /// the appropriate spawn functions.
-    pub fn load_scene(app: &mut Application, scene: Scene) -> Result<(), String> {
+    /// the appropriate spawn functions. Runs format migrations if the scene
+    /// version is older than [`SCENE_VERSION`]. Returns an error if the scene
+    /// version is newer than this build supports.
+    pub fn load_scene(app: &mut Application, mut scene: Scene) -> Result<(), String> {
+        let loaded_version = scene.version;
+
+        // Run migrations before spawning entities
+        migration::run_migrations(&mut scene, loaded_version)
+            .map_err(|e| format!("Cannot load scene '{}': {}", scene.name, e))?;
+
         info!(
-            "Loading scene '{}' (version {}) with {} entities",
+            "Loading scene '{}' (version {}{} with {} entities",
             scene.name,
-            scene.version,
+            loaded_version,
+            if loaded_version != scene.version {
+                format!(" → migrated to {}", scene.version)
+            } else {
+                String::new()
+            },
             scene.entities.len()
         );
 
@@ -2981,5 +2996,384 @@ EntityDescriptor(
         let loaded_default: Scene = ron::from_str(ron_no_version).unwrap();
         assert_eq!(loaded_default.version, 0);
         assert_eq!(loaded_default.name, "Version Default Test");
+    }
+
+    // =========================================================================
+    // Load/Spawn Integration Tests (VAL-SCENE-018, VAL-CROSS-005, VAL-CROSS-006)
+    // =========================================================================
+
+    #[test]
+    fn test_load_spawn_integration() {
+        // Verify a scene with all entity types round-trips correctly
+        // through serialization. This tests the full data path that
+        // load_scene uses: build Scene → RON serialize → RON deserialize → Scene.
+        //
+        // The actual entity spawning (GPU mesh creation, etc.) requires
+        // a Vulkan context and is verified by `cargo run -s`.
+
+        let mut scene = Scene::new("Integration Test");
+        scene.version = SCENE_VERSION;
+
+        // All entity types: Cube, Sphere, Plane, Cylinder, Torus, GltfModel,
+        // ParticleEmitter, Light
+        scene.entities.push(EntityDescriptor {
+            name: Some("Cube1".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [1.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+            source: EntitySource::Cube {
+                size: [1.0, 2.0, 1.0],
+            },
+            drawable: Some(DrawableDescriptor {
+                color: Some([0.8, 0.2, 0.1, 1.0]),
+                metallic: 0.5,
+                roughness: 0.3,
+                ao: 1.0,
+            }),
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: Some(VelocityDescriptor {
+                velocity: [1.0, 0.0, 0.0],
+                acceleration: [0.0, -9.8, 0.0],
+            }),
+        });
+
+        scene.entities.push(EntityDescriptor {
+            name: Some("Sphere1".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [0.0, 2.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+            source: EntitySource::Sphere {
+                radius: 0.5,
+                segments: 32,
+                rings: 16,
+            },
+            drawable: Some(DrawableDescriptor {
+                color: Some([0.1, 0.5, 0.9, 1.0]),
+                metallic: 0.0,
+                roughness: 0.8,
+                ao: 1.0,
+            }),
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+
+        scene.entities.push(EntityDescriptor {
+            name: Some("Plane1".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [0.0, -1.0, 0.0],
+                rotation: [0.707, 0.0, 0.0, 0.707],
+                scale: [10.0, 1.0, 10.0],
+            },
+            source: EntitySource::Plane {
+                width: 20.0,
+                height: 20.0,
+            },
+            drawable: Some(DrawableDescriptor {
+                color: Some([0.5, 0.5, 0.5, 1.0]),
+                metallic: 0.0,
+                roughness: 1.0,
+                ao: 1.0,
+            }),
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+
+        scene.entities.push(EntityDescriptor {
+            name: Some("Cylinder1".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [-3.0, 0.0, 4.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+            source: EntitySource::Cylinder {
+                height: 3.0,
+                radius: 0.75,
+                segments: 32,
+            },
+            drawable: Some(DrawableDescriptor {
+                color: Some([0.9, 0.7, 0.2, 1.0]),
+                metallic: 0.5,
+                roughness: 0.4,
+                ao: 0.9,
+            }),
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+
+        scene.entities.push(EntityDescriptor {
+            name: Some("Torus1".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [0.0, 2.0, -5.0],
+                rotation: [0.5, 0.5, 0.5, 0.5],
+                scale: [1.0, 1.0, 1.0],
+            },
+            source: EntitySource::Torus {
+                radius: 1.0,
+                tube_radius: 0.3,
+                segments: 32,
+                tube_segments: 16,
+            },
+            drawable: Some(DrawableDescriptor {
+                color: Some([0.3, 0.9, 0.4, 1.0]),
+                metallic: 0.3,
+                roughness: 0.6,
+                ao: 1.0,
+            }),
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+
+        // GLTF model with animation (VAL-CROSS-005: animated model state round-trip)
+        scene.entities.push(EntityDescriptor {
+            name: Some("AnimatedFox".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [3.0, 0.0, 0.0],
+                rotation: [0.0, 0.38268343, 0.0, 0.92387953],
+                scale: [0.01, 0.01, 0.01],
+            },
+            source: EntitySource::GltfModel {
+                path: "resources/models/Fox.glb".to_string(),
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: Some(AnimationDescriptor {
+                current_clip: Some("Run".to_string()),
+                playing: true,
+                loop_animation: true,
+                speed: 1.5,
+                time: 0.75,
+                duration: 1.2,
+                blending: true,
+                target_clip: Some("Walk".to_string()),
+                blend_weight: 0.4,
+                blend_time: 0.3,
+                blend_duration: 0.5,
+                target_time: 1.0,
+                target_duration: 3.0,
+                loop_count: 2,
+            }),
+            velocity: None,
+        });
+
+        // Particle emitter
+        scene.entities.push(EntityDescriptor {
+            name: Some("FireEmitter".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [-3.0, 1.0, -3.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+            source: EntitySource::ParticleEmitter,
+            drawable: None,
+            point_light: None,
+            particle_emitter: Some(ParticleEmitterDescriptor {
+                position: [-3.0, 1.0, -3.0],
+                emit_rate: 400.0,
+                base_lifetime: 2.5,
+                lifetime_variation: 0.3,
+                velocity_direction: [0.0, 1.0, 0.0],
+                velocity_magnitude: 3.0,
+                velocity_cone_angle: 0.05,
+                base_scale: 0.08,
+                scale_variation: 0.2,
+                color: [1.0, 0.5, 0.0, 1.0],
+                color_variation: 0.1,
+                gravity: 0.0,
+                turbulence_strength: 0.0,
+                turbulence_frequency: 3.0,
+                shape: katla_gfx::particles::EmitterShape::Point,
+                shape_params: [0.0; 4],
+                active: true,
+            }),
+            animation: None,
+            velocity: None,
+        });
+
+        // Point light
+        scene.entities.push(EntityDescriptor {
+            name: Some("WarmLight".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [-5.0, 3.0, -3.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+            source: EntitySource::Light,
+            drawable: Some(DrawableDescriptor {
+                color: Some([1.0, 0.6, 0.2, 1.0]),
+                metallic: 0.0,
+                roughness: 1.0,
+                ao: 1.0,
+            }),
+            point_light: Some(PointLightDescriptor {
+                color: [1.0, 0.6, 0.2],
+                intensity: 15.0,
+                range: 12.0,
+            }),
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+
+        // Parent-child hierarchy (VAL-CROSS-006)
+        scene.entities.push(EntityDescriptor {
+            name: Some("ParentEntity".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [0.0, 5.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [2.0, 2.0, 2.0],
+            },
+            source: EntitySource::Cube {
+                size: [1.0, 1.0, 1.0],
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+        scene.entities.push(EntityDescriptor {
+            name: Some("ChildA".to_string()),
+            parent: Some("ParentEntity".to_string()),
+            transform: TransformDescriptor {
+                position: [2.0, 0.0, 0.0],
+                rotation: [0.0, 0.707, 0.0, 0.707],
+                scale: [0.5, 0.5, 0.5],
+            },
+            source: EntitySource::Sphere {
+                radius: 0.3,
+                segments: 16,
+                rings: 8,
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+        scene.entities.push(EntityDescriptor {
+            name: Some("Grandchild".to_string()),
+            parent: Some("ChildA".to_string()),
+            transform: TransformDescriptor {
+                position: [1.0, 1.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [0.25, 0.25, 0.25],
+            },
+            source: EntitySource::Cube {
+                size: [0.5, 0.5, 0.5],
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+
+        assert_eq!(scene.entities.len(), 11, "Scene must have 11 entities");
+
+        // Round-trip through RON serialization (what load_from_file does)
+        let loaded: Scene = round_trip(&scene);
+
+        // Verify entity count
+        assert_eq!(loaded.entities.len(), 11);
+
+        // Verify each entity type survived
+        let entity_names: Vec<_> = loaded
+            .entities
+            .iter()
+            .filter_map(|e| e.name.clone())
+            .collect();
+        assert!(entity_names.contains(&"Cube1".to_string()));
+        assert!(entity_names.contains(&"Sphere1".to_string()));
+        assert!(entity_names.contains(&"Plane1".to_string()));
+        assert!(entity_names.contains(&"Cylinder1".to_string()));
+        assert!(entity_names.contains(&"Torus1".to_string()));
+        assert!(entity_names.contains(&"AnimatedFox".to_string()));
+        assert!(entity_names.contains(&"FireEmitter".to_string()));
+        assert!(entity_names.contains(&"WarmLight".to_string()));
+        assert!(entity_names.contains(&"ParentEntity".to_string()));
+        assert!(entity_names.contains(&"ChildA".to_string()));
+        assert!(entity_names.contains(&"Grandchild".to_string()));
+
+        // VAL-CROSS-005: Animated model state preserved
+        let fox = loaded
+            .entities
+            .iter()
+            .find(|e| e.name == Some("AnimatedFox".to_string()))
+            .expect("Fox must exist");
+        let fox_anim = fox.animation.as_ref().expect("Fox must have animation");
+        assert_eq!(fox_anim.current_clip, Some("Run".to_string()));
+        assert!(fox_anim.playing);
+        assert!(fox_anim.loop_animation);
+        assert_eq!(fox_anim.speed, 1.5);
+        assert_eq!(fox_anim.time, 0.75);
+        assert_eq!(fox_anim.duration, 1.2);
+        assert!(fox_anim.blending);
+        assert_eq!(fox_anim.target_clip, Some("Walk".to_string()));
+        assert_eq!(fox_anim.blend_weight, 0.4);
+        assert_eq!(fox_anim.blend_time, 0.3);
+        assert_eq!(fox_anim.blend_duration, 0.5);
+        assert_eq!(fox_anim.target_time, 1.0);
+        assert_eq!(fox_anim.target_duration, 3.0);
+        assert_eq!(fox_anim.loop_count, 2);
+
+        // VAL-CROSS-006: Parent-child hierarchy preserved
+        let parent = loaded
+            .entities
+            .iter()
+            .find(|e| e.name == Some("ParentEntity".to_string()))
+            .expect("Parent must exist");
+        let child_a = loaded
+            .entities
+            .iter()
+            .find(|e| e.name == Some("ChildA".to_string()))
+            .expect("ChildA must exist");
+        let grandchild = loaded
+            .entities
+            .iter()
+            .find(|e| e.name == Some("Grandchild".to_string()))
+            .expect("Grandchild must exist");
+        assert!(parent.parent.is_none());
+        assert_eq!(child_a.parent, Some("ParentEntity".to_string()));
+        assert_eq!(grandchild.parent, Some("ChildA".to_string()));
+        assert_eq!(parent.transform.scale, [2.0, 2.0, 2.0]);
+        assert_eq!(child_a.transform.scale, [0.5, 0.5, 0.5]);
+        assert_eq!(grandchild.transform.scale, [0.25, 0.25, 0.25]);
+
+        // Verify all data fields match between original and loaded
+        for (original, loaded) in scene.entities.iter().zip(loaded.entities.iter()) {
+            assert_eq!(original.name, loaded.name);
+            assert_eq!(original.source, loaded.source);
+            assert_eq!(original.transform, loaded.transform);
+            assert_eq!(original.parent, loaded.parent);
+            assert_eq!(original.drawable, loaded.drawable);
+            assert_eq!(original.point_light, loaded.point_light);
+            assert_eq!(original.particle_emitter, loaded.particle_emitter);
+            assert_eq!(original.animation, loaded.animation);
+            assert_eq!(original.velocity, loaded.velocity);
+        }
     }
 }
