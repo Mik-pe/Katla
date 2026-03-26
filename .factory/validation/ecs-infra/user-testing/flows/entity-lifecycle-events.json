@@ -1,0 +1,108 @@
+{
+  "groupId": "entity-lifecycle-events",
+  "testedAt": "2026-03-26T00:00:00Z",
+  "isolation": {
+    "scope": "cargo test -p katla_ecs only, no source modifications"
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-ECS-001",
+      "title": "Entity spawn event emitted on create_entity",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_entity_spawn_event_emitted --nocapture",
+          "expected": "Test passes with exit code 0",
+          "observed": "Test passed: test world::tests::test_entity_spawn_event_emitted ... ok"
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_entity_spawn_event_emitted --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_entity_spawn_event_emitted ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test passed successfully. Validates that create_entity() pushes exactly one EntityEvent::Spawned onto the event queue with the correct entity ID."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-002",
+      "title": "Entity destroyed event emitted on destroy_entity",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_entity_destroyed_event_emitted --nocapture",
+          "expected": "Test passes with exit code 0",
+          "observed": "Test passed: test world::tests::test_entity_destroyed_event_emitted ... ok"
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_entity_destroyed_event_emitted --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_entity_destroyed_event_emitted ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test passed successfully. Validates that destroy_entity() for a live entity pushes exactly one EntityEvent::Destroyed onto the event queue."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-003",
+      "title": "No event emitted for destroy_entity on invalid entity",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_destroy_invalid_entity_no_event --nocapture",
+          "expected": "Test passes with exit code 0",
+          "observed": "Test passed: test world::tests::test_destroy_invalid_entity_no_event ... ok"
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_destroy_invalid_entity_no_event --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_destroy_invalid_entity_no_event ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test passed successfully. Validates that destroy_entity() with a non-live entity ID does not push any events to the queue."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-004",
+      "title": "Entity events flushed at end of update()",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_entity_events_flushed_after_update --nocapture",
+          "expected": "Test passes with exit code 0",
+          "observed": "Test passed: test world::tests::test_entity_events_flushed_after_update ... ok"
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_entity_events_flushed_after_update --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_entity_events_flushed_after_update ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test passed successfully. Validates that after world.update(dt) completes, the entity event queue is empty."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-005",
+      "title": "Event ordering reflects creation/destruction order",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_entity_event_ordering --nocapture",
+          "expected": "Test passes with exit code 0",
+          "observed": "Test passed: test world::tests::test_entity_event_ordering ... ok"
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_entity_event_ordering --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_entity_event_ordering ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test passed successfully. Validates that entity events are emitted in exact API call order (e.g., Spawned(A), Spawned(B), Destroyed(A))."
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 5 assertions: all 5 passed (VAL-ECS-001 through VAL-ECS-005). All entity lifecycle event tests in katla_ecs pass successfully, confirming correct spawn/destroy event emission, no-event behavior for invalid entities, event flushing on update, and event ordering."
+}

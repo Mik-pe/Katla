@@ -1,0 +1,172 @@
+{
+  "groupId": "change-detection",
+  "testedAt": "2026-03-26T23:30:00Z",
+  "isolation": {
+    "scope": "cargo test -p katla_ecs (pure unit tests, no GPU)"
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-ECS-013",
+      "title": "Generation counter incremented on add_component",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_add_component_marks_changed --nocapture",
+          "expected": "Test passes, confirming add_component marks entity as changed",
+          "observed": "Test passed. Test creates entity, adds component, checks query_changed includes that entity."
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_add_component_marks_changed --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_add_component_marks_changed ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test creates entity, adds TestComponent, then verifies query_changed returns that entity ID. Correctly validates that add_component increments the generation counter."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-014",
+      "title": "Generation counter incremented on get_component_mut",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_get_component_mut_marks_changed --nocapture",
+          "expected": "Test passes, confirming get_component_mut marks entity as changed",
+          "observed": "Test passed. Test creates entity, adds component, clears changed, calls get_component_mut, checks query_changed includes entity."
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_get_component_mut_marks_changed --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_get_component_mut_marks_changed ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test verifies that get_component_mut marks entity as changed even without actual field mutation. The test clears change detection first, then calls get_component_mut, then checks query_changed. Correctly validates generation counter increment on mutable access."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-015",
+      "title": "query_changed returns only changed entities",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_query_changed_returns_only_changed --nocapture",
+          "expected": "Test passes, confirming query_changed returns exactly the 3 mutated entities out of 10",
+          "observed": "Test passed. Creates 10 entities, clears changed, mutates only indices 2, 5, 7, verifies query_changed returns exactly those 3."
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_query_changed_returns_only_changed --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_query_changed_returns_only_changed ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test creates 10 entities with TestComponent, clears change detection from adds, then mutably accesses only entities at indices 2, 5, and 7. Asserts query_changed returns exactly 3 entities and contains only those IDs. Correctly validates selective change detection."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-016",
+      "title": "clear_changed resets all generation tracking",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_clear_changed_resets_detection --nocapture",
+          "expected": "Test passes, confirming clear_changed empties query_changed results",
+          "observed": "Test passed. Creates entity, adds component (marks changed), clears changed, verifies query_changed returns empty."
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_clear_changed_resets_detection --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_clear_changed_resets_detection ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test creates entity, adds component (marks it changed), verifies query_changed is non-empty, calls clear_changed(), then verifies query_changed returns empty. Correctly validates that clear_changed resets all generation tracking."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-017",
+      "title": "query_changed is subset of query",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_query_changed_is_subset --nocapture",
+          "expected": "Test passes, confirming every query_changed entity also appears in query results",
+          "observed": "Test passed. Creates 5 entities, checks every entity from query_changed is present in query set."
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_query_changed_is_subset --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_query_changed_is_subset ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test creates 5 entities with TestComponent, collects query results and query_changed results into HashSets, then asserts every entity from query_changed is present in the query set. Note: test name is test_query_changed_is_subset (without '_of_query' suffix). Correctly validates subset relationship."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-018",
+      "title": "Immutable get_component does not trigger change detection",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_immutable_get_no_change --nocapture",
+          "expected": "Test passes, confirming get_component does NOT mark entity as changed",
+          "observed": "Test passed. Creates entity, adds component, clears changed, calls get_component (immutable), verifies query_changed is empty."
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_immutable_get_no_change --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_immutable_get_no_change ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test creates entity, adds component, clears change detection, calls world.get_component() (immutable reference), then verifies query_changed returns empty. Note: test name is test_immutable_get_no_change (without '_detection' suffix). Correctly validates that immutable access does not trigger change detection."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-019",
+      "title": "Change detection across multi-component tuple query",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_query_changed_multi_component --nocapture",
+          "expected": "Test passes, confirming query_changed for (A, B) returns union of entities where either A or B was mutated",
+          "observed": "Test passed. Creates 2 entities with both CompA and CompB, mutates A on entity1 and B on entity2, verifies query_changed returns both."
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_query_changed_multi_component --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_query_changed_multi_component ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test defines CompA and CompB, creates 2 entities with both components, clears change detection, mutates CompA on entity1 and CompB on entity2, then calls query_changed::<(&CompA, &CompB)>(). Asserts both entities are returned (union semantics). Note: test name is test_query_changed_multi_component (without '_union' suffix). Correctly validates multi-component change detection with union semantics."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-020",
+      "title": "Destroyed entity excluded from query_changed",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_destroyed_entity_excluded --nocapture",
+          "expected": "Test passes, confirming destroyed entity is excluded from query_changed even if mutated earlier",
+          "observed": "Test passed. Creates 2 entities, mutates both, destroys entity1, verifies query_changed excludes entity1 and includes entity2."
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_destroyed_entity_excluded --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_destroyed_entity_excluded ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test creates 2 entities, mutably accesses both (marking them changed), destroys entity1, then verifies query_changed excludes entity1 and includes entity2. Note: test name is test_destroyed_entity_excluded (without '_from_query_changed' suffix). Correctly validates that destroyed entities are excluded from change detection queries."
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Test names in the task prompt did not match actual test function names in the source code. The validation contract referenced names like 'test_query_changed_is_subset_of_query' and 'test_immutable_get_no_change_detection' but the actual test names are shorter: 'test_query_changed_is_subset' and 'test_immutable_get_no_change'. Required searching the source code to find the correct test names.",
+      "resolved": true,
+      "resolution": "Used Grep to search katla_ecs/src/world.rs for the actual test function names, then re-ran tests with correct filters.",
+      "affectedAssertions": ["VAL-ECS-017", "VAL-ECS-018", "VAL-ECS-019", "VAL-ECS-020"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 8 assertions: all 8 passed. All change detection features (generation counter on add_component, generation counter on get_component_mut, selective query_changed, clear_changed reset, subset relationship, immutable access exclusion, multi-component union semantics, destroyed entity exclusion) are working correctly."
+}

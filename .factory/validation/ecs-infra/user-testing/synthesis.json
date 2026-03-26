@@ -1,0 +1,56 @@
+{
+  "milestone": "ecs-infra",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 27,
+    "passed": 27,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-ECS-001",
+    "VAL-ECS-002",
+    "VAL-ECS-003",
+    "VAL-ECS-004",
+    "VAL-ECS-005",
+    "VAL-ECS-006",
+    "VAL-ECS-007",
+    "VAL-ECS-008",
+    "VAL-ECS-009",
+    "VAL-ECS-010",
+    "VAL-ECS-011",
+    "VAL-ECS-012",
+    "VAL-ECS-013",
+    "VAL-ECS-014",
+    "VAL-ECS-015",
+    "VAL-ECS-016",
+    "VAL-ECS-017",
+    "VAL-ECS-018",
+    "VAL-ECS-019",
+    "VAL-ECS-020",
+    "VAL-ECS-021",
+    "VAL-ECS-022",
+    "VAL-ECS-023",
+    "VAL-ECS-024",
+    "VAL-ECS-025",
+    "VAL-ECS-026",
+    "VAL-CROSS-008"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "flowReports": [
+    ".factory/validation/ecs-infra/user-testing/flows/entity-lifecycle-events.json",
+    ".factory/validation/ecs-infra/user-testing/flows/component-events.json",
+    ".factory/validation/ecs-infra/user-testing/flows/change-detection.json",
+    ".factory/validation/ecs-infra/user-testing/flows/query-conversion.json"
+  ],
+  "appliedUpdates": [
+    {
+      "target": "user-testing.md",
+      "description": "Added Flow Validator Guidance: katla-ecs-unit-tests section with test name mapping corrections (validation contract references longer names than actual test functions)",
+      "source": "flow-report"
+    }
+  ],
+  "previousRound": null
+}
