@@ -1,0 +1,153 @@
+{
+  "group": "unit-tests",
+  "testedAt": "2026-03-27T00:50:00Z",
+  "isolation": {
+    "type": "native-rust-cargo-test",
+    "package": "katla_app",
+    "workingDirectory": "C:\\dev\\katla",
+    "noGPU": true,
+    "noServices": true
+  },
+  "toolsUsed": ["cargo-test"],
+  "assertions": [
+    {
+      "id": "VAL-SCENE-001",
+      "title": "Primitive serialization round-trip",
+      "status": "pass",
+      "testNames": ["test_primitive_round_trip", "test_all_entity_source_variants_round_trip"],
+      "evidence": "running 2 tests\ntest scene::tests::test_primitive_round_trip ... ok\ntest scene::tests::test_all_entity_source_variants_round_trip ... ok\ntest result: ok. 2 passed; 0 failed",
+      "observation": "All EntitySource variants (Cube, Sphere, Plane, Cylinder, Torus) round-trip correctly through RON serialization."
+    },
+    {
+      "id": "VAL-SCENE-002",
+      "title": "GLTF model serialization round-trip",
+      "status": "pass",
+      "testNames": ["test_gltf_round_trip", "test_gltf_entity_with_animation_round_trip"],
+      "evidence": "running 2 tests\ntest scene::tests::test_gltf_entity_with_animation_round_trip ... ok\ntest scene::tests::test_gltf_round_trip ... ok\ntest result: ok. 2 passed; 0 failed",
+      "observation": "EntitySource::GltfModel preserves path and AnimationDescriptor fields through RON round-trip."
+    },
+    {
+      "id": "VAL-SCENE-003",
+      "title": "Point light serialization round-trip",
+      "status": "pass",
+      "testNames": ["test_point_light_round_trip", "test_point_light_descriptor_round_trip"],
+      "evidence": "running 2 tests\ntest scene::tests::test_point_light_descriptor_round_trip ... ok\ntest scene::tests::test_point_light_round_trip ... ok\ntest result: ok. 2 passed; 0 failed",
+      "observation": "PointLightDescriptor preserves color, intensity, and range through RON round-trip."
+    },
+    {
+      "id": "VAL-SCENE-004",
+      "title": "Particle emitter serialization round-trip",
+      "status": "pass",
+      "testNames": ["test_particle_emitter_round_trip", "test_particle_emitter_descriptor_round_trip"],
+      "evidence": "running 2 tests\ntest scene::tests::test_particle_emitter_descriptor_round_trip ... ok\ntest scene::tests::test_particle_emitter_round_trip ... ok\ntest result: ok. 2 passed; 0 failed",
+      "observation": "ParticleEmitterDescriptor preserves all fields including shape enum variants through RON round-trip."
+    },
+    {
+      "id": "VAL-SCENE-005",
+      "title": "Animated model serialization round-trip",
+      "status": "pass",
+      "testNames": ["test_animation_round_trip", "test_gltf_entity_with_animation_round_trip"],
+      "evidence": "running 1 test\ntest scene::tests::test_animation_round_trip ... ok\ntest result: ok. 1 passed; 0 failed",
+      "observation": "AnimationDescriptor in blending state preserves all blend fields through RON round-trip."
+    },
+    {
+      "id": "VAL-SCENE-006",
+      "title": "Parent-child hierarchy preservation",
+      "status": "pass",
+      "testNames": ["test_hierarchy_preservation", "test_parent_child_relationships_round_trip"],
+      "evidence": "running 2 tests\ntest scene::tests::test_parent_child_relationships_round_trip ... ok\ntest scene::tests::test_hierarchy_preservation ... ok\ntest result: ok. 2 passed; 0 failed",
+      "observation": "Scene with parented entities preserves parent reference string through round-trip."
+    },
+    {
+      "id": "VAL-SCENE-007",
+      "title": "Entity count preservation",
+      "status": "pass",
+      "testNames": ["test_entity_count_preservation"],
+      "evidence": "running 1 test\ntest scene::tests::test_entity_count_preservation ... ok\ntest result: ok. 1 passed; 0 failed",
+      "observation": "Scene with N entities round-trips to exactly N entities regardless of entity type mix."
+    },
+    {
+      "id": "VAL-SCENE-008",
+      "title": "Unknown fields ignored (forward compatibility)",
+      "status": "pass",
+      "testNames": ["test_unknown_fields_ignored", "test_forward_compatibility_unknown_struct_fields", "test_forward_compatibility_new_entity_source_variant"],
+      "evidence": "running 3 tests\ntest scene::tests::test_forward_compatibility_unknown_struct_fields ... ok\ntest scene::tests::test_unknown_fields_ignored ... ok\ntest scene::tests::test_forward_compatibility_new_entity_source_variant ... ok\ntest result: ok. 3 passed; 0 failed",
+      "observation": "RON scene with extra unknown keys deserializes successfully. Unknown fields silently ignored."
+    },
+    {
+      "id": "VAL-SCENE-009",
+      "title": "Version field present in serialized output",
+      "status": "pass",
+      "testNames": ["test_version_field_present", "test_scene_version_defaults"],
+      "evidence": "running 2 tests\ntest scene::tests::test_scene_version_defaults ... ok\ntest scene::tests::test_version_field_present ... ok\ntest result: ok. 2 passed; 0 failed",
+      "observation": "Every serialized scene includes version field equal to SCENE_VERSION."
+    },
+    {
+      "id": "VAL-SCENE-010",
+      "title": "Migration runs on version mismatch",
+      "status": "pass",
+      "testNames": ["test_migration_runs_on_mismatch"],
+      "evidence": "running 1 test\ntest scene::migration::tests::test_migration_runs_on_mismatch ... ok\ntest result: ok. 1 passed; 0 failed",
+      "observation": "Loading scene with version < SCENE_VERSION triggers migration. Scene version bumped to SCENE_VERSION."
+    },
+    {
+      "id": "VAL-SCENE-011",
+      "title": "Migration preserves entity data",
+      "status": "pass",
+      "testNames": ["test_migration_preserves_data"],
+      "evidence": "running 1 test\ntest scene::migration::tests::test_migration_preserves_data ... ok\ntest result: ok. 1 passed; 0 failed",
+      "observation": "After migration, all entity names, transforms, sources, descriptors remain identical to pre-migration state."
+    },
+    {
+      "id": "VAL-SCENE-012",
+      "title": "v1\u2192v2 migration stub exists and works",
+      "status": "pass",
+      "testNames": ["test_v1_v2_migration_stub", "test_migration_bumps_version"],
+      "evidence": "running 2 tests\ntest scene::migration::tests::test_v1_v2_migration_stub ... ok\ntest scene::migration::tests::test_migration_bumps_version ... ok\ntest result: ok. 2 passed; 0 failed",
+      "observation": "SceneMigrator for v1\u2192v2 exists, compiles, is registered. Bumps version from 1 to 2."
+    },
+    {
+      "id": "VAL-SCENE-013",
+      "title": "Default scene round-trip",
+      "status": "pass",
+      "testNames": ["test_default_scene_round_trip", "test_build_default_scene_round_trip", "test_full_default_scene_like_serialization"],
+      "evidence": "running 3 tests\ntest scene::tests::test_full_default_scene_like_serialization ... ok\ntest scene::tests::test_build_default_scene_round_trip ... ok\ntest scene::tests::test_default_scene_round_trip ... ok\ntest result: ok. 3 passed; 0 failed",
+      "observation": "build_default_scene() round-trips through RON preserving all entity data including entity count."
+    },
+    {
+      "id": "VAL-SCENE-014",
+      "title": "Empty scene save/load",
+      "status": "pass",
+      "testNames": ["test_empty_scene"],
+      "evidence": "running 1 test\ntest scene::tests::test_empty_scene ... ok\ntest result: ok. 1 passed; 0 failed",
+      "observation": "Empty scene round-trips with name, version preserved, entities empty."
+    },
+    {
+      "id": "VAL-SCENE-015",
+      "title": "Velocity descriptor serialization round-trip",
+      "status": "pass",
+      "testNames": ["test_velocity_round_trip"],
+      "evidence": "running 1 test\ntest scene::tests::test_velocity_round_trip ... ok\ntest result: ok. 1 passed; 0 failed",
+      "observation": "VelocityDescriptor preserves velocity and acceleration vectors through RON round-trip."
+    },
+    {
+      "id": "VAL-SCENE-016",
+      "title": "Default scene matches disk file",
+      "status": "pass",
+      "testNames": ["test_default_scene_matches_disk", "test_regenerate_default_scene"],
+      "evidence": "running 2 tests\ntest scene::tests::test_default_scene_matches_disk ... ok\ntest scene::tests::test_regenerate_default_scene ... ok\ntest result: ok. 2 passed; 0 failed",
+      "observation": "build_default_scene() RON output matches assets/scenes/default.katla byte-for-byte."
+    },
+    {
+      "id": "VAL-SCENE-017",
+      "title": "Scene metadata fields preserved",
+      "status": "pass",
+      "testNames": ["test_metadata_preservation"],
+      "evidence": "running 1 test\ntest scene::tests::test_metadata_preservation ... ok\ntest result: ok. 1 passed; 0 failed",
+      "observation": "Scene metadata (author, created_at, modified_at, engine_version) round-trips correctly. Version defaults to 0 when absent."
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 17 assertions across 30 unit tests: all 17 passed, 0 failed. All scene serialization round-trip, forward compatibility, migration, and metadata tests pass successfully."
+}

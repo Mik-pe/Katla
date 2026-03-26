@@ -1,0 +1,38 @@
+{
+  "milestone": "scene-serialization",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 21,
+    "passed": 21,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-SCENE-001",
+    "VAL-SCENE-002",
+    "VAL-SCENE-003",
+    "VAL-SCENE-004",
+    "VAL-SCENE-005",
+    "VAL-SCENE-006",
+    "VAL-SCENE-007",
+    "VAL-SCENE-008",
+    "VAL-SCENE-009",
+    "VAL-SCENE-010",
+    "VAL-SCENE-011",
+    "VAL-SCENE-012",
+    "VAL-SCENE-013",
+    "VAL-SCENE-014",
+    "VAL-SCENE-015",
+    "VAL-SCENE-016",
+    "VAL-SCENE-017",
+    "VAL-SCENE-018",
+    "VAL-CROSS-005",
+    "VAL-CROSS-006",
+    "VAL-CROSS-009"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}

@@ -41,6 +41,35 @@ Surface: katla_ecs unit tests (no GPU, no services)
 
 **Performance assertions (VAL-ECS-025, VAL-ECS-026):** These use absolute time thresholds (<500ms for 100K creates, <200ms for 100K mut accesses) rather than direct percentage overhead measurement, since events/change detection are always enabled with no disabled baseline.
 
+## Flow Validator Guidance: scene-serialization-tests
+
+Surface: katla_app scene serialization tests (no GPU, no services)
+
+**Test name mapping:** Scene serialization assertions map to tests in `katla_app/src/scene/mod.rs` and `katla_app/src/scene/migration.rs`:
+- VAL-SCENE-001: `test_primitive_round_trip`, `test_all_entity_source_variants_round_trip`
+- VAL-SCENE-002: `test_gltf_round_trip`, `test_gltf_entity_with_animation_round_trip`
+- VAL-SCENE-003: `test_point_light_round_trip`, `test_point_light_descriptor_round_trip`
+- VAL-SCENE-004: `test_particle_emitter_round_trip`, `test_particle_emitter_descriptor_round_trip`
+- VAL-SCENE-005: `test_animation_round_trip`, `test_gltf_entity_with_animation_round_trip`
+- VAL-SCENE-006: `test_hierarchy_preservation`, `test_parent_child_relationships_round_trip`
+- VAL-SCENE-007: `test_entity_count_preservation`
+- VAL-SCENE-008: `test_unknown_fields_ignored`, `test_forward_compatibility_unknown_struct_fields`, `test_forward_compatibility_new_entity_source_variant`
+- VAL-SCENE-009: `test_version_field_present`, `test_scene_version_defaults`
+- VAL-SCENE-010: `test_migration_runs_on_mismatch`
+- VAL-SCENE-011: `test_migration_preserves_data`
+- VAL-SCENE-012: `test_v1_v2_migration_stub`, `test_migration_bumps_version`
+- VAL-SCENE-013: `test_default_scene_round_trip`, `test_build_default_scene_round_trip`, `test_full_default_scene_like_serialization`
+- VAL-SCENE-014: `test_empty_scene`
+- VAL-SCENE-015: `test_velocity_round_trip`
+- VAL-SCENE-016: `test_default_scene_matches_disk`, `test_regenerate_default_scene`
+- VAL-SCENE-017: `test_metadata_preservation`
+- VAL-SCENE-018: `test_load_spawn_integration`
+- VAL-CROSS-005: `test_gltf_entity_with_animation_round_trip`, `test_animation_round_trip`
+- VAL-CROSS-006: `test_parent_child_relationships_round_trip`, `test_hierarchy_preservation`
+- VAL-CROSS-009: `test_forward_compatibility_error`, `test_forward_compatibility_no_panic`
+
+**Isolation:** All scene serialization tests are pure unit tests (RON round-trips, no GPU needed). They can run concurrently without conflict.
+
 ## Resource Notes
 
 - GPU resource tests (VAL-GPU-*) are integration tests requiring Vulkan
