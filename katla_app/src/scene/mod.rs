@@ -612,6 +612,7 @@ pub const DEFAULT_SCENE_PATH: &str = "assets/scenes/default.katla";
 /// This is the single source of truth for the default scene contents.
 /// The `default.katla` file on disk must be generated from this function
 /// and kept in sync via the `test_default_scene_matches_disk` test.
+#[allow(clippy::excessive_precision)]
 pub fn build_default_scene() -> Scene {
     use katla_gfx::particles::EmitterShape;
 

@@ -1,0 +1,61 @@
+{
+  "featureId": "gpu-destroy-apis",
+  "reviewedAt": "2026-03-27T00:15:00.000Z",
+  "commitId": "e7ee766",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation adds 4 destroy methods on VulkanRenderer (destroy_mesh, destroy_material, destroy_texture, destroy_skeleton) in a clean separate module (destroy_api.rs). AssetRegistry gains remove_mesh/remove_material returning Option<T>, plus a pub(crate) remove_pipeline. BindlessTextureManager gains release_texture_slot with default slot protection. TextureManager gains is_default_texture for default protection. All safety guarantees (double-destroy, NONE/unowned handles, default textures) are correctly implemented, leveraging ResourceStorage::remove returning None for invalid/already-removed handles. The commit also includes an unrelated pre-existing working-tree change adding the outline module/state to mod.rs, which the worker acknowledged. 10 unit tests cover all VAL assertions at the logic level; GPU-level integration testing is appropriately deferred.",
+    "issues": [
+      {
+        "file": "katla_gfx/src/renderer/destroy_api.rs",
+        "line": 19,
+        "severity": "non_blocking",
+        "description": "destroy_mesh does not have an explicit NONE guard like destroy_texture does. It relies on ResourceStorage::remove returning None for out-of-bounds indices (u32::MAX). This is safe but inconsistent — destroy_texture explicitly checks handle.is_none() while destroy_mesh, destroy_material, and destroy_skeleton do not. The behavior is correct either way, but the inconsistency could confuse future maintainers."
+      },
+      {
+        "file": "katla_gfx/src/renderer/destroy_api.rs",
+        "line": 23,
+        "severity": "non_blocking",
+        "description": "destroy_material destroys the material_descriptor_layout but does not free the material_descriptor_set. Currently material_descriptor_set is always None in the codebase, so this is not a practical issue. However, if descriptor sets are later populated, they would leak. The comment in the code only mentions destroying the layout."
+      },
+      {
+        "file": "katla_gfx/src/renderer/destroy_api.rs",
+        "line": 122,
+        "severity": "non_blocking",
+        "description": "test_default_textures_preserved tests only that TextureHandle::new(i) for i in 0..5 returns is_some(). It cannot actually verify is_default_texture() without a GPU context. The test provides minimal value — it essentially tests that handle indices 0-4 are not u32::MAX."
+      },
+      {
+        "file": "katla_gfx/src/renderer/destroy_api.rs",
+        "line": 77,
+        "severity": "non_blocking",
+        "description": "test_destroy_texture only verifies NONE handle detection, not actual texture destruction logic (release of bindless slot, TextureManager::destroy). Full GPU testing is appropriately deferred but the test name suggests broader coverage than it provides."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The commit bundles a pre-existing working-tree change (adding outline module and outline state to renderer/mod.rs) alongside the destroy API changes. The worker acknowledged this but could not separate them with git add -p on Windows. This is a workflow friction point — git interactive staging doesn't work in non-interactive shells.",
+      "evidence": "Transcript shows worker attempting 'git add -p' which fails with 'The interactive mode exited because it can't prompt'. Worker then stages the entire mod.rs file."
+    },
+    {
+      "area": "knowledge",
+      "observation": "material_descriptor_set on MaterialAsset is currently always None (never populated by the material compiler). The destroy_material code destroys material_descriptor_layout but not material_descriptor_set. When descriptor sets are later populated, destroy_material will need to also free them.",
+      "evidence": "katla_gfx/src/vulkan/material/compiler.rs:246 and :292 both set material_descriptor_set: None. katla_gfx/src/renderer/destroy_api.rs:23 only destroys layout."
+    },
+    {
+      "area": "knowledge",
+      "observation": "GPU resource cleanup tests (texture destroy, skeleton destroy with actual Vulkan resources) cannot run as unit tests — they require a Vulkan context. The architecture.md correctly documents this. Integration testing is deferred to the scene-load-gpu-cleanup feature which uses 25-frame mode.",
+      "evidence": "test_destroy_texture (line 77) is a logic-only test. Handoff coverage note: 'GPU-integration tests require Vulkan context and are deferred to scene-load-gpu-cleanup feature.'"
+    },
+    {
+      "area": "conventions",
+      "observation": "The destroy_api.rs module uses `use super::*` glob import which is consistent with other renderer submodules (material_api.rs, skeleton_api.rs, etc.) — no issue, just noting the convention is followed.",
+      "evidence": "katla_gfx/src/renderer/destroy_api.rs:1 uses `use super::*`, matching the pattern in skeleton_api.rs and material_api.rs."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The gpu-destroy-apis feature is well-implemented and passes review. All four destroy methods (mesh, material, texture, skeleton) are correctly implemented with proper safety guarantees. Double-destroy and NONE/unowned handle safety is ensured through ResourceStorage::remove returning None for invalid indices. Default textures are protected by both an explicit is_default_texture guard and bindless slot protection (slots 0-4). The API crosses the katla_gfx/katla_app boundary correctly as confirmed by the scene-load-gpu-cleanup feature using these APIs. All 10 unit tests pass and the full workspace test suite passes. Four non-blocking issues noted: inconsistent NONE guard pattern across destroy methods, missing descriptor set cleanup in destroy_material (currently unused), and two tests with weaker-than-name-suggests coverage. None are blocking."
+}

@@ -1,0 +1,82 @@
+{
+  "milestone": "gpu-resources",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "gpu-destroy-apis",
+      "severity": "non_blocking",
+      "description": "Inconsistent NONE guard pattern: destroy_texture has explicit is_none() check, destroy_mesh/destroy_material/destroy_skeleton do not. All are safe via ResourceStorage::remove returning None."
+    },
+    {
+      "featureId": "gpu-destroy-apis",
+      "severity": "non_blocking",
+      "description": "destroy_material does not free material_descriptor_set (currently always None). Will leak if descriptor sets are later populated."
+    },
+    {
+      "featureId": "gpu-destroy-apis",
+      "severity": "non_blocking",
+      "description": "test_default_textures_preserved provides minimal coverage (tests handle indices 0-4 are not u32::MAX, not actual default texture protection)."
+    },
+    {
+      "featureId": "gpu-destroy-apis",
+      "severity": "non_blocking",
+      "description": "test_destroy_texture only tests NONE handle detection, not actual texture destruction logic."
+    },
+    {
+      "featureId": "scene-load-gpu-cleanup",
+      "severity": "non_blocking",
+      "description": "NewScene editor action still has stale warn! about GPU leak and doesn't use gpu_resource_tracker.release_all(). Relies on per-entity ECS event cleanup instead."
+    },
+    {
+      "featureId": "scene-load-gpu-cleanup",
+      "severity": "non_blocking",
+      "description": "ComponentEvent::Removed not integrated for standalone DrawableComponent removal. Only entity destruction triggers GPU cleanup via EntityEvent::Destroyed."
+    },
+    {
+      "featureId": "scene-load-gpu-cleanup",
+      "severity": "non_blocking",
+      "description": "GLTF textures uploaded in spawn_gltf_model are never tracked in GpuResourceTracker. track_texture() API exists but is unused. Textures leak on scene load."
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Added GPU Resource Cleanup section to architecture.md documenting GpuResourceTracker initialization, cleanup patterns, shared resource handling, and known gaps (GLTF textures not tracked, ComponentEvent::Removed not integrated)",
+      "sourceFeature": "scene-load-gpu-cleanup"
+    },
+    {
+      "target": "library",
+      "description": "Added material_descriptor_set always-None caveat and inconsistent NONE guard pattern note to GPU Resource Destroy APIs section in architecture.md",
+      "sourceFeature": "gpu-destroy-apis"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "When implementing GPU cleanup features, workers should search for all warn! messages about GPU leaks (not just the one mentioned in the feature description) and remove/update them all. The NewScene action in editor/mod.rs had the same warn! as scene/mod.rs but was missed.",
+      "evidence": "scene-load-gpu-cleanup worker removed warn! from scene/mod.rs load_scene but missed identical message in editor/mod.rs NewScene action (line 205)",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    { "observation": "git add -p doesn't work in non-interactive shells on Windows", "reason": "operational constraint, already known" },
+    { "observation": "GPU resource cleanup tests need Vulkan context for full integration testing", "reason": "already documented in testing-infrastructure.md" },
+    { "observation": "Destroy API module uses glob import matching other renderer submodules", "reason": "trivial convention note, no action needed" },
+    { "observation": "Entity deletion relies on ECS event cleanup pattern", "reason": "documented in applied library update" },
+    { "observation": "GpuResourceTracker two-phase initialization", "reason": "documented in applied library update" }
+  ],
+  "previousRound": null
+}

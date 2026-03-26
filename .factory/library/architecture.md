@@ -200,3 +200,21 @@ Per-resource destroy methods on `VulkanRenderer` (in `katla_gfx/src/renderer/des
 - Material destroy cascades: removes material → destroys descriptor set layout → removes pipeline from registry
 - `AssetRegistry::remove_mesh/remove_material` return `Option<T>` for caller cleanup if needed
 - `AssetRegistry::remove_pipeline` is `pub(crate)` since only the renderer should directly remove pipelines
+- `material_descriptor_set` on `MaterialAsset` is currently always `None` (never populated by the material compiler). `destroy_material` destroys the descriptor set layout but not the descriptor set. When descriptor sets are later populated, `destroy_material` must also free them.
+- `destroy_texture` has an explicit `handle.is_none()` guard while `destroy_mesh`, `destroy_material`, and `destroy_skeleton` do not. All are safe due to `ResourceStorage::remove` returning `None` for invalid indices, but the pattern is inconsistent.
+
+## GPU Resource Cleanup (katla_app)
+
+`GpuResourceTracker` in `katla_app/src/gpu_resource_tracker.rs` provides reference-counted tracking for meshes, materials, textures, and skeletons. Used by scene load and entity destruction for GPU cleanup.
+
+**Initialization:** Two-phase — created in `builder.rs` with `MaterialHandle::NONE` as protected material, then `set_protected_material()` called during `Application::init()` after the actual default PBR material is compiled.
+
+**Scene load cleanup:** `load_scene` calls `gpu_resource_tracker.release_all()` before `clear_entities()`, destroying all tracked GPU resources in bulk.
+
+**Entity deletion cleanup:** `EditorAction::DeleteEntity` calls `app.world.destroy_entity(id)` which fires `EntityEvent::Destroyed`. The `gpu_cleanup` module processes these events on the next frame after `world.update()`, releasing per-entity GPU resources. This is the standard pattern for entity deletion GPU cleanup.
+
+**Shared resources:** Protected by reference counting — a mesh used by multiple entities is only destroyed when all references are released. `GpuResourceTracker::release(entity_id)` decrements ref counts and only destroys when count reaches zero.
+
+**Known gap — GLTF textures not tracked:** `track_texture()` API exists on `GpuResourceTracker` but is never called from the spawn path (`spawn_gltf_model` in `spawning.rs`). GLTF model textures (albedo, normal, MR, AO, emission) are uploaded but not tracked, so they leak on scene load. Texture tracking would require either adding texture handles to `DrawableComponent` or a separate per-entity texture list.
+
+**Known gap — ComponentEvent::Removed not integrated:** The `gpu_cleanup` module only handles `EntityEvent::Destroyed`, not `ComponentEvent::Removed`. If `DrawableComponent` is removed from a live entity without destroying it, GPU resources would leak.
