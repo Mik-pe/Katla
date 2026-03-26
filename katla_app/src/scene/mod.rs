@@ -2199,4 +2199,787 @@ EntityDescriptor(
         assert_eq!(tracker.mesh_count(), 0);
         assert_eq!(tracker.material_count(), 0);
     }
+
+    // =========================================================================
+    // Scene Serialization Round-Trip Tests (VAL-SCENE-001 through VAL-SCENE-017)
+    // =========================================================================
+
+    #[test]
+    fn test_primitive_round_trip() {
+        let primitives = vec![
+            EntityDescriptor {
+                name: Some("MyCube".to_string()),
+                parent: None,
+                transform: TransformDescriptor {
+                    position: [1.5, 2.5, 3.5],
+                    rotation: [0.1, 0.2, 0.3, 0.4],
+                    scale: [2.0, 3.0, 4.0],
+                },
+                source: EntitySource::Cube {
+                    size: [1.5, 2.0, 3.0],
+                },
+                drawable: Some(DrawableDescriptor {
+                    color: Some([0.8, 0.2, 0.1, 1.0]),
+                    metallic: 0.7,
+                    roughness: 0.3,
+                    ao: 0.8,
+                }),
+                point_light: None,
+                particle_emitter: None,
+                animation: None,
+                velocity: None,
+            },
+            EntityDescriptor {
+                name: Some("MySphere".to_string()),
+                parent: None,
+                transform: TransformDescriptor {
+                    position: [0.0, 5.0, -2.0],
+                    rotation: [0.0, 0.0, 0.0, 1.0],
+                    scale: [1.0, 1.0, 1.0],
+                },
+                source: EntitySource::Sphere {
+                    radius: 1.23,
+                    segments: 48,
+                    rings: 24,
+                },
+                drawable: Some(DrawableDescriptor {
+                    color: Some([0.1, 0.5, 0.9, 1.0]),
+                    metallic: 0.1,
+                    roughness: 0.9,
+                    ao: 1.0,
+                }),
+                point_light: None,
+                particle_emitter: None,
+                animation: None,
+                velocity: None,
+            },
+            EntityDescriptor {
+                name: Some("MyPlane".to_string()),
+                parent: None,
+                transform: TransformDescriptor {
+                    position: [0.0, -1.0, 0.0],
+                    rotation: [0.707, 0.0, 0.0, 0.707],
+                    scale: [10.0, 1.0, 10.0],
+                },
+                source: EntitySource::Plane {
+                    width: 50.0,
+                    height: 50.0,
+                },
+                drawable: Some(DrawableDescriptor {
+                    color: Some([0.5, 0.5, 0.5, 1.0]),
+                    metallic: 0.0,
+                    roughness: 1.0,
+                    ao: 1.0,
+                }),
+                point_light: None,
+                particle_emitter: None,
+                animation: None,
+                velocity: None,
+            },
+            EntityDescriptor {
+                name: Some("MyCylinder".to_string()),
+                parent: None,
+                transform: TransformDescriptor {
+                    position: [-3.0, 0.0, 4.0],
+                    rotation: [0.0, 0.0, 0.0, 1.0],
+                    scale: [1.0, 2.0, 1.0],
+                },
+                source: EntitySource::Cylinder {
+                    height: 3.0,
+                    radius: 0.75,
+                    segments: 36,
+                },
+                drawable: Some(DrawableDescriptor {
+                    color: Some([0.9, 0.7, 0.2, 1.0]),
+                    metallic: 0.5,
+                    roughness: 0.4,
+                    ao: 0.9,
+                }),
+                point_light: None,
+                particle_emitter: None,
+                animation: None,
+                velocity: None,
+            },
+            EntityDescriptor {
+                name: Some("MyTorus".to_string()),
+                parent: None,
+                transform: TransformDescriptor {
+                    position: [0.0, 2.0, 0.0],
+                    rotation: [0.5, 0.5, 0.5, 0.5],
+                    scale: [1.0, 1.0, 1.0],
+                },
+                source: EntitySource::Torus {
+                    radius: 2.0,
+                    tube_radius: 0.4,
+                    segments: 64,
+                    tube_segments: 32,
+                },
+                drawable: Some(DrawableDescriptor {
+                    color: Some([0.3, 0.9, 0.4, 1.0]),
+                    metallic: 0.3,
+                    roughness: 0.6,
+                    ao: 1.0,
+                }),
+                point_light: None,
+                particle_emitter: None,
+                animation: None,
+                velocity: None,
+            },
+        ];
+
+        for desc in &primitives {
+            let loaded: EntityDescriptor = round_trip(desc);
+            assert_eq!(loaded.name, desc.name, "Name mismatch for {:?}", desc.name);
+            assert_eq!(
+                loaded.source, desc.source,
+                "Source mismatch for {:?}",
+                desc.name
+            );
+            assert_eq!(
+                loaded.transform.position, desc.transform.position,
+                "Position mismatch for {:?}",
+                desc.name
+            );
+            assert_eq!(
+                loaded.transform.rotation, desc.transform.rotation,
+                "Rotation mismatch for {:?}",
+                desc.name
+            );
+            assert_eq!(
+                loaded.transform.scale, desc.transform.scale,
+                "Scale mismatch for {:?}",
+                desc.name
+            );
+            assert_eq!(
+                loaded.drawable, desc.drawable,
+                "Drawable mismatch for {:?}",
+                desc.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_gltf_round_trip() {
+        let desc = EntityDescriptor {
+            name: Some("Fox".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [3.0, 0.0, 0.0],
+                rotation: [0.0, 0.38268343, 0.0, 0.92387953],
+                scale: [0.01, 0.01, 0.01],
+            },
+            source: EntitySource::GltfModel {
+                path: "resources/models/Fox.glb".to_string(),
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: Some(AnimationDescriptor {
+                current_clip: Some("Run".to_string()),
+                playing: true,
+                loop_animation: true,
+                speed: 1.0,
+                time: 0.5,
+                duration: 1.2,
+                blending: false,
+                target_clip: None,
+                blend_weight: 1.0,
+                blend_time: 0.0,
+                blend_duration: 0.0,
+                target_time: 0.0,
+                target_duration: 0.0,
+                loop_count: 3,
+            }),
+            velocity: None,
+        };
+
+        let loaded: EntityDescriptor = round_trip(&desc);
+        assert_eq!(loaded.name, Some("Fox".to_string()));
+        assert_eq!(
+            loaded.source,
+            EntitySource::GltfModel {
+                path: "resources/models/Fox.glb".to_string(),
+            }
+        );
+        let anim = loaded.animation.as_ref().unwrap();
+        assert_eq!(anim.current_clip, Some("Run".to_string()));
+        assert!(anim.playing);
+        assert!(anim.loop_animation);
+        assert_eq!(anim.speed, 1.0);
+        assert_eq!(anim.time, 0.5);
+        assert_eq!(anim.duration, 1.2);
+        assert_eq!(anim.loop_count, 3);
+        assert!(!anim.blending);
+    }
+
+    #[test]
+    fn test_point_light_round_trip() {
+        let desc = EntityDescriptor {
+            name: Some("Torch".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [5.0, 3.0, -2.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+            source: EntitySource::Light,
+            drawable: Some(DrawableDescriptor {
+                color: Some([1.0, 0.6, 0.2, 1.0]),
+                metallic: 0.0,
+                roughness: 1.0,
+                ao: 1.0,
+            }),
+            point_light: Some(PointLightDescriptor {
+                color: [1.0, 0.6, 0.2],
+                intensity: 15.0,
+                range: 12.0,
+            }),
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        };
+
+        let loaded: EntityDescriptor = round_trip(&desc);
+        let pl = loaded.point_light.unwrap();
+        assert_eq!(pl.color, [1.0, 0.6, 0.2]);
+        assert_eq!(pl.intensity, 15.0);
+        assert_eq!(pl.range, 12.0);
+
+        let drawable = loaded.drawable.unwrap();
+        assert_eq!(drawable.color, Some([1.0, 0.6, 0.2, 1.0]));
+    }
+
+    #[test]
+    fn test_particle_emitter_round_trip() {
+        let shapes = vec![
+            katla_gfx::particles::EmitterShape::Point,
+            katla_gfx::particles::EmitterShape::Circle,
+        ];
+
+        for (idx, shape) in shapes.into_iter().enumerate() {
+            let desc = EntityDescriptor {
+                name: Some(format!("Emitter{}", idx)),
+                parent: None,
+                transform: TransformDescriptor {
+                    position: [0.0, 1.0, 0.0],
+                    rotation: [0.0, 0.0, 0.0, 1.0],
+                    scale: [1.0, 1.0, 1.0],
+                },
+                source: EntitySource::ParticleEmitter,
+                drawable: None,
+                point_light: None,
+                particle_emitter: Some(ParticleEmitterDescriptor {
+                    position: [1.0, 2.0, 3.0],
+                    emit_rate: 350.0,
+                    base_lifetime: 3.0,
+                    lifetime_variation: 0.5,
+                    velocity_direction: [0.0, 1.0, 0.0],
+                    velocity_magnitude: 2.5,
+                    velocity_cone_angle: 0.15,
+                    base_scale: 0.1,
+                    scale_variation: 0.3,
+                    color: [1.0, 0.8, 0.3, 0.9],
+                    color_variation: 0.15,
+                    gravity: -2.0,
+                    turbulence_strength: 3.0,
+                    turbulence_frequency: 2.5,
+                    shape,
+                    shape_params: if idx == 0 {
+                        [0.0; 4]
+                    } else {
+                        [3.0, 0.0, 0.0, 0.0]
+                    },
+                    active: idx == 0,
+                }),
+                animation: None,
+                velocity: None,
+            };
+
+            let loaded: EntityDescriptor = round_trip(&desc);
+            let pe = loaded.particle_emitter.as_ref().unwrap();
+            assert_eq!(pe.emit_rate, 350.0);
+            assert_eq!(pe.base_lifetime, 3.0);
+            assert_eq!(pe.lifetime_variation, 0.5);
+            assert_eq!(pe.velocity_direction, [0.0, 1.0, 0.0]);
+            assert_eq!(pe.velocity_magnitude, 2.5);
+            assert_eq!(pe.velocity_cone_angle, 0.15);
+            assert_eq!(pe.base_scale, 0.1);
+            assert_eq!(pe.scale_variation, 0.3);
+            assert_eq!(pe.color, [1.0, 0.8, 0.3, 0.9]);
+            assert_eq!(pe.color_variation, 0.15);
+            assert_eq!(pe.gravity, -2.0);
+            assert_eq!(pe.turbulence_strength, 3.0);
+            assert_eq!(pe.turbulence_frequency, 2.5);
+            assert_eq!(pe.shape, shape);
+            assert_eq!(pe.active, idx == 0);
+        }
+    }
+
+    #[test]
+    fn test_animation_round_trip() {
+        let non_blending = AnimationDescriptor {
+            current_clip: Some("Walk".to_string()),
+            playing: true,
+            loop_animation: true,
+            speed: 1.5,
+            time: 2.3,
+            duration: 3.0,
+            blending: false,
+            target_clip: None,
+            blend_weight: 1.0,
+            blend_time: 0.0,
+            blend_duration: 0.0,
+            target_time: 0.0,
+            target_duration: 0.0,
+            loop_count: 5,
+        };
+
+        let loaded: AnimationDescriptor = round_trip(&non_blending);
+        assert_eq!(loaded.current_clip, Some("Walk".to_string()));
+        assert!(loaded.playing);
+        assert!(loaded.loop_animation);
+        assert_eq!(loaded.speed, 1.5);
+        assert_eq!(loaded.time, 2.3);
+        assert_eq!(loaded.duration, 3.0);
+        assert!(!loaded.blending);
+        assert_eq!(loaded.loop_count, 5);
+
+        let blending = AnimationDescriptor {
+            current_clip: Some("Idle".to_string()),
+            playing: true,
+            loop_animation: true,
+            speed: 1.0,
+            time: 0.5,
+            duration: 2.0,
+            blending: true,
+            target_clip: Some("Walk".to_string()),
+            blend_weight: 0.4,
+            blend_time: 0.3,
+            blend_duration: 0.5,
+            target_time: 1.0,
+            target_duration: 3.0,
+            loop_count: 0,
+        };
+
+        let loaded: AnimationDescriptor = round_trip(&blending);
+        assert_eq!(loaded.current_clip, Some("Idle".to_string()));
+        assert!(loaded.blending);
+        assert_eq!(loaded.target_clip, Some("Walk".to_string()));
+        assert_eq!(loaded.blend_weight, 0.4);
+        assert_eq!(loaded.blend_time, 0.3);
+        assert_eq!(loaded.blend_duration, 0.5);
+        assert_eq!(loaded.target_time, 1.0);
+        assert_eq!(loaded.target_duration, 3.0);
+
+        // Also test via EntityDescriptor round-trip
+        let desc = EntityDescriptor {
+            name: Some("AnimatedModel".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+            source: EntitySource::GltfModel {
+                path: "test.glb".to_string(),
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: Some(blending.clone()),
+            velocity: None,
+        };
+        let loaded_desc: EntityDescriptor = round_trip(&desc);
+        let loaded_anim = loaded_desc.animation.unwrap();
+        assert_eq!(loaded_anim, blending);
+    }
+
+    #[test]
+    fn test_hierarchy_preservation() {
+        let mut scene = Scene::new("Hierarchy Test");
+        scene.entities.push(EntityDescriptor {
+            name: Some("Root".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [0.0, 5.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [2.0, 2.0, 2.0],
+            },
+            source: EntitySource::Cube {
+                size: [1.0, 1.0, 1.0],
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+        scene.entities.push(EntityDescriptor {
+            name: Some("ChildA".to_string()),
+            parent: Some("Root".to_string()),
+            transform: TransformDescriptor {
+                position: [2.0, 0.0, 0.0],
+                rotation: [0.0, 0.707, 0.0, 0.707],
+                scale: [0.5, 0.5, 0.5],
+            },
+            source: EntitySource::Sphere {
+                radius: 0.3,
+                segments: 16,
+                rings: 8,
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+        scene.entities.push(EntityDescriptor {
+            name: Some("Grandchild".to_string()),
+            parent: Some("ChildA".to_string()),
+            transform: TransformDescriptor {
+                position: [1.0, 1.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [0.25, 0.25, 0.25],
+            },
+            source: EntitySource::Cube {
+                size: [0.5, 0.5, 0.5],
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+
+        let loaded: Scene = round_trip(&scene);
+        assert_eq!(loaded.entities.len(), 3);
+        assert!(loaded.entities[0].parent.is_none());
+        assert_eq!(loaded.entities[1].parent, Some("Root".to_string()));
+        assert_eq!(loaded.entities[2].parent, Some("ChildA".to_string()));
+        assert_eq!(loaded.entities[0].transform.scale, [2.0, 2.0, 2.0]);
+        assert_eq!(loaded.entities[1].transform.scale, [0.5, 0.5, 0.5]);
+        assert_eq!(loaded.entities[2].transform.scale, [0.25, 0.25, 0.25]);
+    }
+
+    #[test]
+    fn test_entity_count_preservation() {
+        let mut scene = Scene::new("Mixed Scene");
+        scene.version = SCENE_VERSION;
+
+        // One of each EntitySource variant: 8 total
+        scene.entities.push(EntityDescriptor {
+            name: Some("Cube1".to_string()),
+            parent: None,
+            transform: TransformDescriptor::default_transform(),
+            source: EntitySource::Cube {
+                size: [1.0, 1.0, 1.0],
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+        scene.entities.push(EntityDescriptor {
+            name: Some("Sphere1".to_string()),
+            parent: None,
+            transform: TransformDescriptor::default_transform(),
+            source: EntitySource::Sphere {
+                radius: 1.0,
+                segments: 16,
+                rings: 8,
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+        scene.entities.push(EntityDescriptor {
+            name: Some("Plane1".to_string()),
+            parent: None,
+            transform: TransformDescriptor::default_transform(),
+            source: EntitySource::Plane {
+                width: 10.0,
+                height: 10.0,
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+        scene.entities.push(EntityDescriptor {
+            name: Some("Cylinder1".to_string()),
+            parent: None,
+            transform: TransformDescriptor::default_transform(),
+            source: EntitySource::Cylinder {
+                height: 2.0,
+                radius: 0.5,
+                segments: 16,
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+        scene.entities.push(EntityDescriptor {
+            name: Some("Torus1".to_string()),
+            parent: None,
+            transform: TransformDescriptor::default_transform(),
+            source: EntitySource::Torus {
+                radius: 1.0,
+                tube_radius: 0.3,
+                segments: 16,
+                tube_segments: 8,
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+        scene.entities.push(EntityDescriptor {
+            name: Some("Model1".to_string()),
+            parent: None,
+            transform: TransformDescriptor::default_transform(),
+            source: EntitySource::GltfModel {
+                path: "test.glb".to_string(),
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+        scene.entities.push(EntityDescriptor {
+            name: Some("Emitter1".to_string()),
+            parent: None,
+            transform: TransformDescriptor::default_transform(),
+            source: EntitySource::ParticleEmitter,
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+        scene.entities.push(EntityDescriptor {
+            name: Some("Light1".to_string()),
+            parent: None,
+            transform: TransformDescriptor::default_transform(),
+            source: EntitySource::Light,
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+
+        assert_eq!(scene.entities.len(), 8);
+        let loaded: Scene = round_trip(&scene);
+        assert_eq!(loaded.entities.len(), 8);
+        assert_eq!(loaded.version, SCENE_VERSION);
+        for (original, loaded) in scene.entities.iter().zip(loaded.entities.iter()) {
+            assert_eq!(original.source, loaded.source);
+        }
+    }
+
+    #[test]
+    fn test_unknown_fields_ignored() {
+        // Forward compatibility: a scene with unknown fields at the top level
+        // should deserialize successfully. RON ignores unknown fields by default.
+        let ron_with_unknown = r#"(
+    version: 1,
+    name: "Forward Compat Test",
+    future_field: "this is ignored",
+    entities: [],
+)"#;
+
+        let loaded: Scene = ron::from_str(ron_with_unknown).unwrap();
+        assert_eq!(loaded.name, "Forward Compat Test");
+        assert_eq!(loaded.version, 1);
+        assert!(loaded.entities.is_empty());
+
+        // Entity-level unknown fields: RON with unknown fields on EntityDescriptor
+        // RON v0.8+ does not allow unknown struct fields by default,
+        // but the version field at the Scene level provides a migration path.
+        // Verify that the scene-level version field works correctly for this purpose.
+        let ron_version_mismatch = r#"(
+    version: 2,
+    name: "Version 2 Scene",
+    entities: [],
+)"#;
+
+        let loaded: Scene = ron::from_str(ron_version_mismatch).unwrap();
+        assert_eq!(loaded.version, 2);
+        assert_eq!(loaded.name, "Version 2 Scene");
+    }
+
+    #[test]
+    fn test_version_field_present() {
+        let scene = Scene::new("Version Test");
+        let ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
+
+        assert!(
+            ron.contains("version: 1"),
+            "Serialized scene must contain 'version: 1'"
+        );
+
+        // Test with entities too
+        let scene = build_default_scene();
+        let ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
+        assert!(
+            ron.contains("version: 1"),
+            "Default scene must contain 'version: 1'"
+        );
+    }
+
+    #[test]
+    fn test_empty_scene() {
+        let scene = Scene::new("Empty");
+        assert_eq!(scene.entities.len(), 0);
+        assert_eq!(scene.version, 1);
+        assert_eq!(scene.name, "Empty");
+
+        let loaded: Scene = round_trip(&scene);
+        assert_eq!(loaded.name, "Empty");
+        assert_eq!(loaded.version, 1);
+        assert!(loaded.entities.is_empty());
+        assert!(loaded.author.is_none());
+        assert!(loaded.created_at.is_none());
+        assert!(loaded.modified_at.is_none());
+        assert!(loaded.engine_version.is_none());
+
+        // Also test deserializing empty scene from RON
+        let ron_empty = r#"(
+    version: 1,
+    name: "Empty From RON",
+    author: None,
+    created_at: None,
+    modified_at: None,
+    engine_version: None,
+    entities: [],
+)"#;
+        let loaded: Scene = ron::from_str(ron_empty).unwrap();
+        assert_eq!(loaded.name, "Empty From RON");
+        assert_eq!(loaded.version, 1);
+        assert!(loaded.entities.is_empty());
+    }
+
+    #[test]
+    fn test_velocity_round_trip() {
+        let desc = EntityDescriptor {
+            name: Some("MovingObject".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [0.0, 10.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+            source: EntitySource::Cube {
+                size: [1.0, 1.0, 1.0],
+            },
+            drawable: Some(DrawableDescriptor {
+                color: Some([0.2, 0.4, 0.8, 1.0]),
+                metallic: 0.0,
+                roughness: 0.5,
+                ao: 1.0,
+            }),
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: Some(VelocityDescriptor {
+                velocity: [5.0, 0.0, -3.0],
+                acceleration: [0.0, -9.81, 0.0],
+            }),
+        };
+
+        let loaded: EntityDescriptor = round_trip(&desc);
+        let vel = loaded.velocity.as_ref().unwrap();
+        assert_eq!(vel.velocity, [5.0, 0.0, -3.0]);
+        assert_eq!(vel.acceleration, [0.0, -9.81, 0.0]);
+
+        // Test with zero velocity
+        let desc_zero = EntityDescriptor {
+            name: Some("StaticObject".to_string()),
+            parent: None,
+            transform: TransformDescriptor::default_transform(),
+            source: EntitySource::Cube {
+                size: [1.0, 1.0, 1.0],
+            },
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: Some(VelocityDescriptor {
+                velocity: [0.0, 0.0, 0.0],
+                acceleration: [0.0, 0.0, 0.0],
+            }),
+        };
+        let loaded_zero: EntityDescriptor = round_trip(&desc_zero);
+        let vel_zero = loaded_zero.velocity.unwrap();
+        assert_eq!(vel_zero.velocity, [0.0, 0.0, 0.0]);
+        assert_eq!(vel_zero.acceleration, [0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_default_scene_round_trip() {
+        let scene = build_default_scene();
+        let loaded: Scene = round_trip(&scene);
+
+        assert_eq!(loaded.entities.len(), scene.entities.len());
+        assert_eq!(loaded.name, scene.name);
+        assert_eq!(loaded.version, scene.version);
+
+        for (original, loaded) in scene.entities.iter().zip(loaded.entities.iter()) {
+            assert_eq!(original.name, loaded.name);
+            assert_eq!(original.source, loaded.source);
+            assert_eq!(original.transform.position, loaded.transform.position);
+            assert_eq!(original.transform.rotation, loaded.transform.rotation);
+            assert_eq!(original.transform.scale, loaded.transform.scale);
+            assert_eq!(original.parent, loaded.parent);
+            assert_eq!(original.drawable, loaded.drawable);
+            assert_eq!(original.point_light, loaded.point_light);
+            assert_eq!(original.particle_emitter, loaded.particle_emitter);
+            assert_eq!(original.animation, loaded.animation);
+            assert_eq!(original.velocity, loaded.velocity);
+        }
+    }
+
+    #[test]
+    fn test_metadata_preservation() {
+        let mut scene = Scene::new("Metadata Test");
+        scene.version = 1;
+        scene.author = Some("TestAuthor".to_string());
+        scene.created_at = Some("1000000000".to_string());
+        scene.modified_at = Some("2000000000".to_string());
+        scene.engine_version = Some("0.5.0".to_string());
+
+        let loaded: Scene = round_trip(&scene);
+        assert_eq!(loaded.name, "Metadata Test");
+        assert_eq!(loaded.version, 1);
+        assert_eq!(loaded.author, Some("TestAuthor".to_string()));
+        assert_eq!(loaded.created_at, Some("1000000000".to_string()));
+        assert_eq!(loaded.modified_at, Some("2000000000".to_string()));
+        assert_eq!(loaded.engine_version, Some("0.5.0".to_string()));
+
+        // Test with None metadata
+        let scene_none = Scene::new("No Metadata");
+        let loaded_none: Scene = round_trip(&scene_none);
+        assert_eq!(loaded_none.name, "No Metadata");
+        assert!(loaded_none.author.is_none());
+        assert!(loaded_none.created_at.is_none());
+        assert!(loaded_none.modified_at.is_none());
+        assert!(loaded_none.engine_version.is_none());
+
+        // Test version defaults to 0 when absent
+        let ron_no_version = r#"(
+    name: "Version Default Test",
+    entities: [],
+)"#;
+        let loaded_default: Scene = ron::from_str(ron_no_version).unwrap();
+        assert_eq!(loaded_default.version, 0);
+        assert_eq!(loaded_default.name, "Version Default Test");
+    }
 }
