@@ -204,11 +204,8 @@ impl super::VulkanRenderer {
                         self.context
                             .free_buffer(readback.staging_buffer, readback.staging_allocation);
 
-                        if data == 0 {
-                            Ok(None)
-                        } else {
-                            Ok(Some((frame, data)))
-                        }
+                        // Return data as-is; 0 means background/no object.
+                        Ok(Some((frame, data)))
                     }
                     Ok(false) => {
                         // Not ready yet — put it back
@@ -248,11 +245,7 @@ impl super::VulkanRenderer {
                 self.context
                     .free_buffer(readback.staging_buffer, readback.staging_allocation);
 
-                if data == 0 {
-                    Ok(None)
-                } else {
-                    Ok(Some((frame, data)))
-                }
+                Ok(Some((frame, data)))
             }
         } else {
             Ok(None)

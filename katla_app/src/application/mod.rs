@@ -255,13 +255,15 @@ impl ApplicationHandler for Application {
                 };
                 self.ui_context.input.scroll_delta = scroll;
 
-                // Forward scroll to ECS input state for orbit camera zoom.
-                // Use the raw Y component (before UI scaling) for consistent zoom speed.
-                let wheel_y = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, y) => y,
-                    winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
-                };
-                self.world.get_input_mut().mouse_wheel_delta += wheel_y;
+                // Forward scroll to ECS input state for orbit camera zoom,
+                // but only when the viewport panel is focused.
+                if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
+                    let wheel_y = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_, y) => y,
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+                    };
+                    self.world.get_input_mut().mouse_wheel_delta += wheel_y;
+                }
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -270,6 +272,19 @@ impl ApplicationHandler for Application {
                 if let PhysicalKey::Code(keycode) = event.physical_key {
                     let key_combo = KeyCombo::with_modifiers(keycode, self.current_modifiers);
                     let binding = InputBinding::Keyboard(key_combo);
+
+                    // Focus camera on selected entity with 'F'
+                    if event.state == ElementState::Pressed
+                        && keycode == KeyCode::KeyF
+                        && self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
+                        && !self.current_modifiers.control_key()
+                        && !self.current_modifiers.shift_key()
+                        && !self.current_modifiers.alt_key()
+                    {
+                        if let Some(entity_id) = self.editor_ui.selected_entity {
+                            self.focus_camera_on_entity(entity_id);
+                        }
+                    }
 
                     // Toggle particle inspector with Ctrl+P
                     if event.state == ElementState::Pressed
@@ -1015,6 +1030,71 @@ impl Application {
         info!("Application::init() completed");
     }
 
+    fn focus_camera_on_entity(&mut self, entity_id: katla_ecs::EntityId) {
+        use crate::components::{Children, OrbitCameraControllerComponent, WorldTransform};
+
+        // Collect world positions of the entity and all its children
+        let mut positions = Vec::new();
+        let mut queue = vec![entity_id];
+        let mut visited = std::collections::HashSet::new();
+        visited.insert(entity_id);
+
+        while let Some(eid) = queue.pop() {
+            if let Some(wt) = self.world.get_component::<WorldTransform>(eid) {
+                positions.push(wt.transform.position);
+            }
+            if let Some(children) = self.world.get_component::<Children>(eid) {
+                for &child in &children.children {
+                    if visited.insert(child) {
+                        queue.push(child);
+                    }
+                }
+            }
+        }
+
+        if positions.is_empty() {
+            return;
+        }
+
+        // Compute bounding sphere center
+        let center = positions
+            .iter()
+            .fold(katla_math::Vec3::new(0.0, 0.0, 0.0), |acc, p| acc + *p)
+            / positions.len() as f32;
+
+        // Compute radius as the max distance from center
+        let radius = positions
+            .iter()
+            .map(|p| (*p - center).length())
+            .fold(0.0_f32, f32::max)
+            .max(0.5);
+
+        // Distance to fit the object: use FOV to determine how far back the camera needs to be
+        // so the object covers roughly 40% of the viewport height
+        let fov_rad = 60.0_f32.to_radians(); // match default FOV
+        let desired_screen_fraction = 0.4;
+        let distance = (radius / desired_screen_fraction) / (fov_rad.tan());
+
+        let camera_entity = self.camera.borrow().entity;
+        if let Some(orbit) = self
+            .world
+            .get_component_mut::<OrbitCameraControllerComponent>(camera_entity)
+        {
+            orbit.focus = Some(crate::components::camera::orbit_camera::FocusTarget {
+                target: center,
+                distance: distance.clamp(orbit.min_distance, orbit.max_distance),
+                duration: 0.35,
+                elapsed: 0.0,
+                start_target: orbit.target,
+                start_distance: orbit.distance,
+                start_yaw: orbit.yaw,
+                start_pitch: orbit.pitch,
+                target_yaw: orbit.yaw,
+                target_pitch: orbit.pitch,
+            });
+        }
+    }
+
     /// Process GPU picking: queue a readback for a pending pick, or resolve a completed readback.
     ///
     /// Flow:
@@ -1025,22 +1105,30 @@ impl Application {
     fn process_picking(&mut self) {
         // Check for completed readback from a previous frame
         if let Ok(Some((_frame, instance_index))) = self.renderer.check_picking_readback() {
-            // The shader encodes instance_index + 1, so subtract 1 to get the storage buffer index
-            let storage_index = instance_index - 1;
-
-            if let Some(&entity_id) = self.entity_instance_map.get(&storage_index) {
-                info!(
-                    "Picked entity {:?} (instance_index={}, storage_index={})",
-                    entity_id, instance_index, storage_index
-                );
-                self.editor_ui.selected_entity = Some(entity_id);
+            if instance_index == 0 {
+                // Background/empty space was clicked — clear selection
+                if self.editor_ui.selected_entity.is_some() {
+                    info!("Clicked empty space, clearing selection");
+                    self.editor_ui.selected_entity = None;
+                }
             } else {
-                log::debug!(
-                    "Picked instance_index={} but no entity mapping found (storage_index={})",
-                    instance_index,
-                    storage_index
-                );
-                self.editor_ui.selected_entity = None;
+                // The shader encodes instance_index + 1, so subtract 1 to get the storage buffer index
+                let storage_index = instance_index - 1;
+
+                if let Some(&entity_id) = self.entity_instance_map.get(&storage_index) {
+                    info!(
+                        "Picked entity {:?} (instance_index={}, storage_index={})",
+                        entity_id, instance_index, storage_index
+                    );
+                    self.editor_ui.selected_entity = Some(entity_id);
+                } else {
+                    log::debug!(
+                        "Picked instance_index={} but no entity mapping found (storage_index={})",
+                        instance_index,
+                        storage_index
+                    );
+                    self.editor_ui.selected_entity = None;
+                }
             }
         }
 

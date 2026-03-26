@@ -29,6 +29,9 @@ pub struct PipelineBuilder {
     depth_bias_constant: f32,
     depth_bias_slope: f32,
     depth_bias_clamp: f32,
+    stencil_test_enable: bool,
+    stencil_front: Option<vk::StencilOpState>,
+    stencil_back: Option<vk::StencilOpState>,
     blend_enable: bool,
     blend_src_color: BlendFactor,
     blend_dst_color: BlendFactor,
@@ -36,6 +39,7 @@ pub struct PipelineBuilder {
     blend_src_alpha: BlendFactor,
     blend_dst_alpha: BlendFactor,
     blend_alpha_op: BlendOp,
+    color_write_mask: vk::ColorComponentFlags,
     descriptor_layouts: Vec<vk::DescriptorSetLayout>,
     push_constant_ranges: Vec<vk::PushConstantRange>,
     dynamic_states: Vec<DynamicState>,
@@ -66,6 +70,9 @@ impl PipelineBuilder {
             depth_bias_constant: 0.0,
             depth_bias_slope: 0.0,
             depth_bias_clamp: 0.0,
+            stencil_test_enable: false,
+            stencil_front: None,
+            stencil_back: None,
             blend_enable: false,
             blend_src_color: BlendFactor::SrcAlpha,
             blend_dst_color: BlendFactor::OneMinusSrcAlpha,
@@ -73,6 +80,10 @@ impl PipelineBuilder {
             blend_src_alpha: BlendFactor::One,
             blend_dst_alpha: BlendFactor::Zero,
             blend_alpha_op: BlendOp::Add,
+            color_write_mask: vk::ColorComponentFlags::R
+                | vk::ColorComponentFlags::G
+                | vk::ColorComponentFlags::B
+                | vk::ColorComponentFlags::A,
             descriptor_layouts: Vec::new(),
             push_constant_ranges: Vec::new(),
             dynamic_states: vec![DynamicState::Viewport, DynamicState::Scissor],
@@ -166,6 +177,25 @@ impl PipelineBuilder {
         self
     }
 
+    /// Enable stencil testing with separate front/back state.
+    pub fn with_stencil_test(
+        mut self,
+        front: vk::StencilOpState,
+        back: vk::StencilOpState,
+    ) -> Self {
+        self.stencil_test_enable = true;
+        self.stencil_front = Some(front);
+        self.stencil_back = Some(back);
+        self
+    }
+
+    /// Set the color write mask (which color channels are written to the framebuffer).
+    /// Use `vk::ColorComponentFlags::empty()` to disable all color writes (stencil-only pass).
+    pub fn with_color_write_mask(mut self, mask: vk::ColorComponentFlags) -> Self {
+        self.color_write_mask = mask;
+        self
+    }
+
     pub fn with_rendering_formats(
         mut self,
         color_format: Option<ImageFormat>,
@@ -228,12 +258,7 @@ impl PipelineBuilder {
             .rasterization_samples(vk::SampleCountFlags::TYPE_1);
 
         let color_blend_attachment = vk::PipelineColorBlendAttachmentState::default()
-            .color_write_mask(
-                vk::ColorComponentFlags::R
-                    | vk::ColorComponentFlags::G
-                    | vk::ColorComponentFlags::B
-                    | vk::ColorComponentFlags::A,
-            )
+            .color_write_mask(self.color_write_mask)
             .blend_enable(self.blend_enable)
             .src_color_blend_factor(self.blend_src_color.into())
             .dst_color_blend_factor(self.blend_dst_color.into())
@@ -248,6 +273,9 @@ impl PipelineBuilder {
             .logic_op_enable(false)
             .attachments(&color_blend_attachments);
 
+        let stencil_front = self.stencil_front.unwrap_or_default();
+        let stencil_back = self.stencil_back.unwrap_or_default();
+
         let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(self.depth_test)
             .depth_write_enable(self.depth_write)
@@ -255,7 +283,9 @@ impl PipelineBuilder {
             .depth_bounds_test_enable(false)
             .min_depth_bounds(0.0)
             .max_depth_bounds(1.0)
-            .stencil_test_enable(false);
+            .stencil_test_enable(self.stencil_test_enable)
+            .front(stencil_front)
+            .back(stencil_back);
 
         let dynamic_states_vk: Vec<vk::DynamicState> =
             self.dynamic_states.iter().map(|s| (*s).into()).collect();
