@@ -1,5 +1,9 @@
 use crate::RendererError;
 use crate::handle::PipelineHandle;
+use crate::pipeline::{CullMode, CompareOp, FrontFace};
+use crate::texture::ImageFormat;
+use crate::vulkan::material::builder::PipelineBuilder;
+use crate::vulkan::vertexbinding::VertexFormat;
 use ash::vk;
 use log::info;
 
@@ -26,6 +30,69 @@ pub(crate) struct OutlineState {
 }
 
 impl super::VulkanRenderer {
+    fn build_outline_pipeline(
+        &mut self,
+        vert: vk::ShaderModule,
+        frag: vk::ShaderModule,
+        storage_layout: vk::DescriptorSetLayout,
+        stencil_state: vk::StencilOpState,
+        depth_compare: CompareOp,
+        cull_mode: CullMode,
+        color_format: ImageFormat,
+        color_write_mask: vk::ColorComponentFlags,
+        empty_layout: Option<vk::DescriptorSetLayout>,
+    ) -> Result<PipelineHandle, RendererError> {
+        let mut builder = PipelineBuilder::new(self.context.clone())
+            .with_shaders(vert, frag)
+            .with_soa_attribute(0, VertexFormat::RGB32f)
+            .with_depth_test(true, false, depth_compare)
+            .with_cull_mode(cull_mode, FrontFace::CounterClockwise)
+            .with_stencil_test(stencil_state, stencil_state)
+            .with_color_write_mask(color_write_mask)
+            .with_rendering_formats(Some(color_format), Some(ImageFormat::D32SfloatS8Uint));
+
+        if let Some(empty_layout) = empty_layout {
+            let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
+            builder = builder
+                .with_descriptor_layouts(vec![storage_layout, empty_layout, skeleton_layout])
+                .with_soa_attribute(4, VertexFormat::RGBA16u)
+                .with_soa_attribute(5, VertexFormat::RGBA32f);
+        } else {
+            builder = builder.with_descriptor_layouts(vec![storage_layout]);
+        }
+
+        let pipeline = builder.build_dynamic().map_err(|e| {
+            RendererError::InitializationFailed(format!("Failed to build outline pipeline: {:?}", e))
+        })?;
+
+        Ok(self.asset_registry.register_pipeline(pipeline))
+    }
+
+    fn load_outline_shaders(
+        &self,
+        path: &std::path::Path,
+        name: &str,
+    ) -> Result<(vk::ShaderModule, vk::ShaderModule), RendererError> {
+        let mut cache = self.material_compiler.shader_cache.borrow_mut();
+        let vert = cache
+            .load_shader(path, vk::ShaderStageFlags::VERTEX)
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to load {} vertex shader: {:?}",
+                    name, e
+                ))
+            })?;
+        let frag = cache
+            .load_shader(path, vk::ShaderStageFlags::FRAGMENT)
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to load {} fragment shader: {:?}",
+                    name, e
+                ))
+            })?;
+        Ok((vert, frag))
+    }
+
     pub fn init_outline_pipelines(
         &mut self,
         stencil_mark_path: &std::path::Path,
@@ -33,10 +100,6 @@ impl super::VulkanRenderer {
         outline_draw_path: &std::path::Path,
         outline_draw_skinned_path: &std::path::Path,
     ) -> Result<(), RendererError> {
-        use crate::pipeline::{CullMode, FrontFace};
-        use crate::vulkan::material::builder::PipelineBuilder;
-        use crate::vulkan::vertexbinding::VertexFormat;
-
         let storage_layout = self.storage_descriptor_sets[0].layout();
 
         // === Stencil Mark Pipeline ===
@@ -46,25 +109,7 @@ impl super::VulkanRenderer {
         // occlusion mark pass to use bit 1 independently, preventing self-occlusion
         // artifacts on non-convex meshes.
         {
-            let mut cache = self.material_compiler.shader_cache.borrow_mut();
-            let vert = cache
-                .load_shader(stencil_mark_path, vk::ShaderStageFlags::VERTEX)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load stencil mark vertex shader: {:?}",
-                        e
-                    ))
-                })?;
-            let frag = cache
-                .load_shader(stencil_mark_path, vk::ShaderStageFlags::FRAGMENT)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load stencil mark fragment shader: {:?}",
-                        e
-                    ))
-                })?;
-            drop(cache);
-
+            let (vert, frag) = self.load_outline_shaders(stencil_mark_path, "stencil mark")?;
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
                 pass_op: vk::StencilOp::REPLACE,
@@ -74,53 +119,24 @@ impl super::VulkanRenderer {
                 write_mask: 0x01,
                 reference: 1,
             };
-
-            let pipeline = PipelineBuilder::new(self.context.clone())
-                .with_shaders(vert, frag)
-                .with_descriptor_layouts(vec![storage_layout])
-                .with_soa_attribute(0, VertexFormat::RGB32f)
-                .with_depth_test(true, false, crate::pipeline::CompareOp::GreaterOrEqual)
-                .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
-                .with_stencil_test(stencil_state, stencil_state)
-                .with_color_write_mask(vk::ColorComponentFlags::empty())
-                .with_rendering_formats(
-                    Some(crate::texture::ImageFormat::R16G16B16A16Sfloat),
-                    Some(crate::texture::ImageFormat::D32SfloatS8Uint),
-                )
-                .build_dynamic()
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to build stencil mark pipeline: {:?}",
-                        e
-                    ))
-                })?;
-
-            let handle = self.asset_registry.register_pipeline(pipeline);
+            let handle = self.build_outline_pipeline(
+                vert,
+                frag,
+                storage_layout,
+                stencil_state,
+                CompareOp::GreaterOrEqual,
+                CullMode::Back,
+                ImageFormat::R16G16B16A16Sfloat,
+                vk::ColorComponentFlags::empty(),
+                None,
+            )?;
             self.outline.stencil_mark_pipeline = Some(handle);
         }
 
         // === Skinned Stencil Mark Pipeline ===
         {
-            let mut cache = self.material_compiler.shader_cache.borrow_mut();
-            let vert = cache
-                .load_shader(stencil_mark_skinned_path, vk::ShaderStageFlags::VERTEX)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load skinned stencil mark vertex shader: {:?}",
-                        e
-                    ))
-                })?;
-            let frag = cache
-                .load_shader(stencil_mark_skinned_path, vk::ShaderStageFlags::FRAGMENT)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load skinned stencil mark fragment shader: {:?}",
-                        e
-                    ))
-                })?;
-            drop(cache);
-
-            let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
+            let (vert, frag) =
+                self.load_outline_shaders(stencil_mark_skinned_path, "skinned stencil mark")?;
 
             let empty_descriptor_layout = unsafe {
                 self.context
@@ -147,34 +163,17 @@ impl super::VulkanRenderer {
                 write_mask: 0x01,
                 reference: 1,
             };
-
-            let pipeline = PipelineBuilder::new(self.context.clone())
-                .with_shaders(vert, frag)
-                .with_descriptor_layouts(vec![
-                    storage_layout,
-                    empty_descriptor_layout,
-                    skeleton_layout,
-                ])
-                .with_soa_attribute(0, VertexFormat::RGB32f)
-                .with_soa_attribute(4, VertexFormat::RGBA16u)
-                .with_soa_attribute(5, VertexFormat::RGBA32f)
-                .with_depth_test(true, false, crate::pipeline::CompareOp::GreaterOrEqual)
-                .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
-                .with_stencil_test(stencil_state, stencil_state)
-                .with_color_write_mask(vk::ColorComponentFlags::empty())
-                .with_rendering_formats(
-                    Some(crate::texture::ImageFormat::R16G16B16A16Sfloat),
-                    Some(crate::texture::ImageFormat::D32SfloatS8Uint),
-                )
-                .build_dynamic()
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to build skinned stencil mark pipeline: {:?}",
-                        e
-                    ))
-                })?;
-
-            let handle = self.asset_registry.register_pipeline(pipeline);
+            let handle = self.build_outline_pipeline(
+                vert,
+                frag,
+                storage_layout,
+                stencil_state,
+                CompareOp::GreaterOrEqual,
+                CullMode::Back,
+                ImageFormat::R16G16B16A16Sfloat,
+                vk::ColorComponentFlags::empty(),
+                Some(empty_descriptor_layout),
+            )?;
             self.outline.stencil_mark_skinned_pipeline = Some(handle);
         }
 
@@ -188,25 +187,7 @@ impl super::VulkanRenderer {
         // write_mask=0x02: only writes bit 1, preserving bit 0 from stencil mark.
         // depth_fail_op: REPLACE ref=2 writes 0b10 (bit 1 set) on depth fail.
         {
-            let mut cache = self.material_compiler.shader_cache.borrow_mut();
-            let vert = cache
-                .load_shader(stencil_mark_path, vk::ShaderStageFlags::VERTEX)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load occlusion mark vertex shader: {:?}",
-                        e
-                    ))
-                })?;
-            let frag = cache
-                .load_shader(stencil_mark_path, vk::ShaderStageFlags::FRAGMENT)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load occlusion mark fragment shader: {:?}",
-                        e
-                    ))
-                })?;
-            drop(cache);
-
+            let (vert, frag) = self.load_outline_shaders(stencil_mark_path, "occlusion mark")?;
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
                 pass_op: vk::StencilOp::KEEP,
@@ -216,54 +197,31 @@ impl super::VulkanRenderer {
                 write_mask: 0x02,
                 reference: 2,
             };
-
-            let pipeline = PipelineBuilder::new(self.context.clone())
-                .with_shaders(vert, frag)
-                .with_descriptor_layouts(vec![storage_layout])
-                .with_soa_attribute(0, VertexFormat::RGB32f)
-                .with_depth_test(true, false, crate::pipeline::CompareOp::GreaterOrEqual)
-                .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
-                .with_stencil_test(stencil_state, stencil_state)
-                .with_color_write_mask(vk::ColorComponentFlags::empty())
-                .with_rendering_formats(
-                    Some(crate::texture::ImageFormat::R16G16B16A16Sfloat),
-                    Some(crate::texture::ImageFormat::D32SfloatS8Uint),
-                )
-                .build_dynamic()
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to build occlusion mark pipeline: {:?}",
-                        e
-                    ))
-                })?;
-
-            let handle = self.asset_registry.register_pipeline(pipeline);
+            let handle = self.build_outline_pipeline(
+                vert,
+                frag,
+                storage_layout,
+                stencil_state,
+                CompareOp::GreaterOrEqual,
+                CullMode::Back,
+                ImageFormat::R16G16B16A16Sfloat,
+                vk::ColorComponentFlags::empty(),
+                None,
+            )?;
             self.outline.occlusion_mark_pipeline = Some(handle);
         }
 
         // === Skinned Occlusion Mark Pipeline ===
         {
-            let mut cache = self.material_compiler.shader_cache.borrow_mut();
-            let vert = cache
-                .load_shader(stencil_mark_skinned_path, vk::ShaderStageFlags::VERTEX)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load skinned occlusion mark vertex shader: {:?}",
-                        e
-                    ))
-                })?;
-            let frag = cache
-                .load_shader(stencil_mark_skinned_path, vk::ShaderStageFlags::FRAGMENT)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load skinned occlusion mark fragment shader: {:?}",
-                        e
-                    ))
-                })?;
-            drop(cache);
-
-            let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
-            let empty_descriptor_layout = self.outline.skinned_empty_layout.unwrap();
+            let (vert, frag) = self.load_outline_shaders(
+                stencil_mark_skinned_path,
+                "skinned occlusion mark",
+            )?;
+            let empty_descriptor_layout = self.outline.skinned_empty_layout.ok_or(
+                RendererError::InitializationFailed(
+                    "Skinned empty layout not initialized — call init_outline_pipelines first".into(),
+                ),
+            )?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -274,34 +232,17 @@ impl super::VulkanRenderer {
                 write_mask: 0x02,
                 reference: 2,
             };
-
-            let pipeline = PipelineBuilder::new(self.context.clone())
-                .with_shaders(vert, frag)
-                .with_descriptor_layouts(vec![
-                    storage_layout,
-                    empty_descriptor_layout,
-                    skeleton_layout,
-                ])
-                .with_soa_attribute(0, VertexFormat::RGB32f)
-                .with_soa_attribute(4, VertexFormat::RGBA16u)
-                .with_soa_attribute(5, VertexFormat::RGBA32f)
-                .with_depth_test(true, false, crate::pipeline::CompareOp::GreaterOrEqual)
-                .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
-                .with_stencil_test(stencil_state, stencil_state)
-                .with_color_write_mask(vk::ColorComponentFlags::empty())
-                .with_rendering_formats(
-                    Some(crate::texture::ImageFormat::R16G16B16A16Sfloat),
-                    Some(crate::texture::ImageFormat::D32SfloatS8Uint),
-                )
-                .build_dynamic()
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to build skinned occlusion mark pipeline: {:?}",
-                        e
-                    ))
-                })?;
-
-            let handle = self.asset_registry.register_pipeline(pipeline);
+            let handle = self.build_outline_pipeline(
+                vert,
+                frag,
+                storage_layout,
+                stencil_state,
+                CompareOp::GreaterOrEqual,
+                CullMode::Back,
+                ImageFormat::R16G16B16A16Sfloat,
+                vk::ColorComponentFlags::empty(),
+                Some(empty_descriptor_layout),
+            )?;
             self.outline.occlusion_mark_skinned_pipeline = Some(handle);
         }
 
@@ -310,26 +251,7 @@ impl super::VulkanRenderer {
         // depth write OFF. Stencil test EQUAL 0: only draws on background.
         // Occluded parts are handled by the stencil indicator + tonemap overlay.
         {
-            let mut cache = self.material_compiler.shader_cache.borrow_mut();
-            let vert = cache
-                .load_shader(outline_draw_path, vk::ShaderStageFlags::VERTEX)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load outline draw vertex shader: {:?}",
-                        e
-                    ))
-                })?;
-            let frag = cache
-                .load_shader(outline_draw_path, vk::ShaderStageFlags::FRAGMENT)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load outline draw fragment shader: {:?}",
-                        e
-                    ))
-                })?;
-            drop(cache);
-
-            // Stencil: only draw where stencil == 0 (background, not on selected object at all)
+            let (vert, frag) = self.load_outline_shaders(outline_draw_path, "outline draw")?;
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
                 pass_op: vk::StencilOp::KEEP,
@@ -339,57 +261,29 @@ impl super::VulkanRenderer {
                 write_mask: 0x00,
                 reference: 0,
             };
-
-            let pipeline = PipelineBuilder::new(self.context.clone())
-                .with_shaders(vert, frag)
-                .with_descriptor_layouts(vec![storage_layout])
-                .with_soa_attribute(0, VertexFormat::RGB32f)
-                // Depth test GREATER_OR_EQUAL with depth write OFF — outline only
-                // appears where the shell is in front of existing geometry.
-                // Occluded parts use the stencil indicator + tonemap overlay instead.
-                .with_depth_test(true, false, crate::pipeline::CompareOp::GreaterOrEqual)
-                // Inverted culling: render front faces (normally culled).
-                // Combined with the extruded vertices this creates the outline shell.
-                .with_cull_mode(CullMode::Front, FrontFace::CounterClockwise)
-                .with_stencil_test(stencil_state, stencil_state)
-                .with_rendering_formats(
-                    Some(crate::texture::ImageFormat::R16G16B16A16Sfloat),
-                    Some(crate::texture::ImageFormat::D32SfloatS8Uint),
-                )
-                .build_dynamic()
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to build outline draw pipeline: {:?}",
-                        e
-                    ))
-                })?;
-
-            let handle = self.asset_registry.register_pipeline(pipeline);
+            let handle = self.build_outline_pipeline(
+                vert,
+                frag,
+                storage_layout,
+                stencil_state,
+                CompareOp::GreaterOrEqual,
+                CullMode::Front,
+                ImageFormat::R16G16B16A16Sfloat,
+                vk::ColorComponentFlags::default(),
+                None,
+            )?;
             self.outline.outline_draw_pipeline = Some(handle);
         }
 
         // === Skinned Outline Draw Pipeline ===
         {
-            let mut cache = self.material_compiler.shader_cache.borrow_mut();
-            let vert = cache
-                .load_shader(outline_draw_skinned_path, vk::ShaderStageFlags::VERTEX)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load skinned outline draw vertex shader: {:?}",
-                        e
-                    ))
-                })?;
-            let frag = cache
-                .load_shader(outline_draw_skinned_path, vk::ShaderStageFlags::FRAGMENT)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load skinned outline draw fragment shader: {:?}",
-                        e
-                    ))
-                })?;
-            drop(cache);
-
-            let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
+            let (vert, frag) =
+                self.load_outline_shaders(outline_draw_skinned_path, "skinned outline draw")?;
+            let empty_descriptor_layout = self.outline.skinned_empty_layout.ok_or(
+                RendererError::InitializationFailed(
+                    "Skinned empty layout not initialized — call init_outline_pipelines first".into(),
+                ),
+            )?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -400,35 +294,17 @@ impl super::VulkanRenderer {
                 write_mask: 0x00,
                 reference: 0,
             };
-
-            let empty_descriptor_layout = self.outline.skinned_empty_layout.unwrap();
-
-            let pipeline = PipelineBuilder::new(self.context.clone())
-                .with_shaders(vert, frag)
-                .with_descriptor_layouts(vec![
-                    storage_layout,
-                    empty_descriptor_layout,
-                    skeleton_layout,
-                ])
-                .with_soa_attribute(0, VertexFormat::RGB32f)
-                .with_soa_attribute(4, VertexFormat::RGBA16u)
-                .with_soa_attribute(5, VertexFormat::RGBA32f)
-                .with_depth_test(true, false, crate::pipeline::CompareOp::GreaterOrEqual)
-                .with_cull_mode(CullMode::Front, FrontFace::CounterClockwise)
-                .with_stencil_test(stencil_state, stencil_state)
-                .with_rendering_formats(
-                    Some(crate::texture::ImageFormat::R16G16B16A16Sfloat),
-                    Some(crate::texture::ImageFormat::D32SfloatS8Uint),
-                )
-                .build_dynamic()
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to build skinned outline draw pipeline: {:?}",
-                        e
-                    ))
-                })?;
-
-            let handle = self.asset_registry.register_pipeline(pipeline);
+            let handle = self.build_outline_pipeline(
+                vert,
+                frag,
+                storage_layout,
+                stencil_state,
+                CompareOp::GreaterOrEqual,
+                CullMode::Front,
+                ImageFormat::R16G16B16A16Sfloat,
+                vk::ColorComponentFlags::default(),
+                Some(empty_descriptor_layout),
+            )?;
             self.outline.outline_draw_skinned_pipeline = Some(handle);
         }
 
@@ -442,32 +318,11 @@ impl super::VulkanRenderer {
         shader_path: &std::path::Path,
         skinned_shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
-        use crate::pipeline::{CullMode, FrontFace};
-        use crate::vulkan::material::builder::PipelineBuilder;
-        use crate::vulkan::vertexbinding::VertexFormat;
-
         let storage_layout = self.storage_descriptor_sets[0].layout();
 
         {
-            let mut cache = self.material_compiler.shader_cache.borrow_mut();
-            let vert = cache
-                .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load stencil indicator vertex shader: {:?}",
-                        e
-                    ))
-                })?;
-            let frag = cache
-                .load_shader(shader_path, vk::ShaderStageFlags::FRAGMENT)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load stencil indicator fragment shader: {:?}",
-                        e
-                    ))
-                })?;
-            drop(cache);
-
+            let (vert, frag) =
+                self.load_outline_shaders(shader_path, "stencil indicator")?;
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
                 pass_op: vk::StencilOp::KEEP,
@@ -477,52 +332,30 @@ impl super::VulkanRenderer {
                 write_mask: 0x00,
                 reference: 2,
             };
-
-            let pipeline = PipelineBuilder::new(self.context.clone())
-                .with_shaders(vert, frag)
-                .with_descriptor_layouts(vec![storage_layout])
-                .with_soa_attribute(0, VertexFormat::RGB32f)
-                .with_depth_test(true, false, crate::pipeline::CompareOp::Always)
-                .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
-                .with_stencil_test(stencil_state, stencil_state)
-                .with_rendering_formats(
-                    Some(crate::texture::ImageFormat::R8Unorm),
-                    Some(crate::texture::ImageFormat::D32SfloatS8Uint),
-                )
-                .build_dynamic()
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to build stencil indicator pipeline: {:?}",
-                        e
-                    ))
-                })?;
-
-            let handle = self.asset_registry.register_pipeline(pipeline);
+            let handle = self.build_outline_pipeline(
+                vert,
+                frag,
+                storage_layout,
+                stencil_state,
+                CompareOp::Always,
+                CullMode::Back,
+                ImageFormat::R8Unorm,
+                vk::ColorComponentFlags::default(),
+                None,
+            )?;
             self.outline.stencil_indicator_pipeline = Some(handle);
         }
 
         {
-            let mut cache = self.material_compiler.shader_cache.borrow_mut();
-            let vert = cache
-                .load_shader(skinned_shader_path, vk::ShaderStageFlags::VERTEX)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load skinned stencil indicator vertex shader: {:?}",
-                        e
-                    ))
-                })?;
-            let frag = cache
-                .load_shader(skinned_shader_path, vk::ShaderStageFlags::FRAGMENT)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to load skinned stencil indicator fragment shader: {:?}",
-                        e
-                    ))
-                })?;
-            drop(cache);
-
-            let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
-            let empty_descriptor_layout = self.outline.skinned_empty_layout.unwrap();
+            let (vert, frag) = self.load_outline_shaders(
+                skinned_shader_path,
+                "skinned stencil indicator",
+            )?;
+            let empty_descriptor_layout = self.outline.skinned_empty_layout.ok_or(
+                RendererError::InitializationFailed(
+                    "Skinned empty layout not initialized — call init_outline_pipelines first".into(),
+                ),
+            )?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -533,33 +366,17 @@ impl super::VulkanRenderer {
                 write_mask: 0x00,
                 reference: 2,
             };
-
-            let pipeline = PipelineBuilder::new(self.context.clone())
-                .with_shaders(vert, frag)
-                .with_descriptor_layouts(vec![
-                    storage_layout,
-                    empty_descriptor_layout,
-                    skeleton_layout,
-                ])
-                .with_soa_attribute(0, VertexFormat::RGB32f)
-                .with_soa_attribute(4, VertexFormat::RGBA16u)
-                .with_soa_attribute(5, VertexFormat::RGBA32f)
-                .with_depth_test(true, false, crate::pipeline::CompareOp::Always)
-                .with_cull_mode(CullMode::Back, FrontFace::CounterClockwise)
-                .with_stencil_test(stencil_state, stencil_state)
-                .with_rendering_formats(
-                    Some(crate::texture::ImageFormat::R8Unorm),
-                    Some(crate::texture::ImageFormat::D32SfloatS8Uint),
-                )
-                .build_dynamic()
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to build skinned stencil indicator pipeline: {:?}",
-                        e
-                    ))
-                })?;
-
-            let handle = self.asset_registry.register_pipeline(pipeline);
+            let handle = self.build_outline_pipeline(
+                vert,
+                frag,
+                storage_layout,
+                stencil_state,
+                CompareOp::Always,
+                CullMode::Back,
+                ImageFormat::R8Unorm,
+                vk::ColorComponentFlags::default(),
+                Some(empty_descriptor_layout),
+            )?;
             self.outline.stencil_indicator_skinned_pipeline = Some(handle);
         }
 
