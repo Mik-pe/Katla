@@ -6,12 +6,12 @@ pub struct OrbitCameraControllerComponent {
     pub distance: f32,
     pub yaw: f32,
     pub pitch: f32,
+    pub fov: f32,
     pub sensitivity: f32,
     pub zoom_speed: f32,
     pub min_distance: f32,
     pub max_distance: f32,
     pub pitch_limit: f32,
-    pub pan_speed: f32,
 }
 
 impl Default for OrbitCameraControllerComponent {
@@ -21,12 +21,12 @@ impl Default for OrbitCameraControllerComponent {
             distance: 10.0,
             yaw: 0.0,
             pitch: 0.3,
+            fov: 60.0,
             sensitivity: 0.005,
             zoom_speed: 1.0,
             min_distance: 0.5,
             max_distance: 100.0,
             pitch_limit: std::f32::consts::FRAC_PI_2 - 0.01,
-            pan_speed: 0.01,
         }
     }
 }
