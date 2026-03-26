@@ -148,6 +148,14 @@ impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> 
             }
         }
     }
+
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![TypeId::of::<T1>(), TypeId::of::<T2>(), TypeId::of::<T3>()]
+    }
+
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
+    }
 }
 
 // Implement QueryData for (&mut T1, &T2, &T3)
@@ -195,6 +203,14 @@ impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> 
                 }
             }
         }
+    }
+
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![TypeId::of::<T1>(), TypeId::of::<T2>(), TypeId::of::<T3>()]
+    }
+
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
     }
 }
 
@@ -244,6 +260,14 @@ impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> 
             }
         }
     }
+
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![TypeId::of::<T1>(), TypeId::of::<T2>(), TypeId::of::<T3>()]
+    }
+
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
+    }
 }
 
 // Implement QueryData for (&T1, &T2, &mut T3)
@@ -291,5 +315,13 @@ impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> 
                 }
             }
         }
+    }
+
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![TypeId::of::<T1>(), TypeId::of::<T2>(), TypeId::of::<T3>()]
+    }
+
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
     }
 }

@@ -16,6 +16,10 @@ use std::any::Any;
 pub struct ComponentStorage<T: Component> {
     /// Internal sparse set for O(1) lookups
     storage: SparseSet<EntityId, T>,
+    /// Per-entity generation counters for change detection.
+    /// Incremented on insert and get_mut. Compared against a "last seen" generation
+    /// to determine if an entity's component has changed.
+    generations: SparseSet<EntityId, u64>,
 }
 
 impl<T: Component> ComponentStorage<T> {
@@ -23,21 +27,28 @@ impl<T: Component> ComponentStorage<T> {
     pub fn new() -> Self {
         Self {
             storage: SparseSet::new(),
+            generations: SparseSet::new(),
         }
     }
 
     /// Adds a component for the given entity.
     ///
     /// If the entity already has this component type, it will be replaced.
+    /// Marks the entity as changed for change detection.
     pub fn insert(&mut self, entity_id: EntityId, component: T) {
         self.storage.insert(entity_id, component);
+        self.increment_generation(entity_id);
     }
 
     /// Removes a component for the given entity.
     ///
     /// Returns true if the component was removed, false if it didn't exist.
     pub fn remove(&mut self, entity_id: EntityId) -> bool {
-        self.storage.remove(entity_id)
+        let removed = self.storage.remove(entity_id);
+        if removed {
+            self.generations.remove(entity_id);
+        }
+        removed
     }
 
     /// Gets a reference to a component for the given entity.
@@ -46,7 +57,11 @@ impl<T: Component> ComponentStorage<T> {
     }
 
     /// Gets a mutable reference to a component for the given entity.
+    ///
+    /// Marks the entity as changed for change detection, even if the
+    /// component is not actually modified.
     pub fn get_mut(&mut self, entity_id: EntityId) -> Option<&mut T> {
+        self.increment_generation(entity_id);
         self.storage.get_mut(entity_id)
     }
 
@@ -100,14 +115,28 @@ impl<T: Component> ComponentStorage<T> {
         self.storage.is_empty()
     }
 
-    /// Clears all components.
+    /// Clears all components and generation tracking.
     pub fn clear(&mut self) {
         self.storage.clear();
+        self.generations.clear();
     }
 
     /// Removes all components for entities not in the given set.
     pub fn retain_entities(&mut self, valid_entities: &std::collections::HashSet<EntityId>) {
         self.storage.retain_keys(valid_entities);
+        self.generations.retain_keys(valid_entities);
+    }
+
+    /// Increments the generation counter for the given entity.
+    /// Creates a new counter (starting at 1) if one doesn't exist.
+    fn increment_generation(&mut self, entity_id: EntityId) {
+        let current = self.generations.get(entity_id).copied().unwrap_or(0);
+        self.generations.insert(entity_id, current + 1);
+    }
+
+    /// Returns the current generation counter for the given entity.
+    pub(crate) fn generation(&self, entity_id: EntityId) -> u64 {
+        self.generations.get(entity_id).copied().unwrap_or(0)
     }
 }
 
@@ -133,6 +162,13 @@ pub trait AnyComponentStorage: Any {
 
     /// Collects all entity IDs that have a component in this storage.
     fn collect_entity_ids(&self, out: &mut std::collections::HashSet<EntityId>);
+
+    /// Returns the maximum generation counter across all entities in this storage.
+    fn max_generation(&self) -> u64;
+
+    /// Returns the generation counter for a specific entity.
+    /// Returns 0 if the entity doesn't exist in this storage.
+    fn generation_for_entity(&self, entity_id: EntityId) -> u64;
 
     /// Returns a reference to self as `Any` for downcasting.
     fn as_any(&self) -> &dyn Any;
@@ -164,6 +200,14 @@ impl<T: Component> AnyComponentStorage for ComponentStorage<T> {
         }
     }
 
+    fn max_generation(&self) -> u64 {
+        self.generations.values().copied().max().unwrap_or(0)
+    }
+
+    fn generation_for_entity(&self, entity_id: EntityId) -> u64 {
+        self.generation(entity_id)
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -180,6 +224,10 @@ impl<T: Component> AnyComponentStorage for ComponentStorage<T> {
 pub struct ComponentStorageManager {
     /// Maps type IDs to component storages
     storages: std::collections::HashMap<std::any::TypeId, Box<dyn AnyComponentStorage>>,
+    /// Per-type "last seen" generation snapshot for change detection.
+    /// After `clear_changed()` is called, stores the generation counter value
+    /// that was current at that point. Entities with generation > snapshot are "changed".
+    changed_generations: std::collections::HashMap<std::any::TypeId, u64>,
 }
 
 impl ComponentStorageManager {
@@ -187,6 +235,7 @@ impl ComponentStorageManager {
     pub fn new() -> Self {
         Self {
             storages: std::collections::HashMap::new(),
+            changed_generations: std::collections::HashMap::new(),
         }
     }
 
@@ -313,6 +362,55 @@ impl ComponentStorageManager {
             storage.collect_entity_ids(&mut ids);
         }
         ids
+    }
+
+    /// Snapshots the current maximum generation for each component type.
+    ///
+    /// After this call, `is_changed` will return false for all entities until
+    /// their components are next mutated via `insert` or `get_mut`.
+    pub(crate) fn clear_changed(&mut self) {
+        for (&type_id, storage) in self.storages.iter() {
+            let max_gen = storage.max_generation();
+            self.changed_generations.insert(type_id, max_gen);
+        }
+    }
+
+    /// Collects entity IDs that have changed for any of the given component types.
+    ///
+    /// An entity is considered changed if its generation counter for any of the
+    /// given TypeIds exceeds the "last seen" snapshot value.
+    pub(crate) fn collect_changed_entity_ids(
+        &self,
+        type_ids: &[std::any::TypeId],
+    ) -> std::collections::HashSet<EntityId> {
+        let mut changed = std::collections::HashSet::new();
+        let all_entities = self.entities_with_components();
+        for entity_id in all_entities {
+            for &type_id in type_ids {
+                if self.is_changed_by_type_id(entity_id, type_id) {
+                    changed.insert(entity_id);
+                    break;
+                }
+            }
+        }
+        changed
+    }
+
+    /// Checks if a specific entity's component has changed for a given TypeId.
+    ///
+    /// Uses the generation counter system. Returns true if the entity's generation
+    /// for the given type exceeds the "last seen" snapshot.
+    fn is_changed_by_type_id(&self, entity_id: EntityId, type_id: std::any::TypeId) -> bool {
+        let storage = match self.storages.get(&type_id) {
+            Some(s) => s,
+            None => return false,
+        };
+        let current_gen = storage.generation_for_entity(entity_id);
+        if current_gen == 0 {
+            return false;
+        }
+        let last_seen = self.changed_generations.get(&type_id).copied().unwrap_or(0);
+        current_gen > last_seen
     }
 
     /// Creates a query for iterating over entities with specific components.

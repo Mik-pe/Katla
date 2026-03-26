@@ -131,6 +131,14 @@ impl<T1: Component + 'static, T2: Component + 'static> QueryData for (&mut T1, &
             }
         }
     }
+
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![TypeId::of::<T1>(), TypeId::of::<T2>()]
+    }
+
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
+    }
 }
 
 // Implement QueryData for (mutable, immutable)
@@ -164,6 +172,14 @@ impl<T1: Component + 'static, T2: Component + 'static> QueryData for (&mut T1, &
             }
         }
     }
+
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![TypeId::of::<T1>(), TypeId::of::<T2>()]
+    }
+
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
+    }
 }
 
 // Implement QueryData for two immutable components
@@ -193,9 +209,17 @@ impl<T1: Component + 'static, T2: Component + 'static> QueryData for (&T1, &T2) 
             }
         }
     }
+
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![TypeId::of::<T1>(), TypeId::of::<T2>()]
+    }
+
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
+    }
 }
 
-// Implement QueryData for (immutable, mutable)
+// Implement QueryData for (&T1, &mut T2)
 impl<T1: Component + 'static, T2: Component + 'static> QueryData for (&T1, &mut T2) {
     type Item<'a> = (EntityId, &'a T1, &'a mut T2);
     type Iter<'a> = QueryIter2RefMut<'a, T1, T2>;
@@ -225,5 +249,13 @@ impl<T1: Component + 'static, T2: Component + 'static> QueryData for (&T1, &mut 
                 }
             }
         }
+    }
+
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![TypeId::of::<T1>(), TypeId::of::<T2>()]
+    }
+
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
     }
 }

@@ -43,6 +43,10 @@ pub use iter6::*;
 pub use iter7::*;
 pub use iter8::*;
 
+use std::any::TypeId;
+
+use crate::EntityId;
+
 /// Trait for querying components from storage.
 ///
 /// This trait is implemented for tuples of component references, allowing ergonomic
@@ -70,4 +74,15 @@ pub trait QueryData {
     ///
     /// Panics if the same component type is requested multiple times in the query.
     fn fetch(storage: &mut crate::ComponentStorageManager) -> Self::Iter<'_>;
+
+    /// Returns the TypeIds of all component types in this query tuple.
+    ///
+    /// Used by change detection to determine which component storages to check
+    /// for generation counter changes.
+    fn type_ids_for_changed() -> Vec<TypeId>;
+
+    /// Extracts the EntityId from a query item.
+    ///
+    /// All query items are tuples where EntityId is the first element.
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId;
 }

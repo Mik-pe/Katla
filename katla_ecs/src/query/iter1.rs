@@ -2,6 +2,7 @@
 
 use super::QueryData;
 use crate::{Component, ComponentStorageManager, EntityId};
+use std::any::TypeId;
 
 /// Iterator for querying a single mutable component.
 pub struct QueryIter1Mut<'a, T: Component> {
@@ -45,6 +46,14 @@ impl<T: Component + 'static> QueryData for &mut T {
             }
         }
     }
+
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
+    }
 }
 
 // Implement QueryData for single immutable component
@@ -60,5 +69,13 @@ impl<T: Component + 'static> QueryData for &T {
         } else {
             QueryIter1 { iter: [].iter() }
         }
+    }
+
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
     }
 }
