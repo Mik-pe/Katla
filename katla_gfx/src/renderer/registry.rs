@@ -235,11 +235,30 @@ impl AssetRegistry {
         self.materials.len()
     }
 
+    /// Remove a mesh by handle, returning the removed asset for GPU cleanup.
+    ///
+    /// Returns `None` if the handle is invalid or already removed.
+    pub fn remove_mesh(&mut self, handle: MeshHandle) -> Option<MeshAsset> {
+        self.meshes.remove(handle.index())
+    }
+
+    /// Remove a material by handle, returning the removed asset for GPU cleanup.
+    ///
+    /// Returns `None` if the handle is invalid or already removed.
+    pub fn remove_material(&mut self, handle: MaterialHandle) -> Option<MaterialAsset> {
+        self.materials.remove(handle.index())
+    }
+
     /// Clear all assets from the registry.
     pub fn clear(&mut self) {
         self.meshes = ResourceStorage::new();
         self.materials = ResourceStorage::new();
         self.pipelines = ResourceStorage::new();
+    }
+
+    /// Remove a pipeline by handle.
+    pub(crate) fn remove_pipeline(&mut self, handle: PipelineHandle) -> Option<AnyPipeline> {
+        self.pipelines.remove(handle.index())
     }
 
     /// Invalidate all compiled materials and destroy their pipelines.

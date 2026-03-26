@@ -179,3 +179,24 @@ Per-component change detection via generation counters:
 ## ECS QueryData Trait Maintenance
 
 `QueryData` trait has methods that must be implemented across all arity files (`iter1.rs` through `iter8.rs`). When adding new trait methods (e.g., `type_ids_for_changed`, `entity_id_from_item`), ALL 8 files must be updated. This is a maintenance burden — be thorough when adding methods.
+
+## GPU Resource Destroy APIs
+
+Per-resource destroy methods on `VulkanRenderer` (in `katla_gfx/src/renderer/destroy_api.rs`):
+
+- `destroy_mesh(handle)` — delegates to `AssetRegistry::remove_mesh`, GPU buffers dropped via `MeshAsset` Drop
+- `destroy_material(handle)` — removes from `AssetRegistry`, also destroys descriptor set layout and associated pipeline
+- `destroy_texture(handle)` — checks default texture guard, releases bindless slot via `BindlessTextureManager::release_texture_slot`, then `TextureManager::destroy`
+- `destroy_skeleton(handle)` — removes from both `skeleton_descriptors` and `skeleton_buffers` ResourceStorages
+
+**Safety guarantees:**
+- Double-destroy is safe (no-op, `ResourceStorage::remove` returns `None` for already-removed slots)
+- `NONE` handles (`index = u32::MAX`) and unowned handles are safe (returns `None` from storage)
+- Default textures (slots 0-4 in TextureManager) are protected by `is_default_texture()` guard
+
+**Key design notes:**
+- `BindlessTextureManager::release_texture_slot()` protects default slots (0-4) from being freed
+- `TextureManager::destroy()` also removes bindless slot tracking via `unregister_bindless_slot()`
+- Material destroy cascades: removes material → destroys descriptor set layout → removes pipeline from registry
+- `AssetRegistry::remove_mesh/remove_material` return `Option<T>` for caller cleanup if needed
+- `AssetRegistry::remove_pipeline` is `pub(crate)` since only the renderer should directly remove pipelines

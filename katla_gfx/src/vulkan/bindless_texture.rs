@@ -520,6 +520,32 @@ impl BindlessTextureManager {
         }
     }
 
+    /// Release a bindless slot, making it available for reuse.
+    ///
+    /// The slot is returned to the free list. The caller is responsible for
+    /// destroying the underlying texture resources. Default slots (0-4) are
+    /// protected and cannot be released.
+    ///
+    /// # Arguments
+    /// * `slot` - The bindless slot to release
+    ///
+    /// # Returns
+    /// `true` if the slot was released, `false` if it was a default slot or already free.
+    pub fn release_texture_slot(&mut self, slot: u32) -> bool {
+        if slot < DEFAULT_TEXTURE_COUNT {
+            return false;
+        }
+        if (slot as usize) >= self.slots.len() {
+            return false;
+        }
+        if self.slots[slot as usize].is_none() {
+            return false;
+        }
+        self.slots[slot as usize] = None;
+        self.free_slots.push(slot);
+        true
+    }
+
     /// Check if a slot is a default texture slot.
     ///
     /// # Arguments
