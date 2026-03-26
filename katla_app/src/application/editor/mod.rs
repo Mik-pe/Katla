@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use log::{info, warn};
+use log::info;
 
 use katla_ecs::EntityId;
 use katla_gfx::renderer::UIDrawList;
@@ -201,9 +201,6 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
             }
             EditorAction::NewScene => {
-                warn!(
-                    "Clearing entities without releasing GPU resources (renderer API not available)"
-                );
                 let to_remove: Vec<EntityId> = app
                     .world
                     .entity_ids()
@@ -219,6 +216,21 @@ pub fn process_editor_actions(app: &mut Application) {
                     {
                         ps.destroy_emitter(handle);
                     }
+                }
+
+                // Release all GPU resources before destroying entities
+                let to_destroy = app.gpu_resource_tracker.release_all();
+                for handle in &to_destroy.meshes {
+                    app.renderer.destroy_mesh(*handle);
+                }
+                for handle in &to_destroy.materials {
+                    app.renderer.destroy_material(*handle);
+                }
+                for handle in &to_destroy.textures {
+                    app.renderer.destroy_texture(*handle);
+                }
+                for handle in &to_destroy.skeletons {
+                    app.renderer.destroy_skeleton(*handle);
                 }
 
                 for id in to_remove {

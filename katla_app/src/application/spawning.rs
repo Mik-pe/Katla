@@ -3,6 +3,13 @@ use log::{debug, info};
 
 use crate::scene::entity_source::EntitySource;
 
+/// Result of uploading GLTF textures: bindless indices for material assignment
+/// and texture handles for GPU resource tracking.
+struct GltfTextureUpload {
+    indices: [u32; 5],
+    handles: Vec<katla_gfx::TextureHandle>,
+}
+
 impl super::Application {
     /// Spawn a primitive entity with a specific color using the default material.
     ///
@@ -346,16 +353,21 @@ impl super::Application {
             .ok()?;
 
         // 5. Upload textures and set texture indices
-        let texture_indices = self.upload_gltf_textures(&model);
+        let texture_upload = self.upload_gltf_textures(&model);
+
+        // Track texture handles for GPU cleanup on scene load/entity destruction
+        for handle in &texture_upload.handles {
+            self.gpu_resource_tracker.track_texture(*handle);
+        }
 
         // Set texture indices on material (only first 4: albedo, normal, mr, ao)
         self.renderer.set_material_texture_indices(
             material_handle,
             [
-                texture_indices[0],
-                texture_indices[1],
-                texture_indices[2],
-                texture_indices[3],
+                texture_upload.indices[0],
+                texture_upload.indices[1],
+                texture_upload.indices[2],
+                texture_upload.indices[3],
             ],
         );
 
@@ -380,14 +392,13 @@ impl super::Application {
 
         // Set emission texture index on drawable component
         if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(entity) {
-            drawable.emission = texture_indices[4] as f32;
+            drawable.emission = texture_upload.indices[4] as f32;
 
-            // Log if we have an emission texture
-            if texture_indices[4] > 0 {
+            if texture_upload.indices[4] > 0 {
                 info!(
                     "Model '{}' has emission texture at bindless index {}",
                     path.as_ref().display(),
-                    texture_indices[4]
+                    texture_upload.indices[4]
                 );
             }
         }
@@ -444,66 +455,66 @@ impl super::Application {
     /// Upload textures from a GLTF model and return bindless texture indices.
     ///
     /// Returns [albedo, normal, metallic_roughness, ao, emission] indices.
-    fn upload_gltf_textures(&mut self, model: &crate::util::GLTFModel) -> [u32; 5] {
-        let default_index = 0u32; // Default white texture
+    fn upload_gltf_textures(&mut self, model: &crate::util::GLTFModel) -> GltfTextureUpload {
+        let default_index = 0u32;
         let mut albedo_index = default_index;
         let mut normal_index = default_index;
         let mut mr_index = default_index;
         let mut ao_index = default_index;
         let mut emission_index = default_index;
+        let mut handles = Vec::new();
 
-        // Get first material if available
         let material_info = model.materials.first();
 
         if let Some(mat) = material_info {
-            // Upload albedo texture
             if let Some(tex_idx) = mat.base_color_texture
                 && let Some(image) = model.images.get(tex_idx)
             {
                 let handle = self.upload_gltf_image(image, true);
                 albedo_index = self.get_bindless_index(handle);
+                handles.push(handle);
                 debug!(
                     "Uploaded albedo texture {} -> bindless {}",
                     tex_idx, albedo_index
                 );
             }
 
-            // Upload normal texture
             if let Some(tex_idx) = mat.normal_texture
                 && let Some(image) = model.images.get(tex_idx)
             {
                 let handle = self.upload_gltf_image(image, false);
                 normal_index = self.get_bindless_index(handle);
+                handles.push(handle);
                 debug!(
                     "Uploaded normal texture {} -> bindless {}",
                     tex_idx, normal_index
                 );
             }
 
-            // Upload metallic/roughness texture
             if let Some(tex_idx) = mat.metallic_roughness_texture
                 && let Some(image) = model.images.get(tex_idx)
             {
                 let handle = self.upload_gltf_image(image, false);
                 mr_index = self.get_bindless_index(handle);
+                handles.push(handle);
                 debug!("Uploaded MR texture {} -> bindless {}", tex_idx, mr_index);
             }
 
-            // Upload AO texture
             if let Some(tex_idx) = mat.occlusion_texture
                 && let Some(image) = model.images.get(tex_idx)
             {
                 let handle = self.upload_gltf_image(image, false);
                 ao_index = self.get_bindless_index(handle);
+                handles.push(handle);
                 debug!("Uploaded AO texture {} -> bindless {}", tex_idx, ao_index);
             }
 
-            // Upload emissive texture
             if let Some(tex_idx) = mat.emission_texture
                 && let Some(image) = model.images.get(tex_idx)
             {
                 let handle = self.upload_gltf_image(image, false);
                 emission_index = self.get_bindless_index(handle);
+                handles.push(handle);
                 debug!(
                     "Uploaded emissive texture {} -> bindless {}",
                     tex_idx, emission_index
@@ -511,13 +522,16 @@ impl super::Application {
             }
         }
 
-        [
-            albedo_index,
-            normal_index,
-            mr_index,
-            ao_index,
-            emission_index,
-        ]
+        GltfTextureUpload {
+            indices: [
+                albedo_index,
+                normal_index,
+                mr_index,
+                ao_index,
+                emission_index,
+            ],
+            handles,
+        }
     }
 
     /// Upload a single GLTF image to the GPU.
