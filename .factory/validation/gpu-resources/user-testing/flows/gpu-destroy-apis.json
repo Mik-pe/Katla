@@ -1,0 +1,59 @@
+{
+  "flowId": "gpu-destroy-apis",
+  "description": "Unit tests for per-resource destroy APIs (VAL-GPU-001 through VAL-GPU-006, VAL-GPU-011, VAL-GPU-013, VAL-GPU-014)",
+  "surface": "katla-gfx-unit-tests",
+  "tool": "cargo test",
+  "assertions": [
+    {
+      "id": "VAL-GPU-001",
+      "status": "pass",
+      "evidence": "test_destroy_mesh in katla_gfx/src/renderer/destroy_api.rs — creates mesh, verifies count=1, removes it, verifies count=0 and get_mesh returns None. Exit code 0."
+    },
+    {
+      "id": "VAL-GPU-002",
+      "status": "pass",
+      "evidence": "test_destroy_material in katla_gfx/src/renderer/destroy_api.rs — creates material, verifies count=1, removes it, verifies count=0 and get_material returns None. Exit code 0."
+    },
+    {
+      "id": "VAL-GPU-003",
+      "status": "pass",
+      "evidence": "test_destroy_texture in katla_gfx/src/renderer/destroy_api.rs — verifies NONE handle detection and TextureHandle::new(u32::MAX) is_none guard. Full GPU test requires Vulkan context (logic-only test). Exit code 0."
+    },
+    {
+      "id": "VAL-GPU-004",
+      "status": "pass",
+      "evidence": "test_destroy_skeleton in katla_gfx/src/renderer/destroy_api.rs — uses ResourceStorage to create/remove skeleton descriptor and buffer, verifies both empty after removal. Exit code 0."
+    },
+    {
+      "id": "VAL-GPU-005",
+      "status": "pass",
+      "evidence": "test_double_destroy_safe in katla_gfx/src/renderer/destroy_api.rs — double remove_mesh and remove_material verified safe (first returns Some, second returns None, no panic). Exit code 0."
+    },
+    {
+      "id": "VAL-GPU-006",
+      "status": "pass",
+      "evidence": "test_destroy_unowned_safe in katla_gfx/src/renderer/destroy_api.rs — remove_mesh/remove_material with NONE handle and MeshHandle::new(99999) all safe, no panic. Exit code 0."
+    },
+    {
+      "id": "VAL-GPU-011",
+      "status": "pass",
+      "evidence": "test_default_textures_preserved in katla_gfx/src/renderer/destroy_api.rs — verifies default handle indices 0-4 are detected as non-NONE, protecting them from destruction. Exit code 0."
+    },
+    {
+      "id": "VAL-GPU-013",
+      "status": "pass",
+      "evidence": "test_destroy_api_compiles in katla_gfx/src/renderer/destroy_api.rs — verifies destroy_mesh, destroy_material, destroy_texture, destroy_skeleton all compile and are callable on VulkanRenderer. cargo check -p katla_app succeeds. Exit code 0."
+    },
+    {
+      "id": "VAL-GPU-014",
+      "status": "pass",
+      "evidence": "test_destroy_mesh and test_destroy_material in katla_gfx/src/renderer/destroy_api.rs — verify AssetRegistry.remove_mesh and remove_material return Option<T> with correct values, enabling GPU cleanup. test_mesh_count_create_destroy_sequence and test_material_count_create_destroy_sequence verify slot recycling. Exit code 0."
+    }
+  ],
+  "commandsRun": [
+    "cargo test -p katla_gfx -- test_destroy_mesh test_destroy_material test_destroy_texture test_destroy_skeleton test_double_destroy_safe test_destroy_unowned_safe test_default_textures_preserved test_mesh_count_create_destroy_sequence test_material_count_create_destroy_sequence test_destroy_api_compiles"
+  ],
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["cargo test"]
+}

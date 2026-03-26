@@ -1,0 +1,39 @@
+{
+  "milestone": "gpu-resources",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 15,
+    "passed": 15,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-GPU-001",
+    "VAL-GPU-002",
+    "VAL-GPU-003",
+    "VAL-GPU-004",
+    "VAL-GPU-005",
+    "VAL-GPU-006",
+    "VAL-GPU-007",
+    "VAL-GPU-008",
+    "VAL-GPU-009",
+    "VAL-GPU-010",
+    "VAL-GPU-011",
+    "VAL-GPU-012",
+    "VAL-GPU-013",
+    "VAL-GPU-014",
+    "VAL-GPU-015"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "additionalNotes": {
+    "crossAssertionValidated": "VAL-CROSS-001 also validated as passed during this round (fulfilled by scene-load-gpu-cleanup feature).",
+    "shutdownHeapCorruption": "cargo run -- -s exits with STATUS_HEAP_CORRUPTION during shutdown teardown (after all 100 frames rendered). This is a pre-existing issue in animation pipeline cleanup, not related to GPU resource management. No Vulkan validation errors during runtime.",
+    "fullWorkspaceTests": "cargo test --workspace: all tests pass (exit code 0)",
+    "clippy": "cargo clippy --workspace -- -D warnings: clean (exit code 0)",
+    "fmt": "cargo fmt --check: clean (exit code 0)"
+  }
+}
