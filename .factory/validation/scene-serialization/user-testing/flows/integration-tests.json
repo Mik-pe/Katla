@@ -1,0 +1,87 @@
+{
+  "group": "integration-tests",
+  "testedAt": "2026-03-27T00:45:00Z",
+  "isolation": {
+    "type": "native-rust-tests",
+    "tool": "cargo test -p katla_app",
+    "workingDirectory": "C:\\dev\\katla"
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-SCENE-018",
+      "title": "Integration test — full load/spawn cycle (headless GPU)",
+      "status": "pass",
+      "testNames": ["test_load_spawn_integration"],
+      "steps": [
+        {
+          "action": "cargo test -p katla_app -- test_load_spawn_integration --nocapture",
+          "expected": "Test passes with correct entity count and component data",
+          "observed": "test scene::tests::test_load_spawn_integration ... ok"
+        }
+      ],
+      "evidence": {
+        "testOutput": "running 1 test\ntest scene::tests::test_load_spawn_integration ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 182 filtered out",
+        "exitCode": 0
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-005",
+      "title": "Animated model state round-trip through save-load",
+      "status": "pass",
+      "testNames": ["test_gltf_entity_with_animation_round_trip", "test_animation_round_trip"],
+      "steps": [
+        {
+          "action": "cargo test -p katla_app -- test_gltf_entity_with_animation_round_trip test_animation_round_trip --nocapture",
+          "expected": "Both tests pass with animation state preserved",
+          "observed": "test scene::tests::test_gltf_entity_with_animation_round_trip ... ok\ntest scene::tests::test_animation_round_trip ... ok"
+        }
+      ],
+      "evidence": {
+        "testOutput": "running 2 tests\ntest scene::tests::test_gltf_entity_with_animation_round_trip ... ok\ntest scene::tests::test_animation_round_trip ... ok\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 181 filtered out",
+        "exitCode": 0
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-006",
+      "title": "Parent-child hierarchy preservation through save-load",
+      "status": "pass",
+      "testNames": ["test_parent_child_relationships_round_trip", "test_hierarchy_preservation"],
+      "steps": [
+        {
+          "action": "cargo test -p katla_app -- test_parent_child_relationships_round_trip test_hierarchy_preservation --nocapture",
+          "expected": "Both tests pass with hierarchy correctly preserved",
+          "observed": "test scene::tests::test_hierarchy_preservation ... ok\ntest scene::tests::test_parent_child_relationships_round_trip ... ok"
+        }
+      ],
+      "evidence": {
+        "testOutput": "running 2 tests\ntest scene::tests::test_hierarchy_preservation ... ok\ntest scene::tests::test_parent_child_relationships_round_trip ... ok\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 181 filtered out",
+        "exitCode": 0
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-009",
+      "title": "Scene version migration forward compatibility",
+      "status": "pass",
+      "testNames": ["test_forward_compatibility_error", "test_forward_compatibility_no_panic"],
+      "steps": [
+        {
+          "action": "cargo test -p katla_app -- test_forward_compatibility_error test_forward_compatibility_no_panic --nocapture",
+          "expected": "Both tests pass — error returned for future version, no panic",
+          "observed": "test scene::migration::tests::test_forward_compatibility_error ... ok\ntest scene::migration::tests::test_forward_compatibility_no_panic ... ok"
+        }
+      ],
+      "evidence": {
+        "testOutput": "running 2 tests\ntest scene::migration::tests::test_forward_compatibility_error ... ok\ntest scene::migration::tests::test_forward_compatibility_no_panic ... ok\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 181 filtered out",
+        "exitCode": 0
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 4 assertions with 7 tests total: all passed. VAL-SCENE-018 (load/spawn integration), VAL-CROSS-005 (animation round-trip), VAL-CROSS-006 (hierarchy preservation), VAL-CROSS-009 (forward compatibility) all verified via cargo test."
+}
