@@ -314,10 +314,20 @@ impl PipelineBuilder {
                 color_formats.push(fmt);
             }
 
+            let depth_fmt = self.depth_format.unwrap_or(vk::Format::UNDEFINED);
+            let stencil_fmt = if depth_fmt == vk::Format::D32_SFLOAT_S8_UINT
+                || depth_fmt == vk::Format::D24_UNORM_S8_UINT
+            {
+                depth_fmt
+            } else {
+                vk::Format::UNDEFINED
+            };
+
             Some(
                 vk::PipelineRenderingCreateInfo::default()
                     .color_attachment_formats(&color_formats)
-                    .depth_attachment_format(self.depth_format.unwrap_or(vk::Format::UNDEFINED)),
+                    .depth_attachment_format(depth_fmt)
+                    .stencil_attachment_format(stencil_fmt),
             )
         } else {
             None
