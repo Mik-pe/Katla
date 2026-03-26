@@ -256,8 +256,9 @@ impl ApplicationHandler for Application {
                 self.ui_context.input.scroll_delta = scroll;
 
                 // Forward scroll to ECS input state for orbit camera zoom,
-                // but only when the viewport panel is focused.
-                if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
+                // but only when the mouse is hovering over the viewport.
+                let mouse_pos = self.ui_context.input.mouse_pos;
+                if self.editor_ui.last_viewport_bounds.contains(mouse_pos) {
                     let wheel_y = match delta {
                         winit::event::MouseScrollDelta::LineDelta(_, y) => y,
                         winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
