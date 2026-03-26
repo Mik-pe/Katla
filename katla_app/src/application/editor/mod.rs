@@ -50,6 +50,9 @@ pub fn upload_font_atlas(app: &mut Application) {
 pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawList> {
     let scale_factor = app.scale_factor;
 
+    // Update per-frame timers
+    app.editor_ui.update_timers(dt);
+
     // Get physical window size and convert to logical for UI layout
     let size = app.window.inner_size();
     let physical_size = Vec2::new(size.width as f32, size.height as f32);
@@ -186,7 +189,10 @@ pub fn process_editor_actions(app: &mut Application) {
             EditorAction::SaveScene => {
                 let path = std::path::PathBuf::from("assets/scenes/default.katla");
                 match crate::scene::SceneManager::save_to_file(app, &path) {
-                    Ok(()) => info!("Scene saved to {:?}", path),
+                    Ok(()) => {
+                        info!("Scene saved to {:?}", path);
+                        app.editor_ui.show_save_confirmation();
+                    }
                     Err(e) => log::error!("Failed to save scene: {}", e),
                 }
             }

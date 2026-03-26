@@ -13,6 +13,8 @@ pub struct StatusBar<'a> {
     pub total_assets: usize,
     pub is_playing: bool,
     pub theme: &'a Theme,
+    /// If > 0, show "Scene saved" confirmation in the status bar.
+    pub save_confirmation_timer: f32,
 }
 
 impl<'a> StatusBar<'a> {
@@ -27,6 +29,7 @@ impl<'a> StatusBar<'a> {
         total_assets: usize,
         is_playing: bool,
         theme: &'a Theme,
+        save_confirmation_timer: f32,
     ) -> Self {
         Self {
             screen_size,
@@ -38,6 +41,7 @@ impl<'a> StatusBar<'a> {
             total_assets,
             is_playing,
             theme,
+            save_confirmation_timer,
         }
     }
 }
@@ -120,6 +124,21 @@ impl<'a> Widget for StatusBar<'a> {
             start_y,
         );
         ui.draw_text(&theme_text, theme_pos, self.theme.text_muted, font_size);
+
+        // Show transient save confirmation
+        if self.save_confirmation_timer > 0.0 {
+            let save_text = "✓ Scene saved";
+            let save_size = ui.measure_text(save_text, font_size);
+            let save_x = bar_bounds.min.x() + (bar_bounds.width() - save_size.x()) * 0.5;
+            // Fade out over the last 0.5 seconds
+            let alpha = if self.save_confirmation_timer < 0.5 {
+                self.save_confirmation_timer / 0.5
+            } else {
+                1.0
+            };
+            let save_color = self.theme.success.with_alpha(alpha);
+            ui.draw_text(save_text, Vec2::new(save_x, start_y), save_color, font_size);
+        }
 
         Response::default()
     }
