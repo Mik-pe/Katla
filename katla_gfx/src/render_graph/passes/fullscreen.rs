@@ -37,6 +37,8 @@ pub struct TonemapParams {
     pub mode: TonemapOperator,
     /// Bindless texture index for HDR source (None = not a tonemap pass)
     pub hdr_texture_index: Option<u32>,
+    /// Bindless texture index for stencil indicator R8 texture (wallhack overlay)
+    pub stencil_indicator_index: Option<u32>,
 }
 
 impl Default for TonemapParams {
@@ -46,6 +48,7 @@ impl Default for TonemapParams {
             gamma: 2.2,
             mode: TonemapOperator::Aces,
             hdr_texture_index: None,
+            stencil_indicator_index: None,
         }
     }
 }
@@ -227,6 +230,7 @@ mod tests {
             gamma: 2.4,
             mode: TonemapOperator::Reinhard,
             hdr_texture_index: Some(5),
+            stencil_indicator_index: None,
         };
         let pass = FullscreenPass::new("tonemap")
             .read("hdr_color")
