@@ -152,7 +152,7 @@ impl ApplicationBuilder {
         use katla_gfx::render_graph::UIPass;
         use katla_gfx::render_graph::{
             DepthPrepass, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
-            ShadowPass,
+            OutlinePass, ShadowPass,
         };
         use katla_gfx::render_pass::{ClearValue, LoadOp, StoreOp};
         use katla_gfx::texture::ImageFormat as TextureImageFormat;
@@ -261,6 +261,28 @@ impl ApplicationBuilder {
                 message: format!("Failed to initialize skinned depth prepass pipeline: {}", e),
             })?;
 
+        // Initialize outline pipelines for stencil-based selection highlight
+        let stencil_mark_shader_path = resources.shader_path("outline/stencil_mark.wgsl");
+        let stencil_mark_skinned_shader_path =
+            resources.shader_path("outline/stencil_mark_skinned.wgsl");
+        let outline_draw_shader_path = resources.shader_path("outline/outline_draw.wgsl");
+        let outline_draw_skinned_shader_path =
+            resources.shader_path("outline/outline_draw_skinned.wgsl");
+        let overlay_shader_path = resources.shader_path("outline/overlay.wgsl");
+        let overlay_skinned_shader_path = resources.shader_path("outline/overlay_skinned.wgsl");
+        renderer
+            .init_outline_pipelines(
+                &stencil_mark_shader_path,
+                &stencil_mark_skinned_shader_path,
+                &outline_draw_shader_path,
+                &outline_draw_skinned_shader_path,
+                &overlay_shader_path,
+                &overlay_skinned_shader_path,
+            )
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to initialize outline pipelines: {}", e),
+            })?;
+
         // Compile geometry shader for PBR model rendering
         log::info!("About to compile PBR geometry shader...");
         let geometry_shader_path = resources.shader_path("model_pbr.wgsl");
@@ -361,10 +383,7 @@ impl ApplicationBuilder {
             // Depth prepass: renders scene depth from camera's perspective.
             // Also outputs object IDs to a R32Uint texture for GPU-based entity picking.
             // Populates the depth buffer before the geometry pass for early-Z rejection.
-            .add_pass(
-                DepthPrepass::new("depth_prepass")
-                    .write_object_id("object_id"),
-            )
+            .add_pass(DepthPrepass::new("depth_prepass").write_object_id("object_id"))
             // Geometry pass: renders scene to HDR color texture
             // Loads existing contents (sky pass) and writes geometry on top
             // Reuses depth from the depth prepass (LoadOp::Load)
@@ -387,6 +406,13 @@ impl ApplicationBuilder {
                     )
                     .material(geometry_material)
                     .read("shadow_atlas"),
+            )
+            // Outline pass: stencil-based selection highlight for editor.
+            // Renders after geometry so the outline is drawn on top of the scene.
+            // Only draws when entities are selected (filtered draw list).
+            .add_pass(
+                OutlinePass::new("outline")
+                    .write_color("hdr_color", TextureImageFormat::R16G16B16A16Sfloat),
             )
             // Tonemap pass: samples HDR color and outputs to viewport texture
             // The viewport texture is then sampled by the UI system to display in the viewport panel
