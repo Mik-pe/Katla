@@ -58,4 +58,54 @@ impl VulkanRenderer {
             buffer.update(matrices);
         }
     }
+
+    /// Copy joint matrices from the animation compute output buffer to a
+    /// specific entity's skeleton buffer via GPU-side buffer copy.
+    ///
+    /// Call this after the animation compute dispatch and its barrier.
+    ///
+    /// # Arguments
+    /// * `cmd` - Command buffer to record the copy on
+    /// * `skeleton_handle` - Target skeleton buffer handle
+    /// * `src_buffer` - Animation compute output buffer (TRANSFER_SRC)
+    /// * `joint_offset` - Offset into src_buffer in bytes (joint_index * 64)
+    /// * `joint_count` - Number of joints to copy
+    pub fn copy_skeleton_from_compute_output(
+        &self,
+        cmd: vk::CommandBuffer,
+        skeleton_handle: SkeletonHandle,
+        src_buffer: vk::Buffer,
+        joint_offset: u32,
+        joint_count: u32,
+    ) {
+        let dst_buffer = match self
+            .skeleton_buffers
+            .get(skeleton_handle.index())
+            .map(|b| b.buffer())
+        {
+            Some(b) => b,
+            None => return,
+        };
+
+        let src_offset = (joint_offset as u64) * 64;
+        let size = (joint_count as u64) * 64;
+
+        let copy_region = vk::BufferCopy::default()
+            .src_offset(src_offset)
+            .dst_offset(0)
+            .size(size);
+
+        unsafe {
+            self.context
+                .device
+                .cmd_copy_buffer(cmd, src_buffer, dst_buffer, &[copy_region]);
+        }
+    }
+
+    /// Get the raw Vulkan buffer for a skeleton handle.
+    pub fn skeleton_buffer_handle(&self, handle: SkeletonHandle) -> Option<vk::Buffer> {
+        self.skeleton_buffers
+            .get(handle.index())
+            .map(|b| b.buffer())
+    }
 }
