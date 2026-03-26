@@ -142,3 +142,40 @@ When a pass samples a transient texture via bindless, the read dependency MUST b
 - `dstStage = FRAGMENT_SHADER` (this pass samples)
 - `srcAccess = COLOR_ATTACHMENT_WRITE`
 - `dstAccess = SHADER_READ`
+
+## ECS Event System
+
+Entity and component events use a simple `Vec`-based queue on `World`:
+
+- **`EntityEvent`** enum: `Spawned(EntityId)`, `Destroyed(EntityId)` — defined in `katla_ecs/src/events.rs`
+- **`ComponentEvent`** enum: `Added(EntityId, TypeId)`, `Removed(EntityId, TypeId)` — uses `TypeId` for type-safe filtering
+- Events emitted from `create_entity`/`destroy_entity`/`add_component`/`remove_component`
+- Access: `world.entity_events() -> &[EntityEvent]`, `world.component_events() -> &[ComponentEvent]`, `world.component_events_for::<T>() -> Vec<&ComponentEvent>` (filtered by TypeId)
+- **Flushed at end of `update()`** — events from the current frame are visible to systems during `update()` but cleared afterward
+- `cleanup_empty_entities()` and `clear_entities()` do NOT emit events (bulk cleanup, not user-initiated)
+
+`World::add_component` is generic `<T: Component + 'static>` (not `impl Trait`) to capture `TypeId::of::<T>()` for event emission.
+
+## ECS Change Detection
+
+Per-component change detection via generation counters:
+
+- Each `ComponentStorage` has a `SparseSet<EntityId, u64>` tracking generation per entity
+- Generation incremented on `insert()` (add_component) and `get_mut()` (get_component_mut)
+- `ComponentStorageManager` maintains a `changed_generations` snapshot per component TypeId
+- `world.query_changed::<Q>()` returns entities whose generation > snapshot (union semantics for multi-component tuples)
+- `clear_changed()` called at end of `update()` resets the snapshot
+- `collect_changed_entity_ids()` iterates all entities with any component, not just queried types — minor perf note for large worlds
+
+## ECS World Internal: UnsafeCell
+
+`World.storage` is wrapped in `UnsafeCell<ComponentStorageManager>` to support `query_ref(&self)` (immutable queries from shared references):
+
+- All storage access goes through `self.storage.get()` (unsafe, `&self`) or `self.storage.get_mut()` (safe, `&mut self`)
+- `query_ref()` is sound only for immutable `QueryData` types (`&T`, `(&T, &U)`, etc.) — mutable queries through `query_ref` would be UB but are not prevented at compile time
+- `UnsafeCell` makes `World` `!Sync` (acceptable — World is never shared across threads)
+- Old `pub(crate) storage` field removed; use `world.storage_mut(&mut self)` for direct access
+
+## ECS QueryData Trait Maintenance
+
+`QueryData` trait has methods that must be implemented across all arity files (`iter1.rs` through `iter8.rs`). When adding new trait methods (e.g., `type_ids_for_changed`, `entity_id_from_item`), ALL 8 files must be updated. This is a maintenance burden — be thorough when adding methods.

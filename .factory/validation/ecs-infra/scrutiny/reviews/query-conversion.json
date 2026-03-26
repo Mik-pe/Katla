@@ -1,0 +1,57 @@
+{
+  "featureId": "query-conversion",
+  "milestone": "ecs-infra",
+  "reviewedAt": "2026-03-26T23:30:00Z",
+  "commitId": "cbf85498128aa350815e0709d1976a46781ffca6",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean implementation of query_ref() using UnsafeCell interior mutability on World.storage. Three hot-path conversion sites (renderer collect_draws, editor collect_entity_info, scene save) correctly switched from entity_ids()+get_component() loops to query()/query_ref(). Seven tests cover correctness and performance. One tangential NDC Y-axis fix in editor unproject is well-tested. The UnsafeCell soundness concern for query_ref is a known limitation without compile-time enforcement but is acceptable for this codebase.",
+    "issues": [
+      {
+        "file": "katla_ecs/src/world.rs",
+        "line": 230,
+        "severity": "non_blocking",
+        "description": "query_ref() accepts any QueryData type including &mut T, but the SAFETY comment states mutable queries would be unsound. There is no compile-time guard preventing world.query_ref::<&mut SomeComponent>() from being called. This is an API footgun — a caller could accidentally trigger UB. A future improvement would be to add a separate QueryDataRef marker trait or use a type-state pattern to restrict query_ref to immutable-only access. Not blocking since no call sites use mutable query_ref, and the doc comment documents the restriction."
+      },
+      {
+        "file": "katla_ecs/src/world.rs",
+        "line": 34,
+        "severity": "non_blocking",
+        "description": "UnsafeCell<ComponentStorageManager> makes World !Sync. This is acceptable since World is never shared across threads (no Arc<World> usage found), but it should be noted in case future multi-threading is planned. No Send/Sync impls were added, so this is the default UnsafeCell behavior and is correct."
+      },
+      {
+        "file": "katla_app/src/application/editor/mod.rs",
+        "line": 573,
+        "severity": "non_blocking",
+        "description": "Tangential change: NDC Y-axis calculation in unproject_to_ground_plane_impl was flipped from negating Y to not negating Y. The comment explains this is for Windows top-down swapchain. This change is well-tested (5 existing unit tests verify unproject behavior) and is a bug fix rather than query conversion work. Including bug fixes in feature commits is a minor style concern but not blocking."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The worker added a tangential bug fix (NDC Y-axis flip in unproject_to_ground_plane_impl) alongside the query conversion feature. While the fix is correct and well-tested, AGENTS.md says 'One logical change per commit'. Future workers should be aware that the codebase owner is OK with small related fixes bundled in feature commits.",
+      "evidence": "katla_app/src/application/editor/mod.rs:571-573 — Y-axis flip change unrelated to query conversion"
+    },
+    {
+      "area": "library",
+      "observation": "The World struct uses UnsafeCell<ComponentStorageManager> to support query_ref(&self). This is an important architectural detail for anyone working on World internals. Future workers modifying World should know that storage access always goes through UnsafeCell::get() or get_mut().",
+      "evidence": "katla_ecs/src/world.rs:34-37 — UnsafeCell wrapping with safety documentation",
+      "suggestedTarget": "library",
+      "suggestedKey": "world-unsafe-cell",
+      "suggestedContent": "World.storage is wrapped in UnsafeCell<ComponentStorageManager> to support query_ref() (immutable queries from &self). All storage access goes through self.storage.get() (unsafe, &self) or self.storage.get_mut() (safe, &mut self). query_ref() is sound only for immutable QueryData types (&T, (&T, &U), etc.). Mutable queries through query_ref would be UB but are not prevented at compile time."
+    },
+    {
+      "area": "library",
+      "observation": "The old pub(crate) field World.storage and its getter methods storage()/storage_mut() were removed. A new pub storage_mut() method was added. This changes the public API surface of World.",
+      "evidence": "katla_ecs/src/world.rs:70-73 — new storage_mut() replaces old pub(crate) field access",
+      "suggestedTarget": "library",
+      "suggestedKey": "world-storage-api",
+      "suggestedContent": "World no longer exposes storage as a pub(crate) field. Use world.storage_mut(&mut self) for direct ComponentStorageManager access. The old storage() getter that returned &ComponentStorageManager was removed. query_ref(&self) provides immutable iteration from shared references."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Query conversion feature is well-implemented. The UnsafeCell-based query_ref() correctly enables read-only queries from shared references. All three hot-path sites (renderer, editor, scene save) were properly converted. Seven tests cover correctness (query matches manual loop, mut propagation, empty world, component filtering, query_ref equivalence) and performance (event emission and change detection overhead). The only notable concern is that query_ref does not prevent mutable queries at the type level, but this is documented and no call sites misuse it. Tangential NDC Y-axis fix is correct. Status: PASS."
+}
