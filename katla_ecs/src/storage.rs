@@ -122,11 +122,17 @@ pub trait AnyComponentStorage: Any {
     /// Removes a component for the given entity.
     fn remove_entity(&mut self, entity_id: EntityId);
 
+    /// Returns true if the entity has a component in this storage.
+    fn contains_entity(&self, entity_id: EntityId) -> bool;
+
     /// Clears all components.
     fn clear(&mut self);
 
     /// Removes all components for entities not in the given set.
     fn retain_entities(&mut self, valid_entities: &std::collections::HashSet<EntityId>);
+
+    /// Collects all entity IDs that have a component in this storage.
+    fn collect_entity_ids(&self, out: &mut std::collections::HashSet<EntityId>);
 
     /// Returns a reference to self as `Any` for downcasting.
     fn as_any(&self) -> &dyn Any;
@@ -140,12 +146,22 @@ impl<T: Component> AnyComponentStorage for ComponentStorage<T> {
         self.remove(entity_id);
     }
 
+    fn contains_entity(&self, entity_id: EntityId) -> bool {
+        self.contains(entity_id)
+    }
+
     fn clear(&mut self) {
         self.clear();
     }
 
     fn retain_entities(&mut self, valid_entities: &std::collections::HashSet<EntityId>) {
         self.retain_entities(valid_entities);
+    }
+
+    fn collect_entity_ids(&self, out: &mut std::collections::HashSet<EntityId>) {
+        for (entity_id, _) in self.storage.iter() {
+            out.insert(entity_id);
+        }
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -258,10 +274,17 @@ impl ComponentStorageManager {
     }
 
     /// Removes all components for the given entity across all component types.
-    pub fn remove_entity(&mut self, entity_id: EntityId) {
-        for storage in self.storages.values_mut() {
-            storage.remove_entity(entity_id);
+    ///
+    /// Returns the TypeIds of components that were actually present and removed.
+    pub fn remove_entity(&mut self, entity_id: EntityId) -> Vec<std::any::TypeId> {
+        let mut removed_types = Vec::new();
+        for (&type_id, storage) in self.storages.iter_mut() {
+            if storage.contains_entity(entity_id) {
+                storage.remove_entity(entity_id);
+                removed_types.push(type_id);
+            }
         }
+        removed_types
     }
 
     /// Removes all components for entities not in the given set.
@@ -281,6 +304,15 @@ impl ComponentStorageManager {
     /// Returns the number of component types stored.
     pub fn storage_count(&self) -> usize {
         self.storages.len()
+    }
+
+    /// Returns the set of entity IDs that have at least one component.
+    pub(crate) fn entities_with_components(&self) -> std::collections::HashSet<EntityId> {
+        let mut ids = std::collections::HashSet::new();
+        for storage in self.storages.values() {
+            storage.collect_entity_ids(&mut ids);
+        }
+        ids
     }
 
     /// Creates a query for iterating over entities with specific components.
@@ -407,7 +439,10 @@ mod tests {
         }
 
         assert_eq!(
-            manager.get_component::<TestComponent>(entity).unwrap().value,
+            manager
+                .get_component::<TestComponent>(entity)
+                .unwrap()
+                .value,
             15
         );
     }

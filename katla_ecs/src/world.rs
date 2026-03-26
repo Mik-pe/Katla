@@ -1,7 +1,7 @@
 use crate::components::Component;
 use crate::entity::EntityId;
 use crate::entity_allocator::EntityAllocator;
-use crate::events::EntityEvent;
+use crate::events::{ComponentEvent, EntityEvent};
 use crate::resource::ResourceStorage;
 use crate::storage::ComponentStorageManager;
 use crate::system::{OrderedSystem, System, SystemExecutionOrder};
@@ -43,6 +43,8 @@ pub struct World {
     resources: ResourceStorage,
     /// Entity lifecycle events emitted during the current frame
     entity_events: Vec<EntityEvent>,
+    /// Component events emitted during the current frame
+    component_events: Vec<ComponentEvent>,
 }
 
 impl World {
@@ -55,6 +57,7 @@ impl World {
             input_state: InputState::new(),
             resources: ResourceStorage::new(),
             entity_events: Vec::new(),
+            component_events: Vec::new(),
         }
     }
 
@@ -97,9 +100,14 @@ impl World {
     ///
     /// Returns `true` if the entity existed and was removed, `false` otherwise.
     /// Emits `EntityEvent::Destroyed` only for live entities.
+    /// Emits `ComponentEvent::Removed` for each component that was on the entity.
     pub fn destroy_entity(&mut self, id: EntityId) -> bool {
         if self.entities.deallocate(id) {
-            self.storage.remove_entity(id);
+            let removed_types = self.storage.remove_entity(id);
+            for type_id in &removed_types {
+                self.component_events
+                    .push(ComponentEvent::Removed(id, *type_id));
+            }
             self.entity_events.push(EntityEvent::Destroyed(id));
             true
         } else {
@@ -115,18 +123,29 @@ impl World {
     /// Adds a component to an entity.
     ///
     /// Does nothing if the entity doesn't exist.
-    pub fn add_component(&mut self, id: EntityId, component: impl Component + 'static) {
+    /// Emits `ComponentEvent::Added` when the component is added.
+    pub fn add_component<T: Component + 'static>(&mut self, id: EntityId, component: T) {
         if self.entities.is_valid(id) {
             self.storage.add_component(id, component);
+            self.component_events
+                .push(ComponentEvent::Added(id, std::any::TypeId::of::<T>()));
         }
     }
 
     /// Removes a component from an entity.
+    ///
+    /// Emits `ComponentEvent::Removed` only if the component existed on the entity.
     pub fn remove_component<T>(&mut self, id: EntityId) -> bool
     where
         T: Component + 'static,
     {
-        self.storage.remove_component::<T>(id)
+        if self.storage.remove_component::<T>(id) {
+            self.component_events
+                .push(ComponentEvent::Removed(id, std::any::TypeId::of::<T>()));
+            true
+        } else {
+            false
+        }
     }
 
     /// Gets a reference to a component for a specific entity.
@@ -233,6 +252,7 @@ impl World {
 
         // Flush per-frame events
         self.entity_events.clear();
+        self.component_events.clear();
 
         // Clear per-frame mouse delta after the tick.
         self.input_state.mouse_delta = (0.0, 0.0);
@@ -274,6 +294,29 @@ impl World {
     /// and cleared at the end of each `update()` call.
     pub fn entity_events(&self) -> &[EntityEvent] {
         &self.entity_events
+    }
+
+    /// Returns the component events emitted during the current frame.
+    ///
+    /// Events are accumulated from `add_component`, `remove_component`, and
+    /// `destroy_entity` calls and cleared at the end of each `update()` call.
+    pub fn component_events(&self) -> &[ComponentEvent] {
+        &self.component_events
+    }
+
+    /// Returns component events filtered to a specific component type.
+    ///
+    /// Only events whose `TypeId` matches `TypeId::of::<T>()` are returned.
+    pub fn component_events_for<T: Component + 'static>(&self) -> Vec<&ComponentEvent> {
+        let target = std::any::TypeId::of::<T>();
+        self.component_events
+            .iter()
+            .filter(|event| match event {
+                ComponentEvent::Added(_, type_id) | ComponentEvent::Removed(_, type_id) => {
+                    *type_id == target
+                }
+            })
+            .collect()
     }
 
     /// Removes entities that have no components.
@@ -672,5 +715,203 @@ mod tests {
         let events = world.entity_events();
         assert_eq!(events[0], EntityEvent::Spawned(id3));
         assert_eq!(events[1], EntityEvent::Destroyed(id3));
+    }
+
+    // --- Component event tests ---
+
+    #[test]
+    fn test_component_added_event() {
+        let mut world = World::new();
+        let id = world.create_entity();
+
+        world.add_component(id, TestComponent { value: 42 });
+
+        let events = world.component_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0],
+            ComponentEvent::Added(id, std::any::TypeId::of::<TestComponent>())
+        );
+    }
+
+    #[test]
+    fn test_component_removed_event() {
+        let mut world = World::new();
+        let id = world.create_entity();
+        world.add_component(id, TestComponent { value: 1 });
+
+        // Clear the Added event
+        world.component_events.clear();
+
+        assert!(world.remove_component::<TestComponent>(id));
+
+        let events = world.component_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0],
+            ComponentEvent::Removed(id, std::any::TypeId::of::<TestComponent>())
+        );
+    }
+
+    #[test]
+    fn test_destroy_entity_emits_component() {
+        let mut world = World::new();
+        let id = world.create_entity();
+        world.add_component(id, TestComponent { value: 1 });
+
+        // Clear the Added event
+        world.component_events.clear();
+
+        assert!(world.destroy_entity(id));
+
+        let comp_events: Vec<_> = world
+            .component_events()
+            .iter()
+            .filter(|e| matches!(e, ComponentEvent::Removed(..)))
+            .collect();
+        assert_eq!(comp_events.len(), 1);
+        assert_eq!(
+            comp_events[0],
+            &ComponentEvent::Removed(id, std::any::TypeId::of::<TestComponent>())
+        );
+
+        // Entity destroyed event should also be emitted
+        let ent_events: Vec<_> = world
+            .entity_events()
+            .iter()
+            .filter(|e| matches!(e, EntityEvent::Destroyed(..)))
+            .collect();
+        assert_eq!(ent_events.len(), 1);
+    }
+
+    #[test]
+    fn test_destroy_entity_emits_component_removed_for_multiple_types() {
+        let mut world = World::new();
+
+        #[derive(Component, Default)]
+        struct CompA {
+            _x: i32,
+        }
+        #[derive(Component, Default)]
+        struct CompB {
+            _y: f32,
+        }
+
+        let id = world.create_entity();
+        world.add_component(id, CompA::default());
+        world.add_component(id, CompB::default());
+
+        world.component_events.clear();
+
+        world.destroy_entity(id);
+
+        let comp_events: Vec<_> = world
+            .component_events()
+            .iter()
+            .filter(|e| matches!(e, ComponentEvent::Removed(..)))
+            .collect();
+        assert_eq!(comp_events.len(), 2);
+
+        let type_ids: Vec<_> = comp_events
+            .iter()
+            .map(|e| match e {
+                ComponentEvent::Removed(_, tid) => *tid,
+                _ => panic!("unexpected event variant"),
+            })
+            .collect();
+        assert!(type_ids.contains(&std::any::TypeId::of::<CompA>()));
+        assert!(type_ids.contains(&std::any::TypeId::of::<CompB>()));
+    }
+
+    #[test]
+    fn test_component_events_type_safety() {
+        let mut world = World::new();
+
+        #[derive(Component, Default)]
+        struct Health {
+            _hp: f32,
+        }
+        #[derive(Component, Default)]
+        struct Mana {
+            _mp: f32,
+        }
+
+        let id1 = world.create_entity();
+        let id2 = world.create_entity();
+        world.add_component(id1, Health::default());
+        world.add_component(id2, Mana::default());
+        world.remove_component::<Health>(id1);
+
+        let health_events = world.component_events_for::<Health>();
+        assert_eq!(health_events.len(), 2); // Added + Removed
+        assert!(health_events.iter().all(|e| {
+            let tid = match e {
+                ComponentEvent::Added(_, tid) | ComponentEvent::Removed(_, tid) => *tid,
+            };
+            tid == std::any::TypeId::of::<Health>()
+        }));
+
+        let mana_events = world.component_events_for::<Mana>();
+        assert_eq!(mana_events.len(), 1); // Only Added
+    }
+
+    #[test]
+    fn test_component_events_flushed() {
+        let mut world = World::new();
+        let id = world.create_entity();
+
+        world.add_component(id, TestComponent { value: 1 });
+        assert_eq!(world.component_events().len(), 1);
+
+        world.update(0.016);
+        assert!(world.component_events().is_empty());
+    }
+
+    #[test]
+    fn test_remove_nonexistent_component() {
+        let mut world = World::new();
+        let id = world.create_entity();
+
+        assert!(!world.remove_component::<TestComponent>(id));
+        assert!(world.component_events().is_empty());
+    }
+
+    #[test]
+    fn test_double_add_component() {
+        let mut world = World::new();
+        let id = world.create_entity();
+
+        world.add_component(id, TestComponent { value: 1 });
+        world.add_component(id, TestComponent { value: 2 });
+
+        let events: Vec<_> = world
+            .component_events()
+            .iter()
+            .filter(|e| matches!(e, ComponentEvent::Added(..)))
+            .collect();
+        assert_eq!(events.len(), 2);
+        assert_eq!(
+            events[0],
+            &ComponentEvent::Added(id, std::any::TypeId::of::<TestComponent>())
+        );
+        assert_eq!(
+            events[1],
+            &ComponentEvent::Added(id, std::any::TypeId::of::<TestComponent>())
+        );
+    }
+
+    #[test]
+    fn test_component_events_accumulate_across_frame() {
+        let mut world = World::new();
+
+        let id = world.create_entity();
+        world.add_component(id, TestComponent { value: 1 });
+
+        world.update(0.016);
+        assert!(world.component_events().is_empty());
+
+        let id2 = world.create_entity();
+        world.add_component(id2, TestComponent { value: 2 });
+        assert_eq!(world.component_events().len(), 1);
     }
 }
