@@ -59,6 +59,16 @@ pub struct FrameGraph {
     /// Calculated each frame based on alive particle count.
     pub(super) particle_simulate_workgroup_count: u32,
 
+    /// Animation skeleton count for this frame.
+    /// Number of skeletons to evaluate in the pose compute pass.
+    pub(super) animation_skeleton_count: u32,
+
+    /// Skeleton copy commands for this frame.
+    /// Each entry is (skeleton_handle_index, joint_offset_bytes, joint_count).
+    /// The compute pass copies from the animation output buffer to each entity's
+    /// SkeletonBuffer after dispatch.
+    pub(super) skeleton_copy_commands: Vec<(u32, u32, u32)>,
+
     /// Flag to trigger particle debug readback this frame.
     pub(super) particle_debug_readback: bool,
 
@@ -84,6 +94,8 @@ impl FrameGraph {
             frame_count: 0,
             particle_emit_workgroup_count: 1,
             particle_simulate_workgroup_count: 1,
+            animation_skeleton_count: 0,
+            skeleton_copy_commands: Vec::new(),
             particle_debug_readback: false,
             compositing_descriptor_sets: RefCell::new(vec![None, None]),
         }
@@ -276,6 +288,22 @@ impl FrameGraph {
     /// This should be calculated each frame based on alive particle count.
     pub fn set_particle_simulate_workgroup_count(&mut self, count: u32) {
         self.particle_simulate_workgroup_count = count;
+    }
+
+    /// Set the animation skeleton count for this frame.
+    ///
+    /// This is the number of skeletons to evaluate in the pose compute pass.
+    pub fn set_animation_skeleton_count(&mut self, count: u32) {
+        self.animation_skeleton_count = count;
+    }
+
+    /// Set skeleton copy commands for this frame.
+    ///
+    /// Each entry is (skeleton_handle_index, joint_offset, joint_count).
+    /// The animation compute pass copies from the output buffer to each
+    /// entity's SkeletonBuffer after the dispatch.
+    pub fn set_skeleton_copy_commands(&mut self, commands: Vec<(u32, u32, u32)>) {
+        self.skeleton_copy_commands = commands;
     }
 
     /// Set whether to trigger particle debug readback this frame.
@@ -868,29 +896,54 @@ impl Default for FrameGraphBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::pass::PassType;
 
     #[test]
-    fn test_frame_graph_new() {
-        let graph = FrameGraph::new();
-        assert_eq!(graph.pass_count(), 0);
+    fn test_frame_graph_add_and_index_passes() {
+        let mut graph = FrameGraph::new();
+        let p1 = PassDesc::new("a", PassType::Graphics, vec![], vec!["r1".to_string()]);
+        let p2 = PassDesc::new("b", PassType::Graphics, vec!["r1".to_string()], vec!["r2".to_string()]);
+
+        graph.add_pass(p1);
+        graph.add_pass(p2);
+
+        assert_eq!(graph.pass_count(), 2);
+        assert_eq!(graph.pass_index("a"), Some(0));
+        assert_eq!(graph.pass_index("b"), Some(1));
+        assert_eq!(graph.pass_index("nonexistent"), None);
+    }
+
+    #[test]
+    fn test_frame_graph_insert_pass_reindexes() {
+        let mut graph = FrameGraph::new();
+        graph.add_pass(PassDesc::new("a", PassType::Graphics, vec![], vec![]));
+        graph.add_pass(PassDesc::new("b", PassType::Graphics, vec![], vec![]));
+
+        graph.insert_pass(1, PassDesc::new("inserted", PassType::Graphics, vec![], vec![]));
+
+        assert_eq!(graph.pass_count(), 3);
+        assert_eq!(graph.pass_index("a"), Some(0));
+        assert_eq!(graph.pass_index("inserted"), Some(1));
+        assert_eq!(graph.pass_index("b"), Some(2));
+    }
+
+    #[test]
+    fn test_frame_graph_add_pass_resets_compiled() {
+        let mut graph = FrameGraph::new();
+        graph.add_pass(PassDesc::new("a", PassType::Graphics, vec![], vec![]));
+        graph.compile().unwrap();
+        assert!(graph.compiled);
+
+        graph.add_pass(PassDesc::new("b", PassType::Graphics, vec![], vec![]));
         assert!(!graph.compiled);
+        assert!(graph.execution_plan.is_none());
     }
 
     #[test]
-    fn test_frame_graph_default() {
-        let graph = FrameGraph::default();
-        assert_eq!(graph.pass_count(), 0);
-    }
+    fn test_frame_graph_builder_with_resources() {
+        let builder = FrameGraphBuilder::new()
+            .import_resource("ext", GraphResourceHandle::new(42));
 
-    #[test]
-    fn test_frame_graph_builder_new() {
-        let builder = FrameGraphBuilder::new();
-        assert!(builder.pass_builders.is_empty());
-    }
-
-    #[test]
-    fn test_frame_graph_builder_default() {
-        let builder = FrameGraphBuilder::default();
-        assert!(builder.pass_builders.is_empty());
+        assert_eq!(builder.resources.len(), 1);
     }
 }

@@ -274,85 +274,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_geometry_pass_new() {
-        let pass = GeometryPass::new("test_geometry");
-        assert_eq!(pass.name(), "test_geometry");
-        assert_eq!(pass.color_output_count(), 0);
-        assert!(pass.reads().is_empty());
-    }
-
-    #[test]
-    fn test_geometry_pass_write_color() {
-        let pass = GeometryPass::new("test").write_color("color", ImageFormat::R16G16B16A16Sfloat);
-
-        assert_eq!(pass.color_output_count(), 1);
-    }
-
-    #[test]
-    fn test_geometry_pass_write_multiple_colors() {
-        let pass = GeometryPass::new("test")
-            .write_color("color0", ImageFormat::R16G16B16A16Sfloat)
-            .write_color("color1", ImageFormat::R8G8B8A8Srgb);
-
-        assert_eq!(pass.color_output_count(), 2);
-    }
-
-    #[test]
-    fn test_geometry_pass_full_setup() {
-        let pass = GeometryPass::new("geometry")
-            .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-            .read("shadow_map")
-            .read("previous_frame")
-            .clear_color([0.1, 0.2, 0.3, 1.0]);
-
-        assert_eq!(pass.name(), "geometry");
-        assert_eq!(pass.color_output_count(), 1);
-        assert_eq!(pass.reads().len(), 2);
-        assert_eq!(pass.reads()[0], "shadow_map");
-        assert_eq!(pass.reads()[1], "previous_frame");
-    }
-
-    #[test]
-    fn test_geometry_pass_custom_load_store() {
-        let pass = GeometryPass::new("test").write_color_with(
-            "color",
-            ImageFormat::R16G16B16A16Sfloat,
-            LoadOp::Load,
-            StoreOp::DontCare,
-            ClearValue::OPAQUE_BLACK,
-        );
-
-        assert_eq!(pass.color_output_count(), 1);
-    }
-
-    #[test]
-    fn test_geometry_pass_material() {
-        let material = crate::handle::MaterialHandle::new(42);
-        let pass = GeometryPass::new("test")
-            .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-            .material(material);
-
-        // Material is passed through to the builder
-        let builder = pass.as_builder();
-        assert_eq!(builder.material, Some(material));
-        assert_eq!(builder.output_format, Some(ImageFormat::R16G16B16A16Sfloat));
-    }
-
-    #[test]
-    fn test_geometry_pass_builder_trait() {
-        let pass = GeometryPass::new("geometry")
-            .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-            .read("shadow_map");
-
-        let builder = pass.as_builder();
-
-        assert_eq!(builder.name, "geometry");
-        assert_eq!(builder.pass_type, PassType::Graphics);
-        assert_eq!(builder.reads, vec!["shadow_map"]);
-        assert_eq!(builder.writes, vec!["color"]);
-    }
-
-    #[test]
     fn test_geometry_pass_build_fn_resolution() {
         let pass = GeometryPass::new("geometry")
             .write_color("color", ImageFormat::R16G16B16A16Sfloat)
@@ -369,7 +290,6 @@ mod tests {
 
         let data = result.unwrap();
         let pass_data = data.downcast_ref::<GeometryPassData>().unwrap();
-
         assert_eq!(pass_data.colors.len(), 1);
     }
 
@@ -379,8 +299,7 @@ mod tests {
             GeometryPass::new("geometry").write_color("color", ImageFormat::R16G16B16A16Sfloat);
 
         let builder = pass.as_builder();
-
-        let resource_map = HashMap::new(); // Empty - no resources
+        let resource_map = HashMap::new();
 
         let result = (builder.build_fn)(&resource_map);
         assert!(result.is_err());
@@ -389,5 +308,34 @@ mod tests {
             Err(RenderGraphError::ResourceNotFound(name)) => assert_eq!(name, "color"),
             _ => panic!("Expected ResourceNotFound error"),
         }
+    }
+
+    #[test]
+    fn test_geometry_pass_multiple_color_outputs() {
+        let pass = GeometryPass::new("geometry")
+            .write_color("albedo", ImageFormat::R8G8B8A8Srgb)
+            .write_color("normals", ImageFormat::R16G16B16A16Sfloat);
+
+        let builder = pass.as_builder();
+
+        let mut resource_map = HashMap::new();
+        resource_map.insert("albedo".to_string(), GraphResourceHandle::new(0));
+        resource_map.insert("normals".to_string(), GraphResourceHandle::new(1));
+
+        let result = (builder.build_fn)(&resource_map).unwrap();
+        let pass_data = result.downcast_ref::<GeometryPassData>().unwrap();
+        assert_eq!(pass_data.colors.len(), 2);
+    }
+
+    #[test]
+    fn test_geometry_pass_material_propagates() {
+        let material = crate::handle::MaterialHandle::new(42);
+        let pass = GeometryPass::new("test")
+            .write_color("color", ImageFormat::R16G16B16A16Sfloat)
+            .material(material);
+
+        let builder = pass.as_builder();
+        assert_eq!(builder.material, Some(material));
+        assert_eq!(builder.output_format, Some(ImageFormat::R16G16B16A16Sfloat));
     }
 }

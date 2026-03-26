@@ -207,4 +207,55 @@ mod tests {
         let wrong_gen = EntityId::new(id.index(), id.generation() + 1);
         assert!(!allocator.deallocate(wrong_gen));
     }
+
+    #[test]
+    fn test_entity_allocator_stress_create_destroy() {
+        let mut allocator = EntityAllocator::new();
+        let mut ids = Vec::new();
+
+        // Create 1000 entities
+        for _ in 0..1000 {
+            ids.push(allocator.allocate());
+        }
+        assert_eq!(allocator.live_count(), 1000);
+
+        // Destroy all
+        for id in &ids {
+            assert!(allocator.deallocate(*id));
+        }
+        assert_eq!(allocator.live_count(), 0);
+
+        // Create 1000 more - should reuse slots
+        let mut new_ids = Vec::new();
+        for _ in 0..1000 {
+            new_ids.push(allocator.allocate());
+        }
+        assert_eq!(allocator.live_count(), 1000);
+
+        // Verify no corruption: all new IDs should be valid
+        for id in &new_ids {
+            assert!(allocator.is_valid(*id));
+        }
+
+        // Verify live iteration matches count
+        assert_eq!(allocator.iter_live().count(), 1000);
+    }
+
+    #[test]
+    fn test_allocator_clear_resets_state() {
+        let mut allocator = EntityAllocator::new();
+        allocator.allocate();
+        allocator.allocate();
+        allocator.allocate();
+
+        allocator.clear();
+
+        assert_eq!(allocator.live_count(), 0);
+        assert_eq!(allocator.iter_live().count(), 0);
+
+        // Should be able to allocate fresh IDs after clear
+        let id = allocator.allocate();
+        assert_eq!(id.index(), 0);
+        assert_eq!(id.generation(), 0);
+    }
 }

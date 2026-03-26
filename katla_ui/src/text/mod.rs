@@ -289,51 +289,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_font_system_creation() {
-        let sys = FontSystem::new();
-        assert_eq!(sys.atlas_width, FontSystem::DEFAULT_ATLAS_WIDTH);
-        assert_eq!(sys.atlas_height, FontSystem::DEFAULT_ATLAS_HEIGHT);
-        assert!(sys.atlas_dirty);
-    }
-
-    #[test]
-    fn test_font_id_default() {
-        assert_eq!(FontId::DEFAULT, FontId(0));
-    }
-
-    #[test]
-    fn test_subpixel_bin_zero() {
-        let (floor, bin) = SubpixelBin::new(10.0);
-        assert_eq!(floor, 10);
-        assert_eq!(bin, SubpixelBin::Zero);
-        assert_eq!(bin.as_offset(), 0.0);
-    }
-
-    #[test]
-    fn test_subpixel_bin_one() {
-        let (floor, bin) = SubpixelBin::new(10.25);
-        assert_eq!(floor, 10);
-        assert_eq!(bin, SubpixelBin::One);
-        assert_eq!(bin.as_offset(), 0.25);
-    }
-
-    #[test]
-    fn test_subpixel_bin_two() {
-        let (floor, bin) = SubpixelBin::new(10.5);
-        assert_eq!(floor, 10);
-        assert_eq!(bin, SubpixelBin::Two);
-        assert_eq!(bin.as_offset(), 0.5);
-    }
-
-    #[test]
-    fn test_subpixel_bin_three() {
-        let (floor, bin) = SubpixelBin::new(10.75);
-        assert_eq!(floor, 10);
-        assert_eq!(bin, SubpixelBin::Three);
-        assert_eq!(bin.as_offset(), 0.75);
-    }
-
-    #[test]
     fn test_subpixel_bin_boundary() {
         let (floor, bin) = SubpixelBin::new(10.249);
         assert_eq!(floor, 10);

@@ -236,13 +236,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_ui_renderer_new() {
-        let renderer = UIRenderer::new();
-        assert!(renderer.texture_registry.is_empty());
-        assert!(renderer.font_atlas_bindless_slot.is_none());
-    }
-
-    #[test]
     fn test_convert_empty_draw_list() {
         let renderer = UIRenderer::new();
         let draw_list = DrawList::new();

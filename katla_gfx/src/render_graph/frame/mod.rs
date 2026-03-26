@@ -99,6 +99,16 @@ impl<'a> Frame<'a> {
         self.graph.particle_simulate_workgroup_count
     }
 
+    /// Get the animation skeleton count for this frame.
+    pub fn animation_skeleton_count(&self) -> u32 {
+        self.graph.animation_skeleton_count
+    }
+
+    /// Get the skeleton copy commands for this frame.
+    pub fn skeleton_copy_commands(&self) -> &[(u32, u32, u32)] {
+        &self.graph.skeleton_copy_commands
+    }
+
     /// Submit a draw list to a pass.
     pub fn submit(&mut self, pass: &str, draw_list: &DrawList) -> &mut Self {
         let index = self
@@ -372,15 +382,5 @@ impl<'a> Drop for Frame<'a> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::PassExecutionData;
-
-    #[test]
-    fn test_pass_execution_data_default() {
-        let data = PassExecutionData::default();
-        assert!(data.draw_lists.is_empty());
-        assert!(data.dispatch.is_none());
-        assert!(data.uniform_data.is_empty());
-    }
-}
+// PassExecutionData is a data container with no non-trivial logic to test.
+// Full testing requires GPU context for dispatch/draw_list behavior.

@@ -572,35 +572,4 @@ mod tests {
         // Count from 0 to 4 inclusive = 5 slots
         assert_eq!(DEFAULT_EMISSION_SLOT + 1, expected_default_count);
     }
-
-    #[test]
-    fn test_debug_bindless_textures_returns_string() {
-        // Verify debug_bindless_textures returns a String
-        // Actual testing requires Vulkan context and registered textures
-        assert!(true);
-    }
-
-    #[test]
-    fn test_list_unregistered_textures_returns_vec() {
-        // Verify list_unregistered_textures returns Vec<TextureHandle>
-        // Actual testing requires Vulkan context and textures
-        assert!(true);
-    }
-
-    #[test]
-    fn test_is_bindless_registered_returns_bool() {
-        // Verify is_bindless_registered returns a bool
-        // Actual testing requires Vulkan context
-        assert!(true);
-    }
-
-    #[test]
-    fn test_bindless_stats_returns_tuple() {
-        // Verify bindless_stats returns (usize, usize, usize)
-        // Actual testing requires Vulkan context
-        let stats: (usize, usize, usize) = (0, 0, 0);
-        assert_eq!(stats.0, 0);
-        assert_eq!(stats.1, 0);
-        assert_eq!(stats.2, 0);
-    }
 }

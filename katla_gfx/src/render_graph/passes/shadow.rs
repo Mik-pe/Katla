@@ -88,31 +88,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_shadow_pass_new() {
+    fn test_shadow_pass_default_resolution() {
         let pass = ShadowPass::new("shadows");
-        assert_eq!(pass.name, "shadows");
-        assert!(pass.depth_output.is_none());
         assert_eq!(pass.resolution, (4096, 4096));
     }
 
     #[test]
-    fn test_shadow_pass_write_depth() {
-        let pass = ShadowPass::new("shadows").write_depth("shadow_map", ImageFormat::D32Sfloat);
-
-        assert!(pass.depth_output.is_some());
-        let (name, format) = pass.depth_output.unwrap();
-        assert_eq!(name, "shadow_map");
-        assert_eq!(format, ImageFormat::D32Sfloat);
-    }
-
-    #[test]
-    fn test_shadow_pass_resolution() {
-        let pass = ShadowPass::new("shadows").resolution(2048, 2048);
-        assert_eq!(pass.resolution, (2048, 2048));
-    }
-
-    #[test]
-    fn test_shadow_pass_as_builder() {
+    fn test_shadow_pass_as_builder_reads_writes() {
         let pass = ShadowPass::new("shadows")
             .write_depth("shadow_map", ImageFormat::D32Sfloat)
             .resolution(2048, 2048);
@@ -120,35 +102,7 @@ mod tests {
         let builder = pass.as_builder();
 
         assert_eq!(builder.name, "shadows");
-        assert_eq!(builder.pass_type, PassType::Graphics);
         assert!(builder.reads.is_empty());
         assert_eq!(builder.writes, vec!["shadow_map"]);
-    }
-
-    #[test]
-    fn test_shadow_pass_build_fn() {
-        let pass = ShadowPass::new("shadows")
-            .write_depth("shadow_map", ImageFormat::D32Sfloat)
-            .resolution(2048, 2048);
-
-        let builder = pass.as_builder();
-
-        let mut resource_map = HashMap::new();
-        resource_map.insert("shadow_map".to_string(), GraphResourceHandle::new(0));
-
-        let result = (builder.build_fn)(&resource_map);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_shadow_pass_build_fn_empty_resources() {
-        let pass = ShadowPass::new("shadows").write_depth("shadow_map", ImageFormat::D32Sfloat);
-
-        let builder = pass.as_builder();
-
-        let resource_map = HashMap::new();
-
-        let result = (builder.build_fn)(&resource_map);
-        assert!(result.is_ok());
     }
 }

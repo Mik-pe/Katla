@@ -305,4 +305,22 @@ mod tests {
             assert!(selection.is_selected(*e));
         }
     }
+
+    #[test]
+    fn test_deselect_nonexistent_entity_no_panic() {
+        let mut world = World::new();
+        let mut selection = Selection::new();
+        let e1 = make_entity(&mut world);
+        let e2 = make_entity(&mut world);
+
+        selection.select(e1);
+        assert!(selection.is_selected(e1));
+        assert_eq!(selection.count(), 1);
+
+        // Deselect entity B which was never selected - should not panic
+        selection.deselect(e2);
+        assert_eq!(selection.count(), 1);
+        assert!(selection.is_selected(e1));
+        assert_eq!(selection.get_primary(), Some(e1));
+    }
 }

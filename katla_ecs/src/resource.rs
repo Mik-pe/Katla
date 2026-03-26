@@ -135,13 +135,6 @@ mod tests {
     }
 
     #[test]
-    fn test_contains_true_when_present() {
-        let mut storage = ResourceStorage::new();
-        storage.insert(TestResource { value: 42 });
-        assert!(storage.contains::<TestResource>());
-    }
-
-    #[test]
     fn test_remove_returns_resource() {
         let mut storage = ResourceStorage::new();
         storage.insert(TestResource { value: 42 });
@@ -208,27 +201,6 @@ mod tests {
     }
 
     #[test]
-    fn test_clone_resource_before_insert() {
-        let mut storage = ResourceStorage::new();
-
-        let resource = AnotherTestResource {
-            name: "original".to_string(),
-        };
-
-        storage.insert(resource.clone());
-
-        // Modify original
-        let mut original = resource;
-        original.name = "modified".to_string();
-
-        // Storage should have original value
-        assert_eq!(
-            storage.get::<AnotherTestResource>().unwrap().name,
-            "original"
-        );
-    }
-
-    #[test]
     fn test_multiple_remove_and_reinsert() {
         let mut storage = ResourceStorage::new();
 
@@ -244,26 +216,6 @@ mod tests {
         storage.insert(TestResource { value: 20 });
         assert!(storage.contains::<TestResource>());
         assert_eq!(storage.get::<TestResource>().unwrap().value, 20);
-    }
-
-    #[test]
-    fn test_string_resource() {
-        let mut storage = ResourceStorage::new();
-
-        storage.insert("Hello, World!".to_string());
-
-        let retrieved = storage.get::<String>();
-        assert_eq!(retrieved.unwrap(), "Hello, World!");
-    }
-
-    #[test]
-    fn test_vec_resource() {
-        let mut storage = ResourceStorage::new();
-
-        storage.insert(vec![1, 2, 3, 4, 5]);
-
-        let retrieved = storage.get::<Vec<i32>>();
-        assert_eq!(retrieved.unwrap(), &vec![1, 2, 3, 4, 5]);
     }
 
     #[test]

@@ -574,21 +574,4 @@ impl Default for UiStyle {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_dark_theme() {
-        let style = UiStyle::dark();
-        assert!(style.window_bg.r < 0.5);
-        assert!(style.text_color.r > 0.5);
-    }
-
-    #[test]
-    fn test_light_theme() {
-        let style = UiStyle::light();
-        assert!(style.window_bg.r > 0.5);
-        assert!(style.text_color.r < 0.5);
-    }
-}

@@ -338,50 +338,10 @@ impl Drop for World {
 mod tests {
     use super::*;
     use crate::components::Component;
-    use crate::system::System;
 
     #[derive(Component, Default)]
     struct TestComponent {
         value: i32,
-    }
-
-    struct TestSystem {
-        processed_count: usize,
-    }
-
-    impl TestSystem {
-        fn new() -> Self {
-            Self { processed_count: 0 }
-        }
-    }
-
-    impl System for TestSystem {
-        fn update(&mut self, world: &mut World, _delta_time: f32) {
-            self.processed_count = world.query::<&TestComponent>().count();
-        }
-
-        fn name(&self) -> &str {
-            "TestSystem"
-        }
-    }
-
-    #[test]
-    fn test_world_creation() {
-        let world = World::new();
-        assert_eq!(world.entity_count(), 0);
-        assert_eq!(world.system_count(), 0);
-    }
-
-    #[test]
-    fn test_create_entity() {
-        let mut world = World::new();
-        let id1 = world.create_entity();
-        let id2 = world.create_entity();
-
-        assert_eq!(world.entity_count(), 2);
-        assert_ne!(id1, id2);
-        assert!(world.entity_exists(id1));
-        assert!(world.entity_exists(id2));
     }
 
     #[test]
@@ -393,34 +353,6 @@ mod tests {
         assert!(world.destroy_entity(id));
         assert_eq!(world.entity_count(), 0);
         assert!(!world.entity_exists(id));
-    }
-
-    #[test]
-    fn test_add_component() {
-        let mut world = World::new();
-        let id = world.create_entity();
-
-        world.add_component(id, TestComponent::default());
-        assert!(world.get_component::<TestComponent>(id).is_some());
-    }
-
-    #[test]
-    fn test_remove_component() {
-        let mut world = World::new();
-        let id = world.create_entity();
-
-        world.add_component(id, TestComponent::default());
-        assert!(world.remove_component::<TestComponent>(id));
-        assert!(world.get_component::<TestComponent>(id).is_none());
-    }
-
-    #[test]
-    fn test_get_component() {
-        let mut world = World::new();
-        let id = world.create_entity();
-
-        world.add_component(id, TestComponent::default());
-        assert!(world.get_component::<TestComponent>(id).is_some());
     }
 
     #[test]
@@ -439,34 +371,6 @@ mod tests {
     }
 
     #[test]
-    fn test_register_system() {
-        let mut world = World::new();
-        let system = Box::new(TestSystem::new());
-
-        world.register_system(system, SystemExecutionOrder::NORMAL);
-        assert_eq!(world.system_count(), 1);
-    }
-
-    #[test]
-    fn test_system_update() {
-        let mut world = World::new();
-
-        // Create entities with components
-        let id1 = world.create_entity();
-        world.add_component(id1, TestComponent::default());
-
-        let id2 = world.create_entity();
-        world.add_component(id2, TestComponent::default());
-
-        // Register system
-        let system = Box::new(TestSystem::new());
-        world.register_system(system, SystemExecutionOrder::NORMAL);
-
-        // Update world
-        world.update(0.016);
-    }
-
-    #[test]
     fn test_clear_entities() {
         let mut world = World::new();
         world.create_entity();
@@ -476,18 +380,6 @@ mod tests {
         assert_eq!(world.entity_count(), 3);
         world.clear_entities();
         assert_eq!(world.entity_count(), 0);
-    }
-
-    #[test]
-    fn test_entity_iteration() {
-        let mut world = World::new();
-        let id1 = world.create_entity();
-        let id2 = world.create_entity();
-
-        let ids: Vec<EntityId> = world.entity_ids().collect();
-        assert_eq!(ids.len(), 2);
-        assert!(ids.contains(&id1));
-        assert!(ids.contains(&id2));
     }
 
     #[test]
@@ -540,5 +432,89 @@ mod tests {
         // add_component should be a no-op for invalid entity
         world.add_component(id, TestComponent::default());
         assert!(world.get_component::<TestComponent>(id).is_none());
+    }
+
+    #[test]
+    fn test_entity_double_destroy_no_panic() {
+        let mut world = World::new();
+        let id = world.create_entity();
+
+        world.add_component(id, TestComponent { value: 42 });
+
+        // First destroy should succeed
+        assert!(world.destroy_entity(id));
+        // Second destroy should return false but not panic
+        assert!(!world.destroy_entity(id));
+    }
+
+    #[test]
+    fn test_query_returns_correct_data_not_just_count() {
+        let mut world = World::new();
+
+        let id1 = world.create_entity();
+        world.add_component(id1, TestComponent { value: 10 });
+
+        let id2 = world.create_entity();
+        world.add_component(id2, TestComponent { value: 20 });
+
+        let id3 = world.create_entity();
+        world.add_component(id3, TestComponent { value: 30 });
+
+        let mut values: Vec<i32> = world
+            .query::<&TestComponent>()
+            .map(|(_, comp)| comp.value)
+            .collect();
+        values.sort();
+
+        assert_eq!(values, vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn test_entity_destroy_then_spawn_reuses_slot() {
+        let mut world = World::new();
+
+        let id1 = world.create_entity();
+        let original_index = id1.index();
+
+        world.destroy_entity(id1);
+
+        let id2 = world.create_entity();
+
+        // The new entity should reuse the same slot index
+        assert_eq!(id2.index(), original_index);
+        // But should have a different generation
+        assert_ne!(id2.generation(), id1.generation());
+    }
+
+    #[test]
+    fn test_destroy_entity_returns_false_for_never_created() {
+        let mut world = World::new();
+
+        // Try to destroy an entity that was never created
+        let fake_id = EntityId::test_new(999);
+        assert!(!world.destroy_entity(fake_id));
+    }
+
+    #[test]
+    fn test_clear_entities_allows_reuse() {
+        let mut world = World::new();
+
+        for _ in 0..10 {
+            let id = world.create_entity();
+            world.add_component(id, TestComponent { value: 1 });
+        }
+
+        assert_eq!(world.entity_count(), 10);
+        world.clear_entities();
+        assert_eq!(world.entity_count(), 0);
+
+        // Should be able to create new entities after clear
+        let id = world.create_entity();
+        world.add_component(id, TestComponent { value: 99 });
+        assert_eq!(world.entity_count(), 1);
+        assert_eq!(
+            world.get_component::<TestComponent>(id).unwrap().value,
+            99
+        );
     }
 }

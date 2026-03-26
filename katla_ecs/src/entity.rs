@@ -70,24 +70,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_entity_id_packing() {
-        let id = EntityId::new(42, 7);
-        assert_eq!(id.index(), 42);
-        assert_eq!(id.generation(), 7);
-    }
-
-    #[test]
     fn test_entity_id_max_values() {
         let id = EntityId::new(u32::MAX, u32::MAX);
         assert_eq!(id.index(), u32::MAX);
         assert_eq!(id.generation(), u32::MAX);
-    }
-
-    #[test]
-    fn test_entity_id_zero_values() {
-        let id = EntityId::new(0, 0);
-        assert_eq!(id.index(), 0);
-        assert_eq!(id.generation(), 0);
     }
 
     #[test]

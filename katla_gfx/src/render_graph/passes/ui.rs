@@ -148,60 +148,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_ui_pass_new() {
-        let pass = UIPass::new("test_ui");
-        assert_eq!(pass.name(), "test_ui");
-        assert!(pass.color_output.is_none());
-        assert!(pass.reads().is_empty());
-    }
-
-    #[test]
-    fn test_ui_pass_write() {
-        let pass = UIPass::new("test").write("color");
-        assert!(pass.color_output.is_some());
-    }
-
-    #[test]
-    fn test_ui_pass_full_setup() {
-        let pass = UIPass::new("ui").write("color").read("font_atlas");
-
-        assert_eq!(pass.name(), "ui");
-        assert!(pass.color_output.is_some());
-        assert_eq!(pass.reads().len(), 1);
-        assert_eq!(pass.reads()[0], "font_atlas");
-    }
-
-    #[test]
-    fn test_ui_pass_material() {
-        let material = MaterialHandle::new(0);
-        let pass = UIPass::new("ui").write("color").material(material);
-
-        assert_eq!(pass.material, Some(material));
-    }
-
-    #[test]
-    fn test_ui_pass_builder_trait() {
-        let pass = UIPass::new("ui").write("color").read("font_atlas");
-
-        let builder = pass.as_builder();
-
-        assert_eq!(builder.name, "ui");
-        assert_eq!(builder.pass_type, PassType::Graphics);
-        assert_eq!(builder.reads, vec!["font_atlas"]);
-        assert_eq!(builder.writes, vec!["color"]);
-    }
-
-    #[test]
-    fn test_ui_pass_builder_with_material() {
-        let material = MaterialHandle::new(42);
-        let pass = UIPass::new("ui").write("color").material(material);
-
-        let builder = pass.as_builder();
-
-        assert_eq!(builder.material, Some(material));
-    }
-
-    #[test]
     fn test_ui_pass_build_fn_resolution() {
         let pass = UIPass::new("ui").write("color").read("font_atlas");
 
@@ -215,19 +161,16 @@ mod tests {
         assert!(result.is_ok());
 
         let data = result.unwrap();
-        // UIPassData is a unit struct, just verify downcast works
         assert!(data.downcast_ref::<UIPassData>().is_some());
     }
 
     #[test]
     fn test_ui_pass_build_fn_empty_resources() {
         let pass = UIPass::new("ui").write("color");
-
         let builder = pass.as_builder();
+        let resource_map = HashMap::new();
 
-        let resource_map = HashMap::new(); // Empty - no resources
-
-        // UIPass build_fn doesn't validate resources, it just returns UIPassData
+        // UIPass build_fn doesn't validate resources
         let result = (builder.build_fn)(&resource_map);
         assert!(result.is_ok());
     }

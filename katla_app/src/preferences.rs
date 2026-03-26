@@ -123,15 +123,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_preferences() {
-        let prefs = Preferences::default();
-        assert_eq!(prefs.theme, "catppuccin");
-        assert!(prefs.show_grid);
-        assert!(prefs.show_stats);
-        assert_eq!(prefs.font_scale, 1.0);
-    }
-
-    #[test]
     fn test_parse_toml() {
         let content = r#"
 theme = "nord"

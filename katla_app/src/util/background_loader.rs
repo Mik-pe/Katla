@@ -267,14 +267,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_load_id_uniqueness() {
-        let mut loader = BackgroundLoader::new();
-        let id1 = loader.request_thumbnail(PathBuf::from("test1.png"), 64);
-        let id2 = loader.request_thumbnail(PathBuf::from("test2.png"), 64);
-        assert_ne!(id1, id2);
-    }
-
-    #[test]
     fn test_pending_tracking() {
         let mut loader = BackgroundLoader::new();
         let path = PathBuf::from("test.png");

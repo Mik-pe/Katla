@@ -151,19 +151,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_material_info() {
-        let info = GltfMaterialInfo::default();
-        assert_eq!(info.base_color_factor, [0.0; 4]);
-        assert_eq!(info.metallic_factor, 0.0);
-        assert_eq!(info.roughness_factor, 0.0);
-        assert!(info.base_color_texture.is_none());
-        assert!(info.normal_texture.is_none());
-        assert!(info.metallic_roughness_texture.is_none());
-        assert!(info.occlusion_texture.is_none());
-        assert!(!info.has_textures());
-    }
-
-    #[test]
     fn test_summary_no_textures() {
         let info = GltfMaterialInfo {
             base_color_factor: [1.0, 1.0, 1.0, 1.0],

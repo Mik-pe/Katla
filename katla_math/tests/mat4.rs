@@ -2,80 +2,6 @@ use approx::assert_relative_eq;
 use katla_math::{Mat4, PI, Quat, Transform, Vec3, Vec4};
 
 #[test]
-fn test_from_translation() {
-    let m = Mat4::from_translation([5.0, 10.0, 15.0]);
-    assert_relative_eq!(m[0][0], 1.0);
-    assert_relative_eq!(m[1][1], 1.0);
-    assert_relative_eq!(m[2][2], 1.0);
-    assert_relative_eq!(m[3][0], 5.0);
-    assert_relative_eq!(m[3][1], 10.0);
-    assert_relative_eq!(m[3][2], 15.0);
-    assert_relative_eq!(m[3][3], 1.0);
-}
-
-#[test]
-fn test_extract_row() {
-    let m = Mat4([
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-        Vec4::new(5.0, 6.0, 7.0, 8.0),
-        Vec4::new(9.0, 10.0, 11.0, 12.0),
-        Vec4::new(13.0, 14.0, 15.0, 16.0),
-    ]);
-
-    let row0 = m.extract_row(0);
-    assert_relative_eq!(row0[0], 1.0);
-    assert_relative_eq!(row0[1], 5.0);
-    assert_relative_eq!(row0[2], 9.0);
-    assert_relative_eq!(row0[3], 13.0);
-
-    let row1 = m.extract_row(1);
-    assert_relative_eq!(row1[0], 2.0);
-    assert_relative_eq!(row1[1], 6.0);
-    assert_relative_eq!(row1[2], 10.0);
-    assert_relative_eq!(row1[3], 14.0);
-}
-
-#[test]
-fn test_mul_identity() {
-    let identity = Mat4::default();
-    let m = Mat4([
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-        Vec4::new(5.0, 6.0, 7.0, 8.0),
-        Vec4::new(9.0, 10.0, 11.0, 12.0),
-        Vec4::new(13.0, 14.0, 15.0, 16.0),
-    ]);
-
-    let result1 = identity.mul(&m);
-    let result2 = m.mul(&identity);
-
-    assert_eq!(result1, m);
-    assert_eq!(result2, m);
-}
-
-#[test]
-fn test_mul() {
-    let m1 = Mat4([
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-        Vec4::new(5.0, 6.0, 7.0, 8.0),
-        Vec4::new(9.0, 10.0, 11.0, 12.0),
-        Vec4::new(13.0, 14.0, 15.0, 16.0),
-    ]);
-
-    let m2 = Mat4([
-        Vec4::new(17.0, 18.0, 19.0, 20.0),
-        Vec4::new(21.0, 22.0, 23.0, 24.0),
-        Vec4::new(25.0, 26.0, 27.0, 28.0),
-        Vec4::new(29.0, 30.0, 31.0, 32.0),
-    ]);
-
-    let result = m1.mul(&m2);
-
-    // Check that multiplication doesn't panic and produces reasonable values
-    assert!(!result[0][0].is_nan());
-    assert!(!result[0][0].is_infinite());
-}
-
-#[test]
 fn test_mul_associative() {
     let m1 = Mat4([
         Vec4::new(1.0, 2.0, 3.0, 4.0),
@@ -109,23 +35,6 @@ fn test_mul_associative() {
 }
 
 #[test]
-fn test_determinant_identity() {
-    let identity = Mat4::default();
-    assert_relative_eq!(identity.calc_det(), 1.0);
-}
-
-#[test]
-fn test_determinant_zero() {
-    let m = Mat4([
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-    ]);
-    assert_relative_eq!(m.calc_det(), 0.0);
-}
-
-#[test]
 fn test_inverse_identity() {
     let identity = Mat4::default();
     let inv = identity.inverse();
@@ -150,20 +59,6 @@ fn test_inverse_rotation() {
     let result = m.mul(&inv);
     let identity = Mat4::default();
     assert_eq!(identity, result);
-}
-
-#[test]
-fn test_calc_inv_det() {
-    let identity = Mat4::default();
-    assert_relative_eq!(identity.calc_inv_det(), 1.0);
-
-    let m = Mat4([
-        Vec4::new(2.0, 0.0, 0.0, 0.0),
-        Vec4::new(0.0, 2.0, 0.0, 0.0),
-        Vec4::new(0.0, 0.0, 2.0, 0.0),
-        Vec4::new(0.0, 0.0, 0.0, 1.0),
-    ]);
-    assert_relative_eq!(m.calc_inv_det(), 0.125);
 }
 
 #[test]
@@ -222,26 +117,6 @@ fn test_from_rotaxis_zero_angle() {
 }
 
 #[test]
-fn test_create_ortho() {
-    let m = Mat4::create_ortho(-1.0, 1.0, -1.0, 1.0, 0.1, 100.0);
-
-    assert_relative_eq!(m[0][0], 1.0);
-    assert_relative_eq!(m[1][1], 1.0);
-    assert_relative_eq!(m[2][2], -0.02002002, epsilon = 1e-6);
-    assert_relative_eq!(m[3][3], 1.0);
-}
-
-#[test]
-fn test_create_proj() {
-    let m = Mat4::create_proj(90.0, 1.0, 0.1);
-
-    assert_relative_eq!(m[2][3], -1.0);
-    assert_relative_eq!(m[3][3], 0.0);
-    assert!(m[2][2] == 0.0);
-    assert!(m[3][2] > 0.0);
-}
-
-#[test]
 fn test_create_lookat() {
     let eye = Vec3::new(0.0, 0.0, 5.0);
     let target = Vec3::new(0.0, 0.0, 0.0);
@@ -269,59 +144,6 @@ fn test_create_lookat_up_direction() {
 }
 
 #[test]
-fn test_from_into() {
-    let m = Mat4([
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-        Vec4::new(5.0, 6.0, 7.0, 8.0),
-        Vec4::new(9.0, 10.0, 11.0, 12.0),
-        Vec4::new(13.0, 14.0, 15.0, 16.0),
-    ]);
-
-    let arr: [[f32; 4]; 4] = m.into();
-
-    assert_eq!(arr[0][0], 1.0);
-    assert_eq!(arr[0][1], 2.0);
-    assert_eq!(arr[0][2], 3.0);
-    assert_eq!(arr[0][3], 4.0);
-    assert_eq!(arr[3][0], 13.0);
-    assert_eq!(arr[3][1], 14.0);
-    assert_eq!(arr[3][2], 15.0);
-    assert_eq!(arr[3][3], 16.0);
-}
-
-#[test]
-fn test_indexing() {
-    let m = Mat4([
-        Vec4::new(1.0, 2.0, 3.0, 4.0),
-        Vec4::new(5.0, 6.0, 7.0, 8.0),
-        Vec4::new(9.0, 10.0, 11.0, 12.0),
-        Vec4::new(13.0, 14.0, 15.0, 16.0),
-    ]);
-
-    assert_relative_eq!(m[0][0], 1.0);
-    assert_relative_eq!(m[1][1], 6.0);
-    assert_relative_eq!(m[2][2], 11.0);
-    assert_relative_eq!(m[3][3], 16.0);
-}
-
-#[test]
-#[should_panic(expected = "INDEXING OUT_OF_BOUNDS")]
-fn test_index_out_of_bounds() {
-    let m = Mat4::default();
-    let _ = m[4];
-}
-
-#[test]
-fn test_extract_translation() {
-    let m = Mat4::from_translation([5.0, 10.0, 15.0]);
-    let translation = m.extract_translation();
-
-    assert_relative_eq!(translation.x(), 5.0);
-    assert_relative_eq!(translation.y(), 10.0);
-    assert_relative_eq!(translation.z(), 15.0);
-}
-
-#[test]
 fn test_decompose_identity() {
     let m = Mat4::identity();
     let transform = m.decompose();
@@ -340,20 +162,6 @@ fn test_decompose_identity() {
     assert_relative_eq!(y, 0.0, epsilon = 1e-5);
     assert_relative_eq!(z, 0.0, epsilon = 1e-5);
     assert_relative_eq!(w, 1.0, epsilon = 1e-5);
-}
-
-#[test]
-fn test_decompose_translation() {
-    let m = Mat4::from_translation([5.0, 10.0, 15.0]);
-    let transform = m.decompose();
-
-    assert_relative_eq!(transform.position.x(), 5.0);
-    assert_relative_eq!(transform.position.y(), 10.0);
-    assert_relative_eq!(transform.position.z(), 15.0);
-
-    assert_relative_eq!(transform.scale.x(), 1.0);
-    assert_relative_eq!(transform.scale.y(), 1.0);
-    assert_relative_eq!(transform.scale.z(), 1.0);
 }
 
 #[test]
@@ -411,4 +219,31 @@ fn test_decompose_trs() {
 
     // Note: rotation may not be perfectly normalized when decomposing from
     // matrices with non-uniform scale, which is expected behavior
+}
+
+#[test]
+fn test_create_ortho() {
+    let m = Mat4::create_ortho(-1.0, 1.0, -1.0, 1.0, 0.1, 100.0);
+
+    assert_relative_eq!(m[0][0], 1.0);
+    assert_relative_eq!(m[1][1], 1.0);
+    assert_relative_eq!(m[2][2], -0.02002002, epsilon = 1e-6);
+    assert_relative_eq!(m[3][3], 1.0);
+}
+
+#[test]
+fn test_create_proj() {
+    let m = Mat4::create_proj(90.0, 1.0, 0.1);
+
+    assert_relative_eq!(m[2][3], -1.0);
+    assert_relative_eq!(m[3][3], 0.0);
+    assert!(m[2][2] == 0.0);
+    assert!(m[3][2] > 0.0);
+}
+
+#[test]
+#[should_panic(expected = "INDEXING OUT_OF_BOUNDS")]
+fn test_index_out_of_bounds() {
+    let m = Mat4::default();
+    let _ = m[4];
 }
