@@ -571,6 +571,422 @@ impl SceneManager {
     }
 }
 
+/// Path to the default scene file, relative to the working directory.
+pub const DEFAULT_SCENE_PATH: &str = "assets/scenes/default.katla";
+
+/// Build the default scene as a pure `Scene` descriptor (no GPU access required).
+///
+/// This is the single source of truth for the default scene contents.
+/// The `default.katla` file on disk must be generated from this function
+/// and kept in sync via the `test_default_scene_matches_disk` test.
+pub fn build_default_scene() -> Scene {
+    use katla_gfx::particles::EmitterShape;
+
+    let mut scene = Scene::new("Default Scene");
+    scene.version = SCENE_VERSION;
+
+    // Ground plane
+    scene.entities.push(EntityDescriptor {
+        name: Some("Ground".to_string()),
+        parent: None,
+        transform: TransformDescriptor {
+            position: [0.0, -1.0, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0, 1.0, 1.0],
+        },
+        source: EntitySource::Plane {
+            width: 20.0,
+            height: 20.0,
+        },
+        drawable: Some(DrawableDescriptor {
+            color: Some([0.15686275, 0.17254902, 0.20392157, 1.0]),
+            metallic: 0.0,
+            roughness: 1.0,
+            ao: 1.0,
+        }),
+        point_light: None,
+        particle_emitter: None,
+        animation: None,
+        velocity: None,
+    });
+
+    // PBR material grid (5x5) -- metallic (Y) x roughness (X)
+    let grid_size = 5usize;
+    let half_grid = (grid_size - 1) as f32 / 2.0;
+    for y in 0..grid_size {
+        for x in 0..grid_size {
+            let metallic = y as f32 / (grid_size - 1).max(1) as f32;
+            let roughness = x as f32 / (grid_size - 1).max(1) as f32;
+            let base_r = 0.4 + metallic * 0.2;
+            let base_g = 0.6 + metallic * 0.2;
+            scene.entities.push(EntityDescriptor {
+                name: Some(format!("Sphere_{}_{}", x, y)),
+                parent: None,
+                transform: TransformDescriptor {
+                    position: [
+                        (x as f32 - half_grid) * 1.2,
+                        2.0 + (y as f32 - half_grid) * 1.2,
+                        -6.0,
+                    ],
+                    rotation: [0.0, 0.0, 0.0, 1.0],
+                    scale: [1.0, 1.0, 1.0],
+                },
+                source: EntitySource::Sphere {
+                    radius: 0.4,
+                    segments: 32,
+                    rings: 16,
+                },
+                drawable: Some(DrawableDescriptor {
+                    color: Some([base_r, base_g, 1.0, 1.0]),
+                    metallic,
+                    roughness,
+                    ao: 1.0,
+                }),
+                point_light: None,
+                particle_emitter: None,
+                animation: None,
+                velocity: None,
+            });
+        }
+    }
+
+    // Center cube
+    scene.entities.push(EntityDescriptor {
+        name: Some("CenterCube".to_string()),
+        parent: None,
+        transform: TransformDescriptor {
+            position: [-5.0, 0.0, -5.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0, 1.0, 1.0],
+        },
+        source: EntitySource::Cube {
+            size: [1.0, 1.0, 1.0],
+        },
+        drawable: Some(DrawableDescriptor {
+            color: Some([1.0, 0.47058824, 0.31372549, 1.0]),
+            metallic: 0.0,
+            roughness: 0.5,
+            ao: 1.0,
+        }),
+        point_light: None,
+        particle_emitter: None,
+        animation: None,
+        velocity: None,
+    });
+
+    // Cyan sphere
+    scene.entities.push(EntityDescriptor {
+        name: Some("CyanSphere".to_string()),
+        parent: None,
+        transform: TransformDescriptor {
+            position: [-7.0, 0.0, -5.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0, 1.0, 1.0],
+        },
+        source: EntitySource::Sphere {
+            radius: 0.7,
+            segments: 32,
+            rings: 16,
+        },
+        drawable: Some(DrawableDescriptor {
+            color: Some([0.31372549, 0.86274511, 1.0, 1.0]),
+            metallic: 0.0,
+            roughness: 0.5,
+            ao: 1.0,
+        }),
+        point_light: None,
+        particle_emitter: None,
+        animation: None,
+        velocity: None,
+    });
+
+    // Magenta cylinder
+    scene.entities.push(EntityDescriptor {
+        name: Some("MagentaCylinder".to_string()),
+        parent: None,
+        transform: TransformDescriptor {
+            position: [5.0, 0.0, -5.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0, 1.0, 1.0],
+        },
+        source: EntitySource::Cylinder {
+            height: 1.5,
+            radius: 0.5,
+            segments: 32,
+        },
+        drawable: Some(DrawableDescriptor {
+            color: Some([1.0, 0.31372549, 0.78431373, 1.0]),
+            metallic: 0.0,
+            roughness: 0.5,
+            ao: 1.0,
+        }),
+        point_light: None,
+        particle_emitter: None,
+        animation: None,
+        velocity: None,
+    });
+
+    // Lime torus
+    scene.entities.push(EntityDescriptor {
+        name: Some("LimeTorus".to_string()),
+        parent: None,
+        transform: TransformDescriptor {
+            position: [7.0, 0.5, -3.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0, 1.0, 1.0],
+        },
+        source: EntitySource::Torus {
+            radius: 0.8,
+            tube_radius: 0.2,
+            segments: 32,
+            tube_segments: 16,
+        },
+        drawable: Some(DrawableDescriptor {
+            color: Some([0.58823529, 1.0, 0.39215686, 1.0]),
+            metallic: 0.0,
+            roughness: 0.5,
+            ao: 1.0,
+        }),
+        point_light: None,
+        particle_emitter: None,
+        animation: None,
+        velocity: None,
+    });
+
+    // Backdrop plane
+    scene.entities.push(EntityDescriptor {
+        name: Some("Backdrop".to_string()),
+        parent: None,
+        transform: TransformDescriptor {
+            position: [0.0, 2.0, -10.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0, 1.0, 1.0],
+        },
+        source: EntitySource::Plane {
+            width: 15.0,
+            height: 8.0,
+        },
+        drawable: Some(DrawableDescriptor {
+            color: Some([0.23529412, 0.15686275, 0.39215686, 1.0]),
+            metallic: 0.0,
+            roughness: 0.5,
+            ao: 1.0,
+        }),
+        point_light: None,
+        particle_emitter: None,
+        animation: None,
+        velocity: None,
+    });
+
+    // Fox with animation
+    scene.entities.push(EntityDescriptor {
+        name: Some("Fox".to_string()),
+        parent: None,
+        transform: TransformDescriptor {
+            position: [3.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [0.01, 0.01, 0.01],
+        },
+        source: EntitySource::GltfModel {
+            path: "resources/models/Fox.glb".to_string(),
+        },
+        drawable: None,
+        point_light: None,
+        particle_emitter: None,
+        animation: Some(AnimationDescriptor {
+            current_clip: Some("Run".to_string()),
+            playing: true,
+            loop_animation: true,
+            speed: 1.0,
+            time: 0.0,
+            duration: 0.0,
+            blending: false,
+            target_clip: None,
+            blend_weight: 1.0,
+            blend_time: 0.0,
+            blend_duration: 0.0,
+            target_time: 0.0,
+            target_duration: 0.0,
+            loop_count: 0,
+        }),
+        velocity: None,
+    });
+
+    // DamagedHelmet
+    scene.entities.push(EntityDescriptor {
+        name: Some("DamagedHelmet".to_string()),
+        parent: None,
+        transform: TransformDescriptor {
+            position: [0.0, 1.5, -5.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0, 1.0, 1.0],
+        },
+        source: EntitySource::GltfModel {
+            path: "resources/models/DamagedHelmet.glb".to_string(),
+        },
+        drawable: None,
+        point_light: None,
+        particle_emitter: None,
+        animation: None,
+        velocity: None,
+    });
+
+    // Fire particle emitter
+    scene.entities.push(EntityDescriptor {
+        name: Some("FireEmitter".to_string()),
+        parent: None,
+        transform: TransformDescriptor {
+            position: [-3.0, 1.0, -3.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0, 1.0, 1.0],
+        },
+        source: EntitySource::ParticleEmitter,
+        drawable: None,
+        point_light: None,
+        particle_emitter: Some(ParticleEmitterDescriptor {
+            position: [-3.0, 1.0, -3.0],
+            emit_rate: 400.0,
+            base_lifetime: 2.5,
+            lifetime_variation: 0.3,
+            velocity_direction: [0.0, 1.0, 0.0],
+            velocity_magnitude: 3.0,
+            velocity_cone_angle: 0.05,
+            base_scale: 0.08,
+            scale_variation: 0.2,
+            color: [1.0, 0.5, 0.0, 1.0],
+            color_variation: 0.1,
+            gravity: 0.0,
+            turbulence_strength: 0.0,
+            turbulence_frequency: 3.0,
+            shape: EmitterShape::Point,
+            shape_params: [0.0; 4],
+            active: true,
+        }),
+        animation: None,
+        velocity: None,
+    });
+
+    // Ethereal particle emitter
+    scene.entities.push(EntityDescriptor {
+        name: Some("EtherealEmitter".to_string()),
+        parent: None,
+        transform: TransformDescriptor {
+            position: [3.0, 0.5, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0, 1.0, 1.0],
+        },
+        source: EntitySource::ParticleEmitter,
+        drawable: None,
+        point_light: None,
+        particle_emitter: Some(ParticleEmitterDescriptor {
+            position: [3.0, 0.5, 0.0],
+            emit_rate: 200.0,
+            base_lifetime: 4.0,
+            lifetime_variation: 0.5,
+            velocity_direction: [0.0, 1.0, 0.0],
+            velocity_magnitude: 1.5,
+            velocity_cone_angle: 0.1,
+            base_scale: 0.12,
+            scale_variation: 0.4,
+            color: [0.6, 0.8, 1.0, 0.8],
+            color_variation: 0.2,
+            gravity: -0.5,
+            turbulence_strength: 4.0,
+            turbulence_frequency: 3.0,
+            shape: EmitterShape::Circle,
+            shape_params: [2.0, 0.0, 0.0, 0.0],
+            active: true,
+        }),
+        animation: None,
+        velocity: None,
+    });
+
+    // Sparkle particle emitter
+    scene.entities.push(EntityDescriptor {
+        name: Some("SparkleEmitter".to_string()),
+        parent: None,
+        transform: TransformDescriptor {
+            position: [0.0, 3.0, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0, 1.0, 1.0],
+        },
+        source: EntitySource::ParticleEmitter,
+        drawable: None,
+        point_light: None,
+        particle_emitter: Some(ParticleEmitterDescriptor {
+            position: [0.0, 3.0, 0.0],
+            emit_rate: 250.0,
+            base_lifetime: 3.0,
+            lifetime_variation: 1.0,
+            velocity_direction: [0.0, -1.0, 0.0],
+            velocity_magnitude: 0.5,
+            velocity_cone_angle: 0.1,
+            base_scale: 0.1,
+            scale_variation: 0.5,
+            color: [0.8, 0.9, 1.0, 1.0],
+            color_variation: 0.3,
+            gravity: 0.0,
+            turbulence_strength: 0.0,
+            turbulence_frequency: 3.0,
+            shape: EmitterShape::Point,
+            shape_params: [0.0; 4],
+            active: true,
+        }),
+        animation: None,
+        velocity: None,
+    });
+
+    // Point lights
+    let lights = [
+        ("WarmLight", [-5.0, 3.0, -3.0], [1.0, 0.6, 0.2], 15.0, 12.0),
+        ("CoolLight", [-7.0, 2.0, -4.0], [0.3, 0.5, 1.0], 12.0, 10.0),
+        (
+            "MagentaLight",
+            [5.0, 2.5, -3.0],
+            [1.0, 0.2, 0.8],
+            14.0,
+            10.0,
+        ),
+        ("GreenLight", [7.0, 1.5, -1.0], [0.3, 1.0, 0.4], 10.0, 8.0),
+        (
+            "OverheadLight",
+            [0.0, 6.0, -3.0],
+            [0.9, 0.85, 0.8],
+            8.0,
+            15.0,
+        ),
+    ];
+
+    for (name, pos, color, intensity, range) in lights {
+        scene.entities.push(EntityDescriptor {
+            name: Some(name.to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: pos,
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+            source: EntitySource::Light,
+            drawable: Some(DrawableDescriptor {
+                color: Some([color[0], color[1], color[2], 1.0]),
+                metallic: 0.0,
+                roughness: 1.0,
+                ao: 1.0,
+            }),
+            point_light: Some(PointLightDescriptor {
+                color,
+                intensity,
+                range,
+            }),
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+    }
+
+    scene
+}
+
 fn color_from_desc(drawable: &Option<DrawableDescriptor>) -> katla_math::Color {
     drawable
         .as_ref()
@@ -1199,6 +1615,203 @@ EntityDescriptor(
         assert_eq!(
             fire.unwrap().particle_emitter.as_ref().unwrap().emit_rate,
             400.0
+        );
+    }
+
+    #[test]
+    fn test_build_default_scene_entity_count() {
+        // 1 ground + 25 spheres (5x5 grid) + 1 cube + 1 sphere + 1 cylinder + 1 torus
+        // + 1 backdrop + 1 fox + 1 helmet + 3 emitters + 5 lights = 41
+        let scene = build_default_scene();
+        assert_eq!(
+            scene.entities.len(),
+            41,
+            "Default scene must have exactly 41 entities"
+        );
+        assert_eq!(scene.name, "Default Scene");
+        assert_eq!(scene.version, SCENE_VERSION);
+    }
+
+    #[test]
+    fn test_build_default_scene_round_trip() {
+        let scene = build_default_scene();
+        let loaded: Scene = round_trip(&scene);
+        assert_eq!(loaded.entities.len(), scene.entities.len());
+        assert_eq!(loaded.name, scene.name);
+        for (original, loaded) in scene.entities.iter().zip(loaded.entities.iter()) {
+            assert_eq!(original.name, loaded.name, "Entity name mismatch");
+            assert_eq!(
+                original.source, loaded.source,
+                "EntitySource mismatch for {:?}",
+                original.name
+            );
+            assert_eq!(
+                original.transform.position, loaded.transform.position,
+                "Position mismatch for {:?}",
+                original.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_build_default_scene_all_entities_named() {
+        let scene = build_default_scene();
+        for entity in &scene.entities {
+            assert!(
+                entity.name.is_some(),
+                "All default scene entities must have names, found unnamed entity: {:?}",
+                entity
+            );
+        }
+    }
+
+    #[test]
+    fn test_build_default_scene_fox_initial_state() {
+        let scene = build_default_scene();
+        let fox = scene
+            .entities
+            .iter()
+            .find(|e| e.name == Some("Fox".to_string()))
+            .expect("Fox entity must exist");
+
+        let anim = fox.animation.as_ref().expect("Fox must have animation");
+        assert_eq!(anim.current_clip, Some("Run".to_string()));
+        assert!(anim.playing);
+        assert!(anim.loop_animation);
+        assert_eq!(anim.time, 0.0, "Fox animation time must start at 0");
+        assert_eq!(anim.loop_count, 0, "Fox loop count must start at 0");
+    }
+
+    #[test]
+    fn test_build_default_scene_lights() {
+        let scene = build_default_scene();
+        let light_names = [
+            "WarmLight",
+            "CoolLight",
+            "MagentaLight",
+            "GreenLight",
+            "OverheadLight",
+        ];
+        for name in &light_names {
+            let light = scene
+                .entities
+                .iter()
+                .find(|e| e.name == Some(name.to_string()))
+                .unwrap_or_else(|| panic!("Light entity '{}' must exist", name));
+            assert!(
+                light.point_light.is_some(),
+                "'{}' must have PointLight component",
+                name
+            );
+            assert_eq!(light.source, EntitySource::Light);
+        }
+    }
+
+    #[test]
+    fn test_build_default_scene_emitters() {
+        let scene = build_default_scene();
+        let emitters: Vec<_> = scene
+            .entities
+            .iter()
+            .filter(|e| e.source == EntitySource::ParticleEmitter)
+            .collect();
+        assert_eq!(emitters.len(), 3, "Must have exactly 3 particle emitters");
+
+        let fire = emitters
+            .iter()
+            .find(|e| e.name == Some("FireEmitter".to_string()))
+            .expect("FireEmitter must exist");
+        assert_eq!(fire.particle_emitter.as_ref().unwrap().emit_rate, 400.0);
+
+        let ethereal = emitters
+            .iter()
+            .find(|e| e.name == Some("EtherealEmitter".to_string()))
+            .expect("EtherealEmitter must exist");
+        assert_eq!(
+            ethereal.particle_emitter.as_ref().unwrap().shape,
+            katla_gfx::particles::EmitterShape::Circle
+        );
+    }
+
+    #[test]
+    fn test_build_default_scene_pbr_grid() {
+        let scene = build_default_scene();
+        let spheres: Vec<_> = scene
+            .entities
+            .iter()
+            .filter(|e| e.name.as_ref().map_or(false, |n| n.starts_with("Sphere_")))
+            .collect();
+        assert_eq!(spheres.len(), 25, "PBR grid must have 25 spheres");
+
+        let mut metallics: Vec<f32> = spheres
+            .iter()
+            .map(|s| s.drawable.as_ref().unwrap().metallic)
+            .collect();
+        metallics.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        metallics.dedup_by(|a, b| (*a - *b).abs() < f32::EPSILON);
+        assert_eq!(
+            metallics.len(),
+            5,
+            "Grid must have 5 distinct metallic values"
+        );
+
+        let mut roughnesses: Vec<f32> = spheres
+            .iter()
+            .map(|s| s.drawable.as_ref().unwrap().roughness)
+            .collect();
+        roughnesses.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        roughnesses.dedup_by(|a, b| (*a - *b).abs() < f32::EPSILON);
+        assert_eq!(
+            roughnesses.len(),
+            5,
+            "Grid must have 5 distinct roughness values"
+        );
+    }
+
+    #[test]
+    fn test_default_scene_matches_disk() {
+        // This is the 1:1 parity test: the canonical scene built in code
+        // must exactly match what's on disk. If this fails, regenerate the
+        // file by running: cargo test -p katla_app -- test_regenerate_default_scene --nocapture
+        let scene = build_default_scene();
+        let canonical_ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
+
+        let disk_path = std::path::Path::new(DEFAULT_SCENE_PATH);
+        if !disk_path.exists() {
+            panic!(
+                "Default scene file not found at {:?}. Run test_regenerate_default_scene to create it.",
+                disk_path
+            );
+        }
+
+        let disk_content = std::fs::read_to_string(disk_path)
+            .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", disk_path, e));
+
+        assert_eq!(
+            canonical_ron, disk_content,
+            "Default scene on disk does not match build_default_scene(). \
+             Run test_regenerate_default_scene to regenerate."
+        );
+    }
+
+    #[test]
+    fn test_regenerate_default_scene() {
+        // Utility test to regenerate the canonical default scene file.
+        // Run with: cargo test -p katla_app -- test_regenerate_default_scene --nocapture
+        let scene = build_default_scene();
+        let canonical_ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
+
+        let disk_path = std::path::Path::new(DEFAULT_SCENE_PATH);
+        if let Some(parent) = disk_path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(disk_path, &canonical_ron).unwrap();
+
+        println!(
+            "Regenerated default scene at {:?} ({} entities, {} bytes)",
+            disk_path,
+            scene.entities.len(),
+            canonical_ron.len()
         );
     }
 }

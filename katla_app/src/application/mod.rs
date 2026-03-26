@@ -16,7 +16,7 @@ mod spawning;
 
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc, time::Instant};
 
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use winit::keyboard::ModifiersState;
 
 pub use builder::*;
@@ -822,7 +822,10 @@ impl Application {
         self.gpu_animation_system =
             Some(crate::systems::gpu_animation_system::GpuAnimationSystem::new());
 
-        // Add animation compute pass to frame graph (after particle passes)
+        // Add animation compute pass to frame graph.
+        // Inserted at position 0 so it runs before other compute passes (light culling,
+        // particle emit/simulate) and all graphics passes. This ensures skeleton matrices
+        // are ready for the subsequent copy commands and vertex shader skinning.
         if let Some(pipeline_handle) = self.renderer.animation_pipeline_handle() {
             use katla_gfx::render_graph::{PassDesc, PassType, RenderGraphError};
             self.frame_graph.insert_pass(
@@ -863,7 +866,7 @@ impl Application {
 
                         // Copy per-entity joint matrices from output buffer to SkeletonBuffers
                         let output_buf = buffers.output_buffer();
-                        for (handle_idx, joint_offset, joint_count) in copy_cmds {
+                        for &(handle_idx, joint_offset, joint_count) in &copy_cmds {
                             let handle = katla_gfx::SkeletonHandle::new(handle_idx);
                             renderer.copy_skeleton_from_compute_output(
                                 cmd.vk_command_buffer(),
@@ -874,6 +877,26 @@ impl Application {
                             );
                         }
 
+                        // Global barrier: transfer write → vertex shader read
+                        // Covers all skeleton buffers written by the copies above.
+                        if !copy_cmds.is_empty() {
+                            let vk_cmd = cmd.vk_command_buffer();
+                            let barrier = ash::vk::MemoryBarrier2::default()
+                                .src_stage_mask(ash::vk::PipelineStageFlags2::COPY)
+                                .dst_stage_mask(ash::vk::PipelineStageFlags2::VERTEX_SHADER)
+                                .src_access_mask(ash::vk::AccessFlags2::TRANSFER_WRITE)
+                                .dst_access_mask(ash::vk::AccessFlags2::SHADER_READ);
+                            let barriers = [barrier];
+                            let dep_info =
+                                ash::vk::DependencyInfo::default().memory_barriers(&barriers);
+                            unsafe {
+                                renderer
+                                    .context()
+                                    .device
+                                    .cmd_pipeline_barrier2(vk_cmd, &dep_info);
+                            }
+                        }
+
                         Ok::<(), RenderGraphError>(())
                     }),
             );
@@ -882,7 +905,7 @@ impl Application {
 
         // Add light culling compute pass to frame graph.
         // This must run before geometry passes so culling results are available for PBR shading.
-        // Insert at position 0 to run before particle compute passes as well.
+        // Inserted at position 0 — after animation_pose_eval, before particle passes.
         if self.renderer.has_light_culling() {
             use katla_gfx::render_graph::{PassDesc, PassType, RenderGraphError};
             self.frame_graph.insert_pass(
@@ -940,8 +963,19 @@ impl Application {
         self.editor_ui
             .set_viewport_bindless_index(viewport_bindless_index);
 
-        // Set up default test scene
-        self.setup_default_scene();
+        // Load default scene from disk
+        let scene_path = std::path::Path::new(crate::scene::DEFAULT_SCENE_PATH);
+        match crate::scene::SceneManager::load_from_file(self, scene_path) {
+            Ok(()) => info!(
+                "Loaded default scene from {}",
+                crate::scene::DEFAULT_SCENE_PATH
+            ),
+            Err(e) => error!(
+                "Failed to load default scene from {}: {}",
+                crate::scene::DEFAULT_SCENE_PATH,
+                e
+            ),
+        }
 
         info!("Application::init() completed");
     }
