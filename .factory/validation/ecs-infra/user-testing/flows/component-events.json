@@ -1,0 +1,146 @@
+{
+  "groupId": "component-events",
+  "testedAt": "2026-03-26T00:00:00Z",
+  "isolation": {
+    "scope": "unit tests only, no external services, no source modifications"
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-ECS-006",
+      "title": "Component added event emitted on add_component",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_component_added_event --nocapture",
+          "expected": "Test passes, confirming ComponentEvent::Added is pushed on add_component",
+          "observed": "test world::tests::test_component_added_event ... ok, exit code 0"
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_component_added_event --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_component_added_event ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test confirmed that calling add_component pushes ComponentEvent::Added(id, TypeId::of::<T>()) onto the component event queue."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-007",
+      "title": "Component removed event emitted on remove_component",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_component_removed_event --nocapture",
+          "expected": "Test passes, confirming ComponentEvent::Removed is pushed on remove_component",
+          "observed": "test world::tests::test_component_removed_event ... ok, exit code 0"
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_component_removed_event --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_component_removed_event ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test confirmed that calling remove_component::<T>(id) where the component exists pushes ComponentEvent::Removed(id, TypeId::of::<T>())."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-008",
+      "title": "Destroy entity emits component removed events for all components",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_destroy_entity_emits_component --nocapture",
+          "expected": "Both tests pass, confirming ComponentEvent::Removed for each component type on destroy_entity",
+          "observed": "2 tests passed: test_destroy_entity_emits_component and test_destroy_entity_emits_component_removed_for_multiple_types, exit code 0"
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_destroy_entity_emits_component --nocapture",
+        "exitCode": 0,
+        "output": "running 2 tests\ntest world::tests::test_destroy_entity_emits_component ... ok\ntest world::tests::test_destroy_entity_emits_component_removed_for_multiple_types ... ok\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 97 filtered out",
+        "observation": "Both tests confirmed that destroy_entity emits ComponentEvent::Removed for each component type on the entity (single and multiple types)."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-009",
+      "title": "component_events_for is type-safe and filters correctly",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_component_events_type_safety --nocapture",
+          "expected": "Test passes, confirming component_events_for returns only events matching the requested TypeId",
+          "observed": "test world::tests::test_component_events_type_safety ... ok, exit code 0"
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_component_events_type_safety --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_component_events_type_safety ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test confirmed that component_events_for::<T>() returns only events matching TypeId::of::<T>(), excluding events for unrelated types."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-010",
+      "title": "Component events flushed at end of update()",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_component_events_flushed --nocapture",
+          "expected": "Test passes, confirming component event queues are cleared after world.update(dt)",
+          "observed": "test world::tests::test_component_events_flushed ... ok, exit code 0"
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_component_events_flushed --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_component_events_flushed ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test confirmed that component event queues are cleared at the end of world.update(dt), consistent with entity event flushing."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-011",
+      "title": "Remove non-existent component emits no event",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_remove_nonexistent_component --nocapture",
+          "expected": "Test passes, confirming no event emitted when removing a non-existent component",
+          "observed": "test world::tests::test_remove_nonexistent_component ... ok, exit code 0"
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_remove_nonexistent_component --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_remove_nonexistent_component ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test confirmed that calling remove_component::<T>(id) when the entity does not have component T does not emit a Removed event. Queue length unchanged."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-012",
+      "title": "Double add_component emits event for each call",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs -- test_double_add_component --nocapture",
+          "expected": "Test passes, confirming two ComponentEvent::Added events for two add_component calls",
+          "observed": "test world::tests::test_double_add_component ... ok, exit code 0"
+        }
+      ],
+      "evidence": {
+        "command": "cargo test -p katla_ecs -- test_double_add_component --nocapture",
+        "exitCode": 0,
+        "output": "running 1 test\ntest world::tests::test_double_add_component ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out",
+        "observation": "Test confirmed that calling add_component twice for the same entity/type emits two ComponentEvent::Added events."
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 7 assertions (VAL-ECS-006 through VAL-ECS-012): all 7 passed. All component event tests in katla_ecs confirm correct behavior for add, remove, destroy, type filtering, flushing, non-existent removal, and double-add scenarios."
+}
