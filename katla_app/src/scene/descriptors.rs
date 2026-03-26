@@ -3,15 +3,25 @@ use serde::{Deserialize, Serialize};
 use super::entity_source::EntitySource;
 
 /// Transform data for serialization (plain arrays, no SIMD types).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TransformDescriptor {
     pub position: [f32; 3],
     pub rotation: [f32; 4],
     pub scale: [f32; 3],
 }
 
+impl TransformDescriptor {
+    pub fn default_transform() -> Self {
+        Self {
+            position: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            scale: [1.0, 1.0, 1.0],
+        }
+    }
+}
+
 /// Drawable material properties (color + PBR params, no GPU handles).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DrawableDescriptor {
     pub color: Option<[f32; 4]>,
     pub metallic: f32,
@@ -20,7 +30,7 @@ pub struct DrawableDescriptor {
 }
 
 /// Point light data for serialization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PointLightDescriptor {
     pub color: [f32; 3],
     pub intensity: f32,
@@ -28,7 +38,7 @@ pub struct PointLightDescriptor {
 }
 
 /// Particle emitter data for serialization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParticleEmitterDescriptor {
     pub position: [f32; 3],
     pub emit_rate: f32,
@@ -50,7 +60,7 @@ pub struct ParticleEmitterDescriptor {
 }
 
 /// Animation state for serialization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AnimationDescriptor {
     pub current_clip: Option<String>,
     pub playing: bool,
@@ -99,7 +109,7 @@ impl Default for AnimationDescriptor {
 }
 
 /// Velocity data for serialization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VelocityDescriptor {
     pub velocity: [f32; 3],
     pub acceleration: [f32; 3],
