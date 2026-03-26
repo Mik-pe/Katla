@@ -1,0 +1,29 @@
+{
+  "featureId": "component-events",
+  "milestone": "ecs-infra",
+  "reviewedAt": "2026-03-26T23:30:00Z",
+  "commitId": "1f02b72",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean, well-structured implementation of component event emission for the katla_ecs World. The feature covers all 7 VAL-ECS assertions (006-012) with 9 unit tests. The code follows existing patterns established by the entity events system, uses appropriate Rust idioms, and integrates cleanly with the existing storage layer.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "observation": "The mission AGENTS.md correctly documents that events live in katla_ecs/src/events.rs, which the worker followed. It also documents the Vec-based queue pattern and flush-at-end-of-update lifecycle. The worker's implementation was fully consistent with these guidelines — no gaps.",
+      "suggestedTarget": null,
+      "suggestedKey": null,
+      "suggestedContent": null
+    },
+    {
+      "observation": "The worker changed add_component from impl Trait to generic<T> to access TypeId::of::<T>(). This is a reasonable approach but it's a subtle API change that narrows the function signature. No existing callers were broken since the storage layer already used generics. Future workers should be aware that World::add_component is now generic<T> rather than impl Trait.",
+      "suggestedTarget": "library",
+      "suggestedKey": "ecs-component-events",
+      "suggestedContent": "World::add_component<T: Component + 'static>(id, component) is generic over T to capture TypeId for ComponentEvent::Added emission. This was changed from impl Trait to generic<T> in commit 1f02b72. component_events_for::<T>() returns Vec<&ComponentEvent> filtered by TypeId. Events are accumulated in Vec<ComponentEvent> and flushed at end of update()."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Component events feature passes review. Implementation is clean, well-tested (9 tests covering all 7 VAL-ECS assertions plus an extra accumulation-across-frames test), and follows established patterns. The add_component signature change from impl Trait to generic<T> is the most notable design decision but is justified and correct. No bugs or edge cases missed. Clippy passes, all workspace tests pass."
+}

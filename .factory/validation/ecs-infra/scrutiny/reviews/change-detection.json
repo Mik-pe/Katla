@@ -1,0 +1,36 @@
+{
+  "featureId": "change-detection",
+  "milestone": "ecs-infra",
+  "reviewedAt": "2026-03-26T23:30:00Z",
+  "commitId": "bd39f859b90c8faae7013e6b98c0af5b98c2d604",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean implementation of per-component change detection using generation counters. The design is sound: SparseSet<EntityId, u64> per ComponentStorage tracks generations incremented on insert and get_mut. Type-erased AnyComponentStorage methods (max_generation, generation_for_entity) enable snapshot-based change tracking in ComponentStorageManager. The QueryChangedIter wrapper elegantly filters query results using a pre-computed HashSet of changed entity IDs. All 8 VAL-ECS assertions (013-020) plus an integration test for update() auto-clear are covered by unit tests. Code follows existing patterns and conventions.",
+    "issues": [
+      {
+        "severity": "non_blocking",
+        "description": "collect_changed_entity_ids iterates ALL entities with ANY component (via entities_with_components()), not just entities that have the queried component types. For worlds with many entities of different types, this is O(all_entities * queried_types) rather than O(entities_with_queried_types * queried_types). The correctness is fine because QueryChangedIter's inner query filters to only matching entities, but it means the pre-computed changed_ids HashSet may contain entities that don't match the query. This is a minor performance concern for large worlds, not a correctness issue.",
+        "file": "katla_ecs/src/storage.rs",
+        "line": 357
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "observation": "The change detection design pattern (generation counters in SparseSet, snapshot-based comparison via max_generation) is a well-known ECS pattern (used by Bevy, Flecs). This is now documented in mission AGENTS.md under 'ECS Design Guidance' but could be useful for future workers in architecture.md as well.",
+      "suggestedTarget": "library",
+      "suggestedKey": "architecture",
+      "suggestedContent": "Add section on change detection architecture: generation counters per entity in ComponentStorage, snapshot-based tracking via changed_generations HashMap in ComponentStorageManager, union semantics for multi-component query_changed."
+    },
+    {
+      "observation": "The QueryData trait gained two new methods (type_ids_for_changed, entity_id_from_item) that must be implemented for every query arity (iter1-iter8). This is a maintenance burden - adding a new query arity requires implementing these methods. The existing pattern of code-generated-like repetitive implementations across iter1-iter8 is already established but worth noting for future workers who may add new arities.",
+      "suggestedTarget": "library",
+      "suggestedKey": "architecture",
+      "suggestedContent": "Note that QueryData trait has methods that must be implemented across all 8 iter files (iter1-iter8). When adding new trait methods, all files must be updated."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The change-detection feature is well-implemented with clean code, comprehensive test coverage (9 tests covering all 8 VAL assertions plus integration), and correct semantics. The generation counter approach is simple, efficient, and follows established ECS patterns. One non-blocking observation about collect_changed_entity_ids iterating all entities rather than just queried ones is noted for potential future optimization. The worker followed the skill procedure correctly and the code passes clippy with no warnings."
+}

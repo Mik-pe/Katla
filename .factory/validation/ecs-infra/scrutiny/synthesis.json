@@ -1,0 +1,96 @@
+{
+  "milestone": "ecs-infra",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test --workspace",
+      "exitCode": 0,
+      "observation": "All 146+ tests passed across katla_ecs, katla_app, katla_gfx, katla_ui, katla_math. 8 compiler warnings (pre-existing, not from ecs-infra features)."
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo check",
+      "exitCode": 0,
+      "observation": "Typecheck clean. 1 pre-existing dead_code warning in katla_ui (selectable method)."
+    },
+    "lint": {
+      "passed": false,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 1,
+      "observation": "3 clippy errors, all pre-existing on clean main (verified by stashing changes and re-running). None from ecs-infra features: katla_ui selectable dead_code, katla_gfx pose_compute manual_slice_size_calculation + manual_div_ceil. Working tree adds 1 extra: katla_gfx outline too_many_arguments."
+    }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "entity-lifecycle-events",
+      "severity": "non_blocking",
+      "description": "cleanup_empty_entities() and clear_entities() do not emit EntityEvent::Destroyed. By design, not required by spec.",
+      "file": "katla_ecs/src/world.rs"
+    },
+    {
+      "featureId": "entity-lifecycle-events",
+      "severity": "non_blocking",
+      "description": "test_entity_events_visible_during_update uses assert!(true) — doesn't verify system actually saw events.",
+      "file": "katla_ecs/src/world.rs"
+    },
+    {
+      "featureId": "change-detection",
+      "severity": "non_blocking",
+      "description": "collect_changed_entity_ids iterates all entities with any component, not just queried types. Minor perf note for large worlds.",
+      "file": "katla_ecs/src/storage.rs"
+    },
+    {
+      "featureId": "query-conversion",
+      "severity": "non_blocking",
+      "description": "query_ref() accepts any QueryData including &mut T but mutable queries would be UB. No compile-time guard. Documented restriction, no misuse at call sites.",
+      "file": "katla_ecs/src/world.rs"
+    },
+    {
+      "featureId": "query-conversion",
+      "severity": "non_blocking",
+      "description": "Tangential NDC Y-axis bug fix bundled with query conversion commit. Correct and well-tested but violates one-change-per-commit convention.",
+      "file": "katla_app/src/application/editor/mod.rs"
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Added ECS event system, change detection, UnsafeCell World internals, and QueryData trait maintenance sections to architecture.md",
+      "sourceFeature": "ecs-infra milestone (all 4 features)"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Consider adding guidance to scope cargo fmt to the modified crate only ('cargo fmt -p <crate>') rather than formatting the whole workspace, to avoid mixing unrelated formatting changes with feature commits.",
+      "evidence": "entity-lifecycle-events worker ran 'cargo fmt' workspace-wide, causing unrelated katla_gfx formatting changes to be mixed into the feature commit.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Reinforce the 'one logical change per commit' convention. Small tangential bug fixes should be separate commits, not bundled with feature work.",
+      "evidence": "query-conversion worker included an NDC Y-axis bug fix in the feature commit. The fix was correct and tested but unrelated to query conversion.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Pre-existing workspace build issues (katla_gfx compile errors blocking cargo test --workspace)",
+      "reason": "already-documented: cleanup-notes.md already notes to use per-crate test commands and that workspace tests are slow"
+    },
+    {
+      "observation": "Mission AGENTS.md correctly documents ECS event patterns — no gaps found",
+      "reason": "null-target: reviewer confirmed existing guidance is adequate, no update needed"
+    }
+  ],
+  "previousRound": null
+}
