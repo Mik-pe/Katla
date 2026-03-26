@@ -176,9 +176,7 @@ impl<'a> Frame<'a> {
         cmd: &CommandBuffer,
         data: &PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        let frame_idx = self.current_frame();
-
-        let (mark_pipeline, mark_layout) = self
+        let (pipeline, layout) = self
             .renderer
             .outline
             .stencil_mark_pipeline
@@ -199,111 +197,7 @@ impl<'a> Frame<'a> {
             })
             .unwrap_or((None, None));
 
-        unsafe {
-            self.renderer.context.device.cmd_bind_pipeline(
-                cmd.vk_command_buffer(),
-                vk::PipelineBindPoint::GRAPHICS,
-                mark_pipeline,
-            );
-        }
-
-        let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-        cmd.bind_descriptor_sets(mark_layout, 0, &[storage_ds], &[]);
-
-        let mut current_is_skinned = false;
-
-        for draw_list in &data.draw_lists {
-            for draw_call in draw_list.iter() {
-                let is_skinned = !draw_call.skeleton.is_none();
-
-                if is_skinned && skinned_pipeline.is_none() {
-                    continue;
-                }
-
-                if is_skinned != current_is_skinned {
-                    if is_skinned {
-                        unsafe {
-                            self.renderer.context.device.cmd_bind_pipeline(
-                                cmd.vk_command_buffer(),
-                                vk::PipelineBindPoint::GRAPHICS,
-                                skinned_pipeline.unwrap(),
-                            );
-                        }
-                        cmd.bind_descriptor_sets(skinned_layout.unwrap(), 0, &[storage_ds], &[]);
-                    } else {
-                        unsafe {
-                            self.renderer.context.device.cmd_bind_pipeline(
-                                cmd.vk_command_buffer(),
-                                vk::PipelineBindPoint::GRAPHICS,
-                                mark_pipeline,
-                            );
-                        }
-                        cmd.bind_descriptor_sets(mark_layout, 0, &[storage_ds], &[]);
-                    }
-                    current_is_skinned = is_skinned;
-                }
-
-                if is_skinned {
-                    let skeleton_ds = self
-                        .renderer
-                        .get_skeleton_descriptor(draw_call.skeleton)
-                        .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
-                    cmd.bind_descriptor_sets(
-                        skinned_layout.unwrap(),
-                        2,
-                        &[skeleton_ds.vk_set()],
-                        &[],
-                    );
-                }
-
-                let mesh = self
-                    .renderer
-                    .asset_registry
-                    .get_mesh(draw_call.mesh)
-                    .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
-
-                let pos_buf = mesh
-                    .get_attribute_buffer(AttributeType::Position)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
-                if is_skinned {
-                    let joints_buf = mesh
-                        .get_attribute_buffer(AttributeType::JointIndices)
-                        .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null());
-                    let weights_buf = mesh
-                        .get_attribute_buffer(AttributeType::JointWeights)
-                        .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null());
-                    cmd.bind_vertex_buffers_at_locations(&[
-                        (0, pos_buf),
-                        (4, joints_buf),
-                        (5, weights_buf),
-                    ]);
-                } else {
-                    cmd.bind_vertex_buffers_at_locations(&[(0, pos_buf)]);
-                }
-
-                if let Some(ib) = &mesh.index_buffer {
-                    cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
-                }
-
-                let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
-
-                unsafe {
-                    self.renderer.context.device.cmd_draw_indexed(
-                        cmd.vk_command_buffer(),
-                        index_count,
-                        1,
-                        0,
-                        0,
-                        draw_call.instance_index,
-                    );
-                }
-            }
-        }
-
-        Ok(())
+        self.draw_with_pipelines(cmd, data, pipeline, layout, skinned_pipeline, skinned_layout)
     }
 
     /// Promote stencil 1→2 where selected objects are occluded by scene geometry.
@@ -312,9 +206,7 @@ impl<'a> Frame<'a> {
         cmd: &CommandBuffer,
         data: &PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        let frame_idx = self.current_frame();
-
-        let (mark_pipeline, mark_layout) = self
+        let (pipeline, layout) = self
             .renderer
             .outline
             .occlusion_mark_pipeline
@@ -335,111 +227,7 @@ impl<'a> Frame<'a> {
             })
             .unwrap_or((None, None));
 
-        unsafe {
-            self.renderer.context.device.cmd_bind_pipeline(
-                cmd.vk_command_buffer(),
-                vk::PipelineBindPoint::GRAPHICS,
-                mark_pipeline,
-            );
-        }
-
-        let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-        cmd.bind_descriptor_sets(mark_layout, 0, &[storage_ds], &[]);
-
-        let mut current_is_skinned = false;
-
-        for draw_list in &data.draw_lists {
-            for draw_call in draw_list.iter() {
-                let is_skinned = !draw_call.skeleton.is_none();
-
-                if is_skinned && skinned_pipeline.is_none() {
-                    continue;
-                }
-
-                if is_skinned != current_is_skinned {
-                    if is_skinned {
-                        unsafe {
-                            self.renderer.context.device.cmd_bind_pipeline(
-                                cmd.vk_command_buffer(),
-                                vk::PipelineBindPoint::GRAPHICS,
-                                skinned_pipeline.unwrap(),
-                            );
-                        }
-                        cmd.bind_descriptor_sets(skinned_layout.unwrap(), 0, &[storage_ds], &[]);
-                    } else {
-                        unsafe {
-                            self.renderer.context.device.cmd_bind_pipeline(
-                                cmd.vk_command_buffer(),
-                                vk::PipelineBindPoint::GRAPHICS,
-                                mark_pipeline,
-                            );
-                        }
-                        cmd.bind_descriptor_sets(mark_layout, 0, &[storage_ds], &[]);
-                    }
-                    current_is_skinned = is_skinned;
-                }
-
-                if is_skinned {
-                    let skeleton_ds = self
-                        .renderer
-                        .get_skeleton_descriptor(draw_call.skeleton)
-                        .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
-                    cmd.bind_descriptor_sets(
-                        skinned_layout.unwrap(),
-                        2,
-                        &[skeleton_ds.vk_set()],
-                        &[],
-                    );
-                }
-
-                let mesh = self
-                    .renderer
-                    .asset_registry
-                    .get_mesh(draw_call.mesh)
-                    .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
-
-                let pos_buf = mesh
-                    .get_attribute_buffer(AttributeType::Position)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
-                if is_skinned {
-                    let joints_buf = mesh
-                        .get_attribute_buffer(AttributeType::JointIndices)
-                        .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null());
-                    let weights_buf = mesh
-                        .get_attribute_buffer(AttributeType::JointWeights)
-                        .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null());
-                    cmd.bind_vertex_buffers_at_locations(&[
-                        (0, pos_buf),
-                        (4, joints_buf),
-                        (5, weights_buf),
-                    ]);
-                } else {
-                    cmd.bind_vertex_buffers_at_locations(&[(0, pos_buf)]);
-                }
-
-                if let Some(ib) = &mesh.index_buffer {
-                    cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
-                }
-
-                let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
-
-                unsafe {
-                    self.renderer.context.device.cmd_draw_indexed(
-                        cmd.vk_command_buffer(),
-                        index_count,
-                        1,
-                        0,
-                        0,
-                        draw_call.instance_index,
-                    );
-                }
-            }
-        }
-
-        Ok(())
+        self.draw_with_pipelines(cmd, data, pipeline, layout, skinned_pipeline, skinned_layout)
     }
 
     /// Render the outline shell with inverted culling where stencil != 1.
@@ -448,9 +236,7 @@ impl<'a> Frame<'a> {
         cmd: &CommandBuffer,
         data: &PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        let frame_idx = self.current_frame();
-
-        let (draw_pipeline, draw_layout) = self
+        let (pipeline, layout) = self
             .renderer
             .outline
             .outline_draw_pipeline
@@ -471,16 +257,30 @@ impl<'a> Frame<'a> {
             })
             .unwrap_or((None, None));
 
+        self.draw_with_pipelines(cmd, data, pipeline, layout, skinned_pipeline, skinned_layout)
+    }
+
+    fn draw_with_pipelines(
+        &mut self,
+        cmd: &CommandBuffer,
+        data: &PassExecutionData,
+        pipeline: vk::Pipeline,
+        layout: vk::PipelineLayout,
+        skinned_pipeline: Option<vk::Pipeline>,
+        skinned_layout: Option<vk::PipelineLayout>,
+    ) -> Result<(), RenderGraphError> {
+        let frame_idx = self.current_frame();
+
         unsafe {
             self.renderer.context.device.cmd_bind_pipeline(
                 cmd.vk_command_buffer(),
                 vk::PipelineBindPoint::GRAPHICS,
-                draw_pipeline,
+                pipeline,
             );
         }
 
         let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-        cmd.bind_descriptor_sets(draw_layout, 0, &[storage_ds], &[]);
+        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
 
         let mut current_is_skinned = false;
 
@@ -507,10 +307,10 @@ impl<'a> Frame<'a> {
                             self.renderer.context.device.cmd_bind_pipeline(
                                 cmd.vk_command_buffer(),
                                 vk::PipelineBindPoint::GRAPHICS,
-                                draw_pipeline,
+                                pipeline,
                             );
                         }
-                        cmd.bind_descriptor_sets(draw_layout, 0, &[storage_ds], &[]);
+                        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
                     }
                     current_is_skinned = is_skinned;
                 }
@@ -692,109 +492,7 @@ impl<'a> Frame<'a> {
             })
             .unwrap_or((None, None));
 
-        unsafe {
-            self.renderer.context.device.cmd_bind_pipeline(
-                cmd.vk_command_buffer(),
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline,
-            );
-        }
-
-        let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
-
-        let mut current_is_skinned = false;
-
-        for draw_list in &data.draw_lists {
-            for draw_call in draw_list.iter() {
-                let is_skinned = !draw_call.skeleton.is_none();
-
-                if is_skinned && skinned_pipeline.is_none() {
-                    continue;
-                }
-
-                if is_skinned != current_is_skinned {
-                    if is_skinned {
-                        unsafe {
-                            self.renderer.context.device.cmd_bind_pipeline(
-                                cmd.vk_command_buffer(),
-                                vk::PipelineBindPoint::GRAPHICS,
-                                skinned_pipeline.unwrap(),
-                            );
-                        }
-                        cmd.bind_descriptor_sets(skinned_layout.unwrap(), 0, &[storage_ds], &[]);
-                    } else {
-                        unsafe {
-                            self.renderer.context.device.cmd_bind_pipeline(
-                                cmd.vk_command_buffer(),
-                                vk::PipelineBindPoint::GRAPHICS,
-                                pipeline,
-                            );
-                        }
-                        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
-                    }
-                    current_is_skinned = is_skinned;
-                }
-
-                if is_skinned {
-                    let skeleton_ds = self
-                        .renderer
-                        .get_skeleton_descriptor(draw_call.skeleton)
-                        .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
-                    cmd.bind_descriptor_sets(
-                        skinned_layout.unwrap(),
-                        2,
-                        &[skeleton_ds.vk_set()],
-                        &[],
-                    );
-                }
-
-                let mesh = self
-                    .renderer
-                    .asset_registry
-                    .get_mesh(draw_call.mesh)
-                    .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
-
-                let pos_buf = mesh
-                    .get_attribute_buffer(AttributeType::Position)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
-                if is_skinned {
-                    let joints_buf = mesh
-                        .get_attribute_buffer(AttributeType::JointIndices)
-                        .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null());
-                    let weights_buf = mesh
-                        .get_attribute_buffer(AttributeType::JointWeights)
-                        .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null());
-                    cmd.bind_vertex_buffers_at_locations(&[
-                        (0, pos_buf),
-                        (4, joints_buf),
-                        (5, weights_buf),
-                    ]);
-                } else {
-                    cmd.bind_vertex_buffers_at_locations(&[(0, pos_buf)]);
-                }
-
-                if let Some(ib) = &mesh.index_buffer {
-                    cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
-                }
-
-                let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
-
-                unsafe {
-                    self.renderer.context.device.cmd_draw_indexed(
-                        cmd.vk_command_buffer(),
-                        index_count,
-                        1,
-                        0,
-                        0,
-                        draw_call.instance_index,
-                    );
-                }
-            }
-        }
+        self.draw_with_pipelines(cmd, &data, pipeline, layout, skinned_pipeline, skinned_layout)?;
 
         cmd.end_rendering();
 
