@@ -424,4 +424,89 @@ mod tests {
             "Lighting should come before PostProcess"
         );
     }
+
+    #[test]
+    fn test_diamond_dependency() {
+        // Diamond: A -> B, A -> C, B -> D, C -> D
+        // Verify D comes after both B and C in topological order
+        let passes = vec![
+            make_pass("A", vec![], vec!["r_a"]),
+            make_pass("B", vec!["r_a"], vec!["r_b"]),
+            make_pass("C", vec!["r_a"], vec!["r_c"]),
+            make_pass("D", vec!["r_b", "r_c"], vec![]),
+        ];
+
+        let compiler = GraphCompiler::new(passes);
+        let plan = compiler.compile().unwrap();
+
+        assert_eq!(plan.sorted_passes.len(), 4);
+
+        let a_pos = plan.sorted_passes.iter().position(|&i| i == 0).unwrap();
+        let b_pos = plan.sorted_passes.iter().position(|&i| i == 1).unwrap();
+        let c_pos = plan.sorted_passes.iter().position(|&i| i == 2).unwrap();
+        let d_pos = plan.sorted_passes.iter().position(|&i| i == 3).unwrap();
+
+        assert!(a_pos < b_pos, "A should come before B");
+        assert!(a_pos < c_pos, "A should come before C");
+        assert!(b_pos < d_pos, "B should come before D");
+        assert!(c_pos < d_pos, "C should come before D");
+    }
+
+    #[test]
+    fn test_duplicate_resource_writers() {
+        // Two passes writing the same resource: last writer should create WAW dependency
+        let passes = vec![
+            make_pass("Writer1", vec![], vec!["shared"]),
+            make_pass("Writer2", vec![], vec!["shared"]),
+            make_pass("Reader", vec!["shared"], vec![]),
+        ];
+
+        let compiler = GraphCompiler::new(passes);
+        let plan = compiler.compile().unwrap();
+
+        assert_eq!(plan.sorted_passes.len(), 3);
+
+        let w1_pos = plan.sorted_passes.iter().position(|&i| i == 0).unwrap();
+        let w2_pos = plan.sorted_passes.iter().position(|&i| i == 1).unwrap();
+        let r_pos = plan.sorted_passes.iter().position(|&i| i == 2).unwrap();
+
+        // Both writers should come before the reader
+        assert!(w1_pos < r_pos, "Writer1 should come before Reader");
+        assert!(w2_pos < r_pos, "Writer2 should come before Reader");
+        // Writer2 should come after Writer1 (WAW dependency)
+        assert!(w1_pos < w2_pos, "Writer1 should come before Writer2");
+    }
+
+    #[test]
+    fn test_single_pass_no_deps() {
+        let passes = vec![make_pass("solo", vec![], vec![])];
+        let compiler = GraphCompiler::new(passes);
+        let plan = compiler.compile().unwrap();
+        assert_eq!(plan.sorted_passes.len(), 1);
+        assert_eq!(plan.sorted_passes[0], 0);
+    }
+
+    #[test]
+    fn test_self_read_write_no_cycle() {
+        // A pass that reads and writes the same resource should NOT create a cycle
+        let passes = vec![make_pass("self_loop", vec!["r"], vec!["r"])];
+        let compiler = GraphCompiler::new(passes);
+        let plan = compiler.compile().unwrap();
+        assert_eq!(plan.sorted_passes.len(), 1);
+    }
+
+    #[test]
+    fn test_three_way_cycle() {
+        // A -> B -> C -> A (three-node cycle)
+        let passes = vec![
+            make_pass("A", vec!["r_c"], vec!["r_a"]),
+            make_pass("B", vec!["r_a"], vec!["r_b"]),
+            make_pass("C", vec!["r_b"], vec!["r_c"]),
+        ];
+
+        let result = GraphCompiler::new(passes).compile();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Cycle"));
+    }
 }

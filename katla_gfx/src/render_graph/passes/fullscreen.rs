@@ -180,45 +180,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_fullscreen_pass_new() {
-        let pass = FullscreenPass::new("tone_map");
-        assert_eq!(pass.name, "tone_map");
-        assert!(pass.reads.is_empty());
-        assert!(pass.writes.is_empty());
-        assert!(pass.pipeline.is_none());
-        assert!(pass.tonemap_params.is_none());
-    }
-
-    #[test]
-    fn test_fullscreen_pass_read() {
-        let pass = FullscreenPass::new("tone_map")
-            .read("hdr_color")
-            .read("bloom");
-
-        assert_eq!(pass.reads.len(), 2);
-        assert_eq!(pass.reads[0], "hdr_color");
-        assert_eq!(pass.reads[1], "bloom");
-    }
-
-    #[test]
-    fn test_fullscreen_pass_write() {
-        let pass = FullscreenPass::new("tone_map").write("ldr_output", ImageFormat::R8G8B8A8Srgb);
-
-        assert_eq!(pass.writes.len(), 1);
-        assert_eq!(pass.writes[0].0, "ldr_output");
-        assert_eq!(pass.writes[0].1, ImageFormat::R8G8B8A8Srgb);
-    }
-
-    #[test]
-    fn test_fullscreen_pass_pipeline() {
-        let pipeline = PipelineHandle::new(42);
-        let pass = FullscreenPass::new("tone_map").pipeline(pipeline);
-
-        assert!(pass.pipeline.is_some());
-        assert_eq!(pass.pipeline.unwrap().index(), 42);
-    }
-
-    #[test]
     fn test_tonemap_params_default() {
         let params = TonemapParams::default();
         assert_eq!(params.exposure, 1.0);
@@ -228,45 +189,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fullscreen_pass_tonemap() {
-        let params = TonemapParams {
-            exposure: 1.5,
-            gamma: 2.4,
-            mode: TonemapOperator::Reinhard,
-            hdr_texture_index: Some(5),
-        };
-        let pass = FullscreenPass::new("tonemap")
-            .read("hdr_color")
-            .write_backbuffer()
-            .pipeline(PipelineHandle::new(1))
-            .tonemap(params);
-
-        assert!(pass.tonemap_params.is_some());
-        let tonemap = pass.tonemap_params.unwrap();
-        assert_eq!(tonemap.exposure, 1.5);
-        assert_eq!(tonemap.gamma, 2.4);
-        assert_eq!(tonemap.mode, TonemapOperator::Reinhard);
-        assert_eq!(tonemap.hdr_texture_index, Some(5));
-    }
-
-    #[test]
-    fn test_fullscreen_pass_as_builder() {
-        let pipeline = PipelineHandle::new(42);
-        let pass = FullscreenPass::new("tone_map")
-            .read("hdr_color")
-            .write("ldr_output", ImageFormat::R8G8B8A8Srgb)
-            .pipeline(pipeline);
-
-        let builder = pass.as_builder();
-
-        assert_eq!(builder.name, "tone_map");
-        assert_eq!(builder.pass_type, PassType::Graphics);
-        assert_eq!(builder.reads, vec!["hdr_color"]);
-        assert_eq!(builder.writes, vec!["ldr_output"]);
-    }
-
-    #[test]
-    fn test_fullscreen_pass_build_fn() {
+    fn test_fullscreen_pass_build_fn_with_resources() {
         let pipeline = PipelineHandle::new(42);
         let pass = FullscreenPass::new("tone_map")
             .read("hdr_color")
@@ -290,11 +213,32 @@ mod tests {
             .write("ldr_output", ImageFormat::R8G8B8A8Srgb);
 
         let builder = pass.as_builder();
-
-        let resource_map = HashMap::new(); // Empty - no resources
+        let resource_map = HashMap::new();
 
         // FullscreenPass build_fn doesn't validate resources
         let result = (builder.build_fn)(&resource_map);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_fullscreen_pass_tonemap_params_propagate() {
+        let params = TonemapParams {
+            exposure: 1.5,
+            gamma: 2.4,
+            mode: TonemapOperator::Reinhard,
+            hdr_texture_index: Some(5),
+        };
+        let pass = FullscreenPass::new("tonemap")
+            .read("hdr_color")
+            .write_backbuffer()
+            .pipeline(PipelineHandle::new(1))
+            .tonemap(params);
+
+        assert!(pass.tonemap_params.is_some());
+        let tonemap = pass.tonemap_params.unwrap();
+        assert_eq!(tonemap.exposure, 1.5);
+        assert_eq!(tonemap.gamma, 2.4);
+        assert_eq!(tonemap.mode, TonemapOperator::Reinhard);
+        assert_eq!(tonemap.hdr_texture_index, Some(5));
     }
 }

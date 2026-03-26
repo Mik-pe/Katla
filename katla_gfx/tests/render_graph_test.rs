@@ -1,82 +1,52 @@
 //! Render graph integration tests.
 //!
-//! This test module demonstrates the render graph API and verifies
-//! that all types work together correctly.
+//! This test module verifies render graph error types and pass builder configuration.
+//! Graph compilation and dependency analysis are tested in compiler.rs inline tests.
 
+use katla_gfx::render_graph::GeometryPass;
 use katla_gfx::texture::ImageFormat;
-use katla_gfx::*;
-
-#[test]
-fn test_render_graph_api_compilation() {
-    // This test verifies that the render graph API compiles correctly.
-    // Visual testing is done via `cargo run -- -s`.
-
-    // Test that pass templates are accessible
-    let _geometry = GeometryPass::new("geometry");
-    let _fullscreen = FullscreenPass::new("fullscreen");
-    let _shadow = ShadowPass::new("shadow");
-}
-
-#[test]
-fn test_geometry_pass_builder() {
-    // Test that GeometryPass builds correctly.
-    // Note: Depth is handled automatically using the global depth buffer.
-    let _pass = GeometryPass::new("test_geometry")
-        .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-        .read("shadow_map");
-}
-
-#[test]
-fn test_fullscreen_pass_builder() {
-    // Test that FullscreenPass builds correctly.
-    let _pass = FullscreenPass::new("test_fullscreen")
-        .read("input_texture")
-        .write("output", ImageFormat::R8G8B8A8Srgb);
-}
-
-#[test]
-fn test_shadow_pass_builder() {
-    // Test that ShadowPass builds correctly.
-    let _pass = ShadowPass::new("test_shadows")
-        .write_depth("shadow_map", ImageFormat::D32Sfloat)
-        .resolution(2048, 2048);
-}
-
-#[test]
-fn test_pass_builder_types() {
-    // Pass templates (GeometryPass, FullscreenPass, ShadowPass) are used
-    // directly with FrameGraphBuilder. The PassBuilder trait is internal.
-    // This test verifies that pass templates can be created and configured.
-
-    let _g = GeometryPass::new("g").write_color("c", ImageFormat::R8G8B8A8Srgb);
-    let _f = FullscreenPass::new("f").write("o", ImageFormat::R8G8B8A8Srgb);
-    let _s = ShadowPass::new("s").write_depth("d", ImageFormat::D32Sfloat);
-}
 
 #[test]
 fn test_render_graph_error_display() {
-    // Test that RenderGraphError implements Display correctly.
-    let err = RenderGraphError::ResourceNotFound("my_resource".to_string());
+    let err = katla_gfx::RenderGraphError::ResourceNotFound("my_resource".to_string());
     assert!(err.to_string().contains("my_resource"));
 
-    let err = RenderGraphError::PassNotFound("my_pass".to_string());
+    let err = katla_gfx::RenderGraphError::PassNotFound("my_pass".to_string());
     assert!(err.to_string().contains("my_pass"));
 
-    let err = RenderGraphError::AllocationFailed(1024);
+    let err = katla_gfx::RenderGraphError::AllocationFailed(1024);
     assert!(err.to_string().contains("1024"));
+
+    let err = katla_gfx::RenderGraphError::DependencyCycle("A -> B -> A".to_string());
+    assert!(err.to_string().contains("Cycle detected"));
+
+    let err = katla_gfx::RenderGraphError::InvalidConfiguration("bad config".to_string());
+    assert!(err.to_string().contains("bad config"));
+
+    let err = katla_gfx::RenderGraphError::VulkanError("device lost".to_string());
+    assert!(err.to_string().contains("Vulkan error"));
 }
 
 #[test]
-fn test_shadow_pass_default_resolution() {
-    // ShadowPass defaults to 4096x4096 atlas resolution.
-    // Verify it compiles and configures correctly with explicit resolution.
-    let pass = ShadowPass::new("s")
-        .resolution(4096, 4096)
-        .write_depth("d", ImageFormat::D32Sfloat);
-    let pass2 = ShadowPass::new("s2")
-        .write_depth("d", ImageFormat::D32Sfloat)
-        .resolution(2048, 2048);
-    // Both should compile without error
-    let _ = pass;
-    let _ = pass2;
+fn test_geometry_pass_chained_reads() {
+    let pass = GeometryPass::new("geometry")
+        .write_color("color", ImageFormat::R16G16B16A16Sfloat)
+        .read("shadow_map")
+        .read("environment_map")
+        .read("previous_frame");
+
+    assert_eq!(pass.reads().len(), 3);
+    assert_eq!(pass.reads()[0], "shadow_map");
+    assert_eq!(pass.reads()[1], "environment_map");
+    assert_eq!(pass.reads()[2], "previous_frame");
+    assert_eq!(pass.color_output_count(), 1);
+}
+
+#[test]
+fn test_geometry_pass_multiple_color_outputs() {
+    let pass = GeometryPass::new("geometry")
+        .write_color("albedo", ImageFormat::R8G8B8A8Srgb)
+        .write_color("normals", ImageFormat::R16G16B16A16Sfloat);
+
+    assert_eq!(pass.color_output_count(), 2);
 }

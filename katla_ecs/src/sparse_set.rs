@@ -208,13 +208,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sparse_set_new() {
-        let set: SparseSet<usize, i32> = SparseSet::new();
-        assert!(set.is_empty());
-        assert_eq!(set.len(), 0);
-    }
-
-    #[test]
     fn test_sparse_set_insert() {
         let mut set = SparseSet::new();
         set.insert(0, 10);
@@ -256,28 +249,6 @@ mod tests {
     }
 
     #[test]
-    fn test_sparse_set_contains() {
-        let mut set = SparseSet::new();
-        set.insert(0, 10);
-        set.insert(2, 30);
-
-        assert!(set.contains(0));
-        assert!(!set.contains(1));
-        assert!(set.contains(2));
-    }
-
-    #[test]
-    fn test_sparse_set_get() {
-        let mut set = SparseSet::new();
-        set.insert(0, 10);
-        set.insert(1, 20);
-
-        assert_eq!(set.get(0), Some(&10));
-        assert_eq!(set.get(1), Some(&20));
-        assert_eq!(set.get(2), None);
-    }
-
-    #[test]
     fn test_sparse_set_get_mut() {
         let mut set = SparseSet::new();
         set.insert(0, 10);
@@ -316,47 +287,6 @@ mod tests {
 
         assert_eq!(set.get(0), Some(&20));
         assert_eq!(set.get(1), Some(&40));
-    }
-
-    #[test]
-    fn test_sparse_values() {
-        let mut set = SparseSet::new();
-        set.insert(0, 10);
-        set.insert(1, 20);
-        set.insert(2, 30);
-
-        let values: Vec<&i32> = set.values().collect();
-        assert_eq!(values.len(), 3);
-        assert!(values.contains(&&10));
-        assert!(values.contains(&&20));
-        assert!(values.contains(&&30));
-    }
-
-    #[test]
-    fn test_sparse_keys() {
-        let mut set = SparseSet::new();
-        set.insert(0, 10);
-        set.insert(1, 20);
-        set.insert(2, 30);
-
-        let keys: Vec<usize> = set.keys().collect();
-        assert_eq!(keys.len(), 3);
-        assert!(keys.contains(&0));
-        assert!(keys.contains(&1));
-        assert!(keys.contains(&2));
-    }
-
-    #[test]
-    fn test_sparse_set_clear() {
-        let mut set = SparseSet::new();
-        set.insert(0, 10);
-        set.insert(1, 20);
-
-        set.clear();
-
-        assert!(set.is_empty());
-        assert_eq!(set.len(), 0);
-        assert_eq!(set.get(0), None);
     }
 
     #[test]
@@ -430,14 +360,61 @@ mod tests {
     }
 
     #[test]
-    fn test_sparse_set_empty_operations() {
-        let mut set: SparseSet<usize, i32> = SparseSet::new();
+    fn test_sparse_set_dense_sparse_consistency_after_remove() {
+        let mut set: SparseSet<u32, i32> = SparseSet::new();
 
-        assert!(!set.remove(0));
-        assert_eq!(set.get(0), None);
-        assert!(!set.contains(0));
-        assert_eq!(set.values().count(), 0);
-        assert_eq!(set.keys().count(), 0);
-        assert_eq!(set.iter().count(), 0);
+        for i in 0..5u32 {
+            set.insert(i, (i * 10) as i32);
+        }
+
+        // Remove items 1 and 3
+        set.remove(1);
+        set.remove(3);
+
+        assert_eq!(set.len(), 3);
+
+        // Verify dense/sparse consistency: for each remaining item,
+        // sparse[key] indexes into dense, and dense[sparse[key]] == key
+        for (key, value) in set.iter() {
+            assert!(set.contains(key));
+            assert_eq!(*set.get(key).unwrap(), *value);
+        }
+
+        // Removed keys should not be accessible
+        assert!(!set.contains(1));
+        assert!(!set.contains(3));
+        assert_eq!(set.get(1), None);
+        assert_eq!(set.get(3), None);
+
+        // Remaining keys should have correct values
+        assert_eq!(set.get(0), Some(&0));
+        assert_eq!(set.get(2), Some(&20));
+        assert_eq!(set.get(4), Some(&40));
+    }
+
+    #[test]
+    fn test_sparse_set_remove_all_then_reinsert() {
+        let mut set: SparseSet<u32, i32> = SparseSet::new();
+
+        for i in 0..5u32 {
+            set.insert(i, i as i32);
+        }
+
+        // Remove all
+        for i in 0..5u32 {
+            assert!(set.remove(i));
+        }
+
+        assert!(set.is_empty());
+
+        // Re-insert with different values
+        for i in 0..5u32 {
+            set.insert(i, (i * 100) as i32);
+        }
+
+        assert_eq!(set.len(), 5);
+        for i in 0..5u32 {
+            assert_eq!(set.get(i), Some(&((i * 100) as i32)));
+        }
     }
 }

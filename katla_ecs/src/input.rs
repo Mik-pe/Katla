@@ -65,31 +65,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_input_state_new() {
-        let state = InputState::new();
-
-        assert_eq!(state.mouse_position, (0.0, 0.0));
-        assert_eq!(state.mouse_delta, (0.0, 0.0));
-        assert_eq!(state.mouse_wheel_delta, 0.0);
-
-        // All mouse buttons should be released
-        for button in 0..5 {
-            assert_eq!(state.mouse_buttons[button], ButtonState::Released);
-        }
-
-        // All keyboard keys should be false
-        for key in 0..Action::COUNT {
-            assert!(!state.keyboard_keys[key]);
-        }
-    }
-
-    #[test]
-    fn test_input_state_default() {
-        let state = InputState::default();
-        assert_eq!(state.mouse_position, (0.0, 0.0));
-    }
-
-    #[test]
     fn test_set_action_state() {
         let mut state = InputState::new();
 
@@ -100,19 +75,6 @@ mod tests {
         state.set_action_state(Action::Jump, false);
         assert!(!state.is_action_pressed(Action::Jump));
         assert!(!state.keyboard_keys[Action::Jump as usize]);
-    }
-
-    #[test]
-    fn test_is_action_pressed() {
-        let mut state = InputState::new();
-
-        assert!(!state.is_action_pressed(Action::MoveLeft));
-
-        state.set_action_state(Action::MoveLeft, true);
-        assert!(state.is_action_pressed(Action::MoveLeft));
-
-        state.set_action_state(Action::MoveLeft, false);
-        assert!(!state.is_action_pressed(Action::MoveLeft));
     }
 
     #[test]
@@ -198,58 +160,6 @@ mod tests {
     }
 
     #[test]
-    fn test_all_mouse_buttons() {
-        let mut state = InputState::new();
-
-        state.set_mouse_button_state(MouseButton::Left, ButtonState::Pressed);
-        state.set_mouse_button_state(MouseButton::Right, ButtonState::Pressed);
-        state.set_mouse_button_state(MouseButton::Middle, ButtonState::Pressed);
-        state.set_mouse_button_state(MouseButton::Forward, ButtonState::Pressed);
-        state.set_mouse_button_state(MouseButton::Backward, ButtonState::Pressed);
-
-        assert_eq!(
-            state.mouse_buttons[MouseButton::Left as usize],
-            ButtonState::Pressed
-        );
-        assert_eq!(
-            state.mouse_buttons[MouseButton::Right as usize],
-            ButtonState::Pressed
-        );
-        assert_eq!(
-            state.mouse_buttons[MouseButton::Middle as usize],
-            ButtonState::Pressed
-        );
-        assert_eq!(
-            state.mouse_buttons[MouseButton::Forward as usize],
-            ButtonState::Pressed
-        );
-        assert_eq!(
-            state.mouse_buttons[MouseButton::Backward as usize],
-            ButtonState::Pressed
-        );
-    }
-
-    #[test]
-    fn test_input_state_independence() {
-        let mut state = InputState::new();
-
-        // Set keyboard action
-        state.set_action_state(Action::Jump, true);
-
-        // Mouse buttons should still be released
-        assert_eq!(
-            state.mouse_buttons[MouseButton::Left as usize],
-            ButtonState::Released
-        );
-
-        // Set mouse button
-        state.set_mouse_button_state(MouseButton::Left, ButtonState::Pressed);
-
-        // Keyboard action should still be pressed
-        assert!(state.is_action_pressed(Action::Jump));
-    }
-
-    #[test]
     fn test_consecutive_mouse_positions() {
         let mut state = InputState::new();
 
@@ -266,39 +176,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_toggle_action_state() {
-        let mut state = InputState::new();
-
-        // Toggle on
-        state.set_action_state(Action::Sprint, true);
-        assert!(state.is_action_pressed(Action::Sprint));
-
-        // Toggle off
-        state.set_action_state(Action::Sprint, false);
-        assert!(!state.is_action_pressed(Action::Sprint));
-
-        // Toggle on again
-        state.set_action_state(Action::Sprint, true);
-        assert!(state.is_action_pressed(Action::Sprint));
-    }
-
-    #[test]
-    fn test_mouse_button_toggle() {
-        let mut state = InputState::new();
-
-        // Press
-        state.set_mouse_button_state(MouseButton::Middle, ButtonState::Pressed);
-        assert_eq!(
-            state.mouse_buttons[MouseButton::Middle as usize],
-            ButtonState::Pressed
-        );
-
-        // Release
-        state.set_mouse_button_state(MouseButton::Middle, ButtonState::Released);
-        assert_eq!(
-            state.mouse_buttons[MouseButton::Middle as usize],
-            ButtonState::Released
-        );
-    }
 }

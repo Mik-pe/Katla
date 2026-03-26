@@ -111,36 +111,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_pass_type_default() {
-        assert_eq!(PassType::default(), PassType::Graphics);
+    fn test_pass_desc_with_pipeline() {
+        let desc = PassDesc::new("test", PassType::Graphics, vec![], vec!["out".to_string()])
+            .with_pipeline(crate::handle::PipelineHandle::new(42));
+
+        assert_eq!(desc.pipeline.unwrap().index(), 42);
     }
 
     #[test]
-    fn test_pass_type_equality() {
-        assert_eq!(PassType::Graphics, PassType::Graphics);
-    }
-
-    #[test]
-    fn test_pass_desc_new() {
-        let reads = vec!["input".to_string()];
-        let writes = vec!["output".to_string()];
-        let desc = PassDesc::new(
-            "test_pass",
-            PassType::Graphics,
-            reads.clone(),
-            writes.clone(),
-        );
-
-        assert_eq!(desc.name, "test_pass");
-        assert_eq!(desc.pass_type, PassType::Graphics);
-        assert_eq!(desc.reads, vec!["input"]);
-        assert_eq!(desc.writes, vec!["output"]);
-    }
-
-    #[test]
-    fn test_pass_desc_new_default() {
-        let desc = PassDesc::new("test", PassType::default(), vec![], vec![]);
-        assert_eq!(desc.name, "test");
-        assert_eq!(desc.pass_type, PassType::Graphics);
+    fn test_pass_desc_defaults() {
+        let desc = PassDesc::new("test", PassType::Graphics, vec!["r".to_string()], vec!["w".to_string()]);
+        assert!(desc.pipeline.is_none());
+        assert!(desc.tonemap_params.is_none());
+        assert!(desc.material.is_none());
+        assert!(desc.output_format.is_none());
+        assert!(desc.color_attachments.is_empty());
+        assert!(desc.depth_attachment.is_none());
+        assert!(desc.compositing_viewports.is_none());
+        assert!(desc.compute_fn.is_none());
+        assert!(desc.uses_depth);
     }
 }

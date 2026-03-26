@@ -379,53 +379,5 @@ impl Drop for CompositingDescriptorSet {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_max_viewports_constant() {
-        // Ensure we have the expected maximum
-        assert_eq!(MAX_VIEWPORTS, 8);
-    }
-
-    #[test]
-    fn test_compositing_descriptor_set_new_requires_vulkan() {
-        // This test verifies the API signature is correct
-        // Actual functionality testing requires a Vulkan context
-
-        // Verify MAX_VIEWPORTS is a reasonable value
-        assert!(MAX_VIEWPORTS >= 2);
-        assert!(MAX_VIEWPORTS <= 16);
-    }
-
-    #[test]
-    fn test_compositing_descriptor_set_validation_logic() {
-        // Test validation logic without requiring Vulkan context
-        // We can verify the error message format
-
-        let count = 10;
-        let error_msg = format!(
-            "Too many viewports: {} exceeds maximum of {}",
-            count, MAX_VIEWPORTS
-        );
-
-        assert!(error_msg.contains("Too many viewports"));
-        assert!(error_msg.contains(&count.to_string()));
-        assert!(error_msg.contains(&MAX_VIEWPORTS.to_string()));
-    }
-
-    #[test]
-    fn test_compositing_descriptor_set_texture_count() {
-        // Verify texture_count() method exists and returns the expected type
-        // Actual testing requires Vulkan context
-
-        // This is a compile-time check that the API is correct
-        fn check_texture_count(desc_set: &CompositingDescriptorSet) -> usize {
-            desc_set.texture_count()
-        }
-
-        // Verify the function signature
-        assert!(std::mem::size_of::<usize>() > 0);
-    }
-}
+// CompositingDescriptorSet requires Vulkan context for all operations.
+// No non-trivial logic to test without GPU.

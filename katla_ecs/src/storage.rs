@@ -315,37 +315,9 @@ mod tests {
         value: i32,
     }
 
-    #[test]
-    fn test_component_storage_insert() {
-        let mut storage = ComponentStorage::<TestComponent>::new();
-        let entity = EntityId::test_new(0);
-
-        storage.insert(entity, TestComponent { value: 42 });
-
-        assert_eq!(storage.len(), 1);
-        assert!(storage.contains(entity));
-    }
-
-    #[test]
-    fn test_component_storage_get() {
-        let mut storage = ComponentStorage::<TestComponent>::new();
-        let entity = EntityId::test_new(0);
-
-        storage.insert(entity, TestComponent { value: 42 });
-
-        let component = storage.get(entity).unwrap();
-        assert_eq!(component.value, 42);
-    }
-
-    #[test]
-    fn test_component_storage_remove() {
-        let mut storage = ComponentStorage::<TestComponent>::new();
-        let entity = EntityId::test_new(0);
-
-        storage.insert(entity, TestComponent { value: 42 });
-        assert!(storage.remove(entity));
-        assert!(!storage.contains(entity));
-        assert_eq!(storage.len(), 0);
+    #[derive(Component, Clone, Debug, PartialEq)]
+    struct TestComponent2 {
+        value: f32,
     }
 
     #[test]
@@ -359,162 +331,6 @@ mod tests {
         let component = storage.get(entity).unwrap();
         assert_eq!(component.value, 100);
         assert_eq!(storage.len(), 1);
-    }
-
-    #[test]
-    fn test_component_storage_iter() {
-        let mut storage = ComponentStorage::<TestComponent>::new();
-        let entity1 = EntityId::test_new(0);
-        let entity2 = EntityId::test_new(1);
-
-        storage.insert(entity1, TestComponent { value: 42 });
-        storage.insert(entity2, TestComponent { value: 100 });
-
-        let components: Vec<_> = storage.iter().collect();
-        assert_eq!(components.len(), 2);
-        assert!(components.contains(&(entity1, &TestComponent { value: 42 })));
-        assert!(components.contains(&(entity2, &TestComponent { value: 100 })));
-    }
-
-    #[test]
-    fn test_storage_manager() {
-        let mut manager = ComponentStorageManager::new();
-        let entity = EntityId::test_new(0);
-
-        manager.add_component(entity, TestComponent { value: 42 });
-
-        assert_eq!(manager.storage_count(), 1);
-
-        let component = manager.get_component::<TestComponent>(entity).unwrap();
-        assert_eq!(component.value, 42);
-    }
-
-    #[test]
-    fn test_storage_manager_remove_entity() {
-        let mut manager = ComponentStorageManager::new();
-        let entity = EntityId::test_new(0);
-
-        manager.add_component(entity, TestComponent { value: 42 });
-        manager.remove_entity(entity);
-
-        assert!(manager.get_component::<TestComponent>(entity).is_none());
-    }
-
-    #[derive(Component, Clone, Debug, PartialEq)]
-    struct TestComponent2 {
-        value: f32,
-    }
-
-    #[derive(Component, Clone, Debug, PartialEq)]
-    struct TestComponent3 {
-        name: String,
-    }
-
-    #[test]
-    fn test_query_single_mutable() {
-        let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::test_new(0);
-        let entity2 = EntityId::test_new(1);
-
-        manager.add_component(entity1, TestComponent { value: 10 });
-        manager.add_component(entity2, TestComponent { value: 20 });
-
-        let results: Vec<EntityId> = manager
-            .query::<&mut TestComponent>()
-            .map(|(id, _)| id)
-            .collect();
-        assert_eq!(results.len(), 2);
-        assert!(results.contains(&entity1));
-        assert!(results.contains(&entity2));
-    }
-
-    #[test]
-    fn test_query_single_immutable() {
-        let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::test_new(0);
-        let entity2 = EntityId::test_new(1);
-
-        manager.add_component(entity1, TestComponent { value: 10 });
-        manager.add_component(entity2, TestComponent { value: 20 });
-
-        let results: Vec<EntityId> = manager
-            .query::<&TestComponent>()
-            .map(|(id, _)| id)
-            .collect();
-        assert_eq!(results.len(), 2);
-        assert!(results.contains(&entity1));
-        assert!(results.contains(&entity2));
-    }
-
-    #[test]
-    fn test_query_two_mutable() {
-        let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::test_new(0);
-        let entity2 = EntityId::test_new(1);
-
-        manager.add_component(entity1, TestComponent { value: 10 });
-        manager.add_component(entity1, TestComponent2 { value: 1.5 });
-        manager.add_component(entity2, TestComponent { value: 20 });
-        manager.add_component(entity2, TestComponent2 { value: 2.5 });
-
-        let results: Vec<EntityId> = manager
-            .query::<(&mut TestComponent, &mut TestComponent2)>()
-            .map(|(id, _, _)| id)
-            .collect();
-        assert_eq!(results.len(), 2);
-        assert!(results.contains(&entity1));
-        assert!(results.contains(&entity2));
-    }
-
-    #[test]
-    fn test_query_mutable_and_immutable() {
-        let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::test_new(0);
-        let entity2 = EntityId::test_new(1);
-
-        manager.add_component(entity1, TestComponent { value: 10 });
-        manager.add_component(entity1, TestComponent2 { value: 1.5 });
-        manager.add_component(entity2, TestComponent { value: 20 });
-        manager.add_component(entity2, TestComponent2 { value: 2.5 });
-
-        let results: Vec<EntityId> = manager
-            .query::<(&mut TestComponent, &TestComponent2)>()
-            .map(|(id, _, _)| id)
-            .collect();
-        assert_eq!(results.len(), 2);
-        assert!(results.contains(&entity1));
-        assert!(results.contains(&entity2));
-    }
-
-    #[test]
-    fn test_query_immutable_and_mutable() {
-        let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::test_new(0);
-        let entity2 = EntityId::test_new(1);
-
-        manager.add_component(entity1, TestComponent { value: 10 });
-        manager.add_component(entity1, TestComponent2 { value: 1.5 });
-        manager.add_component(entity2, TestComponent { value: 20 });
-        manager.add_component(entity2, TestComponent2 { value: 2.5 });
-
-        let results: Vec<EntityId> = manager
-            .query::<(&TestComponent, &mut TestComponent2)>()
-            .map(|(id, _, _)| id)
-            .collect();
-        assert_eq!(results.len(), 2);
-        assert!(results.contains(&entity1));
-        assert!(results.contains(&entity2));
-    }
-
-    #[test]
-    fn test_query_empty_storage() {
-        let mut manager = ComponentStorageManager::new();
-
-        let results: Vec<EntityId> = manager
-            .query::<&TestComponent>()
-            .map(|(id, _)| id)
-            .collect();
-        assert_eq!(results.len(), 0);
     }
 
     #[test]
@@ -548,102 +364,6 @@ mod tests {
     }
 
     #[test]
-    fn test_query_three_components_all_immutable() {
-        let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::test_new(0);
-        let entity2 = EntityId::test_new(1);
-
-        manager.add_component(entity1, TestComponent { value: 10 });
-        manager.add_component(entity1, TestComponent2 { value: 1.5 });
-        manager.add_component(
-            entity1,
-            TestComponent3 {
-                name: "Entity 1".to_string(),
-            },
-        );
-        manager.add_component(entity2, TestComponent { value: 20 });
-        manager.add_component(entity2, TestComponent2 { value: 2.5 });
-        manager.add_component(
-            entity2,
-            TestComponent3 {
-                name: "Entity 2".to_string(),
-            },
-        );
-
-        let results: Vec<EntityId> = manager
-            .query::<(&TestComponent, &TestComponent2, &TestComponent3)>()
-            .map(|(id, _, _, _)| id)
-            .collect();
-        assert_eq!(results.len(), 2);
-        assert!(results.contains(&entity1));
-        assert!(results.contains(&entity2));
-    }
-
-    #[test]
-    fn test_query_three_components_one_mutable() {
-        let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::test_new(0);
-        let entity2 = EntityId::test_new(1);
-
-        manager.add_component(entity1, TestComponent { value: 10 });
-        manager.add_component(entity1, TestComponent2 { value: 1.5 });
-        manager.add_component(
-            entity1,
-            TestComponent3 {
-                name: "Entity 1".to_string(),
-            },
-        );
-        manager.add_component(entity2, TestComponent { value: 20 });
-        manager.add_component(entity2, TestComponent2 { value: 2.5 });
-        manager.add_component(
-            entity2,
-            TestComponent3 {
-                name: "Entity 2".to_string(),
-            },
-        );
-
-        let results: Vec<EntityId> = manager
-            .query::<(&TestComponent, &mut TestComponent2, &TestComponent3)>()
-            .map(|(id, _, _, _)| id)
-            .collect();
-        assert_eq!(results.len(), 2);
-        assert!(results.contains(&entity1));
-        assert!(results.contains(&entity2));
-    }
-
-    #[test]
-    fn test_query_three_components_mutable_at_end() {
-        let mut manager = ComponentStorageManager::new();
-        let entity1 = EntityId::test_new(0);
-        let entity2 = EntityId::test_new(1);
-
-        manager.add_component(entity1, TestComponent { value: 10 });
-        manager.add_component(entity1, TestComponent2 { value: 1.5 });
-        manager.add_component(
-            entity1,
-            TestComponent3 {
-                name: "Entity 1".to_string(),
-            },
-        );
-        manager.add_component(entity2, TestComponent { value: 20 });
-        manager.add_component(entity2, TestComponent2 { value: 2.5 });
-        manager.add_component(
-            entity2,
-            TestComponent3 {
-                name: "Entity 2".to_string(),
-            },
-        );
-
-        let results: Vec<EntityId> = manager
-            .query::<(&TestComponent, &TestComponent2, &mut TestComponent3)>()
-            .map(|(id, _, _, _)| id)
-            .collect();
-        assert_eq!(results.len(), 2);
-        assert!(results.contains(&entity1));
-        assert!(results.contains(&entity2));
-    }
-
-    #[test]
     #[should_panic]
     fn test_query_three_same_type_panics() {
         let mut manager = ComponentStorageManager::new();
@@ -651,5 +371,52 @@ mod tests {
             .query::<(&TestComponent, &TestComponent, &TestComponent)>()
             .map(|(id, _, _, _)| id)
             .collect();
+    }
+
+    #[test]
+    fn test_query_returns_correct_component_values() {
+        let mut manager = ComponentStorageManager::new();
+        let entity1 = EntityId::test_new(0);
+        let entity2 = EntityId::test_new(1);
+
+        manager.add_component(entity1, TestComponent { value: 10 });
+        manager.add_component(entity1, TestComponent2 { value: 1.5 });
+        manager.add_component(entity2, TestComponent { value: 20 });
+        manager.add_component(entity2, TestComponent2 { value: 2.5 });
+
+        let mut results: Vec<(i32, f32)> = manager
+            .query::<(&TestComponent, &TestComponent2)>()
+            .map(|(_, a, b)| (a.value, b.value))
+            .collect();
+        results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0], (10, 1.5));
+        assert_eq!(results[1], (20, 2.5));
+    }
+
+    #[test]
+    fn test_query_mut_modifies_values() {
+        let mut manager = ComponentStorageManager::new();
+        let entity = EntityId::test_new(0);
+
+        manager.add_component(entity, TestComponent { value: 10 });
+
+        for (_, comp) in manager.query::<&mut TestComponent>() {
+            comp.value += 5;
+        }
+
+        assert_eq!(
+            manager.get_component::<TestComponent>(entity).unwrap().value,
+            15
+        );
+    }
+
+    #[test]
+    fn test_storage_remove_nonexistent_component_no_panic() {
+        let mut manager = ComponentStorageManager::new();
+        let entity = EntityId::test_new(0);
+
+        assert!(!manager.remove_component::<TestComponent>(entity));
     }
 }

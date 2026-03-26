@@ -1,17 +1,6 @@
 use super::*;
 
 #[test]
-fn test_begin_end_frame() {
-    let mut ctx = UiContext::new();
-
-    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
-    assert_eq!(ctx.screen_size(), Vec2::new(800.0, 600.0));
-
-    let draw_list = ctx.end();
-    assert!(draw_list.is_empty());
-}
-
-#[test]
 fn test_id_generation() {
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
@@ -956,4 +945,126 @@ fn test_layouts_dont_interfere() {
     ctx.end_column();
 
     ctx.end();
+}
+
+// === Click Behavior Tests ===
+
+/// Test that pressing inside a widget and releasing outside returns Released (not Clicked).
+///
+/// This verifies the press-then-drag-off behavior: if the user presses inside a button
+/// but moves the mouse outside before releasing, the button should NOT register a click.
+#[test]
+fn test_click_behavior_press_inside_release_outside() {
+    use crate::input::mouse_button;
+    use crate::widgets::Button;
+
+    let mut ctx = UiContext::new();
+    let button_bounds = Rect2D::from_origin_size(Vec2::new(100.0, 100.0), Vec2::new(80.0, 30.0));
+    let mut button_clicked = false;
+
+    // Frame 1: Press mouse inside button bounds
+    ctx.input.set_mouse_pos(Vec2::new(140.0, 115.0)); // Center of button
+    ctx.input.set_mouse_button(mouse_button::LEFT, true);
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+    {
+        let response = ctx.add(Button::new("Test").bounds(button_bounds));
+        assert!(response.hovered, "Button should be hovered");
+        assert!(!response.clicked, "Button should not be clicked on press");
+        // active_id is set during this frame's click processing, but the response
+        // captures the state before the click handler ran
+    }
+    ctx.end();
+
+    // Frame 2: Move mouse outside button, then release
+    ctx.input.clear_frame_state();
+    ctx.input.set_mouse_pos(Vec2::new(300.0, 400.0)); // Outside button
+    ctx.input.set_mouse_button(mouse_button::LEFT, false);
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+    {
+        let response = ctx.add(Button::new("Test").bounds(button_bounds));
+        if response.clicked {
+            button_clicked = true;
+        }
+    }
+    ctx.end();
+
+    assert!(
+        !button_clicked,
+        "Button should NOT be clicked when mouse is released outside its bounds"
+    );
+}
+
+// === Popup Blocking Tests ===
+
+/// Test that an open popup blocks clicks on widgets underneath.
+///
+/// When a popup is open, clicking on a widget that is visually behind the popup
+/// should not register. The popup consumes the click event.
+#[test]
+fn test_popup_blocks_click_underneath() {
+    use crate::input::mouse_button;
+    use crate::widgets::Button;
+
+    let mut ctx = UiContext::new();
+    let mut popup_open = true;
+    let mut button_clicked = false;
+
+    let button_bounds = Rect2D::from_origin_size(Vec2::new(100.0, 100.0), Vec2::new(80.0, 30.0));
+    let popup_bounds_config = Rect2D::from_origin_size(Vec2::new(80.0, 80.0), Vec2::new(200.0, 200.0));
+
+    // popup_bounds covers the button_bounds, so the button is "underneath" the popup.
+
+    // Frame 1: Press on button area (which is inside popup)
+    ctx.input.set_mouse_pos(Vec2::new(140.0, 115.0)); // Inside both popup and button
+    ctx.input.set_mouse_button(mouse_button::LEFT, true);
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+    // Render popup first (it sets popup_bounds and blocks hover for widgets underneath)
+    ctx.popup(
+        Popup::new("test_popup").fixed(popup_bounds_config),
+        &mut popup_open,
+        |_ui, _open| {},
+    );
+
+    // Try to click the button underneath the popup
+    {
+        let response = ctx.add(Button::new("Test").bounds(button_bounds));
+        if response.clicked {
+            button_clicked = true;
+        }
+        assert!(
+            !response.hovered,
+            "Button should not be hovered when popup covers it"
+        );
+    }
+    ctx.end();
+
+    // Frame 2: Release on button area (still inside popup)
+    ctx.input.clear_frame_state();
+    ctx.input.set_mouse_pos(Vec2::new(140.0, 115.0));
+    ctx.input.set_mouse_button(mouse_button::LEFT, false);
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+    ctx.popup(
+        Popup::new("test_popup").fixed(popup_bounds_config),
+        &mut popup_open,
+        |_ui, _open| {},
+    );
+
+    {
+        let response = ctx.add(Button::new("Test").bounds(button_bounds));
+        if response.clicked {
+            button_clicked = true;
+        }
+        assert!(
+            !response.hovered,
+            "Button should not be hovered when popup covers it on release"
+        );
+    }
+    ctx.end();
+
+    assert!(
+        !button_clicked,
+        "Button underneath popup should NOT receive click"
+    );
 }

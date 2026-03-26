@@ -416,14 +416,6 @@ mod tests {
     use katla_math::Vec2;
 
     #[test]
-    fn test_empty_draw_list() {
-        let list = DrawList::new();
-        assert!(list.is_empty());
-        assert_eq!(list.vertex_count(), 0);
-        assert_eq!(list.index_count(), 0);
-    }
-
-    #[test]
     fn test_add_rect() {
         let mut list = DrawList::new();
         let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0));

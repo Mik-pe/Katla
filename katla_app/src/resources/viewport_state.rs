@@ -235,15 +235,6 @@ mod tests {
     }
 
     #[test]
-    fn test_grid_state_default() {
-        let state = ViewportGridState::default();
-
-        assert_eq!(state.layout, ViewportLayout::Single);
-        assert_eq!(state.active_viewport, None);
-        assert!(state.viewport_slots.iter().all(|s| s.is_none()));
-    }
-
-    #[test]
     fn test_grid_state_set_layout() {
         let mut state = ViewportGridState::new();
 

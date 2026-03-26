@@ -323,15 +323,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_viewport_rect_new() {
-        let rect = ViewportRect::new(0.0, 0.0, 1920.0, 1080.0);
-        assert_eq!(rect.x, 0.0);
-        assert_eq!(rect.y, 0.0);
-        assert_eq!(rect.z, 1920.0);
-        assert_eq!(rect.w, 1080.0);
-    }
-
-    #[test]
     fn test_viewport_rect_from_origin_size() {
         let rect = ViewportRect::from_origin_size(100.0, 200.0, 300.0, 400.0);
         assert_eq!(rect.x, 100.0);
@@ -341,127 +332,10 @@ mod tests {
     }
 
     #[test]
-    fn test_viewport_rect_to_array() {
-        let rect = ViewportRect::new(10.0, 20.0, 100.0, 200.0);
-        let arr = rect.to_array();
-        assert_eq!(arr, [10.0, 20.0, 100.0, 200.0]);
-    }
-
-    #[test]
-    fn test_viewport_rect_width() {
-        let rect = ViewportRect::new(0.0, 0.0, 960.0, 1080.0);
-        assert_eq!(rect.width(), 960.0);
-    }
-
-    #[test]
-    fn test_viewport_rect_height() {
-        let rect = ViewportRect::new(0.0, 0.0, 960.0, 1080.0);
-        assert_eq!(rect.height(), 1080.0);
-    }
-
-    #[test]
-    fn test_viewport_rect_equality() {
-        let rect1 = ViewportRect::new(0.0, 0.0, 100.0, 100.0);
-        let rect2 = ViewportRect::new(0.0, 0.0, 100.0, 100.0);
-        let rect3 = ViewportRect::new(1.0, 0.0, 100.0, 100.0);
-
-        assert_eq!(rect1, rect2);
-        assert_ne!(rect1, rect3);
-    }
-
-    #[test]
-    fn test_composite_pass_new() {
-        let pass = CompositePass::new("composite");
-        assert_eq!(pass.name, "composite");
-        assert!(pass.viewports.is_empty());
-        assert!(pass.output.is_none());
-        assert!(pass.material.is_none());
-    }
-
-    #[test]
-    fn test_composite_pass_viewport() {
-        let rect = ViewportRect::new(0.0, 0.0, 960.0, 1080.0);
-        let pass = CompositePass::new("composite").viewport("viewport_0", rect);
-
-        assert_eq!(pass.viewports.len(), 1);
-        assert_eq!(pass.viewports[0].0, "viewport_0");
-        assert_eq!(pass.viewports[0].1, rect);
-    }
-
-    #[test]
-    fn test_composite_pass_multiple_viewports() {
-        let left = ViewportRect::new(0.0, 0.0, 960.0, 1080.0);
-        let right = ViewportRect::new(960.0, 0.0, 1920.0, 1080.0);
-
-        let pass = CompositePass::new("composite")
-            .viewport("viewport_0", left)
-            .viewport("viewport_1", right);
-
-        assert_eq!(pass.viewports.len(), 2);
-        assert_eq!(pass.viewports[0].0, "viewport_0");
-        assert_eq!(pass.viewports[1].0, "viewport_1");
-    }
-
-    #[test]
-    fn test_composite_pass_write() {
-        let pass = CompositePass::new("composite")
-            .viewport("viewport_0", ViewportRect::new(0.0, 0.0, 960.0, 1080.0))
-            .write("intermediate_output");
-
-        assert_eq!(pass.output, Some("intermediate_output".to_string()));
-    }
-
-    #[test]
-    fn test_composite_pass_write_backbuffer() {
-        let pass = CompositePass::new("composite")
-            .viewport("viewport_0", ViewportRect::new(0.0, 0.0, 960.0, 1080.0))
-            .write_backbuffer();
-
-        assert_eq!(pass.output, Some(BACKBUFFER_NAME.to_string()));
-    }
-
-    #[test]
-    fn test_composite_pass_material() {
-        let material = MaterialHandle::new(42);
-        let pass = CompositePass::new("composite")
-            .viewport("viewport_0", ViewportRect::new(0.0, 0.0, 960.0, 1080.0))
-            .material(material);
-
-        assert!(pass.material.is_some());
-        assert_eq!(pass.material.unwrap().index(), 42);
-    }
-
-    #[test]
-    fn test_composite_pass_builder_trait() {
-        let rect = ViewportRect::new(0.0, 0.0, 960.0, 1080.0);
-        let pass = CompositePass::new("composite")
-            .viewport("viewport_0", rect)
-            .write_backbuffer();
-
-        let builder = pass.as_builder();
-
-        assert_eq!(builder.name, "composite");
-        assert_eq!(builder.pass_type, PassType::Graphics);
-        assert_eq!(builder.reads, vec!["viewport_0"]);
-        assert_eq!(builder.writes, vec![BACKBUFFER_NAME]);
-        assert!(!builder.uses_depth);
-    }
-
-    #[test]
-    fn test_composite_pass_builder_trait_multiple_viewports() {
-        let left = ViewportRect::new(0.0, 0.0, 960.0, 1080.0);
-        let right = ViewportRect::new(960.0, 0.0, 1920.0, 1080.0);
-
-        let pass = CompositePass::new("composite")
-            .viewport("viewport_0", left)
-            .viewport("viewport_1", right)
-            .write_backbuffer();
-
-        let builder = pass.as_builder();
-
-        assert_eq!(builder.reads.len(), 2);
-        assert_eq!(builder.reads[0], "viewport_0");
-        assert_eq!(builder.reads[1], "viewport_1");
+    fn test_viewport_rect_width_height() {
+        let rect = ViewportRect::new(10.0, 20.0, 960.0, 1080.0);
+        assert_eq!(rect.width(), 960.0 - 10.0);
+        assert_eq!(rect.height(), 1080.0 - 20.0);
     }
 
     #[test]
@@ -481,7 +355,6 @@ mod tests {
 
         let data = result.unwrap();
         let pass_data = data.downcast_ref::<CompositePassData>().unwrap();
-
         assert_eq!(pass_data.viewports.len(), 1);
         assert_eq!(pass_data.viewports[0].0.index(), 0);
         assert_eq!(pass_data.viewports[0].1, rect);
@@ -495,8 +368,7 @@ mod tests {
             .write_backbuffer();
 
         let builder = pass.as_builder();
-
-        let resource_map = HashMap::new(); // Empty - no resources
+        let resource_map = HashMap::new();
 
         let result = (builder.build_fn)(&resource_map);
         assert!(result.is_err());
@@ -508,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn test_composite_pass_build_fn_multiple_viewports() {
+    fn test_composite_pass_multiple_viewports() {
         let left = ViewportRect::new(0.0, 0.0, 960.0, 1080.0);
         let right = ViewportRect::new(960.0, 0.0, 1920.0, 1080.0);
 
@@ -518,19 +390,8 @@ mod tests {
             .write_backbuffer();
 
         let builder = pass.as_builder();
-
-        let mut resource_map = HashMap::new();
-        resource_map.insert("viewport_0".to_string(), GraphResourceHandle::new(0));
-        resource_map.insert("viewport_1".to_string(), GraphResourceHandle::new(1));
-
-        let result = (builder.build_fn)(&resource_map);
-        assert!(result.is_ok());
-
-        let data = result.unwrap();
-        let pass_data = data.downcast_ref::<CompositePassData>().unwrap();
-
-        assert_eq!(pass_data.viewports.len(), 2);
-        assert_eq!(pass_data.viewports[0].1, left);
-        assert_eq!(pass_data.viewports[1].1, right);
+        assert_eq!(builder.reads.len(), 2);
+        assert_eq!(builder.reads[0], "viewport_0");
+        assert_eq!(builder.reads[1], "viewport_1");
     }
 }

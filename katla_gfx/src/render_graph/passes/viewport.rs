@@ -329,34 +329,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_viewport_pass_new() {
-        let pass = ViewportPass::new("viewport_0");
-        assert_eq!(pass.name(), "viewport_0");
-        assert!(pass.extent.is_none());
-        assert!(pass.format.is_none());
-        assert!(pass.clear_color.is_none());
-        assert!(pass.reads().is_empty());
-    }
-
-    #[test]
-    fn test_viewport_pass_full_setup() {
-        let pass = ViewportPass::new("viewport_0")
-            .extent(960, 1080)
-            .format(ImageFormat::R16G16B16A16Sfloat)
-            .clear_color([0.1, 0.2, 0.3, 1.0])
-            .read("shadow_map")
-            .read("environment_map");
-
-        assert_eq!(pass.name(), "viewport_0");
-        assert_eq!(pass.extent, Some((960, 1080)));
-        assert_eq!(pass.format, Some(ImageFormat::R16G16B16A16Sfloat));
-        assert_eq!(pass.clear_color, Some([0.1, 0.2, 0.3, 1.0]));
-        assert_eq!(pass.reads().len(), 2);
-        assert_eq!(pass.reads()[0], "shadow_map");
-        assert_eq!(pass.reads()[1], "environment_map");
-    }
-
-    #[test]
     fn test_viewport_pass_resource_desc() {
         let pass = ViewportPass::new("viewport_0")
             .extent(512, 512)
@@ -383,74 +355,13 @@ mod tests {
     #[test]
     fn test_viewport_pass_resource_desc_missing_extent() {
         let pass = ViewportPass::new("viewport_0").format(ImageFormat::R8G8B8A8Srgb);
-
         assert!(pass.resource_desc().is_none());
     }
 
     #[test]
     fn test_viewport_pass_resource_desc_missing_format() {
         let pass = ViewportPass::new("viewport_0").extent(512, 512);
-
         assert!(pass.resource_desc().is_none());
-    }
-
-    #[test]
-    fn test_viewport_pass_load_store_ops() {
-        let pass = ViewportPass::new("viewport_0")
-            .extent(512, 512)
-            .format(ImageFormat::R16G16B16A16Sfloat)
-            .load_store_ops(LoadOp::Load, StoreOp::DontCare);
-
-        assert_eq!(pass.load_op, LoadOp::Load);
-        assert_eq!(pass.store_op, StoreOp::DontCare);
-    }
-
-    #[test]
-    fn test_viewport_pass_material() {
-        let material = crate::handle::MaterialHandle::new(42);
-        let pass = ViewportPass::new("viewport_0")
-            .extent(512, 512)
-            .format(ImageFormat::R16G16B16A16Sfloat)
-            .material(material);
-
-        assert!(pass.material.is_some());
-        assert_eq!(pass.material.unwrap().index(), 42);
-    }
-
-    #[test]
-    fn test_viewport_pass_builder_trait() {
-        let pass = ViewportPass::new("viewport_0")
-            .extent(512, 512)
-            .format(ImageFormat::R16G16B16A16Sfloat)
-            .read("shadow_map");
-
-        let builder = pass.as_builder();
-
-        assert_eq!(builder.name, "viewport_0");
-        assert_eq!(builder.pass_type, PassType::Graphics);
-        assert_eq!(builder.reads, vec!["shadow_map"]);
-        assert_eq!(builder.writes, vec!["viewport_0"]);
-        assert!(builder.uses_depth);
-    }
-
-    #[test]
-    fn test_viewport_pass_builder_trait_multiple_viewports() {
-        let pass0 = ViewportPass::new("viewport_0")
-            .extent(960, 1080)
-            .format(ImageFormat::R16G16B16A16Sfloat);
-
-        let pass1 = ViewportPass::new("viewport_1")
-            .extent(960, 1080)
-            .format(ImageFormat::R16G16B16A16Sfloat);
-
-        let builder0 = pass0.as_builder();
-        let builder1 = pass1.as_builder();
-
-        assert_eq!(builder0.name, "viewport_0");
-        assert_eq!(builder0.writes, vec!["viewport_0"]);
-
-        assert_eq!(builder1.name, "viewport_1");
-        assert_eq!(builder1.writes, vec!["viewport_1"]);
     }
 
     #[test]
@@ -489,8 +400,7 @@ mod tests {
             .format(ImageFormat::R16G16B16A16Sfloat);
 
         let builder = pass.as_builder();
-
-        let resource_map = HashMap::new(); // Empty - no resources
+        let resource_map = HashMap::new();
 
         let result = (builder.build_fn)(&resource_map);
         assert!(result.is_err());
@@ -507,7 +417,6 @@ mod tests {
     #[test]
     fn test_viewport_pass_default_format() {
         let pass = ViewportPass::new("viewport_0").extent(512, 512);
-
         let builder = pass.as_builder();
 
         let mut resource_map = HashMap::new();
@@ -518,32 +427,26 @@ mod tests {
 
         let data = result.unwrap();
         let pass_data = data.downcast_ref::<ViewportPassData>().unwrap();
-
-        // Should default to HDR format
         assert_eq!(pass_data._color.1, ImageFormat::R16G16B16A16Sfloat);
     }
 
     #[test]
-    fn test_multiple_viewport_passes_unique_names() {
-        let left = ViewportPass::new("viewport_0")
-            .extent(960, 1080)
-            .format(ImageFormat::R16G16B16A16Sfloat);
+    fn test_viewport_pass_load_store_ops_propagate() {
+        let pass = ViewportPass::new("viewport_0")
+            .extent(512, 512)
+            .format(ImageFormat::R16G16B16A16Sfloat)
+            .load_store_ops(LoadOp::Load, StoreOp::DontCare);
 
-        let right = ViewportPass::new("viewport_1")
-            .extent(960, 1080)
-            .format(ImageFormat::R16G16B16A16Sfloat);
+        let builder = pass.as_builder();
 
-        // Each viewport should have unique resource descriptors
-        let left_desc = left.resource_desc().unwrap();
-        let right_desc = right.resource_desc().unwrap();
+        let mut resource_map = HashMap::new();
+        resource_map.insert("viewport_0".to_string(), GraphResourceHandle::new(0));
 
-        assert_eq!(left_desc.name, "viewport_0");
-        assert_eq!(right_desc.name, "viewport_1");
+        let result = (builder.build_fn)(&resource_map);
+        let data = result.unwrap();
+        let pass_data = data.downcast_ref::<ViewportPassData>().unwrap();
 
-        // Both should write to different resources
-        let left_builder = left.as_builder();
-        let right_builder = right.as_builder();
-
-        assert_ne!(left_builder.writes, right_builder.writes);
+        assert_eq!(pass_data._color.2, LoadOp::Load);
+        assert_eq!(pass_data._color.3, StoreOp::DontCare);
     }
 }

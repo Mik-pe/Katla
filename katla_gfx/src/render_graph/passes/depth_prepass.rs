@@ -56,43 +56,4 @@ impl PassBuilder for DepthPrepass {
 #[derive(Debug)]
 pub(crate) struct DepthPrepassData;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_depth_prepass_new() {
-        let pass = DepthPrepass::new("depth_prepass");
-        assert_eq!(pass.name, "depth_prepass");
-        assert!(pass.reads.is_empty());
-    }
-
-    #[test]
-    fn test_depth_prepass_with_reads() {
-        let pass = DepthPrepass::new("depth_prepass").read("shadow_atlas");
-        assert_eq!(pass.reads, vec!["shadow_atlas"]);
-    }
-
-    #[test]
-    fn test_depth_prepass_as_builder() {
-        let pass = DepthPrepass::new("depth_prepass").read("shadow_atlas");
-        let builder = pass.as_builder();
-
-        assert_eq!(builder.name, "depth_prepass");
-        assert_eq!(builder.pass_type, PassType::Graphics);
-        assert!(builder.writes.is_empty());
-        assert!(builder.pipeline.is_none());
-        assert!(builder.material.is_none());
-        assert!(builder.uses_depth);
-    }
-
-    #[test]
-    fn test_depth_prepass_build_fn() {
-        let pass = DepthPrepass::new("depth_prepass");
-        let builder = pass.as_builder();
-
-        let resource_map = HashMap::new();
-        let result = (builder.build_fn)(&resource_map);
-        assert!(result.is_ok());
-    }
-}
+// DepthPrepass tests are covered by the builder trait test in builder.rs.

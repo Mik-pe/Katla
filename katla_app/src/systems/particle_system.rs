@@ -120,14 +120,4 @@ impl Default for ParticleSystem {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use katla_gfx::particles::EmitterConfig;
 
-    #[test]
-    fn test_emitter_config_defaults() {
-        let config = EmitterConfig::default();
-        assert_eq!(config.position, [0.0; 3]);
-        assert!(config.emit_rate > 0.0);
-    }
-}

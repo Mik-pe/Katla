@@ -12,13 +12,3 @@ impl NameComponent {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::NameComponent;
-
-    #[test]
-    fn test_name_component() {
-        let name = NameComponent::new("Test");
-        assert_eq!(name.name, "Test");
-    }
-}

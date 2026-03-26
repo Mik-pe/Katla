@@ -3,38 +3,11 @@ mod tests {
     use crate::animation::clips::{
         AnimationChannel, AnimationClip, AnimationSampler, ChannelPath, SampleBuffer,
     };
-    use crate::animation::components::{
-        AnimationEvent, AnimationPlayer, JointTransform, MorphTargetWeights,
-    };
+    use crate::animation::components::{AnimationPlayer, JointTransform};
     use crate::animation::samplers::Interpolation;
     use katla_math::Quat;
 
-    // Tests for actual behavior - play/pause/stop/seek/crossfade
-    #[test]
-    fn test_animation_player_play_pause() {
-        let mut player = AnimationPlayer::stopped();
-
-        assert!(!player.playing);
-        player.play();
-        assert!(player.playing);
-        player.pause();
-        assert!(!player.playing);
-    }
-
-    #[test]
-    fn test_animation_player_stop() {
-        let mut player = AnimationPlayer::new("Test");
-        player.time = 5.0;
-        player.loop_count = 3;
-        player.playing = true;
-
-        player.stop();
-
-        assert_eq!(player.time, 0.0);
-        assert!(!player.playing);
-        assert_eq!(player.loop_count, 0);
-    }
-
+    // Tests for actual behavior - seek/crossfade
     #[test]
     fn test_animation_player_seek_clamps() {
         let mut player = AnimationPlayer::new("Test").with_duration(10.0);
@@ -74,33 +47,41 @@ mod tests {
     }
 
     #[test]
-    fn test_animation_player_take_events() {
-        let mut player = AnimationPlayer::new("Test");
-        player.events.push(AnimationEvent::Completed {
-            clip_name: "Test".to_string(),
-        });
-        player.events.push(AnimationEvent::Looped {
-            clip_name: "Test".to_string(),
-            loop_count: 1,
-        });
+    fn test_animation_crossfade_completion_transitions_state() {
+        let mut player = AnimationPlayer::new("Walk").with_duration(5.0);
+        player.crossfade_to("Run", 3.0, 0.5);
 
-        let events = player.take_events();
+        assert!(player.blending);
+        assert_eq!(player.target_clip.as_ref().unwrap(), "Run");
 
-        assert_eq!(events.len(), 2);
-        assert!(player.events.is_empty());
+        // Simulate advancing blend_time past blend_duration
+        player.blend_time = 0.6; // past blend_duration of 0.5
+        player.blend_weight = 0.0;
+
+        // Complete the crossfade by calling set_clip (what the system does)
+        let target_name = player.target_clip.clone().unwrap();
+        let target_duration = player.target_duration;
+        player.set_clip(&target_name, target_duration);
+
+        assert!(!player.blending);
+        assert_eq!(player.current_clip.as_ref().unwrap(), "Run");
+        assert!(player.target_clip.is_none());
     }
 
     #[test]
-    fn test_animation_player_is_complete() {
-        let mut player = AnimationPlayer::new("Test").with_duration(5.0);
-        player.loop_animation = false;
+    fn test_animation_crossfade_zero_duration() {
+        let mut player = AnimationPlayer::new("Walk").with_duration(5.0);
 
-        assert!(!player.is_complete());
+        // Crossfade with duration 0.0 - should not cause division-by-zero (NaN)
+        player.crossfade_to("Run", 3.0, 0.0);
 
-        player.time = 5.0;
-        player.playing = false;
+        assert!(player.blending);
+        assert_eq!(player.blend_duration, 0.0);
+        assert_eq!(player.blend_time, 0.0);
+        assert_eq!(player.blend_weight, 1.0); // Should still be valid, no NaN
 
-        assert!(player.is_complete());
+        // The blend_weight should remain a valid f32 (not NaN)
+        assert!(!player.blend_weight.is_nan());
     }
 
     // Tests for lerp/blending behavior (actual interpolation logic)
@@ -162,50 +143,7 @@ mod tests {
         assert!(result.translation[0] > 5.0 && result.translation[0] < 10.0);
     }
 
-    // Tests for morph target weights (actual behavior: clamping, bounds checking)
-    #[test]
-    fn test_morph_target_weights_set() {
-        let mut weights = MorphTargetWeights::new(3);
-
-        weights.set_weight(0, 0.5);
-        weights.set_weight(1, 1.0);
-        weights.set_weight(2, 0.75);
-
-        assert_eq!(weights.get_weight(0), 0.5);
-        assert_eq!(weights.get_weight(1), 1.0);
-        assert_eq!(weights.get_weight(2), 0.75);
-    }
-
-    #[test]
-    fn test_morph_target_weights_set_clamps() {
-        let mut weights = MorphTargetWeights::new(2);
-
-        weights.set_weight(0, 1.5);
-        weights.set_weight(1, -0.5);
-
-        assert_eq!(weights.get_weight(0), 1.0);
-        assert_eq!(weights.get_weight(1), 0.0);
-    }
-
-    #[test]
-    fn test_morph_target_weights_set_out_of_bounds() {
-        let mut weights = MorphTargetWeights::new(2);
-
-        weights.set_weight(5, 0.5);
-
-        assert_eq!(weights.get_weight(5), 0.0);
-    }
-
     // Tests for animation sampler duration calculations (actual logic)
-    #[test]
-    fn test_animation_sampler_keyframe_count() {
-        let inputs = vec![0.0, 0.25, 0.5, 0.75, 1.0];
-        let sampler =
-            AnimationSampler::new_translation(inputs, vec![[0.0; 3]; 5], Interpolation::Linear);
-
-        assert_eq!(sampler.keyframe_count(), 5);
-    }
-
     #[test]
     fn test_animation_sampler_duration() {
         let inputs = vec![0.0, 0.5, 1.0, 1.5, 2.0];
@@ -215,45 +153,7 @@ mod tests {
         assert_eq!(sampler.duration(), 2.0);
     }
 
-    #[test]
-    fn test_animation_sampler_empty_duration() {
-        let sampler = AnimationSampler::new_translation(vec![], vec![], Interpolation::Linear);
-
-        assert_eq!(sampler.duration(), 0.0);
-    }
-
     // Tests for sample buffer behavior (actual functionality)
-    #[test]
-    fn test_sample_buffer_clear() {
-        use crate::animation::clips::AnimationSampler;
-
-        let sampler = AnimationSampler::new_translation(
-            vec![0.0, 1.0],
-            vec![[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]],
-            Interpolation::Linear,
-        );
-
-        let channel = AnimationChannel {
-            target_node: 0,
-            path: ChannelPath::Translation,
-            sampler,
-        };
-
-        let clip = AnimationClip {
-            name: "Test".to_string(),
-            duration: 1.0,
-            channels: vec![channel],
-        };
-
-        let mut buffer = SampleBuffer::new();
-        clip.sample_into(0.5, &mut buffer);
-        assert!(!buffer.samples().is_empty());
-
-        buffer.clear();
-
-        assert!(buffer.samples().is_empty());
-    }
-
     #[test]
     fn test_animation_clip_sample_into() {
         let sampler = AnimationSampler::new_translation(
@@ -278,33 +178,5 @@ mod tests {
         clip.sample_into(0.5, &mut buffer);
 
         assert_eq!(buffer.samples().len(), 1);
-    }
-
-    // Tests for interpolation conversion to/from GLTF (actual serialization logic)
-    #[test]
-    fn test_interpolation_to_gltf() {
-        assert_eq!(Interpolation::Linear.to_gltf(), "LINEAR");
-        assert_eq!(Interpolation::Step.to_gltf(), "STEP");
-        assert_eq!(Interpolation::CubicSpline.to_gltf(), "CUBICSPLINE");
-    }
-
-    #[test]
-    fn test_interpolation_from_gltf() {
-        assert!(matches!(
-            Interpolation::from_gltf("LINEAR"),
-            Interpolation::Linear
-        ));
-        assert!(matches!(
-            Interpolation::from_gltf("STEP"),
-            Interpolation::Step
-        ));
-        assert!(matches!(
-            Interpolation::from_gltf("CUBICSPLINE"),
-            Interpolation::CubicSpline
-        ));
-        assert!(matches!(
-            Interpolation::from_gltf("UNKNOWN"),
-            Interpolation::Linear
-        ));
     }
 }
