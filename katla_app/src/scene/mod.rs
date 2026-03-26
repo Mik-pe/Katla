@@ -255,7 +255,7 @@ impl SceneManager {
         let loaded_version = scene.version;
 
         // Run migrations before spawning entities
-        migration::run_migrations(&mut scene, loaded_version)
+        migration::run_migrations(&mut scene)
             .map_err(|e| format!("Cannot load scene '{}': {}", scene.name, e))?;
 
         info!(

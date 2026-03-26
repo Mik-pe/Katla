@@ -37,6 +37,26 @@ impl std::fmt::Display for SceneVersionTooNew {
 
 impl std::error::Error for SceneVersionTooNew {}
 
+/// Built-in v0 → v1 migration stub.
+///
+/// Currently a no-op placeholder. This handles scenes created before
+/// the version field was introduced (version defaults to 0 when absent).
+struct MigrateV0ToV1;
+
+impl SceneMigrator for MigrateV0ToV1 {
+    fn source_version(&self) -> u32 {
+        0
+    }
+
+    fn target_version(&self) -> u32 {
+        1
+    }
+
+    fn migrate(&self, _scene: &mut Scene) {
+        // Stub: no data transformation needed yet.
+    }
+}
+
 /// Built-in v1 → v2 migration stub.
 ///
 /// Currently a no-op placeholder. When scene format fields are added
@@ -64,7 +84,7 @@ impl SceneMigrator for MigrateV1ToV2 {
 /// Migrations must be sorted by `source_version` ascending. The migration
 /// pipeline iterates this list and applies each matching migration in order.
 fn built_in_migrations() -> Vec<Box<dyn SceneMigrator>> {
-    vec![Box::new(MigrateV1ToV2)]
+    vec![Box::new(MigrateV0ToV1), Box::new(MigrateV1ToV2)]
 }
 
 /// Run all applicable migrations on a scene.
@@ -75,23 +95,28 @@ fn built_in_migrations() -> Vec<Box<dyn SceneMigrator>> {
 ///
 /// Returns an error if `scene.version > SCENE_VERSION` (forward compatibility
 /// is not supported — the scene was saved by a newer engine).
-pub fn run_migrations(scene: &mut Scene, scene_version: u32) -> Result<(), SceneVersionTooNew> {
-    if scene_version > scene.version {
+pub fn run_migrations(scene: &mut Scene) -> Result<(), SceneVersionTooNew> {
+    use super::SCENE_VERSION;
+
+    if scene.version > SCENE_VERSION {
         return Err(SceneVersionTooNew {
-            scene_version,
-            supported_version: scene.version,
+            scene_version: scene.version,
+            supported_version: SCENE_VERSION,
         });
     }
 
-    if scene_version >= scene.version {
+    if scene.version >= SCENE_VERSION {
         return Ok(());
     }
 
     let migrations = built_in_migrations();
 
-    let mut current = scene_version;
+    let original_version = scene.version;
     for migration in &migrations {
-        if migration.source_version() == current {
+        if scene.version >= SCENE_VERSION {
+            break;
+        }
+        if migration.source_version() == scene.version {
             info!(
                 "Applying scene migration v{} → v{}",
                 migration.source_version(),
@@ -99,14 +124,13 @@ pub fn run_migrations(scene: &mut Scene, scene_version: u32) -> Result<(), Scene
             );
             migration.migrate(scene);
             scene.version = migration.target_version();
-            current = migration.target_version();
         }
     }
 
-    if current < scene.version {
+    if original_version < scene.version {
         info!(
             "Scene migrated from v{} to v{} (SCENE_VERSION={})",
-            scene_version, current, scene.version
+            original_version, scene.version, SCENE_VERSION
         );
     }
 
@@ -136,15 +160,12 @@ mod tests {
     #[test]
     fn test_migration_runs_on_mismatch() {
         let mut scene = Scene::new("Old Scene");
-        scene.version = 0;
+        scene.version = 1;
 
-        // SCENE_VERSION is 1 in current code, but scene.version is 0.
-        // The migration pipeline should try to run migrations from 0 to SCENE_VERSION.
-        // Since no migration matches from_version=0, the scene stays at 0.
-        let result = run_migrations(&mut scene, 0);
+        // Scene is at v1, which matches SCENE_VERSION=1, so no migration runs.
+        let result = run_migrations(&mut scene);
         assert!(result.is_ok());
-        // No migration from 0 exists, so version stays at 0
-        // (the pipeline only migrates what it knows about)
+        assert_eq!(scene.version, SCENE_VERSION);
     }
 
     #[test]
@@ -202,7 +223,7 @@ mod tests {
         let entity_count = scene.entities.len();
 
         // Run migration
-        let result = run_migrations(&mut scene, 1);
+        let result = run_migrations(&mut scene);
         assert!(result.is_ok());
 
         // Verify data is preserved
@@ -230,10 +251,9 @@ mod tests {
     fn test_forward_compatibility_error() {
         let mut scene = Scene::new("Future Scene");
         // Simulate a scene saved by a newer engine (version 99)
-        scene.version = SCENE_VERSION;
+        scene.version = 99;
 
-        // Try to migrate from version 99 (higher than SCENE_VERSION)
-        let result = run_migrations(&mut scene, 99);
+        let result = run_migrations(&mut scene);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -255,15 +275,15 @@ mod tests {
     #[test]
     fn test_forward_compatibility_no_panic() {
         let mut scene = Scene::new("Future Scene");
-        scene.version = SCENE_VERSION;
+        scene.version = SCENE_VERSION + 1;
 
         // This should return an error, never panic
-        let result = run_migrations(&mut scene, SCENE_VERSION + 1);
+        let result = run_migrations(&mut scene);
         assert!(result.is_err());
 
         // Scene should be unmodified
         assert_eq!(scene.name, "Future Scene");
-        assert_eq!(scene.version, SCENE_VERSION);
+        assert_eq!(scene.version, SCENE_VERSION + 1);
     }
 
     #[test]
@@ -271,7 +291,7 @@ mod tests {
         let mut scene = Scene::new("Current Version");
         scene.version = SCENE_VERSION;
 
-        let result = run_migrations(&mut scene, SCENE_VERSION);
+        let result = run_migrations(&mut scene);
         assert!(result.is_ok());
         assert_eq!(scene.version, SCENE_VERSION);
         assert_eq!(scene.name, "Current Version");
@@ -279,14 +299,16 @@ mod tests {
 
     #[test]
     fn test_migration_bumps_version() {
-        // Simulate loading a v1 scene into a build with SCENE_VERSION=2
-        // (This test assumes we'll eventually bump SCENE_VERSION to 2)
-        let mut scene = Scene::new("V1 Scene");
-        scene.version = 2; // Pretend SCENE_VERSION is 2
+        // Simulate loading a v0 scene (e.g. a scene file without a version field).
+        // The v0→v1 migration should fire, bumping version to SCENE_VERSION (1).
+        let mut scene = Scene::new("V0 Scene");
+        scene.version = 0;
 
-        // Migrate from v1
-        let result = run_migrations(&mut scene, 1);
+        let result = run_migrations(&mut scene);
         assert!(result.is_ok());
-        assert_eq!(scene.version, 2, "Version should be bumped after migration");
+        assert_eq!(
+            scene.version, SCENE_VERSION,
+            "Version should be bumped to SCENE_VERSION after migration"
+        );
     }
 }
