@@ -225,6 +225,7 @@ impl World {
 
         // Clear per-frame mouse delta after the tick.
         self.input_state.mouse_delta = (0.0, 0.0);
+        self.input_state.mouse_wheel_delta = 0.0;
     }
 
     /// Returns the number of entities in the world.

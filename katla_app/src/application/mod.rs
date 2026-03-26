@@ -115,14 +115,17 @@ impl ApplicationHandler for Application {
         _device_id: DeviceId,
         event: DeviceEvent,
     ) {
-        if let DeviceEvent::MouseMotion { delta } = event
-            && self.world.get_input().is_action_pressed(Action::LookEnable)
-        {
-            let current_delta = self.world.get_input().mouse_delta;
-            self.world.get_input_mut().mouse_delta = (
-                current_delta.0 + delta.0 as f32,
-                current_delta.1 + delta.1 as f32,
-            );
+        if let DeviceEvent::MouseMotion { delta } = event {
+            let input = self.world.get_input();
+            let should_track = input.is_action_pressed(Action::LookEnable)
+                || input.is_action_pressed(Action::PanEnable);
+            if should_track {
+                let current_delta = input.mouse_delta;
+                self.world.get_input_mut().mouse_delta = (
+                    current_delta.0 + delta.0 as f32,
+                    current_delta.1 + delta.1 as f32,
+                );
+            }
         }
     }
 
@@ -231,6 +234,14 @@ impl ApplicationHandler for Application {
                     }
                 };
                 self.ui_context.input.scroll_delta = scroll;
+
+                // Forward scroll to ECS input state for orbit camera zoom.
+                // Use the raw Y component (before UI scaling) for consistent zoom speed.
+                let wheel_y = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, y) => y,
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+                };
+                self.world.get_input_mut().mouse_wheel_delta += wheel_y;
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();

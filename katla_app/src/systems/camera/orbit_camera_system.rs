@@ -35,15 +35,24 @@ impl System for OrbitCameraSystem {
                 }
 
                 if should_pan {
+                    // World units per raw pixel at the orbit distance:
+                    //   visible_height = 2 * distance * tan(fov/2)
+                    //   units_per_pixel = visible_height / viewport_height
+                    // DeviceEvent::MouseMotion delta is in screen pixels on most
+                    // platforms. Assuming ~1000px viewport as a reasonable default.
+                    let fov_rad = orbit.fov.to_radians();
+                    let visible_height = 2.0 * orbit.distance * fov_rad.tan();
+                    let units_per_pixel = visible_height / 1000.0;
+
                     let rotation = Quat::new_from_yaw_pitch(orbit.yaw, orbit.pitch);
                     let right = rotation.rotate_vec3(Vec3::new(1.0, 0.0, 0.0));
                     let up = Vec3::new(0.0, 1.0, 0.0);
-                    orbit.target -= right * delta.0 * orbit.pan_speed * orbit.distance;
-                    orbit.target += up * delta.1 * orbit.pan_speed * orbit.distance;
+                    orbit.target -= right * delta.0 * units_per_pixel;
+                    orbit.target += up * delta.1 * units_per_pixel;
                 }
 
                 if scroll.abs() > 0.0 {
-                    orbit.distance -= scroll * orbit.zoom_speed * 0.1 * orbit.distance * 0.1;
+                    orbit.distance *= 1.0 - scroll * orbit.zoom_speed * 0.1;
                     orbit.distance = orbit.distance.clamp(orbit.min_distance, orbit.max_distance);
                 }
 
