@@ -239,13 +239,6 @@ impl ComponentStorageManager {
         }
     }
 
-    /// Gets or creates a component storage for the given component type.
-    ///
-    /// # Safety
-    /// The downcast is sound because:
-    /// 1. We look up by TypeId::of::<T>()
-    /// 2. We either create ComponentStorage::<T> or retrieve existing storage for that TypeId
-    /// 3. Therefore, the downcast must succeed
     fn get_or_create_storage<T: Component>(&mut self) -> &mut ComponentStorage<T> {
         let type_id = std::any::TypeId::of::<T>();
         let storages = &mut self.storages;
@@ -258,11 +251,6 @@ impl ComponentStorageManager {
             .expect("TypeId lookup ensures correct type, downcast cannot fail")
     }
 
-    /// Gets a reference to the component storage for the given component type.
-    ///
-    /// # Safety
-    /// The downcast is sound because we look up by TypeId::of::<T>(), and if
-    /// a storage exists for that TypeId, it must be ComponentStorage<T>.
     pub fn get_storage<T: Component>(&self) -> Option<&ComponentStorage<T>> {
         self.storages
             .get(&std::any::TypeId::of::<T>())
@@ -274,11 +262,6 @@ impl ComponentStorageManager {
             })
     }
 
-    /// Gets a mutable reference to the component storage for the given component type.
-    ///
-    /// # Safety
-    /// The downcast is sound because we look up by TypeId::of::<T>(), and if
-    /// a storage exists for that TypeId, it must be ComponentStorage<T>.
     pub fn get_storage_mut<T: Component>(&mut self) -> Option<&mut ComponentStorage<T>> {
         let type_id = std::any::TypeId::of::<T>();
         self.storages.get_mut(&type_id).map(|storage| {
@@ -336,26 +319,22 @@ impl ComponentStorageManager {
         removed_types
     }
 
-    /// Removes all components for entities not in the given set.
     pub fn retain_entities(&mut self, valid_entities: &std::collections::HashSet<EntityId>) {
         for storage in self.storages.values_mut() {
             storage.retain_entities(valid_entities);
         }
     }
 
-    /// Clears all components from all storages.
     pub fn clear(&mut self) {
         for storage in self.storages.values_mut() {
             storage.clear();
         }
     }
 
-    /// Returns the number of component types stored.
     pub fn storage_count(&self) -> usize {
         self.storages.len()
     }
 
-    /// Returns the set of entity IDs that have at least one component.
     pub(crate) fn entities_with_components(&self) -> std::collections::HashSet<EntityId> {
         let mut ids = std::collections::HashSet::new();
         for storage in self.storages.values() {
@@ -375,10 +354,6 @@ impl ComponentStorageManager {
         }
     }
 
-    /// Collects entity IDs that have changed for any of the given component types.
-    ///
-    /// An entity is considered changed if its generation counter for any of the
-    /// given TypeIds exceeds the "last seen" snapshot value.
     pub(crate) fn collect_changed_entity_ids(
         &self,
         type_ids: &[std::any::TypeId],
@@ -396,10 +371,6 @@ impl ComponentStorageManager {
         changed
     }
 
-    /// Checks if a specific entity's component has changed for a given TypeId.
-    ///
-    /// Uses the generation counter system. Returns true if the entity's generation
-    /// for the given type exceeds the "last seen" snapshot.
     fn is_changed_by_type_id(&self, entity_id: EntityId, type_id: std::any::TypeId) -> bool {
         let storage = match self.storages.get(&type_id) {
             Some(s) => s,

@@ -339,19 +339,13 @@ impl Application {
         self.entity_instance_map.clear();
         self.entity_to_instance_indices.clear();
 
-        let entity_count = self.world.entity_ids().count();
+        let entity_count = self.world.entity_count();
         let mut drawable_count = 0;
 
-        for entity_id in self.world.entity_ids() {
-            let drawable = match self.world.get_component::<DrawableComponent>(entity_id) {
-                Some(d) => d,
-                None => continue,
-            };
-            let transform = match self.world.get_component::<TransformComponent>(entity_id) {
-                Some(t) => t,
-                None => continue,
-            };
-
+        for (entity_id, drawable, transform) in self
+            .world
+            .query::<(&DrawableComponent, &TransformComponent)>()
+        {
             let mesh_handle = drawable.mesh_handle;
             if mesh_handle.is_none() {
                 continue;

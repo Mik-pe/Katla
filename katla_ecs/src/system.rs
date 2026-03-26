@@ -88,7 +88,7 @@ impl OrderedSystem {
 
 #[cfg(test)]
 mod tests {
-    use crate::Component;
+    use crate::{Component, EntityId};
 
     use super::*;
 
@@ -116,8 +116,11 @@ mod tests {
             self.update_count += 1;
 
             // Access component storage via the world
-            if let Some(transforms) = world.storage.get_storage::<TestComponent>() {
-                let _count = transforms.len();
+            if world
+                .get_component::<TestComponent>(EntityId::test_new(0))
+                .is_some()
+            {
+                let _count = 1;
             }
         }
     }
@@ -128,7 +131,7 @@ mod tests {
         let mut world = World::new();
 
         let entity = world.create_entity();
-        world.storage.add_component(entity, TestComponent::new());
+        world.add_component(entity, TestComponent::new());
 
         system.update(&mut world, 0.016);
 
