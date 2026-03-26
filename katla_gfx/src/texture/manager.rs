@@ -427,6 +427,18 @@ impl TextureManager {
             .collect()
     }
 
+    /// Check if a texture handle refers to a default texture.
+    ///
+    /// Default textures (white albedo, flat normal, metallic/roughness, occlusion, emission)
+    /// are protected and must never be destroyed.
+    pub fn is_default_texture(&self, handle: TextureHandle) -> bool {
+        handle == self.default_white
+            || handle == self.default_normal
+            || handle == self.default_metallic_roughness
+            || handle == self.default_occlusion
+            || handle == self.default_emission
+    }
+
     /// Check if a texture handle is registered with the bindless system.
     ///
     /// # Arguments

@@ -10,12 +10,14 @@ pub mod animation_init;
 pub mod bindless_queries;
 pub mod compositing;
 pub mod depth_prepass;
+pub mod destroy_api;
 pub mod font_atlas;
 pub mod frame_lifecycle;
 pub mod fullscreen_shader;
 pub mod light_culling;
 pub mod material_api;
 pub mod mesh_manager;
+pub mod outline;
 pub mod particle_init;
 pub mod picking;
 pub mod readback;
@@ -172,6 +174,8 @@ pub struct VulkanRenderer {
     pub(crate) shadow: shadow::ShadowState,
     /// Depth prepass state (depth-only pre-pass).
     depth_prepass: depth_prepass::DepthPrepassState,
+    /// Outline highlight state (stencil-based selection highlight).
+    pub(crate) outline: outline::OutlineState,
     /// Pending picking readback operation.
     pending_picking_readback: Option<picking::PickingReadback>,
     /// Base bindless index for per-frame depth textures.
@@ -323,6 +327,7 @@ impl VulkanRenderer {
             light_culling: light_culling::LightCullingState::default(),
             shadow: shadow::ShadowState::default(),
             depth_prepass: depth_prepass::DepthPrepassState::default(),
+            outline: outline::OutlineState::default(),
             pending_picking_readback: None,
             depth_texture_base_index: None,
             first_frame_rendered: false,
