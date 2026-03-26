@@ -255,11 +255,31 @@ impl SceneManager {
             scene.entities.len()
         );
 
-        // Clear existing world state
-        // TODO: Release GPU resources (meshes, textures, materials, skeletons) before clearing.
-        // The renderer does not yet expose per-resource destroy APIs, so GPU memory will leak
-        // across scene loads.
-        warn!("Clearing entities without releasing GPU resources (renderer API not available)");
+        // Release all GPU resources before clearing entities.
+        // The tracker returns handles whose ref count dropped to zero;
+        // the renderer then frees the actual GPU memory.
+        let to_destroy = app.gpu_resource_tracker.release_all();
+        for handle in &to_destroy.meshes {
+            app.renderer.destroy_mesh(*handle);
+        }
+        for handle in &to_destroy.materials {
+            app.renderer.destroy_material(*handle);
+        }
+        for handle in &to_destroy.textures {
+            app.renderer.destroy_texture(*handle);
+        }
+        for handle in &to_destroy.skeletons {
+            app.renderer.destroy_skeleton(*handle);
+        }
+
+        info!(
+            "Released GPU resources: {} meshes, {} materials, {} textures, {} skeletons",
+            to_destroy.meshes.len(),
+            to_destroy.materials.len(),
+            to_destroy.textures.len(),
+            to_destroy.skeletons.len()
+        );
+
         app.world.clear_entities();
 
         // Re-create the editor camera entity (destroyed by clear_entities).
@@ -381,17 +401,24 @@ impl SceneManager {
             let srgb_color = color_from_desc(&desc.drawable);
             let linear_color = srgb_color.to_linear();
 
+            let drawable = DrawableComponent::with_handles_and_color(
+                mesh_handle,
+                material_handle,
+                linear_color,
+            );
+            app.gpu_resource_tracker.track_drawable(
+                mesh_handle,
+                material_handle,
+                drawable.skeleton_handle,
+            );
+
             app.world.spawn((
                 TransformComponent {
                     transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
                         pos[0], pos[1], pos[2],
                     )),
                 },
-                DrawableComponent::with_handles_and_color(
-                    mesh_handle,
-                    material_handle,
-                    linear_color,
-                ),
+                drawable,
             ))
         } else {
             match &desc.source {
@@ -430,6 +457,11 @@ impl SceneManager {
                         0.0,
                         1.0,
                         1.0,
+                    );
+                    app.gpu_resource_tracker.track_drawable(
+                        mesh_handle,
+                        material_handle,
+                        drawable.skeleton_handle,
                     );
 
                     let point_light = desc
@@ -1814,5 +1846,238 @@ EntityDescriptor(
             scene.entities.len(),
             canonical_ron.len()
         );
+    }
+
+    // =========================================================================
+    // GPU Resource Cleanup Tests (unit-level, no GPU required)
+    // =========================================================================
+
+    #[test]
+    fn test_scene_load_gpu_cleanup_tracker_logic() {
+        // Verify that the GpuResourceTracker correctly tracks and releases
+        // resources through a simulated scene load cycle.
+        use crate::gpu_resource_tracker::GpuResourceTracker;
+        use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
+
+        let protected = MaterialHandle::new(100);
+        let mut tracker = GpuResourceTracker::new(protected);
+
+        // Simulate spawning 3 entities with shared material
+        let shared_mat = MaterialHandle::new(10);
+        let m1 = MeshHandle::new(1);
+        let m2 = MeshHandle::new(2);
+        let m3 = MeshHandle::new(3);
+
+        tracker.track_drawable(m1, shared_mat, SkeletonHandle::NONE);
+        tracker.track_drawable(m2, shared_mat, SkeletonHandle::NONE);
+        tracker.track_drawable(m3, shared_mat, SkeletonHandle::NONE);
+
+        assert_eq!(tracker.mesh_count(), 3);
+        assert_eq!(tracker.material_ref_count(shared_mat), 3);
+
+        // Simulate scene load (release all)
+        let to_destroy = tracker.release_all();
+
+        // All meshes should be destroyed
+        assert_eq!(to_destroy.meshes.len(), 3);
+        // Shared material should be destroyed (ref count was 3, now 0)
+        assert_eq!(to_destroy.materials.len(), 1);
+        assert_eq!(to_destroy.materials[0], shared_mat);
+        // Protected material should NOT be in destroy list
+        assert!(!to_destroy.materials.iter().any(|m| m.index() == 100));
+
+        // Tracker should be empty
+        assert_eq!(tracker.mesh_count(), 0);
+        assert_eq!(tracker.material_count(), 0);
+    }
+
+    #[test]
+    fn test_repeated_load_no_leak() {
+        // Simulate repeated scene loads and verify resources don't accumulate
+        use crate::gpu_resource_tracker::GpuResourceTracker;
+        use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
+
+        let protected = MaterialHandle::new(100);
+        let mut tracker = GpuResourceTracker::new(protected);
+
+        for load_iteration in 0..5 {
+            // Simulate loading a scene with 10 entities
+            for i in 0..10 {
+                let mesh = MeshHandle::new((load_iteration * 100) + i);
+                let mat = MaterialHandle::new((load_iteration * 100) + i + 50);
+                tracker.track_drawable(mesh, mat, SkeletonHandle::NONE);
+            }
+
+            assert_eq!(tracker.mesh_count(), 10);
+
+            // Release all (simulating scene load)
+            let to_destroy = tracker.release_all();
+            assert_eq!(to_destroy.meshes.len(), 10, "Iteration {}", load_iteration);
+            assert_eq!(
+                to_destroy.materials.len(),
+                10,
+                "Iteration {}",
+                load_iteration
+            );
+            assert_eq!(
+                tracker.mesh_count(),
+                0,
+                "Tracker should be empty after release"
+            );
+        }
+    }
+
+    #[test]
+    fn test_entity_destroy_gpu_cleanup() {
+        // Verify that destroying an entity releases its GPU resources
+        use crate::gpu_resource_tracker::GpuResourceTracker;
+        use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
+
+        let protected = MaterialHandle::new(100);
+        let mut tracker = GpuResourceTracker::new(protected);
+
+        let mesh = MeshHandle::new(1);
+        let mat = MaterialHandle::new(2);
+        let skeleton = SkeletonHandle::new(3);
+
+        tracker.track_drawable(mesh, mat, skeleton);
+
+        // Simulate entity destruction (release drawable)
+        let to_destroy = tracker.release_drawable(mesh, mat, skeleton);
+
+        assert_eq!(to_destroy.meshes.len(), 1, "Mesh should be destroyed");
+        assert_eq!(
+            to_destroy.materials.len(),
+            1,
+            "Material should be destroyed"
+        );
+        assert_eq!(
+            to_destroy.skeletons.len(),
+            1,
+            "Skeleton should be destroyed"
+        );
+        assert_eq!(tracker.mesh_count(), 0);
+    }
+
+    #[test]
+    fn test_component_remove_gpu_cleanup() {
+        // Verify that removing a DrawableComponent releases its GPU resources
+        use crate::gpu_resource_tracker::GpuResourceTracker;
+        use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
+
+        let protected = MaterialHandle::new(100);
+        let mut tracker = GpuResourceTracker::new(protected);
+
+        let mesh = MeshHandle::new(1);
+        let mat = MaterialHandle::new(2);
+
+        tracker.track_drawable(mesh, mat, SkeletonHandle::NONE);
+
+        // Simulate component removal
+        let to_destroy = tracker.release_drawable(mesh, mat, SkeletonHandle::NONE);
+
+        assert_eq!(to_destroy.meshes.len(), 1);
+        assert_eq!(to_destroy.materials.len(), 1);
+    }
+
+    #[test]
+    fn test_shared_resources_safe() {
+        // Verify that shared resources (mesh used by multiple entities)
+        // are not destroyed when only one entity is cleaned up
+        use crate::gpu_resource_tracker::GpuResourceTracker;
+        use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
+
+        let protected = MaterialHandle::new(100);
+        let mut tracker = GpuResourceTracker::new(protected);
+
+        // Two entities share the same mesh and material
+        let shared_mesh = MeshHandle::new(1);
+        let shared_mat = MaterialHandle::new(2);
+
+        tracker.track_drawable(shared_mesh, shared_mat, SkeletonHandle::NONE);
+        tracker.track_drawable(shared_mesh, shared_mat, SkeletonHandle::NONE);
+
+        assert_eq!(tracker.mesh_ref_count(shared_mesh), 2);
+        assert_eq!(tracker.material_ref_count(shared_mat), 2);
+
+        // Destroy first entity
+        let to_destroy = tracker.release_drawable(shared_mesh, shared_mat, SkeletonHandle::NONE);
+
+        assert!(
+            to_destroy.meshes.is_empty(),
+            "Shared mesh should NOT be destroyed when one entity remains"
+        );
+        assert!(
+            to_destroy.materials.is_empty(),
+            "Shared material should NOT be destroyed when one entity remains"
+        );
+        assert_eq!(tracker.mesh_ref_count(shared_mesh), 1);
+
+        // Second entity should still have valid resources
+        assert_eq!(tracker.mesh_ref_count(shared_mesh), 1);
+        assert_eq!(tracker.material_ref_count(shared_mat), 1);
+
+        // Destroy second entity - now resources should be freed
+        let to_destroy = tracker.release_drawable(shared_mesh, shared_mat, SkeletonHandle::NONE);
+        assert_eq!(
+            to_destroy.meshes.len(),
+            1,
+            "Mesh should be destroyed after last entity"
+        );
+        assert_eq!(
+            to_destroy.materials.len(),
+            1,
+            "Material should be destroyed after last entity"
+        );
+        assert_eq!(tracker.mesh_count(), 0);
+    }
+
+    #[test]
+    fn test_resource_counts_create_destroy_sequence() {
+        // VAL-GPU-010: Create N, destroy one → N-1, destroy another → N-2, create new → N-1
+        use crate::gpu_resource_tracker::GpuResourceTracker;
+        use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
+
+        let protected = MaterialHandle::new(100);
+        let mut tracker = GpuResourceTracker::new(protected);
+
+        let mat = MaterialHandle::new(50);
+
+        // Create 3 meshes (each with unique mesh, shared material)
+        let m1 = MeshHandle::new(1);
+        let m2 = MeshHandle::new(2);
+        let m3 = MeshHandle::new(3);
+
+        tracker.track_drawable(m1, mat, SkeletonHandle::NONE);
+        tracker.track_drawable(m2, mat, SkeletonHandle::NONE);
+        tracker.track_drawable(m3, mat, SkeletonHandle::NONE);
+        assert_eq!(tracker.mesh_count(), 3);
+
+        // Destroy one → 2
+        let d1 = tracker.release_drawable(m2, mat, SkeletonHandle::NONE);
+        assert!(d1.meshes.len() == 1);
+        assert!(d1.materials.is_empty(), "Material still shared");
+        assert_eq!(tracker.mesh_count(), 2);
+
+        // Destroy another → 1
+        let d2 = tracker.release_drawable(m1, mat, SkeletonHandle::NONE);
+        assert!(d2.meshes.len() == 1);
+        assert!(d2.materials.is_empty(), "Material still shared by m3");
+        assert_eq!(tracker.mesh_count(), 1);
+
+        // Create new → 2
+        let m4 = MeshHandle::new(4);
+        tracker.track_drawable(m4, mat, SkeletonHandle::NONE);
+        assert_eq!(tracker.mesh_count(), 2);
+
+        // Destroy remaining two → 0
+        let d3 = tracker.release_drawable(m3, mat, SkeletonHandle::NONE);
+        assert!(d3.meshes.len() == 1);
+        assert!(d3.materials.is_empty(), "Material still shared by m4");
+        let d4 = tracker.release_drawable(m4, mat, SkeletonHandle::NONE);
+        assert_eq!(d4.meshes.len(), 1);
+        assert_eq!(d4.materials.len(), 1, "Material ref count now 0");
+        assert_eq!(tracker.mesh_count(), 0);
+        assert_eq!(tracker.material_count(), 0);
     }
 }

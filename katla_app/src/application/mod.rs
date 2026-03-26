@@ -101,9 +101,19 @@ pub struct Application {
     /// Maps instance_index -> EntityId for resolving GPU picking results.
     /// Populated each frame during collect_draws_with_context.
     pub(crate) entity_instance_map: std::collections::HashMap<u32, katla_ecs::EntityId>,
+    /// Reverse map: EntityId -> Vec<instance_index> for outline selection.
+    /// Populated each frame alongside entity_instance_map.
+    entity_to_instance_indices: std::collections::HashMap<katla_ecs::EntityId, Vec<u32>>,
     /// Pending picking operation: (frame_number, mouse_x_physical, mouse_y_physical).
     /// Set on left-click in viewport, processed after the next render.
     pub(crate) pending_pick: Option<(usize, f32, f32)>,
+    /// Bindless texture index for the stencil indicator R8 texture.
+    /// Passed to the tonemap shader each frame via emission_idx field.
+    pub(crate) stencil_indicator_bindless_index: Option<u32>,
+    /// Whether the window is currently minimized (zero extent).
+    pub(crate) minimized: bool,
+    /// Tracks GPU resource reference counts for automatic cleanup on entity/component destruction.
+    pub(crate) gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker,
 }
 
 impl ApplicationHandler for Application {
@@ -198,6 +208,11 @@ impl ApplicationHandler for Application {
                 let new_height = logical_size.height as f32;
 
                 if new_width > 0 && new_height > 0.0 {
+                    if self.minimized {
+                        self.minimized = false;
+                        info!("Window restored from minimized");
+                    }
+
                     // Recreate swapchain and transient textures
                     let recreated_textures =
                         self.renderer.recreate_swapchain(&mut self.frame_graph);
@@ -230,6 +245,9 @@ impl ApplicationHandler for Application {
                         .borrow_mut()
                         .aspect_ratio_changed(&mut self.world, aspect);
                     info!("=== Resize complete ===");
+                } else if !self.minimized {
+                    self.minimized = true;
+                    info!("Window minimized (zero extent), skipping rendering");
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -308,6 +326,18 @@ impl ApplicationHandler for Application {
                         );
                     }
 
+                    // Save scene with Ctrl+S
+                    if event.state == ElementState::Pressed
+                        && keycode == KeyCode::KeyS
+                        && self.current_modifiers.control_key()
+                        && !self.current_modifiers.shift_key()
+                        && !self.current_modifiers.alt_key()
+                    {
+                        self.editor_ui
+                            .pending_actions
+                            .push(crate::ui::EditorAction::SaveScene);
+                    }
+
                     if let Some(action) = self.input_mapper.get_action(&binding) {
                         // Only send keyboard input to game when viewport is focused
                         if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
@@ -351,6 +381,11 @@ impl ApplicationHandler for Application {
                 debug!("DPI scale factor changed to {}", self.scale_factor);
             }
             WindowEvent::RedrawRequested => {
+                if self.minimized {
+                    self.window.request_redraw();
+                    return;
+                }
+
                 debug!("RedrawRequested (frame {})", self.frame_count);
                 self.timer.add_timestamp();
                 let dt = self.timer.get_delta() as f32;
@@ -359,6 +394,13 @@ impl ApplicationHandler for Application {
                 debug!("Updating world...");
                 self.world.update(dt);
                 debug!("World updated");
+
+                // Process ECS events to clean up GPU resources for destroyed entities
+                crate::gpu_cleanup::process_gpu_cleanup_events(
+                    &self.world,
+                    &mut self.gpu_resource_tracker,
+                    &mut self.renderer,
+                );
 
                 // Update particle emitters from ECS components
                 self.particle_system.update(
@@ -687,6 +729,10 @@ impl Application {
 
         info!("Default HDR PBR material loaded successfully");
 
+        // Set the protected material in the GPU resource tracker so it's never destroyed
+        self.gpu_resource_tracker
+            .set_protected_material(self.default_material_handle);
+
         // Initialize particle emit pipeline
         let particle_emit_shader_path = self.resources.shader_path("particles/particle_emit.wgsl");
         self.renderer
@@ -1014,6 +1060,25 @@ impl Application {
         self.editor_ui
             .set_viewport_bindless_index(viewport_bindless_index);
 
+        // Register stencil indicator texture with bindless for tonemap shader
+        let stencil_indicator_index = self
+            .frame_graph
+            .register_transient_texture_bindless(&mut self.renderer, "stencil_indicator")
+            .expect("Failed to register stencil indicator texture with bindless system");
+
+        info!(
+            "Stencil indicator texture registered with bindless at index {}",
+            stencil_indicator_index
+        );
+
+        // Store stencil indicator bindless index for passing to tonemap each frame
+        self.stencil_indicator_bindless_index = Some(stencil_indicator_index);
+
+        // Set stencil indicator index on tonemap pass so the shader can apply wallhack tint
+        self.frame_graph
+            .set_tonemap_stencil_indicator_index("tonemap", stencil_indicator_index)
+            .expect("Failed to set tonemap stencil indicator index");
+
         // Load default scene from disk
         let scene_path = std::path::Path::new(crate::scene::DEFAULT_SCENE_PATH);
         match crate::scene::SceneManager::load_from_file(self, scene_path) {
@@ -1070,13 +1135,27 @@ impl Application {
             .fold(0.0_f32, f32::max)
             .max(0.5);
 
-        // Distance to fit the object: use FOV to determine how far back the camera needs to be
-        // so the object covers roughly 40% of the viewport height
-        let fov_rad = 60.0_f32.to_radians(); // match default FOV
-        let desired_screen_fraction = 0.4;
-        let distance = (radius / desired_screen_fraction) / (fov_rad.tan());
-
+        // Distance to fit the object so it covers ~50% of the smaller viewport dimension.
         let camera_entity = self.camera.borrow().entity;
+        let fov_rad = self
+            .world
+            .get_component::<crate::components::PerspectiveComponent>(camera_entity)
+            .map(|p| p.fov.to_radians())
+            .unwrap_or_else(|| 60.0_f32.to_radians());
+        let aspect = self
+            .world
+            .get_component::<crate::components::PerspectiveComponent>(camera_entity)
+            .map(|p| p.aspect_ratio)
+            .unwrap_or(16.0 / 9.0);
+        let target_fraction = 0.5;
+        // Vertical FOV covers half_height = distance * tan(fov/2)
+        // Horizontal FOV covers half_width = half_height * aspect
+        // We want the object to fill target_fraction of the smaller visible extent
+        let half_height = 1.0 / fov_rad.tan(); // at distance=1
+        let half_width = half_height * aspect;
+        let smaller_half = half_height.min(half_width);
+        let distance = radius / (target_fraction * smaller_half);
+
         if let Some(orbit) = self
             .world
             .get_component_mut::<OrbitCameraControllerComponent>(camera_entity)
