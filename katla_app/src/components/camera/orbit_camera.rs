@@ -1,6 +1,20 @@
 use katla_ecs::Component;
 
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
+pub struct FocusTarget {
+    pub target: katla_math::Vec3,
+    pub distance: f32,
+    pub duration: f32,
+    pub elapsed: f32,
+    pub start_target: katla_math::Vec3,
+    pub start_distance: f32,
+    pub start_yaw: f32,
+    pub start_pitch: f32,
+    pub target_yaw: f32,
+    pub target_pitch: f32,
+}
+
+#[derive(Component, Debug, Clone)]
 pub struct OrbitCameraControllerComponent {
     pub target: katla_math::Vec3,
     pub distance: f32,
@@ -12,6 +26,7 @@ pub struct OrbitCameraControllerComponent {
     pub min_distance: f32,
     pub max_distance: f32,
     pub pitch_limit: f32,
+    pub focus: Option<FocusTarget>,
 }
 
 impl Default for OrbitCameraControllerComponent {
@@ -27,6 +42,7 @@ impl Default for OrbitCameraControllerComponent {
             min_distance: 0.5,
             max_distance: 100.0,
             pitch_limit: std::f32::consts::FRAC_PI_2 - 0.01,
+            focus: None,
         }
     }
 }
