@@ -180,6 +180,12 @@ Per-component change detection via generation counters:
 
 `QueryData` trait has methods that must be implemented across all arity files (`iter1.rs` through `iter8.rs`). When adding new trait methods (e.g., `type_ids_for_changed`, `entity_id_from_item`), ALL 8 files must be updated. This is a maintenance burden — be thorough when adding methods.
 
+## Scene Serialization Descriptors
+
+Descriptor structs (`TransformDescriptor`, `DrawableDescriptor`, `EntityDescriptor`, etc.) in `katla_app/src/scene/descriptors.rs` should include `#[derive(PartialEq)]` for testability. Round-trip serialization tests assert equality between original and deserialized values.
+
+RON v0.8+ does NOT silently ignore unknown struct fields by default. Forward compatibility is handled by the scene migration framework (version field + `SceneMigrator` trait), not by RON's `deny_unknown_fields` behavior.
+
 ## GPU Resource Destroy APIs
 
 Per-resource destroy methods on `VulkanRenderer` (in `katla_gfx/src/renderer/destroy_api.rs`):
@@ -215,6 +221,6 @@ Per-resource destroy methods on `VulkanRenderer` (in `katla_gfx/src/renderer/des
 
 **Shared resources:** Protected by reference counting — a mesh used by multiple entities is only destroyed when all references are released. `GpuResourceTracker::release(entity_id)` decrements ref counts and only destroys when count reaches zero.
 
-**Known gap — GLTF textures not tracked:** `track_texture()` API exists on `GpuResourceTracker` but is never called from the spawn path (`spawn_gltf_model` in `spawning.rs`). GLTF model textures (albedo, normal, MR, AO, emission) are uploaded but not tracked, so they leak on scene load. Texture tracking would require either adding texture handles to `DrawableComponent` or a separate per-entity texture list.
+**GLTF texture tracking:** `spawn_gltf_model` in `spawning.rs` calls `gpu_resource_tracker.track_texture()` for each uploaded GLTF texture (albedo, normal, MR, AO, emission). `upload_gltf_textures` returns both bindless indices (for material assignment) and `TextureHandle`s (for tracking) via `GltfTextureUpload` struct.
 
-**Known gap — ComponentEvent::Removed not integrated:** The `gpu_cleanup` module only handles `EntityEvent::Destroyed`, not `ComponentEvent::Removed`. If `DrawableComponent` is removed from a live entity without destroying it, GPU resources would leak.
+**ComponentEvent::Removed handling:** The `gpu_cleanup` module processes both `EntityEvent::Destroyed` and `ComponentEvent::Removed` for `DrawableComponent`. Component removal events for entities that were also destroyed this frame are skipped (already handled via destruction path) to avoid double-cleanup.

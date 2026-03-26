@@ -1,0 +1,47 @@
+{
+  "milestone": "scene-serialization",
+  "round": 2,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Document descriptor PartialEq convention and RON v0.8+ unknown fields behavior in architecture.md",
+      "sourceFeature": "scene-serialization-tests (round 1) + migration-forward-compat-fix (round 2)"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Reinforce visibility convention: modules used only internally (e.g., migration) should use pub(crate) not pub, per existing AGENTS.md guidance about preferring pub(crate) until there's a clear external use case.",
+      "evidence": "scene/migration.rs is declared as pub mod but only used internally via migration::run_migrations() from load_scene in the same crate.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "No changes needed to services.yaml — all commands used are already documented.",
+      "reason": "already-documented"
+    },
+    {
+      "observation": "round_trip helper function pattern for RON serialization testing.",
+      "reason": "already-documented-in-context: This is an internal test utility, not a reusable cross-feature pattern requiring guidance."
+    },
+    {
+      "observation": "Migration loop early-break guard pattern (over-migration prevention when multiple registered migrations exist beyond SCENE_VERSION).",
+      "reason": "implementation-detail: This is a specific fix detail for the migration loop, not a general pattern requiring documentation."
+    }
+  ],
+  "previousRound": ".factory/validation/scene-serialization/scrutiny/synthesis.json (round 1)"
+}
