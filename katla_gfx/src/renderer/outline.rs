@@ -1,6 +1,6 @@
 use crate::RendererError;
 use crate::handle::PipelineHandle;
-use crate::pipeline::{CullMode, CompareOp, FrontFace};
+use crate::pipeline::{CompareOp, CullMode, FrontFace};
 use crate::texture::ImageFormat;
 use crate::vulkan::material::builder::PipelineBuilder;
 use crate::vulkan::vertexbinding::VertexFormat;
@@ -30,6 +30,7 @@ pub(crate) struct OutlineState {
 }
 
 impl super::VulkanRenderer {
+    #[allow(clippy::too_many_arguments)]
     fn build_outline_pipeline(
         &mut self,
         vert: vk::ShaderModule,
@@ -62,7 +63,10 @@ impl super::VulkanRenderer {
         }
 
         let pipeline = builder.build_dynamic().map_err(|e| {
-            RendererError::InitializationFailed(format!("Failed to build outline pipeline: {:?}", e))
+            RendererError::InitializationFailed(format!(
+                "Failed to build outline pipeline: {:?}",
+                e
+            ))
         })?;
 
         Ok(self.asset_registry.register_pipeline(pipeline))
@@ -213,15 +217,15 @@ impl super::VulkanRenderer {
 
         // === Skinned Occlusion Mark Pipeline ===
         {
-            let (vert, frag) = self.load_outline_shaders(
-                stencil_mark_skinned_path,
-                "skinned occlusion mark",
-            )?;
-            let empty_descriptor_layout = self.outline.skinned_empty_layout.ok_or(
-                RendererError::InitializationFailed(
-                    "Skinned empty layout not initialized — call init_outline_pipelines first".into(),
-                ),
-            )?;
+            let (vert, frag) =
+                self.load_outline_shaders(stencil_mark_skinned_path, "skinned occlusion mark")?;
+            let empty_descriptor_layout =
+                self.outline
+                    .skinned_empty_layout
+                    .ok_or(RendererError::InitializationFailed(
+                        "Skinned empty layout not initialized — call init_outline_pipelines first"
+                            .into(),
+                    ))?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -279,11 +283,13 @@ impl super::VulkanRenderer {
         {
             let (vert, frag) =
                 self.load_outline_shaders(outline_draw_skinned_path, "skinned outline draw")?;
-            let empty_descriptor_layout = self.outline.skinned_empty_layout.ok_or(
-                RendererError::InitializationFailed(
-                    "Skinned empty layout not initialized — call init_outline_pipelines first".into(),
-                ),
-            )?;
+            let empty_descriptor_layout =
+                self.outline
+                    .skinned_empty_layout
+                    .ok_or(RendererError::InitializationFailed(
+                        "Skinned empty layout not initialized — call init_outline_pipelines first"
+                            .into(),
+                    ))?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -321,8 +327,7 @@ impl super::VulkanRenderer {
         let storage_layout = self.storage_descriptor_sets[0].layout();
 
         {
-            let (vert, frag) =
-                self.load_outline_shaders(shader_path, "stencil indicator")?;
+            let (vert, frag) = self.load_outline_shaders(shader_path, "stencil indicator")?;
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
                 pass_op: vk::StencilOp::KEEP,
@@ -347,15 +352,15 @@ impl super::VulkanRenderer {
         }
 
         {
-            let (vert, frag) = self.load_outline_shaders(
-                skinned_shader_path,
-                "skinned stencil indicator",
-            )?;
-            let empty_descriptor_layout = self.outline.skinned_empty_layout.ok_or(
-                RendererError::InitializationFailed(
-                    "Skinned empty layout not initialized — call init_outline_pipelines first".into(),
-                ),
-            )?;
+            let (vert, frag) =
+                self.load_outline_shaders(skinned_shader_path, "skinned stencil indicator")?;
+            let empty_descriptor_layout =
+                self.outline
+                    .skinned_empty_layout
+                    .ok_or(RendererError::InitializationFailed(
+                        "Skinned empty layout not initialized — call init_outline_pipelines first"
+                            .into(),
+                    ))?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,

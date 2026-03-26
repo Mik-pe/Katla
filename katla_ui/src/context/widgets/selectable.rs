@@ -16,6 +16,7 @@ impl UiContext {
     ///
     /// Returns a Response. Check `response.clicked` for click.
     /// The `selected` parameter controls whether the item is highlighted as selected.
+    #[allow(dead_code)]
     pub(crate) fn selectable(
         &mut self,
         id: &str,

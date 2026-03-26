@@ -165,13 +165,11 @@ pub fn process_editor_actions(app: &mut Application) {
                 for id in &to_delete {
                     if let Some(emitter) =
                         app.world.get_component_mut::<ParticleEmitterComponent>(*id)
+                        && let Some(handle) = emitter.emitter_handle.take()
+                        && let Some(ps) = &mut app.renderer.particle_system
                     {
-                        if let Some(handle) = emitter.emitter_handle.take() {
-                            if let Some(ps) = &mut app.renderer.particle_system {
-                                ps.destroy_emitter(handle);
-                                info!("Destroyed particle emitter for deleted entity {:?}", id);
-                            }
-                        }
+                        ps.destroy_emitter(handle);
+                        info!("Destroyed particle emitter for deleted entity {:?}", id);
                     }
                 }
 
@@ -216,12 +214,10 @@ pub fn process_editor_actions(app: &mut Application) {
                 for id in &to_remove {
                     if let Some(emitter) =
                         app.world.get_component_mut::<ParticleEmitterComponent>(*id)
+                        && let Some(handle) = emitter.emitter_handle.take()
+                        && let Some(ps) = &mut app.renderer.particle_system
                     {
-                        if let Some(handle) = emitter.emitter_handle.take() {
-                            if let Some(ps) = &mut app.renderer.particle_system {
-                                ps.destroy_emitter(handle);
-                            }
-                        }
+                        ps.destroy_emitter(handle);
                     }
                 }
 

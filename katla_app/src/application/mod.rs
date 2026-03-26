@@ -299,10 +299,9 @@ impl ApplicationHandler for Application {
                         && !self.current_modifiers.control_key()
                         && !self.current_modifiers.shift_key()
                         && !self.current_modifiers.alt_key()
+                        && let Some(entity_id) = self.editor_ui.selected_entity
                     {
-                        if let Some(entity_id) = self.editor_ui.selected_entity {
-                            self.focus_camera_on_entity(entity_id);
-                        }
+                        self.focus_camera_on_entity(entity_id);
                     }
 
                     // Toggle particle inspector with Ctrl+P
@@ -427,14 +426,13 @@ impl ApplicationHandler for Application {
                     for entity in gpu_anim.entities() {
                         if let Some(drawable) =
                             self.world.get_component::<DrawableComponent>(entity)
+                            && let Some(info) = gpu_anim.entity_info(entity)
                         {
-                            if let Some(info) = gpu_anim.entity_info(entity) {
-                                copy_cmds.push((
-                                    drawable.skeleton_handle.index(),
-                                    info.joint_offset,
-                                    info.joint_count,
-                                ));
-                            }
+                            copy_cmds.push((
+                                drawable.skeleton_handle.index(),
+                                info.joint_offset,
+                                info.joint_count,
+                            ));
                         }
                     }
                     self.frame_graph.set_skeleton_copy_commands(copy_cmds);
