@@ -395,18 +395,18 @@ pub struct Pipeline {
 
 impl Pipeline {
     /// Get the raw Vulkan pipeline handle.
-    pub(crate) fn vk_pipeline(&self) -> vk::Pipeline {
+    pub fn vk_pipeline(&self) -> vk::Pipeline {
         self.handle.unwrap_or(vk::Pipeline::null())
     }
 
     /// Get the raw Vulkan pipeline layout.
-    pub(crate) fn vk_layout(&self) -> vk::PipelineLayout {
+    pub fn vk_layout(&self) -> vk::PipelineLayout {
         self.layout.unwrap_or(vk::PipelineLayout::null())
     }
 
     /// Get the descriptor set layouts used when creating this pipeline.
     /// These must be used when allocating descriptor sets for this pipeline.
-    pub(crate) fn descriptor_set_layouts(&self) -> &[vk::DescriptorSetLayout] {
+    pub fn descriptor_set_layouts(&self) -> &[vk::DescriptorSetLayout] {
         &self.descriptor_set_layouts
     }
 
