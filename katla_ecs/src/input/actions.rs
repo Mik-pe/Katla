@@ -15,8 +15,9 @@ pub enum Action {
 
     LookEnable = 11,
     Sprint = 12,
+    PanEnable = 13,
 }
 
 impl Action {
-    pub const COUNT: usize = 15;
+    pub const COUNT: usize = 16;
 }
