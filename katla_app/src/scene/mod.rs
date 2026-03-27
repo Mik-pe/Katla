@@ -3376,4 +3376,618 @@ EntityDescriptor(
             assert_eq!(original.velocity, loaded.velocity);
         }
     }
+
+    // =========================================================================
+    // Cross-Area Integration Tests (VAL-CROSS-002, VAL-CROSS-003,
+    // VAL-CROSS-004, VAL-CROSS-007)
+    // =========================================================================
+
+    /// VAL-CROSS-002: Transform edit persistence through save-reload.
+    ///
+    /// Simulates the full editor workflow: build a scene → modify a transform
+    /// → serialize → deserialize → verify transform values match within epsilon.
+    #[test]
+    fn test_transform_persistence() {
+        let mut scene = Scene::new("Transform Persistence Test");
+        scene.version = SCENE_VERSION;
+
+        // Create entity with non-default transform
+        let original_position = [3.14, 2.71, -1.62];
+        let original_rotation = [0.0, 0.38268343, 0.0, 0.92387953]; // 45° around Y
+        let original_scale = [2.0, 0.5, 3.0];
+
+        scene.entities.push(EntityDescriptor {
+            name: Some("MovingCube".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: original_position,
+                rotation: original_rotation,
+                scale: original_scale,
+            },
+            source: EntitySource::Cube {
+                size: [1.0, 1.0, 1.0],
+            },
+            drawable: Some(DrawableDescriptor {
+                color: Some([0.8, 0.2, 0.1, 1.0]),
+                metallic: 0.5,
+                roughness: 0.3,
+                ao: 1.0,
+            }),
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+
+        // Simulate editing: modify the transform values
+        let edited_position = [5.0, 10.0, -3.5];
+        let edited_rotation = [0.0, 0.70710678, 0.0, 0.70710678]; // 90° around Y
+        let edited_scale = [4.0, 1.0, 2.0];
+
+        scene.entities[0].transform = TransformDescriptor {
+            position: edited_position,
+            rotation: edited_rotation,
+            scale: edited_scale,
+        };
+
+        // Simulate save → reload via RON round-trip
+        let loaded: Scene = round_trip(&scene);
+
+        // Verify transform values match within epsilon
+        let eps = f32::EPSILON;
+        let loaded_transform = &loaded.entities[0].transform;
+
+        for i in 0..3 {
+            assert!(
+                (loaded_transform.position[i] - edited_position[i]).abs() < eps,
+                "Position[{}] mismatch: got {}, expected {}",
+                i,
+                loaded_transform.position[i],
+                edited_position[i]
+            );
+            assert!(
+                (loaded_transform.rotation[i] - edited_rotation[i]).abs() < eps,
+                "Rotation[{}] mismatch: got {}, expected {}",
+                i,
+                loaded_transform.rotation[i],
+                edited_rotation[i]
+            );
+            assert!(
+                (loaded_transform.scale[i] - edited_scale[i]).abs() < eps,
+                "Scale[{}] mismatch: got {}, expected {}",
+                i,
+                loaded_transform.scale[i],
+                edited_scale[i]
+            );
+        }
+
+        // Also verify rotation w component
+        assert!(
+            (loaded_transform.rotation[3] - edited_rotation[3]).abs() < eps,
+            "Rotation[3] mismatch: got {}, expected {}",
+            loaded_transform.rotation[3],
+            edited_rotation[3]
+        );
+
+        // Verify entity name and source are preserved
+        assert_eq!(loaded.entities[0].name, Some("MovingCube".to_string()));
+        assert_eq!(
+            loaded.entities[0].source,
+            EntitySource::Cube {
+                size: [1.0, 1.0, 1.0],
+            }
+        );
+
+        // Verify drawable properties are preserved
+        let drawable = loaded.entities[0].drawable.as_ref().unwrap();
+        assert_eq!(drawable.metallic, 0.5);
+        assert_eq!(drawable.roughness, 0.3);
+    }
+
+    /// VAL-CROSS-003: Entity destruction cascades ECS cleanup and GPU release.
+    ///
+    /// Creates entities with GPU resources, destroys them, and verifies:
+    /// - EntityEvent::Destroyed is emitted
+    /// - ComponentEvent::Removed events are emitted for all components
+    /// - Entity count decreases
+    /// - GpuResourceTracker correctly releases resources
+    #[test]
+    fn test_entity_destruction_cleanup() {
+        use crate::components::DrawableComponent;
+        use crate::gpu_resource_tracker::GpuResourceTracker;
+        use katla_ecs::events::{ComponentEvent, EntityEvent};
+        use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
+        use std::any::TypeId;
+
+        let protected = MaterialHandle::new(999);
+        let mut tracker = GpuResourceTracker::new(protected);
+
+        let mut world = katla_ecs::World::new();
+
+        // Create entity with multiple components
+        let entity_a = world.create_entity();
+        world.add_component(entity_a, TransformComponent::default());
+        let mesh_a = MeshHandle::new(1);
+        let mat_a = MaterialHandle::new(2);
+        world.add_component(entity_a, DrawableComponent::with_handles(mesh_a, mat_a));
+        world.add_component(entity_a, PointLight::new([1.0, 0.5, 0.2], 10.0, 15.0));
+        world.add_component(entity_a, NameComponent::new("EntityA"));
+
+        // Track GPU resources
+        tracker.track_drawable(mesh_a, mat_a, SkeletonHandle::NONE);
+
+        // Create second entity
+        let entity_b = world.create_entity();
+        world.add_component(entity_b, TransformComponent::default());
+        let mesh_b = MeshHandle::new(3);
+        let mat_b = MaterialHandle::new(4);
+        world.add_component(entity_b, DrawableComponent::with_handles(mesh_b, mat_b));
+        world.add_component(entity_b, NameComponent::new("EntityB"));
+        tracker.track_drawable(mesh_b, mat_b, SkeletonHandle::NONE);
+
+        // Destroy entity_a
+        let destroyed = world.destroy_entity(entity_a);
+        assert!(
+            destroyed,
+            "destroy_entity should return true for live entity"
+        );
+
+        // Verify EntityEvent::Destroyed was emitted
+        let entity_events = world.entity_events();
+        let destroyed_events: Vec<_> = entity_events
+            .iter()
+            .filter(|e| matches!(e, EntityEvent::Destroyed(id) if *id == entity_a))
+            .collect();
+        assert_eq!(
+            destroyed_events.len(),
+            1,
+            "Exactly one Destroyed event for entity_a"
+        );
+
+        // Verify ComponentEvent::Removed events for all components
+        let component_events = world.component_events();
+        let transform_type_id = TypeId::of::<TransformComponent>();
+        let drawable_type_id = TypeId::of::<DrawableComponent>();
+        let point_light_type_id = TypeId::of::<PointLight>();
+        let name_type_id = TypeId::of::<NameComponent>();
+
+        let removed_for_a: Vec<_> = component_events
+            .iter()
+            .filter(|e| matches!(e, ComponentEvent::Removed(id, tid) if *id == entity_a))
+            .collect();
+
+        let removed_type_ids: Vec<TypeId> = removed_for_a
+            .iter()
+            .map(|e| {
+                if let ComponentEvent::Removed(_, tid) = e {
+                    *tid
+                } else {
+                    unreachable!()
+                }
+            })
+            .collect();
+
+        assert!(
+            removed_type_ids.contains(&transform_type_id),
+            "TransformComponent Removed event should be emitted"
+        );
+        assert!(
+            removed_type_ids.contains(&drawable_type_id),
+            "DrawableComponent Removed event should be emitted"
+        );
+        assert!(
+            removed_type_ids.contains(&point_light_type_id),
+            "PointLight Removed event should be emitted"
+        );
+        assert!(
+            removed_type_ids.contains(&name_type_id),
+            "NameComponent Removed event should be emitted"
+        );
+
+        // Simulate GPU cleanup for destroyed entity
+        // (In production, gpu_cleanup module does this after world.update())
+        let to_destroy = tracker.release_drawable(mesh_a, mat_a, SkeletonHandle::NONE);
+        assert_eq!(to_destroy.meshes.len(), 1, "Mesh should be destroyed");
+        assert_eq!(
+            to_destroy.materials.len(),
+            1,
+            "Material should be destroyed"
+        );
+        assert_eq!(tracker.mesh_count(), 1, "One mesh remains (entity_b)");
+        assert_eq!(
+            tracker.material_count(),
+            1,
+            "One material remains (entity_b)"
+        );
+
+        // Verify entity_b is unaffected
+        let entity_b_name = world.get_component::<NameComponent>(entity_b);
+        assert!(entity_b_name.is_some(), "entity_b should still be alive");
+        assert_eq!(entity_b_name.unwrap().name, "EntityB");
+
+        // Update the world to flush events
+        world.update(0.016);
+        assert!(
+            world.entity_events().is_empty(),
+            "Events should be flushed after update()"
+        );
+        assert!(
+            world.component_events().is_empty(),
+            "Component events should be flushed after update()"
+        );
+
+        // Now destroy entity_b
+        world.destroy_entity(entity_b);
+        let to_destroy_b = tracker.release_drawable(mesh_b, mat_b, SkeletonHandle::NONE);
+        assert_eq!(to_destroy_b.meshes.len(), 1);
+        assert_eq!(to_destroy_b.materials.len(), 1);
+        assert_eq!(tracker.mesh_count(), 0, "All meshes released");
+        assert_eq!(tracker.material_count(), 0, "All materials released");
+    }
+
+    /// VAL-CROSS-004: Component addition triggers event and change detection.
+    ///
+    /// Adds components to entities and verifies:
+    /// - ComponentEvent::Added is emitted
+    /// - Change detection marks entity as changed via query_changed
+    #[test]
+    fn test_component_add_events() {
+        use crate::components::DrawableComponent;
+        use katla_ecs::events::ComponentEvent;
+        use std::any::TypeId;
+
+        let mut world = katla_ecs::World::new();
+
+        // Create entity
+        let entity = world.create_entity();
+        world.add_component(entity, TransformComponent::default());
+
+        // Clear any events from entity creation
+        world.update(0.016);
+
+        // Add a component
+        world.add_component(entity, NameComponent::new("TestEntity"));
+
+        // Verify ComponentEvent::Added was emitted
+        let component_events = world.component_events();
+        let name_type_id = TypeId::of::<NameComponent>();
+        let added_events: Vec<_> = component_events
+            .iter()
+            .filter(|e| {
+                matches!(e, ComponentEvent::Added(id, tid) if *id == entity && *tid == name_type_id)
+            })
+            .collect();
+        assert_eq!(
+            added_events.len(),
+            1,
+            "Exactly one NameComponent Added event should be emitted"
+        );
+
+        // Verify component_events_for type-safe filtering
+        let filtered = world.component_events_for::<NameComponent>();
+        assert_eq!(
+            filtered.len(),
+            1,
+            "component_events_for::<NameComponent> should return 1 event"
+        );
+
+        // Verify change detection marks entity as changed
+        let changed_entities: Vec<_> = world
+            .query_changed::<(&TransformComponent, &NameComponent)>()
+            .collect();
+        assert!(
+            changed_entities.iter().any(|(id, _, _)| *id == entity),
+            "Entity should appear in query_changed after add_component"
+        );
+
+        // Add another component (DrawableComponent) and verify both events
+        world.add_component(
+            entity,
+            DrawableComponent::with_handles(
+                katla_gfx::MeshHandle::new(1),
+                katla_gfx::MaterialHandle::new(2),
+            ),
+        );
+
+        let drawable_type_id = TypeId::of::<DrawableComponent>();
+        let drawable_added: Vec<_> = world
+            .component_events()
+            .iter()
+            .filter(|e| {
+                matches!(e, ComponentEvent::Added(id, tid) if *id == entity && *tid == drawable_type_id)
+            })
+            .collect();
+        assert_eq!(
+            drawable_added.len(),
+            1,
+            "DrawableComponent Added event should be emitted"
+        );
+
+        // Create a second entity with same components but don't add NameComponent
+        let entity2 = world.create_entity();
+        world.add_component(entity2, TransformComponent::default());
+        world.add_component(entity2, NameComponent::new("Entity2"));
+
+        // Verify entity2 events
+        let name_events_for = world.component_events_for::<NameComponent>();
+        let entity2_name_events: Vec<_> = name_events_for
+            .iter()
+            .filter(|e| matches!(e, ComponentEvent::Added(id, _) if *id == entity2))
+            .collect();
+        assert_eq!(
+            entity2_name_events.len(),
+            1,
+            "Entity2 should have its own NameComponent Added event"
+        );
+
+        // Update to flush events
+        world.update(0.016);
+        assert!(
+            world.component_events().is_empty(),
+            "Component events should be flushed after update()"
+        );
+
+        // After flush, query_changed should return empty until next mutation
+        // (clear_changed is called at end of update)
+        let changed_after_flush: Vec<_> = world
+            .query_changed::<(&TransformComponent, &NameComponent)>()
+            .collect();
+        assert!(
+            changed_after_flush.is_empty(),
+            "query_changed should return empty after clear_changed"
+        );
+    }
+
+    /// VAL-CROSS-007: Full editor workflow end-to-end.
+    ///
+    /// Simulates the complete editor workflow:
+    /// 1. Spawn entities (build scene)
+    /// 2. Edit properties (modify transforms, add components)
+    /// 3. Save (serialize to RON)
+    /// 4. New scene (clear)
+    /// 5. Load (deserialize from RON)
+    /// 6. Verify state
+    #[test]
+    fn test_full_editor_workflow() {
+        // Step 1: Spawn entities — build initial scene
+        let mut scene = Scene::new("Editor Workflow Test");
+        scene.version = SCENE_VERSION;
+
+        // Add a cube entity
+        scene.entities.push(EntityDescriptor {
+            name: Some("TestCube".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+            source: EntitySource::Cube {
+                size: [1.0, 1.0, 1.0],
+            },
+            drawable: Some(DrawableDescriptor {
+                color: Some([0.8, 0.2, 0.1, 1.0]),
+                metallic: 0.5,
+                roughness: 0.3,
+                ao: 1.0,
+            }),
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+
+        // Add a light entity
+        scene.entities.push(EntityDescriptor {
+            name: Some("TestLight".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [5.0, 3.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+            source: EntitySource::Light,
+            drawable: Some(DrawableDescriptor {
+                color: Some([1.0, 0.9, 0.8, 1.0]),
+                metallic: 0.0,
+                roughness: 1.0,
+                ao: 1.0,
+            }),
+            point_light: Some(PointLightDescriptor {
+                color: [1.0, 0.9, 0.8],
+                intensity: 20.0,
+                range: 15.0,
+            }),
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+        });
+
+        // Add a sphere with velocity
+        scene.entities.push(EntityDescriptor {
+            name: Some("MovingSphere".to_string()),
+            parent: None,
+            transform: TransformDescriptor {
+                position: [0.0, 2.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [0.5, 0.5, 0.5],
+            },
+            source: EntitySource::Sphere {
+                radius: 0.5,
+                segments: 16,
+                rings: 8,
+            },
+            drawable: Some(DrawableDescriptor {
+                color: Some([0.1, 0.5, 0.9, 1.0]),
+                metallic: 0.0,
+                roughness: 0.8,
+                ao: 1.0,
+            }),
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: Some(VelocityDescriptor {
+                velocity: [1.0, 0.0, -2.0],
+                acceleration: [0.0, -9.8, 0.0],
+            }),
+        });
+
+        assert_eq!(
+            scene.entities.len(),
+            3,
+            "Initial scene must have 3 entities"
+        );
+
+        // Step 2: Edit properties — modify transforms
+        // Simulate user moving the cube via inspector
+        scene.entities[0].transform.position = [2.5, 1.0, -3.0];
+        scene.entities[0].transform.scale = [2.0, 2.0, 2.0];
+        scene.entities[0].drawable.as_mut().unwrap().metallic = 0.8;
+
+        // Simulate user adjusting light intensity
+        scene.entities[1].point_light.as_mut().unwrap().intensity = 35.0;
+        scene.entities[1].transform.position = [8.0, 5.0, 2.0];
+
+        // Simulate user editing sphere velocity
+        scene.entities[2].velocity.as_mut().unwrap().velocity = [0.0, 3.0, -1.0];
+
+        // Step 3: Save — serialize to RON
+        let saved_ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
+        assert!(
+            saved_ron.contains("TestCube"),
+            "Saved scene must contain TestCube"
+        );
+        assert!(
+            saved_ron.contains("TestLight"),
+            "Saved scene must contain TestLight"
+        );
+        assert!(
+            saved_ron.contains("MovingSphere"),
+            "Saved scene must contain MovingSphere"
+        );
+
+        // Step 4: New scene — simulate clearing (create fresh scene)
+        let mut new_scene = Scene::new("New Empty Scene");
+        new_scene.version = SCENE_VERSION;
+        assert!(new_scene.entities.is_empty(), "New scene must be empty");
+
+        // Step 5: Load — deserialize from saved RON
+        let loaded_scene: Scene = ron::from_str(&saved_ron).unwrap();
+
+        // Step 6: Verify state — all entities present with correct edited values
+        assert_eq!(
+            loaded_scene.entities.len(),
+            3,
+            "Loaded scene must have 3 entities"
+        );
+
+        // Verify TestCube with edited values
+        let cube = loaded_scene
+            .entities
+            .iter()
+            .find(|e| e.name == Some("TestCube".to_string()))
+            .expect("TestCube must exist after load");
+        let eps = f32::EPSILON;
+        assert!(
+            (cube.transform.position[0] - 2.5).abs() < eps,
+            "Cube X position should be 2.5"
+        );
+        assert!(
+            (cube.transform.position[1] - 1.0).abs() < eps,
+            "Cube Y position should be 1.0"
+        );
+        assert!(
+            (cube.transform.position[2] - (-3.0)).abs() < eps,
+            "Cube Z position should be -3.0"
+        );
+        assert!(
+            (cube.transform.scale[0] - 2.0).abs() < eps,
+            "Cube scale should be [2.0, 2.0, 2.0]"
+        );
+        assert_eq!(
+            cube.drawable.as_ref().unwrap().metallic,
+            0.8,
+            "Cube metallic should be updated to 0.8"
+        );
+
+        // Verify TestLight with edited values
+        let light = loaded_scene
+            .entities
+            .iter()
+            .find(|e| e.name == Some("TestLight".to_string()))
+            .expect("TestLight must exist after load");
+        assert!(
+            (light.transform.position[0] - 8.0).abs() < eps,
+            "Light X position should be 8.0"
+        );
+        assert!(
+            (light.transform.position[1] - 5.0).abs() < eps,
+            "Light Y position should be 5.0"
+        );
+        assert_eq!(
+            light.point_light.as_ref().unwrap().intensity,
+            35.0,
+            "Light intensity should be updated to 35.0"
+        );
+        assert_eq!(
+            light.point_light.as_ref().unwrap().color,
+            [1.0, 0.9, 0.8],
+            "Light color should be preserved"
+        );
+
+        // Verify MovingSphere with edited velocity
+        let sphere = loaded_scene
+            .entities
+            .iter()
+            .find(|e| e.name == Some("MovingSphere".to_string()))
+            .expect("MovingSphere must exist after load");
+        let vel = sphere.velocity.as_ref().unwrap();
+        assert!(
+            (vel.velocity[1] - 3.0).abs() < eps,
+            "Sphere velocity Y should be 3.0"
+        );
+        assert!(
+            (vel.velocity[2] - (-1.0)).abs() < eps,
+            "Sphere velocity Z should be -1.0"
+        );
+        assert!(
+            (vel.acceleration[1] - (-9.8)).abs() < eps,
+            "Sphere acceleration Y should be -9.8"
+        );
+
+        // Verify entity sources are preserved
+        assert_eq!(
+            cube.source,
+            EntitySource::Cube {
+                size: [1.0, 1.0, 1.0],
+            }
+        );
+        assert_eq!(light.source, EntitySource::Light);
+        assert_eq!(
+            sphere.source,
+            EntitySource::Sphere {
+                radius: 0.5,
+                segments: 16,
+                rings: 8,
+            }
+        );
+
+        // Verify round-trip consistency: load → save → load should be identical
+        let reloaded: Scene = round_trip(&loaded_scene);
+        for (first, second) in loaded_scene.entities.iter().zip(reloaded.entities.iter()) {
+            assert_eq!(first.name, second.name, "Name mismatch on re-round-trip");
+            assert_eq!(
+                first.source, second.source,
+                "Source mismatch on re-round-trip"
+            );
+            assert_eq!(
+                first.transform, second.transform,
+                "Transform mismatch on re-round-trip for {:?}",
+                first.name
+            );
+            assert_eq!(first.drawable, second.drawable, "Drawable mismatch");
+            assert_eq!(first.point_light, second.point_light, "PointLight mismatch");
+            assert_eq!(first.velocity, second.velocity, "Velocity mismatch");
+        }
+    }
 }
