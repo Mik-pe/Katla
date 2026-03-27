@@ -9,7 +9,7 @@
 
 mod asset_browser;
 mod hierarchy;
-mod inspector;
+pub(crate) mod inspector;
 
 mod preferences;
 mod status_bar;
@@ -66,6 +66,28 @@ pub struct EntityInfo {
     pub has_children: bool,
     /// Parent entity ID (if any)
     pub parent_id: Option<EntityId>,
+    /// Point light data (if entity has PointLight component)
+    pub point_light: Option<PointLightInfo>,
+    /// Particle emitter data (if entity has ParticleEmitterComponent)
+    pub particle_emitter: Option<ParticleEmitterInfo>,
+}
+
+/// Point light inspector data.
+#[derive(Debug, Clone)]
+pub struct PointLightInfo {
+    pub color: [f32; 3],
+    pub intensity: f32,
+    pub range: f32,
+}
+
+/// Particle emitter inspector data.
+#[derive(Debug, Clone)]
+pub struct ParticleEmitterInfo {
+    pub emit_rate: f32,
+    pub velocity_magnitude: f32,
+    pub base_lifetime: f32,
+    pub gravity: f32,
+    pub base_scale: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +134,29 @@ pub enum EditorAction {
     ToggleParticleEmitter,
     /// Reset the global particle system (clear all particles).
     ResetParticleSystem,
+    /// Update entity transform (committed on slider release).
+    UpdateTransform {
+        entity_id: EntityId,
+        position: Vec3,
+        rotation: Vec3,
+        scale: Vec3,
+    },
+    /// Update point light properties (committed on slider release).
+    UpdatePointLight {
+        entity_id: EntityId,
+        color: [f32; 3],
+        intensity: f32,
+        range: f32,
+    },
+    /// Update particle emitter properties (committed on slider release).
+    UpdateParticleEmitter {
+        entity_id: EntityId,
+        emit_rate: f32,
+        velocity_magnitude: f32,
+        base_lifetime: f32,
+        gravity: f32,
+        base_scale: f32,
+    },
 }
 
 /// Which panel is currently focused (receives input).
@@ -195,6 +240,10 @@ pub struct EditorUI {
     /// Whether the UI wanted keyboard capture on the previous frame.
     /// Used to suppress Ctrl+S when a TextInput or modal is focused.
     pub prev_want_capture_keyboard: bool,
+    /// Mutable inspector editing state for all editable properties.
+    pub inspector_edit: crate::ui::editor_ui::inspector::InspectorEditState,
+    /// The entity ID whose inspector editing state is currently populated.
+    pub(crate) inspector_edit_entity: Option<EntityId>,
 }
 
 impl EditorUI {
@@ -225,6 +274,20 @@ impl EditorUI {
             particle_inspector_data: ParticleInspectorData::default(),
             save_confirmation_timer: 0.0,
             prev_want_capture_keyboard: false,
+            inspector_edit: inspector::InspectorEditState {
+                pos: [0.0; 3],
+                rot: [0.0; 3],
+                scale: [1.0, 1.0, 1.0],
+                light_color: [1.0; 3],
+                light_intensity: 1.0,
+                light_range: 10.0,
+                emit_rate: 10.0,
+                velocity: 2.0,
+                lifetime: 2.0,
+                gravity: -9.81,
+                particle_scale: 0.1,
+            },
+            inspector_edit_entity: None,
         }
     }
 
@@ -238,6 +301,44 @@ impl EditorUI {
     /// Set the editor theme.
     pub fn set_theme(&mut self, theme: Theme) {
         self.theme = theme;
+    }
+
+    /// Sync inspector editing state from the selected entity's EntityInfo.
+    ///
+    /// Called before UI build to populate slider values. Only updates when the
+    /// selected entity changes (detected via entity ID).
+    pub fn sync_inspector_edit_state(&mut self, entities: &[EntityInfo]) {
+        if self.inspector_edit_entity != self.selected_entity {
+            self.inspector_edit_entity = self.selected_entity;
+            if let Some(entity) = self
+                .selected_entity
+                .and_then(|id| entities.iter().find(|e| e.id == id))
+            {
+                self.inspector_edit.pos = [
+                    entity.position.x(),
+                    entity.position.y(),
+                    entity.position.z(),
+                ];
+                self.inspector_edit.rot = [
+                    entity.rotation.x(),
+                    entity.rotation.y(),
+                    entity.rotation.z(),
+                ];
+                self.inspector_edit.scale = [entity.scale.x(), entity.scale.y(), entity.scale.z()];
+                if let Some(ref pl) = entity.point_light {
+                    self.inspector_edit.light_color = pl.color;
+                    self.inspector_edit.light_intensity = pl.intensity;
+                    self.inspector_edit.light_range = pl.range;
+                }
+                if let Some(ref pe) = entity.particle_emitter {
+                    self.inspector_edit.emit_rate = pe.emit_rate;
+                    self.inspector_edit.velocity = pe.velocity_magnitude;
+                    self.inspector_edit.lifetime = pe.base_lifetime;
+                    self.inspector_edit.gravity = pe.gravity;
+                    self.inspector_edit.particle_scale = pe.base_scale;
+                }
+            }
+        }
     }
 
     /// Set the font scale.
@@ -596,6 +697,7 @@ impl EditorUI {
             &mut self.focused_panel,
             &mut self.pending_actions,
             &self.theme,
+            &mut self.inspector_edit,
         ));
 
         ui.draw_rect(
@@ -1051,6 +1153,8 @@ mod tests {
                 depth: 0,
                 has_children: false,
                 parent_id: None,
+                point_light: None,
+                particle_emitter: None,
             },
             EntityInfo {
                 id: entity2,
@@ -1063,6 +1167,8 @@ mod tests {
                 depth: 0,
                 has_children: false,
                 parent_id: None,
+                point_light: None,
+                particle_emitter: None,
             },
         ];
 

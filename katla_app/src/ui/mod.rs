@@ -8,8 +8,10 @@ mod particle_stats;
 pub mod renderer;
 pub mod theme;
 
+pub use editor_ui::inspector::InspectorEditState;
 pub use editor_ui::{
-    EditorAction, EditorUI, EntityInfo, FocusedPanel, SpawnableModel, ThumbnailState,
+    EditorAction, EditorUI, EntityInfo, FocusedPanel, ParticleEmitterInfo, PointLightInfo,
+    SpawnableModel, ThumbnailState,
 };
 pub use particle_inspector::{
     EmitterConfigView, ParticleInspector, ParticleInspectorAction, ParticleInspectorData,
