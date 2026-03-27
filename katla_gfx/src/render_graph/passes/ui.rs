@@ -107,10 +107,6 @@ impl UIPass {
     }
 }
 
-/// Internal data for a UI pass after name resolution.
-#[derive(Debug)]
-pub(crate) struct UIPassData;
-
 impl PassBuilder for UIPass {
     fn as_builder(self) -> InternalPassBuilder {
         // Collect write resource names
@@ -132,13 +128,11 @@ impl PassBuilder for UIPass {
             material,
             output_format: None,
             build_fn: Box::new(
-                move |_resource_map: &HashMap<String, GraphResourceHandle>| {
-                    // UI pass data is currently unused but kept for future extensibility
-                    Ok(Box::new(UIPassData))
-                },
+                move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
             ),
-            uses_depth: false, // UI passes don't use depth testing
+            uses_depth: false,
             depth_attachment: None,
+            kind: None,
         }
     }
 }
@@ -159,9 +153,6 @@ mod tests {
 
         let result = (builder.build_fn)(&resource_map);
         assert!(result.is_ok());
-
-        let data = result.unwrap();
-        assert!(data.downcast_ref::<UIPassData>().is_some());
     }
 
     #[test]

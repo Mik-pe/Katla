@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::error::RenderGraphError;
-use crate::render_graph::pass::PassType;
+use crate::render_graph::pass::{PassKind, PassType};
 use crate::render_graph::resource::GraphResourceHandle;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -265,6 +265,7 @@ impl PassBuilder for GeometryPass {
             }),
             uses_depth: true,
             depth_attachment: depth_config,
+            kind: Some(PassKind::Geometry),
         }
     }
 }

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::error::RenderGraphError;
-use crate::render_graph::pass::PassType;
+use crate::render_graph::pass::{PassKind, PassType};
 use crate::render_graph::resource::GraphResourceHandle;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -320,6 +320,7 @@ impl PassBuilder for ViewportPass {
             }),
             uses_depth: true, // Viewports use the global depth buffer
             depth_attachment: None,
+            kind: Some(PassKind::Geometry),
         }
     }
 }

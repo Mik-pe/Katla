@@ -27,6 +27,28 @@ pub enum PassType {
     Compute,
 }
 
+/// Semantic kind of a render pass, used for dispatch routing.
+///
+/// Set at build time by each pass template. Eliminates structural heuristics
+/// (checking `material.is_none() && pipeline.is_none()`) in the execution loop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PassKind {
+    /// Depth prepass — renders depth and optional object IDs.
+    DepthPrepass,
+    /// Shadow mapping — renders shadow depth into atlas.
+    Shadow,
+    /// Geometry — renders 3D scene geometry with material.
+    Geometry,
+    /// Outline — stencil-based selection highlight.
+    Outline,
+    /// Stencil indicator — writes R8 mask where stencil==2.
+    StencilIndicator,
+    /// Fullscreen — post-processing (tonemap, etc.) with pipeline.
+    Fullscreen,
+    /// Compositing — multi-viewport compositing.
+    Compositing,
+}
+
 /// Internal pass descriptor.
 pub struct PassDesc {
     /// Human-readable name for debugging.
@@ -58,6 +80,10 @@ pub struct PassDesc {
     /// Optional compute dispatch callback for compute passes.
     /// When set, this closure is called instead of a generic dispatch.
     pub compute_fn: Option<ComputeFn>,
+
+    /// Semantic kind of this pass, used for dispatch routing.
+    /// Set at build time by each pass template.
+    pub kind: Option<PassKind>,
 }
 
 impl PassDesc {
@@ -82,6 +108,7 @@ impl PassDesc {
             depth_attachment: None,
             compositing_viewports: None,
             compute_fn: None,
+            kind: None,
         }
     }
 
@@ -103,6 +130,18 @@ impl PassDesc {
     ) -> Self {
         self.compute_fn = Some(Box::new(f));
         self
+    }
+
+    /// Check if this pass writes to a specific resource by name (no allocation).
+    #[inline]
+    pub fn writes_to(&self, name: &str) -> bool {
+        self.writes.iter().any(|w| w == name)
+    }
+
+    /// Check if this pass reads from a specific resource by name (no allocation).
+    #[inline]
+    pub fn reads_from(&self, name: &str) -> bool {
+        self.reads.iter().any(|r| r == name)
     }
 }
 
@@ -134,6 +173,7 @@ mod tests {
         assert!(desc.depth_attachment.is_none());
         assert!(desc.compositing_viewports.is_none());
         assert!(desc.compute_fn.is_none());
+        assert!(desc.kind.is_none());
         assert!(desc.uses_depth);
     }
 }

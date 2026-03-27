@@ -12,6 +12,7 @@ use std::collections::HashMap;
 
 use super::error::RenderGraphError;
 use super::frame_graph::{BACKBUFFER_NAME, FrameGraph};
+use super::pass::PassDesc;
 use super::resource::ResourceState;
 use crate::renderer::VulkanRenderer;
 use crate::renderer::types::{DrawList, UIDrawList};
@@ -75,7 +76,7 @@ impl<'a> Frame<'a> {
             temporary_buffers: Vec::new(),
             depth_buffer_written: false,
             particle_emit_ran: false,
-            particle_debug_readback: graph.particle_debug_readback,
+            particle_debug_readback: graph.params.particle_debug_readback,
         }
     }
 
@@ -92,22 +93,22 @@ impl<'a> Frame<'a> {
 
     /// Get the particle emit workgroup count for this frame.
     pub fn particle_emit_workgroup_count(&self) -> u32 {
-        self.graph.particle_emit_workgroup_count
+        self.graph.params.particle_emit_workgroup_count
     }
 
     /// Get the particle simulate workgroup count for this frame.
     pub fn particle_simulate_workgroup_count(&self) -> u32 {
-        self.graph.particle_simulate_workgroup_count
+        self.graph.params.particle_simulate_workgroup_count
     }
 
     /// Get the animation skeleton count for this frame.
     pub fn animation_skeleton_count(&self) -> u32 {
-        self.graph.animation_skeleton_count
+        self.graph.params.animation_skeleton_count
     }
 
     /// Get the skeleton copy commands for this frame.
     pub fn skeleton_copy_commands(&self) -> &[(u32, u32, u32)] {
-        &self.graph.skeleton_copy_commands
+        &self.graph.params.skeleton_copy_commands
     }
 
     /// Submit a draw list to a pass.
@@ -176,6 +177,100 @@ impl<'a> Frame<'a> {
         self
     }
 
+    /// Resolve a color attachment for a pass.
+    ///
+    /// Handles both backbuffer and transient texture targets, including
+    /// load/store/clear operation resolution from `pass.color_attachments`.
+    ///
+    /// Returns `None` if the pass has no color outputs.
+    pub(super) fn resolve_color_attachment(
+        &self,
+        pass: &PassDesc,
+    ) -> Result<Option<vk::RenderingAttachmentInfo<'_>>, RenderGraphError> {
+        use super::frame_graph::BACKBUFFER_NAME;
+        use crate::render_pass::{ClearValue, LoadOp, StoreOp};
+
+        if pass.writes_to(BACKBUFFER_NAME) {
+            let swapchain_view =
+                self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
+
+            let backbuffer_written = self.resource_states.contains_key(BACKBUFFER_NAME);
+            let load_op = if backbuffer_written {
+                vk::AttachmentLoadOp::LOAD
+            } else {
+                vk::AttachmentLoadOp::CLEAR
+            };
+
+            return Ok(Some(
+                vk::RenderingAttachmentInfo::default()
+                    .image_view(swapchain_view)
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .load_op(load_op)
+                    .store_op(vk::AttachmentStoreOp::STORE)
+                    .clear_value(vk::ClearValue {
+                        color: vk::ClearColorValue {
+                            float32: [0.1, 0.1, 0.1, 1.0],
+                        },
+                    }),
+            ));
+        }
+
+        let color_name = match pass.writes.first() {
+            Some(name) => name,
+            None => return Ok(None),
+        };
+
+        let transient = self
+            .graph
+            .transient_texture(color_name, self.current_frame())
+            .ok_or_else(|| {
+                RenderGraphError::ResourceNotFound(format!(
+                    "Color target '{}' not found. Use 'backbuffer' for swapchain or create a transient resource.",
+                    color_name
+                ))
+            })?;
+
+        let (load_op, store_op, clear_value) = pass
+            .color_attachments
+            .iter()
+            .find(|(name, ..)| name == color_name)
+            .map(|(_, _, load_op, store_op, clear_value)| {
+                (
+                    match load_op {
+                        LoadOp::Load => vk::AttachmentLoadOp::LOAD,
+                        LoadOp::Clear => vk::AttachmentLoadOp::CLEAR,
+                        LoadOp::DontCare => vk::AttachmentLoadOp::NONE_EXT,
+                    },
+                    match store_op {
+                        StoreOp::Store => vk::AttachmentStoreOp::STORE,
+                        StoreOp::DontCare => vk::AttachmentStoreOp::NONE_EXT,
+                    },
+                    match clear_value {
+                        ClearValue::Color(c) => vk::ClearColorValue { float32: *c },
+                        _ => vk::ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 1.0],
+                        },
+                    },
+                )
+            })
+            .unwrap_or((
+                vk::AttachmentLoadOp::CLEAR,
+                vk::AttachmentStoreOp::STORE,
+                vk::ClearColorValue {
+                    float32: [0.1, 0.1, 0.1, 1.0],
+                },
+            ));
+
+        Ok(Some(
+            vk::RenderingAttachmentInfo::default()
+                .image_view(transient.image_view.vk())
+                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .load_op(load_op)
+                .store_op(store_op)
+                .clear_value(vk::ClearValue { color: clear_value }),
+        ))
+    }
+
     /// Execute all passes in order.
     pub(super) fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
         self.particle_emit_ran = false;
@@ -199,12 +294,13 @@ impl<'a> Frame<'a> {
         // Clone the command buffer to avoid borrowing issues
         let cmd = self.renderer.frame_context.command_buffers[frame_idx].clone();
 
-        // === Execute all passes in order ===
-        // Compute passes must be placed before graphics passes when building the frame
-        // graph, since Vulkan doesn't allow compute dispatches inside a render pass.
-        // The particle render pass (inline after geometry) reads compute output, so
-        // particle compute passes are inserted at position 0 during frame graph setup.
-        for (index, pass) in self.graph.passes.iter().enumerate() {
+        // === Execute all passes in topologically sorted order ===
+        // The execution plan from the graph compiler ensures dependencies
+        // execute before the passes that read from them.
+        let execution_order = self.graph.execution_order();
+
+        for index in execution_order {
+            let pass = &self.graph.passes[index];
             let data = self.pending.remove(&index).unwrap_or_default();
 
             if pass.name == "ui" {
@@ -237,7 +333,7 @@ impl<'a> Frame<'a> {
             // CRITICAL: Track backbuffer state BEFORE pass execution
             // This allows subsequent passes that write to backbuffer to use LOAD instead of CLEAR
             // For example: compositing pass writes to backbuffer, then UI pass should LOAD that content
-            if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
+            if pass.writes_to(BACKBUFFER_NAME) {
                 log::trace!(
                     "Pass '{}' will write to backbuffer, tracking state BEFORE execution",
                     pass.name
@@ -258,73 +354,69 @@ impl<'a> Frame<'a> {
 
             match pass.pass_type {
                 super::pass::PassType::Graphics => {
-                    // Check if this is a shadow pass (no material, no pipeline, no color writes,
-                    // but has depth writes via transient resources)
-                    if pass.material.is_none()
-                        && pass.pipeline.is_none()
-                        && pass.writes.iter().any(|w| {
-                            self.graph
-                                .transient_texture(w, self.current_frame())
-                                .map(|t| t.format == vk::Format::D32_SFLOAT)
-                                .unwrap_or(false)
-                        })
-                    {
-                        log::trace!("'{}' -> shadow pass (no-op, clearing atlas)", pass.name);
-                        self.execute_shadow_pass(&cmd, pass)?;
-                    }
-                    // Check if this is a depth prepass (no material, no pipeline,
-                    // uses depth — may also write object IDs to a R32Uint texture)
-                    else if pass.material.is_none()
-                        && pass.pipeline.is_none()
-                        && pass.uses_depth
-                        && pass.name != "outline"
-                        && pass.name != "stencil_indicator"
-                    {
-                        log::trace!("'{}' -> depth prepass", pass.name);
-                        self.execute_depth_prepass(&cmd, pass, data)?;
-                    }
-                    // Outline pass: stencil-based selection highlight
-                    // Uses depth (LoadOp::Load from prepass) and writes to hdr_color
-                    else if pass.name == "outline" {
-                        log::trace!("'{}' -> outline pass", pass.name);
-                        self.execute_outline_pass(&cmd, pass, data)?;
-                    }
-                    // Stencil indicator pass: writes R8 mask where stencil==2
-                    else if pass.name == "stencil_indicator" {
-                        log::trace!("'{}' -> stencil indicator pass", pass.name);
-                        self.execute_stencil_indicator_pass(&cmd, pass, data)?;
-                    }
-                    // Check if this is a compositing pass (has material AND compositing_viewports)
-                    else if let Some(material_handle) = pass.material {
-                        if pass.compositing_viewports.is_some() && data.draw_lists.is_empty() {
-                            log::trace!("'{}' -> compositing pass", pass.name);
-                            self.execute_compositing_pass(&cmd, pass, material_handle)?;
-                        } else {
-                            // Pass has material but is NOT compositing (e.g., UI pass)
-                            // Fall through to graphics pass execution
-                            log::trace!(
-                                "'{}' -> graphics pass with material (draw_lists={}, ui_draw_lists={})",
-                                pass.name,
-                                data.draw_lists.len(),
-                                data.ui_draw_lists.len()
-                            );
-                            self.execute_graphics_pass(&cmd, pass, data)?;
+                    match pass.kind {
+                        Some(super::pass::PassKind::Shadow) => {
+                            log::trace!("'{}' -> shadow pass", pass.name);
+                            self.execute_shadow_pass(&cmd, pass)?;
                         }
-                    }
-                    // Check if this is a fullscreen pass (has pipeline, no draw lists)
-                    else if pass.pipeline.is_some() && data.draw_lists.is_empty() {
-                        log::trace!("'{}' -> fullscreen pass", pass.name);
-                        if let Some(pipeline) = pass.pipeline {
-                            self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
+                        Some(super::pass::PassKind::DepthPrepass) => {
+                            log::trace!("'{}' -> depth prepass", pass.name);
+                            self.execute_depth_prepass(&cmd, pass, data)?;
                         }
-                    } else {
-                        log::trace!(
-                            "'{}' -> graphics pass (draw_lists={}, ui_draw_lists={})",
-                            pass.name,
-                            data.draw_lists.len(),
-                            data.ui_draw_lists.len()
-                        );
-                        self.execute_graphics_pass(&cmd, pass, data)?;
+                        Some(super::pass::PassKind::Outline) => {
+                            log::trace!("'{}' -> outline pass", pass.name);
+                            self.execute_outline_pass(&cmd, pass, data)?;
+                        }
+                        Some(super::pass::PassKind::StencilIndicator) => {
+                            log::trace!("'{}' -> stencil indicator pass", pass.name);
+                            self.execute_stencil_indicator_pass(&cmd, pass, data)?;
+                        }
+                        Some(super::pass::PassKind::Compositing) => {
+                            if let Some(material_handle) = pass.material {
+                                log::trace!("'{}' -> compositing pass", pass.name);
+                                self.execute_compositing_pass(&cmd, pass, material_handle)?;
+                            } else {
+                                log::warn!("Compositing pass '{}' has no material", pass.name);
+                            }
+                        }
+                        Some(super::pass::PassKind::Fullscreen) => {
+                            log::trace!("'{}' -> fullscreen pass", pass.name);
+                            if let Some(pipeline) = pass.pipeline {
+                                self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
+                            }
+                        }
+                        Some(super::pass::PassKind::Geometry) | None => {
+                            // Geometry pass or pass without explicit kind — use heuristics
+                            if let Some(material_handle) = pass.material {
+                                if pass.compositing_viewports.is_some()
+                                    && data.draw_lists.is_empty()
+                                {
+                                    log::trace!("'{}' -> compositing pass (heuristic)", pass.name);
+                                    self.execute_compositing_pass(&cmd, pass, material_handle)?;
+                                } else {
+                                    log::trace!(
+                                        "'{}' -> graphics pass with material (draw_lists={}, ui_draw_lists={})",
+                                        pass.name,
+                                        data.draw_lists.len(),
+                                        data.ui_draw_lists.len()
+                                    );
+                                    self.execute_graphics_pass(&cmd, pass, data)?;
+                                }
+                            } else if pass.pipeline.is_some() && data.draw_lists.is_empty() {
+                                log::trace!("'{}' -> fullscreen pass (heuristic)", pass.name);
+                                if let Some(pipeline) = pass.pipeline {
+                                    self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
+                                }
+                            } else {
+                                log::trace!(
+                                    "'{}' -> graphics pass (draw_lists={}, ui_draw_lists={})",
+                                    pass.name,
+                                    data.draw_lists.len(),
+                                    data.ui_draw_lists.len()
+                                );
+                                self.execute_graphics_pass(&cmd, pass, data)?;
+                            }
+                        }
                     }
                 }
                 super::pass::PassType::Compute => {

@@ -32,7 +32,7 @@ use super::pass::PassDesc;
 /// - Resource state tracking info
 #[derive(Debug, Clone)]
 pub struct ExecutionPlan {
-    sorted_passes: Vec<usize>,
+    pub(super) sorted_passes: Vec<usize>,
 }
 
 impl ExecutionPlan {
