@@ -100,7 +100,7 @@ pub struct DraggablePanel;
 impl DraggablePanel {
     const TITLE_BAR_HEIGHT: f32 = 32.0;
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, unused_variables)]
     pub fn begin(
         ui: &mut UiContext,
         id: &str,
@@ -217,11 +217,7 @@ impl DraggablePanel {
             Vec2::new(close_size, close_size),
         );
         let close_clicked = ui
-            .add(
-                Button::new("\u{00d7}")
-                    .bounds(close_bounds)
-                    .id(&format!("close_{}", id)),
-            )
+            .add(Button::new("\u{00d7}").bounds(close_bounds).id("\x00close"))
             .clicked;
 
         // Click-outside detection

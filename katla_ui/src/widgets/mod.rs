@@ -109,15 +109,15 @@ impl<'a> Button<'a> {
 
     /// Set the button width.
     pub fn width(mut self, width: f32) -> Self {
-        let height = self.bounds.height();
-        self.bounds = Rect2D::from_size(Vec2::new(width, height));
+        self.bounds =
+            Rect2D::from_origin_size(self.bounds.min, Vec2::new(width, self.bounds.height()));
         self
     }
 
     /// Set the button height.
     pub fn height(mut self, height: f32) -> Self {
-        let width = self.bounds.width();
-        self.bounds = Rect2D::from_size(Vec2::new(width, height));
+        self.bounds =
+            Rect2D::from_origin_size(self.bounds.min, Vec2::new(self.bounds.width(), height));
         self
     }
 
@@ -280,6 +280,89 @@ impl<'a> crate::Widget for Checkbox<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
         let id = self.id.unwrap_or(self.label);
         ui.checkbox(id, self.label, self.checked, self.bounds)
+    }
+}
+
+// =============================================================================
+// ToggleButton Widget
+// =============================================================================
+
+/// A toggle button with a check icon when enabled.
+///
+/// Similar to a checkbox but styled as a full-width button, useful for
+/// settings panels and preference toggles.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::ToggleButton;
+///
+/// if ui.add(ToggleButton::new(true, "Feature").bounds(my_bounds)).clicked {
+///     println!("Toggled!");
+/// }
+/// ```
+pub struct ToggleButton<'a> {
+    checked: bool,
+    label: &'a str,
+    bounds: Rect2D,
+    id: Option<&'a str>,
+    checked_color: Option<Color>,
+    unchecked_color: Option<Color>,
+}
+
+impl<'a> ToggleButton<'a> {
+    /// Create a new toggle button.
+    pub fn new(checked: bool, label: &'a str) -> Self {
+        Self {
+            checked,
+            label,
+            bounds: Rect2D::from_size(Vec2::new(150.0, 24.0)),
+            id: None,
+            checked_color: None,
+            unchecked_color: None,
+        }
+    }
+
+    /// Set the button bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set a custom ID.
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Set the checked (on) background color.
+    pub fn checked_color(mut self, color: Color) -> Self {
+        self.checked_color = Some(color);
+        self
+    }
+
+    /// Set the unchecked (off) background color.
+    pub fn unchecked_color(mut self, color: Color) -> Self {
+        self.unchecked_color = Some(color);
+        self
+    }
+}
+
+impl<'a> crate::Widget for ToggleButton<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let id = self.id.unwrap_or(self.label);
+        let checked_color = self.checked_color.unwrap_or(ui.style.selectable_selected);
+        let unchecked_color = self.unchecked_color.unwrap_or(ui.style.menu_bg);
+        let text_color = ui.style.button_text;
+        ui.toggle_button(
+            id,
+            self.label,
+            self.checked,
+            self.bounds,
+            checked_color,
+            unchecked_color,
+            text_color,
+        )
     }
 }
 

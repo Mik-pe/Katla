@@ -47,7 +47,7 @@ use std::collections::{HashMap, HashSet};
 /// ```
 pub struct SparseSet<K, V>
 where
-    K: std::hash::Hash + Eq + Copy + Clone,
+    K: std::hash::Hash + Eq + Copy,
 {
     /// Dense array storing (Key, Value) pairs contiguously
     dense: Vec<(K, V)>,
@@ -58,7 +58,7 @@ where
 
 impl<K, V> SparseSet<K, V>
 where
-    K: std::hash::Hash + Eq + Copy + Clone,
+    K: std::hash::Hash + Eq + Copy,
 {
     /// Creates a new empty SparseSet.
     pub fn new() -> Self {
@@ -196,7 +196,7 @@ where
 
 impl<K, V> Default for SparseSet<K, V>
 where
-    K: std::hash::Hash + Eq + Copy + Clone,
+    K: std::hash::Hash + Eq + Copy,
 {
     fn default() -> Self {
         Self::new()

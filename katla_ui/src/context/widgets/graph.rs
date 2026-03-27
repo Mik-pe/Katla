@@ -10,13 +10,11 @@ use super::super::{GraphOptions, UiContext};
 impl UiContext {
     pub fn graph(
         &mut self,
-        id: &str,
         label: Option<&str>,
         values: &[f32],
         bounds: Rect2D,
         options: Option<GraphOptions>,
     ) {
-        let _ = id; // ID reserved for future interactivity
         let opts = options.unwrap_or_default();
 
         // Handle empty values case

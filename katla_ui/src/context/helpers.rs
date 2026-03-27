@@ -51,13 +51,6 @@ impl UiContext {
         self.text_label_colored(text, self.style.text_color);
     }
 
-    /// Display a text label at the cursor position with the default text color.
-    ///
-    /// Alias for `label()`.
-    pub fn text_label(&mut self, text: &str) {
-        self.label(text);
-    }
-
     /// Display a text label at the cursor position with custom color.
     ///
     /// Draws text with the specified color and advances the cursor automatically.
