@@ -179,5 +179,3 @@ impl ClipRect {
         }
     }
 }
-
-

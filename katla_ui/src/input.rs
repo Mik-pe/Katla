@@ -216,6 +216,7 @@ impl UiInputState {
         self.keys_released.clear();
         self.want_capture_mouse = false;
         self.want_capture_keyboard = false;
+        self.any_key_down = false;
         self.cursor = MouseCursor::Arrow;
     }
 
@@ -441,31 +442,55 @@ mod tests {
         // Test all four edges (inclusive boundary check)
         // Top-left corner
         state.set_mouse_pos(Vec2::new(10.0, 10.0));
-        assert!(state.is_hovered(rect), "Top-left corner should be hovered (inclusive)");
+        assert!(
+            state.is_hovered(rect),
+            "Top-left corner should be hovered (inclusive)"
+        );
 
         // Top-right corner
         state.set_mouse_pos(Vec2::new(110.0, 10.0));
-        assert!(state.is_hovered(rect), "Top-right corner should be hovered (inclusive)");
+        assert!(
+            state.is_hovered(rect),
+            "Top-right corner should be hovered (inclusive)"
+        );
 
         // Bottom-left corner
         state.set_mouse_pos(Vec2::new(10.0, 60.0));
-        assert!(state.is_hovered(rect), "Bottom-left corner should be hovered (inclusive)");
+        assert!(
+            state.is_hovered(rect),
+            "Bottom-left corner should be hovered (inclusive)"
+        );
 
         // Bottom-right corner
         state.set_mouse_pos(Vec2::new(110.0, 60.0));
-        assert!(state.is_hovered(rect), "Bottom-right corner should be hovered (inclusive)");
+        assert!(
+            state.is_hovered(rect),
+            "Bottom-right corner should be hovered (inclusive)"
+        );
 
         // Just outside each edge
         state.set_mouse_pos(Vec2::new(9.999, 30.0));
-        assert!(!state.is_hovered(rect), "Just left of left edge should not be hovered");
+        assert!(
+            !state.is_hovered(rect),
+            "Just left of left edge should not be hovered"
+        );
 
         state.set_mouse_pos(Vec2::new(110.001, 30.0));
-        assert!(!state.is_hovered(rect), "Just right of right edge should not be hovered");
+        assert!(
+            !state.is_hovered(rect),
+            "Just right of right edge should not be hovered"
+        );
 
         state.set_mouse_pos(Vec2::new(60.0, 9.999));
-        assert!(!state.is_hovered(rect), "Just above top edge should not be hovered");
+        assert!(
+            !state.is_hovered(rect),
+            "Just above top edge should not be hovered"
+        );
 
         state.set_mouse_pos(Vec2::new(60.0, 60.001));
-        assert!(!state.is_hovered(rect), "Just below bottom edge should not be hovered");
+        assert!(
+            !state.is_hovered(rect),
+            "Just below bottom edge should not be hovered"
+        );
     }
 }
