@@ -341,10 +341,9 @@ impl DrawList {
         self.pending_batches.sort_by_key(|b| b.z_index);
 
         // Convert to GPU commands
-        self.commands = self
-            .pending_batches
-            .iter()
-            .map(|batch| {
+        self.commands.clear();
+        self.commands
+            .extend(self.pending_batches.iter().map(|batch| {
                 let clip_rect = if batch.clip_rect.min.x() < f32::MAX / 2.0 {
                     Some(ClipRect::from_rect(&batch.clip_rect).to_array())
                 } else {
@@ -356,8 +355,7 @@ impl DrawList {
                     clip_rect,
                     batch.texture,
                 )
-            })
-            .collect();
+            }));
     }
 
     /// Check if the draw list is empty.
