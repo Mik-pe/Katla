@@ -1345,7 +1345,21 @@ impl Application {
         let cube_mesh = self.renderer.create_cube_mesh([1.0, 1.0, 1.0]);
         let ring_mesh = self.renderer.create_torus_mesh(0.5, 0.02, 48, 24);
 
-        let material = self.default_material_handle;
+        let unlit_shader_path = self.resources.shader_path("unlit.wgsl");
+        let material = self
+            .renderer
+            .compile_material(
+                &unlit_shader_path,
+                katla_gfx::MaterialOptions {
+                    vertex_type: katla_gfx::VertexType::Pbr,
+                    color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
+                    depth_test: false,
+                    ..Default::default()
+                },
+            )
+            .expect("Failed to create gizmo unlit material");
+
+        self.gpu_resource_tracker.set_protected_material(material);
 
         self.gizmo_resources = GizmoResources {
             shaft_mesh,
