@@ -24,7 +24,7 @@ impl<'a> Frame<'a> {
             extent,
         };
 
-        log::trace!(
+        log::debug!(
             "[OBJECT_ID] frame_idx={}, draw_lists={}",
             frame_idx,
             data.draw_lists.len()

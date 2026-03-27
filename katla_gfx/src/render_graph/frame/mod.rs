@@ -2,6 +2,7 @@ mod barriers;
 mod compositing;
 mod depth_prepass;
 mod draw_calls;
+mod draw_helpers;
 mod graphics_pass;
 mod outline_pass;
 mod particle_rendering;
@@ -9,6 +10,7 @@ mod shadow_pass;
 mod ui_rendering;
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use super::error::RenderGraphError;
 use super::frame_graph::{BACKBUFFER_NAME, FrameGraph};
@@ -40,8 +42,8 @@ pub struct Frame<'a> {
 /// Data for a single pass execution.
 #[derive(Default, Clone)]
 pub(super) struct PassExecutionData {
-    /// Draw lists to render in this pass.
-    draw_lists: Vec<DrawList>,
+    /// Draw lists to render in this pass (shared via Rc to avoid cloning).
+    draw_lists: Vec<Rc<DrawList>>,
 
     /// UI draw lists to render in this pass.
     ui_draw_lists: Vec<UIDrawList>,
@@ -122,7 +124,7 @@ impl<'a> Frame<'a> {
             .entry(index)
             .or_default()
             .draw_lists
-            .push(draw_list.clone());
+            .push(Rc::new(draw_list.clone()));
         self
     }
 
@@ -140,7 +142,7 @@ impl<'a> Frame<'a> {
             .ui_draw_lists
             .push(ui_draw_list.clone());
 
-        log::trace!(
+        log::debug!(
             "submit_ui: pass='{}', index={}, commands={}, pending UI lists now={}",
             pass,
             index,
@@ -275,162 +277,66 @@ impl<'a> Frame<'a> {
     pub(super) fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
         self.particle_emit_ran = false;
 
-        // Use storage_manager.current_frame() consistently for all frame resource selection
         let frame_idx = self.current_frame();
-        log::trace!(
-            "=== execute_passes: frame_idx={}, {} passes to execute ===",
-            frame_idx,
-            self.graph.passes.len()
-        );
-        for (idx, pass) in self.graph.passes.iter().enumerate() {
-            log::trace!(
-                "  Pass {}: '{}' (type={:?})",
-                idx,
-                pass.name,
-                pass.pass_type
-            );
-        }
-
-        // Clone the command buffer to avoid borrowing issues
         let cmd = self.renderer.frame_context.command_buffers[frame_idx].clone();
-
-        // === Execute all passes in topologically sorted order ===
-        // The execution plan from the graph compiler ensures dependencies
-        // execute before the passes that read from them.
         let execution_order = self.graph.execution_order();
 
         for index in execution_order {
             let pass = &self.graph.passes[index];
             let data = self.pending.remove(&index).unwrap_or_default();
 
-            if pass.name == "ui" {
-                log::trace!(
-                    "UI pass execution: index={}, frame_idx={}, ui_draw_lists={}, commands={}",
-                    index,
-                    self.current_frame(),
-                    data.ui_draw_lists.len(),
-                    data.ui_draw_lists
-                        .iter()
-                        .map(|l| l.commands.len())
-                        .sum::<usize>()
-                );
-            }
-
-            log::trace!(
-                "Executing pass '{}' (index {}): pipeline={:?}, draw_lists={}, writes={:?}",
-                pass.name,
-                index,
-                pass.pipeline,
-                data.draw_lists.len(),
-                pass.writes
-            );
-
-            // Track which writes happened this frame (for debugging black screen issues)
-            if !pass.writes.is_empty() {
-                log::trace!("Pass '{}' writes to: {:?}", pass.name, pass.writes);
-            }
-
-            // CRITICAL: Track backbuffer state BEFORE pass execution
-            // This allows subsequent passes that write to backbuffer to use LOAD instead of CLEAR
-            // For example: compositing pass writes to backbuffer, then UI pass should LOAD that content
             if pass.writes_to(BACKBUFFER_NAME) {
-                log::trace!(
-                    "Pass '{}' will write to backbuffer, tracking state BEFORE execution",
-                    pass.name
-                );
-                log::trace!(
-                    "Current resource_states: {:?}",
-                    self.resource_states.keys().collect::<Vec<_>>()
-                );
                 self.resource_states
                     .insert(BACKBUFFER_NAME.to_string(), ResourceState::ColorAttachment);
-                log::trace!(
-                    "After tracking, resource_states: {:?}",
-                    self.resource_states.keys().collect::<Vec<_>>()
-                );
             }
 
             self.insert_barriers(&cmd, index)?;
 
             match pass.pass_type {
-                super::pass::PassType::Graphics => {
-                    match pass.kind {
-                        Some(super::pass::PassKind::Shadow) => {
-                            log::trace!("'{}' -> shadow pass", pass.name);
-                            self.execute_shadow_pass(&cmd, pass)?;
+                super::pass::PassType::Graphics => match pass.kind {
+                    Some(super::pass::PassKind::Shadow) => {
+                        self.execute_shadow_pass(&cmd, pass)?;
+                    }
+                    Some(super::pass::PassKind::DepthPrepass) => {
+                        self.execute_depth_prepass(&cmd, pass, data)?;
+                    }
+                    Some(super::pass::PassKind::Outline) => {
+                        self.execute_outline_pass(&cmd, pass, data)?;
+                    }
+                    Some(super::pass::PassKind::StencilIndicator) => {
+                        self.execute_stencil_indicator_pass(&cmd, pass, data)?;
+                    }
+                    Some(super::pass::PassKind::Compositing) => {
+                        if let Some(material_handle) = pass.material {
+                            self.execute_compositing_pass(&cmd, pass, material_handle)?;
+                        } else {
+                            log::warn!("Compositing pass '{}' has no material", pass.name);
                         }
-                        Some(super::pass::PassKind::DepthPrepass) => {
-                            log::trace!("'{}' -> depth prepass", pass.name);
-                            self.execute_depth_prepass(&cmd, pass, data)?;
+                    }
+                    Some(super::pass::PassKind::Fullscreen) => {
+                        if let Some(pipeline) = pass.pipeline {
+                            self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
                         }
-                        Some(super::pass::PassKind::Outline) => {
-                            log::trace!("'{}' -> outline pass", pass.name);
-                            self.execute_outline_pass(&cmd, pass, data)?;
-                        }
-                        Some(super::pass::PassKind::StencilIndicator) => {
-                            log::trace!("'{}' -> stencil indicator pass", pass.name);
-                            self.execute_stencil_indicator_pass(&cmd, pass, data)?;
-                        }
-                        Some(super::pass::PassKind::Compositing) => {
-                            if let Some(material_handle) = pass.material {
-                                log::trace!("'{}' -> compositing pass", pass.name);
+                    }
+                    Some(super::pass::PassKind::Geometry) | None => {
+                        if let Some(material_handle) = pass.material {
+                            if pass.compositing_viewports.is_some() && data.draw_lists.is_empty() {
                                 self.execute_compositing_pass(&cmd, pass, material_handle)?;
                             } else {
-                                log::warn!("Compositing pass '{}' has no material", pass.name);
+                                self.execute_graphics_pass(&cmd, pass, data)?;
                             }
-                        }
-                        Some(super::pass::PassKind::Fullscreen) => {
-                            log::trace!("'{}' -> fullscreen pass", pass.name);
+                        } else if pass.pipeline.is_some() && data.draw_lists.is_empty() {
                             if let Some(pipeline) = pass.pipeline {
                                 self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
                             }
-                        }
-                        Some(super::pass::PassKind::Geometry) | None => {
-                            // Geometry pass or pass without explicit kind — use heuristics
-                            if let Some(material_handle) = pass.material {
-                                if pass.compositing_viewports.is_some()
-                                    && data.draw_lists.is_empty()
-                                {
-                                    log::trace!("'{}' -> compositing pass (heuristic)", pass.name);
-                                    self.execute_compositing_pass(&cmd, pass, material_handle)?;
-                                } else {
-                                    log::trace!(
-                                        "'{}' -> graphics pass with material (draw_lists={}, ui_draw_lists={})",
-                                        pass.name,
-                                        data.draw_lists.len(),
-                                        data.ui_draw_lists.len()
-                                    );
-                                    self.execute_graphics_pass(&cmd, pass, data)?;
-                                }
-                            } else if pass.pipeline.is_some() && data.draw_lists.is_empty() {
-                                log::trace!("'{}' -> fullscreen pass (heuristic)", pass.name);
-                                if let Some(pipeline) = pass.pipeline {
-                                    self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
-                                }
-                            } else {
-                                log::trace!(
-                                    "'{}' -> graphics pass (draw_lists={}, ui_draw_lists={})",
-                                    pass.name,
-                                    data.draw_lists.len(),
-                                    data.ui_draw_lists.len()
-                                );
-                                self.execute_graphics_pass(&cmd, pass, data)?;
-                            }
+                        } else {
+                            self.execute_graphics_pass(&cmd, pass, data)?;
                         }
                     }
-                }
+                },
                 super::pass::PassType::Compute => {
-                    // Compute pass (e.g., particle simulation, light culling)
-                    log::trace!("'{}' -> compute pass", pass.name);
                     if let Some(ref compute_fn) = pass.compute_fn {
-                        // Custom compute dispatch via closure (e.g., light culling)
-                        // The closure handles pipeline binding and dispatch internally
-                        compute_fn(
-                            self,
-                            &cmd,
-                            pass.pipeline
-                                .unwrap_or(crate::handle::PipelineHandle::default()),
-                        )?;
+                        compute_fn(self, &cmd, pass.pipeline.unwrap_or_default())?;
                     } else if let Some(pipeline) = pass.pipeline {
                         self.execute_compute_pass(&cmd, pass, pipeline)?;
                     } else {
@@ -442,17 +348,12 @@ impl<'a> Frame<'a> {
                 }
             }
 
-            // Insert post-pass barriers for transient textures that will be read by subsequent passes
-            // This ensures proper synchronization between write and read operations
             self.insert_post_pass_barriers(&cmd, index)?;
 
-            // Track depth buffer writes for synchronization with subsequent passes
             if pass.uses_depth {
                 self.depth_buffer_written = true;
             }
 
-            // Render particles after geometry pass (before tonemap, so they get tonemapped
-            // and depth-tested against the scene geometry)
             if pass.name == "geometry"
                 && let Some(ref particle_system) = self.renderer.particle_system
                 && particle_system.alive_count() > 0

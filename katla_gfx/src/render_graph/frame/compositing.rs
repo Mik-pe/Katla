@@ -32,7 +32,7 @@ impl<'a> Frame<'a> {
                     "Compositing pass missing viewport data".to_string(),
                 ))?;
 
-        log::trace!(
+        log::debug!(
             "[COMPOSITING] Pass '{}' execution: frame_idx={}, viewport_count={}, writes={:?}",
             pass.name,
             current_frame,
@@ -220,7 +220,7 @@ impl<'a> Frame<'a> {
                     ))
                 })?;
 
-            log::trace!(
+            log::debug!(
                 "[COMPOSITING] Looking up viewport texture: '{}' (handle={})",
                 resource_name,
                 handle.index()
@@ -241,7 +241,7 @@ impl<'a> Frame<'a> {
                     ))
                 })?;
 
-            log::trace!(
+            log::debug!(
                 "[COMPOSITING] Found viewport texture '{}': format={:?}, extent={}x{}",
                 resource_name,
                 transient.format,

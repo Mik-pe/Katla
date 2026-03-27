@@ -12,7 +12,7 @@ impl<'a> Frame<'a> {
         pass: &PassDesc,
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        log::trace!(
+        log::debug!(
             "[GRAPHICS] PASS '{}' with frame_idx={}, draw_lists={}, ui_draw_lists={}",
             pass.name,
             self.current_frame(),
@@ -76,7 +76,7 @@ impl<'a> Frame<'a> {
         pipeline_handle: crate::handle::PipelineHandle,
     ) -> Result<(), RenderGraphError> {
         let current_frame = self.current_frame();
-        log::trace!(
+        log::debug!(
             "[FULLSCREEN] Pass '{}' execution: frame_idx={}, writes={:?}, reads={:?}",
             pass.name,
             current_frame,

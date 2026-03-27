@@ -188,7 +188,7 @@ impl<'a> Frame<'a> {
                         RenderGraphError::VulkanError(format!("Particle render failed: {}", e))
                     })?;
 
-                log::trace!("Drew {} particles successfully", alive_count);
+                log::debug!("Drew {} particles successfully", alive_count);
             } else {
                 log::warn!("Particle render pipeline not created, skipping particle rendering");
             }
@@ -244,7 +244,7 @@ impl<'a> Frame<'a> {
         pipeline_handle: crate::handle::PipelineHandle,
     ) -> Result<(), RenderGraphError> {
         let current_frame = self.current_frame();
-        log::trace!(
+        log::debug!(
             "[COMPUTE] Pass '{}' execution: frame_idx={}, pipeline={:?}",
             pass.name,
             current_frame,
@@ -291,7 +291,7 @@ impl<'a> Frame<'a> {
             device.cmd_dispatch(cmd.vk_command_buffer(), x, y, z);
         }
 
-        log::trace!(
+        log::debug!(
             "Compute pass '{}' dispatched ({}, {}, {})",
             pass.name,
             x,

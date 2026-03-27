@@ -21,7 +21,7 @@ impl<'a> Frame<'a> {
             return Ok(());
         };
 
-        log::trace!(
+        log::debug!(
             "[BARRIER] Pre-pass barriers for '{}': reads={:?}, writes={:?}",
             pass.name,
             pass.reads,
@@ -42,7 +42,7 @@ impl<'a> Frame<'a> {
                 .depth_render_textures
                 .get(frame_idx)
             {
-                log::trace!(
+                log::debug!(
                     "[BARRIER] Depth render-pass sync before '{}' (previous pass wrote depth)",
                     pass.name
                 );
@@ -88,7 +88,7 @@ impl<'a> Frame<'a> {
                 // This persists across frames via RefCell
                 let old_layout = transient.current_layout();
 
-                log::trace!(
+                log::debug!(
                     "[Barrier] Pass '{}' write '{}': {:?} -> {:?}",
                     pass.name,
                     write_name,
@@ -142,7 +142,7 @@ impl<'a> Frame<'a> {
                 continue;
             };
 
-            log::trace!(
+            log::debug!(
                 "[BARRIER] Pass '{}' reading transient texture '{}': current_layout={:?}, format={:?}",
                 pass.name,
                 read_name,
@@ -165,7 +165,7 @@ impl<'a> Frame<'a> {
                 // This persists across frames via RefCell
                 let old_layout = transient.current_layout();
 
-                log::trace!(
+                log::debug!(
                     "[BARRIER] Pass '{}' transitioning '{}' from {:?} to {:?}",
                     pass.name,
                     read_name,
@@ -270,7 +270,7 @@ impl<'a> Frame<'a> {
             if needs_transition {
                 let old_layout = transient.current_layout();
 
-                log::trace!(
+                log::debug!(
                     "[PostBarrier] Pass '{}' -> next read '{}': {:?} -> SHADER_READ_ONLY",
                     current_pass.name,
                     write_name,

@@ -1,9 +1,11 @@
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
+use crate::render_graph::frame::draw_helpers::{
+    DescriptorConfig, DrawParams, draw_meshes_with_skinning,
+};
 use crate::render_graph::pass::PassDesc;
 use crate::render_graph::resource::ResourceState;
 use crate::vulkan::commandbuffer::CommandBuffer;
-use crate::vulkan::vertex_attribute::AttributeType;
 use ash::vk;
 
 impl<'a> Frame<'a> {
@@ -18,7 +20,7 @@ impl<'a> Frame<'a> {
     ) -> Result<(), RenderGraphError> {
         let frame_idx = self.current_frame();
 
-        log::trace!(
+        log::debug!(
             "[SHADOW] Pass '{}' execution: frame_idx={}, writes={:?}",
             pass.name,
             frame_idx,
@@ -74,35 +76,18 @@ impl<'a> Frame<'a> {
                 shadow_pipeline_handle,
             ))?;
 
-        unsafe {
-            self.renderer.context.device.cmd_bind_pipeline(
-                cmd.vk_command_buffer(),
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline,
-            );
-        }
+        let (skinned_pipeline, skinned_layout) =
+            if let Some(skinned_handle) = self.renderer.shadow_pipeline_skinned() {
+                self.renderer
+                    .asset_registry
+                    .get_pipeline_vk_handles(skinned_handle)
+                    .map(|(p, l)| (Some(p), Some(l)))
+                    .ok_or(RenderGraphError::InvalidPipelineHandle(skinned_handle))?
+            } else {
+                (None, None)
+            };
 
-        // Bind descriptor sets:
-        // Set 0: storage uniforms (frame_data + objects) — per-frame
-        // Set 2: shadow cascades — per-frame
-        let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
-
-        if let Some(cascade_ds) = self.renderer.shadow_cascade_descriptor_set() {
-            cmd.bind_descriptor_sets(layout, 2, &[cascade_ds], &[]);
-        }
-
-        // Render geometry for each cascade.
-        // Each cascade gets its own viewport region in the 2x2 atlas.
-        // Cascade index is passed via push constants to the shadow depth shader.
-        //
-        // Atlas layout (4096x4096):
-        //   cascade 0 (near)  -> top-left:     (0, half_h, half_w, half_h)
-        //   cascade 1         -> top-right:    (half_w, half_h, half_w, half_h)
-        //   cascade 2         -> bottom-left:  (0, 0, half_w, half_h)
-        //   cascade 3 (far)   -> bottom-right: (half_w, 0, half_w, half_h)
-        //
-        // Note: Vulkan viewport Y=0 is at the TOP of the image
+        // Viewport/scissor regions for each cascade in the 2x2 atlas
         let viewports = [
             vk::Viewport {
                 x: 0.0,
@@ -111,7 +96,7 @@ impl<'a> Frame<'a> {
                 height: half_h as f32,
                 min_depth: 0.0,
                 max_depth: 1.0,
-            }, // cascade 0 (top-left)
+            },
             vk::Viewport {
                 x: half_w as f32,
                 y: half_h as f32,
@@ -119,7 +104,7 @@ impl<'a> Frame<'a> {
                 height: half_h as f32,
                 min_depth: 0.0,
                 max_depth: 1.0,
-            }, // cascade 1 (top-right)
+            },
             vk::Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -127,7 +112,7 @@ impl<'a> Frame<'a> {
                 height: half_h as f32,
                 min_depth: 0.0,
                 max_depth: 1.0,
-            }, // cascade 2 (bottom-left)
+            },
             vk::Viewport {
                 x: half_w as f32,
                 y: 0.0,
@@ -135,7 +120,7 @@ impl<'a> Frame<'a> {
                 height: half_h as f32,
                 min_depth: 0.0,
                 max_depth: 1.0,
-            }, // cascade 3 (bottom-right)
+            },
         ];
 
         let scissors = [
@@ -178,9 +163,6 @@ impl<'a> Frame<'a> {
             },
         ];
 
-        // Render geometry for each cascade.
-        // Each cascade gets its own viewport region in the 2x2 atlas.
-        // Cascade index is passed via push constants to the shadow depth shader.
         let data = self
             .pending
             .remove(&self.graph.pass_index(&pass.name).unwrap_or(0))
@@ -202,6 +184,12 @@ impl<'a> Frame<'a> {
             .map(|csm| csm.params().depth_bias_slope)
             .unwrap_or(2.0);
 
+        // Build extra descriptor sets (shadow cascades at set 2)
+        let mut extra_sets = Vec::new();
+        if let Some(cascade_ds) = self.renderer.shadow_cascade_descriptor_set() {
+            extra_sets.push((2u32, cascade_ds));
+        }
+
         for cascade_idx in 0..num_cascades {
             let vp = viewports[cascade_idx as usize];
             let sc = scissors[cascade_idx as usize];
@@ -222,147 +210,21 @@ impl<'a> Frame<'a> {
             self.renderer
                 .set_shadow_cascade_params(cascade_idx, depth_bias);
 
-            // --- Non-skinned meshes (regular shadow pipeline) ---
-            for draw_list in &data.draw_lists {
-                for draw_call in &draw_list.draws {
-                    if !draw_call.skeleton.is_none() {
-                        continue;
-                    }
-
-                    let mesh = self
-                        .renderer
-                        .asset_registry
-                        .get_mesh(draw_call.mesh)
-                        .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
-
-                    // Shadow pipeline needs position(0) only
-                    let pos_buf = mesh
-                        .get_attribute_buffer(AttributeType::Position)
-                        .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null());
-                    cmd.bind_vertex_buffers_at_locations(&[(0, pos_buf)]);
-
-                    if let Some(ib) = &mesh.index_buffer {
-                        cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
-                    }
-
-                    let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
-
-                    unsafe {
-                        self.renderer.context.device.cmd_draw_indexed(
-                            cmd.vk_command_buffer(),
-                            index_count,
-                            1,
-                            0,
-                            0,
-                            draw_call.instance_index,
-                        );
-                    }
-                }
-            }
-
-            // --- Skinned meshes (skinned shadow pipeline) ---
-            if let Some(skinned_pipeline_handle) = self.renderer.shadow_pipeline_skinned() {
-                let (skinned_pipeline, skinned_layout) = self
-                    .renderer
-                    .asset_registry
-                    .get_pipeline_vk_handles(skinned_pipeline_handle)
-                    .ok_or(RenderGraphError::InvalidPipelineHandle(
-                        skinned_pipeline_handle,
-                    ))?;
-
-                unsafe {
-                    self.renderer.context.device.cmd_bind_pipeline(
-                        cmd.vk_command_buffer(),
-                        vk::PipelineBindPoint::GRAPHICS,
-                        skinned_pipeline,
-                    );
-                }
-
-                // Re-bind descriptor sets for the skinned pipeline layout:
-                // Set 0: storage uniforms (frame_data + objects)
-                // Set 2: shadow cascades
-                let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-                cmd.bind_descriptor_sets(skinned_layout, 0, &[storage_ds], &[]);
-
-                if let Some(cascade_ds) = self.renderer.shadow_cascade_descriptor_set() {
-                    cmd.bind_descriptor_sets(skinned_layout, 2, &[cascade_ds], &[]);
-                }
-
-                for draw_list in &data.draw_lists {
-                    for draw_call in &draw_list.draws {
-                        if draw_call.skeleton.is_none() {
-                            continue;
-                        }
-
-                        // Bind Set 3: skeleton joint matrices for this draw call
-                        let skeleton_ds = self
-                            .renderer
-                            .get_skeleton_descriptor(draw_call.skeleton)
-                            .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
-                        cmd.bind_descriptor_sets(skinned_layout, 3, &[skeleton_ds.vk_set()], &[]);
-
-                        let mesh = self
-                            .renderer
-                            .asset_registry
-                            .get_mesh(draw_call.mesh)
-                            .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
-
-                        // Skinned shadow pipeline needs position(0) + joint_indices(4) + joint_weights(5)
-                        let pos_buf = mesh
-                            .get_attribute_buffer(AttributeType::Position)
-                            .map(|vb| vb.object())
-                            .unwrap_or(vk::Buffer::null());
-                        let joints_buf = mesh
-                            .get_attribute_buffer(AttributeType::JointIndices)
-                            .map(|vb| vb.object())
-                            .unwrap_or(vk::Buffer::null());
-                        let weights_buf = mesh
-                            .get_attribute_buffer(AttributeType::JointWeights)
-                            .map(|vb| vb.object())
-                            .unwrap_or(vk::Buffer::null());
-                        cmd.bind_vertex_buffers_at_locations(&[
-                            (0, pos_buf),
-                            (4, joints_buf),
-                            (5, weights_buf),
-                        ]);
-
-                        if let Some(ib) = &mesh.index_buffer {
-                            cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
-                        }
-
-                        let index_count =
-                            mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
-
-                        unsafe {
-                            self.renderer.context.device.cmd_draw_indexed(
-                                cmd.vk_command_buffer(),
-                                index_count,
-                                1,
-                                0,
-                                0,
-                                draw_call.instance_index,
-                            );
-                        }
-                    }
-                }
-
-                // Switch back to the regular shadow pipeline for the next cascade iteration
-                unsafe {
-                    self.renderer.context.device.cmd_bind_pipeline(
-                        cmd.vk_command_buffer(),
-                        vk::PipelineBindPoint::GRAPHICS,
-                        pipeline,
-                    );
-                }
-
-                let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-                cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
-
-                if let Some(cascade_ds) = self.renderer.shadow_cascade_descriptor_set() {
-                    cmd.bind_descriptor_sets(layout, 2, &[cascade_ds], &[]);
-                }
-            }
+            draw_meshes_with_skinning(DrawParams {
+                cmd,
+                renderer: self.renderer,
+                draw_lists: &data.draw_lists,
+                pipeline,
+                layout,
+                skinned_pipeline,
+                skinned_layout,
+                frame_idx,
+                descriptors: DescriptorConfig {
+                    bind_textures: false,
+                    skeleton_set: 3,
+                    extra_sets: extra_sets.clone(),
+                },
+            })?;
         }
 
         cmd.end_rendering();
