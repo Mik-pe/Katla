@@ -25,10 +25,10 @@
 - [x] Validator slope_bias doesn't match production -- Validator now only uses `constant_bias` (`.x`), matching production. Slope bias is handled by Vulkan pipeline depth bias, not the shader.
 - [x] Cascade blending only tested in trivial case -- Added `test_shadow_asymmetric_blend` that renders a quad into cascade 0 only, creating shadowed/lit boundary and verifying blend zone produces ~0.5.
 - [x] Pancake projection never exercised in GPU tests -- Added `test_shadow_real_csm_matrices` that calls `CascadeShadowMap::update()` with a real camera and light to get actual VP matrices including pancake.
-- [ ] No edge-case cascade selection tests -- Missing: view_z exactly equal to split distance, view_z=0.0 (camera plane), view_z beyond last split, num_cascades=0. These are common failure modes in real scenes.
-- [ ] Validator uses textureLoad, not textureSampleCompare -- The production path uses 16-sample PCF Poisson disc via `textureSampleCompare`. The validator uses single-point `textureLoad`. While acceptable for validating depth comparison logic, the validator should explicitly document that PCF softness, comparison sampler behavior, and UV clamping at cascade boundaries are untested.
+- [x] No edge-case cascade selection tests -- Added `test_shadow_cascade_edge_cases` (view_z at split boundary, view_z=0, beyond last split, negative view_z) and `test_shadow_zero_cascades` (num_cascades=0 returns fully lit).
+- [x] Validator uses textureLoad, not textureSampleCompare -- Documented in shader header: PCF softness, comparison sampler edge cases, and UV clamping at cascade boundaries are explicitly listed as out-of-scope for the validator.
 - [x] No test for Vulkan pipeline depth bias -- Added `test_shadow_depth_bias_pipeline` that renders a quad at known depth and verifies both biased and unbiased sampling at the same projected depth.
-- [ ] `shadow_bias.z` (normal offset) is dead code -- Documented in production but never read by any shader. Either implement normal-offset bias in the shadow sampling shader or remove the field to avoid confusion.
+- [x] `shadow_bias.z` (normal offset) is dead code -- Clarified in production shader and Rust that .z is unused padding. GPU struct layout preserved for alignment.
 
 ## ECS Infrastructure
 

@@ -11,8 +11,11 @@
 //   - Comparison sampler behavior (LESS_OR_EQUAL) is emulated manually.
 //
 // These divergences are acceptable for validating the core depth comparison
-// and cascade selection logic, but PCF softness and comparison sampler edge
-// cases remain untested by this validator.
+// and cascade selection logic. The following production behaviors are NOT
+// tested by this validator and must be verified visually or with render tests:
+//   - PCF softness and Poisson disc sampling patterns
+//   - Comparison sampler edge cases (border color, addressing mode)
+//   - UV clamping at cascade boundaries under sub-texel offsets
 //
 // Entry point:
 //   cs_main - dispatches to sample_shadow_manual or sample_shadow_blended
