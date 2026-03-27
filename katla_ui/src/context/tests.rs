@@ -1010,7 +1010,8 @@ fn test_popup_blocks_click_underneath() {
     let mut button_clicked = false;
 
     let button_bounds = Rect2D::from_origin_size(Vec2::new(100.0, 100.0), Vec2::new(80.0, 30.0));
-    let popup_bounds_config = Rect2D::from_origin_size(Vec2::new(80.0, 80.0), Vec2::new(200.0, 200.0));
+    let popup_bounds_config =
+        Rect2D::from_origin_size(Vec2::new(80.0, 80.0), Vec2::new(200.0, 200.0));
 
     // popup_bounds covers the button_bounds, so the button is "underneath" the popup.
 

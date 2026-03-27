@@ -573,5 +573,3 @@ impl Default for UiStyle {
         Self::dark()
     }
 }
-
-
