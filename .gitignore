@@ -13,3 +13,4 @@ frames/
 *.exe
 *.dll
 .sisyphus
+.cargo/
