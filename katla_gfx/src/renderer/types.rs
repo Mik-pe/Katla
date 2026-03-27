@@ -349,23 +349,14 @@ impl DrawList {
     /// Sort by sort_key (useful for transparency, etc.).
     ///
     /// Draws without a sort key are sorted last.
+    /// Call `compute_sort_keys()` first for proper depth ordering.
     pub fn sort(&mut self) {
-        self.draws.sort_by_key(|d| d.sort_key.unwrap_or(u64::MAX));
-    }
-
-    /// Sort optimally for rendering performance.
-    ///
-    /// - Opaque objects: sorted by material (reduces state changes) then front-to-back (early-Z)
-    /// - Transparent objects: sorted back-to-front (correct blending)
-    ///
-    /// This requires sort keys to be computed first via `compute_sort_keys()`.
-    pub fn sort_optimal(&mut self) {
         self.draws.sort_by_key(|d| d.sort_key.unwrap_or(u64::MAX));
     }
 
     /// Compute sort keys for all draw calls based on camera distance.
     ///
-    /// Call this before `sort_optimal()` for proper depth ordering.
+    /// Call this before `sort()` for proper depth ordering.
     ///
     /// # Arguments
     /// * `camera_position` - Camera position in world space

@@ -19,5 +19,7 @@ pub enum Action {
 }
 
 impl Action {
+    /// Total number of action slots. Padded to 16 (2 spare) so the
+    /// `keyboard_keys` array in `InputState` stays power-of-two sized.
     pub const COUNT: usize = 16;
 }

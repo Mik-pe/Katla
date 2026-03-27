@@ -281,20 +281,41 @@ impl UiContext {
     ///
     /// This is useful for icon buttons where you want the icon centered.
     pub fn draw_icon_centered(&mut self, icon: char, bounds: Rect2D, size: f32, color: Color) {
-        // Get icon metrics to center it
         let prev_font = self.current_font;
         self.current_font = FontId::ICON;
 
+        let font_atlas = self.fonts.atlas_id();
+        let (floor_x, subpixel_bin) = SubpixelBin::new(bounds.center().x());
+        let baseline_y = (bounds.center().y() + self.font_ascent(size)).round();
+
         let mut buf = [0u8; 4];
         let icon_str = icon.encode_utf8(&mut buf);
-        let icon_size = self.measure_text(icon_str, size);
 
-        let pos = Vec2::new(
-            bounds.center().x() - icon_size.x() * 0.5,
-            bounds.center().y() - icon_size.y() * 0.5,
-        );
+        if let Some(glyph) =
+            self.fonts
+                .get_or_rasterize(FontId::ICON, icon, size, self.scale_factor, subpixel_bin)
+        {
+            if glyph.size.x() > 0.0 && glyph.size.y() > 0.0 {
+                let icon_center_x = floor_x as f32 + glyph.offset_x + glyph.size.x() * 0.5;
+                let icon_center_y = baseline_y - glyph.top_offset + glyph.size.y() * 0.5;
 
-        self.draw_text(icon_str, pos, color, size);
+                let draw_x = bounds.center().x() - icon_center_x + floor_x as f32 + glyph.offset_x;
+                let draw_y = bounds.center().y() - icon_center_y + baseline_y - glyph.top_offset;
+
+                let glyph_bounds = Rect2D::from_origin_size(Vec2::new(draw_x, draw_y), glyph.size);
+                self.draw_list.set_clip(self.clip_rect());
+                self.draw_list
+                    .add_textured_rect(glyph_bounds, glyph.uv_rect, color, font_atlas);
+            }
+        } else {
+            self.draw_text(
+                icon_str,
+                Vec2::new(bounds.min.x(), bounds.min.y()),
+                color,
+                size,
+            );
+        }
+
         self.current_font = prev_font;
     }
 
