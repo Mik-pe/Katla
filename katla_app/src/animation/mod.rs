@@ -36,6 +36,7 @@
 pub mod clips;
 pub mod components;
 pub mod gltf_loader;
+pub(crate) mod gpu_clip_loader;
 pub mod samplers;
 pub mod skin;
 pub mod systems;
@@ -51,7 +52,7 @@ pub use components::{
 };
 pub use samplers::{CachedSampler, Interpolation};
 pub use skin::{JointWeights, Skeleton, Skin};
-pub use systems::{AnimationUpdateSystem, MorphTargetSystem, SkeletalAnimationSystem};
+pub use systems::{AnimationUpdateSystem, MorphTargetSystem};
 
 use crate::util::gltf_parser::AttributeParser;
 use katla_ecs::World;
