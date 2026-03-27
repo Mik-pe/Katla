@@ -124,14 +124,13 @@ impl<'a> Frame<'a> {
         // Depth attachment (only for passes that use depth testing)
         // Use per-frame depth buffer to prevent data races when multiple frames
         // execute concurrently on the GPU (e.g., MAILBOX present mode).
-        let depth_attachment = if pass.uses_depth {
+        let (depth_attachment, stencil_attachment) = if pass.uses_depth {
             let frame_idx = self.current_frame();
-            let depth_view = self
+            let depth_texture = self
                 .renderer
                 .frame_context
                 .depth_render_textures
                 .get(frame_idx)
-                .map(|t| t.image_view.vk())
                 .expect("depth_render_textures must have an entry for current frame");
 
             let (load_op, store_op, clear_depth) = pass
@@ -149,27 +148,55 @@ impl<'a> Frame<'a> {
                     0.0,
                 ));
 
-            Some(
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(depth_view)
-                    .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                    .load_op(load_op)
-                    .store_op(store_op)
-                    .clear_value(vk::ClearValue {
-                        depth_stencil: vk::ClearDepthStencilValue {
-                            depth: clear_depth,
-                            stencil: 0,
-                        },
-                    }),
-            )
+            let depth_view = depth_texture.image_view.vk();
+            let depth = vk::RenderingAttachmentInfo::default()
+                .image_view(depth_view)
+                .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                .load_op(load_op)
+                .store_op(store_op)
+                .clear_value(vk::ClearValue {
+                    depth_stencil: vk::ClearDepthStencilValue {
+                        depth: clear_depth,
+                        stencil: 0,
+                    },
+                });
+
+            // Provide stencil attachment when the depth format has a stencil component.
+            // Without this, the stencil aspect becomes UNDEFINED after the render pass,
+            // which can cause issues with subsequent passes that use stencil (e.g., outline).
+            let stencil = if depth_texture.depth_stencil_image_view.is_some() {
+                Some(
+                    vk::RenderingAttachmentInfo::default()
+                        .image_view(
+                            depth_texture
+                                .depth_stencil_image_view
+                                .as_ref()
+                                .unwrap()
+                                .vk(),
+                        )
+                        .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                        .load_op(vk::AttachmentLoadOp::CLEAR)
+                        .store_op(vk::AttachmentStoreOp::DONT_CARE)
+                        .clear_value(vk::ClearValue {
+                            depth_stencil: vk::ClearDepthStencilValue {
+                                depth: 0.0,
+                                stencil: 0,
+                            },
+                        }),
+                )
+            } else {
+                None
+            };
+
+            (Some(depth), stencil)
         } else {
-            None
+            (None, None)
         };
 
         cmd.begin_rendering(
             &[color_attachment],
             depth_attachment.as_ref(),
-            None,
+            stencil_attachment.as_ref(),
             render_area,
             1,
         );

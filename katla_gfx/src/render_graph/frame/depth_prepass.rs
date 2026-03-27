@@ -45,30 +45,42 @@ impl<'a> Frame<'a> {
                             .map(|(_, _, load_op, store_op, clear_value)| {
                                 (
                                     match load_op {
-                                        crate::render_pass::LoadOp::Load => vk::AttachmentLoadOp::LOAD,
-                                        crate::render_pass::LoadOp::Clear => vk::AttachmentLoadOp::CLEAR,
+                                        crate::render_pass::LoadOp::Load => {
+                                            vk::AttachmentLoadOp::LOAD
+                                        }
+                                        crate::render_pass::LoadOp::Clear => {
+                                            vk::AttachmentLoadOp::CLEAR
+                                        }
                                         crate::render_pass::LoadOp::DontCare => {
                                             vk::AttachmentLoadOp::NONE_EXT
                                         }
                                     },
                                     match store_op {
-                                        crate::render_pass::StoreOp::Store => vk::AttachmentStoreOp::STORE,
+                                        crate::render_pass::StoreOp::Store => {
+                                            vk::AttachmentStoreOp::STORE
+                                        }
                                         crate::render_pass::StoreOp::DontCare => {
                                             vk::AttachmentStoreOp::NONE_EXT
                                         }
                                     },
                                     match clear_value {
                                         crate::render_pass::ClearValue::Color(c) => {
-                                            vk::ClearColorValue { uint32: [c[0] as u32, 0, 0, 0] }
+                                            vk::ClearColorValue {
+                                                uint32: [c[0] as u32, 0, 0, 0],
+                                            }
                                         }
-                                        _ => vk::ClearColorValue { uint32: [0, 0, 0, 0] },
+                                        _ => vk::ClearColorValue {
+                                            uint32: [0, 0, 0, 0],
+                                        },
                                     },
                                 )
                             })
                             .unwrap_or((
                                 vk::AttachmentLoadOp::CLEAR,
                                 vk::AttachmentStoreOp::STORE,
-                                vk::ClearColorValue { uint32: [0, 0, 0, 0] },
+                                vk::ClearColorValue {
+                                    uint32: [0, 0, 0, 0],
+                                },
                             ));
 
                         vk::RenderingAttachmentInfo::default()
@@ -82,13 +94,14 @@ impl<'a> Frame<'a> {
             .collect();
 
         // Depth attachment
-        let depth_view = self
+        let depth_texture = self
             .renderer
             .frame_context
             .depth_render_textures
             .get(frame_idx)
-            .map(|t| t.image_view.vk())
             .expect("depth_render_textures must have an entry for current frame");
+
+        let depth_view = depth_texture.image_view.vk();
 
         let depth_attachment = vk::RenderingAttachmentInfo::default()
             .image_view(depth_view)
@@ -102,10 +115,36 @@ impl<'a> Frame<'a> {
                 },
             });
 
+        // Provide stencil attachment when the depth format has a stencil component
+        // to avoid leaving the stencil aspect in an undefined state.
+        let stencil_attachment = if depth_texture.depth_stencil_image_view.is_some() {
+            Some(
+                vk::RenderingAttachmentInfo::default()
+                    .image_view(
+                        depth_texture
+                            .depth_stencil_image_view
+                            .as_ref()
+                            .unwrap()
+                            .vk(),
+                    )
+                    .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .store_op(vk::AttachmentStoreOp::DONT_CARE)
+                    .clear_value(vk::ClearValue {
+                        depth_stencil: vk::ClearDepthStencilValue {
+                            depth: 0.0,
+                            stencil: 0,
+                        },
+                    }),
+            )
+        } else {
+            None
+        };
+
         cmd.begin_rendering(
             &color_attachments,
             Some(&depth_attachment),
-            None,
+            stencil_attachment.as_ref(),
             render_area,
             1,
         );
