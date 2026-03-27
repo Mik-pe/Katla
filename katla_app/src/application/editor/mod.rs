@@ -339,6 +339,11 @@ pub fn process_editor_actions(app: &mut Application) {
                     }
                 }
 
+                // Wait for all in-flight GPU work to complete before freeing resources.
+                // With FRAMES_IN_FLIGHT=2, the previous frame may still reference
+                // these buffers on the GPU.
+                app.renderer.wait_for_device();
+
                 // Release all GPU resources before destroying entities
                 let to_destroy = app.gpu_resource_tracker.release_all();
                 for handle in &to_destroy.meshes {
