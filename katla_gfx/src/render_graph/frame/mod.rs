@@ -3,6 +3,7 @@ mod compositing;
 mod depth_prepass;
 mod draw_calls;
 mod graphics_pass;
+mod outline_pass;
 mod particle_rendering;
 mod shadow_pass;
 mod ui_rendering;
@@ -276,9 +277,22 @@ impl<'a> Frame<'a> {
                     else if pass.material.is_none()
                         && pass.pipeline.is_none()
                         && pass.uses_depth
+                        && pass.name != "outline"
+                        && pass.name != "stencil_indicator"
                     {
                         log::trace!("'{}' -> depth prepass", pass.name);
                         self.execute_depth_prepass(&cmd, pass, data)?;
+                    }
+                    // Outline pass: stencil-based selection highlight
+                    // Uses depth (LoadOp::Load from prepass) and writes to hdr_color
+                    else if pass.name == "outline" {
+                        log::trace!("'{}' -> outline pass", pass.name);
+                        self.execute_outline_pass(&cmd, pass, data)?;
+                    }
+                    // Stencil indicator pass: writes R8 mask where stencil==2
+                    else if pass.name == "stencil_indicator" {
+                        log::trace!("'{}' -> stencil indicator pass", pass.name);
+                        self.execute_stencil_indicator_pass(&cmd, pass, data)?;
                     }
                     // Check if this is a compositing pass (has material AND compositing_viewports)
                     else if let Some(material_handle) = pass.material {
