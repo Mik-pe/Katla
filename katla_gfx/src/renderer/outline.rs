@@ -273,7 +273,10 @@ impl super::VulkanRenderer {
                 CompareOp::GreaterOrEqual,
                 CullMode::Front,
                 ImageFormat::R16G16B16A16Sfloat,
-                vk::ColorComponentFlags::default(),
+                vk::ColorComponentFlags::R
+                    | vk::ColorComponentFlags::G
+                    | vk::ColorComponentFlags::B
+                    | vk::ColorComponentFlags::A,
                 None,
             )?;
             self.outline.outline_draw_pipeline = Some(handle);
@@ -308,7 +311,10 @@ impl super::VulkanRenderer {
                 CompareOp::GreaterOrEqual,
                 CullMode::Front,
                 ImageFormat::R16G16B16A16Sfloat,
-                vk::ColorComponentFlags::default(),
+                vk::ColorComponentFlags::R
+                    | vk::ColorComponentFlags::G
+                    | vk::ColorComponentFlags::B
+                    | vk::ColorComponentFlags::A,
                 Some(empty_descriptor_layout),
             )?;
             self.outline.outline_draw_skinned_pipeline = Some(handle);
@@ -345,7 +351,10 @@ impl super::VulkanRenderer {
                 CompareOp::Always,
                 CullMode::Back,
                 ImageFormat::R8Unorm,
-                vk::ColorComponentFlags::default(),
+                vk::ColorComponentFlags::R
+                    | vk::ColorComponentFlags::G
+                    | vk::ColorComponentFlags::B
+                    | vk::ColorComponentFlags::A,
                 None,
             )?;
             self.outline.stencil_indicator_pipeline = Some(handle);
@@ -379,7 +388,10 @@ impl super::VulkanRenderer {
                 CompareOp::Always,
                 CullMode::Back,
                 ImageFormat::R8Unorm,
-                vk::ColorComponentFlags::default(),
+                vk::ColorComponentFlags::R
+                    | vk::ColorComponentFlags::G
+                    | vk::ColorComponentFlags::B
+                    | vk::ColorComponentFlags::A,
                 Some(empty_descriptor_layout),
             )?;
             self.outline.stencil_indicator_skinned_pipeline = Some(handle);

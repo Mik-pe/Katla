@@ -197,7 +197,14 @@ impl<'a> Frame<'a> {
             })
             .unwrap_or((None, None));
 
-        self.draw_with_pipelines(cmd, data, pipeline, layout, skinned_pipeline, skinned_layout)
+        self.draw_with_pipelines(
+            cmd,
+            data,
+            pipeline,
+            layout,
+            skinned_pipeline,
+            skinned_layout,
+        )
     }
 
     /// Promote stencil 1→2 where selected objects are occluded by scene geometry.
@@ -227,7 +234,14 @@ impl<'a> Frame<'a> {
             })
             .unwrap_or((None, None));
 
-        self.draw_with_pipelines(cmd, data, pipeline, layout, skinned_pipeline, skinned_layout)
+        self.draw_with_pipelines(
+            cmd,
+            data,
+            pipeline,
+            layout,
+            skinned_pipeline,
+            skinned_layout,
+        )
     }
 
     /// Render the outline shell with inverted culling where stencil != 1.
@@ -257,7 +271,14 @@ impl<'a> Frame<'a> {
             })
             .unwrap_or((None, None));
 
-        self.draw_with_pipelines(cmd, data, pipeline, layout, skinned_pipeline, skinned_layout)
+        self.draw_with_pipelines(
+            cmd,
+            data,
+            pipeline,
+            layout,
+            skinned_pipeline,
+            skinned_layout,
+        )
     }
 
     fn draw_with_pipelines(
@@ -380,16 +401,14 @@ impl<'a> Frame<'a> {
 
     /// Execute the stencil indicator pass — writes 1.0 to an R8 texture where stencil == 2.
     /// This texture is later sampled by the tonemap shader to apply the wallhack overlay tint.
+    /// When no draw lists are submitted (nothing selected), the texture is still cleared
+    /// to prevent stale overlay from a previous selection.
     pub(super) fn execute_stencil_indicator_pass(
         &mut self,
         cmd: &CommandBuffer,
         pass: &PassDesc,
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        if data.draw_lists.is_empty() {
-            return Ok(());
-        }
-
         let frame_idx = self.current_frame();
         let extent = self.renderer.frame_context.swapchain.get_extent();
         let render_area = vk::Rect2D {
@@ -416,6 +435,9 @@ impl<'a> Frame<'a> {
             return Ok(());
         };
 
+        // Always begin a render pass to clear the stencil indicator texture,
+        // even when nothing is selected. Without this, stale overlay data
+        // from a previous selection persists on screen.
         let ds_view = self
             .renderer
             .frame_context
@@ -456,6 +478,11 @@ impl<'a> Frame<'a> {
             1,
         );
 
+        if data.draw_lists.is_empty() {
+            cmd.end_rendering();
+            return Ok(());
+        }
+
         cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
             0.0,
             0.0,
@@ -492,7 +519,14 @@ impl<'a> Frame<'a> {
             })
             .unwrap_or((None, None));
 
-        self.draw_with_pipelines(cmd, &data, pipeline, layout, skinned_pipeline, skinned_layout)?;
+        self.draw_with_pipelines(
+            cmd,
+            &data,
+            pipeline,
+            layout,
+            skinned_pipeline,
+            skinned_layout,
+        )?;
 
         cmd.end_rendering();
 
