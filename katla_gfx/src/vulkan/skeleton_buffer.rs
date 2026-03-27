@@ -36,17 +36,32 @@ impl SkeletonBuffer {
 
         let buffer_info = vk::BufferCreateInfo::default()
             .size(buffer_size)
-            .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
+            .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_DST)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let (buffer, allocation) = context.allocate_buffer(&buffer_info, MemoryLocation::CpuToGpu);
 
-        Self {
+        let mut skeleton_buffer = Self {
             buffer,
             allocation: Some(allocation),
             context,
             size: buffer_size,
-        }
+        };
+
+        skeleton_buffer.initialize_identity(joint_count);
+
+        skeleton_buffer
+    }
+
+    /// Initialize the buffer with identity matrices.
+    ///
+    /// Ensures vertices render correctly before the first animation frame.
+    fn initialize_identity(&mut self, joint_count: usize) {
+        let identity: [f32; 16] = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let matrices: Vec<[f32; 16]> = (0..joint_count).map(|_| identity).collect();
+        self.update(&matrices);
     }
 
     /// Update the skeleton buffer with new joint matrices.
