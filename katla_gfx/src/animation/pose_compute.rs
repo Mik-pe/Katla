@@ -732,8 +732,7 @@ impl PoseComputePipeline {
             }
         }
 
-        let workgroups =
-            skeleton_count.div_ceil(POSE_COMPUTE_WORKGROUP_SIZE);
+        let workgroups = skeleton_count.div_ceil(POSE_COMPUTE_WORKGROUP_SIZE);
         unsafe {
             self.context.device.cmd_dispatch(cmd, workgroups, 1, 1);
         }

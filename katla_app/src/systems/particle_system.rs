@@ -119,5 +119,3 @@ impl Default for ParticleSystem {
         Self::new()
     }
 }
-
-

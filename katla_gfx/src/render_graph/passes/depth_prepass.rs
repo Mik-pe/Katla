@@ -87,11 +87,9 @@ impl PassBuilder for DepthPrepass {
                 )> = build_writes
                     .iter()
                     .map(|output_name| {
-                        let handle = resource_map.get(output_name).copied().ok_or_else(
-                            || {
-                                RenderGraphError::ResourceNotFound(output_name.clone())
-                            },
-                        )?;
+                        let handle = resource_map.get(output_name).copied().ok_or_else(|| {
+                            RenderGraphError::ResourceNotFound(output_name.clone())
+                        })?;
                         Ok((
                             handle,
                             ImageFormat::R32Uint,

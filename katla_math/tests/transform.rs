@@ -128,10 +128,7 @@ fn test_transform_lerp() {
 
 #[test]
 fn test_transform_look_direction() {
-    let transform = Transform::look_direction(
-        Vec3::new(0.0, 0.0, -1.0),
-        Vec3::new(0.0, 1.0, 0.0),
-    );
+    let transform = Transform::look_direction(Vec3::new(0.0, 0.0, -1.0), Vec3::new(0.0, 1.0, 0.0));
 
     assert!(transform.rotation.is_normalized());
 
