@@ -424,7 +424,7 @@ fn hit_test_rotate_rings(
     view_matrix: &Mat4,
     proj_matrix: &Mat4,
     viewport: (f32, f32, f32, f32),
-    origin_screen: (f32, f32),
+    _origin_screen: (f32, f32),
     pixel_threshold: f32,
 ) -> Option<GizmoAxis> {
     let ring_radius = gizmo_scale * 1.0;
@@ -626,7 +626,6 @@ pub fn generate_translate_draw_calls(
             DrawCall::new(resources.shaft_mesh, resources.material)
                 .with_transform(shaft_transform)
                 .with_color(color.to_array())
-                .with_pbr(0.0, 1.0, 1.0) // Non-metallic, rough, full AO for flat look
                 .with_instance_index(shaft_idx),
         );
 
@@ -644,7 +643,6 @@ pub fn generate_translate_draw_calls(
             DrawCall::new(resources.cone_mesh, resources.material)
                 .with_transform(tip_transform)
                 .with_color(color.to_array())
-                .with_pbr(0.0, 1.0, 1.0)
                 .with_instance_index(tip_idx),
         );
     }
@@ -692,7 +690,6 @@ pub fn generate_rotate_draw_calls(
             DrawCall::new(resources.ring_mesh, resources.material)
                 .with_transform(ring_transform)
                 .with_color(color.to_array())
-                .with_pbr(0.0, 1.0, 1.0)
                 .with_instance_index(idx),
         );
     }
@@ -738,7 +735,6 @@ pub fn generate_scale_draw_calls(
             DrawCall::new(resources.shaft_mesh, resources.material)
                 .with_transform(shaft_transform)
                 .with_color(color.to_array())
-                .with_pbr(0.0, 1.0, 1.0)
                 .with_instance_index(shaft_idx),
         );
 
@@ -754,7 +750,6 @@ pub fn generate_scale_draw_calls(
             DrawCall::new(resources.cube_mesh, resources.material)
                 .with_transform(cube_transform.to_array())
                 .with_color(color.to_array())
-                .with_pbr(0.0, 1.0, 1.0)
                 .with_instance_index(cube_idx),
         );
     }

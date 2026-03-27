@@ -60,6 +60,10 @@ pub struct MaterialOptions {
     /// Whether this material uses compositing (requires set 2 descriptor set layout).
     /// Default is false.
     pub is_compositing: bool,
+    /// Whether depth testing is enabled for this material.
+    /// Default is true. Set to false for overlays, gizmos, and debug rendering
+    /// that should render on top of scene geometry.
+    pub depth_test: bool,
 }
 
 impl Default for MaterialOptions {
@@ -71,6 +75,7 @@ impl Default for MaterialOptions {
             vertex_type: VertexType::Pbr,
             color_format: ImageFormat::B8G8R8A8Srgb,
             is_compositing: false,
+            depth_test: true,
         }
     }
 }
@@ -241,6 +246,7 @@ impl MaterialCompiler {
                 alpha_blended: options.alpha_blended,
                 double_sided: options.double_sided,
                 wireframe: options.wireframe,
+                depth_test: options.depth_test,
                 vertex_binding,
                 textures: crate::renderer::registry::MaterialTextures::default(),
                 material_descriptor_set: None,
@@ -287,6 +293,7 @@ impl MaterialCompiler {
             alpha_blended: options.alpha_blended,
             double_sided: options.double_sided,
             wireframe: options.wireframe,
+            depth_test: options.depth_test,
             vertex_binding,
             textures: crate::renderer::registry::MaterialTextures::default(),
             material_descriptor_set: None,
@@ -316,6 +323,7 @@ impl MaterialCompiler {
             alpha_blended,
             double_sided,
             wireframe,
+            depth_test,
         ) = {
             let material = registry.get_material(material_handle).ok_or_else(|| {
                 MaterialError::ShaderCompilation(format!(
@@ -353,6 +361,7 @@ impl MaterialCompiler {
                 material.alpha_blended,
                 material.double_sided,
                 material.wireframe,
+                material.depth_test,
             )
         };
 
@@ -374,6 +383,7 @@ impl MaterialCompiler {
             alpha_blended,
             double_sided,
             wireframe,
+            depth_test,
         };
 
         // Build descriptor layouts
@@ -605,9 +615,14 @@ impl MaterialCompiler {
 
         // Configure render state from options
         // Disable depth test for UI passes and compositing passes (no depth attachment)
-        if !is_ui && !options.is_compositing {
+        // or when the material explicitly opts out (e.g., gizmo overlays)
+        if is_ui || options.is_compositing {
+            // No depth for UI/compositing (no depth attachment)
+        } else if options.depth_test {
             builder =
                 builder.with_depth_test(true, true, crate::pipeline::CompareOp::GreaterOrEqual);
+        } else {
+            builder = builder.with_depth_test(false, false, crate::pipeline::CompareOp::Always);
         }
 
         if options.double_sided {

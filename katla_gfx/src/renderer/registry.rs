@@ -112,6 +112,8 @@ pub struct MaterialAsset {
     pub double_sided: bool,
     /// Whether wireframe rendering is enabled.
     pub wireframe: bool,
+    /// Whether depth testing is enabled for this material.
+    pub depth_test: bool,
     /// Vertex binding description.
     pub vertex_binding: VertexBinding,
     /// Bindless texture indices for this material.
