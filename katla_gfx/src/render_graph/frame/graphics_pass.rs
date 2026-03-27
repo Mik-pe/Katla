@@ -148,7 +148,30 @@ impl<'a> Frame<'a> {
                     0.0,
                 ));
 
-            let depth_view = depth_texture.image_view.vk();
+            // When the depth format has a stencil component, both depth and stencil
+            // attachments must use the same imageView (VUID-VkRenderingInfo-pDepthAttachment-06085).
+            let (depth_view, stencil) =
+                if let Some(ref ds_view) = depth_texture.depth_stencil_image_view {
+                    (
+                        ds_view.vk(),
+                        Some(
+                            vk::RenderingAttachmentInfo::default()
+                                .image_view(ds_view.vk())
+                                .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                                .load_op(vk::AttachmentLoadOp::CLEAR)
+                                .store_op(vk::AttachmentStoreOp::DONT_CARE)
+                                .clear_value(vk::ClearValue {
+                                    depth_stencil: vk::ClearDepthStencilValue {
+                                        depth: 0.0,
+                                        stencil: 0,
+                                    },
+                                }),
+                        ),
+                    )
+                } else {
+                    (depth_texture.image_view.vk(), None)
+                };
+
             let depth = vk::RenderingAttachmentInfo::default()
                 .image_view(depth_view)
                 .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
@@ -160,33 +183,6 @@ impl<'a> Frame<'a> {
                         stencil: 0,
                     },
                 });
-
-            // Provide stencil attachment when the depth format has a stencil component.
-            // Without this, the stencil aspect becomes UNDEFINED after the render pass,
-            // which can cause issues with subsequent passes that use stencil (e.g., outline).
-            let stencil = if depth_texture.depth_stencil_image_view.is_some() {
-                Some(
-                    vk::RenderingAttachmentInfo::default()
-                        .image_view(
-                            depth_texture
-                                .depth_stencil_image_view
-                                .as_ref()
-                                .unwrap()
-                                .vk(),
-                        )
-                        .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                        .load_op(vk::AttachmentLoadOp::CLEAR)
-                        .store_op(vk::AttachmentStoreOp::DONT_CARE)
-                        .clear_value(vk::ClearValue {
-                            depth_stencil: vk::ClearDepthStencilValue {
-                                depth: 0.0,
-                                stencil: 0,
-                            },
-                        }),
-                )
-            } else {
-                None
-            };
 
             (Some(depth), stencil)
         } else {

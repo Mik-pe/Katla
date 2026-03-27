@@ -536,8 +536,6 @@ impl Drop for PoseComputeBuffers {
 pub struct PoseComputePipeline {
     context: Rc<VulkanContext>,
 
-    pipeline: Option<vk::Pipeline>,
-    pipeline_layout: Option<vk::PipelineLayout>,
     pipeline_handle: Option<PipelineHandle>,
 
     descriptor_layout: Option<vk::DescriptorSetLayout>,
@@ -552,8 +550,6 @@ impl PoseComputePipeline {
     pub fn new(context: Rc<VulkanContext>) -> Self {
         Self {
             context,
-            pipeline: None,
-            pipeline_layout: None,
             pipeline_handle: None,
             descriptor_layout: None,
             descriptor_pool: None,
@@ -798,16 +794,6 @@ impl PoseComputePipeline {
                     .destroy_descriptor_set_layout(layout, None);
             }
         }
-        if let Some(layout) = self.pipeline_layout.take() {
-            unsafe {
-                self.context.device.destroy_pipeline_layout(layout, None);
-            }
-        }
-        if let Some(pipeline) = self.pipeline.take() {
-            unsafe {
-                self.context.device.destroy_pipeline(pipeline, None);
-            }
-        }
     }
 
     // -- Private helpers -----------------------------------------------------
@@ -868,11 +854,6 @@ impl PoseComputePipeline {
                     e
                 ))
             })?;
-
-        // Store raw handles for cleanup (ComputePipeline owns them but we also
-        // track the registry handle; the pipeline struct is moved into the registry).
-        self.pipeline = Some(compute_pipeline.pipeline().vk());
-        self.pipeline_layout = Some(compute_pipeline.pipeline_layout().vk());
 
         let handle = asset_registry.register_compute_pipeline(compute_pipeline);
         self.pipeline_handle = Some(handle);
