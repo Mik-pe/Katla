@@ -1,10 +1,10 @@
 #!/bin/bash
-# Environment setup script for Katla engine cleanup mission
+# Environment setup script for Katla engine missions
 # This script is idempotent - safe to run multiple times
 
 set -e
 
-echo "Setting up Katla cleanup environment..."
+echo "Setting up Katla environment..."
 
 # Check Rust toolchain
 if command -v rustc &> /dev/null; then

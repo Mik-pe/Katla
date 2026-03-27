@@ -1,0 +1,45 @@
+{
+  "featureId": "scene-migration-framework",
+  "reviewedAt": "2026-03-27T00:45:00.000Z",
+  "commitId": "1869a35",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The migration framework is well-structured with a clean trait design, good error type with Display/Error impl, and comprehensive test coverage. However, there is a blocking bug in the forward compatibility check: the `run_migrations` function compares the loaded scene version against `scene.version` (which is the same value), making the forward-incompatibility error unreachable in the real `load_scene` code path. The function should compare against `SCENE_VERSION` instead. Additionally, the `test_migration_runs_on_mismatch` test does not actually test what its name and comment claim.",
+    "issues": [
+      {
+        "file": "katla_app/src/scene/migration.rs",
+        "line": 78,
+        "severity": "blocking",
+        "description": "Forward compatibility check is dead code in the real load_scene path. `run_migrations(scene, scene_version)` compares `scene_version > scene.version`, but `load_scene` always passes `loaded_version` which equals `scene.version`. A scene saved by a newer engine (e.g. version 3) loaded by an older engine (SCENE_VERSION=1) would silently load without error or migration. The comparison should be against `SCENE_VERSION` (the current build's supported version) rather than `scene.version` (which is the loaded file's version). Fix: change `scene_version > scene.version` to `scene_version > SCENE_VERSION`, or refactor the function to accept SCENE_VERSION as a parameter and compare against that."
+      },
+      {
+        "file": "katla_app/src/scene/migration.rs",
+        "line": 144,
+        "severity": "non_blocking",
+        "description": "test_migration_runs_on_mismatch does not actually test migration running on a version mismatch. It sets scene.version=0 and calls run_migrations(&mut scene, 0), but since scene_version(0) >= scene.version(0), the function returns Ok(()) immediately without running any migrations. The test assertion only checks is_ok() but doesn't verify that a migration was applied. The test name and comment ('The migration pipeline should try to run migrations from 0 to SCENE_VERSION') are misleading."
+      },
+      {
+        "file": "katla_app/src/scene/migration.rs",
+        "line": 288,
+        "severity": "non_blocking",
+        "description": "test_migration_bumps_version sets scene.version=2 and calls run_migrations(&mut scene, 1), which is an artificial scenario that wouldn't occur through load_scene (which always passes loaded_version == scene.version). While the test validates the migration pipeline logic in isolation, it doesn't test the real code path. Once the blocking bug above is fixed, this test pattern should be reconsidered."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "observation": "The migration module is declared as `pub mod migration` but only used internally via `migration::run_migrations()`. Making it `pub(crate)` would be more aligned with the project's visibility convention of preferring pub(crate) unless there's a clear external use case.",
+      "suggestedTarget": "AGENTS.md",
+      "detail": "AGENTS.md already states: 'Visibility: Prefer pub(crate) until we know something should be part of the public API.' The migration module has no external consumers."
+    },
+    {
+      "observation": "Worker correctly followed the app-worker skill procedure and committed only the files related to the feature. The verification commands (cargo test --workspace, cargo clippy --workspace -- -D warnings) all passed. No new services or dependencies were introduced.",
+      "suggestedTarget": "services.yaml",
+      "detail": "No changes needed to services.yaml. All commands used are already documented."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The scene migration framework has a clean design with the SceneMigrator trait, migration registry, v1→v2 stub, and good error handling for forward compatibility. However, the forward compatibility check is a dead code path in the real load_scene flow due to comparing the loaded version against itself rather than against SCENE_VERSION. This is a blocking bug that must be fixed before the feature can be considered complete. The tests pass but some test scenarios are artificial and don't exercise the real code path. Dependency boundaries are respected (all changes in katla_app). No shared state gaps beyond the visibility convention note."
+}

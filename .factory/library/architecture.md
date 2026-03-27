@@ -224,3 +224,31 @@ Per-resource destroy methods on `VulkanRenderer` (in `katla_gfx/src/renderer/des
 **GLTF texture tracking:** `spawn_gltf_model` in `spawning.rs` calls `gpu_resource_tracker.track_texture()` for each uploaded GLTF texture (albedo, normal, MR, AO, emission). `upload_gltf_textures` returns both bindless indices (for material assignment) and `TextureHandle`s (for tracking) via `GltfTextureUpload` struct.
 
 **ComponentEvent::Removed handling:** The `gpu_cleanup` module processes both `EntityEvent::Destroyed` and `ComponentEvent::Removed` for `DrawableComponent`. Component removal events for entities that were also destroyed this frame are skipped (already handled via destruction path) to avoid double-cleanup.
+
+## Editor Keyboard Shortcut Suppression
+
+**Pattern:** Ctrl+S and other global shortcuts must be suppressed when a `TextInput` widget or modal dialog has keyboard focus. The `UiInputState.want_capture_keyboard` flag is set during UI rendering (in `generate_ui_draw_list`), but keyboard events arrive in `window_event` BEFORE UI rendering. Solution: save `want_capture_keyboard` to `EditorUI.prev_want_capture_keyboard` after UI rendering, and check it in the next frame's `window_event` handler. This introduces a one-frame delay but is imperceptible to users.
+
+## Window Minimize/Occluded Handling
+
+**Pattern:** Both `WindowEvent::Resized` (with zero extent) and `WindowEvent::Occluded(true)` set `Application.minimized = true`, which causes `RedrawRequested` to skip rendering and just call `request_redraw()`. On restore (`Resized` with non-zero extent or `Occluded(false)`), the swapchain is recreated via `renderer.recreate_swapchain()` and rendering resumes.
+
+## Save Confirmation Feedback
+
+**Pattern:** Transient status bar messages use a countdown timer on `EditorUI`. `show_save_confirmation()` sets `save_confirmation_timer = 2.0`, `update_timers(dt)` decrements it each frame, and the `StatusBar` widget renders the message with an alpha fade-out during the last 0.5 seconds.
+
+## Inspector Inline Editing
+
+**Pattern:** The inspector panel supports real-time editing of ECS components via interactive sliders. The flow is:
+
+1. **State sync**: Before UI build, `EditorUI::sync_inspector_edit_state()` copies current ECS values into `InspectorEditState` when the selected entity changes (tracked via entity ID comparison).
+2. **Slider editing**: The `Inspector` widget receives `&mut InspectorEditState` and renders `Slider` widgets that directly mutate the editing state during drag.
+3. **Real-time ECS update**: After UI rendering in `generate_ui_draw_list()`, `apply_inspector_slider_changes()` compares editing state against current ECS values and updates `TransformComponent`, `PointLight`, `ParticleEmitterComponent` immediately. This happens before `process_editor_actions()` so the viewport reflects changes the same frame.
+4. **Deferred commit**: Each changed property also pushes an `EditorAction` (UpdateTransform, UpdatePointLight, UpdateParticleEmitter) to `pending_actions`. These are processed in `process_editor_actions()` after UI rendering. This pattern means every slider change both updates ECS immediately AND commits via the action queue.
+
+**Key types:**
+- `InspectorEditState` (in `editor_ui/inspector.rs`) — groups all mutable editing fields
+- `PointLightInfo`, `ParticleEmitterInfo` — read-only data carried in `EntityInfo`
+- `EditorAction::UpdateTransform/UpdatePointLight/UpdateParticleEmitter` — deferred commit actions
+
+**Borrow checker note:** `apply_inspector_slider_changes()` must be called before borrowing `app.ui_renderer` in `generate_ui_draw_list()` to avoid double mutable borrow of `app`.
