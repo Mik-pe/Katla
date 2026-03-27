@@ -175,8 +175,8 @@ impl CascadeShadowMap {
             shadow_bias: [
                 self.params.depth_bias_constant,
                 self.params.depth_bias_slope,
-                0.0,
-                0.0,
+                0.0, // reserved (was normal_offset, never used by shaders)
+                self.params.shadow_map_size as f32, // atlas size for validator shader
             ],
         }
     }
@@ -575,6 +575,129 @@ mod tests {
         let result = mat4_mul(&proj, &snapped_view);
         for i in 0..16 {
             assert!(!result[i].is_nan());
+        }
+    }
+
+    #[test]
+    fn test_cascade_selection_view_z_zero() {
+        let mut csm = CascadeShadowMap::new(CascadeParams::default());
+        let view = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 5.0, 1.0,
+        ];
+        let proj = katla_math_proj_reverse_z(60.0, 16.0 / 9.0, 0.1);
+        csm.update([0.5, -0.8, -0.3], &view, &proj);
+        let gpu = csm.gpu_data();
+
+        let num = gpu.light_direction[3] as usize;
+        let mut selected = num - 1;
+        for i in 0..num {
+            if 0.0f32 <= gpu.cascades[i].split_distance {
+                selected = i;
+                break;
+            }
+        }
+        assert_eq!(selected, 0, "view_z=0.0 should select cascade 0");
+    }
+
+    #[test]
+    fn test_cascade_selection_exact_split() {
+        let mut csm = CascadeShadowMap::new(CascadeParams {
+            num_cascades: 4,
+            lambda: 0.65,
+            max_distance: 50.0,
+            shadow_map_size: 1024,
+            depth_bias_constant: 1.5,
+            depth_bias_slope: 2.0,
+        });
+        let view = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let proj = katla_math_proj_reverse_z(60.0, 16.0 / 9.0, 0.1);
+        csm.update([0.0, -1.0, 0.0], &view, &proj);
+        let gpu = csm.gpu_data();
+
+        let num = gpu.light_direction[3] as usize;
+        let split_0 = gpu.cascades[0].split_distance;
+
+        let mut selected = num - 1;
+        for i in 0..num {
+            if split_0 <= gpu.cascades[i].split_distance {
+                selected = i;
+                break;
+            }
+        }
+        assert_eq!(
+            selected, 0,
+            "view_z exactly at split[0] should select cascade 0"
+        );
+    }
+
+    #[test]
+    fn test_cascade_selection_beyond_last_split() {
+        let mut csm = CascadeShadowMap::new(CascadeParams {
+            num_cascades: 4,
+            lambda: 0.65,
+            max_distance: 50.0,
+            shadow_map_size: 1024,
+            depth_bias_constant: 1.5,
+            depth_bias_slope: 2.0,
+        });
+        let view = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let proj = katla_math_proj_reverse_z(60.0, 16.0 / 9.0, 0.1);
+        csm.update([0.0, -1.0, 0.0], &view, &proj);
+        let gpu = csm.gpu_data();
+
+        let num = gpu.light_direction[3] as usize;
+        let beyond = gpu.cascades[num - 1].split_distance + 1000.0;
+
+        let mut selected = num - 1;
+        for i in 0..num {
+            if beyond <= gpu.cascades[i].split_distance {
+                selected = i;
+                break;
+            }
+        }
+        assert_eq!(
+            selected,
+            num - 1,
+            "view_z beyond last split should select last cascade"
+        );
+    }
+
+    #[test]
+    fn test_cascade_selection_zero_cascades() {
+        let csm = CascadeShadowMap::new(CascadeParams {
+            num_cascades: 0,
+            ..CascadeParams::default()
+        });
+        assert_eq!(csm.cascade_count(), 0);
+        let gpu = csm.gpu_data();
+        assert_eq!(gpu.light_direction[3], 0.0);
+    }
+
+    #[test]
+    fn test_pancake_modifies_projection() {
+        let proj = mat4_ortho(-10.0, 10.0, -10.0, 10.0, -20.0, -5.0);
+        let mins = [-10.0, -10.0, -20.0];
+        let pancaked = apply_pancake(&proj, &mins);
+
+        assert_ne!(
+            proj[10], pancaked[10],
+            "apply_pancake should modify proj[10]"
+        );
+        assert_ne!(
+            proj[14], pancaked[14],
+            "apply_pancake should modify proj[14]"
+        );
+
+        for i in 0..16 {
+            assert!(
+                !pancaked[i].is_nan(),
+                "pancaked projection has NaN at [{}]",
+                i
+            );
         }
     }
 
