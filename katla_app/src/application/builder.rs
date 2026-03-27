@@ -734,4 +734,15 @@ impl ApplicationBuilder {
 
         Ok((app, event_loop))
     }
+
+    /// Build, initialize, and run the application in one call.
+    ///
+    /// Equivalent to `build()`, `init()`, and `event_loop.run_app()`.
+    /// Returns on error during build; panics if the event loop itself fails.
+    pub fn run(self) -> AppResult<()> {
+        let (mut application, event_loop) = self.build()?;
+        application.init();
+        event_loop.run_app(&mut application).unwrap();
+        Ok(())
+    }
 }

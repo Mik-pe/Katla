@@ -15,6 +15,8 @@ pub mod systems;
 mod ui;
 mod util;
 
+pub mod prelude;
+
 pub use error::{AppError, AppResult};
 pub use gui_state::GuiState;
 
