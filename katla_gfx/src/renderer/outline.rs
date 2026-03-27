@@ -7,6 +7,44 @@ use crate::vulkan::vertexbinding::VertexFormat;
 use ash::vk;
 use log::info;
 
+/// Push constants for outline draw pipelines.
+///
+/// Layout must match `OutlinePushConstants` in outline_draw.wgsl:
+/// - offset 0: outline_width (f32) + 3 x padding (f32) = 16 bytes
+/// - offset 16: outline_color (vec4) = 16 bytes
+///
+/// Total: 32 bytes
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct OutlinePushConstants {
+    pub outline_width: f32,
+    _pad0: f32,
+    _pad1: f32,
+    _pad2: f32,
+    pub outline_color: [f32; 4],
+}
+
+impl Default for OutlinePushConstants {
+    fn default() -> Self {
+        Self {
+            outline_width: 0.004,
+            _pad0: 0.0,
+            _pad1: 0.0,
+            _pad2: 0.0,
+            outline_color: [1.0, 0.55, 0.0, 1.0],
+        }
+    }
+}
+
+/// Compute a viewport-aware outline width in NDC.
+/// The base width (0.004) targets ~1080p; scale inversely with viewport height
+/// so outlines remain a consistent pixel width across resolutions.
+pub(crate) fn compute_outline_width(viewport_height: f32) -> f32 {
+    const BASE_HEIGHT: f32 = 1080.0;
+    const BASE_WIDTH: f32 = 0.004;
+    BASE_WIDTH * (BASE_HEIGHT / viewport_height)
+}
+
 #[derive(Default)]
 pub(crate) struct OutlineState {
     /// Pipeline for stencil mark pass (writes ref=1 to stencil for visible selected objects).
@@ -42,6 +80,7 @@ impl super::VulkanRenderer {
         color_format: ImageFormat,
         color_write_mask: vk::ColorComponentFlags,
         empty_layout: Option<vk::DescriptorSetLayout>,
+        push_constant_size: Option<u32>,
     ) -> Result<PipelineHandle, RendererError> {
         let mut builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert, frag)
@@ -51,6 +90,11 @@ impl super::VulkanRenderer {
             .with_stencil_test(stencil_state, stencil_state)
             .with_color_write_mask(color_write_mask)
             .with_rendering_formats(Some(color_format), Some(ImageFormat::D32SfloatS8Uint));
+
+        if let Some(size) = push_constant_size {
+            let stages = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
+            builder = builder.with_push_constant_range(stages, 0, size);
+        }
 
         if let Some(empty_layout) = empty_layout {
             let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
@@ -133,6 +177,7 @@ impl super::VulkanRenderer {
                 ImageFormat::R16G16B16A16Sfloat,
                 vk::ColorComponentFlags::empty(),
                 None,
+                None,
             )?;
             self.outline.stencil_mark_pipeline = Some(handle);
         }
@@ -177,6 +222,7 @@ impl super::VulkanRenderer {
                 ImageFormat::R16G16B16A16Sfloat,
                 vk::ColorComponentFlags::empty(),
                 Some(empty_descriptor_layout),
+                None,
             )?;
             self.outline.stencil_mark_skinned_pipeline = Some(handle);
         }
@@ -210,6 +256,7 @@ impl super::VulkanRenderer {
                 CullMode::Back,
                 ImageFormat::R16G16B16A16Sfloat,
                 vk::ColorComponentFlags::empty(),
+                None,
                 None,
             )?;
             self.outline.occlusion_mark_pipeline = Some(handle);
@@ -246,6 +293,7 @@ impl super::VulkanRenderer {
                 ImageFormat::R16G16B16A16Sfloat,
                 vk::ColorComponentFlags::empty(),
                 Some(empty_descriptor_layout),
+                None,
             )?;
             self.outline.occlusion_mark_skinned_pipeline = Some(handle);
         }
@@ -278,6 +326,7 @@ impl super::VulkanRenderer {
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
                 None,
+                Some(std::mem::size_of::<OutlinePushConstants>() as u32),
             )?;
             self.outline.outline_draw_pipeline = Some(handle);
         }
@@ -316,6 +365,7 @@ impl super::VulkanRenderer {
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
                 Some(empty_descriptor_layout),
+                Some(std::mem::size_of::<OutlinePushConstants>() as u32),
             )?;
             self.outline.outline_draw_skinned_pipeline = Some(handle);
         }
@@ -356,6 +406,7 @@ impl super::VulkanRenderer {
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
                 None,
+                None,
             )?;
             self.outline.stencil_indicator_pipeline = Some(handle);
         }
@@ -393,6 +444,7 @@ impl super::VulkanRenderer {
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
                 Some(empty_descriptor_layout),
+                None,
             )?;
             self.outline.stencil_indicator_skinned_pipeline = Some(handle);
         }

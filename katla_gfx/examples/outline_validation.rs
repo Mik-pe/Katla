@@ -452,6 +452,16 @@ struct ImageResources {
     stencil_staging_allocation: Allocation,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct OutlinePushConstants {
+    outline_width: f32,
+    _pad0: f32,
+    _pad1: f32,
+    _pad2: f32,
+    outline_color: [f32; 4],
+}
+
 struct PipelineResources {
     descriptor_set_layout: vk::DescriptorSetLayout,
     pipeline_layout: vk::PipelineLayout,
@@ -1203,6 +1213,11 @@ fn create_pipelines(
         .with_rendering_formats(
             Some(ImageFormat::R16G16B16A16Sfloat),
             Some(ImageFormat::D32SfloatS8Uint),
+        )
+        .with_push_constant_range(
+            vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+            0,
+            32,
         )
         .build_dynamic()
         .map_err(|e| format!("Failed to build outline draw pipeline: {:?}", e))?;
@@ -2035,6 +2050,21 @@ fn render_and_readback(
             vk::PipelineBindPoint::GRAPHICS,
             pipelines.outline_draw_pipeline.vk_pipeline(),
         );
+        let outline_push = OutlinePushConstants {
+            outline_width: 0.004,
+            _pad0: 0.0,
+            _pad1: 0.0,
+            _pad2: 0.0,
+            outline_color: [1.0, 0.55, 0.0, 1.0],
+        };
+        let stages = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
+        device.cmd_push_constants(
+            cmd,
+            pipelines.outline_draw_pipeline.vk_layout(),
+            stages,
+            0,
+            bytemuck::bytes_of(&outline_push),
+        );
         device.cmd_draw_indexed(cmd, index_count, 1, 0, 0, 1);
 
         device.cmd_end_rendering(cmd);
@@ -2732,6 +2762,21 @@ fn render_self_occlusion_test(
             cmd,
             vk::PipelineBindPoint::GRAPHICS,
             pipelines.outline_draw_pipeline.vk_pipeline(),
+        );
+        let outline_push = OutlinePushConstants {
+            outline_width: 0.004,
+            _pad0: 0.0,
+            _pad1: 0.0,
+            _pad2: 0.0,
+            outline_color: [1.0, 0.55, 0.0, 1.0],
+        };
+        let stages = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
+        device.cmd_push_constants(
+            cmd,
+            pipelines.outline_draw_pipeline.vk_layout(),
+            stages,
+            0,
+            bytemuck::bytes_of(&outline_push),
         );
         device.cmd_draw_indexed(cmd, index_count, 1, 0, 0, 0);
 
