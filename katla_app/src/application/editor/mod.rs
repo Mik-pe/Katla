@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use log::info;
+use log::{debug, info};
 
 use katla_ecs::EntityId;
 use katla_gfx::renderer::UIDrawList;
@@ -13,7 +13,7 @@ use crate::components::{
     ParticleEmitterComponent, PointLight, TransformComponent,
 };
 
-use crate::ui::{EditorAction, EntityInfo};
+use crate::ui::{EditorAction, EntityInfo, ParticleEmitterInfo, PointLightInfo};
 
 use super::Application;
 
@@ -67,6 +67,9 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     // Collect entity info for editor UI
     let entity_info = collect_entity_info(app);
 
+    // Sync inspector editing state from current entity data
+    app.editor_ui.sync_inspector_edit_state(&entity_info);
+
     // Set current time for UI animations (cursor blink etc.)
     app.ui_context
         .set_time(app.start_time.elapsed().as_secs_f64());
@@ -93,6 +96,11 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
             .clone()
     };
 
+    // Apply real-time inspector slider changes to ECS during drag.
+    // This happens every frame while a slider is being dragged so the viewport updates immediately.
+    // Must happen before borrowing ui_renderer to avoid double mutable borrow.
+    apply_inspector_slider_changes(app);
+
     // Convert draw list to GPU format
     let ui_renderer = &mut app.ui_renderer;
 
@@ -112,6 +120,113 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
         Some(gpu_list)
     } else {
         None
+    }
+}
+
+/// Apply real-time inspector slider changes to ECS components during drag.
+///
+/// Compares the inspector editing state against the current ECS component values.
+/// If they differ, updates the ECS component immediately (for viewport feedback)
+/// and pushes an EditorAction to commit the final value on slider release.
+fn apply_inspector_slider_changes(app: &mut Application) {
+    use crate::ui::InspectorEditState;
+
+    let entity_id = match app.editor_ui.inspector_edit_entity {
+        Some(id) => id,
+        None => return,
+    };
+
+    let InspectorEditState {
+        pos,
+        rot,
+        scale,
+        light_color,
+        light_intensity,
+        light_range,
+        emit_rate,
+        velocity,
+        lifetime,
+        gravity,
+        particle_scale,
+    } = &app.editor_ui.inspector_edit;
+
+    // Transform
+    if let Some(transform) = app.world.get_component_mut::<TransformComponent>(entity_id) {
+        let pos_vec = Vec3::new(pos[0], pos[1], pos[2]);
+        let rot_vec = Vec3::new(rot[0], rot[1], rot[2]);
+        let scale_vec = Vec3::new(scale[0], scale[1], scale[2]);
+
+        let pos_changed = (pos_vec - transform.transform.position).length() > 1e-4;
+        let euler = transform.transform.rotation.to_euler();
+        let rot_changed = (rot_vec.x() - euler.0).abs() > 1e-3
+            || (rot_vec.y() - euler.1).abs() > 1e-3
+            || (rot_vec.z() - euler.2).abs() > 1e-3;
+        let scale_changed = (scale_vec - transform.transform.scale).length() > 1e-4;
+
+        if pos_changed || rot_changed || scale_changed {
+            transform.transform.position = pos_vec;
+            if rot_changed {
+                transform.transform.rotation =
+                    katla_math::Quat::from_euler(rot_vec.x(), rot_vec.y(), rot_vec.z());
+            }
+            if scale_changed {
+                transform.transform.scale = scale_vec;
+            }
+
+            app.editor_ui
+                .pending_actions
+                .push(EditorAction::UpdateTransform {
+                    entity_id,
+                    position: pos_vec,
+                    rotation: rot_vec,
+                    scale: scale_vec,
+                });
+        }
+    }
+
+    // PointLight
+    if let Some(light) = app.world.get_component::<PointLight>(entity_id) {
+        let color_changed = (light_color[0] - light.color[0]).abs() > 1e-3
+            || (light_color[1] - light.color[1]).abs() > 1e-3
+            || (light_color[2] - light.color[2]).abs() > 1e-3;
+        let intensity_changed = (*light_intensity - light.intensity).abs() > 1e-4;
+        let range_changed = (*light_range - light.range).abs() > 1e-4;
+
+        if color_changed || intensity_changed || range_changed {
+            app.editor_ui
+                .pending_actions
+                .push(EditorAction::UpdatePointLight {
+                    entity_id,
+                    color: *light_color,
+                    intensity: *light_intensity,
+                    range: *light_range,
+                });
+        }
+    }
+
+    // ParticleEmitter
+    if let Some(emitter) = app
+        .world
+        .get_component::<ParticleEmitterComponent>(entity_id)
+    {
+        let rate_changed = (*emit_rate - emitter.config.emit_rate).abs() > 1e-4;
+        let vel_changed = (*velocity - emitter.config.velocity_magnitude).abs() > 1e-4;
+        let life_changed = (*lifetime - emitter.config.base_lifetime).abs() > 1e-4;
+        let grav_changed = (*gravity - emitter.config.gravity).abs() > 1e-4;
+        let scale_changed = (*particle_scale - emitter.config.base_scale).abs() > 1e-4;
+
+        if rate_changed || vel_changed || life_changed || grav_changed || scale_changed {
+            app.editor_ui
+                .pending_actions
+                .push(EditorAction::UpdateParticleEmitter {
+                    entity_id,
+                    emit_rate: *emit_rate,
+                    velocity_magnitude: *velocity,
+                    base_lifetime: *lifetime,
+                    gravity: *gravity,
+                    base_scale: *particle_scale,
+                });
+        }
     }
 }
 
@@ -297,6 +412,78 @@ pub fn process_editor_actions(app: &mut Application) {
                 // TODO: implement global particle system reset
                 info!("Particle system reset requested - not yet implemented");
             }
+            EditorAction::UpdateTransform {
+                entity_id,
+                position,
+                rotation,
+                scale,
+            } => {
+                if let Some(transform) =
+                    app.world.get_component_mut::<TransformComponent>(entity_id)
+                {
+                    transform.transform.position = position;
+                    transform.transform.rotation =
+                        katla_math::Quat::from_euler(rotation.x(), rotation.y(), rotation.z());
+                    transform.transform.scale = scale;
+                    debug!(
+                        "Transform updated for entity {:?}: pos=({:.2}, {:.2}, {:.2}) rot=({:.1}, {:.1}, {:.1}) scale=({:.2}, {:.2}, {:.2})",
+                        entity_id,
+                        position.x(),
+                        position.y(),
+                        position.z(),
+                        rotation.x(),
+                        rotation.y(),
+                        rotation.z(),
+                        scale.x(),
+                        scale.y(),
+                        scale.z(),
+                    );
+                }
+            }
+            EditorAction::UpdatePointLight {
+                entity_id,
+                color,
+                intensity,
+                range,
+            } => {
+                if let Some(light) = app.world.get_component_mut::<PointLight>(entity_id) {
+                    light.color = color;
+                    light.intensity = intensity;
+                    light.range = range;
+                    debug!(
+                        "PointLight updated for entity {:?}: color=({:.2}, {:.2}, {:.2}) intensity={:.2} range={:.2}",
+                        entity_id, color[0], color[1], color[2], intensity, range,
+                    );
+                }
+            }
+            EditorAction::UpdateParticleEmitter {
+                entity_id,
+                emit_rate,
+                velocity_magnitude,
+                base_lifetime,
+                gravity,
+                base_scale,
+            } => {
+                if let Some(emitter) = app
+                    .world
+                    .get_component_mut::<ParticleEmitterComponent>(entity_id)
+                {
+                    emitter.config.emit_rate = emit_rate;
+                    emitter.config.velocity_magnitude = velocity_magnitude;
+                    emitter.config.base_lifetime = base_lifetime;
+                    emitter.config.gravity = gravity;
+                    emitter.config.base_scale = base_scale;
+                    debug!(
+                        "ParticleEmitter updated for entity {:?}: rate={:.1} vel={:.1} life={:.2} grav={:.1} scale={:.2}",
+                        entity_id,
+                        emit_rate,
+                        velocity_magnitude,
+                        base_lifetime,
+                        gravity,
+                        base_scale,
+                    );
+                }
+            }
         }
     }
 
@@ -409,7 +596,16 @@ fn collect_particle_inspector_data(app: &mut Application) {
 /// Collect entity information for the editor UI in tree order.
 pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
     // First pass: collect all entities with transforms and their relationships
-    type EntityData = (String, Vec3, Vec3, Vec3, String, Vec<String>);
+    type EntityData = (
+        String,
+        Vec3,
+        Vec3,
+        Vec3,
+        String,
+        Vec<String>,
+        Option<PointLightInfo>,
+        Option<ParticleEmitterInfo>,
+    );
     let mut entity_data: HashMap<EntityId, EntityData> = HashMap::new();
     let mut parent_map: HashMap<EntityId, EntityId> = HashMap::new();
     let mut children_map: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
@@ -460,12 +656,41 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         if app.world.get_component::<PointLight>(entity_id).is_some() {
             components.push("PointLight".to_string());
         }
+        if app
+            .world
+            .get_component::<ParticleEmitterComponent>(entity_id)
+            .is_some()
+        {
+            components.push("ParticleEmitter".to_string());
+        }
         if app.world.get_component::<Parent>(entity_id).is_some() {
             components.push("Parent".to_string());
         }
         if app.world.get_component::<Children>(entity_id).is_some() {
             components.push("Children".to_string());
         }
+
+        // Collect PointLight data
+        let point_light =
+            app.world
+                .get_component::<PointLight>(entity_id)
+                .map(|pl| PointLightInfo {
+                    color: pl.color,
+                    intensity: pl.intensity,
+                    range: pl.range,
+                });
+
+        // Collect ParticleEmitter data
+        let particle_emitter = app
+            .world
+            .get_component::<ParticleEmitterComponent>(entity_id)
+            .map(|pe| ParticleEmitterInfo {
+                emit_rate: pe.config.emit_rate,
+                velocity_magnitude: pe.config.velocity_magnitude,
+                base_lifetime: pe.config.base_lifetime,
+                gravity: pe.config.gravity,
+                base_scale: pe.config.base_scale,
+            });
 
         // Determine entity type based on primary component
         let entity_type = if app
@@ -486,7 +711,19 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
             "Empty".to_string()
         };
 
-        entity_data.insert(entity_id, (name, pos, rot, scale, entity_type, components));
+        entity_data.insert(
+            entity_id,
+            (
+                name,
+                pos,
+                rot,
+                scale,
+                entity_type,
+                components,
+                point_light,
+                particle_emitter,
+            ),
+        );
         root_entities.insert(entity_id);
 
         // Track parent relationship
@@ -512,8 +749,10 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         result: &mut Vec<EntityInfo>,
         depth: u32,
     ) {
-        if let Some((name, pos, rot, scale, entity_type, components)) = entity_data.get(&entity_id)
-        {
+        if let Some(data) = entity_data.get(&entity_id) {
+            let (name, pos, rot, scale, entity_type, components, point_light, particle_emitter) =
+                data;
+
             let children = children_map
                 .get(&entity_id)
                 .map(|c| c.as_slice())
@@ -529,6 +768,8 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 depth,
                 has_children: !children.is_empty(),
                 parent_id,
+                point_light: point_light.clone(),
+                particle_emitter: particle_emitter.clone(),
             });
 
             // Recursively add children
