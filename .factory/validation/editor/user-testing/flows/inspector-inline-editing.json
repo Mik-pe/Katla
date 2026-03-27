@@ -1,0 +1,39 @@
+{
+  "flowId": "inspector-inline-editing",
+  "assertions": ["VAL-EDITOR-007", "VAL-EDITOR-008", "VAL-EDITOR-009", "VAL-EDITOR-010", "VAL-EDITOR-011", "VAL-EDITOR-012", "VAL-EDITOR-013"],
+  "status": "pass",
+  "method": "code_inspection_and_unit_tests",
+  "findings": {
+    "VAL-EDITOR-007": {
+      "status": "pass",
+      "evidence": "Code inspection: katla_app/src/ui/editor_ui/inspector.rs lines 209-262 show vec3_slider_row() for position (range -100..=100), rotation (range -180..=180), and scale (range 0.01..=100). Each axis has a Slider widget with unique ID and themed labels."
+    },
+    "VAL-EDITOR-008": {
+      "status": "pass",
+      "evidence": "Code inspection: katla_app/src/application/editor/mod.rs apply_inspector_slider_changes() (lines 122-191) called every frame from generate_ui_draw_list(). Reads InspectorEditState mutated by sliders, applies changes to ECS TransformComponent immediately. Viewport reflects changes during drag since rendering uses the ECS component."
+    },
+    "VAL-EDITOR-009": {
+      "status": "pass",
+      "evidence": "Code inspection: katla_app/src/application/editor/mod.rs lines 167-171 push EditorAction::UpdateTransform with entity_id, position, rotation, scale when change detected. Same pattern for PointLight (lines 176-185) and ParticleEmitter (lines 190-206). Action pushed each frame during drag, ensuring final value is captured."
+    },
+    "VAL-EDITOR-010": {
+      "status": "pass",
+      "evidence": "Code inspection: katla_app/src/ui/editor_ui/inspector.rs lines 265-309 show PointLight controls when entity.point_light.is_some(). Color R/G/B sliders (range 0..=1), Intensity slider (range 0..=100), Range slider (range 0.1..=100). Values synced from PointLightInfo via sync_inspector_edit_state()."
+    },
+    "VAL-EDITOR-011": {
+      "status": "pass",
+      "evidence": "Code inspection: katla_app/src/ui/editor_ui/inspector.rs lines 313-353 show ParticleEmitter controls when entity.particle_emitter.is_some(). Sliders for Emit Rate (0..=1000), Velocity (0..=50), Lifetime (0.1..=30), Gravity (-30..=30), Particle Scale (0.01..=5). Values synced from ParticleEmitterInfo."
+    },
+    "VAL-EDITOR-012": {
+      "status": "pass",
+      "evidence": "Unit test test_hierarchy_entity_selection_works verifies that selecting an entity in hierarchy emits SelectEntity action. Code inspection: sync_inspector_edit_state() in editor_ui.rs syncs InspectorEditState from selected entity data every frame, so inspector immediately reflects new entity's properties."
+    },
+    "VAL-EDITOR-013": {
+      "status": "pass",
+      "evidence": "Code inspection: katla_app/src/ui/editor_ui/inspector.rs lines 362-378 show entity type as read-only label via ui.label(). Component names displayed as read-only labels via ui.label(). Entity name displayed via draw_text(). No interactive widgets on non-editable fields."
+    }
+  },
+  "toolsUsed": ["cargo test", "code inspection"],
+  "frictions": [],
+  "blockers": []
+}
