@@ -30,3 +30,9 @@ name = "animation_validation"
 
 [[example]]
 name = "light_shadow_validation"
+
+[[example]]
+name = "picking_validation"
+
+[[example]]
+name = "outline_validation"
