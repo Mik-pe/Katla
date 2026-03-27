@@ -120,6 +120,8 @@ impl UiContext {
         // Cursor tracks offset relative to start_x
         let mut cursor_offset = 0.0f32;
 
+        self.draw_list.set_clip(self.clip_rect());
+
         for c in text.chars() {
             // Handle newlines - move to next line
             if c == '\n' {
@@ -149,7 +151,6 @@ impl UiContext {
                 let bounds = Rect2D::from_origin_size(Vec2::new(pos_x, pos_y), glyph.size);
 
                 // Draw glyph as textured quad
-                self.draw_list.set_clip(self.clip_rect());
                 self.draw_list
                     .add_textured_rect(bounds, glyph.uv_rect, color, font_atlas);
 
