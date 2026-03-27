@@ -8,8 +8,8 @@ use crate::handle::PipelineHandle;
 use crate::texture::ImageFormat;
 
 use super::super::builder::{InternalPassBuilder, PassBuilder};
-use super::super::graph::BACKBUFFER_NAME;
-use super::super::pass::PassType;
+use super::super::frame_graph::BACKBUFFER_NAME;
+use super::super::pass::{PassKind, PassType};
 use super::super::resource::GraphResourceHandle;
 
 /// Tonemapping operators for fullscreen post-processing.
@@ -163,20 +163,14 @@ impl PassBuilder for FullscreenPass {
             material: None,
             output_format: None,
             build_fn: Box::new(
-                move |_resource_map: &HashMap<String, GraphResourceHandle>| {
-                    // Fullscreen pass data is currently unused but kept for future extensibility
-                    Ok(Box::new(FullscreenPassData))
-                },
+                move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
             ),
             uses_depth: true,
             depth_attachment: None,
+            kind: Some(PassKind::Fullscreen),
         }
     }
 }
-
-/// Internal data for a fullscreen pass.
-#[derive(Debug)]
-pub(crate) struct FullscreenPassData;
 
 #[cfg(test)]
 mod tests {

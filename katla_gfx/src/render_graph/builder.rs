@@ -8,7 +8,7 @@ use std::any::Any;
 use std::collections::HashMap;
 
 use super::error::RenderGraphError;
-use super::pass::PassType;
+use super::pass::{PassKind, PassType};
 use super::resource::GraphResourceHandle;
 
 /// Pass builder trait.
@@ -100,6 +100,9 @@ pub struct InternalPassBuilder {
         crate::render_pass::StoreOp,
         crate::render_pass::ClearValue,
     )>,
+
+    /// Semantic kind of this pass, used for dispatch routing.
+    pub kind: Option<PassKind>,
 }
 
 #[cfg(test)]
@@ -146,6 +149,7 @@ mod tests {
                 build_fn: Box::new(|_resource_map| Ok(Box::new(()))),
                 uses_depth: true,
                 depth_attachment: None,
+                kind: None,
             }
         }
     }

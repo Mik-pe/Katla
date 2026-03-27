@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::error::RenderGraphError;
-use super::super::pass::PassType;
+use super::super::pass::{PassKind, PassType};
 use super::super::resource::GraphResourceHandle;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -104,6 +104,7 @@ impl PassBuilder for DepthPrepass {
             }),
             uses_depth: true,
             depth_attachment: None,
+            kind: Some(PassKind::DepthPrepass),
         }
     }
 }

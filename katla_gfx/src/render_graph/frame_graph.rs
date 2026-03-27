@@ -15,6 +15,34 @@ use ash::vk;
 /// Special resource name for the swapchain backbuffer.
 pub const BACKBUFFER_NAME: &str = "backbuffer";
 
+/// Per-frame parameters for render graph execution.
+///
+/// These values change every frame and are set before calling `execute()`.
+/// Logically separate from the graph structure which is "built once, executed many times."
+pub(super) struct FrameParams {
+    pub delta_time: f32,
+    pub frame_count: usize,
+    pub particle_emit_workgroup_count: u32,
+    pub particle_simulate_workgroup_count: u32,
+    pub animation_skeleton_count: u32,
+    pub skeleton_copy_commands: Vec<(u32, u32, u32)>,
+    pub particle_debug_readback: bool,
+}
+
+impl Default for FrameParams {
+    fn default() -> Self {
+        Self {
+            delta_time: 0.0,
+            frame_count: 0,
+            particle_emit_workgroup_count: 1,
+            particle_simulate_workgroup_count: 1,
+            animation_skeleton_count: 0,
+            skeleton_copy_commands: Vec::new(),
+            particle_debug_readback: false,
+        }
+    }
+}
+
 /// Executable render graph.
 ///
 /// Built once from a [`FrameGraphBuilder`], executed many times per frame.
@@ -45,32 +73,10 @@ pub struct FrameGraph {
     /// Base bindless index for LDR texture (actual index = base + frame_idx).
     ldr_texture_base_index: Option<u32>,
 
-    /// Delta time for this frame (used for particle simulation).
-    pub(super) delta_time: f32,
-
-    /// Global frame counter for this frame (used as random seed for particle simulation).
-    pub(super) frame_count: usize,
-
-    /// Particle emit workgroup count for this frame.
-    /// Calculated each frame based on particles to emit.
-    pub(super) particle_emit_workgroup_count: u32,
-
-    /// Particle simulate workgroup count for this frame.
-    /// Calculated each frame based on alive particle count.
-    pub(super) particle_simulate_workgroup_count: u32,
-
-    /// Animation skeleton count for this frame.
-    /// Number of skeletons to evaluate in the pose compute pass.
-    pub(super) animation_skeleton_count: u32,
-
-    /// Skeleton copy commands for this frame.
-    /// Each entry is (skeleton_handle_index, joint_offset_bytes, joint_count).
-    /// The compute pass copies from the animation output buffer to each entity's
-    /// SkeletonBuffer after dispatch.
-    pub(super) skeleton_copy_commands: Vec<(u32, u32, u32)>,
-
-    /// Flag to trigger particle debug readback this frame.
-    pub(super) particle_debug_readback: bool,
+    /// Per-frame parameters set before each `execute()` call.
+    /// These are logically separate from the graph structure itself,
+    /// which is "built once, executed many times."
+    pub(super) params: FrameParams,
 
     /// Per-frame compositing descriptor sets (one per frame in flight).
     /// Pre-allocated and reused each frame via update_textures().
@@ -90,13 +96,7 @@ impl FrameGraph {
             transient_resources: Vec::new(),
             transient_textures: Vec::new(),
             ldr_texture_base_index: None,
-            delta_time: 0.0,
-            frame_count: 0,
-            particle_emit_workgroup_count: 1,
-            particle_simulate_workgroup_count: 1,
-            animation_skeleton_count: 0,
-            skeleton_copy_commands: Vec::new(),
-            particle_debug_readback: false,
+            params: FrameParams::default(),
             compositing_descriptor_sets: RefCell::new(vec![None, None]),
         }
     }
@@ -273,47 +273,37 @@ impl FrameGraph {
 
     /// Set the delta time for this frame (used for particle simulation).
     pub fn set_delta_time(&mut self, delta_time: f32) {
-        self.delta_time = delta_time;
+        self.params.delta_time = delta_time;
     }
 
     /// Set the global frame counter for this frame (used for particle simulation).
     pub fn set_frame_count(&mut self, frame_count: usize) {
-        self.frame_count = frame_count;
+        self.params.frame_count = frame_count;
     }
 
     /// Set the particle emit workgroup count for this frame.
-    ///
-    /// This should be calculated each frame based on particles to emit.
     pub fn set_particle_emit_workgroup_count(&mut self, count: u32) {
-        self.particle_emit_workgroup_count = count;
+        self.params.particle_emit_workgroup_count = count;
     }
 
     /// Set the particle simulate workgroup count for this frame.
-    ///
-    /// This should be calculated each frame based on alive particle count.
     pub fn set_particle_simulate_workgroup_count(&mut self, count: u32) {
-        self.particle_simulate_workgroup_count = count;
+        self.params.particle_simulate_workgroup_count = count;
     }
 
     /// Set the animation skeleton count for this frame.
-    ///
-    /// This is the number of skeletons to evaluate in the pose compute pass.
     pub fn set_animation_skeleton_count(&mut self, count: u32) {
-        self.animation_skeleton_count = count;
+        self.params.animation_skeleton_count = count;
     }
 
     /// Set skeleton copy commands for this frame.
-    ///
-    /// Each entry is (skeleton_handle_index, joint_offset, joint_count).
-    /// The animation compute pass copies from the output buffer to each
-    /// entity's SkeletonBuffer after the dispatch.
     pub fn set_skeleton_copy_commands(&mut self, commands: Vec<(u32, u32, u32)>) {
-        self.skeleton_copy_commands = commands;
+        self.params.skeleton_copy_commands = commands;
     }
 
     /// Set whether to trigger particle debug readback this frame.
     pub fn set_particle_debug_readback(&mut self, enabled: bool) {
-        self.particle_debug_readback = enabled;
+        self.params.particle_debug_readback = enabled;
     }
 
     /// Cleanup and destroy all transient textures.
@@ -346,6 +336,17 @@ impl FrameGraph {
     /// Get a pass by index.
     pub(crate) fn pass(&self, index: usize) -> Option<&PassDesc> {
         self.passes.get(index)
+    }
+
+    /// Get the execution order for passes.
+    ///
+    /// Returns pass indices in topologically sorted order (dependencies first).
+    /// Falls back to insertion order if the graph hasn't been compiled.
+    pub(crate) fn execution_order(&self) -> Vec<usize> {
+        self.execution_plan
+            .as_ref()
+            .map(|plan| plan.sorted_passes.clone())
+            .unwrap_or_else(|| (0..self.passes.len()).collect())
     }
 
     /// Get a transient texture by name for a specific frame.
@@ -876,6 +877,7 @@ impl FrameGraphBuilder {
             pass.output_format = pass_builder.output_format;
             pass.uses_depth = pass_builder.uses_depth;
             pass.depth_attachment = pass_builder.depth_attachment;
+            pass.kind = pass_builder.kind;
 
             // Extract color attachment info from pass data (for geometry and depth prepass passes)
             if let Some(geom_data) = pass_data.downcast_ref::<GeometryPassData>() {

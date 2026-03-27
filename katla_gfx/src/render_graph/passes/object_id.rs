@@ -72,13 +72,13 @@ impl PassBuilder for ObjectIdPass {
             material: None,
             output_format: Some(ImageFormat::R32Uint),
             build_fn: Box::new(|_resource_map: &HashMap<String, GraphResourceHandle>| {
-                Ok(Box::new(ObjectIdPassData))
+                Ok(Box::new(()))
             }),
             uses_depth: true,
             depth_attachment: self.depth_config,
+            kind: None,
         }
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct ObjectIdPassData;
+

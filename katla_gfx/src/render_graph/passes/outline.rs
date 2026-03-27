@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use super::super::builder::{InternalPassBuilder, PassBuilder};
-use super::super::error::RenderGraphError;
-use super::super::pass::PassType;
+use super::super::pass::{PassKind, PassType};
 use super::super::resource::GraphResourceHandle;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -32,21 +31,9 @@ impl OutlinePass {
     }
 }
 
-#[allow(dead_code)]
-pub(crate) struct OutlinePassData {
-    pub(crate) colors: Vec<(
-        GraphResourceHandle,
-        ImageFormat,
-        LoadOp,
-        StoreOp,
-        ClearValue,
-    )>,
-}
-
 impl PassBuilder for OutlinePass {
     fn as_builder(self) -> InternalPassBuilder {
         let writes = self.writes.clone();
-        let build_writes = writes.clone();
 
         InternalPassBuilder {
             name: self.name,
@@ -57,30 +44,8 @@ impl PassBuilder for OutlinePass {
             tonemap_params: None,
             material: None,
             output_format: Some(ImageFormat::R16G16B16A16Sfloat),
-            build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {
-                let colors: Vec<(
-                    GraphResourceHandle,
-                    ImageFormat,
-                    LoadOp,
-                    StoreOp,
-                    ClearValue,
-                )> = build_writes
-                    .iter()
-                    .map(|output_name| {
-                        let handle = resource_map.get(output_name).copied().ok_or_else(|| {
-                            RenderGraphError::ResourceNotFound(output_name.clone())
-                        })?;
-                        Ok((
-                            handle,
-                            ImageFormat::R16G16B16A16Sfloat,
-                            LoadOp::Load,
-                            StoreOp::Store,
-                            ClearValue::Color([0.0, 0.0, 0.0, 1.0]),
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, RenderGraphError>>()?;
-
-                Ok(Box::new(OutlinePassData { colors }))
+            build_fn: Box::new(|_resource_map: &HashMap<String, GraphResourceHandle>| {
+                Ok(Box::new(()))
             }),
             uses_depth: true,
             depth_attachment: Some((
@@ -91,6 +56,7 @@ impl PassBuilder for OutlinePass {
                     stencil: 0,
                 },
             )),
+            kind: Some(PassKind::Outline),
         }
     }
 }
@@ -143,6 +109,7 @@ impl PassBuilder for StencilIndicatorPass {
                     stencil: 0,
                 },
             )),
+            kind: Some(PassKind::StencilIndicator),
         }
     }
 }

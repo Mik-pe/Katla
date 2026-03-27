@@ -92,7 +92,7 @@ impl<'a> Frame<'a> {
             extent,
         };
 
-        let color_attachment = if pass.writes.contains(&BACKBUFFER_NAME.to_string()) {
+        let color_attachment = if pass.writes_to(BACKBUFFER_NAME) {
             let swapchain_view =
                 self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
             vk::RenderingAttachmentInfo::default()

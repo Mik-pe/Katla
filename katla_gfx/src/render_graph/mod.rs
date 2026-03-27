@@ -36,7 +36,6 @@ pub mod descriptor_sets;
 mod error;
 mod frame;
 mod frame_graph;
-mod graph;
 mod pass;
 mod passes;
 mod resource;
@@ -47,12 +46,12 @@ pub use descriptor_sets::CompositingDescriptorSet;
 pub use error::RenderGraphError;
 pub use frame::Frame;
 pub use frame_graph::{BACKBUFFER_NAME, FrameGraph, FrameGraphBuilder};
-pub use graph::TransientTexture;
-pub use pass::{PassDesc, PassType};
+pub use pass::{PassDesc, PassKind, PassType};
 pub use passes::{
     CompositePass, DepthPrepass, FullscreenPass, GeometryPass, OutlinePass, ShadowPass,
     StencilIndicatorPass, TonemapOperator, TonemapParams, UIPass, ViewportPass, ViewportRect,
 };
 pub use resource::{GraphResourceDesc, GraphResourceHandle, GraphResourceType, ResourceState};
+pub use transient_texture::TransientTexture;
 
 // Internal - for pass template implementation

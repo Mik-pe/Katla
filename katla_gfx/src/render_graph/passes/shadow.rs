@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::texture::ImageFormat;
 
 use super::super::builder::{InternalPassBuilder, PassBuilder};
-use super::super::pass::PassType;
+use super::super::pass::{PassKind, PassType};
 use super::super::resource::GraphResourceHandle;
 
 /// Shadow mapping pass template for directional light cascaded shadow maps.
@@ -68,20 +68,14 @@ impl PassBuilder for ShadowPass {
             material: None,
             output_format: None,
             build_fn: Box::new(
-                move |_resource_map: &HashMap<String, GraphResourceHandle>| {
-                    // Shadow pass data is currently unused but kept for future extensibility
-                    Ok(Box::new(ShadowPassData))
-                },
+                move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
             ),
             uses_depth: true,
             depth_attachment: None,
+            kind: Some(PassKind::Shadow),
         }
     }
 }
-
-/// Internal data for a shadow pass.
-#[derive(Debug)]
-pub(crate) struct ShadowPassData;
 
 #[cfg(test)]
 mod tests {

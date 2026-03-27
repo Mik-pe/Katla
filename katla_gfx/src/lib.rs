@@ -227,9 +227,7 @@ pub use vertex::{VertexPBR, VertexPBRSkinned, VertexUI};
 pub use vulkan::vertex_attribute::AttributeType;
 
 // Render pass system
-pub use render_pass::{
-    AttachmentInfo, AttachmentResources, BarrierKind, ClearValue, LoadOp, StoreOp,
-};
+pub use render_pass::{AttachmentInfo, BarrierKind, ClearValue, LoadOp, StoreOp};
 
 // UI rendering types
 pub use renderer::{UIDrawList, UiDrawCommand};

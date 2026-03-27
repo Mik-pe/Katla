@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use crate::handle::MaterialHandle;
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::error::RenderGraphError;
-use crate::render_graph::graph::BACKBUFFER_NAME;
-use crate::render_graph::pass::PassType;
+use crate::render_graph::frame_graph::BACKBUFFER_NAME;
+use crate::render_graph::pass::{PassKind, PassType};
 use crate::render_graph::resource::GraphResourceHandle;
 
 /// Viewport rectangle for positioning viewport outputs on screen.
@@ -314,6 +314,7 @@ impl PassBuilder for CompositePass {
             }),
             uses_depth: false, // Compositing is a fullscreen pass, no depth needed
             depth_attachment: None,
+            kind: Some(PassKind::Compositing),
         }
     }
 }
