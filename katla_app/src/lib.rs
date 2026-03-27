@@ -2,6 +2,7 @@ pub mod animation;
 pub mod application;
 pub mod components;
 pub mod error;
+pub mod gizmo;
 pub mod gpu_cleanup;
 pub mod gpu_resource_tracker;
 pub mod gui_state;

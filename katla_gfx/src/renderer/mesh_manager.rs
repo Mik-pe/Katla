@@ -332,6 +332,18 @@ impl MeshManager {
         self.create_mesh(registry, &vertices, &indices)
     }
 
+    /// Create a cone mesh with base at y=0 and apex at y=height.
+    pub(crate) fn create_cone(
+        &self,
+        registry: &mut AssetRegistry,
+        height: f32,
+        base_radius: f32,
+        segments: u32,
+    ) -> MeshHandle {
+        let (vertices, indices) = crate::primitives::generate_cone(height, base_radius, segments);
+        self.create_mesh(registry, &vertices, &indices)
+    }
+
     /// Create a cylinder mesh standing on Y axis.
     pub(crate) fn create_cylinder(
         &self,

@@ -106,20 +106,20 @@ impl Application {
 
         self.renderer.upload_shadow_cascades();
 
-        if let Err(e) = self.renderer.execute_draw_calls(frame.draw_list()) {
+        let mut draw_list = frame.take_draw_list();
+
+        // Generate gizmo draw calls if an entity is selected
+        self.collect_gizmo_draw_calls(&mut draw_list);
+
+        if let Err(e) = self.renderer.execute_draw_calls(&draw_list) {
             log::error!("Failed to execute draw calls: {}", e);
             return; // Skip rendering this frame
         }
-
-        let draw_list = frame.take_draw_list();
 
         log::trace!(
             "About to submit {} draw calls to geometry pass",
             draw_list.len()
         );
-
-        self.frame_graph.set_delta_time(delta_time);
-        self.frame_graph.set_frame_count(frame_count);
 
         let frame_index = self.renderer.current_frame() as u32;
         if let Some(ref mut particle_system) = self.renderer.particle_system {
@@ -430,5 +430,99 @@ impl Application {
             }
         }
         indices
+    }
+
+    /// Generate gizmo draw calls and append them to the main draw list.
+    fn collect_gizmo_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
+        use crate::components::{PerspectiveComponent, TransformComponent};
+        use crate::gizmo::*;
+
+        let Some(entity_id) = self.editor_ui.selected_entity else {
+            self.gizmo_state.clear_entity();
+            return;
+        };
+
+        let Some(transform) = self.world.get_component::<TransformComponent>(entity_id) else {
+            self.gizmo_state.clear_entity();
+            return;
+        };
+
+        if !self.gizmo_resources.initialized {
+            return;
+        }
+
+        let position = transform.transform.position;
+        self.gizmo_state.set_entity(entity_id, position);
+
+        // Get camera FOV and viewport height for screen-space scaling
+        let camera = self.camera.borrow();
+        let fov = if let Some(proj) = self
+            .world
+            .get_component::<PerspectiveComponent>(camera.entity)
+        {
+            proj.fov
+        } else {
+            60.0
+        };
+        drop(camera);
+
+        let viewport_height = self.editor_ui.viewport_size().1 as f32;
+        let cam_pos = if let Some(t) = self
+            .world
+            .get_component::<TransformComponent>(self.camera.borrow().entity)
+        {
+            t.transform.position
+        } else {
+            katla_math::Vec3::new(0.0, 2.0, 10.0)
+        };
+
+        let fov_rad = fov.to_radians();
+        let desired_screen_size = 120.0; // pixels
+        let gizmo_scale = compute_gizmo_scale(
+            cam_pos,
+            position,
+            fov_rad,
+            viewport_height,
+            desired_screen_size,
+        );
+
+        // Allocate instance indices starting after existing draws
+        let mut next_instance = draw_list
+            .iter()
+            .map(|d| d.instance_index)
+            .max()
+            .unwrap_or(0)
+            + 1;
+
+        let gizmo_draws = match self.gizmo_state.mode {
+            GizmoMode::Translate => generate_translate_draw_calls(
+                &self.gizmo_resources,
+                position,
+                gizmo_scale,
+                self.gizmo_state.hovered_axis,
+                self.gizmo_state.active_axis,
+                &mut next_instance,
+            ),
+            GizmoMode::Rotate => generate_rotate_draw_calls(
+                &self.gizmo_resources,
+                position,
+                gizmo_scale,
+                self.gizmo_state.hovered_axis,
+                self.gizmo_state.active_axis,
+                &mut next_instance,
+            ),
+            GizmoMode::Scale => generate_scale_draw_calls(
+                &self.gizmo_resources,
+                position,
+                gizmo_scale,
+                self.gizmo_state.hovered_axis,
+                self.gizmo_state.active_axis,
+                &mut next_instance,
+            ),
+        };
+
+        for draw in gizmo_draws {
+            draw_list.push(draw);
+        }
     }
 }

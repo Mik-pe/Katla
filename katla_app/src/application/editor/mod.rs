@@ -67,6 +67,13 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     // Collect entity info for editor UI
     let entity_info = collect_entity_info(app);
 
+    // Sync gizmo mode to editor UI for toolbar display
+    app.editor_ui.gizmo_mode = match app.gizmo_state.mode {
+        crate::gizmo::GizmoMode::Translate => 0,
+        crate::gizmo::GizmoMode::Rotate => 1,
+        crate::gizmo::GizmoMode::Scale => 2,
+    };
+
     // Sync inspector editing state from current entity data
     app.editor_ui.sync_inspector_edit_state(&entity_info);
 
@@ -489,6 +496,15 @@ pub fn process_editor_actions(app: &mut Application) {
                     );
                 }
             }
+            EditorAction::SetGizmoMode(mode_id) => {
+                let mode = match mode_id {
+                    0 => crate::gizmo::GizmoMode::Translate,
+                    1 => crate::gizmo::GizmoMode::Rotate,
+                    2 => crate::gizmo::GizmoMode::Scale,
+                    _ => crate::gizmo::GizmoMode::Translate,
+                };
+                app.gizmo_state.set_mode(mode);
+            }
         }
     }
 
@@ -508,6 +524,7 @@ pub fn process_editor_actions(app: &mut Application) {
     app.window.set_cursor(cursor_icon);
 
     // Clear input state for next frame
+    app.gizmo_state.consumed_click = false;
     app.ui_context.input.clear_frame_state();
 }
 

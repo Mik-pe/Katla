@@ -3,12 +3,14 @@
 //! Used internally by [`VulkanRenderer::create_*_mesh`] convenience methods.
 //! External users should use those methods instead.
 
+mod cone;
 mod cube;
 mod cylinder;
 mod plane;
 mod sphere;
 mod torus;
 
+pub use cone::generate_cone;
 pub use cube::generate_cube;
 pub use cylinder::generate_cylinder;
 pub use plane::generate_plane;

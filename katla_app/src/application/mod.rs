@@ -114,6 +114,12 @@ pub struct Application {
     pub(crate) minimized: bool,
     /// Tracks GPU resource reference counts for automatic cleanup on entity/component destruction.
     pub(crate) gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker,
+    /// Gizmo state (mode, drag, hover).
+    pub(crate) gizmo_state: crate::gizmo::GizmoState,
+    /// Gizmo GPU resources (meshes, material).
+    pub(crate) gizmo_resources: crate::gizmo::GizmoResources,
+    /// Previous frame's mouse screen position (for gizmo rotation drag delta).
+    pub(crate) prev_mouse_screen: Option<(f32, f32)>,
 }
 
 impl ApplicationHandler for Application {
@@ -132,6 +138,10 @@ impl ApplicationHandler for Application {
         event: DeviceEvent,
     ) {
         if let DeviceEvent::MouseMotion { delta } = event {
+            // Don't track mouse motion for orbit camera when gizmo is active
+            if self.gizmo_state.is_dragging() {
+                return;
+            }
             let input = self.world.get_input();
             let should_track = input.is_action_pressed(Action::LookEnable)
                 || input.is_action_pressed(Action::PanEnable);
@@ -169,19 +179,27 @@ impl ApplicationHandler for Application {
                     && self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
                     && self.editor_ui.last_viewport_bounds.contains(mouse_pos)
                 {
-                    // Store viewport-relative logical coordinates for the picking readback.
-                    // The actual physical pixel coordinates will be computed after rendering
-                    // when we know the current frame index and scale factor.
-                    let vp = self.editor_ui.last_viewport_bounds;
-                    let rel_x = mouse_pos.x() - vp.min.x();
-                    let rel_y = mouse_pos.y() - vp.min.y();
-                    self.pending_pick = Some((self.frame_count, rel_x, rel_y));
+                    // Check if the click hits a gizmo axis first
+                    self.gizmo_state.consumed_click = false;
+
+                    if let Some(axis) = self.hit_test_gizmo(mouse_pos) {
+                        self.begin_gizmo_drag(axis, mouse_pos);
+                    } else {
+                        // Store viewport-relative logical coordinates for the picking readback.
+                        let vp = self.editor_ui.last_viewport_bounds;
+                        let rel_x = mouse_pos.x() - vp.min.x();
+                        let rel_y = mouse_pos.y() - vp.min.y();
+                        self.pending_pick = Some((self.frame_count, rel_x, rel_y));
+                    }
                 }
             }
 
             if let Some(action) = self.input_mapper.get_action(&binding) {
-                // Only send mouse input to game when viewport is focused
-                if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
+                // Only send mouse input to game when viewport is focused and gizmo is not active
+                if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
+                    && !self.gizmo_state.is_dragging()
+                    && !self.gizmo_state.consumed_click
+                {
                     let pressed = matches!(state, ElementState::Pressed);
                     self.world.get_input_mut().set_action_state(action, pressed);
                 }
@@ -199,6 +217,14 @@ impl ApplicationHandler for Application {
                 self.ui_context
                     .input
                     .set_mouse_button_with_time(btn, pressed, time);
+            }
+
+            // End gizmo drag on mouse release
+            if matches!(state, ElementState::Released)
+                && *button == winit::event::MouseButton::Left
+                && self.gizmo_state.is_dragging()
+            {
+                self.gizmo_state.end_drag();
             }
         }
 
@@ -254,9 +280,11 @@ impl ApplicationHandler for Application {
                 // Convert physical pixels to logical pixels for UI
                 let logical_x = position.x as f32 / self.scale_factor;
                 let logical_y = position.y as f32 / self.scale_factor;
-                self.ui_context
-                    .input
-                    .set_mouse_pos(Vec2::new(logical_x, logical_y));
+                let mouse_pos = Vec2::new(logical_x, logical_y);
+                self.ui_context.input.set_mouse_pos(mouse_pos);
+
+                // Gizmo hover and drag updates
+                self.update_gizmo_interaction(mouse_pos);
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let scroll = match delta {
@@ -366,9 +394,21 @@ impl ApplicationHandler for Application {
 
                     if event.state == ElementState::Pressed
                         && self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
-                        && keycode == KeyCode::Escape
+                        && !self.ui_context.input.want_capture_keyboard
                     {
-                        event_loop.exit()
+                        // Gizmo mode shortcuts
+                        if keycode == KeyCode::KeyW {
+                            self.gizmo_state
+                                .set_mode(crate::gizmo::GizmoMode::Translate);
+                        } else if keycode == KeyCode::KeyE {
+                            self.gizmo_state.set_mode(crate::gizmo::GizmoMode::Rotate);
+                        } else if keycode == KeyCode::KeyR {
+                            self.gizmo_state.set_mode(crate::gizmo::GizmoMode::Scale);
+                        }
+
+                        if keycode == KeyCode::Escape {
+                            event_loop.exit()
+                        }
                     }
                 }
             }
@@ -747,6 +787,9 @@ impl Application {
         // Set the protected material in the GPU resource tracker so it's never destroyed
         self.gpu_resource_tracker
             .set_protected_material(self.default_material_handle);
+
+        // Initialize gizmo GPU resources
+        self.init_gizmo_resources();
 
         // Initialize particle emit pipeline
         let particle_emit_shader_path = self.resources.shader_path("particles/particle_emit.wgsl");
@@ -1291,6 +1334,299 @@ impl Application {
     /// Get the default PBR material handle.
     pub fn default_material(&self) -> katla_gfx::MaterialHandle {
         self.default_material_handle
+    }
+
+    /// Initialize GPU resources for the 3D gizmo (meshes + material).
+    fn init_gizmo_resources(&mut self) {
+        use crate::gizmo::GizmoResources;
+
+        let shaft_mesh = self.renderer.create_cylinder_mesh(1.0, 0.05, 16);
+        let cone_mesh = self.renderer.create_cone_mesh(1.0, 0.5, 16);
+        let cube_mesh = self.renderer.create_cube_mesh([1.0, 1.0, 1.0]);
+        let ring_mesh = self.renderer.create_torus_mesh(0.5, 0.02, 48, 24);
+
+        let material = self.default_material_handle;
+
+        self.gizmo_resources = GizmoResources {
+            shaft_mesh,
+            cone_mesh,
+            cube_mesh,
+            ring_mesh,
+            material,
+            initialized: true,
+        };
+
+        info!("Gizmo GPU resources initialized");
+    }
+
+    /// Hit-test gizmo axes at the given screen position.
+    ///
+    /// Returns the hit axis, or None if no axis is close enough to the mouse.
+    fn hit_test_gizmo(&self, mouse_pos: katla_math::Vec2) -> Option<crate::gizmo::GizmoAxis> {
+        use crate::components::{PerspectiveComponent, TransformComponent};
+        use crate::gizmo::*;
+
+        if self.gizmo_state.entity.is_none() || !self.gizmo_resources.initialized {
+            return None;
+        }
+
+        let vp = &self.editor_ui.last_viewport_bounds;
+        let viewport = (vp.min.x(), vp.min.y(), vp.width(), vp.height());
+
+        if !vp.contains(mouse_pos) {
+            return None;
+        }
+
+        let camera = self.camera.borrow();
+        let view_mat = camera.get_view_mat(&self.world);
+        let proj_mat = camera.get_proj_mat(&self.world);
+        drop(camera);
+
+        let fov = self
+            .world
+            .get_component::<PerspectiveComponent>(self.camera.borrow().entity)
+            .map(|p| p.fov)
+            .unwrap_or(60.0);
+
+        let viewport_height = self.editor_ui.viewport_size().1 as f32;
+        let cam_pos = self
+            .world
+            .get_component::<TransformComponent>(self.camera.borrow().entity)
+            .map(|t| t.transform.position)
+            .unwrap_or(katla_math::Vec3::new(0.0, 2.0, 10.0));
+
+        let gizmo_scale = compute_gizmo_scale(
+            cam_pos,
+            self.gizmo_state.origin,
+            fov.to_radians(),
+            viewport_height,
+            120.0,
+        );
+
+        hit_test_axes(
+            (mouse_pos.x(), mouse_pos.y()),
+            self.gizmo_state.origin,
+            gizmo_scale,
+            &view_mat,
+            &proj_mat,
+            viewport,
+            self.gizmo_state.mode,
+            12.0, // pixel threshold
+        )
+    }
+
+    /// Begin dragging a gizmo axis.
+    fn begin_gizmo_drag(&mut self, axis: crate::gizmo::GizmoAxis, mouse_pos: katla_math::Vec2) {
+        use crate::components::TransformComponent;
+
+        if let Some(entity_id) = self.gizmo_state.entity {
+            let entity_pos = self
+                .world
+                .get_component::<TransformComponent>(entity_id)
+                .map(|t| t.transform.position)
+                .unwrap_or(self.gizmo_state.origin);
+
+            // Compute a world-space reference point on the drag plane
+            let vp = &self.editor_ui.last_viewport_bounds;
+            let viewport = (vp.min.x(), vp.min.y(), vp.width(), vp.height());
+            let camera = self.camera.borrow();
+            let view_mat = camera.get_view_mat(&self.world);
+            let proj_mat = camera.get_proj_mat(&self.world);
+            drop(camera);
+
+            let (ray_origin, ray_dir) = crate::gizmo::screen_to_ray(
+                (mouse_pos.x(), mouse_pos.y()),
+                viewport,
+                &view_mat,
+                &proj_mat,
+            );
+            {
+                // Compute camera forward for the drag plane
+                let _cam_pos = self
+                    .world
+                    .get_component::<TransformComponent>(self.camera.borrow().entity)
+                    .map(|t| t.transform.position)
+                    .unwrap_or(katla_math::Vec3::new(0.0, 2.0, 10.0));
+                let cam_rot = self.camera.borrow().get_view_rotation(&self.world);
+                let camera_forward = cam_rot * katla_math::Vec3::new(0.0, 0.0, -1.0);
+
+                if let Some(delta) = crate::gizmo::compute_translate_delta(
+                    axis,
+                    ray_origin,
+                    ray_dir,
+                    entity_pos,
+                    camera_forward,
+                ) {
+                    // Store the initial world position on the plane (not the entity position)
+                    let world_pos = entity_pos + delta;
+                    self.gizmo_state.begin_drag(axis, world_pos, entity_pos);
+                } else {
+                    self.gizmo_state.begin_drag(axis, entity_pos, entity_pos);
+                }
+
+                // Store initial rotation/scale for rotate/scale modes
+                if let Some(transform) = self.world.get_component::<TransformComponent>(entity_id) {
+                    let euler = transform.transform.rotation.to_euler();
+                    self.gizmo_state.drag_start_rotation = Some(euler);
+                    self.gizmo_state.drag_start_scale = Some(transform.transform.scale);
+                    self.gizmo_state.drag_rotation_accum = katla_math::Vec3::new(0.0, 0.0, 0.0);
+                }
+            }
+        }
+    }
+
+    /// Update gizmo interaction on mouse move: hover highlight and drag application.
+    fn update_gizmo_interaction(&mut self, mouse_pos: katla_math::Vec2) {
+        use crate::components::TransformComponent;
+
+        // Store previous screen position for rotation delta
+        let prev_screen = self.prev_mouse_screen;
+        let current_screen = (mouse_pos.x(), mouse_pos.y());
+        self.prev_mouse_screen = Some(current_screen);
+
+        if self.gizmo_state.is_dragging() {
+            // Apply the drag based on the current mode
+            let Some(entity_id) = self.gizmo_state.entity else {
+                return;
+            };
+
+            let Some(axis) = self.gizmo_state.active_axis else {
+                return;
+            };
+
+            let vp = &self.editor_ui.last_viewport_bounds;
+            let viewport = (vp.min.x(), vp.min.y(), vp.width(), vp.height());
+
+            if !vp.contains(mouse_pos) {
+                return;
+            }
+
+            let camera = self.camera.borrow();
+            let view_mat = camera.get_view_mat(&self.world);
+            let proj_mat = camera.get_proj_mat(&self.world);
+            drop(camera);
+
+            let cam_rot = self.camera.borrow().get_view_rotation(&self.world);
+            let camera_forward = cam_rot * katla_math::Vec3::new(0.0, 0.0, -1.0);
+
+            let (ray_origin, ray_dir) =
+                crate::gizmo::screen_to_ray(current_screen, viewport, &view_mat, &proj_mat);
+            {
+                if let Some(transform) = self
+                    .world
+                    .get_component_mut::<TransformComponent>(entity_id)
+                {
+                    match self.gizmo_state.mode {
+                        crate::gizmo::GizmoMode::Translate => {
+                            if let Some(start_origin) = self.gizmo_state.drag_start_origin
+                                && let Some(delta) = crate::gizmo::compute_translate_delta(
+                                    axis,
+                                    ray_origin,
+                                    ray_dir,
+                                    start_origin,
+                                    camera_forward,
+                                )
+                            {
+                                transform.transform.position = start_origin + delta;
+                                self.gizmo_state.origin = transform.transform.position;
+                            }
+                        }
+                        crate::gizmo::GizmoMode::Rotate => {
+                            if let Some(prev) = prev_screen {
+                                // Project gizmo origin to screen space for rotation center
+                                let origin_screen = crate::gizmo::world_to_screen(
+                                    self.gizmo_state.origin,
+                                    &view_mat,
+                                    &proj_mat,
+                                    viewport,
+                                );
+
+                                if let Some(center) = origin_screen {
+                                    let delta = crate::gizmo::compute_rotate_delta(
+                                        axis,
+                                        center,
+                                        current_screen,
+                                        prev,
+                                    );
+                                    self.gizmo_state.drag_rotation_accum = katla_math::Vec3::new(
+                                        self.gizmo_state.drag_rotation_accum.x()
+                                            + if axis == crate::gizmo::GizmoAxis::X {
+                                                delta
+                                            } else {
+                                                0.0
+                                            },
+                                        self.gizmo_state.drag_rotation_accum.y()
+                                            + if axis == crate::gizmo::GizmoAxis::Y {
+                                                delta
+                                            } else {
+                                                0.0
+                                            },
+                                        self.gizmo_state.drag_rotation_accum.z()
+                                            + if axis == crate::gizmo::GizmoAxis::Z {
+                                                delta
+                                            } else {
+                                                0.0
+                                            },
+                                    );
+
+                                    if let Some((start_pitch, start_yaw, start_roll)) =
+                                        self.gizmo_state.drag_start_rotation
+                                    {
+                                        let new_pitch =
+                                            start_pitch + self.gizmo_state.drag_rotation_accum.x();
+                                        let new_yaw =
+                                            start_yaw + self.gizmo_state.drag_rotation_accum.y();
+                                        let new_roll =
+                                            start_roll + self.gizmo_state.drag_rotation_accum.z();
+                                        transform.transform.rotation = katla_math::Quat::from_euler(
+                                            new_pitch, new_yaw, new_roll,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        crate::gizmo::GizmoMode::Scale => {
+                            if let Some(start_origin) = self.gizmo_state.drag_start_origin
+                                && let Some(axis_dist) = crate::gizmo::compute_scale_delta(
+                                    axis,
+                                    ray_origin,
+                                    ray_dir,
+                                    start_origin,
+                                    camera_forward,
+                                )
+                                && let Some(start_scale) = self.gizmo_state.drag_start_scale
+                            {
+                                let axis_idx = match axis {
+                                    crate::gizmo::GizmoAxis::X => 0,
+                                    crate::gizmo::GizmoAxis::Y => 1,
+                                    crate::gizmo::GizmoAxis::Z => 2,
+                                };
+                                // Store the initial axis distance on the first drag frame
+                                // to compute relative scale from the drag start
+                                if self.gizmo_state.drag_start_world.is_none() {
+                                    self.gizmo_state.drag_start_world =
+                                        Some(katla_math::Vec3::new(axis_dist, 0.0, 0.0));
+                                }
+                                let initial_dist = self.gizmo_state.drag_start_world.unwrap().x();
+                                // Scale relative to drag start: ratio of current distance to initial distance
+                                let scale_factor = if initial_dist.abs() > 1e-6 {
+                                    axis_dist / initial_dist
+                                } else {
+                                    1.0 + axis_dist * 0.01
+                                };
+                                let mut scale = [start_scale.x(), start_scale.y(), start_scale.z()];
+                                scale[axis_idx] = (scale[axis_idx] * scale_factor).max(0.01);
+                                transform.transform.scale =
+                                    katla_math::Vec3::new(scale[0], scale[1], scale[2]);
+                            }
+                        }
+                    }
+                }
+            }
+        } else if self.gizmo_state.entity.is_some() {
+            // Update hover highlight
+            self.gizmo_state.hovered_axis = self.hit_test_gizmo(mouse_pos);
+        }
     }
 
     /// Poll the background loader and process completed loads.

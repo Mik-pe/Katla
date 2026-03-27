@@ -157,6 +157,8 @@ pub enum EditorAction {
         gravity: f32,
         base_scale: f32,
     },
+    /// Set the gizmo transform mode.
+    SetGizmoMode(u8), // 0=Translate, 1=Rotate, 2=Scale
 }
 
 /// Which panel is currently focused (receives input).
@@ -244,6 +246,8 @@ pub struct EditorUI {
     pub inspector_edit: crate::ui::editor_ui::inspector::InspectorEditState,
     /// The entity ID whose inspector editing state is currently populated.
     pub(crate) inspector_edit_entity: Option<EntityId>,
+    /// Current gizmo mode (synced from Application for toolbar display).
+    pub gizmo_mode: u8,
 }
 
 impl EditorUI {
@@ -288,6 +292,7 @@ impl EditorUI {
                 particle_scale: 0.1,
             },
             inspector_edit_entity: None,
+            gizmo_mode: 0,
         }
     }
 
@@ -580,6 +585,11 @@ impl EditorUI {
             &mut self.toolbar_state,
             &self.theme,
             preferences,
+            match self.gizmo_mode {
+                0 => crate::gizmo::GizmoMode::Translate,
+                1 => crate::gizmo::GizmoMode::Rotate,
+                _ => crate::gizmo::GizmoMode::Scale,
+            },
         ));
         self.pending_actions
             .append(&mut self.toolbar_state.pending_actions);
