@@ -127,7 +127,12 @@ impl UiContext {
             Vec2::new(scrollbar_width, actual_height),
         );
 
-        let scrollbar_id = self.generate_id(&format!("{}_scrollbar", id));
+        let scrollbar_id = {
+            self.push_id(id);
+            let sid = self.generate_id("\x00scrollbar");
+            self.pop_id();
+            sid
+        };
         if self.active_id == Some(scrollbar_id) {
             if self.input.mouse_down[mouse_button::LEFT] {
                 let max_scroll = (state.content_height - actual_height).max(0.0);

@@ -298,11 +298,41 @@ impl World {
     ///
     /// * `delta_time` - Time elapsed since the last frame in seconds
     pub fn update(&mut self, delta_time: f32) {
-        // Avoid aliasing `&mut self.systems` and `&mut self` at the same time.
-        // Temporarily take the systems list, run updates, then put it back.
-        let mut systems = std::mem::take(&mut self.systems);
+        // Take systems out to avoid aliasing &mut self.systems with &mut self.
+        let systems = std::mem::take(&mut self.systems);
 
-        for ordered_system in &mut systems {
+        // Guard that restores systems on panic so self.systems isn't left empty.
+        struct Guard<'a> {
+            dest: *mut Vec<OrderedSystem>,
+            systems: Option<Vec<OrderedSystem>>,
+            _marker: std::marker::PhantomData<&'a mut Vec<OrderedSystem>>,
+        }
+
+        impl Drop for Guard<'_> {
+            fn drop(&mut self) {
+                if let Some(systems) = self.systems.take() {
+                    // SAFETY: Guard holds a mutable reference to self.systems.
+                    // We only run this on panic (unwind) or if the normal path
+                    // didn't consume systems.
+                    unsafe {
+                        *self.dest = systems;
+                    }
+                }
+            }
+        }
+
+        let mut guard = Guard {
+            dest: &mut self.systems as *mut _,
+            systems: Some(systems),
+            _marker: std::marker::PhantomData,
+        };
+
+        // SAFETY: We have exclusive access to self.systems via the raw pointer in guard.
+        // The systems vec is temporarily in guard.systems. If a panic occurs, the
+        // Guard's Drop restores them. If no panic, we restore manually below.
+        let systems = guard.systems.as_mut().unwrap();
+
+        for ordered_system in systems.iter_mut() {
             if !ordered_system.system.is_enabled() {
                 continue;
             }
@@ -310,6 +340,8 @@ impl World {
             ordered_system.system.update(self, delta_time);
         }
 
+        // Normal path: take systems out of guard and restore to self.systems
+        let systems = guard.systems.take().unwrap();
         self.systems = systems;
 
         // Flush per-frame events
@@ -385,13 +417,16 @@ impl World {
     }
 
     /// Removes entities that have no components.
+    ///
+    /// Emits `EntityEvent::Destroyed` for each removed entity.
     pub fn cleanup_empty_entities(&mut self) {
         let entities_with_components: std::collections::HashSet<EntityId> =
-            unsafe { (*self.storage.get()).entities_with_components() };
+            self.storage.get_mut().entities_with_components();
 
         for entity_id in self.entities.iter_live().collect::<Vec<_>>() {
             if !entities_with_components.contains(&entity_id) {
                 self.entities.deallocate(entity_id);
+                self.entity_events.push(EntityEvent::Destroyed(entity_id));
             }
         }
     }

@@ -5,7 +5,7 @@
 use katla_math::{Rect2D, Vec2};
 use katla_ui::{
     FontId, FontSize, ForkAwesome, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
-    widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle},
+    widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle, ToggleButton},
 };
 
 use crate::Preferences;
@@ -368,14 +368,12 @@ fn build_appearance_tab(
     let grid_btn_bounds =
         Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
     if ui
-        .toggle_button(
-            "pref_grid_toggle",
-            "Show Grid",
-            show_grid,
-            grid_btn_bounds,
-            theme.success,
-            theme.button_bg,
-            theme.button_text,
+        .add(
+            ToggleButton::new(show_grid, "Show Grid")
+                .bounds(grid_btn_bounds)
+                .id("pref_grid_toggle")
+                .checked_color(theme.success)
+                .unchecked_color(theme.button_bg),
         )
         .clicked
     {
@@ -386,14 +384,12 @@ fn build_appearance_tab(
     let stats_btn_bounds =
         Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
     if ui
-        .toggle_button(
-            "pref_stats_toggle",
-            "Show Stats Panel",
-            show_stats,
-            stats_btn_bounds,
-            theme.success,
-            theme.button_bg,
-            theme.button_text,
+        .add(
+            ToggleButton::new(show_stats, "Show Stats Panel")
+                .bounds(stats_btn_bounds)
+                .id("pref_stats_toggle")
+                .checked_color(theme.success)
+                .unchecked_color(theme.button_bg),
         )
         .clicked
     {
@@ -453,14 +449,12 @@ fn build_editor_tab(
     let snap_btn_bounds =
         Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
     if ui
-        .toggle_button(
-            "pref_snap_toggle",
-            "Snap to Grid",
-            editor_settings.snap_to_grid,
-            snap_btn_bounds,
-            theme.success,
-            theme.button_bg,
-            theme.button_text,
+        .add(
+            ToggleButton::new(editor_settings.snap_to_grid, "Snap to Grid")
+                .bounds(snap_btn_bounds)
+                .id("pref_snap_toggle")
+                .checked_color(theme.success)
+                .unchecked_color(theme.button_bg),
         )
         .clicked
     {

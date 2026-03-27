@@ -64,7 +64,7 @@ impl UiContext {
     /// Returns a Response. Check `response.clicked` for click.
     /// Colors are passed as parameters to allow theme customization.
     #[allow(clippy::too_many_arguments)]
-    pub fn toggle_button(
+    pub(crate) fn toggle_button(
         &mut self,
         id: &str,
         label: &str,

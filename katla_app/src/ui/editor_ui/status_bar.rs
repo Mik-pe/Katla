@@ -80,11 +80,11 @@ impl<'a> Widget for StatusBar<'a> {
         ui.separator_text();
 
         let frame_text = format!("Frame: {}", self.frame_count);
-        ui.text_label(&frame_text);
+        ui.label(&frame_text);
         ui.separator_text();
 
         let entity_text = format!("Entities: {}", self.entity_count);
-        ui.text_label(&entity_text);
+        ui.label(&entity_text);
         ui.separator_text();
 
         let selection_text = if self.selected_count > 0 {
