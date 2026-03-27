@@ -7,20 +7,22 @@
 // restrictions prevent full parity):
 //   - Single-point textureLoad instead of 16-sample PCF Poisson disc.
 //     PCF requires textureSampleCompare which is fragment-only.
-//   - These divergences are acceptable for validating the core depth
-//     comparison and cascade selection logic.
+//   - UV clamping at cascade boundaries (production uses sampler addressing).
+//   - Comparison sampler behavior (LESS_OR_EQUAL) is emulated manually.
 //
-// Two entry points:
-//   cs_main          - single-point sampling, no cascade blending
-//   cs_main_blended  - single-point sampling with 5% cascade blend zone
+// These divergences are acceptable for validating the core depth comparison
+// and cascade selection logic, but PCF softness and comparison sampler edge
+// cases remain untested by this validator.
+//
+// Entry point:
+//   cs_main - dispatches to sample_shadow_manual or sample_shadow_blended
+//              based on test_params.use_blending.
 //
 // Descriptor layout:
 //   @group(0) @binding(0)  shadow_data: storage buffer (ShadowFrameData)
 //   @group(0) @binding(1)  shadow_atlas: depth texture 2d
 //   @group(0) @binding(2)  output_data: storage buffer (array<f32>)
 //   @group(0) @binding(3)  test_params: uniform buffer (TestParams)
-
-const NUM_CASCADES: u32 = 4u;
 
 struct ShadowCascadeData {
     view_proj: mat4x4f,
@@ -54,6 +56,12 @@ var<storage, read_write> output_data: array<f32>;
 
 @group(0) @binding(3)
 var<uniform> test_params: TestParams;
+
+// Atlas size passed in via shadow_bias.w to avoid shader recompilation.
+// Must match the atlas texture dimensions created on the CPU side.
+fn atlas_size() -> f32 {
+    return shadow_data.shadow_bias.w;
+}
 
 fn cascade_uv_offset_scale(cascade_idx: u32) -> vec4f {
     let col = f32(cascade_idx % 2u);
@@ -98,13 +106,13 @@ fn sample_shadow_manual(world_pos: vec3f, view_z: f32) -> f32 {
     let atlas = cascade_uv_offset_scale(cascade_idx);
     uv = atlas.xy + uv * atlas.zw;
 
+    // Production shadow_sampling.wgsl only uses constant_bias (.x).
+    // Slope bias (.y) is handled by Vulkan pipeline depth bias, not the shader.
     let constant_bias = shadow_data.shadow_bias.x;
-    let slope_bias = shadow_data.shadow_bias.y;
-    let compare_depth = depth - constant_bias - slope_bias;
+    let compare_depth = depth - constant_bias;
 
-    // textureLoad for depth texture (compute shader compatible).
-    const ATLAS_SIZE: u32 = 256u;
-    let coords = vec2i(clamp(vec2f(uv) * vec2f(f32(ATLAS_SIZE)), vec2f(0.0), vec2f(f32(ATLAS_SIZE) - 1.0)));
+    let sz = atlas_size();
+    let coords = vec2i(clamp(vec2f(uv) * vec2f(sz), vec2f(0.0), vec2f(sz - 1.0)));
     let stored_depth = textureLoad(shadow_atlas, coords, 0);
 
     if (compare_depth <= stored_depth) {
@@ -155,4 +163,3 @@ fn cs_main() {
     }
     output_data[test_params.test_index] = visibility;
 }
-
