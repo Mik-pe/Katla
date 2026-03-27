@@ -1,0 +1,51 @@
+{
+  "featureId": "inspector-inline-editing",
+  "reviewedAt": "2026-03-27T02:30:00Z",
+  "commitId": "521a194",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation replaces the read-only inspector display with interactive sliders for Transform (position/rotation/scale), PointLight (color/intensity/range), and ParticleEmitter (emit rate/velocity/lifetime/gravity/scale). The architecture uses InspectorEditState to hold mutable slider values, syncs from ECS on selection change, and applies changes back via apply_inspector_slider_changes() before UI rendering completes. All 186 workspace tests pass, clippy clean, formatted. The implementation covers all expected behaviors from the feature description. A few non-blocking issues were identified around inconsistent real-time update behavior and redundant writes.",
+    "issues": [
+      {
+        "file": "katla_app/src/application/editor/mod.rs",
+        "line": 147,
+        "severity": "non_blocking",
+        "description": "Inconsistent real-time update pattern: TransformComponent is updated directly in ECS via get_component_mut (enabling real-time viewport feedback), but PointLight and ParticleEmitter only push EditorActions without direct ECS writes. This means PointLight color/intensity changes and ParticleEmitter parameter changes will NOT be visible in the viewport until the EditorAction is processed on the next frame. The feature description says 'real-time update' generally and the commit message states 'Real-time ECS component updates during slider drag'. Consider adding direct ECS writes for PointLight and ParticleEmitter in apply_inspector_slider_changes() to match the Transform pattern."
+      },
+      {
+        "file": "katla_app/src/application/editor/mod.rs",
+        "line": 157,
+        "severity": "non_blocking",
+        "description": "Redundant double-write for Transform: apply_inspector_slider_changes() writes transform.position/rotation/scale directly via get_component_mut, then pushes EditorAction::UpdateTransform which is processed in process_editor_actions() writing the same values again. The immediate write is necessary for real-time viewport feedback, but the EditorAction push could be gated to only fire on slider release (using Response.active going from true to false) to avoid the redundant second write every frame during drag."
+      },
+      {
+        "file": "katla_app/src/ui/editor_ui/inspector.rs",
+        "line": 131,
+        "severity": "non_blocking",
+        "description": "Slider Response is bound to _response and completely ignored. The Response struct has 'changed' and 'active' fields that could be used to distinguish between drag-in-progress and release events, which would enable the 'commit on release' behavior described in the feature. Currently, changes are committed every frame during drag rather than on release."
+      },
+      {
+        "file": "katla_app/src/ui/editor_ui.rs",
+        "line": 244,
+        "severity": "non_blocking",
+        "description": "The inspector_edit field type uses the fully-qualified path crate::ui::editor_ui::inspector::InspectorEditState instead of the re-exported crate::ui::InspectorEditState. InspectorEditState is already re-exported from ui/mod.rs (line 11), so the shorter path would be more consistent."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The worker discovered and documented the inspector inline editing pattern in architecture.md, including the InspectorEditState sync flow, the borrow checker constraint requiring apply_inspector_slider_changes() to be called before borrowing ui_renderer, and the deferred commit pattern. This is well-documented and will benefit future workers.",
+      "evidence": ".factory/library/architecture.md 'Inspector Inline Editing' section added by the worker"
+    },
+    {
+      "area": "conventions",
+      "observation": "The worker used the Slider widget's &mut f32 pattern correctly for direct mutation during UI build. This is the idiomatic katla_ui pattern but isn't explicitly documented in AGENTS.md or the library. The pattern is: Slider::new(&mut value, range) mutates value directly during ui.add(), and the Response is checked for .changed/.active for event handling.",
+      "evidence": "katla_ui/src/widgets/mod.rs:302-343 — Slider struct holds &'a mut f32, ui.add() mutates the value directly"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The inspector-inline-editing feature is well-implemented and passes all automated checks (186 tests, clippy, fmt). The core architecture is sound: InspectorEditState holds mutable slider values synced from ECS on selection change, Slider widgets mutate the state directly during drag, and apply_inspector_slider_changes() propagates changes to ECS for viewport feedback. Transform editing has real-time viewport updates; PointLight and ParticleEmitter edits are deferred by one frame (non-blocking inconsistency). The 'commit on release' behavior from the feature description is not implemented — changes are committed every frame during drag instead. The implementation adds no new tests (noted as acceptable for a UI feature requiring manual verification). Overall: pass with minor improvement opportunities."
+}

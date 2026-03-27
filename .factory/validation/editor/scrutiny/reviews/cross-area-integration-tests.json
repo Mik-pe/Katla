@@ -1,0 +1,33 @@
+{
+  "featureId": "cross-area-integration-tests",
+  "reviewedAt": "2026-03-27T01:22:00.000Z",
+  "commitId": "459ed5e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Four cross-area integration tests were added to katla_app/src/scene/mod.rs covering all four required behaviors (VAL-CROSS-002, VAL-CROSS-003, VAL-CROSS-004, VAL-CROSS-007). The tests are well-structured, exercise real APIs (ECS World, GpuResourceTracker, component events, change detection, RON serialization round-trips), and all pass. The implementation is clean with no blocking issues.",
+    "issues": [
+      {
+        "file": "katla_app/src/scene/mod.rs",
+        "line": 3477,
+        "severity": "non_blocking",
+        "description": "test_transform_persistence uses f32::EPSILON (~1.19e-7) for float comparison after RON round-trip. This is appropriate for exact round-trip serialization (RON preserves full f32 precision), but a slightly larger epsilon (e.g., 1e-6) would be more robust against future serialization format changes. Not blocking — current epsilon is technically correct for this use case."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The worker discovered that query_changed returns a 3-tuple (EntityId, &T, &U) for two-component queries, not a 2-tuple as might be expected. The transcript shows the worker had to fix destructuring after the initial compile error. This pattern is documented in architecture.md under ECS Change Detection but the specific tuple arity behavior could be made more explicit.",
+      "evidence": "Transcript shows compile error and fix: 'The query returns a 3-tuple (EntityId, &TransformComponent, &NameComponent), not a 2-tuple.' This is implied by QueryData design but the exact tuple shape isn't explicitly documented."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The worker discovered that component_events_for returns a Vec<&ComponentEvent> (owned Vec of references), requiring the result to be bound to a variable before chaining .iter() on it. The initial code chained .iter() on a temporary Vec, causing a borrow checker error. This return type detail isn't documented in architecture.md.",
+      "evidence": "Transcript shows: 'component_events_for returns a Vec and I'm chaining .iter() on it, but the temporary is dropped.' The fix was binding the result to a variable first: 'let filtered = world.component_events_for::<NameComponent>();'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The cross-area-integration-tests feature is well-implemented. All four tests pass, covering transform persistence through save-reload (VAL-CROSS-002), entity destruction with ECS events and GPU cleanup (VAL-CROSS-003), component addition events with change detection (VAL-CROSS-004), and full end-to-end editor workflow (VAL-CROSS-007). The tests follow existing patterns in the codebase (using the round_trip helper, existing EntityDescriptor construction patterns), use real APIs rather than mocks, and include thorough assertions with descriptive error messages. The worker followed the skill procedure correctly with no deviations. Two minor knowledge observations about ECS API ergonomics (query tuple arity, component_events_for return type) could improve the library documentation. Status: PASS."
+}
