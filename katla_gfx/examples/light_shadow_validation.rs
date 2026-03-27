@@ -2531,6 +2531,125 @@ fn test_shadow_real_csm_matrices(
     Ok(())
 }
 
+fn test_shadow_cascade_edge_cases(
+    context: &VulkanContext,
+    res: &ShadowValidateResources,
+) -> Result<(), String> {
+    log::info!(
+        "Testing shadow cascade edge cases (split boundary, view_z=0, beyond last split)..."
+    );
+
+    clear_depth_to(context, res, 1.0)?;
+
+    // Set up cascades with known split distances
+    let vp: [f32; 16] = [
+        0.5, 0.0, 0.0, 0.0, 0.0, -0.5, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0,
+    ];
+
+    let mut cascades = [ShadowCascadeGPU {
+        view_proj: vp,
+        split_distance: 5.0,
+        texel_size: 1.0 / SHADOW_ATLAS_SIZE as f32,
+        _pad: [0.0, 0.0],
+    }; 4];
+    cascades[1].split_distance = 10.0;
+    cascades[2].split_distance = 20.0;
+    cascades[3].split_distance = 50.0;
+
+    let gpu_data = ShadowFrameData {
+        cascades,
+        light_direction: [0.0, -1.0, 0.0, 4.0],
+        shadow_bias: [0.0, 0.0, 0.0, SHADOW_ATLAS_SIZE as f32],
+    };
+    upload_shadow_data(context, res, &gpu_data);
+
+    // 1. view_z exactly equal to split_distance[0] = 5.0
+    // Should select cascade 0 (view_z <= split[0] is true)
+    let vis_at_split = dispatch_shadow_validate(context, res, [0.0, 0.0, 0.0], 5.0, 60)?;
+    if vis_at_split < 0.95 {
+        return Err(format!(
+            "view_z exactly at split[0]=5.0 should select cascade 0 and be lit, got {:.4}",
+            vis_at_split
+        ));
+    }
+
+    // 2. view_z = 0.0 (camera plane / on the near plane)
+    // Should select cascade 0 (0.0 <= 5.0)
+    let vis_zero = dispatch_shadow_validate(context, res, [0.0, 0.0, 0.0], 0.0, 61)?;
+    if vis_zero < 0.95 {
+        return Err(format!(
+            "view_z=0.0 should select cascade 0 and be lit, got {:.4}",
+            vis_zero
+        ));
+    }
+
+    // 3. view_z well beyond last split (500.0 > split[3]=50.0)
+    // Should select last cascade (index 3) and still be lit
+    let vis_beyond = dispatch_shadow_validate(context, res, [0.0, 0.0, 0.0], 500.0, 62)?;
+    if vis_beyond < 0.95 {
+        return Err(format!(
+            "view_z=500.0 (beyond last split=50.0) should select last cascade and be lit, got {:.4}",
+            vis_beyond
+        ));
+    }
+
+    // 4. negative view_z (object behind camera)
+    // Should select cascade 0 (-5.0 <= 5.0)
+    let vis_negative = dispatch_shadow_validate(context, res, [0.0, 0.0, 0.0], -5.0, 63)?;
+    if vis_negative < 0.95 {
+        return Err(format!(
+            "Negative view_z=-5.0 should select cascade 0 and be lit, got {:.4}",
+            vis_negative
+        ));
+    }
+
+    log::info!(
+        "  PASSED: cascade edge cases (at_split={:.4}, zero={:.4}, beyond={:.4}, negative={:.4})",
+        vis_at_split,
+        vis_zero,
+        vis_beyond,
+        vis_negative
+    );
+    Ok(())
+}
+
+fn test_shadow_zero_cascades(
+    context: &VulkanContext,
+    res: &ShadowValidateResources,
+) -> Result<(), String> {
+    log::info!("Testing shadow sampling with num_cascades=0...");
+
+    clear_depth_to(context, res, 1.0)?;
+
+    // Set num_cascades to 0 via light_direction.w
+    let gpu_data = ShadowFrameData {
+        cascades: [ShadowCascadeGPU {
+            view_proj: [0.0; 16],
+            split_distance: 0.0,
+            texel_size: 0.0,
+            _pad: [0.0, 0.0],
+        }; 4],
+        light_direction: [0.0, -1.0, 0.0, 0.0], // w=0 -> num_cascades=0
+        shadow_bias: [0.0, 0.0, 0.0, SHADOW_ATLAS_SIZE as f32],
+    };
+    upload_shadow_data(context, res, &gpu_data);
+
+    // With 0 cascades, shader should return 1.0 (fully lit, no shadows)
+    let visibility = dispatch_shadow_validate(context, res, [0.0, 0.0, 0.0], 5.0, 70)?;
+    if visibility < 0.95 {
+        return Err(format!(
+            "num_cascades=0 should return fully lit (1.0), got {:.4}",
+            visibility
+        ));
+    }
+
+    log::info!(
+        "  PASSED: num_cascades=0 returns fully lit ({:.4})",
+        visibility
+    );
+    Ok(())
+}
+
 fn test_shadow_depth_bias_pipeline(
     context: &VulkanContext,
     res: &ShadowValidateResources,
@@ -2967,6 +3086,11 @@ fn main() -> ExitCode {
                 "depth_bias_pipeline",
                 test_shadow_depth_bias_pipeline(&context, res),
             ),
+            (
+                "cascade_edge_cases",
+                test_shadow_cascade_edge_cases(&context, res),
+            ),
+            ("zero_cascades", test_shadow_zero_cascades(&context, res)),
         ] {
             if let Err(e) = result {
                 log::error!("FAIL: {}: {}", name, e);

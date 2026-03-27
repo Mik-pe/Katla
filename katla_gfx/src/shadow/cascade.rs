@@ -173,10 +173,10 @@ impl CascadeShadowMap {
                 self.cascades.len() as f32,
             ],
             shadow_bias: [
-                self.params.depth_bias_constant,
-                self.params.depth_bias_slope,
-                0.0, // reserved (was normal_offset, never used by shaders)
-                self.params.shadow_map_size as f32, // atlas size for validator shader
+                self.params.depth_bias_constant,    // .x: shader constant bias
+                self.params.depth_bias_slope, // .y: Vulkan pipeline depth bias (not sampled in shader)
+                0.0,                          // .z: unused
+                self.params.shadow_map_size as f32, // .w: atlas size for validator shader
             ],
         }
     }

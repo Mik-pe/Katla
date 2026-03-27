@@ -11,7 +11,7 @@ const PCF_SAMPLE_COUNT: u32 = 16u;  // Poisson disc samples
 struct ShadowFrameData {
     cascades: array<ShadowCascadeData, 4>,
     light_direction: vec4f,     // xyz = direction, w = num_cascades
-    shadow_bias: vec4f,         // x = constant bias (y=Vulkan depth bias, z=unused, w=reserved)
+    shadow_bias: vec4f,         // x = constant bias, y = Vulkan depth bias (not sampled in shader), w = reserved
 }
 
 @group(4) @binding(0)
