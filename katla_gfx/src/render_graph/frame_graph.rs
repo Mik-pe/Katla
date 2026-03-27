@@ -215,6 +215,11 @@ impl FrameGraph {
                 // Add frame_idx to base slot to get the correct per-frame texture
                 let actual_hdr_index = hdr_base_index + frame_idx as u32;
 
+                let stencil_indicator_idx = params
+                    .stencil_indicator_index
+                    .map(|base| base + frame_idx as u32)
+                    .unwrap_or(0);
+
                 let mode_value = params.mode as u32;
                 renderer.storage_manager.update_object_bindless(
                     frame_idx,
@@ -232,7 +237,7 @@ impl FrameGraph {
                     0.0,
                     0.0,
                     1.0,
-                    0.0,
+                    stencil_indicator_idx as f32,
                     [0, 0, 0, 0],
                 );
             }
@@ -716,6 +721,27 @@ impl FrameGraph {
             )))
         }
     }
+
+    /// Set the stencil indicator texture index for a tonemap pass.
+    pub fn set_tonemap_stencil_indicator_index(
+        &mut self,
+        pass_name: &str,
+        texture_index: u32,
+    ) -> Result<(), RenderGraphError> {
+        let pass_idx = self.pass_names.get(pass_name).ok_or_else(|| {
+            RenderGraphError::ResourceNotFound(format!("Pass '{}' not found", pass_name))
+        })?;
+
+        if let Some(ref mut params) = self.passes[*pass_idx].tonemap_params {
+            params.stencil_indicator_index = Some(texture_index);
+            Ok(())
+        } else {
+            Err(RenderGraphError::VulkanError(format!(
+                "Pass '{}' is not a tonemap pass (no tonemap_params found)",
+                pass_name
+            )))
+        }
+    }
 }
 
 impl Default for FrameGraph {
@@ -869,7 +895,8 @@ impl FrameGraphBuilder {
                     }
                 }
             } else if let Some(dp_data) =
-                pass_data.downcast_ref::<crate::render_graph::passes::depth_prepass::DepthPrepassData>()
+                pass_data
+                    .downcast_ref::<crate::render_graph::passes::depth_prepass::DepthPrepassData>()
             {
                 for (handle, format, load_op, store_op, clear_value) in &dp_data.colors {
                     for (name, candidate_handle) in &global_resource_map {
