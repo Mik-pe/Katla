@@ -12,6 +12,9 @@ use super::*;
 
 pub struct RenderTexture {
     pub(crate) image_view: VkImageView,
+    /// Image view with both DEPTH and STENCIL aspects.
+    /// `None` if the depth format has no stencil component (e.g., D32_SFLOAT).
+    pub(crate) depth_stencil_image_view: Option<VkImageView>,
     pub(crate) image: VkImage,
     pub image_memory: Option<Allocation>,
     pub context: Rc<VulkanContext>,
@@ -23,6 +26,9 @@ impl RenderTexture {
             self.context
                 .device
                 .destroy_image_view(self.image_view.vk(), None);
+            if let Some(ds_view) = self.depth_stencil_image_view.take() {
+                self.context.device.destroy_image_view(ds_view.vk(), None);
+            }
         }
         let image_memory = self.image_memory.take();
 
@@ -211,6 +217,22 @@ fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D)
         vk::ImageAspectFlags::DEPTH,
     );
 
+    let has_stencil = matches!(
+        depth_format,
+        vk::Format::D32_SFLOAT_S8_UINT | vk::Format::D24_UNORM_S8_UINT
+    );
+
+    let depth_stencil_image_view = if has_stencil {
+        Some(VkImageView::new(VulkanFrameCtx::create_image_view(
+            &context.device,
+            depth_image,
+            depth_format,
+            vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
+        )))
+    } else {
+        None
+    };
+
     let cmd_buffer = context.begin_single_time_commands();
     let cmd = cmd_buffer.vk_command_buffer();
 
@@ -234,6 +256,7 @@ fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D)
 
     RenderTexture {
         image_view: VkImageView::new(image_view),
+        depth_stencil_image_view,
         image: VkImage::new(depth_image),
         image_memory: Some(image_memory),
         context,
