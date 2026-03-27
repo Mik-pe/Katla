@@ -50,8 +50,8 @@ pub use frame_graph::{BACKBUFFER_NAME, FrameGraph, FrameGraphBuilder};
 pub use graph::TransientTexture;
 pub use pass::{PassDesc, PassType};
 pub use passes::{
-    CompositePass, DepthPrepass, FullscreenPass, GeometryPass, ShadowPass, TonemapOperator,
-    TonemapParams, UIPass, ViewportPass, ViewportRect,
+    CompositePass, DepthPrepass, FullscreenPass, GeometryPass, OutlinePass, ShadowPass,
+    StencilIndicatorPass, TonemapOperator, TonemapParams, UIPass, ViewportPass, ViewportRect,
 };
 pub use resource::{GraphResourceDesc, GraphResourceHandle, GraphResourceType, ResourceState};
 

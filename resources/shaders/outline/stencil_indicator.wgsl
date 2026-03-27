@@ -1,7 +1,6 @@
-// Wallhack overlay pass for selection highlights.
-// Renders a semi-transparent tint over the selected object wherever stencil == 1,
-// including areas occluded by other geometry (depth test ALWAYS).
-// Uses alpha blending so the underlying scene shows through.
+// Stencil indicator pass — writes white (1.0) to an R8 texture where stencil == 2.
+// The tonemap shader samples this texture to apply the wallhack overlay tint in-shader,
+// avoiding alpha blending in HDR space which produces incorrect results.
 
 #include <frame_uniforms.wgsl>
 
@@ -34,5 +33,5 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    return vec4f(1.0, 0.55, 0.0, 0.15);
+    return vec4f(1.0, 0.0, 0.0, 1.0);
 }
