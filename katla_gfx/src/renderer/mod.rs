@@ -881,6 +881,20 @@ impl VulkanRenderer {
             .create_plane(&mut self.asset_registry, width, height)
     }
 
+    /// Create a cone mesh with base at y=0 and apex at y=height.
+    ///
+    /// # Arguments
+    /// * `height` - The height of the cone (Y axis)
+    /// * `base_radius` - The radius of the base circle
+    /// * `segments` - Number of segments around the circumference
+    ///
+    /// # Returns
+    /// A `MeshHandle` that references the registered mesh.
+    pub fn create_cone_mesh(&mut self, height: f32, base_radius: f32, segments: u32) -> MeshHandle {
+        self.mesh_manager
+            .create_cone(&mut self.asset_registry, height, base_radius, segments)
+    }
+
     /// Create a cylinder mesh standing on Y axis.
     ///
     /// # Arguments

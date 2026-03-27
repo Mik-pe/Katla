@@ -706,6 +706,9 @@ impl ApplicationBuilder {
             gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(
                 katla_gfx::MaterialHandle::NONE,
             ),
+            gizmo_state: crate::gizmo::GizmoState::default(),
+            gizmo_resources: crate::gizmo::GizmoResources::default(),
+            prev_mouse_screen: None,
         };
 
         Ok((app, event_loop))
