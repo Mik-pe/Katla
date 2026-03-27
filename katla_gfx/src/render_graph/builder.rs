@@ -74,6 +74,8 @@ pub struct InternalPassBuilder {
 
     /// Optional tonemap parameters (for HDR tonemapping passes).
     pub tonemap_params: Option<crate::render_graph::passes::TonemapParams>,
+    /// Optional overlay parameters (for wallhack overlay passes).
+    pub overlay_params: Option<crate::render_graph::passes::OverlayParams>,
 
     /// Optional material handle (for geometry passes).
     pub material: Option<crate::handle::MaterialHandle>,

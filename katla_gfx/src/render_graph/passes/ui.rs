@@ -125,6 +125,7 @@ impl PassBuilder for UIPass {
             writes,
             pipeline: None,
             tonemap_params: None,
+            overlay_params: None,
             material,
             output_format: None,
             build_fn: Box::new(

@@ -178,14 +178,24 @@ impl ApplicationBuilder {
                 message: format!("Failed to compile tonemap shader: {}", e),
             })?;
 
+        // Compile wallhack overlay shader (reads LDR + stencil indicator, applies tint)
+        let overlay_shader_path = resources.shader_path("wallhack_overlay.wgsl");
+        let overlay_pipeline = renderer
+            .compile_fullscreen_shader_with_format(
+                overlay_shader_path,
+                katla_gfx::ImageFormat::B8G8R8A8Srgb,
+            )
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!("Failed to compile wallhack overlay shader: {}", e),
+            })?;
+
         // We'll get the HDR texture index after registering with bindless
         // For now, use None - it will be set during app init
         let tonemap_params = katla_gfx::TonemapParams {
             exposure: 0.4,
             gamma: 2.2,
             mode: katla_gfx::TonemapOperator::Aces,
-            hdr_texture_index: None,       // Will be set after registration
-            stencil_indicator_index: None, // Will be set after registration
+            hdr_texture_index: None,
         };
 
         // Compile UI shader for editor UI rendering
@@ -438,7 +448,7 @@ impl ApplicationBuilder {
                     .write_color("hdr_color", TextureImageFormat::R16G16B16A16Sfloat),
             )
             // Stencil indicator pass: writes R8 mask where selected objects are occluded.
-            // Sampled by the tonemap shader to apply wallhack overlay tint in-shader.
+            // Sampled by the wallhack overlay pass to apply tint over occluded selected objects.
             .add_pass(
                 StencilIndicatorPass::new("stencil_indicator")
                     .write_color("stencil_indicator", TextureImageFormat::R8Unorm),
@@ -448,10 +458,22 @@ impl ApplicationBuilder {
             .add_pass(
                 FullscreenPass::new("tonemap")
                     .read("hdr_color")
-                    .read("stencil_indicator")
                     .write("viewport_0", TextureImageFormat::B8G8R8A8Srgb)
                     .pipeline(tonemap_pipeline)
                     .tonemap(tonemap_params),
+            )
+            // Wallhack overlay pass: reads LDR viewport and stencil indicator mask,
+            // applies orange tint where selected objects are occluded.
+            .add_pass(
+                katla_gfx::OverlayPass::new("wallhack_overlay")
+                    .read("viewport_0")
+                    .read("stencil_indicator")
+                    .write("viewport_0", TextureImageFormat::B8G8R8A8Srgb)
+                    .pipeline(overlay_pipeline)
+                    .overlay(katla_gfx::OverlayParams {
+                        ldr_texture_index: None,       // Set during app init
+                        stencil_indicator_index: None, // Set during app init
+                    }),
             )
             // Background pass: fills the backbuffer with a solid background color
             // This provides a dark background for the editor UI panels
@@ -464,7 +486,6 @@ impl ApplicationBuilder {
                         gamma: 1.0,
                         mode: katla_gfx::TonemapOperator::Aces,
                         hdr_texture_index: None,
-                        stencil_indicator_index: None,
                     }),
             )
             // UI pass: draws editor UI to backbuffer

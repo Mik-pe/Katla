@@ -45,26 +45,38 @@ pub(crate) fn compute_outline_width(viewport_height: f32) -> f32 {
     BASE_WIDTH * (BASE_HEIGHT / viewport_height)
 }
 
-#[derive(Default)]
 pub(crate) struct OutlineState {
     /// Pipeline for stencil mark pass (writes ref=1 to stencil for visible selected objects).
-    pub stencil_mark_pipeline: Option<PipelineHandle>,
+    pub stencil_mark_pipeline: PipelineHandle,
     /// Skinned stencil mark pipeline.
-    pub stencil_mark_skinned_pipeline: Option<PipelineHandle>,
+    pub stencil_mark_skinned_pipeline: PipelineHandle,
     /// Pipeline for occlusion mark pass (promotes stencil 1→2 where selected objects are occluded).
-    pub occlusion_mark_pipeline: Option<PipelineHandle>,
+    pub occlusion_mark_pipeline: PipelineHandle,
     /// Skinned occlusion mark pipeline.
-    pub occlusion_mark_skinned_pipeline: Option<PipelineHandle>,
+    pub occlusion_mark_skinned_pipeline: PipelineHandle,
     /// Pipeline for outline draw pass (inverted culling, stencil != 1).
-    pub outline_draw_pipeline: Option<PipelineHandle>,
+    pub outline_draw_pipeline: PipelineHandle,
     /// Skinned outline draw pipeline.
-    pub outline_draw_skinned_pipeline: Option<PipelineHandle>,
+    pub outline_draw_skinned_pipeline: PipelineHandle,
     /// Pipeline for stencil indicator pass (writes R8 where stencil == 2).
-    pub stencil_indicator_pipeline: Option<PipelineHandle>,
+    pub stencil_indicator_pipeline: PipelineHandle,
     /// Skinned stencil indicator pipeline.
-    pub stencil_indicator_skinned_pipeline: Option<PipelineHandle>,
-    /// Empty descriptor set layout (Set 1 placeholder for skinned pipelines).
-    pub skinned_empty_layout: Option<vk::DescriptorSetLayout>,
+    pub stencil_indicator_skinned_pipeline: PipelineHandle,
+}
+
+impl Default for OutlineState {
+    fn default() -> Self {
+        Self {
+            stencil_mark_pipeline: PipelineHandle::NONE,
+            stencil_mark_skinned_pipeline: PipelineHandle::NONE,
+            occlusion_mark_pipeline: PipelineHandle::NONE,
+            occlusion_mark_skinned_pipeline: PipelineHandle::NONE,
+            outline_draw_pipeline: PipelineHandle::NONE,
+            outline_draw_skinned_pipeline: PipelineHandle::NONE,
+            stencil_indicator_pipeline: PipelineHandle::NONE,
+            stencil_indicator_skinned_pipeline: PipelineHandle::NONE,
+        }
+    }
 }
 
 impl super::VulkanRenderer {
@@ -179,29 +191,13 @@ impl super::VulkanRenderer {
                 None,
                 None,
             )?;
-            self.outline.stencil_mark_pipeline = Some(handle);
+            self.outline.stencil_mark_pipeline = handle;
         }
 
         // === Skinned Stencil Mark Pipeline ===
         {
             let (vert, frag) =
                 self.load_outline_shaders(stencil_mark_skinned_path, "skinned stencil mark")?;
-
-            let empty_descriptor_layout = unsafe {
-                self.context
-                    .device
-                    .create_descriptor_set_layout(
-                        &vk::DescriptorSetLayoutCreateInfo::default(),
-                        None,
-                    )
-                    .map_err(|e| {
-                        RendererError::InitializationFailed(format!(
-                            "Failed to create empty descriptor layout for skinned outline: {:?}",
-                            e
-                        ))
-                    })?
-            };
-            self.outline.skinned_empty_layout = Some(empty_descriptor_layout);
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -221,10 +217,10 @@ impl super::VulkanRenderer {
                 CullMode::Back,
                 ImageFormat::R16G16B16A16Sfloat,
                 vk::ColorComponentFlags::empty(),
-                Some(empty_descriptor_layout),
+                Some(self.shared_empty_descriptor_layout),
                 None,
             )?;
-            self.outline.stencil_mark_skinned_pipeline = Some(handle);
+            self.outline.stencil_mark_skinned_pipeline = handle;
         }
 
         // === Occlusion Mark Pipeline ===
@@ -259,20 +255,13 @@ impl super::VulkanRenderer {
                 None,
                 None,
             )?;
-            self.outline.occlusion_mark_pipeline = Some(handle);
+            self.outline.occlusion_mark_pipeline = handle;
         }
 
         // === Skinned Occlusion Mark Pipeline ===
         {
             let (vert, frag) =
                 self.load_outline_shaders(stencil_mark_skinned_path, "skinned occlusion mark")?;
-            let empty_descriptor_layout =
-                self.outline
-                    .skinned_empty_layout
-                    .ok_or(RendererError::InitializationFailed(
-                        "Skinned empty layout not initialized — call init_outline_pipelines first"
-                            .into(),
-                    ))?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -292,10 +281,10 @@ impl super::VulkanRenderer {
                 CullMode::Back,
                 ImageFormat::R16G16B16A16Sfloat,
                 vk::ColorComponentFlags::empty(),
-                Some(empty_descriptor_layout),
+                Some(self.shared_empty_descriptor_layout),
                 None,
             )?;
-            self.outline.occlusion_mark_skinned_pipeline = Some(handle);
+            self.outline.occlusion_mark_skinned_pipeline = handle;
         }
 
         // === Outline Draw Pipeline ===
@@ -328,20 +317,13 @@ impl super::VulkanRenderer {
                 None,
                 Some(std::mem::size_of::<OutlinePushConstants>() as u32),
             )?;
-            self.outline.outline_draw_pipeline = Some(handle);
+            self.outline.outline_draw_pipeline = handle;
         }
 
         // === Skinned Outline Draw Pipeline ===
         {
             let (vert, frag) =
                 self.load_outline_shaders(outline_draw_skinned_path, "skinned outline draw")?;
-            let empty_descriptor_layout =
-                self.outline
-                    .skinned_empty_layout
-                    .ok_or(RendererError::InitializationFailed(
-                        "Skinned empty layout not initialized — call init_outline_pipelines first"
-                            .into(),
-                    ))?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -364,10 +346,10 @@ impl super::VulkanRenderer {
                     | vk::ColorComponentFlags::G
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
-                Some(empty_descriptor_layout),
+                Some(self.shared_empty_descriptor_layout),
                 Some(std::mem::size_of::<OutlinePushConstants>() as u32),
             )?;
-            self.outline.outline_draw_skinned_pipeline = Some(handle);
+            self.outline.outline_draw_skinned_pipeline = handle;
         }
 
         info!("Outline pipelines initialized (stencil-based selection highlight)");
@@ -408,19 +390,12 @@ impl super::VulkanRenderer {
                 None,
                 None,
             )?;
-            self.outline.stencil_indicator_pipeline = Some(handle);
+            self.outline.stencil_indicator_pipeline = handle;
         }
 
         {
             let (vert, frag) =
                 self.load_outline_shaders(skinned_shader_path, "skinned stencil indicator")?;
-            let empty_descriptor_layout =
-                self.outline
-                    .skinned_empty_layout
-                    .ok_or(RendererError::InitializationFailed(
-                        "Skinned empty layout not initialized — call init_outline_pipelines first"
-                            .into(),
-                    ))?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -443,10 +418,10 @@ impl super::VulkanRenderer {
                     | vk::ColorComponentFlags::G
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
-                Some(empty_descriptor_layout),
+                Some(self.shared_empty_descriptor_layout),
                 None,
             )?;
-            self.outline.stencil_indicator_skinned_pipeline = Some(handle);
+            self.outline.stencil_indicator_skinned_pipeline = handle;
         }
 
         info!("Stencil indicator pipelines initialized");

@@ -37,8 +37,6 @@ pub struct TonemapParams {
     pub mode: TonemapOperator,
     /// Bindless texture index for HDR source (None = not a tonemap pass)
     pub hdr_texture_index: Option<u32>,
-    /// Bindless texture index for stencil indicator R8 texture (wallhack overlay)
-    pub stencil_indicator_index: Option<u32>,
 }
 
 impl Default for TonemapParams {
@@ -48,7 +46,6 @@ impl Default for TonemapParams {
             gamma: 2.2,
             mode: TonemapOperator::Aces,
             hdr_texture_index: None,
-            stencil_indicator_index: None,
         }
     }
 }
@@ -160,6 +157,7 @@ impl PassBuilder for FullscreenPass {
             writes,
             pipeline: self.pipeline,
             tonemap_params: self.tonemap_params,
+            overlay_params: None,
             material: None,
             output_format: None,
             build_fn: Box::new(
@@ -168,6 +166,84 @@ impl PassBuilder for FullscreenPass {
             uses_depth: true,
             depth_attachment: None,
             kind: Some(PassKind::Fullscreen),
+        }
+    }
+}
+
+/// Overlay parameters for the wallhack overlay pass.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct OverlayParams {
+    /// Bindless texture index for LDR source (tonemap output).
+    pub ldr_texture_index: Option<u32>,
+    /// Bindless texture index for stencil indicator R8 mask.
+    pub stencil_indicator_index: Option<u32>,
+}
+
+/// Wallhack overlay pass — applies tint to occluded selected objects.
+///
+/// Reads the LDR tonemap output and the stencil indicator R8 mask, then
+/// writes the composited result. This is a fullscreen pass that runs after
+/// tonemapping to keep the tonemap shader pure (HDR->LDR only).
+pub struct OverlayPass {
+    name: String,
+    reads: Vec<String>,
+    writes: Vec<(String, ImageFormat)>,
+    pipeline: Option<PipelineHandle>,
+    overlay_params: Option<OverlayParams>,
+}
+
+impl OverlayPass {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            reads: Vec::new(),
+            writes: Vec::new(),
+            pipeline: None,
+            overlay_params: None,
+        }
+    }
+
+    pub fn read(mut self, name: impl Into<String>) -> Self {
+        self.reads.push(name.into());
+        self
+    }
+
+    pub fn write(mut self, name: impl Into<String>, format: ImageFormat) -> Self {
+        self.writes.push((name.into(), format));
+        self
+    }
+
+    pub fn pipeline(mut self, pipeline: PipelineHandle) -> Self {
+        self.pipeline = Some(pipeline);
+        self
+    }
+
+    pub fn overlay(mut self, params: OverlayParams) -> Self {
+        self.overlay_params = Some(params);
+        self
+    }
+}
+
+impl PassBuilder for OverlayPass {
+    fn as_builder(self) -> InternalPassBuilder {
+        let writes: Vec<String> = self.writes.iter().map(|(n, _)| n.clone()).collect();
+
+        InternalPassBuilder {
+            name: self.name,
+            pass_type: PassType::Graphics,
+            reads: self.reads.clone(),
+            writes,
+            pipeline: self.pipeline,
+            tonemap_params: None,
+            material: None,
+            output_format: None,
+            build_fn: Box::new(
+                move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
+            ),
+            uses_depth: false,
+            depth_attachment: None,
+            kind: Some(PassKind::Fullscreen),
+            overlay_params: self.overlay_params,
         }
     }
 }
@@ -224,7 +300,6 @@ mod tests {
             gamma: 2.4,
             mode: TonemapOperator::Reinhard,
             hdr_texture_index: Some(5),
-            stencil_indicator_index: None,
         };
         let pass = FullscreenPass::new("tonemap")
             .read("hdr_color")

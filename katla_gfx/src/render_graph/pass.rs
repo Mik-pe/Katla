@@ -63,6 +63,8 @@ pub struct PassDesc {
     pub pipeline: Option<crate::handle::PipelineHandle>,
     /// Optional tonemap parameters (for HDR tonemapping passes).
     pub tonemap_params: Option<crate::render_graph::passes::TonemapParams>,
+    /// Optional overlay parameters (for wallhack overlay passes).
+    pub overlay_params: Option<crate::render_graph::passes::OverlayParams>,
     /// Optional material handle (for geometry passes).
     pub material: Option<crate::handle::MaterialHandle>,
     /// Output color format (for material format inference).
@@ -101,6 +103,7 @@ impl PassDesc {
             pass_type,
             pipeline: None,
             tonemap_params: None,
+            overlay_params: None,
             material: None,
             output_format: None,
             color_attachments: Vec::new(),

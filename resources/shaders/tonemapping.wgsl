@@ -10,7 +10,6 @@
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
 #include <fullscreen_triangle.wgsl>
-#include <outline_params.wgsl>
 
 // Set 0: Uniforms (storage buffers)
 @group(0) @binding(0)
@@ -59,9 +58,6 @@ fn fs_main(in: FullscreenVertexOutput) -> @location(0) vec4f {
     let mode = u32(tonemap_params.b);
     let hdr_texture_idx = u32(tonemap_params.a);
 
-    // Stencil indicator texture index (emission_idx field, 0 = no indicator)
-    let stencil_indicator_idx = u32(objects[0].material_params.w);
-
     let hdr_color = textureSample(bindless_textures[hdr_texture_idx], shared_sampler, in.uv).rgb;
 
     var color = hdr_color * exposure;
@@ -85,14 +81,6 @@ fn fs_main(in: FullscreenVertexOutput) -> @location(0) vec4f {
     }
 
     color = gamma_correct(color, gamma);
-
-    // Apply wallhack overlay tint where stencil indicator > 0 (occluded selected objects)
-    if (stencil_indicator_idx != 0u) {
-        let indicator = textureSample(bindless_textures[stencil_indicator_idx], shared_sampler, in.uv).r;
-        if (indicator > 0.5) {
-            color = mix(color, OUTLINE_COLOR, WALLHACK_ALPHA);
-        }
-    }
 
     return vec4f(color, 1.0);
 }

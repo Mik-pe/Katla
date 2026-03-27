@@ -10,8 +10,6 @@ pub(crate) struct DepthPrepassState {
     pub pipeline: Option<PipelineHandle>,
     /// Depth-only pipeline for skinned meshes
     pub pipeline_skinned: Option<PipelineHandle>,
-    /// Empty descriptor set layout (Set 1 placeholder for skinned pipeline)
-    pub skinned_empty_layout: Option<vk::DescriptorSetLayout>,
 }
 
 impl super::VulkanRenderer {
@@ -112,23 +110,11 @@ impl super::VulkanRenderer {
         let storage_layout = self.storage_descriptor_sets[0].layout();
         let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
 
-        let empty_descriptor_layout = unsafe {
-            self.context
-                .device
-                .create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default(), None)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to create empty descriptor layout for skinned depth prepass: {:?}",
-                        e
-                    ))
-                })?
-        };
-
         let pipeline = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_module, frag_module)
             .with_descriptor_layouts(vec![
                 storage_layout,
-                empty_descriptor_layout,
+                self.shared_empty_descriptor_layout,
                 skeleton_layout,
             ])
             .with_soa_attribute(0, VertexFormat::RGB32f) // position
@@ -150,7 +136,6 @@ impl super::VulkanRenderer {
 
         let pipeline_handle = self.asset_registry.register_pipeline(pipeline);
         self.depth_prepass.pipeline_skinned = Some(pipeline_handle);
-        self.depth_prepass.skinned_empty_layout = Some(empty_descriptor_layout);
 
         info!("Skinned depth prepass pipeline initialized (reverse-Z, back-face culled)");
         Ok(())

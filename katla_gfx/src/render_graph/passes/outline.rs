@@ -42,6 +42,7 @@ impl PassBuilder for OutlinePass {
             writes,
             pipeline: None,
             tonemap_params: None,
+            overlay_params: None,
             material: None,
             output_format: Some(ImageFormat::R16G16B16A16Sfloat),
             build_fn: Box::new(|_resource_map: &HashMap<String, GraphResourceHandle>| {
@@ -95,6 +96,7 @@ impl PassBuilder for StencilIndicatorPass {
             writes,
             pipeline: None,
             tonemap_params: None,
+            overlay_params: None,
             material: None,
             output_format: Some(ImageFormat::R8Unorm),
             build_fn: Box::new(

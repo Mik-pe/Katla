@@ -65,6 +65,7 @@ impl PassBuilder for ShadowPass {
             writes,
             pipeline: None,
             tonemap_params: None,
+            overlay_params: None,
             material: None,
             output_format: None,
             build_fn: Box::new(

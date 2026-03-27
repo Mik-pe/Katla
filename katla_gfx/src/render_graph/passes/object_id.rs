@@ -69,6 +69,7 @@ impl PassBuilder for ObjectIdPass {
             writes: self.writes,
             pipeline: None,
             tonemap_params: None,
+            overlay_params: None,
             material: None,
             output_format: Some(ImageFormat::R32Uint),
             build_fn: Box::new(|_resource_map: &HashMap<String, GraphResourceHandle>| {

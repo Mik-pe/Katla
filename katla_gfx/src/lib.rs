@@ -244,8 +244,8 @@ pub use lighting::{LightCullFrameData, LightCullingBuffers, PointLightGPU};
 // Render graph system - minimal public API
 pub use render_graph::{
     CompositingDescriptorSet, Frame, FrameGraph, FrameGraphBuilder, FullscreenPass, GeometryPass,
-    GraphResourceDesc, GraphResourceType, RenderGraphError, ShadowPass, TonemapOperator,
-    TonemapParams,
+    GraphResourceDesc, GraphResourceType, OverlayParams, OverlayPass, RenderGraphError, ShadowPass,
+    TonemapOperator, TonemapParams,
 };
 
 /// Low-level Vulkan context - an escape hatch for advanced use cases.
