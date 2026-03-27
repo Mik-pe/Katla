@@ -11,4 +11,3 @@ impl NameComponent {
         Self { name: name.into() }
     }
 }
-
