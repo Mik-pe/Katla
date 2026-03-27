@@ -1,8 +1,10 @@
 use crate::render_graph::error::RenderGraphError;
+use crate::render_graph::frame::draw_helpers::{
+    DescriptorConfig, DrawParams, draw_meshes_with_skinning,
+};
 use crate::render_graph::frame::{Frame, PassExecutionData};
 use crate::render_graph::pass::PassDesc;
 use crate::vulkan::commandbuffer::CommandBuffer;
-use crate::vulkan::vertex_attribute::AttributeType;
 use ash::vk;
 
 impl<'a> Frame<'a> {
@@ -24,7 +26,7 @@ impl<'a> Frame<'a> {
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
         if data.draw_lists.is_empty() {
-            log::trace!("[OUTLINE] No draw lists, skipping outline pass");
+            log::debug!("[OUTLINE] No draw lists, skipping outline pass");
             return Ok(());
         }
 
@@ -35,7 +37,7 @@ impl<'a> Frame<'a> {
             extent,
         };
 
-        log::trace!(
+        log::debug!(
             "[OUTLINE] frame_idx={}, draw_lists={}",
             frame_idx,
             data.draw_lists.len()
@@ -88,14 +90,14 @@ impl<'a> Frame<'a> {
                     .store_op(store_op)
                     .clear_value(vk::ClearValue { color: clear_value })
             } else {
-                log::trace!(
+                log::debug!(
                     "[OUTLINE] Color target '{}' not found, skipping",
                     color_name
                 );
                 return Ok(());
             }
         } else {
-            log::trace!("[OUTLINE] No color outputs, skipping");
+            log::debug!("[OUTLINE] No color outputs, skipping");
             return Ok(());
         };
 
@@ -291,112 +293,21 @@ impl<'a> Frame<'a> {
         skinned_layout: Option<vk::PipelineLayout>,
     ) -> Result<(), RenderGraphError> {
         let frame_idx = self.current_frame();
-
-        unsafe {
-            self.renderer.context.device.cmd_bind_pipeline(
-                cmd.vk_command_buffer(),
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline,
-            );
-        }
-
-        let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
-
-        let mut current_is_skinned = false;
-
-        for draw_list in &data.draw_lists {
-            for draw_call in draw_list.iter() {
-                let is_skinned = !draw_call.skeleton.is_none();
-
-                if is_skinned && skinned_pipeline.is_none() {
-                    continue;
-                }
-
-                if is_skinned != current_is_skinned {
-                    if is_skinned {
-                        unsafe {
-                            self.renderer.context.device.cmd_bind_pipeline(
-                                cmd.vk_command_buffer(),
-                                vk::PipelineBindPoint::GRAPHICS,
-                                skinned_pipeline.unwrap(),
-                            );
-                        }
-                        cmd.bind_descriptor_sets(skinned_layout.unwrap(), 0, &[storage_ds], &[]);
-                    } else {
-                        unsafe {
-                            self.renderer.context.device.cmd_bind_pipeline(
-                                cmd.vk_command_buffer(),
-                                vk::PipelineBindPoint::GRAPHICS,
-                                pipeline,
-                            );
-                        }
-                        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
-                    }
-                    current_is_skinned = is_skinned;
-                }
-
-                if is_skinned {
-                    let skeleton_ds = self
-                        .renderer
-                        .get_skeleton_descriptor(draw_call.skeleton)
-                        .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
-                    cmd.bind_descriptor_sets(
-                        skinned_layout.unwrap(),
-                        2,
-                        &[skeleton_ds.vk_set()],
-                        &[],
-                    );
-                }
-
-                let mesh = self
-                    .renderer
-                    .asset_registry
-                    .get_mesh(draw_call.mesh)
-                    .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
-
-                let pos_buf = mesh
-                    .get_attribute_buffer(AttributeType::Position)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
-                if is_skinned {
-                    let joints_buf = mesh
-                        .get_attribute_buffer(AttributeType::JointIndices)
-                        .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null());
-                    let weights_buf = mesh
-                        .get_attribute_buffer(AttributeType::JointWeights)
-                        .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null());
-                    cmd.bind_vertex_buffers_at_locations(&[
-                        (0, pos_buf),
-                        (4, joints_buf),
-                        (5, weights_buf),
-                    ]);
-                } else {
-                    cmd.bind_vertex_buffers_at_locations(&[(0, pos_buf)]);
-                }
-
-                if let Some(ib) = &mesh.index_buffer {
-                    cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
-                }
-
-                let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
-
-                unsafe {
-                    self.renderer.context.device.cmd_draw_indexed(
-                        cmd.vk_command_buffer(),
-                        index_count,
-                        1,
-                        0,
-                        0,
-                        draw_call.instance_index,
-                    );
-                }
-            }
-        }
-
-        Ok(())
+        draw_meshes_with_skinning(DrawParams {
+            cmd,
+            renderer: self.renderer,
+            draw_lists: &data.draw_lists,
+            pipeline,
+            layout,
+            skinned_pipeline,
+            skinned_layout,
+            frame_idx,
+            descriptors: DescriptorConfig {
+                bind_textures: false,
+                skeleton_set: 2,
+                extra_sets: Vec::new(),
+            },
+        })
     }
 
     /// Execute the stencil indicator pass — writes 1.0 to an R8 texture where stencil == 2.

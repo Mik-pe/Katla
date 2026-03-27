@@ -22,3 +22,17 @@
 - [x] Remove unused variables: `_tip_center` in generate_translate_draw_calls, `_axis_dir` in generate_rotate_draw_calls
 - [x] Use proper near/far clip planes in screen_to_ray instead of z=1.0 and z=0.5
 - [x] Deduplicate fallback path in compute_translate_delta and compute_scale_delta when axis is parallel to camera forward
+
+## Drawcall Submission
+
+### Code Quality
+
+- [x] Extract shared `draw_meshes_with_skinning()` helper — skinned/non-skinned draw loop is copy-pasted across 5+ pass executors (depth_prepass, object_id_pass, shadow_pass, outline_pass::draw_with_pipelines, execute_draw_call)
+- [x] Avoid cloning `DrawList` three times in app `render_frame()` — use `Arc<DrawList>` or shared indices when submitting same list to depth_prepass, geometry, and shadow passes
+- [x] Move material recompilation out of hot draw path — `execute_draw_call()` calls `ensure_material_compiled()` mid-render-pass; validate/compile materials before pass execution begins
+- [x] Simplify borrow workaround in `execute_draw_call()` — material is fetched, data extracted, then explicitly dropped (`let _ = material;`) to allow `&mut self`; restructure to separate read-only extraction from mutation
+
+### Performance
+
+- [x] Apply material/pipeline sorting before pass execution — `DrawList::sort_by_material()` and `sort_optimal()` exist but are never called; draw calls execute in submission order with full pipeline state changes per draw
+- [x] Reduce trace logging overhead in draw hot path — `log::trace!()` calls with string formatting on every draw call in every pass

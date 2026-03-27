@@ -107,6 +107,7 @@ impl Application {
         self.renderer.upload_shadow_cascades();
 
         let mut draw_list = frame.take_draw_list();
+        draw_list.sort_by_material();
 
         // Generate gizmo draw calls if an entity is selected
         self.collect_gizmo_draw_calls(&mut draw_list);
@@ -116,7 +117,7 @@ impl Application {
             return; // Skip rendering this frame
         }
 
-        log::trace!(
+        log::debug!(
             "About to submit {} draw calls to geometry pass",
             draw_list.len()
         );
@@ -152,7 +153,7 @@ impl Application {
                         1 // ALWAYS run at least 1 workgroup for swap to happen
                     };
 
-                    log::trace!(
+                    log::debug!(
                         "Particle compute workgroups: emit {} particles = {} workgroups, simulate ~{} max_alive + {} emit = {} total particles = {} workgroups",
                         emit_count,
                         emit_workgroups,
@@ -220,7 +221,7 @@ impl Application {
         });
 
         self.renderer.render(&mut self.frame_graph, |frame| {
-            log::trace!(
+            log::debug!(
                 "Inside render closure: submitting {} draw calls to geometry pass",
                 draw_list.len()
             );
@@ -229,7 +230,7 @@ impl Application {
                 frame.submit("depth_prepass", &draw_list);
                 frame.submit("geometry", &draw_list);
                 frame.submit("shadow", &draw_list);
-                log::trace!(
+                log::debug!(
                     "Submitted {} draw calls to depth_prepass, geometry, and shadow passes",
                     draw_list.len()
                 );
@@ -242,14 +243,14 @@ impl Application {
             {
                 frame.submit("outline", outline_dl);
                 frame.submit("stencil_indicator", outline_dl);
-                log::trace!(
+                log::debug!(
                     "Submitted {} selected draw calls to outline + stencil_indicator passes",
                     outline_dl.len()
                 );
             }
 
             if let Some(ref ui_list) = ui_draw_list {
-                log::trace!("Submitting {} UI draw commands", ui_list.commands.len());
+                log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
                 frame.submit_ui("ui", ui_list);
             }
         });
@@ -320,7 +321,7 @@ impl Application {
         }
 
         if !lights.is_empty() {
-            log::trace!(
+            log::debug!(
                 "Uploading {} point lights to GPU for Forward+ culling",
                 lights.len()
             );
@@ -396,7 +397,7 @@ impl Application {
             drawable_count += 1;
         }
 
-        log::trace!(
+        log::debug!(
             "Submitted {} draw calls from {} entities",
             drawable_count,
             entity_count

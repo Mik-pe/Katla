@@ -1,8 +1,10 @@
 use crate::render_graph::error::RenderGraphError;
+use crate::render_graph::frame::draw_helpers::{
+    DescriptorConfig, DrawParams, draw_meshes_with_skinning,
+};
 use crate::render_graph::frame::{Frame, PassExecutionData};
 use crate::render_graph::pass::PassDesc;
 use crate::vulkan::commandbuffer::CommandBuffer;
-use crate::vulkan::vertex_attribute::AttributeType;
 use ash::vk;
 
 impl<'a> Frame<'a> {
@@ -24,7 +26,7 @@ impl<'a> Frame<'a> {
             extent,
         };
 
-        log::trace!(
+        log::debug!(
             "[DEPTH_PREPASS] frame_idx={}, draw_lists={}",
             frame_idx,
             data.draw_lists.len()
@@ -101,8 +103,6 @@ impl<'a> Frame<'a> {
             .get(frame_idx)
             .expect("depth_render_textures must have an entry for current frame");
 
-        // When the depth format has a stencil component, both depth and stencil
-        // attachments must use the same imageView (VUID-VkRenderingInfo-pDepthAttachment-06085).
         let (depth_view, stencil_attachment) =
             if let Some(ref ds_view) = depth_texture.depth_stencil_image_view {
                 (
@@ -159,17 +159,6 @@ impl<'a> Frame<'a> {
                 depth_pipeline_handle,
             ))?;
 
-        unsafe {
-            self.renderer.context.device.cmd_bind_pipeline(
-                cmd.vk_command_buffer(),
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline,
-            );
-        }
-
-        let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
-
         cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
             0.0,
             0.0,
@@ -185,117 +174,32 @@ impl<'a> Frame<'a> {
         };
         cmd.set_scissor(&[scissor]);
 
-        // Draw all geometry (depth only — same draw lists as geometry pass)
-        let skinned_pipeline_handle = self.renderer.depth_prepass_skinned_pipeline();
-
-        let (skinned_pipeline, skinned_layout) = if let Some(handle) = skinned_pipeline_handle {
-            self.renderer
-                .asset_registry
-                .get_pipeline_vk_handles(handle)
-                .map(|(p, l)| (Some(p), Some(l)))
-                .unwrap_or((None, None))
-        } else {
-            (None, None)
-        };
-
-        let mut current_pipeline_is_skinned = false;
-
-        for draw_list in &data.draw_lists {
-            for draw_call in draw_list.iter() {
-                let is_skinned = !draw_call.skeleton.is_none();
-
-                if is_skinned && skinned_pipeline.is_none() {
-                    continue;
-                }
-
-                if is_skinned != current_pipeline_is_skinned {
-                    if is_skinned {
-                        unsafe {
-                            self.renderer.context.device.cmd_bind_pipeline(
-                                cmd.vk_command_buffer(),
-                                vk::PipelineBindPoint::GRAPHICS,
-                                skinned_pipeline.unwrap(),
-                            );
-                        }
-
-                        let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-                        cmd.bind_descriptor_sets(skinned_layout.unwrap(), 0, &[storage_ds], &[]);
-                    } else {
-                        unsafe {
-                            self.renderer.context.device.cmd_bind_pipeline(
-                                cmd.vk_command_buffer(),
-                                vk::PipelineBindPoint::GRAPHICS,
-                                pipeline,
-                            );
-                        }
-
-                        let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-                        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
-                    }
-                    current_pipeline_is_skinned = is_skinned;
-                }
-
-                // Bind skeleton descriptor set for skinned meshes (Set 2)
-                if is_skinned {
-                    let skeleton_ds = self
-                        .renderer
-                        .get_skeleton_descriptor(draw_call.skeleton)
-                        .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
-                    cmd.bind_descriptor_sets(
-                        skinned_layout.unwrap(),
-                        2,
-                        &[skeleton_ds.vk_set()],
-                        &[],
-                    );
-                }
-
-                let mesh = self
-                    .renderer
+        let (skinned_pipeline, skinned_layout) =
+            if let Some(handle) = self.renderer.depth_prepass_skinned_pipeline() {
+                self.renderer
                     .asset_registry
-                    .get_mesh(draw_call.mesh)
-                    .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
+                    .get_pipeline_vk_handles(handle)
+                    .map(|(p, l)| (Some(p), Some(l)))
+                    .unwrap_or((None, None))
+            } else {
+                (None, None)
+            };
 
-                // Depth prepass: bind SOA attribute buffers based on mesh type
-                let pos_buf = mesh
-                    .get_attribute_buffer(AttributeType::Position)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
-                if is_skinned {
-                    let joints_buf = mesh
-                        .get_attribute_buffer(AttributeType::JointIndices)
-                        .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null());
-                    let weights_buf = mesh
-                        .get_attribute_buffer(AttributeType::JointWeights)
-                        .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null());
-                    cmd.bind_vertex_buffers_at_locations(&[
-                        (0, pos_buf),
-                        (4, joints_buf),
-                        (5, weights_buf),
-                    ]);
-                } else {
-                    cmd.bind_vertex_buffers_at_locations(&[(0, pos_buf)]);
-                }
-
-                if let Some(ib) = &mesh.index_buffer {
-                    cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
-                }
-
-                let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
-
-                unsafe {
-                    self.renderer.context.device.cmd_draw_indexed(
-                        cmd.vk_command_buffer(),
-                        index_count,
-                        1,
-                        0,
-                        0,
-                        draw_call.instance_index,
-                    );
-                }
-            }
-        }
+        draw_meshes_with_skinning(DrawParams {
+            cmd,
+            renderer: self.renderer,
+            draw_lists: &data.draw_lists,
+            pipeline,
+            layout,
+            skinned_pipeline,
+            skinned_layout,
+            frame_idx,
+            descriptors: DescriptorConfig {
+                bind_textures: false,
+                skeleton_set: 2,
+                extra_sets: Vec::new(),
+            },
+        })?;
 
         cmd.end_rendering();
 
