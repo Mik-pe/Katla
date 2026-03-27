@@ -666,6 +666,32 @@ impl VulkanRenderer {
         }
         self.shadow.descriptor_sets.clear();
 
+        // Outline params resources
+        if self.outline.params_descriptor_pool != vk::DescriptorPool::null() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_pool(self.outline.params_descriptor_pool, None);
+            }
+            self.outline.params_descriptor_pool = vk::DescriptorPool::null();
+        }
+        for (buffer, allocation) in self
+            .outline
+            .params_buffers
+            .drain(..)
+            .zip(self.outline.params_allocations.drain(..))
+        {
+            self.context.free_buffer(buffer, allocation);
+        }
+        if self.outline.params_descriptor_layout != vk::DescriptorSetLayout::null() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(self.outline.params_descriptor_layout, None);
+            }
+            self.outline.params_descriptor_layout = vk::DescriptorSetLayout::null();
+        }
+
         // Wait for GPU to finish all in-flight work before destroying resources
         // that pipelines still reference (descriptor set layouts, etc.)
         self.context.pre_destroy();
@@ -1150,7 +1176,7 @@ impl VulkanRenderer {
                 .expect("Failed to end command buffer");
         }
 
-        // 8. Submit command buffer with synchronization
+        // 9. Submit command buffer with synchronization
         let render_finished_semaphore = self.swap_data.render_finished_semaphore(image_index);
         let frame_complete_semaphore = self.swap_data.frame_complete_semaphore();
         let signal_semaphores = [render_finished_semaphore, frame_complete_semaphore];
@@ -1202,10 +1228,8 @@ impl VulkanRenderer {
                 .expect("Failed to present");
         }
 
-        // 10. Advance to next frame
-        self.swap_data.step_frame();
-
         // 11. Advance to next frame
+        self.swap_data.step_frame();
     }
 }
 
