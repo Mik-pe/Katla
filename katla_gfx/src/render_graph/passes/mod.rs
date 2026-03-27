@@ -41,7 +41,7 @@ mod viewport;
 
 pub use composite::{CompositePass, CompositePassData, ViewportRect};
 pub use depth_prepass::DepthPrepass;
-pub use fullscreen::{FullscreenPass, TonemapOperator, TonemapParams};
+pub use fullscreen::{FullscreenPass, OverlayParams, OverlayPass, TonemapOperator, TonemapParams};
 pub use geometry::GeometryPass;
 pub use outline::{OutlinePass, StencilIndicatorPass};
 pub use shadow::ShadowPass;

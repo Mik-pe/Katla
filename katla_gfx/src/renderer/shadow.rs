@@ -23,8 +23,6 @@ pub(crate) struct ShadowState {
     pub pipeline: Option<PipelineHandle>,
     /// Depth-only pipeline for skinned mesh shadow rendering
     pub pipeline_skinned: Option<PipelineHandle>,
-    /// Empty descriptor set layout (Set 1 placeholder for shadow pipeline)
-    pub empty_descriptor_layout: Option<vk::DescriptorSetLayout>,
     /// Cascade descriptor set layout (Set 2 for shadow depth shader)
     pub cascade_descriptor_layout: Option<vk::DescriptorSetLayout>,
     /// Per-frame cascade descriptor sets (Set 2)
@@ -426,17 +424,6 @@ impl super::VulkanRenderer {
         // - Set 1: empty placeholder (matches PBR pipeline layout numbering)
         // - Set 2: shadow cascades
 
-        let empty_descriptor_layout = unsafe {
-            device
-                .create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default(), None)
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to create empty descriptor layout for shadow pipeline: {:?}",
-                        e
-                    ))
-                })?
-        };
-        self.shadow.empty_descriptor_layout = Some(empty_descriptor_layout);
         // - Front-face culling (reduces self-shadowing)
         // - Hardware depth bias (slope + constant)
         // - Depth-only output (D32Sfloat, no color)
@@ -453,7 +440,7 @@ impl super::VulkanRenderer {
             .with_shaders(vert_module, frag_module)
             .with_descriptor_layouts(vec![
                 storage_layout,
-                empty_descriptor_layout,
+                self.shared_empty_descriptor_layout,
                 cascade_layout,
             ])
             .with_soa_attribute(0, VertexFormat::RGB32f) // position
@@ -571,12 +558,6 @@ impl super::VulkanRenderer {
         use crate::vulkan::vertexbinding::VertexFormat;
 
         let storage_layout = self.storage_descriptor_sets[0].layout();
-        let empty_descriptor_layout = self.shadow.empty_descriptor_layout.ok_or_else(|| {
-            RendererError::InitializationFailed(
-                "Shadow empty descriptor layout not initialized. Call init_shadow_pipeline() first."
-                    .to_string(),
-            )
-        })?;
         let cascade_layout = self.shadow.cascade_descriptor_layout.ok_or_else(|| {
             RendererError::InitializationFailed(
                 "Shadow cascade descriptor layout not initialized. Call init_shadow_pipeline() first."
@@ -615,7 +596,7 @@ impl super::VulkanRenderer {
             .with_shaders(vert_module, frag_module)
             .with_descriptor_layouts(vec![
                 storage_layout,
-                empty_descriptor_layout,
+                self.shared_empty_descriptor_layout,
                 cascade_layout,
                 skeleton_layout,
             ])

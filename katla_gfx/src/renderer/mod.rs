@@ -172,6 +172,9 @@ pub struct VulkanRenderer {
     light_culling: light_culling::LightCullingState,
     /// Shadow system state (CSM cascaded shadow maps).
     pub(crate) shadow: shadow::ShadowState,
+    /// Shared empty descriptor set layout (no bindings).
+    /// Used as a placeholder for Set 1 in skinned pipelines (outline, depth prepass, shadow).
+    pub(crate) shared_empty_descriptor_layout: vk::DescriptorSetLayout,
     /// Depth prepass state (depth-only pre-pass).
     depth_prepass: depth_prepass::DepthPrepassState,
     /// Outline highlight state (stencil-based selection highlight).
@@ -300,6 +303,15 @@ impl VulkanRenderer {
         };
         info!("Compositing descriptor set layout created");
 
+        // Create shared empty descriptor set layout (no bindings).
+        // Used as a placeholder for Set 1 in skinned pipelines (outline, depth prepass, shadow).
+        let shared_empty_descriptor_layout = unsafe {
+            context
+                .device
+                .create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default(), None)
+                .map_err(|_| vk::Result::ERROR_INITIALIZATION_FAILED)?
+        };
+
         Ok(Self {
             context: context.clone(),
             frame_context,
@@ -325,6 +337,7 @@ impl VulkanRenderer {
             animation_pipeline: None,
             animation_buffers: None,
             light_culling: light_culling::LightCullingState::default(),
+            shared_empty_descriptor_layout,
             shadow: shadow::ShadowState::default(),
             depth_prepass: depth_prepass::DepthPrepassState::default(),
             outline: outline::OutlineState::default(),
@@ -673,25 +686,11 @@ impl VulkanRenderer {
                     .destroy_descriptor_set_layout(layout, None);
             }
         }
-        if let Some(layout) = self.shadow.empty_descriptor_layout.take() {
+        if self.shared_empty_descriptor_layout != vk::DescriptorSetLayout::null() {
             unsafe {
                 self.context
                     .device
-                    .destroy_descriptor_set_layout(layout, None);
-            }
-        }
-        if let Some(layout) = self.depth_prepass.skinned_empty_layout.take() {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(layout, None);
-            }
-        }
-        if let Some(layout) = self.outline.skinned_empty_layout.take() {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(layout, None);
+                    .destroy_descriptor_set_layout(self.shared_empty_descriptor_layout, None);
             }
         }
 

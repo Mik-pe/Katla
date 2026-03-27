@@ -1129,13 +1129,17 @@ impl Application {
             stencil_indicator_index
         );
 
-        // Store stencil indicator bindless index for passing to tonemap each frame
+        // Store stencil indicator bindless index for passing to overlay each frame
         self.stencil_indicator_bindless_index = Some(stencil_indicator_index);
 
-        // Set stencil indicator index on tonemap pass so the shader can apply wallhack tint
+        // Set overlay texture indices so the wallhack overlay shader can read LDR + indicator
         self.frame_graph
-            .set_tonemap_stencil_indicator_index("tonemap", stencil_indicator_index)
-            .expect("Failed to set tonemap stencil indicator index");
+            .set_overlay_texture_indices(
+                "wallhack_overlay",
+                viewport_bindless_index,
+                stencil_indicator_index,
+            )
+            .expect("Failed to set wallhack overlay texture indices");
 
         // Load default scene from disk
         let scene_path = std::path::Path::new(crate::scene::DEFAULT_SCENE_PATH);

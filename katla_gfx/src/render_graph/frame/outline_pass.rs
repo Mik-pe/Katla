@@ -181,23 +181,17 @@ impl<'a> Frame<'a> {
     ) -> Result<(), RenderGraphError> {
         let (pipeline, layout) = self
             .renderer
-            .outline
-            .stencil_mark_pipeline
-            .and_then(|h| self.renderer.asset_registry.get_pipeline_vk_handles(h))
+            .asset_registry
+            .get_pipeline_vk_handles(self.renderer.outline.stencil_mark_pipeline)
             .ok_or(RenderGraphError::InvalidConfiguration(
                 "Stencil mark pipeline not initialized".to_string(),
             ))?;
 
         let (skinned_pipeline, skinned_layout) = self
             .renderer
-            .outline
-            .stencil_mark_skinned_pipeline
-            .and_then(|h| {
-                self.renderer
-                    .asset_registry
-                    .get_pipeline_vk_handles(h)
-                    .map(|(p, l)| (Some(p), Some(l)))
-            })
+            .asset_registry
+            .get_pipeline_vk_handles(self.renderer.outline.stencil_mark_skinned_pipeline)
+            .map(|(p, l)| (Some(p), Some(l)))
             .unwrap_or((None, None));
 
         self.draw_with_pipelines(
@@ -218,23 +212,17 @@ impl<'a> Frame<'a> {
     ) -> Result<(), RenderGraphError> {
         let (pipeline, layout) = self
             .renderer
-            .outline
-            .occlusion_mark_pipeline
-            .and_then(|h| self.renderer.asset_registry.get_pipeline_vk_handles(h))
+            .asset_registry
+            .get_pipeline_vk_handles(self.renderer.outline.occlusion_mark_pipeline)
             .ok_or(RenderGraphError::InvalidConfiguration(
                 "Occlusion mark pipeline not initialized".to_string(),
             ))?;
 
         let (skinned_pipeline, skinned_layout) = self
             .renderer
-            .outline
-            .occlusion_mark_skinned_pipeline
-            .and_then(|h| {
-                self.renderer
-                    .asset_registry
-                    .get_pipeline_vk_handles(h)
-                    .map(|(p, l)| (Some(p), Some(l)))
-            })
+            .asset_registry
+            .get_pipeline_vk_handles(self.renderer.outline.occlusion_mark_skinned_pipeline)
+            .map(|(p, l)| (Some(p), Some(l)))
             .unwrap_or((None, None));
 
         self.draw_with_pipelines(
@@ -255,23 +243,17 @@ impl<'a> Frame<'a> {
     ) -> Result<(), RenderGraphError> {
         let (pipeline, layout) = self
             .renderer
-            .outline
-            .outline_draw_pipeline
-            .and_then(|h| self.renderer.asset_registry.get_pipeline_vk_handles(h))
+            .asset_registry
+            .get_pipeline_vk_handles(self.renderer.outline.outline_draw_pipeline)
             .ok_or(RenderGraphError::InvalidConfiguration(
                 "Outline draw pipeline not initialized".to_string(),
             ))?;
 
         let (skinned_pipeline, skinned_layout) = self
             .renderer
-            .outline
-            .outline_draw_skinned_pipeline
-            .and_then(|h| {
-                self.renderer
-                    .asset_registry
-                    .get_pipeline_vk_handles(h)
-                    .map(|(p, l)| (Some(p), Some(l)))
-            })
+            .asset_registry
+            .get_pipeline_vk_handles(self.renderer.outline.outline_draw_skinned_pipeline)
+            .map(|(p, l)| (Some(p), Some(l)))
             .unwrap_or((None, None));
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
@@ -422,23 +404,17 @@ impl<'a> Frame<'a> {
 
         let (pipeline, layout) = self
             .renderer
-            .outline
-            .stencil_indicator_pipeline
-            .and_then(|h| self.renderer.asset_registry.get_pipeline_vk_handles(h))
+            .asset_registry
+            .get_pipeline_vk_handles(self.renderer.outline.stencil_indicator_pipeline)
             .ok_or(RenderGraphError::InvalidConfiguration(
                 "Stencil indicator pipeline not initialized".to_string(),
             ))?;
 
         let (skinned_pipeline, skinned_layout) = self
             .renderer
-            .outline
-            .stencil_indicator_skinned_pipeline
-            .and_then(|h| {
-                self.renderer
-                    .asset_registry
-                    .get_pipeline_vk_handles(h)
-                    .map(|(p, l)| (Some(p), Some(l)))
-            })
+            .asset_registry
+            .get_pipeline_vk_handles(self.renderer.outline.stencil_indicator_skinned_pipeline)
+            .map(|(p, l)| (Some(p), Some(l)))
             .unwrap_or((None, None));
 
         self.draw_with_pipelines(
