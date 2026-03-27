@@ -12,7 +12,7 @@ var<storage, read> frame_data: FrameUniforms;
 @group(0) @binding(1)
 var<storage, read> objects: array<ObjectUniforms>;
 
-struct OutlinePushConstants {
+struct OutlineParams {
     outline_width: f32,
     _pad0: f32,
     _pad1: f32,
@@ -20,7 +20,8 @@ struct OutlinePushConstants {
     outline_color: vec4f,
 }
 
-var<push_constant> outline_params: OutlinePushConstants;
+@group(1) @binding(0)
+var<uniform> outline_params: OutlineParams;
 
 struct VertexInput {
     @location(0) position: vec3f,

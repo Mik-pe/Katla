@@ -12,7 +12,7 @@ var<storage, read> objects: array<ObjectUniforms>;
 @group(2) @binding(0)
 var<storage, read> joint_matrices: array<mat4x4f>;
 
-struct OutlinePushConstants {
+struct OutlineParams {
     outline_width: f32,
     _pad0: f32,
     _pad1: f32,
@@ -20,7 +20,8 @@ struct OutlinePushConstants {
     outline_color: vec4f,
 }
 
-var<push_constant> outline_params: OutlinePushConstants;
+@group(3) @binding(0)
+var<uniform> outline_params: OutlineParams;
 
 struct VertexInput {
     @location(0) position: vec3f,

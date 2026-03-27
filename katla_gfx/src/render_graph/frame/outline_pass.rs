@@ -201,6 +201,7 @@ impl<'a> Frame<'a> {
             layout,
             skinned_pipeline,
             skinned_layout,
+            Vec::new(),
         )
     }
 
@@ -232,6 +233,7 @@ impl<'a> Frame<'a> {
             layout,
             skinned_pipeline,
             skinned_layout,
+            Vec::new(),
         )
     }
 
@@ -257,14 +259,33 @@ impl<'a> Frame<'a> {
             .unwrap_or((None, None));
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
+        let frame_idx = self.current_frame();
         let mut push_constants = OutlinePushConstants::default();
         push_constants.outline_width = compute_outline_width(extent.height as f32);
 
-        let stages = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
-        cmd.push_constants(layout, stages, 0, &push_constants);
-        if let Some(skinned_layout) = skinned_layout {
-            cmd.push_constants(skinned_layout, stages, 0, &push_constants);
+        // Update the uniform buffer for this frame
+        unsafe {
+            let ptr = self
+                .renderer
+                .context
+                .map_buffer(&self.renderer.outline.params_allocations[frame_idx]);
+            std::ptr::copy_nonoverlapping(
+                &push_constants as *const _ as *const u8,
+                ptr,
+                std::mem::size_of::<OutlinePushConstants>(),
+            );
         }
+        self.renderer.context.flush_mapped_memory(
+            &self.renderer.outline.params_allocations[frame_idx],
+            0,
+            std::mem::size_of::<OutlinePushConstants>() as u64,
+        );
+
+        // Non-skinned: outline params at set 1
+        // Skinned: outline params at set 3
+        let params_ds = self.renderer.outline.params_descriptor_sets[frame_idx];
+
+        let extra_sets = vec![(1u32, params_ds), (3u32, params_ds)];
 
         self.draw_with_pipelines(
             cmd,
@@ -273,9 +294,11 @@ impl<'a> Frame<'a> {
             layout,
             skinned_pipeline,
             skinned_layout,
+            extra_sets,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_with_pipelines(
         &mut self,
         cmd: &CommandBuffer,
@@ -284,6 +307,7 @@ impl<'a> Frame<'a> {
         layout: vk::PipelineLayout,
         skinned_pipeline: Option<vk::Pipeline>,
         skinned_layout: Option<vk::PipelineLayout>,
+        extra_sets: Vec<(u32, vk::DescriptorSet)>,
     ) -> Result<(), RenderGraphError> {
         let frame_idx = self.current_frame();
         draw_meshes_with_skinning(DrawParams {
@@ -298,7 +322,7 @@ impl<'a> Frame<'a> {
             descriptors: DescriptorConfig {
                 bind_textures: false,
                 skeleton_set: 2,
-                extra_sets: Vec::new(),
+                extra_sets,
             },
         })
     }
@@ -424,6 +448,7 @@ impl<'a> Frame<'a> {
             layout,
             skinned_pipeline,
             skinned_layout,
+            Vec::new(),
         )?;
 
         cmd.end_rendering();

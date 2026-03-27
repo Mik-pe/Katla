@@ -62,6 +62,16 @@ pub(crate) struct OutlineState {
     pub stencil_indicator_pipeline: PipelineHandle,
     /// Skinned stencil indicator pipeline.
     pub stencil_indicator_skinned_pipeline: PipelineHandle,
+    /// Descriptor set layout for outline params uniform buffer.
+    pub params_descriptor_layout: vk::DescriptorSetLayout,
+    /// Per-frame descriptor sets for outline params (set 1 non-skinned, set 3 skinned).
+    pub params_descriptor_sets: Vec<vk::DescriptorSet>,
+    /// Per-frame uniform buffers for outline params.
+    pub params_buffers: Vec<vk::Buffer>,
+    /// Per-frame buffer allocations for outline params.
+    pub params_allocations: Vec<gpu_allocator::vulkan::Allocation>,
+    /// Descriptor pool for outline params.
+    pub params_descriptor_pool: vk::DescriptorPool,
 }
 
 impl Default for OutlineState {
@@ -75,6 +85,11 @@ impl Default for OutlineState {
             outline_draw_skinned_pipeline: PipelineHandle::NONE,
             stencil_indicator_pipeline: PipelineHandle::NONE,
             stencil_indicator_skinned_pipeline: PipelineHandle::NONE,
+            params_descriptor_layout: vk::DescriptorSetLayout::null(),
+            params_descriptor_sets: Vec::new(),
+            params_buffers: Vec::new(),
+            params_allocations: Vec::new(),
+            params_descriptor_pool: vk::DescriptorPool::null(),
         }
     }
 }
@@ -92,7 +107,7 @@ impl super::VulkanRenderer {
         color_format: ImageFormat,
         color_write_mask: vk::ColorComponentFlags,
         empty_layout: Option<vk::DescriptorSetLayout>,
-        push_constant_size: Option<u32>,
+        params_layout: Option<vk::DescriptorSetLayout>,
     ) -> Result<PipelineHandle, RendererError> {
         let mut builder = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert, frag)
@@ -103,19 +118,31 @@ impl super::VulkanRenderer {
             .with_color_write_mask(color_write_mask)
             .with_rendering_formats(Some(color_format), Some(ImageFormat::D32SfloatS8Uint));
 
-        if let Some(size) = push_constant_size {
-            let stages = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
-            builder = builder.with_push_constant_range(stages, 0, size);
-        }
-
         if let Some(empty_layout) = empty_layout {
             let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
+            if let Some(params_layout) = params_layout {
+                builder = builder.with_descriptor_layouts(vec![
+                    storage_layout,
+                    empty_layout,
+                    skeleton_layout,
+                    params_layout,
+                ]);
+            } else {
+                builder = builder.with_descriptor_layouts(vec![
+                    storage_layout,
+                    empty_layout,
+                    skeleton_layout,
+                ]);
+            }
             builder = builder
-                .with_descriptor_layouts(vec![storage_layout, empty_layout, skeleton_layout])
                 .with_soa_attribute(4, VertexFormat::RGBA16u)
                 .with_soa_attribute(5, VertexFormat::RGBA32f);
         } else {
-            builder = builder.with_descriptor_layouts(vec![storage_layout]);
+            if let Some(params_layout) = params_layout {
+                builder = builder.with_descriptor_layouts(vec![storage_layout, params_layout]);
+            } else {
+                builder = builder.with_descriptor_layouts(vec![storage_layout]);
+            }
         }
 
         let pipeline = builder.build_dynamic().map_err(|e| {
@@ -161,6 +188,120 @@ impl super::VulkanRenderer {
         outline_draw_skinned_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         let storage_layout = self.storage_descriptor_sets[0].layout();
+        let device = &self.context.device;
+
+        // Create outline params uniform buffer resources.
+        // Used by the outline draw pipelines (non-skinned: set 1, skinned: set 3).
+        let params_size = std::mem::size_of::<OutlinePushConstants>() as u64;
+        let frames_in_flight = super::FRAMES_IN_FLIGHT;
+
+        let params_descriptor_layout = unsafe {
+            let bindings = [vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
+            device
+                .create_descriptor_set_layout(
+                    &vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings),
+                    None,
+                )
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to create outline params descriptor layout: {:?}",
+                        e
+                    ))
+                })?
+        };
+
+        let pool_sizes = [vk::DescriptorPoolSize::default()
+            .ty(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(frames_in_flight as u32)];
+        let params_descriptor_pool = unsafe {
+            device
+                .create_descriptor_pool(
+                    &vk::DescriptorPoolCreateInfo::default()
+                        .pool_sizes(&pool_sizes)
+                        .max_sets(frames_in_flight as u32),
+                    None,
+                )
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to create outline params descriptor pool: {:?}",
+                        e
+                    ))
+                })?
+        };
+
+        let layouts = (0..frames_in_flight)
+            .map(|_| params_descriptor_layout)
+            .collect::<Vec<_>>();
+        let params_descriptor_sets = unsafe {
+            device
+                .allocate_descriptor_sets(
+                    &vk::DescriptorSetAllocateInfo::default()
+                        .descriptor_pool(params_descriptor_pool)
+                        .set_layouts(&layouts),
+                )
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to allocate outline params descriptor sets: {:?}",
+                        e
+                    ))
+                })?
+        };
+
+        let mut params_buffers = Vec::with_capacity(frames_in_flight);
+        let mut params_allocations = Vec::with_capacity(frames_in_flight);
+
+        for &params_ds in params_descriptor_sets.iter() {
+            let buffer_info = vk::BufferCreateInfo::default()
+                .size(params_size)
+                .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+            let (buffer, allocation) = self
+                .context
+                .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
+
+            unsafe {
+                let ptr = self.context.map_buffer(&allocation);
+                let defaults = OutlinePushConstants::default();
+                std::ptr::copy_nonoverlapping(
+                    &defaults as *const _ as *const u8,
+                    ptr,
+                    params_size as usize,
+                );
+            }
+            self.context
+                .flush_mapped_memory(&allocation, 0, params_size);
+
+            let buffer_info = [vk::DescriptorBufferInfo::default()
+                .buffer(buffer)
+                .offset(0)
+                .range(params_size)];
+
+            unsafe {
+                device.update_descriptor_sets(
+                    &[vk::WriteDescriptorSet::default()
+                        .dst_set(params_ds)
+                        .dst_binding(0)
+                        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                        .descriptor_count(1)
+                        .buffer_info(&buffer_info)],
+                    &[],
+                );
+            }
+
+            params_buffers.push(buffer);
+            params_allocations.push(allocation);
+        }
+
+        self.outline.params_descriptor_layout = params_descriptor_layout;
+        self.outline.params_descriptor_sets = params_descriptor_sets;
+        self.outline.params_buffers = params_buffers;
+        self.outline.params_allocations = params_allocations;
+        self.outline.params_descriptor_pool = params_descriptor_pool;
 
         // === Stencil Mark Pipeline ===
         // Renders selected objects with color write OFF, depth test GREATER_OR_EQUAL.
@@ -315,7 +456,7 @@ impl super::VulkanRenderer {
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
                 None,
-                Some(std::mem::size_of::<OutlinePushConstants>() as u32),
+                Some(self.outline.params_descriptor_layout),
             )?;
             self.outline.outline_draw_pipeline = handle;
         }
@@ -347,7 +488,7 @@ impl super::VulkanRenderer {
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
                 Some(self.shared_empty_descriptor_layout),
-                Some(std::mem::size_of::<OutlinePushConstants>() as u32),
+                Some(self.outline.params_descriptor_layout),
             )?;
             self.outline.outline_draw_skinned_pipeline = handle;
         }
