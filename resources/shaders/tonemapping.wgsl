@@ -10,6 +10,7 @@
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
 #include <fullscreen_triangle.wgsl>
+#include <outline_params.wgsl>
 
 // Set 0: Uniforms (storage buffers)
 @group(0) @binding(0)
@@ -89,9 +90,7 @@ fn fs_main(in: FullscreenVertexOutput) -> @location(0) vec4f {
     if (stencil_indicator_idx != 0u) {
         let indicator = textureSample(bindless_textures[stencil_indicator_idx], shared_sampler, in.uv).r;
         if (indicator > 0.5) {
-            let overlay_color = vec3f(1.0, 0.55, 0.0);
-            let overlay_alpha = 0.4;
-            color = mix(color, overlay_color, overlay_alpha);
+            color = mix(color, OUTLINE_COLOR, WALLHACK_ALPHA);
         }
     }
 

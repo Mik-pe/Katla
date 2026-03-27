@@ -12,8 +12,15 @@ var<storage, read> objects: array<ObjectUniforms>;
 @group(2) @binding(0)
 var<storage, read> joint_matrices: array<mat4x4f>;
 
-// Outline width in normalized device coordinates (pixels / screen height).
-const OUTLINE_WIDTH: f32 = 0.004;
+struct OutlinePushConstants {
+    outline_width: f32,
+    _pad0: f32,
+    _pad1: f32,
+    _pad2: f32,
+    outline_color: vec4f,
+}
+
+var<push_constant> outline_params: OutlinePushConstants;
 
 struct VertexInput {
     @location(0) position: vec3f,
@@ -52,7 +59,7 @@ fn vs_main(
 
     var final_clip = clip;
     if clip_dir_len > 0.001 {
-        let offset = normalize(clip_dir.xy) * OUTLINE_WIDTH * clip.w;
+        let offset = normalize(clip_dir.xy) * outline_params.outline_width * clip.w;
         final_clip = vec4f(clip.x + offset.x, clip.y + offset.y, clip.z, clip.w);
     }
 
@@ -64,5 +71,5 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    return vec4f(1.0, 0.55, 0.0, 1.0);
+    return outline_params.outline_color;
 }

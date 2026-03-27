@@ -2,37 +2,18 @@
 
 ## Gizmo
 
-### Bugs
-
-- [x] Create cone mesh for translate gizmo tips instead of reusing cube (init_gizmo_resources creates a cube as tip_mesh, but translate gizmo expects cones)
-- [x] Fix rotation delta calculation: use gizmo origin screen position as center instead of previous mouse position (works by accident currently, breaks when mouse is at previous position)
-- [x] Fix scale mode plane anchor: uses start_origin for ray-plane hit but returns absolute scale factor, causing jumps instead of relative accumulation from drag start
-- [x] Make rotation sign conventions consistent: Y-axis uses identity while X/Z negate, causing inconsistent rotation direction
-- [x] Fix rotate gizmo hit testing: uses line-segment distance like translate/scale, but rotate gizmo is a torus ring that needs point-to-circle distance
-
 ### UX
 
-- [x] Gate W/E/R gizmo shortcuts on keyboard capture state to prevent mode switches while typing in inspector fields
 - [ ] Add plane-drag support (e.g., XY, XZ, YZ planes) for translate and scale modes
 - [ ] Calibrate scale sensitivity to screen-space movement (magic 0.01 constant is not zoom-aware)
 
-### Code Quality
-
-- [x] Remove dead `pending_mode_change` field from GizmoState (never read or written)
-- [x] Remove unused variables: `_tip_center` in generate_translate_draw_calls, `_axis_dir` in generate_rotate_draw_calls
-- [x] Use proper near/far clip planes in screen_to_ray instead of z=1.0 and z=0.5
-- [x] Deduplicate fallback path in compute_translate_delta and compute_scale_delta when axis is parallel to camera forward
-
-## Drawcall Submission
+## Outline + Overlay
 
 ### Code Quality
 
-- [x] Extract shared `draw_meshes_with_skinning()` helper — skinned/non-skinned draw loop is copy-pasted across 5+ pass executors (depth_prepass, object_id_pass, shadow_pass, outline_pass::draw_with_pipelines, execute_draw_call)
-- [x] Avoid cloning `DrawList` three times in app `render_frame()` — use `Arc<DrawList>` or shared indices when submitting same list to depth_prepass, geometry, and shadow passes
-- [x] Move material recompilation out of hot draw path — `execute_draw_call()` calls `ensure_material_compiled()` mid-render-pass; validate/compile materials before pass execution begins
-- [x] Simplify borrow workaround in `execute_draw_call()` — material is fetched, data extracted, then explicitly dropped (`let _ = material;`) to allow `&mut self`; restructure to separate read-only extraction from mutation
+- [ ] Move wallhack overlay logic out of tonemapping shader — `tonemapping.wgsl` has outline-specific `stencil_indicator` sampling baked in; extract to a separate fullscreen overlay pass or make it data-driven
 
-### Performance
+### Refactoring
 
-- [x] Apply material/pipeline sorting before pass execution — `DrawList::sort_by_material()` and `sort_optimal()` exist but are never called; draw calls execute in submission order with full pipeline state changes per draw
-- [x] Reduce trace logging overhead in draw hot path — `log::trace!()` calls with string formatting on every draw call in every pass
+- [ ] Remove `Option<PipelineHandle>` wrappers in `OutlineState` — all fields are always initialized during `init_outline_pipelines`, use a once-cell pattern or init-time struct
+- [ ] Share the empty descriptor set layout for skinned outline pipelines as a renderer-level resource instead of burying creation in `init_outline_pipelines`

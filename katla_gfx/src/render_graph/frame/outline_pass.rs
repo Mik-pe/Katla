@@ -4,6 +4,7 @@ use crate::render_graph::frame::draw_helpers::{
 };
 use crate::render_graph::frame::{Frame, PassExecutionData};
 use crate::render_graph::pass::PassDesc;
+use crate::renderer::outline::{OutlinePushConstants, compute_outline_width};
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
@@ -272,6 +273,16 @@ impl<'a> Frame<'a> {
                     .map(|(p, l)| (Some(p), Some(l)))
             })
             .unwrap_or((None, None));
+
+        let extent = self.renderer.frame_context.swapchain.get_extent();
+        let mut push_constants = OutlinePushConstants::default();
+        push_constants.outline_width = compute_outline_width(extent.height as f32);
+
+        let stages = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
+        cmd.push_constants(layout, stages, 0, &push_constants);
+        if let Some(skinned_layout) = skinned_layout {
+            cmd.push_constants(skinned_layout, stages, 0, &push_constants);
+        }
 
         self.draw_with_pipelines(
             cmd,
