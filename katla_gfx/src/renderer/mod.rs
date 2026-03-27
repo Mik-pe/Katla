@@ -687,6 +687,13 @@ impl VulkanRenderer {
                     .destroy_descriptor_set_layout(layout, None);
             }
         }
+        if let Some(layout) = self.outline.skinned_empty_layout.take() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(layout, None);
+            }
+        }
 
         self.swap_data.destroy(&self.context.device);
         self.frame_context.destroy();
