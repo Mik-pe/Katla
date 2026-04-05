@@ -378,11 +378,12 @@ impl<'a> crate::Widget for ToggleButton<'a> {
 /// use katla_ui::widgets::Slider;
 ///
 /// let mut volume = 0.5;
-/// if ui.add(Slider::new(&mut volume, 0.0..=1.0)).changed {
+/// if ui.add(Slider::new("volume", &mut volume, 0.0..=1.0)).changed {
 ///     println!("Volume: {}", volume);
 /// }
 /// ```
 pub struct Slider<'a> {
+    label: &'a str,
     value: &'a mut f32,
     range: std::ops::RangeInclusive<f32>,
     bounds: Rect2D,
@@ -390,9 +391,10 @@ pub struct Slider<'a> {
 }
 
 impl<'a> Slider<'a> {
-    /// Create a new slider with value and range.
-    pub fn new(value: &'a mut f32, range: std::ops::RangeInclusive<f32>) -> Self {
+    /// Create a new slider with label, value, and range.
+    pub fn new(label: &'a str, value: &'a mut f32, range: std::ops::RangeInclusive<f32>) -> Self {
         Self {
+            label,
             value,
             range,
             bounds: Rect2D::from_size(Vec2::new(150.0, 20.0)),
@@ -406,7 +408,7 @@ impl<'a> Slider<'a> {
         self
     }
 
-    /// Set a custom ID.
+    /// Set a custom ID (overrides label-based ID).
     pub fn id(mut self, id: &'a str) -> Self {
         self.id = Some(id);
         self
@@ -415,7 +417,7 @@ impl<'a> Slider<'a> {
 
 impl<'a> crate::Widget for Slider<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let id = self.id.unwrap_or("slider");
+        let id = self.id.unwrap_or(self.label);
         ui.slider(
             id,
             self.value,
@@ -438,11 +440,12 @@ impl<'a> crate::Widget for Slider<'a> {
 /// use katla_ui::widgets::TextInput;
 ///
 /// let mut name = String::new();
-/// if ui.add(TextInput::new(&mut name).placeholder("Enter name...")).changed {
+/// if ui.add(TextInput::new("name", &mut name).placeholder("Enter name...")).changed {
 ///     println!("Name: {}", name);
 /// }
 /// ```
 pub struct TextInput<'a> {
+    label: &'a str,
     text: &'a mut String,
     placeholder: Option<&'a str>,
     show_clear: bool,
@@ -451,9 +454,10 @@ pub struct TextInput<'a> {
 }
 
 impl<'a> TextInput<'a> {
-    /// Create a new text input.
-    pub fn new(text: &'a mut String) -> Self {
+    /// Create a new text input with label.
+    pub fn new(label: &'a str, text: &'a mut String) -> Self {
         Self {
+            label,
             text,
             placeholder: None,
             show_clear: false,
@@ -480,7 +484,7 @@ impl<'a> TextInput<'a> {
         self
     }
 
-    /// Set a custom ID.
+    /// Set a custom ID (overrides label-based ID).
     pub fn id(mut self, id: &'a str) -> Self {
         self.id = Some(id);
         self
@@ -489,7 +493,7 @@ impl<'a> TextInput<'a> {
 
 impl<'a> crate::Widget for TextInput<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let id = self.id.unwrap_or("text_input");
+        let id = self.id.unwrap_or(self.label);
         ui.text_input(
             id,
             self.text,

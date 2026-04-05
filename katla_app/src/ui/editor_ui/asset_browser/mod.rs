@@ -264,7 +264,7 @@ pub fn build_asset_browser(
     );
 
     let search_response = ui.add(
-        katla_ui::widgets::TextInput::new(&mut state.search_filter)
+        katla_ui::widgets::TextInput::new("asset_search", &mut state.search_filter)
             .bounds(search_bounds)
             .placeholder("Filter...")
             .show_clear(true),
@@ -690,7 +690,7 @@ pub fn build_asset_browser(
 
                 ui.with_z_index(katla_ui::z_index::POPUP, |ui| {
                     let rename_response = ui.add(
-                        katla_ui::widgets::TextInput::new(&mut state.rename_buffer)
+                        katla_ui::widgets::TextInput::new("asset_rename", &mut state.rename_buffer)
                             .bounds(input_bounds),
                     );
 
