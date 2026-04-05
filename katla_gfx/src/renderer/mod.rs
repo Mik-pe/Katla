@@ -168,8 +168,8 @@ pub struct VulkanRenderer {
     pub animation_pipeline: Option<crate::animation::PoseComputePipeline>,
     /// GPU animation buffers for pose evaluation.
     pub animation_buffers: Option<crate::animation::PoseComputeBuffers>,
-    /// Light culling state (Forward+ dynamic lighting).
-    light_culling: light_culling::LightCullingState,
+    /// Light culling subsystem (Forward+ dynamic lighting).
+    light_culling: light_culling::LightSubsystem,
     /// Shadow system state (CSM cascaded shadow maps).
     pub(crate) shadow: shadow::ShadowSubsystem,
     /// Shared empty descriptor set layout (no bindings).
@@ -336,7 +336,7 @@ impl VulkanRenderer {
             particle_system: None,
             animation_pipeline: None,
             animation_buffers: None,
-            light_culling: light_culling::LightCullingState::default(),
+            light_culling: light_culling::LightSubsystem::default(),
             shared_empty_descriptor_layout,
             shadow: shadow::ShadowSubsystem::default(),
             depth_prepass: depth_prepass::DepthPrepassState::default(),
@@ -625,11 +625,8 @@ impl VulkanRenderer {
             }
         }
 
-        // Drop light culling pipeline and buffers.
-        // Drop order: pipeline first (doesn't own descriptor layouts),
-        // then buffers (owns descriptor layouts and GPU buffers).
-        self.light_culling.pipeline = None;
-        self.light_culling.buffers = None;
+        // Destroy light culling subsystem
+        self.light_culling.destroy();
 
         // Destroy shadow system resources (buffers, samplers, pools)
         self.shadow.destroy_resources(&self.context);
