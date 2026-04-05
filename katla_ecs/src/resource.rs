@@ -7,14 +7,19 @@ use std::any::{Any, TypeId};
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```
 /// use katla_ecs::Resource;
 ///
-/// #[derive(Resource)]
 /// struct GameSettings {
 ///     difficulty: f32,
-///     player_count: usize,
 /// }
+///
+/// fn use_resource(settings: &GameSettings) -> f32 {
+///     settings.difficulty
+/// }
+///
+/// let settings = GameSettings { difficulty: 1.5 };
+/// assert_eq!(use_resource(&settings), 1.5);
 /// ```
 pub trait Resource: Any + 'static {}
 
