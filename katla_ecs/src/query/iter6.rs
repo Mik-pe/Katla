@@ -323,14 +323,13 @@ impl<
         );
 
         unsafe {
-            let ptr_mut = storage as *mut ComponentStorageManager;
-            let ptr_const = storage as *const ComponentStorageManager;
-            let storage1 = (*ptr_mut).get_storage_mut::<T1>();
-            let storage2 = (*ptr_const).get_storage::<T2>();
-            let storage3 = (*ptr_const).get_storage::<T3>();
-            let storage4 = (*ptr_const).get_storage::<T4>();
-            let storage5 = (*ptr_const).get_storage::<T5>();
-            let storage6 = (*ptr_const).get_storage::<T6>();
+            let ptr = storage.borrow_ptr();
+            let (storage1, storage2) =
+                ComponentStorageManager::get_storage_mut_and_ref::<T1, T2>(ptr);
+            let storage3 = (*ptr).get_storage::<T3>();
+            let storage4 = (*ptr).get_storage::<T4>();
+            let storage5 = (*ptr).get_storage::<T5>();
+            let storage6 = (*ptr).get_storage::<T6>();
 
             if let (Some(s1), Some(s2), Some(s3), Some(s4), Some(s5), Some(s6)) =
                 (storage1, storage2, storage3, storage4, storage5, storage6)
