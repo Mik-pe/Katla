@@ -9,7 +9,7 @@ impl UiContext {
     /// Calculate popup position based on config.
     ///
     /// For `AtCursor`, uses the captured position from when the popup was first opened.
-    pub(super) fn calculate_popup_position(&self, config: &Popup) -> Vec2 {
+    pub(super) fn calculate_popup_position<'a>(&self, config: &Popup<'a>) -> Vec2 {
         match config.position {
             PopupPosition::AtCursor => {
                 // Use captured position if available, otherwise current mouse pos
@@ -26,7 +26,11 @@ impl UiContext {
     }
 
     /// Calculate final popup bounds from tracked content.
-    pub(super) fn calculate_final_popup_bounds(&self, config: &Popup, position: Vec2) -> Rect2D {
+    pub(super) fn calculate_final_popup_bounds<'a>(
+        &self,
+        config: &Popup<'a>,
+        position: Vec2,
+    ) -> Rect2D {
         match config.position {
             PopupPosition::Fixed(bounds) => bounds,
             PopupPosition::Centered { width, height } => {
@@ -52,13 +56,11 @@ impl UiContext {
     }
 
     /// Draw popup background (shadow + bg + border).
-    pub(super) fn draw_popup_background(&mut self, bounds: Rect2D, style: &PopupStyle) {
-        // Shadow (not for tooltips)
-        if *style != PopupStyle::Tooltip {
-            let shadow_offset = Vec2::new(4.0, 4.0);
-            let shadow_bounds = Rect2D::new(bounds.min + shadow_offset, bounds.max + shadow_offset);
-            self.draw_rect(shadow_bounds, self.style.popup_shadow);
-        }
+    pub(super) fn draw_popup_background(&mut self, bounds: Rect2D) {
+        // Shadow
+        let shadow_offset = Vec2::new(4.0, 4.0);
+        let shadow_bounds = Rect2D::new(bounds.min + shadow_offset, bounds.max + shadow_offset);
+        self.draw_rect(shadow_bounds, self.style.popup_shadow);
 
         // Background
         self.draw_rect(bounds, self.style.popup_bg);
@@ -70,7 +72,7 @@ impl UiContext {
     /// Handle popup close behavior.
     ///
     /// Returns `true` if the popup should be closed.
-    pub(super) fn handle_popup_close(&mut self, config: &Popup, bounds: Rect2D) -> bool {
+    pub(super) fn handle_popup_close<'a>(&mut self, config: &Popup<'a>, bounds: Rect2D) -> bool {
         // Capture mouse when over popup
         if bounds.contains(self.input.mouse_pos) {
             self.input.want_capture_mouse = true;

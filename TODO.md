@@ -145,8 +145,8 @@ Bite-sized tasks to make the engine usable by game makers. Ordered by impact and
   - [ ] Audit all call sites using both closure-based and begin/end layout styles
   - [ ] Decide and document which style to keep as primary
   - [ ] Remove the non-primary style and update all consumers
-- [ ] **Merge `spacer()` / `spacing()` / `advance_cursor()`** — Three methods that all move the cursor with overlapping behavior. `spacer()` and `spacing()` behave identically when no layout is active. Pick one user-facing API, make the others internal or remove.
-- [ ] **Reconcile `tooltip()` with `PopupStyle::Tooltip`** — `utility.rs::tooltip()` draws immediately at mouse position. `PopupStyle::Tooltip` exists in the popup system but is unused. Either make `tooltip()` use the popup system for z-ordering, or remove `PopupStyle::Tooltip`.
+- [x] **Merge `spacer()` / `spacing()` / `advance_cursor()`** — Three methods that all move the cursor with overlapping behavior. `spacer()` and `spacing()` behave identically when no layout is active. Pick one user-facing API, make the others internal or remove.
+- [x] **Reconcile `tooltip()` with `PopupStyle::Tooltip`** — `utility.rs::tooltip()` draws immediately at mouse position. `PopupStyle::Tooltip` exists in the popup system but is unused. Either make `tooltip()` use the popup system for z-ordering, or remove `PopupStyle::Tooltip`.
 
 ### P0: Correctness
 
@@ -157,7 +157,7 @@ Bite-sized tasks to make the engine usable by game makers. Ordered by impact and
 
 ### P1: Performance
 
-- [ ] **Eliminate per-frame `String` allocations in `Popup`** — `Popup.id` is `String` but every call site passes `&str`. The `id: impl Into<String>` forces allocation. Use `&'a str` with a lifetime or `Cow<'a, str>`.
+- [x] **Eliminate per-frame `String` allocations in `Popup`** — `Popup.id` is `String` but every call site passes `&str`. The `id: impl Into<String>` forces allocation. Use `&'a str` with a lifetime or `Cow<'a, str>`.
 - [x] **Remove `format!()` in `ScrollArea` scrollbar ID** — `scroll_area.rs` allocates `format!("{}_scrollbar", id)` every frame. Use a compound label approach in `generate_id` that doesn't allocate.
 - [x] **Remove `format!()` in `DraggablePanel` close button** — `draggable_panel.rs` allocates `format!("close_{}", id)` every frame. Same fix as ScrollArea.
 - [x] **Reuse `commands` Vec in `DrawList::finalize()`** — `draw_list.rs` replaces `self.commands` with a new Vec via `.collect()` every frame. Use `clear()` + `extend()` to reuse the allocation. Already uses `clear()` + `extend()`.

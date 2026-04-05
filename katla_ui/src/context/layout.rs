@@ -72,7 +72,11 @@ impl UiContext {
         bounds
     }
 
-    /// Add a spacer of the given width (in horizontal layout) or height (in vertical layout).
+    /// Add horizontal spacing.
+    ///
+    /// Alias for `spacing()` — always advances horizontally regardless of layout direction.
+    /// Prefer `spacing()` for direction-aware spacing.
+    #[inline]
     pub fn spacer(&mut self, size: f32) {
         if let Some(layout) = self.layout_stack.last_mut() {
             layout.cursor = Vec2::new(layout.cursor.x() + size, layout.cursor.y());
