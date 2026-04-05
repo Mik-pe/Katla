@@ -149,20 +149,14 @@ impl<'a> Button<'a> {
 impl<'a> crate::Widget for Button<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
         let id = self.id.unwrap_or(self.text);
-        let response = ui.button_with_colors(
+        ui.button_with_colors(
             id,
             self.text,
             self.bounds,
             self.fill_color,
             self.hover_color,
-        );
-
-        // Draw border if specified
-        if let Some(border_color) = self.border_color {
-            ui.draw_selection_border(self.bounds, border_color, 1.0);
-        }
-
-        response
+            self.border_color,
+        )
     }
 }
 
@@ -220,6 +214,12 @@ impl<'a> ImageButton<'a> {
         self.enabled = enabled;
         self
     }
+
+    /// Position the button at the current cursor position with default size.
+    pub fn at_cursor(mut self, ui: &UiContext) -> Self {
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(30.0, 30.0));
+        self
+    }
 }
 
 impl<'a> crate::Widget for ImageButton<'a> {
@@ -272,6 +272,12 @@ impl<'a> Checkbox<'a> {
     /// Set a custom ID.
     pub fn id(mut self, id: &'a str) -> Self {
         self.id = Some(id);
+        self
+    }
+
+    /// Position the checkbox at the current cursor position with default size.
+    pub fn at_cursor(mut self, ui: &UiContext) -> Self {
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(150.0, 24.0));
         self
     }
 }
@@ -346,6 +352,12 @@ impl<'a> ToggleButton<'a> {
         self.unchecked_color = Some(color);
         self
     }
+
+    /// Position the toggle button at the current cursor position with default size.
+    pub fn at_cursor(mut self, ui: &UiContext) -> Self {
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(150.0, 24.0));
+        self
+    }
 }
 
 impl<'a> crate::Widget for ToggleButton<'a> {
@@ -411,6 +423,12 @@ impl<'a> Slider<'a> {
     /// Set a custom ID (overrides label-based ID).
     pub fn id(mut self, id: &'a str) -> Self {
         self.id = Some(id);
+        self
+    }
+
+    /// Position the slider at the current cursor position with default size.
+    pub fn at_cursor(mut self, ui: &UiContext) -> Self {
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(150.0, 20.0));
         self
     }
 }
@@ -487,6 +505,12 @@ impl<'a> TextInput<'a> {
     /// Set a custom ID (overrides label-based ID).
     pub fn id(mut self, id: &'a str) -> Self {
         self.id = Some(id);
+        self
+    }
+
+    /// Position the text input at the current cursor position with default size.
+    pub fn at_cursor(mut self, ui: &UiContext) -> Self {
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(200.0, 24.0));
         self
     }
 }
@@ -681,39 +705,58 @@ impl crate::Widget for Separator {
 ///
 /// ui.add(Badge::new("Beta", Color::new(0.2, 0.6, 1.0, 1.0)));
 /// ```
-pub struct Badge {
-    text: &'static str,
+pub struct Badge<'a> {
+    text: &'a str,
     color: Color,
+    bounds: Rect2D,
 }
 
-impl Badge {
+impl<'a> Badge<'a> {
     /// Create a new badge with text and color.
-    pub fn new(text: &'static str, color: Color) -> Self {
-        Self { text, color }
+    pub fn new(text: &'a str, color: Color) -> Self {
+        Self {
+            text,
+            color,
+            bounds: Rect2D::from_size(Vec2::new(60.0, 20.0)),
+        }
+    }
+
+    /// Set the badge bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Position the badge at the current cursor position, auto-sizing to fit text.
+    pub fn at_cursor(mut self, ui: &UiContext) -> Self {
+        let padding = 4.0;
+        let text_size = ui.measure_text(self.text, ui.scaled_font_size(crate::FontSize::XSmall));
+        let badge_size = Vec2::new(text_size.x() + padding * 2.0, text_size.y() + padding);
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), badge_size);
+        self
     }
 }
 
-impl crate::Widget for Badge {
+impl crate::Widget for Badge<'_> {
     fn ui(self, ui: &mut UiContext) -> crate::Response {
         let padding = 4.0;
-        let text_size = ui.measure_text(self.text, ui.scaled_font_size(crate::FontSize::XSmall));
-        let badge_size =
-            katla_math::Vec2::new(text_size.x() + padding * 2.0, text_size.y() + padding);
-
-        let bounds = Rect2D::from_origin_size(ui.cursor, badge_size);
+        let font_size = ui.scaled_font_size(crate::FontSize::XSmall);
 
         // Background
-        ui.draw_rect(bounds, self.color);
+        ui.draw_rect(self.bounds, self.color);
 
         // Text
         ui.draw_text(
             self.text,
-            katla_math::Vec2::new(ui.cursor.x() + padding, ui.cursor.y() + padding / 2.0),
+            Vec2::new(
+                self.bounds.min.x() + padding,
+                self.bounds.min.y() + padding / 2.0,
+            ),
             Color::WHITE,
-            ui.scaled_font_size(crate::FontSize::XSmall),
+            font_size,
         );
 
-        Response::new(bounds)
+        Response::new(self.bounds)
     }
 }
 
@@ -801,6 +844,12 @@ impl<'a> RadioButton<'a> {
     /// Set the button bounds.
     pub fn bounds(mut self, bounds: Rect2D) -> Self {
         self.bounds = bounds;
+        self
+    }
+
+    /// Position the radio button at the current cursor position with default size.
+    pub fn at_cursor(mut self, ui: &UiContext) -> Self {
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(150.0, 20.0));
         self
     }
 }

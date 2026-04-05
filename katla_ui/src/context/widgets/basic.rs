@@ -13,7 +13,7 @@ use crate::response::Response;
 use super::super::UiContext;
 
 impl UiContext {
-    /// Draw a button with optional custom background colors.
+    /// Draw a button with optional custom background colors and border.
     pub(crate) fn button_with_colors(
         &mut self,
         id: &str,
@@ -21,6 +21,7 @@ impl UiContext {
         bounds: Rect2D,
         fill_color: Option<Color>,
         hover_color: Option<Color>,
+        border_color: Option<Color>,
     ) -> Response {
         let widget_id = self.generate_id(id);
 
@@ -50,6 +51,11 @@ impl UiContext {
 
         // Draw button background
         self.draw_rect(bounds, bg_color);
+
+        // Draw border if specified
+        if let Some(border_color) = border_color {
+            self.draw_selection_border(bounds, border_color, 1.0);
+        }
 
         // Draw button text
         let text_size = self.measure_text(text, self.style.font_size);
