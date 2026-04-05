@@ -1,0 +1,102 @@
+{
+  "assertionId": "architecture",
+  "testedAt": "2026-04-05T21:49:00Z",
+  "isolation": {
+    "type": "local-rust-workspace",
+    "workingDirectory": "C:\\dev\\katla",
+    "tools": ["cargo", "rg"],
+    "gpuRequired": false
+  },
+  "toolsUsed": ["cargo check", "cargo test", "rg"],
+  "assertions": [
+    {
+      "id": "VAL-ECS-004",
+      "title": "Input module moved out of katla_ecs",
+      "status": "pass",
+      "evidence": "Verified that katla_ecs no longer contains input module or game-specific input types. All checks passed: input.rs and input/ directory do not exist in katla_ecs/src/. rg 'katla_ecs::input' finds zero results in the workspace (only found references in review JSON files, not source code). cargo check --workspace succeeds with exit code 0 (only pre-existing warnings in katla_gfx).",
+      "commandsRun": [
+        {
+          "command": "Glob for katla_ecs/src/input.rs and katla_ecs/src/input/**/*",
+          "exitCode": 0,
+          "observation": "No matching files found — input module fully removed from katla_ecs"
+        },
+        {
+          "command": "rg 'katla_ecs::input' C:\\dev\\katla\\",
+          "exitCode": 0,
+          "observation": "Zero source code references found; only review JSON metadata files mention the old path"
+        },
+        {
+          "command": "cargo check --workspace",
+          "exitCode": 0,
+          "observation": "Workspace compiles successfully with only pre-existing warnings in katla_gfx (unused Handle import, dead_code TimestampQuery)"
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-005",
+      "title": "World input access works via resource pattern",
+      "status": "pass",
+      "evidence": "All katla_app tests pass (196 unit tests passed, 13 doctests ignored as pre-existing). cargo check --workspace confirms the entire workspace compiles. The input module has been successfully moved to katla_app::input and input state is accessed through the generic resource API pattern.",
+      "commandsRun": [
+        {
+          "command": "cargo test -p katla_app",
+          "exitCode": 0,
+          "observation": "196 unit tests passed, 0 failed, 1 ignored (pre-existing cycle detection test). 13 doctests ignored (pre-existing). All input-related tests pass including test_consecutive_mouse_positions, test_mouse_delta_calculation, test_all_actions_can_be_set, test_multiple_action_states, test_set_action_state, test_set_mouse_button_state, test_set_mouse_position, and viewport_input tests."
+        },
+        {
+          "command": "cargo check --workspace",
+          "exitCode": 0,
+          "observation": "Full workspace compiles successfully"
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-006",
+      "title": "Change detection is O(dirty_entities) not O(all_entities)",
+      "status": "pass",
+      "evidence": "collect_changed_entity_ids() in storage.rs (lines 343-353) iterates only dirty entities per type via storage.collect_dirty_entity_ids(). It does NOT call entities_with_components(). The doc comment explicitly states 'O(dirty_entities) instead of O(all_entities * type_ids)'. Both change detection tests pass: test_change_detection_only_dirty_entities and test_change_detection_overhead.",
+      "commandsRun": [
+        {
+          "command": "cargo test -p katla_ecs test_change_detection",
+          "exitCode": 0,
+          "observation": "2 tests passed: test_change_detection_only_dirty_entities and test_change_detection_overhead"
+        },
+        {
+          "command": "rg 'entities_with_components' katla_ecs/src/storage.rs",
+          "exitCode": 0,
+          "observation": "Function exists (line ~365) but is NOT called from collect_changed_entity_ids (lines 343-353). Confirmed by reading the implementation: collect_changed_entity_ids uses storage.collect_dirty_entity_ids() instead."
+        },
+        {
+          "command": "rg 'collect_changed_entity_ids' katla_ecs/src/storage.rs (with context)",
+          "exitCode": 0,
+          "observation": "Implementation confirmed: iterates type_ids, calls storage.collect_dirty_entity_ids(&mut changed) for each — no full entity scan."
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-007",
+      "title": "SparseSet uses Vec-based sparse mapping",
+      "status": "pass",
+      "evidence": "rg 'HashMap' katla_ecs/src/sparse_set.rs returns zero matches — no HashMap usage in SparseSet. All 101 ECS unit tests pass including 17 SparseSet-specific tests (test_sparse_set_insert, test_sparse_set_remove, test_sparse_set_get_mut, test_sparse_set_iter, test_sparse_set_iter_mut, test_sparse_set_contains_after_remove, test_sparse_set_clear_resets_state, etc.). All doctests pass (9 passed, 4 pre-existing ignored).",
+      "commandsRun": [
+        {
+          "command": "rg 'HashMap' katla_ecs/src/sparse_set.rs",
+          "exitCode": 0,
+          "observation": "Zero matches — no HashMap usage in SparseSet implementation"
+        },
+        {
+          "command": "cargo test -p katla_ecs",
+          "exitCode": 0,
+          "observation": "101 unit tests passed, 0 failed. 9 doctests passed, 4 ignored (pre-existing). All SparseSet operations verified working."
+        }
+      ],
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 4 assertions: all 4 passed. VAL-ECS-004: input module cleanly removed from katla_ecs with zero source references remaining. VAL-ECS-005: all 196 katla_app tests pass, workspace compiles. VAL-ECS-006: change detection uses O(dirty_entities) via collect_dirty_entity_ids, no full scan. VAL-ECS-007: SparseSet has zero HashMap usage, all 101 ECS tests pass."
+}
