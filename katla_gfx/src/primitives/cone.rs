@@ -113,8 +113,8 @@ mod tests {
     #[test]
     fn test_cone_vertex_count() {
         let (vertices, _) = generate_cone(1.0, 0.5, 16);
-        // 1 apex + (16+1) side ring + 1 bottom center + (16+1) bottom ring = 52
-        assert_eq!(vertices.len(), 52);
+        // 1 apex + (16+1) side ring + 1 bottom center + (16+1) bottom ring = 36
+        assert_eq!(vertices.len(), 36);
     }
 
     #[test]
