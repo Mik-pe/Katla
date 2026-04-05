@@ -5,6 +5,10 @@ authors = ["Mik-pe <mikael.pettersson201@gmail.com>"]
 edition = "2024"
 autoexamples = false
 
+[features]
+default = []
+validation = []
+
 [dependencies]
 raw-window-handle = { workspace = true }
 ash = { workspace = true }
@@ -22,17 +26,20 @@ env_logger = { workspace = true }
 
 [[example]]
 name = "particle_validation"
-
-
+required-features = ["validation"]
 
 [[example]]
 name = "animation_validation"
+required-features = ["validation"]
 
 [[example]]
 name = "light_shadow_validation"
+required-features = ["validation"]
 
 [[example]]
 name = "picking_validation"
+required-features = ["validation"]
 
 [[example]]
 name = "outline_validation"
+required-features = ["validation"]

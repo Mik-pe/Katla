@@ -225,7 +225,7 @@ impl ApplicationBuilder {
         // Initialize shadow resources BEFORE compiling PBR materials,
         // since PBR pipelines need Set 4 for shadow data.
         // Shadow atlas view will be set after frame graph creates the transient texture.
-        use katla_gfx::shadow::CascadeParams;
+        use katla_gfx::CascadeParams;
         renderer
             .init_shadow_resources(None, CascadeParams::default())
             .map_err(|e| crate::error::AppError::Graphics {

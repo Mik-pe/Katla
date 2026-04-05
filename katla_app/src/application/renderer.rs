@@ -305,7 +305,7 @@ impl Application {
     /// for Forward+ tile-based light culling.
     fn collect_and_upload_lights(&mut self) {
         use crate::components::{PointLight, TransformComponent};
-        use katla_gfx::lighting::PointLightGPU;
+        use katla_gfx::PointLightGPU;
 
         let mut lights = Vec::new();
         for (_entity, point_light, transform) in

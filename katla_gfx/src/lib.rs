@@ -132,7 +132,7 @@
 //! The library is organized into:
 //!
 //! - **Public API** - [`renderer`], [`render_graph`], [`material`], [`texture`]
-//! - **Internal** - `vulkan`, `pipeline`, `sync` (implementation details)
+//! - **Internal** - `vulkan`, `pipeline`, `sync`, `animation`, `shadow`, `lighting` (implementation details; `sync`, `animation`, `shadow`, `lighting` are accessible with the `validation` feature)
 //!
 //! # Resource Handles
 //!
@@ -146,12 +146,10 @@
 // Public modules
 pub mod error;
 pub mod handle;
-pub mod lighting;
 pub mod material;
 pub mod particles;
 pub mod render_pass;
 pub mod renderer;
-pub mod shadow;
 pub mod texture;
 pub mod vertex;
 
@@ -159,6 +157,7 @@ pub mod vertex;
 pub(crate) mod pipeline;
 
 // Re-export pipeline state types for validation examples
+#[cfg(feature = "validation")]
 pub use pipeline::{CompareOp, CullMode, FrontFace};
 
 // Internal implementation (primitive mesh generators - use VulkanRenderer::create_*_mesh instead)
@@ -168,20 +167,46 @@ pub(crate) mod primitives;
 pub mod compute;
 pub mod render_graph;
 
-// Internal implementation (not public)
+// Internal modules — pub(crate) by default, pub when 'validation' feature is enabled
+#[cfg(feature = "validation")]
 pub mod animation;
+#[cfg(not(feature = "validation"))]
+pub(crate) mod animation;
+
+#[cfg(feature = "validation")]
+pub mod lighting;
+#[cfg(not(feature = "validation"))]
+pub(crate) mod lighting;
+
+#[cfg(feature = "validation")]
+pub mod shadow;
+#[cfg(not(feature = "validation"))]
+pub(crate) mod shadow;
+
+#[cfg(feature = "validation")]
+pub mod sync;
+#[cfg(not(feature = "validation"))]
+pub(crate) mod sync;
+
 pub(crate) mod vulkan;
 
 // Re-export animation types for katla_app GPU animation pipeline
-pub use animation::{AnimChannelInfo, AnimClipHeader, JointInfo, PoseComputeBuffers, PoseComputePipeline, SkeletonAnimParams};
+pub use animation::{
+    AnimChannelInfo, AnimClipHeader, JointInfo, PoseComputeBuffers, PoseComputePipeline,
+    SkeletonAnimParams,
+};
+
+// Re-export types used by katla_app
+pub use lighting::PointLightGPU;
+pub use shadow::CascadeParams;
 
 // Internal modules (implementation details)
 pub(crate) mod barrier;
 pub(crate) mod gpu_buffer;
-pub mod sync;
 pub(crate) mod viewport;
 
 // Re-export ShaderCache for examples and tests
+#[cfg(feature = "validation")]
 pub use vulkan::material::shadermodule::ShaderCache;
 
 // Re-export compute pipeline types for external compute dispatch
@@ -190,12 +215,17 @@ pub use vulkan::material::compute_pipeline::{
 };
 
 // Re-export pipeline builder and types for validation examples
+#[cfg(feature = "validation")]
 pub use vulkan::material::builder::Pipeline;
+#[cfg(feature = "validation")]
 pub use vulkan::material::builder::PipelineBuilder;
+#[cfg(feature = "validation")]
 pub use vulkan::vertexbinding::VertexFormat;
 
 // Re-export for validation examples and advanced compute usage
+#[cfg(feature = "validation")]
 pub use vulkan::commandbuffer::CommandBuffer;
+#[cfg(feature = "validation")]
 pub use vulkan::pipeline_state::ShaderStages;
 
 // Size type (Katla-native)
