@@ -183,11 +183,10 @@ impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> 
         );
 
         unsafe {
-            let ptr_mut = storage as *mut ComponentStorageManager;
-            let ptr_const = storage as *const ComponentStorageManager;
-            let storage1 = (*ptr_mut).get_storage_mut::<T1>();
-            let storage2 = (*ptr_const).get_storage::<T2>();
-            let storage3 = (*ptr_const).get_storage::<T3>();
+            let ptr = storage.borrow_ptr();
+            let (storage1, storage2) =
+                ComponentStorageManager::get_storage_mut_and_ref::<T1, T2>(ptr);
+            let storage3 = (*ptr).get_storage::<T3>();
 
             if let (Some(s1), Some(s2), Some(s3)) = (storage1, storage2, storage3) {
                 QueryIter3MutRefRef {
@@ -239,11 +238,10 @@ impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> 
         );
 
         unsafe {
-            let ptr_const = storage as *const ComponentStorageManager;
-            let ptr_mut = storage as *mut ComponentStorageManager;
-            let storage1 = (*ptr_const).get_storage::<T1>();
-            let storage2 = (*ptr_mut).get_storage_mut::<T2>();
-            let storage3 = (*ptr_const).get_storage::<T3>();
+            let ptr = storage.borrow_ptr();
+            let (storage2, storage1) =
+                ComponentStorageManager::get_storage_mut_and_ref::<T2, T1>(ptr);
+            let storage3 = (*ptr).get_storage::<T3>();
 
             if let (Some(s1), Some(s2), Some(s3)) = (storage1, storage2, storage3) {
                 QueryIter3RefMutRef {
@@ -295,11 +293,10 @@ impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> 
         );
 
         unsafe {
-            let ptr_const = storage as *const ComponentStorageManager;
-            let ptr_mut = storage as *mut ComponentStorageManager;
-            let storage1 = (*ptr_const).get_storage::<T1>();
-            let storage2 = (*ptr_const).get_storage::<T2>();
-            let storage3 = (*ptr_mut).get_storage_mut::<T3>();
+            let ptr = storage.borrow_ptr();
+            let (storage3, storage1) =
+                ComponentStorageManager::get_storage_mut_and_ref::<T3, T1>(ptr);
+            let storage2 = (*ptr).get_storage::<T2>();
 
             if let (Some(s1), Some(s2), Some(s3)) = (storage1, storage2, storage3) {
                 QueryIter3RefRefMut {

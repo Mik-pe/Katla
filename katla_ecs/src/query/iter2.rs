@@ -112,9 +112,8 @@ impl<T1: Component + 'static, T2: Component + 'static> QueryData for (&mut T1, &
         );
 
         unsafe {
-            let ptr = storage as *mut ComponentStorageManager;
-            let storage1 = (*ptr).get_storage_mut::<T1>();
-            let storage2 = (*ptr).get_storage_mut::<T2>();
+            let ptr = storage.borrow_ptr();
+            let (storage1, storage2) = ComponentStorageManager::get_two_storage_mut::<T1, T2>(ptr);
 
             if let (Some(s1), Some(s2)) = (storage1, storage2) {
                 QueryIter2MutMut {
@@ -154,10 +153,9 @@ impl<T1: Component + 'static, T2: Component + 'static> QueryData for (&mut T1, &
         );
 
         unsafe {
-            let ptr_mut = storage as *mut ComponentStorageManager;
-            let ptr_const = storage as *const ComponentStorageManager;
-            let storage1 = (*ptr_mut).get_storage_mut::<T1>();
-            let storage2 = (*ptr_const).get_storage::<T2>();
+            let ptr = storage.borrow_ptr();
+            let (storage1, storage2) =
+                ComponentStorageManager::get_storage_mut_and_ref::<T1, T2>(ptr);
 
             if let (Some(s1), Some(s2)) = (storage1, storage2) {
                 QueryIter2MutRef {
@@ -232,12 +230,11 @@ impl<T1: Component + 'static, T2: Component + 'static> QueryData for (&T1, &mut 
         );
 
         unsafe {
-            let ptr_const = storage as *const ComponentStorageManager;
-            let ptr_mut = storage as *mut ComponentStorageManager;
-            let storage1 = (*ptr_const).get_storage::<T1>();
-            let storage2 = (*ptr_mut).get_storage_mut::<T2>();
+            let ptr = storage.borrow_ptr();
+            let (storage1, storage2) =
+                ComponentStorageManager::get_storage_mut_and_ref::<T2, T1>(ptr);
 
-            if let (Some(s1), Some(s2)) = (storage1, storage2) {
+            if let (Some(s2), Some(s1)) = (storage1, storage2) {
                 QueryIter2RefMut {
                     storage1: Some(s1),
                     iter2: s2.components_vec_mut().iter_mut(),
