@@ -88,7 +88,7 @@ fn vec3_slider_row(
 
         let id = format!("{}_{}", label.to_lowercase(), i);
         ui.add(
-            Slider::new(val, range.clone())
+            Slider::new(&id, val, range.clone())
                 .bounds(slider_bounds)
                 .id(&id),
         );
@@ -128,7 +128,7 @@ fn scalar_slider_row(
     );
 
     let id = format!("slider_{}", label.to_lowercase().replace(' ', "_"));
-    let _response = ui.add(Slider::new(value, range).bounds(slider_bounds).id(&id));
+    let _response = ui.add(Slider::new(&id, value, range).bounds(slider_bounds).id(&id));
 
     let val_text = format!("{:.2}", value);
     let val_pos = Vec2::new(slider_x + slider_area + 4.0, cursor.y());
@@ -270,7 +270,7 @@ impl<'a> Widget for Inspector<'a> {
                     );
                     let id = format!("light_color_{}", i);
                     let _response = ui.add(
-                        Slider::new(&mut self.edit.light_color[i], 0.0..=1.0)
+                        Slider::new(&id, &mut self.edit.light_color[i], 0.0..=1.0)
                             .bounds(slider_bounds)
                             .id(&id),
                     );

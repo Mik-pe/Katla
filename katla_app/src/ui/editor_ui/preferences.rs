@@ -474,7 +474,7 @@ fn build_editor_tab(
     let slider_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, 20.0));
     let mut camera_speed = editor_settings.camera_speed;
     let slider_response = ui.add(
-        katla_ui::widgets::Slider::new(&mut camera_speed, 5.0..=200.0)
+        katla_ui::widgets::Slider::new("camera_speed_slider", &mut camera_speed, 5.0..=200.0)
             .bounds(slider_bounds)
             .id("camera_speed_slider"),
     );

@@ -150,8 +150,8 @@ Bite-sized tasks to make the engine usable by game makers. Ordered by impact and
 
 ### P0: Correctness
 
-- [ ] **Fix Slider default ID** — Falls back to constant string `"slider"`, meaning two instances on the same frame share an ID and break interaction. Derive unique IDs from label+counter or require explicit IDs.
-- [ ] **Fix TextInput default ID** — Falls back to constant string `"text_input"`, meaning two instances on the same frame share an ID and break interaction. Derive unique IDs from label+counter or require explicit IDs.
+- [x] **Fix Slider default ID** — Falls back to constant string `"slider"`, meaning two instances on the same frame share an ID and break interaction. Derive unique IDs from label+counter or require explicit IDs.
+- [x] **Fix TextInput default ID** — Falls back to constant string `"text_input"`, meaning two instances on the same frame share an ID and break interaction. Derive unique IDs from label+counter or require explicit IDs.
 - [x] **Make `toggle_button()` `pub(crate)`** — `selectable.rs` exposes `toggle_button` as fully `pub` while all other widget internals are `pub(crate)`. Either make it `pub(crate)` or add a proper builder in `widgets/mod.rs`.
 - [x] **Set clip once per `draw_text()` call** — `drawing.rs` calls `set_clip()` inside the per-glyph loop. Clip doesn't change between glyphs in the same text call. Move `set_clip()` before the loop.
 
