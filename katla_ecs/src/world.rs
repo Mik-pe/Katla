@@ -1475,7 +1475,7 @@ mod tests {
 
     #[test]
     fn test_change_detection_overhead() {
-        // VAL-ECS-026: Generation counter increment in get_component_mut
+        // VAL-ECS-026: Dirty set insert in get_component_mut
         // must not add more than 5% overhead. We measure wall-clock time for
         // 100K get_component_mut calls.
         use std::time::Instant;
@@ -1493,7 +1493,7 @@ mod tests {
         // Clear change detection from adds
         world.clear_changed();
 
-        // Measure: get_component_mut with generation counter increment
+        // Measure: get_component_mut with dirty set insert
         let start = Instant::now();
         for id in &ids {
             if let Some(comp) = world.get_component_mut::<TestComponent>(*id) {
@@ -1502,12 +1502,53 @@ mod tests {
         }
         let with_gen_duration = start.elapsed();
 
-        // The generation counter is a simple SparseSet insert + u64 increment.
+        // The dirty set insert is a simple SparseSet insert.
         // Verify it completes in reasonable time (< 200ms for 100K mut accesses).
         assert!(
             with_gen_duration.as_millis() < 200,
             "100K get_component_mut took {}ms, expected < 200ms",
             with_gen_duration.as_millis()
         );
+    }
+
+    #[test]
+    fn test_change_detection_only_dirty_entities() {
+        // VAL-ECS-006: With many entities but few changed, only changed entities are returned.
+        // This verifies the O(dirty_entities) optimization — no full scan of all entities.
+        let mut world = World::new();
+
+        // Create 1000 entities with components
+        let mut ids = Vec::with_capacity(1000);
+        for i in 0..1000 {
+            let id = world.create_entity();
+            world.add_component(id, TestComponent { value: i });
+            ids.push(id);
+        }
+
+        // Clear change detection from adds
+        world.clear_changed();
+
+        // Mutably access only 3 specific entities
+        let _ = world.get_component_mut::<TestComponent>(ids[10]);
+        let _ = world.get_component_mut::<TestComponent>(ids[500]);
+        let _ = world.get_component_mut::<TestComponent>(ids[999]);
+
+        let changed: std::collections::HashSet<EntityId> = world
+            .query_changed::<&TestComponent>()
+            .map(|(eid, _)| eid)
+            .collect();
+
+        // Should return exactly the 3 dirty entities
+        assert_eq!(changed.len(), 3);
+        assert!(changed.contains(&ids[10]));
+        assert!(changed.contains(&ids[500]));
+        assert!(changed.contains(&ids[999]));
+
+        // Verify no other entities leaked in
+        for i in 0..1000 {
+            if i != 10 && i != 500 && i != 999 {
+                assert!(!changed.contains(&ids[i]));
+            }
+        }
     }
 }

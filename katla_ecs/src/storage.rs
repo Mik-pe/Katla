@@ -16,10 +16,9 @@ use std::any::Any;
 pub struct ComponentStorage<T: Component> {
     /// Internal sparse set for O(1) lookups
     storage: SparseSet<EntityId, T>,
-    /// Per-entity generation counters for change detection.
-    /// Incremented on insert and get_mut. Compared against a "last seen" generation
-    /// to determine if an entity's component has changed.
-    generations: SparseSet<EntityId, u64>,
+    /// Per-type dirty entity tracking for O(dirty_entities) change detection.
+    /// Populated on insert and get_mut. Cleared by clear_changed().
+    dirty: SparseSet<EntityId, ()>,
 }
 
 impl<T: Component> ComponentStorage<T> {
@@ -27,7 +26,7 @@ impl<T: Component> ComponentStorage<T> {
     pub fn new() -> Self {
         Self {
             storage: SparseSet::new(),
-            generations: SparseSet::new(),
+            dirty: SparseSet::new(),
         }
     }
 
@@ -37,7 +36,7 @@ impl<T: Component> ComponentStorage<T> {
     /// Marks the entity as changed for change detection.
     pub fn insert(&mut self, entity_id: EntityId, component: T) {
         self.storage.insert(entity_id, component);
-        self.increment_generation(entity_id);
+        self.dirty.insert(entity_id, ());
     }
 
     /// Removes a component for the given entity.
@@ -46,7 +45,7 @@ impl<T: Component> ComponentStorage<T> {
     pub fn remove(&mut self, entity_id: EntityId) -> bool {
         let removed = self.storage.remove(entity_id);
         if removed {
-            self.generations.remove(entity_id);
+            self.dirty.remove(entity_id);
         }
         removed
     }
@@ -61,7 +60,7 @@ impl<T: Component> ComponentStorage<T> {
     /// Marks the entity as changed for change detection, even if the
     /// component is not actually modified.
     pub fn get_mut(&mut self, entity_id: EntityId) -> Option<&mut T> {
-        self.increment_generation(entity_id);
+        self.dirty.insert(entity_id, ());
         self.storage.get_mut(entity_id)
     }
 
@@ -115,28 +114,16 @@ impl<T: Component> ComponentStorage<T> {
         self.storage.is_empty()
     }
 
-    /// Clears all components and generation tracking.
+    /// Clears all components and dirty tracking.
     pub fn clear(&mut self) {
         self.storage.clear();
-        self.generations.clear();
+        self.dirty.clear();
     }
 
     /// Removes all components for entities not in the given set.
     pub fn retain_entities(&mut self, valid_entities: &std::collections::HashSet<EntityId>) {
         self.storage.retain_keys(valid_entities);
-        self.generations.retain_keys(valid_entities);
-    }
-
-    /// Increments the generation counter for the given entity.
-    /// Creates a new counter (starting at 1) if one doesn't exist.
-    fn increment_generation(&mut self, entity_id: EntityId) {
-        let current = self.generations.get(entity_id).copied().unwrap_or(0);
-        self.generations.insert(entity_id, current + 1);
-    }
-
-    /// Returns the current generation counter for the given entity.
-    pub(crate) fn generation(&self, entity_id: EntityId) -> u64 {
-        self.generations.get(entity_id).copied().unwrap_or(0)
+        self.dirty.retain_keys(valid_entities);
     }
 }
 
@@ -163,12 +150,11 @@ pub trait AnyComponentStorage: Any {
     /// Collects all entity IDs that have a component in this storage.
     fn collect_entity_ids(&self, out: &mut std::collections::HashSet<EntityId>);
 
-    /// Returns the maximum generation counter across all entities in this storage.
-    fn max_generation(&self) -> u64;
+    /// Collects dirty entity IDs (entities modified since last clear_changed).
+    fn collect_dirty_entity_ids(&self, out: &mut std::collections::HashSet<EntityId>);
 
-    /// Returns the generation counter for a specific entity.
-    /// Returns 0 if the entity doesn't exist in this storage.
-    fn generation_for_entity(&self, entity_id: EntityId) -> u64;
+    /// Clears the dirty set for this storage.
+    fn clear_dirty(&mut self);
 
     /// Returns a reference to self as `Any` for downcasting.
     fn as_any(&self) -> &dyn Any;
@@ -200,12 +186,14 @@ impl<T: Component> AnyComponentStorage for ComponentStorage<T> {
         }
     }
 
-    fn max_generation(&self) -> u64 {
-        self.generations.values().copied().max().unwrap_or(0)
+    fn collect_dirty_entity_ids(&self, out: &mut std::collections::HashSet<EntityId>) {
+        for entity_id in self.dirty.keys() {
+            out.insert(entity_id);
+        }
     }
 
-    fn generation_for_entity(&self, entity_id: EntityId) -> u64 {
-        self.generation(entity_id)
+    fn clear_dirty(&mut self) {
+        self.dirty.clear();
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -224,10 +212,6 @@ impl<T: Component> AnyComponentStorage for ComponentStorage<T> {
 pub struct ComponentStorageManager {
     /// Maps type IDs to component storages
     storages: std::collections::HashMap<std::any::TypeId, Box<dyn AnyComponentStorage>>,
-    /// Per-type "last seen" generation snapshot for change detection.
-    /// After `clear_changed()` is called, stores the generation counter value
-    /// that was current at that point. Entities with generation > snapshot are "changed".
-    changed_generations: std::collections::HashMap<std::any::TypeId, u64>,
 }
 
 impl ComponentStorageManager {
@@ -235,7 +219,6 @@ impl ComponentStorageManager {
     pub fn new() -> Self {
         Self {
             storages: std::collections::HashMap::new(),
-            changed_generations: std::collections::HashMap::new(),
         }
     }
 
@@ -348,40 +331,26 @@ impl ComponentStorageManager {
     /// After this call, `is_changed` will return false for all entities until
     /// their components are next mutated via `insert` or `get_mut`.
     pub(crate) fn clear_changed(&mut self) {
-        for (&type_id, storage) in self.storages.iter() {
-            let max_gen = storage.max_generation();
-            self.changed_generations.insert(type_id, max_gen);
+        for storage in self.storages.values_mut() {
+            storage.clear_dirty();
         }
     }
 
+    /// Collects entity IDs that have been modified since the last `clear_changed()` call.
+    ///
+    /// Iterates only dirty entities in the specified type storages — O(dirty_entities)
+    /// instead of O(all_entities * type_ids).
     pub(crate) fn collect_changed_entity_ids(
         &self,
         type_ids: &[std::any::TypeId],
     ) -> std::collections::HashSet<EntityId> {
-        let mut changed = std::collections::HashSet::new();
-        let all_entities = self.entities_with_components();
-        for entity_id in all_entities {
-            for &type_id in type_ids {
-                if self.is_changed_by_type_id(entity_id, type_id) {
-                    changed.insert(entity_id);
-                    break;
-                }
+        let mut changed = std::collections::HashSet::<EntityId>::new();
+        for &type_id in type_ids {
+            if let Some(storage) = self.storages.get(&type_id) {
+                storage.collect_dirty_entity_ids(&mut changed);
             }
         }
         changed
-    }
-
-    fn is_changed_by_type_id(&self, entity_id: EntityId, type_id: std::any::TypeId) -> bool {
-        let storage = match self.storages.get(&type_id) {
-            Some(s) => s,
-            None => return false,
-        };
-        let current_gen = storage.generation_for_entity(entity_id);
-        if current_gen == 0 {
-            return false;
-        }
-        let last_seen = self.changed_generations.get(&type_id).copied().unwrap_or(0);
-        current_gen > last_seen
     }
 
     /// Returns a raw pointer to `self` for use with the `get_two_storage_mut` /

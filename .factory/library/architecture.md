@@ -158,14 +158,13 @@ Entity and component events use a simple `Vec`-based queue on `World`:
 
 ## ECS Change Detection
 
-Per-component change detection via generation counters:
+Per-component change detection via dirty entity tracking:
 
-- Each `ComponentStorage` has a `SparseSet<EntityId, u64>` tracking generation per entity
-- Generation incremented on `insert()` (add_component) and `get_mut()` (get_component_mut)
-- `ComponentStorageManager` maintains a `changed_generations` snapshot per component TypeId
-- `world.query_changed::<Q>()` returns entities whose generation > snapshot (union semantics for multi-component tuples)
-- `clear_changed()` called at end of `update()` resets the snapshot
-- `collect_changed_entity_ids()` iterates all entities with any component, not just queried types — minor perf note for large worlds
+- Each `ComponentStorage` has a `SparseSet<EntityId, ()>` tracking dirty entities
+- Entity marked dirty on `insert()` (add_component) and `get_mut()` (get_component_mut)
+- `collect_changed_entity_ids()` iterates only dirty entities per queried type — O(dirty_entities)
+- `clear_changed()` called at end of `update()` clears all dirty sets
+- No full entity scan required — `entities_with_components()` is not used by change detection
 
 ## ECS World Internal: UnsafeCell
 
