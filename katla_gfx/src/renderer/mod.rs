@@ -177,8 +177,8 @@ pub struct VulkanRenderer {
     pub(crate) shared_empty_descriptor_layout: vk::DescriptorSetLayout,
     /// Depth prepass state (depth-only pre-pass).
     depth_prepass: depth_prepass::DepthPrepassState,
-    /// Outline highlight state (stencil-based selection highlight).
-    pub(crate) outline: outline::OutlineState,
+    /// Outline highlight subsystem (stencil-based selection highlight).
+    pub(crate) outline: outline::OutlineSubsystem,
     /// Pending picking readback operation.
     pending_picking_readback: Option<picking::PickingReadback>,
     /// Base bindless index for per-frame depth textures.
@@ -340,7 +340,7 @@ impl VulkanRenderer {
             shared_empty_descriptor_layout,
             shadow: shadow::ShadowSubsystem::default(),
             depth_prepass: depth_prepass::DepthPrepassState::default(),
-            outline: outline::OutlineState::default(),
+            outline: outline::OutlineSubsystem::default(),
             pending_picking_readback: None,
             depth_texture_base_index: None,
             first_frame_rendered: false,
@@ -631,31 +631,8 @@ impl VulkanRenderer {
         // Destroy shadow system resources (buffers, samplers, pools)
         self.shadow.destroy_resources(&self.context);
 
-        // Outline params resources
-        if self.outline.params_descriptor_pool != vk::DescriptorPool::null() {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_pool(self.outline.params_descriptor_pool, None);
-            }
-            self.outline.params_descriptor_pool = vk::DescriptorPool::null();
-        }
-        for (buffer, allocation) in self
-            .outline
-            .params_buffers
-            .drain(..)
-            .zip(self.outline.params_allocations.drain(..))
-        {
-            self.context.free_buffer(buffer, allocation);
-        }
-        if self.outline.params_descriptor_layout != vk::DescriptorSetLayout::null() {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(self.outline.params_descriptor_layout, None);
-            }
-            self.outline.params_descriptor_layout = vk::DescriptorSetLayout::null();
-        }
+        // Destroy outline subsystem resources
+        self.outline.destroy(&self.context);
 
         // Wait for GPU to finish all in-flight work before destroying resources
         // that pipelines still reference (descriptor set layouts, etc.)

@@ -1,11 +1,17 @@
+use super::FRAMES_IN_FLIGHT;
 use crate::RendererError;
 use crate::handle::PipelineHandle;
 use crate::pipeline::{CompareOp, CullMode, FrontFace};
+use crate::renderer::registry::AssetRegistry;
 use crate::texture::ImageFormat;
+use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::builder::PipelineBuilder;
+use crate::vulkan::material::compiler::MaterialCompiler;
+use crate::vulkan::material::storage_uniform::StorageDescriptorSet;
 use crate::vulkan::vertexbinding::VertexFormat;
 use ash::vk;
 use log::info;
+use std::rc::Rc;
 
 /// Push constants for outline draw pipelines.
 ///
@@ -45,7 +51,14 @@ pub(crate) fn compute_outline_width(viewport_height: f32) -> f32 {
     BASE_WIDTH * (BASE_HEIGHT / viewport_height)
 }
 
-pub(crate) struct OutlineState {
+#[derive(Default)]
+/// Owns all outline highlight GPU state for stencil-based selection.
+///
+/// Lifecycle:
+/// - `init_outline_pipelines()` — creates params resources + 6 outline pipelines
+/// - `init_stencil_indicator_pipelines()` — creates 2 stencil indicator pipelines
+/// - `destroy()` — tears down params pool, buffers, descriptor layout
+pub(crate) struct OutlineSubsystem {
     /// Pipeline for stencil mark pass (writes ref=1 to stencil for visible selected objects).
     pub stencil_mark_pipeline: PipelineHandle,
     /// Skinned stencil mark pipeline.
@@ -74,30 +87,19 @@ pub(crate) struct OutlineState {
     pub params_descriptor_pool: vk::DescriptorPool,
 }
 
-impl Default for OutlineState {
-    fn default() -> Self {
-        Self {
-            stencil_mark_pipeline: PipelineHandle::NONE,
-            stencil_mark_skinned_pipeline: PipelineHandle::NONE,
-            occlusion_mark_pipeline: PipelineHandle::NONE,
-            occlusion_mark_skinned_pipeline: PipelineHandle::NONE,
-            outline_draw_pipeline: PipelineHandle::NONE,
-            outline_draw_skinned_pipeline: PipelineHandle::NONE,
-            stencil_indicator_pipeline: PipelineHandle::NONE,
-            stencil_indicator_skinned_pipeline: PipelineHandle::NONE,
-            params_descriptor_layout: vk::DescriptorSetLayout::null(),
-            params_descriptor_sets: Vec::new(),
-            params_buffers: Vec::new(),
-            params_allocations: Vec::new(),
-            params_descriptor_pool: vk::DescriptorPool::null(),
-        }
-    }
+/// Dependencies needed from VulkanRenderer for outline subsystem initialization.
+pub(crate) struct OutlineInitContext<'a> {
+    pub context: &'a Rc<VulkanContext>,
+    pub material_compiler: &'a mut MaterialCompiler,
+    pub storage_descriptor_set: &'a StorageDescriptorSet,
+    pub shared_empty_descriptor_layout: vk::DescriptorSetLayout,
+    pub asset_registry: &'a mut AssetRegistry,
 }
 
-impl super::VulkanRenderer {
+impl OutlineSubsystem {
     #[allow(clippy::too_many_arguments)]
     fn build_outline_pipeline(
-        &mut self,
+        ctx: &mut OutlineInitContext,
         vert: vk::ShaderModule,
         frag: vk::ShaderModule,
         storage_layout: vk::DescriptorSetLayout,
@@ -109,7 +111,7 @@ impl super::VulkanRenderer {
         empty_layout: Option<vk::DescriptorSetLayout>,
         params_layout: Option<vk::DescriptorSetLayout>,
     ) -> Result<PipelineHandle, RendererError> {
-        let mut builder = PipelineBuilder::new(self.context.clone())
+        let mut builder = PipelineBuilder::new(ctx.context.clone())
             .with_shaders(vert, frag)
             .with_soa_attribute(0, VertexFormat::RGB32f)
             .with_depth_test(true, false, depth_compare)
@@ -119,7 +121,7 @@ impl super::VulkanRenderer {
             .with_rendering_formats(Some(color_format), Some(ImageFormat::D32SfloatS8Uint));
 
         if let Some(empty_layout) = empty_layout {
-            let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
+            let skeleton_layout = ctx.material_compiler.skeleton_descriptor_layout();
             if let Some(params_layout) = params_layout {
                 builder = builder.with_descriptor_layouts(vec![
                     storage_layout,
@@ -152,15 +154,15 @@ impl super::VulkanRenderer {
             ))
         })?;
 
-        Ok(self.asset_registry.register_pipeline(pipeline))
+        Ok(ctx.asset_registry.register_pipeline(pipeline))
     }
 
     fn load_outline_shaders(
-        &self,
+        material_compiler: &MaterialCompiler,
         path: &std::path::Path,
         name: &str,
     ) -> Result<(vk::ShaderModule, vk::ShaderModule), RendererError> {
-        let mut cache = self.material_compiler.shader_cache.borrow_mut();
+        let mut cache = material_compiler.shader_cache.borrow_mut();
         let vert = cache
             .load_shader(path, vk::ShaderStageFlags::VERTEX)
             .map_err(|e| {
@@ -180,20 +182,25 @@ impl super::VulkanRenderer {
         Ok((vert, frag))
     }
 
+    /// Initialize outline params resources and all outline pipelines.
+    ///
+    /// Creates the outline params uniform buffer (per-frame) and builds 6 pipelines:
+    /// stencil mark, skinned stencil mark, occlusion mark, skinned occlusion mark,
+    /// outline draw, skinned outline draw.
     pub fn init_outline_pipelines(
         &mut self,
+        ctx: &mut OutlineInitContext,
         stencil_mark_path: &std::path::Path,
         stencil_mark_skinned_path: &std::path::Path,
         outline_draw_path: &std::path::Path,
         outline_draw_skinned_path: &std::path::Path,
     ) -> Result<(), RendererError> {
-        let storage_layout = self.storage_descriptor_sets[0].layout();
-        let device = &self.context.device;
+        let storage_layout = ctx.storage_descriptor_set.layout();
+        let device = &ctx.context.device;
 
         // Create outline params uniform buffer resources.
         // Used by the outline draw pipelines (non-skinned: set 1, skinned: set 3).
         let params_size = std::mem::size_of::<OutlinePushConstants>() as u64;
-        let frames_in_flight = super::FRAMES_IN_FLIGHT;
 
         let params_descriptor_layout = unsafe {
             let bindings = [vk::DescriptorSetLayoutBinding::default()
@@ -216,13 +223,13 @@ impl super::VulkanRenderer {
 
         let pool_sizes = [vk::DescriptorPoolSize::default()
             .ty(vk::DescriptorType::UNIFORM_BUFFER)
-            .descriptor_count(frames_in_flight as u32)];
+            .descriptor_count(FRAMES_IN_FLIGHT as u32)];
         let params_descriptor_pool = unsafe {
             device
                 .create_descriptor_pool(
                     &vk::DescriptorPoolCreateInfo::default()
                         .pool_sizes(&pool_sizes)
-                        .max_sets(frames_in_flight as u32),
+                        .max_sets(FRAMES_IN_FLIGHT as u32),
                     None,
                 )
                 .map_err(|e| {
@@ -233,7 +240,7 @@ impl super::VulkanRenderer {
                 })?
         };
 
-        let layouts = (0..frames_in_flight)
+        let layouts = (0..FRAMES_IN_FLIGHT)
             .map(|_| params_descriptor_layout)
             .collect::<Vec<_>>();
         let params_descriptor_sets = unsafe {
@@ -251,8 +258,8 @@ impl super::VulkanRenderer {
                 })?
         };
 
-        let mut params_buffers = Vec::with_capacity(frames_in_flight);
-        let mut params_allocations = Vec::with_capacity(frames_in_flight);
+        let mut params_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut params_allocations = Vec::with_capacity(FRAMES_IN_FLIGHT);
 
         for &params_ds in params_descriptor_sets.iter() {
             let buffer_info = vk::BufferCreateInfo::default()
@@ -260,12 +267,12 @@ impl super::VulkanRenderer {
                 .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            let (buffer, allocation) = self
+            let (buffer, allocation) = ctx
                 .context
                 .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
 
             unsafe {
-                let ptr = self.context.map_buffer(&allocation);
+                let ptr = ctx.context.map_buffer(&allocation);
                 let defaults = OutlinePushConstants::default();
                 std::ptr::copy_nonoverlapping(
                     &defaults as *const _ as *const u8,
@@ -273,8 +280,7 @@ impl super::VulkanRenderer {
                     params_size as usize,
                 );
             }
-            self.context
-                .flush_mapped_memory(&allocation, 0, params_size);
+            ctx.context.flush_mapped_memory(&allocation, 0, params_size);
 
             let buffer_info = [vk::DescriptorBufferInfo::default()
                 .buffer(buffer)
@@ -297,20 +303,19 @@ impl super::VulkanRenderer {
             params_allocations.push(allocation);
         }
 
-        self.outline.params_descriptor_layout = params_descriptor_layout;
-        self.outline.params_descriptor_sets = params_descriptor_sets;
-        self.outline.params_buffers = params_buffers;
-        self.outline.params_allocations = params_allocations;
-        self.outline.params_descriptor_pool = params_descriptor_pool;
+        self.params_descriptor_layout = params_descriptor_layout;
+        self.params_descriptor_sets = params_descriptor_sets;
+        self.params_buffers = params_buffers;
+        self.params_allocations = params_allocations;
+        self.params_descriptor_pool = params_descriptor_pool;
 
         // === Stencil Mark Pipeline ===
-        // Renders selected objects with color write OFF, depth test GREATER_OR_EQUAL.
-        // Stencil: REPLACE ref=1 on depth pass (visible), KEEP on depth fail.
-        // write_mask=0x01: only writes bit 0 of the stencil value. This allows the
-        // occlusion mark pass to use bit 1 independently, preventing self-occlusion
-        // artifacts on non-convex meshes.
         {
-            let (vert, frag) = self.load_outline_shaders(stencil_mark_path, "stencil mark")?;
+            let (vert, frag) = Self::load_outline_shaders(
+                ctx.material_compiler,
+                stencil_mark_path,
+                "stencil mark",
+            )?;
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
                 pass_op: vk::StencilOp::REPLACE,
@@ -320,7 +325,8 @@ impl super::VulkanRenderer {
                 write_mask: 0x01,
                 reference: 1,
             };
-            let handle = self.build_outline_pipeline(
+            let handle = Self::build_outline_pipeline(
+                ctx,
                 vert,
                 frag,
                 storage_layout,
@@ -332,13 +338,16 @@ impl super::VulkanRenderer {
                 None,
                 None,
             )?;
-            self.outline.stencil_mark_pipeline = handle;
+            self.stencil_mark_pipeline = handle;
         }
 
         // === Skinned Stencil Mark Pipeline ===
         {
-            let (vert, frag) =
-                self.load_outline_shaders(stencil_mark_skinned_path, "skinned stencil mark")?;
+            let (vert, frag) = Self::load_outline_shaders(
+                ctx.material_compiler,
+                stencil_mark_skinned_path,
+                "skinned stencil mark",
+            )?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -349,7 +358,8 @@ impl super::VulkanRenderer {
                 write_mask: 0x01,
                 reference: 1,
             };
-            let handle = self.build_outline_pipeline(
+            let handle = Self::build_outline_pipeline(
+                ctx,
                 vert,
                 frag,
                 storage_layout,
@@ -358,23 +368,19 @@ impl super::VulkanRenderer {
                 CullMode::Back,
                 ImageFormat::R16G16B16A16Sfloat,
                 vk::ColorComponentFlags::empty(),
-                Some(self.shared_empty_descriptor_layout),
+                Some(ctx.shared_empty_descriptor_layout),
                 None,
             )?;
-            self.outline.stencil_mark_skinned_pipeline = handle;
+            self.stencil_mark_skinned_pipeline = handle;
         }
 
         // === Occlusion Mark Pipeline ===
-        // Second stencil pass: writes stencil bit 1 (value 2) where selected objects
-        // are occluded by other scene geometry (depth test fail).
-        // compare EQUAL 0 with compare_mask=0x01: only processes pixels where bit 0
-        // is clear (no visible front face from stencil mark). This prevents
-        // self-occlusion on non-convex meshes — back faces behind front faces of the
-        // same object have stencil bit 0 set and are skipped.
-        // write_mask=0x02: only writes bit 1, preserving bit 0 from stencil mark.
-        // depth_fail_op: REPLACE ref=2 writes 0b10 (bit 1 set) on depth fail.
         {
-            let (vert, frag) = self.load_outline_shaders(stencil_mark_path, "occlusion mark")?;
+            let (vert, frag) = Self::load_outline_shaders(
+                ctx.material_compiler,
+                stencil_mark_path,
+                "occlusion mark",
+            )?;
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
                 pass_op: vk::StencilOp::KEEP,
@@ -384,7 +390,8 @@ impl super::VulkanRenderer {
                 write_mask: 0x02,
                 reference: 2,
             };
-            let handle = self.build_outline_pipeline(
+            let handle = Self::build_outline_pipeline(
+                ctx,
                 vert,
                 frag,
                 storage_layout,
@@ -396,13 +403,16 @@ impl super::VulkanRenderer {
                 None,
                 None,
             )?;
-            self.outline.occlusion_mark_pipeline = handle;
+            self.occlusion_mark_pipeline = handle;
         }
 
         // === Skinned Occlusion Mark Pipeline ===
         {
-            let (vert, frag) =
-                self.load_outline_shaders(stencil_mark_skinned_path, "skinned occlusion mark")?;
+            let (vert, frag) = Self::load_outline_shaders(
+                ctx.material_compiler,
+                stencil_mark_skinned_path,
+                "skinned occlusion mark",
+            )?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -413,7 +423,8 @@ impl super::VulkanRenderer {
                 write_mask: 0x02,
                 reference: 2,
             };
-            let handle = self.build_outline_pipeline(
+            let handle = Self::build_outline_pipeline(
+                ctx,
                 vert,
                 frag,
                 storage_layout,
@@ -422,18 +433,19 @@ impl super::VulkanRenderer {
                 CullMode::Back,
                 ImageFormat::R16G16B16A16Sfloat,
                 vk::ColorComponentFlags::empty(),
-                Some(self.shared_empty_descriptor_layout),
+                Some(ctx.shared_empty_descriptor_layout),
                 None,
             )?;
-            self.outline.occlusion_mark_skinned_pipeline = handle;
+            self.occlusion_mark_skinned_pipeline = handle;
         }
 
         // === Outline Draw Pipeline ===
-        // Inverted culling (front faces only) with depth test GREATER_OR_EQUAL,
-        // depth write OFF. Stencil test EQUAL 0: only draws on background.
-        // Occluded parts are handled by the stencil indicator + tonemap overlay.
         {
-            let (vert, frag) = self.load_outline_shaders(outline_draw_path, "outline draw")?;
+            let (vert, frag) = Self::load_outline_shaders(
+                ctx.material_compiler,
+                outline_draw_path,
+                "outline draw",
+            )?;
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
                 pass_op: vk::StencilOp::KEEP,
@@ -443,7 +455,8 @@ impl super::VulkanRenderer {
                 write_mask: 0x00,
                 reference: 0,
             };
-            let handle = self.build_outline_pipeline(
+            let handle = Self::build_outline_pipeline(
+                ctx,
                 vert,
                 frag,
                 storage_layout,
@@ -456,15 +469,18 @@ impl super::VulkanRenderer {
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
                 None,
-                Some(self.outline.params_descriptor_layout),
+                Some(self.params_descriptor_layout),
             )?;
-            self.outline.outline_draw_pipeline = handle;
+            self.outline_draw_pipeline = handle;
         }
 
         // === Skinned Outline Draw Pipeline ===
         {
-            let (vert, frag) =
-                self.load_outline_shaders(outline_draw_skinned_path, "skinned outline draw")?;
+            let (vert, frag) = Self::load_outline_shaders(
+                ctx.material_compiler,
+                outline_draw_skinned_path,
+                "skinned outline draw",
+            )?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -475,7 +491,8 @@ impl super::VulkanRenderer {
                 write_mask: 0x00,
                 reference: 0,
             };
-            let handle = self.build_outline_pipeline(
+            let handle = Self::build_outline_pipeline(
+                ctx,
                 vert,
                 frag,
                 storage_layout,
@@ -487,10 +504,10 @@ impl super::VulkanRenderer {
                     | vk::ColorComponentFlags::G
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
-                Some(self.shared_empty_descriptor_layout),
-                Some(self.outline.params_descriptor_layout),
+                Some(ctx.shared_empty_descriptor_layout),
+                Some(self.params_descriptor_layout),
             )?;
-            self.outline.outline_draw_skinned_pipeline = handle;
+            self.outline_draw_skinned_pipeline = handle;
         }
 
         info!("Outline pipelines initialized (stencil-based selection highlight)");
@@ -498,15 +515,23 @@ impl super::VulkanRenderer {
         Ok(())
     }
 
+    /// Initialize stencil indicator pipelines for wallhack overlay.
+    ///
+    /// Creates 2 pipelines: stencil indicator (non-skinned) and skinned stencil indicator.
     pub fn init_stencil_indicator_pipelines(
         &mut self,
+        ctx: &mut OutlineInitContext,
         shader_path: &std::path::Path,
         skinned_shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
-        let storage_layout = self.storage_descriptor_sets[0].layout();
+        let storage_layout = ctx.storage_descriptor_set.layout();
 
         {
-            let (vert, frag) = self.load_outline_shaders(shader_path, "stencil indicator")?;
+            let (vert, frag) = Self::load_outline_shaders(
+                ctx.material_compiler,
+                shader_path,
+                "stencil indicator",
+            )?;
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
                 pass_op: vk::StencilOp::KEEP,
@@ -516,7 +541,8 @@ impl super::VulkanRenderer {
                 write_mask: 0x00,
                 reference: 2,
             };
-            let handle = self.build_outline_pipeline(
+            let handle = Self::build_outline_pipeline(
+                ctx,
                 vert,
                 frag,
                 storage_layout,
@@ -531,12 +557,15 @@ impl super::VulkanRenderer {
                 None,
                 None,
             )?;
-            self.outline.stencil_indicator_pipeline = handle;
+            self.stencil_indicator_pipeline = handle;
         }
 
         {
-            let (vert, frag) =
-                self.load_outline_shaders(skinned_shader_path, "skinned stencil indicator")?;
+            let (vert, frag) = Self::load_outline_shaders(
+                ctx.material_compiler,
+                skinned_shader_path,
+                "skinned stencil indicator",
+            )?;
 
             let stencil_state = vk::StencilOpState {
                 fail_op: vk::StencilOp::KEEP,
@@ -547,7 +576,8 @@ impl super::VulkanRenderer {
                 write_mask: 0x00,
                 reference: 2,
             };
-            let handle = self.build_outline_pipeline(
+            let handle = Self::build_outline_pipeline(
+                ctx,
                 vert,
                 frag,
                 storage_layout,
@@ -559,14 +589,90 @@ impl super::VulkanRenderer {
                     | vk::ColorComponentFlags::G
                     | vk::ColorComponentFlags::B
                     | vk::ColorComponentFlags::A,
-                Some(self.shared_empty_descriptor_layout),
+                Some(ctx.shared_empty_descriptor_layout),
                 None,
             )?;
-            self.outline.stencil_indicator_skinned_pipeline = handle;
+            self.stencil_indicator_skinned_pipeline = handle;
         }
 
         info!("Stencil indicator pipelines initialized");
 
         Ok(())
+    }
+
+    /// Destroy all outline GPU resources.
+    ///
+    /// Frees the descriptor pool, per-frame buffers, and descriptor layout.
+    pub fn destroy(&mut self, context: &Rc<VulkanContext>) {
+        if self.params_descriptor_pool != vk::DescriptorPool::null() {
+            unsafe {
+                context
+                    .device
+                    .destroy_descriptor_pool(self.params_descriptor_pool, None);
+            }
+            self.params_descriptor_pool = vk::DescriptorPool::null();
+        }
+        for (buffer, allocation) in self
+            .params_buffers
+            .drain(..)
+            .zip(self.params_allocations.drain(..))
+        {
+            context.free_buffer(buffer, allocation);
+        }
+        if self.params_descriptor_layout != vk::DescriptorSetLayout::null() {
+            unsafe {
+                context
+                    .device
+                    .destroy_descriptor_set_layout(self.params_descriptor_layout, None);
+            }
+            self.params_descriptor_layout = vk::DescriptorSetLayout::null();
+        }
+    }
+}
+
+impl super::VulkanRenderer {
+    /// Initialize outline params resources and all outline pipelines.
+    ///
+    /// Delegates to [`OutlineSubsystem::init_outline_pipelines`].
+    pub fn init_outline_pipelines(
+        &mut self,
+        stencil_mark_path: &std::path::Path,
+        stencil_mark_skinned_path: &std::path::Path,
+        outline_draw_path: &std::path::Path,
+        outline_draw_skinned_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        let mut ctx = super::outline::OutlineInitContext {
+            context: &self.context,
+            material_compiler: &mut self.material_compiler,
+            storage_descriptor_set: &self.storage_descriptor_sets[0],
+            shared_empty_descriptor_layout: self.shared_empty_descriptor_layout,
+            asset_registry: &mut self.asset_registry,
+        };
+        self.outline.init_outline_pipelines(
+            &mut ctx,
+            stencil_mark_path,
+            stencil_mark_skinned_path,
+            outline_draw_path,
+            outline_draw_skinned_path,
+        )
+    }
+
+    /// Initialize stencil indicator pipelines for wallhack overlay.
+    ///
+    /// Delegates to [`OutlineSubsystem::init_stencil_indicator_pipelines`].
+    pub fn init_stencil_indicator_pipelines(
+        &mut self,
+        shader_path: &std::path::Path,
+        skinned_shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        let mut ctx = super::outline::OutlineInitContext {
+            context: &self.context,
+            material_compiler: &mut self.material_compiler,
+            storage_descriptor_set: &self.storage_descriptor_sets[0],
+            shared_empty_descriptor_layout: self.shared_empty_descriptor_layout,
+            asset_registry: &mut self.asset_registry,
+        };
+        self.outline
+            .init_stencil_indicator_pipelines(&mut ctx, shader_path, skinned_shader_path)
     }
 }
