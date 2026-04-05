@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use katla_ecs::input::actions::Action;
+use crate::input::Action;
 use winit::event::MouseButton;
 use winit::keyboard::KeyCode;
 use winit::keyboard::ModifiersState;

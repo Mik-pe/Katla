@@ -1,10 +1,10 @@
-use katla_ecs::{InputState, System, World, input::MouseButton};
+use katla_ecs::{System, World};
 use katla_math::{Quat, Vec3};
 
 use crate::components::{OrbitCameraControllerComponent, TransformComponent};
+use crate::input::{Action, ButtonState, InputState, MouseButton};
 
 fn is_mouse_button_pressed(input: &InputState, button: MouseButton) -> bool {
-    use katla_ecs::input::ButtonState;
     input.mouse_buttons[button as usize] == ButtonState::Pressed
 }
 
@@ -16,10 +16,12 @@ pub struct OrbitCameraSystem;
 
 impl System for OrbitCameraSystem {
     fn update(&mut self, world: &mut World, delta_time: f32) {
-        let input = world.get_input();
-        let should_orbit = input.is_action_pressed(katla_ecs::input::Action::LookEnable);
+        let Some(input) = world.get_resource::<InputState>() else {
+            return;
+        };
+        let should_orbit = input.is_action_pressed(Action::LookEnable);
         let should_pan = is_mouse_button_pressed(input, MouseButton::Middle)
-            || input.is_action_pressed(katla_ecs::input::Action::PanEnable);
+            || input.is_action_pressed(Action::PanEnable);
         let scroll = input.mouse_wheel_delta;
         let delta = input.mouse_delta;
 

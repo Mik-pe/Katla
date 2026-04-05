@@ -20,7 +20,7 @@ use log::{debug, error, info, warn};
 use winit::keyboard::ModifiersState;
 
 pub use builder::*;
-use katla_ecs::{World, input::Action};
+use katla_ecs::World;
 use katla_gfx::renderer::VulkanRenderer;
 use katla_math::Vec2;
 
@@ -35,7 +35,7 @@ use winit::{
 use self::camera::Camera;
 use crate::{
     gui_state::GuiState,
-    input::{InputBinding, InputMapper, KeyCombo, MouseCombo},
+    input::{Action, InputBinding, InputMapper, KeyCombo, MouseCombo},
     preferences::Preferences,
     resources::ResourceManager,
     util::{BackgroundLoader, GltfCache, Timer},
@@ -142,15 +142,20 @@ impl ApplicationHandler for Application {
             if self.gizmo_state.is_dragging() {
                 return;
             }
-            let input = self.world.get_input();
+            let input = self
+                .world
+                .get_resource::<crate::input::InputState>()
+                .unwrap();
             let should_track = input.is_action_pressed(Action::LookEnable)
                 || input.is_action_pressed(Action::PanEnable);
             if should_track {
                 let current_delta = input.mouse_delta;
-                self.world.get_input_mut().mouse_delta = (
-                    current_delta.0 + delta.0 as f32,
-                    current_delta.1 + delta.1 as f32,
-                );
+                if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {
+                    input.mouse_delta = (
+                        current_delta.0 + delta.0 as f32,
+                        current_delta.1 + delta.1 as f32,
+                    );
+                }
             }
         }
     }
@@ -201,7 +206,9 @@ impl ApplicationHandler for Application {
                     && !self.gizmo_state.consumed_click
                 {
                     let pressed = matches!(state, ElementState::Pressed);
-                    self.world.get_input_mut().set_action_state(action, pressed);
+                    if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {
+                        input.set_action_state(action, pressed);
+                    }
                 }
             }
 
@@ -309,7 +316,9 @@ impl ApplicationHandler for Application {
                         winit::event::MouseScrollDelta::LineDelta(_, y) => y,
                         winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
                     };
-                    self.world.get_input_mut().mouse_wheel_delta += wheel_y;
+                    if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {
+                        input.mouse_wheel_delta += wheel_y;
+                    }
                 }
             }
             WindowEvent::CloseRequested => {
@@ -380,7 +389,11 @@ impl ApplicationHandler for Application {
                         // Only send keyboard input to game when viewport is focused
                         if self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport {
                             let pressed = matches!(event.state, ElementState::Pressed);
-                            self.world.get_input_mut().set_action_state(action, pressed);
+                            if let Some(input) =
+                                self.world.get_resource_mut::<crate::input::InputState>()
+                            {
+                                input.set_action_state(action, pressed);
+                            }
                         }
                     }
 
@@ -444,6 +457,12 @@ impl ApplicationHandler for Application {
                 debug!("Updating world...");
                 self.world.update(dt);
                 debug!("World updated");
+
+                // Clear per-frame mouse delta after the tick.
+                if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {
+                    input.mouse_delta = (0.0, 0.0);
+                    input.mouse_wheel_delta = 0.0;
+                }
 
                 // Process ECS events to clean up GPU resources for destroyed entities
                 crate::gpu_cleanup::process_gpu_cleanup_events(

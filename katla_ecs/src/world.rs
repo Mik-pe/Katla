@@ -1,3 +1,4 @@
+use crate::Resource;
 use crate::components::Component;
 use crate::entity::EntityId;
 use crate::entity_allocator::EntityAllocator;
@@ -5,7 +6,6 @@ use crate::events::{ComponentEvent, EntityEvent};
 use crate::resource::ResourceStorage;
 use crate::storage::ComponentStorageManager;
 use crate::system::{OrderedSystem, System, SystemExecutionOrder};
-use crate::{InputState, Resource};
 use std::cell::UnsafeCell;
 
 /// World is the central manager for the ECS framework.
@@ -39,8 +39,6 @@ pub struct World {
     pub(crate) storage: UnsafeCell<ComponentStorageManager>,
     /// Registered systems
     systems: Vec<OrderedSystem>,
-    /// Global Input state
-    input_state: InputState,
     /// Global resources storage
     resources: ResourceStorage,
     /// Entity lifecycle events emitted during the current frame
@@ -56,7 +54,6 @@ impl World {
             entities: EntityAllocator::new(),
             storage: UnsafeCell::new(ComponentStorageManager::new()),
             systems: Vec::new(),
-            input_state: InputState::new(),
             resources: ResourceStorage::new(),
             entity_events: Vec::new(),
             component_events: Vec::new(),
@@ -359,10 +356,6 @@ impl World {
 
         // Reset change detection so mutations in the next frame are tracked fresh
         self.storage.get_mut().clear_changed();
-
-        // Clear per-frame mouse delta after the tick.
-        self.input_state.mouse_delta = (0.0, 0.0);
-        self.input_state.mouse_wheel_delta = 0.0;
     }
 
     /// Returns the number of entities in the world.
@@ -438,14 +431,6 @@ impl World {
                 self.entity_events.push(EntityEvent::Destroyed(entity_id));
             }
         }
-    }
-
-    pub fn get_input(&self) -> &InputState {
-        &self.input_state
-    }
-
-    pub fn get_input_mut(&mut self) -> &mut InputState {
-        &mut self.input_state
     }
 
     /// Insert a resource into the world.
