@@ -214,8 +214,14 @@ pub(super) unsafe fn is_physical_device_suitable(
 
         score += properties.limits.max_image_dimension2_d;
 
-        let swapchain_support =
-            SwapchainInfo::query_swapchain_support(surface_loader, physical_device, surface);
+        let swapchain_support = match SwapchainInfo::query_swapchain_support(
+            surface_loader,
+            physical_device,
+            surface,
+        ) {
+            Ok(support) => support,
+            Err(_) => return 0,
+        };
 
         if swapchain_support.surface_formats.is_empty()
             && swapchain_support.present_modes.is_empty()

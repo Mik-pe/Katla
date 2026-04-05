@@ -58,7 +58,10 @@ impl Application {
 
         // Wait for the current frame's previous GPU submission to complete
         // before writing to per-frame storage buffers.
-        self.renderer.wait_for_frame();
+        if let Err(e) = self.renderer.wait_for_frame() {
+            log::error!("Failed to wait for frame: {}", e);
+            return;
+        }
 
         // Tile grid dimensions for Forward+ light culling.
         // Must match the render target (swapchain) size, NOT the editor viewport panel size,

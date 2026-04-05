@@ -69,7 +69,7 @@ impl VulkanFrameCtx {
         unsafe { device.create_image_view(&create_info, None) }.unwrap()
     }
 
-    pub fn init(context: &Rc<VulkanContext>) -> Self {
+    pub fn init(context: &Rc<VulkanContext>) -> Result<Self, crate::error::RendererError> {
         let swapchain_loader = context
             .swapchain_loader
             .as_ref()
@@ -88,9 +88,9 @@ impl VulkanFrameCtx {
             context.physical_device,
             surface,
             None,
-        );
+        )?;
 
-        let swapchain_images = swapchain.get_swapchain_images();
+        let swapchain_images = swapchain.get_swapchain_images()?;
 
         let swapchain_image_views: Vec<VkImageView> = swapchain_images
             .iter()
@@ -117,17 +117,17 @@ impl VulkanFrameCtx {
             .gfx_cmdpool
             .create_command_buffers(swapchain_image_views.len() as _);
 
-        Self {
+        Ok(Self {
             context: context.clone(),
             swapchain,
             swapchain_image_views,
             swapchain_images: swapchain_images_wrapped,
             depth_render_textures,
             command_buffers,
-        }
+        })
     }
 
-    pub fn recreate_swapchain(&mut self) {
+    pub fn recreate_swapchain(&mut self) -> Result<(), crate::error::RendererError> {
         let swapchain_loader = self
             .context
             .swapchain_loader
@@ -149,20 +149,18 @@ impl VulkanFrameCtx {
             self.context.physical_device,
             surface,
             Some(self.swapchain.swapchain),
-        );
+        )?;
         self.destroy();
         self.swapchain = swapchain;
 
-        self.swapchain_images = self
-            .swapchain
-            .get_swapchain_images()
+        let swapchain_images = self.swapchain.get_swapchain_images()?;
+
+        self.swapchain_images = swapchain_images
             .iter()
             .map(|img| VkImage::new(*img))
             .collect();
 
-        self.swapchain_image_views = self
-            .swapchain
-            .get_swapchain_images()
+        self.swapchain_image_views = swapchain_images
             .iter()
             .map(|swapchain_image| {
                 VkImageView::new(Self::create_image_view(
@@ -177,6 +175,7 @@ impl VulkanFrameCtx {
         self.depth_render_textures = (0..FRAMES_IN_FLIGHT)
             .map(|_| create_depth_render_texture(self.context.clone(), self.swapchain.get_extent()))
             .collect();
+        Ok(())
     }
 
     pub fn destroy(&mut self) {

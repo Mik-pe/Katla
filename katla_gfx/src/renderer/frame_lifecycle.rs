@@ -12,8 +12,8 @@ impl VulkanRenderer {
     /// 2. `set_frame_uniforms()` - writes frame data to storage buffer
     /// 3. `execute_draw_calls()` - writes per-object data to storage buffer
     /// 4. `render()` - submits GPU work
-    pub fn wait_for_frame(&mut self) {
-        self.swap_data.wait_for_fence(&self.context.device);
+    pub fn wait_for_frame(&mut self) -> Result<(), crate::error::RendererError> {
+        self.swap_data.wait_for_fence(&self.context.device)
     }
 
     /// Set frame-level uniforms for the current frame.
