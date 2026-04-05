@@ -200,6 +200,73 @@ pub(crate) const FRAMES_IN_FLIGHT: usize = 2;
 /// this limit, `execute_draw_calls` will return a `RendererError::ObjectLimitExceeded`.
 pub const MAX_OBJECTS_PER_FRAME: u32 = 256;
 
+/// Private initialization helpers for VulkanRenderer.
+impl VulkanRenderer {
+    /// Wrap a fallible initialization step, converting errors to RendererError::InitializationFailed.
+    fn init_step<T, E: std::fmt::Debug>(
+        label: &str,
+        result: Result<T, E>,
+    ) -> Result<T, RendererError> {
+        result.map_err(|e| {
+            error!("Failed to create {}: {:?}", label, e);
+            RendererError::InitializationFailed(format!("Failed to create {}", label))
+        })
+    }
+
+    fn create_storage_descriptor_sets(
+        context: &Rc<VulkanContext>,
+        storage_manager: &StorageUniformManager,
+    ) -> Result<Vec<StorageDescriptorSet>, RendererError> {
+        let mut sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        for frame_idx in 0..FRAMES_IN_FLIGHT {
+            let descriptor_set = StorageDescriptorSet::new(
+                context,
+                storage_manager.buffer(frame_idx),
+                storage_manager.buffer_size(),
+            )
+            .map_err(|e| {
+                error!("Failed to create storage descriptor set: {:?}", e);
+                RendererError::InitializationFailed(format!(
+                    "Failed to create storage descriptor set for frame {}: {:?}",
+                    frame_idx, e
+                ))
+            })?;
+            sets.push(descriptor_set);
+        }
+        Ok(sets)
+    }
+
+    fn create_compositing_descriptor_set_layout(
+        device: &ash::Device,
+    ) -> Result<vk::DescriptorSetLayout, RendererError> {
+        use crate::render_graph::descriptor_sets::CompositingDescriptorSet;
+        CompositingDescriptorSet::create_layout(device).map_err(|e| {
+            error!(
+                "Failed to create compositing descriptor set layout: {:?}",
+                e
+            );
+            RendererError::InitializationFailed(
+                "Failed to create compositing descriptor set layout".to_string(),
+            )
+        })
+    }
+
+    fn create_empty_descriptor_set_layout(
+        context: &Rc<VulkanContext>,
+    ) -> Result<vk::DescriptorSetLayout, RendererError> {
+        unsafe {
+            context
+                .device
+                .create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default(), None)
+                .map_err(|_| {
+                    RendererError::InitializationFailed(
+                        "Failed to create empty descriptor set layout".to_string(),
+                    )
+                })
+        }
+    }
+}
+
 impl VulkanRenderer {
     pub fn init(
         display: &dyn HasDisplayHandle,
@@ -216,104 +283,60 @@ impl VulkanRenderer {
             engine_name,
         ));
 
-        // Set up validation logging at appropriate log levels
         if validation_mode.is_enabled() {
             context.setup_validation_logging();
         }
 
         let frame_context = VulkanFrameCtx::init(&context);
+        let swap_data = SwapData::new(
+            &context.device,
+            &frame_context
+                .swapchain_images
+                .iter()
+                .map(|img| img.vk())
+                .collect::<Vec<_>>(),
+            FRAMES_IN_FLIGHT,
+        );
 
-        let swapchain_images_raw: Vec<vk::Image> = frame_context
-            .swapchain_images
-            .iter()
-            .map(|img| img.vk())
-            .collect();
-        let swap_data = SwapData::new(&context.device, &swapchain_images_raw, FRAMES_IN_FLIGHT);
-
-        // Initialize bindless texture manager
-        let bindless_manager = BindlessTextureManager::new(context.clone()).map_err(|e| {
-            error!("Failed to create bindless texture manager: {:?}", e);
-            RendererError::InitializationFailed(
-                "Failed to create bindless texture manager".to_string(),
-            )
-        })?;
+        let bindless_manager = Self::init_step(
+            "bindless texture manager",
+            BindlessTextureManager::new(context.clone()),
+        )?;
         info!(
             "Bindless texture system initialized (max {} textures)",
             MAX_BINDLESS_TEXTURES
         );
 
-        // Initialize texture manager
-        let texture_manager = TextureManager::new(context.clone()).map_err(|e| {
-            error!("Failed to create texture manager: {:?}", e);
-            RendererError::InitializationFailed("Failed to create texture manager".to_string())
-        })?;
+        let texture_manager =
+            Self::init_step("texture manager", TextureManager::new(context.clone()))?;
         info!("Texture manager initialized");
 
-        // Initialize storage uniform system with standard layout
         let storage_manager = StorageUniformManager::new(context.clone(), FRAMES_IN_FLIGHT)?;
+        let storage_descriptor_sets =
+            Self::create_storage_descriptor_sets(&context, &storage_manager)?;
 
-        // Create per-frame storage descriptor sets for binding frame and object uniforms
-        let mut storage_descriptor_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        for frame_idx in 0..FRAMES_IN_FLIGHT {
-            let descriptor_set = StorageDescriptorSet::new(
-                &context,
-                storage_manager.buffer(frame_idx),
-                storage_manager.buffer_size(),
-            )
-            .map_err(|e| {
-                error!("Failed to create storage descriptor set: {:?}", e);
-                RendererError::InitializationFailed(format!(
-                    "Failed to create storage descriptor set for frame {}: {:?}",
-                    frame_idx, e
-                ))
-            })?;
-            storage_descriptor_sets.push(descriptor_set);
-        }
-
-        // Initialize mesh manager
         let mesh_manager = mesh_manager::MeshManager::new(context.clone());
-
-        // Initialize viewport manager
         let viewport_manager = viewport_manager::ViewportManager::new();
 
-        // Initialize material compiler (use first descriptor set for compilation)
-        let material_compiler = MaterialCompiler::new(
-            context.clone(),
-            &bindless_manager,
-            &storage_descriptor_sets[0],
-        )
-        .map_err(|e| {
-            error!("Failed to create material compiler: {:?}", e);
-            RendererError::InitializationFailed("Failed to create material compiler".to_string())
-        })?;
+        let material_compiler = Self::init_step(
+            "material compiler",
+            MaterialCompiler::new(
+                context.clone(),
+                &bindless_manager,
+                &storage_descriptor_sets[0],
+            ),
+        )?;
         info!("Material compiler initialized");
 
-        // Create compositing descriptor set layout for multi-viewport rendering
-        let compositing_descriptor_set_layout = {
-            use crate::render_graph::descriptor_sets::CompositingDescriptorSet;
-            CompositingDescriptorSet::create_layout(&context.device).map_err(|e| {
-                error!(
-                    "Failed to create compositing descriptor set layout: {:?}",
-                    e
-                );
-                RendererError::InitializationFailed(
-                    "Failed to create compositing descriptor set layout".to_string(),
-                )
-            })?
-        };
+        let compositing_descriptor_set_layout =
+            Self::create_compositing_descriptor_set_layout(&context.device)?;
         info!("Compositing descriptor set layout created");
 
-        // Create shared empty descriptor set layout (no bindings).
-        // Used as a placeholder for Set 1 in skinned pipelines (outline, depth prepass, shadow).
-        let shared_empty_descriptor_layout = unsafe {
-            context
-                .device
-                .create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default(), None)
-                .map_err(|_| vk::Result::ERROR_INITIALIZATION_FAILED)?
-        };
+        let shared_empty_descriptor_layout = Self::create_empty_descriptor_set_layout(&context)?;
+        let ui_renderer = ui_renderer::UIRenderer::new(&context);
 
         Ok(Self {
-            context: context.clone(),
+            context,
             frame_context,
             swap_data,
             mesh_manager,
@@ -332,7 +355,7 @@ impl VulkanRenderer {
             output_target: None,
             viewport_manager,
             material_compiler,
-            ui_renderer: ui_renderer::UIRenderer::new(&context),
+            ui_renderer,
             particle_system: None,
             animation_pipeline: None,
             animation_buffers: None,
