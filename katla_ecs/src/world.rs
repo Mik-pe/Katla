@@ -227,10 +227,19 @@ impl World {
     /// immutable access patterns. Use this when you need to iterate components
     /// from a shared reference to the world (e.g., in UI callbacks or
     /// serialization that take `&World` or `&Application`).
-    pub fn query_ref<Q: crate::query::QueryData>(&self) -> Q::Iter<'_> {
-        // SAFETY: For immutable query types (e.g., &T, (&T, &U)), `Q::fetch`
-        // only calls `get_storage::<T>()` which reads through the HashMap without
-        // mutation. Mutable query types (e.g., &mut T) would be unsound here.
+    ///
+    /// The `Q` type parameter must implement [`ImmutableQuery`](crate::query::ImmutableQuery),
+    /// which is a sealed trait implemented only for patterns that yield shared
+    /// references (`&T`, `(&T, &U)`, etc.). Calling `query_ref::<&mut T>()` will
+    /// fail to compile because `&mut T` does not implement `ImmutableQuery`.
+    pub fn query_ref<Q>(&self) -> Q::Iter<'_>
+    where
+        Q: crate::query::QueryData + crate::query::ImmutableQuery,
+    {
+        // SAFETY: Q is bounded by ImmutableQuery, which is only implemented for
+        // patterns that yield shared references (&T, (&T, &U), etc.).
+        // Q::fetch only calls get_storage::<T>() which reads through the HashMap
+        // without mutation.
         unsafe { (*self.storage.get()).query::<Q>() }
     }
 
@@ -1397,6 +1406,55 @@ mod tests {
             .collect();
 
         assert_eq!(mut_query, ref_query);
+    }
+
+    #[test]
+    fn test_query_ref_immutable_single() {
+        let mut world = World::new();
+
+        let id1 = world.create_entity();
+        world.add_component(id1, TestComponent { value: 10 });
+        let id2 = world.create_entity();
+        world.add_component(id2, TestComponent { value: 20 });
+
+        let world_ref: &World = &world;
+        let mut values: Vec<i32> = world_ref
+            .query_ref::<&TestComponent>()
+            .map(|(_, comp)| comp.value)
+            .collect();
+        values.sort();
+
+        assert_eq!(values, vec![10, 20]);
+    }
+
+    #[test]
+    fn test_query_ref_immutable_tuple() {
+        #[derive(Component, Default)]
+        struct CompA {
+            x: i32,
+        }
+        #[derive(Component, Default)]
+        struct CompB {
+            y: f32,
+        }
+
+        let mut world = World::new();
+
+        let id_both = world.create_entity();
+        world.add_component(id_both, CompA { x: 42 });
+        world.add_component(id_both, CompB { y: 3.14 });
+
+        let id_only_a = world.create_entity();
+        world.add_component(id_only_a, CompA { x: 99 });
+
+        let world_ref: &World = &world;
+        let results: Vec<(EntityId, i32, f32)> = world_ref
+            .query_ref::<(&CompA, &CompB)>()
+            .map(|(eid, a, b)| (eid, a.x, b.y))
+            .collect();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], (id_both, 42, 3.14));
     }
 
     // --- Performance benchmarks (VAL-ECS-025, VAL-ECS-026) ---
