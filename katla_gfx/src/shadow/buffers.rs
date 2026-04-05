@@ -47,7 +47,9 @@ impl ShadowBuffers {
             gpu_allocator::MemoryLocation::CpuToGpu,
         )?;
 
-        let shadow_data_mapped_ptr = context.map_buffer(&shadow_data_allocation);
+        let shadow_data_mapped_ptr = context
+            .map_buffer(&shadow_data_allocation)
+            .expect("Failed to map buffer");
         unsafe {
             std::ptr::write_bytes(shadow_data_mapped_ptr, 0, shadow_data_size as usize);
         }
@@ -81,7 +83,7 @@ impl ShadowBuffers {
         }
 
         if let Some(alloc) = self.shadow_data_allocation.as_ref() {
-            self.context.flush_mapped_memory(
+            let _ = self.context.flush_mapped_memory(
                 alloc,
                 0,
                 std::mem::size_of::<ShadowFrameData>() as u64,

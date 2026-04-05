@@ -33,4 +33,5 @@ pub fn create_headless_context(with_validation_layers: bool) -> VulkanContext {
     };
 
     VulkanContext::init_headless(validation_mode, app_name, engine_name)
+        .expect("Failed to create headless Vulkan context")
 }

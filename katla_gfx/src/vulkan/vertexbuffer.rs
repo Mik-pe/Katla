@@ -82,7 +82,10 @@ impl BufferObject {
             );
         }
         if let Some(allocation) = &self.allocation {
-            let mapped_ptr = self.context.map_buffer(allocation);
+            let mapped_ptr = self
+                .context
+                .map_buffer(allocation)
+                .expect("Failed to map buffer");
             unsafe {
                 std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_ptr, data_size as usize);
             }
@@ -102,8 +105,9 @@ impl IndexBuffer {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .usage(vk::BufferUsageFlags::INDEX_BUFFER)
                 .size(buf_size);
-            let (buffer, allocation) =
-                context.allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu);
+            let (buffer, allocation) = context
+                .allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
+                .expect("Failed to allocate index buffer");
 
             BufferObject {
                 allocation: Some(allocation),
@@ -136,8 +140,9 @@ impl VertexBuffer {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
                 .size(buf_size);
-            let (buffer, allocation) =
-                context.allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu);
+            let (buffer, allocation) = context
+                .allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
+                .expect("Failed to allocate vertex buffer");
 
             BufferObject {
                 allocation: Some(allocation),

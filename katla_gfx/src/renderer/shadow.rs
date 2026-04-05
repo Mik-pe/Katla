@@ -334,9 +334,13 @@ impl ShadowSubsystem {
 
             let (buffer, allocation) = ctx
                 .context
-                .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
+                .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu)
+                .expect("Failed to allocate shadow cascade buffer");
 
-            let mapped_ptr = ctx.context.map_buffer(&allocation);
+            let mapped_ptr = ctx
+                .context
+                .map_buffer(&allocation)
+                .expect("Failed to map buffer");
             unsafe {
                 std::ptr::write_bytes(mapped_ptr, 0, per_frame_buffer_size as usize);
             }
@@ -578,7 +582,7 @@ impl ShadowSubsystem {
                 );
             }
             if frame_idx < self.cascade_allocations.len() {
-                context.flush_mapped_memory(
+                let _ = context.flush_mapped_memory(
                     &self.cascade_allocations[frame_idx],
                     0,
                     (cascade_size * crate::shadow::cascade::MAX_CASCADES) as u64,
@@ -613,7 +617,7 @@ impl ShadowSubsystem {
             );
         }
         if frame_idx < self.cascade_allocations.len() {
-            context.flush_mapped_memory(
+            let _ = context.flush_mapped_memory(
                 &self.cascade_allocations[frame_idx],
                 params_offset as u64,
                 16,

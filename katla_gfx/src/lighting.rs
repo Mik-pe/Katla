@@ -154,7 +154,9 @@ impl LightCullingBuffers {
             gpu_allocator::MemoryLocation::CpuToGpu,
         )?;
 
-        let light_mapped_ptr = context.map_buffer(&light_allocation);
+        let light_mapped_ptr = context
+            .map_buffer(&light_allocation)
+            .expect("Failed to map buffer");
         unsafe {
             std::ptr::write_bytes(light_mapped_ptr, 0, light_buffer_size as usize);
         }
@@ -311,7 +313,7 @@ impl LightCullingBuffers {
             let dirty_count = new_count.max(self.prev_light_count);
             let flush_size = (dirty_count as usize * std::mem::size_of::<PointLightGPU>()) as u64;
             if flush_size > 0 {
-                self.context.flush_mapped_memory(alloc, 0, flush_size);
+                let _ = self.context.flush_mapped_memory(alloc, 0, flush_size);
             }
         }
 
@@ -330,7 +332,7 @@ impl LightCullingBuffers {
                     std::mem::size_of::<LightCullFrameData>(),
                 );
             }
-            self.context.flush_mapped_memory(
+            let _ = self.context.flush_mapped_memory(
                 alloc,
                 0,
                 std::mem::size_of::<LightCullFrameData>() as u64,

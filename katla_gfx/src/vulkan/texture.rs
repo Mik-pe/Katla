@@ -34,7 +34,9 @@ impl Texture {
             .usage(vk::BufferUsageFlags::TRANSFER_SRC)
             .size(size);
 
-        context.allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
+        context
+            .allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
+            .expect("Failed to create staging buffer")
     }
 
     fn transition_image_layout(
@@ -172,15 +174,18 @@ impl Texture {
             .samples(vk::SampleCountFlags::TYPE_1)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let (image_object, image_memory) =
-            context.create_image(create_info, gpu_allocator::MemoryLocation::GpuOnly);
+        let (image_object, image_memory) = context
+            .create_image(create_info, gpu_allocator::MemoryLocation::GpuOnly)
+            .expect("Failed to create image");
 
         let total_size = pixel_data.len() as u64;
 
         let (staging_buffer, staging_allocation) =
             Self::create_staging_buffer(&context, total_size);
 
-        let map = context.map_buffer(&staging_allocation);
+        let map = context
+            .map_buffer(&staging_allocation)
+            .expect("Failed to map buffer");
 
         unsafe {
             std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
@@ -310,7 +315,10 @@ impl Texture {
         let (staging_buffer, staging_allocation) =
             Self::create_staging_buffer(&self.context, total_size);
 
-        let map = self.context.map_buffer(&staging_allocation);
+        let map = self
+            .context
+            .map_buffer(&staging_allocation)
+            .expect("Failed to map buffer");
 
         unsafe {
             std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
@@ -392,13 +400,17 @@ impl Texture {
 
         let (new_image, new_memory) = self
             .context
-            .create_image(create_info, gpu_allocator::MemoryLocation::GpuOnly);
+            .create_image(create_info, gpu_allocator::MemoryLocation::GpuOnly)
+            .expect("Failed to create image");
 
         let total_size = pixel_data.len() as u64;
         let (staging_buffer, staging_allocation) =
             Self::create_staging_buffer(&self.context, total_size);
 
-        let map = self.context.map_buffer(&staging_allocation);
+        let map = self
+            .context
+            .map_buffer(&staging_allocation)
+            .expect("Failed to map buffer");
 
         unsafe {
             std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);

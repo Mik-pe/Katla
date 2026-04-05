@@ -152,6 +152,7 @@ mod tests {
                 uses_depth: true,
                 depth_attachment: None,
                 kind: None,
+                overlay_params: None,
             }
         }
     }

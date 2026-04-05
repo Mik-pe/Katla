@@ -202,7 +202,8 @@ impl PoseComputeBuffers {
 
         let (buffer, allocation) = self
             .context
-            .allocate_buffer(&buffer_info, MemoryLocation::CpuToGpu);
+            .allocate_buffer(&buffer_info, MemoryLocation::CpuToGpu)
+            .expect("Failed to allocate pose compute params buffer");
 
         self.params_buffer = Some(buffer);
         self.params_allocation = Some(allocation);
@@ -314,7 +315,8 @@ impl PoseComputeBuffers {
 
         let (buffer, allocation) = self
             .context
-            .allocate_buffer(&buffer_info, MemoryLocation::GpuOnly);
+            .allocate_buffer(&buffer_info, MemoryLocation::GpuOnly)
+            .expect("Failed to allocate pose compute output buffer");
 
         self.output_buffer = Some(buffer);
         self.output_allocation = Some(allocation);
@@ -352,7 +354,7 @@ impl PoseComputeBuffers {
                     byte_len as usize,
                 );
             }
-            self.context.flush_mapped_memory(alloc, 0, byte_len);
+            let _ = self.context.flush_mapped_memory(alloc, 0, byte_len);
         }
     }
 
@@ -469,7 +471,7 @@ impl PoseComputeBuffers {
             unsafe {
                 std::ptr::copy_nonoverlapping(src, mapped.as_ptr() as *mut u8, byte_len as usize);
             }
-            self.context.flush_mapped_memory(alloc, 0, byte_len);
+            let _ = self.context.flush_mapped_memory(alloc, 0, byte_len);
         }
     }
 

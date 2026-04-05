@@ -101,3 +101,15 @@ impl From<MaterialError> for RendererError {
         RendererError::MaterialError(error)
     }
 }
+
+impl RendererError {
+    pub(crate) fn from_allocation_error(
+        resource: &str,
+        error: gpu_allocator::AllocationError,
+    ) -> Self {
+        RendererError::InitializationFailed(format!(
+            "Failed to allocate {} memory: {:?}",
+            resource, error
+        ))
+    }
+}

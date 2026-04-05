@@ -2931,7 +2931,8 @@ fn main() -> ExitCode {
     let engine_name = CString::new("Katla Engine").unwrap();
 
     log::info!("Creating headless Vulkan context...");
-    let context = VulkanContext::init_headless(ValidationMode::GpuAssisted, app_name, engine_name);
+    let context = VulkanContext::init_headless(ValidationMode::GpuAssisted, app_name, engine_name)
+        .expect("Failed to create headless Vulkan context");
     let context = std::rc::Rc::new(context);
     log::info!("Vulkan context created successfully");
 

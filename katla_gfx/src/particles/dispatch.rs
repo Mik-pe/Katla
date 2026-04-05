@@ -61,7 +61,7 @@ impl GlobalParticleSystem {
                 unsafe {
                     std::ptr::copy_nonoverlapping(self.emitters.as_ptr(), dst, self.emitters.len());
                 }
-                self.context.flush_mapped_memory(
+                let _ = self.context.flush_mapped_memory(
                     allocation,
                     0,
                     (self.emitters.len() * std::mem::size_of::<EmitterConfig>()) as u64,
@@ -125,7 +125,7 @@ impl GlobalParticleSystem {
                         std::mem::size_of::<FrameData>(),
                     );
                 }
-                self.context.flush_mapped_memory(
+                let _ = self.context.flush_mapped_memory(
                     allocation,
                     0,
                     std::mem::size_of::<FrameData>() as u64,

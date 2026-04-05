@@ -73,11 +73,15 @@ impl DeviceAddressBuffer {
             )
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let (buffer, allocation) = context.allocate_buffer(&buffer_info, MemoryLocation::CpuToGpu);
+        let (buffer, allocation) = context
+            .allocate_buffer(&buffer_info, MemoryLocation::CpuToGpu)
+            .expect("Failed to allocate BDA buffer");
 
         // Map the buffer persistently
         let mapped_ptr = unsafe {
-            let ptr = context.map_buffer(&allocation);
+            let ptr = context
+                .map_buffer(&allocation)
+                .expect("Failed to map buffer");
             std::ptr::write_bytes(ptr, 0, size as usize);
             ptr
         };
@@ -104,7 +108,10 @@ impl DeviceAddressBuffer {
         if let Some(ptr) = self.mapped_ptr {
             unsafe { std::slice::from_raw_parts_mut(ptr, self.size as usize) }
         } else {
-            let ptr = self.context.map_buffer(&self.allocation);
+            let ptr = self
+                .context
+                .map_buffer(&self.allocation)
+                .expect("Failed to map buffer");
             unsafe { std::slice::from_raw_parts_mut(ptr, self.size as usize) }
         }
     }
@@ -115,7 +122,8 @@ impl DeviceAddressBuffer {
     /// * `offset` - Offset from the start of the buffer (in bytes)
     /// * `size` - Size of the range to flush (in bytes)
     pub fn flush(&self, offset: u64, size: u64) {
-        self.context
+        let _ = self
+            .context
             .flush_mapped_memory(&self.allocation, offset, size);
     }
 }

@@ -269,10 +269,14 @@ impl OutlineSubsystem {
 
             let (buffer, allocation) = ctx
                 .context
-                .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
+                .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu)
+                .expect("Failed to allocate outline params buffer");
 
             unsafe {
-                let ptr = ctx.context.map_buffer(&allocation);
+                let ptr = ctx
+                    .context
+                    .map_buffer(&allocation)
+                    .expect("Failed to map buffer");
                 let defaults = OutlinePushConstants::default();
                 std::ptr::copy_nonoverlapping(
                     &defaults as *const _ as *const u8,
@@ -280,7 +284,7 @@ impl OutlineSubsystem {
                     params_size as usize,
                 );
             }
-            ctx.context.flush_mapped_memory(&allocation, 0, params_size);
+            let _ = ctx.context.flush_mapped_memory(&allocation, 0, params_size);
 
             let buffer_info = [vk::DescriptorBufferInfo::default()
                 .buffer(buffer)

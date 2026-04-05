@@ -512,11 +512,14 @@ fn main() -> ExitCode {
 
     log::info!("=== GPU Picking Validation ===");
 
-    let context = std::rc::Rc::new(VulkanContext::init_headless(
-        ValidationMode::Enabled,
-        CString::new("Picking Validation").unwrap(),
-        CString::new("Katla Engine").unwrap(),
-    ));
+    let context = std::rc::Rc::new(
+        VulkanContext::init_headless(
+            ValidationMode::Enabled,
+            CString::new("Picking Validation").unwrap(),
+            CString::new("Katla Engine").unwrap(),
+        )
+        .expect("Failed to create headless Vulkan context"),
+    );
     log::info!("Vulkan context created");
 
     let shader_dir = find_shader_directory();

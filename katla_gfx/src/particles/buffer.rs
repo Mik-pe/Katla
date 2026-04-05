@@ -309,7 +309,7 @@ impl GlobalParticleBuffer {
                         std::mem::size_of::<ParticleCounters>(),
                     );
                 }
-                context.flush_mapped_memory(
+                let _ = context.flush_mapped_memory(
                     counters_allocations[frame_idx].as_ref().unwrap(),
                     0,
                     std::mem::size_of::<ParticleCounters>() as u64,
@@ -519,7 +519,8 @@ impl GlobalParticleBuffer {
                     dead_list_data.len(),
                 );
             }
-            self.context
+            let _ = self
+                .context
                 .flush_mapped_memory(&staging_allocation, 0, dead_list_size);
         }
 
@@ -638,7 +639,7 @@ impl GlobalParticleBuffer {
                         counters_bytes.len(),
                     );
                 }
-                self.context.flush_mapped_memory(
+                let _ = self.context.flush_mapped_memory(
                     &staging_allocation,
                     0,
                     counters_bytes.len() as u64,
@@ -684,7 +685,7 @@ impl GlobalParticleBuffer {
     pub fn get_alive_count(&self, frame_index: usize) -> Result<u32, String> {
         let fi = frame_index % 2;
         if let Some(counters_allocation) = &self.counters_allocations[fi] {
-            self.context.invalidate_mapped_memory(
+            let _ = self.context.invalidate_mapped_memory(
                 counters_allocation,
                 0,
                 std::mem::size_of::<ParticleCounters>() as u64,
@@ -704,7 +705,7 @@ impl GlobalParticleBuffer {
     pub fn get_dead_count(&self, frame_index: usize) -> Result<u32, String> {
         let fi = frame_index % 2;
         if let Some(counters_allocation) = &self.counters_allocations[fi] {
-            self.context.invalidate_mapped_memory(
+            let _ = self.context.invalidate_mapped_memory(
                 counters_allocation,
                 0,
                 std::mem::size_of::<ParticleCounters>() as u64,

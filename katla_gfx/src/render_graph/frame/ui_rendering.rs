@@ -290,10 +290,14 @@ impl<'a> Frame<'a> {
                     .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
                     .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-                let (uniform_buffer, uniform_allocation) = self.renderer.context.allocate_buffer(
-                    &uniform_buffer_info,
-                    gpu_allocator::MemoryLocation::CpuToGpu,
-                );
+                let (uniform_buffer, uniform_allocation) = self
+                    .renderer
+                    .context
+                    .allocate_buffer(
+                        &uniform_buffer_info,
+                        gpu_allocator::MemoryLocation::CpuToGpu,
+                    )
+                    .expect("Failed to allocate UI uniform buffer");
                 ui_resources.uniform_buffer = Some((uniform_buffer, uniform_allocation));
             }
 
@@ -310,7 +314,10 @@ impl<'a> Frame<'a> {
                 .as_ref()
                 .unwrap()
                 .1;
-            self.renderer.context.map_buffer(allocation)
+            self.renderer
+                .context
+                .map_buffer(allocation)
+                .expect("Failed to map buffer")
         };
 
         unsafe {

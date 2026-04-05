@@ -42,7 +42,8 @@ impl VulkanRenderer {
 
         let (staging_buffer, staging_allocation) = self
             .context
-            .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
+            .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu)
+            .expect("Failed to allocate readback staging buffer");
 
         // Create a fence for this readback operation
         let fence_info = vk::FenceCreateInfo::default();
@@ -165,7 +166,10 @@ impl VulkanRenderer {
                 match self.context.device.get_fence_status(readback.fence) {
                     Ok(true) => {
                         // Fence signaled - readback is complete!
-                        let mapped_ptr = self.context.map_buffer(&readback.staging_allocation);
+                        let mapped_ptr = self
+                            .context
+                            .map_buffer(&readback.staging_allocation)
+                            .expect("Failed to map buffer");
                         let data =
                             std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize);
                         let result = data.to_vec();
@@ -225,7 +229,10 @@ impl VulkanRenderer {
                     .wait_for_fences(&[readback.fence], true, u64::MAX);
 
                 // Fence signaled - readback is complete!
-                let mapped_ptr = self.context.map_buffer(&readback.staging_allocation);
+                let mapped_ptr = self
+                    .context
+                    .map_buffer(&readback.staging_allocation)
+                    .expect("Failed to map buffer");
                 let data = std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize);
                 let result = data.to_vec();
                 let frame = readback.frame;

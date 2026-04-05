@@ -39,7 +39,9 @@ impl SkeletonBuffer {
             .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_DST)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let (buffer, allocation) = context.allocate_buffer(&buffer_info, MemoryLocation::CpuToGpu);
+        let (buffer, allocation) = context
+            .allocate_buffer(&buffer_info, MemoryLocation::CpuToGpu)
+            .expect("Failed to allocate skeleton buffer");
 
         let mut skeleton_buffer = Self {
             buffer,
@@ -82,10 +84,13 @@ impl SkeletonBuffer {
                     );
                 }
                 // Flush the buffer to make CPU writes visible to GPU
-                self.context.flush_mapped_memory(allocation, 0, self.size);
+                let _ = self.context.flush_mapped_memory(allocation, 0, self.size);
             } else {
                 // Map manually if not persistently mapped
-                let ptr = self.context.map_buffer(allocation);
+                let ptr = self
+                    .context
+                    .map_buffer(allocation)
+                    .expect("Failed to map buffer");
                 let dst = ptr as *mut f32;
                 unsafe {
                     std::ptr::copy_nonoverlapping(
@@ -94,7 +99,7 @@ impl SkeletonBuffer {
                         matrices.len() * 16,
                     );
                 }
-                self.context.flush_mapped_memory(allocation, 0, self.size);
+                let _ = self.context.flush_mapped_memory(allocation, 0, self.size);
             }
         }
     }

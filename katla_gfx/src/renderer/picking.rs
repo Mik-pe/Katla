@@ -56,8 +56,9 @@ impl PickingSubsystem {
             .usage(vk::BufferUsageFlags::TRANSFER_DST)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let (staging_buffer, staging_allocation) =
-            context.allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
+        let (staging_buffer, staging_allocation) = context
+            .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu)
+            .expect("Failed to allocate picking staging buffer");
 
         let fence_info = vk::FenceCreateInfo::default();
         let fence = unsafe {
@@ -213,7 +214,9 @@ impl PickingSubsystem {
             unsafe {
                 match context.device.get_fence_status(readback.fence) {
                     Ok(true) => {
-                        let mapped_ptr = context.map_buffer(&readback.staging_allocation);
+                        let mapped_ptr = context
+                            .map_buffer(&readback.staging_allocation)
+                            .expect("Failed to map buffer");
                         let data = std::ptr::read(mapped_ptr as *const u32);
 
                         readback.command_buffer.return_to_pool();
@@ -255,7 +258,9 @@ impl PickingSubsystem {
                     .device
                     .wait_for_fences(&[readback.fence], true, u64::MAX);
 
-                let mapped_ptr = context.map_buffer(&readback.staging_allocation);
+                let mapped_ptr = context
+                    .map_buffer(&readback.staging_allocation)
+                    .expect("Failed to map buffer");
                 let data = std::ptr::read(mapped_ptr as *const u32);
 
                 readback.command_buffer.return_to_pool();
