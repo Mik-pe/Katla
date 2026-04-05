@@ -106,11 +106,19 @@ impl VulkanRenderer {
                 });
             }
 
-            // Extract material parameters
-            let color = draw_call.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
-            let metallic = draw_call.metallic;
-            let roughness = draw_call.roughness;
-            let ao = draw_call.ao;
+            // Extract material parameters from first instance
+            let (model_matrix, color, metallic, roughness, ao) =
+                if let Some(inst) = draw_call.instances.first() {
+                    (
+                        inst.model_matrix,
+                        inst.color,
+                        inst.metallic,
+                        inst.roughness,
+                        inst.ao,
+                    )
+                } else {
+                    ([0.0; 16], [1.0, 1.0, 1.0, 1.0], 0.0, 0.5, 1.0)
+                };
             let emission_idx = draw_call.emission;
 
             // Get texture indices from material
@@ -125,7 +133,7 @@ impl VulkanRenderer {
             self.storage_manager.update_object_bindless(
                 frame_idx,
                 index,
-                &draw_call.model_matrix,
+                &model_matrix,
                 &color,
                 metallic,
                 roughness,

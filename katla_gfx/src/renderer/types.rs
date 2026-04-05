@@ -117,11 +117,10 @@ impl InstanceData {
 /// buffer (Set 0, Binding 1) contains its per-object data. This is allocated by the
 /// FrameContext and used by the shader via `@builtin(instance_index)`.
 ///
-/// # Instancing
-/// When `instances` is non-empty, the draw call uses GPU instancing:
-/// - All instances share the same mesh and material
-/// - Each instance has its own transform/color/PBR in the `instances` array
-/// - A single `draw_indexed_instanced()` call renders all instances
+/// # Instances
+/// Every draw call uses `instances` (a `Vec<InstanceData>`). Single-object draws use
+/// a single-element vec; multi-instance draws use N elements. The render pass always
+/// reads per-instance data from `instances[0]`.
 #[derive(Clone, Debug)]
 pub struct DrawCall {
     /// Mesh to draw.
@@ -131,16 +130,6 @@ pub struct DrawCall {
     /// Instance index for storage buffer lookup (Set 0, Binding 1).
     /// The shader uses this to index objects[instance_index].
     pub instance_index: u32,
-    /// Model matrix for single-instance mode (when instances is empty).
-    pub model_matrix: [f32; 16],
-    /// Optional material color for single-instance mode.
-    pub color: Option<[f32; 4]>,
-    /// PBR metallic factor for single-instance mode.
-    pub metallic: f32,
-    /// PBR roughness factor for single-instance mode.
-    pub roughness: f32,
-    /// Ambient occlusion factor for single-instance mode.
-    pub ao: f32,
     /// Emission texture bindless index (0 = no emission).
     pub emission: f32,
     /// Whether this draw uses transparency (affects sort order).
@@ -149,32 +138,26 @@ pub struct DrawCall {
     pub sort_key: Option<u64>,
     /// Skeleton handle for GPU skinning (Set 2).
     pub skeleton: SkeletonHandle,
-    /// Instance data for GPU instancing.
-    /// When non-empty, uses instanced rendering instead of single-draw.
+    /// Per-instance data (transform, color, PBR). Always contains at least one element.
     pub instances: Vec<InstanceData>,
 }
 
 impl DrawCall {
-    /// Create a new draw call with default parameters (single-instance mode).
+    /// Create a new draw call with a single default instance.
     pub fn new(mesh: MeshHandle, material: MaterialHandle) -> Self {
         Self {
             mesh,
             material,
             instance_index: 0, // Will be set by FrameContext
-            model_matrix: [0.0; 16],
-            color: None,
-            metallic: 0.0,
-            roughness: 0.5,
-            ao: 1.0,
             emission: 0.0,
             transparent: false,
             sort_key: None,
             skeleton: SkeletonHandle::NONE,
-            instances: Vec::new(),
+            instances: vec![InstanceData::default()],
         }
     }
 
-    /// Create an instanced draw call with multiple instances.
+    /// Create a draw call with multiple instances.
     ///
     /// All instances share the same mesh and material but have different
     /// transforms and material properties.
@@ -186,12 +169,7 @@ impl DrawCall {
         Self {
             mesh,
             material,
-            instance_index: 0,       // Will be set by FrameContext
-            model_matrix: [0.0; 16], // Not used in instanced mode
-            color: None,
-            metallic: 0.0,
-            roughness: 0.5,
-            ao: 1.0,
+            instance_index: 0, // Will be set by FrameContext
             emission: 0.0,
             transparent: false,
             sort_key: None,
@@ -200,47 +178,53 @@ impl DrawCall {
         }
     }
 
-    /// Check if this draw call uses instancing.
+    /// Check if this draw call uses multi-instance rendering.
     pub fn is_instanced(&self) -> bool {
-        !self.instances.is_empty()
+        self.instances.len() > 1
     }
 
-    /// Get the instance count (1 for single-instance mode, instances.len() for instanced).
+    /// Get the instance count.
     pub fn instance_count(&self) -> u32 {
-        if self.instances.is_empty() {
-            1
-        } else {
-            self.instances.len() as u32
-        }
+        self.instances.len() as u32
     }
 
-    /// Set the model transform matrix from a 16-element array.
+    /// Set the model transform matrix on the first instance.
     pub fn with_transform(mut self, model: [f32; 16]) -> Self {
-        self.model_matrix = model;
+        if let Some(inst) = self.instances.first_mut() {
+            inst.model_matrix = model;
+        }
         self
     }
 
-    /// Set the material color (RGBA, 0.0-1.0 range).
+    /// Set the material color on the first instance (RGBA, 0.0-1.0 range).
     pub fn with_color(mut self, color: [f32; 4]) -> Self {
-        self.color = Some(color);
+        if let Some(inst) = self.instances.first_mut() {
+            inst.color = color;
+        }
         self
     }
 
-    /// Set PBR metallic factor (0.0 = dielectric, 1.0 = metal).
+    /// Set PBR metallic factor on the first instance (0.0 = dielectric, 1.0 = metal).
     pub fn with_metallic(mut self, metallic: f32) -> Self {
-        self.metallic = metallic;
+        if let Some(inst) = self.instances.first_mut() {
+            inst.metallic = metallic;
+        }
         self
     }
 
-    /// Set PBR roughness factor (0.0 = smooth, 1.0 = rough).
+    /// Set PBR roughness factor on the first instance (0.0 = smooth, 1.0 = rough).
     pub fn with_roughness(mut self, roughness: f32) -> Self {
-        self.roughness = roughness;
+        if let Some(inst) = self.instances.first_mut() {
+            inst.roughness = roughness;
+        }
         self
     }
 
-    /// Set ambient occlusion factor (0.0 = occluded, 1.0 = no occlusion).
+    /// Set ambient occlusion factor on the first instance (0.0 = occluded, 1.0 = no occlusion).
     pub fn with_ao(mut self, ao: f32) -> Self {
-        self.ao = ao;
+        if let Some(inst) = self.instances.first_mut() {
+            inst.ao = ao;
+        }
         self
     }
 
@@ -250,17 +234,25 @@ impl DrawCall {
         self
     }
 
-    /// Set all PBR material parameters at once.
+    /// Set all PBR material parameters at once on the first instance.
     pub fn with_pbr(mut self, metallic: f32, roughness: f32, ao: f32) -> Self {
-        self.metallic = metallic;
-        self.roughness = roughness;
-        self.ao = ao;
+        if let Some(inst) = self.instances.first_mut() {
+            inst.metallic = metallic;
+            inst.roughness = roughness;
+            inst.ao = ao;
+        }
         self
     }
 
     /// Get material parameters as an array for GPU upload: [metallic, roughness, ao, emission].
     pub fn material_params(&self) -> [f32; 4] {
-        [self.metallic, self.roughness, self.ao, self.emission]
+        let inst = self.instances.first();
+        [
+            inst.map(|i| i.metallic).unwrap_or(0.0),
+            inst.map(|i| i.roughness).unwrap_or(0.5),
+            inst.map(|i| i.ao).unwrap_or(1.0),
+            self.emission,
+        ]
     }
 
     /// Mark this draw call as using transparency.
@@ -362,7 +354,12 @@ impl DrawList {
     /// * `camera_position` - Camera position in world space
     pub fn compute_sort_keys(&mut self, camera_position: [f32; 3]) {
         for draw in &mut self.draws {
-            let distance = compute_distance_from_camera(&draw.model_matrix, camera_position);
+            let model_matrix = draw
+                .instances
+                .first()
+                .map(|i| i.model_matrix)
+                .unwrap_or([0.0; 16]);
+            let distance = compute_distance_from_camera(&model_matrix, camera_position);
             draw.sort_key = Some(compute_sort_key(
                 draw.material,
                 draw.mesh,
@@ -595,9 +592,10 @@ mod tests {
             .with_sort_key(42);
 
         assert_eq!(draw.sort_key, Some(42));
-        assert_eq!(draw.color, Some([1.0, 0.0, 0.0, 1.0]));
-        assert_eq!(draw.metallic, 0.5);
-        assert_eq!(draw.roughness, 0.3);
+        let inst = &draw.instances[0];
+        assert_eq!(inst.color, [1.0, 0.0, 0.0, 1.0]);
+        assert_eq!(inst.metallic, 0.5);
+        assert_eq!(inst.roughness, 0.3);
     }
 
     #[test]
