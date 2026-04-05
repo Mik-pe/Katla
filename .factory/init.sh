@@ -2,8 +2,6 @@
 # Environment setup script for Katla engine missions
 # This script is idempotent - safe to run multiple times
 
-set -e
-
 echo "Setting up Katla environment..."
 
 # Check Rust toolchain
@@ -20,5 +18,9 @@ else
     echo "ERROR: Cargo not found"
     exit 1
 fi
+
+# Build workspace to ensure all dependencies are downloaded
+echo "Building workspace..."
+cargo build --workspace --lib 2>&1 || echo "WARNING: Build had issues, continuing..."
 
 echo "Environment setup complete!"

@@ -7,18 +7,20 @@ Environment variables, external dependencies, and setup notes.
 
 ---
 
-## Build Requirements
+## Rust Toolchain
 
-- Rust toolchain (edition 2024 for most crates, 2021 for katla_derive)
-- Vulkan SDK (needed for katla_gfx compilation)
-- No runtime services needed for this cleanup mission
+- Rust 2024 edition
+- Workspace with multiple crates (katla_math, katla_gfx, katla_ecs, katla_ui, katla_app, katla_derive)
+- Uses ash for Vulkan bindings
+- GPU allocator for Vulkan memory management
 
-## Platform
+## External Dependencies
 
-- Windows (win32)
-- No special environment variables needed
-- No external services required
+- **Vulkan SDK**: Required for GPU rendering and validation examples. Not needed for unit tests.
+- **No network services, databases, or external APIs**
 
-## Dependency Notes
+## Platform Notes
 
-- **winit 0.30**: Text input is exclusively handled through `Ime::Commit` events. The `text` field was removed from `KeyboardInput` struct. Do not process `event.text` from keyboard input — it will cause duplicate text input.
+- Windows (win32) development environment
+- PowerShell is the default shell (not bash)
+- Use `cargo fmt` for formatting, `cargo clippy` for linting
