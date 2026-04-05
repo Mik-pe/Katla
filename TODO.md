@@ -6,6 +6,8 @@
 
 - [ ] **Fix `query_ref` soundness hole** — `world.rs:234` allows `world.query_ref::<&mut T>()` from `&self`, creating `&mut` without `&mut World` (UB). Add a sealed `ImmutableQuery` marker trait implemented only for immutable patterns (`&T`, `(&T, &U)`, etc.) and bound `query_ref` on it.
 - [ ] **Centralize unsafe borrow pattern in queries** — 16+ raw-pointer casts across `iter2..iter8.rs` replicate the same `storage as *mut ComponentStorageManager` / `(*ptr).get_storage_mut::<T>()` pattern. Extract into a single unsafe helper on `ComponentStorageManager` (e.g., `get_two_storage_mut::<T1, T2>() -> (&mut Storage<T1>, &mut Storage<T2>)`) with one consolidated SAFETY comment, then call it from each query impl.
+  - [ ] Add `get_two_storage_mut::<T1, T2>()` unsafe helper on `ComponentStorageManager` with consolidated SAFETY comment
+  - [ ] Update `iter2.rs` through `iter8.rs` to use the new helper, removing raw-pointer casts
 
 ### P1: Architecture
 
@@ -23,7 +25,7 @@
 
 - [ ] **Fix doctests** — 10 of 13 doctests are `ignore`d. Convert key examples (World::query, World::spawn, Spawnable) to runnable doctests using `use katla_ecs::*` so they're validated by CI.
 - [x] **Remove redundant `Clone` bound on `SparseSet`** — `sparse_set.rs` requires `K: Hash + Eq + Copy + Clone` but `Copy` implies `Clone`. Drop the redundant `Clone`.
-- [ ] **Document `Action::COUNT = 16` padding** — `input/actions.rs` has 14 variants but `COUNT = 16`. Add a brief comment explaining the 2-slot padding.
+- [x] **Document `Action::COUNT = 16` padding** — `input/actions.rs` has 14 variants but `COUNT = 16`. Add a brief comment explaining the 2-slot padding.
 
 ## Gizmo
 
@@ -82,14 +84,14 @@ Bite-sized tasks to make the engine usable by game makers. Ordered by impact and
 
 ### P0: Visibility Tightening
 
-- [ ] **Change `renderer/` submodules to `pub(crate) mod`** — All 22 submodules (`animation_init`, `bindless_queries`, `compositing`, `depth_prepass`, `destroy_api`, `font_atlas`, `frame_lifecycle`, `fullscreen_shader`, `light_culling`, `material_api`, `mesh_manager`, `outline`, `particle_init`, `picking`, `readback`, `registry`, `shadow`, `skeleton_api`, `texture_api`, `types`, `ui_renderer`, `viewport_manager`) are `pub mod` but are implementation details. Change all to `pub(crate) mod`. Re-export only `AssetRegistry`, `DrawList`, `DrawCall`, `UIDrawList`, `UiDrawCommand`, `FrameUniforms`, `InstanceData`, `VulkanRenderer` from `renderer::types` via `lib.rs`.
-- [ ] **Change `sync` module to `pub(crate) mod`** — `sync.rs` exposes raw Vulkan wrapper types (`VkSemaphore`, `VkFence`, `VkPipeline`, etc.) to the entire workspace. Make it `pub(crate) mod` and re-export only `ShaderStages` (already re-exported from `lib.rs` via `pipeline_state`).
-- [ ] **Change `animation` module to `pub(crate) mod`** — Exposes `PoseComputePipeline` and `PoseComputeBuffers` (GPU compute internals). Keep `pub(crate) mod animation` and re-export only the data types: `AnimChannelInfo`, `AnimClipHeader`, `JointInfo`, `SkeletonAnimParams`.
-- [ ] **Change `shadow` module to `pub(crate) mod`** — `ShadowBuffers` and `CascadeShadowMapper` are internal GPU subsystems. Make `pub(crate)` and re-export nothing (app layer interacts through `VulkanRenderer` methods and `FrameUniforms`).
-- [ ] **Change `lighting` module to `pub(crate) mod`** — `PointLightGPU`, `LightCullFrameData`, `LightCullingBuffers` are internal. Make `pub(crate)` and re-export nothing.
-- [ ] **Change `vulkan/` submodules from `pub mod` to `pub(crate) mod`** — `vulkan/mod.rs` declares all 17 submodules as `pub mod`. Since `vulkan` itself is `pub(crate)`, this is technically contained but misleading. Change inner modules to `pub(crate) mod` or plain `mod` to match actual intent.
-- [ ] **Change `particles/` submodules from `pub mod` to `pub(crate) mod`** — `buffer`, `debug_readback`, `descriptors`, `dispatch`, `pipeline`, etc. are all `pub mod` within a public module. Only `EmitterConfig` and `GlobalParticleSystem` need to be public. Make submodules `pub(crate) mod`.
-- [ ] **Make `OutputRenderTarget` `pub(crate)`** — Currently `pub` but takes `Rc<VulkanContext>` and raw `vk` types. Only used internally by `VulkanRenderer::init_output_target()`.
+- [x] **Change `renderer/` submodules to `pub(crate) mod`** — All 22 submodules (`animation_init`, `bindless_queries`, `compositing`, `depth_prepass`, `destroy_api`, `font_atlas`, `frame_lifecycle`, `fullscreen_shader`, `light_culling`, `material_api`, `mesh_manager`, `outline`, `particle_init`, `picking`, `readback`, `registry`, `shadow`, `skeleton_api`, `texture_api`, `types`, `ui_renderer`, `viewport_manager`) are `pub mod` but are implementation details. Change all to `pub(crate) mod`. Re-export only `AssetRegistry`, `DrawList`, `DrawCall`, `UIDrawList`, `UiDrawCommand`, `FrameUniforms`, `InstanceData`, `VulkanRenderer` from `renderer::types` via `lib.rs`.
+- [ ] **Change `sync` module to `pub(crate) mod`** — `sync.rs` exposes raw Vulkan wrapper types (`VkSemaphore`, `VkFence`, `VkPipeline`, etc.) to the entire workspace. Make it `pub(crate) mod` and re-export only `ShaderStages` (already re-exported from `lib.rs` via `pipeline_state`). Note: kept `pub` for now because validation examples use `katla_gfx::sync::*` via the external crate path. Gate examples behind a Cargo feature first.
+- [ ] **Change `animation` module to `pub(crate) mod`** — Exposes `PoseComputePipeline` and `PoseComputeBuffers` (GPU compute internals). Keep `pub(crate) mod animation` and re-export only the data types: `AnimChannelInfo`, `AnimClipHeader`, `JointInfo`, `SkeletonAnimParams`. Note: kept `pub` for now because validation examples and katla_app use `katla_gfx::animation::*` via the external crate path.
+- [ ] **Change `shadow` module to `pub(crate) mod`** — `ShadowBuffers` and `CascadeShadowMapper` are internal GPU subsystems. Make `pub(crate)` and re-export nothing (app layer interacts through `VulkanRenderer` methods and `FrameUniforms`). Note: kept `pub` for now because validation examples use `katla_gfx::shadow::*`.
+- [ ] **Change `lighting` module to `pub(crate) mod`** — `PointLightGPU`, `LightCullFrameData`, `LightCullingBuffers` are internal. Make `pub(crate)` and re-export nothing. Note: kept `pub` for now because validation examples and katla_app use `katla_gfx::lighting::*`.
+- [x] **Change `vulkan/` submodules from `pub mod` to `pub(crate) mod`** — `vulkan/mod.rs` declares all 17 submodules as `pub mod`. Since `vulkan` itself is `pub(crate)`, this is technically contained but misleading. Change inner modules to `pub(crate) mod` or plain `mod` to match actual intent.
+- [x] **Change `particles/` submodules from `pub mod` to `pub(crate) mod`** — `buffer`, `debug_readback`, `descriptors`, `dispatch`, `pipeline`, etc. are all `pub mod` within a public module. Only `EmitterConfig` and `GlobalParticleSystem` need to be public. Make submodules `pub(crate) mod`.
+- [x] **Make `OutputRenderTarget` `pub(crate)`** — Currently `pub` but takes `Rc<VulkanContext>` and raw `vk` types. Only used internally by `VulkanRenderer::init_output_target()`.
 
 ### P0: VulkanRenderer Decomposition
 
@@ -110,14 +112,14 @@ Bite-sized tasks to make the engine usable by game makers. Ordered by impact and
 
 ### P2: Code Duplication / Cleanup
 
-- [ ] **Remove `DrawList::sort_optimal()`** — Identical to `sort()`. Both do `sort_by_key(|d| d.sort_key.unwrap_or(u64::MAX))`. Keep `sort()` only.
+- [x] **Remove `DrawList::sort_optimal()`** — Identical to `sort()`. Both do `sort_by_key(|d| d.sort_key.unwrap_or(u64::MAX))`. Keep `sort()` only. Already removed.
 - [ ] **Unify `DrawCall` single-instance and instanced paths** — `model_matrix`, `color`, `metallic`, `roughness`, `ao` duplicate fields in `InstanceData`. Eliminate the flat fields and always use a single `InstanceData` (or `instances: Vec<InstanceData>` with a guaranteed first element).
-- [ ] **Fix duplicate step comment in `VulkanRenderer::render()`** — Lines labeled "// 10. Present" and "// 10. Advance" then "// 11. Advance". Renumber the steps.
+- [ ] **Fix duplicate step comment in `VulkanRenderer::render()`** — Steps 10 (Present) and 11 (Advance) are already correctly numbered. No action needed.
 
 ### P3: Polish
 
 - [ ] **Consider a minimal `Mat4` type within katla_gfx** — `FrameUniforms`, `InstanceData`, `DrawCall` all use `[f32; 16]` with scattered helpers (`compute_distance_from_camera`, `katla_math_proj_reverse_z` in tests). A small `Mat4` newtype with `transpose()` and `translation()` would centralize this without depending on katla_math.
-- [ ] **Add `#[inline]` to hot-path `ResourceStorage` methods** — `get()`, `get_mut()`, `insert()` are called per-draw-call but lack `#[inline]`.
+- [x] **Add `#[inline]` to hot-path `ResourceStorage` methods** — `get()`, `get_mut()`, `insert()` are called per-draw-call but lack `#[inline]`.
 - [ ] **Gate validation examples behind a Cargo feature** — 5 validation examples in `Cargo.toml` (particle, animation, light_shadow, picking, outline) pull in test infrastructure. Consider an `examples` or `validation` feature.
 
 ## katla_ui
@@ -140,14 +142,14 @@ Bite-sized tasks to make the engine usable by game makers. Ordered by impact and
 - [ ] **Eliminate per-frame `String` allocations in `Popup`** — `Popup.id` is `String` but every call site passes `&str`. The `id: impl Into<String>` forces allocation. Use `&'a str` with a lifetime or `Cow<'a, str>`.
 - [x] **Remove `format!()` in `ScrollArea` scrollbar ID** — `scroll_area.rs` allocates `format!("{}_scrollbar", id)` every frame. Use a compound label approach in `generate_id` that doesn't allocate.
 - [x] **Remove `format!()` in `DraggablePanel` close button** — `draggable_panel.rs` allocates `format!("close_{}", id)` every frame. Same fix as ScrollArea.
-- [ ] **Reuse `commands` Vec in `DrawList::finalize()`** — `draw_list.rs` replaces `self.commands` with a new Vec via `.collect()` every frame. Use `clear()` + `extend()` to reuse the allocation.
+- [x] **Reuse `commands` Vec in `DrawList::finalize()`** — `draw_list.rs` replaces `self.commands` with a new Vec via `.collect()` every frame. Use `clear()` + `extend()` to reuse the allocation. Already uses `clear()` + `extend()`.
 - [ ] **Store font bytes without `Box::leak`** — `font_loading.rs` leaks font data with `Box::leak(bytes.to_vec().into_boxed_slice())` for `'static` lifetime. Store bytes in `FontSystem` as `Vec<Vec<u8>>` and reference by index.
 
 ### P2: Ergonomics
 
 - [ ] **Add `at_cursor()` to all builder widgets** — Button has `at_cursor()` but Checkbox, Slider, TextInput, Label don't. Inconsistent. Add to all or provide a unified auto-layout method.
 - [ ] **Make cursor advancement consistent** — `button_auto_wide` and `label` advance the cursor. `Collapsible` and `Badge` don't. All widgets drawing at the cursor should advance it, or none should (with clear docs).
-- [ ] **Fix `draw_icon_centered` to use glyph metrics** — `drawing.rs` measures text advance width to center icons. For icon glyphs, advance width differs from visual bounds. Use `get_or_rasterize` and the glyph's actual size.
+- [x] **Fix `draw_icon_centered` to use glyph metrics** — `drawing.rs` measures text advance width to center icons. For icon glyphs, advance width differs from visual bounds. Use `get_or_rasterize` and the glyph's actual size. Already uses `get_or_rasterize` and glyph size for centering.
 
 ### P3: Polish
 
