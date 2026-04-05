@@ -192,7 +192,9 @@ impl VulkanFrameCtx {
 }
 
 fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D) -> RenderTexture {
-    let depth_format = context.find_depth_format();
+    let depth_format = context
+        .find_depth_format()
+        .expect("Failed to find depth format");
     let extent_3d = vk::Extent3D {
         width: extent.width,
         height: extent.height,
@@ -208,7 +210,9 @@ fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D)
         .samples(vk::SampleCountFlags::TYPE_1)
         .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED);
 
-    let (depth_image, image_memory) = context.create_image(create_info, MemoryLocation::GpuOnly);
+    let (depth_image, image_memory) = context
+        .create_image(create_info, MemoryLocation::GpuOnly)
+        .expect("Failed to create depth image");
 
     let image_view = VulkanFrameCtx::create_image_view(
         &context.device,

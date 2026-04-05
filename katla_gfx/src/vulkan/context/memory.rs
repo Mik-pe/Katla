@@ -4,6 +4,8 @@ use gpu_allocator::{
     vulkan::{Allocation, AllocationCreateDesc, AllocationScheme},
 };
 
+use crate::error::RendererError;
+
 use super::VulkanContext;
 
 impl VulkanContext {
@@ -11,8 +13,9 @@ impl VulkanContext {
         &self,
         buffer_info: &vk::BufferCreateInfo,
         location: MemoryLocation,
-    ) -> (vk::Buffer, Allocation) {
-        let buffer = unsafe { self.device.create_buffer(buffer_info, None) }.unwrap();
+    ) -> Result<(vk::Buffer, Allocation), RendererError> {
+        let buffer = unsafe { self.device.create_buffer(buffer_info, None) }
+            .map_err(|e| RendererError::VulkanError(format!("Failed to create buffer: {:?}", e)))?;
         let requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
         let allocation_info = AllocationCreateDesc {
             name: "Buffer Allocation",
@@ -23,27 +26,34 @@ impl VulkanContext {
         };
 
         let mut allocator = self.allocator.borrow_mut();
-        let allocation = allocator.allocate(&allocation_info).unwrap();
+        let allocation = allocator
+            .allocate(&allocation_info)
+            .map_err(|e| RendererError::from_allocation_error("buffer", e))?;
 
         unsafe {
             self.device
                 .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
-                .unwrap()
-        };
-        (buffer, allocation)
+                .map_err(|e| {
+                    RendererError::VulkanError(format!("Failed to bind buffer memory: {:?}", e))
+                })?;
+        }
+        Ok((buffer, allocation))
     }
 
     /// Free a buffer and its allocation.
     pub(crate) fn free_buffer(&self, buffer: vk::Buffer, allocation: Allocation) {
         let mut allocator = self.allocator.borrow_mut();
-        allocator.free(allocation).unwrap();
+        let _ = allocator.free(allocation);
         unsafe { self.device.destroy_buffer(buffer, None) };
     }
 
     /// Map a buffer allocation to host memory.
     /// Currently maps the entire buffer; partial mapping could be added as an optimization.
-    pub fn map_buffer(&self, allocation: &Allocation) -> *mut u8 {
-        allocation.mapped_ptr().unwrap().cast().as_ptr()
+    pub fn map_buffer(&self, allocation: &Allocation) -> Result<*mut u8, RendererError> {
+        allocation
+            .mapped_ptr()
+            .map(|ptr| ptr.cast().as_ptr())
+            .ok_or_else(|| RendererError::InvalidOperation("Buffer is not mapped".to_string()))
     }
 
     /// Flush mapped memory ranges to make CPU writes visible to the GPU.
@@ -58,7 +68,7 @@ impl VulkanContext {
         allocation: &Allocation,
         offset: vk::DeviceSize,
         size: vk::DeviceSize,
-    ) {
+    ) -> Result<(), RendererError> {
         let base_memory_offset = allocation.offset() + offset;
 
         let aligned_memory_offset = base_memory_offset & !(self.non_coherent_atom_size - 1);
@@ -81,8 +91,11 @@ impl VulkanContext {
 
             self.device
                 .flush_mapped_memory_ranges(&[flush_range])
-                .expect("Failed to flush mapped memory");
+                .map_err(|e| {
+                    RendererError::VulkanError(format!("Failed to flush mapped memory: {:?}", e))
+                })?;
         }
+        Ok(())
     }
 
     /// Invalidate mapped memory ranges to make GPU writes visible to CPU reads.
@@ -97,7 +110,7 @@ impl VulkanContext {
         allocation: &Allocation,
         offset: vk::DeviceSize,
         size: vk::DeviceSize,
-    ) {
+    ) -> Result<(), RendererError> {
         let base_memory_offset = allocation.offset() + offset;
         let aligned_memory_offset = base_memory_offset & !(self.non_coherent_atom_size - 1);
 
@@ -118,16 +131,23 @@ impl VulkanContext {
 
             self.device
                 .invalidate_mapped_memory_ranges(&[range])
-                .expect("Failed to invalidate mapped memory");
+                .map_err(|e| {
+                    RendererError::VulkanError(format!(
+                        "Failed to invalidate mapped memory: {:?}",
+                        e
+                    ))
+                })?;
         }
+        Ok(())
     }
 
     pub fn create_image(
         &self,
         image_create_info: vk::ImageCreateInfo,
         location: MemoryLocation,
-    ) -> (vk::Image, Allocation) {
-        let image = unsafe { self.device.create_image(&image_create_info, None) }.unwrap();
+    ) -> Result<(vk::Image, Allocation), RendererError> {
+        let image = unsafe { self.device.create_image(&image_create_info, None) }
+            .map_err(|e| RendererError::VulkanError(format!("Failed to create image: {:?}", e)))?;
         let requirements = unsafe { self.device.get_image_memory_requirements(image) };
         let allocation_info = AllocationCreateDesc {
             name: "Image Allocation",
@@ -138,21 +158,25 @@ impl VulkanContext {
         };
 
         let mut allocator = self.allocator.borrow_mut();
-        let allocation = allocator.allocate(&allocation_info).unwrap();
+        let allocation = allocator
+            .allocate(&allocation_info)
+            .map_err(|e| RendererError::from_allocation_error("image", e))?;
 
         unsafe {
             self.device
                 .bind_image_memory(image, allocation.memory(), allocation.offset())
-                .unwrap();
+                .map_err(|e| {
+                    RendererError::VulkanError(format!("Failed to bind image memory: {:?}", e))
+                })?;
         }
-        (image, allocation)
+        Ok((image, allocation))
     }
 
     /// Free an image and its allocation.
     /// Uses wrapper type to avoid exposing vk::Image in public API.
     pub(crate) fn free_image(&self, image: crate::sync::VkImage, allocation: Allocation) {
         let mut allocator = self.allocator.borrow_mut();
-        allocator.free(allocation).unwrap();
+        let _ = allocator.free(allocation);
         unsafe {
             self.device.destroy_image(image.vk(), None);
         }

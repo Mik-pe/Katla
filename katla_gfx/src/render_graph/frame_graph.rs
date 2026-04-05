@@ -463,7 +463,8 @@ impl FrameGraph {
 
                 let (image, allocation) = renderer
                     .context
-                    .create_image(image_info, gpu_allocator::MemoryLocation::GpuOnly);
+                    .create_image(image_info, gpu_allocator::MemoryLocation::GpuOnly)
+                    .expect("Failed to create graph image");
 
                 // Create image view
                 let view_info = vk::ImageViewCreateInfo::default()

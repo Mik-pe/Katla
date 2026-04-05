@@ -617,19 +617,23 @@ impl ParticleDebugReadback {
         let counters_size = std::mem::size_of::<ParticleCounters>() as u64;
 
         if let Some(ref staging) = self.particle_staging {
-            self.context
-                .invalidate_mapped_memory(&staging.allocation, 0, particle_data_size);
+            let _ =
+                self.context
+                    .invalidate_mapped_memory(&staging.allocation, 0, particle_data_size);
         }
         if let Some(ref staging) = self.alive_list_staging {
-            self.context
+            let _ = self
+                .context
                 .invalidate_mapped_memory(&staging.allocation, 0, index_list_size);
         }
         if let Some(ref staging) = self.dead_list_staging {
-            self.context
+            let _ = self
+                .context
                 .invalidate_mapped_memory(&staging.allocation, 0, index_list_size);
         }
         if let Some(ref staging) = self.counters_staging {
-            self.context
+            let _ = self
+                .context
                 .invalidate_mapped_memory(&staging.allocation, 0, counters_size);
         }
 
@@ -674,7 +678,7 @@ impl ParticleDebugReadback {
 
         // Read indirect draw command
         let indirect_draw = if let Some(ref staging) = self.indirect_draw_staging {
-            self.context.invalidate_mapped_memory(
+            let _ = self.context.invalidate_mapped_memory(
                 &staging.allocation,
                 0,
                 std::mem::size_of::<IndirectDrawCommandData>() as u64,

@@ -268,14 +268,15 @@ impl<'a> Frame<'a> {
             let ptr = self
                 .renderer
                 .context
-                .map_buffer(&self.renderer.outline.params_allocations[frame_idx]);
+                .map_buffer(&self.renderer.outline.params_allocations[frame_idx])
+                .expect("Failed to map buffer");
             std::ptr::copy_nonoverlapping(
                 &push_constants as *const _ as *const u8,
                 ptr,
                 std::mem::size_of::<OutlinePushConstants>(),
             );
         }
-        self.renderer.context.flush_mapped_memory(
+        let _ = self.renderer.context.flush_mapped_memory(
             &self.renderer.outline.params_allocations[frame_idx],
             0,
             std::mem::size_of::<OutlinePushConstants>() as u64,

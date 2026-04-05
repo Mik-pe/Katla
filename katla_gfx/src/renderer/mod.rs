@@ -281,7 +281,7 @@ impl VulkanRenderer {
             validation_mode,
             app_name,
             engine_name,
-        ));
+        )?);
 
         if validation_mode.is_enabled() {
             context.setup_validation_logging();
@@ -1233,8 +1233,9 @@ impl OutputRenderTarget {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .samples(vk::SampleCountFlags::TYPE_1);
 
-            let (color_image, color_memory) =
-                context.create_image(color_create_info, gpu_allocator::MemoryLocation::GpuOnly);
+            let (color_image, color_memory) = context
+                .create_image(color_create_info, gpu_allocator::MemoryLocation::GpuOnly)
+                .expect("Failed to create color image");
 
             // Create color image view
             let color_view_create_info = vk::ImageViewCreateInfo::default()

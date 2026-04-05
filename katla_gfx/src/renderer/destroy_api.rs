@@ -87,6 +87,7 @@ mod tests {
             alpha_blended: false,
             double_sided: false,
             wireframe: false,
+            depth_test: true,
             vertex_binding: VertexBinding { formats: vec![] },
             textures: MaterialTextures::default(),
             material_descriptor_set: None,

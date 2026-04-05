@@ -27,6 +27,7 @@ use std::{
 };
 
 use super::SwapchainInfo;
+use crate::error::RendererError;
 use crate::sync::{VkImage, VkImageView};
 
 pub(super) const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
@@ -129,7 +130,7 @@ pub struct VulkanFrameCtx {
 impl VulkanContext {
     pub fn pre_destroy(&self) {
         unsafe {
-            self.device.device_wait_idle().unwrap();
+            let _ = self.device.device_wait_idle();
         }
     }
 
@@ -158,15 +159,17 @@ impl VulkanContext {
         validation_mode: ValidationMode,
         app_name: CString,
         engine_name: CString,
-    ) -> Self {
-        let entry = unsafe { Entry::load() }.unwrap();
+    ) -> Result<Self, RendererError> {
+        let entry = unsafe { Entry::load() }.map_err(|e| {
+            RendererError::InitializationFailed(format!("Failed to load Vulkan entry: {:?}", e))
+        })?;
         let instance = Self::create_instance(
             validation_mode,
             &app_name,
             &engine_name,
             Some(display),
             &entry,
-        );
+        )?;
         let debug_utils_loader = DebugInstance::new(&entry, &instance);
 
         // Create validation callback storage
@@ -180,34 +183,45 @@ impl VulkanContext {
             user_data,
         );
         let surface_loader = SurfaceInstance::new(&entry, &instance);
+        let display_handle = display.display_handle().map_err(|e| {
+            RendererError::InitializationFailed(format!("Failed to get display handle: {:?}", e))
+        })?;
+        let window_handle = window.window_handle().map_err(|e| {
+            RendererError::InitializationFailed(format!("Failed to get window handle: {:?}", e))
+        })?;
         let surface = unsafe {
             ash_window::create_surface(
                 &entry,
                 &instance,
-                display.display_handle().unwrap().as_raw(),
-                window.window_handle().unwrap().as_raw(),
+                display_handle.as_raw(),
+                window_handle.as_raw(),
                 None,
             )
         }
-        .unwrap();
+        .map_err(|e| {
+            RendererError::InitializationFailed(format!("Failed to create surface: {:?}", e))
+        })?;
 
         let physical_device =
-            unsafe { device::pick_physical_device(&instance, &surface_loader, surface) }.unwrap();
+            unsafe { device::pick_physical_device(&instance, &surface_loader, surface) }?;
 
         let queue_indices = QueueFamilyIndices::find_queue_families(
             &instance,
             &surface_loader,
             surface,
             physical_device,
-        );
+        )?;
+
+        let graphics_queue_idx = queue_indices.graphics_idx.ok_or_else(|| {
+            RendererError::InitializationFailed("No graphics queue family found".to_string())
+        })?;
+        let transfer_queue_idx = 0;
 
         let queue_create_infos = vec![
             vk::DeviceQueueCreateInfo::default()
-                .queue_family_index(queue_indices.graphics_idx.unwrap())
+                .queue_family_index(graphics_queue_idx)
                 .queue_priorities(&[1.0]),
         ];
-        let graphics_queue_idx = queue_indices.graphics_idx.unwrap();
-        let transfer_queue_idx = 0;
 
         let device = device::create_device(
             &instance,
@@ -215,7 +229,7 @@ impl VulkanContext {
             queue_create_infos,
             validation_mode.is_enabled(),
             true,
-        );
+        )?;
 
         let swapchain_loader = Rc::new(SwapchainDevice::new(&instance, &device));
         let push_descriptor_loader = PushDescriptorDevice::new(&instance, &device);
@@ -229,12 +243,17 @@ impl VulkanContext {
         let create_info = vk::CommandPoolCreateInfo::default()
             .queue_family_index(transfer_queue_idx)
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-        let transfer_command_pool =
-            unsafe { device.create_command_pool(&create_info, None) }.unwrap();
+        let transfer_command_pool = unsafe { device.create_command_pool(&create_info, None) }
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to create transfer command pool: {:?}",
+                    e
+                ))
+            })?;
 
         let mut debug_settings = AllocatorDebugSettings::default();
         debug_settings.log_leaks_on_shutdown = true;
-        let create_info = AllocatorCreateDesc {
+        let allocator_create_info = AllocatorCreateDesc {
             instance: instance.clone(),
             device: device.clone(),
             physical_device,
@@ -243,14 +262,17 @@ impl VulkanContext {
             allocation_sizes: AllocationSizes::default(),
         };
 
-        let allocator = ManuallyDrop::new(RefCell::new(Allocator::new(&create_info).unwrap()));
+        let allocator = ManuallyDrop::new(RefCell::new(
+            Allocator::new(&allocator_create_info)
+                .map_err(|e| RendererError::from_allocation_error("GPU", e))?,
+        ));
 
         let push_descriptor_khr = Some(ash::khr::push_descriptor::Device::new(&instance, &device));
 
         let device_properties = unsafe { instance.get_physical_device_properties(physical_device) };
         let non_coherent_atom_size = device_properties.limits.non_coherent_atom_size;
 
-        Self {
+        Ok(Self {
             _entry: entry,
             instance,
             device,
@@ -272,7 +294,7 @@ impl VulkanContext {
             push_descriptor_enabled: true,
             push_descriptor_khr,
             non_coherent_atom_size,
-        }
+        })
     }
 
     /// Initialize VulkanContext for testing/headless rendering.
@@ -291,10 +313,11 @@ impl VulkanContext {
     /// # Returns
     /// A fully-initialized VulkanContext without a surface or swapchain
     ///
-    /// # Panics
-    /// - If Vulkan is not available
-    /// - If no suitable physical device is found
-    /// - If device creation fails
+    /// # Errors
+    /// Returns `RendererError::InitializationFailed` if:
+    /// - Vulkan is not available
+    /// - No suitable physical device is found
+    /// - Device creation fails
     ///
     /// # Example
     /// ```no_run
@@ -305,16 +328,18 @@ impl VulkanContext {
     ///     ValidationMode::GpuAssisted,  // enable GPU-assisted validation
     ///     CString::new("My App").unwrap(),
     ///     CString::new("My Engine").unwrap(),
-    /// );
+    /// ).expect("Failed to create headless Vulkan context");
     /// ```
     pub fn init_headless(
         validation_mode: ValidationMode,
         app_name: CString,
         engine_name: CString,
-    ) -> Self {
-        let entry = unsafe { Entry::load() }.unwrap();
+    ) -> Result<Self, RendererError> {
+        let entry = unsafe { Entry::load() }.map_err(|e| {
+            RendererError::InitializationFailed(format!("Failed to load Vulkan entry: {:?}", e))
+        })?;
         let instance =
-            Self::create_instance(validation_mode, &app_name, &engine_name, None, &entry);
+            Self::create_instance(validation_mode, &app_name, &engine_name, None, &entry)?;
         let debug_utils_loader = DebugInstance::new(&entry, &instance);
 
         // Create validation callback storage
@@ -329,21 +354,22 @@ impl VulkanContext {
         );
 
         // Pick physical device (no swapchain requirement)
-        let physical_device = unsafe { device::pick_physical_device_headless(&instance) }
-            .expect("No suitable physical device found for headless rendering");
+        let physical_device = unsafe { device::pick_physical_device_headless(&instance) }?;
 
         // Find queue families (no surface support required)
         let queue_indices =
             QueueFamilyIndices::find_queue_families_headless(&instance, physical_device);
 
+        let graphics_queue_idx = queue_indices.graphics_idx.ok_or_else(|| {
+            RendererError::InitializationFailed("No graphics queue family found".to_string())
+        })?;
+        let transfer_queue_idx = queue_indices.transfer_idx.unwrap_or(0);
+
         let queue_create_infos = vec![
             vk::DeviceQueueCreateInfo::default()
-                .queue_family_index(queue_indices.graphics_idx.unwrap())
+                .queue_family_index(graphics_queue_idx)
                 .queue_priorities(&[1.0]),
         ];
-
-        let graphics_queue_idx = queue_indices.graphics_idx.unwrap();
-        let transfer_queue_idx = queue_indices.transfer_idx.unwrap_or(0);
 
         // Create device WITHOUT swapchain extension
         let device = device::create_device(
@@ -352,7 +378,7 @@ impl VulkanContext {
             queue_create_infos,
             validation_mode.is_enabled(),
             false,
-        );
+        )?;
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_idx, 0) };
 
@@ -365,12 +391,17 @@ impl VulkanContext {
         let create_info = vk::CommandPoolCreateInfo::default()
             .queue_family_index(transfer_queue_idx)
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-        let transfer_command_pool =
-            unsafe { device.create_command_pool(&create_info, None) }.unwrap();
+        let transfer_command_pool = unsafe { device.create_command_pool(&create_info, None) }
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to create transfer command pool: {:?}",
+                    e
+                ))
+            })?;
 
         let mut debug_settings = AllocatorDebugSettings::default();
         debug_settings.log_leaks_on_shutdown = true;
-        let create_info = AllocatorCreateDesc {
+        let allocator_create_info = AllocatorCreateDesc {
             instance: instance.clone(),
             device: device.clone(),
             physical_device,
@@ -379,14 +410,17 @@ impl VulkanContext {
             allocation_sizes: AllocationSizes::default(),
         };
 
-        let allocator = ManuallyDrop::new(RefCell::new(Allocator::new(&create_info).unwrap()));
+        let allocator = ManuallyDrop::new(RefCell::new(
+            Allocator::new(&allocator_create_info)
+                .map_err(|e| RendererError::from_allocation_error("GPU", e))?,
+        ));
 
         let push_descriptor_khr = Some(ash::khr::push_descriptor::Device::new(&instance, &device));
 
         let device_properties = unsafe { instance.get_physical_device_properties(physical_device) };
         let non_coherent_atom_size = device_properties.limits.non_coherent_atom_size;
 
-        Self {
+        Ok(Self {
             _entry: entry,
             instance,
             device,
@@ -408,14 +442,14 @@ impl VulkanContext {
             push_descriptor_enabled: true,
             push_descriptor_khr,
             non_coherent_atom_size,
-        }
+        })
     }
 }
 
 impl Drop for VulkanContext {
     fn drop(&mut self) {
         unsafe {
-            self.device.device_wait_idle().unwrap();
+            let _ = self.device.device_wait_idle();
 
             self.device
                 .destroy_command_pool(self.transfer_command_pool, None);
