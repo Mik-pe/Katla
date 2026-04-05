@@ -678,6 +678,8 @@ impl ApplicationBuilder {
             }
         }
 
+        world.insert_resource(crate::input::InputState::new());
+
         let app = Application {
             window,
             renderer,

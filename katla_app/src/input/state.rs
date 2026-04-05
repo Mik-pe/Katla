@@ -1,8 +1,5 @@
-pub mod actions;
-pub mod mouse;
-
-pub use actions::Action;
-pub use mouse::MouseButton;
+pub use super::actions::Action;
+pub use super::mouse::MouseButton;
 
 pub enum ModifierKey {
     Shift,

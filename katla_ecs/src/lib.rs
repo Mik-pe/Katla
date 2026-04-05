@@ -1,7 +1,6 @@
 pub mod components;
 pub mod entity;
 pub mod events;
-pub mod input;
 pub mod query;
 pub mod resource;
 pub mod spawn;
@@ -18,7 +17,6 @@ mod sparse_set;
 pub use components::Component;
 pub use entity::EntityId;
 pub use events::{ComponentEvent, EntityEvent};
-pub use input::InputState;
 pub use query::ImmutableQuery;
 pub use query::QueryData;
 pub use resource::Resource;
