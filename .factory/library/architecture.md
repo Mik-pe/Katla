@@ -172,7 +172,7 @@ Per-component change detection via generation counters:
 `World.storage` is wrapped in `UnsafeCell<ComponentStorageManager>` to support `query_ref(&self)` (immutable queries from shared references):
 
 - All storage access goes through `self.storage.get()` (unsafe, `&self`) or `self.storage.get_mut()` (safe, `&mut self`)
-- `query_ref()` is sound only for immutable `QueryData` types (`&T`, `(&T, &U)`, etc.) — mutable queries through `query_ref` would be UB but are not prevented at compile time
+- `query_ref()` is sound only for immutable `QueryData` types (`&T`, `(&T, &U)`, etc.) — enforced at compile time via the sealed `ImmutableQuery` marker trait
 - `UnsafeCell` makes `World` `!Sync` (acceptable — World is never shared across threads)
 - Old `pub(crate) storage` field removed; use `world.storage_mut(&mut self)` for direct access
 
