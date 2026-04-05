@@ -353,41 +353,12 @@ impl ComponentStorageManager {
         changed
     }
 
-    /// Returns a raw pointer to `self` for use with the `get_two_storage_mut` /
-    /// `get_storage_mut_and_ref` helpers.  This is the single sanctioned place
-    /// where the `as *mut ComponentStorageManager` cast lives outside of tests.
+    /// Returns a raw pointer to `self` for use with the `get_two_storage_mut`
+    /// helper.  This is the single sanctioned place where the
+    /// `as *mut ComponentStorageManager` cast lives outside of tests.
     #[inline]
     pub(crate) fn borrow_ptr(&mut self) -> *mut ComponentStorageManager {
         self as *mut ComponentStorageManager
-    }
-
-    /// Obtains simultaneous mutable and immutable references to two distinct
-    /// component storages from a raw pointer.
-    ///
-    /// This is the centralised helper that replaces open-coded raw-pointer casts
-    /// throughout the query iterator modules.  All unsafe reasoning about why
-    /// disjoint HashMap entries can be borrowed simultaneously lives here.
-    ///
-    /// # Safety
-    ///
-    /// * `ptr` must be a valid, properly-aligned pointer to a `ComponentStorageManager`
-    ///   that outlives lifetime `'a`.
-    /// * Callers **must** ensure `TypeId::of::<T1>() != TypeId::of::<T2>()`.
-    ///   Violating this produces a mutable and immutable reference to the same
-    ///   storage, which is UB.
-    pub(crate) unsafe fn get_storage_mut_and_ref<'a, T1: Component, T2: Component>(
-        ptr: *mut ComponentStorageManager,
-    ) -> (
-        Option<&'a mut ComponentStorage<T1>>,
-        Option<&'a ComponentStorage<T2>>,
-    ) {
-        // SAFETY: Caller guarantees `ptr` is valid for lifetime `'a` and T1 ≠ T2
-        // (disjoint HashMap entries), so the two lookups produce independent references.
-        unsafe {
-            let storage1 = (*ptr).get_storage_mut::<T1>();
-            let storage2 = (*ptr).get_storage::<T2>();
-            (storage1, storage2)
-        }
     }
 
     /// Obtains simultaneous mutable references to two distinct component storages

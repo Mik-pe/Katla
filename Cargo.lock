@@ -1232,6 +1232,7 @@ name = "katla_ecs"
 version = "0.1.0"
 dependencies = [
  "katla_derive",
+ "paste",
 ]
 
 [[package]]
