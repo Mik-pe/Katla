@@ -171,7 +171,7 @@ pub struct VulkanRenderer {
     /// Light culling state (Forward+ dynamic lighting).
     light_culling: light_culling::LightCullingState,
     /// Shadow system state (CSM cascaded shadow maps).
-    pub(crate) shadow: shadow::ShadowState,
+    pub(crate) shadow: shadow::ShadowSubsystem,
     /// Shared empty descriptor set layout (no bindings).
     /// Used as a placeholder for Set 1 in skinned pipelines (outline, depth prepass, shadow).
     pub(crate) shared_empty_descriptor_layout: vk::DescriptorSetLayout,
@@ -338,7 +338,7 @@ impl VulkanRenderer {
             animation_buffers: None,
             light_culling: light_culling::LightCullingState::default(),
             shared_empty_descriptor_layout,
-            shadow: shadow::ShadowState::default(),
+            shadow: shadow::ShadowSubsystem::default(),
             depth_prepass: depth_prepass::DepthPrepassState::default(),
             outline: outline::OutlineState::default(),
             pending_picking_readback: None,
@@ -632,39 +632,7 @@ impl VulkanRenderer {
         self.light_culling.buffers = None;
 
         // Destroy shadow system resources (buffers, samplers, pools)
-        self.shadow.csm = None;
-        self.shadow.buffers = None;
-        if let Some(sampler) = self.shadow.sampler.take() {
-            unsafe {
-                self.context.device.destroy_sampler(sampler, None);
-            }
-        }
-        // Cascade descriptor resources (Set 2 for shadow depth shader)
-        if let Some(pool) = self.shadow.cascade_descriptor_pool.take() {
-            unsafe {
-                self.context.device.destroy_descriptor_pool(pool, None);
-            }
-        }
-        self.shadow.cascade_descriptor_sets.clear();
-        for (buffer, allocation) in self
-            .shadow
-            .cascade_buffers
-            .drain(..)
-            .zip(self.shadow.cascade_allocations.drain(..))
-        {
-            unsafe {
-                self.context.device.destroy_buffer(buffer, None);
-                let _ = self.context.allocator.borrow_mut().free(allocation);
-            }
-        }
-        self.shadow.cascade_mapped_ptrs.clear();
-        // Original shadow descriptor resources (pool only, layout destroyed after pre_destroy)
-        if let Some(pool) = self.shadow.descriptor_pool.take() {
-            unsafe {
-                self.context.device.destroy_descriptor_pool(pool, None);
-            }
-        }
-        self.shadow.descriptor_sets.clear();
+        self.shadow.destroy_resources(&self.context);
 
         // Outline params resources
         if self.outline.params_descriptor_pool != vk::DescriptorPool::null() {
@@ -698,20 +666,7 @@ impl VulkanRenderer {
 
         // Destroy descriptor set layouts AFTER device_wait_idle, since pipelines
         // in asset_registry still reference them until they are dropped.
-        if let Some(layout) = self.shadow.cascade_descriptor_layout.take() {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(layout, None);
-            }
-        }
-        if let Some(layout) = self.shadow.descriptor_layout.take() {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(layout, None);
-            }
-        }
+        self.shadow.destroy_layouts(&self.context);
         if self.shared_empty_descriptor_layout != vk::DescriptorSetLayout::null() {
             unsafe {
                 self.context
