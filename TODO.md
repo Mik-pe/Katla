@@ -13,11 +13,21 @@
 
 - [ ] **Move `input` module out of `katla_ecs`** — `input/mod.rs`, `input/mouse.rs`, `input/actions.rs` contain `InputState`, `MouseButton`, `Action` (hardcoded game-specific actions like `MoveForward`, `Jump`). None are ECS concepts. Move to `katla_app` where they're consumed, or into a `katla_input` crate. Keep `World::get_input()` working via a generic or trait.
 - [ ] **Optimize change detection from O(all_entities * type_ids)** — `storage.rs:collect_changed_entity_ids()` iterates every entity with any component and checks per-type generation lookups. Maintain a per-type `SparseSet<EntityId, ()>` of dirty entity IDs that gets populated on `insert`/`get_mut` and drained on `clear_changed()`. Eliminates the full-scan entirely.
+  - [ ] Add per-type `SparseSet<EntityId, ()>` dirty tracking field to storage
+  - [ ] Populate dirty set on `insert` and `get_mut`
+  - [ ] Rewrite `collect_changed_entity_ids()` to drain dirty sets instead of full scan
+  - [ ] Update `clear_changed()` to clear dirty sets
 - [ ] **Replace `HashMap` sparse mapping with array-based sparse set** — `SparseSet<K, V>` uses `HashMap<K, usize>` for the sparse array, hashing `EntityId` on every lookup. Since `EntityId` has a dense `u32` index, use `Vec<Option<usize>>` indexed by `EntityId::index()` for true O(1) with zero hashing. Update `SparseSet` to take a key-to-index converter or require `EntityId` keys directly.
+  - [ ] Refactor `SparseSet` to use `Vec<Option<usize>>` instead of `HashMap<K, usize>`
+  - [ ] Update all `SparseSet` consumers to work with the new API
 
 ### P2: Maintenance
 
 - [ ] **Macro-ify query iterator generation** — `iter1..iter8.rs` total ~2000 lines of nearly identical code with 2^N mutability permutations per arity. Create a declarative macro that generates all permutations for a given arity from a template. Adding a 9th component should be a one-line macro invocation.
+  - [ ] Design declarative macro template for a single arity's mutability permutations
+  - [ ] Generate all mutability permutations for arities 1-8 using the macro
+  - [ ] Replace existing `iter1..iter8.rs` files with macro invocations
+  - [ ] Verify all permutations compile and existing tests pass
 - [x] **Fix `cleanup_empty_entities` missing events** — `world.rs:396` deallocates entities from the allocator but does NOT emit `EntityEvent::Destroyed` or `ComponentEvent::Removed`, breaking the event contract that all other destroy paths follow. Add event emission. Also remove the unnecessary `unsafe` block since the method takes `&mut self`.
 - [x] **Add panic safety to `World::update`** — `world.rs:316` uses `std::mem::take(&mut self.systems)` before the system loop. If any system panics, `self.systems` is left permanently empty. Use a scope guard (or `Drop` impl) that restores systems on panic, or use `std::panic::catch_unwind` per system.
 
@@ -100,7 +110,7 @@ Bite-sized tasks to make the engine usable by game makers. Ordered by impact and
 - [ ] **Extract outline state into an owned `OutlineSubsystem` struct** — `outline: OutlineState` plus outline initialization and destroy logic. Already partially extracted as `OutlineState` but lifecycle is still on `VulkanRenderer`.
 - [ ] **Extract depth prepass into an owned `DepthPrepassSubsystem`** — `depth_prepass: DepthPrepassState` with its own init/destroy.
 - [ ] **Extract picking readback into an owned `PickingSubsystem`** — `pending_picking_readback` field plus `picking.rs` impl block.
-- [ ] **Simplify `VulkanRenderer::init()` after subsystem extraction** — With owned subsystems, `init()` should drop from ~150 lines to ~50 lines of subsystem construction.
+- [ ] **Simplify `VulkanRenderer::init()` after subsystem extraction** — With owned subsystems, `init()` should drop from ~150 lines to ~50 lines of subsystem construction. Depends on all 5 subsystem extractions above.
 
 ### P1: Error Handling
 
@@ -114,7 +124,11 @@ Bite-sized tasks to make the engine usable by game makers. Ordered by impact and
 
 - [x] **Remove `DrawList::sort_optimal()`** — Identical to `sort()`. Both do `sort_by_key(|d| d.sort_key.unwrap_or(u64::MAX))`. Keep `sort()` only. Already removed.
 - [ ] **Unify `DrawCall` single-instance and instanced paths** — `model_matrix`, `color`, `metallic`, `roughness`, `ao` duplicate fields in `InstanceData`. Eliminate the flat fields and always use a single `InstanceData` (or `instances: Vec<InstanceData>` with a guaranteed first element).
-- [ ] **Fix duplicate step comment in `VulkanRenderer::render()`** — Steps 10 (Present) and 11 (Advance) are already correctly numbered. No action needed.
+  - [ ] Remove duplicate flat fields from `DrawCall`
+  - [ ] Ensure all `DrawCall` construction sites populate `InstanceData` instead
+  - [ ] Update render pass to always use instance path
+  - [ ] Verify visual correctness
+- [x] **Fix duplicate step comment in `VulkanRenderer::render()`** — Steps 10 (Present) and 11 (Advance) are already correctly numbered. No action needed.
 
 ### P3: Polish
 
@@ -128,14 +142,18 @@ Bite-sized tasks to make the engine usable by game makers. Ordered by impact and
 
 - [x] **Remove `text_label()` alias** — `helpers.rs` has `text_label()` as a pure alias for `label()`. One way to add a label, not two.
 - [ ] **Pick one layout style as primary** — Crate has both closure-based (`horizontal(|ui| { ... })`) and begin/end (`begin_row()` / `end_row()`). Document which is preferred; consider removing one style.
+  - [ ] Audit all call sites using both closure-based and begin/end layout styles
+  - [ ] Decide and document which style to keep as primary
+  - [ ] Remove the non-primary style and update all consumers
 - [ ] **Merge `spacer()` / `spacing()` / `advance_cursor()`** — Three methods that all move the cursor with overlapping behavior. `spacer()` and `spacing()` behave identically when no layout is active. Pick one user-facing API, make the others internal or remove.
 - [ ] **Reconcile `tooltip()` with `PopupStyle::Tooltip`** — `utility.rs::tooltip()` draws immediately at mouse position. `PopupStyle::Tooltip` exists in the popup system but is unused. Either make `tooltip()` use the popup system for z-ordering, or remove `PopupStyle::Tooltip`.
 
 ### P0: Correctness
 
-- [ ] **Fix Slider/TextInput default IDs** — Both fall back to constant strings (`"slider"`, `"text_input"`), meaning two instances on the same frame share an ID and break interaction. Derive unique IDs from label+counter or require explicit IDs.
+- [ ] **Fix Slider default ID** — Falls back to constant string `"slider"`, meaning two instances on the same frame share an ID and break interaction. Derive unique IDs from label+counter or require explicit IDs.
+- [ ] **Fix TextInput default ID** — Falls back to constant string `"text_input"`, meaning two instances on the same frame share an ID and break interaction. Derive unique IDs from label+counter or require explicit IDs.
 - [x] **Make `toggle_button()` `pub(crate)`** — `selectable.rs` exposes `toggle_button` as fully `pub` while all other widget internals are `pub(crate)`. Either make it `pub(crate)` or add a proper builder in `widgets/mod.rs`.
-- [ ] **Set clip once per `draw_text()` call** — `drawing.rs` calls `set_clip()` inside the per-glyph loop. Clip doesn't change between glyphs in the same text call. Move `set_clip()` before the loop.
+- [x] **Set clip once per `draw_text()` call** — `drawing.rs` calls `set_clip()` inside the per-glyph loop. Clip doesn't change between glyphs in the same text call. Move `set_clip()` before the loop.
 
 ### P1: Performance
 
@@ -144,6 +162,9 @@ Bite-sized tasks to make the engine usable by game makers. Ordered by impact and
 - [x] **Remove `format!()` in `DraggablePanel` close button** — `draggable_panel.rs` allocates `format!("close_{}", id)` every frame. Same fix as ScrollArea.
 - [x] **Reuse `commands` Vec in `DrawList::finalize()`** — `draw_list.rs` replaces `self.commands` with a new Vec via `.collect()` every frame. Use `clear()` + `extend()` to reuse the allocation. Already uses `clear()` + `extend()`.
 - [ ] **Store font bytes without `Box::leak`** — `font_loading.rs` leaks font data with `Box::leak(bytes.to_vec().into_boxed_slice())` for `'static` lifetime. Store bytes in `FontSystem` as `Vec<Vec<u8>>` and reference by index.
+  - [ ] Add `Vec<Vec<u8>>` storage in `FontSystem` for font byte data
+  - [ ] Change font references from `&'static [u8]` to index-based or lifetime-parameterized access
+  - [ ] Remove `Box::leak` calls in font loading
 
 ### P2: Ergonomics
 
