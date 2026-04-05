@@ -19,6 +19,7 @@ pub use components::Component;
 pub use entity::EntityId;
 pub use events::{ComponentEvent, EntityEvent};
 pub use input::InputState;
+pub use query::ImmutableQuery;
 pub use query::QueryData;
 pub use resource::Resource;
 pub use spawn::Spawnable;

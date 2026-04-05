@@ -43,9 +43,150 @@ pub use iter6::*;
 pub use iter7::*;
 pub use iter8::*;
 
+use crate::components::Component;
 use std::any::TypeId;
 
 use crate::EntityId;
+
+mod sealed {
+    /// Sealed trait to prevent external implementations of `ImmutableQuery`.
+    pub trait Sealed {}
+}
+
+/// Marker trait for query types that only produce immutable references.
+///
+/// This trait is implemented only for patterns that yield shared references
+/// (`&T`, `(&T, &U)`, etc.), never for patterns containing `&mut T`.
+/// It is used as a bound on [`World::query_ref`](crate::World::query_ref)
+/// to close the soundness hole where `query_ref::<&mut T>()` would create
+/// mutable references from a shared `&World`.
+///
+/// # Design
+///
+/// The trait is sealed via the `Sealed` supertrait — external crates cannot
+/// implement `ImmutableQuery` for custom types, so mutable query patterns
+/// can never satisfy the bound.
+pub trait ImmutableQuery: sealed::Sealed {}
+
+impl<T: Component + 'static> sealed::Sealed for &T {}
+impl<T: Component + 'static> ImmutableQuery for &T {}
+
+impl<T1: Component + 'static, T2: Component + 'static> sealed::Sealed for (&T1, &T2) {}
+impl<T1: Component + 'static, T2: Component + 'static> ImmutableQuery for (&T1, &T2) {}
+
+impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> sealed::Sealed
+    for (&T1, &T2, &T3)
+{
+}
+impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> ImmutableQuery
+    for (&T1, &T2, &T3)
+{
+}
+
+impl<
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+> sealed::Sealed for (&T1, &T2, &T3, &T4)
+{
+}
+impl<
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+> ImmutableQuery for (&T1, &T2, &T3, &T4)
+{
+}
+
+impl<
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+    T5: Component + 'static,
+> sealed::Sealed for (&T1, &T2, &T3, &T4, &T5)
+{
+}
+impl<
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+    T5: Component + 'static,
+> ImmutableQuery for (&T1, &T2, &T3, &T4, &T5)
+{
+}
+
+impl<
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+    T5: Component + 'static,
+    T6: Component + 'static,
+> sealed::Sealed for (&T1, &T2, &T3, &T4, &T5, &T6)
+{
+}
+impl<
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+    T5: Component + 'static,
+    T6: Component + 'static,
+> ImmutableQuery for (&T1, &T2, &T3, &T4, &T5, &T6)
+{
+}
+
+impl<
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+    T5: Component + 'static,
+    T6: Component + 'static,
+    T7: Component + 'static,
+> sealed::Sealed for (&T1, &T2, &T3, &T4, &T5, &T6, &T7)
+{
+}
+impl<
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+    T5: Component + 'static,
+    T6: Component + 'static,
+    T7: Component + 'static,
+> ImmutableQuery for (&T1, &T2, &T3, &T4, &T5, &T6, &T7)
+{
+}
+
+impl<
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+    T5: Component + 'static,
+    T6: Component + 'static,
+    T7: Component + 'static,
+    T8: Component + 'static,
+> sealed::Sealed for (&T1, &T2, &T3, &T4, &T5, &T6, &T7, &T8)
+{
+}
+impl<
+    T1: Component + 'static,
+    T2: Component + 'static,
+    T3: Component + 'static,
+    T4: Component + 'static,
+    T5: Component + 'static,
+    T6: Component + 'static,
+    T7: Component + 'static,
+    T8: Component + 'static,
+> ImmutableQuery for (&T1, &T2, &T3, &T4, &T5, &T6, &T7, &T8)
+{
+}
 
 /// Trait for querying components from storage.
 ///
