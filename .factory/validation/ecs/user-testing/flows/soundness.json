@@ -1,0 +1,141 @@
+{
+  "groupId": "soundness",
+  "testedAt": "2026-04-05T00:00:00.000Z",
+  "isolation": {
+    "type": "rust-workspace",
+    "workingDirectory": "C:\\dev\\katla",
+    "tools": ["cargo", "rg"],
+    "noGpuRequired": true
+  },
+  "toolsUsed": ["cargo check", "cargo test", "rg"],
+  "assertions": [
+    {
+      "id": "VAL-ECS-001",
+      "title": "query_ref rejects mutable query patterns",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create temp crate in %TEMP% with world.query_ref::<&mut Pos>() call",
+          "expected": "Compile error E0277: trait bound not satisfied",
+          "observed": "error[E0277]: the trait bound `&mut Pos: ImmutableQuery` is not satisfied"
+        },
+        {
+          "action": "Verify ImmutableQuery trait is sealed and only implemented for &T patterns",
+          "expected": "sealed::Sealed trait + ImmutableQuery impls only for &T, (&T,&U), etc.",
+          "observed": "Confirmed: sealed::Sealed trait in query/mod.rs, ImmutableQuery impls only for &T, (&T1,&T2) through (&T1,...,&T8). No &mut T impl exists."
+        }
+      ],
+      "evidence": {
+        "compileError": "evidence/ecs/soundness/VAL-ECS-001-compile-error.txt",
+        "sealedTrait": "katla_ecs/src/query/mod.rs lines 107-108: sealed::Sealed trait, ImmutableQuery: sealed::Sealed",
+        "noMutImpl": "rg ImmutableQuery found no impl for &mut T — only &T and tuple-of-&T variants"
+      },
+      "commandsRun": [
+        {
+          "command": "cd %TEMP%\\ecs_val_test && cargo check",
+          "exitCode": 101,
+          "observation": "Compile failed with E0277: `&mut Pos` does not implement `ImmutableQuery`. Error message helpfully lists all valid ImmutableQuery types."
+        },
+        {
+          "command": "rg 'ImmutableQuery' katla_ecs/src/",
+          "exitCode": 0,
+          "observation": "Found sealed::Sealed trait + ImmutableQuery impls only for &T and immutable tuple patterns (no &mut T impl)"
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-002",
+      "title": "query_ref accepts immutable query patterns",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ecs test_query_ref",
+          "expected": "All query_ref tests pass",
+          "observed": "3 tests passed: test_query_ref_matches_query, test_query_ref_immutable_single, test_query_ref_immutable_tuple"
+        },
+        {
+          "action": "Run full ECS test suite to verify no regressions",
+          "expected": "All 101 tests pass",
+          "observed": "101 passed; 0 failed; 0 ignored"
+        }
+      ],
+      "evidence": {
+        "testOutput": "cargo test -p katla_ecs: 101 passed, 0 failed. 3 query_ref tests all pass.",
+        "docTests": "9 passed, 4 ignored (pre-existing ignore doctests)"
+      },
+      "commandsRun": [
+        {
+          "command": "cargo test -p katla_ecs test_query_ref",
+          "exitCode": 0,
+          "observation": "test_query_ref_matches_query ... ok, test_query_ref_immutable_single ... ok, test_query_ref_immutable_tuple ... ok"
+        },
+        {
+          "command": "cargo test -p katla_ecs",
+          "exitCode": 0,
+          "observation": "101 passed; 0 failed; 0 ignored (unit tests). 9 passed, 4 ignored (doc tests)."
+        }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-ECS-003",
+      "title": "Centralized unsafe borrow helper eliminates raw-pointer casts",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for 'as *mut ComponentStorageManager' in query iterator files",
+          "expected": "Zero results in query/ directory (only in storage.rs helper and its tests)",
+          "observed": "Zero matches in katla_ecs/src/query/. All matches are in storage.rs: the borrow_ptr() helper (line 361) and two test functions (lines 536, 551)."
+        },
+        {
+          "action": "Verify query macros use borrow_ptr() and get_two_storage_mut()",
+          "expected": "Macros call storage.borrow_ptr() and ComponentStorageManager::get_two_storage_mut()",
+          "observed": "Confirmed: macros.rs line 280 uses borrow_ptr(), line 458 uses get_two_storage_mut()"
+        },
+        {
+          "action": "Verify no iter2.rs through iter8.rs files exist (replaced by macros)",
+          "expected": "No individual iterN.rs files",
+          "observed": "Glob for **/iter*.rs in query/ returned no matches"
+        },
+        {
+          "action": "Run all ECS tests",
+          "expected": "All pass",
+          "observed": "101 passed; 0 failed"
+        }
+      ],
+      "evidence": {
+        "rgRawPointerInQuery": "rg 'as *mut ComponentStorageManager' katla_ecs/src/query/ — zero results",
+        "rgRawPointerAll": "3 matches in storage.rs only: borrow_ptr() helper (line 361), test_get_two_storage_mut (line 536), test_get_two_storage_mut_missing_types (line 551)",
+        "macroUsage": "macros.rs uses borrow_ptr() at line 280 and get_two_storage_mut() at line 458",
+        "noIterFiles": "No iter1.rs..iter8.rs files in query/ directory — replaced by macro generation"
+      },
+      "commandsRun": [
+        {
+          "command": "rg 'as \\*mut ComponentStorageManager' C:\\dev\\katla\\katla_ecs\\src\\query\\",
+          "exitCode": 1,
+          "observation": "Zero matches (ripgrep exit code 1 = no matches)"
+        },
+        {
+          "command": "rg 'as \\*mut ComponentStorageManager' C:\\dev\\katla\\katla_ecs\\src\\",
+          "exitCode": 0,
+          "observation": "3 matches, all in storage.rs: borrow_ptr helper (line 361), two test functions (lines 536, 551)"
+        },
+        {
+          "command": "rg 'borrow_ptr|get_two_storage_mut' C:\\dev\\katla\\katla_ecs\\src\\query\\",
+          "exitCode": 0,
+          "observation": "borrow_ptr used at macros.rs:280, get_two_storage_mut used at macros.rs:458"
+        },
+        {
+          "command": "cargo test -p katla_ecs",
+          "exitCode": 0,
+          "observation": "101 passed; 0 failed; 0 ignored"
+        }
+      ],
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 3 assertions: all passed. VAL-ECS-001: query_ref::<&mut T>() correctly rejected at compile time via sealed ImmutableQuery trait. VAL-ECS-002: query_ref::<&T>() and tuple variants compile and all 3 dedicated tests pass (101 total ECS tests pass). VAL-ECS-003: zero raw-pointer casts in query/ directory; all iterators use centralized borrow_ptr()/get_two_storage_mut() helper in storage.rs."
+}

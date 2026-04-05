@@ -1,0 +1,31 @@
+{
+  "milestone": "ecs",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 9,
+    "passed": 9,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-ECS-001",
+    "VAL-ECS-002",
+    "VAL-ECS-003",
+    "VAL-ECS-004",
+    "VAL-ECS-005",
+    "VAL-ECS-006",
+    "VAL-ECS-007",
+    "VAL-ECS-008",
+    "VAL-ECS-009"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "flowReports": [
+    ".factory/validation/ecs/user-testing/flows/soundness.json",
+    ".factory/validation/ecs/user-testing/flows/architecture.json",
+    ".factory/validation/ecs/user-testing/flows/maintenance-polish.json"
+  ],
+  "appliedUpdates": [],
+  "previousRound": null
+}
