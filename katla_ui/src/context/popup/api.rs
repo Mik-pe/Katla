@@ -15,12 +15,12 @@ impl UiContext {
     ///
     /// The `open` parameter controls whether the popup is shown. Set it to `true` to open,
     /// and the closure can set it to `false` to close.
-    pub fn popup<F>(&mut self, config: Popup, open: &mut bool, content: F) -> bool
+    pub fn popup<'a, F>(&mut self, config: Popup<'a>, open: &mut bool, content: F) -> bool
     where
         F: FnOnce(&mut Self, &mut bool),
     {
         // Use stable ID for popups - they need consistent IDs across frames
-        let popup_id = self.make_stable_id(&config.id);
+        let popup_id = self.make_stable_id(config.id);
 
         // Check if we should render
         if !*open {
@@ -76,7 +76,7 @@ impl UiContext {
             _ => Rect2D::new(Vec2::new(0.0, 0.0), self.screen_size),
         };
         self.push_clip_absolute(clip);
-        self.push_id(&config.id);
+        self.push_id(config.id);
 
         // Store initial popup bounds for get_popup_bounds()
         // For Centered popups (modals), use the specified size immediately
@@ -98,13 +98,11 @@ impl UiContext {
         let final_bounds = self.calculate_final_popup_bounds(&config, position);
 
         // Draw background at lower z-index (so content appears on top)
-        if config.style != PopupStyle::Tooltip {
-            self.pop_z_index();
-            self.push_z_index(z - 1);
-            self.draw_popup_background(final_bounds, &config.style);
-            self.pop_z_index();
-            self.push_z_index(z);
-        }
+        self.pop_z_index();
+        self.push_z_index(z - 1);
+        self.draw_popup_background(final_bounds);
+        self.pop_z_index();
+        self.push_z_index(z);
 
         // Store final bounds for click-outside detection
         self.popup_bounds = Some(final_bounds);
