@@ -1,36 +1,56 @@
 //! Sparse set implementation for O(1) lookup, insert, remove operations
 //! while maintaining contiguous storage for fast iteration.
 //!
-//! # TODO: Benchmarks
-//!
-//! Implement comprehensive benchmarks to compare performance:
-//! - O(1) lookups vs O(n) linear search
-//! - Insert/remove operations
-//! - Iteration performance
-//! - Memory overhead comparison
-//! - Large dataset performance (10k+ entities)
-//! - Sparse key handling
-//!
-//! Note: Benchmarks require either nightly Rust (for `#[bench]` attribute)
-//! or the `criterion` library for more advanced benchmarking.
+//! Uses a `Vec<Option<usize>>` sparse array indexed by key, providing true O(1)
+//! lookups with zero hashing overhead.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+
+/// Trait for keys that can be used as indices into the sparse array.
+///
+/// Each key maps to a unique `usize` index used to look up its position
+/// in the dense array. Implementors must ensure that `sparse_index()` returns
+/// a unique value per distinct key.
+pub(crate) trait SparseKey: Copy {
+    fn sparse_index(&self) -> usize;
+}
+
+impl SparseKey for u32 {
+    #[inline]
+    fn sparse_index(&self) -> usize {
+        *self as usize
+    }
+}
+
+impl SparseKey for crate::entity::EntityId {
+    #[inline]
+    fn sparse_index(&self) -> usize {
+        self.index() as usize
+    }
+}
+
+impl SparseKey for usize {
+    #[inline]
+    fn sparse_index(&self) -> usize {
+        *self
+    }
+}
 
 /// A sparse set data structure that provides O(1) operations while
 /// maintaining contiguous storage for iteration.
 ///
 /// Internally uses:
 /// - `dense`: Stores (K, V) pairs contiguously for iteration
-/// - `sparse`: Maps keys to indices in the dense vector via HashMap
+/// - `sparse`: Vec indexed by key's sparse_index(), mapping to dense array index
 ///
 /// # Type Parameters
-/// - `K`: Key type (must be Hash + Eq)
+/// - `K`: Key type (must implement `SparseKey`)
 /// - `V`: Value type
 ///
 /// # Performance
-/// - Insert: O(1) amortized
+/// - Insert: O(1) amortized (sparse vec may grow)
 /// - Remove: O(1)
-/// - Get/Contains: O(1)
+/// - Get/Contains: O(1) with zero hashing
 /// - Iterate: O(n) with excellent cache locality
 ///
 /// # Example
@@ -47,24 +67,33 @@ use std::collections::{HashMap, HashSet};
 /// ```
 pub struct SparseSet<K, V>
 where
-    K: std::hash::Hash + Eq + Copy,
+    K: SparseKey,
 {
     /// Dense array storing (Key, Value) pairs contiguously
     dense: Vec<(K, V)>,
 
-    /// Sparse HashMap mapping Key → index in dense array
-    sparse: HashMap<K, usize>,
+    /// Sparse vec mapping key index → index in dense array.
+    /// `None` means the key is not present.
+    sparse: Vec<Option<usize>>,
 }
 
 impl<K, V> SparseSet<K, V>
 where
-    K: std::hash::Hash + Eq + Copy,
+    K: SparseKey,
 {
     /// Creates a new empty SparseSet.
     pub fn new() -> Self {
         Self {
             dense: Vec::new(),
-            sparse: HashMap::new(),
+            sparse: Vec::new(),
+        }
+    }
+
+    /// Ensures the sparse vec is large enough to hold the given index.
+    #[inline]
+    fn ensure_sparse_capacity(&mut self, index: usize) {
+        if index >= self.sparse.len() {
+            self.sparse.resize(index + 1, None);
         }
     }
 
@@ -73,14 +102,15 @@ where
     /// If the key already exists, the value is updated.
     /// If the key doesn't exist, a new entry is created.
     pub fn insert(&mut self, key: K, value: V) {
-        if let Some(&dense_idx) = self.sparse.get(&key) {
-            // Key exists, update value
+        let idx = key.sparse_index();
+        self.ensure_sparse_capacity(idx);
+
+        if let Some(&dense_idx) = self.sparse[idx].as_ref() {
             self.dense[dense_idx].1 = value;
         } else {
-            // New key
             let dense_idx = self.dense.len();
             self.dense.push((key, value));
-            self.sparse.insert(key, dense_idx);
+            self.sparse[idx] = Some(dense_idx);
         }
     }
 
@@ -88,35 +118,37 @@ where
     ///
     /// Returns true if the key existed and was removed, false otherwise.
     pub fn remove(&mut self, key: K) -> bool {
-        if let Some(&dense_idx) = self.sparse.get(&key) {
-            // Remove from dense using swap_remove for O(1)
+        let idx = key.sparse_index();
+        if idx < self.sparse.len()
+            && let Some(dense_idx) = self.sparse[idx].take()
+        {
             self.dense.swap_remove(dense_idx);
 
-            // Update sparse mapping for the element that was swapped
             if let Some((moved_key, _)) = self.dense.get(dense_idx) {
-                self.sparse.insert(*moved_key, dense_idx);
+                self.sparse[moved_key.sparse_index()] = Some(dense_idx);
             }
 
-            // Remove the sparse entry for the removed key
-            self.sparse.remove(&key);
-
-            true
-        } else {
-            false
+            return true;
         }
+        false
     }
 
     /// Gets a reference to the value for the given key.
+    #[inline]
     pub fn get(&self, key: K) -> Option<&V> {
+        let idx = key.sparse_index();
         self.sparse
-            .get(&key)
+            .get(idx)
+            .and_then(|opt| opt.as_ref())
             .and_then(|&dense_idx| self.dense.get(dense_idx))
             .map(|(_, value)| value)
     }
 
     /// Gets a mutable reference to the value for the given key.
+    #[inline]
     pub fn get_mut(&mut self, key: K) -> Option<&mut V> {
-        if let Some(&dense_idx) = self.sparse.get(&key) {
+        let idx = key.sparse_index();
+        if let Some(&dense_idx) = self.sparse.get(idx).and_then(|opt| opt.as_ref()) {
             self.dense.get_mut(dense_idx).map(|(_, value)| value)
         } else {
             None
@@ -124,8 +156,13 @@ where
     }
 
     /// Returns true if the key exists in the set.
+    #[inline]
     pub fn contains(&self, key: K) -> bool {
-        self.sparse.contains_key(&key)
+        let idx = key.sparse_index();
+        self.sparse
+            .get(idx)
+            .map(|opt| opt.is_some())
+            .unwrap_or(false)
     }
 
     /// Returns an iterator over all (Key, &Value) pairs.
@@ -180,13 +217,15 @@ where
     }
 
     /// Retains only the entries whose keys are in the provided set.
-    pub fn retain_keys(&mut self, valid_keys: &HashSet<K>) {
+    pub fn retain_keys(&mut self, valid_keys: &HashSet<K>)
+    where
+        K: std::hash::Hash + Eq,
+    {
         let mut i = 0;
         while i < self.dense.len() {
             let (key, _) = self.dense[i];
             if !valid_keys.contains(&key) {
                 self.remove(key);
-                // Don't increment i, as a new element is now at position i
             } else {
                 i += 1;
             }
@@ -196,7 +235,7 @@ where
 
 impl<K, V> Default for SparseSet<K, V>
 where
-    K: std::hash::Hash + Eq + Copy,
+    K: SparseKey,
 {
     fn default() -> Self {
         Self::new()
@@ -209,7 +248,7 @@ mod tests {
 
     #[test]
     fn test_sparse_set_insert() {
-        let mut set = SparseSet::new();
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
         set.insert(0, 10);
         set.insert(1, 20);
         set.insert(2, 30);
@@ -222,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_sparse_set_insert_update() {
-        let mut set = SparseSet::new();
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
         set.insert(0, 10);
         assert_eq!(set.get(0), Some(&10));
 
@@ -233,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_sparse_set_remove() {
-        let mut set = SparseSet::new();
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
         set.insert(0, 10);
         set.insert(1, 20);
         set.insert(2, 30);
@@ -250,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_sparse_set_get_mut() {
-        let mut set = SparseSet::new();
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
         set.insert(0, 10);
 
         if let Some(value) = set.get_mut(0) {
@@ -262,14 +301,13 @@ mod tests {
 
     #[test]
     fn test_sparse_set_iter() {
-        let mut set = SparseSet::new();
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
         set.insert(0, 10);
         set.insert(1, 20);
         set.insert(2, 30);
 
         let items: Vec<(usize, &i32)> = set.iter().collect();
         assert_eq!(items.len(), 3);
-        // Note: order should be insertion order due to push-based insertion
         assert!(items.contains(&(0, &10)));
         assert!(items.contains(&(1, &20)));
         assert!(items.contains(&(2, &30)));
@@ -277,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_sparse_set_iter_mut() {
-        let mut set = SparseSet::new();
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
         set.insert(0, 10);
         set.insert(1, 20);
 
@@ -291,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_sparse_set_retain_keys() {
-        let mut set = SparseSet::new();
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
         set.insert(0, 10);
         set.insert(1, 20);
         set.insert(2, 30);
@@ -312,7 +350,7 @@ mod tests {
 
     #[test]
     fn test_sparse_set_large_key_ids() {
-        let mut set = SparseSet::new();
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
         set.insert(1000, 100);
         set.insert(5000, 500);
         set.insert(10000, 1000);
@@ -325,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_sparse_set_remove_middle() {
-        let mut set = SparseSet::new();
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
         set.insert(0, 10);
         set.insert(1, 20);
         set.insert(2, 30);
@@ -336,7 +374,6 @@ mod tests {
 
         assert_eq!(set.len(), 4);
         assert_eq!(set.get(2), None);
-        // Verify other elements are still accessible
         assert_eq!(set.get(0), Some(&10));
         assert_eq!(set.get(1), Some(&20));
         assert_eq!(set.get(3), Some(&40));
@@ -345,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_sparse_set_iteration_order_after_removal() {
-        let mut set = SparseSet::new();
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
         set.insert(0, 10);
         set.insert(1, 20);
         set.insert(2, 30);
@@ -354,7 +391,6 @@ mod tests {
 
         let items: Vec<(usize, i32)> = set.iter().map(|(k, v)| (k, *v)).collect();
         assert_eq!(items.len(), 2);
-        // Last element was moved to position 1
         assert_eq!(items[0], (0, 10));
         assert_eq!(items[1], (2, 30));
     }
@@ -367,26 +403,21 @@ mod tests {
             set.insert(i, (i * 10) as i32);
         }
 
-        // Remove items 1 and 3
         set.remove(1);
         set.remove(3);
 
         assert_eq!(set.len(), 3);
 
-        // Verify dense/sparse consistency: for each remaining item,
-        // sparse[key] indexes into dense, and dense[sparse[key]] == key
         for (key, value) in set.iter() {
             assert!(set.contains(key));
             assert_eq!(*set.get(key).unwrap(), *value);
         }
 
-        // Removed keys should not be accessible
         assert!(!set.contains(1));
         assert!(!set.contains(3));
         assert_eq!(set.get(1), None);
         assert_eq!(set.get(3), None);
 
-        // Remaining keys should have correct values
         assert_eq!(set.get(0), Some(&0));
         assert_eq!(set.get(2), Some(&20));
         assert_eq!(set.get(4), Some(&40));
@@ -400,14 +431,12 @@ mod tests {
             set.insert(i, i as i32);
         }
 
-        // Remove all
         for i in 0..5u32 {
             assert!(set.remove(i));
         }
 
         assert!(set.is_empty());
 
-        // Re-insert with different values
         for i in 0..5u32 {
             set.insert(i, (i * 100) as i32);
         }
@@ -416,5 +445,65 @@ mod tests {
         for i in 0..5u32 {
             assert_eq!(set.get(i), Some(&((i * 100) as i32)));
         }
+    }
+
+    #[test]
+    fn test_sparse_set_sparse_vec_grows_with_large_indices() {
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
+
+        // Insert a key with a large index — sparse vec should grow
+        set.insert(50000, 42);
+        assert_eq!(set.get(50000), Some(&42));
+        assert_eq!(set.len(), 1);
+
+        // Sparse vec should have at least 50001 entries
+        assert!(set.sparse.len() > 50000);
+
+        // Small index should also work after growing
+        set.insert(0, 1);
+        assert_eq!(set.get(0), Some(&1));
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn test_sparse_set_contains_after_remove() {
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
+        set.insert(42, 100);
+        assert!(set.contains(42));
+
+        set.remove(42);
+        assert!(!set.contains(42));
+    }
+
+    #[test]
+    fn test_sparse_set_clear_resets_state() {
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
+        set.insert(0, 10);
+        set.insert(100, 20);
+
+        set.clear();
+
+        assert!(set.is_empty());
+        assert_eq!(set.len(), 0);
+        assert_eq!(set.get(0), None);
+        assert_eq!(set.get(100), None);
+        assert!(set.sparse.is_empty());
+    }
+
+    #[test]
+    fn test_sparse_set_values_and_keys() {
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
+        set.insert(3, 30);
+        set.insert(1, 10);
+        set.insert(2, 20);
+
+        let mut values: Vec<&i32> = set.values().collect();
+        values.sort();
+        assert_eq!(values, vec![&10, &20, &30]);
+
+        let keys: std::collections::HashSet<usize> = set.keys().collect();
+        assert!(keys.contains(&1));
+        assert!(keys.contains(&2));
+        assert!(keys.contains(&3));
     }
 }
