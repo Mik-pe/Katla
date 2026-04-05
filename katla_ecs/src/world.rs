@@ -81,7 +81,7 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```
     /// use katla_ecs::{World, Component, Spawnable};
     ///
     /// #[derive(Component, Default)]
@@ -97,6 +97,10 @@ impl World {
     ///     Transform::default(),
     ///     Velocity::default(),
     /// ));
+    ///
+    /// assert!(world.entity_exists(player));
+    /// assert!(world.get_component::<Transform>(player).is_some());
+    /// assert!(world.get_component::<Velocity>(player).is_some());
     /// ```
     pub fn spawn<B: crate::spawn::Spawnable>(&mut self, bundle: B) -> EntityId {
         bundle.spawn(self)
@@ -203,15 +207,22 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// // Query and modify entities
-    /// for (entity, transform, velocity) in world.query::<(&mut TransformComponent, &VelocityComponent)>() {
-    ///     transform.position += velocity.value * delta_time;
-    /// }
+    /// ```
+    /// use katla_ecs::{World, Component};
     ///
-    /// // Query with three components
-    /// for (entity, pos, vel, force) in world.query::<(&PositionComponent, &VelocityComponent, &ForceComponent)>() {
-    ///     // Process physics...
+    /// #[derive(Component, Default)]
+    /// struct Position { x: f32, y: f32 }
+    ///
+    /// #[derive(Component, Default)]
+    /// struct Velocity { dx: f32, dy: f32 }
+    ///
+    /// let mut world = World::new();
+    /// let id = world.spawn((Position::default(), Velocity::default()));
+    ///
+    /// // Query and modify entities
+    /// for (_entity, pos, vel) in world.query::<(&mut Position, &Velocity)>() {
+    ///     pos.x += vel.dx;
+    ///     pos.y += vel.dy;
     /// }
     /// ```
     pub fn query<Q: crate::query::QueryData>(&mut self) -> Q::Iter<'_> {
@@ -250,11 +261,21 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```
+    /// use katla_ecs::{World, Component};
+    ///
+    /// #[derive(Component, Default)]
+    /// struct Transform { x: f32, y: f32 }
+    ///
+    /// let mut world = World::new();
+    /// let id = world.spawn((Transform::default(),));
+    ///
     /// // Only process entities whose Transform was added or mutably accessed
-    /// for (entity, transform) in world.query_changed::<&TransformComponent>() {
-    ///     // Recalculate derived data for changed transforms
-    /// }
+    /// world.clear_changed();
+    /// world.get_component_mut::<Transform>(id);
+    ///
+    /// let changed: Vec<_> = world.query_changed::<&Transform>().collect();
+    /// assert_eq!(changed.len(), 1);
     /// ```
     pub fn query_changed<Q>(&mut self) -> QueryChangedIter<'_, Q>
     where
@@ -439,8 +460,15 @@ impl World {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// world.insert_resource(GameSettings::default());
+    /// ```
+    /// use katla_ecs::{World, Resource};
+    ///
+    /// struct GameSettings { difficulty: f32 }
+    ///
+    /// let mut world = World::new();
+    /// world.insert_resource(GameSettings { difficulty: 1.0 });
+    ///
+    /// assert!(world.contains_resource::<GameSettings>());
     /// ```
     pub fn insert_resource<R: Resource>(&mut self, resource: R) {
         self.resources.insert(resource);

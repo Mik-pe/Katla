@@ -5,7 +5,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```
 //! use katla_ecs::{World, Component, Spawnable};
 //!
 //! #[derive(Component, Default)]
@@ -25,6 +25,9 @@
 //!     Velocity::default(),
 //!     Health { value: 100.0 },
 //! ));
+//!
+//! assert!(world.entity_exists(player));
+//! assert!(world.get_component::<Health>(player).is_some());
 //! ```
 
 use crate::components::Component;
