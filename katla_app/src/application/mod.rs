@@ -248,7 +248,13 @@ impl ApplicationHandler for Application {
 
                     // Recreate swapchain and transient textures
                     let recreated_textures =
-                        self.renderer.recreate_swapchain(&mut self.frame_graph);
+                        match self.renderer.recreate_swapchain(&mut self.frame_graph) {
+                            Ok(textures) => textures,
+                            Err(e) => {
+                                log::error!("Failed to recreate swapchain: {}", e);
+                                return;
+                            }
+                        };
 
                     let extent = self.renderer.swapchain_extent();
 
@@ -331,7 +337,9 @@ impl ApplicationHandler for Application {
                 } else if !occluded && self.minimized {
                     self.minimized = false;
                     info!("Window unoccluded, resuming rendering");
-                    let _ = self.renderer.recreate_swapchain(&mut self.frame_graph);
+                    if let Err(e) = self.renderer.recreate_swapchain(&mut self.frame_graph) {
+                        log::error!("Failed to recreate swapchain: {}", e);
+                    }
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {

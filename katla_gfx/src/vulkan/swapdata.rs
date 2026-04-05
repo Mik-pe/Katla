@@ -1,5 +1,7 @@
 use ash::{Device, vk};
 
+use crate::error::RendererError;
+
 pub struct SwapData {
     frames_in_flight: usize,
     frame: usize,
@@ -18,51 +20,85 @@ impl SwapData {
         device: &Device,
         swapchain_images: &[vk::Image],
         frames_in_flight: usize,
-    ) -> Self {
+    ) -> Result<Self, RendererError> {
         let num_swapchain_images = swapchain_images.len();
 
-        // Create the semaphores for acquire (we don't know which image we'll get yet)
         let semaphore_info = vk::SemaphoreCreateInfo::default();
         let image_available_semaphores: Vec<_> = (0..frames_in_flight)
-            .map(|_| unsafe { device.create_semaphore(&semaphore_info, None) }.unwrap())
-            .collect();
-        // Create per-swapchain-image semaphores for finished rendering
-        // This prevents semaphore reuse issues when swapchain has more images than FRAMES_IN_FLIGHT
+            .map(|_| {
+                unsafe { device.create_semaphore(&semaphore_info, None) }.map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to create image available semaphore: {:?}",
+                        e
+                    ))
+                })
+            })
+            .collect::<Result<_, _>>()?;
         let render_finished_semaphores: Vec<_> = (0..num_swapchain_images)
-            .map(|_| unsafe { device.create_semaphore(&semaphore_info, None) }.unwrap())
-            .collect();
+            .map(|_| {
+                unsafe { device.create_semaphore(&semaphore_info, None) }.map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to create render finished semaphore: {:?}",
+                        e
+                    ))
+                })
+            })
+            .collect::<Result<_, _>>()?;
 
-        // Per-frame semaphores for inter-frame GPU synchronization.
-        // These cover ALL pipeline stages including TRANSFER/CLEAR used by vkCmdUpdateBuffer.
         let frame_complete_semaphores: Vec<_> = (0..frames_in_flight)
-            .map(|_| unsafe { device.create_semaphore(&semaphore_info, None) }.unwrap())
-            .collect();
+            .map(|_| {
+                unsafe { device.create_semaphore(&semaphore_info, None) }.map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to create frame complete semaphore: {:?}",
+                        e
+                    ))
+                })
+            })
+            .collect::<Result<_, _>>()?;
 
         let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
         let in_flight_fences: Vec<_> = (0..frames_in_flight)
-            .map(|_| unsafe { device.create_fence(&fence_info, None) }.unwrap())
-            .collect();
+            .map(|_| {
+                unsafe { device.create_fence(&fence_info, None) }.map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to create in-flight fence: {:?}",
+                        e
+                    ))
+                })
+            })
+            .collect::<Result<_, _>>()?;
 
         let frame = 0;
-        Self {
+        Ok(Self {
             frames_in_flight,
             frame,
             in_flight_fences,
             image_available_semaphores,
             render_finished_semaphores,
             frame_complete_semaphores,
-        }
+        })
     }
 
-    pub fn wait_for_fence(&self, device: &Device) {
+    pub fn wait_for_fence(&self, device: &Device) -> Result<(), RendererError> {
         unsafe {
             device
                 .wait_for_fences(&[self.in_flight_fences[self.frame]], true, u64::MAX)
-                .unwrap();
+                .map_err(|e| {
+                    RendererError::SwapchainError(format!(
+                        "Failed to wait for in-flight fence: {:?}",
+                        e
+                    ))
+                })?;
             device
                 .reset_fences(&[self.in_flight_fences[self.frame]])
-                .unwrap();
+                .map_err(|e| {
+                    RendererError::SwapchainError(format!(
+                        "Failed to reset in-flight fence: {:?}",
+                        e
+                    ))
+                })?;
         }
+        Ok(())
     }
 
     pub fn step_frame(&mut self) {

@@ -6,6 +6,8 @@ use ash::{
     vk::{self, PhysicalDevice},
 };
 
+use crate::error::RendererError;
+
 pub struct SwapchainInfo {
     pub surface_caps: vk::SurfaceCapabilitiesKHR,
     pub surface_formats: Vec<vk::SurfaceFormatKHR>,
@@ -26,12 +28,14 @@ impl Swapchain {
         physical_device: PhysicalDevice,
         surface: vk::SurfaceKHR,
         old_swapchain: Option<vk::SwapchainKHR>,
-    ) -> Self {
+    ) -> Result<Self, RendererError> {
         let swapchain_info =
-            SwapchainInfo::query_swapchain_support(surface_loader, physical_device, surface);
+            SwapchainInfo::query_swapchain_support(surface_loader, physical_device, surface)?;
 
         let surface_caps = &swapchain_info.surface_caps;
-        let format = swapchain_info.choose_surface_format().unwrap();
+        let format = swapchain_info.choose_surface_format().ok_or_else(|| {
+            RendererError::SwapchainError("No surface formats available".to_string())
+        })?;
 
         let present_mode = swapchain_info.choose_present_mode();
 
@@ -60,18 +64,23 @@ impl Swapchain {
             .present_mode(present_mode)
             .clipped(true)
             .old_swapchain(old_swapchain);
-        let swapchain = unsafe { swapchain_loader.create_swapchain(&create_info, None) }.unwrap();
+        let swapchain =
+            unsafe { swapchain_loader.create_swapchain(&create_info, None) }.map_err(|e| {
+                RendererError::SwapchainError(format!("Failed to create swapchain: {:?}", e))
+            })?;
 
-        Self {
+        Ok(Self {
             swapchain_loader,
             swapchain_info,
             swapchain,
             format,
-        }
+        })
     }
 
-    pub fn get_swapchain_images(&self) -> Vec<vk::Image> {
-        unsafe { self.swapchain_loader.get_swapchain_images(self.swapchain) }.unwrap()
+    pub fn get_swapchain_images(&self) -> Result<Vec<vk::Image>, RendererError> {
+        unsafe { self.swapchain_loader.get_swapchain_images(self.swapchain) }.map_err(|e| {
+            RendererError::SwapchainError(format!("Failed to get swapchain images: {:?}", e))
+        })
     }
 
     pub fn get_extent(&self) -> vk::Extent2D {
@@ -115,23 +124,32 @@ impl SwapchainInfo {
         surface_loader: &Surface,
         physical_device: vk::PhysicalDevice,
         surface: vk::SurfaceKHR,
-    ) -> SwapchainInfo {
+    ) -> Result<SwapchainInfo, RendererError> {
         unsafe {
             let surface_caps = surface_loader
                 .get_physical_device_surface_capabilities(physical_device, surface)
-                .unwrap();
+                .map_err(|e| {
+                    RendererError::SwapchainError(format!(
+                        "Failed to get surface capabilities: {:?}",
+                        e
+                    ))
+                })?;
             let surface_formats = surface_loader
                 .get_physical_device_surface_formats(physical_device, surface)
-                .unwrap();
+                .map_err(|e| {
+                    RendererError::SwapchainError(format!("Failed to get surface formats: {:?}", e))
+                })?;
             let present_modes = surface_loader
                 .get_physical_device_surface_present_modes(physical_device, surface)
-                .unwrap();
+                .map_err(|e| {
+                    RendererError::SwapchainError(format!("Failed to get present modes: {:?}", e))
+                })?;
 
-            SwapchainInfo {
+            Ok(SwapchainInfo {
                 surface_caps,
                 surface_formats,
                 present_modes,
-            }
+            })
         }
     }
 }

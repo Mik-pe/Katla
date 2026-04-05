@@ -287,7 +287,7 @@ impl VulkanRenderer {
             context.setup_validation_logging();
         }
 
-        let frame_context = VulkanFrameCtx::init(&context);
+        let frame_context = VulkanFrameCtx::init(&context)?;
         let swap_data = SwapData::new(
             &context.device,
             &frame_context
@@ -296,7 +296,7 @@ impl VulkanRenderer {
                 .map(|img| img.vk())
                 .collect::<Vec<_>>(),
             FRAMES_IN_FLIGHT,
-        );
+        )?;
 
         let bindless_manager = Self::init_step(
             "bindless texture manager",
@@ -692,7 +692,7 @@ impl VulkanRenderer {
     pub fn recreate_swapchain(
         &mut self,
         frame_graph: &mut crate::render_graph::FrameGraph,
-    ) -> Vec<(String, u32)> {
+    ) -> Result<Vec<(String, u32)>, crate::error::RendererError> {
         self.wait_for_device();
         self.first_frame_rendered = false;
 
@@ -700,7 +700,7 @@ impl VulkanRenderer {
         info!("=== Recreating swapchain ===");
         info!("  Old extent: {}x{}", old_extent.width, old_extent.height);
 
-        self.frame_context.recreate_swapchain();
+        self.frame_context.recreate_swapchain()?;
 
         let new_extent = self.frame_context.swapchain.get_extent();
         info!("  New extent: {}x{}", new_extent.width, new_extent.height);
@@ -746,11 +746,11 @@ impl VulkanRenderer {
                     "Recreated {} transient textures for resize",
                     recreated_textures.len()
                 );
-                recreated_textures
+                Ok(recreated_textures)
             }
             Err(e) => {
                 log::error!("Failed to recreate transient textures: {}", e);
-                Vec::new()
+                Ok(Vec::new())
             }
         }
     }
