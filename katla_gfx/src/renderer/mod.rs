@@ -175,8 +175,8 @@ pub struct VulkanRenderer {
     /// Shared empty descriptor set layout (no bindings).
     /// Used as a placeholder for Set 1 in skinned pipelines (outline, depth prepass, shadow).
     pub(crate) shared_empty_descriptor_layout: vk::DescriptorSetLayout,
-    /// Depth prepass state (depth-only pre-pass).
-    depth_prepass: depth_prepass::DepthPrepassState,
+    /// Depth prepass subsystem (depth-only pre-pass).
+    depth_prepass: depth_prepass::DepthPrepassSubsystem,
     /// Outline highlight subsystem (stencil-based selection highlight).
     pub(crate) outline: outline::OutlineSubsystem,
     /// Pending picking readback operation.
@@ -339,7 +339,7 @@ impl VulkanRenderer {
             light_culling: light_culling::LightSubsystem::default(),
             shared_empty_descriptor_layout,
             shadow: shadow::ShadowSubsystem::default(),
-            depth_prepass: depth_prepass::DepthPrepassState::default(),
+            depth_prepass: depth_prepass::DepthPrepassSubsystem::default(),
             outline: outline::OutlineSubsystem::default(),
             pending_picking_readback: None,
             depth_texture_base_index: None,
@@ -633,6 +633,9 @@ impl VulkanRenderer {
 
         // Destroy outline subsystem resources
         self.outline.destroy(&self.context);
+
+        // Destroy depth prepass subsystem (pipelines owned by AssetRegistry, no GPU cleanup)
+        self.depth_prepass.destroy();
 
         // Wait for GPU to finish all in-flight work before destroying resources
         // that pipelines still reference (descriptor set layouts, etc.)
