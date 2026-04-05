@@ -5,7 +5,7 @@ use log::{debug, warn};
 
 use katla_ecs::EntityId;
 use katla_ecs::World;
-use katla_gfx::animation::{PoseComputeBuffers, PoseComputePipeline};
+use katla_gfx::{PoseComputeBuffers, PoseComputePipeline};
 
 use crate::animation::components::{AnimatedModel, AnimationPlayer};
 use crate::animation::gpu_clip_loader::{
