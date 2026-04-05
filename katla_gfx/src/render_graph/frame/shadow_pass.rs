@@ -168,21 +168,9 @@ impl<'a> Frame<'a> {
             .remove(&self.graph.pass_index(&pass.name).unwrap_or(0))
             .unwrap_or_default();
 
-        let num_cascades: u32 = self
-            .renderer
-            .shadow
-            .csm
-            .as_ref()
-            .map(|csm| csm.cascade_count() as u32)
-            .unwrap_or(4);
+        let num_cascades: u32 = self.renderer.shadow_cascade_count();
 
-        let depth_bias = self
-            .renderer
-            .shadow
-            .csm
-            .as_ref()
-            .map(|csm| csm.params().depth_bias_slope)
-            .unwrap_or(2.0);
+        let depth_bias = self.renderer.shadow_cascade_depth_bias();
 
         // Build extra descriptor sets (shadow cascades at set 2)
         let mut extra_sets = Vec::new();

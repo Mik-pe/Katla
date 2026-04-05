@@ -1,55 +1,76 @@
 use super::FRAMES_IN_FLIGHT;
 use crate::RendererError;
 use crate::handle::PipelineHandle;
+use crate::renderer::registry::AssetRegistry;
+use crate::vulkan::context::VulkanContext;
+use crate::vulkan::material::compiler::MaterialCompiler;
+use crate::vulkan::material::storage_uniform::StorageDescriptorSet;
 use ash::vk;
 use log::info;
+use std::rc::Rc;
 
 #[derive(Default)]
-/// Bundles all shadow-related state from VulkanRenderer.
-pub(crate) struct ShadowState {
+/// Owns all shadow-related GPU state for CSM (Cascaded Shadow Maps).
+///
+/// Lifecycle:
+/// - `init_resources()` — creates sampler, descriptor layouts/pools/sets, CSM, buffers
+/// - `init_pipeline()` — creates depth-only shadow pipeline + cascade descriptors
+/// - `init_pipeline_skinned()` — creates skinned variant of shadow pipeline
+/// - `destroy()` — tears down all GPU resources
+pub(crate) struct ShadowSubsystem {
     /// CSM cascade computation
-    pub csm: Option<crate::shadow::CascadeShadowMap>,
+    csm: Option<crate::shadow::CascadeShadowMap>,
     /// GPU buffers (shadow data storage buffer, atlas view, sampler)
-    pub buffers: Option<crate::shadow::ShadowBuffers>,
+    buffers: Option<crate::shadow::ShadowBuffers>,
     /// Descriptor set layout (Set 4, owned by renderer)
-    pub descriptor_layout: Option<vk::DescriptorSetLayout>,
+    descriptor_layout: Option<vk::DescriptorSetLayout>,
     /// Comparison sampler for depth comparison
-    pub sampler: Option<vk::Sampler>,
+    sampler: Option<vk::Sampler>,
     /// Descriptor pool for per-frame shadow descriptor sets
-    pub descriptor_pool: Option<vk::DescriptorPool>,
+    descriptor_pool: Option<vk::DescriptorPool>,
     /// Per-frame descriptor sets (Set 4)
-    pub descriptor_sets: Vec<vk::DescriptorSet>,
+    descriptor_sets: Vec<vk::DescriptorSet>,
     /// Depth-only pipeline for shadow map rendering
-    pub pipeline: Option<PipelineHandle>,
+    pipeline: Option<PipelineHandle>,
     /// Depth-only pipeline for skinned mesh shadow rendering
-    pub pipeline_skinned: Option<PipelineHandle>,
+    pipeline_skinned: Option<PipelineHandle>,
     /// Cascade descriptor set layout (Set 2 for shadow depth shader)
-    pub cascade_descriptor_layout: Option<vk::DescriptorSetLayout>,
+    cascade_descriptor_layout: Option<vk::DescriptorSetLayout>,
     /// Per-frame cascade descriptor sets (Set 2)
-    pub cascade_descriptor_sets: Vec<vk::DescriptorSet>,
+    cascade_descriptor_sets: Vec<vk::DescriptorSet>,
     /// Per-frame cascade storage buffers (CPU→GPU, contains ShadowCascadeGPU array)
-    pub cascade_buffers: Vec<vk::Buffer>,
+    cascade_buffers: Vec<vk::Buffer>,
     /// Per-frame cascade buffer allocations
-    pub cascade_allocations: Vec<gpu_allocator::vulkan::Allocation>,
+    cascade_allocations: Vec<gpu_allocator::vulkan::Allocation>,
     /// Per-frame cascade buffer mapped pointers
-    pub cascade_mapped_ptrs: Vec<*mut u8>,
+    cascade_mapped_ptrs: Vec<*mut u8>,
     /// Cascade descriptor pool
-    pub cascade_descriptor_pool: Option<vk::DescriptorPool>,
+    cascade_descriptor_pool: Option<vk::DescriptorPool>,
 }
 
-impl super::VulkanRenderer {
+/// Dependencies needed from VulkanRenderer for shadow subsystem initialization.
+pub(crate) struct ShadowInitContext<'a> {
+    pub context: &'a Rc<VulkanContext>,
+    pub material_compiler: &'a mut MaterialCompiler,
+    pub storage_descriptor_set: &'a StorageDescriptorSet,
+    pub shared_empty_descriptor_layout: vk::DescriptorSetLayout,
+    pub asset_registry: &'a mut AssetRegistry,
+}
+
+impl ShadowSubsystem {
     /// Initialize the shadow system for CSM (Cascaded Shadow Maps).
     ///
     /// Must be called after `init_light_culling()` and before compiling PBR materials,
     /// because PBR pipelines need Set 4 for shadow data in their layout.
-    pub fn init_shadow_resources(
+    pub fn init_resources(
         &mut self,
+        ctx: &mut ShadowInitContext,
         shadow_atlas_view: Option<vk::ImageView>,
         params: crate::shadow::CascadeParams,
     ) -> Result<(), RendererError> {
         info!("Initializing shadow resources...");
 
-        let device = &self.context.device;
+        let device = &ctx.context.device;
 
         // Create comparison sampler for shadow depth comparison
         let sampler_info = vk::SamplerCreateInfo::default()
@@ -123,7 +144,7 @@ impl super::VulkanRenderer {
         };
 
         // Set shadow descriptor layout in material compiler so PBR pipelines include Set 4
-        self.material_compiler
+        ctx.material_compiler
             .set_shadow_descriptor_layout(shadow_descriptor_layout);
 
         // Create descriptor pool for per-frame shadow descriptor sets
@@ -179,7 +200,7 @@ impl super::VulkanRenderer {
 
         // Create shadow buffers (storage buffer for ShadowFrameData)
         let shadow_buffers = crate::shadow::ShadowBuffers::new(
-            self.context.clone(),
+            ctx.context.clone(),
             shadow_atlas_view,
             shadow_sampler,
         )
@@ -187,12 +208,12 @@ impl super::VulkanRenderer {
             RendererError::InitializationFailed(format!("Failed to create shadow buffers: {}", e))
         })?;
 
-        self.shadow.csm = Some(shadow_csm);
-        self.shadow.buffers = Some(shadow_buffers);
-        self.shadow.descriptor_layout = Some(shadow_descriptor_layout);
-        self.shadow.sampler = Some(shadow_sampler);
-        self.shadow.descriptor_pool = Some(shadow_descriptor_pool);
-        self.shadow.descriptor_sets = shadow_descriptor_sets;
+        self.csm = Some(shadow_csm);
+        self.buffers = Some(shadow_buffers);
+        self.descriptor_layout = Some(shadow_descriptor_layout);
+        self.sampler = Some(shadow_sampler);
+        self.descriptor_pool = Some(shadow_descriptor_pool);
+        self.descriptor_sets = shadow_descriptor_sets;
 
         info!(
             "Shadow resources initialized (CSM, {} cascades)",
@@ -201,52 +222,12 @@ impl super::VulkanRenderer {
         Ok(())
     }
 
-    /// Update shadow cascades and upload GPU data for the current frame.
-    ///
-    /// Call this once per frame after setting frame uniforms but before rendering.
-    pub fn update_shadows(&mut self, light_direction: [f32; 3]) {
-        if let Some(ref mut csm) = self.shadow.csm {
-            csm.update(
-                light_direction,
-                &self.frame_uniforms.view_matrix,
-                &self.frame_uniforms.proj_matrix,
-            );
-
-            if let Some(ref mut buffers) = self.shadow.buffers {
-                let gpu_data = csm.gpu_data();
-                buffers.upload_shadow_data(&gpu_data);
-            }
-        }
-    }
-
-    /// Get the shadow descriptor set for the current frame.
-    pub fn shadow_descriptor_set(&self) -> Option<vk::DescriptorSet> {
-        let frame_idx = self.current_frame();
-        self.shadow.descriptor_sets.get(frame_idx).copied()
-    }
-
-    /// Update the shadow atlas image view for a specific frame (call on resize/recreation).
-    pub fn set_shadow_atlas_view(&mut self, frame_idx: usize, view: vk::ImageView) {
-        if let Some(ref mut buffers) = self.shadow.buffers {
-            buffers.set_shadow_atlas_view(frame_idx, view);
-        }
-    }
-
-    /// Get the shadow comparison sampler.
-    pub fn shadow_sampler(&self) -> Option<vk::Sampler> {
-        self.shadow.sampler
-    }
-
     /// Initialize the shadow depth pipeline and cascade descriptor infrastructure.
     ///
-    /// Must be called after `init_shadow_resources()` and before frame graph execution.
-    /// Creates:
-    /// - A depth-only pipeline from `shadow_depth.wgsl` (front-face culled, depth bias)
-    /// - Cascade descriptor set layout (Set 2) for the shadow depth shader
-    /// - Per-frame cascade descriptor sets
-    /// - Cascade storage buffer (CPU→GPU mapped)
-    pub fn init_shadow_pipeline(
+    /// Must be called after `init_resources()` and before frame graph execution.
+    pub fn init_pipeline(
         &mut self,
+        ctx: &mut ShadowInitContext,
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         use crate::pipeline::{CullMode, FrontFace};
@@ -254,7 +235,7 @@ impl super::VulkanRenderer {
         use crate::vulkan::material::builder::PipelineBuilder;
         use crate::vulkan::vertexbinding::VertexFormat;
 
-        let device = &self.context.device;
+        let device = &ctx.context.device;
 
         // Create cascade descriptor set layout (Set 2):
         // Binding 0: storage buffer (array<ShadowCascadeData, 4>)
@@ -351,11 +332,11 @@ impl super::VulkanRenderer {
                 .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            let (buffer, allocation) = self
+            let (buffer, allocation) = ctx
                 .context
                 .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu);
 
-            let mapped_ptr = self.context.map_buffer(&allocation);
+            let mapped_ptr = ctx.context.map_buffer(&allocation);
             unsafe {
                 std::ptr::write_bytes(mapped_ptr, 0, per_frame_buffer_size as usize);
             }
@@ -400,7 +381,7 @@ impl super::VulkanRenderer {
         }
 
         // Compile shadow depth shader
-        let mut cache = self.material_compiler.shader_cache.borrow_mut();
+        let mut cache = ctx.material_compiler.shader_cache.borrow_mut();
         let vert_module = cache
             .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
             .map_err(|e| {
@@ -423,24 +404,22 @@ impl super::VulkanRenderer {
         // - Set 0: storage uniforms (frame_data + objects)
         // - Set 1: empty placeholder (matches PBR pipeline layout numbering)
         // - Set 2: shadow cascades
-
         // - Front-face culling (reduces self-shadowing)
         // - Hardware depth bias (slope + constant)
         // - Depth-only output (D32Sfloat, no color)
-        let storage_layout = self.storage_descriptor_sets[0].layout();
+        let storage_layout = ctx.storage_descriptor_set.layout();
 
         let cascade_params = self
-            .shadow
             .csm
             .as_ref()
             .map(|csm| csm.params().clone())
             .unwrap_or_default();
 
-        let pipeline = PipelineBuilder::new(self.context.clone())
+        let pipeline = PipelineBuilder::new(ctx.context.clone())
             .with_shaders(vert_module, frag_module)
             .with_descriptor_layouts(vec![
                 storage_layout,
-                self.shared_empty_descriptor_layout,
+                ctx.shared_empty_descriptor_layout,
                 cascade_layout,
             ])
             .with_soa_attribute(0, VertexFormat::RGB32f) // position
@@ -460,15 +439,15 @@ impl super::VulkanRenderer {
                 ))
             })?;
 
-        let pipeline_handle = self.asset_registry.register_pipeline(pipeline);
+        let pipeline_handle = ctx.asset_registry.register_pipeline(pipeline);
 
-        self.shadow.pipeline = Some(pipeline_handle);
-        self.shadow.cascade_descriptor_layout = Some(cascade_layout);
-        self.shadow.cascade_descriptor_sets = cascade_descriptor_sets;
-        self.shadow.cascade_buffers = cascade_buffers;
-        self.shadow.cascade_allocations = cascade_allocations;
-        self.shadow.cascade_mapped_ptrs = cascade_mapped_ptrs;
-        self.shadow.cascade_descriptor_pool = Some(cascade_pool);
+        self.pipeline = Some(pipeline_handle);
+        self.cascade_descriptor_layout = Some(cascade_layout);
+        self.cascade_descriptor_sets = cascade_descriptor_sets;
+        self.cascade_buffers = cascade_buffers;
+        self.cascade_allocations = cascade_allocations;
+        self.cascade_mapped_ptrs = cascade_mapped_ptrs;
+        self.cascade_descriptor_pool = Some(cascade_pool);
 
         info!(
             "Shadow depth pipeline initialized (4 cascades, front-face culled, hardware depth bias)"
@@ -476,97 +455,30 @@ impl super::VulkanRenderer {
         Ok(())
     }
 
-    /// Upload shadow cascade GPU data for the current frame.
-    ///
-    /// Call this after `update_shadows()` to upload cascade view_proj matrices
-    /// to the cascade storage buffer for the shadow depth shader.
-    pub fn upload_shadow_cascades(&mut self) {
-        if let (Some(csm), frame_idx) = (&self.shadow.csm, self.current_frame()) {
-            if frame_idx >= self.shadow.cascade_mapped_ptrs.len() {
-                return;
-            }
-            let mapped_ptr = self.shadow.cascade_mapped_ptrs[frame_idx];
-            let gpu_data = csm.gpu_data();
-            let cascade_size = std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>();
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    gpu_data.cascades.as_ptr() as *const u8,
-                    mapped_ptr,
-                    cascade_size * crate::shadow::cascade::MAX_CASCADES,
-                );
-            }
-            if frame_idx < self.shadow.cascade_allocations.len() {
-                self.context.flush_mapped_memory(
-                    &self.shadow.cascade_allocations[frame_idx],
-                    0,
-                    (cascade_size * crate::shadow::cascade::MAX_CASCADES) as u64,
-                );
-            }
-        }
-    }
-
-    /// Update shadow params for a specific cascade draw.
-    ///
-    /// Call this before each cascade draw to set the active cascade index and bias.
-    pub fn set_shadow_cascade_params(&self, cascade_index: u32, bias: f32) {
-        let frame_idx = self.current_frame();
-        if frame_idx >= self.shadow.cascade_mapped_ptrs.len() {
-            return;
-        }
-        let mapped_ptr = self.shadow.cascade_mapped_ptrs[frame_idx];
-        let cascade_size = std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>()
-            * crate::shadow::cascade::MAX_CASCADES;
-        let params_offset = cascade_size;
-        let params: [u32; 4] = [cascade_index, bias.to_bits(), 0, 0];
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                params.as_ptr() as *const u8,
-                mapped_ptr.add(params_offset),
-                16,
-            );
-        }
-        if frame_idx < self.shadow.cascade_allocations.len() {
-            self.context.flush_mapped_memory(
-                &self.shadow.cascade_allocations[frame_idx],
-                params_offset as u64,
-                16,
-            );
-        }
-    }
-
-    /// Get the shadow depth pipeline handle.
-    pub fn shadow_pipeline(&self) -> Option<PipelineHandle> {
-        self.shadow.pipeline
-    }
-
-    /// Get the skinned shadow depth pipeline handle.
-    pub fn shadow_pipeline_skinned(&self) -> Option<PipelineHandle> {
-        self.shadow.pipeline_skinned
-    }
-
     /// Initialize the skinned shadow depth pipeline.
     ///
     /// Same as the regular shadow pipeline but uses the skinned vertex layout
     /// (includes joint indices/weights) and binds skeleton joint matrices at Set 3.
     /// Uses the same cascade descriptor sets as the regular shadow pipeline.
-    pub fn init_shadow_pipeline_skinned(
+    pub fn init_pipeline_skinned(
         &mut self,
+        ctx: &mut ShadowInitContext,
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         use crate::pipeline::{CullMode, FrontFace};
         use crate::vulkan::material::builder::PipelineBuilder;
         use crate::vulkan::vertexbinding::VertexFormat;
 
-        let storage_layout = self.storage_descriptor_sets[0].layout();
-        let cascade_layout = self.shadow.cascade_descriptor_layout.ok_or_else(|| {
+        let storage_layout = ctx.storage_descriptor_set.layout();
+        let cascade_layout = self.cascade_descriptor_layout.ok_or_else(|| {
             RendererError::InitializationFailed(
-                "Shadow cascade descriptor layout not initialized. Call init_shadow_pipeline() first."
+                "Shadow cascade descriptor layout not initialized. Call init_pipeline() first."
                     .to_string(),
             )
         })?;
-        let skeleton_layout = self.material_compiler.skeleton_descriptor_layout();
+        let skeleton_layout = ctx.material_compiler.skeleton_descriptor_layout();
 
-        let mut cache = self.material_compiler.shader_cache.borrow_mut();
+        let mut cache = ctx.material_compiler.shader_cache.borrow_mut();
         let vert_module = cache
             .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
             .map_err(|e| {
@@ -586,17 +498,16 @@ impl super::VulkanRenderer {
         drop(cache);
 
         let cascade_params = self
-            .shadow
             .csm
             .as_ref()
             .map(|csm| csm.params().clone())
             .unwrap_or_default();
 
-        let pipeline = PipelineBuilder::new(self.context.clone())
+        let pipeline = PipelineBuilder::new(ctx.context.clone())
             .with_shaders(vert_module, frag_module)
             .with_descriptor_layouts(vec![
                 storage_layout,
-                self.shared_empty_descriptor_layout,
+                ctx.shared_empty_descriptor_layout,
                 cascade_layout,
                 skeleton_layout,
             ])
@@ -619,8 +530,8 @@ impl super::VulkanRenderer {
                 ))
             })?;
 
-        let pipeline_handle = self.asset_registry.register_pipeline(pipeline);
-        self.shadow.pipeline_skinned = Some(pipeline_handle);
+        let pipeline_handle = ctx.asset_registry.register_pipeline(pipeline);
+        self.pipeline_skinned = Some(pipeline_handle);
 
         info!(
             "Skinned shadow depth pipeline initialized (4 cascades, front-face culled, depth bias)"
@@ -628,10 +539,86 @@ impl super::VulkanRenderer {
         Ok(())
     }
 
-    /// Get the cascade descriptor set for the current frame (Set 2).
-    pub fn shadow_cascade_descriptor_set(&self) -> Option<vk::DescriptorSet> {
-        let frame_idx = self.current_frame();
-        self.shadow.cascade_descriptor_sets.get(frame_idx).copied()
+    /// Update shadow cascades and upload GPU data for the current frame.
+    ///
+    /// Call this once per frame after setting frame uniforms but before rendering.
+    pub fn update_shadows(
+        &mut self,
+        view_matrix: &[f32; 16],
+        proj_matrix: &[f32; 16],
+        light_direction: [f32; 3],
+    ) {
+        if let Some(ref mut csm) = self.csm {
+            csm.update(light_direction, view_matrix, proj_matrix);
+
+            if let Some(ref mut buffers) = self.buffers {
+                let gpu_data = csm.gpu_data();
+                buffers.upload_shadow_data(&gpu_data);
+            }
+        }
+    }
+
+    /// Upload shadow cascade GPU data for the current frame.
+    ///
+    /// Call this after `update_shadows()` to upload cascade view_proj matrices
+    /// to the cascade storage buffer for the shadow depth shader.
+    pub fn upload_shadow_cascades(&self, context: &Rc<VulkanContext>, frame_idx: usize) {
+        if let Some(csm) = &self.csm {
+            if frame_idx >= self.cascade_mapped_ptrs.len() {
+                return;
+            }
+            let mapped_ptr = self.cascade_mapped_ptrs[frame_idx];
+            let gpu_data = csm.gpu_data();
+            let cascade_size = std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>();
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    gpu_data.cascades.as_ptr() as *const u8,
+                    mapped_ptr,
+                    cascade_size * crate::shadow::cascade::MAX_CASCADES,
+                );
+            }
+            if frame_idx < self.cascade_allocations.len() {
+                context.flush_mapped_memory(
+                    &self.cascade_allocations[frame_idx],
+                    0,
+                    (cascade_size * crate::shadow::cascade::MAX_CASCADES) as u64,
+                );
+            }
+        }
+    }
+
+    /// Update shadow params for a specific cascade draw.
+    ///
+    /// Call this before each cascade draw to set the active cascade index and bias.
+    pub fn set_shadow_cascade_params(
+        &self,
+        context: &Rc<VulkanContext>,
+        frame_idx: usize,
+        cascade_index: u32,
+        bias: f32,
+    ) {
+        if frame_idx >= self.cascade_mapped_ptrs.len() {
+            return;
+        }
+        let mapped_ptr = self.cascade_mapped_ptrs[frame_idx];
+        let cascade_size = std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>()
+            * crate::shadow::cascade::MAX_CASCADES;
+        let params_offset = cascade_size;
+        let params: [u32; 4] = [cascade_index, bias.to_bits(), 0, 0];
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                params.as_ptr() as *const u8,
+                mapped_ptr.add(params_offset),
+                16,
+            );
+        }
+        if frame_idx < self.cascade_allocations.len() {
+            context.flush_mapped_memory(
+                &self.cascade_allocations[frame_idx],
+                params_offset as u64,
+                16,
+            );
+        }
     }
 
     /// Upload shadow data and bind shadow descriptors for the current frame.
@@ -639,22 +626,264 @@ impl super::VulkanRenderer {
     /// Call this inside the render graph execution (after binding pipeline, before draw calls).
     pub fn bind_shadow_descriptors(
         &self,
+        context: &Rc<VulkanContext>,
+        frame_idx: usize,
         cmd: vk::CommandBuffer,
         pipeline_layout: vk::PipelineLayout,
     ) {
-        let frame_idx = self.current_frame();
-
-        if let (Some(buffers), Some(&descriptor_set)) = (
-            &self.shadow.buffers,
-            self.shadow.descriptor_sets.get(frame_idx),
-        ) && let Err(e) = buffers.update_and_bind_descriptors(
-            cmd,
-            &self.context.device,
-            pipeline_layout,
-            descriptor_set,
-            frame_idx,
-        ) {
+        if let (Some(buffers), Some(&descriptor_set)) =
+            (&self.buffers, self.descriptor_sets.get(frame_idx))
+            && let Err(e) = buffers.update_and_bind_descriptors(
+                cmd,
+                &context.device,
+                pipeline_layout,
+                descriptor_set,
+                frame_idx,
+            )
+        {
             log::warn!("Failed to bind shadow descriptors: {}", e);
         }
+    }
+
+    /// Update the shadow atlas image view for a specific frame (call on resize/recreation).
+    pub fn set_shadow_atlas_view(&mut self, frame_idx: usize, view: vk::ImageView) {
+        if let Some(ref mut buffers) = self.buffers {
+            buffers.set_shadow_atlas_view(frame_idx, view);
+        }
+    }
+
+    /// Get the shadow descriptor set for the given frame.
+    pub fn descriptor_set(&self, frame_idx: usize) -> Option<vk::DescriptorSet> {
+        self.descriptor_sets.get(frame_idx).copied()
+    }
+
+    /// Get the cascade descriptor set for the given frame (Set 2).
+    pub fn cascade_descriptor_set(&self, frame_idx: usize) -> Option<vk::DescriptorSet> {
+        self.cascade_descriptor_sets.get(frame_idx).copied()
+    }
+
+    /// Get the shadow depth pipeline handle.
+    pub fn pipeline(&self) -> Option<PipelineHandle> {
+        self.pipeline
+    }
+
+    /// Get the skinned shadow depth pipeline handle.
+    pub fn pipeline_skinned(&self) -> Option<PipelineHandle> {
+        self.pipeline_skinned
+    }
+
+    /// Get the shadow comparison sampler.
+    pub fn sampler(&self) -> Option<vk::Sampler> {
+        self.sampler
+    }
+
+    /// Get the number of cascades configured in the CSM.
+    pub fn cascade_count(&self) -> u32 {
+        self.csm
+            .as_ref()
+            .map(|csm| csm.cascade_count() as u32)
+            .unwrap_or(4)
+    }
+
+    /// Get the depth bias slope from cascade params.
+    pub fn cascade_depth_bias(&self) -> f32 {
+        self.csm
+            .as_ref()
+            .map(|csm| csm.params().depth_bias_slope)
+            .unwrap_or(2.0)
+    }
+
+    /// Destroy all shadow GPU resources.
+    ///
+    /// Must be called after `VulkanContext::pre_destroy()` for descriptor layouts
+    /// that pipelines reference, but before the context is fully dropped.
+    /// Call in two phases:
+    /// 1. `destroy_resources()` — frees pools, buffers, sampler (before pre_destroy)
+    /// 2. `destroy_layouts()` — frees descriptor layouts (after pre_destroy)
+    pub fn destroy_resources(&mut self, context: &Rc<VulkanContext>) {
+        self.csm = None;
+        self.buffers = None;
+        if let Some(sampler) = self.sampler.take() {
+            unsafe {
+                context.device.destroy_sampler(sampler, None);
+            }
+        }
+        // Cascade descriptor resources (Set 2 for shadow depth shader)
+        if let Some(pool) = self.cascade_descriptor_pool.take() {
+            unsafe {
+                context.device.destroy_descriptor_pool(pool, None);
+            }
+        }
+        self.cascade_descriptor_sets.clear();
+        for (buffer, allocation) in self
+            .cascade_buffers
+            .drain(..)
+            .zip(self.cascade_allocations.drain(..))
+        {
+            unsafe {
+                context.device.destroy_buffer(buffer, None);
+                let _ = context.allocator.borrow_mut().free(allocation);
+            }
+        }
+        self.cascade_mapped_ptrs.clear();
+        // Original shadow descriptor resources (pool only, layout destroyed after pre_destroy)
+        if let Some(pool) = self.descriptor_pool.take() {
+            unsafe {
+                context.device.destroy_descriptor_pool(pool, None);
+            }
+        }
+        self.descriptor_sets.clear();
+    }
+
+    /// Destroy descriptor set layouts (call after `VulkanContext::pre_destroy()`).
+    pub fn destroy_layouts(&mut self, context: &Rc<VulkanContext>) {
+        if let Some(layout) = self.cascade_descriptor_layout.take() {
+            unsafe {
+                context.device.destroy_descriptor_set_layout(layout, None);
+            }
+        }
+        if let Some(layout) = self.descriptor_layout.take() {
+            unsafe {
+                context.device.destroy_descriptor_set_layout(layout, None);
+            }
+        }
+    }
+}
+
+impl super::VulkanRenderer {
+    /// Initialize the shadow system for CSM (Cascaded Shadow Maps).
+    ///
+    /// Delegates to [`ShadowSubsystem::init_resources`].
+    pub fn init_shadow_resources(
+        &mut self,
+        shadow_atlas_view: Option<vk::ImageView>,
+        params: crate::shadow::CascadeParams,
+    ) -> Result<(), RendererError> {
+        let mut ctx = super::shadow::ShadowInitContext {
+            context: &self.context,
+            material_compiler: &mut self.material_compiler,
+            storage_descriptor_set: &self.storage_descriptor_sets[0],
+            shared_empty_descriptor_layout: self.shared_empty_descriptor_layout,
+            asset_registry: &mut self.asset_registry,
+        };
+        self.shadow
+            .init_resources(&mut ctx, shadow_atlas_view, params)
+    }
+
+    /// Initialize the shadow depth pipeline and cascade descriptor infrastructure.
+    ///
+    /// Delegates to [`ShadowSubsystem::init_pipeline`].
+    pub fn init_shadow_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        let mut ctx = super::shadow::ShadowInitContext {
+            context: &self.context,
+            material_compiler: &mut self.material_compiler,
+            storage_descriptor_set: &self.storage_descriptor_sets[0],
+            shared_empty_descriptor_layout: self.shared_empty_descriptor_layout,
+            asset_registry: &mut self.asset_registry,
+        };
+        self.shadow.init_pipeline(&mut ctx, shader_path)
+    }
+
+    /// Initialize the skinned shadow depth pipeline.
+    ///
+    /// Delegates to [`ShadowSubsystem::init_pipeline_skinned`].
+    pub fn init_shadow_pipeline_skinned(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        let mut ctx = super::shadow::ShadowInitContext {
+            context: &self.context,
+            material_compiler: &mut self.material_compiler,
+            storage_descriptor_set: &self.storage_descriptor_sets[0],
+            shared_empty_descriptor_layout: self.shared_empty_descriptor_layout,
+            asset_registry: &mut self.asset_registry,
+        };
+        self.shadow.init_pipeline_skinned(&mut ctx, shader_path)
+    }
+
+    /// Update shadow cascades and upload GPU data for the current frame.
+    ///
+    /// Delegates to [`ShadowSubsystem::update_shadows`].
+    pub fn update_shadows(&mut self, light_direction: [f32; 3]) {
+        self.shadow.update_shadows(
+            &self.frame_uniforms.view_matrix,
+            &self.frame_uniforms.proj_matrix,
+            light_direction,
+        );
+    }
+
+    /// Upload shadow cascade GPU data for the current frame.
+    ///
+    /// Delegates to [`ShadowSubsystem::upload_shadow_cascades`].
+    pub fn upload_shadow_cascades(&mut self) {
+        self.shadow
+            .upload_shadow_cascades(&self.context, self.current_frame());
+    }
+
+    /// Get the shadow descriptor set for the current frame.
+    pub fn shadow_descriptor_set(&self) -> Option<vk::DescriptorSet> {
+        self.shadow.descriptor_set(self.current_frame())
+    }
+
+    /// Update the shadow atlas image view for a specific frame.
+    pub fn set_shadow_atlas_view(&mut self, frame_idx: usize, view: vk::ImageView) {
+        self.shadow.set_shadow_atlas_view(frame_idx, view);
+    }
+
+    /// Get the shadow comparison sampler.
+    pub fn shadow_sampler(&self) -> Option<vk::Sampler> {
+        self.shadow.sampler()
+    }
+
+    /// Upload shadow data and bind shadow descriptors for the current frame.
+    pub fn bind_shadow_descriptors(
+        &self,
+        cmd: vk::CommandBuffer,
+        pipeline_layout: vk::PipelineLayout,
+    ) {
+        self.shadow.bind_shadow_descriptors(
+            &self.context,
+            self.current_frame(),
+            cmd,
+            pipeline_layout,
+        );
+    }
+
+    /// Get the shadow depth pipeline handle.
+    pub fn shadow_pipeline(&self) -> Option<PipelineHandle> {
+        self.shadow.pipeline()
+    }
+
+    /// Get the skinned shadow depth pipeline handle.
+    pub fn shadow_pipeline_skinned(&self) -> Option<PipelineHandle> {
+        self.shadow.pipeline_skinned()
+    }
+
+    /// Get the cascade descriptor set for the current frame (Set 2).
+    pub fn shadow_cascade_descriptor_set(&self) -> Option<vk::DescriptorSet> {
+        self.shadow.cascade_descriptor_set(self.current_frame())
+    }
+
+    /// Update shadow params for a specific cascade draw.
+    pub fn set_shadow_cascade_params(&self, cascade_index: u32, bias: f32) {
+        self.shadow.set_shadow_cascade_params(
+            &self.context,
+            self.current_frame(),
+            cascade_index,
+            bias,
+        );
+    }
+
+    /// Get the number of cascades configured in the shadow subsystem.
+    pub fn shadow_cascade_count(&self) -> u32 {
+        self.shadow.cascade_count()
+    }
+
+    /// Get the depth bias slope from shadow cascade params.
+    pub fn shadow_cascade_depth_bias(&self) -> f32 {
+        self.shadow.cascade_depth_bias()
     }
 }
