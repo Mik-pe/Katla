@@ -306,37 +306,43 @@ impl<'a> DrawBuilder<'a> {
     /// This writes the per-object data to the storage buffer (at the allocated
     /// instance index) and adds the draw call to the frame's draw list.
     pub fn submit(self) {
-        // Default values
-        let transform = self.transform.unwrap_or([
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ]);
-        let color = self.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
-        let metallic = self.metallic.unwrap_or(0.0);
-        let roughness = self.roughness.unwrap_or(0.5);
-        let ao = self.ao.unwrap_or(1.0);
-        let emission = self.emission.unwrap_or(0.0);
-
-        if self.instances.is_empty() {
-            // Single draw (or skinned mesh)
-            let mut draw_call = DrawCall::new(self.mesh, self.material)
-                .with_transform(transform)
-                .with_color(color)
-                .with_pbr(metallic, roughness, ao)
-                .with_emission(emission)
-                .with_instance_index(self.instance_index);
-
-            // Add skeleton if present
-            if let Some(skeleton) = self.skeleton {
-                draw_call = draw_call.with_skeleton(skeleton);
-            }
-
-            self.frame.push_draw(draw_call);
+        let mut instance = if let Some(inst) = self.instances.first() {
+            inst.clone()
         } else {
-            // Instanced draw
-            let draw_call = DrawCall::instanced(self.mesh, self.material, self.instances.clone())
-                .with_instance_index(self.instance_index);
+            InstanceData::default()
+        };
 
-            self.frame.push_draw(draw_call);
+        // Apply builder overrides
+        if let Some(transform) = self.transform {
+            instance.model_matrix = transform;
         }
+        if let Some(color) = self.color {
+            instance.color = color;
+        }
+        if let Some(metallic) = self.metallic {
+            instance.metallic = metallic;
+        }
+        if let Some(roughness) = self.roughness {
+            instance.roughness = roughness;
+        }
+        if let Some(ao) = self.ao {
+            instance.ao = ao;
+        }
+
+        let instances = if self.instances.is_empty() {
+            vec![instance]
+        } else {
+            self.instances
+        };
+
+        let mut draw_call = DrawCall::instanced(self.mesh, self.material, instances)
+            .with_instance_index(self.instance_index)
+            .with_emission(self.emission.unwrap_or(0.0));
+
+        if let Some(skeleton) = self.skeleton {
+            draw_call = draw_call.with_skeleton(skeleton);
+        }
+
+        self.frame.push_draw(draw_call);
     }
 }
