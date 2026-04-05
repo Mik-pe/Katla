@@ -25,31 +25,83 @@
 //! }
 //! ```
 
-mod iter1;
-mod iter2;
-mod iter3;
-mod iter4;
-mod iter5;
-mod iter6;
-mod iter7;
-mod iter8;
+#[macro_use]
+mod macros;
 
-pub use iter1::*;
-pub use iter2::*;
-pub use iter3::*;
-pub use iter4::*;
-pub use iter5::*;
-pub use iter6::*;
-pub use iter7::*;
-pub use iter8::*;
-
-use crate::components::Component;
-use std::any::TypeId;
+use paste::paste;
 
 use crate::EntityId;
+use crate::components::Component;
+use crate::storage::{ComponentStorage, ComponentStorageManager};
+use std::any::TypeId;
+
+// ── Arity 1 ────────────────────────────────────────────────────────────────
+impl_query_iter_arity1!();
+
+// ── Arity 2 ────────────────────────────────────────────────────────────────
+impl_query_iter_all_ref!(2, T1, T2);
+impl_query_iter_single_mut!(2, T1Mut, [], T1, [T2]);
+impl_query_iter_single_mut!(2, T2Mut, [T1], T2, []);
+impl_query_iter_double_mut!(2, T1T2Mut, [T1, T2], []);
+
+// ── Arity 3 ────────────────────────────────────────────────────────────────
+impl_query_iter_all_ref!(3, T1, T2, T3);
+impl_query_iter_single_mut!(3, T1Mut, [], T1, [T2, T3]);
+impl_query_iter_single_mut!(3, T2Mut, [T1], T2, [T3]);
+impl_query_iter_single_mut!(3, T3Mut, [T1, T2], T3, []);
+
+// ── Arity 4 ────────────────────────────────────────────────────────────────
+impl_query_iter_all_ref!(4, T1, T2, T3, T4);
+impl_query_iter_single_mut!(4, T1Mut, [], T1, [T2, T3, T4]);
+impl_query_iter_single_mut!(4, T2Mut, [T1], T2, [T3, T4]);
+impl_query_iter_single_mut!(4, T3Mut, [T1, T2], T3, [T4]);
+impl_query_iter_single_mut!(4, T4Mut, [T1, T2, T3], T4, []);
+
+// ── Arity 5 ────────────────────────────────────────────────────────────────
+impl_query_iter_all_ref!(5, T1, T2, T3, T4, T5);
+impl_query_iter_single_mut!(5, T1Mut, [], T1, [T2, T3, T4, T5]);
+impl_query_iter_single_mut!(5, T2Mut, [T1], T2, [T3, T4, T5]);
+impl_query_iter_single_mut!(5, T3Mut, [T1, T2], T3, [T4, T5]);
+impl_query_iter_single_mut!(5, T4Mut, [T1, T2, T3], T4, [T5]);
+impl_query_iter_single_mut!(5, T5Mut, [T1, T2, T3, T4], T5, []);
+
+// ── Arity 6 ────────────────────────────────────────────────────────────────
+impl_query_iter_all_ref!(6, T1, T2, T3, T4, T5, T6);
+impl_query_iter_single_mut!(6, T1Mut, [], T1, [T2, T3, T4, T5, T6]);
+impl_query_iter_single_mut!(6, T2Mut, [T1], T2, [T3, T4, T5, T6]);
+impl_query_iter_single_mut!(6, T3Mut, [T1, T2], T3, [T4, T5, T6]);
+impl_query_iter_single_mut!(6, T4Mut, [T1, T2, T3], T4, [T5, T6]);
+impl_query_iter_single_mut!(6, T5Mut, [T1, T2, T3, T4], T5, [T6]);
+impl_query_iter_single_mut!(6, T6Mut, [T1, T2, T3, T4, T5], T6, []);
+
+// ── Arity 7 ────────────────────────────────────────────────────────────────
+impl_query_iter_all_ref!(7, T1, T2, T3, T4, T5, T6, T7);
+impl_query_iter_single_mut!(7, T1Mut, [], T1, [T2, T3, T4, T5, T6, T7]);
+impl_query_iter_single_mut!(7, T2Mut, [T1], T2, [T3, T4, T5, T6, T7]);
+impl_query_iter_single_mut!(7, T3Mut, [T1, T2], T3, [T4, T5, T6, T7]);
+impl_query_iter_single_mut!(7, T4Mut, [T1, T2, T3], T4, [T5, T6, T7]);
+impl_query_iter_single_mut!(7, T5Mut, [T1, T2, T3, T4], T5, [T6, T7]);
+impl_query_iter_single_mut!(7, T6Mut, [T1, T2, T3, T4, T5], T6, [T7]);
+impl_query_iter_single_mut!(7, T7Mut, [T1, T2, T3, T4, T5, T6], T7, []);
+
+// ── Arity 8 ────────────────────────────────────────────────────────────────
+impl_query_iter_all_ref!(8, T1, T2, T3, T4, T5, T6, T7, T8);
+impl_query_iter_single_mut!(8, T1Mut, [], T1, [T2, T3, T4, T5, T6, T7, T8]);
+impl_query_iter_single_mut!(8, T2Mut, [T1], T2, [T3, T4, T5, T6, T7, T8]);
+impl_query_iter_single_mut!(8, T3Mut, [T1, T2], T3, [T4, T5, T6, T7, T8]);
+impl_query_iter_single_mut!(8, T4Mut, [T1, T2, T3], T4, [T5, T6, T7, T8]);
+impl_query_iter_single_mut!(8, T5Mut, [T1, T2, T3, T4], T5, [T6, T7, T8]);
+impl_query_iter_single_mut!(8, T6Mut, [T1, T2, T3, T4, T5], T6, [T7, T8]);
+impl_query_iter_single_mut!(8, T7Mut, [T1, T2, T3, T4, T5, T6], T7, [T8]);
+impl_query_iter_single_mut!(8, T8Mut, [T1, T2, T3, T4, T5, T6, T7], T8, []);
+
+// ── Adding arity 9 is a one-line invocation per permutation: ─────────────
+// impl_query_iter_all_ref!(9, T1, T2, T3, T4, T5, T6, T7, T8, T9);
+// impl_query_iter_single_mut!(9, T1Mut, [], T1, [T2, T3, T4, T5, T6, T7, T8, T9]);
+// impl_query_iter_single_mut!(9, T2Mut, [T1], T2, [T3, T4, T5, T6, T7, T8, T9]);
+// ... etc.
 
 mod sealed {
-    /// Sealed trait to prevent external implementations of `ImmutableQuery`.
     pub trait Sealed {}
 }
 
@@ -60,12 +112,6 @@ mod sealed {
 /// It is used as a bound on [`World::query_ref`](crate::World::query_ref)
 /// to close the soundness hole where `query_ref::<&mut T>()` would create
 /// mutable references from a shared `&World`.
-///
-/// # Design
-///
-/// The trait is sealed via the `Sealed` supertrait — external crates cannot
-/// implement `ImmutableQuery` for custom types, so mutable query patterns
-/// can never satisfy the bound.
 pub trait ImmutableQuery: sealed::Sealed {}
 
 impl<T: Component + 'static> sealed::Sealed for &T {}
@@ -217,13 +263,8 @@ pub trait QueryData {
     fn fetch(storage: &mut crate::ComponentStorageManager) -> Self::Iter<'_>;
 
     /// Returns the TypeIds of all component types in this query tuple.
-    ///
-    /// Used by change detection to determine which component storages to check
-    /// for generation counter changes.
     fn type_ids_for_changed() -> Vec<TypeId>;
 
     /// Extracts the EntityId from a query item.
-    ///
-    /// All query items are tuples where EntityId is the first element.
     fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId;
 }
