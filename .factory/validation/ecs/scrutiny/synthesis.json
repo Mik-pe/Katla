@@ -1,0 +1,93 @@
+{
+  "milestone": "ecs",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test -p katla_ecs", "exitCode": 0, "observation": "101 unit tests passed, 9 doctests passed, 4 ignored" },
+    "testWorkspace": { "passed": false, "command": "cargo test --workspace", "exitCode": 1, "observation": "321 passed, 1 failed (test_cone_vertex_count in katla_gfx — pre-existing GFX issue, not ECS-related)" },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0, "observation": "Workspace compiles. 3 warnings in katla_gfx (unused import, dead code) unrelated to ECS" },
+    "lint": { "passed": true, "command": "cargo clippy -p katla_ecs -- -D warnings", "exitCode": 0, "observation": "No clippy warnings for katla_ecs" },
+    "lintWorkspace": { "passed": false, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 1, "observation": "3 errors in katla_gfx (unused import Handle, dead code TimestampQuery) unrelated to ECS" },
+    "fmt": { "passed": true, "command": "cargo fmt --check", "exitCode": 0, "observation": "All code properly formatted" },
+    "docTests": { "passed": true, "command": "cargo test --doc -p katla_ecs", "exitCode": 0, "observation": "9 passed, 4 ignored (internal API types correctly remain ignored)" }
+  },
+  "reviewsSummary": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "failedFeatures": [],
+    "reviews": [
+      { "featureId": "ecs-fix-query-ref-soundness", "status": "pass", "fulfills": ["VAL-ECS-001", "VAL-ECS-002"] },
+      { "featureId": "ecs-centralize-unsafe-borrow", "status": "pass", "fulfills": ["VAL-ECS-003"] },
+      { "featureId": "ecs-move-input-module", "status": "pass", "fulfills": ["VAL-ECS-004", "VAL-ECS-005"] },
+      { "featureId": "ecs-optimize-change-detection", "status": "pass", "fulfills": ["VAL-ECS-006"] },
+      { "featureId": "ecs-sparse-set-vec", "status": "pass", "fulfills": ["VAL-ECS-007"] },
+      { "featureId": "ecs-macro-iterators", "status": "pass", "fulfills": ["VAL-ECS-008"] },
+      { "featureId": "ecs-fix-doctests", "status": "pass", "fulfills": ["VAL-ECS-009"] }
+    ]
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    { "featureId": "ecs-move-input-module", "severity": "non_blocking", "description": "Inconsistent unwrap vs if-let pattern for InputState resource access in katla_app application/mod.rs" },
+    { "featureId": "ecs-optimize-change-detection", "severity": "non_blocking", "description": "Stale docstring on clear_changed() still references 'maximum generation' instead of 'dirty sets'" },
+    { "featureId": "ecs-sparse-set-vec", "severity": "non_blocking", "description": "SparseKey doc comment could be more precise about World-level generation guarantees for uniqueness" },
+    { "featureId": "ecs-sparse-set-vec", "severity": "non_blocking", "description": "Minor style inconsistency: get_mut uses if-let, get uses and_then for equivalent logic" },
+    { "featureId": "ecs-macro-iterators", "severity": "non_blocking", "description": "architecture.md 'ECS QueryData Trait Maintenance' section is stale — still references deleted iter1..iter8.rs files" },
+    { "featureId": "ecs-macro-iterators", "severity": "non_blocking", "description": "ImmutableQuery sealed trait impls for arities 2-8 are still hand-written, could be macro-generated" },
+    { "featureId": "ecs-macro-iterators", "severity": "non_blocking", "description": "VAL-ECS-008 validation contract states 'All 2^N mutability permutations per arity' but Rust coherence prevents this for arities 3+ — contract wording should be revised" }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Update .factory/library/architecture.md 'ECS QueryData Trait Maintenance' section to reflect macro-based approach (query/macros.rs) instead of deleted iter1..iter8.rs files.",
+      "evidence": "ecs-macro-iterators review: architecture.md:178 still says 'iter1.rs through iter8.rs' and warns about updating 'ALL 8 files'. These files no longer exist.",
+      "isSystemic": false
+    },
+    {
+      "target": "validation-contract.md",
+      "suggestion": "Revise VAL-ECS-008 to state achievable permutations (1 all-ref + N single-mut per arity, plus double-mut for arity 2 only) instead of 'All 2^N mutability permutations per arity'. Rust trait coherence prevents full 2^N at arities 3+.",
+      "evidence": "ecs-macro-iterators review: the worker discovered that overlapping QueryData impls for multi-mut patterns at arity 3+ conflict at the abstract pattern level. The original hand-written code had the same limitation.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Update ecs-worker skill to reference query/macros.rs and query/mod.rs instead of deleted iter*.rs files.",
+      "evidence": "ecs-macro-iterators review: skill's 'Work Procedure' step 2 says to read 'katla_ecs/src/query/iter*.rs' but these files no longer exist.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the ECS resource pattern (insert_resource/get_resource/get_resource_mut) as the canonical way to store global state in World, so future workers know to use it instead of adding dedicated World fields.",
+      "evidence": "ecs-move-input-module review: InputState moved to resource pattern. Camera systems and event handlers all use world.get_resource::<InputState>(). The architecture.md does not have an 'ECS Resources' section.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the SparseKey trait pattern in architecture.md under the ECS section. Other workers may encounter this pub(crate) trait when working with SparseSet.",
+      "evidence": "ecs-sparse-set-vec review: new pub(crate) SparseKey trait implemented for u32, usize, EntityId in sparse_set.rs. Not documented in AGENTS.md or architecture.md.",
+      "isSystemic": false
+    },
+    {
+      "target": "skills",
+      "suggestion": "The ecs-worker skill return-to-orchestrator condition about module moves requiring coordination may be too conservative for well-scoped moves that stay within the worker's skill domain.",
+      "evidence": "ecs-move-input-module review: Worker handled the katla_app coordination without returning to orchestrator. The skill's guidance about returning for cross-crate changes was overly cautious here.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    { "observation": "TODO.md entry for query_ref soundness fix not marked complete", "reason": "duplicate" },
+    { "observation": "ImmutableQuery impls could be macro-generated", "reason": "already-addressed" },
+    { "observation": "Worker introduced get_storage_mut_and_ref() beyond spec", "reason": "already-documented" },
+    { "observation": "Input delta clearing frame-order detail in katla_app", "reason": "ambiguous" },
+    { "observation": "Resource is blanket impl not derive macro", "reason": "already-documented" },
+    { "observation": "World::spawn requires 1-tuple for single component", "reason": "already-documented" },
+    { "observation": "Dirty entity tracking uses SparseSet<EntityId, ()> instead of HashSet", "reason": "already-documented" },
+    { "observation": "get_mut() conservatively marks entities as dirty even without modification", "reason": "already-documented" },
+    { "observation": "SparseSet clear() trades memory for speed by clearing sparse vec entirely", "reason": "already-documented" },
+    { "observation": "paste crate added as workspace dependency for macro identifier pasting", "reason": "already-documented" },
+    { "observation": "Rust coherence prevents full 2^N mutability permutations at arities 3+", "reason": "already-documented" },
+    { "observation": "Double-mut macro uses index-based iteration to avoid borrow checker issues", "reason": "already-documented" }
+  ],
+  "previousRound": null
+}

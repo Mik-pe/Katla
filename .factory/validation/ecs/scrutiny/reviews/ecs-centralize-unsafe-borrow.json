@@ -1,0 +1,26 @@
+{
+  "featureId": "ecs-centralize-unsafe-borrow",
+  "reviewedAt": "2026-04-05T21:40:00.000Z",
+  "commitId": "1579701",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The feature successfully centralizes the unsafe borrow pattern in query iterators by adding three helpers on ComponentStorageManager: borrow_ptr(), get_storage_mut_and_ref(), and get_two_storage_mut(). All 11 raw-pointer cast sites across iter2.rs through iter8.rs were replaced with calls to these helpers. The implementation correctly consolidates SAFETY reasoning into well-documented helper methods. Two unit tests cover the happy path and missing-types edge case. The code compiles cleanly with no clippy warnings.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The unsafe borrow pattern in katla_ecs query iterators is a known soundness pattern where disjoint HashMap entries (keyed by TypeId) are safely borrowed simultaneously via raw pointers. This pattern is now centralized in borrow_ptr() + get_two_storage_mut() / get_storage_mut_and_ref() helpers in storage.rs. The macros (macros.rs) introduced by a later feature correctly adopted these helpers.",
+      "evidence": "katla_ecs/src/storage.rs:356-410 — borrow_ptr(), get_storage_mut_and_ref(), get_two_storage_mut() with consolidated SAFETY comments. katla_ecs/src/query/macros.rs:280,456,458 — macros use borrow_ptr() and get_two_storage_mut()."
+    },
+    {
+      "area": "conventions",
+      "observation": "The worker introduced get_storage_mut_and_ref() in addition to the spec's get_two_storage_mut(). This is a reasonable extension — some query patterns need one mutable and one immutable reference (e.g., (&mut T1, &T2)), and having a dedicated helper for this avoids misusing get_two_storage_mut() in contexts where only one mutable ref is needed. The feature description mentioned only get_two_storage_mut but the additional helper is consistent with the spirit of centralization.",
+      "evidence": "katla_ecs/src/storage.rs:369-409 — get_storage_mut_and_ref() and get_two_storage_mut() as two distinct helpers. iter2.rs diff shows both helpers being used for different mutability patterns."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature ecs-centralize-unsafe-borrow (VAL-ECS-003) passes review. The worker added three well-documented unsafe helpers (borrow_ptr, get_storage_mut_and_ref, get_two_storage_mut) on ComponentStorageManager, replacing all 11 open-coded raw-pointer casts across iter2-iter8.rs. Zero `as *mut ComponentStorageManager` casts remain outside the helpers and test code. All 103 tests pass, clippy is clean, and code is formatted. The subsequent macro-ification feature (commit 4995a9b) correctly adopted borrow_ptr() and get_two_storage_mut(), confirming the helpers are the stable API for this pattern."
+}

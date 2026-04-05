@@ -1,0 +1,26 @@
+{
+  "featureId": "ecs-fix-doctests",
+  "reviewedAt": "2026-04-05T21:40:00.000Z",
+  "commitId": "805a54f",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The worker converted 7 of 10 ignored doctests in katla_ecs to runnable examples across 3 files (world.rs, spawn.rs, resource.rs). All converted doctests are self-contained with proper use statements, type definitions, and assertions. The remaining 4 ignored doctests are on internal API types (SparseSet, ComponentStorageManager, query module internals) that correctly remain ignored. The feature fully satisfies VAL-ECS-009.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "Resource is a blanket impl trait (impl<T: Any + 'static> Resource for T {}), not a derive macro. The worker correctly removed #[derive(Resource)] from doctests that had it. This is a katla_ecs API quirk worth noting.",
+      "evidence": "katla_ecs/src/resource.rs:24 — blanket impl. Doctests in the pre-commit state incorrectly used #[derive(Resource)]."
+    },
+    {
+      "area": "knowledge",
+      "observation": "World::spawn requires a tuple for its bundle argument — even for single components, a 1-tuple (T,) is needed. The worker used (Transform::default(),) in the query_changed doctest. This is a non-obvious API detail for doctest authors.",
+      "evidence": "katla_ecs/src/world.rs:268 — doctest uses world.spawn((Transform::default(),)); spawn.rs:33 shows the 1-tuple impl Spawnable for (T,)."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature ecs-fix-doctests passes review. The worker correctly identified 7 doctests that could be made runnable, fixed compilation issues (removed #[derive(Resource)] from blanket-impl trait, used 1-tuples for single-component spawns), added proper use statements and assertions, and left 4 internal-API doctests correctly ignored. All verification commands passed (cargo test --doc, cargo test -p katla_ecs, cargo clippy, cargo fmt). The feature fully satisfies VAL-ECS-009: at least 3 key examples (7 total) were converted from ignore to runnable, and cargo test --doc -p katla_ecs passes."
+}
