@@ -179,8 +179,8 @@ pub struct VulkanRenderer {
     depth_prepass: depth_prepass::DepthPrepassSubsystem,
     /// Outline highlight subsystem (stencil-based selection highlight).
     pub(crate) outline: outline::OutlineSubsystem,
-    /// Pending picking readback operation.
-    pending_picking_readback: Option<picking::PickingReadback>,
+    /// Picking readback subsystem.
+    picking: picking::PickingSubsystem,
     /// Base bindless index for per-frame depth textures.
     /// Actual index for frame N is `depth_texture_base_index + N`.
     depth_texture_base_index: Option<u32>,
@@ -341,7 +341,7 @@ impl VulkanRenderer {
             shadow: shadow::ShadowSubsystem::default(),
             depth_prepass: depth_prepass::DepthPrepassSubsystem::default(),
             outline: outline::OutlineSubsystem::default(),
-            pending_picking_readback: None,
+            picking: picking::PickingSubsystem::default(),
             depth_texture_base_index: None,
             first_frame_rendered: false,
         })
@@ -627,6 +627,9 @@ impl VulkanRenderer {
 
         // Destroy light culling subsystem
         self.light_culling.destroy();
+
+        // Destroy picking subsystem (cleans up any pending readback)
+        self.picking.destroy(&self.context);
 
         // Destroy shadow system resources (buffers, samplers, pools)
         self.shadow.destroy_resources(&self.context);
