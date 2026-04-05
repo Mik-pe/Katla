@@ -1,19 +1,34 @@
 use crate::RendererError;
 use ash::vk;
 use log::{error, info, warn};
+use std::rc::Rc;
+
+use crate::vulkan::context::VulkanContext;
+use crate::vulkan::material::compiler::MaterialCompiler;
 
 #[derive(Default)]
-/// Bundles all light culling state from VulkanRenderer.
-pub(crate) struct LightCullingState {
+/// Owns all light culling GPU state for Forward+ dynamic lighting.
+///
+/// Lifecycle:
+/// - `init()` — creates buffers, compiles compute shader, sets descriptor layout
+/// - `resize()` — recreates buffers for new screen dimensions
+/// - `destroy()` — drops pipeline and buffers (cleanup handled by Drop)
+pub(crate) struct LightSubsystem {
     /// Light culling buffers for Forward+ dynamic lighting.
-    pub buffers: Option<crate::lighting::LightCullingBuffers>,
+    buffers: Option<crate::lighting::LightCullingBuffers>,
     /// Light culling compute pipeline (stored directly, not in registry).
-    pub pipeline: Option<crate::vulkan::material::compute_pipeline::ComputePipeline>,
+    pipeline: Option<crate::vulkan::material::compute_pipeline::ComputePipeline>,
     /// Light culling compute shader path (needed to recreate pipeline on resize).
-    pub shader_path: Option<std::path::PathBuf>,
+    shader_path: Option<std::path::PathBuf>,
 }
 
-impl super::VulkanRenderer {
+/// Dependencies needed from VulkanRenderer for light subsystem initialization.
+pub(crate) struct LightInitContext<'a> {
+    pub context: &'a Rc<VulkanContext>,
+    pub material_compiler: &'a mut MaterialCompiler,
+}
+
+impl LightSubsystem {
     /// Initialize the Forward+ light culling system.
     ///
     /// Creates GPU buffers for light data and tile culling results, compiles
@@ -21,27 +36,28 @@ impl super::VulkanRenderer {
     /// layout in the material compiler for PBR pipeline compilation.
     ///
     /// Must be called before compiling any PBR materials.
-    pub fn init_light_culling(
+    pub fn init(
         &mut self,
+        ctx: &mut LightInitContext,
         screen_width: u32,
         screen_height: u32,
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         let light_culling_buffers = crate::lighting::LightCullingBuffers::new(
-            self.context.clone(),
+            ctx.context.clone(),
             screen_width,
             screen_height,
         )
         .map_err(|e| RendererError::InitializationFailed(format!("Light culling init: {}", e)))?;
 
         if let Some(layout) = light_culling_buffers.fragment_descriptor_layout() {
-            self.material_compiler
+            ctx.material_compiler
                 .set_light_culling_descriptor_layout(layout);
         }
 
-        self.light_culling.buffers = Some(light_culling_buffers);
-        self.light_culling.shader_path = Some(shader_path.to_path_buf());
-        self.rebuild_light_culling_pipeline()?;
+        self.buffers = Some(light_culling_buffers);
+        self.shader_path = Some(shader_path.to_path_buf());
+        self.rebuild_pipeline(ctx)?;
 
         info!(
             "Forward+ light culling initialized: {}x{}, {}x{} tiles",
@@ -58,20 +74,23 @@ impl super::VulkanRenderer {
     ///
     /// Called during init and after resize to create a compute pipeline that references
     /// the current compute descriptor layout (owned by LightCullingBuffers).
-    pub(crate) fn rebuild_light_culling_pipeline(&mut self) -> Result<(), RendererError> {
-        let lc = self.light_culling.buffers.as_ref().ok_or_else(|| {
+    pub(crate) fn rebuild_pipeline(
+        &mut self,
+        ctx: &mut LightInitContext,
+    ) -> Result<(), RendererError> {
+        let lc = self.buffers.as_ref().ok_or_else(|| {
             RendererError::InitializationFailed(
                 "Cannot rebuild light culling pipeline: buffers not initialized".to_string(),
             )
         })?;
 
-        let shader_path = self.light_culling.shader_path.as_ref().ok_or_else(|| {
+        let shader_path = self.shader_path.as_ref().ok_or_else(|| {
             RendererError::InitializationFailed(
                 "Cannot rebuild light culling pipeline: shader path not set".to_string(),
             )
         })?;
 
-        let compute_shader = self
+        let compute_shader = ctx
             .material_compiler
             .shader_cache
             .borrow_mut()
@@ -90,7 +109,7 @@ impl super::VulkanRenderer {
         })?;
 
         let pipeline = crate::vulkan::material::compute_pipeline::ComputePipelineBuilder::new(
-            self.context.clone(),
+            ctx.context.clone(),
         )
         .with_shader(crate::sync::VkShaderModule(compute_shader))
         .add_descriptor_layout(crate::sync::VkDescriptorSetLayout(compute_layout))
@@ -102,7 +121,7 @@ impl super::VulkanRenderer {
             ))
         })?;
 
-        self.light_culling.pipeline = Some(pipeline);
+        self.pipeline = Some(pipeline);
         Ok(())
     }
 
@@ -110,7 +129,7 @@ impl super::VulkanRenderer {
     ///
     /// Call this once per frame before rendering to update the GPU light buffer.
     pub fn upload_lights(&mut self, lights: &[crate::lighting::PointLightGPU]) {
-        if let Some(ref mut lc) = self.light_culling.buffers {
+        if let Some(ref mut lc) = self.buffers {
             lc.upload_lights(lights);
         }
     }
@@ -121,11 +140,12 @@ impl super::VulkanRenderer {
     /// The view and proj matrices are needed for projecting light positions to screen space.
     pub fn dispatch_light_culling(
         &mut self,
+        context: &Rc<VulkanContext>,
         cmd: vk::CommandBuffer,
         view_matrix: &[f32; 16],
         proj_matrix: &[f32; 16],
     ) {
-        let lc = match self.light_culling.buffers.as_mut() {
+        let lc = match self.buffers.as_mut() {
             Some(lc) => lc,
             None => return,
         };
@@ -151,7 +171,7 @@ impl super::VulkanRenderer {
         lc.write_frame_data(&frame_data);
 
         // Bind compute pipeline
-        let compute_pipeline = match self.light_culling.pipeline.as_ref() {
+        let compute_pipeline = match self.pipeline.as_ref() {
             Some(p) => p,
             None => return,
         };
@@ -164,7 +184,7 @@ impl super::VulkanRenderer {
             let barrier = vk::MemoryBarrier::default()
                 .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
                 .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE);
-            self.context.device.cmd_pipeline_barrier(
+            context.device.cmd_pipeline_barrier(
                 cmd,
                 vk::PipelineStageFlags::TRANSFER,
                 vk::PipelineStageFlags::COMPUTE_SHADER,
@@ -174,7 +194,7 @@ impl super::VulkanRenderer {
                 &[],
             );
 
-            self.context.device.cmd_bind_pipeline(
+            context.device.cmd_bind_pipeline(
                 cmd,
                 vk::PipelineBindPoint::COMPUTE,
                 compute_pipeline.pipeline().vk(),
@@ -189,7 +209,7 @@ impl super::VulkanRenderer {
             }
 
             // Dispatch: one workgroup per tile
-            self.context
+            context
                 .device
                 .cmd_dispatch(cmd, lc.tiles_x(), lc.tiles_y(), 1);
         }
@@ -200,7 +220,7 @@ impl super::VulkanRenderer {
                 .src_access_mask(vk::AccessFlags::SHADER_WRITE)
                 .dst_access_mask(vk::AccessFlags::SHADER_READ);
 
-            self.context.device.cmd_pipeline_barrier(
+            context.device.cmd_pipeline_barrier(
                 cmd,
                 vk::PipelineStageFlags::COMPUTE_SHADER,
                 vk::PipelineStageFlags::FRAGMENT_SHADER,
@@ -214,40 +234,36 @@ impl super::VulkanRenderer {
 
     /// Whether the light culling system is active.
     pub fn has_light_culling(&self) -> bool {
-        self.light_culling.buffers.is_some()
+        self.buffers.is_some()
     }
 
     /// Get the light culling buffers for push descriptor binding during geometry pass.
-    pub fn light_culling_buffers(&self) -> Option<&crate::lighting::LightCullingBuffers> {
-        self.light_culling.buffers.as_ref()
+    pub fn buffers(&self) -> Option<&crate::lighting::LightCullingBuffers> {
+        self.buffers.as_ref()
     }
 
     /// Recreate light culling buffers for a new screen size.
     ///
-    /// The compute pipeline is reused since it reads tile dimensions from
-    /// the uniform buffer at dispatch time. Only the GPU buffers are recreated.
+    /// Drops the old compute pipeline and buffers, creates new ones with updated
+    /// dimensions, and rebuilds the compute pipeline.
+    ///
     /// Call this after swapchain recreation to keep tile dimensions in sync.
-    pub fn resize_light_culling(&mut self, screen_width: u32, screen_height: u32) {
-        if self.light_culling.buffers.is_none() {
+    pub fn resize(&mut self, ctx: &mut LightInitContext, screen_width: u32, screen_height: u32) {
+        if self.buffers.is_none() {
             return;
         }
 
         // Drop the old compute pipeline FIRST — its pipeline layout references
         // the compute descriptor layout owned by LightCullingBuffers, which we're
         // about to destroy. The pipeline must not outlive the layout it references.
-        self.light_culling.pipeline = None;
-
-        // Invalidate material pipelines BEFORE dropping old light culling buffers.
-        // Old material pipelines reference the old light culling descriptor set layout,
-        // so they must be destroyed first to avoid use-after-free in pipeline layout cleanup.
-        self.recompile_deferred_materials();
+        self.pipeline = None;
 
         // Drop old buffers (destroys old descriptor layouts)
-        self.light_culling.buffers = None;
+        self.buffers = None;
 
         // Create new buffers with updated dimensions
         match crate::lighting::LightCullingBuffers::new(
-            self.context.clone(),
+            ctx.context.clone(),
             screen_width,
             screen_height,
         ) {
@@ -255,14 +271,14 @@ impl super::VulkanRenderer {
                 // Update the fragment descriptor layout in the material compiler
                 // so newly compiled materials use the correct layout
                 if let Some(layout) = new_buffers.fragment_descriptor_layout() {
-                    self.material_compiler
+                    ctx.material_compiler
                         .set_light_culling_descriptor_layout(layout);
                 }
 
-                self.light_culling.buffers = Some(new_buffers);
+                self.buffers = Some(new_buffers);
 
                 // Rebuild compute pipeline with new compute descriptor layout
-                if let Err(e) = self.rebuild_light_culling_pipeline() {
+                if let Err(e) = self.rebuild_pipeline(ctx) {
                     error!(
                         "Failed to rebuild light culling compute pipeline after resize: {}",
                         e
@@ -270,7 +286,7 @@ impl super::VulkanRenderer {
                 }
 
                 info!(
-                    "Light culling buffers resized to {}x{} ({}x{} tiles), invalidated compiled materials",
+                    "Light culling buffers resized to {}x{} ({}x{} tiles)",
                     screen_width,
                     screen_height,
                     screen_width.div_ceil(16),
@@ -281,5 +297,87 @@ impl super::VulkanRenderer {
                 error!("Failed to recreate light culling buffers: {}", e);
             }
         }
+    }
+
+    /// Destroy light culling resources.
+    ///
+    /// Drop order: pipeline first (doesn't own descriptor layouts),
+    /// then buffers (owns descriptor layouts and GPU buffers).
+    pub fn destroy(&mut self) {
+        self.pipeline = None;
+        self.buffers = None;
+    }
+}
+
+impl super::VulkanRenderer {
+    /// Initialize the Forward+ light culling system.
+    ///
+    /// Delegates to [`LightSubsystem::init`].
+    pub fn init_light_culling(
+        &mut self,
+        screen_width: u32,
+        screen_height: u32,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        let mut ctx = super::light_culling::LightInitContext {
+            context: &self.context,
+            material_compiler: &mut self.material_compiler,
+        };
+        self.light_culling
+            .init(&mut ctx, screen_width, screen_height, shader_path)
+    }
+
+    /// Upload point light data for the current frame.
+    ///
+    /// Delegates to [`LightSubsystem::upload_lights`].
+    pub fn upload_lights(&mut self, lights: &[crate::lighting::PointLightGPU]) {
+        self.light_culling.upload_lights(lights);
+    }
+
+    /// Clear tile headers and dispatch the light culling compute shader.
+    ///
+    /// Delegates to [`LightSubsystem::dispatch_light_culling`].
+    pub fn dispatch_light_culling(
+        &mut self,
+        cmd: vk::CommandBuffer,
+        view_matrix: &[f32; 16],
+        proj_matrix: &[f32; 16],
+    ) {
+        self.light_culling
+            .dispatch_light_culling(&self.context, cmd, view_matrix, proj_matrix);
+    }
+
+    /// Whether the light culling system is active.
+    ///
+    /// Delegates to [`LightSubsystem::has_light_culling`].
+    pub fn has_light_culling(&self) -> bool {
+        self.light_culling.has_light_culling()
+    }
+
+    /// Get the light culling buffers for push descriptor binding during geometry pass.
+    ///
+    /// Delegates to [`LightSubsystem::buffers`].
+    pub fn light_culling_buffers(&self) -> Option<&crate::lighting::LightCullingBuffers> {
+        self.light_culling.buffers()
+    }
+
+    /// Recreate light culling buffers for a new screen size.
+    ///
+    /// Delegates to [`LightSubsystem::resize`]. Also invalidates compiled materials
+    /// since they reference the old light culling descriptor set layout.
+    pub fn resize_light_culling(&mut self, screen_width: u32, screen_height: u32) {
+        // Invalidate material pipelines BEFORE resizing light culling.
+        // Old material pipelines reference the old light culling descriptor set layout,
+        // so they must be destroyed first to avoid use-after-free in pipeline layout cleanup.
+        if self.light_culling.has_light_culling() {
+            self.recompile_deferred_materials();
+        }
+
+        let mut ctx = super::light_culling::LightInitContext {
+            context: &self.context,
+            material_compiler: &mut self.material_compiler,
+        };
+        self.light_culling
+            .resize(&mut ctx, screen_width, screen_height);
     }
 }
