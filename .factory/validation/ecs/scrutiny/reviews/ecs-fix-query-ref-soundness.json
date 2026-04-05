@@ -1,0 +1,31 @@
+{
+  "featureId": "ecs-fix-query-ref-soundness",
+  "reviewedAt": "2026-04-05T22:00:00.000Z",
+  "commitId": "32a2b0a",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean, minimal soundness fix. A sealed ImmutableQuery marker trait is introduced in katla_ecs/src/query/mod.rs with implementations for &T and all-immutable tuples up to arity 8. The trait is sealed via a private sealed::Sealed supertrait, preventing external crates from implementing ImmutableQuery for mutable patterns. query_ref's Q parameter is now bounded on both QueryData + ImmutableQuery, making query_ref::<&mut T>() a compile-time error. query() (with &mut self) remains unrestricted. Two new unit tests verify immutable single and tuple queries work correctly through &World. All 101 ECS tests pass.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The TODO.md entry for this soundness fix (TODO.md line 7) was not marked as completed after the fix was implemented. The checkbox remains unchecked. This suggests either TODO.md is manually maintained and not part of the automated workflow, or it was overlooked.",
+      "evidence": "TODO.md:7 still shows '- [ ] **Fix `query_ref` soundness hole**' despite the fix being committed as 32a2b0a"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The handoff mentions 'Updated architecture.md library docs' and indeed .factory/library/architecture.md line 174 now correctly documents the compile-time enforcement via sealed ImmutableQuery. This was properly updated from the previous version that only noted it as a documented restriction without compile-time enforcement.",
+      "evidence": ".factory/library/architecture.md:174 now reads: 'enforced at compile time via the sealed ImmutableQuery marker trait' — previously the query-conversion review flagged this as a non-blocking issue needing compile-time enforcement."
+    },
+    {
+      "area": "knowledge",
+      "observation": "ImmutableQuery trait implementations are manually written for each arity (1 through 8), resulting in ~140 lines of repetitive Sealed + ImmutableQuery impl blocks. This mirrors the pattern used for QueryData impls (which use macros). A macro could reduce this to ~5 lines, but the manual approach is consistent with the sealed trait's nature (it needs explicit control over which types implement it).",
+      "evidence": "katla_ecs/src/query/mod.rs lines 104-235 contain 16 impl blocks (Sealed + ImmutableQuery for each of 8 arities)"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The ecs-fix-query-ref-soundness feature correctly closes the query_ref soundness hole identified in VAL-ECS-001 and VAL-ECS-002. The sealed ImmutableQuery marker trait approach is idiomatic Rust — the private Sealed supertrait prevents external crates from implementing ImmutableQuery for mutable query patterns, and the explicit impl list for &T and all-immutable tuples up to arity 8 provides compile-time enforcement. query_ref now requires Q: QueryData + ImmutableQuery, making query_ref::<&mut T>() a compile error. The existing call sites (katla_app scene serialization and editor) use immutable patterns and are unaffected. Two new unit tests verify correctness. All 101 ECS tests pass. No blocking issues found."
+}

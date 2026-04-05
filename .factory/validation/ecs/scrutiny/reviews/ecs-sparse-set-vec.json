@@ -1,0 +1,44 @@
+{
+  "featureId": "ecs-sparse-set-vec",
+  "reviewedAt": "2026-04-05T22:00:00.000Z",
+  "commitId": "0f97962",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean, correct replacement of HashMap-based sparse mapping with Vec<Option<usize>> indexed by EntityId::index(). The implementation introduces a pub(crate) SparseKey trait implemented for u32, usize, and EntityId. All SparseSet operations (insert, remove, get, get_mut, contains, len, iter, clear, retain_keys) work correctly. The remove logic correctly handles swap_remove sparse index updates. Auto-growing sparse vec handles large entity indices. 4 new tests cover growth, contains-after-remove, clear, and iterators. All 101 ECS tests pass, workspace tests pass (only pre-existing cone vertex count failure), clippy clean.",
+    "issues": [
+      {
+        "file": "katla_ecs/src/sparse_set.rs",
+        "line": 12,
+        "severity": "non_blocking",
+        "description": "SparseKey doc comment says 'Implementors must ensure that sparse_index() returns a unique value per distinct key.' For EntityId, this is only true within a single World's entity lifetime — two EntityIds with the same index but different generations would collide. However, this is safe in practice because the World guards all SparseSet access with is_valid() which checks generation. The doc could be more precise, but this is not a bug."
+      },
+      {
+        "file": "katla_ecs/src/sparse_set.rs",
+        "line": 144,
+        "severity": "non_blocking",
+        "description": "get_mut uses an if-let chain while get uses and_then chains for equivalent logic. Both are correct but the style inconsistency is minor. Not worth a change."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker introduced a pub(crate) SparseKey trait pattern for index-based lookup. This is a new crate-internal pattern that other workers may encounter when working with SparseSet. It is not documented in AGENTS.md or architecture.md.",
+      "evidence": "katla_ecs/src/sparse_set.rs:12-49 — SparseKey trait and impls for u32, usize, EntityId"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker noted the SparseKey uniqueness invariant is maintained by World-level generation checks (is_valid), not by SparseSet itself. This is an important architectural invariant worth documenting in architecture.md under the ECS section.",
+      "evidence": "world.rs:130 (is_valid guards all component access), sparse_set.rs:12 (SparseKey doc comment about uniqueness)"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The SparseSet clear() implementation clears both dense and sparse vectors. After clear(), the sparse vec is empty (not just None-filled), meaning the next insert will need to grow the vec again. This is a memory-vs-speed tradeoff that's correct for ECS usage (World::clear() is rare), but worth noting.",
+      "evidence": "katla_ecs/src/sparse_set.rs:202-205 — clear() calls self.sparse.clear(), test_sparse_set_clear_resets_state verifies sparse.is_empty()"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature ecs-sparse-set-vec (VAL-ECS-007) passes review. The HashMap-based sparse mapping in SparseSet has been correctly replaced with Vec<Option<usize>> indexed by key's sparse_index(). The SparseKey trait is a clean abstraction that maintains testability with u32/usize keys while serving EntityId in production. All operations are correct including the swap_remove sparse index update, auto-growth for large indices, and the retain_keys Hash+Eq local bound. Tests are comprehensive. No blocking issues found."
+}

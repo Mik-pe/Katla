@@ -1,0 +1,33 @@
+{
+  "featureId": "ecs-optimize-change-detection",
+  "reviewedAt": "2026-04-05T22:00:00.000Z",
+  "commitId": "31dbc78",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean, correct implementation that replaces generation-counter change detection with per-type dirty entity tracking. The O(all_entities * type_ids) scan is eliminated in favor of O(dirty_entities) iteration. All expectedBehavior requirements are met. The implementation has survived 3 subsequent commits to katla_ecs without regression.",
+    "issues": [
+      {
+        "file": "katla_ecs/src/storage.rs",
+        "line": 329,
+        "severity": "non_blocking",
+        "description": "Stale docstring on clear_changed(): 'Snapshots the current maximum generation for each component type' should say 'Clears dirty entity sets for all component storages'. The second paragraph is still accurate. This is purely a documentation issue — the implementation is correct."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The dirty entity tracking design uses SparseSet<EntityId, ()> (unit value type) rather than a HashSet. This mirrors the existing SparseSet infrastructure already used for component storage. This pattern is now documented in architecture.md under 'ECS Change Detection'.",
+      "evidence": "katla_ecs/src/storage.rs:21 — dirty: SparseSet<EntityId, ()>; .factory/library/architecture.md:159-164 — updated docs"
+    },
+    {
+      "area": "knowledge",
+      "observation": "get_mut() marks entities as dirty even if the caller doesn't actually modify the component (conservative marking). This is an intentional design choice documented in the docstring at storage.rs:60-61. Tests like test_change_detection_overhead account for this.",
+      "evidence": "katla_ecs/src/storage.rs:60 — 'Marks the entity as changed for change detection, even if the component is not actually modified.'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The feature correctly implements VAL-ECS-006: change detection is now O(dirty_entities) instead of O(all_entities * type_ids). The generation counter system (generations SparseSet + changed_generations HashMap) was cleanly replaced with a per-type dirty: SparseSet<EntityId, ()>. collect_changed_entity_ids() now iterates only dirty entities from the queried type storages. The old entities_with_components() full scan is no longer used by change detection. All 97 tests pass, clippy is clean, and the implementation survived 3 subsequent commits. One non-blocking docstring issue: clear_changed() still references 'maximum generation' instead of 'dirty sets'."
+}
