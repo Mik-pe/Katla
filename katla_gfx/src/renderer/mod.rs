@@ -6,28 +6,28 @@
 //! - `viewport` - Viewport system management (TODO: extract from lib.rs)
 //! - `ui` - UI buffer and texture management (TODO: extract from lib.rs)
 
-pub mod animation_init;
-pub mod bindless_queries;
-pub mod compositing;
-pub mod depth_prepass;
-pub mod destroy_api;
-pub mod font_atlas;
-pub mod frame_lifecycle;
-pub mod fullscreen_shader;
-pub mod light_culling;
-pub mod material_api;
-pub mod mesh_manager;
-pub mod outline;
-pub mod particle_init;
-pub mod picking;
-pub mod readback;
-pub mod registry;
-pub mod shadow;
-pub mod skeleton_api;
-pub mod texture_api;
-pub mod types;
-pub mod ui_renderer;
-pub mod viewport_manager;
+pub(crate) mod animation_init;
+pub(crate) mod bindless_queries;
+pub(crate) mod compositing;
+pub(crate) mod depth_prepass;
+pub(crate) mod destroy_api;
+pub(crate) mod font_atlas;
+pub(crate) mod frame_lifecycle;
+pub(crate) mod fullscreen_shader;
+pub(crate) mod light_culling;
+pub(crate) mod material_api;
+pub(crate) mod mesh_manager;
+pub(crate) mod outline;
+pub(crate) mod particle_init;
+pub(crate) mod picking;
+pub(crate) mod readback;
+pub(crate) mod registry;
+pub(crate) mod shadow;
+pub(crate) mod skeleton_api;
+pub(crate) mod texture_api;
+pub(crate) mod types;
+pub(crate) mod ui_renderer;
+pub(crate) mod viewport_manager;
 
 pub use crate::handle::{
     Handle, MaterialHandle, MeshHandle, PipelineHandle, SkeletonHandle, TextureHandle,
@@ -1236,7 +1236,7 @@ impl VulkanRenderer {
 /// Output render target for final UI composition.
 /// The UI renders to this texture, then present_pass blits it to the swapchain.
 /// This decouples rendering from presentation for a cleaner architecture.
-pub struct OutputRenderTarget {
+pub(crate) struct OutputRenderTarget {
     /// Color attachment image.
     pub(crate) color_image: vk::Image,
     color_memory: Option<gpu_allocator::vulkan::Allocation>,

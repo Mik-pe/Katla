@@ -1,20 +1,20 @@
-pub mod bda;
-pub mod bindless_texture;
-pub mod commandbuffer;
-pub mod commandpool;
-pub mod context;
-pub mod descriptor_set;
-pub mod material;
-pub mod pipeline_state;
-pub mod queue;
-pub mod skeleton_buffer;
-pub mod swapchain;
-pub mod swapdata;
-pub mod texture;
-pub mod vertex_attr_set;
-pub mod vertex_attribute;
-pub mod vertexbinding;
-pub mod vertexbuffer;
+pub(crate) mod bda;
+pub(crate) mod bindless_texture;
+pub(crate) mod commandbuffer;
+pub(crate) mod commandpool;
+pub(crate) mod context;
+pub(crate) mod descriptor_set;
+pub(crate) mod material;
+pub(crate) mod pipeline_state;
+pub(crate) mod queue;
+pub(crate) mod skeleton_buffer;
+pub(crate) mod swapchain;
+pub(crate) mod swapdata;
+pub(crate) mod texture;
+pub(crate) mod vertex_attr_set;
+pub(crate) mod vertex_attribute;
+pub(crate) mod vertexbinding;
+pub(crate) mod vertexbuffer;
 
 // Re-export commonly used types from submodules for internal crate access
 pub(crate) use commandbuffer::CommandBuffer;

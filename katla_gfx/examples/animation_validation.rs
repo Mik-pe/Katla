@@ -16,7 +16,7 @@ use katla_gfx::animation::{
     AnimChannelInfo, AnimClipHeader, JointInfo, PoseComputeBuffers, PoseComputePipeline,
     SkeletonAnimParams,
 };
-use katla_gfx::renderer::registry::AssetRegistry;
+use katla_gfx::renderer::AssetRegistry;
 use katla_gfx::sync::VkShaderModule;
 use katla_gfx::{ShaderCache, ValidationMode, VulkanContext};
 use std::ffi::CString;
