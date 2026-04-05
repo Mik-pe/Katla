@@ -173,7 +173,7 @@ pub mod animation;
 pub(crate) mod vulkan;
 
 // Re-export animation types for katla_app GPU animation pipeline
-pub use animation::{AnimChannelInfo, AnimClipHeader, JointInfo, SkeletonAnimParams};
+pub use animation::{AnimChannelInfo, AnimClipHeader, JointInfo, PoseComputeBuffers, PoseComputePipeline, SkeletonAnimParams};
 
 // Internal modules (implementation details)
 pub(crate) mod barrier;
@@ -237,9 +237,6 @@ pub use renderer::{DrawList, VulkanRenderer};
 
 // Modern particle system
 pub use particles::{EmitterConfig, GlobalParticleSystem};
-
-// Forward+ lighting system
-pub use lighting::{LightCullFrameData, LightCullingBuffers, PointLightGPU};
 
 // Render graph system - minimal public API
 pub use render_graph::{

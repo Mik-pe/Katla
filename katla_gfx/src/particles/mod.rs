@@ -1,19 +1,19 @@
 //! GPU-driven particle system using a single global buffer with atomic counters,
 //! index list management, and indirect drawing.
 
-pub mod barriers;
-pub mod buffer;
-pub mod debug_readback;
-pub mod descriptors;
-pub mod dispatch;
-pub mod emitter;
-pub mod pipeline;
-pub mod presets;
-pub mod render;
-pub mod stats;
-pub mod timing;
-pub mod types;
-pub mod validation;
+pub(crate) mod barriers;
+pub(crate) mod buffer;
+pub(crate) mod debug_readback;
+pub(crate) mod descriptors;
+pub(crate) mod dispatch;
+pub(crate) mod emitter;
+pub(crate) mod pipeline;
+pub(crate) mod presets;
+pub(crate) mod render;
+pub(crate) mod stats;
+pub(crate) mod timing;
+pub(crate) mod types;
+pub(crate) mod validation;
 
 pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters, ParticleData};
 pub use debug_readback::{IndirectDrawCommandData, ParticleDebugData, ParticleDebugReadback};

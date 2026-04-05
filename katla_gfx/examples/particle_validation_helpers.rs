@@ -6,7 +6,7 @@ use katla_gfx::VulkanContext;
 use katla_gfx::particles::{
     GlobalParticleSystem, PARTICLE_EMIT_WORKGROUP_SIZE, PARTICLE_SIMULATE_WORKGROUP_SIZE,
 };
-use katla_gfx::renderer::registry::AssetRegistry;
+use katla_gfx::renderer::AssetRegistry;
 use std::path::PathBuf;
 
 /// GPU resources needed for render pass validation.

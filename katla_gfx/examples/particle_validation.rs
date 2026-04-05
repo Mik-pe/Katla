@@ -31,7 +31,7 @@ use katla_gfx::particles::{
     EmitterConfig, GlobalParticleSystem, PARTICLE_EMIT_WORKGROUP_SIZE,
     PARTICLE_SIMULATE_WORKGROUP_SIZE,
 };
-use katla_gfx::renderer::registry::AssetRegistry;
+use katla_gfx::renderer::AssetRegistry;
 use std::ffi::CString;
 use std::process::ExitCode;
 use std::rc::Rc;
@@ -1527,7 +1527,7 @@ fn validate_particle_data(particle_system: &GlobalParticleSystem) -> Result<(), 
     Ok(())
 }
 fn validate_emitter_configs(particle_system: &GlobalParticleSystem) -> Result<(), String> {
-    use katla_gfx::particles::validation::validate_emitter_config;
+    use katla_gfx::particles::validate_emitter_config;
 
     let emitters = particle_system.get_emitters();
 

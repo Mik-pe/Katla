@@ -170,6 +170,7 @@ impl<T> ResourceStorage<T> {
         }
     }
 
+    #[inline]
     pub fn insert(&mut self, resource: T) -> u32 {
         if let Some(index) = self.free_indices.pop() {
             self.resources[index as usize] = Some(resource);
@@ -181,10 +182,12 @@ impl<T> ResourceStorage<T> {
         }
     }
 
+    #[inline]
     pub fn get(&self, handle: u32) -> Option<&T> {
         self.resources.get(handle as usize)?.as_ref()
     }
 
+    #[inline]
     pub fn get_mut(&mut self, handle: u32) -> Option<&mut T> {
         self.resources.get_mut(handle as usize)?.as_mut()
     }
