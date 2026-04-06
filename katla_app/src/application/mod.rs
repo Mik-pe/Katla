@@ -120,6 +120,12 @@ pub struct Application {
     pub(crate) gizmo_resources: crate::gizmo::GizmoResources,
     /// Previous frame's mouse screen position (for gizmo rotation drag delta).
     pub(crate) prev_mouse_screen: Option<(f32, f32)>,
+    /// Hook called once after build(), before the event loop.
+    pub(crate) on_init: Option<builder::InitHook>,
+    /// Hook called each frame between world.update(dt) and rendering.
+    pub(crate) on_update: Option<builder::UpdateHook>,
+    /// Hook called during cleanup_on_exit().
+    pub(crate) on_shutdown: Option<builder::ShutdownHook>,
 }
 
 impl ApplicationHandler for Application {
@@ -472,6 +478,11 @@ impl ApplicationHandler for Application {
                     input.mouse_wheel_delta = 0.0;
                 }
 
+                // Run per-frame update hook (after ECS systems, before rendering)
+                if let Some(ref mut hook) = self.on_update {
+                    hook(&mut self.world, dt);
+                }
+
                 // Process ECS events to clean up GPU resources for destroyed entities
                 crate::gpu_cleanup::process_gpu_cleanup_events(
                     &self.world,
@@ -730,6 +741,11 @@ impl Application {
             return;
         }
         self.cleaned_up = true;
+
+        // Run shutdown hook for game-side cleanup
+        if let Some(hook) = self.on_shutdown.take() {
+            hook(self);
+        }
 
         // Wait for any pending async readback to complete before destroying resources
         // This must happen BEFORE wait_for_device() to ensure readback finishes
