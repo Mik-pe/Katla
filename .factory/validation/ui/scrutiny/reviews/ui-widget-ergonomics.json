@@ -1,0 +1,38 @@
+{
+  "featureId": "ui-widget-ergonomics",
+  "reviewedAt": "2026-04-06T13:00:00.000Z",
+  "commitId": "c832a7364d7a8b79d0e1a50f525c698bebf3aead",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The feature adds automatic cursor advancement in UiContext::add() by calling advance_cursor() with the widget's response bounds after rendering. This makes cursor behavior consistent across all widgets drawn via ui.add(). VAL-UI-003 was already satisfied (at_cursor() exists on Checkbox, Slider, TextInput, and Label). VAL-UI-004 is satisfied by the 3-line change in context/mod.rs. The implementation is minimal, correct, and well-tested with 6 new tests covering default vertical, column, row, and at_cursor() scenarios. One latent double-advancement bug was found in button_auto_wide() but it has no current callers.",
+    "issues": [
+      {
+        "file": "katla_ui/src/context/widgets.rs",
+        "line": 116,
+        "severity": "non_blocking",
+        "description": "button_auto_wide() calls self.add(Button::new(...)) which now advances the cursor, AND THEN manually advances the cursor again on lines 116-119. This is a double-advancement bug. However, button_auto_wide() has zero callers in the codebase (only defined and referenced in TODO.md), so this is latent and does not cause any current test failures or regressions. Should be fixed by removing the manual cursor advancement lines 116-119 since self.add() now handles it."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "library",
+      "observation": "The architecture.md documents the two-layer widget system (public builder widgets + internal implementations) but does not document the cursor advancement contract. Now that ui.add() always advances the cursor, convenience methods like button_auto_wide() that also manually advance will double-advance. This is a pattern future workers need to know about.",
+      "evidence": "button_auto_wide() in katla_ui/src/context/widgets.rs:114 calls self.add() then manually advances cursor on line 116-119. The ui.add() change (commit c832a73) introduced this inconsistency."
+    },
+    {
+      "area": "skills",
+      "observation": "The ui-worker skill's example handoff mentions 'Standardized cursor advancement for all widgets that draw at cursor' but this is outdated — cursor advancement is now centralized in ui.add() rather than per-widget. The example could mislead future workers into adding per-widget cursor advancement.",
+      "evidence": ".factory/skills/ui-worker/SKILL.md example handoff line: 'Standardized cursor advancement for all widgets that draw at cursor.'"
+    },
+    {
+      "area": "conventions",
+      "observation": "There are three different cursor advancement patterns in katla_ui: (1) ui.add() auto-advances, (2) helpers like text_label_colored() call advance_cursor() directly, (3) convenience methods like button_auto_wide() manually set self.cursor. This inconsistency is not documented anywhere and could confuse future workers.",
+      "evidence": "katla_ui/src/context/mod.rs:207 (ui.add auto-advance), katla_ui/src/context/helpers.rs:66 (direct advance_cursor call), katla_ui/src/context/widgets.rs:116 (manual self.cursor assignment)"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. The implementation correctly adds automatic cursor advancement in UiContext::add(), satisfying VAL-UI-004. VAL-UI-003 was already satisfied. The 3-line code change is minimal and well-tested with 6 new tests. One non-blocking issue: button_auto_wide() has a latent double-advancement bug (no current callers). Three shared state observations about cursor advancement patterns that should be documented for future workers."
+}
