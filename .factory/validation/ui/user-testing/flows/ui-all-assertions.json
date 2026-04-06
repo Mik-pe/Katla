@@ -1,0 +1,146 @@
+{
+  "assertionId": "ui-all-assertions",
+  "testedAt": "2026-04-06T00:00:00Z",
+  "status": "pass",
+  "assertions": [
+    {
+      "id": "VAL-UI-001",
+      "title": "Single layout style as primary",
+      "status": "pass",
+      "evidence": "Closure-based layout functions (horizontal(Fn), vertical(Fn)) have been removed. Only begin/end style remains: begin_row()/end_row(), begin_column()/end_column(), begin_grid()/end_grid(). The only horizontal()/vertical() functions found are on Spacer (which are constructors, not layout closures). Layout module doc comment documents begin/end as primary: 'begin_row/end_row, begin_column/end_column, begin_grid/end_grid'. All call sites in tests use begin/end style.",
+      "commandsRun": [
+        {
+          "command": "rg 'fn horizontal\\(.*Fn|fn vertical\\(.*Fn' katla_ui/src/",
+          "exitCode": 1,
+          "observation": "Zero matches — no closure-based layout functions exist"
+        },
+        {
+          "command": "rg 'begin_row|end_row|begin_column|end_column' katla_ui/src/",
+          "exitCode": 0,
+          "observation": "Found begin/end pattern in layout.rs (definitions) and context/tests.rs (call sites). All usage is begin/end style."
+        },
+        {
+          "command": "rg 'horizontal\\(|vertical\\(' katla_ui/src/",
+          "exitCode": 0,
+          "observation": "Only Spacer::vertical() and Spacer::horizontal() found — these are widget constructors, not layout closures"
+        },
+        {
+          "command": "cargo check --workspace",
+          "exitCode": 0,
+          "observation": "Workspace compiles successfully"
+        },
+        {
+          "command": "cargo test --workspace",
+          "exitCode": 0,
+          "observation": "All tests pass (197 unit tests + doctests)"
+        }
+      ]
+    },
+    {
+      "id": "VAL-UI-002",
+      "title": "Font bytes stored without Box::leak",
+      "status": "pass",
+      "evidence": "Zero instances of Box::leak found in katla_ui/src/text/. FontSystem struct (text/mod.rs line 183) stores fonts as HashMap<FontId, FontArc> with comment 'Loaded fonts stored with owned data (no Box::leak)'. No Vec<Vec<u8>> either — uses FontArc (reference-counted font handle from fontdb crate) which is the idiomatic approach. All 62 katla_ui tests pass including font/glyph-related tests.",
+      "commandsRun": [
+        {
+          "command": "rg 'Box::leak' katla_ui/src/text/",
+          "exitCode": 1,
+          "observation": "Zero matches — no Box::leak usage in text module"
+        },
+        {
+          "command": "rg 'Box::leak' katla_ui/src/",
+          "exitCode": 1,
+          "observation": "Zero matches across entire katla_ui crate"
+        },
+        {
+          "command": "cargo test -p katla_ui",
+          "exitCode": 0,
+          "observation": "62 tests pass, including glyph cache, UV normalization, subpixel binning, and gamma correction tests"
+        }
+      ]
+    },
+    {
+      "id": "VAL-UI-003",
+      "title": "at_cursor() available on all builder widgets",
+      "status": "pass",
+      "evidence": "at_cursor() method found on all required builder widgets: Button (line 93), ImageButton (line 219), Checkbox (line 279), ToggleButton (line 357), Slider (line 430), TextInput (line 512), Label (line 580). Additional widgets also have at_cursor(): Badge (line 731), DraggablePanel (line 851), Popup (popup/types.rs line 70). All methods follow the same pattern: setting bounds via Rect2D::from_origin_size(ui.cursor(), default_size).",
+      "commandsRun": [
+        {
+          "command": "rg 'at_cursor' katla_ui/src/",
+          "exitCode": 0,
+          "observation": "Found at_cursor on: Button, ImageButton, Checkbox, ToggleButton, Slider, TextInput, Label, Badge, DraggablePanel, Popup — all required widgets covered"
+        },
+        {
+          "command": "cargo check -p katla_ui",
+          "exitCode": 0,
+          "observation": "Compiles successfully"
+        },
+        {
+          "command": "cargo test -p katla_ui",
+          "exitCode": 0,
+          "observation": "All 62 tests pass including test_at_cursor_positions_and_advances"
+        }
+      ]
+    },
+    {
+      "id": "VAL-UI-004",
+      "title": "Cursor advancement is consistent",
+      "status": "pass",
+      "evidence": "UiContext::add() (context/mod.rs line 205) unconditionally calls self.advance_cursor() with the widget's response bounds after widget.ui() executes. This means every widget drawn through ui.add() advances the cursor. The advance_cursor method (layout.rs line 100) handles both direct cursor and layout-stack cursor positioning. Dedicated tests confirm: test_add_advances_cursor, test_add_advances_cursor_in_row_layout, test_add_advances_cursor_in_column_layout, test_add_stacks_widgets_vertically, test_at_cursor_positions_and_advances, test_label_advances_cursor_via_add.",
+      "commandsRun": [
+        {
+          "command": "rg 'fn add\\b' katla_ui/src/ (with context)",
+          "exitCode": 0,
+          "observation": "UiContext::add() calls widget.ui(self) then self.advance_cursor(bounds) — unconditional cursor advancement"
+        },
+        {
+          "command": "rg 'fn advance_cursor' katla_ui/src/ (with context)",
+          "exitCode": 0,
+          "observation": "advance_cursor handles layout stack and direct cursor, respects layout direction (horizontal/vertical)"
+        },
+        {
+          "command": "cargo test -p katla_ui",
+          "exitCode": 0,
+          "observation": "62 tests pass including 6 cursor-specific advancement tests"
+        },
+        {
+          "command": "cargo test --workspace",
+          "exitCode": 0,
+          "observation": "All 197 workspace tests pass"
+        }
+      ]
+    },
+    {
+      "id": "VAL-UI-005",
+      "title": "Border color handled in button_with_colors",
+      "status": "pass",
+      "evidence": "Border drawing logic is centralized entirely in UiContext::button_with_colors() (context/widgets/basic.rs line 17). The method accepts border_color: Option<Color> and draws border via self.draw_selection_border(bounds, border_color, 1.0) at line ~60. Button::ui() (widgets/mod.rs line 149) delegates to button_with_colors, passing through self.border_color. No border drawing code exists in the Button builder Widget::ui() impl — it only forwards parameters. Dedicated tests confirm: test_button_border_drawn_in_button_with_colors and test_button_border_forwarded_to_internal_method both pass.",
+      "commandsRun": [
+        {
+          "command": "rg 'border' katla_ui/src/widgets/mod.rs",
+          "exitCode": 0,
+          "observation": "border_color field stored on Button struct and forwarded to button_with_colors() in Widget::ui() — no border drawing in builder"
+        },
+        {
+          "command": "rg 'button_with_colors' katla_ui/src/ (with context)",
+          "exitCode": 0,
+          "observation": "button_with_colors() is the sole location for border drawing logic, using draw_selection_border()"
+        },
+        {
+          "command": "rg 'fn draw_selection_border' katla_ui/src/ (with context)",
+          "exitCode": 0,
+          "observation": "Utility method in drawing.rs draws 4 border rectangles — called only from button_with_colors()"
+        },
+        {
+          "command": "cargo test -p katla_ui",
+          "exitCode": 0,
+          "observation": "62 tests pass including test_button_border_drawn_in_button_with_colors and test_button_border_forwarded_to_internal_method"
+        }
+      ]
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["cargo test", "cargo check", "rg"],
+  "summary": "All 5 UI milestone assertions pass. Closure-based layout removed (VAL-UI-001), Box::leak eliminated from font storage (VAL-UI-002), at_cursor() available on all builder widgets (VAL-UI-003), cursor advancement centralized in UiContext::add() (VAL-UI-004), border drawing centralized in button_with_colors() (VAL-UI-005). Full workspace (197 tests) and katla_ui (62 tests) pass cleanly."
+}
