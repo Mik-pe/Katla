@@ -279,18 +279,24 @@ impl super::Application {
     /// * `default_animation` - Optional animation name to play automatically
     ///
     /// # Returns
-    /// The entity ID of the spawned model, or None if loading failed
+    /// The entity ID of the spawned model.
+    ///
+    /// # Errors
+    /// Returns `AppError::ShaderCompileFailed` if the PBR shader fails to compile.
+    /// Returns `AppError::SkeletonCreateFailed` if GPU skeleton creation fails for skinned models.
     pub fn spawn_gltf_model(
         &mut self,
         path: impl AsRef<std::path::Path>,
         position: [f32; 3],
         default_animation: Option<&str>,
-    ) -> Option<katla_ecs::EntityId> {
+    ) -> crate::error::AppResult<katla_ecs::EntityId> {
         use crate::components::{DrawableComponent, TransformComponent};
+        use crate::error::AppError;
         use katla_math::Vec3;
 
         // 1. Load model from cache
         let path_buf = path.as_ref().to_path_buf();
+        let path_display = path.as_ref().to_string_lossy().to_string();
         let model = self.gltf_cache.read(path_buf);
 
         // 2. Convert indices to u32 (generate sequential indices for non-indexed geometry)
@@ -350,7 +356,10 @@ impl super::Application {
                     ..Default::default()
                 },
             )
-            .ok()?;
+            .map_err(|e| AppError::ShaderCompileFailed {
+                path: path_display.clone(),
+                reason: format!("{e}"),
+            })?;
 
         // 5. Upload textures and set texture indices
         let texture_upload = self.upload_gltf_textures(&model);
@@ -415,7 +424,12 @@ impl super::Application {
 
             if joint_count > 0 {
                 // Create GPU skeleton
-                let skeleton_handle = self.renderer.create_skeleton(joint_count).ok()?;
+                let skeleton_handle = self.renderer.create_skeleton(joint_count).map_err(|e| {
+                    AppError::SkeletonCreateFailed {
+                        path: path_display.clone(),
+                        reason: format!("{e}"),
+                    }
+                })?;
 
                 // Add skeleton handle to drawable
                 if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(entity) {
@@ -449,7 +463,7 @@ impl super::Application {
             );
         }
 
-        Some(entity)
+        Ok(entity)
     }
 
     /// Upload textures from a GLTF model and return bindless texture indices.

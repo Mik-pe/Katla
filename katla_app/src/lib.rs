@@ -11,6 +11,7 @@ pub mod preferences;
 pub mod rendering;
 pub mod resources;
 pub mod scene;
+pub mod spawner;
 pub mod systems;
 mod ui;
 mod util;

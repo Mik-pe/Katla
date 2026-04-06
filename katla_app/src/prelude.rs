@@ -6,6 +6,7 @@
 pub use crate::application::ApplicationBuilder;
 pub use crate::error::{AppError, AppResult};
 pub use crate::rendering::FrameContext;
+pub use crate::spawner::Spawner;
 
 // Components
 pub use crate::components::camera::{

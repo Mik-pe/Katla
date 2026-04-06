@@ -279,7 +279,11 @@ pub fn process_editor_actions(app: &mut Application) {
                     world_pos.y(),
                     world_pos.z()
                 );
-                app.spawn_gltf_model(&path, [world_pos.x(), world_pos.y(), world_pos.z()], None);
+                if let Err(e) =
+                    app.spawn_gltf_model(&path, [world_pos.x(), world_pos.y(), world_pos.z()], None)
+                {
+                    log::error!("Failed to spawn GLTF model '{}': {}", path.display(), e);
+                }
             }
             EditorAction::DeleteEntity(entity_id) => {
                 // Cascade delete: collect all children first, then delete in reverse order
