@@ -1,7 +1,7 @@
 //! Text rendering and font handling.
 //!
 //! This module provides font loading, glyph caching, and text rendering
-//! using the `ab_glyph` library for rasterization.
+//! using the `skrifa` library for font parsing and `vello_cpu` for rasterization.
 //!
 //! # Subpixel Positioning
 //!
@@ -21,8 +21,8 @@ mod measurement;
 mod rasterization;
 
 use crate::types::TextureId;
-use ab_glyph::FontArc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use katla_math::{Rect2D, Vec2};
 
@@ -181,7 +181,7 @@ pub struct CachedGlyph {
 /// Font system managing fonts, glyph cache, and texture atlas.
 pub struct FontSystem {
     /// Loaded fonts stored with owned data (no Box::leak).
-    pub(super) fonts: HashMap<FontId, FontArc>,
+    pub(super) fonts: HashMap<FontId, Arc<Vec<u8>>>,
     /// Next font ID.
     pub(super) next_font_id: u32,
     /// Glyph cache: (font_id, char, size_key, scale_key, subpixel_bin) -> cached glyph.

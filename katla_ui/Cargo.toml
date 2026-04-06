@@ -10,6 +10,7 @@ bitflags = { workspace = true }
 bytemuck = { workspace = true }
 
 # Font handling
-ab_glyph = { workspace = true }
+skrifa = { workspace = true }
+vello_cpu = { workspace = true }
 
 [dev-dependencies]
