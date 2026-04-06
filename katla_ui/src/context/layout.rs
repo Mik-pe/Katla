@@ -1,6 +1,7 @@
 //! Layout system for UI positioning.
 //!
-//! Provides cursor-based layout, horizontal/vertical layout containers,
+//! Provides cursor-based layout using begin/end-style containers
+//! (`begin_row`/`end_row`, `begin_column`/`end_column`, `begin_grid`/`end_grid`)
 //! and automatic widget positioning.
 
 use katla_math::{Rect2D, Vec2};
@@ -131,83 +132,8 @@ impl UiContext {
     }
 
     // -------------------------------------------------------------------------
-    // Flex Layout System
+    // Layout Item Positioning
     // -------------------------------------------------------------------------
-
-    /// Begin a horizontal layout container.
-    ///
-    /// Widgets added inside the closure will be positioned left to right
-    /// with automatic spacing.
-    ///
-    /// # Example
-    /// ```ignore
-    /// ui.horizontal(|ui| {
-    ///     ui.button("btn1", "One", bounds1);
-    ///     ui.button("btn2", "Two", bounds2);
-    ///     ui.spacer(10.0);
-    ///     ui.button("btn3", "Three", bounds3);
-    /// });
-    /// ```
-    pub fn horizontal<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut Self),
-    {
-        let start_cursor = self.cursor;
-        self.layout_stack.push(LayoutState {
-            direction: LayoutDirection::Horizontal,
-            start_pos: start_cursor,
-            cursor: start_cursor,
-            max_item_size: Vec2::new(0.0, 0.0),
-            spacing: self.style.item_spacing,
-            grid_columns: 0,
-        });
-
-        f(self);
-
-        // SAFETY: We just pushed to layout_stack, so pop must succeed
-        let layout = self.layout_stack.pop().unwrap();
-        self.cursor = Vec2::new(
-            layout.start_pos.x(),
-            layout.cursor.y() + layout.max_item_size.y(),
-        );
-        self.row_height = self.row_height.max(layout.max_item_size.y());
-    }
-
-    /// Begin a vertical layout container.
-    ///
-    /// Widgets added inside the closure will be positioned top to bottom
-    /// with automatic spacing.
-    ///
-    /// # Example
-    /// ```ignore
-    /// ui.vertical(|ui| {
-    ///     ui.label("Name:", bounds1);
-    ///     ui.text_input("name", &mut name, bounds2);
-    /// });
-    /// ```
-    pub fn vertical<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut Self),
-    {
-        let start_cursor = self.cursor;
-        self.layout_stack.push(LayoutState {
-            direction: LayoutDirection::Vertical,
-            start_pos: start_cursor,
-            cursor: start_cursor,
-            max_item_size: Vec2::new(0.0, 0.0),
-            spacing: self.style.item_spacing,
-            grid_columns: 0,
-        });
-
-        f(self);
-
-        // SAFETY: We just pushed to layout_stack, so pop must succeed
-        let layout = self.layout_stack.pop().unwrap();
-        self.cursor = Vec2::new(
-            layout.start_pos.x(),
-            layout.cursor.y() + self.style.item_spacing,
-        );
-    }
 
     /// Get bounds for the next item in the current layout (if any).
     ///
@@ -276,8 +202,8 @@ impl UiContext {
 
     /// Begin a horizontal row layout from the current cursor position.
     ///
-    /// This is a simpler alternative to `horizontal()` that doesn't use
-    /// a closure. Remember to call `end_row()` when done.
+    /// Widgets added after this call will be positioned left to right
+    /// with automatic spacing. Remember to call `end_row()` when done.
     ///
     /// # Example
     /// ```ignore
@@ -314,8 +240,8 @@ impl UiContext {
 
     /// Begin a vertical column layout from the current cursor position.
     ///
-    /// This is a simpler alternative to `vertical()` that doesn't use
-    /// a closure. Remember to call `end_column()` when done.
+    /// Widgets added after this call will be positioned top to bottom
+    /// with automatic spacing. Remember to call `end_column()` when done.
     ///
     /// # Example
     /// ```ignore
