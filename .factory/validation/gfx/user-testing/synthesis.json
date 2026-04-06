@@ -1,0 +1,38 @@
+{
+  "milestone": "gfx",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 15,
+    "passed": 15,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-GFX-001",
+    "VAL-GFX-002",
+    "VAL-GFX-003",
+    "VAL-GFX-004",
+    "VAL-GFX-005",
+    "VAL-GFX-006",
+    "VAL-GFX-007",
+    "VAL-GFX-008",
+    "VAL-GFX-009",
+    "VAL-GFX-010",
+    "VAL-GFX-011",
+    "VAL-GFX-012",
+    "VAL-GFX-013",
+    "VAL-GFX-014",
+    "VAL-GFX-015"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "flowReports": [
+    ".factory/validation/gfx/user-testing/flows/group1-cone-visibility-subsystems.json",
+    ".factory/validation/gfx/user-testing/flows/group2-error-handling.json",
+    ".factory/validation/gfx/user-testing/flows/group3-drawcall-validation-examples.json"
+  ],
+  "notes": "All 15 GFX milestone assertions passed. VAL-GFX-008 init simplification is at 115 lines (down from ~150), above the aspirational ~50 target but substantially improved with subsystem delegation. All workspace tests pass (197+ tests). No frictions or blockers encountered."
+}
