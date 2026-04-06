@@ -23,6 +23,12 @@ pub enum AppError {
     /// IO error
     Io { source: std::io::Error },
 
+    /// Failed to compile shader for GLTF model
+    ShaderCompileFailed { path: String, reason: String },
+
+    /// Failed to create GPU skeleton for skinned model
+    SkeletonCreateFailed { path: String, reason: String },
+
     /// Other error with message
     Other { message: String },
 }
@@ -47,6 +53,12 @@ impl fmt::Display for AppError {
             }
             Self::Io { source } => {
                 write!(f, "IO error: {}", source)
+            }
+            Self::ShaderCompileFailed { path, reason } => {
+                write!(f, "Failed to compile shader for '{}': {}", path, reason)
+            }
+            Self::SkeletonCreateFailed { path, reason } => {
+                write!(f, "Failed to create skeleton for '{}': {}", path, reason)
             }
             Self::Other { message } => {
                 write!(f, "{}", message)

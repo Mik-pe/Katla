@@ -848,7 +848,11 @@ mod tests {
         assert!(builder.on_init.is_some());
 
         // Verify the hook closure captures correctly (not yet called)
-        assert_eq!(*entity_count.borrow(), 0, "Hook should not have been called yet");
+        assert_eq!(
+            *entity_count.borrow(),
+            0,
+            "Hook should not have been called yet"
+        );
         drop(entity_count);
     }
 

@@ -444,7 +444,7 @@ impl SceneManager {
             match &desc.source {
                 EntitySource::GltfModel { path } => app
                     .spawn_gltf_model(path, pos, None)
-                    .ok_or(format!("Failed to load GLTF model: {}", path))?,
+                    .map_err(|e| format!("{e}"))?,
                 EntitySource::ParticleEmitter => {
                     let config = katla_gfx::particles::EmitterConfig {
                         position: desc
