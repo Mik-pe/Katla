@@ -232,6 +232,8 @@ impl<'a> Frame<'a> {
                 ))
             })?;
 
+        let resource_already_written = self.resource_states.contains_key(color_name);
+
         let (load_op, store_op, clear_value) = pass
             .color_attachments
             .iter()
@@ -255,13 +257,20 @@ impl<'a> Frame<'a> {
                     },
                 )
             })
-            .unwrap_or((
-                vk::AttachmentLoadOp::CLEAR,
-                vk::AttachmentStoreOp::STORE,
-                vk::ClearColorValue {
-                    float32: [0.1, 0.1, 0.1, 1.0],
-                },
-            ));
+            .unwrap_or_else(|| {
+                let load = if resource_already_written {
+                    vk::AttachmentLoadOp::LOAD
+                } else {
+                    vk::AttachmentLoadOp::CLEAR
+                };
+                (
+                    load,
+                    vk::AttachmentStoreOp::STORE,
+                    vk::ClearColorValue {
+                        float32: [0.1, 0.1, 0.1, 1.0],
+                    },
+                )
+            });
 
         Ok(Some(
             vk::RenderingAttachmentInfo::default()
