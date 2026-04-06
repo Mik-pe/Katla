@@ -1069,3 +1069,189 @@ fn test_popup_blocks_click_underneath() {
         "Button underneath popup should NOT receive click"
     );
 }
+
+// === Cursor Advancement Consistency Tests (VAL-UI-004) ===
+
+/// Test that ui.add() advances the cursor after rendering a widget.
+///
+/// All widgets drawn via ui.add() should advance the cursor so that
+/// subsequent widgets don't overlap.
+#[test]
+fn test_add_advances_cursor() {
+    use crate::widgets::Button;
+
+    let mut ctx = UiContext::new();
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+    ctx.set_cursor(Vec2::new(10.0, 10.0));
+
+    let cursor_before = ctx.cursor();
+    let _response = ctx.add(Button::new("Test").bounds(Rect2D::from_origin_size(
+        Vec2::new(10.0, 10.0),
+        Vec2::new(100.0, 30.0),
+    )));
+    let cursor_after = ctx.cursor();
+
+    assert!(
+        cursor_after.y() > cursor_before.y(),
+        "Cursor should advance vertically after ui.add(Button): before.y()={}, after.y()={}",
+        cursor_before.y(),
+        cursor_after.y()
+    );
+
+    ctx.end();
+}
+
+/// Test that multiple widgets added via ui.add() stack vertically.
+#[test]
+fn test_add_stacks_widgets_vertically() {
+    use crate::widgets::Button;
+
+    let mut ctx = UiContext::new();
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+    ctx.set_cursor(Vec2::new(10.0, 10.0));
+
+    let h = 30.0;
+    let _r1 = ctx.add(Button::new("A").bounds(Rect2D::from_origin_size(
+        Vec2::new(10.0, 10.0),
+        Vec2::new(100.0, h),
+    )));
+    let cursor_after_first = ctx.cursor();
+
+    let _r2 = ctx.add(Button::new("B").bounds(Rect2D::from_origin_size(
+        cursor_after_first,
+        Vec2::new(100.0, h),
+    )));
+    let cursor_after_second = ctx.cursor();
+
+    assert!(
+        cursor_after_second.y() > cursor_after_first.y(),
+        "Second widget should be below first: first.y()={}, second.y()={}",
+        cursor_after_first.y(),
+        cursor_after_second.y()
+    );
+
+    ctx.end();
+}
+
+/// Test that Label advances cursor after ui.add().
+#[test]
+fn test_label_advances_cursor_via_add() {
+    use crate::widgets::Label;
+
+    let mut ctx = UiContext::new();
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+    ctx.set_cursor(Vec2::new(10.0, 10.0));
+
+    let cursor_before = ctx.cursor();
+    let response = ctx.add(Label::new("Hello").bounds(Rect2D::from_origin_size(
+        Vec2::new(10.0, 10.0),
+        Vec2::new(50.0, 20.0),
+    )));
+    let cursor_after = ctx.cursor();
+
+    assert_eq!(response.bounds.height(), 20.0);
+    assert!(
+        cursor_after.y() > cursor_before.y(),
+        "Cursor should advance after Label: before.y()={}, after.y()={}",
+        cursor_before.y(),
+        cursor_after.y()
+    );
+
+    ctx.end();
+}
+
+/// Test that cursor advancement works correctly inside a column layout.
+#[test]
+fn test_add_advances_cursor_in_column_layout() {
+    use crate::widgets::Button;
+
+    let mut ctx = UiContext::new();
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+    ctx.set_cursor(Vec2::new(10.0, 10.0));
+    ctx.begin_column();
+
+    let cursor_before = ctx.cursor();
+    let _r1 = ctx.add(Button::new("A").bounds(Rect2D::from_origin_size(
+        cursor_before,
+        Vec2::new(100.0, 30.0),
+    )));
+    let cursor_after_first = ctx.cursor();
+
+    let _r2 = ctx.add(Button::new("B").bounds(Rect2D::from_origin_size(
+        cursor_after_first,
+        Vec2::new(100.0, 30.0),
+    )));
+    let cursor_after_second = ctx.cursor();
+
+    assert!(
+        cursor_after_second.y() > cursor_after_first.y(),
+        "Widgets should stack vertically in column layout"
+    );
+
+    ctx.end_column();
+    ctx.end();
+}
+
+/// Test that cursor advancement works correctly inside a row layout.
+#[test]
+fn test_add_advances_cursor_in_row_layout() {
+    use crate::widgets::Button;
+
+    let mut ctx = UiContext::new();
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+    ctx.set_cursor(Vec2::new(10.0, 10.0));
+    ctx.begin_row();
+
+    let cursor_before = ctx.cursor();
+    let _r1 = ctx.add(Button::new("A").bounds(Rect2D::from_origin_size(
+        cursor_before,
+        Vec2::new(80.0, 30.0),
+    )));
+    let cursor_after_first = ctx.cursor();
+
+    assert!(
+        cursor_after_first.x() > cursor_before.x(),
+        "Widget should advance cursor horizontally in row layout"
+    );
+    assert!(
+        cursor_after_first.y() == cursor_before.y(),
+        "Cursor y should stay the same in row layout"
+    );
+
+    ctx.end_row();
+    ctx.end();
+}
+
+/// Test that at_cursor() + ui.add() positions and advances correctly.
+#[test]
+fn test_at_cursor_positions_and_advances() {
+    use crate::widgets::{Button, Label};
+
+    let mut ctx = UiContext::new();
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+    ctx.set_cursor(Vec2::new(50.0, 50.0));
+
+    // Label at_cursor should position at cursor and advance
+    let r1 = ctx.add(Label::new("Test Label").at_cursor(&ctx));
+    assert_eq!(r1.bounds.min.x(), 50.0);
+    assert_eq!(r1.bounds.min.y(), 50.0);
+
+    let cursor_after_label = ctx.cursor();
+    assert!(
+        cursor_after_label.y() > 50.0,
+        "Cursor should advance after Label at_cursor"
+    );
+
+    // Button at_cursor should position at the new cursor position
+    let r2 = ctx.add(Button::new("Click").at_cursor(&ctx));
+    assert_eq!(r2.bounds.min.x(), cursor_after_label.x());
+    assert_eq!(r2.bounds.min.y(), cursor_after_label.y());
+
+    let cursor_after_button = ctx.cursor();
+    assert!(
+        cursor_after_button.y() > cursor_after_label.y(),
+        "Cursor should advance after Button at_cursor"
+    );
+
+    ctx.end();
+}
