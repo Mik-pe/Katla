@@ -4,7 +4,8 @@ default-members = ["game"]
 resolver = "2"
 
 [workspace.dependencies]
-ab_glyph = "0.2"
+skrifa = "0.40"
+vello_cpu = "0.0.7"
 approx = "0.5"
 ash = "0.38"
 ash-window = "0.13"

@@ -533,6 +533,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "color"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a18ef4657441fb193b65f34dc39b3781f0dfec23d3bd94d0eeb4e88cde421edb"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "color_quant"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -772,6 +781,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "euclid"
+version = "0.22.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1a05365e3b1c6d1650318537c7460c6923f1abdd272ad6842baa2b509957a06"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "exr"
 version = "1.74.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -816,6 +834,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fearless_simd"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76258897e51fd156ee03b6246ea53f3e0eb395d0b327e9961c4fc4c8b2fa151a"
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -836,6 +860,15 @@ name = "foldhash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+
+[[package]]
+name = "font-types"
+version = "0.11.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d9237c6d82152100c691fb77ea18037b402bcc7257d2c876a4ffac81bc22a1c"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "foreign-types"
@@ -995,6 +1028,15 @@ dependencies = [
  "presser",
  "thiserror 2.0.18",
  "windows",
+]
+
+[[package]]
+name = "guillotiere"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b17e70c989c36bad147b27a58d148c0741c51448aa5653436547323e524d0ab"
+dependencies = [
+ "euclid",
 ]
 
 [[package]]
@@ -1264,11 +1306,23 @@ dependencies = [
 name = "katla_ui"
 version = "0.1.0"
 dependencies = [
- "ab_glyph",
  "bitflags 2.11.0",
  "bytemuck",
  "katla_math",
  "log",
+ "skrifa",
+ "vello_cpu",
+]
+
+[[package]]
+name = "kurbo"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7564e90fe3c0d5771e1f0bc95322b21baaeaa0d9213fa6a0b61c99f8b17b3bfb"
+dependencies = [
+ "arrayvec",
+ "euclid",
+ "smallvec",
 ]
 
 [[package]]
@@ -1326,6 +1380,12 @@ dependencies = [
  "plain",
  "redox_syscall 0.7.3",
 ]
+
+[[package]]
+name = "linebender_resource_handle"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4a5ff6bcca6c4867b1c4fd4ef63e4db7436ef363e0ad7531d1558856bae64f4"
 
 [[package]]
 name = "linux-raw-sys"
@@ -1850,6 +1910,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35fb2e5f958ec131621fdd531e9fc186ed768cbe395337403ae56c17a74c68ec"
 
 [[package]]
+name = "peniko"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a2b6aadb221872732e87d465213e9be5af2849b0e8cc5300a8ba98fffa2e00a"
+dependencies = [
+ "bytemuck",
+ "color",
+ "kurbo",
+ "linebender_resource_handle",
+ "smallvec",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2150,6 +2223,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "read-fonts"
+version = "0.37.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b634fabf032fab15307ffd272149b622260f55974d9fad689292a5d33df02e5"
+dependencies = [
+ "bytemuck",
+ "font-types",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2353,6 +2436,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95890f873bec569a0362c235787f3aca6e1e887302ba4840839bcc6459c42da6"
 dependencies = [
  "quote",
+]
+
+[[package]]
+name = "skrifa"
+version = "0.40.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fbdfe3d2475fbd7ddd1f3e5cf8288a30eb3e5f95832829570cd88115a7434ac"
+dependencies = [
+ "bytemuck",
+ "read-fonts",
 ]
 
 [[package]]
@@ -2609,6 +2702,46 @@ dependencies = [
  "aligned-vec",
  "num-traits",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "vello_api"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5088cd0113bc5332c753f24503825e3bc93e26c7883c9dc3ad9637bb62c4634"
+dependencies = [
+ "bytemuck",
+ "peniko",
+]
+
+[[package]]
+name = "vello_common"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "986dc49a501a683477614bf07b8e7b6c79ae4828efce3bf22e51850f4a0a8a4c"
+dependencies = [
+ "bytemuck",
+ "fearless_simd",
+ "guillotiere",
+ "hashbrown",
+ "log",
+ "peniko",
+ "png",
+ "skrifa",
+ "smallvec",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "vello_cpu"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a678f91c7524a3a9ac9a19df9f83552866ec70b2ca26441b916a6b219b6aa2de"
+dependencies = [
+ "bytemuck",
+ "hashbrown",
+ "vello_api",
+ "vello_common",
 ]
 
 [[package]]
