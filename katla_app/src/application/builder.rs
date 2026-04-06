@@ -1,3 +1,28 @@
+//! Application builder for configuring and constructing the engine.
+//!
+//! # Handle-Based Asset Workflow
+//!
+//! Katla uses opaque handles to reference GPU resources. Handles are cheap to copy
+//! and store, but the underlying GPU resources are owned by the renderer. The typical
+//! workflow is:
+//!
+//! 1. **Load resources** after `build()` and `init()` via [`Application`] methods:
+//!    - [`Application::load_texture(path)`] → `AppResult<TextureHandle>` — image files (PNG, JPEG)
+//!    - [`Application::load_mesh(path)`] → `AppResult<MeshHandle>` — GLTF/GLB files
+//!    - [`Application::load_animation(path, name)`] → `AppResult<AnimationClip>` — GLTF animations
+//!
+//! 2. **Spawn entities** using handles:
+//!    - [`Spawner::spawn_primitive`] on `World` for simple mesh+material entities
+//!    - [`Application::spawn_gltf_model`] for full GLTF import with textures and animation
+//!
+//! 3. **Track resources** for cleanup:
+//!    - [`GpuResourceTracker`] automatically handles reference-counted cleanup
+//!    - Entity destruction releases tracked GPU resources when ref counts reach zero
+//!
+//! Handles are valid for the lifetime of the renderer. Destroying a handle explicitly
+//! via `renderer.destroy_mesh(handle)` is safe but usually unnecessary — the tracker
+//! handles it automatically.
+
 #[cfg(feature = "editor")]
 use std::collections::HashMap;
 use std::ffi::CString;
