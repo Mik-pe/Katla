@@ -1,7 +1,6 @@
 use katla_math::{Color, Rect2D, Vec2, Vec3};
 use katla_ui::{FontSize, Response, Widget};
 
-use crate::gizmo::GizmoMode;
 use crate::{
     Preferences,
     ui::{EditorAction, SpawnableModel, Theme, editor_ui::Panel},
@@ -45,8 +44,6 @@ pub struct Toolbar<'a> {
     pub state: &'a mut ToolbarState,
     pub theme: &'a Theme,
     pub preferences: &'a Preferences,
-    /// Current gizmo mode (for highlighting the active button).
-    pub gizmo_mode: GizmoMode,
 }
 
 impl<'a> Toolbar<'a> {
@@ -56,7 +53,6 @@ impl<'a> Toolbar<'a> {
         state: &'a mut ToolbarState,
         theme: &'a Theme,
         preferences: &'a Preferences,
-        gizmo_mode: GizmoMode,
     ) -> Self {
         Self {
             screen_size,
@@ -64,7 +60,6 @@ impl<'a> Toolbar<'a> {
             state,
             theme,
             preferences,
-            gizmo_mode,
         }
     }
 }
@@ -191,76 +186,6 @@ impl<'a> Widget for Toolbar<'a> {
         ui.spacing(60.0 + padding);
 
         ui.end_row();
-
-        // Gizmo mode buttons
-        let gizmo_modes: &[(u8, &str, &str)] = &[
-            (0, "W:Move", "translate"),
-            (1, "E:Rotate", "rotate"),
-            (2, "R:Scale", "scale"),
-        ];
-
-        let gizmo_button_width = 65.0;
-        let gizmo_start_x = ui.cursor().x() + padding;
-        ui.draw_line(
-            Vec2::new(gizmo_start_x - padding, padding),
-            Vec2::new(gizmo_start_x - padding, self.height - padding),
-            theme.separator,
-            1.0,
-        );
-
-        ui.begin_row();
-        ui.set_cursor(Vec2::new(gizmo_start_x, 0.0));
-
-        for &(mode_id, label, _icon) in gizmo_modes {
-            let is_active = self.gizmo_mode as u8 == mode_id;
-            let btn_bounds =
-                Rect2D::from_origin_size(ui.cursor(), Vec2::new(gizmo_button_width, button_height));
-
-            let bg = if is_active {
-                theme.highlight
-            } else {
-                Color::TRANSPARENT
-            };
-
-            let text_color = if is_active {
-                theme.text_primary
-            } else {
-                theme.text_muted
-            };
-
-            if ui.mouse_clicked(katla_ui::input::mouse_button::LEFT)
-                && btn_bounds.contains(ui.mouse_pos())
-            {
-                self.state
-                    .pending_actions
-                    .push(EditorAction::SetGizmoMode(mode_id));
-            }
-
-            if btn_bounds.contains(ui.mouse_pos()) && !is_active {
-                ui.draw_rect(btn_bounds, theme.button_hover);
-            }
-
-            ui.draw_rect(btn_bounds, bg);
-            let font_size = ui.scaled_font_size(FontSize::Small);
-            let text_size = ui.measure_text(label, font_size);
-            let text_pos = Vec2::new(
-                btn_bounds.min.x() + (btn_bounds.width() - text_size.x()) * 0.5,
-                btn_bounds.min.y() + (btn_bounds.height() - text_size.y()) * 0.5,
-            );
-            ui.draw_text(label, text_pos, text_color, font_size);
-
-            ui.spacing(gizmo_button_width);
-        }
-
-        ui.end_row();
-
-        let current_x = ui.cursor().x();
-        ui.draw_line(
-            Vec2::new(current_x + padding, padding),
-            Vec2::new(current_x + padding, self.height - padding),
-            theme.separator,
-            1.0,
-        );
 
         let title = "Katla Engine";
         let title_size = ui.measure_text(title, ui.scaled_font_size(FontSize::Medium));
