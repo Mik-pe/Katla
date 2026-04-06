@@ -203,7 +203,12 @@ impl UiContext {
     /// ui.add(MyCustomWidget::new("label"));
     /// ```
     pub fn add<W: crate::Widget>(&mut self, widget: W) -> crate::Response {
-        widget.ui(self)
+        let response = widget.ui(self);
+        self.advance_cursor(katla_math::Vec2::new(
+            response.bounds.width(),
+            response.bounds.height(),
+        ));
+        response
     }
 
     // -------------------------------------------------------------------------
