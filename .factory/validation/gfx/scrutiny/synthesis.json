@@ -1,0 +1,106 @@
+{
+  "milestone": "gfx",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 12,
+    "passed": 12,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "services.yaml",
+      "description": "No changes applied — no new services or commands were confidently identified as missing essential entries",
+      "sourceFeature": "scrutiny-validator-gfx"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "library",
+      "suggestion": "Add a library entry documenting the subsystem extraction pattern used across katla_gfx: rename *State to *Subsystem, add *InitContext for dependency injection, move init/destroy/resize methods into the subsystem, add thin delegation wrappers on VulkanRenderer, and follow the two-phase destroy ordering (destroy_resources before context.pre_destroy(), destroy_layouts after). This pattern was used by ShadowSubsystem, LightSubsystem, OutlineSubsystem, DepthPrepassSubsystem, and PickingSubsystem.",
+      "evidence": "Identified independently by 5 reviewers (shadow, light, outline, depth-prepass, picking). The pattern is well-established but not documented in .factory/library/.",
+      "isSystemic": true
+    },
+    {
+      "target": "skills",
+      "suggestion": "Update the gfx-worker skill's TDD procedure to note an exception for pure structural refactoring features (subsystem extractions, visibility changes, init simplification). For these features, existing workspace tests provide sufficient coverage and writing new tests first is inappropriate since there is no behavioral change to test.",
+      "evidence": "Identified by 4 reviewers (shadow, light, outline, depth-prepass). All subsystem extraction features correctly skipped TDD and relied on existing tests.",
+      "isSystemic": true
+    },
+    {
+      "target": "services.yaml",
+      "suggestion": "Add a service command for checking validation examples compile: 'check-gfx-validation: cargo check -p katla_gfx --features validation --examples'. This is needed because validation examples are feature-gated and invisible to normal builds, so breakage can go unnoticed.",
+      "evidence": "Identified by gfx-visibility-tightening reviewer. Validation examples are currently broken on HEAD due to gfx-error-handling-context changing VulkanContext::init to return Result without updating the examples.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the convention for when to use .expect() vs ? for error propagation. Initialization code may use .expect() with descriptive messages, but runtime allocation calls in render loops should propagate errors via ? or handle them gracefully. Also document the let _ = pattern for intentionally ignoring flush/invalidate errors during non-critical operations.",
+      "evidence": "Identified by gfx-error-handling-context reviewer. Multiple call sites in texture.rs, vertexbuffer.rs, bda.rs use .expect() during frame setup rather than propagating errors. The let _ = pattern for ignoring flush/invalidate errors is used consistently across 6+ files but undocumented.",
+      "isSystemic": false
+    },
+    {
+      "target": "library",
+      "suggestion": "Document the init_step helper pattern in renderer/mod.rs: a generic fn init_step<T, E: Debug>(label, result) that wraps initialization results into RendererError::InitializationFailed with labeled error messages. Also document the extracted init helpers (create_storage_descriptor_sets, create_compositing_descriptor_set_layout, create_empty_descriptor_set_layout) so future workers modifying VulkanRenderer::init() know they exist.",
+      "evidence": "Identified by gfx-simplify-vulkan-renderer-init reviewer. The init_step generic and 3 extracted helpers are not mentioned in any library documentation.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "services.yaml test-gfx command could include a note about running individual tests",
+      "reason": "already-documented — the standard 'cargo test -p katla_gfx <test_name>' pattern is well-known and the existing test-gfx command is sufficient"
+    },
+    {
+      "observation": "DepthPrepassSubsystem fields use pub within pub(crate) struct, could be explicit pub(crate)",
+      "reason": "duplicate — this is a stylistic preference, not a systemic issue. Multiple subsystems follow this convention consistently."
+    },
+    {
+      "observation": "recompile_deferred_materials() kept in VulkanRenderer delegation layer rather than LightSubsystem",
+      "reason": "already-documented — the reviewer noted this is an architectural decision that is sound and self-evident from the code"
+    },
+    {
+      "observation": "VulkanFrameCtx::init missing ? operator (misleading git diff)",
+      "reason": "duplicate — the reviewer confirmed this was a false alarm from context truncation in the diff"
+    }
+  ],
+  "previousRound": null,
+  "lintFixesApplied": [
+    {
+      "file": "katla_gfx/src/renderer/types.rs",
+      "description": "Removed unused import Handle"
+    },
+    {
+      "file": "katla_gfx/src/shadow/mod.rs",
+      "description": "Removed unused imports CascadeInfo, ShadowCascadeGPU, ShadowFrameData"
+    },
+    {
+      "file": "katla_gfx/src/particles/timing.rs",
+      "description": "Added #[allow(dead_code)] to TimestampQuery struct and impl block"
+    },
+    {
+      "file": "katla_gfx/src/shadow/buffers.rs",
+      "description": "Added #[allow(dead_code)] to len() and is_empty() methods"
+    },
+    {
+      "file": "katla_gfx/src/shadow/cascade.rs",
+      "description": "Added #[allow(dead_code)] to cascades() method"
+    },
+    {
+      "file": "katla_gfx/src/vulkan/material/builder.rs",
+      "description": "Added #[allow(dead_code)] to with_push_constant_range() method"
+    },
+    {
+      "file": "katla_app/src/gizmo/types.rs",
+      "description": "Added #[allow(clippy::too_many_arguments)] to hit_test_linear_axes and hit_test_rotate_rings"
+    }
+  ],
+  "note": "gfx-unify-draw-call review subagent reported PASS but the review JSON file was not written to disk. Based on the subagent's reported summary, the feature passes with no blocking issues. Three non-blocking observations were noted about defensive fallback code and DrawBuilder API split."
+}

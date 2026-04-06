@@ -1,0 +1,31 @@
+{
+  "featureId": "gfx-extract-shadow-subsystem",
+  "reviewedAt": "2026-04-06T12:20:00.000Z",
+  "commitId": "2686f84",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean extraction of shadow-related state and methods from VulkanRenderer into a ShadowSubsystem struct. The ShadowState struct was renamed to ShadowSubsystem with owned init_resources(), init_pipeline(), init_pipeline_skinned(), update_shadows(), upload_shadow_cascades(), set_shadow_cascade_params(), bind_shadow_descriptors(), set_shadow_atlas_view(), destroy_resources(), and destroy_layouts() methods. A ShadowInitContext dependency injection struct avoids circular references between the subsystem and VulkanRenderer. VulkanRenderer delegates via thin wrapper methods preserving the existing public API. Direct field access from shadow_pass.rs was replaced with shadow_cascade_count() and shadow_cascade_depth_bias() accessors. Two-phase destroy (destroy_resources before pre_destroy, destroy_layouts after) correctly handles Vulkan descriptor layout lifecycle constraints. All 197 workspace tests pass with no new clippy warnings.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The ShadowInitContext pattern (dependency injection struct with borrowed VulkanRenderer fields) is a reusable pattern for subsystem extraction. This pattern was used successfully for shadow and should be documented for future subsystem extractions (light, outline, depth_prepass, picking).",
+      "evidence": "katla_gfx/src/renderer/shadow.rs:45-51 — ShadowInitContext<'a> struct with context, material_compiler, storage_descriptor_set, shared_empty_descriptor_layout, asset_registry fields. The handoff notes this is the first of 5 subsystem extractions."
+    },
+    {
+      "area": "knowledge",
+      "observation": "Two-phase destroy pattern (destroy_resources before pre_destroy, destroy_layouts after) is needed because Vulkan pipelines reference descriptor set layouts until AssetRegistry drops them. This ordering constraint should be documented for other subsystem extractions.",
+      "evidence": "katla_gfx/src/renderer/mod.rs:658 — self.shadow.destroy_resources(&self.context) called before self.context.pre_destroy(), and katla_gfx/src/renderer/mod.rs:672 — self.shadow.destroy_layouts(&self.context) called after pre_destroy(). Comment at line 670 explains the ordering rationale."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The gfx-worker skill's TDD-focused verification checklist doesn't align well with refactoring/extraction tasks like this one. The skill emphasizes writing tests first and visual verification, but this feature is a pure structural refactor with no behavioral change — existing tests are sufficient. The worker correctly followed the spirit of the checklist (cargo test, cargo fmt, cargo clippy) but skipped the TDD step which would have been inappropriate.",
+      "evidence": "Handoff skillFeedback.followedProcedure is true with no deviations. Worker ran cargo check, cargo test, cargo fmt, and cargo clippy. No new tests were added, which is appropriate for a structural refactor with no behavioral change."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The ShadowSubsystem extraction is well-executed. All shadow-related fields were moved from VulkanRenderer into ShadowSubsystem, init/destroy methods are properly owned by the subsystem, the existing public API is preserved through delegation, and direct field access from shadow_pass.rs was replaced with accessors. The two-phase destroy pattern correctly respects Vulkan descriptor layout lifecycle. No bugs, edge cases, or issues found. All 197 workspace tests pass."
+}

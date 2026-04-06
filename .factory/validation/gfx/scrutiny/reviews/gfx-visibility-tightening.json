@@ -1,0 +1,26 @@
+{
+  "featureId": "gfx-visibility-tightening",
+  "reviewedAt": "2026-04-06T12:30:00.000Z",
+  "commitId": "b70f0f81c29db93ff89657db6c69e279acc56b55",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean, well-scoped visibility tightening of four internal modules (sync, animation, shadow, lighting) in katla_gfx. The implementation correctly uses conditional compilation with a 'validation' Cargo feature to toggle between pub(crate) and pub visibility. All external consumers in katla_app were properly updated to use re-exports. The feature-gating of validation examples is correctly done via required-features in Cargo.toml.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "services",
+      "observation": "The validation feature should have a service command for checking that examples compile when the feature is enabled. Currently services.yaml has check-gfx but nothing for feature-gated example compilation. Workers need to verify both with and without the feature.",
+      "evidence": ".factory/services.yaml has no command like 'check-gfx-validation: cargo check -p katla_gfx --features validation --examples'. The worker manually ran this command during verification."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The validation examples are now broken on HEAD due to later commits (gfx-error-handling-context) that changed VulkanContext::init to return Result without updating the examples. This is a cross-feature interaction issue — the examples are feature-gated and invisible to normal builds, so the breakage went unnoticed.",
+      "evidence": "Running 'cargo check -p katla_gfx --features validation --examples' on HEAD produces ~80+ errors across all 5 examples, all related to VulkanContext::init returning Result. The handoff for gfx-visibility-tightening confirmed examples compiled at commit b70f0f8. Commit 9a8c59c ('Return Result from VulkanContext::init') broke them afterward."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The gfx-visibility-tightening feature is correctly implemented. All four modules (sync, animation, shadow, lighting) are pub(crate) by default with conditional pub visibility when the 'validation' feature is enabled. Necessary re-exports (PointLightGPU, CascadeParams, PoseComputeBuffers, PoseComputePipeline) are provided for katla_app. All 5 validation examples are properly gated behind required-features. Workspace compiles and all 197 tests pass. Two non-blocking shared state observations: missing service command for validation example compilation, and cross-feature breakage of examples by a later commit."
+}

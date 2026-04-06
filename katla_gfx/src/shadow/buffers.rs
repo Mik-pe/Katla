@@ -91,10 +91,12 @@ impl ShadowBuffers {
         }
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.shadow_atlas_views.len()
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.shadow_atlas_views.is_empty()
     }
