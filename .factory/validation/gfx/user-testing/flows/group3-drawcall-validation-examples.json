@@ -1,0 +1,102 @@
+{
+  "groupId": "group3-drawcall-validation-examples",
+  "testedAt": "2026-04-06T12:40:00Z",
+  "isolation": {
+    "type": "cargo-workspace",
+    "repoPath": "C:\\dev\\katla"
+  },
+  "toolsUsed": ["cargo test", "cargo check", "cargo build", "rg"],
+  "assertions": [
+    {
+      "id": "VAL-GFX-014",
+      "title": "DrawCall unified to always use InstanceData",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test --workspace",
+          "expected": "All tests pass (exit code 0)",
+          "observed": "All tests pass. 197 unit tests ran successfully, 1 ignored (cycle detection). All doctests pass across katla_ecs, katla_gfx, katla_math, katla_ui. Exit code 0."
+        },
+        {
+          "action": "rg 'pub model_matrix' katla_gfx/src/",
+          "expected": "Only found on InstanceData struct, not on DrawCall",
+          "observed": "Found only on katla_gfx/src/renderer/types.rs:58 which is inside the InstanceData struct definition (lines 50-108). DrawCall struct is at line 125-143 and has no model_matrix field."
+        },
+        {
+          "action": "rg 'pub color:' katla_gfx/src/renderer/types.rs",
+          "expected": "Only found on InstanceData, not on DrawCall",
+          "observed": "Found on line 60, inside the InstanceData struct. DrawCall struct (line 125-143) has no flat color field."
+        },
+        {
+          "action": "Inspect DrawCall struct definition",
+          "expected": "DrawCall has instances: Vec<InstanceData> instead of flat model_matrix/color/metallic/roughness/ao fields",
+          "observed": "DrawCall struct fields: mesh, material, instance_index, emission, transparent, sort_key, skeleton, instances: Vec<InstanceData>. No duplicate flat fields for model_matrix, color, metallic, roughness, or ao."
+        }
+      ],
+      "evidence": {
+        "description": "DrawCall struct at katla_gfx/src/renderer/types.rs:125-143 has no flat duplicate fields (model_matrix, color, metallic, roughness, ao). All per-instance data is in the instances: Vec<InstanceData> field. The InstanceData struct (lines 50-108) holds model_matrix, color, metallic, roughness, ao. All 197 workspace tests pass.",
+        "consoleErrors": "none"
+      },
+      "issues": null,
+      "commandsRun": [
+        {
+          "command": "cargo test --workspace",
+          "exitCode": 0,
+          "output": "197 tests passed, 1 ignored (cycle detection edge case). All doctests passed across 4 crates."
+        },
+        {
+          "command": "rg 'pub model_matrix' katla_gfx/src/",
+          "exitCode": 0,
+          "output": "Found only at katla_gfx/src/renderer/types.rs:58 (InstanceData struct)"
+        },
+        {
+          "command": "rg 'pub color:' katla_gfx/src/renderer/types.rs",
+          "exitCode": 0,
+          "output": "Found only at line 60 (InstanceData struct)"
+        }
+      ]
+    },
+    {
+      "id": "VAL-GFX-015",
+      "title": "Validation examples behind Cargo feature",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Check Cargo.toml for validation feature and autoexamples",
+          "expected": "Feature 'validation' defined, autoexamples = false, all 5 examples have required-features = [\"validation\"]",
+          "observed": "Cargo.toml has autoexamples = false, [features] with validation = [], and all 5 examples (particle_validation, animation_validation, light_shadow_validation, picking_validation, outline_validation) have required-features = [\"validation\"]"
+        },
+        {
+          "action": "Run cargo check -p katla_gfx (without feature)",
+          "expected": "Succeeds without building validation examples",
+          "observed": "cargo check succeeded (exit code 0). Validation examples were not compiled."
+        },
+        {
+          "action": "Run cargo build -p katla_gfx --features validation (with feature)",
+          "expected": "Succeeds, compiling all validation examples",
+          "observed": "cargo build with --features validation succeeded (exit code 0). All validation examples compiled."
+        }
+      ],
+      "evidence": {
+        "description": "katla_gfx/Cargo.toml has autoexamples = false, a 'validation' feature, and all 5 validation examples (particle, animation, light_shadow, picking, outline) gated behind required-features = [\"validation\"]. cargo check without the feature succeeds (examples skipped). cargo build --features validation succeeds (examples compiled).",
+        "consoleErrors": "none"
+      },
+      "issues": null,
+      "commandsRun": [
+        {
+          "command": "cargo check -p katla_gfx",
+          "exitCode": 0,
+          "output": "Finished dev profile. Validation examples not built."
+        },
+        {
+          "command": "cargo build -p katla_gfx --features validation",
+          "exitCode": 0,
+          "output": "Compiling katla_gfx v0.1.0. Finished dev profile. All validation examples compiled."
+        }
+      ]
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 2 assertions: 2 passed. VAL-GFX-014 confirmed DrawCall has no duplicate flat fields (model_matrix, color, metallic, roughness, ao) - all per-instance data is in the instances: Vec<InstanceData> field. VAL-GFX-015 confirmed all 5 validation examples are gated behind the 'validation' Cargo feature via required-features."
+}
