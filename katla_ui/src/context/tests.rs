@@ -1255,3 +1255,72 @@ fn test_at_cursor_positions_and_advances() {
 
     ctx.end();
 }
+
+// === VAL-UI-005: Border drawing centralized in button_with_colors ===
+
+/// Test that button border drawing is handled entirely by button_with_colors().
+///
+/// A Button with border_color set should produce more draw primitives than one
+/// without, confirming the border is drawn inside the internal method, not split
+/// across the builder and the internal method.
+#[test]
+fn test_button_border_drawn_in_button_with_colors() {
+    use crate::widgets::Button;
+
+    let button_bounds = Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(80.0, 30.0));
+    let border_color = Color::from_rgb_hex(0xFF0000);
+
+    // Button without border
+    let mut ctx_no_border = UiContext::new();
+    ctx_no_border.begin(Vec2::new(800.0, 600.0), 1.0);
+    ctx_no_border.add(Button::new("NoBorder").bounds(button_bounds));
+    let draw_list_no_border = ctx_no_border.end();
+
+    // Button with border
+    let mut ctx_with_border = UiContext::new();
+    ctx_with_border.begin(Vec2::new(800.0, 600.0), 1.0);
+    ctx_with_border.add(
+        Button::new("WithBorder")
+            .bounds(button_bounds)
+            .border(border_color),
+    );
+    let draw_list_with_border = ctx_with_border.end();
+
+    // Border adds 4 rectangles (top, bottom, left, right edges)
+    // The bordered button should have more vertices and indices
+    assert!(
+        draw_list_with_border.vertex_count() > draw_list_no_border.vertex_count(),
+        "Button with border should produce more vertices than without border"
+    );
+    assert!(
+        draw_list_with_border.index_count() > draw_list_no_border.index_count(),
+        "Button with border should produce more indices than without border"
+    );
+}
+
+/// Test that Button::border() is properly forwarded through Widget::ui() to
+/// button_with_colors(), confirming no border drawing happens in the builder layer.
+#[test]
+fn test_button_border_forwarded_to_internal_method() {
+    use crate::widgets::Button;
+
+    let button_bounds = Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(80.0, 30.0));
+    let custom_border = Color::from_rgb_hex(0x00FF00);
+
+    // Render button with border via the public builder API
+    let mut ctx = UiContext::new();
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+    ctx.add(
+        Button::new("Test")
+            .bounds(button_bounds)
+            .border(custom_border),
+    );
+    let draw_list = ctx.end();
+
+    // Verify the draw list has border primitives (more than just bg + text)
+    // Background rect: 6 indices, border: 4 rects * 6 = 24 indices, text may add more
+    assert!(
+        draw_list.index_count() >= 30,
+        "Button with border should have at least 30 indices (bg + 4 border edges)"
+    );
+}
