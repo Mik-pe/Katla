@@ -1,0 +1,59 @@
+{
+  "milestone": "app",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Update katla_app/AGENTS.md frame order section to mark editor-only steps (poll_background_loader, generate_ui_draw_list, process_editor_actions, render_gizmos) as conditional on the 'editor' feature flag, and add the lifecycle hook insertion points (on_update between world.update and particle_system.update, on_init after build in run(), on_shutdown in cleanup_on_exit).",
+      "evidence": "Reviews for app-lifecycle-hooks and app-editor-decoupling both flagged that the frame order doc doesn't reflect lifecycle hooks or editor cfg gating.",
+      "isSystemic": true
+    },
+    {
+      "target": "library",
+      "suggestion": "Update .factory/library/architecture.md to document: (1) the 'editor' Cargo feature flag in katla_app (default on, gates editor UI/fields/frame logic), (2) the Spawner extension trait pattern on World for entity creation, (3) the public resource loading API on Application (load_texture, load_mesh, load_animation), (4) the components::lighting module re-export chain via rendering/mod.rs.",
+      "evidence": "Reviews for app-spawning-decoupling, app-editor-decoupling, app-resource-loading-api, and app-component-visibility all noted missing documentation in architecture.md for new patterns.",
+      "isSystemic": true
+    },
+    {
+      "target": "skills",
+      "suggestion": "Update the app-worker skill to acknowledge that TDD is not universally applicable — GPU-dependent features (resource loading, rendering) cannot be unit-tested without a Vulkan renderer. Add guidance on when to skip TDD and what verification to use instead (compile checks, integration tests, manual review).",
+      "evidence": "Reviews for app-lifecycle-hooks and app-resource-loading-api both noted the TDD mandate in the skill doesn't match actual practice for GPU-dependent or straightforward features.",
+      "isSystemic": true
+    },
+    {
+      "target": "skills",
+      "suggestion": "Update the app-worker skill to mention Cargo feature flags and cfg gating patterns. The 'editor' feature flag in katla_app is a new pattern not reflected in the skill. Future workers working on editor or optional features should know about this.",
+      "evidence": "Review for app-editor-decoupling noted the app-worker skill has no mention of feature flags or cfg attributes.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "services.yaml check-app-no-default command already exists (app-editor-decoupling review)",
+      "reason": "already-documented — the command was already present, no update needed"
+    },
+    {
+      "observation": "Spawner sRGB color path verification suggestion (app-spawning-decoupling review)",
+      "reason": "ambiguous — the reviewer noted this as a suggestion but the DrawableComponent::with_handles_and_color method already handles color conversion per existing conventions; no concrete issue identified"
+    },
+    {
+      "observation": "GltfCache file-not-found error variants scoped out (app-spawning-decoupling review)",
+      "reason": "duplicate — this is a pre-existing design constraint, not a new finding from this feature"
+    }
+  ],
+  "previousRound": null
+}
