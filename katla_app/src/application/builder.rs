@@ -23,6 +23,11 @@ use crate::{
     util::{BackgroundLoader, GLTFModel, GltfCache, Timer},
 };
 
+/// Hook types stored on Application.
+pub(crate) type InitHook = Box<dyn FnOnce(&mut Application)>;
+pub(crate) type UpdateHook = Box<dyn FnMut(&mut World, f32)>;
+pub(crate) type ShutdownHook = Box<dyn FnOnce(&mut Application)>;
+
 /// Default font sizes for UI text (in pixels)
 const DEFAULT_UI_FONT_SIZES: &[f32] = &[14.0, 16.0];
 
@@ -33,6 +38,9 @@ pub struct ApplicationBuilder {
     max_frames: Option<usize>,
     check_black_frames: bool,
     world: World,
+    on_init: Option<InitHook>,
+    on_update: Option<UpdateHook>,
+    on_shutdown: Option<ShutdownHook>,
 }
 
 impl ApplicationBuilder {
@@ -92,6 +100,33 @@ impl ApplicationBuilder {
         for (system, order) in systems {
             self.world.register_system(system, order);
         }
+        self
+    }
+
+    /// Register a hook that runs once after `build()` returns, before the event loop starts.
+    ///
+    /// Use this to spawn initial entities or configure application state that requires
+    /// a fully initialized renderer.
+    pub fn on_init(mut self, f: impl FnOnce(&mut Application) + 'static) -> Self {
+        self.on_init = Some(Box::new(f));
+        self
+    }
+
+    /// Register a hook that runs each frame between `world.update(dt)` and rendering.
+    ///
+    /// Receives a mutable reference to the World and the delta time in seconds.
+    /// Use this for per-frame game logic that needs to run after ECS systems but
+    /// before rendering (e.g., custom physics, AI, procedural generation).
+    pub fn on_update(mut self, f: impl FnMut(&mut World, f32) + 'static) -> Self {
+        self.on_update = Some(Box::new(f));
+        self
+    }
+
+    /// Register a hook that runs once during `cleanup_on_exit()`.
+    ///
+    /// Use this for game-side cleanup (e.g., saving state, releasing external resources).
+    pub fn on_shutdown(mut self, f: impl FnOnce(&mut Application) + 'static) -> Self {
+        self.on_shutdown = Some(Box::new(f));
         self
     }
 
@@ -732,6 +767,9 @@ impl ApplicationBuilder {
             gizmo_state: crate::gizmo::GizmoState::default(),
             gizmo_resources: crate::gizmo::GizmoResources::default(),
             prev_mouse_screen: None,
+            on_init: self.on_init,
+            on_update: self.on_update,
+            on_shutdown: self.on_shutdown,
         };
 
         Ok((app, event_loop))
@@ -739,12 +777,146 @@ impl ApplicationBuilder {
 
     /// Build, initialize, and run the application in one call.
     ///
-    /// Equivalent to `build()`, `init()`, and `event_loop.run_app()`.
+    /// Equivalent to `build()`, `init()`, `on_init` callback, and `event_loop.run_app()`.
     /// Returns on error during build; panics if the event loop itself fails.
     pub fn run(self) -> AppResult<()> {
         let (mut application, event_loop) = self.build()?;
         application.init();
+
+        // Run the on_init hook after initialization, before the event loop
+        if let Some(hook) = application.on_init.take() {
+            hook(&mut application);
+        }
+
         event_loop.run_app(&mut application).unwrap();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use katla_ecs::World;
+
+    #[test]
+    fn test_builder_on_init_stores_hook() {
+        let called = Rc::new(RefCell::new(false));
+        let called_clone = called.clone();
+
+        let builder = ApplicationBuilder::new().on_init(move |_app: &mut Application| {
+            *called_clone.borrow_mut() = true;
+        });
+
+        assert!(builder.on_init.is_some(), "on_init hook should be stored");
+        drop(called);
+    }
+
+    #[test]
+    fn test_builder_on_update_stores_hook() {
+        let builder = ApplicationBuilder::new().on_update(|_world: &mut World, _dt: f32| {
+            // no-op test hook
+        });
+
+        assert!(
+            builder.on_update.is_some(),
+            "on_update hook should be stored"
+        );
+    }
+
+    #[test]
+    fn test_builder_on_shutdown_stores_hook() {
+        let builder = ApplicationBuilder::new().on_shutdown(|_app: &mut Application| {
+            // no-op test hook
+        });
+
+        assert!(
+            builder.on_shutdown.is_some(),
+            "on_shutdown hook should be stored"
+        );
+    }
+
+    #[test]
+    fn test_builder_on_init_hook_can_access_world() {
+        let entity_count = Rc::new(RefCell::new(0usize));
+        let entity_count_clone = entity_count.clone();
+
+        let builder = ApplicationBuilder::new().on_init(move |app: &mut Application| {
+            // Verify the hook has access to the world
+            *entity_count_clone.borrow_mut() = app.world.entity_count();
+        });
+
+        assert!(builder.on_init.is_some());
+
+        // Verify the hook closure captures correctly (not yet called)
+        assert_eq!(*entity_count.borrow(), 0, "Hook should not have been called yet");
+        drop(entity_count);
+    }
+
+    #[test]
+    fn test_builder_on_update_hook_receives_dt() {
+        let received_dts = Rc::new(RefCell::new(Vec::<f32>::new()));
+        let received_dts_clone = received_dts.clone();
+
+        let mut builder =
+            ApplicationBuilder::new().on_update(move |_world: &mut World, dt: f32| {
+                received_dts_clone.borrow_mut().push(dt);
+            });
+
+        assert!(builder.on_update.is_some());
+
+        // Simulate calling the hook multiple times
+        if let Some(ref mut hook) = builder.on_update {
+            let mut world = World::new();
+            hook(&mut world, 0.016);
+            hook(&mut world, 0.033);
+            hook(&mut world, 0.050);
+        }
+
+        let dts = received_dts.borrow();
+        assert_eq!(dts.len(), 3);
+        assert!((dts[0] - 0.016).abs() < f32::EPSILON);
+        assert!((dts[1] - 0.033).abs() < f32::EPSILON);
+        assert!((dts[2] - 0.050).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_builder_hooks_chain_with_other_methods() {
+        let builder = ApplicationBuilder::new()
+            .with_name("test-app")
+            .single_frame(true)
+            .on_init(|_app| {})
+            .on_update(|_world, _dt| {})
+            .on_shutdown(|_app| {});
+
+        assert!(builder.on_init.is_some());
+        assert!(builder.on_update.is_some());
+        assert!(builder.on_shutdown.is_some());
+    }
+
+    #[test]
+    fn test_builder_default_has_no_hooks() {
+        let builder = ApplicationBuilder::default();
+        assert!(builder.on_init.is_none());
+        assert!(builder.on_update.is_none());
+        assert!(builder.on_shutdown.is_none());
+    }
+
+    #[test]
+    fn test_on_update_hook_can_mutate_world() {
+        use katla_ecs::World;
+
+        let mut builder = ApplicationBuilder::new().on_update(|world: &mut World, _dt: f32| {
+            world.insert_resource(42i32);
+        });
+
+        assert!(builder.on_update.is_some());
+
+        if let Some(ref mut hook) = builder.on_update {
+            let mut world = World::new();
+            hook(&mut world, 0.016);
+            let value = world.get_resource::<i32>();
+            assert!(value.is_some());
+            assert_eq!(*value.unwrap(), 42);
+        }
     }
 }
