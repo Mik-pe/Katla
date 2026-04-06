@@ -1,0 +1,36 @@
+{
+  "milestone": "app",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 14,
+    "passed": 14,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-APP-001",
+    "VAL-APP-002",
+    "VAL-APP-003",
+    "VAL-APP-004",
+    "VAL-APP-005",
+    "VAL-APP-006",
+    "VAL-APP-007",
+    "VAL-APP-008",
+    "VAL-APP-009",
+    "VAL-APP-010",
+    "VAL-APP-011",
+    "VAL-APP-012",
+    "VAL-APP-013",
+    "VAL-APP-014"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "flowReports": [
+    ".factory/validation/app/user-testing/flows/lifecycle-hooks.json",
+    ".factory/validation/app/user-testing/flows/spawning-editor.json",
+    ".factory/validation/app/user-testing/flows/resource-visibility.json"
+  ]
+}
