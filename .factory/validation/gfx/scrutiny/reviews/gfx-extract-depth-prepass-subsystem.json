@@ -1,0 +1,31 @@
+{
+  "featureId": "gfx-extract-depth-prepass-subsystem",
+  "reviewedAt": "2026-04-06T12:30:00Z",
+  "commitId": "3f5ebc3",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean structural refactor that extracts DepthPrepassState into DepthPrepassSubsystem with owned init/destroy lifecycle, following the established subsystem pattern (OutlineSubsystem, LightSubsystem, ShadowSubsystem). The implementation correctly introduces DepthPrepassInitContext for dependency injection, moves pipeline initialization into subsystem methods, and preserves the external API via thin delegation wrappers on VulkanRenderer. All callers (frame/depth_prepass.rs, katla_app builder.rs) continue to work without modification. The destroy() method correctly drops pipeline handles (pipelines are AssetRegistry-owned). Cleanup ordering in VulkanRenderer::destroy() places depth_prepass.destroy() before context.pre_destroy(), consistent with the outline subsystem.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The subsystem extraction pattern (rename *State to *Subsystem, add *InitContext, move init/destroy methods, add delegation wrappers on VulkanRenderer) is now well-established across ShadowSubsystem, LightSubsystem, DepthPrepassSubsystem, PickingSubsystem, and OutlineSubsystem. This pattern should be documented in .factory/library/ as it's being repeated for each subsystem extraction feature.",
+      "evidence": "katla_gfx/src/renderer/depth_prepass.rs (DepthPrepassSubsystem + DepthPrepassInitContext), katla_gfx/src/renderer/outline.rs (OutlineSubsystem + OutlineInitContext), katla_gfx/src/renderer/shadow/mod.rs (ShadowSubsystem + ShadowInitContext), katla_gfx/src/renderer/light_culling.rs (LightSubsystem + LightInitContext)"
+    },
+    {
+      "area": "skills",
+      "observation": "The gfx-worker skill's TDD-first procedure doesn't match reality for structural refactor features like this one. This feature is a pure refactor with no behavioral change — writing tests first doesn't apply. The skill's verification checklist asks for unit tests, but the handoff correctly notes this is a structural refactor verified by existing workspace tests passing.",
+      "evidence": "Handoff skillFeedback.followedProcedure=true with no added tests. Skill SKILL.md section 1 says 'Write tests FIRST' — appropriate for new features but not for subsystem extraction refactors where the expectedBehavior is structural existence verified by compilation and existing tests."
+    },
+    {
+      "area": "conventions",
+      "observation": "DepthPrepassSubsystem fields (pipeline, pipeline_skinned) are marked `pub` within a `pub(crate)` struct, meaning they're effectively pub(crate). The OutlineSubsystem follows the same convention. This is consistent but could be tightened to `pub(crate)` explicitly for clarity, since nobody accesses these fields directly — all access goes through accessor methods.",
+      "evidence": "katla_gfx/src/renderer/depth_prepass.rs:24-26 — `pub pipeline: Option<PipelineHandle>`, `pub pipeline_skinned: Option<PipelineHandle>`. Grep confirms no direct field access outside the struct."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The DepthPrepassSubsystem extraction is a well-executed structural refactor that fully meets the feature requirements (VAL-GFX-006). DepthPrepassState was renamed to DepthPrepassSubsystem with #[derive(Default)], DepthPrepassInitContext was added for dependency injection matching the OutlineInitContext/LightInitContext pattern, init_depth_prepass_pipeline() and init_depth_prepass_skinned_pipeline() were moved into the subsystem, destroy() drops pipeline handles, and delegation methods on VulkanRenderer preserve the external API. The destroy call is correctly placed before context.pre_destroy() in VulkanRenderer::destroy(). Inline use statements were moved to file-level imports. All workspace tests pass, cargo fmt is clean, and no new clippy warnings were introduced (7 pre-existing warnings in unrelated files confirmed via stash test). No blocking issues found."
+}

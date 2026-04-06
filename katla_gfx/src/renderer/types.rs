@@ -6,7 +6,7 @@
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle};
 use crate::vertex::VertexUI;
 
-pub use crate::handle::{Handle, TextureHandle};
+pub use crate::handle::TextureHandle;
 
 /// Frame-level uniforms that are shared across all draw calls.
 ///

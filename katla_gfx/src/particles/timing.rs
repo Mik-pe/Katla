@@ -8,6 +8,7 @@ use log::debug;
 use crate::vulkan::context::VulkanContext;
 
 /// GPU timestamp query pools for measuring compute shader execution time.
+#[allow(dead_code)]
 pub struct TimestampQuery {
     /// Query pool for start timestamp
     start_pool: vk::QueryPool,
@@ -28,6 +29,7 @@ pub struct TimestampQuery {
     destroyed: bool,
 }
 
+#[allow(dead_code)]
 impl TimestampQuery {
     /// Create a new timestamp query pool.
     ///

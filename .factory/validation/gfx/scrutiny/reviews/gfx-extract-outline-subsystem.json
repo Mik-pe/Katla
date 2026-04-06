@@ -1,0 +1,26 @@
+{
+  "featureId": "gfx-extract-outline-subsystem",
+  "reviewedAt": "2026-04-06T12:00:00Z",
+  "commitId": "8830cbd",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean structural refactor that extracts OutlineState into OutlineSubsystem with owned lifecycle methods, following the established ShadowSubsystem/LightSubsystem pattern. The rename from OutlineState to OutlineSubsystem, addition of OutlineInitContext for dependency injection, and encapsulation of init/destroy methods are all well-executed. Delegation methods on VulkanRenderer preserve the external API. All tests pass and the workspace compiles cleanly.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The subsystem extraction pattern (rename *State to *Subsystem, add *InitContext, move init/destroy methods, add delegation wrappers on VulkanRenderer) is now well-established across ShadowSubsystem, LightSubsystem, DepthPrepassSubsystem, PickingSubsystem, and now OutlineSubsystem. This pattern should be documented in .factory/library/ as it's being repeated for each subsystem extraction feature.",
+      "evidence": "katla_gfx/src/renderer/outline.rs (OutlineSubsystem + OutlineInitContext), katla_gfx/src/renderer/shadow/mod.rs (ShadowSubsystem + ShadowInitContext), katla_gfx/src/renderer/depth_prepass.rs (DepthPrepassSubsystem), katla_gfx/src/renderer/picking.rs (PickingSubsystem)"
+    },
+    {
+      "area": "skills",
+      "observation": "The gfx-worker skill's TDD-first procedure doesn't match reality for structural refactor features like this one. This feature (and similar subsystem extraction features) is a pure refactor with no behavioral change — writing tests first doesn't apply. The skill's verification checklist asks for unit tests, but the handoff correctly notes this is a structural refactor verified by existing workspace tests passing.",
+      "evidence": "Handoff skillFeedback.followedProcedure=true but with no added tests. Skill SKILL.md section 1 says 'Write tests FIRST' — this is appropriate for new features but not for subsystem extraction refactors where the expectedBehavior is structural existence verified by compilation."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The OutlineSubsystem extraction is a well-executed structural refactor that fully meets the feature requirements. OutlineState was renamed to OutlineSubsystem with #[derive(Default)], OutlineInitContext was added for dependency injection (matching the ShadowSubsystem/LightSubsystem pattern), init_outline_pipelines() and init_stencil_indicator_pipelines() were moved into the subsystem with the context parameter, destroy() encapsulates GPU resource cleanup, and delegation methods on VulkanRenderer preserve the external API. The cleanup order in VulkanRenderer::destroy() correctly places outline.destroy() before context.pre_destroy(). No behavioral changes were introduced. All workspace tests pass, cargo check and cargo clippy are clean. No blocking issues found."
+}

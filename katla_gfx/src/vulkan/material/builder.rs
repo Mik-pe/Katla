@@ -141,6 +141,7 @@ impl PipelineBuilder {
     }
 
     /// Add a push constant range to the pipeline layout.
+    #[allow(dead_code)]
     pub fn with_push_constant_range(
         mut self,
         stages: vk::ShaderStageFlags,

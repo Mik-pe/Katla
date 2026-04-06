@@ -381,6 +381,7 @@ pub fn hit_test_axes(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn hit_test_linear_axes(
     mouse_screen: (f32, f32),
     gizmo_origin: Vec3,
@@ -417,6 +418,7 @@ fn hit_test_linear_axes(
     best_axis
 }
 
+#[allow(clippy::too_many_arguments)]
 fn hit_test_rotate_rings(
     mouse_screen: (f32, f32),
     gizmo_origin: Vec3,

@@ -1,0 +1,15 @@
+{
+  "featureId": "gfx-extract-picking-subsystem",
+  "reviewedAt": "2026-04-06T12:25:00.000Z",
+  "commitId": "cece50f",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean extraction of PickingSubsystem from VulkanRenderer. The picking readback state (pending_picking_readback field) and all associated methods (queue, check, wait, has_pending) were moved into a dedicated PickingSubsystem struct. Delegation methods on VulkanRenderer preserve the public API. Destroy integration is correct. Follows the same pattern established by other subsystem extractions (DepthPrepassSubsystem, OutlineSubsystem, LightSubsystem, ShadowSubsystem).",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "The PickingSubsystem extraction is well-executed and follows the established subsystem pattern in the codebase. All three expected behaviors are satisfied: PickingSubsystem struct exists, picking fields are removed from VulkanRenderer (replaced with picking: PickingSubsystem), and all workspace tests pass. The delegation methods on VulkanRenderer are consistent with how DepthPrepassSubsystem, OutlineSubsystem, and LightSubsystem expose their APIs. The destroy() method properly handles cleanup of pending readback resources (fence wait, command buffer return, fence/buffer destruction). No bugs or edge cases were missed."
+}

@@ -1,0 +1,31 @@
+{
+  "featureId": "gfx-extract-light-subsystem",
+  "reviewedAt": "2026-04-06T00:00:00.000Z",
+  "commitId": "5f1db6d",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean extraction of light culling state from VulkanRenderer into a self-contained LightSubsystem struct. The implementation follows the established ShadowSubsystem pattern with init(), destroy(), and resize() lifecycle methods. LightInitContext provides dependency injection for VulkanRenderer-owned resources (context, material_compiler). Thin delegation methods on VulkanRenderer preserve the public API. Material recompilation on resize correctly remains in the VulkanRenderer delegation layer since it's a cross-cutting concern. All fields on LightSubsystem are properly private. The old LightCullingState type name is fully removed with no stale references remaining.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The subsystem extraction pattern (LightInitContext for dependency injection, thin delegation wrappers on VulkanRenderer, private fields on subsystem) is now used by ShadowSubsystem and LightSubsystem but not documented in .factory/library/. This pattern is relevant to other pending extraction features (outline, depth-prepass, picking).",
+      "evidence": "ShadowSubsystem in katla_gfx/src/renderer/shadow.rs and LightSubsystem in katla_gfx/src/renderer/light_culling.rs both use the same LightInitContext/ShadowInitContext pattern. features.json shows gfx-extract-outline-subsystem, gfx-extract-depth-prepass-subsystem, and gfx-extract-picking-subsystem as subsequent features."
+    },
+    {
+      "area": "conventions",
+      "observation": "The gfx-worker skill prescribes TDD ('Write tests FIRST') but this structural refactoring feature added no tests. The handoff notes this is a refactoring covered by the existing 197+ test suite. The skill's TDD guidance may need a caveat for pure structural refactorings that don't change behavior.",
+      "evidence": "Skill SKILL.md section '1. Test-Driven Development (TDD)' says 'Write tests FIRST'. Handoff tests.added is empty with coverage note: 'LightSubsystem extraction is a structural refactoring. The existing test suite (197+ tests) validates that all public APIs continue to work correctly through delegation.'"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker correctly identified that recompile_deferred_materials() is a cross-cutting concern and kept it in the VulkanRenderer delegation layer rather than moving it into LightSubsystem::resize(). This is a sound architectural decision but the reasoning isn't captured in any shared convention — future workers doing similar extractions may not realize this distinction.",
+      "evidence": "light_culling.rs:370-374 — resize_light_culling() calls self.recompile_deferred_materials() before delegating to self.light_culling.resize(). The LightSubsystem::resize() method does NOT call recompile_deferred_materials()."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "LightSubsystem extraction is a clean, well-executed structural refactoring. The implementation fully covers the feature requirements: LightSubsystem struct with init(), destroy(), resize() methods exists, light culling fields are removed from VulkanRenderer (moved into LightSubsystem with private visibility), and all workspace tests pass. The pattern is consistent with the established ShadowSubsystem extraction. No bugs or issues found."
+}
