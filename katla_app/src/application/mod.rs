@@ -13,6 +13,7 @@ pub(crate) mod camera;
 #[cfg(feature = "editor")]
 pub mod editor;
 mod renderer;
+mod resource_loading;
 mod spawning;
 
 #[cfg(feature = "editor")]

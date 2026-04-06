@@ -581,7 +581,7 @@ impl super::Application {
     ///
     /// For non-indexed geometry (empty index_data), generates sequential indices
     /// [0, 1, 2, ... vertex_count-1] for the given vertex count.
-    fn convert_indices_to_u32_with_vertex_count(
+    pub(crate) fn convert_indices_to_u32_with_vertex_count(
         index_data: &[u8],
         index_stride: u8,
         vertex_count: usize,
