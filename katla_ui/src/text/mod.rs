@@ -21,7 +21,7 @@ mod measurement;
 mod rasterization;
 
 use crate::types::TextureId;
-use ab_glyph::FontRef;
+use ab_glyph::FontArc;
 use std::collections::HashMap;
 
 use katla_math::{Rect2D, Vec2};
@@ -180,8 +180,8 @@ pub struct CachedGlyph {
 
 /// Font system managing fonts, glyph cache, and texture atlas.
 pub struct FontSystem {
-    /// Loaded fonts (leaked for 'static lifetime - fonts live for app lifetime).
-    pub(super) fonts: HashMap<FontId, FontRef<'static>>,
+    /// Loaded fonts stored with owned data (no Box::leak).
+    pub(super) fonts: HashMap<FontId, FontArc>,
     /// Next font ID.
     pub(super) next_font_id: u32,
     /// Glyph cache: (font_id, char, size_key, scale_key, subpixel_bin) -> cached glyph.
