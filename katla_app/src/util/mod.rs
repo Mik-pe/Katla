@@ -8,6 +8,7 @@ pub mod gltf_parser;
 pub mod modelcache;
 pub mod timer;
 
+#[cfg(feature = "editor")]
 pub use background_loader::*;
 pub use cache::*;
 pub use config::*;

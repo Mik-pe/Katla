@@ -1,5 +1,7 @@
+#[cfg(feature = "editor")]
+use std::collections::HashMap;
 use std::ffi::CString;
-use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Instant};
+use std::{cell::RefCell, rc::Rc, time::Instant};
 
 use katla_ecs::{System, SystemExecutionOrder, World};
 use katla_gfx::renderer::VulkanRenderer;
@@ -12,15 +14,19 @@ use winit::window::Window;
 
 use super::camera::Camera;
 
+#[cfg(feature = "editor")]
+use crate::gui_state::GuiState;
+#[cfg(feature = "editor")]
+use crate::ui::Theme;
+#[cfg(feature = "editor")]
+use crate::util::BackgroundLoader;
 use crate::{
     application::{Application, ApplicationInfo},
     error::AppResult,
-    gui_state::GuiState,
     input::InputMapper,
     preferences::Preferences,
     resources::ResourceManager,
-    ui::Theme,
-    util::{BackgroundLoader, GLTFModel, GltfCache, Timer},
+    util::{GLTFModel, GltfCache, Timer},
 };
 
 /// Hook types stored on Application.
@@ -558,6 +564,7 @@ impl ApplicationBuilder {
 
         // Load user preferences
         let preferences = Preferences::load();
+        #[cfg(feature = "editor")]
         let theme = Theme::by_name(&preferences.theme).unwrap_or_default();
         log::info!(
             "Loaded preferences: theme={}, show_grid={}, show_stats={}, font_scale={}",
@@ -568,7 +575,9 @@ impl ApplicationBuilder {
         );
 
         // Load GUI layout state
+        #[cfg(feature = "editor")]
         let gui_state = GuiState::load();
+        #[cfg(feature = "editor")]
         log::info!(
             "Loaded GUI state: left_panel={}, right_panel={}, asset_browser_height={}",
             gui_state.left_panel_width,
@@ -729,7 +738,9 @@ impl ApplicationBuilder {
             frame_count: 0,
             resources,
             ui_context,
+            #[cfg(feature = "editor")]
             ui_renderer,
+            #[cfg(feature = "editor")]
             editor_ui: {
                 let mut editor = crate::ui::EditorUI::with_theme(theme);
                 editor.show_grid = preferences.show_grid;
@@ -742,9 +753,12 @@ impl ApplicationBuilder {
                 editor
             },
             preferences,
+            #[cfg(feature = "editor")]
             gui_state,
             scale_factor: 1.0, // Will be updated when window is created
+            #[cfg(feature = "editor")]
             background_loader: BackgroundLoader::new(),
+            #[cfg(feature = "editor")]
             thumbnail_texture_handles: HashMap::new(),
             start_time: Instant::now(),
             default_material_handle: katla_gfx::MaterialHandle::NONE,
@@ -756,16 +770,23 @@ impl ApplicationBuilder {
             particle_readback_pending: false,
             #[cfg(debug_assertions)]
             particle_readback_done: false,
+            #[cfg(feature = "editor")]
             entity_instance_map: std::collections::HashMap::new(),
+            #[cfg(feature = "editor")]
             entity_to_instance_indices: std::collections::HashMap::new(),
+            #[cfg(feature = "editor")]
             pending_pick: None,
+            #[cfg(feature = "editor")]
             stencil_indicator_bindless_index: None,
             minimized: false,
             gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(
                 katla_gfx::MaterialHandle::NONE,
             ),
+            #[cfg(feature = "editor")]
             gizmo_state: crate::gizmo::GizmoState::default(),
+            #[cfg(feature = "editor")]
             gizmo_resources: crate::gizmo::GizmoResources::default(),
+            #[cfg(feature = "editor")]
             prev_mouse_screen: None,
             on_init: self.on_init,
             on_update: self.on_update,
