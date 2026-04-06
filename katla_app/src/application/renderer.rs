@@ -21,7 +21,13 @@ impl Application {
         // in the RedrawRequested handler to ensure the UI samples from the
         // correct per-frame transient texture.
 
+        #[cfg(feature = "editor")]
         let (viewport_width, viewport_height) = self.editor_ui.viewport_size();
+        #[cfg(not(feature = "editor"))]
+        let (viewport_width, viewport_height) = {
+            let extent = self.renderer.swapchain_extent();
+            (extent.width, extent.height)
+        };
         let viewport_aspect = if viewport_height > 0 {
             viewport_width as f32 / viewport_height as f32
         } else {
@@ -113,6 +119,7 @@ impl Application {
         draw_list.sort_by_material();
 
         // Generate gizmo draw calls if an entity is selected
+        #[cfg(feature = "editor")]
         self.collect_gizmo_draw_calls(&mut draw_list);
 
         if let Err(e) = self.renderer.execute_draw_calls(&draw_list) {
@@ -207,13 +214,13 @@ impl Application {
             log::warn!("⚠️ No particle system in renderer!");
         }
 
-        // Collect selected entity instance indices before the render closure
-        // to avoid borrowing self while self.renderer is mutably borrowed.
+        #[cfg(feature = "editor")]
         let selected_outline_indices = self
             .editor_ui
             .selected_entity
             .map(|entity| self.collect_selected_instance_indices(entity));
 
+        #[cfg(feature = "editor")]
         let outline_draw_list = selected_outline_indices.as_ref().map(|indices| {
             let draws = draw_list
                 .iter()
@@ -241,6 +248,7 @@ impl Application {
                 log::warn!("No draw calls to submit to geometry pass!");
             }
 
+            #[cfg(feature = "editor")]
             if let Some(ref outline_dl) = outline_draw_list
                 && !outline_dl.is_empty()
             {
@@ -340,7 +348,9 @@ impl Application {
         use crate::components::{DrawableComponent, TransformComponent};
 
         // Clear the entity-instance maps for this frame
+        #[cfg(feature = "editor")]
         self.entity_instance_map.clear();
+        #[cfg(feature = "editor")]
         self.entity_to_instance_indices.clear();
 
         let entity_count = self.world.entity_count();
@@ -368,6 +378,7 @@ impl Application {
 
             // Get instance_index before creating the draw builder (which borrows frame mutably).
             // instance_count() returns the next index that will be allocated by draw().
+            #[cfg(feature = "editor")]
             let instance_index = frame.instance_count();
 
             let mut draw = frame
@@ -391,11 +402,17 @@ impl Application {
 
             draw.submit();
 
-            self.entity_instance_map.insert(instance_index, entity_id);
-            self.entity_to_instance_indices
-                .entry(entity_id)
-                .or_default()
-                .push(instance_index);
+            #[cfg(feature = "editor")]
+            {
+                self.entity_instance_map.insert(instance_index, entity_id);
+                self.entity_to_instance_indices
+                    .entry(entity_id)
+                    .or_default()
+                    .push(instance_index);
+            }
+
+            #[cfg(not(feature = "editor"))]
+            let _ = entity_id;
 
             drawable_count += 1;
         }
@@ -410,6 +427,7 @@ impl Application {
     /// Collect instance indices for the selected entity and all its children.
     ///
     /// Used to build the filtered draw list for the outline pass.
+    #[cfg(feature = "editor")]
     fn collect_selected_instance_indices(&self, root_entity: katla_ecs::EntityId) -> Vec<u32> {
         use crate::components::Children;
 
@@ -437,6 +455,7 @@ impl Application {
     }
 
     /// Generate gizmo draw calls and append them to the main draw list.
+    #[cfg(feature = "editor")]
     fn collect_gizmo_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
         use crate::components::{PerspectiveComponent, TransformComponent};
         use crate::gizmo::*;

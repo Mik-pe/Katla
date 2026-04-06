@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "editor"), allow(dead_code))]
 //! Background asset loader system.
 //!
 //! Loads assets on a background thread (CPU work) and returns results

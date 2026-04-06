@@ -2,21 +2,28 @@
 //!
 //! This module provides the bridge between katla_ui and the application layer.
 
+#[cfg(feature = "editor")]
 mod editor_ui;
+#[cfg(feature = "editor")]
 mod particle_inspector;
+#[cfg(feature = "editor")]
 mod particle_stats;
 pub mod renderer;
 pub mod theme;
 
+#[cfg(feature = "editor")]
 pub use editor_ui::inspector::InspectorEditState;
+#[cfg(feature = "editor")]
 pub use editor_ui::{
     EditorAction, EditorUI, EntityInfo, FocusedPanel, ParticleEmitterInfo, PointLightInfo,
     SpawnableModel, ThumbnailState,
 };
+#[cfg(feature = "editor")]
 pub use particle_inspector::{
     EmitterConfigView, ParticleInspector, ParticleInspectorAction, ParticleInspectorData,
     ParticleInspectorState,
 };
+#[cfg(feature = "editor")]
 pub use particle_stats::ParticleStats;
 pub use renderer::UIRenderer;
 pub use theme::Theme;

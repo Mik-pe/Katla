@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "editor"), allow(dead_code))]
 //! Editor theme system with multiple color schemes.
 //!
 //! Provides semantic color names for UI elements, making it easy to
