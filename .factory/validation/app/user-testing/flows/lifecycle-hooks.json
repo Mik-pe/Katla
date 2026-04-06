@@ -1,0 +1,162 @@
+{
+  "assertionGroup": "lifecycle-hooks",
+  "testedAt": "2026-04-06T00:00:00Z",
+  "isolation": {
+    "type": "cargo-commands",
+    "workingDirectory": "C:\\dev\\katla",
+    "package": "katla_app"
+  },
+  "toolsUsed": ["cargo test", "rg"],
+  "assertions": [
+    {
+      "id": "VAL-APP-001",
+      "title": "ApplicationBuilder::on_init hook",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for on_init method definition in katla_app/src/",
+          "expected": "Found pub fn on_init on ApplicationBuilder",
+          "observed": "Found at builder.rs:141 — pub fn on_init(mut self, f: impl FnOnce(&mut Application) + 'static) -> Self"
+        },
+        {
+          "action": "Verify on_init hook is stored on Application struct",
+          "expected": "pub(crate) on_init: Option<builder::InitHook> on Application",
+          "observed": "Confirmed at application/mod.rs:145 — pub(crate) on_init: Option<builder::InitHook>"
+        },
+        {
+          "action": "Verify on_init is called after build(), before event loop in run()",
+          "expected": "Hook invoked between application.init() and event_loop.run_app()",
+          "observed": "Confirmed at builder.rs:832-834: if let Some(hook) = application.on_init.take() { hook(&mut application); } called after application.init() and before event_loop.run_app()"
+        },
+        {
+          "action": "Run unit tests for on_init",
+          "expected": "test_builder_on_init_stores_hook and test_builder_on_init_hook_can_access_world pass",
+          "observed": "Both tests passed. test_builder_on_init_stores_hook verifies hook is stored. test_builder_on_init_hook_can_access_world verifies callback can access Application.world"
+        }
+      ],
+      "evidence": {
+        "testsPassed": ["test_builder_on_init_stores_hook", "test_builder_on_init_hook_can_access_world"],
+        "sourceLocations": {
+          "methodDefinition": "katla_app/src/application/builder.rs:141-143",
+          "typeAlias": "katla_app/src/application/builder.rs:58 — type InitHook = Box<dyn FnOnce(&mut Application)>",
+          "storageOnApplication": "katla_app/src/application/mod.rs:145",
+          "invocationInRun": "katla_app/src/application/builder.rs:832-834"
+        }
+      },
+      "issues": null,
+      "commandsRun": [
+        {
+          "command": "cargo test -p katla_app",
+          "exitCode": 0,
+          "observation": "208 passed, 0 failed, 1 ignored. All lifecycle hook tests passed."
+        },
+        {
+          "command": "rg \"on_init\" katla_app/src/",
+          "exitCode": 0,
+          "observation": "Found method definition, storage on Application, invocation in run(), and unit tests"
+        }
+      ]
+    },
+    {
+      "id": "VAL-APP-002",
+      "title": "ApplicationBuilder::on_update hook",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for on_update method definition in katla_app/src/",
+          "expected": "Found pub fn on_update on ApplicationBuilder",
+          "observed": "Found at builder.rs:151 — pub fn on_update(mut self, f: impl FnMut(&mut World, f32) + 'static) -> Self"
+        },
+        {
+          "action": "Verify on_update hook is stored on Application struct",
+          "expected": "pub(crate) on_update: Option<builder::UpdateHook> on Application",
+          "observed": "Confirmed at application/mod.rs:147 — pub(crate) on_update: Option<builder::UpdateHook>"
+        },
+        {
+          "action": "Verify on_update is called each frame between world.update(dt) and rendering",
+          "expected": "Hook invoked in RedrawRequested after self.world.update(dt) and before rendering",
+          "observed": "Confirmed at application/mod.rs:537-538: if let Some(ref mut hook) = self.on_update { hook(&mut self.world, dt); } — called after world.update(dt) at line 528 and before particle_system.update/rendering at line 547"
+        },
+        {
+          "action": "Run unit tests for on_update",
+          "expected": "test_builder_on_update_stores_hook, test_builder_on_update_hook_receives_dt, and test_on_update_hook_can_mutate_world pass",
+          "observed": "All three tests passed. test_builder_on_update_hook_receives_dt verifies delta time parameter (0.016, 0.033, 0.050). test_on_update_hook_can_mutate_world verifies mutable World access."
+        }
+      ],
+      "evidence": {
+        "testsPassed": ["test_builder_on_update_stores_hook", "test_builder_on_update_hook_receives_dt", "test_on_update_hook_can_mutate_world"],
+        "sourceLocations": {
+          "methodDefinition": "katla_app/src/application/builder.rs:151-153",
+          "typeAlias": "katla_app/src/application/builder.rs:59 — type UpdateHook = Box<dyn FnMut(&mut World, f32)>",
+          "storageOnApplication": "katla_app/src/application/mod.rs:147",
+          "invocationInFrameLoop": "katla_app/src/application/mod.rs:537-538 (after world.update(dt), before rendering)"
+        }
+      },
+      "issues": null,
+      "commandsRun": [
+        {
+          "command": "cargo test -p katla_app",
+          "exitCode": 0,
+          "observation": "208 passed, 0 failed, 1 ignored. All lifecycle hook tests passed."
+        },
+        {
+          "command": "rg \"on_update\" katla_app/src/",
+          "exitCode": 0,
+          "observation": "Found method definition, storage on Application, invocation in frame loop, and unit tests"
+        }
+      ]
+    },
+    {
+      "id": "VAL-APP-003",
+      "title": "ApplicationBuilder::on_shutdown hook",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for on_shutdown method definition in katla_app/src/",
+          "expected": "Found pub fn on_shutdown on ApplicationBuilder",
+          "observed": "Found at builder.rs:159 — pub fn on_shutdown(mut self, f: impl FnOnce(&mut Application) + 'static) -> Self"
+        },
+        {
+          "action": "Verify on_shutdown hook is stored on Application struct",
+          "expected": "pub(crate) on_shutdown: Option<builder::ShutdownHook> on Application",
+          "observed": "Confirmed at application/mod.rs:149 — pub(crate) on_shutdown: Option<builder::ShutdownHook>"
+        },
+        {
+          "action": "Verify on_shutdown is called during cleanup_on_exit()",
+          "expected": "Hook invoked inside cleanup_on_exit() method",
+          "observed": "Confirmed at application/mod.rs:813-814: if let Some(hook) = self.on_shutdown.take() { hook(self); } — called inside cleanup_on_exit() before GPU resource destruction"
+        },
+        {
+          "action": "Run unit tests for on_shutdown",
+          "expected": "test_builder_on_shutdown_stores_hook passes",
+          "observed": "Test passed. Verifies hook is stored on builder. Hook is transferred to Application during build() (builder.rs:818) and invoked during cleanup."
+        }
+      ],
+      "evidence": {
+        "testsPassed": ["test_builder_on_shutdown_stores_hook"],
+        "sourceLocations": {
+          "methodDefinition": "katla_app/src/application/builder.rs:159-161",
+          "typeAlias": "katla_app/src/application/builder.rs:60 — type ShutdownHook = Box<dyn FnOnce(&mut Application)>",
+          "storageOnApplication": "katla_app/src/application/mod.rs:149",
+          "invocationInCleanup": "katla_app/src/application/mod.rs:813-814 (inside cleanup_on_exit())"
+        }
+      },
+      "issues": null,
+      "commandsRun": [
+        {
+          "command": "cargo test -p katla_app",
+          "exitCode": 0,
+          "observation": "208 passed, 0 failed, 1 ignored. All lifecycle hook tests passed."
+        },
+        {
+          "command": "rg \"on_shutdown\" katla_app/src/",
+          "exitCode": 0,
+          "observation": "Found method definition, storage on Application, invocation in cleanup_on_exit(), and unit test"
+        }
+      ]
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 3 assertions: all 3 passed. VAL-APP-001 (on_init) — hook defined, stored on Application, invoked after build()/init() before event loop, unit tests verify callback execution and world access. VAL-APP-002 (on_update) — hook defined, stored on Application, invoked each frame between world.update(dt) and rendering, unit tests verify delta time parameter and mutable world access. VAL-APP-003 (on_shutdown) — hook defined, stored on Application, invoked during cleanup_on_exit(), unit test verifies hook storage."
+}

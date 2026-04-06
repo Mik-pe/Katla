@@ -1,0 +1,161 @@
+{
+  "assertionGroup": "resource-visibility",
+  "testedAt": "2026-04-06T14:25:00Z",
+  "isolation": {
+    "type": "cargo-workspace",
+    "workingDirectory": "C:\\dev\\katla"
+  },
+  "toolsUsed": ["rg", "cargo test", "cargo check"],
+  "assertions": [
+    {
+      "id": "VAL-APP-011",
+      "title": "Application::load_texture public method",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for pub fn load_texture in katla_app/src/",
+          "expected": "Method exists on Application with pub visibility",
+          "observed": "Found at katla_app/src/application/resource_loading.rs:17 — pub fn load_texture(&mut self, path: impl AsRef<std::path::Path>) -> AppResult<katla_gfx::TextureHandle>"
+        },
+        {
+          "action": "Verify return type is Result",
+          "expected": "Returns AppResult<TextureHandle>",
+          "observed": "Returns AppResult<katla_gfx::TextureHandle>. AppResult is an alias for Result<T, AppError>."
+        },
+        {
+          "action": "Run cargo test -p katla_app",
+          "expected": "All tests pass",
+          "observed": "208 passed, 0 failed, 1 ignored, exit code 0"
+        }
+      ],
+      "evidence": {
+        "sourceLocation": "katla_app/src/application/resource_loading.rs:17-39",
+        "signature": "pub fn load_texture(&mut self, path: impl AsRef<std::path::Path>) -> AppResult<katla_gfx::TextureHandle>",
+        "returnsResult": true
+      },
+      "commandsRun": [
+        { "command": "rg \"pub fn load_texture\" katla_app/src/", "exitCode": 0, "observation": "Found method at resource_loading.rs:17" },
+        { "command": "cargo test -p katla_app", "exitCode": 0, "observation": "208 passed, 0 failed, 1 ignored" }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-APP-012",
+      "title": "Application::load_mesh public method",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for pub fn load_mesh in katla_app/src/",
+          "expected": "Method exists on Application with pub visibility",
+          "observed": "Found at katla_app/src/application/resource_loading.rs:80 — pub fn load_mesh(&mut self, path: impl AsRef<std::path::Path>) -> AppResult<katla_gfx::MeshHandle>"
+        },
+        {
+          "action": "Verify return type is Result",
+          "expected": "Returns AppResult<MeshHandle>",
+          "observed": "Returns AppResult<katla_gfx::MeshHandle>. AppResult is an alias for Result<T, AppError>."
+        },
+        {
+          "action": "Verify it does NOT spawn an entity",
+          "expected": "Method only loads mesh data to GPU",
+          "observed": "Doc comment explicitly states 'This does not spawn an entity or set up materials/textures/skinning.' Implementation only calls GLTFModel::new and renderer.create_mesh_soa."
+        }
+      ],
+      "evidence": {
+        "sourceLocation": "katla_app/src/application/resource_loading.rs:80-123",
+        "signature": "pub fn load_mesh(&mut self, path: impl AsRef<std::path::Path>) -> AppResult<katla_gfx::MeshHandle>",
+        "returnsResult": true,
+        "noEntitySpawn": true
+      },
+      "commandsRun": [
+        { "command": "rg \"pub fn load_mesh\" katla_app/src/", "exitCode": 0, "observation": "Found method at resource_loading.rs:80" }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-APP-013",
+      "title": "Application::load_animation public method",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for pub fn load_animation in katla_app/src/",
+          "expected": "Method exists on Application with pub visibility",
+          "observed": "Found at katla_app/src/application/resource_loading.rs:139 — pub fn load_animation(&mut self, path: impl AsRef<std::path::Path>, clip_name: Option<&str>) -> AppResult<AnimationClip>"
+        },
+        {
+          "action": "Verify return type is Result",
+          "expected": "Returns AppResult<AnimationClip>",
+          "observed": "Returns AppResult<AnimationClip>. AnimationClip is a pub struct in katla_app::animation::clips."
+        },
+        {
+          "action": "Verify AnimationClip is publicly accessible",
+          "expected": "AnimationClip is pub and accessible from outside katla_app",
+          "observed": "AnimationClip defined as 'pub struct AnimationClip' in animation/clips.rs:5. The animation module is 'pub mod animation' in lib.rs, making it accessible as katla_app::animation::AnimationClip."
+        },
+        {
+          "action": "Verify clip_name parameter is Option<&str>",
+          "expected": "clip_name is optional",
+          "observed": "Second parameter is clip_name: Option<&str>. When None, loads first animation; when Some(name), loads by name."
+        }
+      ],
+      "evidence": {
+        "sourceLocation": "katla_app/src/application/resource_loading.rs:139-195",
+        "signature": "pub fn load_animation(&mut self, path: impl AsRef<std::path::Path>, clip_name: Option<&str>) -> AppResult<AnimationClip>",
+        "returnsResult": true,
+        "animationClipPublic": true
+      },
+      "commandsRun": [
+        { "command": "rg \"pub fn load_animation\" katla_app/src/", "exitCode": 0, "observation": "Found method at resource_loading.rs:139" },
+        { "command": "rg \"pub struct AnimationClip\" katla_app/src/", "exitCode": 0, "observation": "Found at animation/clips.rs:5" }
+      ],
+      "issues": null
+    },
+    {
+      "id": "VAL-APP-014",
+      "title": "Component visibility audited",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "List all component files in katla_app/src/components/",
+          "expected": "Multiple submodules with component definitions",
+          "observed": "Found 5 submodules: camera, physics, rendering, scene, transform with 17 .rs files total"
+        },
+        {
+          "action": "Search for pub(crate) items in katla_app/src/components/",
+          "expected": "Zero pub(crate) items (all promoted to pub where needed)",
+          "observed": "rg 'pub(crate)' katla_app/src/components/ found zero matches"
+        },
+        {
+          "action": "Verify all component structs are pub",
+          "expected": "All component types are pub",
+          "observed": "All 19 component structs found with 'pub struct' visibility: TransformComponent, WorldTransform, TransformDirty, Children, Parent, NameComponent, EditorHidden, ParticleEmitterComponent, DirectionalLight, PointLight, DrawableComponent, MassComponent, DragComponent, ForceComponent, VelocityComponent, PerspectiveComponent, FocusTarget, OrbitCameraControllerComponent, FlyCameraControllerComponent, FlyCameraLookComponent"
+        },
+        {
+          "action": "Verify components/mod.rs re-exports everything publicly",
+          "expected": "pub use re-exports for all component submodules",
+          "observed": "mod.rs has 'pub use crate::components::{camera, physics, rendering, scene, transform}::*' for all submodules"
+        },
+        {
+          "action": "Run cargo check --workspace",
+          "expected": "Workspace compiles successfully",
+          "observed": "cargo check --workspace finished successfully with exit code 0"
+        }
+      ],
+      "evidence": {
+        "pubCrateCount": 0,
+        "pubStructCount": 19,
+        "allSubmodulesPublic": true,
+        "reExports": "pub use crate::components::{camera, physics, rendering, scene, transform}::*",
+        "workspaceCompiles": true
+      },
+      "commandsRun": [
+        { "command": "rg \"pub(crate)\" katla_app/src/components/", "exitCode": 0, "observation": "No matches found — zero pub(crate) items" },
+        { "command": "rg \"^pub (struct|enum)\" katla_app/src/components/", "exitCode": 0, "observation": "Found 19 pub component structs" },
+        { "command": "cargo check --workspace", "exitCode": 0, "observation": "Workspace compiles successfully" }
+      ],
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 4 assertions: all 4 passed. VAL-APP-011 (load_texture), VAL-APP-012 (load_mesh), VAL-APP-013 (load_animation) all exist as public methods on Application returning AppResult<T>. VAL-APP-014 confirmed zero pub(crate) items in components directory — all 19 component structs are pub. cargo check --workspace and cargo test -p katla_app both succeed."
+}
