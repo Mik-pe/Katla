@@ -1,0 +1,22 @@
+{
+  "featureId": "ui-button-border-cleanup",
+  "milestone": "ui",
+  "reviewedAt": "2026-04-06T13:00:00.000Z",
+  "commitId": "5e37a6f1c3096d4a4aec83bb5369f9517444c233",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The feature's preconditions were inaccurate — border drawing was already centralized in button_with_colors(). No code refactoring was needed. The worker correctly identified this and added two verification tests instead. The tests are well-structured, covering both the vertex/index count difference and the forwarding path through the builder API.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "observation": "Feature preconditions for ui-button-border-cleanup were inaccurate. The precondition stated 'button_with_colors() does not handle border' but it already did handle border via draw_selection_border(). Future feature descriptions should verify preconditions against the actual codebase before assignment to avoid wasted investigation time.",
+      "category": "skill",
+      "suggestedTarget": ".factory/skills/ui-worker/SKILL.md"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The feature requirement (VAL-UI-005) is satisfied: border drawing is centralized in button_with_colors(). The Button builder's Widget::ui() impl contains no border drawing — it only passes border_color to button_with_colors(). The worker correctly identified that no refactoring was needed and added two appropriate verification tests. Tests pass, clippy is clean, code is well-structured."
+}

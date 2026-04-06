@@ -1,0 +1,45 @@
+{
+  "milestone": "ui",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skill:ui-worker",
+      "suggestion": "Update SKILL.md to remove stale references: (1) example handoff that describes removing begin/end in favor of closures should reflect the actual decision (closures removed, begin/end kept); (2) 'Understand Existing Code' section should not reference 'horizontal/vertical closures' since they no longer exist; (3) 'Font loading fix' section should remove Box::leak/FontRef<'static> references and mention FontArc instead.",
+      "evidence": "ui-layout-consistency review: SKILL.md example handoff describes opposite decision. ui-font-no-leak review: SKILL.md references Box::leak which no longer exists. ui-widget-ergonomics review: cursor advancement example outdated.",
+      "isSystemic": true
+    },
+    {
+      "target": "library:architecture.md",
+      "suggestion": "Add note that fonts are stored as FontArc (Arc<dyn Font + Send + Sync>) in the FontSystem HashMap, not FontRef or raw byte vectors. Also document the cursor advancement contract: ui.add() auto-advances the cursor, so convenience methods must not manually advance.",
+      "evidence": "ui-font-no-leak review: architecture.md does not mention FontArc. ui-widget-ergonomics review: architecture.md does not document cursor advancement contract.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Consider adding guidance for feature authors to verify preconditions against the actual codebase before writing feature descriptions. The ui-button-border-cleanup feature had inaccurate preconditions (stated border was not centralized when it already was), wasting investigation time.",
+      "evidence": "ui-button-border-cleanup review: precondition 'button_with_colors() does not handle border' was false — border was already centralized.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "button_auto_wide() double-advances cursor (non-blocking issue from ui-widget-ergonomics review)",
+      "reason": "This is a code issue (non_blocking), not a shared state observation for triage. The reviewer correctly flagged it in the review issues. It has zero callers so it is latent."
+    }
+  ],
+  "previousRound": null
+}

@@ -1,0 +1,27 @@
+{
+  "featureId": "ui-font-no-leak",
+  "milestone": "ui",
+  "reviewedAt": "2026-04-06T13:00:00.000Z",
+  "commitId": "c181104",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean, minimal implementation that replaces Box::leak font storage with FontArc. The change is a drop-in replacement of FontRef<'static> with FontArc in the FontSystem fonts HashMap, leveraging FontArc's Arc-based owned storage to eliminate memory leaks. All downstream consumers (rasterization.rs, measurement.rs) use the Font trait which both types implement, so no changes were needed outside the two modified files.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "observation": "The architecture.md documents the UI font atlas pattern but does not mention FontArc as the font storage type. Workers implementing future font-related features (e.g., dynamic font reloading, font fallback chains) should know that fonts are stored as FontArc (Arc<dyn Font + Send + Sync>) in the HashMap, not FontRef or raw byte vectors.",
+      "category": "library",
+      "suggestedTarget": ".factory/library/architecture.md"
+    },
+    {
+      "observation": "The SKILL.md for ui-worker still references Box::leak in the 'Font loading fix' section: 'The 'static lifetime requirement comes from FontRef<'static>'. This is now outdated since FontArc is used. Future workers reading this skill file may be misled about the current approach.",
+      "category": "skill",
+      "suggestedTarget": ".factory/skills/ui-worker/SKILL.md"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The ui-font-no-leak feature (VAL-UI-002) is correctly implemented. All Box::leak calls in katla_ui/src/text/ have been eliminated and replaced with FontArc::try_from_vec, which owns font data via Arc. The change touches only 2 files (font_loading.rs and mod.rs), removes 10 net lines, and all downstream code works unchanged because FontArc implements the same Font trait. Verification commands (cargo test --workspace, cargo clippy, cargo check) all passed. The worker followed the ui-worker skill procedure and no deviations were noted. Two minor shared state observations were recorded: the architecture.md should document the FontArc storage type, and the ui-worker SKILL.md has stale Box::leak references."
+}
