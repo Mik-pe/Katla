@@ -1,7 +1,7 @@
 //! Widget behavior helpers and convenience methods.
 //!
 //! This module provides:
-//! - **Interaction helpers**: `click_behavior()`, `is_hovered()`, `update_hover()`
+//! - **Interaction helpers**: `click_interaction()`, `is_hovered()`, `update_hover()`
 //! - **Internal implementations**: Organized into submodules by widget category
 //!
 //! # Architecture
@@ -36,7 +36,7 @@ mod utility;
 
 pub use scroll_area::{ScrollArea, ScrollAreaState};
 
-use crate::context::interaction::ClickResult;
+use crate::context::interaction::{ClickConfig, ClickResult};
 use katla_math::Rect2D;
 
 use super::UiContext;
@@ -81,10 +81,23 @@ impl UiContext {
         hovered
     }
 
-    /// Handle standard click behavior for interactive widgets.
+    /// Unified click interaction handling.
     ///
+    /// Detects press, release, and click events with configurable popup awareness.
     /// Returns a `ClickResult` indicating the interaction state.
-    pub(crate) fn click_behavior(&mut self, id: super::WidgetId, hovered: bool) -> ClickResult {
+    ///
+    /// - `popup_aware: true` — uses pre-computed `hovered` on release (respects popup blocking).
+    ///   Used by checkboxes, radio buttons, toggle buttons, image buttons, and sliders.
+    /// - `popup_aware: false` — uses raw `input.is_hovered(bounds)` on release to bypass
+    ///   popup blocking. Used by buttons and menu items that must respond even when
+    ///   a popup is consuming clicks.
+    pub(crate) fn click_interaction(
+        &mut self,
+        id: super::WidgetId,
+        hovered: bool,
+        bounds: Rect2D,
+        config: ClickConfig,
+    ) -> ClickResult {
         let active = self.active_id == Some(id);
 
         if hovered && self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
@@ -92,7 +105,12 @@ impl UiContext {
             ClickResult::Pressed
         } else if active && self.input.mouse_released[crate::input::mouse_button::LEFT] {
             self.active_id = None;
-            if hovered {
+            let release_hovered = if config.popup_aware {
+                hovered
+            } else {
+                self.input.is_hovered(bounds)
+            };
+            if release_hovered {
                 ClickResult::Clicked
             } else {
                 ClickResult::Released

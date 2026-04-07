@@ -209,19 +209,14 @@ impl UiContext {
         let hovered = self.update_hover(dropdown_id, bounds);
 
         // Toggle on click using raw input hover check on release.
-        // Must use self.input.is_hovered() directly because self.is_hovered()
-        // returns false when active_id is set (which it is during press-release).
-        let clicked = if hovered && self.input.mouse_pressed[crate::input::mouse_button::LEFT] {
-            self.active_id = Some(dropdown_id);
-            false
-        } else if self.active_id == Some(dropdown_id)
-            && self.input.mouse_released[crate::input::mouse_button::LEFT]
-        {
-            self.active_id = None;
-            self.input.is_hovered(bounds)
-        } else {
-            false
-        };
+        let clicked = self
+            .click_interaction(
+                dropdown_id,
+                hovered,
+                bounds,
+                super::super::interaction::ClickConfig::POPUP_BYPASS,
+            )
+            .is_clicked();
 
         if clicked {
             *open = !*open;

@@ -10,8 +10,8 @@ use crate::icons::ForkAwesome;
 use crate::input::{KeyCode, mouse_button};
 use crate::response::Response;
 
-use super::super::drawing::center_in_bounds;
 use super::super::UiContext;
+use super::super::drawing::center_in_bounds;
 
 impl UiContext {
     /// Draw a button with optional custom background colors and border.
@@ -27,19 +27,14 @@ impl UiContext {
         let widget_id = self.generate_id(id);
 
         let hovered = self.update_hover(widget_id, bounds);
-        let active = self.active_id == Some(widget_id);
-
-        // Handle click: on release, use raw input hover check to bypass popup blocking.
-        // This differs from click_behavior which uses the pre-computed hovered state.
-        let clicked = if hovered && self.input.mouse_pressed[mouse_button::LEFT] {
-            self.active_id = Some(widget_id);
-            false
-        } else if active && self.input.mouse_released[mouse_button::LEFT] {
-            self.active_id = None;
-            self.input.is_hovered(bounds)
-        } else {
-            false
-        };
+        let click_result = self.click_interaction(
+            widget_id,
+            hovered,
+            bounds,
+            super::super::interaction::ClickConfig::POPUP_BYPASS,
+        );
+        let clicked = click_result.is_clicked();
+        let active = click_result.is_active();
 
         // Determine background color based on state
         let bg_color = if active {
@@ -75,7 +70,12 @@ impl UiContext {
         let widget_id = self.generate_id(id);
 
         let hovered = self.update_hover(widget_id, bounds) && enabled;
-        let click_result = self.click_behavior(widget_id, hovered);
+        let click_result = self.click_interaction(
+            widget_id,
+            hovered,
+            bounds,
+            super::super::interaction::ClickConfig::POPUP_AWARE,
+        );
         let clicked = click_result.is_clicked() && enabled;
         let active = click_result.is_active() && enabled;
 
@@ -126,7 +126,12 @@ impl UiContext {
         let widget_id = self.generate_id(id);
 
         let hovered = self.update_hover(widget_id, bounds);
-        let click_result = self.click_behavior(widget_id, hovered);
+        let click_result = self.click_interaction(
+            widget_id,
+            hovered,
+            bounds,
+            super::super::interaction::ClickConfig::POPUP_AWARE,
+        );
         let clicked = click_result.is_clicked();
         let active = click_result.is_active();
 
@@ -439,7 +444,14 @@ impl UiContext {
             self.style.font_size,
         );
 
-        let clicked = self.click_behavior(widget_id, hovered).is_clicked();
+        let clicked = self
+            .click_interaction(
+                widget_id,
+                hovered,
+                bounds,
+                super::super::interaction::ClickConfig::POPUP_AWARE,
+            )
+            .is_clicked();
 
         let mut response = Response::interactive(clicked, hovered, active, bounds, &self.input);
         response.changed = clicked && !is_selected;
