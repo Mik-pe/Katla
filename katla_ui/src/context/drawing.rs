@@ -10,6 +10,15 @@ use crate::text::{FontId, SubpixelBin};
 use super::UiContext;
 use super::z_index;
 
+/// Compute the top-left position for centering content of a given size within bounds.
+#[inline]
+pub(crate) fn center_in_bounds(bounds: Rect2D, content_size: Vec2) -> Vec2 {
+    Vec2::new(
+        bounds.center().x() - content_size.x() * 0.5,
+        bounds.center().y() - content_size.y() * 0.5,
+    )
+}
+
 impl UiContext {
     // -------------------------------------------------------------------------
     // Low-level Primitives
@@ -270,12 +279,13 @@ impl UiContext {
             && glyph.size.x() > 0.0
             && glyph.size.y() > 0.0
         {
-            // Text centerline: position.y + text_ascent/2
-            // Icon center should match: icon_top + icon_height/2 = text_center
-            let text_center_y = position.y() + text_ascent * 0.5;
-            let icon_top_y = text_center_y - glyph.size.y() * 0.5;
-
-            let glyph_pos = Vec2::new((position.x() + glyph.offset_x).round(), icon_top_y.round());
+            let line_bounds =
+                katla_math::Rect2D::from_origin_size(position, Vec2::new(0.0, text_ascent));
+            let centered = center_in_bounds(line_bounds, glyph.size);
+            let glyph_pos = Vec2::new(
+                (position.x() + glyph.offset_x).round(),
+                centered.y().round(),
+            );
             let bounds = katla_math::Rect2D::from_origin_size(glyph_pos, glyph.size);
             self.draw_list.set_clip(self.clip_rect());
             self.draw_list
@@ -291,8 +301,7 @@ impl UiContext {
         self.current_font = FontId::ICON;
 
         let font_atlas = self.fonts.atlas_id();
-        let (floor_x, subpixel_bin) = SubpixelBin::new(bounds.center().x());
-        let baseline_y = (bounds.center().y() + self.font_ascent(size)).round();
+        let (_, subpixel_bin) = SubpixelBin::new(bounds.center().x());
 
         let mut buf = [0u8; 4];
         let icon_str = icon.encode_utf8(&mut buf);
@@ -302,13 +311,9 @@ impl UiContext {
                 .get_or_rasterize(FontId::ICON, icon, size, self.scale_factor, subpixel_bin)
         {
             if glyph.size.x() > 0.0 && glyph.size.y() > 0.0 {
-                let icon_center_x = floor_x as f32 + glyph.offset_x + glyph.size.x() * 0.5;
-                let icon_center_y = baseline_y - glyph.top_offset + glyph.size.y() * 0.5;
+                let draw_pos = center_in_bounds(bounds, glyph.size);
 
-                let draw_x = bounds.center().x() - icon_center_x + floor_x as f32 + glyph.offset_x;
-                let draw_y = bounds.center().y() - icon_center_y + baseline_y - glyph.top_offset;
-
-                let glyph_bounds = Rect2D::from_origin_size(Vec2::new(draw_x, draw_y), glyph.size);
+                let glyph_bounds = Rect2D::from_origin_size(draw_pos, glyph.size);
                 self.draw_list.set_clip(self.clip_rect());
                 self.draw_list
                     .add_textured_rect(glyph_bounds, glyph.uv_rect, color, font_atlas);

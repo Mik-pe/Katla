@@ -15,7 +15,7 @@ impl VulkanContext {
         location: MemoryLocation,
     ) -> Result<(vk::Buffer, Allocation), RendererError> {
         let buffer = unsafe { self.device.create_buffer(buffer_info, None) }
-            .map_err(|e| RendererError::VulkanError(format!("Failed to create buffer: {:?}", e)))?;
+            .map_err(|e| RendererError::VulkanError("Failed to create buffer".into(), e))?;
         let requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
         let allocation_info = AllocationCreateDesc {
             name: "Buffer Allocation",
@@ -34,7 +34,7 @@ impl VulkanContext {
             self.device
                 .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
                 .map_err(|e| {
-                    RendererError::VulkanError(format!("Failed to bind buffer memory: {:?}", e))
+                    RendererError::VulkanError("Failed to bind buffer memory".into(), e)
                 })?;
         }
         Ok((buffer, allocation))
@@ -92,7 +92,7 @@ impl VulkanContext {
             self.device
                 .flush_mapped_memory_ranges(&[flush_range])
                 .map_err(|e| {
-                    RendererError::VulkanError(format!("Failed to flush mapped memory: {:?}", e))
+                    RendererError::VulkanError("Failed to flush mapped memory".into(), e)
                 })?;
         }
         Ok(())
@@ -132,10 +132,7 @@ impl VulkanContext {
             self.device
                 .invalidate_mapped_memory_ranges(&[range])
                 .map_err(|e| {
-                    RendererError::VulkanError(format!(
-                        "Failed to invalidate mapped memory: {:?}",
-                        e
-                    ))
+                    RendererError::VulkanError("Failed to invalidate mapped memory".into(), e)
                 })?;
         }
         Ok(())
@@ -147,7 +144,7 @@ impl VulkanContext {
         location: MemoryLocation,
     ) -> Result<(vk::Image, Allocation), RendererError> {
         let image = unsafe { self.device.create_image(&image_create_info, None) }
-            .map_err(|e| RendererError::VulkanError(format!("Failed to create image: {:?}", e)))?;
+            .map_err(|e| RendererError::VulkanError("Failed to create image".into(), e))?;
         let requirements = unsafe { self.device.get_image_memory_requirements(image) };
         let allocation_info = AllocationCreateDesc {
             name: "Image Allocation",
@@ -166,7 +163,7 @@ impl VulkanContext {
             self.device
                 .bind_image_memory(image, allocation.memory(), allocation.offset())
                 .map_err(|e| {
-                    RendererError::VulkanError(format!("Failed to bind image memory: {:?}", e))
+                    RendererError::VulkanError("Failed to bind image memory".into(), e)
                 })?;
         }
         Ok((image, allocation))

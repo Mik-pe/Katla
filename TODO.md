@@ -117,6 +117,7 @@
 
 ### P2: Code Reusability
 
+- [ ] **Fix hierarchy view to use a reusable list view** — Each list element in the hierarchy panel is fixed to different pixel sizes, causing elements to jump around when scrolling. Should build a reusable `ListView` widget in `katla_ui` with uniform row heights and virtualized scrolling.
 - [ ] **Extract shared text/icon centering utility** — Three separate implementations in `context/drawing.rs:240-265`, `context/drawing.rs:270-305`, `context/widgets/basic.rs:66-72` each compute centering slightly differently. Should be a shared helper.
 - [ ] **Reduce theme method repetition** — `style.rs` has ~240 lines of near-identical field assignments across `dark()` (358-420), `light()` (425-481), `classic()` (490-565). Adding a new color requires touching all three. Consider struct-update pattern or helper.
 - [ ] **Introduce `DraggablePanel::show()` config struct** — `widgets/draggable_panel.rs:99-105` takes 9 parameters with `#[allow(clippy::too_many_arguments)]`. Use a builder or config struct consistent with the crate's widget patterns.

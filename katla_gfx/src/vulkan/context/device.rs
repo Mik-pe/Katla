@@ -27,9 +27,9 @@ impl QueueFamilyIndices {
                     .get_physical_device_surface_support(physical_device, idx as u32, surface)
                     .map_err(|e| {
                         RendererError::VulkanError(format!(
-                            "Failed to query surface support for queue family {}: {:?}",
-                            idx, e
-                        ))
+                            "Failed to query surface support for queue family {}",
+                            idx
+                        ), e)
                     })?;
 
                 if properties.queue_flags.contains(vk::QueueFlags::GRAPHICS)
