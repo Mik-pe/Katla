@@ -587,8 +587,9 @@ pub fn build_asset_browser(
                 state.update_drag(ui.mouse_pos());
             }
 
-            if state.drag_asset.is_some() && ui.mouse_released(mouse_button::LEFT) {
-                let drag_idx = state.drag_asset.unwrap();
+            if let Some(drag_idx) = state.drag_asset
+                && ui.mouse_released(mouse_button::LEFT)
+            {
                 let mouse_pos = ui.mouse_pos();
                 let mouse_in_browser = bounds.contains(mouse_pos);
 
@@ -705,7 +706,10 @@ pub fn build_asset_browser(
                     {
                         let new_name = state.rename_buffer.clone();
                         if new_name != original_name && !new_name.is_empty() {
-                            let new_path = original_path.parent().unwrap().join(&new_name);
+                            let new_path = original_path
+                                .parent()
+                                .unwrap_or(original_path.as_path())
+                                .join(&new_name);
                             state.pending_actions.push(AssetAction::Rename {
                                 old_path: original_path.clone(),
                                 new_path,
@@ -741,13 +745,14 @@ pub fn build_asset_browser(
                         state.selected_indices.insert(index);
                         state.selected_index = Some(index);
                     }
-                } else if shift_held && state.selected_index.is_some() {
-                    let start = state.selected_index.unwrap();
-                    let end = index;
-                    state.selected_indices.clear();
-                    for i in start.min(end)..=start.max(end) {
-                        if i < state.assets.len() {
-                            state.selected_indices.insert(i);
+                } else if shift_held {
+                    if let Some(start) = state.selected_index {
+                        let end = index;
+                        state.selected_indices.clear();
+                        for i in start.min(end)..=start.max(end) {
+                            if i < state.assets.len() {
+                                state.selected_indices.insert(i);
+                            }
                         }
                     }
                 } else {

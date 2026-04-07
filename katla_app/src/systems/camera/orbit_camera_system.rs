@@ -25,15 +25,13 @@ impl System for OrbitCameraSystem {
         let scroll = input.mouse_wheel_delta;
         let delta = input.mouse_delta;
 
-        let storage = world.storage_mut();
-
         // First pass: compute new orbit state and position (query borrow ends after collect).
         let updates: Vec<(
             katla_ecs::EntityId,
             OrbitCameraControllerComponent,
             Vec3,
             Quat,
-        )> = storage
+        )> = world
             .query::<(&OrbitCameraControllerComponent, &TransformComponent)>()
             .map(|(entity, orbit, _transform)| {
                 let mut orbit = orbit.clone();
@@ -90,14 +88,14 @@ impl System for OrbitCameraSystem {
             })
             .collect();
 
-        // Second pass: apply mutations (same storage, borrow from query has ended).
+        // Second pass: apply mutations
         for (entity, orbit, position, rotation) in updates {
             if let Some(orbit_comp) =
-                storage.get_component_mut::<OrbitCameraControllerComponent>(entity)
+                world.get_component_mut::<OrbitCameraControllerComponent>(entity)
             {
                 *orbit_comp = orbit;
             }
-            if let Some(transform) = storage.get_component_mut::<TransformComponent>(entity) {
+            if let Some(transform) = world.get_component_mut::<TransformComponent>(entity) {
                 transform.transform.position = position;
                 transform.transform.rotation = rotation;
             }
