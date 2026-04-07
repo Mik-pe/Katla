@@ -133,6 +133,8 @@ pub struct UiContext {
     scroll_area_state: Option<widgets::ScrollAreaState>,
     /// Whether to show scrollbar for current scroll area.
     scroll_area_show_scrollbar: bool,
+    /// Scratch buffer for graph widget point computation (avoids per-frame allocation).
+    scratch_points: Vec<Vec2>,
 }
 
 impl UiContext {
@@ -173,6 +175,7 @@ impl UiContext {
             scroll_area_content_bounds: None,
             scroll_area_state: None,
             scroll_area_show_scrollbar: false,
+            scratch_points: Vec::new(),
             time: 0.0,
             last_input_time: 0.0,
         }

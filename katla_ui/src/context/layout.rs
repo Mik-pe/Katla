@@ -214,7 +214,9 @@ impl UiContext {
 
     /// End a horizontal row layout.
     ///
-    /// Advances the cursor below the row. Must be paired with `begin_row()`.
+    /// Advances the cursor below the row. Does not add trailing spacing after
+    /// the row — the cursor moves to `start_pos.x` and `cursor.y + max_item_height`
+    /// directly. Must be paired with `begin_row()`.
     pub fn end_row(&mut self) {
         if let Some(layout) = self.layout_stack.pop() {
             self.cursor = Vec2::new(
@@ -252,7 +254,9 @@ impl UiContext {
 
     /// End a vertical column layout.
     ///
-    /// Advances the cursor below the column. Must be paired with `begin_column()`.
+    /// Advances the cursor below the column, including trailing spacing
+    /// (`layout.spacing`). This provides visual separation between consecutive
+    /// columns in a grid layout. Must be paired with `begin_column()`.
     pub fn end_column(&mut self) {
         if let Some(layout) = self.layout_stack.pop() {
             self.cursor = Vec2::new(layout.start_pos.x(), layout.cursor.y() + layout.spacing);
