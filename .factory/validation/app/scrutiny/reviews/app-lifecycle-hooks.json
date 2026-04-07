@@ -1,0 +1,33 @@
+{
+  "featureId": "app-lifecycle-hooks",
+  "reviewedAt": "2026-04-06T15:30:00.000Z",
+  "commitId": "92762b4",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean implementation of three lifecycle hooks (on_init, on_update, on_shutdown) on ApplicationBuilder. Type aliases are pub(crate), fields are pub(crate) on Application, builder methods use consuming-self chaining pattern, hooks are wired into the correct call sites (run(), RedrawRequested, cleanup_on_exit()), and .take() is correctly used for FnOnce hooks. 8 unit tests cover storage, chaining, delta time correctness, and World mutation. All workspace tests pass, clippy clean, formatted.",
+    "issues": [
+      {
+        "file": "katla_app/src/application/builder.rs",
+        "line": 828,
+        "severity": "non_blocking",
+        "description": "on_init hook is only invoked in run(), not in init(). If a user calls build() + init() separately (the documented alternative to run()), the on_init hook silently does not fire. The run() docstring does document this behavior ('Equivalent to build(), init(), on_init callback, and event_loop.run_app()'), but the method name on_init could mislead users into expecting it fires after any init path. Consider renaming to on_run or documenting the limitation more prominently in the on_init() doc comment."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The app-worker skill's Work Procedure section 3 says 'Write Tests First (TDD)' but this feature's implementation appears to have written tests after implementation (tests are at the bottom of the diff). The skillFeedback says followedProcedure=true. The TDD guidance may not match actual worker practice for simple features like this where the implementation is straightforward.",
+      "evidence": "Skill SKILL.md section 3: 'Write Tests First (TDD) — For each feature, write failing tests BEFORE implementation'. Transcript skeleton shows builder.rs was read, then edits made, then later tests added."
+    },
+    {
+      "area": "conventions",
+      "observation": "The on_update hook placement in the frame loop is after world.update(dt) and mouse delta clearing, but before particle_system.update(), gpu_cleanup, and GPU animation preparation. The katla_app AGENTS.md frame order document lists 8 steps but does not include the update hook. Consider updating the frame order documentation to include the hook insertion point.",
+      "evidence": "katla_app/AGENTS.md Frame Order lists 8 steps without mentioning lifecycle hooks. mod.rs line 537 inserts on_update between step 1 (world.update) and step 2 (particle_system.update)."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The implementation fully matches the feature description. Three lifecycle hooks are added to ApplicationBuilder with proper type aliases (pub(crate)), stored on Application, and wired into the correct call sites. The code follows project conventions: pub(crate) visibility, no unwrap in production, proper error handling, consuming-self builder pattern, formatted code, and zero clippy warnings. 8 unit tests provide good coverage of the builder API. One non-blocking observation about on_init only firing in run() (documented but potentially confusing). Two shared-state observations about frame order docs and TDD skill guidance."
+}
