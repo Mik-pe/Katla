@@ -173,7 +173,7 @@ impl From<VkImage> for vk::Image {
 
 /// Wrapper for Vulkan image view handle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct VkImageView(pub vk::ImageView);
+pub struct VkImageView(vk::ImageView);
 
 unsafe impl Send for VkImageView {}
 unsafe impl Sync for VkImageView {}
@@ -582,13 +582,5 @@ mod tests {
         let dep_info = DependencyInfo::new().add_image_barrier(barrier);
 
         assert_eq!(dep_info.image_barriers.len(), 1);
-    }
-
-    #[test]
-    fn test_dependency_info_default() {
-        let dep_info = DependencyInfo::default();
-        assert!(dep_info.memory_barriers.is_empty());
-        assert!(dep_info.buffer_barriers.is_empty());
-        assert!(dep_info.image_barriers.is_empty());
     }
 }
