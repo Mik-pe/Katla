@@ -67,13 +67,6 @@ impl World {
         id
     }
 
-    /// Gets a mutable reference to the component storage manager.
-    ///
-    /// Use this for direct storage access when the `query` API is insufficient.
-    pub fn storage_mut(&mut self) -> &mut ComponentStorageManager {
-        self.storage.get_mut()
-    }
-
     /// Spawns a new entity with a bundle of components.
     ///
     /// This is an ergonomic way to create an entity with multiple components
@@ -498,6 +491,17 @@ impl World {
     /// Returns `None` if the resource didn't exist.
     pub fn remove_resource<R: Resource>(&mut self) -> Option<R> {
         self.resources.remove()
+    }
+
+    /// Get a mutable reference to a resource, inserting a default if it doesn't exist.
+    ///
+    /// This is the equivalent of `entry().or_insert_with()` for resources.
+    /// Prefer this over `contains_resource` + `get_resource_mut` + `unwrap`.
+    pub fn get_resource_mut_or_insert_with<R: Resource + Default>(&mut self) -> &mut R {
+        if !self.resources.contains::<R>() {
+            self.resources.insert(R::default());
+        }
+        self.resources.get_mut::<R>().unwrap()
     }
 }
 

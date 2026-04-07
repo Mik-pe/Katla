@@ -229,13 +229,7 @@ impl System for TransformHierarchySystem {
         }
 
         // Get or create optimization config resource
-        let optimization = if world.contains_resource::<TransformOptimization>() {
-            world.get_resource_mut::<TransformOptimization>().unwrap()
-        } else {
-            // First run - register the resource
-            world.insert_resource(TransformOptimization::default());
-            world.get_resource_mut::<TransformOptimization>().unwrap()
-        };
+        let optimization = world.get_resource_mut_or_insert_with::<TransformOptimization>();
 
         // First frame: initialize all transforms
         if !self.initialized {

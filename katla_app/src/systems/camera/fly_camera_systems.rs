@@ -40,10 +40,8 @@ impl System for FlyCameraLookSystem {
         let delta = input.mouse_delta;
         let has_movement_input = input_dir.length_squared() > 0.0;
 
-        let storage = world.storage_mut();
-
         // Collect all updates first
-        let transform_updates: Vec<(katla_ecs::EntityId, Quat, f32, bool)> = storage
+        let transform_updates: Vec<(katla_ecs::EntityId, Quat, f32, bool)> = world
             .query::<(
                 &FlyCameraControllerComponent,
                 &mut FlyCameraLookComponent,
@@ -76,7 +74,7 @@ impl System for FlyCameraLookSystem {
         // Apply transform updates
         for (entity, rotation, _speed, _has_input) in &transform_updates {
             if let Some(transform) =
-                storage.get_component_mut::<crate::components::TransformComponent>(*entity)
+                world.get_component_mut::<crate::components::TransformComponent>(*entity)
             {
                 transform.transform.rotation = *rotation;
             }
@@ -86,13 +84,13 @@ impl System for FlyCameraLookSystem {
         for (entity, rotation, speed, has_input) in transform_updates {
             if has_input {
                 // Apply movement force in the direction of camera rotation
-                if let Some(force) = storage.get_component_mut::<ForceComponent>(entity) {
+                if let Some(force) = world.get_component_mut::<ForceComponent>(entity) {
                     let world_dir = rotation.rotate_vec3(input_dir);
                     force.force += world_dir.mul(speed);
                 }
             } else {
                 // No input - directly reduce velocity for smooth stopping
-                if let Some(velocity) = storage.get_component_mut::<VelocityComponent>(entity) {
+                if let Some(velocity) = world.get_component_mut::<VelocityComponent>(entity) {
                     let speed = velocity.velocity.length();
                     if speed > 0.01 {
                         // Reduce velocity by a percentage each frame (exponential decay)
