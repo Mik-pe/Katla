@@ -58,7 +58,12 @@ impl PickingSubsystem {
 
         let (staging_buffer, staging_allocation) = context
             .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu)
-            .expect("Failed to allocate picking staging buffer");
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to allocate picking staging buffer: {}",
+                    e
+                ))
+            })?;
 
         let fence_info = vk::FenceCreateInfo::default();
         let fence = unsafe {
@@ -81,7 +86,7 @@ impl PickingSubsystem {
             },
         );
 
-        command_buffer.begin_single_time_command();
+        command_buffer.begin_single_time_command()?;
 
         // Transition object-ID image from COLOR_ATTACHMENT to TRANSFER_SRC
         let barrier = vk::ImageMemoryBarrier::default()
@@ -171,7 +176,7 @@ impl PickingSubsystem {
             );
         }
 
-        command_buffer.end_single_time_command();
+        command_buffer.end_single_time_command()?;
 
         unsafe {
             let command_buffers = [command_buffer.vk_command_buffer()];
@@ -214,9 +219,7 @@ impl PickingSubsystem {
             unsafe {
                 match context.device.get_fence_status(readback.fence) {
                     Ok(true) => {
-                        let mapped_ptr = context
-                            .map_buffer(&readback.staging_allocation)
-                            .expect("Failed to map buffer");
+                        let mapped_ptr = context.map_buffer(&readback.staging_allocation)?;
                         let data = std::ptr::read(mapped_ptr as *const u32);
 
                         readback.command_buffer.return_to_pool();
@@ -260,7 +263,12 @@ impl PickingSubsystem {
 
                 let mapped_ptr = context
                     .map_buffer(&readback.staging_allocation)
-                    .expect("Failed to map buffer");
+                    .map_err(|e| {
+                        RendererError::InvalidOperation(format!(
+                            "Failed to map picking buffer: {}",
+                            e
+                        ))
+                    })?;
                 let data = std::ptr::read(mapped_ptr as *const u32);
 
                 readback.command_buffer.return_to_pool();

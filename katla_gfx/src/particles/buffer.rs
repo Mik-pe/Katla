@@ -444,7 +444,10 @@ impl GlobalParticleBuffer {
 
     /// Initialize all index lists (dead list starts full, alive lists start empty).
     pub fn initialize_index_lists(&self) -> Result<(), String> {
-        let cmd = self.context.begin_single_time_commands();
+        let cmd = self
+            .context
+            .begin_single_time_commands()
+            .map_err(|e| format!("Failed to begin single-time commands: {}", e))?;
 
         // Zero-fill the particle data region
         unsafe {
@@ -539,7 +542,9 @@ impl GlobalParticleBuffer {
             );
         }
 
-        self.context.end_single_time_commands(cmd);
+        self.context
+            .end_single_time_commands(cmd)
+            .map_err(|e| format!("Failed to end single-time commands: {}", e))?;
 
         // Cleanup staging buffer
         unsafe {
@@ -550,7 +555,10 @@ impl GlobalParticleBuffer {
         }
 
         // Initialize alive lists to zero (empty on startup)
-        let cmd = self.context.begin_single_time_commands();
+        let cmd = self
+            .context
+            .begin_single_time_commands()
+            .map_err(|e| format!("Failed to begin single-time commands: {}", e))?;
 
         unsafe {
             for frame_idx in 0..2 {
@@ -564,11 +572,16 @@ impl GlobalParticleBuffer {
             }
         }
 
-        self.context.end_single_time_commands(cmd);
+        self.context
+            .end_single_time_commands(cmd)
+            .map_err(|e| format!("Failed to end single-time commands: {}", e))?;
 
         // Initialize atomic counters for both frames
         for frame_idx in 0..2 {
-            let cmd = self.context.begin_single_time_commands();
+            let cmd = self
+                .context
+                .begin_single_time_commands()
+                .map_err(|e| format!("Failed to begin single-time commands: {}", e))?;
             let counters_data = ParticleCounters {
                 alive_count: 0,
                 dead_count: self.max_particles,
@@ -659,7 +672,9 @@ impl GlobalParticleBuffer {
                 );
             }
 
-            self.context.end_single_time_commands(cmd);
+            self.context
+                .end_single_time_commands(cmd)
+                .map_err(|e| format!("Failed to end single-time commands: {}", e))?;
 
             unsafe {
                 self.context.device.destroy_buffer(staging_buffer, None);

@@ -34,7 +34,7 @@ impl<'a> Frame<'a> {
                 )
             })?;
 
-        let (depth_attachment, stencil_attachment) = self.resolve_depth_attachment(pass);
+        let (depth_attachment, stencil_attachment) = self.resolve_depth_attachment(pass)?;
 
         cmd.begin_rendering(
             &[color_attachment],
@@ -150,12 +150,15 @@ impl<'a> Frame<'a> {
     pub(super) fn resolve_depth_attachment(
         &self,
         pass: &PassDesc,
-    ) -> (
-        Option<vk::RenderingAttachmentInfo<'_>>,
-        Option<vk::RenderingAttachmentInfo<'_>>,
-    ) {
+    ) -> Result<
+        (
+            Option<vk::RenderingAttachmentInfo<'_>>,
+            Option<vk::RenderingAttachmentInfo<'_>>,
+        ),
+        RenderGraphError,
+    > {
         if !pass.uses_depth {
-            return (None, None);
+            return Ok((None, None));
         }
 
         let frame_idx = self.current_frame();
@@ -164,7 +167,12 @@ impl<'a> Frame<'a> {
             .frame_context
             .depth_render_textures
             .get(frame_idx)
-            .expect("depth_render_textures must have an entry for current frame");
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration(format!(
+                    "depth_render_textures missing entry for frame {}",
+                    frame_idx
+                ))
+            })?;
 
         let (load_op, store_op, clear_depth) = pass
             .depth_attachment
@@ -215,6 +223,6 @@ impl<'a> Frame<'a> {
                 },
             });
 
-        (Some(depth), stencil)
+        Ok((Some(depth), stencil))
     }
 }

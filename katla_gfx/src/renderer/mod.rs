@@ -426,7 +426,11 @@ impl VulkanRenderer {
     ///
     /// This creates a texture that the UI renders to, which is then
     /// copied to the swapchain by the present pass.
-    pub fn init_output_target(&mut self, width: u32, height: u32) -> Result<(), vk::Result> {
+    pub fn init_output_target(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> Result<(), crate::error::RendererError> {
         let needs_resize = self
             .output_target
             .as_ref()
@@ -1057,7 +1061,11 @@ impl VulkanRenderer {
     ///     // Passes without draw lists (like tonemap) run automatically
     /// });
     /// ```
-    pub fn render<F>(&mut self, frame_graph: &mut crate::render_graph::FrameGraph, f: F)
+    pub fn render<F>(
+        &mut self,
+        frame_graph: &mut crate::render_graph::FrameGraph,
+        f: F,
+    ) -> Result<(), crate::error::RendererError>
     where
         F: FnOnce(&mut crate::render_graph::Frame),
     {
@@ -1079,8 +1087,13 @@ impl VulkanRenderer {
                     self.swap_data.image_available_semaphore(),
                     vk::Fence::null(),
                 )
-                .expect("Failed to acquire swapchain image")
-        };
+        }
+        .map_err(|e| {
+            crate::error::RendererError::SwapchainError(format!(
+                "Failed to acquire swapchain image: {:?}",
+                e
+            ))
+        })?;
 
         // Store image index for readback debugging
         self.last_presented_image_index = Some(image_index);
@@ -1095,7 +1108,12 @@ impl VulkanRenderer {
             self.context
                 .device
                 .begin_command_buffer(cmd, &begin_info)
-                .expect("Failed to begin command buffer");
+                .map_err(|e| {
+                    crate::error::RendererError::VulkanError(
+                        "Failed to begin command buffer".into(),
+                        e,
+                    )
+                })?;
         }
 
         // 5. Transition swapchain image to COLOR_ATTACHMENT_OPTIMAL for rendering
@@ -1114,7 +1132,7 @@ impl VulkanRenderer {
         // 6. Execute frame graph (records commands into the command buffer)
         frame_graph
             .execute(self, image_index, f)
-            .expect("Frame graph execution failed");
+            .map_err(crate::error::RendererError::RenderGraphError)?;
 
         // 7. Transition swapchain image from COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR
         let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
@@ -1128,10 +1146,9 @@ impl VulkanRenderer {
 
         // 8. End command buffer
         unsafe {
-            self.context
-                .device
-                .end_command_buffer(cmd)
-                .expect("Failed to end command buffer");
+            self.context.device.end_command_buffer(cmd).map_err(|e| {
+                crate::error::RendererError::VulkanError("Failed to end command buffer".into(), e)
+            })?;
         }
 
         // 9. Submit command buffer with synchronization
@@ -1183,11 +1200,18 @@ impl VulkanRenderer {
                 .swapchain
                 .swapchain_loader
                 .queue_present(self.context.gfx_queue.vk_queue(), &present_info)
-                .expect("Failed to present");
+                .map_err(|e| {
+                    crate::error::RendererError::SwapchainError(format!(
+                        "Failed to present: {:?}",
+                        e
+                    ))
+                })?;
         }
 
         // 11. Advance to next frame
         self.swap_data.step_frame();
+
+        Ok(())
     }
 }
 
@@ -1207,7 +1231,11 @@ pub(crate) struct OutputRenderTarget {
 
 impl OutputRenderTarget {
     /// Create a new output render target with the given dimensions.
-    pub fn new(context: Rc<VulkanContext>, width: u32, height: u32) -> Result<Self, vk::Result> {
+    pub fn new(
+        context: Rc<VulkanContext>,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, crate::error::RendererError> {
         unsafe {
             let extent = vk::Extent2D { width, height };
             let extent3d = vk::Extent3D {
@@ -1250,7 +1278,7 @@ impl OutputRenderTarget {
                 .create_image_view(&color_view_create_info, None)?;
 
             // Transition image to COLOR_ATTACHMENT_OPTIMAL (ready for UI rendering)
-            let cmd_buffer = context.begin_single_time_commands();
+            let cmd_buffer = context.begin_single_time_commands()?;
             let cmd = cmd_buffer.vk_command_buffer();
 
             ImageBarrier::transition_from_undefined(
@@ -1260,7 +1288,7 @@ impl OutputRenderTarget {
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             );
 
-            context.end_single_time_commands(cmd_buffer);
+            context.end_single_time_commands(cmd_buffer)?;
 
             Ok(Self {
                 color_image,

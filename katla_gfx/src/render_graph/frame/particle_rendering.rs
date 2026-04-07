@@ -76,7 +76,12 @@ impl<'a> Frame<'a> {
             .depth_render_textures
             .get(frame_idx)
             .map(|t| t.image_view.vk())
-            .expect("depth_render_textures must have an entry for current frame");
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration(format!(
+                    "depth_render_textures missing entry for frame {}",
+                    frame_idx
+                ))
+            })?;
         let depth_attachment = vk::RenderingAttachmentInfo::default()
             .image_view(depth_view)
             .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)

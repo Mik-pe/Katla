@@ -137,20 +137,26 @@ impl VulkanContext {
     /// Begin a one-time command buffer for transfer operations.
     /// NOTE: For better performance in multi-threaded scenarios, consider using
     /// per-thread command pools and dedicated transfer queues.
-    pub fn begin_single_time_commands(&self) -> super::CommandBuffer {
+    pub fn begin_single_time_commands(
+        &self,
+    ) -> Result<super::CommandBuffer, crate::error::RendererError> {
         let command_buffer = super::CommandBuffer::new(&self.device, &self.gfx_cmdpool);
-        command_buffer.begin_single_time_command();
-        command_buffer
+        command_buffer.begin_single_time_command()?;
+        Ok(command_buffer)
     }
 
-    pub fn end_single_time_commands(&self, command_buffer: super::CommandBuffer) {
-        command_buffer.end_single_time_command();
+    pub fn end_single_time_commands(
+        &self,
+        command_buffer: super::CommandBuffer,
+    ) -> Result<(), crate::error::RendererError> {
+        command_buffer.end_single_time_command()?;
         let command_buffers = vec![&command_buffer];
 
         // Submit using the unified submit_and_wait pattern
         self.gfx_queue.submit_and_wait(&command_buffers, &[], &[]);
 
         command_buffer.return_to_pool();
+        Ok(())
     }
 
     pub fn init(

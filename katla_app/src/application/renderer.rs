@@ -253,7 +253,7 @@ impl Application {
             katla_gfx::renderer::DrawList { draws }
         });
 
-        self.renderer.render(&mut self.frame_graph, |frame| {
+        if let Err(e) = self.renderer.render(&mut self.frame_graph, |frame| {
             log::debug!(
                 "Inside render closure: submitting {} draw calls to geometry pass",
                 draw_list.len()
@@ -288,7 +288,10 @@ impl Application {
                 log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
                 frame.submit_ui("ui", ui_list);
             }
-        });
+        }) {
+            log::error!("Frame render failed, skipping frame: {}", e);
+            return;
+        }
 
         #[cfg(debug_assertions)]
         {

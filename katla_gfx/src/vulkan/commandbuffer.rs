@@ -1,6 +1,7 @@
 use ash::{Device, vk};
 
 use super::{CommandPool, vertex_attr_set::VertexAttributeSet, vertex_attribute::AttributeType};
+use crate::error::RendererError;
 use crate::sync::{DependencyInfo, Rect2D, VkViewport};
 
 #[derive(Clone)]
@@ -37,37 +38,37 @@ impl CommandBuffer {
     /// Reset the command buffer to initial state.
     ///
     /// The command pool must have been created with `RESET_COMMAND_BUFFER` flag.
-    pub fn reset(&self) {
+    pub fn reset(&self) -> Result<(), RendererError> {
         unsafe {
             self.device
                 .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())
-                .expect("Failed to reset command buffer");
+                .map_err(|e| RendererError::VulkanError("Failed to reset command buffer".into(), e))
         }
     }
 
-    pub fn begin_single_time_command(&self) {
+    pub fn begin_single_time_command(&self) -> Result<(), RendererError> {
         let begin_info = vk::CommandBufferBeginInfo::default()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         unsafe {
             self.device
                 .begin_command_buffer(self.command_buffer, &begin_info)
-                .expect("Failed to begin command buffer - command buffer may be in invalid state");
+                .map_err(|e| RendererError::VulkanError("Failed to begin command buffer".into(), e))
         }
     }
 
-    pub fn end_single_time_command(&self) {
+    pub fn end_single_time_command(&self) -> Result<(), RendererError> {
         unsafe {
-            self.device.end_command_buffer(self.command_buffer).expect(
-                "Failed to end command buffer - command buffer may not be in recording state",
-            );
+            self.device
+                .end_command_buffer(self.command_buffer)
+                .map_err(|e| RendererError::VulkanError("Failed to end command buffer".into(), e))
         }
     }
 
-    pub fn end_command(&self) {
+    pub fn end_command(&self) -> Result<(), RendererError> {
         unsafe {
-            self.device.end_command_buffer(self.command_buffer).expect(
-                "Failed to end command buffer - command buffer may not be in recording state",
-            );
+            self.device
+                .end_command_buffer(self.command_buffer)
+                .map_err(|e| RendererError::VulkanError("Failed to end command buffer".into(), e))
         }
     }
 

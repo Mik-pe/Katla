@@ -236,7 +236,9 @@ fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D)
         None
     };
 
-    let cmd_buffer = context.begin_single_time_commands();
+    let cmd_buffer = context
+        .begin_single_time_commands()
+        .expect("Failed to begin single-time commands");
     let cmd = cmd_buffer.vk_command_buffer();
 
     let depth_range = vk::ImageSubresourceRange {
@@ -255,7 +257,9 @@ fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D)
         depth_range,
     );
 
-    context.end_single_time_commands(cmd_buffer);
+    context
+        .end_single_time_commands(cmd_buffer)
+        .expect("Failed to end single-time commands");
 
     RenderTexture {
         image_view: VkImageView::new(image_view),
