@@ -50,7 +50,7 @@
 
 - [ ] **Consolidate image creation into shared helper** — `OutputRenderTarget::new()`, `Texture::create_image()`, `TransientTexture`, swapchain all construct `vk::ImageCreateInfo` then delegate to `context.create_image()`. Differences in usage flags are legitimate, but an `ImageCreateInfoBuilder` could reduce boilerplate. Low priority.
 - [ ] **Extract repeated pipeline lookup into `AssetRegistry` method** — 21 occurrences (verified) across `render_graph/frame/` repeat: `material.pipeline.ok_or(...)` then `registry.get_pipeline_vk_handles(...).ok_or(...)`. A `get_pipeline_or_err(handle) -> Result<_, RenderGraphError>` method would eliminate significant boilerplate.
-- [ ] **Extract `DrawCall` builder helper** — `renderer/types.rs:204-250` — 6 builder methods all repeat the same `if let Some(inst) = self.instances.first_mut()` guard. Extract a private `with_first_instance_mut()` helper. Minor refactor, low risk.
+- [x] **Extract `DrawCall` builder helper** — `renderer/types.rs:204-250` — 6 builder methods all repeat the same `if let Some(inst) = self.instances.first_mut()` guard. Extract a private `with_first_instance_mut()` helper. Minor refactor, low risk.
 
 ### P3: Polish
 
@@ -112,8 +112,8 @@
 ### P2: Visibility
 
 - [ ] **Make `UiContext` fields `pub(crate)`** — `context/mod.rs:63-67` exposes `pub input`, `pub style`, `pub fonts`. Verified: some fields may need katla_app access. Audit before changing.
-- [ ] **Make `LayoutState` `pub(crate)`** — `context/layout.rs:22-36`. Verified: internal layout detail. However, some may be re-exported — check before changing.
-- [ ] **Make `FontId` inner field `pub(crate)`** — `text/mod.rs:50`. Low priority: `FontId(pub u32)` allows arbitrary construction but this is standard for simple ID types.
+- [x] **Make `LayoutState` `pub(crate)`** — `context/layout.rs:22-36`. Verified: internal layout detail. However, some may be re-exported — check before changing.
+- [x] **Make `FontId` inner field `pub(crate)`** — `text/mod.rs:50`. Low priority: `FontId(pub u32)` allows arbitrary construction but this is standard for simple ID types.
 
 ### P2: Code Reusability
 
@@ -151,7 +151,7 @@ Follow egui's approach: use `skrifa` for font parsing/outlining and `vello_cpu` 
 
 ### P3: Polish
 
-- [ ] **Decide fate of scalar quaternion module** — `scalar::quat` module is `#[allow(dead_code)]` on x86/x86_64 (primary targets). Either gate behind cfg or remove.
+- [x] **Decide fate of scalar quaternion module** — `scalar::quat` module is `#[allow(dead_code)]` on x86/x86_64 (primary targets). Either gate behind cfg or remove.
 
 ## Cross-Cutting
 
