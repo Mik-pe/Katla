@@ -80,8 +80,8 @@ impl<'a> Widget for Toolbar<'a> {
             1.0,
         );
 
-        let original_button_normal = ui.style.button_normal;
-        ui.style.button_normal = Color::TRANSPARENT;
+        let original_button_normal = ui.style().button_normal;
+        ui.style_mut().button_normal = Color::TRANSPARENT;
 
         let padding = 4.0;
         let menu_item_width = 50.0;
@@ -200,7 +200,7 @@ impl<'a> Widget for Toolbar<'a> {
             ui.scaled_font_size(FontSize::Medium),
         );
 
-        ui.style.button_normal = original_button_normal;
+        ui.style_mut().button_normal = original_button_normal;
         Response::default()
     }
 }

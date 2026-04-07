@@ -223,7 +223,7 @@ impl Application {
             // Must happen after generate_ui_draw_list (which sets the flag) and
             // before process_editor_actions (which calls clear_frame_state).
             self.editor.editor_ui.prev_want_capture_keyboard =
-                self.ui_context.input.want_capture_keyboard;
+                self.ui_context.input().want_capture_keyboard;
 
             // Upload font atlas AFTER draw list generation (which rasterizes new glyphs)
             // and BEFORE render_frame (which samples from the GPU atlas).

@@ -60,11 +60,11 @@ pub struct UiContext {
     /// The draw list being built this frame.
     pub(crate) draw_list: DrawList,
     /// Input state (updated externally).
-    pub input: UiInputState,
+    pub(crate) input: UiInputState,
     /// Style configuration.
-    pub style: UiStyle,
+    pub(crate) style: UiStyle,
     /// Font system for text rendering.
-    pub fonts: FontSystem,
+    pub(crate) fonts: FontSystem,
     /// Currently active font.
     pub(crate) current_font: FontId,
     /// Current screen size (logical pixels).
@@ -187,6 +187,40 @@ impl UiContext {
             style,
             ..Self::new()
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Field Accessors
+    // -------------------------------------------------------------------------
+
+    /// Access the input state.
+    pub fn input(&self) -> &UiInputState {
+        &self.input
+    }
+
+    /// Access the input state mutably.
+    pub fn input_mut(&mut self) -> &mut UiInputState {
+        &mut self.input
+    }
+
+    /// Access the style configuration.
+    pub fn style(&self) -> &UiStyle {
+        &self.style
+    }
+
+    /// Access the style configuration mutably.
+    pub fn style_mut(&mut self) -> &mut UiStyle {
+        &mut self.style
+    }
+
+    /// Access the font system.
+    pub fn fonts(&self) -> &FontSystem {
+        &self.fonts
+    }
+
+    /// Access the font system mutably.
+    pub fn fonts_mut(&mut self) -> &mut FontSystem {
+        &mut self.fonts
     }
 
     // -------------------------------------------------------------------------

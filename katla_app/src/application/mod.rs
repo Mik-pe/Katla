@@ -223,7 +223,7 @@ impl ApplicationHandler for Application {
 
             #[cfg(feature = "editor")]
             if let ElementState::Pressed = state {
-                let mouse_pos = self.ui_context.input.mouse_pos;
+                let mouse_pos = self.ui_context.input().mouse_pos;
                 self.editor
                     .editor_ui
                     .update_focused_panel_from_click(mouse_pos);
@@ -280,7 +280,7 @@ impl ApplicationHandler for Application {
                 let pressed = matches!(state, ElementState::Pressed);
                 let time = self.start_time.elapsed().as_secs_f64();
                 self.ui_context
-                    .input
+                    .input_mut()
                     .set_mouse_button_with_time(btn, pressed, time);
             }
 
@@ -354,7 +354,7 @@ impl ApplicationHandler for Application {
                 let logical_x = position.x as f32 / self.scale_factor;
                 let logical_y = position.y as f32 / self.scale_factor;
                 let mouse_pos = Vec2::new(logical_x, logical_y);
-                self.ui_context.input.set_mouse_pos(mouse_pos);
+                self.ui_context.input_mut().set_mouse_pos(mouse_pos);
 
                 // Gizmo hover and drag updates
                 #[cfg(feature = "editor")]
@@ -373,14 +373,14 @@ impl ApplicationHandler for Application {
                         )
                     }
                 };
-                self.ui_context.input.scroll_delta = scroll;
+                self.ui_context.input_mut().scroll_delta = scroll;
 
                 // Forward scroll to ECS input state for orbit camera zoom.
                 // Skip if a floating panel/popup was covering the mouse in the
                 // previous frame (hover_z_index > DEFAULT means UI claimed it).
                 #[cfg(feature = "editor")]
                 {
-                    let mouse_pos = self.ui_context.input.mouse_pos;
+                    let mouse_pos = self.ui_context.input().mouse_pos;
                     let ui_claimed = self.ui_context.hover_z_index() > katla_ui::z_index::DEFAULT;
                     if !ui_claimed
                         && self
@@ -503,15 +503,17 @@ impl ApplicationHandler for Application {
                     let ui_key = Self::winit_to_ui_key(keycode);
                     if let Some(key) = ui_key {
                         match event.state {
-                            ElementState::Pressed => self.ui_context.input.add_key_press(key),
-                            ElementState::Released => self.ui_context.input.add_key_release(key),
+                            ElementState::Pressed => self.ui_context.input_mut().add_key_press(key),
+                            ElementState::Released => {
+                                self.ui_context.input_mut().add_key_release(key)
+                            }
                         }
                     }
 
                     #[cfg(feature = "editor")]
                     if event.state == ElementState::Pressed
                         && self.editor.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
-                        && !self.ui_context.input.want_capture_keyboard
+                        && !self.ui_context.input().want_capture_keyboard
                     {
                         // Gizmo mode shortcuts
                         if keycode == KeyCode::KeyW {
@@ -543,7 +545,7 @@ impl ApplicationHandler for Application {
                     // For Commit events, add each character to the UI input
                     if let winit::event::Ime::Commit(text) = event {
                         for c in text.chars() {
-                            self.ui_context.input.add_char(c);
+                            self.ui_context.input_mut().add_char(c);
                         }
                     }
                 }

@@ -23,11 +23,11 @@ use super::Application;
 /// into the CPU atlas) and BEFORE `render_frame()` (which samples from the GPU atlas).
 /// Calling it after render_frame causes a one-frame lag where the GPU has stale data.
 pub fn upload_font_atlas(app: &mut Application) {
-    if app.ui_context.fonts.atlas_needs_update() {
-        let (width, height) = app.ui_context.fonts.atlas_size();
-        let data = app.ui_context.fonts.atlas_data();
+    if app.ui_context.fonts().atlas_needs_update() {
+        let (width, height) = app.ui_context.fonts().atlas_size();
+        let data = app.ui_context.fonts().atlas_data();
 
-        if app.ui_context.fonts.atlas_was_resized() {
+        if app.ui_context.fonts().atlas_was_resized() {
             app.renderer.create_ui_font_atlas(width, height, data);
 
             if let Some(bindless_slot) = app.renderer.ui_renderer.font_atlas_bindless_slot() {
@@ -36,12 +36,12 @@ pub fn upload_font_atlas(app: &mut Application) {
                     .set_font_atlas_bindless_slot(bindless_slot);
             }
 
-            app.ui_context.fonts.clear_atlas_resized();
+            app.ui_context.fonts_mut().clear_atlas_resized();
         } else {
             app.renderer.update_ui_font_atlas(width, height, data);
         }
 
-        app.ui_context.fonts.mark_atlas_updated();
+        app.ui_context.fonts_mut().mark_atlas_updated();
     }
 }
 
@@ -570,7 +570,7 @@ pub fn process_editor_actions(app: &mut Application) {
 
     // Update OS cursor based on UI request
     use winit::window::CursorIcon;
-    let cursor_icon = match app.ui_context.input.cursor {
+    let cursor_icon = match app.ui_context.input().cursor {
         katla_ui::input::MouseCursor::Arrow => CursorIcon::Default,
         katla_ui::input::MouseCursor::Text => CursorIcon::Text,
         katla_ui::input::MouseCursor::ResizeHorizontal => CursorIcon::EwResize,
@@ -585,7 +585,7 @@ pub fn process_editor_actions(app: &mut Application) {
 
     // Clear input state for next frame
     app.editor.gizmo_state.consumed_click = false;
-    app.ui_context.input.clear_frame_state();
+    app.ui_context.input_mut().clear_frame_state();
 }
 
 /// Collect particle inspector data from the world and particle system.

@@ -32,9 +32,9 @@ fn test_preferences_tab_click_does_not_close_panel() {
     let tab_x = 100.0 + 450.0 / 4.0;
     let tab_y = 100.0 + 32.0;
 
-    ui.input.mouse_pos = Vec2::new(tab_x + 10.0, tab_y + 10.0);
-    ui.input.mouse_pressed[mouse_button::LEFT] = true;
-    ui.input.mouse_down[mouse_button::LEFT] = true;
+    ui.input_mut().mouse_pos = Vec2::new(tab_x + 10.0, tab_y + 10.0);
+    ui.input_mut().mouse_pressed[mouse_button::LEFT] = true;
+    ui.input_mut().mouse_down[mouse_button::LEFT] = true;
 
     let panel = PreferencesPanel::new(
         Vec2::new(800.0, 600.0),
@@ -49,11 +49,11 @@ fn test_preferences_tab_click_does_not_close_panel() {
     ui.add(panel);
     ui.end();
 
-    ui.input.clear_frame_state();
+    ui.input_mut().clear_frame_state();
     ui.begin(Vec2::new(800.0, 600.0), 1.0);
-    ui.input.mouse_pos = Vec2::new(tab_x + 10.0, tab_y + 10.0);
-    ui.input.mouse_down[mouse_button::LEFT] = false;
-    ui.input.mouse_released[mouse_button::LEFT] = true;
+    ui.input_mut().mouse_pos = Vec2::new(tab_x + 10.0, tab_y + 10.0);
+    ui.input_mut().mouse_down[mouse_button::LEFT] = false;
+    ui.input_mut().mouse_released[mouse_button::LEFT] = true;
 
     let panel = PreferencesPanel::new(
         Vec2::new(800.0, 600.0),
@@ -132,9 +132,9 @@ fn test_hierarchy_entity_selection_works() {
     let content_padding = 4.0;
     let item_height = 22.0;
     let click_y = header_height + content_padding + item_height + item_height / 2.0;
-    ui.input.mouse_pos = Vec2::new(100.0, click_y);
-    ui.input.mouse_pressed[mouse_button::LEFT] = true;
-    ui.input.mouse_down[mouse_button::LEFT] = true;
+    ui.input_mut().mouse_pos = Vec2::new(100.0, click_y);
+    ui.input_mut().mouse_pressed[mouse_button::LEFT] = true;
+    ui.input_mut().mouse_down[mouse_button::LEFT] = true;
 
     let hierarchy = Hierarchy::new(
         bounds,

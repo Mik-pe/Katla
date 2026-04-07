@@ -64,9 +64,25 @@ impl<'a> Frame<'a> {
             ],
         );
 
-        // TODO: Pass viewport rectangles via proper uniform buffer
-        // For now, the shader uses a simple hardcoded split-screen layout
-        // This will be enhanced in a follow-up to support arbitrary viewport rectangles
+        // Write viewport rectangles into objects[] array (base_color field).
+        // The compositing pass doesn't use per-object data, so we repurpose
+        // objects[0..N] to pass [x, y, x+w, y+h] for each viewport rect.
+        let identity_model = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        for (i, (_handle, rect)) in viewports.iter().enumerate() {
+            self.renderer.storage_manager.update_object_bindless(
+                current_frame,
+                i,
+                &identity_model,
+                &rect.to_array(),
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                [0, 0, 0, 0],
+            );
+        }
 
         // Create or update compositing descriptor set with viewport textures
         let compositing_desc_set =

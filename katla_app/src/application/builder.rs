@@ -628,13 +628,13 @@ impl ApplicationBuilder {
         if font_path.exists() {
             match std::fs::read(&font_path) {
                 Ok(font_bytes) => {
-                    match ui_context.fonts.add_font(&font_bytes) {
+                    match ui_context.fonts_mut().add_font(&font_bytes) {
                         Ok(font_id) => {
                             // Precache common ASCII characters at typical UI sizes
                             // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
                             // actual DPI scale on first use if different
                             for &size in DEFAULT_UI_FONT_SIZES {
-                                ui_context.fonts.precache_ascii(font_id, size, 1.0);
+                                ui_context.fonts_mut().precache_ascii(font_id, size, 1.0);
                             }
                             ui_context.set_font(font_id);
                             log::info!("Loaded default font from {}", font_path.display());
@@ -657,13 +657,16 @@ impl ApplicationBuilder {
         if icon_font_path.exists() {
             match std::fs::read(&icon_font_path) {
                 Ok(font_bytes) => {
-                    match ui_context.fonts.add_font_with_id(&font_bytes, FontId::ICON) {
+                    match ui_context
+                        .fonts_mut()
+                        .add_font_with_id(&font_bytes, FontId::ICON)
+                    {
                         Ok(()) => {
                             // Precache common icons at typical UI sizes
                             // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
                             // actual DPI scale on first use if different
                             for &size in DEFAULT_UI_FONT_SIZES {
-                                ui_context.fonts.precache_icons(
+                                ui_context.fonts_mut().precache_icons(
                                     FontId::ICON,
                                     size,
                                     1.0,
@@ -712,8 +715,8 @@ impl ApplicationBuilder {
         let mut renderer = Self::init_renderer(&event_loop, &window, &info, &resources);
 
         // Upload initial font atlas texture to GPU
-        let (atlas_width, atlas_height) = ui_context.fonts.atlas_size();
-        let atlas_data = ui_context.fonts.atlas_data();
+        let (atlas_width, atlas_height) = ui_context.fonts().atlas_size();
+        let atlas_data = ui_context.fonts().atlas_data();
         let font_atlas_handle =
             renderer.create_ui_font_atlas(atlas_width, atlas_height, atlas_data);
 

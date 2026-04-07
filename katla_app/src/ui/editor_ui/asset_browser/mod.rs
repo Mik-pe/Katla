@@ -59,8 +59,8 @@ pub fn build_asset_browser(
     }
 
     // Header with breadcrumbs and controls
-    let header_height = ui.style.button_height_small;
-    let toolbar_height = ui.style.toolbar_height;
+    let header_height = ui.style().button_height_small;
+    let toolbar_height = ui.style().toolbar_height;
     let header_bounds =
         Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), header_height));
     ui.draw_rect(header_bounds, theme.panel_header);
@@ -201,7 +201,7 @@ pub fn build_asset_browser(
         state.navigate_to_segment(idx, thumbnail_texture_handles);
     }
 
-    let nav_btn_size = ui.style.button_height_small;
+    let nav_btn_size = ui.style().button_height_small;
     let mut nav_x = bounds.max.x() - nav_btn_size - 4.0;
 
     // Refresh button
@@ -293,7 +293,7 @@ pub fn build_asset_browser(
         |ui| {
             let scroll_offset = ui.scroll_offset();
 
-            let item_size = ui.style.thumbnail_size;
+            let item_size = ui.style().thumbnail_size;
             let item_padding = 8.0;
             let col_count =
                 ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
@@ -332,8 +332,8 @@ pub fn build_asset_browser(
                 }
 
                 let icon_pos = Vec2::new(
-                    item_bounds.center().x() - ui.style.icon_size_large * 0.5,
-                    item_bounds.center().y() - ui.style.icon_size_large * 0.5,
+                    item_bounds.center().x() - ui.style().icon_size_large * 0.5,
+                    item_bounds.center().y() - ui.style().icon_size_large * 0.5,
                 );
 
                 match &asset.thumbnail_state {
@@ -354,7 +354,7 @@ pub fn build_asset_browser(
                         );
                     }
                     ThumbnailState::Loading => {
-                        let icon_size = ui.style.icon_size_large;
+                        let icon_size = ui.style().icon_size_large;
                         let rotation = (std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
@@ -375,7 +375,7 @@ pub fn build_asset_browser(
                         ui.draw_icon(
                             ForkAwesome::TIMES_CIRCLE,
                             icon_pos,
-                            ui.style.icon_size_large,
+                            ui.style().icon_size_large,
                             theme.error,
                         );
                     }
@@ -383,7 +383,7 @@ pub fn build_asset_browser(
                         ui.draw_icon(
                             asset.asset_type.icon(),
                             icon_pos,
-                            ui.style.icon_size_large,
+                            ui.style().icon_size_large,
                             asset.asset_type.color(theme),
                         );
                     }
@@ -807,7 +807,7 @@ pub fn build_asset_browser(
 
     // Get scroll offset for context menu (from state since scroll_area cleared it)
     let scroll_offset = state.scroll_state.scroll_offset;
-    let item_size = ui.style.thumbnail_size;
+    let item_size = ui.style().thumbnail_size;
     let item_padding = 8.0;
     let col_count =
         ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
