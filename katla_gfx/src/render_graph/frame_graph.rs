@@ -212,32 +212,35 @@ impl FrameGraph {
             if let Some(ref params) = pass.tonemap_params
                 && let Some(hdr_base_index) = params.hdr_texture_index
             {
-                // Add frame_idx to base slot to get the correct per-frame texture
                 let actual_hdr_index = hdr_base_index + frame_idx as u32;
-
                 let mode_value = params.mode as u32;
-                renderer.storage_manager.update_object_bindless(
+
+                renderer.storage_manager.update_tonemap_params(
                     frame_idx,
-                    0,
-                    &[
-                        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                        1.0,
-                    ],
-                    &[
+                    [
                         params.exposure,
                         params.gamma,
                         mode_value as f32,
                         actual_hdr_index as f32,
                     ],
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0,
-                    [0, 0, 0, 0],
                 );
+                #[cfg(debug_assertions)]
+                {
+                    let rb = renderer.storage_manager.read_tonemap_params(frame_idx);
+                    log::debug!(
+                        "[TONEMAP VERIFY] wrote [{},{},{},{}] readback [{},{},{},{}]",
+                        params.exposure,
+                        params.gamma,
+                        mode_value,
+                        actual_hdr_index,
+                        rb[0],
+                        rb[1],
+                        rb[2],
+                        rb[3]
+                    );
+                }
             }
 
-            // Update overlay params for wallhack overlay passes.
             if let Some(ref params) = pass.overlay_params {
                 let ldr_idx = params
                     .ldr_texture_index
@@ -248,19 +251,9 @@ impl FrameGraph {
                     .map(|base| base + frame_idx as u32)
                     .unwrap_or(0);
 
-                renderer.storage_manager.update_object_bindless(
+                renderer.storage_manager.update_overlay_params(
                     frame_idx,
-                    0,
-                    &[
-                        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                        1.0,
-                    ],
-                    &[ldr_idx as f32, indicator_idx as f32, 0.0, 0.0],
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0,
-                    [0, 0, 0, 0],
+                    [ldr_idx as f32, indicator_idx as f32, 0.0, 0.0],
                 );
             }
         }
@@ -464,7 +457,7 @@ impl FrameGraph {
                 let (image, allocation) = renderer
                     .context
                     .create_image(image_info, gpu_allocator::MemoryLocation::GpuOnly)
-                    .expect("Failed to create graph image");
+                    .map_err(|_e| RenderGraphError::AllocationFailed(0))?;
 
                 // Create image view
                 let view_info = vk::ImageViewCreateInfo::default()

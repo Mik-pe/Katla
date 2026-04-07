@@ -190,7 +190,9 @@ impl Texture {
         unsafe {
             std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
 
-            let command_buffer = context.begin_single_time_commands();
+            let command_buffer = context
+                .begin_single_time_commands()
+                .expect("Failed to begin single-time commands");
             Self::transition_image_layout(
                 &context,
                 command_buffer.vk_command_buffer(),
@@ -216,7 +218,9 @@ impl Texture {
 
             // NOTE: Synchronous command buffer submission can be a bottleneck.
             // For better performance, batch multiple uploads or use async transfer queues.
-            context.end_single_time_commands(command_buffer);
+            context
+                .end_single_time_commands(command_buffer)
+                .expect("Failed to end single-time commands");
             context.free_buffer(staging_buffer, staging_allocation);
 
             let image_view = VulkanFrameCtx::create_image_view(
@@ -323,7 +327,10 @@ impl Texture {
         unsafe {
             std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
 
-            let command_buffer = self.context.begin_single_time_commands();
+            let command_buffer = self
+                .context
+                .begin_single_time_commands()
+                .expect("Failed to begin single-time commands");
             let cmd = command_buffer.vk_command_buffer();
 
             // Transition from SHADER_READ_ONLY to TRANSFER_DST
@@ -359,7 +366,9 @@ impl Texture {
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
 
-            self.context.end_single_time_commands(command_buffer);
+            self.context
+                .end_single_time_commands(command_buffer)
+                .expect("Failed to end single-time commands");
             self.context.free_buffer(staging_buffer, staging_allocation);
         }
     }
@@ -415,7 +424,10 @@ impl Texture {
         unsafe {
             std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
 
-            let command_buffer = self.context.begin_single_time_commands();
+            let command_buffer = self
+                .context
+                .begin_single_time_commands()
+                .expect("Failed to begin single-time commands");
             Self::transition_image_layout(
                 &self.context,
                 command_buffer.vk_command_buffer(),
@@ -439,7 +451,9 @@ impl Texture {
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
 
-            self.context.end_single_time_commands(command_buffer);
+            self.context
+                .end_single_time_commands(command_buffer)
+                .expect("Failed to end single-time commands");
             self.context.free_buffer(staging_buffer, staging_allocation);
             // Create new image view
             let new_image_view = VulkanFrameCtx::create_image_view(

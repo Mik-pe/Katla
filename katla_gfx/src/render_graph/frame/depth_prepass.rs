@@ -101,7 +101,12 @@ impl<'a> Frame<'a> {
             .frame_context
             .depth_render_textures
             .get(frame_idx)
-            .expect("depth_render_textures must have an entry for current frame");
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration(format!(
+                    "depth_render_textures missing entry for frame {}",
+                    frame_idx
+                ))
+            })?;
 
         let (depth_view, stencil_attachment) =
             if let Some(ref ds_view) = depth_texture.depth_stencil_image_view {

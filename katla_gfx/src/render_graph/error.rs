@@ -87,6 +87,12 @@ impl From<ash::vk::Result> for RenderGraphError {
     }
 }
 
+impl From<crate::error::RendererError> for RenderGraphError {
+    fn from(err: crate::error::RendererError) -> Self {
+        Self::VulkanError(err.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

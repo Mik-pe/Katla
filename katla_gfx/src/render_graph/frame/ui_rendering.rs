@@ -296,7 +296,12 @@ impl<'a> Frame<'a> {
                         &uniform_buffer_info,
                         gpu_allocator::MemoryLocation::CpuToGpu,
                     )
-                    .expect("Failed to allocate UI uniform buffer");
+                    .map_err(|e| {
+                        RenderGraphError::VulkanError(format!(
+                            "Failed to allocate UI uniform buffer: {}",
+                            e
+                        ))
+                    })?;
                 ui_resources.uniform_buffer = Some((uniform_buffer, uniform_allocation));
             }
 
@@ -313,10 +318,7 @@ impl<'a> Frame<'a> {
                 .as_ref()
                 .unwrap()
                 .1;
-            self.renderer
-                .context
-                .map_buffer(allocation)
-                .expect("Failed to map buffer")
+            self.renderer.context.map_buffer(allocation)?
         };
 
         unsafe {

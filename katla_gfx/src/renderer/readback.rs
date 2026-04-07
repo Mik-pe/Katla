@@ -43,7 +43,12 @@ impl VulkanRenderer {
         let (staging_buffer, staging_allocation) = self
             .context
             .allocate_buffer(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu)
-            .expect("Failed to allocate readback staging buffer");
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to allocate readback staging buffer: {}",
+                    e
+                ))
+            })?;
 
         // Create a fence for this readback operation
         let fence_info = vk::FenceCreateInfo::default();
@@ -66,7 +71,7 @@ impl VulkanRenderer {
         );
 
         // Begin command buffer
-        command_buffer.begin_single_time_command();
+        command_buffer.begin_single_time_command()?;
 
         // Transition swapchain image to TRANSFER_SRC optimal layout
         let barrier = vk::ImageMemoryBarrier::default()
@@ -124,7 +129,7 @@ impl VulkanRenderer {
         }
 
         // End and submit command buffer with fence (async!)
-        command_buffer.end_single_time_command();
+        command_buffer.end_single_time_command()?;
 
         unsafe {
             // Submit with fence for async completion
@@ -166,10 +171,7 @@ impl VulkanRenderer {
                 match self.context.device.get_fence_status(readback.fence) {
                     Ok(true) => {
                         // Fence signaled - readback is complete!
-                        let mapped_ptr = self
-                            .context
-                            .map_buffer(&readback.staging_allocation)
-                            .expect("Failed to map buffer");
+                        let mapped_ptr = self.context.map_buffer(&readback.staging_allocation)?;
                         let data =
                             std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize);
                         let result = data.to_vec();
@@ -232,7 +234,12 @@ impl VulkanRenderer {
                 let mapped_ptr = self
                     .context
                     .map_buffer(&readback.staging_allocation)
-                    .expect("Failed to map buffer");
+                    .map_err(|e| {
+                        RendererError::InvalidOperation(format!(
+                            "Failed to map readback buffer: {}",
+                            e
+                        ))
+                    })?;
                 let data = std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize);
                 let result = data.to_vec();
                 let frame = readback.frame;
@@ -249,18 +256,5 @@ impl VulkanRenderer {
         } else {
             Ok(None)
         }
-    }
-
-    /// Synchronous readback (kept for backwards compatibility, but not recommended)
-    ///
-    /// This is the old synchronous version that stalls the GPU.
-    /// Use `queue_async_readback()` + `check_pending_readback()` instead
-    /// to avoid masking synchronization issues.
-    pub fn readback_swapchain_image(&self) -> Result<Option<Vec<u8>>, RendererError> {
-        // This method is now deprecated - the async version should be used instead
-        log::warn!(
-            "readback_swapchain_image() is synchronous and may mask race conditions. Use queue_async_readback() + check_pending_readback() instead."
-        );
-        Ok(None)
     }
 }

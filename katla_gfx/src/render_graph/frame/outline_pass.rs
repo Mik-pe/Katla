@@ -108,9 +108,11 @@ impl<'a> Frame<'a> {
             .depth_render_textures
             .get(frame_idx)
             .and_then(|t| t.depth_stencil_image_view.as_ref().map(|v| v.vk()))
-            .expect("depth_stencil_image_view must exist for D32SfloatS8Uint format");
-
-        // Load depth from geometry pass (has all objects' depth for correct
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration(
+                    "depth_stencil_image_view must exist for D32SfloatS8Uint format".to_string(),
+                )
+            })?;
         // outline depth testing). Clear stencil (not written by geometry pass).
         let depth_attachment = vk::RenderingAttachmentInfo::default()
             .image_view(ds_view)
@@ -268,8 +270,7 @@ impl<'a> Frame<'a> {
             let ptr = self
                 .renderer
                 .context
-                .map_buffer(&self.renderer.outline.params_allocations[frame_idx])
-                .expect("Failed to map buffer");
+                .map_buffer(&self.renderer.outline.params_allocations[frame_idx])?;
             std::ptr::copy_nonoverlapping(
                 &push_constants as *const _ as *const u8,
                 ptr,
@@ -375,7 +376,11 @@ impl<'a> Frame<'a> {
             .depth_render_textures
             .get(frame_idx)
             .and_then(|t| t.depth_stencil_image_view.as_ref().map(|v| v.vk()))
-            .expect("depth_stencil_image_view must exist for D32SfloatS8Uint format");
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration(
+                    "depth_stencil_image_view must exist for D32SfloatS8Uint format".to_string(),
+                )
+            })?;
 
         let depth_attachment = vk::RenderingAttachmentInfo::default()
             .image_view(ds_view)
