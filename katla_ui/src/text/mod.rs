@@ -47,7 +47,7 @@ pub(super) fn coverage_to_alpha(coverage: f32) -> f32 {
 
 /// A handle to a loaded font.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FontId(pub u32);
+pub struct FontId(pub(crate) u32);
 
 impl FontId {
     /// Default/built-in font ID.

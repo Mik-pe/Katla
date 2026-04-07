@@ -31,6 +31,14 @@ pub struct FrameUniforms {
     pub light_intensity: [f32; 4],
     /// Forward+ tile grid dimensions: [tiles_x, tiles_y, 0, 0].
     pub tiles: [u32; 4],
+    /// Tonemap parameters: [exposure, gamma, mode, hdr_texture_index].
+    /// Set by the frame graph before tonemap pass execution.
+    pub tonemap: [f32; 4],
+    /// Overlay parameters: [ldr_texture_index, stencil_indicator_index, 0, 0].
+    /// Set by the frame graph before overlay pass execution.
+    pub overlay: [f32; 4],
+    /// Compositing parameters: [screen_width, screen_height, viewport_count, viewport_bindless_index].
+    pub compositing: [f32; 4],
 }
 
 impl Default for FrameUniforms {
@@ -44,6 +52,9 @@ impl Default for FrameUniforms {
             light_color: [1.0, 0.98, 0.95, 0.0],   // Slightly warm white
             light_intensity: [3.0, 0.0, 0.0, 0.0], // HDR intensity for PBR
             tiles: [0, 0, 0, 0],
+            tonemap: [1.0, 2.2, 0.0, 0.0],
+            overlay: [0.0, 0.0, 0.0, 0.0],
+            compositing: [0.0, 0.0, 0.0, 0.0],
         }
     }
 }
@@ -188,43 +199,39 @@ impl DrawCall {
         self.instances.len() as u32
     }
 
+    fn with_first_instance_mut<F: FnOnce(&mut InstanceData)>(&mut self, f: F) {
+        if let Some(inst) = self.instances.first_mut() {
+            f(inst);
+        }
+    }
+
     /// Set the model transform matrix on the first instance.
     pub fn with_transform(mut self, model: [f32; 16]) -> Self {
-        if let Some(inst) = self.instances.first_mut() {
-            inst.model_matrix = model;
-        }
+        self.with_first_instance_mut(|inst| inst.model_matrix = model);
         self
     }
 
     /// Set the material color on the first instance (RGBA, 0.0-1.0 range).
     pub fn with_color(mut self, color: [f32; 4]) -> Self {
-        if let Some(inst) = self.instances.first_mut() {
-            inst.color = color;
-        }
+        self.with_first_instance_mut(|inst| inst.color = color);
         self
     }
 
     /// Set PBR metallic factor on the first instance (0.0 = dielectric, 1.0 = metal).
     pub fn with_metallic(mut self, metallic: f32) -> Self {
-        if let Some(inst) = self.instances.first_mut() {
-            inst.metallic = metallic;
-        }
+        self.with_first_instance_mut(|inst| inst.metallic = metallic);
         self
     }
 
     /// Set PBR roughness factor on the first instance (0.0 = smooth, 1.0 = rough).
     pub fn with_roughness(mut self, roughness: f32) -> Self {
-        if let Some(inst) = self.instances.first_mut() {
-            inst.roughness = roughness;
-        }
+        self.with_first_instance_mut(|inst| inst.roughness = roughness);
         self
     }
 
     /// Set ambient occlusion factor on the first instance (0.0 = occluded, 1.0 = no occlusion).
     pub fn with_ao(mut self, ao: f32) -> Self {
-        if let Some(inst) = self.instances.first_mut() {
-            inst.ao = ao;
-        }
+        self.with_first_instance_mut(|inst| inst.ao = ao);
         self
     }
 
@@ -236,11 +243,11 @@ impl DrawCall {
 
     /// Set all PBR material parameters at once on the first instance.
     pub fn with_pbr(mut self, metallic: f32, roughness: f32, ao: f32) -> Self {
-        if let Some(inst) = self.instances.first_mut() {
+        self.with_first_instance_mut(|inst| {
             inst.metallic = metallic;
             inst.roughness = roughness;
             inst.ao = ao;
-        }
+        });
         self
     }
 
