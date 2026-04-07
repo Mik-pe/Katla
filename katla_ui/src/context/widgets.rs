@@ -118,13 +118,7 @@ impl UiContext {
             self.cursor(),
             katla_math::Vec2::new(width, self.style.button_height_medium),
         );
-        let response = self.add(Button::new(text).bounds(bounds));
-        // Advance cursor
-        self.cursor = katla_math::Vec2::new(
-            self.cursor.x(),
-            self.cursor.y() + self.style.button_height_medium + self.style.item_spacing,
-        );
-        response
+        self.add(Button::new(text).bounds(bounds))
     }
 
     /// Add a label with custom color at the current cursor position.
@@ -138,11 +132,7 @@ impl UiContext {
         let bounds = Rect2D::from_origin_size(self.cursor(), text_size);
         self.draw_text(text, self.cursor(), color, self.style.font_size);
         let response = crate::Response::new(bounds);
-        // Advance cursor
-        self.cursor = katla_math::Vec2::new(
-            self.cursor.x(),
-            self.cursor.y() + text_size.y() + self.style.item_spacing,
-        );
+        self.advance_cursor(text_size);
         response
     }
 }
