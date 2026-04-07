@@ -359,7 +359,7 @@ impl EditorUI {
         loader: &'a mut crate::util::BackgroundLoader,
         thumbnail_texture_handles: &'a std::collections::HashMap<std::path::PathBuf, TextureHandle>,
     ) -> &'a DrawList {
-        self.theme.apply_to_style(&mut ui.style);
+        self.theme.apply_to_style(ui.style_mut());
 
         ui.set_font_scale(self.font_scale);
 

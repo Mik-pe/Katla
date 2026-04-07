@@ -6,6 +6,9 @@
 // - Per-viewport positioning via rectangles
 // - Alpha blending for overlapping viewports
 // - Proper depth ordering (reverse iteration for topmost-last)
+//
+// Viewport rectangles are passed via objects[i].base_color (Set 0, Binding 1).
+// Each object uniform's base_color stores [x, y, x+width, y+height].
 
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
@@ -21,21 +24,7 @@ var<storage, read> objects: array<ObjectUniforms>;
 @group(2) @binding(0)
 var viewportTextures: binding_array<texture_2d<f32>, 8>;
 
-struct ViewportRect {
-    x: f32,
-    y: f32,
-    z: f32,
-    w: f32,
-}
-
-struct CompositingUniforms {
-    rects: array<ViewportRect, 8>,
-    viewport_count: u32,
-    screen_size: vec2f,
-    padding: f32,
-}
-
-fn pixel_in_rect(pixel_pos: vec2f, rect: ViewportRect) -> bool {
+fn pixel_in_rect(pixel_pos: vec2f, rect: vec4f) -> bool {
     return pixel_pos.x >= rect.x &&
            pixel_pos.x <= rect.z &&
            pixel_pos.y >= rect.y &&
@@ -44,10 +33,8 @@ fn pixel_in_rect(pixel_pos: vec2f, rect: ViewportRect) -> bool {
 
 @fragment
 fn fs_main(@builtin(position) clip_position: vec4f, @location(0) uv: vec2f) -> @location(0) vec4f {
-    let params = objects[0];
-
-    let screen_size = params.base_color.xy;
-    let viewport_count = u32(params.material_params.x);
+    let screen_size = frame_data.compositing.xy;
+    let viewport_count = u32(frame_data.compositing.z);
 
     let pixel_pos = uv * screen_size;
 
@@ -57,29 +44,25 @@ fn fs_main(@builtin(position) clip_position: vec4f, @location(0) uv: vec2f) -> @
         return result;
     }
 
-    if (viewport_count >= 2u) {
-        let split_x = screen_size.x * 0.5;
+    // Iterate viewports in reverse order (topmost drawn first)
+    for (var i: i32 = i32(viewport_count) - 1; i >= 0; i--) {
+        let rect = objects[u32(i)].base_color;
 
-        if (pixel_pos.x < split_x) {
-            let local_uv = vec2f(
-                pixel_pos.x / split_x,
-                pixel_pos.y / screen_size.y
-            );
-            let viewport_color = textureSample(viewportTextures[0u], shared_sampler, local_uv);
+        if (!pixel_in_rect(pixel_pos, rect)) {
+            continue;
+        }
+
+        // Map pixel position to local UV within the viewport rectangle
+        let vp_size = vec2f(rect.z - rect.x, rect.w - rect.y);
+        let local_uv = (pixel_pos - vec2f(rect.x, rect.y)) / vp_size;
+
+        let viewport_color = textureSample(viewportTextures[u32(i)], shared_sampler, local_uv);
+
+        if (viewport_color.a >= 0.95) {
             return viewport_color;
         }
-        else {
-            let local_uv = vec2f(
-                (pixel_pos.x - split_x) / split_x,
-                pixel_pos.y / screen_size.y
-            );
-            let viewport_color = textureSample(viewportTextures[1u], shared_sampler, local_uv);
-            return viewport_color;
-        }
-    } else if (viewport_count == 1u) {
-        let local_uv = uv * 0.5;
-        let viewport_color = textureSample(viewportTextures[0u], shared_sampler, local_uv);
-        return viewport_color;
+
+        result = mix(result, viewport_color, viewport_color.a);
     }
 
     return result;
