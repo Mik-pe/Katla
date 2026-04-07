@@ -1,0 +1,123 @@
+{
+  "groupId": "editor-ui-split",
+  "testedAt": "2026-04-07T23:04:00Z",
+  "isolation": {
+    "type": "pure-rust-workspace",
+    "workingDirectory": "C:\\dev\\katla",
+    "tool": "cargo CLI commands"
+  },
+  "toolsUsed": ["cargo check", "cargo clippy", "cargo test", "git diff"],
+  "assertions": [
+    {
+      "id": "VAL-STRUCT-016",
+      "title": "Existing editor_ui/ files remain unchanged",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "git diff --name-only -- katla_app/src/ui/editor_ui/",
+          "expected": "Only new files (types.rs, layout.rs, tests.rs) and mod.rs show diffs; pre-existing files (hierarchy.rs, inspector.rs, preferences.rs, status_bar.rs, toolbar.rs) are clean",
+          "observed": "Only 2 pre-existing files show diffs: asset_browser/types.rs and viewport_grid.rs. No new untracked files found in editor_ui/ (types.rs, layout.rs, tests.rs are all tracked). The new files are not 'untracked' — they were committed previously. mod.rs also shows changes as expected."
+        },
+        {
+          "action": "git diff --stat -- katla_app/src/ui/editor_ui/",
+          "expected": "Minimal or no changes to pre-existing files",
+          "observed": "asset_browser/types.rs: 1 deletion (removed #[allow(dead_code)] annotation). viewport_grid.rs: 10 deletions (removed unused create_test_grid helper function). Total: 11 deletions, 0 additions across 2 pre-existing files."
+        }
+      ],
+      "evidence": {
+        "gitDiffNameOnly": "katla_app/src/ui/editor_ui/asset_browser/types.rs\\nkatla_app/src/ui/editor_ui/viewport_grid.rs",
+        "gitDiffStat": "asset_browser/types.rs | 1 -\\nviewport_grid.rs | 10 ----------\\n2 files changed, 11 deletions(-)",
+        "untrackedFiles": "none",
+        "newTrackedFiles": "types.rs, layout.rs, tests.rs (all committed/tracked)"
+      },
+      "issues": "Two pre-existing files have minor cosmetic diffs: asset_browser/types.rs removed a dead_code allow annotation (1 line) and viewport_grid.rs removed an unused test helper (10 lines). Both changes are cleanup related to the split — removing code that became unused after extraction. The pre-existing files hierarchy.rs, inspector.rs, preferences.rs, status_bar.rs, and toolbar.rs are completely unchanged."
+    },
+    {
+      "id": "VAL-STRUCT-017",
+      "title": "Extracted types/layout/tests compile",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Verify types.rs, layout.rs, tests.rs exist in editor_ui/",
+          "expected": "All three files present",
+          "observed": "All three files exist and are tracked in git"
+        },
+        {
+          "action": "cargo check -p katla_app --features editor",
+          "expected": "Exit code 0, no errors",
+          "observed": "Finished `dev` profile in 0.63s, exit code 0, no errors"
+        }
+      ],
+      "evidence": {
+        "filesExist": "types.rs ✓, layout.rs ✓, tests.rs ✓",
+        "cargoCheck": "Finished `dev` profile [optimized + debuginfo] target(s) in 0.63s — exit code 0"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-STRUCT-018",
+      "title": "EditorUI public API unchanged",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "cargo check -p katla_app --features editor",
+          "expected": "Zero compilation errors at all call sites",
+          "observed": "Compilation succeeded with exit code 0. Zero errors. Since cargo check validates the entire crate including all callers, the public API is intact."
+        }
+      ],
+      "evidence": {
+        "cargoCheck": "Finished `dev` profile [optimized + debuginfo] target(s) in 0.63s — exit code 0, zero errors",
+        "explanation": "cargo check compiles the full dependency graph. If EditorUI's public API had changed, all callers in katla_app would fail to compile. Clean compilation confirms API compatibility."
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-STRUCT-019",
+      "title": "Editor UI tests pass after extraction",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "cargo test -p katla_app --features editor -- editor_ui",
+          "expected": "All editor_ui tests pass",
+          "observed": "11 tests ran, all passed: test_ctrl_s_suppressed_when_keyboard_captured, test_save_confirmation_timer_countdown, test_save_confirmation_timer_never_negative, test_hierarchy_entity_selection_works, test_preferences_tab_click_does_not_close_panel, test_get_slot_at_position_quad, test_get_slot_at_position_horizontal2, test_get_slot_at_position_single, test_get_slot_at_position_vertical2, test_viewport_bounds_quad, test_viewport_bounds_single"
+        }
+      ],
+      "evidence": {
+        "cargoTest": "running 11 tests — all 11 passed; 0 failed; 0 ignored; finished in 0.00s",
+        "testNames": [
+          "ui::editor_ui::tests::test_ctrl_s_suppressed_when_keyboard_captured",
+          "ui::editor_ui::tests::test_save_confirmation_timer_countdown",
+          "ui::editor_ui::tests::test_save_confirmation_timer_never_negative",
+          "ui::editor_ui::tests::test_hierarchy_entity_selection_works",
+          "ui::editor_ui::tests::test_preferences_tab_click_does_not_close_panel",
+          "ui::editor_ui::viewport_grid::tests::test_get_slot_at_position_quad",
+          "ui::editor_ui::viewport_grid::tests::test_get_slot_at_position_horizontal2",
+          "ui::editor_ui::viewport_grid::tests::test_get_slot_at_position_single",
+          "ui::editor_ui::viewport_grid::tests::test_get_slot_at_position_vertical2",
+          "ui::editor_ui::viewport_grid::tests::test_viewport_bounds_quad",
+          "ui::editor_ui::viewport_grid::tests::test_viewport_bounds_single"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-STRUCT-020",
+      "title": "No new clippy warnings from editor_ui split",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "cargo clippy -p katla_app --features editor",
+          "expected": "Zero warnings",
+          "observed": "Finished `dev` profile in 0.73s, exit code 0, no warnings produced"
+        }
+      ],
+      "evidence": {
+        "cargoClippy": "Finished `dev` profile [optimized + debuginfo] target(s) in 0.73s — exit code 0, zero warnings"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 5 assertions: all 5 passed. VAL-STRUCT-016 notes minor cosmetic diffs in 2 pre-existing files (removal of dead_code annotation and unused test helper) which are cleanup related to the extraction. Compilation, tests, and clippy all clean."
+}

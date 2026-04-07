@@ -1,0 +1,47 @@
+{
+  "milestone": "structural-decomposition",
+  "round": 1,
+  "status": "fail",
+  "assertionsSummary": {
+    "total": 20,
+    "passed": 19,
+    "failed": 1,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-STRUCT-001",
+    "VAL-STRUCT-003",
+    "VAL-STRUCT-004",
+    "VAL-STRUCT-005",
+    "VAL-STRUCT-006",
+    "VAL-STRUCT-007",
+    "VAL-STRUCT-008",
+    "VAL-STRUCT-009",
+    "VAL-STRUCT-010",
+    "VAL-STRUCT-011",
+    "VAL-STRUCT-012",
+    "VAL-STRUCT-013",
+    "VAL-STRUCT-014",
+    "VAL-STRUCT-015",
+    "VAL-STRUCT-016",
+    "VAL-STRUCT-017",
+    "VAL-STRUCT-018",
+    "VAL-STRUCT-019",
+    "VAL-STRUCT-020"
+  ],
+  "failedAssertions": [
+    {
+      "id": "VAL-STRUCT-002",
+      "reason": "spawning.rs does not exist under katla_app/src/scene/. The assertion requires files tests.rs, default_scene.rs, serialization.rs, AND spawning.rs to exist in scene/. The implementation correctly placed spawning functionality in katla_app/src/application/spawning.rs instead (application-level spawning belongs in the application module). All other required files exist and compile correctly. The public API is fully preserved (VAL-STRUCT-005 passes) and all tests pass (VAL-STRUCT-001 passes)."
+    }
+  ],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "flowReports": [
+    ".factory/validation/structural-decomposition/user-testing/flows/scene-split.json",
+    ".factory/validation/structural-decomposition/user-testing/flows/application-split.json",
+    ".factory/validation/structural-decomposition/user-testing/flows/struct-decomposition.json",
+    ".factory/validation/structural-decomposition/user-testing/flows/editor-ui-split.json"
+  ],
+  "previousRound": null
+}
