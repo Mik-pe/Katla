@@ -812,6 +812,8 @@ impl ApplicationBuilder {
             #[cfg(feature = "editor")]
             gizmo_resources: crate::gizmo::GizmoResources::default(),
             #[cfg(feature = "editor")]
+            billboard_resources: crate::billboard::BillboardResources::default(),
+            #[cfg(feature = "editor")]
             prev_mouse_screen: None,
             on_init: self.on_init,
             on_update: self.on_update,

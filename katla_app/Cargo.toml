@@ -13,6 +13,7 @@ katla_math = { workspace = true }
 katla_gfx = { workspace = true }
 katla_ecs = { workspace = true }
 katla_ui = { workspace = true }
+katla_icons = { workspace = true }
 katla_derive = { workspace = true }
 ash = { workspace = true }
 bytemuck = { workspace = true }
@@ -30,4 +31,6 @@ png = { workspace = true }
 ron = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+skrifa = { workspace = true }
 toml = { workspace = true }
+vello_cpu = { workspace = true }

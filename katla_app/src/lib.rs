@@ -1,5 +1,8 @@
 pub mod animation;
 pub mod application;
+#[cfg(feature = "editor")]
+pub mod billboard;
+pub(crate) mod billboard_icons;
 pub mod components;
 pub mod error;
 #[cfg(feature = "editor")]
