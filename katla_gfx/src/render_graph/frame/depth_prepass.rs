@@ -154,10 +154,7 @@ impl<'a> Frame<'a> {
         let (pipeline, layout) = self
             .renderer
             .asset_registry
-            .get_pipeline_vk_handles(depth_pipeline_handle)
-            .ok_or(RenderGraphError::InvalidPipelineHandle(
-                depth_pipeline_handle,
-            ))?;
+            .get_pipeline_handles(depth_pipeline_handle)?;
 
         cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
             0.0,

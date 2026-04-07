@@ -1089,14 +1089,20 @@ fn test_scroll_consumed_by_first_scroll_area() {
 
     let state1 = ctx.scroll_area(
         ScrollArea::new("scroll1").max_height(100.0),
-        ScrollAreaState { content_height: 500.0, ..Default::default() },
+        ScrollAreaState {
+            content_height: 500.0,
+            ..Default::default()
+        },
         bounds1,
         |_ui| 500.0,
     );
 
     let state2 = ctx.scroll_area(
         ScrollArea::new("scroll2").max_height(100.0),
-        ScrollAreaState { content_height: 500.0, ..Default::default() },
+        ScrollAreaState {
+            content_height: 500.0,
+            ..Default::default()
+        },
         bounds2,
         |_ui| 500.0,
     );
@@ -1120,10 +1126,9 @@ fn test_scroll_consumed_by_first_scroll_area() {
 /// false due to hover_z_index being higher.
 #[test]
 fn test_scroll_blocked_by_floating_panel() {
-    use crate::widgets::{DraggablePanel, DraggablePanelState, DraggablePanelStyle};
+    use crate::widgets::{DraggablePanel, DraggablePanelConfig, DraggablePanelState, DraggablePanelStyle};
 
-    let scroll_bounds =
-        Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 400.0));
+    let scroll_bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 400.0));
 
     let mut ctx = UiContext::new();
     let mut panel_state = DraggablePanelState {
@@ -1148,13 +1153,11 @@ fn test_scroll_blocked_by_floating_panel() {
     // Render floating panel first (at PANEL z-index)
     DraggablePanel::show(
         &mut ctx,
-        "test_panel",
-        "Test",
-        300.0,
-        300.0,
-        Vec2::new(800.0, 600.0),
         &mut panel_state,
         &style,
+        DraggablePanelConfig::new("test_panel", "Test")
+            .size(300.0, 300.0)
+            .screen_size(Vec2::new(800.0, 600.0)),
         |_ui, _frame| {},
     );
 

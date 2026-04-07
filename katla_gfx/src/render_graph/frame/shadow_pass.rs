@@ -71,18 +71,14 @@ impl<'a> Frame<'a> {
         let (pipeline, layout) = self
             .renderer
             .asset_registry
-            .get_pipeline_vk_handles(shadow_pipeline_handle)
-            .ok_or(RenderGraphError::InvalidPipelineHandle(
-                shadow_pipeline_handle,
-            ))?;
+            .get_pipeline_handles(shadow_pipeline_handle)?;
 
         let (skinned_pipeline, skinned_layout) =
             if let Some(skinned_handle) = self.renderer.shadow_pipeline_skinned() {
                 self.renderer
                     .asset_registry
-                    .get_pipeline_vk_handles(skinned_handle)
-                    .map(|(p, l)| (Some(p), Some(l)))
-                    .ok_or(RenderGraphError::InvalidPipelineHandle(skinned_handle))?
+                    .get_pipeline_handles(skinned_handle)
+                    .map(|(p, l)| (Some(p), Some(l)))?
             } else {
                 (None, None)
             };

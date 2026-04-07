@@ -5,7 +5,10 @@
 use katla_math::{Rect2D, Vec2};
 use katla_ui::{
     FontId, FontSize, ForkAwesome, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
-    widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle, ToggleButton},
+    widgets::{
+        Button, DraggablePanel, DraggablePanelConfig, DraggablePanelState, DraggablePanelStyle,
+        ToggleButton,
+    },
 };
 
 use crate::Preferences;
@@ -146,13 +149,11 @@ impl<'a> Widget for PreferencesPanel<'a> {
 
         DraggablePanel::show(
             ui,
-            "prefs",
-            "Settings",
-            panel_width,
-            panel_height,
-            self.screen_size,
             &mut self.state.panel,
             &style,
+            DraggablePanelConfig::new("prefs", "Settings")
+                .size(panel_width, panel_height)
+                .screen_size(self.screen_size),
             |ui, frame| {
                 panel_bounds = frame.panel_bounds;
 
@@ -265,10 +266,8 @@ impl<'a> Widget for PreferencesPanel<'a> {
                         let row_height = 28.0;
                         let spacing = 8.0;
 
-                        let cursor = Vec2::new(
-                            panel_bounds.min.x() + 16.0,
-                            content_start_y - scroll_offset,
-                        );
+                        let cursor =
+                            Vec2::new(panel_bounds.min.x() + 16.0, content_start_y - scroll_offset);
 
                         let final_y = match current_tab {
                             PreferencesTab::Appearance => build_appearance_tab(

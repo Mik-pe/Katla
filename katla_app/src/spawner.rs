@@ -6,7 +6,7 @@
 
 use katla_ecs::{Component, EntityId, World};
 use katla_gfx::{MaterialHandle, MeshHandle};
-use katla_math::{Color, Transform, Vec3};
+use katla_math::{Color, Vec3};
 
 use crate::components::{DrawableComponent, TransformComponent};
 
@@ -79,13 +79,7 @@ impl Spawner for World {
         color: Color,
     ) -> EntityId {
         self.spawn((
-            TransformComponent {
-                transform: Transform::new_from_position(Vec3::new(
-                    position[0],
-                    position[1],
-                    position[2],
-                )),
-            },
+            TransformComponent::from_position(Vec3::new(position[0], position[1], position[2])),
             DrawableComponent::with_handles_and_color(mesh_handle, material_handle, color),
         ))
     }
@@ -101,13 +95,7 @@ impl Spawner for World {
         ao: f32,
     ) -> EntityId {
         self.spawn((
-            TransformComponent {
-                transform: Transform::new_from_position(Vec3::new(
-                    position[0],
-                    position[1],
-                    position[2],
-                )),
-            },
+            TransformComponent::from_position(Vec3::new(position[0], position[1], position[2])),
             DrawableComponent::with_handles_and_material(
                 mesh_handle,
                 material_handle,
@@ -128,13 +116,7 @@ impl Spawner for World {
         extra: C,
     ) -> EntityId {
         self.spawn((
-            TransformComponent {
-                transform: Transform::new_from_position(Vec3::new(
-                    position[0],
-                    position[1],
-                    position[2],
-                )),
-            },
+            TransformComponent::from_position(Vec3::new(position[0], position[1], position[2])),
             DrawableComponent::with_handles_and_color(mesh_handle, material_handle, color),
             extra,
         ))

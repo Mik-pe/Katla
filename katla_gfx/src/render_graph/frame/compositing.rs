@@ -42,11 +42,6 @@ impl<'a> Frame<'a> {
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
 
-        // Update compositing uniforms (viewport rectangles and screen size)
-        // We use objects[0] for fullscreen/post-processing passes (similar to tonemap)
-        let viewport_count = viewports.len() as u32;
-        let screen_size = [extent.width as f32, extent.height as f32];
-
         // With per-frame transient textures, the actual index is base + frame_idx
         let viewport_bindless_idx = if let Some(base_idx) = self.graph.get_ldr_texture_base_index()
         {
@@ -58,25 +53,15 @@ impl<'a> Frame<'a> {
             0
         };
 
-        // Encode viewport count, screen size, and bindless index in objects[0]
-        // base_color.rg = screen_size (width, height)
-        // base_color.a = viewport bindless texture index
-        // material_params.x = viewport count
-        self.renderer.storage_manager.update_object_bindless(
+        // Encode viewport count, screen size, and bindless index in frame uniforms
+        self.renderer.storage_manager.update_compositing_params(
             current_frame,
-            0,          // Slot 0 for fullscreen passes
-            &[0.0; 16], // Identity matrix (unused)
-            &[
-                screen_size[0],               // base_color.r = screen width
-                screen_size[1],               // base_color.g = screen height
-                0.0,                          // base_color.b = unused
-                viewport_bindless_idx as f32, // base_color.a = viewport bindless index
+            [
+                extent.width as f32,
+                extent.height as f32,
+                viewports.len() as f32,
+                viewport_bindless_idx as f32,
             ],
-            viewport_count as f32, // material_params.x = viewport count
-            0.0,                   // material_params.y = unused
-            0.0,                   // material_params.z = unused
-            0.0,                   // material_params.w = unused
-            [0, 0, 0, 0],          // texture_indices = unused
         );
 
         // TODO: Pass viewport rectangles via proper uniform buffer
@@ -162,8 +147,7 @@ impl<'a> Frame<'a> {
         let (pipeline, layout) = self
             .renderer
             .asset_registry
-            .get_pipeline_vk_handles(pipeline_handle)
-            .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline_handle))?;
+            .get_pipeline_handles(pipeline_handle)?;
 
         // Bind graphics pipeline
         unsafe {

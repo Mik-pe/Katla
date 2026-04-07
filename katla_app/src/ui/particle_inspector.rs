@@ -5,7 +5,9 @@ use katla_ecs::EntityId;
 use katla_math::{Rect2D, Vec2};
 use katla_ui::{
     FontSize, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
-    widgets::{Button, DraggablePanel, DraggablePanelState, DraggablePanelStyle},
+    widgets::{
+        Button, DraggablePanel, DraggablePanelConfig, DraggablePanelState, DraggablePanelStyle,
+    },
 };
 
 use crate::ui::Theme;
@@ -99,13 +101,11 @@ impl<'a> Widget for ParticleInspector<'a> {
 
         DraggablePanel::show(
             ui,
-            "particle_inspector",
-            "Particle Inspector",
-            panel_width,
-            panel_height,
-            screen_size,
             &mut self.state.panel,
             &style,
+            DraggablePanelConfig::new("particle_inspector", "Particle Inspector")
+                .size(panel_width, panel_height)
+                .screen_size(screen_size),
             |ui, frame| {
                 let title_bar_height = DraggablePanel::title_bar_height();
                 let panel_min = frame.panel_bounds.min;

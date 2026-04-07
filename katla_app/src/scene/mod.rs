@@ -433,11 +433,7 @@ impl SceneManager {
             );
 
             app.world.spawn((
-                TransformComponent {
-                    transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
-                        pos[0], pos[1], pos[2],
-                    )),
-                },
+                TransformComponent::from_position(katla_math::Vec3::new(pos[0], pos[1], pos[2])),
                 drawable,
             ))
         } else {
@@ -458,11 +454,9 @@ impl SceneManager {
                     if let Some(ref pe) = desc.particle_emitter {
                         emitter.active = pe.active;
                     }
-                    let transform = TransformComponent {
-                        transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
-                            pos[0], pos[1], pos[2],
-                        )),
-                    };
+                    let transform = TransformComponent::from_position(katla_math::Vec3::new(
+                        pos[0], pos[1], pos[2],
+                    ));
                     app.world.spawn((transform, emitter))
                 }
                 EntitySource::Light => {
@@ -490,11 +484,9 @@ impl SceneManager {
                         .map(|pl| PointLight::new(pl.color, pl.intensity, pl.range))
                         .unwrap_or_default();
 
-                    let transform = TransformComponent {
-                        transform: katla_math::Transform::new_from_position(katla_math::Vec3::new(
-                            pos[0], pos[1], pos[2],
-                        )),
-                    };
+                    let transform = TransformComponent::from_position(katla_math::Vec3::new(
+                        pos[0], pos[1], pos[2],
+                    ));
 
                     app.world.spawn((transform, drawable, point_light))
                 }

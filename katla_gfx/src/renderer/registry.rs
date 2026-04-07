@@ -4,6 +4,7 @@
 //! for referencing them. This keeps ash::vk types contained within katla_gfx.
 
 use crate::handle::{MaterialHandle, MeshHandle, PipelineHandle, ResourceStorage};
+use crate::render_graph::RenderGraphError;
 use crate::vulkan::material::builder::Pipeline;
 use crate::vulkan::material::compute_pipeline::ComputePipeline;
 use crate::vulkan::vertex_attribute::AttributeType;
@@ -220,6 +221,15 @@ impl AssetRegistry {
     ) -> Option<(vk::Pipeline, vk::PipelineLayout)> {
         let pipeline = self.pipelines.get(handle.index())?;
         Some((pipeline.vk_pipeline(), pipeline.vk_layout()))
+    }
+
+    /// Get the Vulkan pipeline and layout handles, returning an error if the handle is invalid.
+    pub(crate) fn get_pipeline_handles(
+        &self,
+        handle: PipelineHandle,
+    ) -> Result<(vk::Pipeline, vk::PipelineLayout), RenderGraphError> {
+        self.get_pipeline_vk_handles(handle)
+            .ok_or(RenderGraphError::InvalidPipelineHandle(handle))
     }
 
     /// Get a pipeline by handle.
