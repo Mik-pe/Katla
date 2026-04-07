@@ -4,6 +4,69 @@
 
 use katla_math::Color;
 
+/// Color scheme for UI theming.
+///
+/// Holds all color-related fields from [`UiStyle`], allowing themes to be defined
+/// independently from dimensions and spacing. Use with [`UiStyle::with_colors`] to
+/// build a complete style.
+#[derive(Debug, Clone)]
+pub struct ColorScheme {
+    pub window_bg: Color,
+    pub window_title_bg: Color,
+    pub window_title_bg_active: Color,
+    pub window_title_text: Color,
+    pub window_border: Color,
+
+    pub button_normal: Color,
+    pub button_hovered: Color,
+    pub button_active: Color,
+    pub button_text: Color,
+
+    pub input_bg: Color,
+    pub input_border: Color,
+    pub input_text: Color,
+    pub input_cursor: Color,
+    pub input_border_focused: Color,
+    pub input_selection: Color,
+
+    pub text_color: Color,
+    pub text_disabled: Color,
+    pub text_hint: Color,
+
+    pub checkbox_bg: Color,
+    pub checkbox_check: Color,
+    pub checkbox_border: Color,
+
+    pub slider_track: Color,
+    pub slider_grab: Color,
+    pub slider_grab_hovered: Color,
+    pub slider_grab_active: Color,
+
+    pub separator: Color,
+    pub border: Color,
+
+    pub menu_bg: Color,
+    pub menu_hovered: Color,
+    pub menu_active: Color,
+    pub menu_border: Color,
+
+    pub popup_bg: Color,
+    pub popup_border: Color,
+    pub popup_shadow: Color,
+
+    pub selectable_hovered: Color,
+    pub selectable_selected: Color,
+
+    pub combo_bg: Color,
+    pub combo_border: Color,
+    pub combo_hovered: Color,
+    pub combo_text: Color,
+
+    pub scrollbar_track: Color,
+    pub scrollbar_handle: Color,
+    pub scrollbar_handle_hovered: Color,
+}
+
 /// Predefined font sizes in points.
 ///
 /// Points are converted to pixels using the standard 96 DPI ratio: 1pt = 4/3 px
@@ -264,6 +327,188 @@ pub struct UiStyle {
     pub scrollbar_handle_hovered: Color,
 }
 
+impl ColorScheme {
+    /// Returns the color scheme for the dark theme.
+    fn dark() -> Self {
+        Self {
+            window_bg: Color::from_rgb_hex(0x2a2a2a),
+            window_title_bg: Color::from_rgb_hex(0x3a3a3a),
+            window_title_bg_active: Color::from_rgb_hex(0x4a4a4a),
+            window_title_text: Color::from_rgb_hex(0xeeeeee),
+            window_border: Color::from_rgb_hex(0x404040),
+
+            button_normal: Color::from_rgb_hex(0x404040),
+            button_hovered: Color::from_rgb_hex(0x505050),
+            button_active: Color::from_rgb_hex(0x606060),
+            button_text: Color::from_rgb_hex(0xeeeeee),
+
+            input_bg: Color::from_rgb_hex(0x282828),
+            input_border: Color::from_rgb_hex(0x404040),
+            input_text: Color::from_rgb_hex(0xeeeeee),
+            input_cursor: Color::from_rgb_hex(0xffffff),
+            input_border_focused: Color::from_rgb_hex(0x4a9eff),
+            input_selection: Color::new(0.3, 0.5, 0.8, 0.5),
+
+            text_color: Color::from_rgb_hex(0xeeeeee),
+            text_disabled: Color::from_rgb_hex(0x808080),
+            text_hint: Color::from_rgb_hex(0x808080),
+
+            checkbox_bg: Color::from_rgb_hex(0x282828),
+            checkbox_check: Color::from_rgb_hex(0x4a9eff),
+            checkbox_border: Color::from_rgb_hex(0x404040),
+
+            slider_track: Color::from_rgb_hex(0x404040),
+            slider_grab: Color::from_rgb_hex(0x4a9eff),
+            slider_grab_hovered: Color::from_rgb_hex(0x5aa5ff),
+            slider_grab_active: Color::from_rgb_hex(0x6ab0ff),
+
+            separator: Color::from_rgb_hex(0x404040),
+            border: Color::from_rgb_hex(0x404040),
+
+            menu_bg: Color::from_rgb_hex(0x2d2d2d),
+            menu_hovered: Color::from_rgb_hex(0x404040),
+            menu_active: Color::from_rgb_hex(0x4a9eff),
+            menu_border: Color::from_rgb_hex(0x404040),
+
+            popup_bg: Color::from_rgb_hex(0x2d2d2d),
+            popup_border: Color::from_rgb_hex(0x404040),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
+
+            selectable_hovered: Color::from_rgb_hex(0x404040),
+            selectable_selected: Color::new(0.29, 0.62, 1.0, 0.4),
+
+            combo_bg: Color::from_rgb_hex(0x282828),
+            combo_border: Color::from_rgb_hex(0x404040),
+            combo_hovered: Color::from_rgb_hex(0x404040),
+            combo_text: Color::from_rgb_hex(0xeeeeee),
+
+            scrollbar_track: Color::from_rgb_hex(0x1a1a1a),
+            scrollbar_handle: Color::from_rgb_hex(0x505050),
+            scrollbar_handle_hovered: Color::from_rgb_hex(0x606060),
+        }
+    }
+
+    /// Returns the color scheme for the light theme.
+    fn light() -> Self {
+        Self {
+            window_bg: Color::from_rgb_hex(0xf0f0f0),
+            window_title_bg: Color::from_rgb_hex(0xe0e0e0),
+            window_title_bg_active: Color::from_rgb_hex(0xd0d0d0),
+            window_title_text: Color::from_rgb_hex(0x222222),
+            window_border: Color::from_rgb_hex(0xc0c0c0),
+
+            button_normal: Color::from_rgb_hex(0xe0e0e0),
+            button_hovered: Color::from_rgb_hex(0xd0d0d0),
+            button_active: Color::from_rgb_hex(0xc0c0c0),
+            button_text: Color::from_rgb_hex(0x222222),
+
+            input_bg: Color::from_rgb_hex(0xffffff),
+            input_border: Color::from_rgb_hex(0xc0c0c0),
+            input_text: Color::from_rgb_hex(0x222222),
+            input_cursor: Color::from_rgb_hex(0x222222),
+            input_border_focused: Color::from_rgb_hex(0x4a9eff),
+            input_selection: Color::new(0.3, 0.5, 0.8, 0.3),
+
+            text_color: Color::from_rgb_hex(0x222222),
+            text_disabled: Color::from_rgb_hex(0x808080),
+            text_hint: Color::from_rgb_hex(0x808080),
+
+            checkbox_bg: Color::from_rgb_hex(0xffffff),
+            checkbox_check: Color::from_rgb_hex(0x2070d0),
+            checkbox_border: Color::from_rgb_hex(0xc0c0c0),
+
+            slider_track: Color::from_rgb_hex(0xc0c0c0),
+            slider_grab: Color::from_rgb_hex(0x2070d0),
+            slider_grab_hovered: Color::from_rgb_hex(0x2880e0),
+            slider_grab_active: Color::from_rgb_hex(0x3090f0),
+
+            separator: Color::from_rgb_hex(0xc0c0c0),
+            border: Color::from_rgb_hex(0xc0c0c0),
+
+            menu_bg: Color::from_rgb_hex(0xfafafa),
+            menu_hovered: Color::from_rgb_hex(0xe0e0e0),
+            menu_active: Color::from_rgb_hex(0x2070d0),
+            menu_border: Color::from_rgb_hex(0xc0c0c0),
+
+            popup_bg: Color::from_rgb_hex(0xfafafa),
+            popup_border: Color::from_rgb_hex(0xc0c0c0),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.2),
+
+            selectable_hovered: Color::from_rgb_hex(0xe0e0e0),
+            selectable_selected: Color::new(0.13, 0.44, 0.82, 0.3),
+
+            combo_bg: Color::from_rgb_hex(0xffffff),
+            combo_border: Color::from_rgb_hex(0xc0c0c0),
+            combo_hovered: Color::from_rgb_hex(0xe0e0e0),
+            combo_text: Color::from_rgb_hex(0x222222),
+
+            scrollbar_track: Color::from_rgb_hex(0xe0e0e0),
+            scrollbar_handle: Color::from_rgb_hex(0xa0a0a0),
+            scrollbar_handle_hovered: Color::from_rgb_hex(0x808080),
+        }
+    }
+
+    /// Returns the color scheme for the classic theme.
+    fn classic() -> Self {
+        Self {
+            window_bg: Color::from_rgb_hex(0x2b2b2b),
+            window_title_bg: Color::from_rgb_hex(0x1f1f1f),
+            window_title_bg_active: Color::from_rgb_hex(0x3465a4),
+            window_title_text: Color::from_rgb_hex(0xeeeeee),
+            window_border: Color::from_rgb_hex(0x555555),
+
+            button_normal: Color::from_rgb_hex(0x4a4a4a),
+            button_hovered: Color::from_rgb_hex(0x5a5a5a),
+            button_active: Color::from_rgb_hex(0x6a6a6a),
+            button_text: Color::from_rgb_hex(0xeeeeee),
+
+            input_bg: Color::from_rgb_hex(0x3a3a3a),
+            input_border: Color::from_rgb_hex(0x555555),
+            input_text: Color::from_rgb_hex(0xeeeeee),
+            input_cursor: Color::from_rgb_hex(0xffffff),
+            input_border_focused: Color::from_rgb_hex(0x4a9eff),
+            input_selection: Color::new(0.4, 0.6, 0.9, 0.4),
+
+            text_color: Color::from_rgb_hex(0xeeeeee),
+            text_disabled: Color::from_rgb_hex(0x777777),
+            text_hint: Color::from_rgb_hex(0x777777),
+
+            checkbox_bg: Color::from_rgb_hex(0x3a3a3a),
+            checkbox_check: Color::from_rgb_hex(0x4a9eff),
+            checkbox_border: Color::from_rgb_hex(0x555555),
+
+            slider_track: Color::from_rgb_hex(0x3a3a3a),
+            slider_grab: Color::from_rgb_hex(0x4a9eff),
+            slider_grab_hovered: Color::from_rgb_hex(0x5aa5ff),
+            slider_grab_active: Color::from_rgb_hex(0x6ab0ff),
+
+            separator: Color::from_rgb_hex(0x555555),
+            border: Color::from_rgb_hex(0x555555),
+
+            menu_bg: Color::from_rgb_hex(0x1f1f1f),
+            menu_hovered: Color::from_rgb_hex(0x4a4a4a),
+            menu_active: Color::from_rgb_hex(0x3465a4),
+            menu_border: Color::from_rgb_hex(0x555555),
+
+            popup_bg: Color::from_rgb_hex(0x1f1f1f),
+            popup_border: Color::from_rgb_hex(0x555555),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.6),
+
+            selectable_hovered: Color::from_rgb_hex(0x4a4a4a),
+            selectable_selected: Color::new(0.2, 0.4, 0.64, 0.5),
+
+            combo_bg: Color::from_rgb_hex(0x3a3a3a),
+            combo_border: Color::from_rgb_hex(0x555555),
+            combo_hovered: Color::from_rgb_hex(0x4a4a4a),
+            combo_text: Color::from_rgb_hex(0xeeeeee),
+
+            scrollbar_track: Color::from_rgb_hex(0x1f1f1f),
+            scrollbar_handle: Color::from_rgb_hex(0x555555),
+            scrollbar_handle_hovered: Color::from_rgb_hex(0x666666),
+        }
+    }
+}
+
 impl UiStyle {
     fn default_dimensions() -> Self {
         Self {
@@ -310,7 +555,6 @@ impl UiStyle {
 
             thumbnail_size: 64.0,
 
-            // Placeholder colors — must be overridden by theme functions
             window_bg: Color::BLACK,
             window_title_bg: Color::BLACK,
             window_title_bg_active: Color::BLACK,
@@ -357,139 +601,84 @@ impl UiStyle {
         }
     }
 
-    /// Apply common color defaults shared across all themes.
-    ///
-    /// Colors that are identical or follow the same pattern in dark/light/classic.
-    fn apply_common_colors(&mut self) {
-        self.input_border_focused = Color::from_rgb_hex(0x4a9eff);
+    /// Build a style from default dimensions and a color scheme.
+    pub fn with_colors(colors: ColorScheme) -> Self {
+        let mut s = Self::default_dimensions();
+        s.apply_colors(colors);
+        s
+    }
+
+    /// Apply a [`ColorScheme`] to this style, overwriting all color fields.
+    pub fn apply_colors(&mut self, c: ColorScheme) {
+        self.window_bg = c.window_bg;
+        self.window_title_bg = c.window_title_bg;
+        self.window_title_bg_active = c.window_title_bg_active;
+        self.window_title_text = c.window_title_text;
+        self.window_border = c.window_border;
+
+        self.button_normal = c.button_normal;
+        self.button_hovered = c.button_hovered;
+        self.button_active = c.button_active;
+        self.button_text = c.button_text;
+
+        self.input_bg = c.input_bg;
+        self.input_border = c.input_border;
+        self.input_text = c.input_text;
+        self.input_cursor = c.input_cursor;
+        self.input_border_focused = c.input_border_focused;
+        self.input_selection = c.input_selection;
+
+        self.text_color = c.text_color;
+        self.text_disabled = c.text_disabled;
+        self.text_hint = c.text_hint;
+
+        self.checkbox_bg = c.checkbox_bg;
+        self.checkbox_check = c.checkbox_check;
+        self.checkbox_border = c.checkbox_border;
+
+        self.slider_track = c.slider_track;
+        self.slider_grab = c.slider_grab;
+        self.slider_grab_hovered = c.slider_grab_hovered;
+        self.slider_grab_active = c.slider_grab_active;
+
+        self.separator = c.separator;
+        self.border = c.border;
+
+        self.menu_bg = c.menu_bg;
+        self.menu_hovered = c.menu_hovered;
+        self.menu_active = c.menu_active;
+        self.menu_border = c.menu_border;
+
+        self.popup_bg = c.popup_bg;
+        self.popup_border = c.popup_border;
+        self.popup_shadow = c.popup_shadow;
+
+        self.selectable_hovered = c.selectable_hovered;
+        self.selectable_selected = c.selectable_selected;
+
+        self.combo_bg = c.combo_bg;
+        self.combo_border = c.combo_border;
+        self.combo_hovered = c.combo_hovered;
+        self.combo_text = c.combo_text;
+
+        self.scrollbar_track = c.scrollbar_track;
+        self.scrollbar_handle = c.scrollbar_handle;
+        self.scrollbar_handle_hovered = c.scrollbar_handle_hovered;
     }
 
     /// Create a dark theme style.
     pub fn dark() -> Self {
-        let mut s = Self::default_dimensions();
-        s.apply_common_colors();
-        s.window_bg = Color::from_rgb_hex(0x2a2a2a);
-        s.window_title_bg = Color::from_rgb_hex(0x3a3a3a);
-        s.window_title_bg_active = Color::from_rgb_hex(0x4a4a4a);
-        s.window_title_text = Color::from_rgb_hex(0xeeeeee);
-        s.window_border = Color::from_rgb_hex(0x404040);
-
-        s.button_normal = Color::from_rgb_hex(0x404040);
-        s.button_hovered = Color::from_rgb_hex(0x505050);
-        s.button_active = Color::from_rgb_hex(0x606060);
-        s.button_text = Color::from_rgb_hex(0xeeeeee);
-
-        s.input_bg = Color::from_rgb_hex(0x282828);
-        s.input_border = Color::from_rgb_hex(0x404040);
-        s.input_text = Color::from_rgb_hex(0xeeeeee);
-        s.input_cursor = Color::from_rgb_hex(0xffffff);
-        s.input_selection = Color::new(0.3, 0.5, 0.8, 0.5);
-
-        s.text_color = Color::from_rgb_hex(0xeeeeee);
-        s.text_disabled = Color::from_rgb_hex(0x808080);
-        s.text_hint = Color::from_rgb_hex(0x808080);
-
-        s.checkbox_bg = Color::from_rgb_hex(0x282828);
-        s.checkbox_check = Color::from_rgb_hex(0x4a9eff);
-        s.checkbox_border = Color::from_rgb_hex(0x404040);
-
-        s.slider_track = Color::from_rgb_hex(0x404040);
-        s.slider_grab = Color::from_rgb_hex(0x4a9eff);
-        s.slider_grab_hovered = Color::from_rgb_hex(0x5aa5ff);
-        s.slider_grab_active = Color::from_rgb_hex(0x6ab0ff);
-
-        s.separator = Color::from_rgb_hex(0x404040);
-        s.border = Color::from_rgb_hex(0x404040);
-
-        s.menu_bg = Color::from_rgb_hex(0x2d2d2d);
-        s.menu_hovered = Color::from_rgb_hex(0x404040);
-        s.menu_active = Color::from_rgb_hex(0x4a9eff);
-        s.menu_border = Color::from_rgb_hex(0x404040);
-
-        s.popup_bg = Color::from_rgb_hex(0x2d2d2d);
-        s.popup_border = Color::from_rgb_hex(0x404040);
-        s.popup_shadow = Color::new(0.0, 0.0, 0.0, 0.5);
-
-        s.selectable_hovered = Color::from_rgb_hex(0x404040);
-        s.selectable_selected = Color::new(0.29, 0.62, 1.0, 0.4);
-
-        s.combo_bg = Color::from_rgb_hex(0x282828);
-        s.combo_border = Color::from_rgb_hex(0x404040);
-        s.combo_hovered = Color::from_rgb_hex(0x404040);
-        s.combo_text = Color::from_rgb_hex(0xeeeeee);
-
-        s.scrollbar_track = Color::from_rgb_hex(0x1a1a1a);
-        s.scrollbar_handle = Color::from_rgb_hex(0x505050);
-        s.scrollbar_handle_hovered = Color::from_rgb_hex(0x606060);
-
-        s
+        Self::with_colors(ColorScheme::dark())
     }
 
     /// Create a light theme style.
     pub fn light() -> Self {
-        let mut s = Self::default_dimensions();
-        s.apply_common_colors();
-        s.window_bg = Color::from_rgb_hex(0xf0f0f0);
-        s.window_title_bg = Color::from_rgb_hex(0xe0e0e0);
-        s.window_title_bg_active = Color::from_rgb_hex(0xd0d0d0);
-        s.window_title_text = Color::from_rgb_hex(0x222222);
-        s.window_border = Color::from_rgb_hex(0xc0c0c0);
-
-        s.button_normal = Color::from_rgb_hex(0xe0e0e0);
-        s.button_hovered = Color::from_rgb_hex(0xd0d0d0);
-        s.button_active = Color::from_rgb_hex(0xc0c0c0);
-        s.button_text = Color::from_rgb_hex(0x222222);
-
-        s.input_bg = Color::from_rgb_hex(0xffffff);
-        s.input_border = Color::from_rgb_hex(0xc0c0c0);
-        s.input_text = Color::from_rgb_hex(0x222222);
-        s.input_cursor = Color::from_rgb_hex(0x222222);
-        s.input_selection = Color::new(0.3, 0.5, 0.8, 0.3);
-
-        s.text_color = Color::from_rgb_hex(0x222222);
-        s.text_disabled = Color::from_rgb_hex(0x808080);
-        s.text_hint = Color::from_rgb_hex(0x808080);
-
-        s.checkbox_bg = Color::from_rgb_hex(0xffffff);
-        s.checkbox_check = Color::from_rgb_hex(0x2070d0);
-        s.checkbox_border = Color::from_rgb_hex(0xc0c0c0);
-
-        s.slider_track = Color::from_rgb_hex(0xc0c0c0);
-        s.slider_grab = Color::from_rgb_hex(0x2070d0);
-        s.slider_grab_hovered = Color::from_rgb_hex(0x2880e0);
-        s.slider_grab_active = Color::from_rgb_hex(0x3090f0);
-
-        s.separator = Color::from_rgb_hex(0xc0c0c0);
-        s.border = Color::from_rgb_hex(0xc0c0c0);
-
-        s.menu_bg = Color::from_rgb_hex(0xfafafa);
-        s.menu_hovered = Color::from_rgb_hex(0xe0e0e0);
-        s.menu_active = Color::from_rgb_hex(0x2070d0);
-        s.menu_border = Color::from_rgb_hex(0xc0c0c0);
-
-        s.popup_bg = Color::from_rgb_hex(0xfafafa);
-        s.popup_border = Color::from_rgb_hex(0xc0c0c0);
-        s.popup_shadow = Color::new(0.0, 0.0, 0.0, 0.2);
-
-        s.selectable_hovered = Color::from_rgb_hex(0xe0e0e0);
-        s.selectable_selected = Color::new(0.13, 0.44, 0.82, 0.3);
-
-        s.combo_bg = Color::from_rgb_hex(0xffffff);
-        s.combo_border = Color::from_rgb_hex(0xc0c0c0);
-        s.combo_hovered = Color::from_rgb_hex(0xe0e0e0);
-        s.combo_text = Color::from_rgb_hex(0x222222);
-
-        s.scrollbar_track = Color::from_rgb_hex(0xe0e0e0);
-        s.scrollbar_handle = Color::from_rgb_hex(0xa0a0a0);
-        s.scrollbar_handle_hovered = Color::from_rgb_hex(0x808080);
-
-        s
+        Self::with_colors(ColorScheme::light())
     }
 
     /// Create a classic imgui-style theme.
     pub fn classic() -> Self {
-        let mut s = Self::default_dimensions();
-        s.apply_common_colors();
+        let mut s = Self::with_colors(ColorScheme::classic());
         s.window_rounding = 0.0;
         s.window_padding = 6.0;
         s.button_rounding = 0.0;
@@ -512,61 +701,6 @@ impl UiStyle {
         s.button_height_medium = 26.0;
         s.toolbar_height = 28.0;
         s.icon_size_large = 26.0;
-
-        s.window_bg = Color::from_rgb_hex(0x2b2b2b);
-        s.window_title_bg = Color::from_rgb_hex(0x1f1f1f);
-        s.window_title_bg_active = Color::from_rgb_hex(0x3465a4);
-        s.window_title_text = Color::from_rgb_hex(0xeeeeee);
-        s.window_border = Color::from_rgb_hex(0x555555);
-
-        s.button_normal = Color::from_rgb_hex(0x4a4a4a);
-        s.button_hovered = Color::from_rgb_hex(0x5a5a5a);
-        s.button_active = Color::from_rgb_hex(0x6a6a6a);
-        s.button_text = Color::from_rgb_hex(0xeeeeee);
-
-        s.input_bg = Color::from_rgb_hex(0x3a3a3a);
-        s.input_border = Color::from_rgb_hex(0x555555);
-        s.input_text = Color::from_rgb_hex(0xeeeeee);
-        s.input_cursor = Color::from_rgb_hex(0xffffff);
-        s.input_selection = Color::new(0.4, 0.6, 0.9, 0.4);
-
-        s.text_color = Color::from_rgb_hex(0xeeeeee);
-        s.text_disabled = Color::from_rgb_hex(0x777777);
-        s.text_hint = Color::from_rgb_hex(0x777777);
-
-        s.checkbox_bg = Color::from_rgb_hex(0x3a3a3a);
-        s.checkbox_check = Color::from_rgb_hex(0x4a9eff);
-        s.checkbox_border = Color::from_rgb_hex(0x555555);
-
-        s.slider_track = Color::from_rgb_hex(0x3a3a3a);
-        s.slider_grab = Color::from_rgb_hex(0x4a9eff);
-        s.slider_grab_hovered = Color::from_rgb_hex(0x5aa5ff);
-        s.slider_grab_active = Color::from_rgb_hex(0x6ab0ff);
-
-        s.separator = Color::from_rgb_hex(0x555555);
-        s.border = Color::from_rgb_hex(0x555555);
-
-        s.menu_bg = Color::from_rgb_hex(0x1f1f1f);
-        s.menu_hovered = Color::from_rgb_hex(0x4a4a4a);
-        s.menu_active = Color::from_rgb_hex(0x3465a4);
-        s.menu_border = Color::from_rgb_hex(0x555555);
-
-        s.popup_bg = Color::from_rgb_hex(0x1f1f1f);
-        s.popup_border = Color::from_rgb_hex(0x555555);
-        s.popup_shadow = Color::new(0.0, 0.0, 0.0, 0.6);
-
-        s.selectable_hovered = Color::from_rgb_hex(0x4a4a4a);
-        s.selectable_selected = Color::new(0.2, 0.4, 0.64, 0.5);
-
-        s.combo_bg = Color::from_rgb_hex(0x3a3a3a);
-        s.combo_border = Color::from_rgb_hex(0x555555);
-        s.combo_hovered = Color::from_rgb_hex(0x4a4a4a);
-        s.combo_text = Color::from_rgb_hex(0xeeeeee);
-
-        s.scrollbar_track = Color::from_rgb_hex(0x1f1f1f);
-        s.scrollbar_handle = Color::from_rgb_hex(0x555555);
-        s.scrollbar_handle_hovered = Color::from_rgb_hex(0x666666);
-
         s
     }
 }

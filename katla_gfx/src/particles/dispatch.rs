@@ -14,6 +14,7 @@ impl GlobalParticleSystem {
         let total_emit_count = self.calculate_emit_count(delta_time);
 
         let total_burst_count: u32 = self
+            .emitter_pool
             .emitter_states
             .iter()
             .map(|state| state.burst_count)
@@ -30,7 +31,7 @@ impl GlobalParticleSystem {
 
         self.update_frame_data(delta_time, total_emit_count, total_burst_count, frame_index)?;
 
-        for state in &mut self.emitter_states {
+        for state in &mut self.emitter_pool.emitter_states {
             state.burst_count = 0;
         }
 
@@ -38,7 +39,7 @@ impl GlobalParticleSystem {
 
         #[cfg(debug_assertions)]
         {
-            let validation_errors = validate_all_emitters(&self.emitters);
+            let validation_errors = validate_all_emitters(&self.emitter_pool.emitters);
             if !validation_errors.is_empty() {
                 for error in &validation_errors {
                     log::warn!("Emitter validation error: {}", error);
@@ -55,16 +56,21 @@ impl GlobalParticleSystem {
 
     pub(super) fn upload_emitter_configs(&self, frame_index: usize) -> Result<(), String> {
         let fi = frame_index % 2;
-        if let Some((_buffer, allocation)) = &self.emitter_configs_buffers[fi] {
+        if let Some((_buffer, allocation)) = &self.buffers.emitter_configs[fi] {
             if let Some(mapped) = allocation.mapped_ptr() {
                 let dst = mapped.as_ptr() as *mut EmitterConfig;
                 unsafe {
-                    std::ptr::copy_nonoverlapping(self.emitters.as_ptr(), dst, self.emitters.len());
+                    std::ptr::copy_nonoverlapping(
+                        self.emitter_pool.emitters.as_ptr(),
+                        dst,
+                        self.emitter_pool.emitters.len(),
+                    );
                 }
                 let _ = self.context.flush_mapped_memory(
                     allocation,
                     0,
-                    (self.emitters.len() * std::mem::size_of::<EmitterConfig>()) as u64,
+                    (self.emitter_pool.emitters.len() * std::mem::size_of::<EmitterConfig>())
+                        as u64,
                 );
             } else {
                 log::warn!("Emitter configs buffer is not mapped for CPU access");
@@ -85,12 +91,13 @@ impl GlobalParticleSystem {
         frame_index: u32,
     ) -> Result<(), String> {
         let fi = (frame_index as usize) % 2;
-        if let Some((_buffer, allocation)) = &self.frame_data_buffers[fi] {
+        if let Some((_buffer, allocation)) = &self.buffers.frame_data[fi] {
             if let Some(mapped) = allocation.mapped_ptr() {
                 let active_emitter_count = self
+                    .emitter_pool
                     .emitters
                     .iter()
-                    .zip(self.emitter_states.iter())
+                    .zip(self.emitter_pool.emitter_states.iter())
                     .filter(|(e, s)| e.emit_rate > 0.0 || s.burst_count > 0)
                     .count() as u32;
 
@@ -212,7 +219,7 @@ impl GlobalParticleSystem {
         emit_workgroups: u32,
         frame_index: usize,
     ) -> Result<(), String> {
-        let pipeline = self.emit_pipeline.ok_or("Emit pipeline not created")?;
+        let pipeline = self.pipelines.emit.ok_or("Emit pipeline not created")?;
 
         let compute_pipeline = asset_registry
             .get_pipeline(pipeline)
@@ -278,7 +285,7 @@ impl GlobalParticleSystem {
             device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
         }
 
-        if let Some(descriptor_set) = self.compute_descriptor_sets[frame_index % 2] {
+        if let Some(descriptor_set) = self.descriptors.compute_sets[frame_index % 2] {
             log::debug!(
                 "Emit dispatch: Set 0 descriptor={:?}, particle_buffer={:?}",
                 descriptor_set,
@@ -299,8 +306,8 @@ impl GlobalParticleSystem {
         }
 
         let fi = frame_index % 2;
-        if let Some((frame_buffer, _)) = &self.frame_data_buffers[fi]
-            && let Some((emitter_buffer, _)) = &self.emitter_configs_buffers[fi]
+        if let Some((frame_buffer, _)) = &self.buffers.frame_data[fi]
+            && let Some((emitter_buffer, _)) = &self.buffers.emitter_configs[fi]
         {
             let frame_data_size = std::mem::size_of::<FrameData>() as u64;
             let emitter_size =
@@ -365,7 +372,8 @@ impl GlobalParticleSystem {
         let device = &self.context.device;
 
         let pipeline = self
-            .simulate_pipeline
+            .pipelines
+            .simulate
             .ok_or("Simulate pipeline not created")?;
 
         let compute_pipeline = asset_registry
@@ -379,7 +387,7 @@ impl GlobalParticleSystem {
             device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
         }
 
-        if let Some(descriptor_set) = self.compute_descriptor_sets[frame_index % 2] {
+        if let Some(descriptor_set) = self.descriptors.compute_sets[frame_index % 2] {
             unsafe {
                 device.cmd_bind_descriptor_sets(
                     command_buffer,
@@ -395,7 +403,7 @@ impl GlobalParticleSystem {
         }
 
         let fi = frame_index % 2;
-        if let Some((frame_buffer, _)) = &self.frame_data_buffers[fi] {
+        if let Some((frame_buffer, _)) = &self.buffers.frame_data[fi] {
             let frame_data_size = std::mem::size_of::<FrameData>() as u64;
             let emitter_size =
                 (MAX_EMITTERS as usize * std::mem::size_of::<EmitterConfig>()) as u64;
@@ -406,7 +414,7 @@ impl GlobalParticleSystem {
                 .range(frame_data_size)];
 
             let emitter_buffer_info =
-                if let Some((emitter_buf, _)) = &self.emitter_configs_buffers[fi] {
+                if let Some((emitter_buf, _)) = &self.buffers.emitter_configs[fi] {
                     Some([vk::DescriptorBufferInfo::default()
                         .buffer(*emitter_buf)
                         .offset(0)
@@ -474,7 +482,8 @@ impl GlobalParticleSystem {
         let fi = frame_index % 2;
 
         let pipeline = self
-            .draw_command_pipeline
+            .pipelines
+            .draw_command
             .ok_or("Draw command pipeline not created")?;
 
         let compute_pipeline = asset_registry

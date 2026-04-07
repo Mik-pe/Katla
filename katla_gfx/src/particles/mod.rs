@@ -11,7 +11,6 @@ pub(crate) mod pipeline;
 pub(crate) mod presets;
 pub(crate) mod render;
 pub(crate) mod stats;
-pub(crate) mod timing;
 pub(crate) mod types;
 pub(crate) mod validation;
 
@@ -37,6 +36,39 @@ use types::EmitterState;
 /// Default maximum particles across all emitters
 pub const DEFAULT_MAX_PARTICLES: u32 = 1_048_576; // 1M particles (48MB)
 
+pub(super) struct ParticlePipelines {
+    pub(super) emit: Option<PipelineHandle>,
+    pub(super) simulate: Option<PipelineHandle>,
+    pub(super) draw_command: Option<PipelineHandle>,
+    pub(super) render: Option<PipelineHandle>,
+}
+
+pub(super) struct ParticleDescriptors {
+    pub(super) compute_layout: Option<vk::DescriptorSetLayout>,
+    pub(super) render_layout: Option<vk::DescriptorSetLayout>,
+    pub(super) compute_push_layout: Option<vk::DescriptorSetLayout>,
+    pub(super) render_push_layout: Option<vk::DescriptorSetLayout>,
+    pub(super) draw_command_layout: Option<vk::DescriptorSetLayout>,
+    pub(super) compute_sets: [Option<vk::DescriptorSet>; 2],
+    pub(super) draw_command_set: Option<vk::DescriptorSet>,
+    pub(super) render_sets: [Option<vk::DescriptorSet>; 2],
+    pub(super) _compute_pools: [vk::DescriptorPool; 2],
+    pub(super) _draw_command_pool: vk::DescriptorPool,
+    pub(super) _render_pools: [vk::DescriptorPool; 2],
+}
+
+pub(super) struct ParticleBuffers {
+    pub(super) frame_data: [Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>; 2],
+    pub(super) emitter_configs: [Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>; 2],
+}
+
+pub(super) struct ParticleEmitterPool {
+    pub(super) emitters: Vec<EmitterConfig>,
+    pub(super) emitter_states: Vec<EmitterState>,
+    pub(super) next_slot: u32,
+    pub(super) free_slots: Vec<u32>,
+}
+
 /// Maximum emitters in system
 pub const MAX_EMITTERS: u32 = 1024;
 
@@ -52,59 +84,17 @@ pub const PARTICLE_SIMULATE_WORKGROUP_SIZE: u32 = 64;
 /// Each emitter is just configuration data - no per-emitter GPU resources.
 pub struct GlobalParticleSystem {
     pub(super) buffer: GlobalParticleBuffer,
-
-    pub(super) emit_pipeline: Option<PipelineHandle>,
-
-    pub(super) simulate_pipeline: Option<PipelineHandle>,
-
-    pub(super) draw_command_pipeline: Option<PipelineHandle>,
-
-    pub(super) render_pipeline: Option<PipelineHandle>,
-
-    pub(super) compute_descriptor_layout: Option<vk::DescriptorSetLayout>,
-
-    pub(super) render_descriptor_layout: Option<vk::DescriptorSetLayout>,
-
-    pub(super) compute_push_descriptor_layout: Option<vk::DescriptorSetLayout>,
-
-    pub(super) render_push_descriptor_layout: Option<vk::DescriptorSetLayout>,
-
-    pub(super) emitters: Vec<EmitterConfig>,
-
-    pub(super) emitter_states: Vec<EmitterState>,
-
-    pub(super) next_emitter_slot: u32,
-
-    pub(super) free_emitter_slots: Vec<u32>,
+    pub(super) pipelines: ParticlePipelines,
+    pub(super) descriptors: ParticleDescriptors,
+    pub(super) buffers: ParticleBuffers,
+    pub(super) emitter_pool: ParticleEmitterPool,
 
     pub(super) context: Rc<VulkanContext>,
-
-    pub(super) frame_count: u32,
-
-    pub(super) frame_data_buffers: [Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>; 2],
-
-    pub(super) emitter_configs_buffers:
-        [Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>; 2],
-
     pub(super) destroyed: bool,
 
-    pub(super) compute_descriptor_sets: [Option<vk::DescriptorSet>; 2],
-
-    pub(super) draw_command_descriptor_set: Option<vk::DescriptorSet>,
-    pub(super) draw_command_descriptor_layout: Option<vk::DescriptorSetLayout>,
-
-    pub(super) render_descriptor_sets: [Option<vk::DescriptorSet>; 2],
-
-    pub(super) _compute_descriptor_pools: [vk::DescriptorPool; 2],
-
-    pub(super) _draw_command_descriptor_pool: vk::DescriptorPool,
-
-    pub(super) _render_descriptor_pools: [vk::DescriptorPool; 2],
-
+    pub(super) frame_count: u32,
     pub(super) max_particles: u32,
-
     pub(super) estimated_max_alive: u32,
-
     pub(super) total_emitted: u64,
 
     pub(super) debug_readback: Option<ParticleDebugReadback>,
@@ -122,30 +112,38 @@ impl GlobalParticleSystem {
 
         let mut system = Self {
             buffer,
-            emit_pipeline: None,
-            simulate_pipeline: None,
-            draw_command_pipeline: None,
-            render_pipeline: None,
-            compute_descriptor_layout: None,
-            render_descriptor_layout: None,
-            compute_push_descriptor_layout: None,
-            render_push_descriptor_layout: None,
-            emitters: Vec::with_capacity(MAX_EMITTERS as usize),
-            emitter_states: Vec::with_capacity(MAX_EMITTERS as usize),
-            next_emitter_slot: 0,
-            free_emitter_slots: Vec::new(),
+            pipelines: ParticlePipelines {
+                emit: None,
+                simulate: None,
+                draw_command: None,
+                render: None,
+            },
+            descriptors: ParticleDescriptors {
+                compute_layout: None,
+                render_layout: None,
+                compute_push_layout: None,
+                render_push_layout: None,
+                draw_command_layout: None,
+                compute_sets: [None, None],
+                draw_command_set: None,
+                render_sets: [None, None],
+                _compute_pools: [vk::DescriptorPool::null(), vk::DescriptorPool::null()],
+                _draw_command_pool: vk::DescriptorPool::null(),
+                _render_pools: [vk::DescriptorPool::null(), vk::DescriptorPool::null()],
+            },
+            buffers: ParticleBuffers {
+                frame_data: [None, None],
+                emitter_configs: [None, None],
+            },
+            emitter_pool: ParticleEmitterPool {
+                emitters: Vec::with_capacity(MAX_EMITTERS as usize),
+                emitter_states: Vec::with_capacity(MAX_EMITTERS as usize),
+                next_slot: 0,
+                free_slots: Vec::new(),
+            },
             context: context.clone(),
-            frame_count: 0,
-            frame_data_buffers: [None, None],
-            emitter_configs_buffers: [None, None],
             destroyed: false,
-            compute_descriptor_sets: [None, None],
-            draw_command_descriptor_set: None,
-            draw_command_descriptor_layout: None,
-            render_descriptor_sets: [None, None],
-            _compute_descriptor_pools: [vk::DescriptorPool::null(), vk::DescriptorPool::null()],
-            _draw_command_descriptor_pool: vk::DescriptorPool::null(),
-            _render_descriptor_pools: [vk::DescriptorPool::null(), vk::DescriptorPool::null()],
+            frame_count: 0,
             max_particles,
             estimated_max_alive: max_particles,
             total_emitted: 0,
@@ -163,8 +161,8 @@ impl GlobalParticleSystem {
             compute_descriptor_sets[fi] = Some(ds);
             compute_descriptor_pools[fi] = pool;
         }
-        system.compute_descriptor_sets = compute_descriptor_sets;
-        system._compute_descriptor_pools = compute_descriptor_pools;
+        system.descriptors.compute_sets = compute_descriptor_sets;
+        system.descriptors._compute_pools = compute_descriptor_pools;
 
         let mut render_descriptor_sets = [None, None];
         let mut render_descriptor_pools = [vk::DescriptorPool::null(), vk::DescriptorPool::null()];
@@ -173,8 +171,8 @@ impl GlobalParticleSystem {
             render_descriptor_sets[fi] = Some(ds);
             render_descriptor_pools[fi] = pool;
         }
-        system.render_descriptor_sets = render_descriptor_sets;
-        system._render_descriptor_pools = render_descriptor_pools;
+        system.descriptors.render_sets = render_descriptor_sets;
+        system.descriptors._render_pools = render_descriptor_pools;
 
         system.create_push_descriptor_buffers(context)?;
 
@@ -191,7 +189,7 @@ impl GlobalParticleSystem {
     }
 
     pub fn get_emitters(&self) -> &[EmitterConfig] {
-        &self.emitters
+        &self.emitter_pool.emitters
     }
 
     pub fn max_estimated_alive(&self) -> u32 {
@@ -199,15 +197,15 @@ impl GlobalParticleSystem {
     }
 
     pub fn emit_pipeline_handle(&self) -> Option<PipelineHandle> {
-        self.emit_pipeline
+        self.pipelines.emit
     }
 
     pub fn simulate_pipeline_handle(&self) -> Option<PipelineHandle> {
-        self.simulate_pipeline
+        self.pipelines.simulate
     }
 
     pub fn render_pipeline_handle(&self) -> Option<PipelineHandle> {
-        self.render_pipeline
+        self.pipelines.render
     }
 
     pub fn particle_buffer(&self) -> vk::Buffer {
@@ -227,7 +225,7 @@ impl GlobalParticleSystem {
     }
 
     pub fn emitter_configs_buffer(&self, frame_index: usize) -> Option<vk::Buffer> {
-        self.emitter_configs_buffers[frame_index % 2]
+        self.buffers.emitter_configs[frame_index % 2]
             .as_ref()
             .map(|(buf, _)| *buf)
     }
@@ -242,7 +240,7 @@ impl GlobalParticleSystem {
 
         info!("  destroying push descriptor buffers");
         for frame_idx in 0..2 {
-            if let Some((buffer, allocation)) = self.frame_data_buffers[frame_idx].take() {
+            if let Some((buffer, allocation)) = self.buffers.frame_data[frame_idx].take() {
                 unsafe {
                     if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
                         allocator.free(allocation).ok();
@@ -250,7 +248,7 @@ impl GlobalParticleSystem {
                     self.context.device.destroy_buffer(buffer, None);
                 }
             }
-            if let Some((buffer, allocation)) = self.emitter_configs_buffers[frame_idx].take() {
+            if let Some((buffer, allocation)) = self.buffers.emitter_configs[frame_idx].take() {
                 unsafe {
                     if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
                         allocator.free(allocation).ok();
@@ -264,35 +262,35 @@ impl GlobalParticleSystem {
         self.buffer.destroy();
 
         info!("  destroying descriptor set layouts");
-        if let Some(layout) = self.compute_descriptor_layout.take() {
+        if let Some(layout) = self.descriptors.compute_layout.take() {
             unsafe {
                 self.context
                     .device
                     .destroy_descriptor_set_layout(layout, None);
             }
         }
-        if let Some(layout) = self.render_descriptor_layout.take() {
+        if let Some(layout) = self.descriptors.render_layout.take() {
             unsafe {
                 self.context
                     .device
                     .destroy_descriptor_set_layout(layout, None);
             }
         }
-        if let Some(layout) = self.compute_push_descriptor_layout.take() {
+        if let Some(layout) = self.descriptors.compute_push_layout.take() {
             unsafe {
                 self.context
                     .device
                     .destroy_descriptor_set_layout(layout, None);
             }
         }
-        if let Some(layout) = self.render_push_descriptor_layout.take() {
+        if let Some(layout) = self.descriptors.render_push_layout.take() {
             unsafe {
                 self.context
                     .device
                     .destroy_descriptor_set_layout(layout, None);
             }
         }
-        if let Some(layout) = self.draw_command_descriptor_layout.take() {
+        if let Some(layout) = self.descriptors.draw_command_layout.take() {
             unsafe {
                 self.context
                     .device
@@ -300,27 +298,27 @@ impl GlobalParticleSystem {
             }
         }
 
-        self.emitters.clear();
-        self.next_emitter_slot = 0;
-        self.free_emitter_slots.clear();
+        self.emitter_pool.emitters.clear();
+        self.emitter_pool.next_slot = 0;
+        self.emitter_pool.free_slots.clear();
 
         info!("  destroying descriptor pools");
         for fi in 0..2 {
-            if self._compute_descriptor_pools[fi] != vk::DescriptorPool::null() {
+            if self.descriptors._compute_pools[fi] != vk::DescriptorPool::null() {
                 unsafe {
                     self.context
                         .device
-                        .destroy_descriptor_pool(self._compute_descriptor_pools[fi], None);
+                        .destroy_descriptor_pool(self.descriptors._compute_pools[fi], None);
                 }
-                self._compute_descriptor_pools[fi] = vk::DescriptorPool::null();
+                self.descriptors._compute_pools[fi] = vk::DescriptorPool::null();
             }
-            if self._render_descriptor_pools[fi] != vk::DescriptorPool::null() {
+            if self.descriptors._render_pools[fi] != vk::DescriptorPool::null() {
                 unsafe {
                     self.context
                         .device
-                        .destroy_descriptor_pool(self._render_descriptor_pools[fi], None);
+                        .destroy_descriptor_pool(self.descriptors._render_pools[fi], None);
                 }
-                self._render_descriptor_pools[fi] = vk::DescriptorPool::null();
+                self.descriptors._render_pools[fi] = vk::DescriptorPool::null();
             }
         }
 
@@ -384,7 +382,7 @@ impl GlobalParticleSystem {
         let particle_data_mb = (self.max_particles as f32) * 48.0 / (1024.0 * 1024.0);
         let index_lists_mb = (self.max_particles as f32) * 12.0 / (1024.0 * 1024.0);
         let counters_mb = 32.0 / (1024.0 * 1024.0);
-        let configs_mb = (self.emitters.len() as f32) * 80.0 / (1024.0 * 1024.0);
+        let configs_mb = (self.emitter_pool.emitters.len() as f32) * 80.0 / (1024.0 * 1024.0);
 
         ParticleStats {
             max_alive_count: self.max_particles,
@@ -396,6 +394,7 @@ impl GlobalParticleSystem {
             avg_compute_time_ms: 0.0,
             peak_compute_time_ms: 0.0,
             emitter_counts: self
+                .emitter_pool
                 .emitters
                 .iter()
                 .filter(|e| e.emit_rate > 0.0)

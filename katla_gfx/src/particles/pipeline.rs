@@ -16,11 +16,13 @@ impl GlobalParticleSystem {
         use crate::vulkan::material::compute_pipeline::ComputePipelineBuilder;
 
         let compute_layout = self
-            .compute_descriptor_layout
+            .descriptors
+            .compute_layout
             .ok_or("Compute descriptor layout not created")?;
 
         let compute_push_layout = self
-            .compute_push_descriptor_layout
+            .descriptors
+            .compute_push_layout
             .ok_or("Compute push descriptor layout not created")?;
 
         let emit_pipeline = ComputePipelineBuilder::new(self.context.clone())
@@ -33,7 +35,7 @@ impl GlobalParticleSystem {
             .map_err(|e| format!("Failed to build emit pipeline: {}", e))?;
 
         let pipeline_handle = asset_registry.register_compute_pipeline(emit_pipeline);
-        self.emit_pipeline = Some(pipeline_handle);
+        self.pipelines.emit = Some(pipeline_handle);
 
         info!("Created particle emit pipeline");
         Ok(())
@@ -48,11 +50,13 @@ impl GlobalParticleSystem {
         use crate::vulkan::material::compute_pipeline::ComputePipelineBuilder;
 
         let compute_layout = self
-            .compute_descriptor_layout
+            .descriptors
+            .compute_layout
             .ok_or("Compute descriptor layout not created")?;
 
         let compute_push_layout = self
-            .compute_push_descriptor_layout
+            .descriptors
+            .compute_push_layout
             .ok_or("Compute push descriptor layout not created")?;
 
         let simulate_pipeline = ComputePipelineBuilder::new(self.context.clone())
@@ -65,7 +69,7 @@ impl GlobalParticleSystem {
             .map_err(|e| format!("Failed to build simulate pipeline: {}", e))?;
 
         let pipeline_handle = asset_registry.register_compute_pipeline(simulate_pipeline);
-        self.simulate_pipeline = Some(pipeline_handle);
+        self.pipelines.simulate = Some(pipeline_handle);
 
         info!("Created particle simulate pipeline");
         Ok(())
@@ -117,12 +121,12 @@ impl GlobalParticleSystem {
             .build()
             .map_err(|e| format!("Failed to build draw command pipeline: {}", e))?;
 
-        self.draw_command_descriptor_set = None;
-        self.draw_command_descriptor_layout = Some(descriptor_layout);
-        self._draw_command_descriptor_pool = vk::DescriptorPool::null();
+        self.descriptors.draw_command_set = None;
+        self.descriptors.draw_command_layout = Some(descriptor_layout);
+        self.descriptors._draw_command_pool = vk::DescriptorPool::null();
 
         let pipeline_handle = asset_registry.register_compute_pipeline(pipeline);
-        self.draw_command_pipeline = Some(pipeline_handle);
+        self.pipelines.draw_command = Some(pipeline_handle);
 
         info!("Created particle draw command pipeline (push descriptors)");
         Ok(())
@@ -145,7 +149,8 @@ impl GlobalParticleSystem {
         use crate::vulkan::material::builder::PipelineBuilder;
 
         let render_layout = self
-            .render_descriptor_layout
+            .descriptors
+            .render_layout
             .ok_or("Render descriptor layout not created")?;
 
         // Create a storage descriptor layout matching the renderer's storage uniforms
@@ -189,7 +194,7 @@ impl GlobalParticleSystem {
             .map_err(|e| format!("Failed to build render pipeline: {}", e))?;
 
         let pipeline_handle = asset_registry.register_pipeline(pipeline);
-        self.render_pipeline = Some(pipeline_handle);
+        self.pipelines.render = Some(pipeline_handle);
 
         // Clean up the temporary layout (pipeline holds its own reference)
         unsafe {
