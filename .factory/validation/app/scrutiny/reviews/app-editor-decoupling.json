@@ -1,0 +1,55 @@
+{
+  "featureId": "app-editor-decoupling",
+  "milestone": "app",
+  "reviewedAt": "2026-04-06T14:30:00.000Z",
+  "commitId": "d1dde6b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean and thorough implementation of the editor feature flag gating. All editor-specific fields, modules, frame logic, input handling, and rendering are correctly gated behind #[cfg(feature = \"editor\")]. The no-editor codepath renders fullscreen viewport with no panels. Both editor-ON and editor-OFF modes compile and pass all 209 workspace tests. Clippy is clean in both modes.",
+    "issues": [
+      {
+        "severity": "non_blocking",
+        "description": "No new tests were added for the no-editor codepath. While the feature is primarily a cfg-gating refactor (no new logic), a compilation test verifying cargo check --no-default-features would have been beneficial as a regression guard. The handoff verification already covers this manually.",
+        "file": null,
+        "line": null
+      },
+      {
+        "severity": "non_blocking",
+        "description": "Three modules (UIRenderer, Theme, BackgroundLoader) use #![cfg_attr(not(feature = \"editor\"), allow(dead_code))] to suppress warnings in no-editor mode. These modules are compiled but unused when editor is off. This is a pragmatic trade-off since gating them fully would require more extensive refactoring, but it means the no-editor binary carries dead code for these types.",
+        "file": "katla_app/src/ui/renderer.rs",
+        "line": 1
+      },
+      {
+        "severity": "suggestion",
+        "description": "The 'editor' feature flag in katla_app/Cargo.toml is a bare flag with no dependencies (editor = []). If the editor feature grows to depend on specific crate features from katla_ui or other dependencies, this should be extended. Currently correct for the gating use case.",
+        "file": "katla_app/Cargo.toml",
+        "line": 8
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "target": "library",
+      "observation": "architecture.md was not updated to document the new 'editor' feature flag in katla_app. The architecture doc should mention: (1) katla_app has an optional 'editor' feature (default on), (2) when off, editor_ui, gui_state, gizmo, background_loader, and UIRenderer are excluded from compilation or dead-code-allowed, (3) the no-editor codepath renders fullscreen viewport with no panels. This would help future workers understand the cfg gating without reading the full diff.",
+      "evidence": "grep for 'editor|feature flag|cfg' in architecture.md shows no mention of the feature flag pattern. The worker did not update the library."
+    },
+    {
+      "target": "services.yaml",
+      "observation": "The check-app-no-default command already exists in services.yaml ('cargo check -p katla_app --no-default-features'), which is exactly the verification needed for this feature. Good alignment.",
+      "evidence": "services.yaml line: check-app-no-default: cargo check -p katla_app --no-default-features"
+    },
+    {
+      "target": "skills",
+      "observation": "The app-worker SKILL.md does not mention Cargo feature flags or cfg gating patterns. Since this is a new pattern for the crate, it may be worth adding a note about the 'editor' feature flag to help future workers understand when to gate code.",
+      "evidence": "SKILL.md for app-worker has no mention of feature flags, cfg attributes, or the editor feature."
+    },
+    {
+      "target": "AGENTS.md",
+      "observation": "The katla_app/AGENTS.md frame order section still references 'poll_background_loader()' as step 3 and 'generate_ui_draw_list()' as step 5 without noting these are editor-only steps. When editor is off, the frame order is simplified to: world.update, particle_system.update, render_frame(None). This could confuse future workers.",
+      "evidence": "katla_app/AGENTS.md frame order lists 8 steps including editor-only ones without marking them as conditional."
+    }
+  ],
+  "summary": "The app-editor-decoupling feature is well-implemented. All editor-specific code (EditorUI, GuiState, gizmo, background loader, entity instance maps, stencil indicator, thumbnail textures, editor frame logic, editor input handling) is correctly gated behind #[cfg(feature = \"editor\")] across 10 files. The no-editor codepath compiles cleanly and provides a fullscreen viewport. All 209 tests pass, clippy is clean in both modes. Minor observations: no tests for the no-editor path, three modules use allow(dead_code) suppression, and architecture.md/katla_app AGENTS.md were not updated to document the new feature flag."
+}
