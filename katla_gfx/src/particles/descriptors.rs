@@ -74,7 +74,7 @@ impl GlobalParticleSystem {
                 .map_err(|e| format!("Failed to create compute descriptor layout: {:?}", e))?
         };
 
-        self.compute_descriptor_layout = Some(compute_layout);
+        self.descriptors.compute_layout = Some(compute_layout);
 
         // Compute push descriptor layout (Set 1: frame data + emitter configs)
         // NOTE: This uses PUSH_DESCRIPTOR bit to indicate these will be pushed via cmd_push_descriptor_set
@@ -102,7 +102,7 @@ impl GlobalParticleSystem {
                 .map_err(|e| format!("Failed to create compute push descriptor layout: {:?}", e))?
         };
 
-        self.compute_push_descriptor_layout = Some(compute_push_layout);
+        self.descriptors.compute_push_layout = Some(compute_push_layout);
 
         // Render layout (Set 0: particle data + alive lists)
         // We reuse the compute layout since both pipelines share the same descriptor set
@@ -161,7 +161,7 @@ impl GlobalParticleSystem {
                 .map_err(|e| format!("Failed to create render descriptor layout: {:?}", e))?
         };
 
-        self.render_descriptor_layout = Some(render_layout);
+        self.descriptors.render_layout = Some(render_layout);
 
         // Render push descriptor layout (Set 1: frame data for graphics)
         // This is similar to compute push layout but with VERTEX/FRAGMENT stages
@@ -182,7 +182,7 @@ impl GlobalParticleSystem {
                 .map_err(|e| format!("Failed to create render push descriptor layout: {:?}", e))?
         };
 
-        self.render_push_descriptor_layout = Some(render_push_layout);
+        self.descriptors.render_push_layout = Some(render_push_layout);
 
         info!("Created particle system descriptor layouts");
         Ok(())
@@ -240,7 +240,7 @@ impl GlobalParticleSystem {
                     })?
             }
 
-            self.frame_data_buffers[frame_idx] = Some((frame_buffer, frame_allocation));
+            self.buffers.frame_data[frame_idx] = Some((frame_buffer, frame_allocation));
 
             // Emitter configs buffer (storage, CPU-visible)
             let emitter_size =
@@ -301,7 +301,7 @@ impl GlobalParticleSystem {
                     })?
             }
 
-            self.emitter_configs_buffers[frame_idx] = Some((emitter_buffer, emitter_allocation));
+            self.buffers.emitter_configs[frame_idx] = Some((emitter_buffer, emitter_allocation));
         }
 
         // Validate push descriptor buffer alignments
@@ -398,7 +398,7 @@ impl GlobalParticleSystem {
 
         let particle_buffer_handle = self.buffer.particle_buffer();
         let counters_buffer_handle = self.buffer.counters_buffer(0);
-        let frame_buffer_handle = self.frame_data_buffers[0].as_ref().map(|(b, _)| *b);
+        let frame_buffer_handle = self.buffers.frame_data[0].as_ref().map(|(b, _)| *b);
 
         log::info!(
             "Buffer handles - particle: {:?}, counters: {:?}, frame_data: {:?}",
@@ -561,7 +561,8 @@ impl GlobalParticleSystem {
         &mut self,
     ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
         let compute_layout = self
-            .compute_descriptor_layout
+            .descriptors
+            .compute_layout
             .ok_or("Compute descriptor layout not created")?;
 
         self.create_descriptor_set_internal(compute_layout, "compute", true, true)
@@ -573,7 +574,8 @@ impl GlobalParticleSystem {
         &mut self,
     ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
         let render_layout = self
-            .render_descriptor_layout
+            .descriptors
+            .render_layout
             .ok_or("Render descriptor layout not created")?;
 
         self.create_descriptor_set_internal(render_layout, "render", false, false)
@@ -583,7 +585,7 @@ impl GlobalParticleSystem {
         let device = &self.context.device;
         let fi = frame_index % 2;
         let descriptor_set =
-            self.compute_descriptor_sets[fi].ok_or("Compute descriptor set not allocated")?;
+            self.descriptors.compute_sets[fi].ok_or("Compute descriptor set not allocated")?;
 
         let layout = self.buffer.layout();
         let next_frame = (frame_index + 1) % 2;
@@ -650,7 +652,7 @@ impl GlobalParticleSystem {
         let device = &self.context.device;
         let fi = frame_index % 2;
         let descriptor_set =
-            self.render_descriptor_sets[fi].ok_or("Render descriptor set not allocated")?;
+            self.descriptors.render_sets[fi].ok_or("Render descriptor set not allocated")?;
 
         let layout = self.buffer.layout();
         let next_frame = (frame_index + 1) % 2;

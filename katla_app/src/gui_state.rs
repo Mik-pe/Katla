@@ -2,10 +2,11 @@
 
 use std::io;
 
-use log::{debug, warn};
+use log::warn;
 
 /// GUI layout state that persists between sessions.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct GuiState {
     /// Left panel (hierarchy) width in pixels.
     pub left_panel_width: f32,
@@ -36,72 +37,30 @@ impl GuiState {
             }
         };
 
-        Self::parse_toml(&content)
+        let mut state: Self = match toml::from_str(&content) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("Failed to parse GUI state: {}", e);
+                return Self::default();
+            }
+        };
+
+        state.clamp();
+        state
     }
 
     /// Save GUI state to disk.
     pub fn save(&self) -> io::Result<()> {
-        crate::util::save_config_file("gui_state.toml", &self.to_toml())
+        let content = match toml::to_string_pretty(self) {
+            Ok(c) => c,
+            Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, e)),
+        };
+        crate::util::save_config_file("gui_state.toml", &content)
     }
 
-    /// Parse GUI state from TOML content.
-    fn parse_toml(content: &str) -> Self {
-        let mut state = Self::default();
-
-        for line in content.lines() {
-            let line = line.trim();
-
-            // Skip comments and empty lines
-            if line.starts_with('#') || line.is_empty() {
-                continue;
-            }
-
-            // Parse key = value
-            if let Some((key, value)) = line.split_once('=') {
-                let key = key.trim();
-                let value = value.trim();
-
-                match key {
-                    "left_panel_width" => {
-                        let width: f32 = value.parse().unwrap_or(220.0);
-                        state.left_panel_width = width.clamp(100.0, 600.0);
-                    }
-                    "right_panel_width" => {
-                        let width: f32 = value.parse().unwrap_or(280.0);
-                        state.right_panel_width = width.clamp(100.0, 600.0);
-                    }
-                    "asset_browser_height" => {
-                        let height: f32 = value.parse().unwrap_or(200.0);
-                        state.asset_browser_height = height.clamp(100.0, 500.0);
-                    }
-                    _ => {
-                        debug!("Unknown GUI state key: {}", key);
-                    }
-                }
-            }
-        }
-
-        state
-    }
-
-    /// Convert GUI state to TOML content.
-    fn to_toml(&self) -> String {
-        format!(
-            r#"# Katla Engine GUI State
-# This file stores UI layout preferences and is automatically generated.
-
-# Left panel (hierarchy) width in pixels
-left_panel_width = {}
-
-# Right panel (inspector) width in pixels
-right_panel_width = {}
-
-# Asset browser panel height in pixels
-asset_browser_height = {}
-"#,
-            self.left_panel_width as i32,
-            self.right_panel_width as i32,
-            self.asset_browser_height as i32
-        )
+    fn clamp(&mut self) {
+        self.left_panel_width = self.left_panel_width.clamp(100.0, 600.0);
+        self.right_panel_width = self.right_panel_width.clamp(100.0, 600.0);
+        self.asset_browser_height = self.asset_browser_height.clamp(100.0, 500.0);
     }
 }
