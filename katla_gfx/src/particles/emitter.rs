@@ -64,7 +64,9 @@ impl GlobalParticleSystem {
 
     pub fn destroy_emitter(&mut self, handle: EmitterHandle) {
         if handle.index() < self.emitters.len() as u32 {
-            self.emitters[handle.index() as usize] = EmitterConfig::default();
+            let mut cleared = EmitterConfig::default();
+            cleared.emit_rate = 0.0;
+            self.emitters[handle.index() as usize] = cleared;
             if handle.index() < self.emitter_states.len() as u32 {
                 self.emitter_states[handle.index() as usize] = EmitterState::default();
             }
