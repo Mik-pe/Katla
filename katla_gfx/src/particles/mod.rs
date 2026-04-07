@@ -242,17 +242,17 @@ impl GlobalParticleSystem {
         for frame_idx in 0..2 {
             if let Some((buffer, allocation)) = self.buffers.frame_data[frame_idx].take() {
                 unsafe {
-                    if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-                        allocator.free(allocation).ok();
-                    }
+                    self.context
+                        .allocator
+                        .free(allocation, "particle frame data");
                     self.context.device.destroy_buffer(buffer, None);
                 }
             }
             if let Some((buffer, allocation)) = self.buffers.emitter_configs[frame_idx].take() {
                 unsafe {
-                    if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-                        allocator.free(allocation).ok();
-                    }
+                    self.context
+                        .allocator
+                        .free(allocation, "particle emitter configs");
                     self.context.device.destroy_buffer(buffer, None);
                 }
             }

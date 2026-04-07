@@ -28,7 +28,7 @@ pub(crate) fn create_buffer(
 
     let allocation = context
         .allocator
-        .borrow_mut()
+        .try_borrow_mut_string(name)?
         .allocate(&AllocationCreateDesc {
             name,
             requirements,

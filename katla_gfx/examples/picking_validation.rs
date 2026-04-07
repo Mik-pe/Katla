@@ -297,10 +297,12 @@ impl PickingTestResources {
             context.device.destroy_buffer(self.output_buffer, None);
             context.device.destroy_buffer(self.input_buffer, None);
         }
-        if let Ok(mut a) = context.allocator.try_borrow_mut() {
-            a.free(self.output_allocation).ok();
-            a.free(self.input_allocation).ok();
-        }
+        context
+            .allocator
+            .free(self.output_allocation, "picking output");
+        context
+            .allocator
+            .free(self.input_allocation, "picking input");
     }
 }
 
@@ -512,14 +514,11 @@ fn main() -> ExitCode {
 
     log::info!("=== GPU Picking Validation ===");
 
-    let context = std::rc::Rc::new(
-        VulkanContext::init_headless(
-            ValidationMode::Enabled,
-            CString::new("Picking Validation").unwrap(),
-            CString::new("Katla Engine").unwrap(),
-        )
-        .expect("Failed to create headless Vulkan context"),
-    );
+    let context = std::rc::Rc::new(VulkanContext::init_headless(
+        ValidationMode::Enabled,
+        CString::new("Picking Validation").unwrap(),
+        CString::new("Katla Engine").unwrap(),
+    ));
     log::info!("Vulkan context created");
 
     let shader_dir = find_shader_directory();

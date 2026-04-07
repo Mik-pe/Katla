@@ -570,9 +570,9 @@ impl GpuBuffer {
         unsafe {
             context.device.destroy_buffer(self.buffer, None);
         }
-        if let Ok(mut a) = context.allocator.try_borrow_mut() {
-            a.free(self.allocation).ok();
-        }
+        context
+            .allocator
+            .free(self.allocation, "outline validation buffer");
     }
 }
 
@@ -3555,14 +3555,11 @@ fn main() -> ExitCode {
 
     log::info!("=== GPU Outline Validation ===");
 
-    let context = std::rc::Rc::new(
-        VulkanContext::init_headless(
-            ValidationMode::Enabled,
-            CString::new("Outline Validation").unwrap(),
-            CString::new("Katla Engine").unwrap(),
-        )
-        .expect("Failed to create headless Vulkan context"),
-    );
+    let context = std::rc::Rc::new(VulkanContext::init_headless(
+        ValidationMode::Enabled,
+        CString::new("Outline Validation").unwrap(),
+        CString::new("Katla Engine").unwrap(),
+    ));
     log::info!("Vulkan context created");
 
     let shader_dir = find_shader_directory();
@@ -4145,18 +4142,33 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         context.device.destroy_buffer(images.stencil_staging, None);
     }
 
-    if let Ok(mut a) = context.allocator.try_borrow_mut() {
-        a.free(images.depth_allocation).ok();
-        a.free(images.hdr_allocation).ok();
-        a.free(images.indicator_allocation).ok();
-        a.free(images.picking_allocation).ok();
-        a.free(images.ldr_allocation).ok();
-        a.free(images.ldr_staging_allocation).ok();
-        a.free(images.indicator_staging_allocation).ok();
-        a.free(images.depth_staging_allocation).ok();
-        a.free(images.picking_staging_allocation).ok();
-        a.free(images.stencil_staging_allocation).ok();
-    }
+    context
+        .allocator
+        .free(images.depth_allocation, "outline depth");
+    context.allocator.free(images.hdr_allocation, "outline HDR");
+    context
+        .allocator
+        .free(images.indicator_allocation, "outline indicator");
+    context
+        .allocator
+        .free(images.picking_allocation, "outline picking");
+    context.allocator.free(images.ldr_allocation, "outline LDR");
+    context
+        .allocator
+        .free(images.ldr_staging_allocation, "outline LDR staging");
+    context.allocator.free(
+        images.indicator_staging_allocation,
+        "outline indicator staging",
+    );
+    context
+        .allocator
+        .free(images.depth_staging_allocation, "outline depth staging");
+    context
+        .allocator
+        .free(images.picking_staging_allocation, "outline picking staging");
+    context
+        .allocator
+        .free(images.stencil_staging_allocation, "outline stencil staging");
 
     vertex_buffer.destroy(&context);
     index_buffer.destroy(&context);

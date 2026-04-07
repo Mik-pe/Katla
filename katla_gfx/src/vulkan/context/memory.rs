@@ -1,12 +1,116 @@
+use std::cell::{RefCell, RefMut};
+use std::mem::ManuallyDrop;
+
 use ash::vk;
 use gpu_allocator::{
     MemoryLocation,
-    vulkan::{Allocation, AllocationCreateDesc, AllocationScheme},
+    vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator},
 };
 
 use crate::error::RendererError;
 
 use super::VulkanContext;
+
+/// Wrapper around `ManuallyDrop<RefCell<Allocator>>` that provides safe
+/// allocation/deallocation methods which log warnings on borrow conflicts
+/// instead of panicking or silently leaking memory.
+pub struct GpuAllocator {
+    inner: ManuallyDrop<RefCell<Allocator>>,
+}
+
+impl GpuAllocator {
+    pub(crate) fn new(allocator: Allocator) -> Self {
+        Self {
+            inner: ManuallyDrop::new(RefCell::new(allocator)),
+        }
+    }
+
+    /// Allocate GPU memory via the inner allocator.
+    ///
+    /// Returns `Err` on both allocation failure and borrow conflict.
+    /// Borrow conflicts are logged as warnings — they indicate a re-entrant
+    /// call (e.g. freeing memory during a Drop while the allocator is borrowed
+    /// for an allocation).
+    pub fn allocate(
+        &self,
+        desc: &AllocationCreateDesc,
+        context: &str,
+    ) -> Result<Allocation, RendererError> {
+        let mut allocator = self.try_borrow(context)?;
+        allocator
+            .allocate(desc)
+            .map_err(|e| RendererError::from_allocation_error(context, e))
+    }
+
+    /// Free a GPU memory allocation.
+    ///
+    /// Logs a warning on borrow conflict instead of panicking.
+    /// Returns `Ok(())` even if the free itself fails (non-fatal).
+    pub fn free(&self, allocation: Allocation, context: &str) {
+        let offset = allocation.offset();
+        match self.inner.try_borrow_mut() {
+            Ok(mut allocator) => {
+                if let Err(e) = allocator.free(allocation) {
+                    log::warn!(
+                        "Failed to free {} allocation at offset {:?}: {:?}",
+                        context,
+                        offset,
+                        e
+                    );
+                }
+            }
+            Err(_) => {
+                log::warn!(
+                    "GpuAllocator borrow conflict during {} free — \
+                     allocator is already borrowed, memory at offset {:?} may leak",
+                    context,
+                    offset
+                );
+            }
+        }
+    }
+
+    /// Borrow the allocator mutably for direct operations.
+    ///
+    /// Logs a warning on borrow conflict and returns a `RendererError`.
+    pub fn try_borrow(&self, context: &str) -> Result<RefMut<'_, Allocator>, RendererError> {
+        self.inner.try_borrow_mut().map_err(|_| {
+            log::warn!(
+                "GpuAllocator borrow conflict during {} — \
+                 allocator is already borrowed",
+                context
+            );
+            RendererError::InvalidOperation(format!(
+                "GpuAllocator borrow conflict during {}",
+                context
+            ))
+        })
+    }
+
+    /// Borrow the allocator mutably, returning a `String` error on conflict.
+    ///
+    /// Used by internal helpers that propagate `String` errors.
+    pub(crate) fn try_borrow_mut_string(
+        &self,
+        context: &str,
+    ) -> Result<RefMut<'_, Allocator>, String> {
+        self.inner.try_borrow_mut().map_err(|_| {
+            log::warn!(
+                "GpuAllocator borrow conflict during {} — \
+                 allocator is already borrowed",
+                context
+            );
+            format!("GpuAllocator borrow conflict during {}", context)
+        })
+    }
+
+    /// Drop the inner allocator. Called during `VulkanContext::drop`.
+    pub(crate) unsafe fn destroy(&mut self) {
+        unsafe {
+            ManuallyDrop::drop(&mut self.inner);
+        }
+    }
+}
 
 impl VulkanContext {
     pub fn allocate_buffer(
@@ -25,10 +129,7 @@ impl VulkanContext {
             allocation_scheme: AllocationScheme::GpuAllocatorManaged,
         };
 
-        let mut allocator = self.allocator.borrow_mut();
-        let allocation = allocator
-            .allocate(&allocation_info)
-            .map_err(|e| RendererError::from_allocation_error("buffer", e))?;
+        let allocation = self.allocator.allocate(&allocation_info, "buffer")?;
 
         unsafe {
             self.device
@@ -42,8 +143,7 @@ impl VulkanContext {
 
     /// Free a buffer and its allocation.
     pub(crate) fn free_buffer(&self, buffer: vk::Buffer, allocation: Allocation) {
-        let mut allocator = self.allocator.borrow_mut();
-        let _ = allocator.free(allocation);
+        self.allocator.free(allocation, "buffer");
         unsafe { self.device.destroy_buffer(buffer, None) };
     }
 
@@ -154,17 +254,12 @@ impl VulkanContext {
             allocation_scheme: AllocationScheme::GpuAllocatorManaged,
         };
 
-        let mut allocator = self.allocator.borrow_mut();
-        let allocation = allocator
-            .allocate(&allocation_info)
-            .map_err(|e| RendererError::from_allocation_error("image", e))?;
+        let allocation = self.allocator.allocate(&allocation_info, "image")?;
 
         unsafe {
             self.device
                 .bind_image_memory(image, allocation.memory(), allocation.offset())
-                .map_err(|e| {
-                    RendererError::VulkanError("Failed to bind image memory".into(), e)
-                })?;
+                .map_err(|e| RendererError::VulkanError("Failed to bind image memory".into(), e))?;
         }
         Ok((image, allocation))
     }
@@ -172,8 +267,7 @@ impl VulkanContext {
     /// Free an image and its allocation.
     /// Uses wrapper type to avoid exposing vk::Image in public API.
     pub(crate) fn free_image(&self, image: crate::sync::VkImage, allocation: Allocation) {
-        let mut allocator = self.allocator.borrow_mut();
-        let _ = allocator.free(allocation);
+        self.allocator.free(allocation, "image");
         unsafe {
             self.device.destroy_image(image.vk(), None);
         }

@@ -208,7 +208,7 @@ impl GlobalParticleBuffer {
 
         let particle_allocation = context
             .allocator
-            .borrow_mut()
+            .try_borrow_mut_string("global_particle_buffer")?
             .allocate(&AllocationCreateDesc {
                 name: "global_particle_buffer",
                 requirements: particle_requirements,
@@ -263,7 +263,7 @@ impl GlobalParticleBuffer {
             counters_allocations[frame_idx] = Some(
                 context
                     .allocator
-                    .borrow_mut()
+                    .try_borrow_mut_string("particle_counters")?
                     .allocate(&AllocationCreateDesc {
                         name: &format!("particle_counters[{}]", frame_idx),
                         requirements: counters_requirements,
@@ -353,7 +353,7 @@ impl GlobalParticleBuffer {
             indirect_draw_allocations[frame_idx] = Some(
                 context
                     .allocator
-                    .borrow_mut()
+                    .try_borrow_mut_string("particle_indirect_draw")?
                     .allocate(&AllocationCreateDesc {
                         name: &format!("particle_indirect_draw[{}]", frame_idx),
                         requirements: indirect_draw_requirements,
@@ -492,7 +492,7 @@ impl GlobalParticleBuffer {
         let staging_allocation = self
             .context
             .allocator
-            .borrow_mut()
+            .try_borrow_mut_string("particle_dead_list_staging")?
             .allocate(&AllocationCreateDesc {
                 name: "particle_dead_list_staging",
                 requirements: staging_requirements,
@@ -550,9 +550,9 @@ impl GlobalParticleBuffer {
         unsafe {
             self.context.device.destroy_buffer(staging_buffer, None);
         }
-        if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-            allocator.free(staging_allocation).ok();
-        }
+        self.context
+            .allocator
+            .free(staging_allocation, "particle staging buffer");
 
         // Initialize alive lists to zero (empty on startup)
         let cmd = self
@@ -613,7 +613,7 @@ impl GlobalParticleBuffer {
             let staging_allocation = self
                 .context
                 .allocator
-                .borrow_mut()
+                .try_borrow_mut_string("particle_counters_staging")?
                 .allocate(&AllocationCreateDesc {
                     name: &format!("particle_counters_staging[{}]", frame_idx),
                     requirements: staging_requirements,
@@ -679,9 +679,9 @@ impl GlobalParticleBuffer {
             unsafe {
                 self.context.device.destroy_buffer(staging_buffer, None);
             }
-            if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-                allocator.free(staging_allocation).ok();
-            }
+            self.context
+                .allocator
+                .free(staging_allocation, "particle index staging buffer");
         }
 
         info!(
@@ -767,29 +767,23 @@ impl GlobalParticleBuffer {
 
         log::info!("  buffer destroy: freeing particle allocation");
         unsafe {
-            if let Some(alloc) = self.particle_allocation.take()
-                && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
-            {
-                allocator.free(alloc).ok();
+            if let Some(alloc) = self.particle_allocation.take() {
+                self.context.allocator.free(alloc, "particle buffer");
             }
             for frame_idx in 0..2 {
                 log::info!(
                     "  buffer destroy: freeing counters allocation[{}]",
                     frame_idx
                 );
-                if let Some(alloc) = self.counters_allocations[frame_idx].take()
-                    && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
-                {
-                    allocator.free(alloc).ok();
+                if let Some(alloc) = self.counters_allocations[frame_idx].take() {
+                    self.context.allocator.free(alloc, "particle counters");
                 }
                 log::info!(
                     "  buffer destroy: freeing indirect draw allocation[{}]",
                     frame_idx
                 );
-                if let Some(alloc) = self.indirect_draw_allocations[frame_idx].take()
-                    && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
-                {
-                    allocator.free(alloc).ok();
+                if let Some(alloc) = self.indirect_draw_allocations[frame_idx].take() {
+                    self.context.allocator.free(alloc, "particle indirect draw");
                 }
             }
             log::info!("  buffer destroy: destroying particle buffer");

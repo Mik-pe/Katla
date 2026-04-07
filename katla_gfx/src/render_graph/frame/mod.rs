@@ -390,9 +390,7 @@ impl<'a> Drop for Frame<'a> {
             self.renderer
                 .context
                 .allocator
-                .borrow_mut()
-                .free(allocation)
-                .ok();
+                .free(allocation, "render graph pass execution");
         }
     }
 }

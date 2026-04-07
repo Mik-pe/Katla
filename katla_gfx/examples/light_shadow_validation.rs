@@ -1032,7 +1032,6 @@ struct ShadowValidateResources {
     shadow_data_buffer: vk::Buffer,
     shadow_data_allocation: Option<Allocation>,
     depth_image: vk::Image,
-    #[allow(dead_code)]
     depth_allocation: Option<Allocation>,
     depth_image_view: vk::ImageView,
     output_buffer: vk::Buffer,
@@ -1054,24 +1053,16 @@ impl ShadowValidateResources {
             context.device.destroy_image(self.depth_image, None);
         }
         if let Some(alloc) = self.shadow_data_allocation {
-            if let Ok(mut a) = context.allocator.try_borrow_mut() {
-                a.free(alloc).ok();
-            }
+            context.allocator.free(alloc, "shadow data");
         }
         if let Some(alloc) = self.output_allocation {
-            if let Ok(mut a) = context.allocator.try_borrow_mut() {
-                a.free(alloc).ok();
-            }
+            context.allocator.free(alloc, "light output");
         }
         if let Some(alloc) = self.test_params_allocation {
-            if let Ok(mut a) = context.allocator.try_borrow_mut() {
-                a.free(alloc).ok();
-            }
+            context.allocator.free(alloc, "test params");
         }
         if let Some(alloc) = self.depth_allocation {
-            if let Ok(mut a) = context.allocator.try_borrow_mut() {
-                a.free(alloc).ok();
-            }
+            context.allocator.free(alloc, "depth");
         }
         self.pipeline.destroy();
     }
@@ -1720,8 +1711,8 @@ fn render_quad_to_atlas_region(
         device.destroy_buffer(vb, None);
         device.destroy_buffer(ib, None);
     }
-    let _ = context.allocator.borrow_mut().free(vb_alloc);
-    let _ = context.allocator.borrow_mut().free(ib_alloc);
+    context.allocator.free(vb_alloc, "light validation VB");
+    context.allocator.free(ib_alloc, "light validation IB");
 
     Ok(())
 }
@@ -2931,8 +2922,7 @@ fn main() -> ExitCode {
     let engine_name = CString::new("Katla Engine").unwrap();
 
     log::info!("Creating headless Vulkan context...");
-    let context = VulkanContext::init_headless(ValidationMode::GpuAssisted, app_name, engine_name)
-        .expect("Failed to create headless Vulkan context");
+    let context = VulkanContext::init_headless(ValidationMode::GpuAssisted, app_name, engine_name);
     let context = std::rc::Rc::new(context);
     log::info!("Vulkan context created successfully");
 

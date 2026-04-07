@@ -64,7 +64,7 @@ fn allocate_upload_buffer(
 
     let allocation = context
         .allocator
-        .borrow_mut()
+        .try_borrow(name)?
         .allocate(&AllocationCreateDesc {
             name,
             requirements,

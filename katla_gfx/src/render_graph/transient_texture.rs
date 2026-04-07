@@ -80,12 +80,7 @@ impl Drop for TransientTexture {
                 .destroy_image_view(self.image_view.vk(), None);
             self.context.device.destroy_image(self.image, None);
             if let Some(allocation) = self.allocation.take() {
-                // Use try_borrow_mut to avoid panic if already borrowed
-                if let Ok(mut allocator) = self.context.allocator.try_borrow_mut() {
-                    allocator.free(allocation).ok();
-                }
-                // If we can't borrow the allocator, it's already being destroyed,
-                // and the memory will be cleaned up when the allocator is dropped
+                self.context.allocator.free(allocation, "transient texture");
             }
         }
     }
