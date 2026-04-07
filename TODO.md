@@ -9,7 +9,7 @@
 ### P3: Polish
 
 - [ ] **Fix doctests** — 7 doc examples still use ` ```ignore ` blocks (down from ~10). Convert key examples to runnable doctests.
-- [ ] **Tighten public API surface** — `ComponentStorage`, `ComponentStorageManager`, `ImmutableQuery`, `QueryData`, `OrderedSystem` are `pub use`'d but never used by external crates. Should be `pub(crate)`.
+- [x] **Tighten public API surface** — `ComponentStorage`, `ComponentStorageManager`, `ImmutableQuery`, `QueryData`, `OrderedSystem` are `pub use`'d but never used by external crates. Should be `pub(crate)`.
 - [ ] **Narrow `World::storage_mut()` exposure** — Exposes internal `ComponentStorageManager`. Used by `katla_app` camera systems; could be replaced with a narrower API.
 
 ## Gizmo
@@ -28,14 +28,14 @@
 ### P2: Robustness
 
 - [ ] **Remove hardcoded compositing viewport layout** — `render_graph/frame/compositing.rs` hardcodes split-screen rects. Should pass viewport rectangles via uniform buffer.
-- [ ] **Integrate GPU particle timing** — `particles/timing.rs` has a full `TimestampQuery` struct (`#[allow(dead_code)]`) that is implemented but never used.
+- [x] **Integrate GPU particle timing** — `particles/timing.rs` has a full `TimestampQuery` struct (`#[allow(dead_code)]`) that is implemented but never used.
 
 ### P0: Visibility Tightening
 
 - [ ] **Change `animation` module to `pub(crate) mod`** — Module visibility done (`pub(crate)` by default). But re-exports (`AnimChannelInfo`, `AnimClipHeader`, `JointInfo`, `SkeletonAnimParams`, `PoseComputeBuffers`, `PoseComputePipeline`) are still unconditional because `katla_app` consumes them. Need to either move types to a public module or update `katla_app` access path.
 - [ ] **Change `shadow` module to `pub(crate) mod`** — Module visibility done. But `CascadeParams` re-export is still unconditional because `katla_app::builder` consumes it.
 - [ ] **Change `lighting` module to `pub(crate) mod`** — Module visibility done. But `PointLightGPU` re-export is still unconditional because `katla_app::renderer` consumes it.
-- [ ] **Make `VkImageView` field private** — `sync.rs:176` exposes `pub struct VkImageView(pub vk::ImageView)`. The inner field should be private with an accessor method to prevent constructing invalid views. (Note: feature-gated, low priority.)
+- [x] **Make `VkImageView` field private** — `sync.rs:176` exposes `pub struct VkImageView(pub vk::ImageView)`. The inner field should be private with an accessor method to prevent constructing invalid views. (Note: feature-gated, low priority.)
 - ~~**Tighten `pub` on vulkan/ submodules**~~ — False positive. The `vulkan` module is `pub(crate) mod vulkan` in `lib.rs`, so internal `pub` items are already crate-scoped. No action needed.
 - ~~**Make `PipelineHandle::new()` pub(crate)**~~ — Verified that `Handle::new()` has legitimate external callers (e.g., `katla_app/src/ui/renderer.rs:158` creates `TextureHandle::new(bindless_index)`). Keep as-is; audit test-only callers instead.
 - ~~**Audit feature-flag-gated module visibility**~~ — Intentional design for validation examples/tests. No action needed.
