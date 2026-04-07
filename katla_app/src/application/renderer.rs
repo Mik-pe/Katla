@@ -94,6 +94,9 @@ impl Application {
                 0.0,
             ],
             tiles: [tiles_x, tiles_y, 0, 0],
+            tonemap: [1.0, 2.2, 0.0, 0.0],
+            overlay: [0.0, 0.0, 0.0, 0.0],
+            compositing: [0.0, 0.0, 0.0, 0.0],
         };
         frame.set_frame_uniforms(frame_uniforms.clone());
 
@@ -121,6 +124,23 @@ impl Application {
         // Generate gizmo draw calls if an entity is selected
         #[cfg(feature = "editor")]
         self.collect_gizmo_draw_calls(&mut draw_list);
+
+        // Extract scene-only draw list (no billboards) for depth/shadow passes
+        #[cfg(feature = "editor")]
+        let scene_draw_list = {
+            let draws = draw_list
+                .iter()
+                .filter(|dc| dc.material != self.billboard_resources.material)
+                .cloned()
+                .collect::<Vec<_>>();
+            katla_gfx::renderer::DrawList { draws }
+        };
+        #[cfg(not(feature = "editor"))]
+        let scene_draw_list = draw_list.clone();
+
+        // Generate billboard icon draw calls (geometry pass only)
+        #[cfg(feature = "editor")]
+        self.collect_billboard_draw_calls(&mut draw_list);
 
         if let Err(e) = self.renderer.execute_draw_calls(&draw_list) {
             log::error!("Failed to execute draw calls: {}", e);
@@ -237,9 +257,9 @@ impl Application {
             );
 
             if !draw_list.is_empty() {
-                frame.submit("depth_prepass", &draw_list);
+                frame.submit("depth_prepass", &scene_draw_list);
                 frame.submit("geometry", &draw_list);
-                frame.submit("shadow", &draw_list);
+                frame.submit("shadow", &scene_draw_list);
                 log::debug!(
                     "Submitted {} draw calls to depth_prepass, geometry, and shadow passes",
                     draw_list.len()
@@ -545,6 +565,103 @@ impl Application {
         };
 
         for draw in gizmo_draws {
+            draw_list.push(draw);
+        }
+    }
+
+    /// Generate billboard draw calls for entities with BillboardComponent.
+    #[cfg(feature = "editor")]
+    fn collect_billboard_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
+        use crate::components::{
+            BillboardComponent, EditorHidden, PerspectiveComponent, TransformComponent,
+        };
+        use crate::gizmo::compute_gizmo_scale;
+        use katla_gfx::renderer::DrawCall;
+        use katla_math::Mat4;
+
+        if !self.billboard_resources.initialized {
+            return;
+        }
+
+        let camera = self.camera.borrow();
+        let cam_entity = camera.entity;
+
+        let (cam_pos, fov) = {
+            let cam_pos = self
+                .world
+                .get_component::<TransformComponent>(cam_entity)
+                .map(|t| t.transform.position)
+                .unwrap_or(katla_math::Vec3::new(0.0, 2.0, 10.0));
+            let fov = self
+                .world
+                .get_component::<PerspectiveComponent>(cam_entity)
+                .map(|p| p.fov)
+                .unwrap_or(60.0);
+            (cam_pos, fov)
+        };
+        drop(camera);
+
+        let viewport_height = self.editor_ui.viewport_size().1 as f32;
+        let fov_rad = fov.to_radians();
+
+        let mut next_instance = draw_list
+            .iter()
+            .map(|d| d.instance_index)
+            .max()
+            .unwrap_or(0)
+            + 1;
+
+        for (entity_id, billboard) in self.world.query_ref::<&BillboardComponent>() {
+            if self
+                .world
+                .get_component::<EditorHidden>(entity_id)
+                .is_some()
+            {
+                continue;
+            }
+
+            let Some(transform) = self.world.get_component::<TransformComponent>(entity_id) else {
+                continue;
+            };
+
+            let position = transform.transform.position;
+
+            let Some(texture_handle) = self.billboard_resources.icon_textures.get(&billboard.icon)
+            else {
+                continue;
+            };
+            let bindless_idx = self
+                .renderer
+                .texture_manager
+                .get_bindless_slot(*texture_handle)
+                .unwrap_or(0);
+
+            let desired_screen_size = 40.0 * billboard.size;
+            let world_scale = compute_gizmo_scale(
+                cam_pos,
+                position,
+                fov_rad,
+                viewport_height,
+                desired_screen_size,
+            );
+
+            let transform_mat = Mat4::from_translation([position.x(), position.y(), position.z()])
+                * Mat4::from_scale(katla_math::Vec3::new(world_scale, world_scale, world_scale));
+
+            let idx = next_instance;
+            next_instance += 1;
+
+            let color = billboard.color.to_linear();
+
+            let draw = DrawCall::new(
+                self.billboard_resources.mesh,
+                self.billboard_resources.material,
+            )
+            .with_transform(transform_mat.to_array())
+            .with_color(color.to_array())
+            .with_instance_index(idx)
+            .with_emission(bindless_idx as f32);
+
             draw_list.push(draw);
         }
     }

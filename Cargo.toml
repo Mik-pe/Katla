@@ -1,5 +1,5 @@
 [workspace]
-members = ["katla_math", "katla_gfx", "katla_app", "katla_ecs", "katla_derive", "katla_ui", "game"]
+members = ["katla_math", "katla_gfx", "katla_app", "katla_ecs", "katla_derive", "katla_ui", "katla_icons", "game"]
 default-members = ["game"]
 resolver = "2"
 
@@ -41,6 +41,7 @@ katla_math = { path = "katla_math" }
 katla_gfx = { path = "katla_gfx" }
 katla_ui = { path = "katla_ui" }
 katla_app = { path = "katla_app" }
+katla_icons = { path = "katla_icons" }
 
 # Faster dev builds with some optimizations
 [profile.dev]

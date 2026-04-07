@@ -5,3 +5,6 @@
 pub mod frame_context;
 
 pub use frame_context::FrameContext;
+
+#[cfg(feature = "editor")]
+pub use crate::billboard_icons::rasterize_icon as rasterize_billboard_icon;

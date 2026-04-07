@@ -138,6 +138,9 @@ pub struct Application {
     /// Gizmo GPU resources (meshes, material).
     #[cfg(feature = "editor")]
     pub(crate) gizmo_resources: crate::gizmo::GizmoResources,
+    /// Billboard GPU resources (mesh, material, icon textures).
+    #[cfg(feature = "editor")]
+    pub(crate) billboard_resources: crate::billboard::BillboardResources,
     /// Previous frame's mouse screen position (for gizmo rotation drag delta).
     #[cfg(feature = "editor")]
     pub(crate) prev_mouse_screen: Option<(f32, f32)>,
@@ -356,11 +359,8 @@ impl ApplicationHandler for Application {
                 #[cfg(feature = "editor")]
                 {
                     let mouse_pos = self.ui_context.input.mouse_pos;
-                    let ui_claimed = self.ui_context.hover_z_index()
-                        > katla_ui::z_index::DEFAULT;
-                    if !ui_claimed
-                        && self.editor_ui.last_viewport_bounds.contains(mouse_pos)
-                    {
+                    let ui_claimed = self.ui_context.hover_z_index() > katla_ui::z_index::DEFAULT;
+                    if !ui_claimed && self.editor_ui.last_viewport_bounds.contains(mouse_pos) {
                         let wheel_y = match delta {
                             winit::event::MouseScrollDelta::LineDelta(_, y) => y,
                             winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
@@ -910,6 +910,10 @@ impl Application {
         // Initialize gizmo GPU resources
         #[cfg(feature = "editor")]
         self.init_gizmo_resources();
+
+        // Initialize billboard GPU resources
+        #[cfg(feature = "editor")]
+        self.init_billboard_resources();
 
         // Initialize particle emit pipeline
         let particle_emit_shader_path = self.resources.shader_path("particles/particle_emit.wgsl");
@@ -1502,6 +1506,51 @@ impl Application {
         };
 
         info!("Gizmo GPU resources initialized");
+    }
+
+    /// Initialize GPU resources for billboard icons (mesh + material + icon textures).
+    #[cfg(feature = "editor")]
+    fn init_billboard_resources(&mut self) {
+        use crate::billboard::BillboardResources;
+        use crate::components::BillboardIcon;
+
+        let mesh = self.renderer.create_plane_xy_mesh(1.0, 1.0, 1);
+
+        let shader_path = self.resources.shader_path("billboard.wgsl");
+        let material = self
+            .renderer
+            .compile_material(
+                &shader_path,
+                katla_gfx::MaterialOptions {
+                    vertex_type: katla_gfx::VertexType::Pbr,
+                    color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
+                    alpha_blended: true,
+                    depth_test: true,
+                    double_sided: true,
+                    ..Default::default()
+                },
+            )
+            .expect("Failed to create billboard material");
+
+        self.gpu_resource_tracker.set_protected_material(material);
+
+        let mut icon_textures = std::collections::HashMap::new();
+        for icon in [BillboardIcon::Lightbulb, BillboardIcon::Fire] {
+            let rasterized = crate::rendering::rasterize_billboard_icon(icon, 64);
+            let desc =
+                katla_gfx::TextureDescriptor::rgba8_srgb(rasterized.width, rasterized.height);
+            let texture_handle = self.renderer.create_texture(&desc, &rasterized.pixels);
+            icon_textures.insert(icon, texture_handle);
+        }
+
+        self.billboard_resources = BillboardResources {
+            mesh,
+            material,
+            icon_textures,
+            initialized: true,
+        };
+
+        info!("Billboard GPU resources initialized");
     }
 
     /// Hit-test gizmo axes at the given screen position.

@@ -457,27 +457,17 @@ impl SceneManager {
                     let transform = TransformComponent::from_position(katla_math::Vec3::new(
                         pos[0], pos[1], pos[2],
                     ));
-                    app.world.spawn((transform, emitter))
+                    let entity_id = app.world.spawn((transform, emitter));
+                    #[cfg(feature = "editor")]
+                    {
+                        use crate::components::BillboardComponent;
+                        use crate::components::billboard::BillboardIcon;
+                        app.world
+                            .add_component(entity_id, BillboardComponent::new(BillboardIcon::Fire));
+                    }
+                    entity_id
                 }
                 EntitySource::Light => {
-                    // Light entities need a visual indicator sphere + the PointLight component
-                    let mesh_handle = app.renderer.create_sphere_mesh(0.2, 16, 12);
-                    let material_handle = app.default_material();
-                    let color = color_from_desc(&desc.drawable);
-                    let drawable = DrawableComponent::with_handles_and_material(
-                        mesh_handle,
-                        material_handle,
-                        Some(color),
-                        0.0,
-                        1.0,
-                        1.0,
-                    );
-                    app.gpu_resource_tracker.track_drawable(
-                        mesh_handle,
-                        material_handle,
-                        drawable.skeleton_handle,
-                    );
-
                     let point_light = desc
                         .point_light
                         .as_ref()
@@ -488,7 +478,17 @@ impl SceneManager {
                         pos[0], pos[1], pos[2],
                     ));
 
-                    app.world.spawn((transform, drawable, point_light))
+                    let entity_id = app.world.spawn((transform, point_light));
+                    #[cfg(feature = "editor")]
+                    {
+                        use crate::components::BillboardComponent;
+                        use crate::components::billboard::BillboardIcon;
+                        app.world.add_component(
+                            entity_id,
+                            BillboardComponent::new(BillboardIcon::Lightbulb),
+                        );
+                    }
+                    entity_id
                 }
                 _ => return Err(format!("Unknown entity source: {:?}", desc.source)),
             }
