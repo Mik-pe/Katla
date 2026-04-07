@@ -650,7 +650,8 @@ impl Default for Separator {
 
 impl crate::Widget for Separator {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let bounds = Rect2D::from_origin_size(ui.cursor, katla_math::Vec2::new(100.0, 20.0));
+        let clip = ui.clip_rect();
+        let bounds = Rect2D::from_origin_size(ui.cursor, katla_math::Vec2::new(clip.width(), 20.0));
 
         let color = self.color.unwrap_or(ui.style.border);
         let y = ui.cursor.y() + 10.0;
@@ -678,7 +679,7 @@ impl crate::Widget for Separator {
             let line_start = ui.cursor.x() + 20.0 + label_size.x();
             ui.draw_line(
                 katla_math::Vec2::new(line_start, y),
-                katla_math::Vec2::new(ui.cursor.x() + 200.0, y),
+                katla_math::Vec2::new(clip.max.x(), y),
                 color,
                 1.0,
             );
@@ -686,7 +687,7 @@ impl crate::Widget for Separator {
             // Just a line
             ui.draw_line(
                 katla_math::Vec2::new(ui.cursor.x(), y),
-                katla_math::Vec2::new(ui.cursor.x() + 200.0, y),
+                katla_math::Vec2::new(clip.max.x(), y),
                 color,
                 1.0,
             );

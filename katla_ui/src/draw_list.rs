@@ -109,7 +109,6 @@ impl DrawList {
         let color_arr = color.to_bytes();
 
         // Four corners in counter-clockwise order for screen space (Y-down)
-        // Note: texture_index will be set during batch conversion based on TextureId
         self.vertices.push(Vertex::position_only(
             Vec2::new(bounds.min.x(), bounds.min.y()),
             color_arr,
@@ -154,30 +153,25 @@ impl DrawList {
         let color_arr = color.to_bytes();
 
         // Four corners with UVs in counter-clockwise order for screen space (Y-down)
-        // Note: texture_index will be set during batch conversion based on TextureId
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.min.x(), bounds.min.y()),
             Vec2::new(uv.min.x(), uv.min.y()),
             color_arr,
-            0, // Will be set during batch conversion
         ));
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.min.x(), bounds.max.y()),
             Vec2::new(uv.min.x(), uv.max.y()),
             color_arr,
-            0, // Will be set during batch conversion
         ));
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.max.x(), bounds.max.y()),
             Vec2::new(uv.max.x(), uv.max.y()),
             color_arr,
-            0, // Will be set during batch conversion
         ));
         self.vertices.push(Vertex::new(
             Vec2::new(bounds.max.x(), bounds.min.y()),
             Vec2::new(uv.max.x(), uv.min.y()),
             color_arr,
-            0, // Will be set during batch conversion
         ));
 
         // Two triangles
@@ -225,7 +219,6 @@ impl DrawList {
         let color_arr = color.to_bytes();
 
         // Add all vertices
-        // Note: texture_index will be set during batch conversion based on TextureId
         for &point in points {
             self.vertices.push(Vertex::position_only(point, color_arr));
         }

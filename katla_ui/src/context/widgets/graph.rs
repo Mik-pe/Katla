@@ -95,22 +95,20 @@ impl UiContext {
             return;
         }
 
-        // 4. Convert values to screen coordinates
-        let points: Vec<Vec2> = values
-            .iter()
-            .enumerate()
-            .map(|(i, &v)| {
-                let t = if values.len() > 1 {
-                    i as f32 / (values.len() - 1) as f32
-                } else {
-                    0.5
-                };
-                let x = graph_bounds.min.x() + t * graph_bounds.width();
-                let normalized = ((v - min_val) / range).clamp(0.0, 1.0);
-                let y = graph_bounds.max.y() - normalized * graph_bounds.height();
-                Vec2::new(x, y)
-            })
-            .collect();
+        // 4. Convert values to screen coordinates (reusing scratch buffer)
+        self.scratch_points.clear();
+        self.scratch_points.reserve(values.len());
+        for (i, &v) in values.iter().enumerate() {
+            let t = if values.len() > 1 {
+                i as f32 / (values.len() - 1) as f32
+            } else {
+                0.5
+            };
+            let x = graph_bounds.min.x() + t * graph_bounds.width();
+            let normalized = ((v - min_val) / range).clamp(0.0, 1.0);
+            let y = graph_bounds.max.y() - normalized * graph_bounds.height();
+            self.scratch_points.push(Vec2::new(x, y));
+        }
 
         // 5. Draw filled area under the line (as vertical strips)
         if let Some(fill_color) = opts.fill_color {
@@ -118,18 +116,16 @@ impl UiContext {
 
             self.push_clip(graph_bounds);
 
-            // Draw vertical quads between each pair of adjacent points
-            for i in 0..points.len().saturating_sub(1) {
-                let p0 = points[i];
-                let p1 = points[i + 1];
+            for i in 0..self.scratch_points.len().saturating_sub(1) {
+                let p0 = self.scratch_points[i];
+                let p1 = self.scratch_points[i + 1];
 
-                // Create a quad: top-left, top-right, bottom-right, bottom-left
                 self.draw_list.add_convex_poly(
                     &[
-                        Vec2::new(p0.x(), p0.y()),   // top-left
-                        Vec2::new(p1.x(), p1.y()),   // top-right
-                        Vec2::new(p1.x(), bottom_y), // bottom-right
-                        Vec2::new(p0.x(), bottom_y), // bottom-left
+                        Vec2::new(p0.x(), p0.y()),
+                        Vec2::new(p1.x(), p1.y()),
+                        Vec2::new(p1.x(), bottom_y),
+                        Vec2::new(p0.x(), bottom_y),
                     ],
                     fill_color,
                 );
@@ -140,10 +136,10 @@ impl UiContext {
 
         // 6. Draw the line segments
         self.push_clip(graph_bounds);
-        for i in 0..points.len().saturating_sub(1) {
+        for i in 0..self.scratch_points.len().saturating_sub(1) {
             self.draw_line(
-                points[i],
-                points[i + 1],
+                self.scratch_points[i],
+                self.scratch_points[i + 1],
                 opts.line_color,
                 opts.line_thickness,
             );

@@ -52,6 +52,7 @@ impl UiContext {
         self.clip_stack.clear();
         self.clip_stack
             .push(katla_math::Rect2D::from_size(screen_size));
+        self.scratch_points.clear();
     }
 
     /// End the frame and get the draw list.
