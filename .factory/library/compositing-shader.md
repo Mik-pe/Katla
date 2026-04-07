@@ -23,45 +23,25 @@ This matches the `CompositingDescriptorSet` layout in `katla_gfx/src/render_grap
 
 ### Data Structures
 
-#### ViewportRect
-```wgsl
-struct ViewportRect {
-    x: f32,  // Left edge in pixels
-    y: f32,  // Top edge in pixels
-    z: f32,  // Right edge in pixels (x + width)
-    w: f32,  // Bottom edge in pixels (y + height)
-}
-```
+#### ViewportRect (stored in objects[i].base_color)
 
-Stores viewport position as [x, y, x+w, y+h] to avoid recalculation in the shader.
+Viewport rectangles are packed as `vec4f(x, y, x+width, y+height)` in the `objects[]` storage buffer (Set 0, Binding 1). Each active viewport `i` has its rectangle at `objects[i].base_color`.
 
-#### CompositingUniforms
-```wgsl
-struct CompositingUniforms {
-    rects: array<ViewportRect, 8>,  // Viewport rectangles
-    viewport_count: u32,             // Number of active viewports
-    screen_size: vec2f,              // Screen dimensions in pixels
-    padding: f32,                    // 16-byte alignment
-}
-```
+#### Compositing Parameters (stored in frame_data.compositing)
+
+Screen size and viewport count are read from `frame_data.compositing` (a `vec4f` field in `FrameUniforms`):
+- `frame_data.compositing.xy`: Screen size (width, height)
+- `frame_data.compositing.z`: Viewport count (as f32, cast to u32 in shader)
 
 ## Implementation Notes
 
-### Current Implementation (Proof of Concept)
+### Current Implementation
 
-The current shader uses `objects[0]` from the storage buffer to pass compositing parameters:
-- `base_color.xy`: Screen size (width, height)
-- `material_params.x`: Viewport count
+The shader uses the existing `objects[]` storage buffer (Set 0, Binding 1) to pass per-viewport rectangles, and `frame_data.compositing` for screen size and viewport count. This avoids creating a dedicated compositing uniform buffer and changing the descriptor set layout.
 
-This is a temporary approach that mirrors the tonemapping shader pattern. The shader currently implements a simple 2-viewport split-screen layout as a proof of concept.
+Each viewport `i` (0..viewport_count) has its rectangle stored at `objects[i].base_color` as `[x, y, x+width, y+height]`. The compositing pass writes identity model matrices + rect data into `objects[i]` via `update_object_bindless()` before the compositing render pass executes.
 
-### Future Implementation
-
-A proper uniform buffer should be created for compositing parameters:
-1. Create a uniform buffer with `CompositingUniforms` layout
-2. Bind at set 2, binding 1 (after texture array at binding 0)
-3. Update each frame with current viewport configuration
-4. Use proper viewport rectangle iteration instead of hardcoded layout
+The compositing pass runs last in the frame graph, so the `objects[]` array is available (its data from the geometry pass is no longer needed).
 
 ### Alpha Blending Algorithm
 
@@ -91,37 +71,33 @@ This ensures:
 ### Split-Screen Layout (2 Viewports)
 
 ```rust
-// Configure compositing parameters
-objects[0].base_color = vec4f(1920.0, 1080.0, 0.0, 0.0);  // Screen size
-objects[0].material_params.x = 2.0;  // 2 viewports
+// frame_data.compositing = vec4f(1920.0, 1080.0, 2.0, 0.0)  // screen_size + count
 
 // Viewport 0: Left half
-rects[0] = ViewportRect::new(0.0, 0.0, 960.0, 1080.0);
+objects[0].base_color = vec4f(0.0, 0.0, 960.0, 1080.0);
 
 // Viewport 1: Right half
-rects[1] = ViewportRect::new(960.0, 0.0, 1920.0, 1080.0);
+objects[1].base_color = vec4f(960.0, 0.0, 1920.0, 1080.0);
 ```
 
 ### 2x2 Grid Layout (4 Viewports)
 
 ```rust
-objects[0].base_color = vec4f(1920.0, 1080.0, 0.0, 0.0);
-objects[0].material_params.x = 4.0;
+// frame_data.compositing = vec4f(1920.0, 1080.0, 4.0, 0.0)
 
-rects[0] = ViewportRect::new(0.0, 0.0, 960.0, 540.0);      // Top-left
-rects[1] = ViewportRect::new(960.0, 0.0, 1920.0, 540.0);    // Top-right
-rects[2] = ViewportRect::new(0.0, 540.0, 960.0, 1080.0);    // Bottom-left
-rects[3] = ViewportRect::new(960.0, 540.0, 1920.0, 1080.0); // Bottom-right
+objects[0].base_color = vec4f(0.0, 0.0, 960.0, 540.0);      // Top-left
+objects[1].base_color = vec4f(960.0, 0.0, 1920.0, 540.0);    // Top-right
+objects[2].base_color = vec4f(0.0, 540.0, 960.0, 1080.0);    // Bottom-left
+objects[3].base_color = vec4f(960.0, 540.0, 1920.0, 1080.0); // Bottom-right
 ```
 
 ### Picture-in-Picture Layout
 
 ```rust
-objects[0].base_color = vec4f(1920.0, 1080.0, 0.0, 0.0);
-objects[0].material_params.x = 2.0;
+// frame_data.compositing = vec4f(1920.0, 1080.0, 2.0, 0.0)
 
-rects[0] = ViewportRect::new(0.0, 0.0, 1920.0, 1080.0);      // Fullscreen background
-rects[1] = ViewportRect::new(1600.0, 800.0, 1900.0, 1050.0); // PiP overlay (semi-transparent)
+objects[0].base_color = vec4f(0.0, 0.0, 1920.0, 1080.0);      // Fullscreen background
+objects[1].base_color = vec4f(1600.0, 800.0, 1900.0, 1050.0); // PiP overlay (semi-transparent)
 ```
 
 ## Verification
@@ -157,11 +133,7 @@ This shader fulfills the following validation contract assertions:
 
 ## Known Limitations
 
-1. **Temporary Parameter Passing**: Currently uses `objects[0]` instead of a dedicated uniform buffer
-2. **Hardcoded Layout**: Proof-of-concept implementation with 2-viewport split-screen
-3. **No Proper Rectangle Support**: Viewport rectangles are not yet implemented
-
-These will be addressed in the compositing pass implementation.
+1. **Parameter Passing via objects[] Buffer**: Viewport rectangles are passed through the objects[] storage buffer (Set 0, Binding 1) rather than a dedicated compositing uniform buffer. This works because compositing runs last in the frame graph when the objects[] data from the geometry pass is no longer needed.
 
 ## Descriptor Set Layout Ordering Constraint
 
