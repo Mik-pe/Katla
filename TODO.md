@@ -35,14 +35,36 @@
 - [ ] **Change `animation` module to `pub(crate) mod`** — Module visibility done (`pub(crate)` by default). But re-exports (`AnimChannelInfo`, `AnimClipHeader`, `JointInfo`, `SkeletonAnimParams`, `PoseComputeBuffers`, `PoseComputePipeline`) are still unconditional because `katla_app` consumes them. Need to either move types to a public module or update `katla_app` access path.
 - [ ] **Change `shadow` module to `pub(crate) mod`** — Module visibility done. But `CascadeParams` re-export is still unconditional because `katla_app::builder` consumes it.
 - [ ] **Change `lighting` module to `pub(crate) mod`** — Module visibility done. But `PointLightGPU` re-export is still unconditional because `katla_app::renderer` consumes it.
+- [ ] **Make `VkImageView` field private** — `sync.rs:176` exposes `pub struct VkImageView(pub vk::ImageView)`. The inner field should be private with an accessor method to prevent constructing invalid views. (Note: feature-gated, low priority.)
+- ~~**Tighten `pub` on vulkan/ submodules**~~ — False positive. The `vulkan` module is `pub(crate) mod vulkan` in `lib.rs`, so internal `pub` items are already crate-scoped. No action needed.
+- ~~**Make `PipelineHandle::new()` pub(crate)**~~ — Verified that `Handle::new()` has legitimate external callers (e.g., `katla_app/src/ui/renderer.rs:158` creates `TextureHandle::new(bindless_index)`). Keep as-is; audit test-only callers instead.
+- ~~**Audit feature-flag-gated module visibility**~~ — Intentional design for validation examples/tests. No action needed.
+
+### P1: Robustness
+
+- [ ] **Replace `.expect()` calls in per-frame hot paths** — 65 `.expect()` calls across 27 files (verified count, not 80+). `.expect()` in init/setup code is acceptable in Rust graphics engines. Focus on per-frame rendering paths (`renderer/mod.rs`, `render_graph/frame/`) and cleanup code where `.expect()` → `Result` propagation would prevent crashes.
+- [ ] **Decompose `GlobalParticleSystem` struct (30 fields)** — `particles/mod.rs:52-109` has 30 fields that naturally group into ~5 sub-structs: `ParticlePipelines` (4), `ParticleDescriptors` (8), `ParticleBuffers` (3), `ParticleEmitterPool` (4), config/stats (4). Straightforward win for maintainability.
+- [ ] **Refactor `VulkanContext.allocator` away from `ManuallyDrop<RefCell<Allocator>>`** — `vulkan/context/mod.rs:99`. The `try_borrow_mut()` pattern silently leaks memory on failure (e.g., `particles/mod.rs:246`). Consider `Mutex<Allocator>` or restructuring for single-threaded access by design.
+
+### P2: Code Reusability
+
+- [ ] **Consolidate image creation into shared helper** — `OutputRenderTarget::new()`, `Texture::create_image()`, `TransientTexture`, swapchain all construct `vk::ImageCreateInfo` then delegate to `context.create_image()`. Differences in usage flags are legitimate, but an `ImageCreateInfoBuilder` could reduce boilerplate. Low priority.
+- [ ] **Extract repeated pipeline lookup into `AssetRegistry` method** — 21 occurrences (verified) across `render_graph/frame/` repeat: `material.pipeline.ok_or(...)` then `registry.get_pipeline_vk_handles(...).ok_or(...)`. A `get_pipeline_or_err(handle) -> Result<_, RenderGraphError>` method would eliminate significant boilerplate.
+- [ ] **Extract `DrawCall` builder helper** — `renderer/types.rs:204-250` — 6 builder methods all repeat the same `if let Some(inst) = self.instances.first_mut()` guard. Extract a private `with_first_instance_mut()` helper. Minor refactor, low risk.
 
 ### P3: Polish
 
-- [ ] **Consider a minimal `Mat4` type within katla_gfx** — All matrices still use raw `[f32; 16]`. No `Mat4` newtype exists.
+- [ ] **Consider a minimal `Mat4` type within katla_gfx** — `FrameUniforms` in `renderer/types.rs:18-20` uses raw `[f32; 16]` arrays. Low priority: the raw arrays match GPU memory layout and are constructed from `katla_math` in `katla_app`, so a local Mat4 would create yet another conversion boundary.
 - [ ] **Extract viewport/UI from renderer module** — Viewport and UI management still in `renderer/mod.rs`; should be split into own modules.
 - [ ] **Clean up dead code** — `ShadowBuffers::len()/is_empty()`, `CascadeParams::cascades()`, `MaterialBuilder::with_push_constant_range()` are `#[allow(dead_code)]`.
+- [ ] **Chain errors in `RendererError::source()`** — `error.rs` — `source()` returns `None` for `VulkanError`/`IoError` variants because they convert to `String`, losing the original error. Change `IoError(String)` to `IoError(io::Error)` etc. to preserve error chains for debugging.
 
 ## katla_app
+
+### P0: Structural Debt
+
+- [ ] **Split `application/mod.rs` monolith (1928 lines)** — Partially decomposed already (`builder.rs` 846 lines, `spawning.rs` 608 lines, `renderer.rs` 530 lines, etc. exist). The remaining `mod.rs` holds the core `Application` struct, `ApplicationHandler` impl (event loop), window events, frame orchestration, input routing, cleanup, hot reload, and timing. Extract event handling, input routing, and frame orchestration into focused submodules.
+- [ ] **Decompose `Application` god struct (39 fields)** — Verified count is 39 fields. Many are cfg-gated editor fields. Group the 7 editor-specific cfg-gated fields (gizmo_state, gizmo_resources, prev_mouse_screen, entity_instance_map, entity_to_instance_indices, pending_pick, stencil_indicator_bindless_index) into an `EditorState` sub-struct behind a single `#[cfg(feature = "editor")]`. This also reduces cfg sprinkling. Particle readback flags could similarly be grouped.
 
 ### P1: Stubs / Missing Implementations
 
@@ -54,21 +76,61 @@
 - [ ] **Reduce `unwrap()` in physics systems** — `physics_system.rs` and `velocity_system.rs` have ~13 `unwrap()` calls on ECS component queries that will panic if components are missing.
 - [ ] **Guard `TransformOptimization` resource access** — `transform_hierarchy_system.rs` calls `unwrap()` on `get_resource_mut::<TransformOptimization>()` which panics if not inserted.
 - [ ] **Guard GLTF bone mapping** — `animation/gltf_loader.rs` calls `unwrap()` on `transforms.get(&idx)` which panics on malformed bone mappings.
+- [ ] **Guard asset browser edge cases** — `asset_browser/mod.rs` has `unwrap()` on `drag_asset`, `parent()`, `selected_index` that could panic on edge cases.
+
+### P2: Code Reusability
+
+- [ ] **Extract shared transform-from-position pattern** — 44 occurrences total but 24 are in tests. ~15 in production code across 5 files (`spawner.rs`, `scene/mod.rs`, `spawning.rs`, `physics_system.rs`, `velocity_system.rs`). Low priority: `Transform::new_from_position()` already exists; the repetition is the `TransformComponent { transform: ... }` wrapper. A `TransformComponent::from_position()` convenience method would help.
+- [ ] **Consolidate `Spawner` and `Application` entity creation** — `Spawner` (207 lines, `&mut World` only, no GPU tracking) vs `Application` methods (608 lines, full app access with GPU resource tracking). Using `Spawner::spawn_primitive()` instead of `Application` methods risks GPU resource leaks. Either unify tracking via an ECS resource or document the distinction clearly.
+- [ ] **Replace hand-rolled TOML parsers with serde** — Preferences/settings parsing manually splits strings and matches on keys instead of using serde derive. Fragile and verbose.
+
+### P2: Architecture
+
+- [ ] **Reduce `#[cfg(feature = "editor")]` sprinkling** — 84+ occurrences across 7 files (`application/mod.rs` ~40, `builder.rs` ~17, `renderer.rs` ~11, `ui/mod.rs` 8). For struct fields, per-field cfg is idiomatic. For function bodies and methods, extract editor-specific code into the existing `application/editor/` module. Grouping editor fields into `EditorState` sub-struct (P0-2) would also help.
 
 ### P3: Polish
 
 - [ ] **Remove dead `DragToViewport.path` field** — `asset_browser/types.rs` has `#[allow(dead_code)]` on a field that is never read.
-- [ ] **Guard asset browser edge cases** — `asset_browser/mod.rs` has `unwrap()` on `drag_asset`, `parent()`, `selected_index` that could panic on edge cases.
+- [ ] **Split `scene/mod.rs` (3998 lines)** — Largest file in katla_app with no submodules. Scene serialization/deserialization, entity instantiation, GLTF loading, and scene management all in one file. High priority for maintainability — decompose into `scene/serialization.rs`, `scene/loader.rs`, `scene/instantiation.rs`, etc.
+- [ ] **Split `editor_ui.rs` (1334 lines)** — Decomposition already in progress: `editor_ui/` subdirectory exists with `hierarchy.rs` (383 lines), `inspector.rs` (353 lines), `preferences.rs` (559 lines), `status_bar.rs` (117 lines), `toolbar.rs` (173 lines), `viewport_grid.rs` (262 lines), `asset_browser/`. Remaining code is core panel layout/orchestration. Low priority.
+- [ ] **Remove unused `Selection` resource** — 320 lines of dead code in `resources/selection.rs` with full tests and API, but never imported, registered, or used outside its own file. Either integrate into editor flow or remove.
+- ~~**Audit stateless service structs**~~ — False positive. Stateless system structs (`ParticleSystem {}`, `VelocitySystem`, `PhysicsSystem`, `OrbitCameraSystem`, etc.) are idiomatic Rust ECS pattern. The struct is a type token for trait dispatch; state lives in `World`. No action needed.
 
 ## katla_ui
+
+### P1: Correctness
+
+- [ ] **Unify click-handling logic across widgets** — `button_with_colors()` (`context/widgets/basic.rs:18-52`), `menu_bar_dropdown()` (`context/popup/api.rs:158-174`), and `click_behavior()` all implement slightly different click detection. Button and dropdown use `self.input.is_hovered(bounds)` on release while `click_behavior()` uses pre-computed hovered state. Three-way inconsistency is a bug magnet. Unify into a single configurable click handler or document why each deviation exists.
+- [ ] **Fix `label_auto_colored()` cursor corruption** — `context/widgets.rs:136` manually advances `self.cursor` instead of using `advance_cursor()`, bypassing layout stack awareness. Verified: if called inside a row/column layout, it corrupts cursor state. Should use `advance_cursor()` like `label()` in `helpers.rs` does.
+- [ ] **Fix `button_auto_wide` layout bypass** — `context/widgets.rs:115-133` manually sets cursor. Verified: has a double-advance bug since `self.add()` already calls `advance_cursor()` internally, causing cursor to skip ahead in layouts.
 
 ### P2: Robustness
 
 - [ ] **Guard `DrawList::finalize()` on empty lists** — `draw_list.rs` has 8 `unwrap()` calls for min/max computation that panic on empty draw lists.
+- [ ] **Fix `Vertex.texture_index` always being 0** — `types.rs:62-88` — every vertex is created with `texture_index: 0` and comments say "Will be set during batch conversion" but `finalize()` never resolves it. Either remove the field from the public struct or resolve within `finalize()`.
+
+### P2: Visibility
+
+- [ ] **Make `UiContext` fields `pub(crate)`** — `context/mod.rs:63-67` exposes `pub input`, `pub style`, `pub fonts`. Verified: some fields may need katla_app access. Audit before changing.
+- [ ] **Make `LayoutState` `pub(crate)`** — `context/layout.rs:22-36`. Verified: internal layout detail. However, some may be re-exported — check before changing.
+- [ ] **Make `FontId` inner field `pub(crate)`** — `text/mod.rs:50`. Low priority: `FontId(pub u32)` allows arbitrary construction but this is standard for simple ID types.
+
+### P2: Code Reusability
+
+- [ ] **Extract shared text/icon centering utility** — Three separate implementations in `context/drawing.rs:240-265`, `context/drawing.rs:270-305`, `context/widgets/basic.rs:66-72` each compute centering slightly differently. Should be a shared helper.
+- [ ] **Reduce theme method repetition** — `style.rs` has ~240 lines of near-identical field assignments across `dark()` (358-420), `light()` (425-481), `classic()` (490-565). Adding a new color requires touching all three. Consider struct-update pattern or helper.
+- [ ] **Introduce `DraggablePanel::show()` config struct** — `widgets/draggable_panel.rs:99-105` takes 9 parameters with `#[allow(clippy::too_many_arguments)]`. Use a builder or config struct consistent with the crate's widget patterns.
 
 ### P3: Polish
 
 - [ ] **Remove or wire up `selectable()` widget** — `context/widgets/selectable.rs` has `#[allow(dead_code)]` on an implemented but uncalled widget method.
+- [ ] **Remove or deprecate `spacer()` in favor of `spacing()`** — `context/layout.rs:92-106` — `spacer()` always advances horizontally regardless of layout direction, while `spacing()` is direction-aware. The doc says "prefer spacing()" but both are `pub`.
+- [ ] **Document `end_column()` vs `end_row()` spacing asymmetry** — `context/layout.rs:228-231` — `end_column()` adds trailing spacing but `end_row()` doesn't. Undocumented and surprising.
+- [ ] **Use `KeyCode::Backspace` instead of `\x08` character check** — `context/widgets/basic.rs:256-258` checks `c == '\x08'` for backspace but `KeyCode` enum has a `Backspace` variant. Conflates character input with key events.
+- [ ] **Remove hardcoded widget default sizes** — `Button` 100x30, `Checkbox` 150x24, `Slider` 150x20, `TextInput` 200x24, etc. don't relate to `UiStyle` dimensions. `at_cursor()` methods use style values but defaults ignore them.
+- [ ] **Fix `Separator` hardcoded 200.0 width** — `widgets/mod.rs:673-704` — no way to make it span full container width without caller computing manually.
+- [ ] **Replace per-frame `Vec<Vec2>` allocation in `graph()`** — `context/widgets/graph.rs:53-65` allocates every frame. Use a scratch buffer approach like `DrawList` uses for circles.
+- [ ] **Make `property_row()` label width configurable** — `context/helpers.rs:20-42` hardcodes `60.0` for label column width. Doesn't scale with font size or content length.
 
 ### P3: Font Library Migration (ab_glyph → skrifa + vello_cpu) — DONE
 
