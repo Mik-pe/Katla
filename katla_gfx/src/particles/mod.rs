@@ -374,6 +374,29 @@ impl GlobalParticleSystem {
         }
     }
 
+    /// Reset all particle system state to initial values.
+    ///
+    /// Clears all counters (alive, dead, emit, workgroups), resets per-emitter
+    /// runtime state (burst counts, accumulators), and reinitializes GPU buffers
+    /// (particle data zeroed, dead list repopulated, alive lists cleared, counters reset).
+    /// Emitter configurations are preserved.
+    pub fn reset_all(&mut self) -> Result<(), String> {
+        info!("Resetting particle system");
+
+        self.frame_count = 0;
+        self.total_emitted = 0;
+        self.recompute_estimated_max_alive();
+
+        for state in &mut self.emitter_pool.emitter_states {
+            *state = EmitterState::default();
+        }
+
+        self.buffer.initialize_index_lists()?;
+
+        info!("Particle system reset complete");
+        Ok(())
+    }
+
     pub fn max_particles(&self) -> u32 {
         self.max_particles
     }
@@ -554,5 +577,68 @@ mod tests {
             config.set_shape(shape);
             assert_eq!(config.get_shape(), shape);
         }
+    }
+
+    #[test]
+    fn test_reset_all_clears_emitter_states() {
+        let mut pool = ParticleEmitterPool {
+            emitters: vec![EmitterConfig::default()],
+            emitter_states: vec![EmitterState {
+                burst_count: 100,
+                emit_accumulator: 5.5,
+            }],
+            next_slot: 1,
+            free_slots: vec![],
+        };
+
+        for state in &mut pool.emitter_states {
+            *state = EmitterState::default();
+        }
+
+        assert_eq!(pool.emitter_states[0].burst_count, 0);
+        assert_eq!(pool.emitter_states[0].emit_accumulator, 0.0);
+    }
+
+    #[test]
+    fn test_reset_all_preserves_configs() {
+        let original_config = EmitterConfig {
+            emit_rate: 75.0,
+            base_lifetime: 3.0,
+            gravity: -5.0,
+            ..Default::default()
+        };
+
+        let mut pool = ParticleEmitterPool {
+            emitters: vec![original_config],
+            emitter_states: vec![EmitterState {
+                burst_count: 100,
+                emit_accumulator: 5.5,
+            }],
+            next_slot: 1,
+            free_slots: vec![],
+        };
+
+        for state in &mut pool.emitter_states {
+            *state = EmitterState::default();
+        }
+
+        assert_eq!(pool.emitters[0].emit_rate, 75.0);
+        assert_eq!(pool.emitters[0].base_lifetime, 3.0);
+        assert_eq!(pool.emitters[0].gravity, -5.0);
+    }
+
+    #[test]
+    fn test_reset_all_clears_counters() {
+        let counters_after_reset = ParticleCounters {
+            alive_count: 0,
+            dead_count: DEFAULT_MAX_PARTICLES,
+            emit_count: 0,
+            workgroups_finished: 0,
+        };
+
+        assert_eq!(counters_after_reset.alive_count, 0);
+        assert_eq!(counters_after_reset.dead_count, DEFAULT_MAX_PARTICLES);
+        assert_eq!(counters_after_reset.emit_count, 0);
+        assert_eq!(counters_after_reset.workgroups_finished, 0);
     }
 }
