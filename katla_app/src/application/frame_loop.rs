@@ -49,11 +49,12 @@ impl Application {
         // Save GUI state before exit
         #[cfg(feature = "editor")]
         {
-            self.gui_state.left_panel_width = self.editor_ui.left_panel_width;
-            self.gui_state.right_panel_width = self.editor_ui.right_panel_width;
-            self.gui_state.asset_browser_height = self.editor_ui.asset_browser.panel_height;
+            self.editor.gui_state.left_panel_width = self.editor.editor_ui.left_panel_width;
+            self.editor.gui_state.right_panel_width = self.editor.editor_ui.right_panel_width;
+            self.editor.gui_state.asset_browser_height =
+                self.editor.editor_ui.asset_browser.panel_height;
 
-            if let Err(e) = self.gui_state.save() {
+            if let Err(e) = self.editor.gui_state.save() {
                 warn!("Failed to save GUI state: {}", e);
             } else {
                 info!("Saved GUI state to disk");
@@ -205,7 +206,9 @@ impl Application {
             let frame_idx = self.renderer.current_frame();
             if let Some(base_ldr_index) = self.frame_graph.get_ldr_texture_base_index() {
                 let actual_ldr_index = base_ldr_index + frame_idx as u32;
-                self.editor_ui.set_viewport_bindless_index(actual_ldr_index);
+                self.editor
+                    .editor_ui
+                    .set_viewport_bindless_index(actual_ldr_index);
             }
         }
 
@@ -219,7 +222,8 @@ impl Application {
             // Save keyboard capture state for next frame's Ctrl+S suppression.
             // Must happen after generate_ui_draw_list (which sets the flag) and
             // before process_editor_actions (which calls clear_frame_state).
-            self.editor_ui.prev_want_capture_keyboard = self.ui_context.input.want_capture_keyboard;
+            self.editor.editor_ui.prev_want_capture_keyboard =
+                self.ui_context.input.want_capture_keyboard;
 
             // Upload font atlas AFTER draw list generation (which rasterizes new glyphs)
             // and BEFORE render_frame (which samples from the GPU atlas).
@@ -353,7 +357,7 @@ impl Application {
         use crate::ui::ThumbnailState;
         use crate::util::LoadResult;
 
-        let results = self.background_loader.poll();
+        let results = self.editor.background_loader.poll();
 
         for result in results {
             match result {
@@ -386,20 +390,22 @@ impl Application {
                         });
 
                     // Register the bindless slot with the UI renderer
-                    self.ui_renderer
+                    self.editor
+                        .ui_renderer
                         .register_bindless_slot(texture_handle, bindless_slot);
 
                     // Update the thumbnail cache entry
-                    if let Some(entry) = self.background_loader.get_thumbnail_mut(&path) {
+                    if let Some(entry) = self.editor.background_loader.get_thumbnail_mut(&path) {
                         entry.uploaded = true;
                     }
 
                     // Store texture handle for this path (persists across directory navigations)
-                    self.thumbnail_texture_handles
+                    self.editor
+                        .thumbnail_texture_handles
                         .insert(path.clone(), texture_handle);
 
                     // Update asset browser entries with this thumbnail
-                    for asset in self.editor_ui.asset_browser.assets.iter_mut() {
+                    for asset in self.editor.editor_ui.asset_browser.assets.iter_mut() {
                         if asset.path == path {
                             asset.thumbnail_state = ThumbnailState::Loaded { texture_handle };
                             debug!(
@@ -416,7 +422,7 @@ impl Application {
                     warn!("Failed to load {:?}: {}", path, error);
 
                     // Update asset browser entry to show failed state
-                    for asset in self.editor_ui.asset_browser.assets.iter_mut() {
+                    for asset in self.editor.editor_ui.asset_browser.assets.iter_mut() {
                         if asset.path == path {
                             asset.thumbnail_state = ThumbnailState::Failed;
                             break;

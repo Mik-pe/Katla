@@ -31,7 +31,7 @@ impl Application {
 
         self.gpu_resource_tracker.set_protected_material(material);
 
-        self.gizmo_resources = GizmoResources {
+        self.editor.gizmo_resources = GizmoResources {
             shaft_mesh,
             cone_mesh,
             cube_mesh,
@@ -50,11 +50,11 @@ impl Application {
     pub(crate) fn hit_test_gizmo(&self, mouse_pos: Vec2) -> Option<GizmoAxis> {
         use crate::components::PerspectiveComponent;
 
-        if self.gizmo_state.entity.is_none() || !self.gizmo_resources.initialized {
+        if self.editor.gizmo_state.entity.is_none() || !self.editor.gizmo_resources.initialized {
             return None;
         }
 
-        let vp = &self.editor_ui.last_viewport_bounds;
+        let vp = &self.editor.editor_ui.last_viewport_bounds;
         let viewport = (vp.min.x(), vp.min.y(), vp.width(), vp.height());
 
         if !vp.contains(mouse_pos) {
@@ -72,7 +72,7 @@ impl Application {
             .map(|p| p.fov)
             .unwrap_or(60.0);
 
-        let viewport_height = self.editor_ui.viewport_size().1 as f32;
+        let viewport_height = self.editor.editor_ui.viewport_size().1 as f32;
         let cam_pos = self
             .world
             .get_component::<crate::components::TransformComponent>(self.camera.borrow().entity)
@@ -81,7 +81,7 @@ impl Application {
 
         let gizmo_scale = compute_gizmo_scale(
             cam_pos,
-            self.gizmo_state.origin,
+            self.editor.gizmo_state.origin,
             fov.to_radians(),
             viewport_height,
             120.0,
@@ -89,12 +89,12 @@ impl Application {
 
         hit_test_axes(
             (mouse_pos.x(), mouse_pos.y()),
-            self.gizmo_state.origin,
+            self.editor.gizmo_state.origin,
             gizmo_scale,
             &view_mat,
             &proj_mat,
             viewport,
-            self.gizmo_state.mode,
+            self.editor.gizmo_state.mode,
             12.0, // pixel threshold
         )
     }
@@ -102,15 +102,15 @@ impl Application {
     /// Begin dragging a gizmo axis.
     #[cfg(feature = "editor")]
     pub(crate) fn begin_gizmo_drag(&mut self, axis: GizmoAxis, mouse_pos: Vec2) {
-        if let Some(entity_id) = self.gizmo_state.entity {
+        if let Some(entity_id) = self.editor.gizmo_state.entity {
             let entity_pos = self
                 .world
                 .get_component::<crate::components::TransformComponent>(entity_id)
                 .map(|t| t.transform.position)
-                .unwrap_or(self.gizmo_state.origin);
+                .unwrap_or(self.editor.gizmo_state.origin);
 
             // Compute a world-space reference point on the drag plane
-            let vp = &self.editor_ui.last_viewport_bounds;
+            let vp = &self.editor.editor_ui.last_viewport_bounds;
             let viewport = (vp.min.x(), vp.min.y(), vp.width(), vp.height());
             let camera = self.camera.borrow();
             let view_mat = camera.get_view_mat(&self.world);
@@ -140,9 +140,13 @@ impl Application {
                 {
                     // Store the initial world position on the plane (not the entity position)
                     let world_pos = entity_pos + delta;
-                    self.gizmo_state.begin_drag(axis, world_pos, entity_pos);
+                    self.editor
+                        .gizmo_state
+                        .begin_drag(axis, world_pos, entity_pos);
                 } else {
-                    self.gizmo_state.begin_drag(axis, entity_pos, entity_pos);
+                    self.editor
+                        .gizmo_state
+                        .begin_drag(axis, entity_pos, entity_pos);
                 }
 
                 // Store initial rotation/scale for rotate/scale modes
@@ -151,9 +155,10 @@ impl Application {
                     .get_component::<crate::components::TransformComponent>(entity_id)
                 {
                     let euler = transform.transform.rotation.to_euler();
-                    self.gizmo_state.drag_start_rotation = Some(euler);
-                    self.gizmo_state.drag_start_scale = Some(transform.transform.scale);
-                    self.gizmo_state.drag_rotation_accum = katla_math::Vec3::new(0.0, 0.0, 0.0);
+                    self.editor.gizmo_state.drag_start_rotation = Some(euler);
+                    self.editor.gizmo_state.drag_start_scale = Some(transform.transform.scale);
+                    self.editor.gizmo_state.drag_rotation_accum =
+                        katla_math::Vec3::new(0.0, 0.0, 0.0);
                 }
             }
         }
@@ -163,21 +168,21 @@ impl Application {
     #[cfg(feature = "editor")]
     pub(crate) fn update_gizmo_interaction(&mut self, mouse_pos: Vec2) {
         // Store previous screen position for rotation delta
-        let prev_screen = self.prev_mouse_screen;
+        let prev_screen = self.editor.prev_mouse_screen;
         let current_screen = (mouse_pos.x(), mouse_pos.y());
-        self.prev_mouse_screen = Some(current_screen);
+        self.editor.prev_mouse_screen = Some(current_screen);
 
-        if self.gizmo_state.is_dragging() {
+        if self.editor.gizmo_state.is_dragging() {
             // Apply the drag based on the current mode
-            let Some(entity_id) = self.gizmo_state.entity else {
+            let Some(entity_id) = self.editor.gizmo_state.entity else {
                 return;
             };
 
-            let Some(axis) = self.gizmo_state.active_axis else {
+            let Some(axis) = self.editor.gizmo_state.active_axis else {
                 return;
             };
 
-            let vp = &self.editor_ui.last_viewport_bounds;
+            let vp = &self.editor.editor_ui.last_viewport_bounds;
             let viewport = (vp.min.x(), vp.min.y(), vp.width(), vp.height());
 
             if !vp.contains(mouse_pos) {
@@ -199,9 +204,9 @@ impl Application {
                     .world
                     .get_component_mut::<crate::components::TransformComponent>(entity_id)
                 {
-                    match self.gizmo_state.mode {
+                    match self.editor.gizmo_state.mode {
                         GizmoMode::Translate => {
-                            if let Some(start_origin) = self.gizmo_state.drag_start_origin
+                            if let Some(start_origin) = self.editor.gizmo_state.drag_start_origin
                                 && let Some(delta) = compute_translate_delta(
                                     axis,
                                     ray_origin,
@@ -211,14 +216,14 @@ impl Application {
                                 )
                             {
                                 transform.transform.position = start_origin + delta;
-                                self.gizmo_state.origin = transform.transform.position;
+                                self.editor.gizmo_state.origin = transform.transform.position;
                             }
                         }
                         GizmoMode::Rotate => {
                             if let Some(prev) = prev_screen {
                                 // Project gizmo origin to screen space for rotation center
                                 let origin_screen = world_to_screen(
-                                    self.gizmo_state.origin,
+                                    self.editor.gizmo_state.origin,
                                     &view_mat,
                                     &proj_mat,
                                     viewport,
@@ -227,24 +232,25 @@ impl Application {
                                 if let Some(center) = origin_screen {
                                     let delta =
                                         compute_rotate_delta(axis, center, current_screen, prev);
-                                    self.gizmo_state.drag_rotation_accum = katla_math::Vec3::new(
-                                        self.gizmo_state.drag_rotation_accum.x()
-                                            + if axis == GizmoAxis::X { delta } else { 0.0 },
-                                        self.gizmo_state.drag_rotation_accum.y()
-                                            + if axis == GizmoAxis::Y { delta } else { 0.0 },
-                                        self.gizmo_state.drag_rotation_accum.z()
-                                            + if axis == GizmoAxis::Z { delta } else { 0.0 },
-                                    );
+                                    self.editor.gizmo_state.drag_rotation_accum =
+                                        katla_math::Vec3::new(
+                                            self.editor.gizmo_state.drag_rotation_accum.x()
+                                                + if axis == GizmoAxis::X { delta } else { 0.0 },
+                                            self.editor.gizmo_state.drag_rotation_accum.y()
+                                                + if axis == GizmoAxis::Y { delta } else { 0.0 },
+                                            self.editor.gizmo_state.drag_rotation_accum.z()
+                                                + if axis == GizmoAxis::Z { delta } else { 0.0 },
+                                        );
 
                                     if let Some((start_pitch, start_yaw, start_roll)) =
-                                        self.gizmo_state.drag_start_rotation
+                                        self.editor.gizmo_state.drag_start_rotation
                                     {
-                                        let new_pitch =
-                                            start_pitch + self.gizmo_state.drag_rotation_accum.x();
-                                        let new_yaw =
-                                            start_yaw + self.gizmo_state.drag_rotation_accum.y();
-                                        let new_roll =
-                                            start_roll + self.gizmo_state.drag_rotation_accum.z();
+                                        let new_pitch = start_pitch
+                                            + self.editor.gizmo_state.drag_rotation_accum.x();
+                                        let new_yaw = start_yaw
+                                            + self.editor.gizmo_state.drag_rotation_accum.y();
+                                        let new_roll = start_roll
+                                            + self.editor.gizmo_state.drag_rotation_accum.z();
                                         transform.transform.rotation = katla_math::Quat::from_euler(
                                             new_pitch, new_yaw, new_roll,
                                         );
@@ -253,7 +259,7 @@ impl Application {
                             }
                         }
                         GizmoMode::Scale => {
-                            if let Some(start_origin) = self.gizmo_state.drag_start_origin
+                            if let Some(start_origin) = self.editor.gizmo_state.drag_start_origin
                                 && let Some(axis_dist) = compute_scale_delta(
                                     axis,
                                     ray_origin,
@@ -261,7 +267,7 @@ impl Application {
                                     start_origin,
                                     camera_forward,
                                 )
-                                && let Some(start_scale) = self.gizmo_state.drag_start_scale
+                                && let Some(start_scale) = self.editor.gizmo_state.drag_start_scale
                             {
                                 let axis_idx = match axis {
                                     GizmoAxis::X => 0,
@@ -270,11 +276,12 @@ impl Application {
                                 };
                                 // Store the initial axis distance on the first drag frame
                                 // to compute relative scale from the drag start
-                                if self.gizmo_state.drag_start_world.is_none() {
-                                    self.gizmo_state.drag_start_world =
+                                if self.editor.gizmo_state.drag_start_world.is_none() {
+                                    self.editor.gizmo_state.drag_start_world =
                                         Some(katla_math::Vec3::new(axis_dist, 0.0, 0.0));
                                 }
-                                let initial_dist = self.gizmo_state.drag_start_world.unwrap().x();
+                                let initial_dist =
+                                    self.editor.gizmo_state.drag_start_world.unwrap().x();
                                 // Scale relative to drag start: ratio of current distance to initial distance
                                 let scale_factor = if initial_dist.abs() > 1e-6 {
                                     axis_dist / initial_dist
@@ -290,9 +297,9 @@ impl Application {
                     }
                 }
             }
-        } else if self.gizmo_state.entity.is_some() {
+        } else if self.editor.gizmo_state.entity.is_some() {
             // Update hover highlight
-            self.gizmo_state.hovered_axis = self.hit_test_gizmo(mouse_pos);
+            self.editor.gizmo_state.hovered_axis = self.hit_test_gizmo(mouse_pos);
         }
     }
 }

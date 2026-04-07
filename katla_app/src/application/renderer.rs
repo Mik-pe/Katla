@@ -22,7 +22,7 @@ impl Application {
         // correct per-frame transient texture.
 
         #[cfg(feature = "editor")]
-        let (viewport_width, viewport_height) = self.editor_ui.viewport_size();
+        let (viewport_width, viewport_height) = self.editor.editor_ui.viewport_size();
         #[cfg(not(feature = "editor"))]
         let (viewport_width, viewport_height) = {
             let extent = self.renderer.swapchain_extent();
@@ -130,7 +130,7 @@ impl Application {
         let scene_draw_list = {
             let draws = draw_list
                 .iter()
-                .filter(|dc| dc.material != self.billboard_resources.material)
+                .filter(|dc| dc.material != self.editor.billboard_resources.material)
                 .cloned()
                 .collect::<Vec<_>>();
             katla_gfx::renderer::DrawList { draws }
@@ -198,7 +198,7 @@ impl Application {
                     {
                         // Only trigger debug readback once to avoid WRITE_AFTER_WRITE hazards
                         // when writing to the same staging buffers multiple consecutive frames
-                        if frame_count == 10 && !self.particle_readback_done {
+                        if frame_count == 10 && !self.debug.particle_readback_done {
                             if particle_system.has_debug_readback() {
                                 // We'll record the copy during frame graph execution
                                 // Just mark that we want to read back this frame
@@ -208,7 +208,7 @@ impl Application {
                                 );
 
                                 // Store a flag to trigger readback after frame execution
-                                self.particle_readback_pending = true;
+                                self.debug.particle_readback_pending = true;
                                 // Set flag in frame graph to record copy commands during execution
                                 self.frame_graph.set_particle_debug_readback(true);
                             } else {
@@ -236,6 +236,7 @@ impl Application {
 
         #[cfg(feature = "editor")]
         let selected_outline_indices = self
+            .editor
             .editor_ui
             .selected_entity
             .map(|entity| self.collect_selected_instance_indices(entity));
@@ -288,8 +289,8 @@ impl Application {
 
         #[cfg(debug_assertions)]
         {
-            if self.particle_readback_pending {
-                self.particle_readback_pending = false;
+            if self.debug.particle_readback_pending {
+                self.debug.particle_readback_pending = false;
 
                 if let Some(ref mut particle_system) = self.renderer.particle_system {
                     match particle_system.read_debug_data() {
@@ -305,7 +306,7 @@ impl Application {
                             debug_data.print_dead_indices(10);
 
                             // Mark readback as done so we don't trigger it again
-                            self.particle_readback_done = true;
+                            self.debug.particle_readback_done = true;
                             log::info!("Particle debug readback complete (will not trigger again)");
 
                             // Check specifically for the test particle at index 0
@@ -369,9 +370,9 @@ impl Application {
 
         // Clear the entity-instance maps for this frame
         #[cfg(feature = "editor")]
-        self.entity_instance_map.clear();
+        self.editor.entity_instance_map.clear();
         #[cfg(feature = "editor")]
-        self.entity_to_instance_indices.clear();
+        self.editor.entity_to_instance_indices.clear();
 
         let entity_count = self.world.entity_count();
         let mut drawable_count = 0;
@@ -424,8 +425,11 @@ impl Application {
 
             #[cfg(feature = "editor")]
             {
-                self.entity_instance_map.insert(instance_index, entity_id);
-                self.entity_to_instance_indices
+                self.editor
+                    .entity_instance_map
+                    .insert(instance_index, entity_id);
+                self.editor
+                    .entity_to_instance_indices
                     .entry(entity_id)
                     .or_default()
                     .push(instance_index);
@@ -467,7 +471,7 @@ impl Application {
 
         let mut indices = Vec::new();
         for entity_id in &entity_set {
-            if let Some(entity_indices) = self.entity_to_instance_indices.get(entity_id) {
+            if let Some(entity_indices) = self.editor.entity_to_instance_indices.get(entity_id) {
                 indices.extend_from_slice(entity_indices);
             }
         }
@@ -480,22 +484,22 @@ impl Application {
         use crate::components::{PerspectiveComponent, TransformComponent};
         use crate::gizmo::*;
 
-        let Some(entity_id) = self.editor_ui.selected_entity else {
-            self.gizmo_state.clear_entity();
+        let Some(entity_id) = self.editor.editor_ui.selected_entity else {
+            self.editor.gizmo_state.clear_entity();
             return;
         };
 
         let Some(transform) = self.world.get_component::<TransformComponent>(entity_id) else {
-            self.gizmo_state.clear_entity();
+            self.editor.gizmo_state.clear_entity();
             return;
         };
 
-        if !self.gizmo_resources.initialized {
+        if !self.editor.gizmo_resources.initialized {
             return;
         }
 
         let position = transform.transform.position;
-        self.gizmo_state.set_entity(entity_id, position);
+        self.editor.gizmo_state.set_entity(entity_id, position);
 
         // Get camera FOV and viewport height for screen-space scaling
         let camera = self.camera.borrow();
@@ -509,7 +513,7 @@ impl Application {
         };
         drop(camera);
 
-        let viewport_height = self.editor_ui.viewport_size().1 as f32;
+        let viewport_height = self.editor.editor_ui.viewport_size().1 as f32;
         let cam_pos = if let Some(t) = self
             .world
             .get_component::<TransformComponent>(self.camera.borrow().entity)
@@ -537,29 +541,29 @@ impl Application {
             .unwrap_or(0)
             + 1;
 
-        let gizmo_draws = match self.gizmo_state.mode {
+        let gizmo_draws = match self.editor.gizmo_state.mode {
             GizmoMode::Translate => generate_translate_draw_calls(
-                &self.gizmo_resources,
+                &self.editor.gizmo_resources,
                 position,
                 gizmo_scale,
-                self.gizmo_state.hovered_axis,
-                self.gizmo_state.active_axis,
+                self.editor.gizmo_state.hovered_axis,
+                self.editor.gizmo_state.active_axis,
                 &mut next_instance,
             ),
             GizmoMode::Rotate => generate_rotate_draw_calls(
-                &self.gizmo_resources,
+                &self.editor.gizmo_resources,
                 position,
                 gizmo_scale,
-                self.gizmo_state.hovered_axis,
-                self.gizmo_state.active_axis,
+                self.editor.gizmo_state.hovered_axis,
+                self.editor.gizmo_state.active_axis,
                 &mut next_instance,
             ),
             GizmoMode::Scale => generate_scale_draw_calls(
-                &self.gizmo_resources,
+                &self.editor.gizmo_resources,
                 position,
                 gizmo_scale,
-                self.gizmo_state.hovered_axis,
-                self.gizmo_state.active_axis,
+                self.editor.gizmo_state.hovered_axis,
+                self.editor.gizmo_state.active_axis,
                 &mut next_instance,
             ),
         };
@@ -579,7 +583,7 @@ impl Application {
         use katla_gfx::renderer::DrawCall;
         use katla_math::Mat4;
 
-        if !self.billboard_resources.initialized {
+        if !self.editor.billboard_resources.initialized {
             return;
         }
 
@@ -601,7 +605,7 @@ impl Application {
         };
         drop(camera);
 
-        let viewport_height = self.editor_ui.viewport_size().1 as f32;
+        let viewport_height = self.editor.editor_ui.viewport_size().1 as f32;
         let fov_rad = fov.to_radians();
 
         let mut next_instance = draw_list
@@ -626,7 +630,11 @@ impl Application {
 
             let position = transform.transform.position;
 
-            let Some(texture_handle) = self.billboard_resources.icon_textures.get(&billboard.icon)
+            let Some(texture_handle) = self
+                .editor
+                .billboard_resources
+                .icon_textures
+                .get(&billboard.icon)
             else {
                 continue;
             };
@@ -654,8 +662,8 @@ impl Application {
             let color = billboard.color.to_linear();
 
             let draw = DrawCall::new(
-                self.billboard_resources.mesh,
-                self.billboard_resources.material,
+                self.editor.billboard_resources.mesh,
+                self.editor.billboard_resources.material,
             )
             .with_transform(transform_mat.to_array())
             .with_color(color.to_array())

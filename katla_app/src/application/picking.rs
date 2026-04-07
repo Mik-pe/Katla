@@ -17,33 +17,33 @@ impl Application {
         if let Ok(Some((_frame, instance_index))) = self.renderer.check_picking_readback() {
             if instance_index == 0 {
                 // Background/empty space was clicked — clear selection
-                if self.editor_ui.selected_entity.is_some() {
+                if self.editor.editor_ui.selected_entity.is_some() {
                     info!("Clicked empty space, clearing selection");
-                    self.editor_ui.selected_entity = None;
+                    self.editor.editor_ui.selected_entity = None;
                 }
             } else {
                 // The shader encodes instance_index + 1, so subtract 1 to get the storage buffer index
                 let storage_index = instance_index - 1;
 
-                if let Some(&entity_id) = self.entity_instance_map.get(&storage_index) {
+                if let Some(&entity_id) = self.editor.entity_instance_map.get(&storage_index) {
                     info!(
                         "Picked entity {:?} (instance_index={}, storage_index={})",
                         entity_id, instance_index, storage_index
                     );
-                    self.editor_ui.selected_entity = Some(entity_id);
+                    self.editor.editor_ui.selected_entity = Some(entity_id);
                 } else {
                     log::debug!(
                         "Picked instance_index={} but no entity mapping found (storage_index={})",
                         instance_index,
                         storage_index
                     );
-                    self.editor_ui.selected_entity = None;
+                    self.editor.editor_ui.selected_entity = None;
                 }
             }
         }
 
         // Queue a new readback if a pick was triggered this frame
-        if let Some((pick_frame, rel_x, rel_y)) = self.pending_pick.take() {
+        if let Some((pick_frame, rel_x, rel_y)) = self.editor.pending_pick.take() {
             if pick_frame != self.frame_count {
                 // Stale pick from a previous frame — discard
                 log::debug!("Discarding stale pending pick from frame {}", pick_frame);
@@ -57,7 +57,7 @@ impl Application {
             // viewport panel (a sub-region of the window). So we need to map panel-local
             // coords to full-texture coords:
             //   physical_x = (rel_x / panel_logical_width) * swapchain_physical_width
-            let vp = &self.editor_ui.last_viewport_bounds;
+            let vp = &self.editor.editor_ui.last_viewport_bounds;
             let panel_width = vp.width().max(1.0);
             let panel_height = vp.height().max(1.0);
             let extent = self.renderer.swapchain_extent();

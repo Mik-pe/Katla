@@ -71,6 +71,51 @@ pub struct ApplicationInfo {
 }
 
 /// Main application struct containing all engine state.
+/// Editor-only state grouped behind a single cfg gate.
+#[cfg(feature = "editor")]
+pub(crate) struct EditorState {
+    /// UI renderer for converting UI draw lists to GPU format
+    pub(crate) ui_renderer: crate::ui::UIRenderer,
+    /// Game engine editor UI
+    pub(crate) editor_ui: crate::ui::EditorUI,
+    /// GUI layout state (panel sizes, positions)
+    pub(crate) gui_state: GuiState,
+    /// Background asset loader thread
+    pub(crate) background_loader: BackgroundLoader,
+    /// Mapping of thumbnail paths to their uploaded texture handles
+    pub(crate) thumbnail_texture_handles: HashMap<PathBuf, katla_gfx::TextureHandle>,
+    /// Maps instance_index -> EntityId for resolving GPU picking results.
+    /// Populated each frame during collect_draws_with_context.
+    pub(crate) entity_instance_map: std::collections::HashMap<u32, katla_ecs::EntityId>,
+    /// Reverse map: EntityId -> Vec<instance_index> for outline selection.
+    /// Populated each frame alongside entity_instance_map.
+    pub(crate) entity_to_instance_indices: std::collections::HashMap<katla_ecs::EntityId, Vec<u32>>,
+    /// Pending picking operation: (frame_number, mouse_x_physical, mouse_y_physical).
+    /// Set on left-click in viewport, processed after the next render.
+    pub(crate) pending_pick: Option<(usize, f32, f32)>,
+    /// Bindless texture index for the stencil indicator R8 texture.
+    /// Passed to the tonemap shader each frame via emission_idx field.
+    pub(crate) stencil_indicator_bindless_index: Option<u32>,
+    /// Gizmo state (mode, drag, hover).
+    pub(crate) gizmo_state: crate::gizmo::GizmoState,
+    /// Gizmo GPU resources (meshes, material).
+    pub(crate) gizmo_resources: crate::gizmo::GizmoResources,
+    /// Billboard GPU resources (mesh, material, icon textures).
+    pub(crate) billboard_resources: crate::billboard::BillboardResources,
+    /// Previous frame's mouse screen position (for gizmo rotation drag delta).
+    pub(crate) prev_mouse_screen: Option<(f32, f32)>,
+}
+
+/// Debug-only state behind debug_assertions gate.
+#[cfg(debug_assertions)]
+pub(crate) struct DebugState {
+    /// Flag to trigger particle debug readback at frame 10
+    pub(crate) particle_readback_pending: bool,
+    /// Flag to ensure particle debug readback only happens once
+    pub(crate) particle_readback_done: bool,
+}
+
+/// Main application struct containing all engine state.
 pub struct Application {
     pub(crate) window: Window,
     pub(crate) renderer: VulkanRenderer,
@@ -87,25 +132,10 @@ pub struct Application {
     pub(crate) resources: ResourceManager,
     /// Immediate mode UI context
     pub(crate) ui_context: katla_ui::UiContext,
-    /// UI renderer for converting UI draw lists to GPU format
-    #[cfg(feature = "editor")]
-    pub(crate) ui_renderer: crate::ui::UIRenderer,
-    /// Game engine editor UI
-    #[cfg(feature = "editor")]
-    pub(crate) editor_ui: crate::ui::EditorUI,
     /// User preferences (theme, settings)
     pub(crate) preferences: Preferences,
-    /// GUI layout state (panel sizes, positions)
-    #[cfg(feature = "editor")]
-    pub(crate) gui_state: GuiState,
     /// DPI scale factor (physical pixels per logical pixel)
     pub(crate) scale_factor: f32,
-    /// Background asset loader thread
-    #[cfg(feature = "editor")]
-    pub(crate) background_loader: BackgroundLoader,
-    /// Mapping of thumbnail paths to their uploaded texture handles
-    #[cfg(feature = "editor")]
-    pub(crate) thumbnail_texture_handles: HashMap<PathBuf, katla_gfx::TextureHandle>,
     /// Application start time for double-click timestamp calculation
     pub(crate) start_time: Instant,
     /// Default PBR material handle for geometry rendering
@@ -119,44 +149,16 @@ pub struct Application {
     /// GPU animation system for pose evaluation (ECS queries only, GPU resources on renderer)
     pub(crate) gpu_animation_system:
         Option<crate::systems::gpu_animation_system::GpuAnimationSystem>,
-    /// Flag to trigger particle debug readback at frame 10
-    #[cfg(debug_assertions)]
-    pub(crate) particle_readback_pending: bool,
-    /// Flag to ensure particle debug readback only happens once
-    #[cfg(debug_assertions)]
-    pub(crate) particle_readback_done: bool,
-    /// Maps instance_index -> EntityId for resolving GPU picking results.
-    /// Populated each frame during collect_draws_with_context.
-    #[cfg(feature = "editor")]
-    pub(crate) entity_instance_map: std::collections::HashMap<u32, katla_ecs::EntityId>,
-    /// Reverse map: EntityId -> Vec<instance_index> for outline selection.
-    /// Populated each frame alongside entity_instance_map.
-    #[cfg(feature = "editor")]
-    entity_to_instance_indices: std::collections::HashMap<katla_ecs::EntityId, Vec<u32>>,
-    /// Pending picking operation: (frame_number, mouse_x_physical, mouse_y_physical).
-    /// Set on left-click in viewport, processed after the next render.
-    #[cfg(feature = "editor")]
-    pub(crate) pending_pick: Option<(usize, f32, f32)>,
-    /// Bindless texture index for the stencil indicator R8 texture.
-    /// Passed to the tonemap shader each frame via emission_idx field.
-    #[cfg(feature = "editor")]
-    pub(crate) stencil_indicator_bindless_index: Option<u32>,
     /// Whether the window is currently minimized (zero extent).
     pub(crate) minimized: bool,
     /// Tracks GPU resource reference counts for automatic cleanup on entity/component destruction.
     pub(crate) gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker,
-    /// Gizmo state (mode, drag, hover).
+    /// Editor-only state (UI, picking, gizmos, billboards)
     #[cfg(feature = "editor")]
-    pub(crate) gizmo_state: crate::gizmo::GizmoState,
-    /// Gizmo GPU resources (meshes, material).
-    #[cfg(feature = "editor")]
-    pub(crate) gizmo_resources: crate::gizmo::GizmoResources,
-    /// Billboard GPU resources (mesh, material, icon textures).
-    #[cfg(feature = "editor")]
-    pub(crate) billboard_resources: crate::billboard::BillboardResources,
-    /// Previous frame's mouse screen position (for gizmo rotation drag delta).
-    #[cfg(feature = "editor")]
-    pub(crate) prev_mouse_screen: Option<(f32, f32)>,
+    pub(crate) editor: EditorState,
+    /// Debug-only state (particle readback)
+    #[cfg(debug_assertions)]
+    pub(crate) debug: DebugState,
     /// Hook called once after build(), before the event loop.
     pub(crate) on_init: Option<builder::InitHook>,
     /// Hook called each frame between world.update(dt) and rendering.
@@ -183,7 +185,7 @@ impl ApplicationHandler for Application {
         if let DeviceEvent::MouseMotion { delta } = event {
             // Don't track mouse motion for orbit camera when gizmo is active
             #[cfg(feature = "editor")]
-            if self.gizmo_state.is_dragging() {
+            if self.editor.gizmo_state.is_dragging() {
                 return;
             }
             let input = self
@@ -222,33 +224,40 @@ impl ApplicationHandler for Application {
             #[cfg(feature = "editor")]
             if let ElementState::Pressed = state {
                 let mouse_pos = self.ui_context.input.mouse_pos;
-                self.editor_ui.update_focused_panel_from_click(mouse_pos);
+                self.editor
+                    .editor_ui
+                    .update_focused_panel_from_click(mouse_pos);
 
                 // Trigger GPU picking on left-click in viewport
                 if *button == winit::event::MouseButton::Left
-                    && self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
-                    && self.editor_ui.last_viewport_bounds.contains(mouse_pos)
+                    && self.editor.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
+                    && self
+                        .editor
+                        .editor_ui
+                        .last_viewport_bounds
+                        .contains(mouse_pos)
                 {
                     // Check if the click hits a gizmo axis first
-                    self.gizmo_state.consumed_click = false;
+                    self.editor.gizmo_state.consumed_click = false;
 
                     if let Some(axis) = self.hit_test_gizmo(mouse_pos) {
                         self.begin_gizmo_drag(axis, mouse_pos);
                     } else {
                         // Store viewport-relative logical coordinates for the picking readback.
-                        let vp = self.editor_ui.last_viewport_bounds;
+                        let vp = self.editor.editor_ui.last_viewport_bounds;
                         let rel_x = mouse_pos.x() - vp.min.x();
                         let rel_y = mouse_pos.y() - vp.min.y();
-                        self.pending_pick = Some((self.frame_count, rel_x, rel_y));
+                        self.editor.pending_pick = Some((self.frame_count, rel_x, rel_y));
                     }
                 }
             }
 
             if let Some(action) = self.input_mapper.get_action(&binding) {
                 #[cfg(feature = "editor")]
-                let send_input = self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
-                    && !self.gizmo_state.is_dragging()
-                    && !self.gizmo_state.consumed_click;
+                let send_input = self.editor.editor_ui.focused_panel
+                    == crate::ui::FocusedPanel::Viewport
+                    && !self.editor.gizmo_state.is_dragging()
+                    && !self.editor.gizmo_state.consumed_click;
 
                 #[cfg(not(feature = "editor"))]
                 let send_input = true;
@@ -279,9 +288,9 @@ impl ApplicationHandler for Application {
             // End gizmo drag on mouse release
             if matches!(state, ElementState::Released)
                 && *button == winit::event::MouseButton::Left
-                && self.gizmo_state.is_dragging()
+                && self.editor.gizmo_state.is_dragging()
             {
-                self.gizmo_state.end_drag();
+                self.editor.gizmo_state.end_drag();
             }
         }
 
@@ -316,7 +325,7 @@ impl ApplicationHandler for Application {
                                 .expect("Failed to update tonemap texture index");
                         } else if name == "viewport_0" {
                             #[cfg(feature = "editor")]
-                            self.editor_ui.set_viewport_bindless_index(slot);
+                            self.editor.editor_ui.set_viewport_bindless_index(slot);
                         }
                     }
 
@@ -373,7 +382,13 @@ impl ApplicationHandler for Application {
                 {
                     let mouse_pos = self.ui_context.input.mouse_pos;
                     let ui_claimed = self.ui_context.hover_z_index() > katla_ui::z_index::DEFAULT;
-                    if !ui_claimed && self.editor_ui.last_viewport_bounds.contains(mouse_pos) {
+                    if !ui_claimed
+                        && self
+                            .editor
+                            .editor_ui
+                            .last_viewport_bounds
+                            .contains(mouse_pos)
+                    {
                         let wheel_y = match delta {
                             winit::event::MouseScrollDelta::LineDelta(_, y) => y,
                             winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
@@ -421,11 +436,11 @@ impl ApplicationHandler for Application {
                     #[cfg(feature = "editor")]
                     if event.state == ElementState::Pressed
                         && keycode == KeyCode::KeyF
-                        && self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
+                        && self.editor.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
                         && !self.current_modifiers.control_key()
                         && !self.current_modifiers.shift_key()
                         && !self.current_modifiers.alt_key()
-                        && let Some(entity_id) = self.editor_ui.selected_entity
+                        && let Some(entity_id) = self.editor.editor_ui.selected_entity
                     {
                         self.focus_camera_on_entity(entity_id);
                     }
@@ -436,7 +451,7 @@ impl ApplicationHandler for Application {
                         && keycode == KeyCode::KeyP
                         && self.current_modifiers.control_key()
                     {
-                        let state = &mut self.editor_ui.particle_inspector_state;
+                        let state = &mut self.editor.editor_ui.particle_inspector_state;
                         if state.panel.is_visible() {
                             state.panel.close();
                         } else {
@@ -459,17 +474,18 @@ impl ApplicationHandler for Application {
                         && self.current_modifiers.control_key()
                         && !self.current_modifiers.shift_key()
                         && !self.current_modifiers.alt_key()
-                        && !self.editor_ui.prev_want_capture_keyboard
+                        && !self.editor.editor_ui.prev_want_capture_keyboard
                     {
-                        self.editor_ui
+                        self.editor
+                            .editor_ui
                             .pending_actions
                             .push(crate::ui::EditorAction::SaveScene);
                     }
 
                     if let Some(action) = self.input_mapper.get_action(&binding) {
                         #[cfg(feature = "editor")]
-                        let send_input =
-                            self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport;
+                        let send_input = self.editor.editor_ui.focused_panel
+                            == crate::ui::FocusedPanel::Viewport;
 
                         #[cfg(not(feature = "editor"))]
                         let send_input = true;
@@ -494,17 +510,22 @@ impl ApplicationHandler for Application {
 
                     #[cfg(feature = "editor")]
                     if event.state == ElementState::Pressed
-                        && self.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
+                        && self.editor.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
                         && !self.ui_context.input.want_capture_keyboard
                     {
                         // Gizmo mode shortcuts
                         if keycode == KeyCode::KeyW {
-                            self.gizmo_state
+                            self.editor
+                                .gizmo_state
                                 .set_mode(crate::gizmo::GizmoMode::Translate);
                         } else if keycode == KeyCode::KeyE {
-                            self.gizmo_state.set_mode(crate::gizmo::GizmoMode::Rotate);
+                            self.editor
+                                .gizmo_state
+                                .set_mode(crate::gizmo::GizmoMode::Rotate);
                         } else if keycode == KeyCode::KeyR {
-                            self.gizmo_state.set_mode(crate::gizmo::GizmoMode::Scale);
+                            self.editor
+                                .gizmo_state
+                                .set_mode(crate::gizmo::GizmoMode::Scale);
                         }
 
                         if keycode == KeyCode::Escape {

@@ -369,7 +369,8 @@ impl Application {
 
         // Set viewport bindless index in editor UI
         #[cfg(feature = "editor")]
-        self.editor_ui
+        self.editor
+            .editor_ui
             .set_viewport_bindless_index(viewport_bindless_index);
 
         // Register stencil indicator texture with bindless for tonemap shader
@@ -386,7 +387,7 @@ impl Application {
             );
 
             // Store stencil indicator bindless index for passing to overlay each frame
-            self.stencil_indicator_bindless_index = Some(stencil_indicator_index);
+            self.editor.stencil_indicator_bindless_index = Some(stencil_indicator_index);
 
             // Set overlay texture indices so the wallhack overlay shader can read LDR + indicator
             self.frame_graph
@@ -450,7 +451,7 @@ impl Application {
             icon_textures.insert(icon, texture_handle);
         }
 
-        self.billboard_resources = BillboardResources {
+        self.editor.billboard_resources = BillboardResources {
             mesh,
             material,
             icon_textures,
