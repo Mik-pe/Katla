@@ -1,0 +1,39 @@
+{
+  "featureId": "fix-billboard-detection-heuristic",
+  "reviewedAt": "2026-04-08T01:30:00.000Z",
+  "commitId": "731f9de",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix correctly addresses the blocking bug from the prior review. An is_billboard: bool flag was added to the DrawCall struct, initialized to false in both constructors, with a with_billboard() builder method. collect_billboard_draw_calls() now sets is_billboard = true via the builder. draw_helpers.rs checks draw_call.is_billboard instead of mesh.has_attribute(TexCoord0). The fix follows the existing pattern for skinned meshes (draw_call.skeleton) and is minimal (14 insertions, 5 deletions across 3 files). All verification commands passed: cargo fmt, cargo check, cargo clippy, cargo test (207 tests), and cargo run -- -s (25-frame headless validation). Two non-blocking stale doc comments remain from the original feature.",
+    "issues": [
+      {
+        "file": "katla_gfx/src/render_graph/frame/draw_helpers.rs",
+        "line": 48,
+        "severity": "non_blocking",
+        "description": "Stale doc comment on draw_meshes_with_skinning() says 'Billboard draws are detected by mesh vertex layout (presence of TexCoord0)' but the fix changed detection to use draw_call.is_billboard. Should say 'Billboard draws are identified by the is_billboard flag on DrawCall'."
+      },
+      {
+        "file": "katla_gfx/src/render_graph/frame/draw_helpers.rs",
+        "line": 38,
+        "severity": "non_blocking",
+        "description": "Stale doc comment on DrawParams.billboard_pipeline says 'When a draw call's mesh has TexCoord0, this pipeline is used instead of the base pipeline.' Should reference the is_billboard flag instead."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker correctly followed the existing pattern for skinned meshes (draw_call.skeleton flag + with_skeleton() builder) when adding the billboard flag. This pattern — using a boolean/handle field on DrawCall set by the katla_app caller — is the canonical way to communicate specialized draw behavior to katla_gfx's draw_helpers without violating dependency boundaries. This convention is now used for both skinned and billboard draws and should be the default approach for any future specialized draw types.",
+      "evidence": "katla_gfx/src/renderer/types.rs:163 (is_billboard field), :171 (with_billboard builder) mirrors :159 (skeleton field), :296 (with_skeleton builder). draw_helpers.rs:113 checks draw_call.is_billboard the same way line 98 checks draw_call.skeleton."
+    },
+    {
+      "area": "conventions",
+      "observation": "When updating doc comments alongside code changes, the worker updated the inline comment at the detection site (draw_helpers.rs:111-112) but missed the two doc comments on the DrawParams struct field (line 38) and the function (line 48). Both still reference the old TexCoord0 heuristic. Stale documentation can mislead future contributors.",
+      "evidence": "katla_gfx/src/render_graph/frame/draw_helpers.rs:38 says 'When a draw call's mesh has TexCoord0', line 48 says 'detected by mesh vertex layout (presence of TexCoord0)' — both should reference is_billboard flag."
+    }
+  ],
+  "addressesFailureFrom": ".factory/validation/billboard-picking/scrutiny/reviews/integrate-billboard-depth-prepass.json",
+  "summary": "PASS — The fix adequately addresses the blocking issue from the original review. The broken mesh.has_attribute(TexCoord0) heuristic in draw_helpers.rs has been replaced with an explicit is_billboard: bool flag on DrawCall, set only in collect_billboard_draw_calls(). This ensures only actual billboard draws route through the billboard depth pipeline, while all regular PBR meshes correctly use the static depth pipeline. The fix follows the established pattern for skinned meshes, adds minimal code (14+/5- across 3 files), and passes all verification (207 tests, clean build, headless GPU validation). Two non-blocking stale doc comments remain that should be updated separately."
+}
