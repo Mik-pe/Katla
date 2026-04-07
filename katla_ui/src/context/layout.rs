@@ -10,7 +10,7 @@ use super::UiContext;
 
 /// Layout direction for container widgets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LayoutDirection {
+pub(crate) enum LayoutDirection {
     /// Horizontal layout (left to right).
     Horizontal,
     /// Vertical layout (top to bottom).
@@ -19,19 +19,19 @@ pub enum LayoutDirection {
 
 /// Layout state for nested containers.
 #[derive(Debug, Clone)]
-pub struct LayoutState {
+pub(crate) struct LayoutState {
     /// Layout direction.
-    pub direction: LayoutDirection,
+    pub(crate) direction: LayoutDirection,
     /// Starting position for this layout.
-    pub start_pos: Vec2,
+    pub(crate) start_pos: Vec2,
     /// Current position within the layout.
-    pub cursor: Vec2,
+    pub(crate) cursor: Vec2,
     /// Maximum item size seen so far (for alignment).
-    pub max_item_size: Vec2,
+    pub(crate) max_item_size: Vec2,
     /// Spacing between items.
-    pub spacing: f32,
+    pub(crate) spacing: f32,
     /// Number of columns for grid layouts (0 for non-grid layouts).
-    pub grid_columns: usize,
+    pub(crate) grid_columns: usize,
 }
 
 impl UiContext {

@@ -18,7 +18,7 @@ mod scalar {
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
     pub mod mat4;
 
-    #[allow(dead_code)]
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
     pub mod quat;
     pub mod vec2;
     pub mod vec3;

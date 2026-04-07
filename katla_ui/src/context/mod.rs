@@ -11,6 +11,7 @@ mod id;
 mod input;
 mod interaction;
 mod layout;
+use layout::LayoutState;
 mod popup;
 mod widgets;
 pub mod z_index;
@@ -22,7 +23,6 @@ use crate::input::UiInputState;
 use crate::style::UiStyle;
 use crate::text::{FontId, FontSystem};
 
-pub use layout::LayoutState;
 pub use popup::{CloseBehavior, Popup, PopupPosition, PopupStyle};
 pub use widgets::{ScrollArea, ScrollAreaState};
 
