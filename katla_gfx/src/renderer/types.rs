@@ -149,6 +149,8 @@ pub struct DrawCall {
     pub sort_key: Option<u64>,
     /// Skeleton handle for GPU skinning (Set 2).
     pub skeleton: SkeletonHandle,
+    /// Whether this draw call is a billboard (camera-facing icon).
+    pub is_billboard: bool,
     /// Per-instance data (transform, color, PBR). Always contains at least one element.
     pub instances: Vec<InstanceData>,
 }
@@ -164,6 +166,7 @@ impl DrawCall {
             transparent: false,
             sort_key: None,
             skeleton: SkeletonHandle::NONE,
+            is_billboard: false,
             instances: vec![InstanceData::default()],
         }
     }
@@ -185,6 +188,7 @@ impl DrawCall {
             transparent: false,
             sort_key: None,
             skeleton: SkeletonHandle::NONE,
+            is_billboard: false,
             instances,
         }
     }
@@ -281,6 +285,12 @@ impl DrawCall {
     /// Set skeleton handle for GPU skinning.
     pub fn with_skeleton(mut self, skeleton: SkeletonHandle) -> Self {
         self.skeleton = skeleton;
+        self
+    }
+
+    /// Mark this draw call as a billboard (camera-facing icon).
+    pub fn with_billboard(mut self) -> Self {
+        self.is_billboard = true;
         self
     }
 

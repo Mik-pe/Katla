@@ -671,7 +671,8 @@ impl Application {
             .with_transform(transform_mat.to_array())
             .with_color(color.to_array())
             .with_instance_index(idx)
-            .with_emission(bindless_idx as f32);
+            .with_emission(bindless_idx as f32)
+            .with_billboard();
 
             draw_list.push(draw);
 
