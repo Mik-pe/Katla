@@ -1,0 +1,139 @@
+{
+  "groupId": "struct-decomposition",
+  "testedAt": "2026-04-07T22:59:00Z",
+  "isolation": {
+    "type": "pure-rust-workspace",
+    "workingDirectory": "C:\\dev\\katla",
+    "tools": ["cargo"]
+  },
+  "toolsUsed": ["cargo check", "cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-STRUCT-011",
+      "title": "EditorState groups all cfg(editor) fields",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Read Application struct in katla_app/src/application/mod.rs",
+          "expected": "EditorState struct with 13 fields, single cfg(feature='editor') on Application.editor field",
+          "observed": "EditorState struct at line 76 has 13 pub(crate) fields (lines 78-106): ui_renderer, editor_ui, gui_state, background_loader, thumbnail_texture_handles, entity_instance_map, entity_to_instance_indices, pending_pick, stencil_indicator_bindless_index, gizmo_state, gizmo_resources, billboard_resources, prev_mouse_screen. Application struct has exactly one #[cfg(feature = 'editor')] field: editor: EditorState (line 157). Zero remaining per-field cfg annotations on Application fields."
+        },
+        {
+          "action": "cargo check -p katla_app",
+          "expected": "Compilation succeeds",
+          "observed": "Exit code 0, compilation successful"
+        }
+      ],
+      "evidence": {
+        "editorStateFieldCount": 13,
+        "editorStateFields": [
+          "ui_renderer",
+          "editor_ui",
+          "gui_state",
+          "background_loader",
+          "thumbnail_texture_handles",
+          "entity_instance_map",
+          "entity_to_instance_indices",
+          "pending_pick",
+          "stencil_indicator_bindless_index",
+          "gizmo_state",
+          "gizmo_resources",
+          "billboard_resources",
+          "prev_mouse_screen"
+        ],
+        "perFieldCfgOnApplication": 0,
+        "cargoCheck": "exit code 0"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-STRUCT-012",
+      "title": "DebugState groups debug-assertion fields",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Read DebugState struct in katla_app/src/application/mod.rs",
+          "expected": "DebugState struct with 2 fields, single cfg(debug_assertions) on Application.debug field",
+          "observed": "DebugState struct at line 111 has 2 pub(crate) fields (lines 113-115): particle_readback_pending, particle_readback_done. Application struct has exactly one #[cfg(debug_assertions)] field: debug: DebugState (line 160). Zero remaining per-field cfg(debug_assertions) annotations on Application fields."
+        },
+        {
+          "action": "cargo check -p katla_app",
+          "expected": "Compilation succeeds",
+          "observed": "Exit code 0, compilation successful"
+        }
+      ],
+      "evidence": {
+        "debugStateFieldCount": 2,
+        "debugStateFields": [
+          "particle_readback_pending",
+          "particle_readback_done"
+        ],
+        "perFieldCfgOnApplication": 0,
+        "cargoCheck": "exit code 0"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-STRUCT-013",
+      "title": "Non-editor build compiles without EditorState",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "cargo check -p katla_app --no-default-features",
+          "expected": "Exit code 0",
+          "observed": "Exit code 0. Compilation succeeded with 6 dead_code warnings for billboard_icons.rs (expected: billboard code is editor-gated, unused in non-editor build). No compilation errors."
+        }
+      ],
+      "evidence": {
+        "exitCode": 0,
+        "warnings": "6 dead_code warnings in billboard_icons.rs (expected in non-editor build)",
+        "errors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-STRUCT-014",
+      "title": "Release build compiles without DebugState",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "cargo check -p katla_app --release",
+          "expected": "Exit code 0",
+          "observed": "Exit code 0. Compilation succeeded with 1 unused_imports warning in builder.rs (info and warn imports unused in release profile). No compilation errors. DebugState (cfg(debug_assertions)) correctly excluded."
+        }
+      ],
+      "evidence": {
+        "exitCode": 0,
+        "warnings": "1 unused_imports warning in builder.rs (expected in release profile)",
+        "errors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-STRUCT-015",
+      "title": "All workspace tests pass after struct decomposition",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "cargo test --workspace",
+          "expected": "Zero failures",
+          "observed": "All tests passed. katla_app: 202 tests passed, 0 failed. katla_ecs: 27 tests passed, 0 failed. katla_gfx: 0 tests, 1 test suite, 4 doc-tests passed. katla_math: 3 doc-tests passed. katla_ui: 48 doc-tests ignored. katla_icons: 2 doc-tests ignored. Total: zero FAILED entries across entire workspace."
+        }
+      ],
+      "evidence": {
+        "exitCode": 0,
+        "testResults": {
+          "katla_app": "202 passed, 0 failed",
+          "katla_ecs": "27 passed, 0 failed",
+          "katla_gfx": "4 doc-tests passed, 0 failed",
+          "katla_math": "3 doc-tests passed, 0 failed"
+        },
+        "failures": 0
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 5 assertions: 5 passed. EditorState correctly groups 13 editor-cfg-gated fields with zero per-field cfg remaining on Application. DebugState correctly groups 2 debug-assertion fields. Both --no-default-features and --release builds compile cleanly. Full workspace test suite passes with zero failures."
+}

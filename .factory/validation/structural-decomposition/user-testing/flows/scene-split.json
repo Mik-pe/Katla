@@ -1,0 +1,190 @@
+{
+  "group": "scene-split",
+  "testedAt": "2026-04-07T22:59:00Z",
+  "isolation": {
+    "type": "pure-rust-workspace",
+    "workingDirectory": "C:\\dev\\katla",
+    "tool": "cargo CLI"
+  },
+  "toolsUsed": ["cargo test", "cargo check"],
+  "assertions": [
+    {
+      "id": "VAL-STRUCT-001",
+      "title": "All scene tests preserved and passing",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_app scene::",
+          "expected": "All scene tests pass with ok status",
+          "observed": "54 tests ran, all 54 passed (ok). Includes 7 migration tests and 47 scene tests."
+        }
+      ],
+      "evidence": {
+        "testOutput": "running 54 tests — all 54 ok. 0 failed; 0 ignored; 148 filtered out.",
+        "testNames": [
+          "scene::migration::tests::test_migration_runs_on_mismatch",
+          "scene::migration::tests::test_migration_same_version_is_noop",
+          "scene::migration::tests::test_v1_v2_migration_stub",
+          "scene::migration::tests::test_forward_compatibility_no_panic",
+          "scene::migration::tests::test_forward_compatibility_error",
+          "scene::migration::tests::test_migration_bumps_version",
+          "scene::migration::tests::test_migration_preserves_data",
+          "scene::tests::test_build_default_scene_entity_count",
+          "scene::tests::test_build_default_scene_fox_initial_state",
+          "scene::tests::test_build_default_scene_all_entities_named",
+          "scene::tests::test_build_default_scene_emitters",
+          "scene::tests::test_build_default_scene_lights",
+          "scene::tests::test_build_default_scene_pbr_grid",
+          "scene::tests::test_component_remove_gpu_cleanup",
+          "scene::tests::test_component_remove_emits_correct_event",
+          "scene::tests::test_component_add_events",
+          "scene::tests::test_animation_round_trip",
+          "scene::tests::test_all_entity_source_variants_round_trip",
+          "scene::tests::test_empty_scene",
+          "scene::tests::test_default_scene_matches_disk",
+          "scene::tests::test_entity_destroy_gpu_cleanup",
+          "scene::tests::test_build_default_scene_round_trip",
+          "scene::tests::test_entity_destruction_cleanup",
+          "scene::tests::test_entity_count_preservation",
+          "scene::tests::test_default_scene_round_trip",
+          "scene::tests::test_forward_compatibility_new_entity_source_variant",
+          "scene::tests::test_full_editor_workflow",
+          "scene::tests::test_full_default_scene_like_serialization",
+          "scene::tests::test_forward_compatibility_unknown_struct_fields",
+          "scene::tests::test_gltf_texture_tracking",
+          "scene::tests::test_gltf_round_trip",
+          "scene::tests::test_gltf_entity_with_animation_round_trip",
+          "scene::tests::test_hierarchy_preservation",
+          "scene::tests::test_metadata_preservation",
+          "scene::tests::test_load_spawn_integration",
+          "scene::tests::test_particle_emitter_descriptor_round_trip",
+          "scene::tests::test_parent_child_relationships_round_trip",
+          "scene::tests::test_point_light_round_trip",
+          "scene::tests::test_particle_emitter_round_trip",
+          "scene::tests::test_primitive_round_trip",
+          "scene::tests::test_point_light_descriptor_round_trip",
+          "scene::tests::test_repeated_load_no_leak",
+          "scene::tests::test_resource_counts_create_destroy_sequence",
+          "scene::tests::test_scene_load_gpu_cleanup_tracker_logic",
+          "scene::tests::test_scene_version_defaults",
+          "scene::tests::test_scene_serialized_output_is_human_readable",
+          "scene::tests::test_scene_round_trip",
+          "scene::tests::test_scene_with_entities_round_trip",
+          "scene::tests::test_shared_resources_safe",
+          "scene::tests::test_unknown_fields_ignored",
+          "scene::tests::test_transform_persistence",
+          "scene::tests::test_velocity_round_trip",
+          "scene::tests::test_version_field_present",
+          "scene::tests::test_regenerate_default_scene"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-STRUCT-002",
+      "title": "Extracted scene submodules compile and are reachable",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Check katla_app/src/scene/ for required files",
+          "expected": "tests.rs, default_scene.rs, serialization.rs, spawning.rs all exist",
+          "observed": "tests.rs, default_scene.rs, serialization.rs exist. spawning.rs is MISSING. Additional files present: descriptors.rs, entity_source.rs, migration.rs."
+        },
+        {
+          "action": "Verify submodules declared in mod.rs",
+          "expected": "All extracted files declared as submodules",
+          "observed": "mod.rs declares: default_scene, descriptors, entity_source, migration, serialization, tests. spawning is not declared (file does not exist)."
+        },
+        {
+          "action": "Run cargo check -p katla_app",
+          "expected": "Exit code 0",
+          "observed": "Exit code 0 — compilation succeeds"
+        }
+      ],
+      "evidence": {
+        "directoryListing": ["default_scene.rs", "descriptors.rs", "entity_source.rs", "migration.rs", "mod.rs", "serialization.rs", "tests.rs"],
+        "missingFiles": ["spawning.rs"],
+        "cargoCheckExitCode": 0
+      },
+      "issues": "spawning.rs does not exist under katla_app/src/scene/. The assertion requires this file to be present. The remaining required files (tests.rs, default_scene.rs, serialization.rs) exist and compile correctly."
+    },
+    {
+      "id": "VAL-STRUCT-003",
+      "title": "scene/mod.rs reduced to module declarations",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Count lines in scene/mod.rs",
+          "expected": "Line count <= 80",
+          "observed": "15 lines"
+        },
+        {
+          "action": "Verify content is only module declarations and re-exports",
+          "expected": "Module declarations and pub use statements only",
+          "observed": "File contains 5 pub mod declarations, 1 cfg(test) mod declaration, and 3 pub use re-export blocks"
+        }
+      ],
+      "evidence": {
+        "lineCount": 15,
+        "limit": 80,
+        "cargoCheckExitCode": 0
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-STRUCT-004",
+      "title": "cfg-gated test module conditionally compiled",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Check tests.rs is gated with #[cfg(test)]",
+          "expected": "#[cfg(test)] present before mod tests declaration",
+          "observed": "#[cfg(test)] found in mod.rs before 'mod tests;'"
+        },
+        {
+          "action": "Run cargo check -p katla_app --release",
+          "expected": "Exit code 0 (tests excluded from release check)",
+          "observed": "Exit code 0 (1 warning: unused imports in builder.rs, unrelated)"
+        },
+        {
+          "action": "Run cargo test -p katla_app scene::",
+          "expected": "All scene tests compile and run",
+          "observed": "54 tests ran, all passed"
+        }
+      ],
+      "evidence": {
+        "cfgGateFound": true,
+        "cargoCheckReleaseExitCode": 0,
+        "cargoTestSceneExitCode": 0,
+        "testsRunCount": 54
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-STRUCT-005",
+      "title": "Public API of scene module unchanged",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo check --workspace",
+          "expected": "Zero compilation errors across all crates",
+          "observed": "Finished dev profile with exit code 0. No errors."
+        }
+      ],
+      "evidence": {
+        "cargoCheckWorkspaceExitCode": 0,
+        "compilationErrors": 0,
+        "reexportsInModRs": [
+          "pub use default_scene::{DEFAULT_SCENE_PATH, build_default_scene}",
+          "pub use descriptors::{AnimationDescriptor, DrawableDescriptor, EntityDescriptor, ParticleEmitterDescriptor, PointLightDescriptor, Scene, TransformDescriptor, VelocityDescriptor}",
+          "pub use entity_source::EntitySource",
+          "pub use serialization::{SCENE_VERSION, SceneManager, ron_pretty_config}"
+        ]
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 5 assertions: 4 passed, 1 failed (VAL-STRUCT-002: spawning.rs does not exist under katla_app/src/scene/). All scene tests (54) pass, mod.rs is 15 lines (well under 80 limit), #[cfg(test)] gate is properly applied, and the full workspace compiles with zero errors."
+}
