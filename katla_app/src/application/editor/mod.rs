@@ -31,7 +31,9 @@ pub fn upload_font_atlas(app: &mut Application) {
             app.renderer.create_ui_font_atlas(width, height, data);
 
             if let Some(bindless_slot) = app.renderer.ui_renderer.font_atlas_bindless_slot() {
-                app.ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
+                app.editor
+                    .ui_renderer
+                    .set_font_atlas_bindless_slot(bindless_slot);
             }
 
             app.ui_context.fonts.clear_atlas_resized();
@@ -51,7 +53,7 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     let scale_factor = app.scale_factor;
 
     // Update per-frame timers
-    app.editor_ui.update_timers(dt);
+    app.editor.editor_ui.update_timers(dt);
 
     // Get physical window size and convert to logical for UI layout
     let size = app.window.inner_size();
@@ -68,27 +70,28 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     let entity_info = collect_entity_info(app);
 
     // Sync gizmo mode to editor UI for toolbar display
-    app.editor_ui.gizmo_mode = match app.gizmo_state.mode {
+    app.editor.editor_ui.gizmo_mode = match app.editor.gizmo_state.mode {
         crate::gizmo::GizmoMode::Translate => 0,
         crate::gizmo::GizmoMode::Rotate => 1,
         crate::gizmo::GizmoMode::Scale => 2,
     };
 
     // Sync inspector editing state from current entity data
-    app.editor_ui.sync_inspector_edit_state(&entity_info);
+    app.editor.editor_ui.sync_inspector_edit_state(&entity_info);
 
     // Set current time for UI animations (cursor blink etc.)
     app.ui_context
         .set_time(app.start_time.elapsed().as_secs_f64());
 
     // Store viewport texture ID before rendering (to avoid borrow issues)
-    let viewport_texture_id = app.editor_ui.viewport_texture_ids[0];
+    let viewport_texture_id = app.editor.editor_ui.viewport_texture_ids[0];
 
     let draw_list = {
         // Collect particle inspector data before rendering
         collect_particle_inspector_data(app);
 
-        app.editor_ui
+        app.editor
+            .editor_ui
             .render(
                 &mut app.ui_context,
                 &app.preferences,
@@ -97,8 +100,8 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
                 &entity_info,
                 fps,
                 app.frame_count,
-                &mut app.background_loader,
-                &app.thumbnail_texture_handles,
+                &mut app.editor.background_loader,
+                &app.editor.thumbnail_texture_handles,
             )
             .clone()
     };
@@ -109,7 +112,7 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     apply_inspector_slider_changes(app);
 
     // Convert draw list to GPU format
-    let ui_renderer = &mut app.ui_renderer;
+    let ui_renderer = &mut app.editor.ui_renderer;
 
     // Register the viewport texture if it exists
     if let Some(texture_id) = viewport_texture_id {
@@ -138,7 +141,7 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
 fn apply_inspector_slider_changes(app: &mut Application) {
     use crate::ui::InspectorEditState;
 
-    let entity_id = match app.editor_ui.inspector_edit_entity {
+    let entity_id = match app.editor.editor_ui.inspector_edit_entity {
         Some(id) => id,
         None => return,
     };
@@ -155,7 +158,7 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         lifetime,
         gravity,
         particle_scale,
-    } = &app.editor_ui.inspector_edit;
+    } = &app.editor.editor_ui.inspector_edit;
 
     // Transform
     if let Some(transform) = app.world.get_component_mut::<TransformComponent>(entity_id) {
@@ -180,7 +183,8 @@ fn apply_inspector_slider_changes(app: &mut Application) {
                 transform.transform.scale = scale_vec;
             }
 
-            app.editor_ui
+            app.editor
+                .editor_ui
                 .pending_actions
                 .push(EditorAction::UpdateTransform {
                     entity_id,
@@ -200,7 +204,8 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         let range_changed = (*light_range - light.range).abs() > 1e-4;
 
         if color_changed || intensity_changed || range_changed {
-            app.editor_ui
+            app.editor
+                .editor_ui
                 .pending_actions
                 .push(EditorAction::UpdatePointLight {
                     entity_id,
@@ -223,7 +228,8 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         let scale_changed = (*particle_scale - emitter.config.base_scale).abs() > 1e-4;
 
         if rate_changed || vel_changed || life_changed || grav_changed || scale_changed {
-            app.editor_ui
+            app.editor
+                .editor_ui
                 .pending_actions
                 .push(EditorAction::UpdateParticleEmitter {
                     entity_id,
@@ -241,7 +247,7 @@ fn apply_inspector_slider_changes(app: &mut Application) {
 ///
 /// Should be called after generate_ui_draw_list to extract any editor actions.
 pub fn process_editor_actions(app: &mut Application) {
-    let editor_actions = app.editor_ui.take_actions();
+    let editor_actions = app.editor.editor_ui.take_actions();
 
     // Process editor actions
     for action in editor_actions {
@@ -317,7 +323,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 match crate::scene::SceneManager::save_to_file(app, &path) {
                     Ok(()) => {
                         info!("Scene saved to {:?}", path);
-                        app.editor_ui.show_save_confirmation();
+                        app.editor.editor_ui.show_save_confirmation();
                     }
                     Err(e) => log::error!("Failed to save scene: {}", e),
                 }
@@ -326,7 +332,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 let path = std::path::PathBuf::from("assets/scenes/default.katla");
                 match crate::scene::SceneManager::load_from_file(app, &path) {
                     Ok(()) => {
-                        app.editor_ui.selected_entity = None;
+                        app.editor.editor_ui.selected_entity = None;
                         info!("Scene loaded from {:?}", path);
                     }
                     Err(e) => log::error!("Failed to load scene: {}", e),
@@ -373,7 +379,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 for id in to_remove {
                     app.world.destroy_entity(id);
                 }
-                app.editor_ui.selected_entity = None;
+                app.editor.editor_ui.selected_entity = None;
                 info!("New scene created");
             }
             EditorAction::Quit => {
@@ -384,30 +390,30 @@ pub fn process_editor_actions(app: &mut Application) {
             }
             EditorAction::SetTheme(theme_key) => {
                 if let Some(theme) = crate::ui::Theme::by_name(&theme_key) {
-                    app.editor_ui.set_theme(theme);
+                    app.editor.editor_ui.set_theme(theme);
                     app.preferences.theme = theme_key;
-                    info!("Theme changed to: {}", app.editor_ui.theme_name());
+                    info!("Theme changed to: {}", app.editor.editor_ui.theme_name());
                 }
             }
             EditorAction::ToggleGrid => {
-                app.editor_ui.show_grid = !app.editor_ui.show_grid;
-                app.preferences.show_grid = app.editor_ui.show_grid;
+                app.editor.editor_ui.show_grid = !app.editor.editor_ui.show_grid;
+                app.preferences.show_grid = app.editor.editor_ui.show_grid;
                 // Grid visibility will be updated below after the match
             }
             EditorAction::ToggleStats => {
-                app.editor_ui.show_stats = !app.editor_ui.show_stats;
-                app.preferences.show_stats = app.editor_ui.show_stats;
+                app.editor.editor_ui.show_stats = !app.editor.editor_ui.show_stats;
+                app.preferences.show_stats = app.editor.editor_ui.show_stats;
             }
             EditorAction::SetFontScale(scale) => {
-                app.editor_ui.set_font_scale(scale);
+                app.editor.editor_ui.set_font_scale(scale);
                 app.preferences.font_scale = scale;
                 info!("Font scale changed to: {:.0}%", scale * 100.0);
             }
             EditorAction::OpenPanel(panel) => {
-                app.editor_ui.open_panel(panel);
+                app.editor.editor_ui.open_panel(panel);
             }
             EditorAction::ToggleParticleEmitter => {
-                if let Some(entity_id) = app.editor_ui.selected_particle_emitter
+                if let Some(entity_id) = app.editor.editor_ui.selected_particle_emitter
                     && let Some(emitter) = app
                         .world
                         .get_component_mut::<crate::components::ParticleEmitterComponent>(entity_id)
@@ -507,7 +513,7 @@ pub fn process_editor_actions(app: &mut Application) {
                     2 => crate::gizmo::GizmoMode::Scale,
                     _ => crate::gizmo::GizmoMode::Translate,
                 };
-                app.gizmo_state.set_mode(mode);
+                app.editor.gizmo_state.set_mode(mode);
             }
         }
     }
@@ -528,7 +534,7 @@ pub fn process_editor_actions(app: &mut Application) {
     app.window.set_cursor(cursor_icon);
 
     // Clear input state for next frame
-    app.gizmo_state.consumed_click = false;
+    app.editor.gizmo_state.consumed_click = false;
     app.ui_context.input.clear_frame_state();
 }
 
@@ -549,7 +555,7 @@ fn collect_particle_inspector_data(app: &mut Application) {
         emitter_entities.push(entity_id);
 
         // Build config view for the selected emitter
-        if app.editor_ui.selected_particle_emitter == Some(entity_id) {
+        if app.editor.editor_ui.selected_particle_emitter == Some(entity_id) {
             let shape_name = match EmitterShape::from_u32(emitter.config.shape) {
                 EmitterShape::Point => "Point",
                 EmitterShape::Line => "Line",
@@ -612,7 +618,7 @@ fn collect_particle_inspector_data(app: &mut Application) {
         }
     });
 
-    app.editor_ui.particle_inspector_data = ParticleInspectorData {
+    app.editor.editor_ui.particle_inspector_data = ParticleInspectorData {
         emitter_entities,
         selected_emitter_config: selected_config,
         stats,
@@ -896,7 +902,7 @@ fn unproject_to_ground_plane_impl(
 /// panel bounds, then raycasts from the camera through that pixel to find where
 /// the ray intersects the ground plane.
 fn unproject_to_ground_plane(app: &Application, screen_pos: Vec2) -> Vec3 {
-    let viewport = app.editor_ui.last_viewport_bounds;
+    let viewport = app.editor.editor_ui.last_viewport_bounds;
 
     let camera = app.camera.borrow();
     let view_mat = camera.get_view_mat(&app.world);

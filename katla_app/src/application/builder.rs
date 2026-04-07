@@ -764,57 +764,48 @@ impl ApplicationBuilder {
             resources,
             ui_context,
             #[cfg(feature = "editor")]
-            ui_renderer,
-            #[cfg(feature = "editor")]
-            editor_ui: {
-                let mut editor = crate::ui::EditorUI::with_theme(theme);
-                editor.show_grid = preferences.show_grid;
-                editor.show_stats = preferences.show_stats;
-                editor.set_font_scale(preferences.font_scale);
-                // Apply GUI layout state
-                editor.left_panel_width = gui_state.left_panel_width;
-                editor.right_panel_width = gui_state.right_panel_width;
-                editor.asset_browser.panel_height = gui_state.asset_browser_height;
-                editor
+            editor: super::EditorState {
+                ui_renderer,
+                editor_ui: {
+                    let mut editor = crate::ui::EditorUI::with_theme(theme);
+                    editor.show_grid = preferences.show_grid;
+                    editor.show_stats = preferences.show_stats;
+                    editor.set_font_scale(preferences.font_scale);
+                    // Apply GUI layout state
+                    editor.left_panel_width = gui_state.left_panel_width;
+                    editor.right_panel_width = gui_state.right_panel_width;
+                    editor.asset_browser.panel_height = gui_state.asset_browser_height;
+                    editor
+                },
+                gui_state,
+                background_loader: BackgroundLoader::new(),
+                thumbnail_texture_handles: HashMap::new(),
+                entity_instance_map: std::collections::HashMap::new(),
+                entity_to_instance_indices: std::collections::HashMap::new(),
+                pending_pick: None,
+                stencil_indicator_bindless_index: None,
+                gizmo_state: crate::gizmo::GizmoState::default(),
+                gizmo_resources: crate::gizmo::GizmoResources::default(),
+                billboard_resources: crate::billboard::BillboardResources::default(),
+                prev_mouse_screen: None,
             },
             preferences,
-            #[cfg(feature = "editor")]
-            gui_state,
             scale_factor: 1.0, // Will be updated when window is created
-            #[cfg(feature = "editor")]
-            background_loader: BackgroundLoader::new(),
-            #[cfg(feature = "editor")]
-            thumbnail_texture_handles: HashMap::new(),
             start_time: Instant::now(),
             default_material_handle: katla_gfx::MaterialHandle::NONE,
             cleaned_up: false,
             quit_requested: false,
             particle_system: crate::systems::ParticleSystem::new(),
             gpu_animation_system: None,
-            #[cfg(debug_assertions)]
-            particle_readback_pending: false,
-            #[cfg(debug_assertions)]
-            particle_readback_done: false,
-            #[cfg(feature = "editor")]
-            entity_instance_map: std::collections::HashMap::new(),
-            #[cfg(feature = "editor")]
-            entity_to_instance_indices: std::collections::HashMap::new(),
-            #[cfg(feature = "editor")]
-            pending_pick: None,
-            #[cfg(feature = "editor")]
-            stencil_indicator_bindless_index: None,
             minimized: false,
             gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(
                 katla_gfx::MaterialHandle::NONE,
             ),
-            #[cfg(feature = "editor")]
-            gizmo_state: crate::gizmo::GizmoState::default(),
-            #[cfg(feature = "editor")]
-            gizmo_resources: crate::gizmo::GizmoResources::default(),
-            #[cfg(feature = "editor")]
-            billboard_resources: crate::billboard::BillboardResources::default(),
-            #[cfg(feature = "editor")]
-            prev_mouse_screen: None,
+            #[cfg(debug_assertions)]
+            debug: super::DebugState {
+                particle_readback_pending: false,
+                particle_readback_done: false,
+            },
             on_init: self.on_init,
             on_update: self.on_update,
             on_shutdown: self.on_shutdown,
