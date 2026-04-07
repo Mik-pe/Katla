@@ -1,0 +1,21 @@
+{
+  "featureId": "billboard-depth-shader-and-pipeline",
+  "reviewedAt": "2026-04-07T22:30:00.000Z",
+  "commitId": "bb1f225",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The billboard_depth.wgsl shader and pipeline are correctly implemented. The shader replicates the camera-facing vertex transform from billboard.wgsl (extract right/up from view matrix columns, offset from model[3].xyz), adds alpha discard (alpha < 0.5 threshold), and outputs instance_index + 1 as vec4u for GPU picking. The pipeline uses the PBR vertex layout (4 SOA attributes), includes both Set 0 (storage) and Set 1 (bindless textures) descriptor layouts, uses CullMode::None for double-sided rendering, CompareOp::Greater for reverse-Z, and R32Uint + D32SfloatS8Uint output formats. The implementation follows existing depth_prepass patterns exactly, adds the bindless_descriptor_layout field to DepthPrepassInitContext, and wires initialization in builder.rs. No regressions — the diff is purely additive (181 insertions, 0 deletions).",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "Billboard shaders (both billboard.wgsl and billboard_depth.wgsl) repurpose ObjectUniforms.material_params.w as the albedo bindless texture index, while frame_uniforms.wgsl comments this field as 'emission_idx'. This is an intentional convention for billboard-specific rendering where texture_indices is unused, but the mismatch between the comment and actual usage could confuse future shader authors.",
+      "evidence": "resources/shaders/common/frame_uniforms.wgsl:21 — material_params.w commented as 'emission_idx'. resources/shaders/billboard.wgsl:62 and billboard_depth.wgsl:56 — both use u32(obj.material_params.w) as albedo texture index."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Clean implementation of billboard depth prepass shader and pipeline. The shader correctly replicates billboard.wgsl's camera-facing transform, adds alpha discard for picking accuracy, and outputs object IDs. The pipeline configuration matches all requirements: PBR vertex layout, Set 0 + Set 1 descriptors, double-sided, reverse-Z, correct output formats. All verification commands passed (cargo check, clippy, test, headless GPU validation). No regressions — purely additive changes following existing patterns."
+}

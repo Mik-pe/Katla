@@ -1,0 +1,47 @@
+{
+  "milestone": "billboard-picking",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "failedFeatures": ["integrate-billboard-depth-prepass"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "integrate-billboard-depth-prepass",
+      "severity": "blocking",
+      "description": "Billboard detection heuristic in draw_helpers.rs:111-114 uses mesh.has_attribute(TexCoord0) to identify billboard draws, but ALL PBR meshes (regular scene meshes, cubes, spheres, planes from glTF) also have TexCoord0 since create_pbr_mesh/create_pbr_mesh_with_tangents always add it. Since the full draw_list (including all scene meshes) is submitted to the depth prepass, all non-skinned PBR meshes would be incorrectly routed to the billboard depth pipeline which uses camera-facing vertex transforms instead of standard MVP transforms. This produces incorrect depth values, breaking early-Z rejection and GPU entity picking for all non-skinned scene objects.",
+      "suggestedFix": "Add a boolean flag (e.g., is_billboard: bool) to the DrawCall struct in katla_gfx, set by the katla_app caller in collect_billboard_draw_calls(). Then check this flag in draw_helpers.rs instead of inferring from vertex attributes. This avoids the cross-crate dependency issue (katla_gfx cannot access billboard_resources.material from katla_app) and follows the existing pattern for skinned meshes which uses draw_call.skeleton."
+    }
+  ],
+  "nonBlockingIssues": [
+    {
+      "featureId": "integrate-billboard-depth-prepass",
+      "severity": "non_blocking",
+      "description": "The billboard detection approach uses vertex attribute inspection in katla_gfx, but the caller (katla_app) already knows which entities are billboards. A DrawCall-level flag would be cleaner and more reliable."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance: when adding specialized draw types (billboard, decal, etc.) that need different pipeline routing in the render graph, always use a DrawCall-level flag rather than inferring draw type from mesh attributes. The katla_gfx crate cannot depend on katla_app to inspect application-level state, so the caller must communicate draw type explicitly.",
+      "evidence": "Feature integrate-billboard-depth-prepass used mesh.has_attribute(TexCoord0) to detect billboards, but all PBR meshes have TexCoord0. This caused a blocking correctness bug where all non-skinned scene meshes were routed through the billboard pipeline.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "material_params.w is commented as 'emission_idx' in frame_uniforms.wgsl but billboard shaders repurpose it as albedo texture index",
+      "reason": "This is an existing convention for billboard-specific rendering where texture_indices is unused. Not specific to this milestone — would be a separate documentation improvement."
+    }
+  ],
+  "previousRound": null
+}
