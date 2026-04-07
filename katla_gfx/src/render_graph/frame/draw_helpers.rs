@@ -1,9 +1,9 @@
-//! Shared draw helpers for skinned/non-skinned mesh drawing.
+//! Shared draw helpers for skinned/non-skinned/billboard mesh drawing.
 //!
 //! Extracts the common draw loop pattern used across depth prepass, shadow pass,
 //! outline pass, and geometry pass. Each pass has the same core loop:
-//! iterate draw lists, switch pipeline for skinned meshes, bind vertex buffers,
-//! bind skeleton descriptors, draw indexed.
+//! iterate draw lists, switch pipeline for skinned or billboard meshes, bind vertex
+//! buffers, bind skeleton descriptors, draw indexed.
 
 use std::rc::Rc;
 
@@ -25,7 +25,7 @@ pub(super) struct DescriptorConfig {
     pub extra_sets: Vec<(u32, vk::DescriptorSet)>,
 }
 
-/// Parameters for the shared skinned/non-skinned draw loop.
+/// Parameters for the shared skinned/non-skinned/billboard draw loop.
 pub(super) struct DrawParams<'a> {
     pub cmd: &'a CommandBuffer,
     pub renderer: &'a mut VulkanRenderer,
@@ -36,12 +36,18 @@ pub(super) struct DrawParams<'a> {
     pub skinned_layout: Option<vk::PipelineLayout>,
     pub frame_idx: usize,
     pub descriptors: DescriptorConfig,
+    /// Optional billboard depth pipeline for PBR-vertex-layout meshes (e.g. billboard icons).
+    /// When a draw call's mesh has TexCoord0, this pipeline is used instead of the base pipeline.
+    pub billboard_pipeline: Option<vk::Pipeline>,
+    pub billboard_layout: Option<vk::PipelineLayout>,
 }
 
-/// Execute the common skinned/non-skinned draw loop.
+/// Execute the common skinned/non-skinned/billboard draw loop.
 ///
-/// Iterates all draw lists, switching between regular and skinned pipelines
-/// as needed, binding vertex buffers and skeleton descriptors per draw call.
+/// Iterates all draw lists, switching between regular, skinned, and billboard
+/// pipelines as needed. Billboard draws are detected by mesh vertex layout
+/// (presence of TexCoord0) and use a dedicated pipeline that binds Set 1
+/// (bindless textures) for alpha discard.
 pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), RenderGraphError> {
     let DrawParams {
         cmd,
@@ -53,6 +59,8 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
         skinned_layout,
         frame_idx,
         descriptors,
+        billboard_pipeline,
+        billboard_layout,
     } = params;
 
     // Bind the base (non-skinned) pipeline
@@ -76,7 +84,15 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
         cmd.bind_descriptor_sets(layout, set, &[ds], &[]);
     }
 
-    let mut current_is_skinned = false;
+    /// Pipeline variant currently bound: regular, skinned, or billboard.
+    #[derive(Clone, Copy, PartialEq)]
+    enum PipelineVariant {
+        Regular,
+        Skinned,
+        Billboard,
+    }
+
+    let mut current_variant = PipelineVariant::Regular;
 
     for draw_list in draw_lists {
         for draw_call in draw_list.iter() {
@@ -86,12 +102,35 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
                 continue;
             }
 
+            // Determine which mesh this draw call uses
+            let mesh = renderer
+                .asset_registry
+                .get_mesh(draw_call.mesh)
+                .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
+
+            // Detect billboard draws: PBR vertex layout with TexCoord0, not skinned
+            let is_billboard = !is_skinned
+                && billboard_pipeline.is_some()
+                && mesh.has_attribute(AttributeType::TexCoord0);
+
+            let target_variant = if is_skinned {
+                PipelineVariant::Skinned
+            } else if is_billboard {
+                PipelineVariant::Billboard
+            } else {
+                PipelineVariant::Regular
+            };
+
             // Switch pipeline if needed
-            if is_skinned != current_is_skinned {
-                let (new_pipe, new_layout) = if is_skinned {
-                    (skinned_pipeline.unwrap(), skinned_layout.unwrap())
-                } else {
-                    (pipeline, layout)
+            if target_variant != current_variant {
+                let (new_pipe, new_layout) = match target_variant {
+                    PipelineVariant::Skinned => {
+                        (skinned_pipeline.unwrap(), skinned_layout.unwrap())
+                    }
+                    PipelineVariant::Billboard => {
+                        (billboard_pipeline.unwrap(), billboard_layout.unwrap())
+                    }
+                    PipelineVariant::Regular => (pipeline, layout),
                 };
                 unsafe {
                     renderer.context.device.cmd_bind_pipeline(
@@ -102,14 +141,19 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
                 }
                 let storage_ds = renderer.storage_descriptor_sets[frame_idx].vk_set();
                 cmd.bind_descriptor_sets(new_layout, 0, &[storage_ds], &[]);
-                if descriptors.bind_textures {
+
+                // Billboard pipeline always needs bindless textures (Set 1) for alpha discard
+                let needs_textures =
+                    descriptors.bind_textures || target_variant == PipelineVariant::Billboard;
+                if needs_textures {
                     let bindless_ds = renderer.bindless_manager.descriptor_set().vk();
                     cmd.bind_descriptor_sets(new_layout, 1, &[bindless_ds], &[]);
                 }
+
                 for &(set, ds) in &descriptors.extra_sets {
                     cmd.bind_descriptor_sets(new_layout, set, &[ds], &[]);
                 }
-                current_is_skinned = is_skinned;
+                current_variant = target_variant;
             }
 
             // Bind skeleton descriptor set for skinned meshes
@@ -127,12 +171,7 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
             }
 
             // Bind mesh vertex buffers
-            let mesh = renderer
-                .asset_registry
-                .get_mesh(draw_call.mesh)
-                .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
-
-            bind_vertex_buffers(cmd, mesh, is_skinned);
+            bind_vertex_buffers(cmd, mesh, is_skinned, is_billboard);
 
             if let Some(ib) = &mesh.index_buffer {
                 cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
@@ -156,11 +195,12 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
     Ok(())
 }
 
-/// Bind vertex buffers for position-only mode with optional skinning attributes.
+/// Bind vertex buffers for position-only mode with optional skinning or billboard attributes.
 fn bind_vertex_buffers(
     cmd: &CommandBuffer,
     mesh: &crate::renderer::registry::MeshAsset,
     is_skinned: bool,
+    is_billboard: bool,
 ) {
     let pos_buf = mesh
         .get_attribute_buffer(AttributeType::Position)
@@ -177,6 +217,26 @@ fn bind_vertex_buffers(
             .map(|vb| vb.object())
             .unwrap_or(vk::Buffer::null());
         cmd.bind_vertex_buffers_at_locations(&[(0, pos_buf), (4, joints_buf), (5, weights_buf)]);
+    } else if is_billboard {
+        // PBR vertex layout: position(0), normal(1), tangent(2), uv(3)
+        let normal_buf = mesh
+            .get_attribute_buffer(AttributeType::Normal)
+            .map(|vb| vb.object())
+            .unwrap_or(vk::Buffer::null());
+        let tangent_buf = mesh
+            .get_attribute_buffer(AttributeType::Tangent)
+            .map(|vb| vb.object())
+            .unwrap_or(vk::Buffer::null());
+        let uv_buf = mesh
+            .get_attribute_buffer(AttributeType::TexCoord0)
+            .map(|vb| vb.object())
+            .unwrap_or(vk::Buffer::null());
+        cmd.bind_vertex_buffers_at_locations(&[
+            (0, pos_buf),
+            (1, normal_buf),
+            (2, tangent_buf),
+            (3, uv_buf),
+        ]);
     } else {
         cmd.bind_vertex_buffers_at_locations(&[(0, pos_buf)]);
     }

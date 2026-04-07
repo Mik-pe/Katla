@@ -325,6 +325,8 @@ impl<'a> Frame<'a> {
                 skeleton_set: 2,
                 extra_sets,
             },
+            billboard_pipeline: None,
+            billboard_layout: None,
         })
     }
 

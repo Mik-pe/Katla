@@ -125,9 +125,11 @@ impl Application {
         #[cfg(feature = "editor")]
         self.collect_gizmo_draw_calls(&mut draw_list);
 
-        // Extract scene-only draw list (no billboards) for depth/shadow passes
+        // Extract scene-only draw list (no billboards) for shadow pass.
+        // Billboards are included in the depth prepass (for GPU picking) via the
+        // billboard depth pipeline, but excluded from shadow maps.
         #[cfg(feature = "editor")]
-        let scene_draw_list = {
+        let shadow_draw_list = {
             let draws = draw_list
                 .iter()
                 .filter(|dc| dc.material != self.editor.billboard_resources.material)
@@ -136,7 +138,7 @@ impl Application {
             katla_gfx::renderer::DrawList { draws }
         };
         #[cfg(not(feature = "editor"))]
-        let scene_draw_list = draw_list.clone();
+        let shadow_draw_list = draw_list.clone();
 
         // Generate billboard icon draw calls (geometry pass only)
         #[cfg(feature = "editor")]
@@ -258,12 +260,13 @@ impl Application {
             );
 
             if !draw_list.is_empty() {
-                frame.submit("depth_prepass", &scene_draw_list);
+                frame.submit("depth_prepass", &draw_list);
                 frame.submit("geometry", &draw_list);
-                frame.submit("shadow", &scene_draw_list);
+                frame.submit("shadow", &shadow_draw_list);
                 log::debug!(
-                    "Submitted {} draw calls to depth_prepass, geometry, and shadow passes",
-                    draw_list.len()
+                    "Submitted {} draw calls to depth_prepass + geometry, {} to shadow",
+                    draw_list.len(),
+                    shadow_draw_list.len()
                 );
             } else {
                 log::warn!("No draw calls to submit to geometry pass!");
@@ -671,6 +674,13 @@ impl Application {
             .with_emission(bindless_idx as f32);
 
             draw_list.push(draw);
+
+            self.editor.entity_instance_map.insert(idx, entity_id);
+            self.editor
+                .entity_to_instance_indices
+                .entry(entity_id)
+                .or_default()
+                .push(idx);
         }
     }
 }
