@@ -1,0 +1,43 @@
+{
+  "groupId": "gpu-validation",
+  "testedAt": "2026-04-08T01:15:00Z",
+  "isolation": {
+    "workingDirectory": "C:\\dev\\katla",
+    "workingTreeState": "uncommitted changes from robustness milestone",
+    "gpuAccess": "exclusive"
+  },
+  "toolsUsed": ["cargo check", "cargo run", "rg"],
+  "assertions": [
+    {
+      "id": "VAL-ROBUST-007",
+      "title": "Remove hardcoded compositing viewport layout",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "rg '0\\.5' resources/shaders/composite.wgsl",
+          "expected": "Zero matches for hardcoded 0.5 split ratios",
+          "observed": "No matches found. Shader file exists at resources\\shaders\\composite.wgsl but contains no hardcoded 0.5 values."
+        },
+        {
+          "action": "cargo check --workspace",
+          "expected": "Exit code 0",
+          "observed": "Finished `dev` profile [optimized + debuginfo] target(s) in 0.73s. Exit code 0."
+        },
+        {
+          "action": "cargo run -- -s",
+          "expected": "25-frame headless GPU validation exits with code 0, no panics, no Vulkan validation errors",
+          "observed": "Compiled all workspace crates successfully. Ran 100 frames (limited-frame mode). Clean shutdown with 'Clean shutdown!' log message. Exit code 0. No ERROR-level log lines, no panics, no Vulkan validation errors."
+        }
+      ],
+      "evidence": {
+        "shaderGrep": "rg '0\\.5' on resources/shaders/composite.wgsl returned zero matches",
+        "cargoCheck": "cargo check --workspace exited 0 in 0.73s",
+        "gpuValidation": "cargo run -- -s compiled in 9.52s, rendered 100 frames, clean shutdown, exit code 0. Log shows compositing descriptor set layout created, bindless texture system initialized, particle system initialized and destroyed cleanly."
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 1 assertion (VAL-ROBUST-007): 1 passed. Compositing shader has no hardcoded 0.5 split ratios, workspace compiles cleanly, and headless GPU validation runs 100 frames with clean shutdown."
+}

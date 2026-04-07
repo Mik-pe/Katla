@@ -1,0 +1,29 @@
+{
+  "milestone": "robustness",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-ROBUST-001",
+    "VAL-ROBUST-002",
+    "VAL-ROBUST-003",
+    "VAL-ROBUST-004",
+    "VAL-ROBUST-005",
+    "VAL-ROBUST-006",
+    "VAL-ROBUST-007"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "flowReports": [
+    ".factory/validation/robustness/user-testing/flows/rg-patterns.json",
+    ".factory/validation/robustness/user-testing/flows/gpu-validation.json"
+  ],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "testedAt": "2026-04-08"
+}
