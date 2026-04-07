@@ -338,6 +338,16 @@ impl ApplicationBuilder {
                 message: format!("Failed to initialize skinned depth prepass pipeline: {}", e),
             })?;
 
+        let billboard_depth_shader_path = resources.shader_path("billboard_depth.wgsl");
+        renderer
+            .init_depth_prepass_billboard_pipeline(&billboard_depth_shader_path)
+            .map_err(|e| crate::error::AppError::Graphics {
+                message: format!(
+                    "Failed to initialize billboard depth prepass pipeline: {}",
+                    e
+                ),
+            })?;
+
         // Initialize outline pipelines for stencil-based selection highlight
         let stencil_mark_shader_path = resources.shader_path("outline/stencil_mark.wgsl");
         let stencil_mark_skinned_shader_path =
