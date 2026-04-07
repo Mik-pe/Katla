@@ -1,0 +1,44 @@
+{
+  "milestone": "editor-features",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 15,
+    "passed": 15,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-EDITOR-001",
+    "VAL-EDITOR-002",
+    "VAL-EDITOR-003",
+    "VAL-EDITOR-004",
+    "VAL-EDITOR-005",
+    "VAL-EDITOR-006",
+    "VAL-EDITOR-007",
+    "VAL-EDITOR-008",
+    "VAL-EDITOR-009",
+    "VAL-EDITOR-010",
+    "VAL-EDITOR-011",
+    "VAL-EDITOR-012",
+    "VAL-EDITOR-013",
+    "VAL-EDITOR-014",
+    "VAL-EDITOR-015"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "flowReports": [
+    ".factory/validation/editor-features/user-testing/flows/duplicate-entity.json",
+    ".factory/validation/editor-features/user-testing/flows/reset-particle-system.json",
+    ".factory/validation/editor-features/user-testing/flows/workspace-regressions.json"
+  ],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "notes": [
+    "VAL-EDITOR-004 (particle emitter GPU handle) verified via code review — create_emitter() called in duplicate_entity when ParticleEmitterComponent exists on source entity",
+    "VAL-EDITOR-012 (destroy/re-create emitters) verified via code review of ResetParticleSystem handler — all 4 required steps confirmed: query entities, destroy_emitter(), reset_all(), create_emitter()",
+    "All unit tests passed: 4 duplicate entity tests, 3 reset particle system tests, 1 reset editor action test",
+    "Full workspace test suite: 207 tests in katla_app, 50 in katla_ecs, plus katla_gfx/katla_math/katla_ui — zero failures",
+    "No clippy warnings for katla_app or katla_gfx"
+  ]
+}

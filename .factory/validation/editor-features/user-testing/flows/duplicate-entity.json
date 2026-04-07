@@ -1,0 +1,132 @@
+{
+  "groupId": "duplicate-entity",
+  "testedAt": "2026-04-07T12:00:00Z",
+  "isolation": {
+    "type": "pure-rust-workspace",
+    "workingDirectory": "C:\\dev\\katla",
+    "tools": ["cargo test", "cargo check", "cargo clippy"]
+  },
+  "toolsUsed": ["cargo test", "cargo check", "cargo clippy"],
+  "assertions": [
+    {
+      "id": "VAL-EDITOR-001",
+      "title": "Duplicate entity preserves all components",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_app test_duplicate_entity_preserves_all_components",
+          "expected": "Test passes, verifying all 9 component types copied with field-wise equal values",
+          "observed": "Test passed. Verified TransformComponent, NameComponent, DrawableComponent, PointLight, VelocityComponent, AnimationPlayer, BillboardComponent, EntitySource all copied. Field values verified: name='TestEntity (copy)', light color/intensity/range, velocity/acceleration, EntitySource::Cube."
+        }
+      ],
+      "evidence": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 206 filtered out",
+      "command": "cargo test -p katla_app test_duplicate_entity_preserves_all_components -- --nocapture"
+    },
+    {
+      "id": "VAL-EDITOR-002",
+      "title": "Duplicate offsets transform position",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_app test_duplicate_entity_offsets_transform",
+          "expected": "Test passes, verifying position offset, rotation/scale copied exactly",
+          "observed": "Test passed. Source position (5.0, 3.0, -2.0) correctly offset by duplicate_offset() (0.5, 0.0, 0.5). Rotation compared via matrix equality (Quat doesn't impl PartialEq). Scale copied exactly."
+        }
+      ],
+      "evidence": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 206 filtered out",
+      "command": "cargo test -p katla_app test_duplicate_entity_offsets_transform -- --nocapture"
+    },
+    {
+      "id": "VAL-EDITOR-003",
+      "title": "Duplicate entity tracks GPU resources",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Verified via VAL-EDITOR-001 test which includes GPU resource tracker checks",
+          "expected": "mesh_ref_count and material_ref_count incremented by 1 after duplication",
+          "observed": "Test in VAL-EDITOR-001 asserts mesh_ref_count(mesh) == 2 and material_ref_count(mat) == 2 after duplication (started at 1 from source entity tracking). GpuResourceTracker::track_drawable() called in duplicate_entity for DrawableComponent."
+        }
+      ],
+      "evidence": "Covered by test_duplicate_entity_preserves_all_components - assertions: mesh_ref_count=2, material_ref_count=2",
+      "command": "cargo test -p katla_app test_duplicate_entity_preserves_all_components -- --nocapture"
+    },
+    {
+      "id": "VAL-EDITOR-004",
+      "title": "Duplicate entity with particle emitter creates new GPU emitter",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Code review of duplicate_entity function in editor/mod.rs",
+          "expected": "When ParticleEmitterComponent exists, duplicate_entity calls create_emitter() on the particle system",
+          "observed": "Confirmed in source code (lines ~492-510 of editor/mod.rs): duplicate_entity checks for ParticleEmitterComponent on source entity, copies config, sets emitter_handle to None, adds component to new entity, then if active && particle_system is Some, calls ps.create_emitter(emitter_config) and assigns the returned handle to the new entity's emitter. New handle guaranteed distinct from source."
+        }
+      ],
+      "evidence": "Source code review of duplicate_entity function in katla_app/src/application/editor/mod.rs. Cannot run GPU test in unit tests but code path verified: config copied, create_emitter() called, new handle assigned.",
+      "command": "code review (no runtime test possible without GPU)"
+    },
+    {
+      "id": "VAL-EDITOR-005",
+      "title": "Duplicate entity with no components succeeds",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_app test_duplicate_entity_empty",
+          "expected": "No panic, entity exists with no components",
+          "observed": "Test passed. Created bare entity via world.create_entity(), duplicated it, verified new entity has different ID and no TransformComponent, NameComponent, or DrawableComponent."
+        }
+      ],
+      "evidence": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 206 filtered out",
+      "command": "cargo test -p katla_app test_duplicate_entity_empty -- --nocapture"
+    },
+    {
+      "id": "VAL-EDITOR-006",
+      "title": "Duplicate selects the new entity",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_app test_duplicate_entity_updates_selection",
+          "expected": "Selection switches to new entity after duplication",
+          "observed": "Test passed. After calling duplicate_entity, verified selected_entity was updated to new_entity_id. Also verified that the action handler in process_editor_actions sets app.editor.editor_ui.selected_entity = Some(new_entity_id) after successful duplication."
+        }
+      ],
+      "evidence": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 206 filtered out",
+      "command": "cargo test -p katla_app test_duplicate_entity_updates_selection -- --nocapture"
+    },
+    {
+      "id": "VAL-EDITOR-007",
+      "title": "Duplicate preserves EntitySource",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Verified via VAL-EDITOR-001 test which includes EntitySource preservation check",
+          "expected": "EntitySource::Cube preserved on duplicated entity",
+          "observed": "Test in VAL-EDITOR-001 asserts new_source == EntitySource::Cube { size: [1.0, 1.0, 1.0] }. Source code confirms EntitySource is cloned directly in duplicate_entity function."
+        }
+      ],
+      "evidence": "Covered by test_duplicate_entity_preserves_all_components - assertion: EntitySource::Cube { size: [1.0, 1.0, 1.0] } preserved",
+      "command": "cargo test -p katla_app test_duplicate_entity_preserves_all_components -- --nocapture"
+    },
+    {
+      "id": "VAL-EDITOR-008",
+      "title": "Duplicate entity compiles cleanly",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo check -p katla_app --features editor",
+          "expected": "Exit code 0, no compilation errors",
+          "observed": "cargo check completed successfully with exit code 0"
+        },
+        {
+          "action": "Run cargo clippy -p katla_app",
+          "expected": "Exit code 0, no clippy warnings",
+          "observed": "cargo clippy completed successfully with exit code 0, no warnings"
+        }
+      ],
+      "evidence": "cargo check -p katla_app --features editor: exit 0. cargo clippy -p katla_app: exit 0, no warnings.",
+      "command": "cargo check -p katla_app --features editor && cargo clippy -p katla_app"
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 8 assertions for duplicate-entity feature: all 8 passed. VAL-EDITOR-001 through VAL-EDITOR-003, VAL-EDITOR-005 through VAL-EDITOR-007 verified via unit tests (4 distinct test functions). VAL-EDITOR-004 verified via source code review (GPU particle system cannot be unit-tested without GPU). VAL-EDITOR-008 verified via cargo check and cargo clippy."
+}

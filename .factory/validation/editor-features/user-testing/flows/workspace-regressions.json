@@ -1,0 +1,61 @@
+{
+  "groupId": "workspace-regressions",
+  "testedAt": "2026-04-07T12:00:00Z",
+  "isolation": {
+    "type": "local-workspace",
+    "workingDirectory": "C:\\dev\\katla",
+    "tools": ["cargo check", "cargo test"]
+  },
+  "toolsUsed": ["cargo test", "cargo check"],
+  "assertions": [
+    {
+      "id": "VAL-EDITOR-014",
+      "title": "Existing tests pass after editor features",
+      "status": "pass",
+      "command": "cargo test --workspace",
+      "steps": [
+        {
+          "action": "Run cargo test --workspace",
+          "expected": "All tests pass with zero failures",
+          "observed": "All tests passed across all workspace crates. katla_app: 207 passed, katla_ecs: 50 passed, katla_gfx: all passed, katla_math: all passed, katla_ui: all passed. Doc-tests: all passed. Exit code 0."
+        }
+      ],
+      "evidence": {
+        "exitCode": 0,
+        "summary": "Zero test failures across entire workspace. Warnings present (dead_code in katla_gfx) but no errors or test failures.",
+        "unittests": {
+          "katla": "0 passed; 0 failed",
+          "katla_app": "207 passed; 0 failed",
+          "katla_ecs": "50 passed; 0 failed",
+          "katla_gfx": "all passed; 0 failed",
+          "katla_math": "all passed; 0 failed",
+          "katla_ui": "all passed; 0 failed"
+        },
+        "doctests": "all passed (many ignored as expected)",
+        "warnings": "2 dead_code warnings in katla_gfx (create_headless_context, 3 bindless methods)"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-EDITOR-015",
+      "title": "Full workspace compiles after editor features",
+      "status": "pass",
+      "command": "cargo check --workspace",
+      "steps": [
+        {
+          "action": "Run cargo check --workspace",
+          "expected": "Compilation succeeds with exit code 0",
+          "observed": "cargo check --workspace finished successfully in 0.50s. Exit code 0."
+        }
+      ],
+      "evidence": {
+        "exitCode": 0,
+        "summary": "Full workspace compiles cleanly with cargo check. No errors."
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 2 assertions: 2 passed. VAL-EDITOR-014 (cargo test --workspace) passed with zero failures across all crates. VAL-EDITOR-015 (cargo check --workspace) passed with clean compilation."
+}
