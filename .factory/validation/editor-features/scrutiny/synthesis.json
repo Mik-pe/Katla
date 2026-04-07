@@ -1,0 +1,47 @@
+{
+  "milestone": "editor-features",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Add gpu-testing-patterns.md documenting DuplicateContext pattern for testing editor actions without GPU, and destroy_emitter() config zeroing behavior",
+      "sourceFeature": "implement-duplicate-entity, implement-reset-particle-system"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add test naming convention: tests named test_<method>_* should call the method under test, not just verify post-conditions on raw structs. If GPU context prevents calling the method, name the test to reflect what is actually being tested (e.g., test_emitter_state_default_values instead of test_reset_all_clears_emitter_states).",
+      "evidence": "Feature implement-reset-particle-system: katla_gfx/src/particles/mod.rs tests named test_reset_all_* construct raw ParticleEmitterPool structs and verify Default trait behavior rather than calling GlobalParticleSystem::reset_all().",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "DrawableComponent does not derive Clone or Copy, requiring manual field-by-field copying",
+      "reason": "too-specific — this is an implementation detail of a single component type, not a pattern workers need to know about"
+    },
+    {
+      "observation": "GlobalParticleSystem cannot be constructed without a real GPU, making particle emitter handle creation untestable in unit tests",
+      "reason": "already-documented — .factory/library/testing-infrastructure.md already covers GPU testing limitations and the pragmatic approach of testing CPU-side logic in isolation"
+    },
+    {
+      "observation": "GlobalParticleSystem unit tests can only test CPU-side data structures (ParticleEmitterPool, ParticleCounters, EmitterState) in isolation",
+      "reason": "already-documented — same constraint covered in testing-infrastructure.md"
+    }
+  ],
+  "previousRound": null
+}
