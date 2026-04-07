@@ -56,7 +56,7 @@
 
 - [ ] **Consider a minimal `Mat4` type within katla_gfx** — `FrameUniforms` in `renderer/types.rs:18-20` uses raw `[f32; 16]` arrays. Low priority: the raw arrays match GPU memory layout and are constructed from `katla_math` in `katla_app`, so a local Mat4 would create yet another conversion boundary.
 - [ ] **Extract viewport/UI from renderer module** — Viewport and UI management still in `renderer/mod.rs`; should be split into own modules.
-- [ ] **Clean up dead code** — `ShadowBuffers::len()/is_empty()`, `CascadeParams::cascades()`, `MaterialBuilder::with_push_constant_range()` are `#[allow(dead_code)]`.
+- ~~**Clean up dead code**~~ — Stale. `ShadowBuffers::len()/is_empty()` already removed. `CascadeParams::cascades()` has a test caller. `MaterialBuilder::with_push_constant_range()` (actually `PipelineBuilder`) has an example caller. No dead code to remove.
 - [ ] **Chain errors in `RendererError::source()`** — `error.rs` — `source()` returns `None` for `VulkanError`/`IoError` variants because they convert to `String`, losing the original error. Change `IoError(String)` to `IoError(io::Error)` etc. to preserve error chains for debugging.
 
 ## katla_app
@@ -90,7 +90,7 @@
 
 ### P3: Polish
 
-- [ ] **Remove dead `DragToViewport.path` field** — `asset_browser/types.rs` has `#[allow(dead_code)]` on a field that is never read.
+- ~~**Remove dead `DragToViewport.path` field**~~ — False positive. `DragToViewport.path` is actively used: set in `asset_browser/mod.rs:650-654` and read in `editor_ui.rs:852-861` for `EditorAction::SpawnModelAtPath`. Not dead code.
 - [ ] **Split `scene/mod.rs` (3998 lines)** — Largest file in katla_app with no submodules. Scene serialization/deserialization, entity instantiation, GLTF loading, and scene management all in one file. High priority for maintainability — decompose into `scene/serialization.rs`, `scene/loader.rs`, `scene/instantiation.rs`, etc.
 - [ ] **Split `editor_ui.rs` (1334 lines)** — Decomposition already in progress: `editor_ui/` subdirectory exists with `hierarchy.rs` (383 lines), `inspector.rs` (353 lines), `preferences.rs` (559 lines), `status_bar.rs` (117 lines), `toolbar.rs` (173 lines), `viewport_grid.rs` (262 lines), `asset_browser/`. Remaining code is core panel layout/orchestration. Low priority.
 - [ ] **Remove unused `Selection` resource** — 320 lines of dead code in `resources/selection.rs` with full tests and API, but never imported, registered, or used outside its own file. Either integrate into editor flow or remove.
@@ -101,8 +101,8 @@
 ### P1: Correctness
 
 - [ ] **Unify click-handling logic across widgets** — `button_with_colors()` (`context/widgets/basic.rs:18-52`), `menu_bar_dropdown()` (`context/popup/api.rs:158-174`), and `click_behavior()` all implement slightly different click detection. Button and dropdown use `self.input.is_hovered(bounds)` on release while `click_behavior()` uses pre-computed hovered state. Three-way inconsistency is a bug magnet. Unify into a single configurable click handler or document why each deviation exists.
-- [ ] **Fix `label_auto_colored()` cursor corruption** — `context/widgets.rs:136` manually advances `self.cursor` instead of using `advance_cursor()`, bypassing layout stack awareness. Verified: if called inside a row/column layout, it corrupts cursor state. Should use `advance_cursor()` like `label()` in `helpers.rs` does.
-- [ ] **Fix `button_auto_wide` layout bypass** — `context/widgets.rs:115-133` manually sets cursor. Verified: has a double-advance bug since `self.add()` already calls `advance_cursor()` internally, causing cursor to skip ahead in layouts.
+- [x] **Fix `label_auto_colored()` cursor corruption** — `context/widgets.rs:136` manually advances `self.cursor` instead of using `advance_cursor()`, bypassing layout stack awareness. Verified: if called inside a row/column layout, it corrupts cursor state. Should use `advance_cursor()` like `label()` in `helpers.rs` does.
+- [x] **Fix `button_auto_wide` layout bypass** — `context/widgets.rs:115-133` manually sets cursor. Verified: has a double-advance bug since `self.add()` already calls `advance_cursor()` internally, causing cursor to skip ahead in layouts.
 
 ### P2: Robustness
 
