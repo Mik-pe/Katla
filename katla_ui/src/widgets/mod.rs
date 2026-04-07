@@ -1047,7 +1047,12 @@ where
 
         // Handle click
         let clicked = ui
-            .click_behavior(id, ui.is_hovered(self.bounds))
+            .click_interaction(
+                id,
+                ui.is_hovered(self.bounds),
+                self.bounds,
+                crate::context::interaction::ClickConfig::POPUP_AWARE,
+            )
             .is_clicked();
 
         let mut response = Response::new(self.bounds);

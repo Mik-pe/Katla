@@ -4,6 +4,28 @@
 
 // WidgetId is defined in context module and re-exported from crate root
 
+/// Configuration for click interaction behavior.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ClickConfig {
+    /// When `false`, uses `release_hovered` (raw input hover check) on release
+    /// to bypass popup blocking. Use this for buttons and menu items that must
+    /// respond even when a popup is consuming clicks.
+    ///
+    /// When `true`, uses the pre-computed `hovered` state which respects
+    /// `popup_consume_click` and `active_id` checks.
+    pub popup_aware: bool,
+}
+
+impl ClickConfig {
+    /// Popup-aware click: release hover uses the pre-computed hovered state.
+    /// Used by checkboxes, radio buttons, toggle buttons, image buttons.
+    pub const POPUP_AWARE: Self = Self { popup_aware: true };
+
+    /// Popup-bypassing click: release hover uses raw input hover check.
+    /// Used by buttons and menu items.
+    pub const POPUP_BYPASS: Self = Self { popup_aware: false };
+}
+
 /// Result of click behavior processing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ClickResult {

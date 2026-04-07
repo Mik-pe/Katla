@@ -29,10 +29,14 @@ impl UiContext {
     ) -> Response {
         let widget_id = self.generate_id(id);
         let hovered = self.update_hover(widget_id, bounds);
-        let active = self.active_id == Some(widget_id);
-
-        // Handle click using consolidated helper
-        let clicked = self.click_behavior(widget_id, hovered).is_clicked();
+        let click_result = self.click_interaction(
+            widget_id,
+            hovered,
+            bounds,
+            super::super::interaction::ClickConfig::POPUP_AWARE,
+        );
+        let clicked = click_result.is_clicked();
+        let active = click_result.is_active();
 
         // Draw background
         let bg_color = if checked {

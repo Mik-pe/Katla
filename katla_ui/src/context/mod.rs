@@ -9,7 +9,7 @@ mod frame;
 mod helpers;
 mod id;
 mod input;
-mod interaction;
+pub(crate) mod interaction;
 mod layout;
 use layout::LayoutState;
 mod popup;
