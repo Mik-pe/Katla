@@ -1,22 +1,17 @@
 commands:
-  install: cargo build
-  typecheck: cargo check
-  build: cargo build
-  build-lib: cargo build --workspace --lib
+  install: cargo build --workspace
+  typecheck: cargo check --workspace
+  build: cargo build --workspace
   test: cargo test --workspace
-  test-ecs: cargo test -p katla_ecs
-  test-gfx: cargo test -p katla_gfx
-  test-app: cargo test -p katla_app
-  test-ui: cargo test -p katla_ui
-  test-doc-ecs: cargo test --doc -p katla_ecs
-  lint: cargo clippy --workspace -- -D warnings
-  lint-fix: cargo clippy --fix
-  fmt: cargo fmt
-  fmt-check: cargo fmt --check
-  check-gfx: cargo check -p katla_gfx
-  check-app: cargo check -p katla_app
-  check-ui: cargo check -p katla_ui
-  check-app-no-default: cargo check -p katla_app --no-default-features
-  run-limited: cargo run -- -s
+  lint: cargo clippy --workspace
+  format: cargo fmt
+  format_check: cargo fmt -- --check
+  headless_validation: cargo run -- -s
+  test_katla_ecs: cargo test -p katla_ecs
+  test_katla_gfx: cargo test -p katla_gfx
+  test_katla_ui: cargo test -p katla_ui
+  test_katla_app: cargo test -p katla_app
+  check_no_editor: cargo check -p katla_app --no-default-features
+  check_with_editor: cargo check -p katla_app --features editor
 
 services: {}

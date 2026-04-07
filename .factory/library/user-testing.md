@@ -1,33 +1,44 @@
 # User Testing
 
-Testing surface, required testing skills/tools, and resource cost classification.
+Testing surface, required tools, and resource classification for validation.
+
+**What belongs here:** Testing surface knowledge, tool requirements, resource constraints.
+**What does NOT belong here:** Service commands (use `.factory/services.yaml`).
+
+---
 
 ## Validation Surface
 
-This mission involves a native Rust library/engine with no web or CLI surface for end users.
+### Primary: CLI / Build Tools
+- `cargo check --workspace` — typecheck
+- `cargo test --workspace` — all unit + integration tests
+- `cargo clippy --workspace` — lint
+- `cargo fmt -- --check` — format
+- `cargo run -- -s` — headless 25-frame GPU validation
 
-**Automated testing (no GPU required):**
-- `cargo test --workspace` — primary validation (ECS, GFX, UI, App unit tests)
-- `cargo clippy --workspace -- -D warnings` — linting
-- `cargo fmt --check` — formatting
-- `cargo check --workspace` — type checking
-- `cargo test --doc -p katla_ecs` — doctests
+### Secondary: GPU Validation Examples
+- `cargo run -p katla_gfx --example picking_validation` — GPU picking
+- `cargo run -p katla_gfx --example outline_validation` — outline rendering
 
-**Automated testing (GPU required, only for visual verification):**
-- `cargo run -- -s` — single-frame mode (25 frames, requires Vulkan)
+### Feature Flag Testing
+- `cargo check -p katla_app --features editor` — with editor
+- `cargo check -p katla_app --no-default-features` — without editor
 
-**No manual user testing surface** — all validation is through compilation and unit tests.
+## Required Tools
+- Rust toolchain (cargo, rustc, clippy, rustfmt)
+- Vulkan SDK (for headless GPU validation)
+- ripgrep (for grep-based evidence collection)
 
 ## Validation Concurrency
 
-Max concurrent validators: 1
+This is a Rust workspace with no running services. Validation is CPU-bound + GPU-bound:
+- `cargo test` parallelism controlled by test runner (default: num_cpus)
+- `cargo check/clippy` single-process
+- GPU validation runs (`cargo run -- -s`) require exclusive GPU access — **max concurrent: 1**
 
-This is a single-threaded Rust compilation and test pipeline. No GPU-intensive validation needed. Machine has sufficient resources for cargo test.
+Resource cost per validator:
+- Test runner: ~200-500MB RAM, CPU-bound
+- Headless GPU run: ~500MB-1GB RAM + GPU
+- Clippy/check: ~500MB-1GB RAM per crate
 
-## Testing Tools
-
-No special testing tools required (no agent-browser, no tuistory). All validation is through cargo commands.
-
-## Pre-existing Issues
-
-- **Known test failure**: `katla_gfx::primitives::cone::tests::test_cone_vertex_count` — expects 52 vertices, got 36. Being fixed as VAL-GFX-001.
+**Max concurrent validators: 3** (limited by memory on typical dev machine)
