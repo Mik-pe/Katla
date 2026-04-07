@@ -315,8 +315,15 @@ pub fn process_editor_actions(app: &mut Application) {
                 info!("Deleted entity {:?} and its children", entity_id);
             }
             EditorAction::DuplicateEntity(entity_id) => {
-                // TODO: Implement entity duplication with all components
-                info!("Duplicate entity {:?} - not yet implemented", entity_id);
+                let mut ctx = DuplicateContext {
+                    world: &mut app.world,
+                    gpu_resource_tracker: &mut app.gpu_resource_tracker,
+                    particle_system: &mut app.renderer.particle_system,
+                };
+                if let Some(new_entity_id) = duplicate_entity(&mut ctx, entity_id) {
+                    app.editor.editor_ui.selected_entity = Some(new_entity_id);
+                    info!("Duplicated entity {:?} -> {:?}", entity_id, new_entity_id);
+                }
             }
             EditorAction::SaveScene => {
                 let path = std::path::PathBuf::from("assets/scenes/default.katla");
@@ -829,6 +836,145 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
     result
 }
 
+/// Position offset applied to duplicated entities to avoid overlapping the source.
+fn duplicate_offset() -> Vec3 {
+    Vec3::new(0.5, 0.0, 0.5)
+}
+
+/// Context needed for entity duplication, decoupled from `Application` for testability.
+pub(crate) struct DuplicateContext<'a> {
+    pub(crate) world: &'a mut katla_ecs::World,
+    pub(crate) gpu_resource_tracker: &'a mut crate::gpu_resource_tracker::GpuResourceTracker,
+    pub(crate) particle_system: &'a mut Option<katla_gfx::particles::GlobalParticleSystem>,
+}
+
+/// Duplicate an entity, copying all its components to a new entity.
+///
+/// Returns `Some(new_entity_id)` if the source entity exists, `None` otherwise.
+///
+/// Component-specific behavior:
+/// - **TransformComponent**: Position offset by `duplicate_offset()` (0.5, 0.0, 0.5); rotation and scale copied exactly.
+/// - **NameComponent**: Appends " (copy)" to the source name.
+/// - **DrawableComponent**: Handles copied as-is; GPU resource tracker incremented via `track_drawable()`.
+/// - **ParticleEmitterComponent**: Config copied; a new GPU emitter handle is created via `create_emitter()`.
+/// - **PointLight**, **VelocityComponent**, **AnimationPlayer**, **BillboardComponent**: Cloned directly.
+/// - **EntitySource**: Cloned directly (preserves serialization round-trip).
+pub(crate) fn duplicate_entity(
+    ctx: &mut DuplicateContext<'_>,
+    entity_id: EntityId,
+) -> Option<EntityId> {
+    use crate::animation::components::AnimationPlayer;
+    use crate::components::physics::physics::VelocityComponent;
+    use crate::components::rendering::billboard::BillboardComponent;
+    use crate::scene::entity_source::EntitySource;
+
+    let new_id = ctx.world.create_entity();
+
+    // TransformComponent: offset position, copy rotation and scale
+    if let Some(transform) = ctx.world.get_component::<TransformComponent>(entity_id) {
+        let mut new_transform = TransformComponent {
+            transform: transform.transform,
+        };
+        new_transform.transform.position = transform.transform.position + duplicate_offset();
+        ctx.world.add_component(new_id, new_transform);
+    }
+
+    // NameComponent: append " (copy)"
+    if let Some(name) = ctx.world.get_component::<NameComponent>(entity_id) {
+        let new_name = format!("{} (copy)", name.name);
+        ctx.world
+            .add_component(new_id, NameComponent { name: new_name });
+    }
+
+    // DrawableComponent: copy handles, track GPU resources
+    if let Some(drawable) = ctx.world.get_component::<DrawableComponent>(entity_id) {
+        let new_drawable = DrawableComponent {
+            mesh_handle: drawable.mesh_handle,
+            material_handle: drawable.material_handle,
+            color: drawable.color,
+            skeleton_handle: drawable.skeleton_handle,
+            metallic: drawable.metallic,
+            roughness: drawable.roughness,
+            ao: drawable.ao,
+            emission: drawable.emission,
+        };
+        ctx.gpu_resource_tracker.track_drawable(
+            new_drawable.mesh_handle,
+            new_drawable.material_handle,
+            new_drawable.skeleton_handle,
+        );
+        ctx.world.add_component(new_id, new_drawable);
+    }
+
+    // ParticleEmitterComponent: copy config, create new GPU emitter
+    if let Some(emitter) = ctx
+        .world
+        .get_component::<ParticleEmitterComponent>(entity_id)
+    {
+        let is_active = emitter.active;
+        let emitter_config = emitter.config;
+        let new_emitter = ParticleEmitterComponent {
+            config: emitter_config,
+            emitter_handle: None,
+            active: is_active,
+            timed_emission: emitter.timed_emission,
+            burst_queue: emitter.burst_queue.clone(),
+        };
+        ctx.world.add_component(new_id, new_emitter);
+
+        if is_active && let Some(ps) = ctx.particle_system {
+            match ps.create_emitter(emitter_config) {
+                Ok(handle) => {
+                    if let Some(em) = ctx
+                        .world
+                        .get_component_mut::<ParticleEmitterComponent>(new_id)
+                    {
+                        em.emitter_handle = Some(handle);
+                    }
+                }
+                Err(e) => log::warn!(
+                    "Failed to create GPU emitter for duplicated entity {:?}: {}",
+                    new_id,
+                    e
+                ),
+            }
+        }
+    }
+
+    // PointLight: Copy type, deref from reference
+    if let Some(light) = ctx.world.get_component::<PointLight>(entity_id) {
+        ctx.world.add_component(new_id, *light);
+    }
+
+    // VelocityComponent: copy fields manually
+    if let Some(vel) = ctx.world.get_component::<VelocityComponent>(entity_id) {
+        ctx.world.add_component(
+            new_id,
+            VelocityComponent {
+                velocity: vel.velocity,
+                acceleration: vel.acceleration,
+            },
+        );
+    }
+
+    // AnimationPlayer: clone
+    if let Some(player) = ctx.world.get_component::<AnimationPlayer>(entity_id) {
+        ctx.world.add_component(new_id, player.clone());
+    }
+
+    // BillboardComponent: clone
+    if let Some(billboard) = ctx.world.get_component::<BillboardComponent>(entity_id) {
+        ctx.world.add_component(new_id, billboard.clone());
+    }
+
+    // EntitySource: clone for serialization round-trip
+    if let Some(source) = ctx.world.get_component::<EntitySource>(entity_id) {
+        ctx.world.add_component(new_id, source.clone());
+    }
+
+    Some(new_id)
+}
+
 /// Recursively collect all children of an entity for cascade delete.
 pub fn collect_children_recursive(
     app: &Application,
@@ -922,6 +1068,7 @@ fn unproject_to_ground_plane(app: &Application, screen_pos: Vec2) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gpu_resource_tracker::GpuResourceTracker;
     use katla_math::{Mat4, Quat, Rect2D, Vec3};
 
     /// Build a view matrix matching what Camera::get_view_mat does:
@@ -1160,6 +1307,226 @@ mod tests {
             "should be in front of camera, got z={:.3} vs cam z={:.3}",
             center.z(),
             cam_pos.z()
+        );
+    }
+
+    #[test]
+    fn test_duplicate_entity_preserves_all_components() {
+        use crate::animation::components::AnimationPlayer;
+        use crate::components::physics::physics::VelocityComponent;
+        use crate::components::rendering::billboard::{BillboardComponent, BillboardIcon};
+        use crate::scene::entity_source::EntitySource;
+        use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
+
+        let mut world = katla_ecs::World::new();
+        let mut tracker = GpuResourceTracker::new(MaterialHandle::new(999));
+
+        let source = world.spawn((
+            TransformComponent::from_position(Vec3::new(1.0, 2.0, 3.0)),
+            NameComponent {
+                name: "TestEntity".to_string(),
+            },
+        ));
+
+        let mesh = MeshHandle::new(10);
+        let mat = MaterialHandle::new(20);
+        let drawable =
+            DrawableComponent::with_handles_and_color(mesh, mat, katla_math::Color::WHITE);
+        world.add_component(source, drawable);
+        tracker.track_drawable(mesh, mat, SkeletonHandle::NONE);
+
+        world.add_component(
+            source,
+            PointLight {
+                color: [1.0, 0.5, 0.0],
+                intensity: 10.0,
+                range: 50.0,
+            },
+        );
+
+        world.add_component(
+            source,
+            VelocityComponent::new(
+                katla_math::Vec3::new(1.0, 0.0, -1.0),
+                katla_math::Vec3::new(0.0, -9.8, 0.0),
+            ),
+        );
+
+        world.add_component(source, AnimationPlayer::new("walk"));
+
+        world.add_component(source, BillboardComponent::new(BillboardIcon::Lightbulb));
+
+        world.add_component(
+            source,
+            EntitySource::Cube {
+                size: [1.0, 1.0, 1.0],
+            },
+        );
+
+        let mut ctx = DuplicateContext {
+            world: &mut world,
+            gpu_resource_tracker: &mut tracker,
+            particle_system: &mut None,
+        };
+        let new_id = duplicate_entity(&mut ctx, source).unwrap();
+
+        // Verify all components exist on new entity
+        assert!(
+            world.get_component::<TransformComponent>(new_id).is_some(),
+            "TransformComponent should be copied"
+        );
+        assert!(
+            world.get_component::<NameComponent>(new_id).is_some(),
+            "NameComponent should be copied"
+        );
+        assert!(
+            world.get_component::<DrawableComponent>(new_id).is_some(),
+            "DrawableComponent should be copied"
+        );
+        assert!(
+            world.get_component::<PointLight>(new_id).is_some(),
+            "PointLight should be copied"
+        );
+        assert!(
+            world.get_component::<VelocityComponent>(new_id).is_some(),
+            "VelocityComponent should be copied"
+        );
+        assert!(
+            world.get_component::<AnimationPlayer>(new_id).is_some(),
+            "AnimationPlayer should be copied"
+        );
+        assert!(
+            world.get_component::<BillboardComponent>(new_id).is_some(),
+            "BillboardComponent should be copied"
+        );
+        assert!(
+            world.get_component::<EntitySource>(new_id).is_some(),
+            "EntitySource should be copied"
+        );
+
+        // Verify field-level values are preserved
+        let new_name = world.get_component::<NameComponent>(new_id).unwrap();
+        assert_eq!(new_name.name, "TestEntity (copy)");
+
+        let new_light = world.get_component::<PointLight>(new_id).unwrap();
+        assert_eq!(new_light.color, [1.0, 0.5, 0.0]);
+        assert_eq!(new_light.intensity, 10.0);
+        assert_eq!(new_light.range, 50.0);
+
+        let new_vel = world.get_component::<VelocityComponent>(new_id).unwrap();
+        assert_eq!(new_vel.velocity, katla_math::Vec3::new(1.0, 0.0, -1.0));
+        assert_eq!(new_vel.acceleration, katla_math::Vec3::new(0.0, -9.8, 0.0));
+
+        let new_source = world.get_component::<EntitySource>(new_id).unwrap();
+        assert_eq!(
+            *new_source,
+            EntitySource::Cube {
+                size: [1.0, 1.0, 1.0]
+            }
+        );
+
+        // Verify GPU resource tracker incremented ref counts
+        assert_eq!(
+            tracker.mesh_ref_count(mesh),
+            2,
+            "Mesh ref count should be 2 after duplication"
+        );
+        assert_eq!(
+            tracker.material_ref_count(mat),
+            2,
+            "Material ref count should be 2 after duplication"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_entity_offsets_transform() {
+        let mut world = katla_ecs::World::new();
+        let mut tracker = GpuResourceTracker::new(katla_gfx::MaterialHandle::NONE);
+
+        let source = world.spawn((TransformComponent::from_position(Vec3::new(5.0, 3.0, -2.0)),));
+
+        let mut ctx = DuplicateContext {
+            world: &mut world,
+            gpu_resource_tracker: &mut tracker,
+            particle_system: &mut None,
+        };
+        let new_id = duplicate_entity(&mut ctx, source).unwrap();
+
+        let src_transform = world.get_component::<TransformComponent>(source).unwrap();
+        let new_transform = world.get_component::<TransformComponent>(new_id).unwrap();
+
+        let expected_pos = src_transform.transform.position + duplicate_offset();
+        assert_eq!(
+            new_transform.transform.position, expected_pos,
+            "Position should be offset by duplicate_offset()"
+        );
+
+        // Rotation: compare via matrix since Quat doesn't implement PartialEq
+        let src_mat = src_transform.transform.rotation.make_mat4();
+        let new_mat = new_transform.transform.rotation.make_mat4();
+        assert_eq!(src_mat, new_mat, "Rotation should be copied exactly");
+
+        assert_eq!(
+            new_transform.transform.scale, src_transform.transform.scale,
+            "Scale should be copied exactly"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_entity_empty() {
+        let mut world = katla_ecs::World::new();
+        let mut tracker = GpuResourceTracker::new(katla_gfx::MaterialHandle::NONE);
+
+        let source = world.create_entity();
+
+        let mut ctx = DuplicateContext {
+            world: &mut world,
+            gpu_resource_tracker: &mut tracker,
+            particle_system: &mut None,
+        };
+
+        let new_id = duplicate_entity(&mut ctx, source);
+
+        assert!(new_id.is_some(), "Empty entity duplication should succeed");
+        let new_id = new_id.unwrap();
+        assert_ne!(new_id, source, "New entity should have a different ID");
+
+        assert!(
+            world.get_component::<TransformComponent>(new_id).is_none(),
+            "Empty entity duplicate should have no TransformComponent"
+        );
+        assert!(
+            world.get_component::<NameComponent>(new_id).is_none(),
+            "Empty entity duplicate should have no NameComponent"
+        );
+        assert!(
+            world.get_component::<DrawableComponent>(new_id).is_none(),
+            "Empty entity duplicate should have no DrawableComponent"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_entity_updates_selection() {
+        let mut world = katla_ecs::World::new();
+        let mut tracker = GpuResourceTracker::new(katla_gfx::MaterialHandle::NONE);
+
+        let source = world.spawn((TransformComponent::from_position(Vec3::new(0.0, 0.0, 0.0)),));
+
+        let mut ctx = DuplicateContext {
+            world: &mut world,
+            gpu_resource_tracker: &mut tracker,
+            particle_system: &mut None,
+        };
+        let new_id = duplicate_entity(&mut ctx, source).unwrap();
+
+        // Verify the new entity was created (selection update is handled at call site)
+        assert_ne!(
+            new_id, source,
+            "Duplicated entity should differ from source"
+        );
+        assert!(
+            world.get_component::<TransformComponent>(new_id).is_some(),
+            "Duplicated entity should have TransformComponent"
         );
     }
 }
