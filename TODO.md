@@ -68,7 +68,7 @@
 ### P3: Polish
 
 - [ ] **Consider a minimal `Mat4` type within katla_gfx** — `FrameUniforms` in `renderer/types.rs:18-20` uses raw `[f32; 16]` arrays. Low priority: the raw arrays match GPU memory layout and are constructed from `katla_math` in `katla_app`, so a local Mat4 would create yet another conversion boundary.
-- [ ] **Extract viewport/UI from renderer module** — ~~Stale.~~ Viewport and UI logic extracted into `viewport_manager.rs` and `ui_renderer.rs` submodules. Only struct composition remains in `mod.rs`, which is appropriate.
+- ~~**Extract viewport/UI from renderer module**~~ — Viewport and UI logic extracted into `viewport_manager.rs` and `ui_renderer.rs` submodules. Only struct composition remains in `mod.rs`, which is appropriate.
 - ~~**Clean up dead code**~~ — Stale. `ShadowBuffers::len()/is_empty()` already removed. `CascadeParams::cascades()` has a test caller. `MaterialBuilder::with_push_constant_range()` (actually `PipelineBuilder`) has an example caller. No dead code to remove.
 - [x] **Chain errors in `RendererError::source()`** — `error.rs` — `source()` returns `None` for `VulkanError`/`IoError` variants because they convert to `String`, losing the original error. Change `IoError(String)` to `IoError(io::Error)` etc. to preserve error chains for debugging.
 
