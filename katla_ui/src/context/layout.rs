@@ -73,19 +73,6 @@ impl UiContext {
         bounds
     }
 
-    /// Add horizontal spacing.
-    ///
-    /// Alias for `spacing()` — always advances horizontally regardless of layout direction.
-    /// Prefer `spacing()` for direction-aware spacing.
-    #[inline]
-    pub fn spacer(&mut self, size: f32) {
-        if let Some(layout) = self.layout_stack.last_mut() {
-            layout.cursor = Vec2::new(layout.cursor.x() + size, layout.cursor.y());
-        } else {
-            self.cursor = Vec2::new(self.cursor.x() + size, self.cursor.y());
-        }
-    }
-
     /// Advance the cursor after placing a widget.
     ///
     /// Call this after positioning a widget to move the cursor for the next item.

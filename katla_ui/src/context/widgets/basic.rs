@@ -275,13 +275,15 @@ impl UiContext {
         if focused {
             self.input.want_capture_keyboard = true;
 
+            // Handle backspace
+            if self.input.key_pressed(KeyCode::Backspace) && !text.is_empty() {
+                text.pop();
+                changed = true;
+            }
+
+            // Handle character input
             for &c in &self.input.characters {
-                if c == '\x08' {
-                    if !text.is_empty() {
-                        text.pop();
-                        changed = true;
-                    }
-                } else if c >= ' ' && text.len() < self.style.text_input_max_length {
+                if c >= ' ' && text.len() < self.style.text_input_max_length {
                     text.push(c);
                     changed = true;
                 }

@@ -123,10 +123,10 @@
 
 ### P3: Polish
 
-- [ ] **Remove or wire up `selectable()` widget** — `context/widgets/selectable.rs` has `#[allow(dead_code)]` on an implemented but uncalled widget method.
-- [ ] **Remove or deprecate `spacer()` in favor of `spacing()`** — `context/layout.rs:92-106` — `spacer()` always advances horizontally regardless of layout direction, while `spacing()` is direction-aware. The doc says "prefer spacing()" but both are `pub`.
+- ~~**Remove or wire up `selectable()` widget**~~ — False positive. `selectable.rs` contains `toggle_button()` which is actively called by `ToggleButton` widget in `widgets/mod.rs`. The `selectable_hovered`/`selectable_selected` style fields are used. No dead code.
+- [x] **Remove or deprecate `spacer()` in favor of `spacing()`** — `context/layout.rs:92-106` — `spacer()` always advances horizontally regardless of layout direction, while `spacing()` is direction-aware. The doc says "prefer spacing()" but both are `pub`.
 - [ ] **Document `end_column()` vs `end_row()` spacing asymmetry** — `context/layout.rs:228-231` — `end_column()` adds trailing spacing but `end_row()` doesn't. Undocumented and surprising.
-- [ ] **Use `KeyCode::Backspace` instead of `\x08` character check** — `context/widgets/basic.rs:256-258` checks `c == '\x08'` for backspace but `KeyCode` enum has a `Backspace` variant. Conflates character input with key events.
+- [x] **Use `KeyCode::Backspace` instead of `\x08` character check** — `context/widgets/basic.rs:256-258` checks `c == '\x08'` for backspace but `KeyCode` enum has a `Backspace` variant. Conflates character input with key events.
 - [ ] **Remove hardcoded widget default sizes** — `Button` 100x30, `Checkbox` 150x24, `Slider` 150x20, `TextInput` 200x24, etc. don't relate to `UiStyle` dimensions. `at_cursor()` methods use style values but defaults ignore them.
 - [ ] **Fix `Separator` hardcoded 200.0 width** — `widgets/mod.rs:673-704` — no way to make it span full container width without caller computing manually.
 - [ ] **Replace per-frame `Vec<Vec2>` allocation in `graph()`** — `context/widgets/graph.rs:53-65` allocates every frame. Use a scratch buffer approach like `DrawList` uses for circles.
