@@ -1,0 +1,21 @@
+{
+  "featureId": "decompose-application-struct",
+  "reviewedAt": "2026-04-07T23:15:00.000Z",
+  "commitId": "b4d28f2",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The Application god struct was cleanly decomposed into EditorState (13 editor-cfg-gated fields) and DebugState (2 debug-assertion fields). The Application struct now has a single #[cfg(feature = 'editor')] editor: EditorState field and a single #[cfg(debug_assertions)] debug: DebugState field. All 15 scattered per-field cfg annotations have been eliminated from the Application struct. All field access sites across 8 files (mod.rs, renderer.rs, picking.rs, init.rs, gizmo.rs, frame_loop.rs, editor/mod.rs, builder.rs) were updated to use the new sub-struct paths. All 202 workspace tests pass, non-editor build compiles, and release build compiles.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "services",
+      "observation": "The handoff ran 'cargo check -p katla_app --release' for release build verification, but services.yaml has no 'check_release' command. This configuration gap means future workers may not know to verify release builds when touching debug_assertions-gated code.",
+      "evidence": "Handoff verification shows 'cargo check -p katla_app --release' was run, but .factory/services.yaml does not include this command."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Clean decomposition of the Application struct into EditorState and DebugState sub-structs. All 13 editor fields correctly grouped behind single #[cfg(feature = 'editor')] on EditorState, both debug fields behind #[cfg(debug_assertions)] on DebugState. Zero per-field cfg annotations remain on Application. All 202 tests pass, both feature configurations compile, release build compiles. Access patterns are consistent (self.editor.X, self.debug.X) with no stale direct references. No issues found."
+}

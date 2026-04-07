@@ -1,0 +1,57 @@
+{
+  "milestone": "structural-decomposition",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0, "observation": "202 tests passed, 0 failed, 100+ ignored doctests. All scene, application, editor_ui tests pass." },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0, "observation": "Clean build with zero errors across all workspace crates." },
+    "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0, "observation": "Zero warnings. Pre-existing dead_code warnings in katla_gfx bindless_texture.rs and billboard_icons.rs are not from this milestone." }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "services.yaml",
+      "description": "Add check_release command: cargo check -p katla_app --release",
+      "sourceFeature": "decompose-application-struct"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document convention: when splitting modules, impl blocks for methods should be placed in submodules of the defining module (e.g., application/gizmo.rs for Application gizmo methods) rather than in the type's own module, to avoid circular dependencies.",
+      "evidence": "split-application-mod-rs feature: gizmo methods placed in application/gizmo.rs rather than src/gizmo/ to avoid circular dependency between application and gizmo crates.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "When splitting files, target submodule file lists should be treated as guidance rather than strict requirements. Workers should be empowered to merge or split files based on architectural judgment (e.g., merging spawning.rs into serialization.rs when they share close coupling).",
+      "evidence": "split-scene-mod-rs feature: spawning.rs was merged into serialization.rs rather than created as a separate file. Both approaches are valid.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Feature description line count estimates were significantly off (e.g., events.rs estimated ~200 lines but was 33 lines; layout.rs estimated ~400 but was 577 lines)",
+      "reason": "already-documented: line count estimates in feature descriptions are inherently imprecise and do not affect correctness or quality"
+    },
+    {
+      "observation": "Worker followed rust-worker skill procedure faithfully for split-editor-ui-rs, adapting test-first approach for pure refactoring",
+      "reason": "duplicate: skill compliance is a worker execution concern, not a guidance gap"
+    },
+    {
+      "observation": "EditorState/DebugState decomposition done as subsequent commit after application split, showing natural progression pattern",
+      "reason": "ambiguous: this is a mission planning observation, not a guidance issue"
+    },
+    {
+      "observation": "Scene README.md not updated to reflect new file structure after split",
+      "reason": "ambiguous: no scene/README.md exists in the repository; this is a non-issue"
+    }
+  ],
+  "previousRound": null
+}

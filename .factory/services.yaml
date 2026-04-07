@@ -13,5 +13,6 @@ commands:
   test_katla_app: cargo test -p katla_app
   check_no_editor: cargo check -p katla_app --no-default-features
   check_with_editor: cargo check -p katla_app --features editor
+  check_release: cargo check -p katla_app --release
 
 services: {}
