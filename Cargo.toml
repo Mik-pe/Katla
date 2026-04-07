@@ -9,10 +9,10 @@ vello_cpu = "0.0.7"
 approx = "0.5"
 ash = "0.38"
 ash-window = "0.13"
-bitflags = "2.6"
-bytemuck = { version = "1.21", features = ["derive"] }
+bitflags = "2.11"
+bytemuck = { version = "1.25", features = ["derive"] }
 byteorder = "1.5"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 dirs = "6.0"
 env_logger = "0.11"
 gltf = { version = "1.4", features = ["KHR_materials_pbrSpecularGlossiness"] }
@@ -21,14 +21,12 @@ image = "0.25"
 itertools = "0.14"
 libc = "0.2"
 log = "0.4"
-naga = { version = "28.0.0", features = ["wgsl-in", "spv-out"] }
-notify = "7.0"
+naga = { version = "29.0.1", features = ["wgsl-in", "spv-out"] }
 paste = "1.0"
 png = "0.18"
 proc-macro2 = "1.0"
 quote = "1.0"
-rand = "0.8"
-ron = "0.8"
+ron = "0.12"
 raw-window-handle = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
