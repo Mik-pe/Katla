@@ -208,6 +208,8 @@ impl<'a> Frame<'a> {
                     skeleton_set: 3,
                     extra_sets: extra_sets.clone(),
                 },
+                billboard_pipeline: None,
+                billboard_layout: None,
             })?;
         }
 

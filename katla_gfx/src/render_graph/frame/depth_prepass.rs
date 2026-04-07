@@ -182,6 +182,17 @@ impl<'a> Frame<'a> {
                 (None, None)
             };
 
+        let (billboard_pipeline, billboard_layout) =
+            if let Some(handle) = self.renderer.depth_prepass_billboard_pipeline() {
+                self.renderer
+                    .asset_registry
+                    .get_pipeline_vk_handles(handle)
+                    .map(|(p, l)| (Some(p), Some(l)))
+                    .unwrap_or((None, None))
+            } else {
+                (None, None)
+            };
+
         draw_meshes_with_skinning(DrawParams {
             cmd,
             renderer: self.renderer,
@@ -196,6 +207,8 @@ impl<'a> Frame<'a> {
                 skeleton_set: 2,
                 extra_sets: Vec::new(),
             },
+            billboard_pipeline,
+            billboard_layout,
         })?;
 
         cmd.end_rendering();
