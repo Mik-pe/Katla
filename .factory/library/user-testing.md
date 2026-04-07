@@ -29,6 +29,16 @@ Testing surface, required tools, and resource classification for validation.
 - Vulkan SDK (for headless GPU validation)
 - ripgrep (for grep-based evidence collection)
 
+## Testing Gotchas
+
+### Validation Examples Require Feature Flag
+GPU validation examples (`picking_validation`, `outline_validation`, etc.) require `--features validation`:
+- `cargo run -p katla_gfx --example picking_validation --features validation`
+- `cargo run -p katla_gfx --example outline_validation --features validation`
+
+### Test Against Committed Code
+The working tree may contain uncommitted changes from in-progress milestones. These can cause false failures (e.g., compile errors in examples from incomplete robustness work). Always stash uncommitted changes before running validation examples, or verify failures are not caused by unrelated working tree changes.
+
 ## Validation Concurrency
 
 This is a Rust workspace with no running services. Validation is CPU-bound + GPU-bound:
