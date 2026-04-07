@@ -547,19 +547,19 @@ impl LightCullingBuffers {
 
             if let Some(alloc) = self.light_allocation.take() {
                 device.destroy_buffer(self.light_buffer, None);
-                let _ = self.context.allocator.borrow_mut().free(alloc);
+                self.context.allocator.free(alloc, "light culling buffer");
             }
             if let Some(alloc) = self.tile_index_allocation.take() {
                 device.destroy_buffer(self.tile_index_buffer, None);
-                let _ = self.context.allocator.borrow_mut().free(alloc);
+                self.context.allocator.free(alloc, "tile index buffer");
             }
             if let Some(alloc) = self.tile_header_allocation.take() {
                 device.destroy_buffer(self.tile_header_buffer, None);
-                let _ = self.context.allocator.borrow_mut().free(alloc);
+                self.context.allocator.free(alloc, "tile header buffer");
             }
             if let Some(alloc) = self.frame_data_allocation.take() {
                 device.destroy_buffer(self.frame_data_buffer, None);
-                let _ = self.context.allocator.borrow_mut().free(alloc);
+                self.context.allocator.free(alloc, "frame data buffer");
             }
         }
     }

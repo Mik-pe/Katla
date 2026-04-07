@@ -1308,10 +1308,8 @@ impl Drop for OutputRenderTarget {
                 .device
                 .destroy_image_view(self.color_image_view, None);
             self.context.device.destroy_image(self.color_image, None);
-            if let Some(memory) = self.color_memory.take()
-                && let Ok(mut allocator) = self.context.allocator.try_borrow_mut()
-            {
-                allocator.free(memory).ok();
+            if let Some(memory) = self.color_memory.take() {
+                self.context.allocator.free(memory, "output render target");
             }
         }
     }

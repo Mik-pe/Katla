@@ -888,8 +888,7 @@ fn main() -> ExitCode {
     let engine_name = CString::new("Katla Engine").unwrap();
 
     log::info!("Creating headless Vulkan context with GPU-assisted validation...");
-    let context = VulkanContext::init_headless(ValidationMode::GpuAssisted, app_name, engine_name)
-        .expect("Failed to create headless Vulkan context");
+    let context = VulkanContext::init_headless(ValidationMode::GpuAssisted, app_name, engine_name);
     let context = std::rc::Rc::new(context);
     log::info!("Vulkan context created successfully");
 
@@ -1044,9 +1043,9 @@ fn main() -> ExitCode {
     unsafe {
         context.device.destroy_buffer(staging.buffer, None);
     }
-    if let Ok(mut allocator) = context.allocator.try_borrow_mut() {
-        allocator.free(staging.allocation).ok();
-    }
+    context
+        .allocator
+        .free(staging.allocation, "animation staging buffer");
 
     if failed {
         log::error!("=== Validation FAILED ===");

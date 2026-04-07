@@ -254,7 +254,7 @@ impl ReadbackStagingBuffer {
 
         let allocation = context
             .allocator
-            .borrow_mut()
+            .try_borrow_mut_string(name)?
             .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
                 name,
                 requirements,
@@ -291,9 +291,9 @@ impl ReadbackStagingBuffer {
     /// Destroy the staging buffer.
     fn destroy(self, context: &Rc<VulkanContext>) {
         unsafe {
-            if let Ok(mut allocator) = context.allocator.try_borrow_mut() {
-                allocator.free(self.allocation).ok();
-            }
+            context
+                .allocator
+                .free(self.allocation, "debug readback staging");
             context.device.destroy_buffer(self.buffer.vk(), None);
         }
     }

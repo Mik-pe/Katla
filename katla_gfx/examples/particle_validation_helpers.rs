@@ -329,16 +329,16 @@ impl RenderValidationResources {
             device.destroy_buffer(self.frame_uniforms_buffer, None);
         }
 
-        if let Ok(mut allocator) = context.allocator.try_borrow_mut() {
-            if let Some(alloc) = self.color_allocation.take() {
-                allocator.free(alloc).ok();
-            }
-            if let Some(alloc) = self.depth_allocation.take() {
-                allocator.free(alloc).ok();
-            }
-            if let Some(alloc) = self.frame_uniforms_allocation.take() {
-                allocator.free(alloc).ok();
-            }
+        if let Some(alloc) = self.color_allocation.take() {
+            context.allocator.free(alloc, "particle validation color");
+        }
+        if let Some(alloc) = self.depth_allocation.take() {
+            context.allocator.free(alloc, "particle validation depth");
+        }
+        if let Some(alloc) = self.frame_uniforms_allocation.take() {
+            context
+                .allocator
+                .free(alloc, "particle validation frame uniforms");
         }
 
         unsafe {
@@ -348,164 +348,6 @@ impl RenderValidationResources {
 
         log::info!("Render validation resources destroyed");
     }
-}
-
-/// Execute actual GPU compute dispatch for particle emit and simulate.
-#[allow(dead_code)]
-pub fn execute_gpu_compute(
-    context: &VulkanContext,
-    particle_system: &mut GlobalParticleSystem,
-    asset_registry: &AssetRegistry,
-    frame: u32,
-    alive_count: u32,
-    emit_count: u32,
-    render_resources: Option<&RenderValidationResources>,
-) -> Result<(), String> {
-    // Calculate workgroup counts based on particle counts
-    let emit_workgroups = if emit_count > 0 {
-        (emit_count + PARTICLE_EMIT_WORKGROUP_SIZE - 1) / PARTICLE_EMIT_WORKGROUP_SIZE
-    } else {
-        0
-    };
-
-    // Simulate processes ALL particles: old survivors + newly emitted.
-    // After emit, alive[frame] contains [survivors..alive_count-1] + [emitted..alive_count+emit_count-1].
-    let total_to_simulate = alive_count + emit_count;
-    let simulate_workgroups = if total_to_simulate > 0 {
-        (total_to_simulate + PARTICLE_SIMULATE_WORKGROUP_SIZE - 1)
-            / PARTICLE_SIMULATE_WORKGROUP_SIZE
-    } else {
-        0
-    };
-
-    if emit_workgroups == 0 && simulate_workgroups == 0 {
-        log::debug!("No particles to emit or simulate, skipping GPU dispatch");
-        return Ok(());
-    }
-
-    // Create command buffer for compute operations
-    let command_buffer = context.begin_single_time_commands();
-
-    // CRITICAL: Update compute descriptor bindings for each dispatch
-    // The validation runs frames 0-9, so we need to use frame_index % 2 for double-buffering
-    let frame_index_for_descriptor = (frame as usize) % 2; // Use actual frame index for proper alternation
-
-    // Record emit dispatch if we have particles to emit
-    if emit_workgroups > 0 {
-        // Update descriptor binding for emit dispatch
-        if let Err(e) =
-            particle_system.update_compute_descriptor_binding(frame_index_for_descriptor)
-        {
-            log::warn!(
-                "Frame {}: Failed to update compute descriptor binding: {}",
-                frame,
-                e
-            );
-        }
-
-        log::debug!(
-            "Recording emit dispatch: {} workgroups ({} particles)",
-            emit_workgroups,
-            emit_count
-        );
-        match particle_system.record_emit_dispatch(
-            command_buffer.vk_command_buffer(),
-            asset_registry,
-            emit_workgroups,
-            frame_index_for_descriptor,
-        ) {
-            Ok(_) => {
-                log::debug!("Emit dispatch recorded successfully");
-            }
-            Err(e) => {
-                log::warn!(
-                    "Failed to record emit dispatch (pipelines may not be loaded): {}",
-                    e
-                );
-                // Continue anyway - we'll validate CPU-side structures
-            }
-        }
-    }
-
-    // Record simulate dispatch if we have alive particles
-    if simulate_workgroups > 0 {
-        // Update descriptor binding for simulate dispatch
-        if let Err(e) =
-            particle_system.update_compute_descriptor_binding(frame_index_for_descriptor)
-        {
-            log::warn!(
-                "Frame {}: Failed to update compute descriptor binding: {}",
-                frame,
-                e
-            );
-        }
-
-        // Reset simulate counters before simulate dispatch.
-        // This resets workgroups_finished to 0 and, when emit was skipped,
-        // resets alive_count and emit_count appropriately.
-        particle_system.reset_simulate_counters(
-            command_buffer.vk_command_buffer(),
-            emit_workgroups > 0,
-            frame_index_for_descriptor,
-        );
-
-        log::debug!(
-            "Recording simulate dispatch: {} workgroups ({} particles)",
-            simulate_workgroups,
-            alive_count
-        );
-        match particle_system.record_simulate_dispatch(
-            command_buffer.vk_command_buffer(),
-            asset_registry,
-            simulate_workgroups,
-            frame_index_for_descriptor,
-        ) {
-            Ok(_) => {
-                log::debug!("Simulate dispatch recorded successfully");
-            }
-            Err(e) => {
-                log::warn!(
-                    "Failed to record simulate dispatch (pipelines may not be loaded): {}",
-                    e
-                );
-                // Continue anyway - we'll validate CPU-side structures
-            }
-        }
-
-        // Record debug readback to capture simulate output
-        match particle_system.record_debug_readback(
-            command_buffer.vk_command_buffer(),
-            frame_index_for_descriptor,
-        ) {
-            Ok(_) => {
-                log::debug!("Debug readback recorded successfully");
-            }
-            Err(e) => {
-                log::warn!("Failed to record debug readback: {}", e);
-            }
-        }
-
-        // No swap needed — simulate writes to alive[(frame+1)%2] via descriptor offset flip
-    }
-
-    // Record render dispatch to exercise the full GPU pipeline
-    if let Some(render_res) = render_resources
-        && let Err(e) = record_render_dispatch(
-            context,
-            particle_system,
-            asset_registry,
-            command_buffer.vk_command_buffer(),
-            render_res,
-            frame_index_for_descriptor,
-        )
-    {
-        log::warn!("Frame {}: Failed to record render dispatch: {}", frame, e);
-    }
-
-    // End command buffer and submit to GPU
-    context.end_single_time_commands(command_buffer);
-
-    Ok(())
 }
 
 /// Record a render dispatch using dynamic rendering with 1x1 color + depth attachments.

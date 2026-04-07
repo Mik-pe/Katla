@@ -19,9 +19,7 @@ use gpu_allocator::{
 };
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
-    cell::RefCell,
     ffi::{CString, c_void},
-    mem::ManuallyDrop,
     rc::Rc,
     sync::{Arc, Mutex},
 };
@@ -96,7 +94,7 @@ pub struct VulkanContext {
     pub swapchain_loader: Option<Rc<SwapchainDevice>>,
     pub push_descriptor_loader: PushDescriptorDevice,
     pub physical_device: vk::PhysicalDevice,
-    pub allocator: ManuallyDrop<RefCell<Allocator>>,
+    pub allocator: memory::GpuAllocator,
     pub surface: Option<vk::SurfaceKHR>,
     pub graphics_queue: vk::Queue,
     pub gfx_queue: super::Queue,
@@ -268,10 +266,10 @@ impl VulkanContext {
             allocation_sizes: AllocationSizes::default(),
         };
 
-        let allocator = ManuallyDrop::new(RefCell::new(
+        let allocator = memory::GpuAllocator::new(
             Allocator::new(&allocator_create_info)
                 .map_err(|e| RendererError::from_allocation_error("GPU", e))?,
-        ));
+        );
 
         let push_descriptor_khr = Some(ash::khr::push_descriptor::Device::new(&instance, &device));
 
@@ -416,10 +414,10 @@ impl VulkanContext {
             allocation_sizes: AllocationSizes::default(),
         };
 
-        let allocator = ManuallyDrop::new(RefCell::new(
+        let allocator = memory::GpuAllocator::new(
             Allocator::new(&allocator_create_info)
                 .map_err(|e| RendererError::from_allocation_error("GPU", e))?,
-        ));
+        );
 
         let push_descriptor_khr = Some(ash::khr::push_descriptor::Device::new(&instance, &device));
 
@@ -460,7 +458,7 @@ impl Drop for VulkanContext {
             self.device
                 .destroy_command_pool(self.transfer_command_pool, None);
             self.gfx_cmdpool.destroy();
-            ManuallyDrop::drop(&mut self.allocator);
+            self.allocator.destroy();
             self.device.destroy_device(None);
 
             if let Some(surface) = self.surface

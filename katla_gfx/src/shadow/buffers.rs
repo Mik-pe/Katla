@@ -91,16 +91,6 @@ impl ShadowBuffers {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn len(&self) -> usize {
-        self.shadow_atlas_views.len()
-    }
-
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.shadow_atlas_views.is_empty()
-    }
-
     pub fn set_shadow_atlas_view(&mut self, frame_idx: usize, view: vk::ImageView) {
         if frame_idx < self.shadow_atlas_views.len() {
             self.shadow_atlas_views[frame_idx] = Some(view);
@@ -189,7 +179,7 @@ impl ShadowBuffers {
 
             if let Some(alloc) = self.shadow_data_allocation.take() {
                 device.destroy_buffer(self.shadow_data_buffer, None);
-                let _ = self.context.allocator.borrow_mut().free(alloc);
+                self.context.allocator.free(alloc, "shadow buffer");
             }
         }
     }

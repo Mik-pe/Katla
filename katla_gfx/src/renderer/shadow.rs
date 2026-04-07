@@ -726,7 +726,7 @@ impl ShadowSubsystem {
         {
             unsafe {
                 context.device.destroy_buffer(buffer, None);
-                let _ = context.allocator.borrow_mut().free(allocation);
+                context.allocator.free(allocation, "shadow cascade buffer");
             }
         }
         self.cascade_mapped_ptrs.clear();

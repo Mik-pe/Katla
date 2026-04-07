@@ -556,10 +556,12 @@ impl GpuValidationResources {
             context.device.destroy_buffer(self.val_results_buffer, None);
             context.device.destroy_buffer(self.val_params_buffer, None);
         }
-        if let Ok(mut allocator) = context.allocator.try_borrow_mut() {
-            allocator.free(self.val_results_alloc).ok();
-            allocator.free(self.val_params_alloc).ok();
-        }
+        context
+            .allocator
+            .free(self.val_results_alloc, "particle validation results");
+        context
+            .allocator
+            .free(self.val_params_alloc, "particle validation params");
     }
 }
 
@@ -682,8 +684,7 @@ fn main() -> ExitCode {
     let engine_name = CString::new("Katla Engine").unwrap();
 
     log::info!("Creating headless Vulkan context with GPU-assisted validation...");
-    let context = VulkanContext::init_headless(ValidationMode::GpuAssisted, app_name, engine_name)
-        .expect("Failed to create headless Vulkan context");
+    let context = VulkanContext::init_headless(ValidationMode::GpuAssisted, app_name, engine_name);
     let context = std::rc::Rc::new(context);
     log::info!("Vulkan context created successfully");
 

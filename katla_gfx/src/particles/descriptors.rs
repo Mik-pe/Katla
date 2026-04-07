@@ -215,7 +215,7 @@ impl GlobalParticleSystem {
 
             let frame_allocation = context
                 .allocator
-                .borrow_mut()
+                .try_borrow_mut_string("particle_frame_data")?
                 .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
                     name: &format!("particle_frame_data[{}]", frame_idx),
                     requirements: frame_requirements,
@@ -270,7 +270,7 @@ impl GlobalParticleSystem {
 
             let emitter_allocation = context
                 .allocator
-                .borrow_mut()
+                .try_borrow_mut_string("particle_emitter_configs")?
                 .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
                     name: &format!("particle_emitter_configs[{}]", frame_idx),
                     requirements: emitter_requirements,
