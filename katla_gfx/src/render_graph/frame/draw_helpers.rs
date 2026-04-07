@@ -108,10 +108,8 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
                 .get_mesh(draw_call.mesh)
                 .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
 
-            // Detect billboard draws: PBR vertex layout with TexCoord0, not skinned
-            let is_billboard = !is_skinned
-                && billboard_pipeline.is_some()
-                && mesh.has_attribute(AttributeType::TexCoord0);
+            // Billboard draws are identified by the is_billboard flag on the draw call
+            let is_billboard = draw_call.is_billboard && billboard_pipeline.is_some();
 
             let target_variant = if is_skinned {
                 PipelineVariant::Skinned
