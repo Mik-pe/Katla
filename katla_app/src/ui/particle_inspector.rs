@@ -95,7 +95,9 @@ impl<'a> Widget for ParticleInspector<'a> {
             text_muted: self.theme.text_muted,
         };
 
-        let frame = DraggablePanel::begin(
+        let was_visible = self.state.panel.is_visible();
+
+        DraggablePanel::show(
             ui,
             "particle_inspector",
             "Particle Inspector",
@@ -104,126 +106,125 @@ impl<'a> Widget for ParticleInspector<'a> {
             screen_size,
             &mut self.state.panel,
             &style,
-        );
+            |ui, frame| {
+                let title_bar_height = DraggablePanel::title_bar_height();
+                let panel_min = frame.panel_bounds.min;
+                let content_x = panel_min.x() + 8.0;
+                let content_start_y = panel_min.y() + title_bar_height + 8.0;
+                let content_width = frame.panel_bounds.width() - 16.0;
+                let content_height = panel_height - title_bar_height - 8.0;
 
-        let title_bar_height = DraggablePanel::title_bar_height();
-        let panel_min = frame.panel_bounds.min;
-        let content_x = panel_min.x() + 8.0;
-        let content_start_y = panel_min.y() + title_bar_height + 8.0;
-        let content_width = frame.panel_bounds.width() - 16.0;
-        let content_height = panel_height - title_bar_height - 8.0;
-
-        let scroll_bounds = Rect2D::from_origin_size(
-            Vec2::new(panel_min.x(), content_start_y - 8.0),
-            Vec2::new(panel_width, content_height),
-        );
-
-        let theme = self.theme;
-        let data = self.data;
-        let selected_emitter = self.selected_emitter;
-        let mut scroll_actions: Vec<ParticleInspectorAction> = Vec::new();
-
-        self.state.scroll_state = ui.scroll_area(
-            ScrollArea::new("particle_inspector_scroll").max_height(content_height),
-            self.state.scroll_state,
-            scroll_bounds,
-            |ui| {
-                let scroll_offset = ui.scroll_offset();
-                let cursor_x = content_x;
-                let mut cursor_y = content_start_y - scroll_offset;
-
-                let line_height = 20.0;
-
-                ui.draw_text(
-                    "Emitter:",
-                    Vec2::new(cursor_x, cursor_y),
-                    theme.text_primary,
-                    ui.scaled_font_size(FontSize::Small),
+                let scroll_bounds = Rect2D::from_origin_size(
+                    Vec2::new(panel_min.x(), content_start_y - 8.0),
+                    Vec2::new(panel_width, content_height),
                 );
-                cursor_y += line_height;
 
-                if data.emitter_entities.is_empty() {
-                    ui.draw_text(
-                        "No particle emitters in scene",
-                        Vec2::new(cursor_x, cursor_y),
-                        theme.text_muted,
-                        ui.scaled_font_size(FontSize::Small),
-                    );
-                    cursor_y += line_height;
-                } else {
-                    for (idx, entity_id) in data.emitter_entities.iter().enumerate() {
-                        let is_selected = selected_emitter == &Some(*entity_id);
-                        let entity_name = format!("Emitter {}", idx);
+                let theme = self.theme;
+                let data = self.data;
+                let selected_emitter = self.selected_emitter;
+                let mut scroll_actions: Vec<ParticleInspectorAction> = Vec::new();
 
-                        let button_bounds = Rect2D::from_origin_size(
+                self.state.scroll_state = ui.scroll_area(
+                    ScrollArea::new("particle_inspector_scroll").max_height(content_height),
+                    self.state.scroll_state,
+                    scroll_bounds,
+                    |ui| {
+                        let scroll_offset = ui.scroll_offset();
+                        let cursor_x = content_x;
+                        let mut cursor_y = content_start_y - scroll_offset;
+
+                        let line_height = 20.0;
+
+                        ui.draw_text(
+                            "Emitter:",
                             Vec2::new(cursor_x, cursor_y),
-                            Vec2::new(content_width, 24.0),
+                            theme.text_primary,
+                            ui.scaled_font_size(FontSize::Small),
                         );
+                        cursor_y += line_height;
 
-                        let button_color = if is_selected {
-                            theme.highlight
+                        if data.emitter_entities.is_empty() {
+                            ui.draw_text(
+                                "No particle emitters in scene",
+                                Vec2::new(cursor_x, cursor_y),
+                                theme.text_muted,
+                                ui.scaled_font_size(FontSize::Small),
+                            );
+                            cursor_y += line_height;
                         } else {
-                            theme.button_bg
-                        };
+                            for (idx, entity_id) in data.emitter_entities.iter().enumerate() {
+                                let is_selected = selected_emitter == &Some(*entity_id);
+                                let entity_name = format!("Emitter {}", idx);
 
-                        if ui
-                            .add(
-                                Button::new(&entity_name)
-                                    .bounds(button_bounds)
-                                    .fill_color(button_color),
-                            )
-                            .clicked
-                        {
-                            scroll_actions.push(ParticleInspectorAction::SelectEmitter(*entity_id));
+                                let button_bounds = Rect2D::from_origin_size(
+                                    Vec2::new(cursor_x, cursor_y),
+                                    Vec2::new(content_width, 24.0),
+                                );
+
+                                let button_color = if is_selected {
+                                    theme.highlight
+                                } else {
+                                    theme.button_bg
+                                };
+
+                                if ui
+                                    .add(
+                                        Button::new(&entity_name)
+                                            .bounds(button_bounds)
+                                            .fill_color(button_color),
+                                    )
+                                    .clicked
+                                {
+                                    scroll_actions
+                                        .push(ParticleInspectorAction::SelectEmitter(*entity_id));
+                                }
+
+                                cursor_y += 28.0;
+                            }
                         }
 
-                        cursor_y += 28.0;
-                    }
-                }
+                        cursor_y += line_height;
+                        ui.draw_line(
+                            Vec2::new(cursor_x, cursor_y),
+                            Vec2::new(cursor_x + content_width, cursor_y),
+                            theme.separator,
+                            1.0,
+                        );
+                        cursor_y += line_height;
 
-                cursor_y += line_height;
-                ui.draw_line(
-                    Vec2::new(cursor_x, cursor_y),
-                    Vec2::new(cursor_x + content_width, cursor_y),
-                    theme.separator,
-                    1.0,
+                        if let Some(ref config) = data.selected_emitter_config {
+                            let layout = InspectorLayout {
+                                cursor_x,
+                                content_width,
+                                theme,
+                            };
+                            cursor_y = render_emitter_config(
+                                ui,
+                                config,
+                                &data.stats,
+                                &layout,
+                                cursor_y,
+                                &mut scroll_actions,
+                            );
+                        } else if selected_emitter.is_some() {
+                            ui.draw_text(
+                                "Selected emitter not found",
+                                Vec2::new(cursor_x, cursor_y),
+                                theme.text_muted,
+                                ui.scaled_font_size(FontSize::Small),
+                            );
+                            cursor_y += line_height;
+                        }
+
+                        cursor_y - content_start_y + scroll_offset
+                    },
                 );
-                cursor_y += line_height;
 
-                if let Some(ref config) = data.selected_emitter_config {
-                    let layout = InspectorLayout {
-                        cursor_x,
-                        content_width,
-                        theme,
-                    };
-                    cursor_y = render_emitter_config(
-                        ui,
-                        config,
-                        &data.stats,
-                        &layout,
-                        cursor_y,
-                        &mut scroll_actions,
-                    );
-                } else if selected_emitter.is_some() {
-                    ui.draw_text(
-                        "Selected emitter not found",
-                        Vec2::new(cursor_x, cursor_y),
-                        theme.text_muted,
-                        ui.scaled_font_size(FontSize::Small),
-                    );
-                    cursor_y += line_height;
-                }
-
-                cursor_y - content_start_y + scroll_offset
+                self.pending_actions.extend(scroll_actions);
             },
         );
 
-        self.pending_actions.extend(scroll_actions);
-
-        DraggablePanel::end(&mut self.state.panel, &frame);
-
-        // Return actions to caller
-        if frame.close_clicked || frame.clicked_outside {
+        if was_visible && !self.state.panel.is_visible() {
             self.pending_actions.push(ParticleInspectorAction::Close);
         }
 

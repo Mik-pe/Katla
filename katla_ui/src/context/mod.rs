@@ -115,6 +115,10 @@ pub struct UiContext {
     pub(super) z_index: u32,
     /// Z-index stack for nested containers.
     pub(super) z_stack: Vec<u32>,
+    /// Highest z-index that the mouse is currently hovering over.
+    /// Updated automatically by `draw_rect`. Widgets check against this to
+    /// prevent interaction when covered by higher-z content.
+    pub(crate) hover_z_index: u32,
     /// Tracked bounding box of all popup content (auto-expanded as items are drawn).
     pub(crate) popup_content_bounds: Option<Rect2D>,
     /// Current popup cursor position for automatic layout.
@@ -161,6 +165,7 @@ impl UiContext {
             popup_consume_click: false,
             z_index: z_index::DEFAULT,
             z_stack: Vec::new(),
+            hover_z_index: z_index::DEFAULT,
             popup_content_bounds: None,
             popup_cursor: Vec2::new(0.0, 0.0),
             popup_width: 0.0,

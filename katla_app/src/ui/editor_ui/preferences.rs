@@ -142,7 +142,9 @@ impl<'a> Widget for PreferencesPanel<'a> {
         let title_bar_height = DraggablePanel::title_bar_height();
         let tab_bar_height = 36.0;
 
-        let frame = DraggablePanel::begin(
+        let mut panel_bounds = Rect2D::from_size(Vec2::new(panel_width, panel_height));
+
+        DraggablePanel::show(
             ui,
             "prefs",
             "Settings",
@@ -151,155 +153,159 @@ impl<'a> Widget for PreferencesPanel<'a> {
             self.screen_size,
             &mut self.state.panel,
             &style,
-        );
+            |ui, frame| {
+                panel_bounds = frame.panel_bounds;
 
-        let panel_bounds = frame.panel_bounds;
-
-        let tab_bar_bounds = Rect2D::from_origin_size(
-            Vec2::new(
-                panel_bounds.min.x(),
-                panel_bounds.min.y() + title_bar_height,
-            ),
-            Vec2::new(panel_width, tab_bar_height),
-        );
-        ui.draw_rect(tab_bar_bounds, self.theme.background_dark);
-
-        let tab_width = panel_width / PreferencesTab::all().len() as f32;
-        for (i, tab) in PreferencesTab::all().iter().enumerate() {
-            let tab_bounds = Rect2D::from_origin_size(
-                Vec2::new(
-                    panel_bounds.min.x() + i as f32 * tab_width,
-                    tab_bar_bounds.min.y(),
-                ),
-                Vec2::new(tab_width, tab_bar_height),
-            );
-            let is_selected = *tab == self.state.current_tab;
-
-            let tab_color = if is_selected {
-                self.theme.panel_bg
-            } else {
-                self.theme.background_dark
-            };
-            ui.draw_rect(tab_bounds, tab_color);
-
-            if is_selected {
-                ui.draw_line(
-                    Vec2::new(tab_bounds.min.x(), tab_bounds.max.y()),
-                    Vec2::new(tab_bounds.max.x(), tab_bounds.max.y()),
-                    self.theme.selection,
-                    2.0,
+                let tab_bar_bounds = Rect2D::from_origin_size(
+                    Vec2::new(
+                        panel_bounds.min.x(),
+                        panel_bounds.min.y() + title_bar_height,
+                    ),
+                    Vec2::new(panel_width, tab_bar_height),
                 );
-            }
+                ui.draw_rect(tab_bar_bounds, self.theme.background_dark);
 
-            if ui
-                .add(
-                    Button::new("")
-                        .bounds(tab_bounds)
-                        .id(&format!("tab_{:?}", tab)),
-                )
-                .clicked
-                && !is_selected
-            {
-                self.state.current_tab = *tab;
-            }
+                let tab_width = panel_width / PreferencesTab::all().len() as f32;
+                for (i, tab) in PreferencesTab::all().iter().enumerate() {
+                    let tab_bounds = Rect2D::from_origin_size(
+                        Vec2::new(
+                            panel_bounds.min.x() + i as f32 * tab_width,
+                            tab_bar_bounds.min.y(),
+                        ),
+                        Vec2::new(tab_width, tab_bar_height),
+                    );
+                    let is_selected = *tab == self.state.current_tab;
 
-            let icon = tab.icon();
-            let icon_size = ui.scaled_font_size(FontSize::Medium);
-            let text = tab.name();
-            let text_size = ui.measure_text(text, ui.scaled_font_size(FontSize::Small));
-            let total_width = icon_size + 4.0 + text_size.x();
-            let start_x = tab_bounds.center().x() - total_width * 0.5;
-            let top_y = tab_bounds.center().y() - text_size.y() * 0.5;
+                    let tab_color = if is_selected {
+                        self.theme.panel_bg
+                    } else {
+                        self.theme.background_dark
+                    };
+                    ui.draw_rect(tab_bounds, tab_color);
 
-            let icon_color = if is_selected {
-                self.theme.text_primary
-            } else {
-                self.theme.text_muted
-            };
-            ui.draw_icon_aligned(
-                icon,
-                Vec2::new(start_x, top_y),
-                icon_size,
-                icon_color,
-                FontId::DEFAULT,
-            );
-
-            let text_color = if is_selected {
-                self.theme.text_primary
-            } else {
-                self.theme.text_muted
-            };
-            ui.draw_text(
-                text,
-                Vec2::new(start_x + icon_size + 4.0, top_y),
-                text_color,
-                ui.scaled_font_size(FontSize::Small),
-            );
-        }
-
-        let content_start_y = panel_bounds.min.y() + title_bar_height + tab_bar_height + 8.0;
-        let content_height = panel_height - title_bar_height - tab_bar_height - 16.0;
-        let scroll_bounds = Rect2D::from_origin_size(
-            Vec2::new(panel_bounds.min.x(), content_start_y),
-            Vec2::new(panel_width, content_height),
-        );
-
-        let current_tab = self.state.current_tab;
-        let editor_settings = self.editor_settings.clone();
-        let theme = self.theme;
-        let theme_key = self.theme_key;
-        let show_grid = self.preferences.show_grid;
-        let show_stats = self.preferences.show_stats;
-        let font_scale = self.preferences.font_scale;
-        let pending_actions = &mut *self.pending_actions;
-
-        self.state.scroll_state = ui.scroll_area(
-            ScrollArea::new("prefs_scroll").max_height(content_height),
-            self.state.scroll_state,
-            scroll_bounds,
-            move |ui| {
-                let scroll_offset = ui.scroll_offset();
-                let content_width = panel_width - 32.0;
-                let row_height = 28.0;
-                let spacing = 8.0;
-
-                let cursor =
-                    Vec2::new(panel_bounds.min.x() + 16.0, content_start_y - scroll_offset);
-
-                let final_y = match current_tab {
-                    PreferencesTab::Appearance => build_appearance_tab(
-                        ui,
-                        theme,
-                        cursor,
-                        content_width,
-                        row_height,
-                        spacing,
-                        theme_key,
-                        show_grid,
-                        show_stats,
-                        font_scale,
-                        pending_actions,
-                    ),
-                    PreferencesTab::Editor => build_editor_tab(
-                        ui,
-                        theme,
-                        cursor,
-                        content_width,
-                        row_height,
-                        &editor_settings,
-                        pending_actions,
-                    ),
-                    PreferencesTab::Keybindings => {
-                        build_keybindings_tab(ui, theme, cursor, content_width, row_height)
+                    if is_selected {
+                        ui.draw_line(
+                            Vec2::new(tab_bounds.min.x(), tab_bounds.max.y()),
+                            Vec2::new(tab_bounds.max.x(), tab_bounds.max.y()),
+                            self.theme.selection,
+                            2.0,
+                        );
                     }
-                    PreferencesTab::About => build_about_tab(ui, theme, cursor, content_width),
-                };
 
-                final_y - content_start_y + scroll_offset + 16.0
+                    if ui
+                        .add(
+                            Button::new("")
+                                .bounds(tab_bounds)
+                                .id(&format!("tab_{:?}", tab)),
+                        )
+                        .clicked
+                        && !is_selected
+                    {
+                        self.state.current_tab = *tab;
+                    }
+
+                    let icon = tab.icon();
+                    let icon_size = ui.scaled_font_size(FontSize::Medium);
+                    let text = tab.name();
+                    let text_size = ui.measure_text(text, ui.scaled_font_size(FontSize::Small));
+                    let total_width = icon_size + 4.0 + text_size.x();
+                    let start_x = tab_bounds.center().x() - total_width * 0.5;
+                    let top_y = tab_bounds.center().y() - text_size.y() * 0.5;
+
+                    let icon_color = if is_selected {
+                        self.theme.text_primary
+                    } else {
+                        self.theme.text_muted
+                    };
+                    ui.draw_icon_aligned(
+                        icon,
+                        Vec2::new(start_x, top_y),
+                        icon_size,
+                        icon_color,
+                        FontId::DEFAULT,
+                    );
+
+                    let text_color = if is_selected {
+                        self.theme.text_primary
+                    } else {
+                        self.theme.text_muted
+                    };
+                    ui.draw_text(
+                        text,
+                        Vec2::new(start_x + icon_size + 4.0, top_y),
+                        text_color,
+                        ui.scaled_font_size(FontSize::Small),
+                    );
+                }
+
+                let content_start_y =
+                    panel_bounds.min.y() + title_bar_height + tab_bar_height + 8.0;
+                let content_height = panel_height - title_bar_height - tab_bar_height - 16.0;
+                let scroll_bounds = Rect2D::from_origin_size(
+                    Vec2::new(panel_bounds.min.x(), content_start_y),
+                    Vec2::new(panel_width, content_height),
+                );
+
+                let current_tab = self.state.current_tab;
+                let editor_settings = self.editor_settings.clone();
+                let theme = self.theme;
+                let theme_key = self.theme_key;
+                let show_grid = self.preferences.show_grid;
+                let show_stats = self.preferences.show_stats;
+                let font_scale = self.preferences.font_scale;
+                let pending_actions = &mut *self.pending_actions;
+
+                self.state.scroll_state = ui.scroll_area(
+                    ScrollArea::new("prefs_scroll").max_height(content_height),
+                    self.state.scroll_state,
+                    scroll_bounds,
+                    move |ui| {
+                        let scroll_offset = ui.scroll_offset();
+                        let content_width = panel_width - 32.0;
+                        let row_height = 28.0;
+                        let spacing = 8.0;
+
+                        let cursor = Vec2::new(
+                            panel_bounds.min.x() + 16.0,
+                            content_start_y - scroll_offset,
+                        );
+
+                        let final_y = match current_tab {
+                            PreferencesTab::Appearance => build_appearance_tab(
+                                ui,
+                                theme,
+                                cursor,
+                                content_width,
+                                row_height,
+                                spacing,
+                                theme_key,
+                                show_grid,
+                                show_stats,
+                                font_scale,
+                                pending_actions,
+                            ),
+                            PreferencesTab::Editor => build_editor_tab(
+                                ui,
+                                theme,
+                                cursor,
+                                content_width,
+                                row_height,
+                                &editor_settings,
+                                pending_actions,
+                            ),
+                            PreferencesTab::Keybindings => {
+                                build_keybindings_tab(ui, theme, cursor, content_width, row_height)
+                            }
+                            PreferencesTab::About => {
+                                build_about_tab(ui, theme, cursor, content_width)
+                            }
+                        };
+
+                        final_y - content_start_y + scroll_offset + 16.0
+                    },
+                );
             },
         );
-
-        DraggablePanel::end(&mut self.state.panel, &frame);
 
         Response::default()
     }

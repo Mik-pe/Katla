@@ -74,4 +74,14 @@ impl UiContext {
     pub fn capture_keyboard(&mut self) {
         self.input.want_capture_keyboard = true;
     }
+
+    /// Get the highest z-index that the mouse is currently over.
+    ///
+    /// Returns `z_index::DEFAULT` when no panel/popup covers the mouse.
+    /// Used by the application layer to decide whether to forward input
+    /// (e.g. scroll) to non-UI systems like the orbit camera.
+    #[inline]
+    pub fn hover_z_index(&self) -> u32 {
+        self.hover_z_index
+    }
 }

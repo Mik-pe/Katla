@@ -80,37 +80,48 @@ pub struct DraggablePanelStyle {
     pub text_muted: Color,
 }
 
-/// Result of [`DraggablePanel::begin`] — contains layout info for the panel body.
+/// Layout info passed to the content closure.
 pub struct DraggablePanelFrame {
     pub panel_bounds: Rect2D,
-    pub close_clicked: bool,
-    pub clicked_outside: bool,
 }
 
 /// Builds the chrome for a draggable, closeable floating panel.
 ///
-/// Usage:
+/// Z-index is managed internally -- content runs at `z_index::PANEL`.
+/// Scroll and hover are blocked for widgets underneath the panel.
+///
+/// # Example
 /// ```ignore
-/// let frame = DraggablePanel::begin(ui, "my_panel", "Title", 450.0, 500.0, screen_size, &mut state, &style);
-/// // ... draw panel content starting at frame.panel_bounds.min.y() + DraggablePanel::title_bar_height() ...
-/// DraggablePanel::end(&mut state, &frame);
+/// DraggablePanel::show(
+///     ui, "my_panel", "Title", 450.0, 500.0, screen_size,
+///     &mut state, &style, |ui, frame| {
+///         // draw content at PANEL z-index
+///     },
+/// );
 /// ```
 pub struct DraggablePanel;
 
 impl DraggablePanel {
     const TITLE_BAR_HEIGHT: f32 = 32.0;
 
-    #[allow(clippy::too_many_arguments, unused_variables)]
-    pub fn begin(
+    #[allow(clippy::too_many_arguments)]
+    pub fn show<F>(
         ui: &mut UiContext,
-        id: &str,
+        _id: &str,
         title: &str,
         panel_width: f32,
         panel_height: f32,
         screen_size: Vec2,
         state: &mut DraggablePanelState,
         style: &DraggablePanelStyle,
-    ) -> DraggablePanelFrame {
+        content: F,
+    ) where
+        F: FnOnce(&mut UiContext, &DraggablePanelFrame),
+    {
+        if !state.is_visible() {
+            return;
+        }
+
         let title_bar_height = Self::TITLE_BAR_HEIGHT;
 
         let default_pos = Vec2::new(
@@ -159,6 +170,8 @@ impl DraggablePanel {
         let panel_pos = state.position.unwrap_or(default_pos);
         let panel_bounds =
             Rect2D::from_origin_size(panel_pos, Vec2::new(panel_width, panel_height));
+
+        ui.push_z_index(crate::z_index::PANEL);
 
         // Shadow
         let shadow_offset = Vec2::new(6.0, 6.0);
@@ -227,15 +240,13 @@ impl DraggablePanel {
             && ui.mouse_clicked(mouse_button::LEFT)
             && !mouse_in_panel;
 
-        DraggablePanelFrame {
-            panel_bounds,
-            close_clicked,
-            clicked_outside: mouse_clicked_outside,
-        }
-    }
+        let frame = DraggablePanelFrame { panel_bounds };
 
-    pub fn end(state: &mut DraggablePanelState, frame: &DraggablePanelFrame) {
-        if frame.close_clicked || frame.clicked_outside {
+        content(ui, &frame);
+
+        ui.pop_z_index();
+
+        if close_clicked || mouse_clicked_outside {
             state.close();
         }
         state.mark_shown();

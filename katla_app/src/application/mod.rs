@@ -350,11 +350,17 @@ impl ApplicationHandler for Application {
                 };
                 self.ui_context.input.scroll_delta = scroll;
 
-                // Forward scroll to ECS input state for orbit camera zoom
+                // Forward scroll to ECS input state for orbit camera zoom.
+                // Skip if a floating panel/popup was covering the mouse in the
+                // previous frame (hover_z_index > DEFAULT means UI claimed it).
                 #[cfg(feature = "editor")]
                 {
                     let mouse_pos = self.ui_context.input.mouse_pos;
-                    if self.editor_ui.last_viewport_bounds.contains(mouse_pos) {
+                    let ui_claimed = self.ui_context.hover_z_index()
+                        > katla_ui::z_index::DEFAULT;
+                    if !ui_claimed
+                        && self.editor_ui.last_viewport_bounds.contains(mouse_pos)
+                    {
                         let wheel_y = match delta {
                             winit::event::MouseScrollDelta::LineDelta(_, y) => y,
                             winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
