@@ -1,0 +1,45 @@
+{
+  "featureId": "tighten-uicontext-and-compositing",
+  "reviewedAt": "2026-04-08T12:00:00.000Z",
+  "commitId": "c252059",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The feature correctly implements both parts: (1) UiContext fields changed from pub to pub(crate) with 6 accessor methods, all 30+ external access sites in katla_app updated to use accessors, (2) composite.wgsl rewritten to read viewport rectangles from objects[].base_color instead of hardcoded 0.5 split, with frame_data.compositing for screen_size and viewport_count. The implementation deviates from the feature description by using the existing objects[] storage buffer instead of a new CompositingUniforms uniform buffer, but this is a pragmatic choice that avoids descriptor set layout changes.",
+    "issues": [
+      {
+        "file": ".factory/library/compositing-shader.md",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "The compositing-shader.md library document is now outdated. It still describes the old CompositingUniforms struct, the objects[0] parameter passing pattern, and lists 'Known Limitations' that have been addressed. The actual implementation now uses frame_data.compositing (vec4f in FrameUniforms) for screen_size/viewport_count and objects[i].base_color for viewport rects. This doc should be updated to reflect the current state."
+      },
+      {
+        "file": "resources/shaders/composite.wgsl",
+        "line": 59,
+        "severity": "non_blocking",
+        "description": "The alpha blending threshold of 0.95 is a hardcoded magic number. While functionally fine (it prevents artifacts from near-opaque viewports), it could benefit from being documented as to why 0.95 was chosen over 1.0 (presumably to handle texture compression artifacts)."
+      },
+      {
+        "file": "katla_app/src/input/viewport_input.rs",
+        "line": 24,
+        "severity": "non_blocking",
+        "description": "A doc comment in an ignore block still references the old direct field access pattern 'ui.input.mouse_pos'. While this doesn't affect compilation, it could confuse future developers. The comment is inside ```ignore so it won't compile, but it demonstrates the old API."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The compositing-shader.md library document is stale. It describes the old approach (CompositingUniforms struct, objects[0] for params, hardcoded 2-viewport split) and lists 'Known Limitations' that have been resolved. The implementation now uses frame_data.compositing (a vec4f field already in FrameUniforms) for screen size/viewport count, and objects[i].base_color for per-viewport rects.",
+      "evidence": ".factory/library/compositing-shader.md lines 40-70 describe the old CompositingUniforms struct and objects[0] approach. The actual shader at resources/shaders/composite.wgsl:36-37 reads frame_data.compositing.xy/.z, and composite.wgsl:48 reads objects[u32(i)].base_color."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The feature description mentioned using CompositingUniforms with a dedicated uniform buffer, but the worker deviated to use the objects[] storage buffer (Set 0, Binding 1) for viewport rects. This was a justified deviation — the compositing pass runs last in the frame graph so the objects[] array is available, and it avoids changing the compositing descriptor set layout.",
+      "evidence": "Handoff skillFeedback.deviation notes: 'Used objects[] storage buffer (Set 0, Binding 1) to pass viewport rects instead of creating a new dedicated uniform buffer at Set 2, Binding 1'. The compositing.rs code writes identity model matrices + rect.to_array() into objects[i] via update_object_bindless()."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature 'tighten-uicontext-and-compositing' (VAL-ROBUST-006, VAL-ROBUST-007) passes review. Part 1 correctly tightened UiContext API: all three fields (input, style, fonts) are now pub(crate) with accessor methods, and all 30+ external access sites across 8 files in katla_app use the new accessors. The only remaining 'ui.input.' reference is in a doc comment inside an ignore block. Part 2 correctly replaced the hardcoded 50/50 split in composite.wgsl with viewport-rectangle-driven compositing using objects[].base_color and frame_data.compositing. Zero hardcoded 0.5 values remain in the shader. The worker's deviation from the spec (using objects[] storage buffer instead of a new uniform buffer) is pragmatic and well-justified. Non-blocking observations: outdated compositing-shader.md library doc, hardcoded 0.95 alpha threshold without documentation, and a stale doc comment."
+}

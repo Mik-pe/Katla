@@ -1,0 +1,45 @@
+{
+  "featureId": "replace-per-frame-expects",
+  "reviewedAt": "2026-04-08T00:45:00.000Z",
+  "commitId": "02eefcf",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Thoroughly replaces ~21 per-frame .expect() calls across katla_gfx with Result propagation. The render loop (renderer/mod.rs:1064) now returns Result<(), RendererError>. All 5 critical render loop operations (acquire_swapchain, begin_command_buffer, frame_graph.execute, end_command_buffer, present) use the ? operator. CommandBuffer methods (reset, begin_single_time_command, end_single_time_command, end_command) return Result. All 6 render graph pass files (depth_prepass, graphics_pass, object_id_pass, particle_rendering, outline_pass, ui_rendering) use ok_or_else/? for depth texture lookups. The katla_app caller logs errors and skips frames gracefully. Init-time .expect() calls correctly remain in texture_api, shadow, outline, OutputRenderTarget, and material_api.",
+    "issues": [
+      {
+        "file": "katla_gfx/src/vulkan/queue.rs",
+        "line": 97,
+        "severity": "non_blocking",
+        "description": "submit_and_wait() (called from end_single_time_commands) still uses .expect() for fence creation and wait_for_fences. This is an init/one-shot path (called during texture upload, buffer init, swapchain recreation) so it's acceptable per the feature's scope, but worth noting that any caller using begin/end_single_time_commands in a per-frame path would still hit a panic. Currently no per-frame callers exist — all per-frame paths use the render loop's direct command buffer."
+      },
+      {
+        "file": "katla_gfx/src/vulkan/context/swapchain.rs",
+        "line": 241,
+        "severity": "non_blocking",
+        "description": "create_depth_render_texture() uses .expect() for begin/end_single_time_commands. This is init-time (swapchain creation/recreation), correctly remaining per feature scope. Not a per-frame path."
+      },
+      {
+        "file": "katla_gfx/src/renderer/readback.rs",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "The deprecated synchronous readback_swapchain_image() method was cleanly removed (not just left behind), which is good — eliminates a source of confusion and potential misuse."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The worker followed the project's error handling convention consistently: using ok_or_else with descriptive error messages containing context (e.g., frame index) rather than bare .expect() strings. The pattern of mapping Vulkan errors through RendererError::VulkanError(String, vk::Result) preserving the original vk::Result for error source chaining is well-established.",
+      "evidence": "commandbuffer.rs:41-76 — all four methods use map_err(|e| RendererError::VulkanError(\"...\".into(), e))"
+    },
+    {
+      "area": "conventions",
+      "observation": "Init-time vs per-frame .expect() boundary is clear and consistently applied. Init paths (OutputRenderTarget, shadow buffers, outline buffers, texture upload, swapchain creation) correctly retain .expect() while all per-frame paths use Result propagation.",
+      "evidence": "renderer/texture_api.rs:30, renderer/shadow.rs:338,343, renderer/outline.rs:273,279, renderer/mod.rs:1266 — all init-time"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature fully implemented and verified. All ~21 per-frame .expect() calls in katla_gfx replaced with Result propagation. The render loop returns Result<(), RendererError> and the katla_app caller logs errors and skips frames. Init-time .expect() calls correctly remain. Zero .expect() calls found in per-frame rendering paths across renderer/, render_graph/, commandbuffer.rs, picking.rs, and readback.rs. The From<RendererError> for RenderGraphError bridge enables clean error conversion across crate boundaries."
+}

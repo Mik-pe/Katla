@@ -1,0 +1,31 @@
+{
+  "featureId": "refactor-gpu-allocator",
+  "reviewedAt": "2026-04-08T12:00:00.000Z",
+  "commitId": "f7267e4",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean, well-structured refactor that replaces raw ManuallyDrop<RefCell<Allocator>> with a GpuAllocator wrapper. The wrapper provides allocate(), free(), try_borrow(), and try_borrow_mut_string() methods that handle borrow conflicts via log::warn! instead of panicking or silently leaking. All ~30 call sites across 20 files were correctly updated. Zero raw borrow_mut() calls remain on the allocator. The ManuallyDrop semantics are preserved for correct Drop ordering via the unsafe destroy() method.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "Worker documented that particle_validation_helpers.rs had a large dead_code function (execute_gpu_compute, ~160 lines) that was removed as part of this refactor. This was dead code unrelated to the allocator refactor but cleaned up opportunistically. The pattern of cleaning up adjacent dead code during refactors is worth noting.",
+      "evidence": "particle_validation_helpers.rs diff shows removal of execute_gpu_compute function (lines 350-514 in old file), reducing file by 178 lines."
+    },
+    {
+      "area": "conventions",
+      "observation": "The GpuAllocator wrapper exposes two error-returning borrow methods: try_borrow() returning RendererError and try_borrow_mut_string() returning String. This dual-API exists because some internal helpers (particles/buffer.rs, particles/descriptors.rs, gpu_buffer.rs) propagate String errors rather than RendererError. This is a pre-existing pattern, not introduced by this feature, but it means the wrapper API is slightly inconsistent.",
+      "evidence": "memory.rs:77 (try_borrow returns RendererError) vs memory.rs:93 (try_borrow_mut_string returns String). Callers in particles/buffer.rs:211, gpu_buffer.rs:31 use try_borrow_mut_string."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The GpuAllocator free() method silently swallows allocation-free errors (logs warn but returns ()). This is intentional per the handoff ('non-fatal'), but the decision that free failures are non-fatal while allocate failures are fatal (return Err) is a design choice worth documenting for future contributors.",
+      "evidence": "memory.rs:53-62 — free() catches allocator.free() error and logs warn without propagating."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The refactor-gpu-allocator feature is complete and correct. GpuAllocator wraps ManuallyDrop<RefCell<Allocator>> in vulkan/context/memory.rs, providing allocate(), free(), try_borrow(), and try_borrow_mut_string() methods. All ~30 call sites across 20 files were updated. Zero raw borrow_mut() calls remain on the allocator (confirmed via grep). Borrow conflicts now log warnings with context instead of panicking. The ManuallyDrop semantics are preserved for correct Drop ordering. Validation assertion VAL-ROBUST-002 is fully satisfied."
+}
