@@ -123,7 +123,7 @@
 
 ### P3: Polish
 
-- ~~**Remove or wire up `selectable()` widget**~~ — False positive. `selectable.rs` contains `toggle_button()` which is actively called by `ToggleButton` widget in `widgets/mod.rs`. The `selectable_hovered`/`selectable_selected` style fields are used. No dead code.
+- [x] **Rename `context/widgets/selectable.rs` to better reflect contents** — File contains `toggle_button()` which is actively called by `ToggleButton` widget in `widgets/mod.rs:369`. The filename `selectable.rs` is misleading — there is no `selectable()` method. Consider renaming to `toggle_button.rs` or merging into another widget file. The `selectable_selected`/`selectable_hovered` style fields are used.
 - [x] **Remove or deprecate `spacer()` in favor of `spacing()`** — `context/layout.rs:92-106` — `spacer()` always advances horizontally regardless of layout direction, while `spacing()` is direction-aware. The doc says "prefer spacing()" but both are `pub`.
 - [ ] **Document `end_column()` vs `end_row()` spacing asymmetry** — `context/layout.rs:228-231` — `end_column()` adds trailing spacing but `end_row()` doesn't. Undocumented and surprising.
 - [x] **Use `KeyCode::Backspace` instead of `\x08` character check** — `context/widgets/basic.rs:256-258` checks `c == '\x08'` for backspace but `KeyCode` enum has a `Backspace` variant. Conflates character input with key events.

@@ -1,6 +1,6 @@
-//! Internal selectable widget implementations.
+//! Internal toggle button widget implementation.
 //!
-//! This module contains rendering and interaction logic for selectable widgets.
+//! This module contains rendering and interaction logic for toggle buttons.
 //! These are private implementation details called by the public builder widgets
 //! in `crate::widgets`.
 
@@ -12,53 +12,6 @@ use crate::icons::ForkAwesome;
 use super::super::UiContext;
 
 impl UiContext {
-    /// Draw a selectable item with selection state.
-    ///
-    /// Returns a Response. Check `response.clicked` for click.
-    /// The `selected` parameter controls whether the item is highlighted as selected.
-    #[allow(dead_code)]
-    pub(crate) fn selectable(
-        &mut self,
-        id: &str,
-        label: &str,
-        selected: bool,
-        bounds: Rect2D,
-    ) -> Response {
-        let widget_id = self.generate_id(id);
-        let hovered = self.update_hover(widget_id, bounds);
-        let active = self.active_id == Some(widget_id);
-
-        // Handle click using consolidated helper
-        let clicked = self.click_behavior(widget_id, hovered).is_clicked();
-
-        // Determine colors based on state
-        let bg_color = if selected {
-            self.style.selectable_selected
-        } else if active {
-            self.style.menu_active
-        } else if hovered {
-            self.style.selectable_hovered
-        } else {
-            Color::TRANSPARENT
-        };
-
-        // Draw background
-        if bg_color != Color::TRANSPARENT {
-            self.draw_rect(bounds, bg_color);
-        }
-
-        // Draw label (top-left positioning, centered vertically)
-        let text_size = self.measure_text(label, self.style.font_size);
-        let text_pos = Vec2::new(
-            bounds.min.x() + self.style.menu_padding,
-            bounds.center().y() - text_size.y() * 0.5,
-        );
-        self.draw_text(label, text_pos, self.style.text_color, self.style.font_size);
-
-        // Use Response builder for consistent construction
-        Response::interactive(clicked, hovered, active, bounds, &self.input)
-    }
-
     /// Draw a toggle button with an optional check icon when enabled.
     ///
     /// Returns a Response. Check `response.clicked` for click.
