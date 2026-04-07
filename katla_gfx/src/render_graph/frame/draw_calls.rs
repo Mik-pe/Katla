@@ -40,8 +40,7 @@ impl<'a> Frame<'a> {
 
                 self.renderer
                     .asset_registry
-                    .get_pipeline_vk_handles(pipeline_handle)
-                    .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline_handle))?
+                    .get_pipeline_handles(pipeline_handle)?
             };
 
             if pipeline != current_pipeline {

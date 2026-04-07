@@ -34,8 +34,7 @@ impl<'a> Frame<'a> {
         let (pipeline, pipeline_layout) = self
             .renderer
             .asset_registry
-            .get_pipeline_vk_handles(pipeline_handle)
-            .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline_handle))?;
+            .get_pipeline_handles(pipeline_handle)?;
 
         // Bind graphics pipeline
         unsafe {

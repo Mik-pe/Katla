@@ -1068,5 +1068,6 @@ where
 
 mod draggable_panel;
 pub use draggable_panel::{
-    DraggablePanel, DraggablePanelFrame, DraggablePanelState, DraggablePanelStyle, PanelState,
+    DraggablePanel, DraggablePanelConfig, DraggablePanelFrame, DraggablePanelState,
+    DraggablePanelStyle, PanelState,
 };

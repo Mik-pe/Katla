@@ -36,13 +36,7 @@ impl super::Application {
         );
 
         let entity = self.world.spawn((
-            TransformComponent {
-                transform: katla_math::Transform::new_from_position(Vec3::new(
-                    position[0],
-                    position[1],
-                    position[2],
-                )),
-            },
+            TransformComponent::from_position(Vec3::new(position[0], position[1], position[2])),
             drawable,
         ));
 
@@ -138,13 +132,7 @@ impl super::Application {
         );
 
         let entity = self.world.spawn((
-            TransformComponent {
-                transform: katla_math::Transform::new_from_position(Vec3::new(
-                    position[0],
-                    position[1],
-                    position[2],
-                )),
-            },
+            TransformComponent::from_position(Vec3::new(position[0], position[1], position[2])),
             drawable,
         ));
 
@@ -382,13 +370,7 @@ impl super::Application {
 
         // 6. Spawn entity with emission texture index
         let entity = self.world.spawn((
-            TransformComponent {
-                transform: katla_math::Transform::new_from_position(Vec3::new(
-                    position[0],
-                    position[1],
-                    position[2],
-                )),
-            },
+            TransformComponent::from_position(Vec3::new(position[0], position[1], position[2])),
             DrawableComponent::with_handles(mesh_handle, material_handle),
         ));
 

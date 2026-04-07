@@ -152,10 +152,7 @@ impl<'a> Frame<'a> {
         let (pipeline, layout) = self
             .renderer
             .asset_registry
-            .get_pipeline_vk_handles(picking_pipeline_handle)
-            .ok_or(RenderGraphError::InvalidPipelineHandle(
-                picking_pipeline_handle,
-            ))?;
+            .get_pipeline_handles(picking_pipeline_handle)?;
 
         unsafe {
             self.renderer.context.device.cmd_bind_pipeline(

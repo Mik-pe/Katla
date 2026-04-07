@@ -1,5 +1,5 @@
 use katla_ecs::Component;
-use katla_math::Transform;
+use katla_math::{Transform, Vec3};
 
 /// Local-space transform relative to parent
 #[derive(Component, Default)]
@@ -10,6 +10,12 @@ pub struct TransformComponent {
 impl TransformComponent {
     pub fn new(transform: Transform) -> Self {
         TransformComponent { transform }
+    }
+
+    pub fn from_position(position: Vec3) -> Self {
+        Self {
+            transform: Transform::new_from_position(position),
+        }
     }
 }
 

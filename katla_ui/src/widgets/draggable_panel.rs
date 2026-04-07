@@ -85,39 +85,82 @@ pub struct DraggablePanelFrame {
     pub panel_bounds: Rect2D,
 }
 
-/// Builds the chrome for a draggable, closeable floating panel.
-///
-/// Z-index is managed internally -- content runs at `z_index::PANEL`.
-/// Scroll and hover are blocked for widgets underneath the panel.
+/// Configuration for [`DraggablePanel::show`], built via the builder pattern.
 ///
 /// # Example
 /// ```ignore
 /// DraggablePanel::show(
-///     ui, "my_panel", "Title", 450.0, 500.0, screen_size,
-///     &mut state, &style, |ui, frame| {
+///     ui,
+///     &mut state,
+///     &style,
+///     DraggablePanelConfig::new("my_panel", "Title")
+///         .size(450.0, 500.0)
+///         .screen_size(screen_size),
+///     |ui, frame| {
 ///         // draw content at PANEL z-index
 ///     },
 /// );
 /// ```
+pub struct DraggablePanelConfig<'a> {
+    id: &'a str,
+    title: &'a str,
+    panel_width: f32,
+    panel_height: f32,
+    screen_size: Vec2,
+}
+
+impl<'a> DraggablePanelConfig<'a> {
+    /// Create a new config with the given panel ID and title.
+    pub fn new(id: &'a str, title: &'a str) -> Self {
+        Self {
+            id,
+            title,
+            panel_width: 300.0,
+            panel_height: 300.0,
+            screen_size: Vec2::new(800.0, 600.0),
+        }
+    }
+
+    /// Set the panel dimensions (width and height).
+    pub fn size(mut self, width: f32, height: f32) -> Self {
+        self.panel_width = width;
+        self.panel_height = height;
+        self
+    }
+
+    /// Set the screen/viewport size used for centering and clamping.
+    pub fn screen_size(mut self, screen_size: Vec2) -> Self {
+        self.screen_size = screen_size;
+        self
+    }
+}
+
+/// Builds the chrome for a draggable, closeable floating panel.
+///
+/// Z-index is managed internally -- content runs at `z_index::PANEL`.
+/// Scroll and hover are blocked for widgets underneath the panel.
 pub struct DraggablePanel;
 
 impl DraggablePanel {
     const TITLE_BAR_HEIGHT: f32 = 32.0;
 
-    #[allow(clippy::too_many_arguments)]
     pub fn show<F>(
         ui: &mut UiContext,
-        _id: &str,
-        title: &str,
-        panel_width: f32,
-        panel_height: f32,
-        screen_size: Vec2,
         state: &mut DraggablePanelState,
         style: &DraggablePanelStyle,
+        config: DraggablePanelConfig<'_>,
         content: F,
     ) where
         F: FnOnce(&mut UiContext, &DraggablePanelFrame),
     {
+        let DraggablePanelConfig {
+            id: _id,
+            title,
+            panel_width,
+            panel_height,
+            screen_size,
+        } = config;
+
         if !state.is_visible() {
             return;
         }
