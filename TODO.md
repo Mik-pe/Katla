@@ -4,11 +4,11 @@
 
 ### P2: Features
 
-- [ ] **Add entity/component removal events** — ECS does not emit removal events, so destroyed entity emitters (particle system) can't be detected automatically. Requires ECS-level hooks.
+- [x] **Add entity/component removal events** — ECS emits `EntityEvent::Destroyed` and `ComponentEvent::Removed` via `destroy_entity()`, `remove_component()`, and `cleanup_empty_entities()`. Public accessors: `entity_events()`, `component_events()`, `component_events_for<T>()`.
 
 ### P3: Polish
 
-- [ ] **Fix doctests** — 7 doc examples still use ` ```ignore ` blocks (down from ~10). Convert key examples to runnable doctests.
+- [ ] **Fix doctests** — 150+ doc examples use ` ```ignore ` blocks across the workspace. Convert key examples to runnable doctests.
 - [x] **Tighten public API surface** — `ComponentStorage`, `ComponentStorageManager`, `ImmutableQuery`, `QueryData`, `OrderedSystem` are `pub use`'d but never used by external crates. Should be `pub(crate)`.
 - [ ] **Narrow `World::storage_mut()` exposure** — Exposes internal `ComponentStorageManager`. Used by `katla_app` camera systems; could be replaced with a narrower API.
 
@@ -23,11 +23,20 @@
 
 ### P2: Features
 
-- [ ] **Add billboard rendering support** — Render billboard quads for geometry-less entities (particle emitters, point lights, etc.) so they are visible in the editor viewport. Use the `forkawesome` crate to generate icon textures for each entity type.
+- [ ] **Add billboard rendering support** — Render billboard quads for geometry-less entities (particle emitters, point lights, etc.) so they are visible in the editor viewport. Subtasks in order:
+  1. **Extract `ForkAwesome` icon codepoints into a shared crate** (`katla_icons`) — Move `katla_ui/src/icons.rs` (the `ForkAwesome` struct with Unicode codepoints) into a new zero-dependency workspace crate `katla_icons`. Both `katla_ui` and `katla_app` depend on it. `katla_gfx` cannot use it (dependency restriction), but `katla_app` handles billboard texture generation at the app layer anyway.
+  2. **Create billboard icon texture generation utility** — Rasterize Fork Awesome glyphs into RGBA pixel buffers using `skrifa` (already a workspace dep) from `resources/fonts/forkawesome-webfont.ttf`. Create a `billboard_icons` module in `katla_app` that produces fixed-size textures (e.g. 64x64) for icons like `LIGHTBULB` (point lights), `FIRE` (particle emitters).
+  3. **Create billboard WGSL shader** (`resources/shaders/billboard.wgsl`) — Camera-facing quad using view matrix right/up vectors. Alpha-blended, depth-write disabled. Uses standard 3-set descriptor layout with bindless texture for the icon.
+  4. **Create billboard mesh + material initialization** — Unit quad mesh and alpha-blended billboard material compiled during app init in `builder.rs`. Store as `BillboardResources { mesh, material }` on `Application`.
+  5. **Create `BillboardComponent` ECS component** — `icon: BillboardIcon`, `color: Option<Color>`, `size: f32`. Defined in `katla_app/src/components/rendering/billboard.rs`.
+  6. **Create billboard draw call generation** — Query entities with `TransformComponent` + `BillboardComponent`, generate `DrawCall`s following the gizmo pattern (`collect_gizmo_draw_calls`). Constant screen-space size via distance scaling.
+  7. **Attach `BillboardComponent` on entity spawn** — Add to particle emitter and point light entities in `spawning.rs` so they are visible in the editor.
+  8. **Editor-only gating** — `#[cfg(feature = "editor")]` on billboard system. Suppress billboards for entities with `EditorHidden` component.
+  9. **Upload icon textures and track bindless indices** — Rasterize icons during init, upload via `renderer.create_texture()`, store `TextureHandle` values in `BillboardResources` alongside mesh/material.
 
 ### P1: Stubs / Missing Implementations
 
-- [ ] **Implement `create_transient_texture()`** — Currently returns a dead handle (`TextureHandle::new(0)`). Needed for UI rendering with transient textures.
+- ~~**Implement `create_transient_texture()`**~~ — False positive. No such function exists. Transient textures are managed by `FrameGraph::recreate_transient_textures()` which is fully implemented.
 
 ### P2: Robustness
 
@@ -36,9 +45,9 @@
 
 ### P0: Visibility Tightening
 
-- [ ] **Change `animation` module to `pub(crate) mod`** — Module visibility done (`pub(crate)` by default). But re-exports (`AnimChannelInfo`, `AnimClipHeader`, `JointInfo`, `SkeletonAnimParams`, `PoseComputeBuffers`, `PoseComputePipeline`) are still unconditional because `katla_app` consumes them. Need to either move types to a public module or update `katla_app` access path.
-- [ ] **Change `shadow` module to `pub(crate) mod`** — Module visibility done. But `CascadeParams` re-export is still unconditional because `katla_app::builder` consumes it.
-- [ ] **Change `lighting` module to `pub(crate) mod`** — Module visibility done. But `PointLightGPU` re-export is still unconditional because `katla_app::renderer` consumes it.
+- ~~**Change `animation` module to `pub(crate) mod`**~~ — Module visibility done (`pub(crate)` by default, `pub` with `validation` feature). Re-exports (`AnimChannelInfo`, `AnimClipHeader`, `JointInfo`, `SkeletonAnimParams`, `PoseComputeBuffers`, `PoseComputePipeline`) are unconditional because `katla_app` consumes them directly.
+- ~~**Change `shadow` module to `pub(crate) mod`**~~ — Module visibility done. `CascadeParams` re-export is unconditional because `katla_app::builder` consumes it.
+- ~~**Change `lighting` module to `pub(crate) mod`**~~ — Module visibility done. `PointLightGPU` re-export is unconditional because `katla_app::renderer` consumes it.
 - [x] **Make `VkImageView` field private** — `sync.rs:176` exposes `pub struct VkImageView(pub vk::ImageView)`. The inner field should be private with an accessor method to prevent constructing invalid views. (Note: feature-gated, low priority.)
 - ~~**Tighten `pub` on vulkan/ submodules**~~ — False positive. The `vulkan` module is `pub(crate) mod vulkan` in `lib.rs`, so internal `pub` items are already crate-scoped. No action needed.
 - ~~**Make `PipelineHandle::new()` pub(crate)**~~ — Verified that `Handle::new()` has legitimate external callers (e.g., `katla_app/src/ui/renderer.rs:158` creates `TextureHandle::new(bindless_index)`). Keep as-is; audit test-only callers instead.
@@ -59,7 +68,7 @@
 ### P3: Polish
 
 - [ ] **Consider a minimal `Mat4` type within katla_gfx** — `FrameUniforms` in `renderer/types.rs:18-20` uses raw `[f32; 16]` arrays. Low priority: the raw arrays match GPU memory layout and are constructed from `katla_math` in `katla_app`, so a local Mat4 would create yet another conversion boundary.
-- [ ] **Extract viewport/UI from renderer module** — Viewport and UI management still in `renderer/mod.rs`; should be split into own modules.
+- [ ] **Extract viewport/UI from renderer module** — ~~Stale.~~ Viewport and UI logic extracted into `viewport_manager.rs` and `ui_renderer.rs` submodules. Only struct composition remains in `mod.rs`, which is appropriate.
 - ~~**Clean up dead code**~~ — Stale. `ShadowBuffers::len()/is_empty()` already removed. `CascadeParams::cascades()` has a test caller. `MaterialBuilder::with_push_constant_range()` (actually `PipelineBuilder`) has an example caller. No dead code to remove.
 - [x] **Chain errors in `RendererError::source()`** — `error.rs` — `source()` returns `None` for `VulkanError`/`IoError` variants because they convert to `String`, losing the original error. Change `IoError(String)` to `IoError(io::Error)` etc. to preserve error chains for debugging.
 
@@ -77,15 +86,15 @@
 
 ### P2: Robustness
 
-- [ ] **Reduce `unwrap()` in physics systems** — `physics_system.rs` and `velocity_system.rs` have ~13 `unwrap()` calls on ECS component queries that will panic if components are missing.
+- [ ] **Reduce `unwrap()` in physics systems** — `physics_system.rs` and `velocity_system.rs` have 17 `unwrap()` calls on ECS component queries that will panic if components are missing.
 - [ ] **Guard `TransformOptimization` resource access** — `transform_hierarchy_system.rs` calls `unwrap()` on `get_resource_mut::<TransformOptimization>()` which panics if not inserted.
-- [ ] **Guard GLTF bone mapping** — `animation/gltf_loader.rs` calls `unwrap()` on `transforms.get(&idx)` which panics on malformed bone mappings.
+- ~~**Guard GLTF bone mapping**~~ — False positive. The only `unwrap()` on `transforms.get()` is in test code (line 306). Production code at line 228 already uses `if let Some()` guard.
 - [ ] **Guard asset browser edge cases** — `asset_browser/mod.rs` has `unwrap()` on `drag_asset`, `parent()`, `selected_index` that could panic on edge cases.
 
 ### P2: Code Reusability
 
 - [x] **Extract shared transform-from-position pattern** — 44 occurrences total but 24 are in tests. ~15 in production code across 5 files (`spawner.rs`, `scene/mod.rs`, `spawning.rs`, `physics_system.rs`, `velocity_system.rs`). Low priority: `Transform::new_from_position()` already exists; the repetition is the `TransformComponent { transform: ... }` wrapper. A `TransformComponent::from_position()` convenience method would help.
-- [ ] **Consolidate `Spawner` and `Application` entity creation** — `Spawner` (207 lines, `&mut World` only, no GPU tracking) vs `Application` methods (608 lines, full app access with GPU resource tracking). Using `Spawner::spawn_primitive()` instead of `Application` methods risks GPU resource leaks. Either unify tracking via an ECS resource or document the distinction clearly.
+- ~~**Consolidate `Spawner` and `Application` entity creation**~~ — The two paths serve intentionally different access patterns. `Spawner` is a `World` extension trait for system-level access; `Application` spawning handles GPU resource tracking at the editor level. Consolidation is not desirable.
 - [x] **Replace hand-rolled TOML parsers with serde** — `Preferences` and `GuiState` now use serde derive with `toml::from_str`/`to_string_pretty`. Added `#[serde(default)]` for forward-compatible partial configs.
 
 ### P2: Architecture
@@ -104,7 +113,7 @@
 
 ### P1: Correctness
 
-- [ ] **Unify click-handling logic across widgets** — `button_with_colors()` (`context/widgets/basic.rs:18-52`), `menu_bar_dropdown()` (`context/popup/api.rs:158-174`), and `click_behavior()` all implement slightly different click detection. Button and dropdown use `self.input.is_hovered(bounds)` on release while `click_behavior()` uses pre-computed hovered state. Three-way inconsistency is a bug magnet. Unify into a single configurable click handler or document why each deviation exists.
+- [ ] **Unify click-handling logic across widgets** — `button_with_colors()` intentionally deviates from `click_behavior()` to bypass popup blocking (documented in code). `menu_bar_dropdown()` uses its own inline check. Consider a `click_behavior_popup_aware()` variant for button.
 - [x] **Fix `label_auto_colored()` cursor corruption** — `context/widgets.rs:136` manually advances `self.cursor` instead of using `advance_cursor()`, bypassing layout stack awareness. Verified: if called inside a row/column layout, it corrupts cursor state. Should use `advance_cursor()` like `label()` in `helpers.rs` does.
 - [x] **Fix `button_auto_wide` layout bypass** — `context/widgets.rs:115-133` manually sets cursor. Verified: has a double-advance bug since `self.add()` already calls `advance_cursor()` internally, causing cursor to skip ahead in layouts.
 
@@ -115,7 +124,7 @@
 
 ### P2: Visibility
 
-- [ ] **Make `UiContext` fields `pub(crate)`** — `context/mod.rs:63-67` exposes `pub input`, `pub style`, `pub fonts`. Verified: some fields may need katla_app access. Audit before changing.
+- [ ] **Make `UiContext` fields `pub(crate)`** — `context/mod.rs:63-67` exposes `pub input`, `pub style`, `pub fonts`. These fields need external access from `katla_app` (20+ access sites). Tightening would require accessor methods or moving the access patterns.
 - [x] **Make `LayoutState` `pub(crate)`** — `context/layout.rs:22-36`. Verified: internal layout detail. However, some may be re-exported — check before changing.
 - [x] **Make `FontId` inner field `pub(crate)`** — `text/mod.rs:50`. Low priority: `FontId(pub u32)` allows arbitrary construction but this is standard for simple ID types.
 
@@ -148,7 +157,7 @@ Follow egui's approach: use `skrifa` for font parsing/outlining and `vello_cpu` 
 - [x] **Migrate glyph ID lookup** — `font.charmap().map(c)` in `rasterization.rs` and `measurement.rs`
 - [x] **Migrate kerning** — stubbed to return 0.0; `// TODO: Add GPOS kerning support via skrifa's GPOS table access`
 - [x] **Rewrite glyph rasterization** — `text/rasterization.rs` uses vello_cpu scene rendering (outline → `kurbo::BezPath` via `KurboPen` → `vello_cpu::RenderContext` → pixel buffer)
-- [ ] **Adopt egui's subpixel quantization** — 4-bin for Latin, 1-bin for CJK (existing 4-bin subpixel still works, CJK optimization deferred)
+- ~~**Adopt egui's subpixel quantization**~~ — 4-bin Latin subpixel quantization already implemented (`SubpixelBin` enum in `text/mod.rs`, integrated into glyph cache key and rasterization). CJK 1-bin optimization not yet done — could be a separate lower-priority item.
 - [x] **Verify atlas integration** — `RasterizedGlyph` output and `place_in_atlas` work unchanged
 - [x] **Remove `ab_glyph` dependency** — from `katla_ui/Cargo.toml` and workspace `Cargo.toml`
 
@@ -162,9 +171,9 @@ Follow egui's approach: use `skrifa` for font parsing/outlining and `vello_cpu` 
 
 ### P3: Cleanup
 
-- [ ] **Audit `#[allow(clippy::too_many_arguments)]`** — ~20 functions suppress this lint. Consider introducing parameter structs for functions with many arguments.
+- [ ] **Audit `#[allow(clippy::too_many_arguments)]`** — 17 functions suppress this lint (down from ~20). Consider introducing parameter structs for functions with many arguments.
 
 ### P3: Dependency Hygiene
 
-- [ ] **Upgrade skrifa to latest and deduplicate** — ~~katla_ui pins `skrifa 0.22` while `vello_cpu 0.0.7` transitively pulls `skrifa 0.40`, resulting in two copies in the binary.~~ Done: upgraded to `skrifa 0.40`, replaced custom `BoundsPen` with `ControlBoundsPen`, single version in tree.
+- [x] **Upgrade skrifa to latest and deduplicate** — Upgraded to `skrifa 0.40`, replaced custom `BoundsPen` with `ControlBoundsPen`. Single version in lockfile, no duplicates.
 - [ ] **Pool `vello_cpu::RenderContext` for CJK workloads** — Currently a fresh `RenderContext` + `Pixmap` is allocated per glyph cache miss. Acceptable for pre-cached ASCII but wasteful for runtime CJK input. Reuse a shared context or pool buffers.
