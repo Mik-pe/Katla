@@ -1,0 +1,34 @@
+{
+  "milestone": "billboard-picking",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-BILLBOARD-001",
+    "VAL-BILLBOARD-002",
+    "VAL-BILLBOARD-003",
+    "VAL-BILLBOARD-004",
+    "VAL-BILLBOARD-005",
+    "VAL-BILLBOARD-006",
+    "VAL-BILLBOARD-007"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [
+    {
+      "target": "user-testing.md",
+      "description": "Documented that validation examples require --features validation flag and that tests should run against committed code, not working tree (uncommitted changes from other milestones can cause false failures)",
+      "source": "flow-report"
+    }
+  ],
+  "previousRound": null,
+  "flowReports": [
+    ".factory/validation/billboard-picking/user-testing/flows/billboard-shader-picking.json",
+    ".factory/validation/billboard-picking/user-testing/flows/billboard-regression.json"
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "groupId": "billboard-regression",
+  "testedAt": "2026-04-08T00:16:00Z",
+  "isolation": {
+    "type": "pure-rust-workspace",
+    "workingDirectory": "C:\\dev\\katla",
+    "gpuValidation": "headless-vulkan-25-frames"
+  },
+  "toolsUsed": ["cargo test", "cargo run --example", "cargo clippy"],
+  "assertions": [
+    {
+      "id": "VAL-BILLBOARD-006",
+      "title": "No regressions in geometry/shadow pass/existing picking",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test --workspace",
+          "expected": "All tests pass with exit code 0",
+          "observed": "All 207 unit tests passed, 0 failures. Exit code 0."
+        },
+        {
+          "action": "Run cargo run -p katla_gfx --example picking_validation --features validation (committed version)",
+          "expected": "Example compiles and exits with code 0",
+          "observed": "All 5 picking tests passed: single_object, two_objects, background_zero, id_encoding_sequence, max_instance_id. Exit code 0."
+        },
+        {
+          "action": "Run cargo run -p katla_gfx --example outline_validation --features validation (committed version)",
+          "expected": "Example compiles and exits with code 0",
+          "observed": "All 6 outline tests passed: depth_prepass, stencil_indicator, outline_present, overlay_tonemap, self_occlusion, two_plane_self_occlusion. Exit code 0."
+        },
+        {
+          "action": "Run cargo clippy --workspace",
+          "expected": "No new clippy warnings",
+          "observed": "Clippy passed with exit code 0, no warnings"
+        }
+      ],
+      "evidence": {
+        "cargoTest": "All 207 tests passed",
+        "pickingValidation": "picking_validation example: 5/5 tests passed, exit code 0",
+        "outlineValidation": "outline_validation example: 6/6 tests passed, exit code 0",
+        "clippy": "Zero warnings, exit code 0"
+      },
+      "note": "Initial run against working tree (with uncommitted robustness milestone changes) showed compile errors in examples due to VulkanContext API type mismatch. Verified by stashing uncommitted changes and running against committed code — all examples pass. The compile errors are from uncommitted robustness work (VAL-ROBUST-001), NOT from billboard-picking changes."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "The validation examples require --features validation flag which is not documented in the validation contract testing procedure. The contract only specifies `cargo run -p katla_gfx --example picking_validation` without the feature flag.",
+      "resolved": true,
+      "resolution": "Discovered the required feature flag from the error message and re-ran with --features validation",
+      "affectedAssertions": ["VAL-BILLBOARD-006"]
+    },
+    {
+      "description": "Uncommitted working tree changes from robustness milestone cause compile errors in validation examples. Tests must run against committed code, not working tree.",
+      "resolved": true,
+      "resolution": "Stashed uncommitted changes and verified against committed code. Documented in user-testing.md.",
+      "affectedAssertions": ["VAL-BILLBOARD-006"]
+    }
+  ],
+  "blockers": [],
+  "summary": "VAL-BILLBOARD-006 PASSED: Unit tests (207/207), picking_validation (5/5), outline_validation (6/6), and clippy all pass on committed billboard-picking code. Working tree has uncommitted robustness changes that break examples, but these are NOT billboard-picking regressions."
+}
