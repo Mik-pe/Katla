@@ -48,21 +48,28 @@ impl UiContext {
 
     /// Check if a widget is being hovered.
     ///
-    /// This uses the imgui/egui approach: widgets at lower Z levels can only
-    /// be hovered if the cursor is NOT inside a higher-level popup's bounds.
-    /// This allows clicking outside popups to work correctly while still
-    /// blocking hover for widgets covered by the popup.
+    /// Widgets can only be hovered if no higher-z-index content covers the
+    /// mouse position. This is tracked automatically by `draw_rect` when
+    /// drawing at a z-index above DEFAULT.
     pub fn is_hovered(&self, bounds: Rect2D) -> bool {
         if self.popup_consume_click {
             return false;
         }
-        if let Some(popup_bounds) = self.popup_bounds
-            && popup_bounds.contains(self.input.mouse_pos)
-            && self.z_index < super::z_index::POPUP
-        {
+        if self.z_index < self.hover_z_index {
             return false;
         }
         self.input.is_hovered(bounds) && self.active_id.is_none()
+    }
+
+    /// Register that the mouse is hovering over content at the given z-index.
+    ///
+    /// Called automatically by `draw_rect` when the current z-index is above
+    /// DEFAULT. The highest z-index wins — if multiple regions overlap at
+    /// the mouse position, only the highest z-index is remembered.
+    pub fn register_hover_layer(&mut self, z: u32, bounds: Rect2D) {
+        if z > self.hover_z_index && bounds.contains(self.input.mouse_pos) {
+            self.hover_z_index = z;
+        }
     }
 
     pub(crate) fn update_hover(&mut self, id: super::WidgetId, bounds: Rect2D) -> bool {

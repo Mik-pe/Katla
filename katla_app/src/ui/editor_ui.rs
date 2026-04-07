@@ -506,6 +506,42 @@ impl EditorUI {
     ) {
         let screen_size = ui.screen_size();
 
+        // Render floating panels first so they register hover layers and consume
+        // scroll before background panels. Visual order is handled by z-index
+        // sorting in the draw list, not render order.
+        if self.preferences_panel_state.panel.is_visible() {
+            let theme_key = self.theme_key();
+            let mut actions = Vec::new();
+            ui.add(PreferencesPanel::new(
+                screen_size,
+                &mut self.preferences_panel_state,
+                preferences,
+                &self.editor_settings,
+                &self.theme,
+                theme_key,
+                &mut actions,
+            ));
+
+            for action in actions {
+                self.apply_preferences_action(action);
+            }
+        }
+
+        if self.particle_inspector_state.panel.is_visible() {
+            let mut actions = Vec::new();
+            ui.add(ParticleInspector::new(
+                &mut self.particle_inspector_state,
+                &mut self.selected_particle_emitter,
+                &self.theme,
+                &self.particle_inspector_data,
+                &mut actions,
+            ));
+
+            for action in actions {
+                self.apply_particle_inspector_action(action);
+            }
+        }
+
         let visible_entities: Vec<EntityId> = entities
             .iter()
             .filter(|e| {
@@ -963,39 +999,6 @@ impl EditorUI {
             &self.theme,
             self.save_confirmation_timer,
         ));
-
-        if self.preferences_panel_state.panel.is_visible() {
-            let theme_key = self.theme_key();
-            let mut actions = Vec::new();
-            ui.add(PreferencesPanel::new(
-                screen_size,
-                &mut self.preferences_panel_state,
-                preferences,
-                &self.editor_settings,
-                &self.theme,
-                theme_key,
-                &mut actions,
-            ));
-
-            for action in actions {
-                self.apply_preferences_action(action);
-            }
-        }
-
-        if self.particle_inspector_state.panel.is_visible() {
-            let mut actions = Vec::new();
-            ui.add(ParticleInspector::new(
-                &mut self.particle_inspector_state,
-                &mut self.selected_particle_emitter,
-                &self.theme,
-                &self.particle_inspector_data,
-                &mut actions,
-            ));
-
-            for action in actions {
-                self.apply_particle_inspector_action(action);
-            }
-        }
 
         if self.asset_browser.is_dragging
             && let Some(drag_idx) = self.asset_browser.drag_asset

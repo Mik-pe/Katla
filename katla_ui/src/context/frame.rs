@@ -35,6 +35,7 @@ impl UiContext {
         self.id_stack.clear();
         self.z_stack.clear();
         self.z_index = z_index::DEFAULT;
+        self.hover_z_index = z_index::DEFAULT;
         self.id_counter = 0;
         self.hovered_id = None;
         self.cursor = Vec2::new(0.0, 0.0);

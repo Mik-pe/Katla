@@ -1070,6 +1070,110 @@ fn test_popup_blocks_click_underneath() {
     );
 }
 
+// === Scroll Consumption Tests ===
+
+/// Test that scroll delta is consumed after the first scroll area uses it.
+///
+/// When two scroll areas are visible and both hovered, only the first one
+/// rendered should receive the scroll delta. This prevents scroll-through
+/// to underlying panels.
+#[test]
+fn test_scroll_consumed_by_first_scroll_area() {
+    let bounds1 = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(200.0, 200.0));
+    let bounds2 = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(200.0, 200.0));
+
+    let mut ctx = UiContext::new();
+    ctx.input.set_mouse_pos(Vec2::new(100.0, 100.0));
+    ctx.input.scroll_delta = Vec2::new(0.0, -5.0);
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+    let state1 = ctx.scroll_area(
+        ScrollArea::new("scroll1").max_height(100.0),
+        ScrollAreaState { content_height: 500.0, ..Default::default() },
+        bounds1,
+        |_ui| 500.0,
+    );
+
+    let state2 = ctx.scroll_area(
+        ScrollArea::new("scroll2").max_height(100.0),
+        ScrollAreaState { content_height: 500.0, ..Default::default() },
+        bounds2,
+        |_ui| 500.0,
+    );
+
+    ctx.end();
+
+    assert_ne!(
+        state1.scroll_offset, 0.0,
+        "First scroll area should have consumed the scroll delta"
+    );
+    assert_eq!(
+        state2.scroll_offset, 0.0,
+        "Second scroll area should NOT receive scroll delta (already consumed)"
+    );
+}
+
+/// Test that a scroll area under a floating panel does not receive scroll.
+///
+/// When a DraggablePanel (z-index PANEL) overlaps a scroll area (z-index DEFAULT),
+/// the scroll area should not receive scroll events because is_hovered returns
+/// false due to hover_z_index being higher.
+#[test]
+fn test_scroll_blocked_by_floating_panel() {
+    use crate::widgets::{DraggablePanel, DraggablePanelState, DraggablePanelStyle};
+
+    let scroll_bounds =
+        Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 400.0));
+
+    let mut ctx = UiContext::new();
+    let mut panel_state = DraggablePanelState {
+        visibility: crate::widgets::PanelState::Visible,
+        ..Default::default()
+    };
+
+    let style = DraggablePanelStyle {
+        panel_bg: katla_math::Color::new(0.2, 0.2, 0.2, 1.0),
+        panel_border: katla_math::Color::BLACK,
+        panel_header: katla_math::Color::new(0.3, 0.3, 0.3, 1.0),
+        background_light: katla_math::Color::new(0.4, 0.4, 0.4, 1.0),
+        text_primary: katla_math::Color::WHITE,
+        text_muted: katla_math::Color::new(0.6, 0.6, 0.6, 1.0),
+    };
+
+    // Mouse is inside both the panel and the scroll area
+    ctx.input.set_mouse_pos(Vec2::new(100.0, 100.0));
+    ctx.input.scroll_delta = Vec2::new(0.0, 5.0);
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+    // Render floating panel first (at PANEL z-index)
+    DraggablePanel::show(
+        &mut ctx,
+        "test_panel",
+        "Test",
+        300.0,
+        300.0,
+        Vec2::new(800.0, 600.0),
+        &mut panel_state,
+        &style,
+        |_ui, _frame| {},
+    );
+
+    // Render scroll area underneath (at DEFAULT z-index)
+    let scroll_state = ctx.scroll_area(
+        ScrollArea::new("bg_scroll").max_height(200.0),
+        ScrollAreaState::default(),
+        scroll_bounds,
+        |_ui| 500.0,
+    );
+
+    ctx.end();
+
+    assert_eq!(
+        scroll_state.scroll_offset, 0.0,
+        "Scroll area under floating panel should NOT receive scroll"
+    );
+}
+
 // === Cursor Advancement Consistency Tests (VAL-UI-004) ===
 
 /// Test that ui.add() advances the cursor after rendering a widget.

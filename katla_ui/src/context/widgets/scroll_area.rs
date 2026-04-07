@@ -113,11 +113,12 @@ impl UiContext {
             Rect2D::from_origin_size(bounds.min, Vec2::new(content_width, actual_height));
 
         // Handle mouse wheel scrolling
-        if self.is_hovered(content_bounds) {
+        if self.is_hovered(content_bounds) && !self.input.scroll_consumed {
             let scroll_delta = self.input.scroll_delta.y() * 30.0;
             if scroll_delta != 0.0 {
                 let max_scroll = (state.content_height - actual_height).max(0.0);
                 state.scroll_offset = (state.scroll_offset - scroll_delta).clamp(0.0, max_scroll);
+                self.input.scroll_consumed = true;
             }
         }
 

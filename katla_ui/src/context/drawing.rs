@@ -8,6 +8,7 @@ use katla_math::{Color, Rect2D, Vec2};
 use crate::text::{FontId, SubpixelBin};
 
 use super::UiContext;
+use super::z_index;
 
 impl UiContext {
     // -------------------------------------------------------------------------
@@ -18,6 +19,10 @@ impl UiContext {
     pub fn draw_rect(&mut self, bounds: Rect2D, color: Color) {
         self.draw_list.set_clip(self.clip_rect());
         self.draw_list.add_rect(bounds, color);
+
+        if self.z_index > z_index::DEFAULT {
+            self.register_hover_layer(self.z_index, bounds);
+        }
     }
 
     /// Draw a rectangle with a border.
