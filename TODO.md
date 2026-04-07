@@ -49,7 +49,7 @@
 ### P2: Code Reusability
 
 - [ ] **Consolidate image creation into shared helper** — `OutputRenderTarget::new()`, `Texture::create_image()`, `TransientTexture`, swapchain all construct `vk::ImageCreateInfo` then delegate to `context.create_image()`. Differences in usage flags are legitimate, but an `ImageCreateInfoBuilder` could reduce boilerplate. Low priority.
-- [ ] **Extract repeated pipeline lookup into `AssetRegistry` method** — 21 occurrences (verified) across `render_graph/frame/` repeat: `material.pipeline.ok_or(...)` then `registry.get_pipeline_vk_handles(...).ok_or(...)`. A `get_pipeline_or_err(handle) -> Result<_, RenderGraphError>` method would eliminate significant boilerplate.
+- [x] **Extract repeated pipeline lookup into `AssetRegistry` method** — 21 occurrences (verified) across `render_graph/frame/` repeat: `material.pipeline.ok_or(...)` then `registry.get_pipeline_vk_handles(...).ok_or(...)`. A `get_pipeline_or_err(handle) -> Result<_, RenderGraphError>` method would eliminate significant boilerplate.
 - [x] **Extract `DrawCall` builder helper** — `renderer/types.rs:204-250` — 6 builder methods all repeat the same `if let Some(inst) = self.instances.first_mut()` guard. Extract a private `with_first_instance_mut()` helper. Minor refactor, low risk.
 
 ### P3: Polish
@@ -80,7 +80,7 @@
 
 ### P2: Code Reusability
 
-- [ ] **Extract shared transform-from-position pattern** — 44 occurrences total but 24 are in tests. ~15 in production code across 5 files (`spawner.rs`, `scene/mod.rs`, `spawning.rs`, `physics_system.rs`, `velocity_system.rs`). Low priority: `Transform::new_from_position()` already exists; the repetition is the `TransformComponent { transform: ... }` wrapper. A `TransformComponent::from_position()` convenience method would help.
+- [x] **Extract shared transform-from-position pattern** — 44 occurrences total but 24 are in tests. ~15 in production code across 5 files (`spawner.rs`, `scene/mod.rs`, `spawning.rs`, `physics_system.rs`, `velocity_system.rs`). Low priority: `Transform::new_from_position()` already exists; the repetition is the `TransformComponent { transform: ... }` wrapper. A `TransformComponent::from_position()` convenience method would help.
 - [ ] **Consolidate `Spawner` and `Application` entity creation** — `Spawner` (207 lines, `&mut World` only, no GPU tracking) vs `Application` methods (608 lines, full app access with GPU resource tracking). Using `Spawner::spawn_primitive()` instead of `Application` methods risks GPU resource leaks. Either unify tracking via an ECS resource or document the distinction clearly.
 - [ ] **Replace hand-rolled TOML parsers with serde** — Preferences/settings parsing manually splits strings and matches on keys instead of using serde derive. Fragile and verbose.
 
@@ -106,7 +106,7 @@
 
 ### P2: Robustness
 
-- [ ] **Guard `DrawList::finalize()` on empty lists** — `draw_list.rs` has 8 `unwrap()` calls for min/max computation that panic on empty draw lists.
+- ~~**Guard `DrawList::finalize()` on empty lists**~~ — False positive. `finalize()` uses `unwrap_or(0)` and safe iterators — already handles empty lists correctly. The 8 `unwrap()` calls are in test assertions only.
 - [ ] **Fix `Vertex.texture_index` always being 0** — `types.rs:62-88` — every vertex is created with `texture_index: 0` and comments say "Will be set during batch conversion" but `finalize()` never resolves it. Either remove the field from the public struct or resolve within `finalize()`.
 
 ### P2: Visibility
@@ -120,7 +120,7 @@
 - [ ] **Fix hierarchy view to use a reusable list view** — Each list element in the hierarchy panel is fixed to different pixel sizes, causing elements to jump around when scrolling. Should build a reusable `ListView` widget in `katla_ui` with uniform row heights and virtualized scrolling.
 - [x] **Extract shared text/icon centering utility** — Three separate implementations in `context/drawing.rs:240-265`, `context/drawing.rs:270-305`, `context/widgets/basic.rs:66-72` each compute centering slightly differently. Should be a shared helper.
 - [ ] **Reduce theme method repetition** — `style.rs` has ~240 lines of near-identical field assignments across `dark()` (358-420), `light()` (425-481), `classic()` (490-565). Adding a new color requires touching all three. Consider struct-update pattern or helper.
-- [ ] **Introduce `DraggablePanel::show()` config struct** — `widgets/draggable_panel.rs:99-105` takes 9 parameters with `#[allow(clippy::too_many_arguments)]`. Use a builder or config struct consistent with the crate's widget patterns.
+- [x] **Introduce `DraggablePanel::show()` config struct** — `widgets/draggable_panel.rs:99-105` takes 9 parameters with `#[allow(clippy::too_many_arguments)]`. Use a builder or config struct consistent with the crate's widget patterns.
 
 ### P3: Polish
 
