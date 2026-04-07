@@ -21,6 +21,10 @@
 
 ## katla_gfx
 
+### P2: Features
+
+- [ ] **Add billboard rendering support** — Render billboard quads for geometry-less entities (particle emitters, point lights, etc.) so they are visible in the editor viewport. Use the `forkawesome` crate to generate icon textures for each entity type.
+
 ### P1: Stubs / Missing Implementations
 
 - [ ] **Implement `create_transient_texture()`** — Currently returns a dead handle (`TextureHandle::new(0)`). Needed for UI rendering with transient textures.
@@ -43,7 +47,7 @@
 ### P1: Robustness
 
 - [ ] **Replace `.expect()` calls in per-frame hot paths** — 65 `.expect()` calls across 27 files (verified count, not 80+). `.expect()` in init/setup code is acceptable in Rust graphics engines. Focus on per-frame rendering paths (`renderer/mod.rs`, `render_graph/frame/`) and cleanup code where `.expect()` → `Result` propagation would prevent crashes.
-- [ ] **Decompose `GlobalParticleSystem` struct (30 fields)** — `particles/mod.rs:52-109` has 30 fields that naturally group into ~5 sub-structs: `ParticlePipelines` (4), `ParticleDescriptors` (8), `ParticleBuffers` (3), `ParticleEmitterPool` (4), config/stats (4). Straightforward win for maintainability.
+- [x] **Decompose `GlobalParticleSystem` struct (30 fields)** — Grouped into `ParticlePipelines` (4), `ParticleDescriptors` (11), `ParticleBuffers` (2), `ParticleEmitterPool` (4) sub-structs.
 - [ ] **Refactor `VulkanContext.allocator` away from `ManuallyDrop<RefCell<Allocator>>`** — `vulkan/context/mod.rs:99`. The `try_borrow_mut()` pattern silently leaks memory on failure (e.g., `particles/mod.rs:246`). Consider `Mutex<Allocator>` or restructuring for single-threaded access by design.
 
 ### P2: Code Reusability
@@ -82,7 +86,7 @@
 
 - [x] **Extract shared transform-from-position pattern** — 44 occurrences total but 24 are in tests. ~15 in production code across 5 files (`spawner.rs`, `scene/mod.rs`, `spawning.rs`, `physics_system.rs`, `velocity_system.rs`). Low priority: `Transform::new_from_position()` already exists; the repetition is the `TransformComponent { transform: ... }` wrapper. A `TransformComponent::from_position()` convenience method would help.
 - [ ] **Consolidate `Spawner` and `Application` entity creation** — `Spawner` (207 lines, `&mut World` only, no GPU tracking) vs `Application` methods (608 lines, full app access with GPU resource tracking). Using `Spawner::spawn_primitive()` instead of `Application` methods risks GPU resource leaks. Either unify tracking via an ECS resource or document the distinction clearly.
-- [ ] **Replace hand-rolled TOML parsers with serde** — Preferences/settings parsing manually splits strings and matches on keys instead of using serde derive. Fragile and verbose.
+- [x] **Replace hand-rolled TOML parsers with serde** — `Preferences` and `GuiState` now use serde derive with `toml::from_str`/`to_string_pretty`. Added `#[serde(default)]` for forward-compatible partial configs.
 
 ### P2: Architecture
 
@@ -119,7 +123,7 @@
 
 - [ ] **Fix hierarchy view to use a reusable list view** — Each list element in the hierarchy panel is fixed to different pixel sizes, causing elements to jump around when scrolling. Should build a reusable `ListView` widget in `katla_ui` with uniform row heights and virtualized scrolling.
 - [x] **Extract shared text/icon centering utility** — Three separate implementations in `context/drawing.rs:240-265`, `context/drawing.rs:270-305`, `context/widgets/basic.rs:66-72` each compute centering slightly differently. Should be a shared helper.
-- [ ] **Reduce theme method repetition** — `style.rs` has ~240 lines of near-identical field assignments across `dark()` (358-420), `light()` (425-481), `classic()` (490-565). Adding a new color requires touching all three. Consider struct-update pattern or helper.
+- [x] **Reduce theme method repetition** — Extracted `pub struct ColorScheme` with all 42 color fields. `dark()`/`light()`/`classic()` now one-liners via `UiStyle::with_colors(ColorScheme::dark())`.
 - [x] **Introduce `DraggablePanel::show()` config struct** — `widgets/draggable_panel.rs:99-105` takes 9 parameters with `#[allow(clippy::too_many_arguments)]`. Use a builder or config struct consistent with the crate's widget patterns.
 
 ### P3: Polish
