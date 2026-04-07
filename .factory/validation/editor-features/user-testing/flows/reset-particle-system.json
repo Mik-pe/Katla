@@ -1,0 +1,95 @@
+{
+  "groupId": "reset-particle-system",
+  "testedAt": "2026-04-07T12:00:00Z",
+  "isolation": {
+    "type": "pure-rust-workspace",
+    "workingDirectory": "C:\\dev\\katla",
+    "tools": ["cargo test", "cargo check", "cargo clippy"]
+  },
+  "toolsUsed": ["cargo test", "cargo check", "cargo clippy"],
+  "assertions": [
+    {
+      "id": "VAL-EDITOR-009",
+      "title": "GlobalParticleSystem::reset_all() resets counters",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_gfx test_reset_all_clears_counters",
+          "expected": "Test passes verifying alive_count=0, dead_count=max_particles, emit_count=0, workgroups_finished=0",
+          "observed": "Test passed. Verified ParticleCounters after reset: alive_count=0, dead_count=DEFAULT_MAX_PARTICLES, emit_count=0, workgroups_finished=0."
+        }
+      ],
+      "evidence": "test result: ok",
+      "command": "cargo test -p katla_gfx test_reset_all_clears_counters"
+    },
+    {
+      "id": "VAL-EDITOR-010",
+      "title": "reset_all() clears per-emitter state",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_gfx test_reset_all_clears_emitter_states",
+          "expected": "Test passes verifying emitter states reset to default",
+          "observed": "Test passed. After resetting emitter states: burst_count=0, emit_accumulator=0.0."
+        }
+      ],
+      "evidence": "test result: ok",
+      "command": "cargo test -p katla_gfx test_reset_all_clears_emitter_states"
+    },
+    {
+      "id": "VAL-EDITOR-011",
+      "title": "reset_all() preserves emitter configurations",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_gfx test_reset_all_preserves_configs",
+          "expected": "Test passes verifying config values retained",
+          "observed": "Test passed. Config values after reset: emit_rate=75.0, base_lifetime=3.0, gravity=-5.0 — all preserved."
+        }
+      ],
+      "evidence": "test result: ok",
+      "command": "cargo test -p katla_gfx test_reset_all_preserves_configs"
+    },
+    {
+      "id": "VAL-EDITOR-012",
+      "title": "EditorAction::ResetParticleSystem destroys and re-creates emitters",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_app test_reset_particle_system_editor_action",
+          "expected": "Test passes verifying no-op path when particle_system is None",
+          "observed": "Test passed. When particle_system is None, the reset action is a no-op and doesn't panic."
+        },
+        {
+          "action": "Code review of ResetParticleSystem handler in editor/mod.rs",
+          "expected": "Handler iterates entities, destroys emitters, calls reset_all(), re-creates emitters",
+          "observed": "Code review of editor/mod.rs:440-485 confirms all 4 required steps: (1) query entities with ParticleEmitterComponent, (2) destroy_emitter() on each handle, (3) reset_all() call, (4) re-create via create_emitter() with updated handles."
+        }
+      ],
+      "evidence": "Unit test passes for no-op path. Code review confirms destroy/re-create logic implemented correctly.",
+      "command": "cargo test -p katla_app test_reset_particle_system_editor_action"
+    },
+    {
+      "id": "VAL-EDITOR-013",
+      "title": "Reset feature compiles cleanly",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo check -p katla_gfx",
+          "expected": "Exit code 0",
+          "observed": "cargo check completed successfully with exit code 0"
+        },
+        {
+          "action": "Run cargo clippy -p katla_gfx",
+          "expected": "Exit code 0, no warnings",
+          "observed": "cargo clippy completed successfully with exit code 0, no warnings"
+        }
+      ],
+      "evidence": "cargo check -p katla_gfx: exit 0. cargo clippy -p katla_gfx: exit 0, no warnings.",
+      "command": "cargo check -p katla_gfx && cargo clippy -p katla_gfx"
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 5 assertions for reset-particle-system feature: all 5 passed. VAL-EDITOR-009 through VAL-EDITOR-011 verified via unit tests in katla_gfx. VAL-EDITOR-012 verified via unit test (no-op path) + code review (destroy/re-create path). VAL-EDITOR-013 verified via cargo check and cargo clippy."
+}
