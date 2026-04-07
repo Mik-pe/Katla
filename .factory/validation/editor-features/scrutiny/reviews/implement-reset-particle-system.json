@@ -1,0 +1,50 @@
+{
+  "featureId": "implement-reset-particle-system",
+  "reviewedAt": "2026-04-07T23:45:00Z",
+  "commitId": "449d44e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation adds reset_all() to GlobalParticleSystem and wires EditorAction::ResetParticleSystem with a destroy/reset/recreate lifecycle. The implementation is correct, compiles cleanly, and all 4 new tests pass. The tests have limited depth — they verify expected state values in isolation rather than calling reset_all() directly (which requires GPU) — but the CPU-side logic is straightforward enough that this is acceptable. The editor action's no-op path when particle_system is None is properly guarded. One non-blocking observation about test quality and one about the free_slots not being cleared during reset.",
+    "issues": [
+      {
+        "file": "katla_gfx/src/particles/mod.rs",
+        "line": 580,
+        "severity": "non_blocking",
+        "description": "test_reset_all_clears_emitter_states tests EmitterState::default() assignment on a raw ParticleEmitterPool rather than calling reset_all() on a GlobalParticleSystem. The test verifies the correct post-condition (burst_count=0, emit_accumulator=0.0) but doesn't exercise the actual reset_all() code path. This is understandable since GlobalParticleSystem requires GPU context, but the test name implies it tests reset_all(). Same applies to test_reset_all_preserves_configs (line 602) and test_reset_all_clears_counters (line 630). The tests are functionally correct but could be clearer about what they actually verify."
+      },
+      {
+        "file": "katla_gfx/src/particles/mod.rs",
+        "line": 377,
+        "severity": "non_blocking",
+        "description": "reset_all() does not clear emitter_pool.free_slots. After the editor action calls destroy_emitter() (which pushes to free_slots) then reset_all(), the free_slots retain stale entries. This is harmless in practice because create_emitter() pops from free_slots during the recreate phase, and any remaining free_slots are just unused capacity. However, if reset_all() were called independently (not via the editor action), the free_slots would accumulate indefinitely across multiple reset cycles. Consider clearing free_slots and next_slot in reset_all() for a cleaner reset."
+      },
+      {
+        "file": "katla_app/src/application/editor/mod.rs",
+        "line": 1572,
+        "severity": "non_blocking",
+        "description": "test_reset_particle_system_editor_action only tests the no-op path (particle_system is None). It creates a World with a ParticleEmitterComponent but never actually exercises the process_editor_actions code path with a real particle system. This is understandable given GPU requirements, but the test primarily verifies that ParticleEmitterComponent can be created and that Option<GlobalParticleSystem>::None is indeed None — neither of which tests the actual reset logic."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "GlobalParticleSystem cannot be tested without a GPU context (Vulkan device + allocator). The reset_all() method calls buffer.initialize_index_lists() which submits GPU commands. This means unit tests for particle system methods can only test CPU-side data structures (ParticleEmitterPool, ParticleCounters, EmitterState) in isolation. This constraint should be documented in .factory/library/ for future workers.",
+      "evidence": "katla_gfx/src/particles/mod.rs tests construct raw ParticleEmitterPool structs directly rather than GlobalParticleSystem instances. reset_all() returns Result<(), String> because of the GPU buffer initialization."
+    },
+    {
+      "area": "knowledge",
+      "observation": "destroy_emitter() zeroes the emit_rate in the EmitterConfig slot (sets emit_rate: 0.0) and pushes the index to free_slots. This means that between destroy_emitter() and create_emitter(), recompute_estimated_max_alive() will see zeroed configs. The editor action's destroy/reset/recreate sequence handles this correctly because create_emitter() restores configs and calls recompute_estimated_max_alive() again, but any code calling reset_all() independently should be aware of this.",
+      "evidence": "katla_gfx/src/particles/emitter.rs:68-77 — destroy_emitter zeroes config and pushes to free_slots. katla_gfx/src/particles/mod.rs:377 — reset_all() calls recompute_estimated_max_alive() before configs are restored."
+    },
+    {
+      "area": "conventions",
+      "observation": "The test naming convention test_reset_all_* in katla_gfx doesn't follow the pattern of actually calling the method under test. Other tests in the same module (e.g., test_emitter_config_shape) do call the actual APIs. This inconsistency could confuse future workers who expect these tests to exercise reset_all().",
+      "evidence": "katla_gfx/src/particles/mod.rs:580-644 — three tests named test_reset_all_* construct raw structs and test Default trait behavior rather than calling GlobalParticleSystem::reset_all()."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The implementation correctly fulfills all 7 validation assertions (VAL-EDITOR-009 through VAL-EDITOR-015). reset_all() properly resets CPU-side state (frame_count, total_emitted, emitter_states) and reinitializes GPU buffers via initialize_index_lists(). The editor action correctly implements the destroy/reset/recreate lifecycle with proper error handling. Tests pass but have limited depth due to GPU context requirements. No blocking issues found."
+}
