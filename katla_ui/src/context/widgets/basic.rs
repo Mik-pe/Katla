@@ -10,6 +10,7 @@ use crate::icons::ForkAwesome;
 use crate::input::{KeyCode, mouse_button};
 use crate::response::Response;
 
+use super::super::drawing::center_in_bounds;
 use super::super::UiContext;
 
 impl UiContext {
@@ -59,10 +60,7 @@ impl UiContext {
 
         // Draw button text
         let text_size = self.measure_text(text, self.style.font_size);
-        let text_pos = Vec2::new(
-            bounds.center().x() - text_size.x() * 0.5,
-            bounds.center().y() - text_size.y() * 0.5,
-        );
+        let text_pos = center_in_bounds(bounds, text_size);
         self.draw_text(text, text_pos, self.style.text_color, self.style.font_size);
 
         Response::interactive(clicked, hovered, active, bounds, &self.input)

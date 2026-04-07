@@ -7,6 +7,8 @@
 use std::fmt;
 use std::io;
 
+use ash::vk;
+
 use crate::render_graph::RenderGraphError;
 use crate::vulkan::material::compiler::MaterialError;
 
@@ -16,11 +18,11 @@ use crate::vulkan::material::compiler::MaterialError;
 /// providing a clean public API without exposing raw `vk::Result`.
 #[derive(Debug)]
 pub enum RendererError {
-    /// Vulkan API error.
-    VulkanError(String),
+    /// Vulkan API error with context message and source result.
+    VulkanError(String, vk::Result),
 
     /// IO error (file loading, etc.).
-    IoError(String),
+    IoError(io::Error),
 
     /// Resource not found.
     NotFound(String),
@@ -47,8 +49,8 @@ pub enum RendererError {
 impl fmt::Display for RendererError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RendererError::VulkanError(msg) => write!(f, "Vulkan error: {}", msg),
-            RendererError::IoError(msg) => write!(f, "IO error: {}", msg),
+            RendererError::VulkanError(msg, _) => write!(f, "Vulkan error: {}", msg),
+            RendererError::IoError(err) => write!(f, "IO error: {}", err),
             RendererError::NotFound(msg) => write!(f, "Not found: {}", msg),
             RendererError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
             RendererError::InitializationFailed(msg) => {
@@ -71,6 +73,8 @@ impl fmt::Display for RendererError {
 impl std::error::Error for RendererError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            RendererError::VulkanError(_, err) => Some(err),
+            RendererError::IoError(err) => Some(err),
             RendererError::RenderGraphError(err) => Some(err),
             RendererError::MaterialError(err) => Some(err),
             _ => None,
@@ -78,15 +82,15 @@ impl std::error::Error for RendererError {
     }
 }
 
-impl From<ash::vk::Result> for RendererError {
-    fn from(result: ash::vk::Result) -> Self {
-        RendererError::VulkanError(format!("{:?}", result))
+impl From<vk::Result> for RendererError {
+    fn from(result: vk::Result) -> Self {
+        RendererError::VulkanError(format!("{:?}", result), result)
     }
 }
 
 impl From<io::Error> for RendererError {
     fn from(error: io::Error) -> Self {
-        RendererError::IoError(error.to_string())
+        RendererError::IoError(error)
     }
 }
 

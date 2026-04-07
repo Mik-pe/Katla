@@ -27,7 +27,7 @@ impl UiContext {
             self.style.text_color,
             self.style.font_size,
         );
-        self.set_cursor(Vec2::new(start_x + 60.0, self.cursor().y()));
+        self.set_cursor(Vec2::new(start_x + self.style.property_label_width, self.cursor().y()));
         self.draw_text(
             value,
             self.cursor(),

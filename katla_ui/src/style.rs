@@ -232,6 +232,8 @@ pub struct UiStyle {
     pub separator_height: f32,
     /// Tooltip padding.
     pub tooltip_padding: f32,
+    /// Label column width for property rows.
+    pub property_label_width: f32,
 
     // Button heights
     /// Small button height (compact UI).
@@ -296,6 +298,7 @@ impl UiStyle {
             graph_padding: 3.0,
             separator_height: 8.0,
             tooltip_padding: 4.0,
+            property_label_width: 60.0,
 
             button_height_small: 24.0,
             button_height_medium: 28.0,

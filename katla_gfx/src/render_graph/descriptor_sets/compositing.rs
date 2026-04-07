@@ -109,10 +109,10 @@ impl CompositingDescriptorSet {
             device
                 .create_descriptor_set_layout(&layout_info, None)
                 .map_err(|e| {
-                    RendererError::VulkanError(format!(
-                        "Failed to create compositing descriptor set layout: {:?}",
-                        e
-                    ))
+                    RendererError::VulkanError(
+                        "Failed to create compositing descriptor set layout".into(),
+                        e,
+                    )
                 })
         }
     }
