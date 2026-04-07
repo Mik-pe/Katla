@@ -57,7 +57,7 @@
 - [ ] **Consider a minimal `Mat4` type within katla_gfx** — `FrameUniforms` in `renderer/types.rs:18-20` uses raw `[f32; 16]` arrays. Low priority: the raw arrays match GPU memory layout and are constructed from `katla_math` in `katla_app`, so a local Mat4 would create yet another conversion boundary.
 - [ ] **Extract viewport/UI from renderer module** — Viewport and UI management still in `renderer/mod.rs`; should be split into own modules.
 - ~~**Clean up dead code**~~ — Stale. `ShadowBuffers::len()/is_empty()` already removed. `CascadeParams::cascades()` has a test caller. `MaterialBuilder::with_push_constant_range()` (actually `PipelineBuilder`) has an example caller. No dead code to remove.
-- [ ] **Chain errors in `RendererError::source()`** — `error.rs` — `source()` returns `None` for `VulkanError`/`IoError` variants because they convert to `String`, losing the original error. Change `IoError(String)` to `IoError(io::Error)` etc. to preserve error chains for debugging.
+- [x] **Chain errors in `RendererError::source()`** — `error.rs` — `source()` returns `None` for `VulkanError`/`IoError` variants because they convert to `String`, losing the original error. Change `IoError(String)` to `IoError(io::Error)` etc. to preserve error chains for debugging.
 
 ## katla_app
 
@@ -93,7 +93,7 @@
 - ~~**Remove dead `DragToViewport.path` field**~~ — False positive. `DragToViewport.path` is actively used: set in `asset_browser/mod.rs:650-654` and read in `editor_ui.rs:852-861` for `EditorAction::SpawnModelAtPath`. Not dead code.
 - [ ] **Split `scene/mod.rs` (3998 lines)** — Largest file in katla_app with no submodules. Scene serialization/deserialization, entity instantiation, GLTF loading, and scene management all in one file. High priority for maintainability — decompose into `scene/serialization.rs`, `scene/loader.rs`, `scene/instantiation.rs`, etc.
 - [ ] **Split `editor_ui.rs` (1334 lines)** — Decomposition already in progress: `editor_ui/` subdirectory exists with `hierarchy.rs` (383 lines), `inspector.rs` (353 lines), `preferences.rs` (559 lines), `status_bar.rs` (117 lines), `toolbar.rs` (173 lines), `viewport_grid.rs` (262 lines), `asset_browser/`. Remaining code is core panel layout/orchestration. Low priority.
-- [ ] **Remove unused `Selection` resource** — 320 lines of dead code in `resources/selection.rs` with full tests and API, but never imported, registered, or used outside its own file. Either integrate into editor flow or remove.
+- [x] **Remove unused `Selection` resource** — 320 lines of dead code in `resources/selection.rs` with full tests and API, but never imported, registered, or used outside its own file. Either integrate into editor flow or remove.
 - ~~**Audit stateless service structs**~~ — False positive. Stateless system structs (`ParticleSystem {}`, `VelocitySystem`, `PhysicsSystem`, `OrbitCameraSystem`, etc.) are idiomatic Rust ECS pattern. The struct is a type token for trait dispatch; state lives in `World`. No action needed.
 
 ## katla_ui
@@ -118,7 +118,7 @@
 ### P2: Code Reusability
 
 - [ ] **Fix hierarchy view to use a reusable list view** — Each list element in the hierarchy panel is fixed to different pixel sizes, causing elements to jump around when scrolling. Should build a reusable `ListView` widget in `katla_ui` with uniform row heights and virtualized scrolling.
-- [ ] **Extract shared text/icon centering utility** — Three separate implementations in `context/drawing.rs:240-265`, `context/drawing.rs:270-305`, `context/widgets/basic.rs:66-72` each compute centering slightly differently. Should be a shared helper.
+- [x] **Extract shared text/icon centering utility** — Three separate implementations in `context/drawing.rs:240-265`, `context/drawing.rs:270-305`, `context/widgets/basic.rs:66-72` each compute centering slightly differently. Should be a shared helper.
 - [ ] **Reduce theme method repetition** — `style.rs` has ~240 lines of near-identical field assignments across `dark()` (358-420), `light()` (425-481), `classic()` (490-565). Adding a new color requires touching all three. Consider struct-update pattern or helper.
 - [ ] **Introduce `DraggablePanel::show()` config struct** — `widgets/draggable_panel.rs:99-105` takes 9 parameters with `#[allow(clippy::too_many_arguments)]`. Use a builder or config struct consistent with the crate's widget patterns.
 
@@ -131,7 +131,7 @@
 - [ ] **Remove hardcoded widget default sizes** — `Button` 100x30, `Checkbox` 150x24, `Slider` 150x20, `TextInput` 200x24, etc. don't relate to `UiStyle` dimensions. `at_cursor()` methods use style values but defaults ignore them.
 - [ ] **Fix `Separator` hardcoded 200.0 width** — `widgets/mod.rs:673-704` — no way to make it span full container width without caller computing manually.
 - [ ] **Replace per-frame `Vec<Vec2>` allocation in `graph()`** — `context/widgets/graph.rs:53-65` allocates every frame. Use a scratch buffer approach like `DrawList` uses for circles.
-- [ ] **Make `property_row()` label width configurable** — `context/helpers.rs:20-42` hardcodes `60.0` for label column width. Doesn't scale with font size or content length.
+- [x] **Make `property_row()` label width configurable** — `context/helpers.rs:20-42` hardcodes `60.0` for label column width. Doesn't scale with font size or content length.
 
 ### P3: Font Library Migration (ab_glyph → skrifa + vello_cpu) — DONE
 
