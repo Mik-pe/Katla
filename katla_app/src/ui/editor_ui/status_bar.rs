@@ -75,7 +75,7 @@ impl<'a> Widget for StatusBar<'a> {
         };
         let fps_slot_width = ui.measure_text("FPS: 1000", font_size).x();
         ui.draw_text(&fps_text, ui.cursor(), fps_color, font_size);
-        ui.spacer(fps_slot_width);
+        ui.spacing(fps_slot_width);
 
         ui.separator_text();
 
