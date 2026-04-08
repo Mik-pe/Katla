@@ -179,7 +179,7 @@ macro_rules! impl_query_iter_all_ref {
 //
 // # Invocation
 //
-// ```ignore
+// ```text
 // // (&mut T1, &T2, &T3) — mut at position 0
 // impl_query_iter_single_mut!(3, T1Mut, [], T1, [T2, T3]);
 //
@@ -333,7 +333,7 @@ macro_rules! impl_query_iter_single_mut {
 //
 // # Invocation
 //
-// ```ignore
+// ```text
 // // (&mut T1, &mut T2, &T3) — two leading muts
 // impl_query_iter_double_mut!(3, T1T2Mut, [T1, T2], [T3]);
 //

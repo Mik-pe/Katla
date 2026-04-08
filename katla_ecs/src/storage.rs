@@ -390,11 +390,28 @@ impl ComponentStorageManager {
     /// See the [`query`](crate::query) module for detailed documentation and examples.
     ///
     /// # Example
-    /// ```ignore
+    /// ```
+    /// use katla_ecs::{World, Component};
+    ///
+    /// #[derive(Component)]
+    /// struct VelocityComponent { value: f32 }
+    ///
+    /// #[derive(Component)]
+    /// struct ForceComponent { force: f32 }
+    ///
+    /// let mut world = World::new();
+    /// let e = world.spawn((
+    ///     VelocityComponent { value: 0.0 },
+    ///     ForceComponent { force: 10.0 },
+    /// ));
+    ///
     /// // Query with mutable and immutable access
-    /// for (entity, velocity, force) in storage.query::<(&mut VelocityComponent, &ForceComponent)>() {
-    ///     velocity.acceleration = force.force;
+    /// for (_entity, velocity, force) in world.query::<(&mut VelocityComponent, &ForceComponent)>() {
+    ///     velocity.value += force.force;
     /// }
+    ///
+    /// let v = world.get_component::<VelocityComponent>(e).unwrap();
+    /// assert_eq!(v.value, 10.0);
     /// ```
     pub fn query<Q: QueryData>(&mut self) -> Q::Iter<'_> {
         Q::fetch(self)

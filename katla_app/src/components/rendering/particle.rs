@@ -96,12 +96,17 @@ impl ParticleEmitterComponent {
     /// * `count` - Number of particles to burst
     ///
     /// # Example
-    /// ```ignore
-    /// // Explosion effect
-    /// explosion_emitter.burst(1000);
+    /// ```
+    /// use katla_app::components::rendering::particle::ParticleEmitterComponent;
     ///
-    /// // Bullet impact
+    /// let mut explosion_emitter = ParticleEmitterComponent::new();
+    /// explosion_emitter.burst(1000);
+    /// assert_eq!(explosion_emitter.burst_queue.len(), 1);
+    /// assert_eq!(explosion_emitter.burst_queue[0], 1000);
+    ///
+    /// let mut impact_emitter = ParticleEmitterComponent::new();
     /// impact_emitter.burst(50);
+    /// assert_eq!(impact_emitter.burst_queue[0], 50);
     /// ```
     pub fn burst(&mut self, count: u32) {
         self.burst_queue.push(count);
@@ -117,9 +122,13 @@ impl ParticleEmitterComponent {
     /// * `duration` - Duration in seconds to emit particles
     ///
     /// # Example
-    /// ```ignore
-    /// // Spell effect that lasts 2 seconds
+    /// ```
+    /// use katla_app::components::rendering::particle::ParticleEmitterComponent;
+    ///
+    /// let mut spell_emitter = ParticleEmitterComponent::new();
     /// spell_emitter.emit_for(2.0);
+    /// assert_eq!(spell_emitter.timed_emission, Some(2.0));
+    /// assert!(spell_emitter.active);
     /// ```
     pub fn emit_for(&mut self, duration: f32) {
         self.timed_emission = Some(duration);
@@ -145,8 +154,12 @@ impl ParticleEmitterComponent {
     /// * `axis` - Axis direction (0=X, 1=Y, 2=Z)
     ///
     /// # Example
-    /// ```ignore
+    /// ```
+    /// use katla_app::components::rendering::particle::ParticleEmitterComponent;
+    ///
+    /// let mut rain_emitter = ParticleEmitterComponent::new();
     /// rain_emitter.with_line_shape(10.0, 1); // 10-unit vertical line (Y-axis)
+    /// assert_eq!(rain_emitter.config.shape_params[0], 10.0);
     /// ```
     pub fn with_line_shape(&mut self, length: f32, axis: u32) -> &mut Self {
         self.config.set_shape(EmitterShape::Line);
@@ -165,8 +178,12 @@ impl ParticleEmitterComponent {
     /// * `radius` - Radius of the circle in world units
     ///
     /// # Example
-    /// ```ignore
+    /// ```
+    /// use katla_app::components::rendering::particle::ParticleEmitterComponent;
+    ///
+    /// let mut aura_emitter = ParticleEmitterComponent::new();
     /// aura_emitter.with_circle_shape(2.0); // 2-unit radius circle
+    /// assert_eq!(aura_emitter.config.shape_params[0], 2.0);
     /// ```
     pub fn with_circle_shape(&mut self, radius: f32) -> &mut Self {
         self.config.set_shape(EmitterShape::Circle);
@@ -183,8 +200,12 @@ impl ParticleEmitterComponent {
     /// * `radius` - Radius of the sphere in world units
     ///
     /// # Example
-    /// ```ignore
+    /// ```
+    /// use katla_app::components::rendering::particle::ParticleEmitterComponent;
+    ///
+    /// let mut explosion_emitter = ParticleEmitterComponent::new();
     /// explosion_emitter.with_sphere_shape(5.0); // 5-unit radius sphere
+    /// assert_eq!(explosion_emitter.config.shape_params[0], 5.0);
     /// ```
     pub fn with_sphere_shape(&mut self, radius: f32) -> &mut Self {
         self.config.set_shape(EmitterShape::Sphere);
@@ -203,8 +224,14 @@ impl ParticleEmitterComponent {
     /// * `depth` - Depth of the box (Z-axis) in world units
     ///
     /// # Example
-    /// ```ignore
+    /// ```
+    /// use katla_app::components::rendering::particle::ParticleEmitterComponent;
+    ///
+    /// let mut volume_emitter = ParticleEmitterComponent::new();
     /// volume_emitter.with_box_shape(4.0, 3.0, 2.0); // 4x3x2 box
+    /// assert_eq!(volume_emitter.config.shape_params[0], 4.0);
+    /// assert_eq!(volume_emitter.config.shape_params[1], 3.0);
+    /// assert_eq!(volume_emitter.config.shape_params[2], 2.0);
     /// ```
     pub fn with_box_shape(&mut self, width: f32, height: f32, depth: f32) -> &mut Self {
         self.config.set_shape(EmitterShape::Box);
