@@ -1,0 +1,34 @@
+{
+  "milestone": "polish-followup",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "services.yaml",
+      "description": "Added picking_validation and outline_validation example commands for discoverability",
+      "sourceFeature": "fix-gpu-validation-examples"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Note that particle_validation.rs and particle_validation_helpers.rs are broken by the same robustness milestone API changes (38 compile errors). These should be fixed in a follow-up feature using the same patterns applied to picking_validation and outline_validation.",
+      "evidence": "Review of fix-gpu-validation-examples found particle_validation.rs has 38 compile errors from GpuAllocator.borrow_mut(), Result-returning command buffer ops, and init_headless() returning Result.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

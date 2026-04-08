@@ -1,0 +1,26 @@
+{
+  "featureId": "fix-gpu-validation-examples",
+  "reviewedAt": "2026-04-08T13:25:00Z",
+  "commitId": "5eb734c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix correctly updates both picking_validation.rs (7 errors resolved) and outline_validation.rs (85 errors resolved) to use the new robustness milestone APIs. All four categories of API changes are addressed: GpuAllocator wrapper methods, Result-returning command buffer operations, Result-returning memory flush/invalidate operations, and proper VulkanContext::init_headless() Result unwrapping. The outline_validation context is correctly wrapped in Rc for PipelineBuilder compatibility. Error handling is consistent and appropriate — ? operator in functions returning Result, and match-based early returns in main(). Both examples compile cleanly and all verification commands passed.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "particle_validation.rs and particle_validation_helpers.rs are also broken by the same robustness milestone API changes (38 compile errors: GpuAllocator.borrow_mut(), begin_single_time_commands() returning Result, init_headless() returning Result, create_image() returning Result). These examples were not included in the fix feature scope but are now uncompilable. The AGENTS.md mission file lists 'GPU examples for validation' including particle_validation specifically.",
+      "evidence": "cargo check -p katla_gfx --example particle_validation --features validation produces 38 errors. Affected patterns: allocator.borrow_mut() at particle_validation.rs:220,262 and particle_validation_helpers.rs:184; context.begin_single_time_commands() used without Result handling at particle_validation.rs:288,791,967; VulkanContext::init_headless() wrapped in Rc without Result unwrap at particle_validation.rs:687-688."
+    },
+    {
+      "area": "services",
+      "observation": "services.yaml does not include commands for the GPU validation examples that the AGENTS.md mission file references. The mission lists cargo run -p katla_gfx --example picking_validation and outline_validation, but services.yaml only has headless_validation (cargo run -- -s). Adding example-specific validation commands would improve discoverability.",
+      "evidence": "AGENTS.md lists 'cargo run -p katla_gfx --example picking_validation' and 'cargo run -p katla_gfx --example outline_validation' but services.yaml commands section has no matching entries."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Clean fix that properly adapts both GPU validation examples to the robustness milestone API changes. All four API change categories are correctly handled with consistent error handling patterns. Verification confirms both examples compile cleanly and all tests pass. One notable observation: particle_validation.rs has the same category of breakage (38 errors) but was out of scope for this feature."
+}

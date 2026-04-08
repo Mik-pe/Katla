@@ -14,5 +14,7 @@ commands:
   check_no_editor: cargo check -p katla_app --no-default-features
   check_with_editor: cargo check -p katla_app --features editor
   check_release: cargo check -p katla_app --release
+  picking_validation: cargo run -p katla_gfx --example picking_validation --features validation
+  outline_validation: cargo run -p katla_gfx --example outline_validation --features validation
 
 services: {}
