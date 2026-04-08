@@ -159,7 +159,9 @@ fn submit_and_wait(context: &VulkanContext, cmd_buf: &CommandBuffer) -> Result<(
             .create_fence(&vk::FenceCreateInfo::default(), None)
             .map_err(|e| format!("Failed to create fence: {:?}", e))?
     };
-    cmd_buf.end_single_time_command();
+    cmd_buf
+        .end_single_time_command()
+        .map_err(|e| format!("Failed to end command buffer: {}", e))?;
     unsafe {
         let submit = vk::SubmitInfo::default().command_buffers(std::slice::from_ref(&cmd));
         context
@@ -496,20 +498,19 @@ impl GpuBuffer {
                 )
                 .map_err(|e| format!("Failed to create buffer '{}': {:?}", name, e))?
         };
-        let allocation = {
-            let reqs = unsafe { context.device.get_buffer_memory_requirements(buffer) };
-            context
-                .allocator
-                .borrow_mut()
-                .allocate(&AllocationCreateDesc {
+        let allocation = context
+            .allocator
+            .allocate(
+                &AllocationCreateDesc {
                     name,
-                    requirements: reqs,
+                    requirements: unsafe { context.device.get_buffer_memory_requirements(buffer) },
                     location: gpu_allocator::MemoryLocation::CpuToGpu,
                     linear: true,
                     allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-                })
-                .map_err(|e| format!("Failed to allocate '{}': {}", name, e))?
-        };
+                },
+                name,
+            )
+            .map_err(|e| format!("Failed to allocate '{}': {}", name, e))?;
         unsafe {
             context
                 .device
@@ -526,7 +527,9 @@ impl GpuBuffer {
                     );
                 }
             }
-            context.flush_mapped_memory(&allocation, 0, size);
+            context
+                .flush_mapped_memory(&allocation, 0, size)
+                .map_err(|e| format!("Failed to flush mapped memory: {}", e))?;
         }
         Ok(Self { buffer, allocation })
     }
@@ -543,20 +546,19 @@ impl GpuBuffer {
                 )
                 .map_err(|e| format!("Failed to create staging buffer '{}': {:?}", name, e))?
         };
-        let allocation = {
-            let reqs = unsafe { context.device.get_buffer_memory_requirements(buffer) };
-            context
-                .allocator
-                .borrow_mut()
-                .allocate(&AllocationCreateDesc {
+        let allocation = context
+            .allocator
+            .allocate(
+                &AllocationCreateDesc {
                     name,
-                    requirements: reqs,
+                    requirements: unsafe { context.device.get_buffer_memory_requirements(buffer) },
                     location: gpu_allocator::MemoryLocation::GpuToCpu,
                     linear: true,
                     allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-                })
-                .map_err(|e| format!("Failed to allocate staging '{}': {}", name, e))?
-        };
+                },
+                name,
+            )
+            .map_err(|e| format!("Failed to allocate staging '{}': {}", name, e))?;
         unsafe {
             context
                 .device
@@ -605,20 +607,19 @@ fn create_image_resources(context: &VulkanContext) -> Result<ImageResources, Str
             )
             .map_err(|e| format!("Failed to create depth image: {:?}", e))?
     };
-    let depth_allocation = {
-        let reqs = unsafe { device.get_image_memory_requirements(depth_image) };
-        context
-            .allocator
-            .borrow_mut()
-            .allocate(&AllocationCreateDesc {
+    let depth_allocation = context
+        .allocator
+        .allocate(
+            &AllocationCreateDesc {
                 name: "depth_image",
-                requirements: reqs,
+                requirements: unsafe { device.get_image_memory_requirements(depth_image) },
                 location: gpu_allocator::MemoryLocation::GpuOnly,
                 linear: true,
                 allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate depth image: {}", e))?
-    };
+            },
+            "depth image",
+        )
+        .map_err(|e| format!("Failed to allocate depth image: {}", e))?;
     unsafe {
         device
             .bind_image_memory(
@@ -665,20 +666,19 @@ fn create_image_resources(context: &VulkanContext) -> Result<ImageResources, Str
             )
             .map_err(|e| format!("Failed to create HDR image: {:?}", e))?
     };
-    let hdr_allocation = {
-        let reqs = unsafe { device.get_image_memory_requirements(hdr_image) };
-        context
-            .allocator
-            .borrow_mut()
-            .allocate(&AllocationCreateDesc {
+    let hdr_allocation = context
+        .allocator
+        .allocate(
+            &AllocationCreateDesc {
                 name: "hdr_image",
-                requirements: reqs,
+                requirements: unsafe { device.get_image_memory_requirements(hdr_image) },
                 location: gpu_allocator::MemoryLocation::GpuOnly,
                 linear: true,
                 allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate HDR image: {}", e))?
-    };
+            },
+            "hdr image",
+        )
+        .map_err(|e| format!("Failed to allocate HDR image: {}", e))?;
     unsafe {
         device
             .bind_image_memory(hdr_image, hdr_allocation.memory(), hdr_allocation.offset())
@@ -708,20 +708,19 @@ fn create_image_resources(context: &VulkanContext) -> Result<ImageResources, Str
             )
             .map_err(|e| format!("Failed to create indicator image: {:?}", e))?
     };
-    let indicator_allocation = {
-        let reqs = unsafe { device.get_image_memory_requirements(indicator_image) };
-        context
-            .allocator
-            .borrow_mut()
-            .allocate(&AllocationCreateDesc {
+    let indicator_allocation = context
+        .allocator
+        .allocate(
+            &AllocationCreateDesc {
                 name: "indicator_image",
-                requirements: reqs,
+                requirements: unsafe { device.get_image_memory_requirements(indicator_image) },
                 location: gpu_allocator::MemoryLocation::GpuOnly,
                 linear: true,
                 allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate indicator image: {}", e))?
-    };
+            },
+            "indicator image",
+        )
+        .map_err(|e| format!("Failed to allocate indicator image: {}", e))?;
     unsafe {
         device
             .bind_image_memory(
@@ -760,20 +759,19 @@ fn create_image_resources(context: &VulkanContext) -> Result<ImageResources, Str
             )
             .map_err(|e| format!("Failed to create LDR image: {:?}", e))?
     };
-    let ldr_allocation = {
-        let reqs = unsafe { device.get_image_memory_requirements(ldr_image) };
-        context
-            .allocator
-            .borrow_mut()
-            .allocate(&AllocationCreateDesc {
+    let ldr_allocation = context
+        .allocator
+        .allocate(
+            &AllocationCreateDesc {
                 name: "ldr_image",
-                requirements: reqs,
+                requirements: unsafe { device.get_image_memory_requirements(ldr_image) },
                 location: gpu_allocator::MemoryLocation::GpuOnly,
                 linear: true,
                 allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate LDR image: {}", e))?
-    };
+            },
+            "ldr image",
+        )
+        .map_err(|e| format!("Failed to allocate LDR image: {}", e))?;
     unsafe {
         device
             .bind_image_memory(ldr_image, ldr_allocation.memory(), ldr_allocation.offset())
@@ -803,20 +801,19 @@ fn create_image_resources(context: &VulkanContext) -> Result<ImageResources, Str
             )
             .map_err(|e| format!("Failed to create picking image: {:?}", e))?
     };
-    let picking_allocation = {
-        let reqs = unsafe { device.get_image_memory_requirements(picking_image) };
-        context
-            .allocator
-            .borrow_mut()
-            .allocate(&AllocationCreateDesc {
+    let picking_allocation = context
+        .allocator
+        .allocate(
+            &AllocationCreateDesc {
                 name: "picking_image",
-                requirements: reqs,
+                requirements: unsafe { device.get_image_memory_requirements(picking_image) },
                 location: gpu_allocator::MemoryLocation::GpuOnly,
                 linear: true,
                 allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate picking image: {}", e))?
-    };
+            },
+            "picking image",
+        )
+        .map_err(|e| format!("Failed to allocate picking image: {}", e))?;
     unsafe {
         device
             .bind_image_memory(
@@ -848,7 +845,9 @@ fn create_image_resources(context: &VulkanContext) -> Result<ImageResources, Str
         GpuBuffer::new_staging(context, (WIDTH * HEIGHT) as u64, "stencil_staging")?;
 
     // Transition all images to correct layouts
-    let cmd_buf = context.begin_single_time_commands();
+    let cmd_buf = context
+        .begin_single_time_commands()
+        .map_err(|e| format!("Failed to begin command buffer: {}", e))?;
     let cmd = cmd_buf.vk_command_buffer();
 
     let color_range = vk::ImageSubresourceRange {
@@ -1433,7 +1432,9 @@ fn test_gpu_rendering_capability(
     images: &ImageResources,
 ) -> Result<bool, String> {
     let device = &context.device;
-    let cmd_buf = context.begin_single_time_commands();
+    let cmd_buf = context
+        .begin_single_time_commands()
+        .map_err(|e| format!("Failed to begin command buffer: {}", e))?;
     let cmd = cmd_buf.vk_command_buffer();
     let render_area = vk::Rect2D {
         offset: vk::Offset2D { x: 0, y: 0 },
@@ -1524,11 +1525,13 @@ fn test_gpu_rendering_capability(
     submit_and_wait(context, &cmd_buf)?;
 
     // Read back and check
-    context.invalidate_mapped_memory(
-        &images.ldr_staging_allocation,
-        0,
-        (WIDTH * HEIGHT * 4) as u64,
-    );
+    context
+        .invalidate_mapped_memory(
+            &images.ldr_staging_allocation,
+            0,
+            (WIDTH * HEIGHT * 4) as u64,
+        )
+        .map_err(|e| format!("Failed to invalidate mapped memory: {}", e))?;
 
     let mut pixels = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
     if let Some(mapped) = images.ldr_staging_allocation.mapped_ptr() {
@@ -1556,7 +1559,9 @@ fn test_gpu_rendering_capability(
     );
 
     // Restore LDR image layout for subsequent use
-    let cmd_buf2 = context.begin_single_time_commands();
+    let cmd_buf2 = context
+        .begin_single_time_commands()
+        .map_err(|e| format!("Failed to begin command buffer: {}", e))?;
     let cmd2 = cmd_buf2.vk_command_buffer();
     transition_image_layout(
         cmd2,
@@ -1683,7 +1688,9 @@ fn fs_main() -> @location(0) vec4f {
     };
 
     // Render a fullscreen green triangle
-    let cmd_buf3 = context.begin_single_time_commands();
+    let cmd_buf3 = context
+        .begin_single_time_commands()
+        .map_err(|e| format!("Failed to begin command buffer: {}", e))?;
     let cmd3 = cmd_buf3.vk_command_buffer();
 
     let green_attachment = vk::RenderingAttachmentInfo::default()
@@ -1779,11 +1786,13 @@ fn fs_main() -> @location(0) vec4f {
 
     submit_and_wait(context, &cmd_buf3)?;
 
-    context.invalidate_mapped_memory(
-        &images.ldr_staging_allocation,
-        0,
-        (WIDTH * HEIGHT * 4) as u64,
-    );
+    context
+        .invalidate_mapped_memory(
+            &images.ldr_staging_allocation,
+            0,
+            (WIDTH * HEIGHT * 4) as u64,
+        )
+        .map_err(|e| format!("Failed to invalidate mapped memory: {}", e))?;
 
     let mut pixels2 = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
     if let Some(mapped) = images.ldr_staging_allocation.mapped_ptr() {
@@ -1810,7 +1819,9 @@ fn fs_main() -> @location(0) vec4f {
     );
 
     // Restore LDR image layout
-    let cmd_buf4 = context.begin_single_time_commands();
+    let cmd_buf4 = context
+        .begin_single_time_commands()
+        .map_err(|e| format!("Failed to begin command buffer: {}", e))?;
     let cmd4 = cmd_buf4.vk_command_buffer();
     transition_image_layout(
         cmd4,
@@ -1856,7 +1867,9 @@ fn render_and_readback(
     sampler: vk::Sampler,
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<f32>, Vec<u32>, Vec<u8>), String> {
     let device = &context.device;
-    let cmd_buf = context.begin_single_time_commands();
+    let cmd_buf = context
+        .begin_single_time_commands()
+        .map_err(|e| format!("Failed to begin command buffer: {}", e))?;
     let cmd = cmd_buf.vk_command_buffer();
     let render_area = vk::Rect2D {
         offset: vk::Offset2D { x: 0, y: 0 },
@@ -2439,11 +2452,13 @@ fn render_and_readback(
     submit_and_wait(context, &cmd_buf)?;
 
     // Readback LDR pixels
-    context.invalidate_mapped_memory(
-        &images.ldr_staging_allocation,
-        0,
-        (WIDTH * HEIGHT * 4) as u64,
-    );
+    context
+        .invalidate_mapped_memory(
+            &images.ldr_staging_allocation,
+            0,
+            (WIDTH * HEIGHT * 4) as u64,
+        )
+        .map_err(|e| format!("Failed to invalidate mapped memory: {}", e))?;
     let mut ldr_pixels = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
     if let Some(mapped) = images.ldr_staging_allocation.mapped_ptr() {
         unsafe {
@@ -2455,11 +2470,13 @@ fn render_and_readback(
         }
     }
 
-    context.invalidate_mapped_memory(
-        &images.indicator_staging_allocation,
-        0,
-        (WIDTH * HEIGHT) as u64,
-    );
+    context
+        .invalidate_mapped_memory(
+            &images.indicator_staging_allocation,
+            0,
+            (WIDTH * HEIGHT) as u64,
+        )
+        .map_err(|e| format!("Failed to invalidate mapped memory: {}", e))?;
     let mut indicator_pixels = vec![0u8; (WIDTH * HEIGHT) as usize];
     if let Some(mapped) = images.indicator_staging_allocation.mapped_ptr() {
         unsafe {
@@ -2472,11 +2489,13 @@ fn render_and_readback(
     }
 
     // Readback depth pixels (f32 per pixel)
-    context.invalidate_mapped_memory(
-        &images.depth_staging_allocation,
-        0,
-        (WIDTH * HEIGHT * 4) as u64,
-    );
+    context
+        .invalidate_mapped_memory(
+            &images.depth_staging_allocation,
+            0,
+            (WIDTH * HEIGHT * 4) as u64,
+        )
+        .map_err(|e| format!("Failed to invalidate mapped memory: {}", e))?;
     let mut depth_pixels = vec![0.0f32; (WIDTH * HEIGHT) as usize];
     if let Some(mapped) = images.depth_staging_allocation.mapped_ptr() {
         unsafe {
@@ -2489,11 +2508,13 @@ fn render_and_readback(
     }
 
     // Readback picking pixels (u32 per pixel)
-    context.invalidate_mapped_memory(
-        &images.picking_staging_allocation,
-        0,
-        (WIDTH * HEIGHT * 4) as u64,
-    );
+    context
+        .invalidate_mapped_memory(
+            &images.picking_staging_allocation,
+            0,
+            (WIDTH * HEIGHT * 4) as u64,
+        )
+        .map_err(|e| format!("Failed to invalidate mapped memory: {}", e))?;
     let mut picking_pixels = vec![0u32; (WIDTH * HEIGHT) as usize];
     if let Some(mapped) = images.picking_staging_allocation.mapped_ptr() {
         unsafe {
@@ -2506,11 +2527,13 @@ fn render_and_readback(
     }
 
     // Readback stencil pixels (1 byte per pixel, S8 component)
-    context.invalidate_mapped_memory(
-        &images.stencil_staging_allocation,
-        0,
-        (WIDTH * HEIGHT) as u64,
-    );
+    context
+        .invalidate_mapped_memory(
+            &images.stencil_staging_allocation,
+            0,
+            (WIDTH * HEIGHT) as u64,
+        )
+        .map_err(|e| format!("Failed to invalidate mapped memory: {}", e))?;
     let mut stencil_pixels = vec![0u8; (WIDTH * HEIGHT) as usize];
     if let Some(mapped) = images.stencil_staging_allocation.mapped_ptr() {
         unsafe {
@@ -2570,7 +2593,9 @@ fn render_self_occlusion_test(
     sampler: vk::Sampler,
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<f32>, Vec<u32>, Vec<u8>), String> {
     let device = &context.device;
-    let cmd_buf = context.begin_single_time_commands();
+    let cmd_buf = context
+        .begin_single_time_commands()
+        .map_err(|e| format!("Failed to begin command buffer: {}", e))?;
     let cmd = cmd_buf.vk_command_buffer();
     let render_area = vk::Rect2D {
         offset: vk::Offset2D { x: 0, y: 0 },
@@ -3144,11 +3169,13 @@ fn render_self_occlusion_test(
     submit_and_wait(context, &cmd_buf)?;
 
     // Readback LDR pixels
-    context.invalidate_mapped_memory(
-        &images.ldr_staging_allocation,
-        0,
-        (WIDTH * HEIGHT * 4) as u64,
-    );
+    context
+        .invalidate_mapped_memory(
+            &images.ldr_staging_allocation,
+            0,
+            (WIDTH * HEIGHT * 4) as u64,
+        )
+        .map_err(|e| format!("Failed to invalidate mapped memory: {}", e))?;
     let mut ldr_pixels = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
     if let Some(mapped) = images.ldr_staging_allocation.mapped_ptr() {
         unsafe {
@@ -3160,11 +3187,13 @@ fn render_self_occlusion_test(
         }
     }
 
-    context.invalidate_mapped_memory(
-        &images.indicator_staging_allocation,
-        0,
-        (WIDTH * HEIGHT) as u64,
-    );
+    context
+        .invalidate_mapped_memory(
+            &images.indicator_staging_allocation,
+            0,
+            (WIDTH * HEIGHT) as u64,
+        )
+        .map_err(|e| format!("Failed to invalidate mapped memory: {}", e))?;
     let mut indicator_pixels = vec![0u8; (WIDTH * HEIGHT) as usize];
     if let Some(mapped) = images.indicator_staging_allocation.mapped_ptr() {
         unsafe {
@@ -3176,11 +3205,13 @@ fn render_self_occlusion_test(
         }
     }
 
-    context.invalidate_mapped_memory(
-        &images.depth_staging_allocation,
-        0,
-        (WIDTH * HEIGHT * 4) as u64,
-    );
+    context
+        .invalidate_mapped_memory(
+            &images.depth_staging_allocation,
+            0,
+            (WIDTH * HEIGHT * 4) as u64,
+        )
+        .map_err(|e| format!("Failed to invalidate mapped memory: {}", e))?;
     let mut depth_pixels = vec![0.0f32; (WIDTH * HEIGHT) as usize];
     if let Some(mapped) = images.depth_staging_allocation.mapped_ptr() {
         unsafe {
@@ -3192,11 +3223,13 @@ fn render_self_occlusion_test(
         }
     }
 
-    context.invalidate_mapped_memory(
-        &images.picking_staging_allocation,
-        0,
-        (WIDTH * HEIGHT * 4) as u64,
-    );
+    context
+        .invalidate_mapped_memory(
+            &images.picking_staging_allocation,
+            0,
+            (WIDTH * HEIGHT * 4) as u64,
+        )
+        .map_err(|e| format!("Failed to invalidate mapped memory: {}", e))?;
     let mut picking_pixels = vec![0u32; (WIDTH * HEIGHT) as usize];
     if let Some(mapped) = images.picking_staging_allocation.mapped_ptr() {
         unsafe {
@@ -3208,11 +3241,13 @@ fn render_self_occlusion_test(
         }
     }
 
-    context.invalidate_mapped_memory(
-        &images.stencil_staging_allocation,
-        0,
-        (WIDTH * HEIGHT) as u64,
-    );
+    context
+        .invalidate_mapped_memory(
+            &images.stencil_staging_allocation,
+            0,
+            (WIDTH * HEIGHT) as u64,
+        )
+        .map_err(|e| format!("Failed to invalidate mapped memory: {}", e))?;
     let mut stencil_pixels = vec![0u8; (WIDTH * HEIGHT) as usize];
     if let Some(mapped) = images.stencil_staging_allocation.mapped_ptr() {
         unsafe {
@@ -3555,11 +3590,18 @@ fn main() -> ExitCode {
 
     log::info!("=== GPU Outline Validation ===");
 
-    let context = std::rc::Rc::new(VulkanContext::init_headless(
+    let context = match VulkanContext::init_headless(
         ValidationMode::Enabled,
         CString::new("Outline Validation").unwrap(),
         CString::new("Katla Engine").unwrap(),
-    ));
+    ) {
+        Ok(ctx) => ctx,
+        Err(e) => {
+            log::error!("Failed to create Vulkan context: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+    let context = std::rc::Rc::new(context);
     log::info!("Vulkan context created");
 
     let shader_dir = find_shader_directory();
@@ -3981,7 +4023,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     }
 
     // Restore image layouts (they were left in TRANSFER_SRC after the first test's readback)
-    let cmd_buf_layouts = context.begin_single_time_commands();
+    let cmd_buf_layouts = match context.begin_single_time_commands() {
+        Ok(buf) => buf,
+        Err(e) => {
+            log::error!("Failed to begin command buffer: {}", e);
+            return ExitCode::from(1);
+        }
+    };
     let cmd_layouts = cmd_buf_layouts.vk_command_buffer();
     let restore_color_range = vk::ImageSubresourceRange {
         aspect_mask: vk::ImageAspectFlags::COLOR,
