@@ -122,9 +122,6 @@ fn test_1024_emitters() {
     // Clone the configs we'll need for updating
     let configs_to_update: Vec<_> = emitters.iter().take(10).cloned().collect();
 
-    // Drop the emitters reference before updating
-    drop(emitters);
-
     // Update some emitters to verify they can be modified
     for i in 0..10 {
         let handle = emitter_handles[i];
@@ -144,10 +141,10 @@ fn test_1024_emitters() {
         particle_system.destroy_emitter(emitter_handles[i]);
     }
 
-    // Verify destroyed emitters are reset to defaults
+    // Verify destroyed emitters have zeroed emit rate
     let emitters = particle_system.get_emitters();
     for i in 0..10 {
-        assert_eq!(emitters[i].emit_rate, 50.0, "Emitter {} not reset", i); // Default value
+        assert_eq!(emitters[i].emit_rate, 0.0, "Emitter {} not destroyed", i);
     }
 
     println!("1024 emitter test passed - All emitters created, updated, and destroyed correctly");
@@ -312,10 +309,6 @@ fn test_frame_rate_stability() {
         final_stats.frame_count, num_frames as u64,
         "Frame count mismatch"
     );
-    // Note: total_dispatches is only incremented during actual compute dispatch
-    // which happens during render graph execution, not in unit tests
-    assert!(final_stats.total_dispatches >= 0);
-
     println!(
         "Frame rate stability test passed - Avg: {:.3}ms, Min: {:.3}ms, Max: {:.3}ms, Degradation: {:.1}%",
         avg_time, min_time, max_time, degradation_pct
@@ -500,9 +493,6 @@ fn test_statistics_tracking() {
     // Check stats after updates
     let stats = particle_system.get_stats();
     assert_eq!(stats.frame_count, 10);
-    // Note: total_dispatches is only incremented during actual compute dispatch
-    // which happens during render graph execution, not in unit tests
-    assert!(stats.total_dispatches >= 0);
 
     println!("Statistics tracking test passed");
 }

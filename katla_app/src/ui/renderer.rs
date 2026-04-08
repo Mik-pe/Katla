@@ -477,7 +477,6 @@ mod tests {
         // The horizontal distance between rects is 150 - 100 = 50 pixels
         // The vertical distance is 75 - 50 = 25 pixels
         let expected_horizontal_gap = 50.0;
-        let expected_vertical_gap = 25.0;
 
         draw_list.add_rect(rect1, Color::RED);
         draw_list.add_rect(rect2, Color::GREEN);

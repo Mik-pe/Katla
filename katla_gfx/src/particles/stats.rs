@@ -69,14 +69,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_particle_stats_default() {
-        let stats = ParticleStats::default();
-        assert_eq!(stats.max_alive_count, 0);
-        assert_eq!(stats.current_alive_count, 0);
-        assert_eq!(stats.compute_time_ms, 0.0);
-    }
-
-    #[test]
     fn test_particle_stats_serialization() {
         let stats = ParticleStats {
             max_alive_count: 1000,

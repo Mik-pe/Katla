@@ -2,7 +2,11 @@ use katla_math::{Mat3, Mat4, Quat, Vec3};
 
 #[test]
 fn test_mat3_determinant_singular() {
-    let m = Mat3::from_elements(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0);
+    let m = Mat3::from_rows(
+        Vec3::new(1.0, 2.0, 3.0),
+        Vec3::new(4.0, 5.0, 6.0),
+        Vec3::new(7.0, 8.0, 9.0),
+    );
 
     // This matrix has linearly dependent rows (det should be 0)
     let det = m.determinant();
@@ -11,7 +15,11 @@ fn test_mat3_determinant_singular() {
 
 #[test]
 fn test_mat3_inverse_singular() {
-    let m = Mat3::from_elements(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0);
+    let m = Mat3::from_rows(
+        Vec3::new(1.0, 2.0, 3.0),
+        Vec3::new(4.0, 5.0, 6.0),
+        Vec3::new(7.0, 8.0, 9.0),
+    );
 
     assert!(m.inverse().is_none());
 }
@@ -29,7 +37,11 @@ fn test_mat3_inverse_then_mul_is_identity() {
 
 #[test]
 fn test_mat3_transpose() {
-    let m = Mat3::from_elements(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0);
+    let m = Mat3::from_rows(
+        Vec3::new(1.0, 2.0, 3.0),
+        Vec3::new(4.0, 5.0, 6.0),
+        Vec3::new(7.0, 8.0, 9.0),
+    );
 
     let t = m.transpose();
 
@@ -40,7 +52,11 @@ fn test_mat3_transpose() {
 
 #[test]
 fn test_mat3_transpose_twice() {
-    let m = Mat3::from_elements(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0);
+    let m = Mat3::from_rows(
+        Vec3::new(1.0, 2.0, 3.0),
+        Vec3::new(4.0, 5.0, 6.0),
+        Vec3::new(7.0, 8.0, 9.0),
+    );
 
     assert_eq!(m.transpose().transpose(), m);
 }

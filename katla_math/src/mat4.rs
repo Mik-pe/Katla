@@ -105,7 +105,6 @@ impl Mat4 {
         ])
     }
 
-    // Creates a reverse Z infinite far plane projection matrix
     pub fn create_proj(fov_angles: f32, aspect_ratio: f32, near: f32) -> Self {
         let f = 1.0 / f32::tan(f32::to_radians(fov_angles) / 2.0);
         Self([
@@ -329,16 +328,10 @@ impl Mat4 {
             (self[2][0] * self[2][0] + self[2][1] * self[2][1] + self[2][2] * self[2][2]).sqrt();
         let scale = crate::Vec3::new(sx, sy, sz);
 
-        let mat3 = crate::Mat3::from_elements(
-            self[0][0] / sx,
-            self[0][1] / sx,
-            self[0][2] / sx,
-            self[1][0] / sy,
-            self[1][1] / sy,
-            self[1][2] / sy,
-            self[2][0] / sz,
-            self[2][1] / sz,
-            self[2][2] / sz,
+        let mat3 = crate::Mat3::from_rows(
+            crate::Vec3::new(self[0][0] / sx, self[0][1] / sx, self[0][2] / sx),
+            crate::Vec3::new(self[1][0] / sy, self[1][1] / sy, self[1][2] / sy),
+            crate::Vec3::new(self[2][0] / sz, self[2][1] / sz, self[2][2] / sz),
         );
         let rotation = crate::Quat::from(mat3);
 

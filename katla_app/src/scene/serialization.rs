@@ -453,13 +453,10 @@ impl SceneManager {
                         pos[0], pos[1], pos[2],
                     ));
                     let entity_id = app.world.spawn((transform, emitter));
-                    #[cfg(feature = "editor")]
-                    {
-                        use crate::components::BillboardComponent;
-                        use crate::components::billboard::BillboardIcon;
-                        app.world
-                            .add_component(entity_id, BillboardComponent::new(BillboardIcon::Fire));
-                    }
+                    app.attach_billboard_icon(
+                        entity_id,
+                        crate::components::billboard::BillboardIcon::Fire,
+                    );
                     entity_id
                 }
                 EntitySource::Light => {
@@ -474,15 +471,10 @@ impl SceneManager {
                     ));
 
                     let entity_id = app.world.spawn((transform, point_light));
-                    #[cfg(feature = "editor")]
-                    {
-                        use crate::components::BillboardComponent;
-                        use crate::components::billboard::BillboardIcon;
-                        app.world.add_component(
-                            entity_id,
-                            BillboardComponent::new(BillboardIcon::Lightbulb),
-                        );
-                    }
+                    app.attach_billboard_icon(
+                        entity_id,
+                        crate::components::billboard::BillboardIcon::Lightbulb,
+                    );
                     entity_id
                 }
                 _ => return Err(format!("Unknown entity source: {:?}", desc.source)),

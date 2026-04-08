@@ -60,7 +60,7 @@ pub use draw_list::DrawList;
 pub use icons::ForkAwesome;
 pub use input::{KeyCode, MouseCursor, UiInputState, mouse_button};
 pub use response::Response;
-pub use style::{FontSize, UiStyle};
+pub use style::{DEFAULTS, FontSize, UiStyle};
 pub use text::FontId;
 pub use types::{ClipRect, DrawCmd, TextureId, Vertex};
 pub use widget::Widget;

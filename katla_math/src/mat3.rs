@@ -72,25 +72,9 @@ impl Mat3 {
         Self::from_rotation(q)
     }
 
-    /// Create a 3x3 matrix from individual elements
-    /// Parameters: m00, m01, m02, m10, m11, m12, m20, m21, m22
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_elements(
-        m00: f32,
-        m01: f32,
-        m02: f32,
-        m10: f32,
-        m11: f32,
-        m12: f32,
-        m20: f32,
-        m21: f32,
-        m22: f32,
-    ) -> Self {
-        Mat3([
-            Vec3::new(m00, m01, m02),
-            Vec3::new(m10, m11, m12),
-            Vec3::new(m20, m21, m22),
-        ])
+    /// Create a 3x3 matrix from row vectors.
+    pub fn from_rows(row0: Vec3, row1: Vec3, row2: Vec3) -> Self {
+        Mat3([row0, row1, row2])
     }
 
     /// Multiply two 3x3 matrices

@@ -24,6 +24,8 @@ use katla_gfx::TextureHandle;
 use katla_math::{Rect2D, Vec2};
 use katla_ui::{DrawList, UiContext};
 
+use crate::util::BackgroundLoader;
+
 use crate::{
     Preferences,
     resources::viewport_state::ViewportGridState,
@@ -40,6 +42,18 @@ use asset_browser::AssetBrowserState;
 
 pub use asset_browser::ThumbnailState;
 pub use types::*;
+
+/// Parameters for rendering the editor UI.
+pub struct EditorRenderParams<'a> {
+    pub preferences: &'a Preferences,
+    pub screen_size: Vec2,
+    pub scale_factor: f32,
+    pub entities: &'a [EntityInfo],
+    pub fps: f32,
+    pub frame_count: usize,
+    pub loader: &'a mut BackgroundLoader,
+    pub thumbnail_texture_handles: &'a std::collections::HashMap<std::path::PathBuf, TextureHandle>,
+}
 
 /// Game Engine Editor UI state.
 pub struct EditorUI {
@@ -346,33 +360,17 @@ impl EditorUI {
     }
 
     /// Render the editor UI and return the draw list.
-    #[allow(clippy::too_many_arguments)]
     pub fn render<'a>(
         &'a mut self,
         ui: &'a mut UiContext,
-        preferences: &Preferences,
-        screen_size: Vec2,
-        scale_factor: f32,
-        entities: &'a [EntityInfo],
-        fps: f32,
-        frame_count: usize,
-        loader: &'a mut crate::util::BackgroundLoader,
-        thumbnail_texture_handles: &'a std::collections::HashMap<std::path::PathBuf, TextureHandle>,
+        params: &mut EditorRenderParams,
     ) -> &'a DrawList {
         self.theme.apply_to_style(ui.style_mut());
 
         ui.set_font_scale(self.font_scale);
 
-        ui.begin(screen_size, scale_factor);
-        self.build(
-            ui,
-            preferences,
-            entities,
-            fps,
-            frame_count,
-            loader,
-            thumbnail_texture_handles,
-        );
+        ui.begin(params.screen_size, params.scale_factor);
+        self.build(ui, params);
         ui.end()
     }
 

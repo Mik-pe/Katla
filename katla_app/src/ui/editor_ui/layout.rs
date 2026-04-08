@@ -1,12 +1,9 @@
 use katla_ecs::EntityId;
-use katla_gfx::TextureHandle;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
 use katla_ui::{FontSize, UiContext, mouse_button};
 
-use crate::Preferences;
-
 use super::{
-    EditorAction, EditorUI, PanelResizeEdge, SpawnableModel,
+    EditorAction, EditorRenderParams, EditorUI, PanelResizeEdge, SpawnableModel,
     asset_browser::{AssetAction, AssetType, build_asset_browser},
     hierarchy, inspector,
     preferences::PreferencesPanel,
@@ -16,18 +13,14 @@ use crate::ui::ParticleInspector;
 
 impl EditorUI {
     /// Build the editor UI.
-    #[allow(clippy::too_many_arguments)]
-    pub fn build(
-        &mut self,
-        ui: &mut UiContext,
-        preferences: &Preferences,
-        entities: &[super::EntityInfo],
-        fps: f32,
-        frame_count: usize,
-        loader: &mut crate::util::BackgroundLoader,
-        thumbnail_texture_handles: &std::collections::HashMap<std::path::PathBuf, TextureHandle>,
-    ) {
+    pub(super) fn build(&mut self, ui: &mut UiContext, params: &mut EditorRenderParams) {
+        let entities = params.entities;
+        let fps = params.fps;
+        let frame_count = params.frame_count;
+        let loader = &mut *params.loader;
+        let thumbnail_texture_handles = params.thumbnail_texture_handles;
         let screen_size = ui.screen_size();
+        let preferences = params.preferences;
 
         // Render floating panels first so they register hover layers and consume
         // scroll before background panels. Visual order is handled by z-index
@@ -509,18 +502,18 @@ impl EditorUI {
             self.asset_browser.selected_indices.len()
         };
         let total_assets = self.asset_browser.assets.len();
-        ui.add(status_bar::StatusBar::new(
+        ui.add(status_bar::StatusBar::new(status_bar::StatusBarConfig {
             screen_size,
-            status_bar_height,
+            height: status_bar_height,
             fps,
             frame_count,
-            entities.len(),
+            entity_count: entities.len(),
             selected_count,
             total_assets,
-            self.is_playing,
-            &self.theme,
-            self.save_confirmation_timer,
-        ));
+            is_playing: self.is_playing,
+            theme: &self.theme,
+            save_confirmation_timer: self.save_confirmation_timer,
+        }));
 
         if self.asset_browser.is_dragging
             && let Some(drag_idx) = self.asset_browser.drag_asset

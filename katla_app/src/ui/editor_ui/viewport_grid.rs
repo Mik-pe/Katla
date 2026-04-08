@@ -164,16 +164,6 @@ mod tests {
         ViewportGridState::with_layout(layout)
     }
 
-    fn create_test_grid<'a>(
-        bounds: Rect2D,
-        state: &'a ViewportGridState,
-        texture_ids: &'a [Option<TextureId>; 4],
-        theme: &'a Theme,
-        focused: &'a mut FocusedPanel,
-    ) -> ViewportGrid<'a> {
-        ViewportGrid::new(bounds, state, texture_ids, theme, focused)
-    }
-
     fn run_test<F>(layout: ViewportLayout, test_fn: F)
     where
         F: FnOnce(&mut ViewportGrid, &Theme),

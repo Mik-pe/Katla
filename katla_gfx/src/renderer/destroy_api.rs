@@ -274,21 +274,4 @@ mod tests {
         assert_eq!(registry.material_count(), 1);
         assert!(registry.get_material(h3).is_some());
     }
-
-    // =========================================================================
-    // VAL-GPU-013: Per-resource destroy API exists on VulkanRenderer
-    // (Compilation check — API visible)
-    // =========================================================================
-
-    #[test]
-    fn test_destroy_api_compiles() {
-        // This test exists to ensure the destroy methods compile and are
-        // accessible. The actual GPU tests are done via integration tests.
-        fn _check_api(renderer: &mut crate::VulkanRenderer) {
-            renderer.destroy_mesh(MeshHandle::NONE);
-            renderer.destroy_material(MaterialHandle::NONE);
-            renderer.destroy_texture(TextureHandle::NONE);
-            renderer.destroy_skeleton(SkeletonHandle::NONE);
-        }
-    }
 }

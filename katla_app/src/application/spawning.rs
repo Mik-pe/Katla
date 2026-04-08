@@ -99,30 +99,27 @@ impl super::Application {
 
     /// Spawn a sphere entity with PBR material properties.
     /// Color is expected in sRGB (perceptual) space and converted to linear for PBR.
-    #[allow(clippy::too_many_arguments)]
     pub fn spawn_sphere_with_material(
         &mut self,
         position: [f32; 3],
         radius: f32,
         segments: u32,
         rings: u32,
-        color: katla_math::Color,
-        metallic: f32,
-        roughness: f32,
+        material: &crate::spawner::PrimitiveMaterialParams,
     ) -> katla_ecs::EntityId {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_math::Vec3;
 
         let mesh_handle = self.renderer.create_sphere_mesh(radius, segments, rings);
         let material_handle = self.default_material();
-        let linear_color = color.to_linear();
+        let linear_color = material.color.map(|c| c.to_linear()).unwrap_or_default();
 
         let drawable = DrawableComponent::with_handles_and_material(
             mesh_handle,
             material_handle,
             Some(linear_color),
-            metallic,
-            roughness,
+            material.metallic,
+            material.roughness,
             1.0,
         );
         self.gpu_resource_tracker.track_drawable(

@@ -388,7 +388,7 @@ mod tests {
             return;
         }
 
-        for (anim_idx, gltf_animation) in animations.iter().enumerate() {
+        for gltf_animation in animations.iter() {
             let clip = load_animation_clip(&parser, gltf_animation);
             eprintln!(
                 "Testing animation '{}' ({} channels, {:.2}s duration)",
@@ -506,7 +506,6 @@ mod tests {
         }
 
         let gltf_skin = &skins[0];
-        let joints: Vec<usize> = gltf_skin.joints().map(|n| n.index()).collect();
 
         // Get inverse bind matrices
         let inverse_bind_matrices = if let Some(accessor) = gltf_skin.inverse_bind_matrices() {

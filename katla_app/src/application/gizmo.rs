@@ -1,12 +1,14 @@
 use log::info;
+use winit::event::ElementState;
+use winit::keyboard::KeyCode;
 
 use crate::application::Application;
 use crate::gizmo::*;
 use katla_math::Vec2;
 
+#[cfg(feature = "editor")]
 impl Application {
     /// Initialize GPU resources for the 3D gizmo (meshes + material).
-    #[cfg(feature = "editor")]
     pub(crate) fn init_gizmo_resources(&mut self) {
         use crate::gizmo::GizmoResources;
 
@@ -46,7 +48,6 @@ impl Application {
     /// Hit-test gizmo axes at the given screen position.
     ///
     /// Returns the hit axis, or None if no axis is close enough to the mouse.
-    #[cfg(feature = "editor")]
     pub(crate) fn hit_test_gizmo(&self, mouse_pos: Vec2) -> Option<GizmoAxis> {
         use crate::components::PerspectiveComponent;
 
@@ -87,20 +88,19 @@ impl Application {
             120.0,
         );
 
-        hit_test_axes(
-            (mouse_pos.x(), mouse_pos.y()),
-            self.editor.gizmo_state.origin,
+        hit_test_axes(&crate::gizmo::HitTestParams {
+            mouse_screen: (mouse_pos.x(), mouse_pos.y()),
+            gizmo_origin: self.editor.gizmo_state.origin,
             gizmo_scale,
-            &view_mat,
-            &proj_mat,
+            view_matrix: &view_mat,
+            proj_matrix: &proj_mat,
             viewport,
-            self.editor.gizmo_state.mode,
-            12.0, // pixel threshold
-        )
+            mode: self.editor.gizmo_state.mode,
+            pixel_threshold: 12.0,
+        })
     }
 
     /// Begin dragging a gizmo axis.
-    #[cfg(feature = "editor")]
     pub(crate) fn begin_gizmo_drag(&mut self, axis: GizmoAxis, mouse_pos: Vec2) {
         if let Some(entity_id) = self.editor.gizmo_state.entity {
             let entity_pos = self
@@ -165,7 +165,6 @@ impl Application {
     }
 
     /// Update gizmo interaction on mouse move: hover highlight and drag application.
-    #[cfg(feature = "editor")]
     pub(crate) fn update_gizmo_interaction(&mut self, mouse_pos: Vec2) {
         // Store previous screen position for rotation delta
         let prev_screen = self.editor.prev_mouse_screen;
@@ -300,6 +299,140 @@ impl Application {
         } else if self.editor.gizmo_state.entity.is_some() {
             // Update hover highlight
             self.editor.gizmo_state.hovered_axis = self.hit_test_gizmo(mouse_pos);
+        }
+    }
+
+    /// Handle editor-specific mouse press: focused panel update, picking, gizmo start.
+    pub(crate) fn handle_editor_mouse_press(
+        &mut self,
+        state: &winit::event::ElementState,
+        button: &winit::event::MouseButton,
+    ) {
+        if let ElementState::Pressed = state {
+            let mouse_pos = self.ui_context.input().mouse_pos;
+            self.editor
+                .editor_ui
+                .update_focused_panel_from_click(mouse_pos);
+
+            if *button == winit::event::MouseButton::Left
+                && self.editor.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
+                && self
+                    .editor
+                    .editor_ui
+                    .last_viewport_bounds
+                    .contains(mouse_pos)
+            {
+                self.editor.gizmo_state.consumed_click = false;
+
+                if let Some(axis) = self.hit_test_gizmo(mouse_pos) {
+                    self.begin_gizmo_drag(axis, mouse_pos);
+                } else {
+                    let vp = self.editor.editor_ui.last_viewport_bounds;
+                    let rel_x = mouse_pos.x() - vp.min.x();
+                    let rel_y = mouse_pos.y() - vp.min.y();
+                    self.editor.pending_pick = Some((self.frame_count, rel_x, rel_y));
+                }
+            }
+        }
+    }
+
+    /// Handle editor-specific mouse release: end gizmo drag.
+    pub(crate) fn handle_editor_mouse_release(
+        &mut self,
+        state: &winit::event::ElementState,
+        button: &winit::event::MouseButton,
+    ) {
+        if matches!(state, ElementState::Released)
+            && *button == winit::event::MouseButton::Left
+            && self.editor.gizmo_state.is_dragging()
+        {
+            self.editor.gizmo_state.end_drag();
+        }
+    }
+
+    /// Handle editor keyboard shortcuts: focus entity (F), particle inspector (Ctrl+P), save (Ctrl+S).
+    pub(crate) fn handle_editor_keyboard_shortcuts(
+        &mut self,
+        event: &winit::event::KeyEvent,
+        keycode: KeyCode,
+    ) {
+        if event.state != ElementState::Pressed {
+            return;
+        }
+
+        if keycode == KeyCode::KeyF
+            && self.editor.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
+            && !self.current_modifiers.control_key()
+            && !self.current_modifiers.shift_key()
+            && !self.current_modifiers.alt_key()
+            && let Some(entity_id) = self.editor.editor_ui.selected_entity
+        {
+            self.focus_camera_on_entity(entity_id);
+        }
+
+        if keycode == KeyCode::KeyP && self.current_modifiers.control_key() {
+            let state = &mut self.editor.editor_ui.particle_inspector_state;
+            if state.panel.is_visible() {
+                state.panel.close();
+            } else {
+                state.panel.open();
+            }
+            info!(
+                "Particle inspector: {}",
+                if state.panel.is_visible() {
+                    "visible"
+                } else {
+                    "hidden"
+                }
+            );
+        }
+
+        if keycode == KeyCode::KeyS
+            && self.current_modifiers.control_key()
+            && !self.current_modifiers.shift_key()
+            && !self.current_modifiers.alt_key()
+            && !self.editor.editor_ui.prev_want_capture_keyboard
+        {
+            self.editor
+                .editor_ui
+                .pending_actions
+                .push(crate::ui::EditorAction::SaveScene);
+        }
+    }
+
+    /// Handle gizmo mode shortcuts (W/E/R) and Escape in viewport.
+    pub(crate) fn handle_editor_gizmo_shortcuts(
+        &mut self,
+        event: &winit::event::KeyEvent,
+        keycode: KeyCode,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+    ) {
+        if event.state != ElementState::Pressed {
+            return;
+        }
+        if self.editor.editor_ui.focused_panel != crate::ui::FocusedPanel::Viewport {
+            return;
+        }
+        if self.ui_context.input().want_capture_keyboard {
+            return;
+        }
+
+        if keycode == KeyCode::KeyW {
+            self.editor
+                .gizmo_state
+                .set_mode(crate::gizmo::GizmoMode::Translate);
+        } else if keycode == KeyCode::KeyE {
+            self.editor
+                .gizmo_state
+                .set_mode(crate::gizmo::GizmoMode::Rotate);
+        } else if keycode == KeyCode::KeyR {
+            self.editor
+                .gizmo_state
+                .set_mode(crate::gizmo::GizmoMode::Scale);
+        }
+
+        if keycode == KeyCode::Escape {
+            event_loop.exit()
         }
     }
 }

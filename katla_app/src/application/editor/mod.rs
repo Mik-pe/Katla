@@ -94,14 +94,16 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
             .editor_ui
             .render(
                 &mut app.ui_context,
-                &app.preferences,
-                screen_size,
-                scale_factor,
-                &entity_info,
-                fps,
-                app.frame_count,
-                &mut app.editor.background_loader,
-                &app.editor.thumbnail_texture_handles,
+                &mut crate::ui::EditorRenderParams {
+                    preferences: &app.preferences,
+                    screen_size,
+                    scale_factor,
+                    entities: &entity_info,
+                    fps,
+                    frame_count: app.frame_count,
+                    loader: &mut app.editor.background_loader,
+                    thumbnail_texture_handles: &app.editor.thumbnail_texture_handles,
+                },
             )
             .clone()
     };

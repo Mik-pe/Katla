@@ -12,11 +12,9 @@ pub mod renderer;
 pub mod theme;
 
 #[cfg(feature = "editor")]
-pub use editor_ui::inspector::InspectorEditState;
-#[cfg(feature = "editor")]
 pub use editor_ui::{
-    EditorAction, EditorUI, EntityInfo, FocusedPanel, ParticleEmitterInfo, PointLightInfo,
-    SpawnableModel, ThumbnailState,
+    EditorAction, EditorRenderParams, EditorUI, EntityInfo, FocusedPanel, ParticleEmitterInfo,
+    PointLightInfo, SpawnableModel, ThumbnailState, inspector::InspectorEditState,
 };
 #[cfg(feature = "editor")]
 pub use particle_inspector::{

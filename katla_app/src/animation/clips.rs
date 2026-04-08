@@ -186,6 +186,14 @@ impl AnimationChannel {
     }
 }
 
+/// Hermite basis functions for cubic spline interpolation.
+struct HermiteBasis {
+    h00: f32,
+    h10: f32,
+    h01: f32,
+    h11: f32,
+}
+
 impl AnimationSampler {
     pub fn sample(&self, time: f32) -> SampledValue {
         if self.inputs.is_empty() {
@@ -238,18 +246,15 @@ impl AnimationSampler {
         let h01 = -2.0 * t3 + 3.0 * t2;
         let h11 = t3 - t2;
 
-        self.interpolate_cubic_spline(index, index + 1, h00, h10, h01, h11, dt)
+        let hermite = HermiteBasis { h00, h10, h01, h11 };
+        self.interpolate_cubic_spline(index, index + 1, &hermite, dt)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn interpolate_cubic_vec3(
         values: &[[f32; 3]],
         index0: usize,
         index1: usize,
-        h00: f32,
-        h10: f32,
-        h01: f32,
-        h11: f32,
+        h: &HermiteBasis,
         dt: f32,
     ) -> [f32; 3] {
         let v0 = [
@@ -274,32 +279,26 @@ impl AnimationSampler {
         ];
 
         [
-            h00 * v0[0] + h10 * m0[0] + h01 * v1[0] + h11 * m1[0],
-            h00 * v0[1] + h10 * m0[1] + h01 * v1[1] + h11 * m1[1],
-            h00 * v0[2] + h10 * m0[2] + h01 * v1[2] + h11 * m1[2],
+            h.h00 * v0[0] + h.h10 * m0[0] + h.h01 * v1[0] + h.h11 * m1[0],
+            h.h00 * v0[1] + h.h10 * m0[1] + h.h01 * v1[1] + h.h11 * m1[1],
+            h.h00 * v0[2] + h.h10 * m0[2] + h.h01 * v1[2] + h.h11 * m1[2],
         ]
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn interpolate_cubic_spline(
         &self,
         index0: usize,
         index1: usize,
-        h00: f32,
-        h10: f32,
-        h01: f32,
-        h11: f32,
+        h: &HermiteBasis,
         dt: f32,
     ) -> SampledValue {
         if let Some(ref translations) = self.translations {
-            let result =
-                Self::interpolate_cubic_vec3(translations, index0, index1, h00, h10, h01, h11, dt);
+            let result = Self::interpolate_cubic_vec3(translations, index0, index1, h, dt);
             SampledValue::Vec3(result)
         } else if self.rotations.is_some() {
-            self.interpolate_values(index0, index1, h00 + h01)
+            self.interpolate_values(index0, index1, h.h00 + h.h01)
         } else if let Some(ref scales) = self.scales {
-            let result =
-                Self::interpolate_cubic_vec3(scales, index0, index1, h00, h10, h01, h11, dt);
+            let result = Self::interpolate_cubic_vec3(scales, index0, index1, h, dt);
             SampledValue::Vec3(result)
         } else if let Some(ref weights) = self.weights {
             let v0 = weights[index0 * 3 + 1];
@@ -307,7 +306,7 @@ impl AnimationSampler {
             let m0 = weights[index0 * 3 + 2] * dt;
             let m1 = weights[index1 * 3] * dt;
 
-            let result = h00 * v0 + h10 * m0 + h01 * v1 + h11 * m1;
+            let result = h.h00 * v0 + h.h10 * m0 + h.h01 * v1 + h.h11 * m1;
             SampledValue::Float(result)
         } else {
             SampledValue::Unknown

@@ -298,7 +298,47 @@ pub struct UiStyle {
     /// Label column width for property rows.
     pub property_label_width: f32,
 
-    // Button heights
+    // Widget default sizes
+    /// Default button width.
+    pub button_default_width: f32,
+    /// Default button height.
+    pub button_default_height: f32,
+    /// Default icon button size (square).
+    pub icon_button_size: f32,
+    /// Default checkbox width.
+    pub checkbox_default_width: f32,
+    /// Default checkbox height.
+    pub checkbox_default_height: f32,
+    /// Default slider width.
+    pub slider_default_width: f32,
+    /// Default slider height.
+    pub slider_default_height: f32,
+    /// Default text input width.
+    pub text_input_default_width: f32,
+    /// Default text input height.
+    pub text_input_default_height: f32,
+    /// Default label width.
+    pub label_default_width: f32,
+    /// Default label height.
+    pub label_default_height: f32,
+    /// Default radio button width.
+    pub radio_button_default_width: f32,
+    /// Default radio button height.
+    pub radio_button_default_height: f32,
+    /// Default progress bar width.
+    pub progress_bar_default_width: f32,
+    /// Default progress bar height.
+    pub progress_bar_default_height: f32,
+    /// Default collapsible header width.
+    pub collapsible_default_width: f32,
+    /// Default collapsible header height.
+    pub collapsible_default_height: f32,
+    /// Default badge width.
+    pub badge_default_width: f32,
+    /// Default badge height.
+    pub badge_default_height: f32,
+
+    // Button heights (deprecated aliases, kept for compatibility)
     /// Small button height (compact UI).
     pub button_height_small: f32,
     /// Medium button height (standard).
@@ -545,6 +585,26 @@ impl UiStyle {
             tooltip_padding: 4.0,
             property_label_width: 60.0,
 
+            button_default_width: 100.0,
+            button_default_height: 30.0,
+            icon_button_size: 30.0,
+            checkbox_default_width: 150.0,
+            checkbox_default_height: 24.0,
+            slider_default_width: 150.0,
+            slider_default_height: 20.0,
+            text_input_default_width: 200.0,
+            text_input_default_height: 24.0,
+            label_default_width: 100.0,
+            label_default_height: 20.0,
+            radio_button_default_width: 150.0,
+            radio_button_default_height: 20.0,
+            progress_bar_default_width: 200.0,
+            progress_bar_default_height: 20.0,
+            collapsible_default_width: 200.0,
+            collapsible_default_height: 24.0,
+            badge_default_width: 60.0,
+            badge_default_height: 20.0,
+
             button_height_small: 24.0,
             button_height_medium: 28.0,
             toolbar_height: 32.0,
@@ -701,6 +761,13 @@ impl UiStyle {
         s.button_height_medium = 26.0;
         s.toolbar_height = 28.0;
         s.icon_size_large = 26.0;
+        s.button_default_width = 100.0;
+        s.button_default_height = 28.0;
+        s.checkbox_default_height = 22.0;
+        s.slider_default_height = 18.0;
+        s.text_input_default_height = 22.0;
+        s.radio_button_default_height = 18.0;
+        s.collapsible_default_height = 22.0;
         s
     }
 }
@@ -709,4 +776,55 @@ impl Default for UiStyle {
     fn default() -> Self {
         Self::dark()
     }
+}
+
+/// Default widget dimensions.
+///
+/// Used by widget constructors when no style context is available (e.g., in `new()`).
+/// When a `UiContext` is available, prefer reading from `ui.style` instead.
+pub const DEFAULTS: WidgetDefaults = WidgetDefaults {
+    button_default_width: 100.0,
+    button_default_height: 30.0,
+    icon_button_size: 30.0,
+    checkbox_default_width: 150.0,
+    checkbox_default_height: 24.0,
+    slider_default_width: 150.0,
+    slider_default_height: 20.0,
+    text_input_default_width: 200.0,
+    text_input_default_height: 24.0,
+    label_default_width: 100.0,
+    label_default_height: 20.0,
+    radio_button_default_width: 150.0,
+    radio_button_default_height: 20.0,
+    progress_bar_default_width: 200.0,
+    progress_bar_default_height: 20.0,
+    collapsible_default_width: 200.0,
+    collapsible_default_height: 24.0,
+    badge_default_width: 60.0,
+    badge_default_height: 20.0,
+};
+
+/// Widget default dimensions.
+///
+/// These values match the defaults in [`UiStyle::dark()`].
+pub struct WidgetDefaults {
+    pub button_default_width: f32,
+    pub button_default_height: f32,
+    pub icon_button_size: f32,
+    pub checkbox_default_width: f32,
+    pub checkbox_default_height: f32,
+    pub slider_default_width: f32,
+    pub slider_default_height: f32,
+    pub text_input_default_width: f32,
+    pub text_input_default_height: f32,
+    pub label_default_width: f32,
+    pub label_default_height: f32,
+    pub radio_button_default_width: f32,
+    pub radio_button_default_height: f32,
+    pub progress_bar_default_width: f32,
+    pub progress_bar_default_height: f32,
+    pub collapsible_default_width: f32,
+    pub collapsible_default_height: f32,
+    pub badge_default_width: f32,
+    pub badge_default_height: f32,
 }

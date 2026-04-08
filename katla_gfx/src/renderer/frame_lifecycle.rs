@@ -133,13 +133,15 @@ impl VulkanRenderer {
             self.storage_manager.update_object_bindless(
                 frame_idx,
                 index,
-                &model_matrix,
-                &color,
-                metallic,
-                roughness,
-                ao,
-                emission_idx,
-                texture_indices,
+                &crate::vulkan::material::storage_uniform::ObjectBindlessParams {
+                    model: &model_matrix,
+                    color: &color,
+                    metallic,
+                    roughness,
+                    ao,
+                    emission_idx,
+                    texture_indices,
+                },
             );
         }
         Ok(())

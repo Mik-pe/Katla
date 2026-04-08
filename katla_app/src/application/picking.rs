@@ -1,8 +1,8 @@
-#[cfg(feature = "editor")]
 use log::info;
 
 use crate::application::Application;
 
+#[cfg(feature = "editor")]
 impl Application {
     /// Process GPU picking: queue a readback for a pending pick, or resolve a completed readback.
     ///
@@ -11,7 +11,6 @@ impl Application {
     /// 2. After render_frame: If `pending_pick` is set for this frame, queue the GPU readback
     ///    converting viewport-relative logical coords to full-render-target physical pixel coords
     /// 3. On subsequent frames: Check if the readback completed, resolve instance_index -> EntityId
-    #[cfg(feature = "editor")]
     pub(crate) fn process_picking(&mut self) {
         // Check for completed readback from a previous frame
         if let Ok(Some((_frame, instance_index))) = self.renderer.check_picking_readback() {
