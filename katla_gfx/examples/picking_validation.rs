@@ -51,7 +51,9 @@ fn submit_and_wait(
             .create_fence(&vk::FenceCreateInfo::default(), None)
             .map_err(|e| format!("Failed to create fence: {:?}", e))?
     };
-    cmd_buf.end_single_time_command();
+    cmd_buf
+        .end_single_time_command()
+        .map_err(|e| format!("Failed to end command buffer: {}", e))?;
     unsafe {
         let submit = vk::SubmitInfo::default().command_buffers(std::slice::from_ref(&cmd));
         context
@@ -102,20 +104,19 @@ impl PickingTestResources {
                 )
                 .map_err(|e| format!("Failed to create output buffer: {:?}", e))?
         };
-        let output_allocation = {
-            let reqs = unsafe { device.get_buffer_memory_requirements(output_buffer) };
-            context
-                .allocator
-                .borrow_mut()
-                .allocate(&AllocationCreateDesc {
+        let output_allocation = context
+            .allocator
+            .allocate(
+                &AllocationCreateDesc {
                     name: "picking_output",
-                    requirements: reqs,
+                    requirements: unsafe { device.get_buffer_memory_requirements(output_buffer) },
                     location: gpu_allocator::MemoryLocation::CpuToGpu,
                     linear: true,
                     allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-                })
-                .map_err(|e| format!("Failed to allocate output: {}", e))?
-        };
+                },
+                "picking output",
+            )
+            .map_err(|e| format!("Failed to allocate output: {}", e))?;
         unsafe {
             device
                 .bind_buffer_memory(
@@ -137,20 +138,19 @@ impl PickingTestResources {
                 )
                 .map_err(|e| format!("Failed to create input buffer: {:?}", e))?
         };
-        let input_allocation = {
-            let reqs = unsafe { device.get_buffer_memory_requirements(input_buffer) };
-            context
-                .allocator
-                .borrow_mut()
-                .allocate(&AllocationCreateDesc {
+        let input_allocation = context
+            .allocator
+            .allocate(
+                &AllocationCreateDesc {
                     name: "picking_input",
-                    requirements: reqs,
+                    requirements: unsafe { device.get_buffer_memory_requirements(input_buffer) },
                     location: gpu_allocator::MemoryLocation::CpuToGpu,
                     linear: true,
                     allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-                })
-                .map_err(|e| format!("Failed to allocate input: {}", e))?
-        };
+                },
+                "picking input",
+            )
+            .map_err(|e| format!("Failed to allocate input: {}", e))?;
         unsafe {
             device
                 .bind_buffer_memory(
@@ -323,19 +323,25 @@ fn write_input_and_dispatch(
                 pixel_count * 4,
             );
         }
-        context.flush_mapped_memory(&res.input_allocation, 0, (pixel_count * 4) as u64);
+        context
+            .flush_mapped_memory(&res.input_allocation, 0, (pixel_count * 4) as u64)
+            .map_err(|e| format!("Failed to flush input memory: {}", e))?;
     }
 
     // Clear output buffer
     if let Some(mapped) = res.output_allocation.mapped_ptr() {
         unsafe { std::ptr::write_bytes(mapped.as_ptr(), 0, pixel_count * 4) };
-        context.flush_mapped_memory(&res.output_allocation, 0, (pixel_count * 4) as u64);
+        context
+            .flush_mapped_memory(&res.output_allocation, 0, (pixel_count * 4) as u64)
+            .map_err(|e| format!("Failed to flush output memory: {}", e))?;
     }
 
     let workgroup_size = 64u32;
     let dispatch_count = ((pixel_count as u32) + workgroup_size - 1) / workgroup_size;
 
-    let cmd_buf = context.begin_single_time_commands();
+    let cmd_buf = context
+        .begin_single_time_commands()
+        .map_err(|e| format!("Failed to begin command buffer: {}", e))?;
     let cmd = cmd_buf.vk_command_buffer();
 
     unsafe {
@@ -368,7 +374,9 @@ fn write_input_and_dispatch(
     submit_and_wait(context, &cmd_buf)?;
 
     // Read back output
-    context.invalidate_mapped_memory(&res.output_allocation, 0, (pixel_count * 4) as u64);
+    context
+        .invalidate_mapped_memory(&res.output_allocation, 0, (pixel_count * 4) as u64)
+        .map_err(|e| format!("Failed to invalidate output memory: {}", e))?;
     let mut result = vec![0u32; pixel_count];
     if let Some(mapped) = res.output_allocation.mapped_ptr() {
         unsafe {
@@ -514,11 +522,17 @@ fn main() -> ExitCode {
 
     log::info!("=== GPU Picking Validation ===");
 
-    let context = std::rc::Rc::new(VulkanContext::init_headless(
+    let context = match VulkanContext::init_headless(
         ValidationMode::Enabled,
         CString::new("Picking Validation").unwrap(),
         CString::new("Katla Engine").unwrap(),
-    ));
+    ) {
+        Ok(ctx) => ctx,
+        Err(e) => {
+            log::error!("Failed to create Vulkan context: {}", e);
+            return ExitCode::from(1);
+        }
+    };
     log::info!("Vulkan context created");
 
     let shader_dir = find_shader_directory();
