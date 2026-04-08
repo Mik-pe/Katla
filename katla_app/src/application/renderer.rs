@@ -21,13 +21,7 @@ impl Application {
         // in the RedrawRequested handler to ensure the UI samples from the
         // correct per-frame transient texture.
 
-        #[cfg(feature = "editor")]
-        let (viewport_width, viewport_height) = self.editor.editor_ui.viewport_size();
-        #[cfg(not(feature = "editor"))]
-        let (viewport_width, viewport_height) = {
-            let extent = self.renderer.swapchain_extent();
-            (extent.width, extent.height)
-        };
+        let (viewport_width, viewport_height) = self.viewport_size();
         let viewport_aspect = if viewport_height > 0 {
             viewport_width as f32 / viewport_height as f32
         } else {
@@ -121,28 +115,7 @@ impl Application {
         let mut draw_list = frame.take_draw_list();
         draw_list.sort_by_material();
 
-        // Generate gizmo draw calls if an entity is selected
-        #[cfg(feature = "editor")]
-        self.collect_gizmo_draw_calls(&mut draw_list);
-
-        // Extract scene-only draw list (no billboards) for shadow pass.
-        // Billboards are included in the depth prepass (for GPU picking) via the
-        // billboard depth pipeline, but excluded from shadow maps.
-        #[cfg(feature = "editor")]
-        let shadow_draw_list = {
-            let draws = draw_list
-                .iter()
-                .filter(|dc| dc.material != self.editor.billboard_resources.material)
-                .cloned()
-                .collect::<Vec<_>>();
-            katla_gfx::renderer::DrawList { draws }
-        };
-        #[cfg(not(feature = "editor"))]
-        let shadow_draw_list = draw_list.clone();
-
-        // Generate billboard icon draw calls (geometry pass only)
-        #[cfg(feature = "editor")]
-        self.collect_billboard_draw_calls(&mut draw_list);
+        let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
 
         if let Err(e) = self.renderer.execute_draw_calls(&draw_list) {
             log::error!("Failed to execute draw calls: {}", e);
@@ -236,23 +209,6 @@ impl Application {
             log::warn!("⚠️ No particle system in renderer!");
         }
 
-        #[cfg(feature = "editor")]
-        let selected_outline_indices = self
-            .editor
-            .editor_ui
-            .selected_entity
-            .map(|entity| self.collect_selected_instance_indices(entity));
-
-        #[cfg(feature = "editor")]
-        let outline_draw_list = selected_outline_indices.as_ref().map(|indices| {
-            let draws = draw_list
-                .iter()
-                .filter(|dc| indices.contains(&dc.instance_index))
-                .cloned()
-                .collect::<Vec<_>>();
-            katla_gfx::renderer::DrawList { draws }
-        });
-
         if let Err(e) = self.renderer.render(&mut self.frame_graph, |frame| {
             log::debug!(
                 "Inside render closure: submitting {} draw calls to geometry pass",
@@ -272,7 +228,6 @@ impl Application {
                 log::warn!("No draw calls to submit to geometry pass!");
             }
 
-            #[cfg(feature = "editor")]
             if let Some(ref outline_dl) = outline_draw_list
                 && !outline_dl.is_empty()
             {
@@ -374,14 +329,9 @@ impl Application {
     fn collect_draws_with_context(&mut self, frame: &mut FrameContext) {
         use crate::components::{DrawableComponent, TransformComponent};
 
-        // Clear the entity-instance maps for this frame
-        #[cfg(feature = "editor")]
-        self.editor.entity_instance_map.clear();
-        #[cfg(feature = "editor")]
-        self.editor.entity_to_instance_indices.clear();
-
         let entity_count = self.world.entity_count();
         let mut drawable_count = 0;
+        let mut entity_map_entries = Vec::new();
 
         for (entity_id, drawable, transform) in self
             .world
@@ -402,11 +352,6 @@ impl Application {
                 // pose evaluation compute pass and copied to the per-entity
                 // SkeletonBuffer. No CPU upload needed.
             }
-
-            // Get instance_index before creating the draw builder (which borrows frame mutably).
-            // instance_count() returns the next index that will be allocated by draw().
-            #[cfg(feature = "editor")]
-            let instance_index = frame.instance_count();
 
             let mut draw = frame
                 .draw(mesh_handle, material_handle)
@@ -429,20 +374,7 @@ impl Application {
 
             draw.submit();
 
-            #[cfg(feature = "editor")]
-            {
-                self.editor
-                    .entity_instance_map
-                    .insert(instance_index, entity_id);
-                self.editor
-                    .entity_to_instance_indices
-                    .entry(entity_id)
-                    .or_default()
-                    .push(instance_index);
-            }
-
-            #[cfg(not(feature = "editor"))]
-            let _ = entity_id;
+            entity_map_entries.push((frame.instance_count() - 1, entity_id));
 
             drawable_count += 1;
         }
@@ -452,12 +384,107 @@ impl Application {
             drawable_count,
             entity_count
         );
+
+        self.build_entity_instance_map(entity_map_entries);
+    }
+
+    /// Get the viewport size in pixels.
+    #[cfg(feature = "editor")]
+    fn viewport_size(&self) -> (u32, u32) {
+        self.editor.editor_ui.viewport_size()
+    }
+
+    #[cfg(not(feature = "editor"))]
+    fn viewport_size(&self) -> (u32, u32) {
+        let extent = self.renderer.swapchain_extent();
+        (extent.width, extent.height)
+    }
+
+    /// Build entity_instance_map and entity_to_instance_indices from collected draw entries.
+    #[cfg(feature = "editor")]
+    fn build_entity_instance_map(&mut self, entries: Vec<(u32, katla_ecs::EntityId)>) {
+        self.editor.entity_instance_map.clear();
+        self.editor.entity_to_instance_indices.clear();
+        for (idx, entity_id) in entries {
+            self.editor.entity_instance_map.insert(idx, entity_id);
+            self.editor
+                .entity_to_instance_indices
+                .entry(entity_id)
+                .or_default()
+                .push(idx);
+        }
+    }
+
+    #[cfg(not(feature = "editor"))]
+    fn build_entity_instance_map(&mut self, _entries: Vec<(u32, katla_ecs::EntityId)>) {}
+
+    /// Prepare draw lists: shadow filtering, outline selection, billboard generation.
+    #[cfg(feature = "editor")]
+    fn prepare_draw_lists(
+        &mut self,
+        draw_list: &mut katla_gfx::renderer::DrawList,
+    ) -> (
+        katla_gfx::renderer::DrawList,
+        Option<katla_gfx::renderer::DrawList>,
+    ) {
+        self.collect_billboard_draw_calls(draw_list);
+        self.prepare_editor_draw_lists(draw_list)
+    }
+
+    #[cfg(not(feature = "editor"))]
+    fn prepare_draw_lists(
+        &mut self,
+        draw_list: &mut katla_gfx::renderer::DrawList,
+    ) -> (
+        katla_gfx::renderer::DrawList,
+        Option<katla_gfx::renderer::DrawList>,
+    ) {
+        (draw_list.clone(), None)
+    }
+}
+
+#[cfg(feature = "editor")]
+impl Application {
+    /// Prepare editor draw lists: gizmo draws, shadow filtering, outline selection.
+    fn prepare_editor_draw_lists(
+        &mut self,
+        draw_list: &mut katla_gfx::renderer::DrawList,
+    ) -> (
+        katla_gfx::renderer::DrawList,
+        Option<katla_gfx::renderer::DrawList>,
+    ) {
+        self.collect_gizmo_draw_calls(draw_list);
+
+        let shadow_draw_list = {
+            let draws = draw_list
+                .iter()
+                .filter(|dc| dc.material != self.editor.billboard_resources.material)
+                .cloned()
+                .collect::<Vec<_>>();
+            katla_gfx::renderer::DrawList { draws }
+        };
+
+        let selected_outline_indices = self
+            .editor
+            .editor_ui
+            .selected_entity
+            .map(|entity| self.collect_selected_instance_indices(entity));
+
+        let outline_draw_list = selected_outline_indices.as_ref().map(|indices| {
+            let draws = draw_list
+                .iter()
+                .filter(|dc| indices.contains(&dc.instance_index))
+                .cloned()
+                .collect::<Vec<_>>();
+            katla_gfx::renderer::DrawList { draws }
+        });
+
+        (shadow_draw_list, outline_draw_list)
     }
 
     /// Collect instance indices for the selected entity and all its children.
     ///
     /// Used to build the filtered draw list for the outline pass.
-    #[cfg(feature = "editor")]
     fn collect_selected_instance_indices(&self, root_entity: katla_ecs::EntityId) -> Vec<u32> {
         use crate::components::Children;
 
@@ -485,7 +512,6 @@ impl Application {
     }
 
     /// Generate gizmo draw calls and append them to the main draw list.
-    #[cfg(feature = "editor")]
     fn collect_gizmo_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
         use crate::components::{PerspectiveComponent, TransformComponent};
         use crate::gizmo::*;
@@ -580,7 +606,6 @@ impl Application {
     }
 
     /// Generate billboard draw calls for entities with BillboardComponent.
-    #[cfg(feature = "editor")]
     fn collect_billboard_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
         use crate::components::{
             BillboardComponent, EditorHidden, PerspectiveComponent, TransformComponent,
