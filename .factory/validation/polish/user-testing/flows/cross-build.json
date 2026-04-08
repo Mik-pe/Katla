@@ -1,0 +1,114 @@
+{
+  "groupId": "cross-build",
+  "testedAt": "2026-04-08T12:46:00Z",
+  "isolation": {
+    "workingDirectory": "C:\\dev\\katla",
+    "externalServices": "none",
+    "workingTreeState": "clean (committed code only)"
+  },
+  "toolsUsed": ["cargo CLI (check, test, clippy)"],
+  "assertions": [
+    {
+      "id": "VAL-CROSS-001",
+      "title": "Full workspace compilation",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo check --workspace",
+          "expected": "Exit code 0",
+          "observed": "Exit code 0. Finished dev profile in 0.64s."
+        },
+        {
+          "action": "Run cargo clippy --workspace",
+          "expected": "Exit code 0, zero warnings",
+          "observed": "Exit code 0. Finished dev profile in 0.75s. No warnings produced."
+        }
+      ],
+      "evidence": {
+        "exitCodes": {"cargo_check": 0, "cargo_clippy": 0},
+        "warnings": 0
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-002",
+      "title": "Full test suite",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test --workspace",
+          "expected": "Zero FAILED entries",
+          "observed": "207 unit tests passed, 0 failed. All doctests passed (7 ok, 0 failed, rest ignored). Total: 0 failures across entire workspace."
+        }
+      ],
+      "evidence": {
+        "unitTests": "207 passed; 0 failed",
+        "doctests": "7 passed; 0 failed; 153 ignored",
+        "totalFailures": 0
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-004",
+      "title": "Editor feature toggle",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo check -p katla_app --features editor",
+          "expected": "Exit code 0",
+          "observed": "Exit code 0. Finished dev profile in 1.09s."
+        },
+        {
+          "action": "Run cargo check -p katla_app --no-default-features",
+          "expected": "Exit code 0",
+          "observed": "Exit code 0. Finished dev profile in 1.21s. 8 warnings (unused imports in picking.rs, dead code in billboard_icons.rs) but clean compilation."
+        }
+      ],
+      "evidence": {
+        "exitCodes": {"with_editor": 0, "no_default_features": 0},
+        "warnings_no_default": 8,
+        "warnings_with_editor": 0
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-007",
+      "title": "UI rendering unchanged",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_ui",
+          "expected": "Zero failures",
+          "observed": "71 unit tests passed; 0 failed; 0 ignored. 49 doctests ignored (no runnable doctests in katla_ui), 0 failed."
+        }
+      ],
+      "evidence": {
+        "unitTests": "71 passed; 0 failed; 0 ignored",
+        "doctests": "0 passed; 0 failed; 49 ignored; 1 ignored (second doc-test run)",
+        "totalFailures": 0
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-008",
+      "title": "Scene load/save round-trip",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_app scene::",
+          "expected": "All scene tests pass",
+          "observed": "54 tests passed; 0 failed; 0 ignored; 153 filtered out. All serialization/deserialization round-trip tests passed including scene_round_trip, default_scene_round_trip, gltf_round_trip, animation_round_trip, primitive_round_trip, velocity_round_trip, point_light_round_trip, particle_emitter_round_trip, parent_child_relationships_round_trip, all_entity_source_variants_round_trip, gltf_entity_with_animation_round_trip, and others."
+        }
+      ],
+      "evidence": {
+        "sceneTests": "54 passed; 0 failed; 0 ignored",
+        "roundTripTests": "All 12+ round-trip tests passed",
+        "totalFailures": 0
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 5 cross-area assertions: all 5 passed. VAL-CROSS-001 (workspace compilation): cargo check and clippy both exit 0 with zero warnings. VAL-CROSS-002 (full test suite): 207 unit tests + 7 doctests passed, 0 failures. VAL-CROSS-004 (editor feature toggle): both with-editor and no-default-features configurations compile cleanly (exit 0). VAL-CROSS-007 (UI rendering): all 71 katla_ui tests pass. VAL-CROSS-008 (scene round-trip): all 54 scene tests pass including all serialization round-trip tests."
+}

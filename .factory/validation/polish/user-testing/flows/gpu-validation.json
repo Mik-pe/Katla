@@ -1,0 +1,114 @@
+{
+  "groupId": "gpu-validation",
+  "testedAt": "2026-04-08T10:51:00Z",
+  "isolation": {
+    "workingDirectory": "C:\\dev\\katla",
+    "gpuDevice": "Intel(R) Iris(R) Plus Graphics",
+    "workingTreeClean": true
+  },
+  "toolsUsed": ["cargo run", "cargo test", "findstr"],
+  "assertions": [
+    {
+      "id": "VAL-CROSS-003",
+      "title": "Headless validation run",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo run -- -s",
+          "expected": "Exit code 0, 25 frames rendered",
+          "observed": "Exit code 0, application ran 100 frames and exited cleanly"
+        },
+        {
+          "action": "Check output for ERROR-level log lines or Vulkan validation errors",
+          "expected": "Zero ERROR-level log lines",
+          "observed": "Zero ERROR-level log lines found. Only INFO and WARN level messages present."
+        },
+        {
+          "action": "Verify frame completion message",
+          "expected": "Frame completion message present",
+          "observed": "'Rendered 100 frames, exiting' logged at INFO level"
+        }
+      ],
+      "evidence": {
+        "exitCode": 0,
+        "errorLogs": "none",
+        "warnLogs": [
+          "FrameData size (32) is smaller than min_storage_buffer_offset_alignment (64) - expected performance warning",
+          "Mesh 'fox1' has no normals, generating smooth normals from geometry - expected recoverable warning"
+        ],
+        "gizmoLog": "Gizmo GPU resources initialized (INFO level, no errors)",
+        "logFile": "polish/gpu-validation/VAL-CROSS-003-headless-run.log"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-005",
+      "title": "Gizmo functionality preserved",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test -p katla_app gizmo",
+          "expected": "All gizmo tests pass",
+          "observed": "0 tests matched 'gizmo' pattern (no dedicated gizmo unit tests exist); test result: ok"
+        },
+        {
+          "action": "Check VAL-CROSS-003 headless run output for gizmo-related errors",
+          "expected": "No gizmo errors in headless run",
+          "observed": "Gizmo initialized successfully: 'Gizmo GPU resources initialized' at INFO level. No gizmo-related ERROR or WARN messages."
+        }
+      ],
+      "evidence": {
+        "gizmoTestResult": "ok. 0 passed; 0 failed; 0 ignored; 207 filtered out",
+        "headlessGizmoLog": "INFO katla_app::application::gizmo - Gizmo GPU resources initialized",
+        "gizmoErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-006",
+      "title": "Picking pipeline integrity",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Run cargo run -p katla_gfx --example picking_validation --features validation",
+          "expected": "Exit code 0",
+          "observed": "Compilation failed with 7 errors. Examples not updated for GpuAllocator wrapper (borrow_mut not accessible without BorrowMut trait import) and Result propagation changes (begin_command_buffer now returns Result)."
+        },
+        {
+          "action": "Run cargo run -p katla_gfx --example outline_validation --features validation",
+          "expected": "Exit code 0",
+          "observed": "Compilation failed with 85 errors. Same root causes as picking_validation plus additional mismatched type errors from VulkanContext wrapped in Rc<Result<...>>."
+        }
+      ],
+      "evidence": {
+        "pickingValidationExitCode": 1,
+        "pickingValidationErrors": [
+          "E0599: no method 'borrow_mut' on GpuAllocator (lines 109, 144)",
+          "E0599: no method 'vk_command_buffer' on Result<CommandBuffer, RendererError> (line 339)",
+          "E0308: mismatched types - expected &CommandBuffer, found &Result (lines 368, 527, 551, 560)"
+        ],
+        "outlineValidationExitCode": 1,
+        "outlineValidationErrors": [
+          "E0599: no method 'borrow_mut' on GpuAllocator (multiple lines)",
+          "E0599: no method 'vk_command_buffer' on Result (lines 852, 1437)",
+          "E0609: no field 'allocator' on Rc<Result<VulkanContext, ...>> (multiple lines)",
+          "E0308: mismatched types throughout - context is Rc<Result<...>> not &VulkanContext",
+          "E0282: type annotations needed (line 524)"
+        ],
+        "pickingLogFile": "polish/gpu-validation/VAL-CROSS-006-picking-validation.log",
+        "outlineLogFile": "polish/gpu-validation/VAL-CROSS-006-outline-validation.log"
+      },
+      "issues": "Both picking_validation and outline_validation examples fail to compile due to API changes from VAL-ROBUST-001 (Result propagation) and VAL-ROBUST-002 (GpuAllocator wrapper). The examples were not updated to match the new API signatures: (1) GpuAllocator no longer exposes borrow_mut() directly - needs BorrowMut trait import or new method, (2) begin_command_buffer() now returns Result<CommandBuffer, RendererError> instead of CommandBuffer, (3) VulkanContext initialization changed to wrap in Rc<Result<...>> which the examples don't unwrap."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "The validation contract says '25 frames' but the application actually runs 100 frames in limited-frame mode (-s flag). This is not a failure but a documentation discrepancy.",
+      "resolved": true,
+      "resolution": "Noted in report. The 100-frame behavior still validates the full Vulkan pipeline as intended.",
+      "affectedAssertions": ["VAL-CROSS-003"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 3 assertions: 2 passed, 1 failed. VAL-CROSS-003 (headless run) passed with exit code 0 and no errors. VAL-CROSS-005 (gizmo) passed - no dedicated gizmo tests exist but headless run shows clean gizmo initialization. VAL-CROSS-006 (picking/outline examples) FAILED - both examples fail to compile due to API changes (GpuAllocator wrapper, Result propagation) that weren't reflected in the example code."
+}

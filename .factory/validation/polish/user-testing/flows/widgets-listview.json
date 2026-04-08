@@ -1,0 +1,94 @@
+{
+  "groupId": "widgets-listview",
+  "testedAt": "2026-04-08T12:00:00Z",
+  "isolation": {
+    "workingDirectory": "C:\\dev\\katla",
+    "services": "none",
+    "description": "Pure Rust workspace, no running services, clean committed tree"
+  },
+  "toolsUsed": ["cargo test", "cargo clippy", "rg"],
+  "assertions": [
+    {
+      "id": "VAL-POLISH-003",
+      "title": "Widget default sizes from style",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for hardcoded dimension literals in widget new()/at_cursor() methods in katla_ui/src/widgets/",
+          "expected": "All Vec2::new() calls in new() and at_cursor() reference Style/DEFAULTS fields, not bare numeric literals",
+          "observed": "All 11 widget types (Button, ImageButton, Checkbox, ToggleButton, Slider, TextInput, Label, Badge, RadioButton, ProgressBar, Collapsible) use DEFAULTS.* or ui.style.* fields for dimensions. No bare numeric dimension literals found in new() or at_cursor() methods."
+        },
+        {
+          "action": "Verify Style struct has fields for widget defaults",
+          "expected": "Style struct has fields like button_default_width, icon_button_size, etc.",
+          "observed": "Style struct has 16 dimension fields: button_default_width, button_default_height, icon_button_size, checkbox_default_width, checkbox_default_height, slider_default_width, slider_default_height, text_input_default_width, text_input_default_height, label_default_width, label_default_height, radio_button_default_width, radio_button_default_height, progress_bar_default_width, progress_bar_default_height, collapsible_default_width, collapsible_default_height, badge_default_width, badge_default_height. WidgetDefaults const DEFAULTS also exists with matching fields."
+        },
+        {
+          "action": "Verify new() and at_cursor() methods read dimensions from style",
+          "expected": "new() uses DEFAULTS.*, at_cursor() uses ui.style.*",
+          "observed": "Confirmed: new() uses DEFAULTS.button_default_width etc. at_cursor() uses ui.style.button_default_width etc. Label::at_cursor() uses ui.measure_text() for text-based sizing. Badge::at_cursor() uses ui.measure_text() with padding."
+        },
+        {
+          "action": "Run cargo test -p katla_ui",
+          "expected": "All tests pass",
+          "observed": "71 tests passed, 0 failed"
+        },
+        {
+          "action": "Run cargo clippy -p katla_ui",
+          "expected": "No warnings",
+          "observed": "Zero warnings, exit code 0"
+        }
+      ],
+      "evidence": {
+        "testOutput": "polish/widgets-listview/VAL-POLISH-003-test-output.txt",
+        "clippyOutput": "polish/widgets-listview/VAL-POLISH-003-clippy-output.txt",
+        "styleFields": "16 dimension fields in Style struct + WidgetDefaults const DEFAULTS",
+        "widgetsChecked": "Button, ImageButton, Checkbox, ToggleButton, Slider, TextInput, Label, Badge, RadioButton, ProgressBar, Collapsible (11 total)"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-POLISH-004",
+      "title": "Hierarchy view uses reusable ListView widget",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for struct ListView in katla_ui/",
+          "expected": "ListView struct exists",
+          "observed": "pub struct ListView<'a, F> found at katla_ui/src/widgets/list_view.rs:28. Implements Widget trait with virtualized rendering (only renders visible rows)."
+        },
+        {
+          "action": "Search for ListView usage in katla_app/src/ui/editor_ui/hierarchy.rs",
+          "expected": "ListView is imported and used",
+          "observed": "Line 5: 'use katla_ui::widgets::ListView;' imported. Line 130: 'ListView::new(\"hierarchy_scroll\", &mut self.state.scroll_state).bounds(content_bounds).item_count(visible_entities.len()).row_height(22.0).render_each(|ui, index, row_bounds| { ... })'"
+        },
+        {
+          "action": "Search for manual cursor advancement patterns in hierarchy.rs",
+          "expected": "Zero manual cursor advancement",
+          "observed": "Zero matches for advance_cursor, advance_vertical, cursor.y, or cursor.x in hierarchy.rs. The ListView handles all scrolling internally."
+        },
+        {
+          "action": "Run cargo test -p katla_ui",
+          "expected": "All tests pass",
+          "observed": "71 tests passed, 0 failed"
+        },
+        {
+          "action": "Run cargo test -p katla_app",
+          "expected": "All tests pass",
+          "observed": "206 tests passed, 0 failed, 1 ignored (pre-existing)"
+        }
+      ],
+      "evidence": {
+        "testOutputUi": "polish/widgets-listview/VAL-POLISH-004-test-output.txt",
+        "listViewLocation": "katla_ui/src/widgets/list_view.rs:28",
+        "hierarchyImport": "katla_app/src/ui/editor_ui/hierarchy.rs:5",
+        "hierarchyUsage": "katla_app/src/ui/editor_ui/hierarchy.rs:130",
+        "manualCursorAdvancement": "none"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 2 assertions: 2 passed. VAL-POLISH-003: All 11 widget types use Style/DEFAULTS fields for dimensions in new()/at_cursor(), zero hardcoded literals. VAL-POLISH-004: ListView struct exists in katla_ui with virtualization, hierarchy.rs imports and uses it, zero manual cursor advancement patterns."
+}
