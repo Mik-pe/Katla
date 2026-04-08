@@ -6,7 +6,7 @@ edition = "2024"
 
 [features]
 default = ["editor"]
-editor = []
+editor = ["katla_ecs/editor"]
 
 [dependencies]
 katla_math = { workspace = true }

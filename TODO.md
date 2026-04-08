@@ -1,5 +1,7 @@
 # TODO
 
+> **Note:** Investigation items (marked with "Investigate", "Consider", or "Design") are research tasks. Each investigation should produce concrete follow-up TODO items with clear scope and priority once the research is complete.
+
 ## ECS
 
 ### P2: Features
@@ -16,8 +18,8 @@
 
 ### UX
 
-- [ ] Add plane-drag support (e.g., XY, XZ, YZ planes) for translate and scale modes
-- [ ] Calibrate scale sensitivity to screen-space movement (magic 0.01 constant is not zoom-aware)
+- [x] **Add plane-drag support (XY, XZ, YZ planes) for translate and scale modes** — GizmoHandle enum unifies axis/plane interaction. Plane handles rendered as semi-transparent quads at origin corners. Plane hit testing with axis-priority. Two-axis translate and scale via compute_translate_plane_delta/compute_scale_plane_delta.
+- [x] **Calibrate scale sensitivity to screen-space movement** — Replaced hardcoded `0.01` fallback with zoom-aware `1.0 / (gizmo_scale * 5.0)` derived from camera distance, FOV, and viewport height.
 
 ## katla_gfx
 
@@ -149,6 +151,94 @@ Follow egui's approach: use `skrifa` for font parsing/outlining and `vello_cpu` 
 - [x] **Decide fate of scalar quaternion module** — `scalar::quat` module is `#[allow(dead_code)]` on x86/x86_64 (primary targets). Either gate behind cfg or remove.
 
 ## Cross-Cutting
+
+### AI Co-Creator — Content Generation with Glass Box Transparency
+
+> **Vision:** An AI co-creator that helps you build worlds, tune gameplay, and iterate on game design — right inside the editor. Ask it to "place a forest of 50 trees around this clearing", "make this particle emitter look like campfire sparks", or "create an enemy patrol route between these points". Every change the AI makes is visible in the viewport, logged in a timeline, and undoable with a single click. You stay in control — the AI suggests, you decide.
+>
+> **Three pillars:**
+> 1. **World Building** — Procedural entity placement, scene templates, environment composition. "Populate this area with ruins and overgrowth."
+> 2. **Parameter Tuning** — Iterate on particle effects, lighting moods, physics feel. "Make the fire warmer and more flickery."
+> 3. **Game Logic & Design** — Entity behaviors, gameplay rules, balance tuning. "Add enemies that chase the player within 10 units."
+>
+> **Architecture:** `katla_agent` crate provides the execution harness, scene tools, and LLM integration. All AI code is feature-gated behind `#[cfg(feature = "agent")]`. The AI's actions flow through the same undo stack as manual edits. Glass box UI shows every action, lets you scrub the timeline, and rollback anything. See `docs/agent-glass-box-research.md` for research findings.
+>
+> **Build order:** Component Reflection → Scene Tool API → Agent Harness → LLM Backend → Content Generation Tools → Glass Box UI.
+
+#### Foundation: Component Reflection (unlocks generic scene tools and inspector)
+
+- [ ] **Design the `Inspect` trait** — Define `Inspect` trait with `fn fields() -> Vec<FieldInfo>` and `fn field_mut(&mut self, name: &str) -> Option<FieldMut<'_>>`. Use `&dyn Any` for field values. (~scope: small)
+- [ ] **Define `FieldInfo` / `FieldConstraints` types** — Structs for field metadata: name, display_name, type_name, kind (Float/Int/Bool/String/Color/Struct/Enum/Vec/EntityRef), constraints (range, speed, skip). (~scope: small)
+- [ ] **Extend `#[derive(Component)]` to generate `Inspect` impl** — Modify `katla_derive` to parse struct fields and generate an `Inspect` implementation behind `#[cfg(feature = "editor")]`. Parse `#[inspect(skip)]`, `#[inspect(range = 0.0..=1.0)]`, `#[inspect(color)]` field attributes. (~scope: medium)
+- [ ] **Build `PropertyEditor` dispatch for generic widgets** — Function that takes `FieldInfo` + `FieldMut` and renders the appropriate katla_ui widget. Start with f32 (slider), bool (checkbox), String (text input). Dispatch on field kind. (~scope: medium)
+- [ ] **Implement missing katla_ui widgets for inspection** — Build DragValue (numeric drag-to-edit), Dropdown (enum selector), ColorPicker. Needed for generic inspector and AI parameter editing. (~scope: large)
+- [ ] **Rewrite inspector panel to use `Inspect` trait** — Replace hardcoded match arms in `inspector.rs` with generic `Inspect`-based rendering. (~scope: medium)
+
+#### Scene Tool API (what the AI uses to build content)
+
+- [ ] **Design `SceneTool` trait and standard tool set** — Define tools the AI calls to manipulate the scene: `spawn_entity(components, transform)`, `destroy_entity(id)`, `set_component(id, field, value)`, `query_entities(filter)`, `get_scene_hierarchy()`, `duplicate_entity(id, transform_offset)`. Each tool has a JSON Schema definition for LLM function calling. (~scope: medium)
+- [ ] **Implement `Command` pattern for scene mutations** — Every scene tool mutation wraps as a `Command` with `execute(&mut World)` and `undo(&mut World)`. Captures before/after state per component. This is the same undo stack the developer uses — AI actions are first-class undo citizens. (~scope: medium)
+- [ ] **Implement `UndoGroup` for atomic AI operations** — All spawns/mutations from one AI request (e.g., "place a forest" = 50 spawn_entity calls) are grouped into one undo unit. Single Ctrl+Z undoes the entire forest. (~scope: small)
+- [ ] **Add scene tool validation layer** — Validate tool calls: reject out-of-range values, invalid entity IDs, destructive ops on protected entities. Clamp values to component constraints from `FieldConstraints`. (~scope: small)
+- [ ] **Build entity query/filter language** — Allow the AI to query "all entities with PointLight within radius R of position P", "all ParticleEmitters", "entity named 'Player'". Structured filter that maps to ECS queries. (~scope: medium)
+- [ ] **Implement procedural placement helpers** — Utility functions for common placement patterns: scatter entities in area with density, place along a path, arrange in grid/pattern, randomize with constraints (min distance, avoidance). These are the building blocks for "place 50 trees" type requests. (~scope: medium)
+- [ ] **Create scene templates / prefab system** — Named scene templates ("campfire" = particle emitter + point light + sound source, "watchtower" = mesh + point light + patrol waypoint). AI instantiates templates instead of raw components. (~scope: large)
+
+#### Agent Harness (execution infrastructure)
+
+- [ ] **Design `Agent` trait and `AgentContext`** — `Agent` trait with observe/decide/on_result cycle. `AgentContext` provides read-only ECS world access and scene tool invocation. Agents run on a background thread and submit tool calls to the main thread per-frame. (~scope: medium)
+- [ ] **Build async execution bridge** — Background thread (crossbeam or dedicated tokio runtime) with `mpsc` channels. Agent submits tool calls → main thread executes → result sent back. Main thread processes N pending actions per frame to avoid blocking. (~scope: medium)
+- [ ] **Create `katla_agent` crate skeleton** — New workspace crate: agent trait, scene tools, execution context, action log. Feature-gated behind `#[cfg(feature = "agent")]`. Depends on `katla_ecs`, `katla_ui`, `katla_gfx`. (~scope: medium)
+- [ ] **Write integration tests for agent + scene tools** — Test: agent spawns entities → verify they exist → undo → verify gone. Test: agent modifies component → verify value → undo → verify original. Use mock Agent. (~scope: medium)
+
+#### LLM Backend (connects AI co-creator to the engine)
+
+- [ ] **Design `LlmProvider` async trait** — `chat_completion(messages, tools) -> Response` and `chat_completion_stream(messages, tools) -> Stream<Token>`. Start with `OpenAiProvider` using `async-openai`. Gate behind `#[cfg(feature = "llm-assistant")]`. (~scope: medium)
+- [ ] **Set up async runtime bridge for LLM calls** — Dedicated tokio runtime on background thread. Winit render loop dispatches requests and polls for streaming tokens each frame without blocking. (~scope: medium)
+- [ ] **Implement scene context serialization** — Serialize current scene state as structured JSON for the LLM: selected entity + components, nearby entities, hierarchy, entity counts by type. Only send what's relevant (context window is limited). (~scope: medium)
+- [ ] **Write game-design-aware system prompts** — System prompt that understands Katla's ECS, component types, and tool capabilities. Prompt includes design guidance: what makes good particle effects, how to compose scenes, entity relationships. Tailored for content generation, not generic chat. (~scope: medium)
+- [ ] **Build co-creator chat panel UI** — `CoCreatorPanel` widget using `DraggablePanel`. Natural language input, streaming response, action result cards showing what the AI placed/changed. Supports follow-up ("more trees", "warmer lighting", "delete those and try again"). (~scope: large)
+- [ ] **Implement MCP server for external AI integration** — Using `rmcp` crate, expose Katla scene tools via MCP. External tools (Claude Code, Cursor) can drive the live scene. Same tool set as the built-in assistant. (~scope: large)
+- [ ] **Add local inference backend option** — Behind `llm-assistant-local` feature, wrap `llama-cpp-2` or `mistralrs` for offline use. (~scope: large)
+
+#### Content Generation Tools (world building, tuning, game logic)
+
+- [ ] **Build world building tool set** — High-level tools for scene composition: `populate_area(template, density, constraints)`, `place_along_path(template, points)`, `scatter(template, count, bounds, min_spacing)`, `create_cluster(templates, center, radius)`. These compose the low-level scene tools into content-creation operations. (~scope: large)
+- [ ] **Build parameter tuning tool set** — Tools for iterative feel adjustment: `tune_component(entity, field, direction)` with semantic understanding ("warmer" → shift light color toward orange, "more flickery" → increase particle velocity variance). `compare_variants(entity, field, values)` spawns copies with different settings for A/B comparison. (~scope: large)
+- [ ] **Build game logic / behavior tool set** — Tools for gameplay: `add_behavior(entity, behavior_template)` for common patterns (patrol, chase, wander, interact), `create_trigger(area, action)` for spatial triggers, `balance_curves(params)` for tuning difficulty curves. These define reusable behavior patterns the AI can compose. (~scope: large)
+- [ ] **Add scene analysis / suggestion tools** — AI can analyze the current scene: detect empty areas, check lighting coverage, suggest entity placements, identify balance issues. `analyze_scene()` returns structured observations the LLM uses to make suggestions. (~scope: medium)
+
+#### Glass Box Transparency (see and control what the AI does)
+
+- [ ] **Design `AgentAction` data model** — Struct for every AI action: what tool was called, what entities were affected, before/after values, timestamp, AI reasoning (why it chose this). (~scope: medium)
+- [ ] **Build `ActionLog` with checkpoint storage** — Ordered log of all AI actions with ECS component diffs. Checkpoints at major boundaries (one per AI request) for rollback. (~scope: medium)
+- [ ] **Implement checkpoint-based rollback** — Restore scene to any prior checkpoint. Full undo of an AI session, or scrub to a specific point in the timeline. (~scope: large)
+- [ ] **Build viewport entity highlighting for AI actions** — Color-coded outlines on entities the AI just created (green), modified (yellow), or is about to delete (red). Fades out after a few seconds. (~scope: large)
+- [ ] **Build action timeline in the editor** — Horizontal timeline showing AI actions as colored blocks. Click any action to highlight affected entities, see what changed, or rollback to that point. (~scope: large)
+- [ ] **Build diff view for scene changes** — For any AI action or session: list of entities added/removed/modified with component-level old→new diffs. (~scope: medium)
+- [ ] **Add pause/resume/step controls** — Pause the AI mid-operation, step through actions one at a time, or rollback. Essential for reviewing large world-building operations before committing. (~scope: medium)
+
+#### Game Loop Modes (Edit/Play/Simulate) — orthogonal infrastructure
+
+- [ ] **Implement `EngineMode` enum and state machine** — `EngineMode` enum (`Edit`, `Play`, `Simulate`) with transition logic. `ModeStateMachine` resource in ECS world. Define valid transitions and guards. (~scope: medium)
+- [ ] **Add component snapshot support to `Component` trait** — Extend trait (or add `Snapshot` trait) with `clone_into_world(&self, new_entity, &mut World)`. Ensure all scene-relevant components implement it. Add `#[derive(Snapshot)]` macro. (~scope: medium)
+- [ ] **Implement ECS world cloning for mode transitions** — `World::clone_for_play()` iterates archetypes, clones component data, builds entity ID remapping table, skips editor-only components. ~scope: large)
+- [ ] **Create system set dispatch infrastructure** — `SystemSet` variants (`Editor`, `Runtime`, `Always`). `run_if_mode(EngineMode)` condition. Main loop checks current mode before dispatching. (~scope: medium)
+- [ ] **Implement editor world snapshot on mode enter** — On Edit→Play: snapshot editor world, store as `EditorWorldSnapshot`, create play world from clone. On Play→Edit: discard play world, restore snapshot. (~scope: medium)
+- [ ] **Add mode transition event system** — `ModeTransitionEvent` (from_mode, to_mode). Systems subscribe for setup/teardown (initialize physics, enable/disable gizmos). (~scope: small)
+- [ ] **Implement simulate mode** — `Simulate` variant: runs runtime systems, no player possession, editor camera stays active, viewport interactive while physics runs. (~scope: medium)
+- [ ] **Add engine mode UI controls** — Toolbar buttons (Play/Stop/Simulate), current mode indicator, keyboard shortcuts (F5=Play, Shift+F5=Stop, F6=Simulate). (~scope: small)
+- [ ] **Handle entity reference remapping** — `EntityRemapper` tracking old→new entity IDs during world clone. Auto-remap entity references in components (parent entities, joint targets) via `RemapEntities` trait. (~scope: medium)
+- [ ] **Write integration tests for mode transitions** — Test Edit→Play→Edit roundtrip preserves editor state. Entity references survive cloning. Mode-specific systems only run in correct mode. (~scope: medium)
+
+#### Multithreading — orthogonal infrastructure
+
+- [ ] **Add system access metadata to `katla_ecs`** — Each system declares which components it reads/writes. Build access analysis pass that identifies non-conflicting systems safe for parallel dispatch. (~scope: medium)
+- [ ] **Implement parallel ECS system dispatch via rayon** — Use rayon `scope()` to dispatch non-conflicting systems concurrently. Start with independent systems (rendering + physics), expand to full access-based scheduling. (~scope: large)
+- [ ] **Add per-thread command pool management to `katla_gfx`** — Vulkan command pools are not thread-safe. Create `CommandPoolManager` that provides per-thread pools for parallel command buffer recording. (~scope: medium)
+- [ ] **Implement parallel asset loading** — Background worker threads load textures/meshes via crossbeam channels. Main thread uploads to GPU at frame boundary. Decouple I/O from render loop. (~scope: medium)
+- [ ] **Add parallel render graph pass execution** — Identify passes with no resource dependencies, record in parallel using secondary command buffers. Dependency-based scheduling. (~scope: large)
+- [ ] **Benchmark and validate threading improvements** — Measure frame time before/after each parallelism change. Verify no data races. Profile with Tracy or custom instrumentation. (~scope: small)
 
 ### P3: Cleanup
 

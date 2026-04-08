@@ -1,0 +1,334 @@
+use crate::World;
+
+use super::command::{
+    DestroyEntityCommand, DuplicateEntityCommand, SceneCommand, SetFieldCommand,
+    SpawnEntityCommand, UndoGroup,
+};
+use super::registry::{ComponentRegistry, FieldValue};
+use super::{SceneOp, SceneToolError, ToolResult};
+
+/// Executes scene operations, producing Commands for the undo stack.
+pub struct SceneToolExecutor;
+
+impl SceneToolExecutor {
+    /// Execute a scene operation, returning the result and undo group.
+    ///
+    /// The commands have already been executed — caller just needs to store
+    /// them in the undo stack.
+    pub fn execute(
+        op: SceneOp,
+        world: &mut World,
+        registry: &ComponentRegistry,
+    ) -> Result<(ToolResult, UndoGroup), SceneToolError> {
+        match op {
+            SceneOp::SpawnEntity {
+                position,
+                rotation,
+                scale,
+                name,
+            } => Self::exec_spawn(world, registry, position, rotation, scale, name),
+            SceneOp::DestroyEntity { entity } => Self::exec_destroy(world, registry, entity),
+            SceneOp::SetField {
+                entity,
+                component,
+                field,
+                value,
+            } => Self::exec_set_field(world, registry, entity, component, field, value),
+            SceneOp::QueryEntities {
+                component_filter,
+                name_filter,
+                position: _,
+                radius: _,
+                limit,
+            } => Self::exec_query(world, registry, component_filter, name_filter, limit),
+            SceneOp::GetSceneHierarchy => Self::exec_hierarchy(world),
+            SceneOp::DuplicateEntity {
+                entity,
+                position_offset,
+            } => Self::exec_duplicate(world, registry, entity, position_offset),
+        }
+    }
+
+    fn exec_spawn(
+        world: &mut World,
+        registry: &ComponentRegistry,
+        position: [f32; 3],
+        rotation: [f32; 3],
+        scale: [f32; 3],
+        name: Option<String>,
+    ) -> Result<(ToolResult, UndoGroup), SceneToolError> {
+        let mut cmd = SpawnEntityCommand::new(position, rotation, scale, name.clone());
+        cmd.execute(world)?;
+
+        let entity = cmd.entity().unwrap();
+        let desc = cmd.description();
+
+        // Add default components to the new entity via registry entries.
+        // For spawn, we add all registered "base" components (e.g. transform, name).
+        // The caller decides which components to register, so this is fully data-driven.
+        for entry in registry.entries() {
+            if !(entry.has_component)(world, entity) {
+                (entry.create_default)(world, entity);
+            }
+        }
+
+        // Set position/scale/rotation fields on registered components
+        for entry in registry.entries() {
+            if !(entry.has_component)(world, entity) {
+                continue;
+            }
+            // Try to set position fields
+            for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+                if (entry.set_field_value)(world, entity, axis, FieldValue::F32(position[i]))
+                    .is_err()
+                {
+                    // Field might not exist, that's fine
+                }
+            }
+            // Try to set scale fields
+            for (i, axis) in ["scale_x", "scale_y", "scale_z"].iter().enumerate() {
+                if (entry.set_field_value)(world, entity, axis, FieldValue::F32(scale[i])).is_err()
+                {
+                    // Field might not exist, that's fine
+                }
+            }
+            // Try to set rotation fields
+            for (i, axis) in ["rot_x", "rot_y", "rot_z"].iter().enumerate() {
+                if (entry.set_field_value)(world, entity, axis, FieldValue::F32(rotation[i]))
+                    .is_err()
+                {
+                    // Field might not exist, that's fine
+                }
+            }
+        }
+
+        // If a name was given, try to set it via registry
+        if let Some(ref n) = name {
+            for entry in registry.entries() {
+                if !(entry.has_component)(world, entity) {
+                    continue;
+                }
+                if let Ok(()) =
+                    (entry.set_field_value)(world, entity, "name", FieldValue::String(n.clone()))
+                {
+                    break;
+                }
+            }
+        }
+
+        let mut group = UndoGroup::new(desc);
+        group.commands.push(Box::new(cmd));
+
+        Ok((
+            ToolResult {
+                success: true,
+                message: format!("Spawned entity {entity}"),
+                affected_entities: vec![entity],
+            },
+            group,
+        ))
+    }
+
+    fn exec_destroy(
+        world: &mut World,
+        registry: &ComponentRegistry,
+        entity: crate::EntityId,
+    ) -> Result<(ToolResult, UndoGroup), SceneToolError> {
+        if !world.entity_exists(entity) {
+            return Err(SceneToolError::EntityNotFound(entity));
+        }
+
+        let mut cmd = DestroyEntityCommand::new(entity);
+        cmd.snapshot_from_registry(world, registry);
+        cmd.execute(world)?;
+
+        let desc = cmd.description();
+        let mut group = UndoGroup::new(desc);
+        group.commands.push(Box::new(cmd));
+
+        Ok((
+            ToolResult {
+                success: true,
+                message: format!("Destroyed entity {entity}"),
+                affected_entities: vec![entity],
+            },
+            group,
+        ))
+    }
+
+    fn exec_set_field(
+        world: &mut World,
+        registry: &ComponentRegistry,
+        entity: crate::EntityId,
+        component: String,
+        field: String,
+        value: serde_json::Value,
+    ) -> Result<(ToolResult, UndoGroup), SceneToolError> {
+        if !world.entity_exists(entity) {
+            return Err(SceneToolError::EntityNotFound(entity));
+        }
+
+        let entry = registry
+            .get(&component)
+            .ok_or_else(|| SceneToolError::ComponentNotFound {
+                entity,
+                component: component.clone(),
+            })?;
+
+        // Read old value
+        let old_value = (entry.get_field_value)(world, entity, &field).ok_or_else(|| {
+            SceneToolError::FieldNotFound {
+                component: component.clone(),
+                field: field.clone(),
+            }
+        })?;
+
+        // Convert JSON value to typed FieldValue
+        let new_value = FieldValue::from_json_typed(&value, &old_value).ok_or_else(|| {
+            SceneToolError::InvalidFieldValue {
+                field: field.clone(),
+                expected_type: old_value.type_name().to_string(),
+                got: format!("{value}"),
+            }
+        })?;
+
+        // Apply the new value
+        (entry.set_field_value)(world, entity, &field, new_value.clone())?;
+
+        let cmd = SetFieldCommand::new(entity, field.clone(), old_value, entry);
+
+        let desc = cmd.description();
+        let mut group = UndoGroup::new(desc);
+        group.commands.push(Box::new(cmd));
+
+        Ok((
+            ToolResult {
+                success: true,
+                message: format!("Set {component}.{field} on entity {entity}"),
+                affected_entities: vec![entity],
+            },
+            group,
+        ))
+    }
+
+    fn exec_query(
+        world: &mut World,
+        registry: &ComponentRegistry,
+        component_filter: Option<String>,
+        _name_filter: Option<String>,
+        limit: Option<usize>,
+    ) -> Result<(ToolResult, UndoGroup), SceneToolError> {
+        let mut entities: Vec<crate::EntityId> = world.entity_ids().collect();
+
+        if let Some(ref type_name) = component_filter {
+            let entry = registry.get(type_name).ok_or_else(|| {
+                SceneToolError::WorldError(format!("Component type '{type_name}' not registered"))
+            })?;
+            entities.retain(|&id| (entry.has_component)(world, id));
+        }
+
+        if let Some(limit) = limit {
+            entities.truncate(limit);
+        }
+
+        let count = entities.len();
+        let names: Vec<String> = entities.iter().map(|&id| format!("{id}")).collect();
+
+        Ok((
+            ToolResult {
+                success: true,
+                message: format!("Found {count} entities: {}", names.join(", ")),
+                affected_entities: entities,
+            },
+            UndoGroup::new("Query (no undo)"),
+        ))
+    }
+
+    fn exec_hierarchy(world: &mut World) -> Result<(ToolResult, UndoGroup), SceneToolError> {
+        let entities: Vec<crate::EntityId> = world.entity_ids().collect();
+        let count = entities.len();
+
+        Ok((
+            ToolResult {
+                success: true,
+                message: format!("Scene has {count} entities"),
+                affected_entities: entities,
+            },
+            UndoGroup::new("GetSceneHierarchy (no undo)"),
+        ))
+    }
+
+    fn exec_duplicate(
+        world: &mut World,
+        registry: &ComponentRegistry,
+        source: crate::EntityId,
+        position_offset: Option<[f32; 3]>,
+    ) -> Result<(ToolResult, UndoGroup), SceneToolError> {
+        if !world.entity_exists(source) {
+            return Err(SceneToolError::EntityNotFound(source));
+        }
+
+        let mut cmd = DuplicateEntityCommand::new(source, position_offset);
+        cmd.execute(world)?;
+
+        let duplicate = cmd.duplicate().unwrap();
+
+        // Copy component fields from source to duplicate via registry
+        for entry in registry.entries() {
+            if !(entry.has_component)(world, source) {
+                continue;
+            }
+            // Add a default instance of the component to the duplicate
+            (entry.create_default)(world, duplicate);
+            // Now copy field values from source
+            let fields = (entry.get_fields)(world, source);
+            for field_info in &fields {
+                if let Some(value) = (entry.get_field_value)(world, source, field_info.name) {
+                    let _ = (entry.set_field_value)(world, duplicate, field_info.name, value);
+                }
+            }
+        }
+
+        // Apply position offset if given
+        if let Some(offset) = position_offset {
+            for entry in registry.entries() {
+                if !(entry.has_component)(world, duplicate) {
+                    continue;
+                }
+                for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+                    if let Some(current) = (entry.get_field_value)(world, duplicate, axis)
+                        && let Some(v) = current.as_f32()
+                    {
+                        let _ = (entry.set_field_value)(
+                            world,
+                            duplicate,
+                            axis,
+                            FieldValue::F32(v + offset[i]),
+                        );
+                    }
+                }
+            }
+        }
+
+        let desc = cmd.description();
+        let mut group = UndoGroup::new(desc);
+        group.commands.push(Box::new(cmd));
+
+        Ok((
+            ToolResult {
+                success: true,
+                message: format!("Duplicated entity {source} -> {duplicate}"),
+                affected_entities: vec![duplicate],
+            },
+            group,
+        ))
+    }
+
+    /// Undo an entire undo group.
+    pub fn undo(group: &mut UndoGroup, world: &mut World) -> Result<(), SceneToolError> {
+        for cmd in group.commands.iter_mut().rev() {
+            cmd.undo(world)?;
+        }
+        Ok(())
+    }
+}
