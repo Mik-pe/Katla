@@ -1,8 +1,10 @@
 pub mod co_creator;
 pub mod context;
+pub mod tools;
 
 pub use co_creator::CoCreatorAgent;
 pub use context::{SceneContext, serialize_scene_context};
+pub use tools::{placement, templates, tuning};
 
 #[cfg(feature = "llm-assistant")]
 pub mod llm;
