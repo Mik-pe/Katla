@@ -35,6 +35,7 @@
 //!     .hover_color(Color::LIGHT_BLUE));
 //! ```
 
+use crate::style::DEFAULTS;
 use crate::{Response, UiContext};
 use katla_math::{Color, Rect2D, Vec2};
 
@@ -67,7 +68,10 @@ impl<'a> Button<'a> {
     pub fn new(text: &'a str) -> Self {
         Self {
             text,
-            bounds: Rect2D::from_size(Vec2::new(100.0, 30.0)),
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.button_default_width,
+                DEFAULTS.button_default_height,
+            )),
             id: None,
             fill_color: None,
             hover_color: None,
@@ -91,8 +95,13 @@ impl<'a> Button<'a> {
     /// ui.add(Button::new("Click Me").at_cursor(ui));
     /// ```
     pub fn at_cursor(mut self, ui: &UiContext) -> Self {
-        self.bounds =
-            Rect2D::from_origin_size(ui.cursor(), Vec2::new(100.0, ui.style.button_height_medium));
+        self.bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(
+                ui.style.button_default_width,
+                ui.style.button_default_height,
+            ),
+        );
         self
     }
 
@@ -191,7 +200,10 @@ impl<'a> ImageButton<'a> {
     pub fn new(icon: char) -> Self {
         Self {
             icon,
-            bounds: Rect2D::from_size(Vec2::new(30.0, 30.0)),
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.icon_button_size,
+                DEFAULTS.icon_button_size,
+            )),
             id: None,
             enabled: true,
         }
@@ -217,7 +229,8 @@ impl<'a> ImageButton<'a> {
 
     /// Position the button at the current cursor position with default size.
     pub fn at_cursor(mut self, ui: &UiContext) -> Self {
-        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(30.0, 30.0));
+        let s = ui.style.icon_button_size;
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(s, s));
         self
     }
 }
@@ -258,7 +271,10 @@ impl<'a> Checkbox<'a> {
         Self {
             checked,
             label,
-            bounds: Rect2D::from_size(Vec2::new(150.0, 24.0)),
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.checkbox_default_width,
+                DEFAULTS.checkbox_default_height,
+            )),
             id: None,
         }
     }
@@ -277,7 +293,13 @@ impl<'a> Checkbox<'a> {
 
     /// Position the checkbox at the current cursor position with default size.
     pub fn at_cursor(mut self, ui: &UiContext) -> Self {
-        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(150.0, 24.0));
+        self.bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(
+                ui.style.checkbox_default_width,
+                ui.style.checkbox_default_height,
+            ),
+        );
         self
     }
 }
@@ -322,7 +344,10 @@ impl<'a> ToggleButton<'a> {
         Self {
             checked,
             label,
-            bounds: Rect2D::from_size(Vec2::new(150.0, 24.0)),
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.checkbox_default_width,
+                DEFAULTS.checkbox_default_height,
+            )),
             id: None,
             checked_color: None,
             unchecked_color: None,
@@ -355,7 +380,13 @@ impl<'a> ToggleButton<'a> {
 
     /// Position the toggle button at the current cursor position with default size.
     pub fn at_cursor(mut self, ui: &UiContext) -> Self {
-        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(150.0, 24.0));
+        self.bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(
+                ui.style.checkbox_default_width,
+                ui.style.checkbox_default_height,
+            ),
+        );
         self
     }
 }
@@ -409,7 +440,10 @@ impl<'a> Slider<'a> {
             label,
             value,
             range,
-            bounds: Rect2D::from_size(Vec2::new(150.0, 20.0)),
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.slider_default_width,
+                DEFAULTS.slider_default_height,
+            )),
             id: None,
         }
     }
@@ -428,7 +462,13 @@ impl<'a> Slider<'a> {
 
     /// Position the slider at the current cursor position with default size.
     pub fn at_cursor(mut self, ui: &UiContext) -> Self {
-        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(150.0, 20.0));
+        self.bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(
+                ui.style.slider_default_width,
+                ui.style.slider_default_height,
+            ),
+        );
         self
     }
 }
@@ -479,7 +519,10 @@ impl<'a> TextInput<'a> {
             text,
             placeholder: None,
             show_clear: false,
-            bounds: Rect2D::from_size(Vec2::new(200.0, 24.0)),
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.text_input_default_width,
+                DEFAULTS.text_input_default_height,
+            )),
             id: None,
         }
     }
@@ -510,7 +553,13 @@ impl<'a> TextInput<'a> {
 
     /// Position the text input at the current cursor position with default size.
     pub fn at_cursor(mut self, ui: &UiContext) -> Self {
-        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(200.0, 24.0));
+        self.bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(
+                ui.style.text_input_default_width,
+                ui.style.text_input_default_height,
+            ),
+        );
         self
     }
 }
@@ -552,7 +601,10 @@ impl<'a> Label<'a> {
     pub fn new(text: &'a str) -> Self {
         Self {
             text,
-            bounds: Rect2D::from_size(Vec2::new(100.0, 20.0)),
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.label_default_width,
+                DEFAULTS.label_default_height,
+            )),
             color: None,
         }
     }
@@ -718,7 +770,10 @@ impl<'a> Badge<'a> {
         Self {
             text,
             color,
-            bounds: Rect2D::from_size(Vec2::new(60.0, 20.0)),
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.badge_default_width,
+                DEFAULTS.badge_default_height,
+            )),
         }
     }
 
@@ -838,7 +893,10 @@ impl<'a> RadioButton<'a> {
             value,
             index,
             label,
-            bounds: Rect2D::from_size(Vec2::new(150.0, 20.0)),
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.radio_button_default_width,
+                DEFAULTS.radio_button_default_height,
+            )),
         }
     }
 
@@ -850,7 +908,13 @@ impl<'a> RadioButton<'a> {
 
     /// Position the radio button at the current cursor position with default size.
     pub fn at_cursor(mut self, ui: &UiContext) -> Self {
-        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(150.0, 20.0));
+        self.bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(
+                ui.style.radio_button_default_width,
+                ui.style.radio_button_default_height,
+            ),
+        );
         self
     }
 }
@@ -891,7 +955,10 @@ impl ProgressBar {
     pub fn new(progress: f32) -> Self {
         Self {
             progress: progress.clamp(0.0, 1.0),
-            bounds: Rect2D::from_size(Vec2::new(200.0, 20.0)),
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.progress_bar_default_width,
+                DEFAULTS.progress_bar_default_height,
+            )),
             color: None,
             bg_color: None,
             show_percentage: false,
@@ -995,7 +1062,10 @@ where
             expanded,
             label,
             content,
-            bounds: Rect2D::from_size(Vec2::new(200.0, 24.0)),
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.collapsible_default_width,
+                DEFAULTS.collapsible_default_height,
+            )),
             default_open: false,
         }
     }
@@ -1077,3 +1147,6 @@ pub use draggable_panel::{
     DraggablePanel, DraggablePanelConfig, DraggablePanelFrame, DraggablePanelState,
     DraggablePanelStyle, PanelState,
 };
+
+mod list_view;
+pub use list_view::ListView;
