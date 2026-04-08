@@ -1,0 +1,95 @@
+{
+  "groupId": "click-cfg",
+  "testedAt": "2026-04-08T00:00:00Z",
+  "isolation": {
+    "workingDirectory": "C:\\dev\\katla",
+    "services": "none",
+    "workingTree": "clean"
+  },
+  "toolsUsed": ["cargo test", "cargo clippy", "cargo check", "rg"],
+  "assertions": [
+    {
+      "id": "VAL-POLISH-001",
+      "title": "Unified click-handling logic",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for `fn click_interaction` in katla_ui/",
+          "expected": "Exactly one definition",
+          "observed": "Exactly 1 definition found in katla_ui/src/context/widgets.rs:94"
+        },
+        {
+          "action": "Search for inline click-detection patterns (pos.x >=, pos.x <=) in widget code outside click_interaction",
+          "expected": "Zero matches",
+          "observed": "Zero matches found across all katla_ui/src/ files"
+        },
+        {
+          "action": "Verify button_with_colors delegates to click_interaction",
+          "expected": "Calls click_interaction",
+          "observed": "button_with_colors (basic.rs:34) calls self.click_interaction with ClickConfig::POPUP_BYPASS"
+        },
+        {
+          "action": "Verify image_button delegates to click_interaction",
+          "expected": "Calls click_interaction",
+          "observed": "image_button (basic.rs:77) calls self.click_interaction with ClickConfig::POPUP_AWARE"
+        },
+        {
+          "action": "Verify menu_bar_dropdown delegates to click_interaction",
+          "expected": "Calls click_interaction",
+          "observed": "menu_bar_dropdown (popup/api.rs:217) calls self.click_interaction with ClickConfig::POPUP_BYPASS"
+        },
+        {
+          "action": "Run cargo test -p katla_ui",
+          "expected": "All tests pass",
+          "observed": "71 passed, 0 failed, exit code 0"
+        },
+        {
+          "action": "Run cargo clippy -p katla_ui",
+          "expected": "No warnings",
+          "observed": "Exit code 0, no warnings"
+        }
+      ],
+      "evidence": {
+        "searchResults": "evidence/polish/click-cfg/VAL-POLISH-001-click-interaction-search.txt",
+        "testOutput": "evidence/polish/click-cfg/VAL-POLISH-001-test-output.txt",
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-POLISH-002",
+      "title": "Consolidate cfg(editor) occurrences",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Count #[cfg(feature = \"editor\")] occurrences in katla_app/src/ using rg --count",
+          "expected": "Total <= 35",
+          "observed": "33 total occurrences across 11 files"
+        },
+        {
+          "action": "Verify EditorState groups editor fields",
+          "expected": "EditorState struct exists with consolidated fields",
+          "observed": "EditorState at application/mod.rs:76 with 15 fields, used as single cfg-gated field on Application"
+        },
+        {
+          "action": "Run cargo check -p katla_app --features editor",
+          "expected": "Succeeds",
+          "observed": "Exit code 0, no errors"
+        },
+        {
+          "action": "Run cargo check -p katla_app --no-default-features",
+          "expected": "Succeeds",
+          "observed": "Exit code 0 (8 dead_code/unused_import warnings, pre-existing)"
+        }
+      ],
+      "evidence": {
+        "cfgCount": "evidence/polish/click-cfg/VAL-POLISH-002-cfg-count.txt",
+        "cargoCheckOutput": "evidence/polish/click-cfg/VAL-POLISH-002-cargo-check.txt"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 2 assertions: 2 passed. VAL-POLISH-001: click_interaction is the single canonical click handler, all button/image_button/menu_bar_dropdown/toggle_button delegate to it, zero inline click patterns, 71 tests pass, zero clippy warnings. VAL-POLISH-002: 33 cfg(editor) occurrences (≤ 35 threshold), EditorState consolidates 15 editor fields, both feature configs compile cleanly."
+}

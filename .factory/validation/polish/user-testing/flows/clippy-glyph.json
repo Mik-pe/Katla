@@ -1,0 +1,91 @@
+{
+  "groupId": "clippy-glyph",
+  "testedAt": "2026-04-08T12:00:00Z",
+  "isolation": {
+    "workingDirectory": "C:\\dev\\katla",
+    "workingTree": "clean (committed code only)",
+    "noExternalServices": true
+  },
+  "toolsUsed": ["cargo clippy", "cargo test", "rg"],
+  "assertions": [
+    {
+      "id": "VAL-POLISH-005",
+      "title": "Audit clippy::too_many_arguments",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for #[allow(clippy::too_many_arguments)] across all .rs files",
+          "expected": "Zero results",
+          "observed": "Zero results — no .rs file contains this annotation"
+        },
+        {
+          "action": "Run cargo clippy --workspace and grep for too_many_arguments",
+          "expected": "No warnings containing too_many_arguments",
+          "observed": "cargo clippy --workspace exited with code 0, no output at all (fully clean)"
+        },
+        {
+          "action": "Run cargo test --workspace",
+          "expected": "All tests pass",
+          "observed": "All tests passed (exit code 0). Some dead_code warnings in katla_gfx test code but zero test failures."
+        }
+      ],
+      "evidence": {
+        "rg_allow_annotation": "Grep for #[allow(clippy::too_many_arguments)] in **/*.rs returned zero matches",
+        "rg_any_mention": "Grep for too_many_arguments in **/*.rs returned zero matches",
+        "clippy_output": "cargo clippy --workspace: exit code 0, no warnings or errors",
+        "test_output": "cargo test --workspace: all tests passed (exit code 0)"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-POLISH-006",
+      "title": "Pool vello_cpu::RenderContext for CJK",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Search for struct GlyphRenderPool in katla_ui/",
+          "expected": "Struct exists",
+          "observed": "Found at katla_ui/src/text/glyph_pool.rs:6 — pub(crate) struct GlyphRenderPool"
+        },
+        {
+          "action": "Search for RenderContext::new in katla_ui/src/text/rasterization.rs",
+          "expected": "Zero in the hot path (only in pool init or tests)",
+          "observed": "One occurrence at line 321, but it is inside #[cfg(test)] mod tests in the test helper function rasterize_glyph_raw. The production code path in get_or_rasterize uses self.glyph_pool.acquire() instead — zero RenderContext::new calls in production hot path."
+        },
+        {
+          "action": "Verify pool uses borrow/closure pattern (not Option::take) for acquire()",
+          "expected": "Closure-based acquire that retains pool ownership",
+          "observed": "GlyphRenderPool::acquire takes a closure F: FnOnce(&mut RenderContext, &mut Pixmap) -> R. The pool retains ownership via self.ctx.as_mut().unwrap() — no Option::take. Caller cannot forget to return the context."
+        },
+        {
+          "action": "Run cargo test -p katla_ui",
+          "expected": "All tests pass",
+          "observed": "71 tests passed, 0 failed (exit code 0)"
+        },
+        {
+          "action": "Run cargo clippy -p katla_ui",
+          "expected": "No warnings",
+          "observed": "cargo clippy -p katla_ui: exit code 0, no warnings or errors"
+        }
+      ],
+      "evidence": {
+        "glyph_pool_struct": "Found at katla_ui/src/text/glyph_pool.rs:6 — pub(crate) struct GlyphRenderPool with acquire() method using closure pattern",
+        "render_context_new_location": "Only in test code (#[cfg(test)] mod tests, line 321). Production path uses pool.acquire().",
+        "pool_pattern": "Closure-based: pub fn acquire<F, R>(&mut self, width: u16, height: u16, f: F) -> R where F: FnOnce(&mut RenderContext, &mut Pixmap) -> R. No Option::take.",
+        "test_output": "cargo test -p katla_ui: 71 passed, 0 failed",
+        "clippy_output": "cargo clippy -p katla_ui: exit code 0, clean"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Cargo build lock contention caused the first cargo clippy --workspace to fail with exit code 1 (blocking waiting for file lock) because another parallel subagent was running cargo commands simultaneously.",
+      "resolved": true,
+      "resolution": "Re-ran cargo clippy --workspace on second attempt which succeeded cleanly.",
+      "affectedAssertions": ["VAL-POLISH-005"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 2 assertions: 2 passed. VAL-POLISH-005: zero #[allow(clippy::too_many_arguments)] annotations remain, zero clippy too_many_arguments warnings, all workspace tests pass. VAL-POLISH-006: GlyphRenderPool struct exists with proper closure-based acquire() pattern, RenderContext::new is only in test code (not production hot path), all katla_ui tests pass, zero clippy warnings."
+}

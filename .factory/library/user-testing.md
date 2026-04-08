@@ -14,7 +14,7 @@ Testing surface, required tools, and resource classification for validation.
 - `cargo test --workspace` — all unit + integration tests
 - `cargo clippy --workspace` — lint
 - `cargo fmt -- --check` — format
-- `cargo run -- -s` — headless 25-frame GPU validation
+- `cargo run -- -s` — headless GPU validation (runs 100 frames, not 25 as contract says)
 
 ### Secondary: GPU Validation Examples
 - `cargo run -p katla_gfx --example picking_validation` — GPU picking
