@@ -1,27 +1,19 @@
 {
   "milestone": "polish",
-  "round": 1,
-  "status": "fail",
+  "round": 2,
+  "status": "pass",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
     "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
     "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
   },
   "reviewsSummary": {
-    "total": 5,
-    "passed": 4,
-    "failed": 1,
-    "failedFeatures": ["pool-vello-rendercontext-and-fix-doctests"]
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "failedFeatures": []
   },
-  "blockingIssues": [
-    {
-      "featureId": "pool-vello-rendercontext-and-fix-doctests",
-      "severity": "blocking",
-      "description": "GlyphRenderPool.acquire() uses Option::take() which removes the (RenderContext, Pixmap) pair from the pool. The caller in rasterization.rs gets ownership and drops it at end-of-scope without returning it. Since self.ctx is always None after a call, every acquire() triggers a fresh RenderContext::new() + Pixmap::new() allocation. The pool provides zero reuse benefit — it allocates exactly as often as the pre-pool code did. Fix: the caller must return the pair to the pool after use (e.g., via a release() method), or the pool must be restructured to lend the pair via a callback pattern instead of transferring ownership.",
-      "file": "katla_ui/src/text/glyph_pool.rs",
-      "line": 36
-    }
-  ],
+  "blockingIssues": [],
   "nonBlockingIssues": [
     {
       "featureId": "audit-too-many-arguments",
@@ -35,13 +27,6 @@
       "severity": "non_blocking",
       "description": "Commit includes significant scope creep: shader contract changes, dead code removal, widget default sizes from another feature, and editor handler method extraction — all intermingled with the parameter struct work.",
       "file": "multiple files",
-      "line": 0
-    },
-    {
-      "featureId": "audit-too-many-arguments",
-      "severity": "non_blocking",
-      "description": "debug_output.txt (runtime artifact) was committed. Now added to .gitignore.",
-      "file": "debug_output.txt",
       "line": 0
     },
     {
@@ -66,18 +51,7 @@
       "line": 84
     }
   ],
-  "appliedUpdates": [
-    {
-      "target": ".gitignore",
-      "description": "Added debug_output.txt to .gitignore to prevent runtime artifacts from being committed.",
-      "sourceFeature": "audit-too-many-arguments"
-    },
-    {
-      "target": "library",
-      "description": "Updated fullscreen-shader-patterns.md to reflect that post-processing params now use frame_data.tonemap/overlay instead of objects[0] abuse.",
-      "sourceFeature": "audit-too-many-arguments"
-    }
-  ],
+  "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
@@ -145,7 +119,12 @@
       "observation": "vello_cpu API knowledge (Pixmap::data_as_u8_slice_mut, RenderContext::reset)",
       "reason": "Already documented in the glyph_pool.rs source code. Adding to library would be redundant with the implementation itself.",
       "sourceFeature": "pool-vello-rendercontext-and-fix-doctests"
+    },
+    {
+      "observation": "The closure-based acquire pattern is a good Rust pattern for scoped borrowing from pools",
+      "reason": "Implementation detail already visible in the source code. Not a cross-cutting convention that needs separate documentation.",
+      "sourceFeature": "fix-glyph-render-pool-ownership"
     }
   ],
-  "previousRound": null
+  "previousRound": ".factory/validation/polish/scrutiny/synthesis.json"
 }

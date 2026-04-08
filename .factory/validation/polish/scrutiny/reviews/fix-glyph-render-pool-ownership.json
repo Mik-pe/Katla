@@ -1,0 +1,21 @@
+{
+  "featureId": "fix-glyph-render-pool-ownership",
+  "reviewedAt": "2026-04-08T12:45:00.000Z",
+  "commitId": "297e2d8",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix correctly addresses the blocking ownership bug from the prior review. GlyphRenderPool::acquire() was changed from returning an owned tuple (via Option::take()) to a closure-based API that borrows via Option::as_mut(). The pool now retains ownership of (RenderContext, Pixmap) at all times, and the caller in rasterization.rs performs all rendering work inside the closure, returning only the extracted alpha Vec<u8>. The fix is minimal, focused, and correctly scoped.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The closure-based acquire pattern (FnOnce receiving &mut references) is a proven Rust pattern for scoped borrowing from pools. This is a good pattern to document for future pool implementations in the project.",
+      "evidence": "glyph_pool.rs:24-26 — pub fn acquire<F, R>(&mut self, width: u16, height: u16, f: F) -> R where F: FnOnce(&mut RenderContext, &mut Pixmap) -> R"
+    }
+  ],
+  "addressesFailureFrom": ".factory/validation/polish/scrutiny/reviews/pool-vello-rendercontext-and-fix-doctests.json",
+  "summary": "PASS. The fix correctly resolves the blocking ownership bug. The prior review identified that acquire() used Option::take() which transferred ownership to the caller, and the caller dropped the pair without returning it — making the pool provide zero reuse. The fix restructures acquire() to take a FnOnce closure that receives (&mut RenderContext, &mut Pixmap) via as_mut() borrow, so the pool retains ownership at all times. The caller (rasterization.rs) now performs all rendering and alpha extraction inside the closure and returns only the alpha Vec<u8>. Key verification: (1) self.ctx.take() replaced with self.ctx.as_mut() — pool never loses ownership, (2) closure receives mutable borrows not owned values, (3) only one caller exists and it correctly uses the new API, (4) all 71 katla_ui tests pass, (5) zero clippy warnings, (6) workspace compiles cleanly."
+}
