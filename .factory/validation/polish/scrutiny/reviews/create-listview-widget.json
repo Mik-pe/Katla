@@ -1,0 +1,45 @@
+{
+  "featureId": "create-listview-widget",
+  "reviewedAt": "2026-04-08T10:22:00.000Z",
+  "commitId": "58f8de2",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean implementation of a reusable ListView widget in katla_ui with virtualization, and a well-executed refactor of the hierarchy panel to use it. The ListView correctly integrates with ScrollAreaState, computes visible row ranges based on scroll offset, and delegates per-item rendering and interaction to a callback closure. The hierarchy refactor pre-filters visible entities into a Vec and captures interaction events through closure-captured Option variables, which is a sound pattern for immediate-mode UI. Dependency rules are respected (katla_ui has no dependency on katla_ecs or katla_app). All verification steps passed with zero clippy warnings.",
+    "issues": [
+      {
+        "file": "katla_ui/src/widgets/list_view.rs",
+        "line": 97,
+        "severity": "non_blocking",
+        "description": "The 4.0 padding added to total_content_height (line 97: `self.item_count as f32 * self.row_height + 4.0`) is not symmetrically applied to the item_y calculation (line 106: `bounds.min.y() + 2.0 + ...`). The top padding is 2.0, meaning the bottom padding would be 4.0 - 2.0 = 2.0 only if the content fills exactly. For very short lists, there's an effective 2.0px top padding and 2.0px bottom padding, which is fine. However, the magic number 4.0 is not documented and the split between top (2.0) and bottom (implicit 2.0) padding could be clearer. Not a bug, but a minor clarity issue."
+      },
+      {
+        "file": "katla_ui/src/widgets/list_view.rs",
+        "line": 110,
+        "severity": "non_blocking",
+        "description": "The virtualization range calculation uses floor/ceil for first/last visible rows which may render one extra row above and below the viewport. This is intentional (ensures no visible gaps during scrolling) and is the correct approach, but the `ceil()` on last_visible_row could render a row whose bottom edge is barely peeking into view, wasting a small amount of work. This is standard practice for virtualized lists and not a real concern."
+      },
+      {
+        "file": "katla_app/src/ui/editor_ui/hierarchy.rs",
+        "line": 134,
+        "severity": "non_blocking",
+        "description": "The visible entities are pre-collected into a Vec<&EntityInfo> each frame (line 134: `self.entities.iter().filter(...).collect()`). This allocates every frame. For small entity counts this is negligible, but for very large scenes with thousands of entities, this could cause measurable allocation pressure. A two-pass approach (first count, then iterate with index) would avoid allocation, but would complicate the callback. The current approach is acceptable for the typical use case."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The commit includes changes to katla_ui/src/widgets/mod.rs that replace hardcoded widget default dimensions with DEFAULTS constants (e.g., button 100x30 -> DEFAULTS.button_default_width/height). This is part of VAL-POLISH-003 (widget default sizes from style), which is a different feature (reduce-cfg-editor-and-widget-sizes). Both features were committed together in the same commit. This is not a problem per se, but it means the diff for this feature is larger than necessary and the two features' changes are interleaved in the same commit.",
+      "evidence": "git show 58f8de2 --stat shows both list_view.rs (new, 130 lines) AND mod.rs (+111/-2 lines of widget default size changes). The mod.rs changes are from VAL-POLISH-003, not VAL-POLISH-004."
+    },
+    {
+      "area": "conventions",
+      "observation": "The DEFAULTS constant and WidgetDefaults struct were introduced for widget new() constructors. The pattern is: new() uses DEFAULTS (compile-time constant), at_cursor() uses ui.style (runtime). This dual-source pattern is not documented anywhere in AGENTS.md or .factory/library/ and could confuse future workers adding new widgets.",
+      "evidence": "katla_ui/src/widgets/mod.rs line 82 (Button::new uses DEFAULTS.button_default_width) vs line 112 (Button::at_cursor uses ui.style.button_default_width). katla_ui/src/style.rs line 785 (DEFAULTS constant definition) vs line 760 (UiStyle::dark with same-named fields)."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The create-listview-widget feature is well-implemented and meets all VAL-POLISH-004 requirements. The ListView widget provides proper virtualization, integrates cleanly with ScrollAreaState, supports uniform row heights with per-item rendering callbacks, and the hierarchy panel has been fully refactored to use it with zero manual cursor advancement remaining. Three minor non-blocking observations were noted (magic padding number, per-frame Vec allocation, and an interleaved commit with VAL-POLISH-003 changes). Overall: pass."
+}

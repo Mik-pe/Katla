@@ -1,0 +1,48 @@
+{
+  "featureId": "reduce-cfg-editor-and-widget-sizes",
+  "reviewedAt": "2026-04-08T12:30:00Z",
+  "commitId": "53b2544",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The cfg(editor) reduction task is well-executed. 11 editor-specific Application methods were extracted into editor_methods.rs (cfg-gated module) with matching no-op stubs in no_editor_methods.rs, replacing 22 per-method cfg annotation pairs with 2 file-level module gates. Additional reductions in renderer.rs consolidated cfg-gated code into helper methods (viewport_size, build_entity_instance_map, prepare_draw_lists) and a dedicated #[cfg(feature = 'editor')] impl Application block. The widget default sizes task was completed by concurrent workers (fbd807c for WidgetDefaults/DEFAULTS const, 58f8de2 for updating widget constructors), which this worker correctly acknowledged.",
+    "issues": [
+      {
+        "file": "katla_app/src/application/editor_methods.rs",
+        "line": 84,
+        "severity": "non_blocking",
+        "description": "The handle_editor_mouse_release method (called from on_mouse_input) presumably lives elsewhere (gizmo module) and ends gizmo drag on left mouse release. The original inline code in mod.rs had the gizmo end_drag call within the WindowEvent::MouseInput handler after on_mouse_input was called. After refactoring, on_mouse_input calls handle_editor_mouse_press then handle_editor_mouse_release, which should preserve the same behavior since both are called unconditionally for any mouse input event. The behavior is preserved but the ordering dependency is subtle."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The pattern of extracting cfg-gated methods into paired editor_methods.rs / no_editor_methods.rs files is a new convention established by this feature. This is a significant pattern for future cfg reduction work and should be documented in AGENTS.md or katla_app/AGENTS.md.",
+      "evidence": "katla_app/src/application/editor_methods.rs and no_editor_methods.rs — new pattern of file-level module gates replacing per-method cfg annotations"
+    },
+    {
+      "area": "conventions",
+      "observation": "The pattern of consolidating per-method cfg-gated helpers into a dedicated #[cfg(feature = 'editor')] impl Application block (as done in renderer.rs) is another useful convention for reducing cfg noise. This complements the file-level module gate pattern.",
+      "evidence": "katla_app/src/application/renderer.rs:446-447 — #[cfg(feature = 'editor')] impl Application block containing collect_gizmo_draw_calls, collect_billboard_draw_calls, collect_selected_instance_indices, prepare_editor_draw_lists"
+    },
+    {
+      "area": "conventions",
+      "observation": "The EditorState::new() constructor was added in this feature, establishing that EditorState construction should go through a dedicated constructor rather than inline struct literals. This is worth documenting since future editor-related changes may need to modify EditorState.",
+      "evidence": "katla_app/src/application/mod.rs:111 — EditorState::new() constructor, katla_app/src/application/builder.rs:784 — single usage site"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The widget default sizes task (part 2 of this feature) was completed by two different concurrent workers rather than this feature's sessions. The WidgetDefaults struct and DEFAULTS const were added in commit fbd807c (audit-too-many-arguments), and widget constructors were updated to use them in commit 58f8de2 (create-listview-widget). This indicates that the widget style work was opportunistically done by workers who were already modifying those files, which is a valid workflow pattern.",
+      "evidence": "git log -S 'pub const DEFAULTS: WidgetDefaults' shows fbd807c; git log -S 'DEFAULTS.button_default_width' in widgets/mod.rs shows 58f8de2; handoff says 'Widget default size task was already completed by a prior worker'"
+    },
+    {
+      "area": "services",
+      "observation": "No new services or commands were needed for this feature. All verification was done with existing cargo commands already in services.yaml.",
+      "evidence": "Handoff verification commands all match existing services.yaml entries (cargo test --workspace, cargo check -p katla_app --no-default-features, cargo clippy --workspace, cargo fmt)"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. The cfg(editor) count was reduced from 45 to 33 (target was ≤35), meeting the requirement. The approach of extracting 11 method pairs into cfg-gated module files (editor_methods.rs / no_editor_methods.rs) is clean and follows the project's existing submodule pattern. Additional reductions in renderer.rs used impl-block-level gating. The widget default sizes task was completed by concurrent workers and verified to be correct — all widget constructors use DEFAULTS constants in new() and ui.style fields in at_cursor(), with all style fields being pub. All verification steps passed: both editor and non-editor builds compile, all 207 tests pass, zero clippy warnings, zero hardcoded dimension literals in widget constructors."
+}

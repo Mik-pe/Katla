@@ -8,6 +8,7 @@ imgui.ini
 .claude/settings.local.json
 !.claude/skills/
 frames/
+debug_output.txt
 
 *.pdb
 *.exe
