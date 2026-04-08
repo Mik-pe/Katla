@@ -7,21 +7,37 @@
 //!
 //! # Examples
 //!
-//! ```ignore
+//! ```
+//! use katla_ecs::{World, Component};
+//!
+//! #[derive(Component)]
+//! struct TransformComponent { x: f32, y: f32, z: f32 }
+//!
+//! #[derive(Component)]
+//! struct VelocityComponent { vx: f32, vy: f32, vz: f32 }
+//!
+//! #[derive(Component)]
+//! struct ForceComponent { fx: f32, fy: f32, fz: f32 }
+//!
+//! let mut world = World::new();
+//! world.spawn((
+//!     TransformComponent { x: 0.0, y: 0.0, z: 0.0 },
+//!     VelocityComponent { vx: 1.0, vy: 0.0, vz: 0.0 },
+//! ));
+//! world.spawn((
+//!     TransformComponent { x: 5.0, y: 0.0, z: 0.0 },
+//!     VelocityComponent { vx: 2.0, vy: 0.0, vz: 0.0 },
+//!     ForceComponent { fx: 0.0, fy: -9.8, fz: 0.0 },
+//! ));
+//!
 //! // Query single component
-//! for (entity, transform) in storage.query::<&mut TransformComponent>() {
-//!     transform.position += Vec3::new(0.0, 1.0, 0.0);
+//! for (_entity, velocity) in world.query::<&VelocityComponent>() {
+//!     assert!(velocity.vx > 0.0);
 //! }
 //!
 //! // Query two components
-//! for (entity, velocity, force) in storage.query::<(&mut VelocityComponent, &ForceComponent)>() {
-//!     velocity.acceleration = force.value / velocity.mass;
-//! }
-//!
-//! // Query three components
-//! for (entity, vel, drag, force) in
-//!     storage.query::<(&VelocityComponent, &DragComponent, &mut ForceComponent)>() {
-//!     force.value += calculate_drag(vel, drag);
+//! for (_entity, velocity, force) in world.query::<(&VelocityComponent, &ForceComponent)>() {
+//!     assert_eq!(force.fy, -9.8);
 //! }
 //! ```
 

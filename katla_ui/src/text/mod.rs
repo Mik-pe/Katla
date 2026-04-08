@@ -17,6 +17,7 @@
 
 mod atlas;
 mod font_loading;
+mod glyph_pool;
 mod measurement;
 mod rasterization;
 
@@ -205,6 +206,8 @@ pub struct FontSystem {
     pub(super) atlas_resized: bool,
     /// Padding around glyphs in atlas.
     pub(super) glyph_padding: u32,
+    /// Reusable render context / pixmap pool for glyph rasterization.
+    pub(super) glyph_pool: glyph_pool::GlyphRenderPool,
 }
 
 impl FontSystem {
@@ -243,6 +246,7 @@ impl FontSystem {
             atlas_dirty: true,
             atlas_resized: false,
             glyph_padding: 1,
+            glyph_pool: glyph_pool::GlyphRenderPool::new(),
         }
     }
 

@@ -156,15 +156,23 @@ impl World {
     /// Use this for accessing individual entities by ID. For iterating over multiple entities
     /// with components, prefer using queries:
     ///
-    /// ```ignore
+    /// ```
+    /// use katla_ecs::{World, Component, EntityId};
+    ///
+    /// #[derive(Component)]
+    /// struct TransformComponent { x: f32 }
+    ///
+    /// let mut world = World::new();
+    /// let entity = world.spawn((TransformComponent { x: 1.0 },));
+    ///
     /// // Prefer queries for iteration:
-    /// for (entity, transform) in world.query::<&TransformComponent>() {
-    ///     // ...
+    /// for (_entity, transform) in world.query::<&TransformComponent>() {
+    ///     assert_eq!(transform.x, 1.0);
     /// }
     ///
     /// // Use get_component for specific entity access:
-    /// if let Some(transform) = world.get_component::<TransformComponent>(specific_entity) {
-    ///     // ...
+    /// if let Some(transform) = world.get_component::<TransformComponent>(entity) {
+    ///     assert_eq!(transform.x, 1.0);
     /// }
     /// ```
     pub fn get_component<T>(&self, id: EntityId) -> Option<&T>

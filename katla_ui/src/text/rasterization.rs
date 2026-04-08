@@ -6,7 +6,6 @@ use skrifa::{
     outline::{DrawSettings, OutlinePen},
 };
 use vello_cpu::kurbo::{Affine, BezPath, Point};
-use vello_cpu::{Pixmap, RenderContext};
 
 use katla_math::{Rect2D, Vec2};
 
@@ -217,13 +216,11 @@ impl super::FontSystem {
         // Simple translate to map the path into the bitmap origin.
         let transform = Affine::translate((-padded.x0, -padded.y0));
 
-        let mut ctx = RenderContext::new(glyph_width_u16, glyph_height_u16);
+        let (mut ctx, mut pixmap) = self.glyph_pool.acquire(glyph_width_u16, glyph_height_u16);
         ctx.set_paint(vello_cpu::peniko::color::palette::css::WHITE);
         ctx.set_transform(transform);
         ctx.fill_path(&path);
         ctx.flush();
-
-        let mut pixmap = Pixmap::new(glyph_width_u16, glyph_height_u16);
         ctx.render_to_pixmap(&mut pixmap);
 
         // Extract alpha channel from premultiplied RGBA.
