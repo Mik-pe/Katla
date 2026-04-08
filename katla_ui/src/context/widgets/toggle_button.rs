@@ -4,10 +4,11 @@
 //! These are private implementation details called by the public builder widgets
 //! in `crate::widgets`.
 
-use katla_math::{Color, Rect2D, Vec2};
+use katla_math::Vec2;
 
 use crate::Response;
 use crate::icons::ForkAwesome;
+use crate::widgets::ToggleButtonParams;
 
 use super::super::UiContext;
 
@@ -16,63 +17,58 @@ impl UiContext {
     ///
     /// Returns a Response. Check `response.clicked` for click.
     /// Colors are passed as parameters to allow theme customization.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn toggle_button(
-        &mut self,
-        id: &str,
-        label: &str,
-        checked: bool,
-        bounds: Rect2D,
-        checked_color: Color,
-        unchecked_color: Color,
-        text_color: Color,
-    ) -> Response {
-        let widget_id = self.generate_id(id);
-        let hovered = self.update_hover(widget_id, bounds);
+    pub(crate) fn toggle_button(&mut self, params: &ToggleButtonParams) -> Response {
+        let widget_id = self.generate_id(params.id);
+        let hovered = self.update_hover(widget_id, params.bounds);
         let click_result = self.click_interaction(
             widget_id,
             hovered,
-            bounds,
+            params.bounds,
             super::super::interaction::ClickConfig::POPUP_AWARE,
         );
         let clicked = click_result.is_clicked();
         let active = click_result.is_active();
 
         // Draw background
-        let bg_color = if checked {
-            checked_color
+        let bg_color = if params.checked {
+            params.checked_color
         } else {
-            unchecked_color
+            params.unchecked_color
         };
-        self.draw_rect(bounds, bg_color);
+        self.draw_rect(params.bounds, bg_color);
 
         // Draw check icon and label
         let font_size = self.style.font_size;
         let icon_size = font_size;
         let padding = font_size;
-        let text_x = bounds.min.x() + padding;
-        let text_y = bounds.min.y() + 6.0;
+        let text_x = params.bounds.min.x() + padding;
+        let text_y = params.bounds.min.y() + 6.0;
 
-        if checked {
+        if params.checked {
             let check_icon = ForkAwesome::CHECK;
-            self.draw_icon(check_icon, Vec2::new(text_x, text_y), icon_size, text_color);
+            self.draw_icon(
+                check_icon,
+                Vec2::new(text_x, text_y),
+                icon_size,
+                params.text_color,
+            );
             self.draw_text(
-                label,
+                params.label,
                 Vec2::new(text_x + icon_size + 4.0, text_y),
-                text_color,
+                params.text_color,
                 font_size,
             );
         } else {
             // Reserve space for alignment
             self.draw_text(
-                label,
+                params.label,
                 Vec2::new(text_x + icon_size + 4.0, text_y),
-                text_color,
+                params.text_color,
                 font_size,
             );
         }
 
         // Use Response builder for consistent construction
-        Response::interactive(clicked, hovered, active, bounds, &self.input)
+        Response::interactive(clicked, hovered, active, params.bounds, &self.input)
     }
 }

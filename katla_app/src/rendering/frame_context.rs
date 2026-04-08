@@ -103,12 +103,13 @@ impl FrameContext {
             light_color: [1.0, 0.98, 0.95, 0.0],   // Slightly warm white
             light_intensity: [1.0, 0.0, 0.0, 0.0], // Base intensity for PBR
             tiles: [0, 0, 0, 0],
+            tonemap: [1.0, 2.2, 0.0, 0.0],
+            overlay: [0.0, 0.0, 0.0, 0.0],
+            compositing: [0.0, 0.0, 0.0, 0.0],
         };
     }
 
     /// Set full frame uniforms including camera and lighting.
-    ///
-    /// Use this for custom lighting configurations.
     pub fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
         self.frame_uniforms = uniforms;
     }

@@ -82,7 +82,6 @@ pub enum AssetAction {
     CreateFolder(PathBuf),
     /// Drag asset to viewport (spawn entity)
     DragToViewport {
-        #[allow(dead_code)]
         path: PathBuf,
         asset_type: AssetType,
         screen_pos: Vec2,

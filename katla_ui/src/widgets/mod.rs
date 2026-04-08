@@ -35,6 +35,16 @@
 //!     .hover_color(Color::LIGHT_BLUE));
 //! ```
 
+pub(crate) struct ToggleButtonParams<'a> {
+    pub id: &'a str,
+    pub label: &'a str,
+    pub checked: bool,
+    pub bounds: katla_math::Rect2D,
+    pub checked_color: katla_math::Color,
+    pub unchecked_color: katla_math::Color,
+    pub text_color: katla_math::Color,
+}
+
 use crate::style::DEFAULTS;
 use crate::{Response, UiContext};
 use katla_math::{Color, Rect2D, Vec2};
@@ -397,15 +407,15 @@ impl<'a> crate::Widget for ToggleButton<'a> {
         let checked_color = self.checked_color.unwrap_or(ui.style.selectable_selected);
         let unchecked_color = self.unchecked_color.unwrap_or(ui.style.menu_bg);
         let text_color = ui.style.button_text;
-        ui.toggle_button(
+        ui.toggle_button(&ToggleButtonParams {
             id,
-            self.label,
-            self.checked,
-            self.bounds,
+            label: self.label,
+            checked: self.checked,
+            bounds: self.bounds,
             checked_color,
             unchecked_color,
             text_color,
-        )
+        })
     }
 }
 

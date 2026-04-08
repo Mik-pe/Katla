@@ -172,12 +172,6 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_default() {
-        let handle = GraphResourceHandle::default();
-        assert!(handle.is_none());
-    }
-
-    #[test]
     fn test_handle_copy_clone() {
         let handle = GraphResourceHandle::new(10);
         let copied = handle;

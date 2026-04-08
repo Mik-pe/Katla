@@ -96,42 +96,49 @@ pub(crate) struct OutlineInitContext<'a> {
     pub asset_registry: &'a mut AssetRegistry,
 }
 
+/// Parameters for building an outline pipeline.
+struct OutlinePipelineParams {
+    storage_layout: vk::DescriptorSetLayout,
+    stencil_state: vk::StencilOpState,
+    depth_compare: CompareOp,
+    cull_mode: CullMode,
+    color_format: ImageFormat,
+    color_write_mask: vk::ColorComponentFlags,
+    empty_layout: Option<vk::DescriptorSetLayout>,
+    params_layout: Option<vk::DescriptorSetLayout>,
+}
+
 impl OutlineSubsystem {
-    #[allow(clippy::too_many_arguments)]
     fn build_outline_pipeline(
         ctx: &mut OutlineInitContext,
         vert: vk::ShaderModule,
         frag: vk::ShaderModule,
-        storage_layout: vk::DescriptorSetLayout,
-        stencil_state: vk::StencilOpState,
-        depth_compare: CompareOp,
-        cull_mode: CullMode,
-        color_format: ImageFormat,
-        color_write_mask: vk::ColorComponentFlags,
-        empty_layout: Option<vk::DescriptorSetLayout>,
-        params_layout: Option<vk::DescriptorSetLayout>,
+        params: &OutlinePipelineParams,
     ) -> Result<PipelineHandle, RendererError> {
         let mut builder = PipelineBuilder::new(ctx.context.clone())
             .with_shaders(vert, frag)
             .with_soa_attribute(0, VertexFormat::RGB32f)
-            .with_depth_test(true, false, depth_compare)
-            .with_cull_mode(cull_mode, FrontFace::CounterClockwise)
-            .with_stencil_test(stencil_state, stencil_state)
-            .with_color_write_mask(color_write_mask)
-            .with_rendering_formats(Some(color_format), Some(ImageFormat::D32SfloatS8Uint));
+            .with_depth_test(true, false, params.depth_compare)
+            .with_cull_mode(params.cull_mode, FrontFace::CounterClockwise)
+            .with_stencil_test(params.stencil_state, params.stencil_state)
+            .with_color_write_mask(params.color_write_mask)
+            .with_rendering_formats(
+                Some(params.color_format),
+                Some(ImageFormat::D32SfloatS8Uint),
+            );
 
-        if let Some(empty_layout) = empty_layout {
+        if let Some(empty_layout) = params.empty_layout {
             let skeleton_layout = ctx.material_compiler.skeleton_descriptor_layout();
-            if let Some(params_layout) = params_layout {
+            if let Some(params_layout) = params.params_layout {
                 builder = builder.with_descriptor_layouts(vec![
-                    storage_layout,
+                    params.storage_layout,
                     empty_layout,
                     skeleton_layout,
                     params_layout,
                 ]);
             } else {
                 builder = builder.with_descriptor_layouts(vec![
-                    storage_layout,
+                    params.storage_layout,
                     empty_layout,
                     skeleton_layout,
                 ]);
@@ -140,10 +147,11 @@ impl OutlineSubsystem {
                 .with_soa_attribute(4, VertexFormat::RGBA16u)
                 .with_soa_attribute(5, VertexFormat::RGBA32f);
         } else {
-            if let Some(params_layout) = params_layout {
-                builder = builder.with_descriptor_layouts(vec![storage_layout, params_layout]);
+            if let Some(params_layout) = params.params_layout {
+                builder =
+                    builder.with_descriptor_layouts(vec![params.storage_layout, params_layout]);
             } else {
-                builder = builder.with_descriptor_layouts(vec![storage_layout]);
+                builder = builder.with_descriptor_layouts(vec![params.storage_layout]);
             }
         }
 
@@ -333,14 +341,16 @@ impl OutlineSubsystem {
                 ctx,
                 vert,
                 frag,
-                storage_layout,
-                stencil_state,
-                CompareOp::GreaterOrEqual,
-                CullMode::Back,
-                ImageFormat::R16G16B16A16Sfloat,
-                vk::ColorComponentFlags::empty(),
-                None,
-                None,
+                &OutlinePipelineParams {
+                    storage_layout,
+                    stencil_state,
+                    depth_compare: CompareOp::GreaterOrEqual,
+                    cull_mode: CullMode::Back,
+                    color_format: ImageFormat::R16G16B16A16Sfloat,
+                    color_write_mask: vk::ColorComponentFlags::empty(),
+                    empty_layout: None,
+                    params_layout: None,
+                },
             )?;
             self.stencil_mark_pipeline = handle;
         }
@@ -366,14 +376,16 @@ impl OutlineSubsystem {
                 ctx,
                 vert,
                 frag,
-                storage_layout,
-                stencil_state,
-                CompareOp::GreaterOrEqual,
-                CullMode::Back,
-                ImageFormat::R16G16B16A16Sfloat,
-                vk::ColorComponentFlags::empty(),
-                Some(ctx.shared_empty_descriptor_layout),
-                None,
+                &OutlinePipelineParams {
+                    storage_layout,
+                    stencil_state,
+                    depth_compare: CompareOp::GreaterOrEqual,
+                    cull_mode: CullMode::Back,
+                    color_format: ImageFormat::R16G16B16A16Sfloat,
+                    color_write_mask: vk::ColorComponentFlags::empty(),
+                    empty_layout: Some(ctx.shared_empty_descriptor_layout),
+                    params_layout: None,
+                },
             )?;
             self.stencil_mark_skinned_pipeline = handle;
         }
@@ -398,14 +410,16 @@ impl OutlineSubsystem {
                 ctx,
                 vert,
                 frag,
-                storage_layout,
-                stencil_state,
-                CompareOp::GreaterOrEqual,
-                CullMode::Back,
-                ImageFormat::R16G16B16A16Sfloat,
-                vk::ColorComponentFlags::empty(),
-                None,
-                None,
+                &OutlinePipelineParams {
+                    storage_layout,
+                    stencil_state,
+                    depth_compare: CompareOp::GreaterOrEqual,
+                    cull_mode: CullMode::Back,
+                    color_format: ImageFormat::R16G16B16A16Sfloat,
+                    color_write_mask: vk::ColorComponentFlags::empty(),
+                    empty_layout: None,
+                    params_layout: None,
+                },
             )?;
             self.occlusion_mark_pipeline = handle;
         }
@@ -431,14 +445,16 @@ impl OutlineSubsystem {
                 ctx,
                 vert,
                 frag,
-                storage_layout,
-                stencil_state,
-                CompareOp::GreaterOrEqual,
-                CullMode::Back,
-                ImageFormat::R16G16B16A16Sfloat,
-                vk::ColorComponentFlags::empty(),
-                Some(ctx.shared_empty_descriptor_layout),
-                None,
+                &OutlinePipelineParams {
+                    storage_layout,
+                    stencil_state,
+                    depth_compare: CompareOp::GreaterOrEqual,
+                    cull_mode: CullMode::Back,
+                    color_format: ImageFormat::R16G16B16A16Sfloat,
+                    color_write_mask: vk::ColorComponentFlags::empty(),
+                    empty_layout: Some(ctx.shared_empty_descriptor_layout),
+                    params_layout: None,
+                },
             )?;
             self.occlusion_mark_skinned_pipeline = handle;
         }
@@ -463,17 +479,19 @@ impl OutlineSubsystem {
                 ctx,
                 vert,
                 frag,
-                storage_layout,
-                stencil_state,
-                CompareOp::GreaterOrEqual,
-                CullMode::Front,
-                ImageFormat::R16G16B16A16Sfloat,
-                vk::ColorComponentFlags::R
-                    | vk::ColorComponentFlags::G
-                    | vk::ColorComponentFlags::B
-                    | vk::ColorComponentFlags::A,
-                None,
-                Some(self.params_descriptor_layout),
+                &OutlinePipelineParams {
+                    storage_layout,
+                    stencil_state,
+                    depth_compare: CompareOp::GreaterOrEqual,
+                    cull_mode: CullMode::Front,
+                    color_format: ImageFormat::R16G16B16A16Sfloat,
+                    color_write_mask: vk::ColorComponentFlags::R
+                        | vk::ColorComponentFlags::G
+                        | vk::ColorComponentFlags::B
+                        | vk::ColorComponentFlags::A,
+                    empty_layout: None,
+                    params_layout: Some(self.params_descriptor_layout),
+                },
             )?;
             self.outline_draw_pipeline = handle;
         }
@@ -499,17 +517,19 @@ impl OutlineSubsystem {
                 ctx,
                 vert,
                 frag,
-                storage_layout,
-                stencil_state,
-                CompareOp::GreaterOrEqual,
-                CullMode::Front,
-                ImageFormat::R16G16B16A16Sfloat,
-                vk::ColorComponentFlags::R
-                    | vk::ColorComponentFlags::G
-                    | vk::ColorComponentFlags::B
-                    | vk::ColorComponentFlags::A,
-                Some(ctx.shared_empty_descriptor_layout),
-                Some(self.params_descriptor_layout),
+                &OutlinePipelineParams {
+                    storage_layout,
+                    stencil_state,
+                    depth_compare: CompareOp::GreaterOrEqual,
+                    cull_mode: CullMode::Front,
+                    color_format: ImageFormat::R16G16B16A16Sfloat,
+                    color_write_mask: vk::ColorComponentFlags::R
+                        | vk::ColorComponentFlags::G
+                        | vk::ColorComponentFlags::B
+                        | vk::ColorComponentFlags::A,
+                    empty_layout: Some(ctx.shared_empty_descriptor_layout),
+                    params_layout: Some(self.params_descriptor_layout),
+                },
             )?;
             self.outline_draw_skinned_pipeline = handle;
         }
@@ -549,17 +569,19 @@ impl OutlineSubsystem {
                 ctx,
                 vert,
                 frag,
-                storage_layout,
-                stencil_state,
-                CompareOp::Always,
-                CullMode::Back,
-                ImageFormat::R8Unorm,
-                vk::ColorComponentFlags::R
-                    | vk::ColorComponentFlags::G
-                    | vk::ColorComponentFlags::B
-                    | vk::ColorComponentFlags::A,
-                None,
-                None,
+                &OutlinePipelineParams {
+                    storage_layout,
+                    stencil_state,
+                    depth_compare: CompareOp::Always,
+                    cull_mode: CullMode::Back,
+                    color_format: ImageFormat::R8Unorm,
+                    color_write_mask: vk::ColorComponentFlags::R
+                        | vk::ColorComponentFlags::G
+                        | vk::ColorComponentFlags::B
+                        | vk::ColorComponentFlags::A,
+                    empty_layout: None,
+                    params_layout: None,
+                },
             )?;
             self.stencil_indicator_pipeline = handle;
         }
@@ -584,17 +606,19 @@ impl OutlineSubsystem {
                 ctx,
                 vert,
                 frag,
-                storage_layout,
-                stencil_state,
-                CompareOp::Always,
-                CullMode::Back,
-                ImageFormat::R8Unorm,
-                vk::ColorComponentFlags::R
-                    | vk::ColorComponentFlags::G
-                    | vk::ColorComponentFlags::B
-                    | vk::ColorComponentFlags::A,
-                Some(ctx.shared_empty_descriptor_layout),
-                None,
+                &OutlinePipelineParams {
+                    storage_layout,
+                    stencil_state,
+                    depth_compare: CompareOp::Always,
+                    cull_mode: CullMode::Back,
+                    color_format: ImageFormat::R8Unorm,
+                    color_write_mask: vk::ColorComponentFlags::R
+                        | vk::ColorComponentFlags::G
+                        | vk::ColorComponentFlags::B
+                        | vk::ColorComponentFlags::A,
+                    empty_layout: Some(ctx.shared_empty_descriptor_layout),
+                    params_layout: None,
+                },
             )?;
             self.stencil_indicator_skinned_pipeline = handle;
         }

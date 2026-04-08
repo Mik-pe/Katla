@@ -12,14 +12,10 @@
 @group(0) @binding(0)
 var<storage, read> frame_data: FrameUniforms;
 
-@group(0) @binding(1)
-var<storage, read> objects: array<ObjectUniforms>;
-
 @fragment
 fn fs_main(in: FullscreenVertexOutput) -> @location(0) vec4f {
-    let params = objects[0].base_color;
-    let ldr_texture_idx = u32(params.r);
-    let indicator_texture_idx = u32(params.g);
+    let ldr_texture_idx = u32(frame_data.overlay.x);
+    let indicator_texture_idx = u32(frame_data.overlay.y);
 
     if (indicator_texture_idx == 0u) {
         return textureSample(bindless_textures[ldr_texture_idx], shared_sampler, in.uv);

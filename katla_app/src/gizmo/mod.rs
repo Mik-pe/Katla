@@ -7,8 +7,8 @@
 mod types;
 
 pub use types::{
-    GizmoAxis, GizmoColor, GizmoMode, GizmoResources, GizmoState, compute_gizmo_scale,
-    compute_rotate_delta, compute_scale_delta, compute_translate_delta, generate_rotate_draw_calls,
-    generate_scale_draw_calls, generate_translate_draw_calls, hit_test_axes,
-    ray_plane_intersection, screen_to_ray, world_to_screen,
+    GizmoAxis, GizmoColor, GizmoMode, GizmoResources, GizmoState, HitTestParams,
+    compute_gizmo_scale, compute_rotate_delta, compute_scale_delta, compute_translate_delta,
+    generate_rotate_draw_calls, generate_scale_draw_calls, generate_translate_draw_calls,
+    hit_test_axes, ray_plane_intersection, screen_to_ray, world_to_screen,
 };

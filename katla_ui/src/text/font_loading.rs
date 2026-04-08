@@ -10,8 +10,7 @@ impl super::FontSystem {
         let data = Arc::new(bytes.to_vec());
 
         // Validate the font can be parsed
-        FontRef::new(&data)
-            .map_err(|e| FontError::LoadFailed(format!("{:?}", e)))?;
+        FontRef::new(&data).map_err(|e| FontError::LoadFailed(format!("{:?}", e)))?;
 
         let id = FontId(self.next_font_id);
         self.next_font_id += 1;
@@ -24,8 +23,7 @@ impl super::FontSystem {
     pub fn add_font_with_id(&mut self, bytes: &[u8], id: FontId) -> Result<(), FontError> {
         let data = Arc::new(bytes.to_vec());
 
-        FontRef::new(&data)
-            .map_err(|e| FontError::LoadFailed(format!("{:?}", e)))?;
+        FontRef::new(&data).map_err(|e| FontError::LoadFailed(format!("{:?}", e)))?;
 
         self.fonts.insert(id, data);
         Ok(())

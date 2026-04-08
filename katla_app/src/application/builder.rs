@@ -23,8 +23,6 @@
 //! via `renderer.destroy_mesh(handle)` is safe but usually unnecessary — the tracker
 //! handles it automatically.
 
-#[cfg(feature = "editor")]
-use std::collections::HashMap;
 use std::ffi::CString;
 use std::{cell::RefCell, rc::Rc, time::Instant};
 
@@ -39,12 +37,6 @@ use winit::window::Window;
 
 use super::camera::Camera;
 
-#[cfg(feature = "editor")]
-use crate::gui_state::GuiState;
-#[cfg(feature = "editor")]
-use crate::ui::Theme;
-#[cfg(feature = "editor")]
-use crate::util::BackgroundLoader;
 use crate::{
     application::{Application, ApplicationInfo},
     error::AppResult,
@@ -116,6 +108,26 @@ impl ApplicationBuilder {
     pub fn check_black_frames(mut self, enabled: bool) -> Self {
         self.check_black_frames = enabled;
         self
+    }
+
+    #[cfg(feature = "editor")]
+    fn load_editor_state_static(
+        preferences: &Preferences,
+    ) -> (crate::ui::Theme, crate::gui_state::GuiState) {
+        let theme = crate::ui::Theme::by_name(&preferences.theme).unwrap_or_default();
+        let gui_state = crate::gui_state::GuiState::load();
+        log::info!(
+            "Loaded GUI state: left_panel={}, right_panel={}, asset_browser_height={}",
+            gui_state.left_panel_width,
+            gui_state.right_panel_width,
+            gui_state.asset_browser_height
+        );
+        (theme, gui_state)
+    }
+
+    #[cfg(not(feature = "editor"))]
+    fn load_editor_state_static(_preferences: &Preferences) -> ((), ()) {
+        ((), ())
     }
 
     pub fn with_system(mut self, system: Box<dyn System>, order: SystemExecutionOrder) -> Self {
@@ -586,38 +598,30 @@ impl ApplicationBuilder {
     pub fn build(self) -> AppResult<(Application, EventLoop<()>)> {
         let event_loop = Self::build_event_loop();
 
+        // Load user preferences and editor state before moving fields
+        let preferences = Preferences::load();
+        let (theme, gui_state) = Self::load_editor_state_static(&preferences);
+        #[cfg(not(feature = "editor"))]
+        let _ = (theme, gui_state);
+
         let info = ApplicationInfo {
             name: self.app_name,
             validation_mode: self.validation_mode,
             max_frames: self.max_frames,
             check_black_frames: self.check_black_frames,
         };
+
         let mut world = self.world;
         let camera = Rc::new(RefCell::new(Camera::new(&mut world)));
 
         let resources = ResourceManager::discover()?;
 
-        // Load user preferences
-        let preferences = Preferences::load();
-        #[cfg(feature = "editor")]
-        let theme = Theme::by_name(&preferences.theme).unwrap_or_default();
         log::info!(
             "Loaded preferences: theme={}, show_grid={}, show_stats={}, font_scale={}",
             preferences.theme,
             preferences.show_grid,
             preferences.show_stats,
             preferences.font_scale
-        );
-
-        // Load GUI layout state
-        #[cfg(feature = "editor")]
-        let gui_state = GuiState::load();
-        #[cfg(feature = "editor")]
-        log::info!(
-            "Loaded GUI state: left_panel={}, right_panel={}, asset_browser_height={}",
-            gui_state.left_panel_width,
-            gui_state.right_panel_width,
-            gui_state.asset_browser_height
         );
 
         // Create UI context and load default font
@@ -777,31 +781,7 @@ impl ApplicationBuilder {
             resources,
             ui_context,
             #[cfg(feature = "editor")]
-            editor: super::EditorState {
-                ui_renderer,
-                editor_ui: {
-                    let mut editor = crate::ui::EditorUI::with_theme(theme);
-                    editor.show_grid = preferences.show_grid;
-                    editor.show_stats = preferences.show_stats;
-                    editor.set_font_scale(preferences.font_scale);
-                    // Apply GUI layout state
-                    editor.left_panel_width = gui_state.left_panel_width;
-                    editor.right_panel_width = gui_state.right_panel_width;
-                    editor.asset_browser.panel_height = gui_state.asset_browser_height;
-                    editor
-                },
-                gui_state,
-                background_loader: BackgroundLoader::new(),
-                thumbnail_texture_handles: HashMap::new(),
-                entity_instance_map: std::collections::HashMap::new(),
-                entity_to_instance_indices: std::collections::HashMap::new(),
-                pending_pick: None,
-                stencil_indicator_bindless_index: None,
-                gizmo_state: crate::gizmo::GizmoState::default(),
-                gizmo_resources: crate::gizmo::GizmoResources::default(),
-                billboard_resources: crate::billboard::BillboardResources::default(),
-                prev_mouse_screen: None,
-            },
+            editor: super::EditorState::new(ui_renderer, theme, &preferences, gui_state),
             preferences,
             scale_factor: 1.0, // Will be updated when window is created
             start_time: Instant::now(),

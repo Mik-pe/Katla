@@ -615,14 +615,6 @@ mod tests {
     }
 
     #[test]
-    fn test_list_occupied_slots_returns_vec() {
-        // Verify the method signature is correct
-        // Returns Vec<(u32, vk::ImageView)>
-        // Actual testing requires Vulkan context
-        assert!(true);
-    }
-
-    #[test]
     fn test_debug_slot_info_returns_string() {
         // Verify debug_slot_info returns a String
         // Actual testing requires Vulkan context

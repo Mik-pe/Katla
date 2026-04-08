@@ -337,76 +337,55 @@ pub fn world_to_screen(
     Some((screen_x, screen_y))
 }
 
+/// Parameters for gizmo hit testing.
+pub struct HitTestParams<'a> {
+    pub mouse_screen: (f32, f32),
+    pub gizmo_origin: Vec3,
+    pub gizmo_scale: f32,
+    pub view_matrix: &'a Mat4,
+    pub proj_matrix: &'a Mat4,
+    pub viewport: (f32, f32, f32, f32),
+    pub mode: GizmoMode,
+    pub pixel_threshold: f32,
+}
+
 /// Hit-test the gizmo axes against a screen-space mouse position.
 ///
 /// For translate and scale modes, projects each axis endpoint to screen space
 /// and finds the closest axis within a pixel threshold.
 /// For rotate mode, projects the rotation ring to screen space and checks
 /// distance to the circle arc.
-#[allow(clippy::too_many_arguments)]
-pub fn hit_test_axes(
-    mouse_screen: (f32, f32),
-    gizmo_origin: Vec3,
-    gizmo_scale: f32,
-    view_matrix: &Mat4,
-    proj_matrix: &Mat4,
-    viewport: (f32, f32, f32, f32),
-    mode: GizmoMode,
-    pixel_threshold: f32,
-) -> Option<GizmoAxis> {
-    let origin_screen = world_to_screen(gizmo_origin, view_matrix, proj_matrix, viewport)?;
+pub fn hit_test_axes(params: &HitTestParams) -> Option<GizmoAxis> {
+    let origin_screen = world_to_screen(
+        params.gizmo_origin,
+        params.view_matrix,
+        params.proj_matrix,
+        params.viewport,
+    )?;
 
-    match mode {
-        GizmoMode::Rotate => hit_test_rotate_rings(
-            mouse_screen,
-            gizmo_origin,
-            gizmo_scale,
-            view_matrix,
-            proj_matrix,
-            viewport,
-            origin_screen,
-            pixel_threshold,
-        ),
-        _ => hit_test_linear_axes(
-            mouse_screen,
-            gizmo_origin,
-            gizmo_scale,
-            view_matrix,
-            proj_matrix,
-            viewport,
-            origin_screen,
-            mode,
-            pixel_threshold,
-        ),
+    match params.mode {
+        GizmoMode::Rotate => hit_test_rotate_rings(params, origin_screen),
+        _ => hit_test_linear_axes(params, origin_screen),
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn hit_test_linear_axes(
-    mouse_screen: (f32, f32),
-    gizmo_origin: Vec3,
-    gizmo_scale: f32,
-    view_matrix: &Mat4,
-    proj_matrix: &Mat4,
-    viewport: (f32, f32, f32, f32),
-    origin_screen: (f32, f32),
-    mode: GizmoMode,
-    pixel_threshold: f32,
-) -> Option<GizmoAxis> {
-    let axis_length = match mode {
-        GizmoMode::Translate => gizmo_scale * 1.5,
-        GizmoMode::Scale => gizmo_scale * 1.2,
+fn hit_test_linear_axes(params: &HitTestParams, origin_screen: (f32, f32)) -> Option<GizmoAxis> {
+    let axis_length = match params.mode {
+        GizmoMode::Translate => params.gizmo_scale * 1.5,
+        GizmoMode::Scale => params.gizmo_scale * 1.2,
         _ => return None,
     };
 
     let mut best_axis = None;
-    let mut best_dist = pixel_threshold;
+    let mut best_dist = params.pixel_threshold;
 
     for axis in [GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z] {
-        let end = gizmo_origin + axis.direction() * axis_length;
+        let end = params.gizmo_origin + axis.direction() * axis_length;
 
-        if let Some(end_screen) = world_to_screen(end, view_matrix, proj_matrix, viewport) {
-            let dist = point_to_segment_dist_2d(mouse_screen, origin_screen, end_screen);
+        if let Some(end_screen) =
+            world_to_screen(end, params.view_matrix, params.proj_matrix, params.viewport)
+        {
+            let dist = point_to_segment_dist_2d(params.mouse_screen, origin_screen, end_screen);
 
             if dist < best_dist {
                 best_dist = dist;
@@ -418,22 +397,12 @@ fn hit_test_linear_axes(
     best_axis
 }
 
-#[allow(clippy::too_many_arguments)]
-fn hit_test_rotate_rings(
-    mouse_screen: (f32, f32),
-    gizmo_origin: Vec3,
-    gizmo_scale: f32,
-    view_matrix: &Mat4,
-    proj_matrix: &Mat4,
-    viewport: (f32, f32, f32, f32),
-    _origin_screen: (f32, f32),
-    pixel_threshold: f32,
-) -> Option<GizmoAxis> {
-    let ring_radius = gizmo_scale * 1.0;
+fn hit_test_rotate_rings(params: &HitTestParams, _origin_screen: (f32, f32)) -> Option<GizmoAxis> {
+    let ring_radius = params.gizmo_scale * 1.0;
     let sample_count = 48;
 
     let mut best_axis = None;
-    let mut best_dist = pixel_threshold;
+    let mut best_dist = params.pixel_threshold;
 
     for axis in [GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z] {
         // Sample points along the ring in 3D, project to screen, and measure distance
@@ -441,15 +410,18 @@ fn hit_test_rotate_rings(
             let angle = (i as f32 / sample_count as f32) * 2.0 * std::f32::consts::PI;
 
             let (perp1, perp2) = axis.perpendicular_axes();
-            let ring_point = gizmo_origin
+            let ring_point = params.gizmo_origin
                 + perp1 * (ring_radius * angle.cos())
                 + perp2 * (ring_radius * angle.sin());
 
-            if let Some(screen_pos) =
-                world_to_screen(ring_point, view_matrix, proj_matrix, viewport)
-            {
-                let dx = mouse_screen.0 - screen_pos.0;
-                let dy = mouse_screen.1 - screen_pos.1;
+            if let Some(screen_pos) = world_to_screen(
+                ring_point,
+                params.view_matrix,
+                params.proj_matrix,
+                params.viewport,
+            ) {
+                let dx = params.mouse_screen.0 - screen_pos.0;
+                let dy = params.mouse_screen.1 - screen_pos.1;
                 let dist = (dx * dx + dy * dy).sqrt();
 
                 if dist < best_dist {

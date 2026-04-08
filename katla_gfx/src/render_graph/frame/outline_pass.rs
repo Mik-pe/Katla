@@ -189,22 +189,12 @@ impl<'a> Frame<'a> {
                 "Stencil mark pipeline not initialized".to_string(),
             ))?;
 
-        let (skinned_pipeline, skinned_layout) = self
+        let skinned = self
             .renderer
             .asset_registry
-            .get_pipeline_vk_handles(self.renderer.outline.stencil_mark_skinned_pipeline)
-            .map(|(p, l)| (Some(p), Some(l)))
-            .unwrap_or((None, None));
+            .get_pipeline_vk_handles(self.renderer.outline.stencil_mark_skinned_pipeline);
 
-        self.draw_with_pipelines(
-            cmd,
-            data,
-            pipeline,
-            layout,
-            skinned_pipeline,
-            skinned_layout,
-            Vec::new(),
-        )
+        self.draw_outline_meshes(cmd, data, pipeline, layout, skinned, Vec::new())
     }
 
     /// Promote stencil 1→2 where selected objects are occluded by scene geometry.
@@ -221,22 +211,12 @@ impl<'a> Frame<'a> {
                 "Occlusion mark pipeline not initialized".to_string(),
             ))?;
 
-        let (skinned_pipeline, skinned_layout) = self
+        let skinned = self
             .renderer
             .asset_registry
-            .get_pipeline_vk_handles(self.renderer.outline.occlusion_mark_skinned_pipeline)
-            .map(|(p, l)| (Some(p), Some(l)))
-            .unwrap_or((None, None));
+            .get_pipeline_vk_handles(self.renderer.outline.occlusion_mark_skinned_pipeline);
 
-        self.draw_with_pipelines(
-            cmd,
-            data,
-            pipeline,
-            layout,
-            skinned_pipeline,
-            skinned_layout,
-            Vec::new(),
-        )
+        self.draw_outline_meshes(cmd, data, pipeline, layout, skinned, Vec::new())
     }
 
     /// Render the outline shell with inverted culling where stencil != 1.
@@ -253,12 +233,10 @@ impl<'a> Frame<'a> {
                 "Outline draw pipeline not initialized".to_string(),
             ))?;
 
-        let (skinned_pipeline, skinned_layout) = self
+        let skinned = self
             .renderer
             .asset_registry
-            .get_pipeline_vk_handles(self.renderer.outline.outline_draw_skinned_pipeline)
-            .map(|(p, l)| (Some(p), Some(l)))
-            .unwrap_or((None, None));
+            .get_pipeline_vk_handles(self.renderer.outline.outline_draw_skinned_pipeline);
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
         let frame_idx = self.current_frame();
@@ -289,28 +267,21 @@ impl<'a> Frame<'a> {
 
         let extra_sets = vec![(1u32, params_ds), (3u32, params_ds)];
 
-        self.draw_with_pipelines(
-            cmd,
-            data,
-            pipeline,
-            layout,
-            skinned_pipeline,
-            skinned_layout,
-            extra_sets,
-        )
+        self.draw_outline_meshes(cmd, data, pipeline, layout, skinned, extra_sets)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn draw_with_pipelines(
+    fn draw_outline_meshes(
         &mut self,
         cmd: &CommandBuffer,
         data: &PassExecutionData,
         pipeline: vk::Pipeline,
         layout: vk::PipelineLayout,
-        skinned_pipeline: Option<vk::Pipeline>,
-        skinned_layout: Option<vk::PipelineLayout>,
+        skinned: Option<(vk::Pipeline, vk::PipelineLayout)>,
         extra_sets: Vec<(u32, vk::DescriptorSet)>,
     ) -> Result<(), RenderGraphError> {
+        let (skinned_pipeline, skinned_layout) = skinned
+            .map(|(p, l)| (Some(p), Some(l)))
+            .unwrap_or((None, None));
         let frame_idx = self.current_frame();
         draw_meshes_with_skinning(DrawParams {
             cmd,
@@ -442,22 +413,12 @@ impl<'a> Frame<'a> {
                 "Stencil indicator pipeline not initialized".to_string(),
             ))?;
 
-        let (skinned_pipeline, skinned_layout) = self
+        let skinned = self
             .renderer
             .asset_registry
-            .get_pipeline_vk_handles(self.renderer.outline.stencil_indicator_skinned_pipeline)
-            .map(|(p, l)| (Some(p), Some(l)))
-            .unwrap_or((None, None));
+            .get_pipeline_vk_handles(self.renderer.outline.stencil_indicator_skinned_pipeline);
 
-        self.draw_with_pipelines(
-            cmd,
-            &data,
-            pipeline,
-            layout,
-            skinned_pipeline,
-            skinned_layout,
-            Vec::new(),
-        )?;
+        self.draw_outline_meshes(cmd, &data, pipeline, layout, skinned, Vec::new())?;
 
         cmd.end_rendering();
 

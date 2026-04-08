@@ -1,7 +1,10 @@
 use super::*;
 
 use katla_math::Vec2;
-use skrifa::{instance::{LocationRef, Size}, MetadataProvider};
+use skrifa::{
+    MetadataProvider,
+    instance::{LocationRef, Size},
+};
 
 impl super::FontSystem {
     /// Get font metrics for a given size.
@@ -81,10 +84,12 @@ impl super::FontSystem {
                 line_width += cached.advance;
             } else {
                 let glyph_id = font.charmap().map(c);
-                let advance = glyph_id.and_then(|g| {
-                    font.glyph_metrics(Size::new(physical_size), LocationRef::default())
-                        .advance_width(g)
-                }).unwrap_or(0.0);
+                let advance = glyph_id
+                    .and_then(|g| {
+                        font.glyph_metrics(Size::new(physical_size), LocationRef::default())
+                            .advance_width(g)
+                    })
+                    .unwrap_or(0.0);
                 line_width += advance / scale_factor;
             }
 

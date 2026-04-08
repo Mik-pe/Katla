@@ -293,9 +293,4 @@ mod tests {
         let depth_load = AttachmentInfo::depth_load(ImageFormat::D32Sfloat);
         assert_eq!(depth_load.load_op, LoadOp::Load);
     }
-
-    #[test]
-    fn test_barrier_kind_default() {
-        assert_eq!(BarrierKind::default(), BarrierKind::None);
-    }
 }

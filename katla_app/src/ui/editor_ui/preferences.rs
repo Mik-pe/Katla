@@ -273,14 +273,16 @@ impl<'a> Widget for PreferencesPanel<'a> {
                             PreferencesTab::Appearance => build_appearance_tab(
                                 ui,
                                 theme,
-                                cursor,
-                                content_width,
-                                row_height,
-                                spacing,
-                                theme_key,
-                                show_grid,
-                                show_stats,
-                                font_scale,
+                                &AppearanceTabParams {
+                                    cursor,
+                                    content_width,
+                                    _row_height: row_height,
+                                    spacing,
+                                    current_theme_key: theme_key,
+                                    show_grid,
+                                    show_stats,
+                                    font_scale,
+                                },
                                 pending_actions,
                             ),
                             PreferencesTab::Editor => build_editor_tab(
@@ -310,21 +312,33 @@ impl<'a> Widget for PreferencesPanel<'a> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn build_appearance_tab(
-    ui: &mut UiContext,
-    theme: &Theme,
+struct AppearanceTabParams<'a> {
     cursor: Vec2,
     content_width: f32,
     _row_height: f32,
     spacing: f32,
-    current_theme_key: &str,
+    current_theme_key: &'a str,
     show_grid: bool,
     show_stats: bool,
     font_scale: f32,
+}
+
+fn build_appearance_tab(
+    ui: &mut UiContext,
+    theme: &Theme,
+    params: &AppearanceTabParams,
     pending_actions: &mut Vec<PreferencesAction>,
 ) -> f32 {
-    ui.set_cursor(cursor);
+    let content_width = params.content_width;
+    let spacing = params.spacing;
+    let current_theme_key = params.current_theme_key;
+    let show_grid = params.show_grid;
+    let show_stats = params.show_stats;
+    let font_scale = params.font_scale;
+
+    ui.set_cursor(params.cursor);
+    ui.label_auto_colored("Color Theme", theme.text_secondary);
+    ui.spacing(20.0);
     ui.label_auto_colored("Color Theme", theme.text_secondary);
     ui.spacing(20.0);
 

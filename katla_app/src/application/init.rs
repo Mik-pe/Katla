@@ -36,13 +36,12 @@ impl Application {
         self.gpu_resource_tracker
             .set_protected_material(self.default_material_handle);
 
-        // Initialize gizmo GPU resources
+        // Initialize editor GPU resources
         #[cfg(feature = "editor")]
-        self.init_gizmo_resources();
-
-        // Initialize billboard GPU resources
-        #[cfg(feature = "editor")]
-        self.init_billboard_resources();
+        {
+            self.init_gizmo_resources();
+            self.init_billboard_resources();
+        }
 
         // Initialize particle emit pipeline
         let particle_emit_shader_path = self.resources.shader_path("particles/particle_emit.wgsl");
@@ -369,13 +368,11 @@ impl Application {
 
         // Set viewport bindless index in editor UI
         #[cfg(feature = "editor")]
-        self.editor
-            .editor_ui
-            .set_viewport_bindless_index(viewport_bindless_index);
-
-        // Register stencil indicator texture with bindless for tonemap shader
-        #[cfg(feature = "editor")]
         {
+            self.editor
+                .editor_ui
+                .set_viewport_bindless_index(viewport_bindless_index);
+
             let stencil_indicator_index = self
                 .frame_graph
                 .register_transient_texture_bindless(&mut self.renderer, "stencil_indicator")
@@ -386,10 +383,8 @@ impl Application {
                 stencil_indicator_index
             );
 
-            // Store stencil indicator bindless index for passing to overlay each frame
             self.editor.stencil_indicator_bindless_index = Some(stencil_indicator_index);
 
-            // Set overlay texture indices so the wallhack overlay shader can read LDR + indicator
             self.frame_graph
                 .set_overlay_texture_indices(
                     "wallhack_overlay",
@@ -415,9 +410,11 @@ impl Application {
 
         info!("Application::init() completed");
     }
+}
 
+#[cfg(feature = "editor")]
+impl Application {
     /// Initialize GPU resources for billboard icons (mesh + material + icon textures).
-    #[cfg(feature = "editor")]
     pub(crate) fn init_billboard_resources(&mut self) {
         use crate::billboard::BillboardResources;
         use crate::components::BillboardIcon;
@@ -461,7 +458,6 @@ impl Application {
         info!("Billboard GPU resources initialized");
     }
 
-    #[cfg(feature = "editor")]
     pub(crate) fn focus_camera_on_entity(&mut self, entity_id: katla_ecs::EntityId) {
         use crate::components::{Children, OrbitCameraControllerComponent, WorldTransform};
 

@@ -100,49 +100,6 @@ impl VulkanRenderer {
         self.asset_registry.invalidate_compiled_materials();
     }
 
-    /// Set the HDR texture index for tonemapping.
-    ///
-    /// Sets up object[0] in the storage buffer to pass the HDR texture index
-    /// to fullscreen shaders (like the tonemap pass). The tonemap shader reads from
-    /// `objects[0].texture_indices.x` to get the bindless texture slot.
-    ///
-    /// # Contract
-    /// - Object index 0 is reserved for fullscreen/post-processing shader parameters
-    /// - The HDR texture must already be registered with the bindless system
-    /// - Tonemap shaders must read from `objects[0].texture_indices.x`
-    ///
-    /// # Arguments
-    /// * `hdr_texture_index` - Bindless texture slot index for the HDR color attachment
-    ///
-    /// # Example
-    /// ```ignore
-    /// // Register HDR texture with bindless
-    /// let hdr_slot = frame_graph.register_transient_texture_bindless(&mut renderer, "hdr_color")?;
-    ///
-    /// // Set up tonemap shader to sample from HDR texture
-    /// renderer.set_hdr_texture_index(hdr_slot);
-    /// ```
-    pub fn set_hdr_texture_index(&mut self, hdr_texture_index: u32) {
-        // Set object[0] texture indices (HDR texture in x, others unused)
-        //
-        // Note: Object index 0 is reserved for fullscreen/post-processing shader parameters.
-        // This is a documented contract between the renderer and fullscreen shaders.
-        let frame_idx = self.current_frame();
-        self.storage_manager.update_object_bindless(
-            frame_idx,
-            0, // object index 0 is reserved for tonemap params
-            &[
-                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-            ], // identity matrix (not used)
-            &[1.0, 1.0, 1.0, 1.0], // white color (not used)
-            0.0, // metallic (not used)
-            0.0, // roughness (not used)
-            1.0, // ao (not used)
-            0.0, // emission index (not used)
-            [hdr_texture_index, 0, 0, 0], // HDR texture index in x
-        );
-    }
-
     /// Set texture indices for a material.
     ///
     /// Updates the material's texture indices for bindless sampling.

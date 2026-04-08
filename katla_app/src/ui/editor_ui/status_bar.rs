@@ -3,7 +3,7 @@ use katla_ui::{FontSize, Response, UiContext, Widget};
 
 use super::Theme;
 
-pub struct StatusBar<'a> {
+pub struct StatusBarConfig<'a> {
     pub screen_size: Vec2,
     pub height: f32,
     pub fps: f32,
@@ -13,35 +13,35 @@ pub struct StatusBar<'a> {
     pub total_assets: usize,
     pub is_playing: bool,
     pub theme: &'a Theme,
-    /// If > 0, show "Scene saved" confirmation in the status bar.
     pub save_confirmation_timer: f32,
 }
 
+pub struct StatusBar<'a> {
+    screen_size: Vec2,
+    height: f32,
+    fps: f32,
+    frame_count: usize,
+    entity_count: usize,
+    selected_count: usize,
+    total_assets: usize,
+    is_playing: bool,
+    theme: &'a Theme,
+    save_confirmation_timer: f32,
+}
+
 impl<'a> StatusBar<'a> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        screen_size: Vec2,
-        height: f32,
-        fps: f32,
-        frame_count: usize,
-        entity_count: usize,
-        selected_count: usize,
-        total_assets: usize,
-        is_playing: bool,
-        theme: &'a Theme,
-        save_confirmation_timer: f32,
-    ) -> Self {
+    pub fn new(config: StatusBarConfig<'a>) -> Self {
         Self {
-            screen_size,
-            height,
-            fps,
-            frame_count,
-            entity_count,
-            selected_count,
-            total_assets,
-            is_playing,
-            theme,
-            save_confirmation_timer,
+            screen_size: config.screen_size,
+            height: config.height,
+            fps: config.fps,
+            frame_count: config.frame_count,
+            entity_count: config.entity_count,
+            selected_count: config.selected_count,
+            total_assets: config.total_assets,
+            is_playing: config.is_playing,
+            theme: config.theme,
+            save_confirmation_timer: config.save_confirmation_timer,
         }
     }
 }

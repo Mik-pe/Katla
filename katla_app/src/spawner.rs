@@ -10,6 +10,13 @@ use katla_math::{Color, Vec3};
 
 use crate::components::{DrawableComponent, TransformComponent};
 
+pub struct PrimitiveMaterialParams {
+    pub color: Option<Color>,
+    pub metallic: f32,
+    pub roughness: f32,
+    pub ao: f32,
+}
+
 /// Extension trait for spawning entities with standard transform+drawable bundles.
 ///
 /// This trait enables entity creation from systems or callbacks that only have
@@ -44,16 +51,12 @@ pub trait Spawner {
     ///
     /// Creates an entity at the given position with the specified mesh, material,
     /// and explicit PBR material properties.
-    #[allow(clippy::too_many_arguments)]
     fn spawn_primitive_with_material(
         &mut self,
         position: [f32; 3],
         mesh_handle: MeshHandle,
         material_handle: MaterialHandle,
-        color: Option<Color>,
-        metallic: f32,
-        roughness: f32,
-        ao: f32,
+        material: &PrimitiveMaterialParams,
     ) -> EntityId;
 
     /// Spawn an entity with transform, drawable, and an additional component.
@@ -89,20 +92,17 @@ impl Spawner for World {
         position: [f32; 3],
         mesh_handle: MeshHandle,
         material_handle: MaterialHandle,
-        color: Option<Color>,
-        metallic: f32,
-        roughness: f32,
-        ao: f32,
+        material: &PrimitiveMaterialParams,
     ) -> EntityId {
         self.spawn((
             TransformComponent::from_position(Vec3::new(position[0], position[1], position[2])),
             DrawableComponent::with_handles_and_material(
                 mesh_handle,
                 material_handle,
-                color,
-                metallic,
-                roughness,
-                ao,
+                material.color,
+                material.metallic,
+                material.roughness,
+                material.ao,
             ),
         ))
     }
@@ -160,10 +160,12 @@ mod tests {
             [0.0, 0.0, 0.0],
             mesh,
             material,
-            Some(Color::RED),
-            0.8,
-            0.2,
-            0.5,
+            &PrimitiveMaterialParams {
+                color: Some(Color::RED),
+                metallic: 0.8,
+                roughness: 0.2,
+                ao: 0.5,
+            },
         );
 
         let drawable = world.get_component::<DrawableComponent>(entity).unwrap();

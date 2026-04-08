@@ -48,7 +48,7 @@
 //! storage_manager.update_frame_with_lighting(frame_idx, &view_matrix, &proj_matrix, ...);
 //!
 //! // Update object uniforms (per draw call)
-//! storage_manager.update_object_bindless(frame_idx, 0, &model_matrix, &[1.0, 0.0, 0.0, 1.0], ...);
+//! storage_manager.update_from_frame_uniforms(frame_idx, &frame_uniforms);
 //!
 //! // Bind in render loop - object index comes from first_instance in draw call
 //! pipeline.bind_with_storage(command_buffer, storage_descriptor.set());
@@ -227,8 +227,14 @@ pub(crate) struct FrameUniforms {
     /// Forward+ tile grid dimensions: [tiles_x, tiles_y, 0, 0].
     tiles: [u32; 4],
 
-    /// Padding to align OBJECT_ARRAY_OFFSET to 64 bytes (minStorageBufferOffsetAlignment).
-    _padding: [u8; 48],
+    /// Tonemap parameters: [exposure, gamma, mode, hdr_texture_index].
+    tonemap: [f32; 4],
+
+    /// Overlay parameters: [ldr_texture_index, stencil_indicator_index, 0, 0].
+    overlay: [f32; 4],
+
+    /// Compositing parameters: [screen_width, screen_height, viewport_count, viewport_bindless_index].
+    compositing: [f32; 4],
 }
 
 /// Per-object uniforms (model matrix, color, PBR params, and bindless texture indices).
@@ -280,6 +286,31 @@ impl StorageUniformLayout {
         assert!(index < Self::MAX_OBJECTS, "Object index out of bounds");
         Self::OBJECT_ARRAY_OFFSET + (Self::OBJECT_STRIDE * index)
     }
+}
+
+/// Parameters for updating frame lighting and post-processing uniforms.
+pub struct FrameLightingParams<'a> {
+    pub view: &'a [f32; 16],
+    pub proj: &'a [f32; 16],
+    pub inv_view_proj: &'a [f32; 16],
+    pub camera_position: &'a [f32; 4],
+    pub light_direction: &'a [f32; 4],
+    pub light_color: &'a [f32; 4],
+    pub light_intensity: [f32; 4],
+    pub tiles: [u32; 4],
+    pub tonemap: [f32; 4],
+    pub overlay: [f32; 4],
+}
+
+/// Parameters for updating per-object bindless uniforms.
+pub struct ObjectBindlessParams<'a> {
+    pub model: &'a [f32; 16],
+    pub color: &'a [f32; 4],
+    pub metallic: f32,
+    pub roughness: f32,
+    pub ao: f32,
+    pub emission_idx: f32,
+    pub texture_indices: [u32; 4],
 }
 
 /// Storage uniform manager.
@@ -342,37 +373,83 @@ impl StorageUniformManager {
     /// * `light_color` - Light color (RGB)
     /// * `light_intensity` - Light intensity and screen-space params [intensity, depth_tex_idx, 0, 0]
     /// * `tiles` - Forward+ tile grid dimensions [tiles_x, tiles_y, 0, 0]
-    #[allow(clippy::too_many_arguments)]
-    pub fn update_frame_with_lighting(
+    ///
+    /// Update frame uniforms including post-processing parameters.
+    pub fn update_frame_with_lighting_and_postprocess(
         &mut self,
         frame_index: usize,
-        view: &[f32; 16],
-        proj: &[f32; 16],
-        inv_view_proj: &[f32; 16],
-        camera_position: &[f32; 4],
-        light_direction: &[f32; 4],
-        light_color: &[f32; 4],
-        light_intensity: [f32; 4],
-        tiles: [u32; 4],
+        params: &FrameLightingParams,
     ) {
         let buffer = &mut self.buffers[frame_index];
         unsafe {
             let mapped = buffer.map();
             let frame_ptr = mapped.as_ptr() as *mut FrameUniforms;
             *frame_ptr = FrameUniforms {
-                view: *view,
-                proj: *proj,
-                inv_view_proj: *inv_view_proj,
-                camera_position: *camera_position,
-                light_direction: *light_direction,
-                light_color: *light_color,
-                light_intensity,
-                tiles,
-                _padding: [0u8; 48],
+                view: *params.view,
+                proj: *params.proj,
+                inv_view_proj: *params.inv_view_proj,
+                camera_position: *params.camera_position,
+                light_direction: *params.light_direction,
+                light_color: *params.light_color,
+                light_intensity: params.light_intensity,
+                tiles: params.tiles,
+                tonemap: params.tonemap,
+                overlay: params.overlay,
+                compositing: [0.0; 4],
             };
         }
-        // Flush frame uniforms to make CPU writes visible to GPU
         buffer.flush(0, std::mem::size_of::<FrameUniforms>() as u64);
+    }
+
+    /// Update only the tonemap parameters in the frame uniform buffer.
+    ///
+    /// This avoids rewriting the entire frame uniform block when only
+    /// tonemap params change (e.g., per-frame transient texture indices).
+    pub fn update_tonemap_params(&mut self, frame_index: usize, tonemap: [f32; 4]) {
+        let offset = std::mem::size_of::<FrameUniforms>() - std::mem::size_of::<[f32; 4]>() * 3; // skip overlay + compositing
+        let buffer = &mut self.buffers[frame_index];
+        unsafe {
+            let mapped = buffer.map();
+            let ptr = (mapped.as_ptr() as usize + offset) as *mut [f32; 4];
+            *ptr = tonemap;
+        }
+        buffer.flush(offset as u64, std::mem::size_of::<[f32; 4]>() as u64);
+    }
+
+    /// Update only the overlay parameters in the frame uniform buffer.
+    pub fn update_overlay_params(&mut self, frame_index: usize, overlay: [f32; 4]) {
+        let offset = std::mem::size_of::<FrameUniforms>() - std::mem::size_of::<[f32; 4]>() * 2; // skip compositing
+        let buffer = &mut self.buffers[frame_index];
+        unsafe {
+            let mapped = buffer.map();
+            let ptr = (mapped.as_ptr() as usize + offset) as *mut [f32; 4];
+            *ptr = overlay;
+        }
+        buffer.flush(offset as u64, std::mem::size_of::<[f32; 4]>() as u64);
+    }
+
+    /// Update only the compositing parameters in the frame uniform buffer.
+    pub fn update_compositing_params(&mut self, frame_index: usize, compositing: [f32; 4]) {
+        let offset = std::mem::size_of::<FrameUniforms>() - std::mem::size_of::<[f32; 4]>(); // last field
+        let buffer = &mut self.buffers[frame_index];
+        unsafe {
+            let mapped = buffer.map();
+            let ptr = (mapped.as_ptr() as usize + offset) as *mut [f32; 4];
+            *ptr = compositing;
+        }
+        buffer.flush(offset as u64, std::mem::size_of::<[f32; 4]>() as u64);
+    }
+
+    /// Read back the tonemap parameters (debug only).
+    #[cfg(debug_assertions)]
+    pub fn read_tonemap_params(&mut self, frame_index: usize) -> [f32; 4] {
+        let offset = std::mem::size_of::<FrameUniforms>() - std::mem::size_of::<[f32; 4]>() * 3;
+        let buffer = &mut self.buffers[frame_index];
+        unsafe {
+            let mapped = buffer.map();
+            let ptr = (mapped.as_ptr() as usize + offset) as *const [f32; 4];
+            *ptr
+        }
     }
 
     /// Update frame uniforms from a FrameUniforms struct.
@@ -385,16 +462,20 @@ impl StorageUniformManager {
         frame_index: usize,
         frame: &crate::renderer::FrameUniforms,
     ) {
-        self.update_frame_with_lighting(
+        self.update_frame_with_lighting_and_postprocess(
             frame_index,
-            &frame.view_matrix,
-            &frame.proj_matrix,
-            &frame.inv_view_proj_matrix,
-            &frame.camera_position,
-            &frame.light_direction,
-            &frame.light_color,
-            frame.light_intensity,
-            frame.tiles,
+            &FrameLightingParams {
+                view: &frame.view_matrix,
+                proj: &frame.proj_matrix,
+                inv_view_proj: &frame.inv_view_proj_matrix,
+                camera_position: &frame.camera_position,
+                light_direction: &frame.light_direction,
+                light_color: &frame.light_color,
+                light_intensity: frame.light_intensity,
+                tiles: frame.tiles,
+                tonemap: frame.tonemap,
+                overlay: frame.overlay,
+            },
         );
     }
 
@@ -410,18 +491,11 @@ impl StorageUniformManager {
     /// * `ao` - Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
     /// * `emission_idx` - Emission texture index for bindless (0 = no emission)
     /// * `texture_indices` - [albedo_idx, normal_idx, mr_idx, ao_idx]
-    #[allow(clippy::too_many_arguments)]
     pub fn update_object_bindless(
         &mut self,
         frame_index: usize,
         index: usize,
-        model: &[f32; 16],
-        color: &[f32; 4],
-        metallic: f32,
-        roughness: f32,
-        ao: f32,
-        emission_idx: f32,
-        texture_indices: [u32; 4],
+        params: &ObjectBindlessParams,
     ) {
         assert!(
             index < StorageUniformLayout::MAX_OBJECTS,
@@ -437,10 +511,15 @@ impl StorageUniformManager {
             let mapped = buffer.map();
             let object_ptr = (mapped.as_ptr() as usize + offset) as *mut ObjectUniforms;
             *object_ptr = ObjectUniforms {
-                model: *model,
-                base_color: *color,
-                material_params: [metallic, roughness, ao, emission_idx],
-                texture_indices,
+                model: *params.model,
+                base_color: *params.color,
+                material_params: [
+                    params.metallic,
+                    params.roughness,
+                    params.ao,
+                    params.emission_idx,
+                ],
+                texture_indices: params.texture_indices,
             };
         }
         // Flush object data to make CPU writes visible to GPU
@@ -469,8 +548,33 @@ mod tests {
 
     #[test]
     fn test_frame_uniforms_size() {
-        // 3 mat4x4 (192 bytes) + 4 vec4 (64 bytes) + 1 vec4<u32> (16 bytes) + 48 padding = 320 bytes
+        // 3 mat4x4 (192) + 4 vec4 (64) + 1 vec4<u32> (16) + 3 vec4 tonemap/overlay/compositing (48) = 320 bytes
         assert_eq!(std::mem::size_of::<FrameUniforms>(), 320);
+
+        // Verify field offsets match WGSL std140 layout
+        unsafe {
+            let base = std::ptr::NonNull::<FrameUniforms>::dangling().as_ptr();
+            assert_eq!(
+                (*base).tiles.as_ptr() as usize - base as usize,
+                256,
+                "tiles offset mismatch"
+            );
+            assert_eq!(
+                (*base).tonemap.as_ptr() as usize - base as usize,
+                272,
+                "tonemap offset mismatch"
+            );
+            assert_eq!(
+                (*base).overlay.as_ptr() as usize - base as usize,
+                288,
+                "overlay offset mismatch"
+            );
+            assert_eq!(
+                (*base).compositing.as_ptr() as usize - base as usize,
+                304,
+                "compositing offset mismatch"
+            );
+        }
     }
 
     #[test]

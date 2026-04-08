@@ -9,6 +9,10 @@ struct FrameUniforms {
     light_color: vec4f,
     light_intensity: vec4f,      // x = intensity, y = depth_texture_bindless_idx
     tiles: vec4<u32>,
+    // Post-processing params (frame-level, not per-object)
+    tonemap: vec4f,              // x = exposure, y = gamma, z = mode, w = hdr_texture_index
+    overlay: vec4f,              // x = ldr_texture_index, y = stencil_indicator_index
+    compositing: vec4f,          // x = screen_width, y = screen_height, z = viewport_count, w = viewport_bindless_index
 }
 
 struct ObjectUniforms {

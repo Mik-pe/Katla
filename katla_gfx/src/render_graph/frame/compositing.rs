@@ -74,13 +74,15 @@ impl<'a> Frame<'a> {
             self.renderer.storage_manager.update_object_bindless(
                 current_frame,
                 i,
-                &identity_model,
-                &rect.to_array(),
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                [0, 0, 0, 0],
+                &crate::vulkan::material::storage_uniform::ObjectBindlessParams {
+                    model: &identity_model,
+                    color: &rect.to_array(),
+                    metallic: 0.0,
+                    roughness: 0.0,
+                    ao: 0.0,
+                    emission_idx: 0.0,
+                    texture_indices: [0, 0, 0, 0],
+                },
             );
         }
 

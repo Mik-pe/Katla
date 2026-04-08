@@ -15,9 +15,6 @@
 @group(0) @binding(0)
 var<storage, read> frame_data: FrameUniforms;
 
-@group(0) @binding(1)
-var<storage, read> objects: array<ObjectUniforms>;
-
 // === Tonemapping Operators ===
 
 fn aces_filmic(x: vec3f) -> vec3f {
@@ -52,11 +49,10 @@ fn gamma_correct(x: vec3f, gamma: f32) -> vec3f {
 
 @fragment
 fn fs_main(in: FullscreenVertexOutput) -> @location(0) vec4f {
-    let tonemap_params = objects[0].base_color;
-    let exposure = tonemap_params.r;
-    let gamma = tonemap_params.g;
-    let mode = u32(tonemap_params.b);
-    let hdr_texture_idx = u32(tonemap_params.a);
+    let exposure = frame_data.tonemap.x;
+    let gamma = frame_data.tonemap.y;
+    let mode = u32(frame_data.tonemap.z);
+    let hdr_texture_idx = u32(frame_data.tonemap.w);
 
     let hdr_color = textureSample(bindless_textures[hdr_texture_idx], shared_sampler, in.uv).rgb;
 
