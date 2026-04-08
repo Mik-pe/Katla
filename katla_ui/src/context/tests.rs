@@ -1126,7 +1126,9 @@ fn test_scroll_consumed_by_first_scroll_area() {
 /// false due to hover_z_index being higher.
 #[test]
 fn test_scroll_blocked_by_floating_panel() {
-    use crate::widgets::{DraggablePanel, DraggablePanelConfig, DraggablePanelState, DraggablePanelStyle};
+    use crate::widgets::{
+        DraggablePanel, DraggablePanelConfig, DraggablePanelState, DraggablePanelStyle,
+    };
 
     let scroll_bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 400.0));
 
@@ -1429,5 +1431,104 @@ fn test_button_border_forwarded_to_internal_method() {
     assert!(
         draw_list.index_count() >= 30,
         "Button with border should have at least 30 indices (bg + 4 border edges)"
+    );
+}
+
+// === ListView Widget Tests ===
+
+#[test]
+fn test_list_view_renders_visible_items() {
+    use crate::widgets::ListView;
+
+    let list_bounds = Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(200.0, 100.0));
+    let mut scroll_state = crate::ScrollAreaState::default();
+    let mut render_count = 0usize;
+
+    let mut ctx = UiContext::new();
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+    ctx.add(
+        ListView::new("test_list", &mut scroll_state)
+            .bounds(list_bounds)
+            .item_count(100)
+            .row_height(22.0)
+            .render_each(|_ui, _index, _bounds| {
+                render_count += 1;
+            }),
+    );
+    let _draw_list = ctx.end();
+
+    // With 100px height and 22px rows, we should render about 5-6 items (not all 100)
+    assert!(
+        render_count < 20,
+        "ListView should virtualize: rendered {} items but expected < 20",
+        render_count
+    );
+    assert!(
+        render_count > 0,
+        "ListView should render at least some visible items"
+    );
+}
+
+#[test]
+fn test_list_view_empty_list() {
+    use crate::widgets::ListView;
+
+    let list_bounds = Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(200.0, 100.0));
+    let mut scroll_state = crate::ScrollAreaState::default();
+    let mut render_count = 0usize;
+
+    let mut ctx = UiContext::new();
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+    ctx.add(
+        ListView::new("empty_list", &mut scroll_state)
+            .bounds(list_bounds)
+            .item_count(0)
+            .row_height(22.0)
+            .render_each(|_ui, _index, _bounds| {
+                render_count += 1;
+            }),
+    );
+    let _draw_list = ctx.end();
+
+    assert_eq!(
+        render_count, 0,
+        "ListView with 0 items should not call render callback"
+    );
+}
+
+#[test]
+fn test_list_view_provides_correct_bounds() {
+    use crate::widgets::ListView;
+
+    let list_bounds = Rect2D::from_origin_size(Vec2::new(50.0, 10.0), Vec2::new(200.0, 100.0));
+    let mut scroll_state = crate::ScrollAreaState::default();
+    let mut first_bounds = None;
+
+    let mut ctx = UiContext::new();
+    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+    ctx.add(
+        ListView::new("bounds_list", &mut scroll_state)
+            .bounds(list_bounds)
+            .item_count(5)
+            .row_height(22.0)
+            .render_each(|_ui, index, bounds| {
+                if index == 0 {
+                    first_bounds = Some(bounds);
+                }
+            }),
+    );
+    let _draw_list = ctx.end();
+
+    let fb = first_bounds.expect("first item should have been rendered");
+    // First item y should be at bounds.min.y + 2.0 (the 2.0 padding)
+    assert!(
+        (fb.min.y() - (list_bounds.min.y() + 2.0)).abs() < 0.01,
+        "First item y should be at list top + padding, got {}",
+        fb.min.y()
+    );
+    assert!(
+        (fb.height() - 22.0).abs() < 0.01,
+        "First item height should be 22.0, got {}",
+        fb.height()
     );
 }

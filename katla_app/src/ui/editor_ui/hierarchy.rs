@@ -2,8 +2,9 @@ use std::collections::HashSet;
 
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2};
+use katla_ui::widgets::ListView;
 use katla_ui::{
-    FontId, FontSize, ForkAwesome, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
+    FontId, FontSize, ForkAwesome, Response, ScrollAreaState, UiContext, Widget,
     input::mouse_button,
 };
 
@@ -92,13 +93,13 @@ impl<'a> Widget for Hierarchy<'a> {
         );
         ui.draw_rect(header_bounds, self.theme.panel_header);
 
-        let visible_count = self
+        let visible_entities: Vec<&EntityInfo> = self
             .entities
             .iter()
             .filter(|e| is_entity_visible(e, self.entities, &self.state.expanded_entities))
-            .count();
+            .collect();
 
-        let header_text = format!("Hierarchy ({} entities)", visible_count);
+        let header_text = format!("Hierarchy ({} entities)", visible_entities.len());
         let header_pos = Vec2::new(self.bounds.min.x() + 8.0, header_bounds.center().y() - 7.0);
         ui.draw_text(
             &header_text,
@@ -113,180 +114,175 @@ impl<'a> Widget for Hierarchy<'a> {
         );
 
         let expanded_entities = self.state.expanded_entities.clone();
+        let selected_entity = *self.selected_entity;
+        let indent_per_level = 16.0;
+
         let mut toggle_entity: Option<EntityId> = None;
         let mut clicked_entity: Option<EntityId> = None;
         let mut right_clicked_entity: Option<EntityId> = None;
 
-        self.state.scroll_state = ui.scroll_area(
-            ScrollArea::new("hierarchy_scroll").max_height(content_bounds.height()),
-            self.state.scroll_state,
-            content_bounds,
-            |ui| {
-                let scroll_offset = ui.scroll_offset();
+        if !visible_entities.is_empty() {
+            let theme = self.theme;
+            let list_origin_x = self.bounds.min.x();
+            let list_width = self.bounds.width();
 
-                let mut cursor = Vec2::new(
-                    self.bounds.min.x(),
-                    self.bounds.min.y() + header_height + 4.0 - scroll_offset,
-                );
-                let item_height = 22.0;
-                let indent_per_level = 16.0;
+            ui.add(
+                ListView::new("hierarchy_scroll", &mut self.state.scroll_state)
+                    .bounds(content_bounds)
+                    .item_count(visible_entities.len())
+                    .row_height(22.0)
+                    .render_each(|ui: &mut UiContext, index, row_bounds| {
+                        let entity = visible_entities[index];
+                        let indent = entity.depth as f32 * indent_per_level;
+                        let item_x = list_origin_x + indent;
+                        let item_width = list_width - indent;
 
-                for entity in self.entities {
-                    if !is_entity_visible(entity, self.entities, &expanded_entities) {
-                        continue;
-                    }
-
-                    let indent = entity.depth as f32 * indent_per_level;
-                    let item_x = self.bounds.min.x() + indent;
-                    let item_width = self.bounds.width() - indent;
-
-                    let item_bounds = Rect2D::from_origin_size(
-                        Vec2::new(item_x, cursor.y()),
-                        Vec2::new(item_width, item_height),
-                    );
-
-                    let is_selected = Some(entity.id) == *self.selected_entity;
-                    let is_hovered = ui.is_hovered(item_bounds);
-
-                    let bg_color = if is_selected {
-                        self.theme.selection
-                    } else if is_hovered {
-                        self.theme.selection_hover
-                    } else {
-                        Color::TRANSPARENT
-                    };
-
-                    if bg_color != Color::TRANSPARENT {
-                        ui.draw_rect(item_bounds, bg_color);
-                    }
-
-                    if entity.depth > 0 {
-                        let line_x = item_x - 8.0;
-                        ui.draw_line(
-                            Vec2::new(line_x, cursor.y()),
-                            Vec2::new(line_x, cursor.y() + item_height),
-                            self.theme.separator,
-                            1.0,
+                        let item_bounds = Rect2D::from_origin_size(
+                            Vec2::new(item_x, row_bounds.min.y()),
+                            Vec2::new(item_width, row_bounds.height()),
                         );
-                    }
 
-                    let text_x = if entity.has_children {
-                        let is_expanded = expanded_entities.contains(&entity.id);
-                        let icon = if is_expanded {
-                            ForkAwesome::CHEVRON_DOWN
-                        } else {
-                            ForkAwesome::CHEVRON_RIGHT
-                        };
-                        let triangle_bounds = Rect2D::from_origin_size(
-                            Vec2::new(item_x + 2.0, cursor.y()),
-                            Vec2::new(16.0, item_height),
-                        );
-                        let triangle_hovered = ui.is_hovered(triangle_bounds);
+                        let is_selected = Some(entity.id) == selected_entity;
+                        let is_hovered = ui.is_hovered(item_bounds);
 
-                        let triangle_color = if triangle_hovered {
-                            self.theme.text_primary
+                        let bg_color = if is_selected {
+                            theme.selection
+                        } else if is_hovered {
+                            theme.selection_hover
                         } else {
-                            self.theme.text_secondary
+                            Color::TRANSPARENT
                         };
 
-                        let triangle_pos = Vec2::new(item_x + 3.0, cursor.y() + 3.0);
+                        if bg_color != Color::TRANSPARENT {
+                            ui.draw_rect(item_bounds, bg_color);
+                        }
+
+                        if entity.depth > 0 {
+                            let line_x = item_x - 8.0;
+                            ui.draw_line(
+                                Vec2::new(line_x, row_bounds.min.y()),
+                                Vec2::new(line_x, row_bounds.max.y()),
+                                theme.separator,
+                                1.0,
+                            );
+                        }
+
+                        let text_x = if entity.has_children {
+                            let is_expanded = expanded_entities.contains(&entity.id);
+                            let icon = if is_expanded {
+                                ForkAwesome::CHEVRON_DOWN
+                            } else {
+                                ForkAwesome::CHEVRON_RIGHT
+                            };
+                            let triangle_bounds = Rect2D::from_origin_size(
+                                Vec2::new(item_x + 2.0, row_bounds.min.y()),
+                                Vec2::new(16.0, row_bounds.height()),
+                            );
+                            let triangle_hovered = ui.is_hovered(triangle_bounds);
+
+                            let triangle_color = if triangle_hovered {
+                                theme.text_primary
+                            } else {
+                                theme.text_secondary
+                            };
+
+                            ui.draw_icon_aligned(
+                                icon,
+                                Vec2::new(item_x + 3.0, row_bounds.min.y() + 3.0),
+                                ui.scaled_font_size(FontSize::Medium),
+                                triangle_color,
+                                FontId::DEFAULT,
+                            );
+
+                            if ui.mouse_clicked(mouse_button::LEFT) && triangle_hovered {
+                                toggle_entity = Some(entity.id);
+                            }
+
+                            item_x + 18.0
+                        } else {
+                            let dot_pos = Vec2::new(item_x + 6.0, row_bounds.min.y() + 8.0);
+                            ui.draw_rect(
+                                Rect2D::from_origin_size(dot_pos, Vec2::new(4.0, 4.0)),
+                                theme.text_muted,
+                            );
+                            item_x + 18.0
+                        };
+
+                        let entity_icon = match entity.entity_type.as_str() {
+                            "Mesh" => ForkAwesome::CUBE,
+                            "Particle Emitter" => ForkAwesome::STAR,
+                            "Directional Light" => ForkAwesome::SUN,
+                            "Point Light" => ForkAwesome::LIGHTBULB,
+                            "Camera" => ForkAwesome::CAMERA,
+                            "Empty" => ForkAwesome::CIRCLE,
+                            _ => ForkAwesome::CUBE,
+                        };
+                        let entity_icon_color = match entity.entity_type.as_str() {
+                            "Mesh" => theme.entity_mesh,
+                            "Particle Emitter" => theme.entity_particle,
+                            "Directional Light" | "Point Light" => theme.entity_light,
+                            _ => theme.text_secondary,
+                        };
+
                         ui.draw_icon_aligned(
-                            icon,
-                            triangle_pos,
+                            entity_icon,
+                            Vec2::new(text_x, row_bounds.min.y() + 3.0),
                             ui.scaled_font_size(FontSize::Medium),
-                            triangle_color,
+                            entity_icon_color,
                             FontId::DEFAULT,
                         );
 
-                        if ui.mouse_clicked(mouse_button::LEFT) && triangle_hovered {
-                            toggle_entity = Some(entity.id);
+                        let name_pos = Vec2::new(text_x + 16.0, row_bounds.min.y() + 3.0);
+                        ui.draw_text(
+                            &entity.name,
+                            name_pos,
+                            theme.text_secondary,
+                            ui.scaled_font_size(FontSize::Medium),
+                        );
+
+                        let badge_color = match entity.entity_type.as_str() {
+                            "Mesh" => theme.entity_mesh,
+                            "Particle Emitter" => theme.entity_particle,
+                            "Directional Light" | "Point Light" => theme.entity_light,
+                            _ => theme.entity_empty,
+                        };
+                        let badge_text = &entity.entity_type;
+                        let badge_size =
+                            ui.measure_text(badge_text, ui.scaled_font_size(FontSize::XSmall));
+                        let badge_pos = Vec2::new(
+                            item_bounds.max.x() - badge_size.x() - 8.0,
+                            row_bounds.min.y() + 5.0,
+                        );
+                        ui.draw_text(
+                            badge_text,
+                            badge_pos,
+                            badge_color,
+                            ui.scaled_font_size(FontSize::XSmall),
+                        );
+
+                        let triangle_width = if entity.has_children { 18.0 } else { 0.0 };
+                        let select_bounds = Rect2D::from_origin_size(
+                            Vec2::new(item_x + triangle_width, row_bounds.min.y()),
+                            Vec2::new(item_width - triangle_width, row_bounds.height()),
+                        );
+                        let select_hovered = ui.is_hovered(select_bounds);
+
+                        if ui.mouse_clicked(mouse_button::LEFT)
+                            && select_hovered
+                            && !ui.has_open_popup()
+                        {
+                            clicked_entity = Some(entity.id);
                         }
 
-                        item_x + 18.0
-                    } else {
-                        let dot_pos = Vec2::new(item_x + 6.0, cursor.y() + 8.0);
-                        ui.draw_rect(
-                            Rect2D::from_origin_size(dot_pos, Vec2::new(4.0, 4.0)),
-                            self.theme.text_muted,
-                        );
-                        item_x + 18.0
-                    };
-
-                    let entity_icon = match entity.entity_type.as_str() {
-                        "Mesh" => ForkAwesome::CUBE,
-                        "Particle Emitter" => ForkAwesome::STAR,
-                        "Directional Light" => ForkAwesome::SUN,
-                        "Point Light" => ForkAwesome::LIGHTBULB,
-                        "Camera" => ForkAwesome::CAMERA,
-                        "Empty" => ForkAwesome::CIRCLE,
-                        _ => ForkAwesome::CUBE,
-                    };
-                    let entity_icon_color = match entity.entity_type.as_str() {
-                        "Mesh" => self.theme.entity_mesh,
-                        "Particle Emitter" => self.theme.entity_particle,
-                        "Directional Light" | "Point Light" => self.theme.entity_light,
-                        _ => self.theme.text_secondary,
-                    };
-
-                    ui.draw_icon_aligned(
-                        entity_icon,
-                        Vec2::new(text_x, cursor.y() + 3.0),
-                        ui.scaled_font_size(FontSize::Medium),
-                        entity_icon_color,
-                        FontId::DEFAULT,
-                    );
-
-                    let name_text = &entity.name;
-                    let name_pos = Vec2::new(text_x + 16.0, cursor.y() + 3.0);
-                    ui.draw_text(
-                        name_text,
-                        name_pos,
-                        self.theme.text_secondary,
-                        ui.scaled_font_size(FontSize::Medium),
-                    );
-
-                    let badge_color = match entity.entity_type.as_str() {
-                        "Mesh" => self.theme.entity_mesh,
-                        "Particle Emitter" => self.theme.entity_particle,
-                        "Directional Light" | "Point Light" => self.theme.entity_light,
-                        _ => self.theme.entity_empty,
-                    };
-                    let badge_text = &entity.entity_type;
-                    let badge_size =
-                        ui.measure_text(badge_text, ui.scaled_font_size(FontSize::XSmall));
-                    let badge_pos =
-                        Vec2::new(item_bounds.max.x() - badge_size.x() - 8.0, cursor.y() + 5.0);
-                    ui.draw_text(
-                        badge_text,
-                        badge_pos,
-                        badge_color,
-                        ui.scaled_font_size(FontSize::XSmall),
-                    );
-
-                    let triangle_width = if entity.has_children { 18.0 } else { 0.0 };
-                    let select_bounds = Rect2D::from_origin_size(
-                        Vec2::new(item_x + triangle_width, cursor.y()),
-                        Vec2::new(item_width - triangle_width, item_height),
-                    );
-                    let select_hovered = ui.is_hovered(select_bounds);
-
-                    if ui.mouse_clicked(mouse_button::LEFT)
-                        && select_hovered
-                        && !ui.has_open_popup()
-                    {
-                        clicked_entity = Some(entity.id);
-                    }
-
-                    if ui.mouse_clicked(mouse_button::RIGHT) && is_hovered && !ui.has_open_popup() {
-                        right_clicked_entity = Some(entity.id);
-                    }
-
-                    cursor = Vec2::new(cursor.x(), cursor.y() + item_height);
-                }
-
-                visible_count as f32 * item_height + 8.0
-            },
-        );
+                        if ui.mouse_clicked(mouse_button::RIGHT)
+                            && is_hovered
+                            && !ui.has_open_popup()
+                        {
+                            right_clicked_entity = Some(entity.id);
+                        }
+                    }),
+            );
+        }
 
         if let Some(entity_id) = toggle_entity {
             if self.state.expanded_entities.contains(&entity_id) {
