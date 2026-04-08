@@ -45,10 +45,10 @@ impl Application {
         info!("Gizmo GPU resources initialized");
     }
 
-    /// Hit-test gizmo axes at the given screen position.
+    /// Hit-test gizmo handles at the given screen position.
     ///
-    /// Returns the hit axis, or None if no axis is close enough to the mouse.
-    pub(crate) fn hit_test_gizmo(&self, mouse_pos: Vec2) -> Option<GizmoAxis> {
+    /// Returns the hit handle (axis or plane), or None if nothing is close enough.
+    pub(crate) fn hit_test_gizmo(&self, mouse_pos: Vec2) -> Option<GizmoHandle> {
         use crate::components::PerspectiveComponent;
 
         if self.editor.gizmo_state.entity.is_none() || !self.editor.gizmo_resources.initialized {
@@ -100,8 +100,8 @@ impl Application {
         })
     }
 
-    /// Begin dragging a gizmo axis.
-    pub(crate) fn begin_gizmo_drag(&mut self, axis: GizmoAxis, mouse_pos: Vec2) {
+    /// Begin dragging a gizmo handle (axis or plane).
+    pub(crate) fn begin_gizmo_drag(&mut self, handle: GizmoHandle, mouse_pos: Vec2) {
         if let Some(entity_id) = self.editor.gizmo_state.entity {
             let entity_pos = self
                 .world
@@ -124,30 +124,37 @@ impl Application {
                 &proj_mat,
             );
             {
-                // Compute camera forward for the drag plane
-                let _cam_pos = self
-                    .world
-                    .get_component::<crate::components::TransformComponent>(
-                        self.camera.borrow().entity,
-                    )
-                    .map(|t| t.transform.position)
-                    .unwrap_or(katla_math::Vec3::new(0.0, 2.0, 10.0));
                 let cam_rot = self.camera.borrow().get_view_rotation(&self.world);
                 let camera_forward = cam_rot * katla_math::Vec3::new(0.0, 0.0, -1.0);
 
-                if let Some(delta) =
-                    compute_translate_delta(axis, ray_origin, ray_dir, entity_pos, camera_forward)
-                {
-                    // Store the initial world position on the plane (not the entity position)
-                    let world_pos = entity_pos + delta;
-                    self.editor
-                        .gizmo_state
-                        .begin_drag(axis, world_pos, entity_pos);
-                } else {
-                    self.editor
-                        .gizmo_state
-                        .begin_drag(axis, entity_pos, entity_pos);
-                }
+                let world_pos = match handle {
+                    GizmoHandle::Axis(axis) => {
+                        if let Some(delta) = compute_translate_delta(
+                            axis,
+                            ray_origin,
+                            ray_dir,
+                            entity_pos,
+                            camera_forward,
+                        ) {
+                            entity_pos + delta
+                        } else {
+                            entity_pos
+                        }
+                    }
+                    GizmoHandle::Plane(plane) => {
+                        if let Some(delta) =
+                            compute_translate_plane_delta(plane, ray_origin, ray_dir, entity_pos)
+                        {
+                            entity_pos + delta
+                        } else {
+                            entity_pos
+                        }
+                    }
+                };
+
+                self.editor
+                    .gizmo_state
+                    .begin_drag(handle, world_pos, entity_pos);
 
                 // Store initial rotation/scale for rotate/scale modes
                 if let Some(transform) = self
@@ -177,7 +184,7 @@ impl Application {
                 return;
             };
 
-            let Some(axis) = self.editor.gizmo_state.active_axis else {
+            let Some(active_handle) = self.editor.gizmo_state.active_handle else {
                 return;
             };
 
@@ -198,6 +205,34 @@ impl Application {
 
             let (ray_origin, ray_dir) =
                 screen_to_ray(current_screen, viewport, &view_mat, &proj_mat);
+
+            // Precompute zoom-aware scale sensitivity for the fallback path (initial_dist ≈ 0)
+            let scale_fallback_sensitivity = {
+                let fov = self
+                    .world
+                    .get_component::<crate::components::PerspectiveComponent>(
+                        self.camera.borrow().entity,
+                    )
+                    .map(|p| p.fov)
+                    .unwrap_or(60.0);
+                let viewport_height = self.editor.editor_ui.viewport_size().1 as f32;
+                let cam_pos = self
+                    .world
+                    .get_component::<crate::components::TransformComponent>(
+                        self.camera.borrow().entity,
+                    )
+                    .map(|t| t.transform.position)
+                    .unwrap_or(katla_math::Vec3::new(0.0, 2.0, 10.0));
+                let gs = compute_gizmo_scale(
+                    cam_pos,
+                    self.editor.gizmo_state.origin,
+                    fov.to_radians(),
+                    viewport_height,
+                    120.0,
+                );
+                1.0 / (gs * 5.0)
+            };
+
             {
                 if let Some(transform) = self
                     .world
@@ -205,21 +240,32 @@ impl Application {
                 {
                     match self.editor.gizmo_state.mode {
                         GizmoMode::Translate => {
-                            if let Some(start_origin) = self.editor.gizmo_state.drag_start_origin
-                                && let Some(delta) = compute_translate_delta(
-                                    axis,
-                                    ray_origin,
-                                    ray_dir,
-                                    start_origin,
-                                    camera_forward,
-                                )
-                            {
-                                transform.transform.position = start_origin + delta;
-                                self.editor.gizmo_state.origin = transform.transform.position;
+                            if let Some(start_origin) = self.editor.gizmo_state.drag_start_origin {
+                                let delta = match active_handle {
+                                    GizmoHandle::Axis(axis) => compute_translate_delta(
+                                        axis,
+                                        ray_origin,
+                                        ray_dir,
+                                        start_origin,
+                                        camera_forward,
+                                    ),
+                                    GizmoHandle::Plane(plane) => compute_translate_plane_delta(
+                                        plane,
+                                        ray_origin,
+                                        ray_dir,
+                                        start_origin,
+                                    ),
+                                };
+                                if let Some(delta) = delta {
+                                    transform.transform.position = start_origin + delta;
+                                    self.editor.gizmo_state.origin = transform.transform.position;
+                                }
                             }
                         }
                         GizmoMode::Rotate => {
-                            if let Some(prev) = prev_screen {
+                            if let Some(axis) = active_handle.axis()
+                                && let Some(prev) = prev_screen
+                            {
                                 // Project gizmo origin to screen space for rotation center
                                 let origin_screen = world_to_screen(
                                     self.editor.gizmo_state.origin,
@@ -259,36 +305,88 @@ impl Application {
                         }
                         GizmoMode::Scale => {
                             if let Some(start_origin) = self.editor.gizmo_state.drag_start_origin
-                                && let Some(axis_dist) = compute_scale_delta(
-                                    axis,
-                                    ray_origin,
-                                    ray_dir,
-                                    start_origin,
-                                    camera_forward,
-                                )
                                 && let Some(start_scale) = self.editor.gizmo_state.drag_start_scale
                             {
-                                let axis_idx = match axis {
-                                    GizmoAxis::X => 0,
-                                    GizmoAxis::Y => 1,
-                                    GizmoAxis::Z => 2,
-                                };
-                                // Store the initial axis distance on the first drag frame
-                                // to compute relative scale from the drag start
-                                if self.editor.gizmo_state.drag_start_world.is_none() {
-                                    self.editor.gizmo_state.drag_start_world =
-                                        Some(katla_math::Vec3::new(axis_dist, 0.0, 0.0));
-                                }
-                                let initial_dist =
-                                    self.editor.gizmo_state.drag_start_world.unwrap().x();
-                                // Scale relative to drag start: ratio of current distance to initial distance
-                                let scale_factor = if initial_dist.abs() > 1e-6 {
-                                    axis_dist / initial_dist
-                                } else {
-                                    1.0 + axis_dist * 0.01
-                                };
                                 let mut scale = [start_scale.x(), start_scale.y(), start_scale.z()];
-                                scale[axis_idx] = (scale[axis_idx] * scale_factor).max(0.01);
+
+                                match active_handle {
+                                    GizmoHandle::Axis(axis) => {
+                                        if let Some(axis_dist) = compute_scale_delta(
+                                            axis,
+                                            ray_origin,
+                                            ray_dir,
+                                            start_origin,
+                                            camera_forward,
+                                        ) {
+                                            let axis_idx = match axis {
+                                                GizmoAxis::X => 0,
+                                                GizmoAxis::Y => 1,
+                                                GizmoAxis::Z => 2,
+                                            };
+                                            if self.editor.gizmo_state.drag_start_world.is_none() {
+                                                self.editor.gizmo_state.drag_start_world = Some(
+                                                    katla_math::Vec3::new(axis_dist, 0.0, 0.0),
+                                                );
+                                            }
+                                            let initial_dist = self
+                                                .editor
+                                                .gizmo_state
+                                                .drag_start_world
+                                                .unwrap()
+                                                .x();
+
+                                            let scale_factor = if initial_dist.abs() > 1e-6 {
+                                                axis_dist / initial_dist
+                                            } else {
+                                                1.0 + axis_dist * scale_fallback_sensitivity
+                                            };
+                                            scale[axis_idx] =
+                                                (scale[axis_idx] * scale_factor).max(0.01);
+                                        }
+                                    }
+                                    GizmoHandle::Plane(plane) => {
+                                        if let Some((d1, d2)) = compute_scale_plane_delta(
+                                            plane,
+                                            ray_origin,
+                                            ray_dir,
+                                            start_origin,
+                                        ) {
+                                            let (a1, a2) = plane.axes();
+                                            let idx1 = match a1 {
+                                                GizmoAxis::X => 0,
+                                                GizmoAxis::Y => 1,
+                                                GizmoAxis::Z => 2,
+                                            };
+                                            let idx2 = match a2 {
+                                                GizmoAxis::X => 0,
+                                                GizmoAxis::Y => 1,
+                                                GizmoAxis::Z => 2,
+                                            };
+
+                                            if self.editor.gizmo_state.drag_start_world.is_none() {
+                                                self.editor.gizmo_state.drag_start_world =
+                                                    Some(katla_math::Vec3::new(d1, d2, 0.0));
+                                            }
+                                            let init =
+                                                self.editor.gizmo_state.drag_start_world.unwrap();
+
+                                            let f1 = if init.x().abs() > 1e-6 {
+                                                d1 / init.x()
+                                            } else {
+                                                1.0 + d1 * scale_fallback_sensitivity
+                                            };
+                                            let f2 = if init.y().abs() > 1e-6 {
+                                                d2 / init.y()
+                                            } else {
+                                                1.0 + d2 * scale_fallback_sensitivity
+                                            };
+
+                                            scale[idx1] = (scale[idx1] * f1).max(0.01);
+                                            scale[idx2] = (scale[idx2] * f2).max(0.01);
+                                        }
+                                    }
+                                }
+
                                 transform.transform.scale =
                                     katla_math::Vec3::new(scale[0], scale[1], scale[2]);
                             }
@@ -298,7 +396,7 @@ impl Application {
             }
         } else if self.editor.gizmo_state.entity.is_some() {
             // Update hover highlight
-            self.editor.gizmo_state.hovered_axis = self.hit_test_gizmo(mouse_pos);
+            self.editor.gizmo_state.hovered_handle = self.hit_test_gizmo(mouse_pos);
         }
     }
 
@@ -324,8 +422,8 @@ impl Application {
             {
                 self.editor.gizmo_state.consumed_click = false;
 
-                if let Some(axis) = self.hit_test_gizmo(mouse_pos) {
-                    self.begin_gizmo_drag(axis, mouse_pos);
+                if let Some(handle) = self.hit_test_gizmo(mouse_pos) {
+                    self.begin_gizmo_drag(handle, mouse_pos);
                 } else {
                     let vp = self.editor.editor_ui.last_viewport_bounds;
                     let rel_x = mouse_pos.x() - vp.min.x();
@@ -397,6 +495,19 @@ impl Application {
                 .editor_ui
                 .pending_actions
                 .push(crate::ui::EditorAction::SaveScene);
+        }
+
+        if keycode == KeyCode::KeyA
+            && self.current_modifiers.control_key()
+            && self.current_modifiers.shift_key()
+            && !self.current_modifiers.alt_key()
+        {
+            let co_creator = &mut self.editor.editor_ui.co_creator;
+            if co_creator.is_open() {
+                co_creator.close();
+            } else {
+                co_creator.open();
+            }
         }
     }
 

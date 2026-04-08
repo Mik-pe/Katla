@@ -8,6 +8,7 @@
 //! - Status bar (bottom)
 
 mod asset_browser;
+pub(crate) mod co_creator;
 mod hierarchy;
 pub(crate) mod inspector;
 mod layout;
@@ -39,6 +40,7 @@ use crate::{
 
 use super::theme::Theme;
 use asset_browser::AssetBrowserState;
+use co_creator::CoCreatorState;
 
 pub use asset_browser::ThumbnailState;
 pub use types::*;
@@ -115,6 +117,8 @@ pub struct EditorUI {
     pub(crate) inspector_edit_entity: Option<EntityId>,
     /// Current gizmo mode (synced from Application for toolbar display).
     pub gizmo_mode: u8,
+    /// AI Co-Creator chat panel state.
+    pub co_creator: CoCreatorState,
 }
 
 impl EditorUI {
@@ -160,6 +164,7 @@ impl EditorUI {
             },
             inspector_edit_entity: None,
             gizmo_mode: 0,
+            co_creator: CoCreatorState::new(),
         }
     }
 
@@ -269,6 +274,9 @@ impl EditorUI {
             }
             Panel::ParticleInspector => {
                 self.particle_inspector_state.panel.open();
+            }
+            Panel::CoCreator => {
+                self.co_creator.open();
             }
         }
     }

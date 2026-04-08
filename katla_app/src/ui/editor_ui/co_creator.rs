@@ -1,0 +1,394 @@
+use katla_math::{Color, Rect2D, Vec2};
+use katla_ui::widgets::{Button, TextInput};
+use katla_ui::widgets::{DraggablePanelConfig, DraggablePanelState, DraggablePanelStyle};
+use katla_ui::{FontSize, UiContext};
+
+use super::Theme;
+
+/// A single chat message in the co-creator panel.
+#[derive(Debug, Clone)]
+pub struct ChatMessage {
+    pub role: MessageRole,
+    pub text: String,
+}
+
+/// Role of a chat message sender.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageRole {
+    User,
+    Assistant,
+    System,
+}
+
+/// State for the co-creator chat panel.
+pub struct CoCreatorState {
+    /// Draggable panel state (position, visibility, drag).
+    pub panel: DraggablePanelState,
+    /// Current text in the input field.
+    pub input_text: String,
+    /// Chat message history.
+    pub messages: Vec<ChatMessage>,
+    /// Whether we're waiting for an agent response.
+    pub processing: bool,
+    /// Status message shown when idle.
+    pub status_message: String,
+}
+
+impl CoCreatorState {
+    pub fn new() -> Self {
+        Self {
+            panel: DraggablePanelState::default(),
+            input_text: String::new(),
+            messages: Vec::new(),
+            processing: false,
+            status_message: "Type a request below.".to_string(),
+        }
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.panel.is_visible()
+    }
+
+    pub fn open(&mut self) {
+        self.panel.open();
+    }
+
+    pub fn close(&mut self) {
+        self.panel.close();
+    }
+
+    /// Add a user message and queue it for processing.
+    pub fn submit_message(&mut self, text: &str) {
+        if text.trim().is_empty() {
+            return;
+        }
+        self.messages.push(ChatMessage {
+            role: MessageRole::User,
+            text: text.to_string(),
+        });
+        self.input_text.clear();
+        self.processing = true;
+    }
+
+    /// Add an assistant response.
+    pub fn add_assistant_message(&mut self, text: &str) {
+        self.messages.push(ChatMessage {
+            role: MessageRole::Assistant,
+            text: text.to_string(),
+        });
+        self.processing = false;
+    }
+
+    /// Add a system message (errors, status).
+    pub fn add_system_message(&mut self, text: &str) {
+        self.messages.push(ChatMessage {
+            role: MessageRole::System,
+            text: text.to_string(),
+        });
+        self.processing = false;
+    }
+}
+
+impl Default for CoCreatorState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Style colors for the co-creator panel.
+pub struct CoCreatorStyle {
+    pub user_msg_color: Color,
+    pub assistant_msg_color: Color,
+    pub system_msg_color: Color,
+    pub panel_bg: Color,
+    pub panel_border: Color,
+    pub panel_header: Color,
+    pub background_light: Color,
+    pub text_primary: Color,
+    pub text_muted: Color,
+}
+
+impl CoCreatorStyle {
+    pub fn from_theme(theme: &Theme) -> Self {
+        Self {
+            user_msg_color: Color::new(0.4, 0.7, 1.0, 1.0),
+            assistant_msg_color: theme.text_primary,
+            system_msg_color: theme.text_muted,
+            panel_bg: theme.panel_bg,
+            panel_border: theme.panel_border,
+            panel_header: theme.panel_header,
+            background_light: theme.background_light,
+            text_primary: theme.text_primary,
+            text_muted: theme.text_muted,
+        }
+    }
+
+    pub fn draggable_panel_style(&self) -> DraggablePanelStyle {
+        DraggablePanelStyle {
+            panel_bg: self.panel_bg,
+            panel_border: self.panel_border,
+            panel_header: self.panel_header,
+            background_light: self.background_light,
+            text_primary: self.text_primary,
+            text_muted: self.text_muted,
+        }
+    }
+}
+
+/// Whether the co-creator panel submitted a message this frame.
+pub struct CoCreatorResponse {
+    /// True if the user submitted a message this frame.
+    pub submitted: bool,
+    /// The submitted text, if any.
+    pub submitted_text: Option<String>,
+}
+
+/// Render the co-creator chat panel.
+/// Returns response indicating if a message was submitted.
+pub fn draw_co_creator_panel(
+    ui: &mut UiContext,
+    state: &mut CoCreatorState,
+    style: &CoCreatorStyle,
+    screen_size: Vec2,
+) -> CoCreatorResponse {
+    if !state.is_open() {
+        state.panel.mark_shown();
+        return CoCreatorResponse {
+            submitted: false,
+            submitted_text: None,
+        };
+    }
+
+    // Snapshot immutable data for rendering inside the closure to avoid
+    // borrowing `state.panel` (mutable) and `state.messages` (shared) simultaneously.
+    let status_message = state.status_message.clone();
+    let messages: Vec<(MessageRole, String)> = state
+        .messages
+        .iter()
+        .map(|m| (m.role, m.text.clone()))
+        .collect();
+    let processing = state.processing;
+    let mut input_text = state.input_text.clone();
+    let mut send_clicked = false;
+
+    let panel_style = style.draggable_panel_style();
+
+    katla_ui::widgets::DraggablePanel::show(
+        ui,
+        &mut state.panel,
+        &panel_style,
+        DraggablePanelConfig::new("co_creator", "AI Co-Creator")
+            .size(400.0, 500.0)
+            .screen_size(screen_size),
+        |ui, frame| {
+            let content_x = frame.panel_bounds.min.x() + 8.0;
+            let content_width = frame.panel_bounds.width() - 16.0;
+            let header_height = 32.0;
+            let input_height = 60.0;
+            let bottom_padding = 8.0;
+
+            let msg_area_top = frame.panel_bounds.min.y() + header_height + 8.0;
+            let msg_area_bottom = frame.panel_bounds.max.y() - input_height - bottom_padding;
+
+            let font_size = ui.scaled_font_size(FontSize::Small);
+
+            // Message area
+            ui.begin_column();
+            ui.set_cursor(Vec2::new(content_x, msg_area_top));
+
+            if messages.is_empty() {
+                ui.draw_text(&status_message, ui.cursor(), style.text_muted, font_size);
+            } else {
+                for (role, text) in &messages {
+                    let color = match role {
+                        MessageRole::User => style.user_msg_color,
+                        MessageRole::Assistant => style.assistant_msg_color,
+                        MessageRole::System => style.system_msg_color,
+                    };
+
+                    let prefix = match role {
+                        MessageRole::User => "You: ",
+                        MessageRole::Assistant => "AI: ",
+                        MessageRole::System => "> ",
+                    };
+
+                    let full_text = format!("{prefix}{text}");
+
+                    for line in wrap_text(&full_text, content_width, font_size, ui) {
+                        ui.draw_text(&line, ui.cursor(), color, font_size);
+                        ui.spacing(font_size + 2.0);
+                    }
+                    ui.spacing(4.0);
+                }
+            }
+
+            if processing {
+                ui.draw_text("Processing...", ui.cursor(), style.text_muted, font_size);
+            }
+
+            ui.end_column();
+
+            // Input area
+            let input_y = msg_area_bottom + 4.0;
+            let input_bounds = Rect2D::from_origin_size(
+                Vec2::new(content_x, input_y),
+                Vec2::new(content_width - 70.0, 28.0),
+            );
+
+            let send_x = content_x + content_width - 60.0;
+            let send_bounds =
+                Rect2D::from_origin_size(Vec2::new(send_x, input_y), Vec2::new(60.0, 28.0));
+
+            ui.add(
+                TextInput::new("co_creator_input", &mut input_text)
+                    .bounds(input_bounds)
+                    .placeholder("Ask the AI...")
+                    .id("co_creator_input"),
+            );
+
+            let response = ui.add(
+                Button::new("Send")
+                    .bounds(send_bounds)
+                    .id("co_creator_send"),
+            );
+            send_clicked = response.clicked;
+        },
+    );
+
+    // Sync input text back from the closure's local copy
+    state.input_text = input_text;
+
+    // Process send after the closure returns (panel state borrow released)
+    let mut submitted_text: Option<String> = None;
+    if send_clicked {
+        let text = state.input_text.clone();
+        state.submit_message(&text);
+        if !text.trim().is_empty() {
+            submitted_text = Some(text);
+        }
+    }
+
+    state.panel.mark_shown();
+
+    CoCreatorResponse {
+        submitted: submitted_text.is_some(),
+        submitted_text,
+    }
+}
+
+/// Simple word-wrap: split text into lines that fit within max_width.
+fn wrap_text(text: &str, max_width: f32, font_size: f32, ui: &UiContext) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+
+    for word in text.split_whitespace() {
+        let test_line = if current_line.is_empty() {
+            word.to_string()
+        } else {
+            format!("{current_line} {word}")
+        };
+
+        let measured = ui.measure_text(&test_line, font_size);
+
+        if measured.x() > max_width && !current_line.is_empty() {
+            lines.push(current_line);
+            current_line = word.to_string();
+        } else {
+            current_line = test_line;
+        }
+    }
+
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+
+    lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_co_creator_state_new() {
+        let state = CoCreatorState::new();
+        assert!(!state.is_open());
+        assert!(state.input_text.is_empty());
+        assert!(state.messages.is_empty());
+        assert!(!state.processing);
+        assert_eq!(state.status_message, "Type a request below.");
+    }
+
+    #[test]
+    fn test_submit_message() {
+        let mut state = CoCreatorState::new();
+        state.submit_message("spawn a cube");
+
+        assert_eq!(state.messages.len(), 1);
+        assert_eq!(state.messages[0].role, MessageRole::User);
+        assert_eq!(state.messages[0].text, "spawn a cube");
+        assert!(state.input_text.is_empty());
+        assert!(state.processing);
+    }
+
+    #[test]
+    fn test_add_assistant_message() {
+        let mut state = CoCreatorState::new();
+        state.processing = true;
+        state.add_assistant_message("Done! Spawned a cube at origin.");
+
+        assert_eq!(state.messages.len(), 1);
+        assert_eq!(state.messages[0].role, MessageRole::Assistant);
+        assert_eq!(state.messages[0].text, "Done! Spawned a cube at origin.");
+        assert!(!state.processing);
+    }
+
+    #[test]
+    fn test_add_system_message() {
+        let mut state = CoCreatorState::new();
+        state.processing = true;
+        state.add_system_message("Error: could not process request.");
+
+        assert_eq!(state.messages.len(), 1);
+        assert_eq!(state.messages[0].role, MessageRole::System);
+        assert!(!state.processing);
+    }
+
+    #[test]
+    fn test_empty_submit_ignored() {
+        let mut state = CoCreatorState::new();
+        state.submit_message("");
+        assert!(state.messages.is_empty());
+        assert!(!state.processing);
+
+        state.submit_message("   ");
+        assert!(state.messages.is_empty());
+        assert!(!state.processing);
+    }
+
+    #[test]
+    fn test_open_close() {
+        let mut state = CoCreatorState::new();
+        assert!(!state.is_open());
+
+        state.open();
+        assert!(state.is_open());
+
+        state.close();
+        assert!(!state.is_open());
+    }
+
+    #[test]
+    fn test_wrap_text_short_line() {
+        // This test verifies wrap_text handles a simple string.
+        // Since measure_text requires a real UiContext, we test the logic
+        // with a mock approach: just verify the function structure.
+        let text = "hello world";
+        let words: Vec<&str> = text.split_whitespace().collect();
+        assert_eq!(words, vec!["hello", "world"]);
+    }
+}

@@ -56,6 +56,7 @@ pub struct ParticleEmitterInfo {
 pub enum Panel {
     Preferences,
     ParticleInspector,
+    CoCreator,
 }
 
 /// Action requested from the editor UI.
@@ -121,6 +122,8 @@ pub enum EditorAction {
     },
     /// Set the gizmo transform mode.
     SetGizmoMode(u8), // 0=Translate, 1=Rotate, 2=Scale
+    /// AI Co-Creator request from the chat panel.
+    CoCreatorRequest(String),
 }
 
 /// Which panel is currently focused (receives input).

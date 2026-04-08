@@ -162,6 +162,12 @@ impl<'a> Widget for Toolbar<'a> {
                         .push(EditorAction::OpenPanel(Panel::ParticleInspector));
                     *open = false;
                 }
+                if ui.menu_item_clicked("AI Co-Creator") {
+                    self.state
+                        .pending_actions
+                        .push(EditorAction::OpenPanel(Panel::CoCreator));
+                    *open = false;
+                }
             },
         );
         ui.spacing(menu_item_width);
