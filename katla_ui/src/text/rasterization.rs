@@ -216,24 +216,23 @@ impl super::FontSystem {
         // Simple translate to map the path into the bitmap origin.
         let transform = Affine::translate((-padded.x0, -padded.y0));
 
-        let (mut ctx, mut pixmap) = self.glyph_pool.acquire(glyph_width_u16, glyph_height_u16);
-        ctx.set_paint(vello_cpu::peniko::color::palette::css::WHITE);
-        ctx.set_transform(transform);
-        ctx.fill_path(&path);
-        ctx.flush();
-        ctx.render_to_pixmap(&mut pixmap);
+        let pixels = self
+            .glyph_pool
+            .acquire(glyph_width_u16, glyph_height_u16, |ctx, pixmap| {
+                ctx.set_paint(vello_cpu::peniko::color::palette::css::WHITE);
+                ctx.set_transform(transform);
+                ctx.fill_path(&path);
+                ctx.flush();
+                ctx.render_to_pixmap(pixmap);
 
-        // Extract alpha channel from premultiplied RGBA.
-        // For white text on transparent, R=G=B=A in premultiplied, so the alpha byte
-        // at offset 3 gives us the coverage directly.
-        let pixel_data = pixmap.data_as_u8_slice();
-        let mut pixels = vec![0u8; glyph_width * glyph_height];
-        for i in 0..glyph_width * glyph_height {
-            let alpha_raw = pixel_data[i * 4 + 3];
-            let coverage = alpha_raw as f32 / 255.0;
-            let alpha = coverage_to_alpha(coverage);
-            pixels[i] = (alpha * 255.0) as u8;
-        }
+                let pixel_data = pixmap.data_as_u8_slice();
+                let mut alpha = vec![0u8; glyph_width * glyph_height];
+                for i in 0..glyph_width * glyph_height {
+                    let coverage = pixel_data[i * 4 + 3] as f32 / 255.0;
+                    alpha[i] = (coverage_to_alpha(coverage) * 255.0) as u8;
+                }
+                alpha
+            });
 
         let rasterized = RasterizedGlyph {
             c,
