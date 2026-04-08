@@ -1,11 +1,11 @@
 {
   "milestone": "polish",
-  "round": 1,
-  "status": "fail",
+  "round": 2,
+  "status": "pass",
   "assertionsSummary": {
     "total": 15,
-    "passed": 14,
-    "failed": 1,
+    "passed": 15,
+    "failed": 0,
     "blocked": 0
   },
   "passedAssertions": [
@@ -21,27 +21,12 @@
     "VAL-CROSS-003",
     "VAL-CROSS-004",
     "VAL-CROSS-005",
+    "VAL-CROSS-006",
     "VAL-CROSS-007",
     "VAL-CROSS-008"
   ],
-  "failedAssertions": [
-    {
-      "id": "VAL-CROSS-006",
-      "reason": "Both picking_validation and outline_validation examples fail to compile due to API changes from robustness milestone (VAL-ROBUST-001 Result propagation, VAL-ROBUST-002 GpuAllocator wrapper) not reflected in example code. Specific issues: GpuAllocator no longer exposes borrow_mut() directly, begin_command_buffer() now returns Result instead of raw CommandBuffer, VulkanContext wrapped in Rc<Result<...>> which examples don't unwrap."
-    }
-  ],
+  "failedAssertions": [],
   "blockedAssertions": [],
-  "appliedUpdates": [
-    {
-      "target": "user-testing.md",
-      "description": "Added note: validation examples require --features validation flag",
-      "source": "setup"
-    },
-    {
-      "target": "user-testing.md",
-      "description": "Added note: -s flag runs 100 frames, not 25 as documented in validation contract",
-      "source": "flow-report"
-    }
-  ],
-  "previousRound": null
+  "appliedUpdates": [],
+  "previousRound": ".factory/validation/polish/user-testing/synthesis.round1.json"
 }
