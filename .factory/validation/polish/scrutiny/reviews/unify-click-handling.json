@@ -1,0 +1,31 @@
+{
+  "featureId": "unify-click-handling",
+  "reviewedAt": "2026-04-08T12:30:00.000Z",
+  "commitId": "1acf8df",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean refactoring that successfully unifies three click-handling patterns into a single click_interaction() method with a ClickConfig struct. The old click_behavior() method is fully removed. Seven call sites are refactored: button_with_colors (POPUP_BYPASS), image_button (POPUP_AWARE), checkbox (POPUP_AWARE), radio_button (POPUP_AWARE), toggle_button (POPUP_AWARE), Collapsible widget (POPUP_AWARE), and menu_bar_dropdown (POPUP_BYPASS). All 68 katla_ui tests pass, zero clippy warnings, and exactly one click_interaction definition exists. Remaining mouse_pressed/mouse_released patterns in scroll_area (scrollbar drag), slider (continuous drag), text_input (focus management), and frame.rs (active_id safety reset) are correctly left untouched as they are different interaction patterns, not click detection.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "ClickConfig field uses `pub` visibility while the struct is `pub(crate)`. Since the struct is already crate-scoped, `pub` on the field is equivalent to `pub(crate)`. This is consistent with ClickResult's `pub fn is_clicked()` etc., but AGENTS.md says 'prefer pub(crate) until we know something should be part of the public API'. Could be worth documenting that `pub` within a `pub(crate)` struct is acceptable.",
+      "evidence": "katla_ui/src/context/interaction.rs:16 — `pub popup_aware: bool` inside `pub(crate) struct ClickConfig`"
+    },
+    {
+      "area": "conventions",
+      "observation": "Import paths for ClickConfig are inconsistent across call sites: context/widgets/ uses `super::super::interaction::ClickConfig` (relative), context/popup/ uses the same relative pattern, but widgets/mod.rs uses `crate::context::interaction::ClickConfig` (absolute). Both work but mixing styles is a minor consistency issue.",
+      "evidence": "katla_ui/src/context/widgets/basic.rs:34 uses super::super::interaction::ClickConfig, katla_ui/src/widgets/mod.rs:1134 uses crate::context::interaction::ClickConfig"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The popup blocking mechanism for click interactions relies on the initial press-phase `hovered` check. When `popup_consume_click` is true, `UiContext::is_hovered()` returns false, which prevents `active_id` from being set. The `popup_aware` flag only affects the release-phase hover check (raw `input.is_hovered` vs pre-computed `hovered`). This means both POPUP_AWARE and POPUP_BYPASS widgets are blocked by popups during the press phase — the difference only manifests if a popup opens/closes between press and release. This is an important behavioral nuance for future workers modifying click handling.",
+      "evidence": "katla_ui/src/context/widgets.rs:103-108 — press branch checks `hovered` (pre-computed) regardless of config; release branch at line 109-113 applies config.popup_aware to choose between pre-computed `hovered` and raw `input.is_hovered(bounds)`"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature VAL-POLISH-001 is fully satisfied. The implementation creates a single click_interaction() method with ClickConfig (popup_aware bool + POPUP_AWARE/POPUP_BYPASS constants), refactors all 7 click-handling call sites to use it, removes the old click_behavior() method entirely, and preserves all existing click behavior exactly. Verification confirms: exactly one click_interaction definition, zero click_behavior definitions or calls, all tests pass, zero clippy warnings. Popup blocking behavior correctly preserved through careful separation of press-phase (always uses pre-computed hover) and release-phase (configurable via ClickConfig)."
+}

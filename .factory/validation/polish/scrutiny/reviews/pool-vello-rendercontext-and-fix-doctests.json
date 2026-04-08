@@ -1,0 +1,38 @@
+{
+  "featureId": "pool-vello-rendercontext-and-fix-doctests",
+  "reviewedAt": "2026-04-08T12:45:00.000Z",
+  "commitId": "7902f25",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The doctest conversion portion (VAL-POLISH-007) is correctly implemented: 3 ECS doctests converted to compilable, 2 macro docs to ```text blocks, and 6 particle.rs doctests converted with proper imports and assertions. However, the GlyphRenderPool portion (VAL-POLISH-006) has a critical bug: the pool never actually reuses RenderContext+Pixmap pairs. The acquire() method uses Option::take() which removes the pair from the pool, and the caller (rasterization.rs) never returns it. On every acquire() call, self.ctx is None (from the previous take()), so needs_realloc is always true and a fresh RenderContext::new() + Pixmap::new() is allocated every time. The pool provides zero reuse benefit — it allocates exactly as often as the pre-pool code did.",
+    "issues": [
+      {
+        "file": "katla_ui/src/text/glyph_pool.rs",
+        "line": 36,
+        "severity": "blocking",
+        "description": "acquire() uses self.ctx.take() which removes the (RenderContext, Pixmap) pair from the pool. The caller in rasterization.rs:219 gets ownership of the pair and drops it at end-of-scope without returning it. Since self.ctx is always None after a call, every subsequent acquire() hits the needs_realloc=true branch and allocates a fresh pair. The pool never reuses anything. Fix: the caller must return the pair to the pool after use (e.g., via a release() method, or by restructuring to borrow from the pool)."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The vello_cpu crate's Pixmap exposes data_as_u8_slice_mut() for mutable access, and RenderContext has a reset() method that clears internal render state. This is useful knowledge for anyone working with the text rendering pipeline in katla_ui. The worker spent time investigating the vello_cpu source at C:\\Users\\mikae\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\vello_cpu-0.0.7 to discover these APIs.",
+      "evidence": "Transcript shows worker reading vello_cpu-0.0.7/src/render.rs and dispatch/ sources to find reset() and data_as_u8_slice_mut() methods. The initial implementation attempt used Pixmap::new per-acquire because the worker initially couldn't find the mutable slice API."
+    },
+    {
+      "area": "services",
+      "observation": "The verification commands for doc tests (cargo test --doc -p katla_ecs and cargo test --doc -p katla_app) are not in services.yaml. These are useful for features that modify documentation examples.",
+      "evidence": "services.yaml has test_katla_ecs and test_katla_app entries but they use 'cargo test -p' not 'cargo test --doc -p'. Doc tests require the --doc flag."
+    },
+    {
+      "area": "conventions",
+      "observation": "The verification step 'rg RenderContext::new katla_ui/src/text/rasterization.rs — zero in hot path' is misleading as a verification command. It only checks that the call was moved to a different file (glyph_pool.rs), not that allocation was eliminated. A better verification would check glyph_pool.rs for the pattern, or better yet, add a test that calls acquire() twice and asserts only one allocation occurs.",
+      "evidence": "rg shows zero matches in rasterization.rs because the RenderContext::new() call is now in glyph_pool.rs:31. The verification command tests file location, not behavior."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature pool-vello-rendercontext-and-fix-doctests FAILS review due to a blocking bug in GlyphRenderPool. VAL-POLISH-007 (doctest conversion) passes: all 11 doctests correctly converted (3 ECS runnable, 2 macro docs to text, 6 particle.rs runnable). VAL-POLISH-006 (GlyphRenderPool) fails: acquire() uses Option::take() which removes the pooled pair, and the caller never returns it, so every call allocates fresh — the pool provides zero reuse. The fix requires either a release() method called by the caller, or restructuring to borrow from the pool instead of taking ownership."
+}

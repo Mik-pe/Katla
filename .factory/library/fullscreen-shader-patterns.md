@@ -32,22 +32,22 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> FullscreenVSOutput {
 
 ## Parameter Passing Pattern
 
-For fullscreen passes that need parameters (e.g., tonemapping, compositing), use `objects[0]`:
+For fullscreen passes that need parameters (e.g., tonemapping, compositing), use `frame_data` fields in `FrameUniforms`:
 
 ```wgsl
-struct CompositingParams {
-    viewport_rects: array<vec4<f32>, 8>,  // [x, y, z, w] = [min_x, min_y, max_x, max_y]
-    viewport_count: u32,
-};
+// Post-processing params stored in frame uniform buffer
+@group(0) @binding(0) var<uniform> frame_data: FrameUniforms;
 
-@group(0) @binding(0)
-var<uniform> params: CompositingParams;
+// Example: tonemapping reads frame_data.tonemap
+// Example: wallhack overlay reads frame_data.overlay
 ```
 
 **Usage in Katla:**
-- Pass parameters via `objects[0]` when creating the pass
-- This mirrors the tonemapping shader pattern
-- Parameters are uploaded as uniform buffer data
+- Post-processing parameters (tonemap, overlay) are stored in `frame_data.tonemap` / `frame_data.overlay` fields
+- Per-viewport compositing rectangles use the `objects[]` storage buffer
+- Parameters are uploaded via the frame uniform buffer
+
+**Historical note:** Prior to the polish milestone, tonemapping and overlay parameters were passed via `objects[0].base_color` abuse. This was refactored to use proper `frame_data` fields.
 
 ## Pass Configuration
 

@@ -1,0 +1,151 @@
+{
+  "milestone": "polish",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 5,
+    "passed": 4,
+    "failed": 1,
+    "failedFeatures": ["pool-vello-rendercontext-and-fix-doctests"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "pool-vello-rendercontext-and-fix-doctests",
+      "severity": "blocking",
+      "description": "GlyphRenderPool.acquire() uses Option::take() which removes the (RenderContext, Pixmap) pair from the pool. The caller in rasterization.rs gets ownership and drops it at end-of-scope without returning it. Since self.ctx is always None after a call, every acquire() triggers a fresh RenderContext::new() + Pixmap::new() allocation. The pool provides zero reuse benefit — it allocates exactly as often as the pre-pool code did. Fix: the caller must return the pair to the pool after use (e.g., via a release() method), or the pool must be restructured to lend the pair via a callback pattern instead of transferring ownership.",
+      "file": "katla_ui/src/text/glyph_pool.rs",
+      "line": 36
+    }
+  ],
+  "nonBlockingIssues": [
+    {
+      "featureId": "audit-too-many-arguments",
+      "severity": "non_blocking",
+      "description": "Duplicate 'Color Theme' label in preferences appearance tab caused during AppearanceTabParams extraction.",
+      "file": "katla_app/src/ui/editor_ui/preferences.rs",
+      "line": 338
+    },
+    {
+      "featureId": "audit-too-many-arguments",
+      "severity": "non_blocking",
+      "description": "Commit includes significant scope creep: shader contract changes, dead code removal, widget default sizes from another feature, and editor handler method extraction — all intermingled with the parameter struct work.",
+      "file": "multiple files",
+      "line": 0
+    },
+    {
+      "featureId": "audit-too-many-arguments",
+      "severity": "non_blocking",
+      "description": "debug_output.txt (runtime artifact) was committed. Now added to .gitignore.",
+      "file": "debug_output.txt",
+      "line": 0
+    },
+    {
+      "featureId": "create-listview-widget",
+      "severity": "non_blocking",
+      "description": "Per-frame Vec allocation for visible entities in hierarchy.rs. Acceptable for typical use case.",
+      "file": "katla_app/src/ui/editor_ui/hierarchy.rs",
+      "line": 134
+    },
+    {
+      "featureId": "create-listview-widget",
+      "severity": "non_blocking",
+      "description": "Magic number 4.0 padding in ListView content height calculation.",
+      "file": "katla_ui/src/widgets/list_view.rs",
+      "line": 97
+    },
+    {
+      "featureId": "reduce-cfg-editor-and-widget-sizes",
+      "severity": "non_blocking",
+      "description": "Subtle ordering dependency in on_mouse_input calling handle_editor_mouse_press then handle_editor_mouse_release.",
+      "file": "katla_app/src/application/editor_methods.rs",
+      "line": 84
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": ".gitignore",
+      "description": "Added debug_output.txt to .gitignore to prevent runtime artifacts from being committed.",
+      "sourceFeature": "audit-too-many-arguments"
+    },
+    {
+      "target": "library",
+      "description": "Updated fullscreen-shader-patterns.md to reflect that post-processing params now use frame_data.tonemap/overlay instead of objects[0] abuse.",
+      "sourceFeature": "audit-too-many-arguments"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the paired editor/non-editor module file pattern (editor_methods.rs / no_editor_methods.rs) as a convention for reducing cfg annotation noise in katla_app.",
+      "evidence": "Feature reduce-cfg-editor-and-widget-sizes established this pattern, reducing 22 per-method cfg pairs to 2 file-level module gates.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the dual-source widget default pattern: new() uses compile-time DEFAULTS const, at_cursor() uses runtime ui.style fields. Future workers adding new widgets should follow this pattern.",
+      "evidence": "Features create-listview-widget and reduce-cfg-editor-and-widget-sizes both use this pattern. Two reviewers independently flagged it as undocumented.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance that popup blocking for click interactions works at the press phase (pre-computed hover) and the popup_aware flag only differentiates release-phase behavior. This nuance is important for future workers modifying click handling.",
+      "evidence": "Feature unify-click-handling — the popup blocking mechanism is subtle and undocumented.",
+      "isSystemic": false
+    },
+    {
+      "target": "library",
+      "suggestion": "Document that Mat3 internal storage is row-major (each Vec3 is a row, not a column), which is unusual for graphics code. from_rows() was renamed from from_elements() to be explicit.",
+      "evidence": "Feature audit-too-many-arguments — the worker renamed from_elements to from_rows to clarify the layout.",
+      "isSystemic": false
+    },
+    {
+      "target": "services.yaml",
+      "suggestion": "Add doc-test commands: 'test_katla_ecs_doc: cargo test --doc -p katla_ecs' and 'test_katla_app_doc: cargo test --doc -p katla_app' for features that modify documentation examples.",
+      "evidence": "Feature pool-vello-rendercontext-and-fix-doctests needed these but they weren't available in services.yaml.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "ClickConfig uses pub visibility inside pub(crate) struct",
+      "reason": "Cosmetic consistency issue. pub within pub(crate) is equivalent to pub(crate). Not worth adding a normative rule for.",
+      "sourceFeature": "unify-click-handling"
+    },
+    {
+      "observation": "Mixed import path styles (relative vs absolute) for ClickConfig",
+      "reason": "Minor style inconsistency. Both patterns work and are idiomatic Rust. Not worth enforcing a rule.",
+      "sourceFeature": "unify-click-handling"
+    },
+    {
+      "observation": "No new services needed for reduce-cfg-editor-and-widget-sizes",
+      "reason": "Informational only — no action needed since existing services cover all verification commands.",
+      "sourceFeature": "reduce-cfg-editor-and-widget-sizes"
+    },
+    {
+      "observation": "Widget default size work completed by concurrent workers rather than this feature's sessions",
+      "reason": "Informational about workflow dynamics, not a knowledge gap or convention issue.",
+      "sourceFeature": "reduce-cfg-editor-and-widget-sizes"
+    },
+    {
+      "observation": "Commit interleaving between create-listview-widget and reduce-cfg-editor-and-widget-sizes",
+      "reason": "Same issue as audit-too-many-arguments scope creep. Already captured in nonBlockingIssues.",
+      "sourceFeature": "create-listview-widget"
+    },
+    {
+      "observation": "Verification command rg RenderContext::new checks file location not behavior",
+      "reason": "Valid criticism of the original feature's verification steps, but not actionable for shared state. Would need a new test to properly verify pool behavior.",
+      "sourceFeature": "pool-vello-rendercontext-and-fix-doctests"
+    },
+    {
+      "observation": "vello_cpu API knowledge (Pixmap::data_as_u8_slice_mut, RenderContext::reset)",
+      "reason": "Already documented in the glyph_pool.rs source code. Adding to library would be redundant with the implementation itself.",
+      "sourceFeature": "pool-vello-rendercontext-and-fix-doctests"
+    }
+  ],
+  "previousRound": null
+}
