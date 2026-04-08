@@ -570,6 +570,9 @@ pub fn process_editor_actions(app: &mut Application) {
                 };
                 app.editor.gizmo_state.set_mode(mode);
             }
+            EditorAction::CoCreatorRequest(text) => {
+                agent::process_co_creator_request(app, &text);
+            }
         }
     }
 

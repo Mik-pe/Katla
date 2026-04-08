@@ -5,7 +5,7 @@ use katla_ui::{FontSize, UiContext, mouse_button};
 use super::{
     EditorAction, EditorRenderParams, EditorUI, PanelResizeEdge, SpawnableModel,
     asset_browser::{AssetAction, AssetType, build_asset_browser},
-    hierarchy, inspector,
+    co_creator, hierarchy, inspector,
     preferences::PreferencesPanel,
     status_bar, toolbar, viewport_grid,
 };
@@ -55,6 +55,17 @@ impl EditorUI {
 
             for action in actions {
                 self.apply_particle_inspector_action(action);
+            }
+        }
+
+        // Co-Creator chat panel
+        if self.co_creator.is_open() {
+            let style = co_creator::CoCreatorStyle::from_theme(&self.theme);
+            let response =
+                co_creator::draw_co_creator_panel(ui, &mut self.co_creator, &style, screen_size);
+            if let Some(text) = response.submitted_text {
+                self.pending_actions
+                    .push(EditorAction::CoCreatorRequest(text));
             }
         }
 
