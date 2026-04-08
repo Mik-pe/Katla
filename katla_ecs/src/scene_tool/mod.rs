@@ -1,6 +1,6 @@
 mod command;
 mod executor;
-mod registry;
+pub mod registry;
 
 pub use command::{
     DestroyEntityCommand, DuplicateEntityCommand, SceneCommand, SetFieldCommand,

@@ -1,5 +1,8 @@
 //! Editor subsystem - handles UI rendering, entity management, and editor actions.
 
+pub mod agent;
+pub mod component_registry;
+
 use std::collections::{HashMap, HashSet};
 
 use log::{debug, info};
