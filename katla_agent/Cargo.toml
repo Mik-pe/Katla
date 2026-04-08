@@ -1,0 +1,23 @@
+[package]
+name = "katla_agent"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+editor = []
+llm-assistant = ["dep:async-openai", "dep:tokio"]
+
+[dependencies]
+katla_ecs = { workspace = true, features = ["editor"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+# Optional LLM dependencies
+async-openai = { version = "0.27", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"], optional = true }
+
+[dev-dependencies]
+katla_ecs = { workspace = true, features = ["editor"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
