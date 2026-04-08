@@ -17,11 +17,15 @@ pub mod builder;
 pub(crate) mod camera;
 #[cfg(feature = "editor")]
 pub mod editor;
+#[cfg(feature = "editor")]
+mod editor_methods;
 mod events;
 mod frame_loop;
 #[cfg(feature = "editor")]
 mod gizmo;
 mod init;
+#[cfg(not(feature = "editor"))]
+mod no_editor_methods;
 mod picking;
 mod renderer;
 mod resource_loading;
@@ -41,8 +45,6 @@ use katla_ecs::World;
 use katla_gfx::renderer::VulkanRenderer;
 use katla_math::Vec2;
 
-#[cfg(feature = "editor")]
-use winit::keyboard::KeyCode;
 use winit::{
     application::ApplicationHandler,
     event::{DeviceEvent, DeviceId, ElementState, WindowEvent},
@@ -53,9 +55,7 @@ use winit::{
 
 use self::camera::Camera;
 #[cfg(feature = "editor")]
-use crate::gui_state::GuiState;
-#[cfg(feature = "editor")]
-use crate::util::BackgroundLoader;
+use crate::{gui_state::GuiState, util::BackgroundLoader};
 use crate::{
     input::{Action, InputBinding, InputMapper, KeyCombo, MouseCombo},
     preferences::Preferences,
@@ -104,6 +104,43 @@ pub(crate) struct EditorState {
     pub(crate) billboard_resources: crate::billboard::BillboardResources,
     /// Previous frame's mouse screen position (for gizmo rotation drag delta).
     pub(crate) prev_mouse_screen: Option<(f32, f32)>,
+}
+
+#[cfg(feature = "editor")]
+impl EditorState {
+    /// Construct EditorState from its component parts.
+    pub(crate) fn new(
+        ui_renderer: crate::ui::UIRenderer,
+        theme: crate::ui::Theme,
+        preferences: &Preferences,
+        gui_state: crate::gui_state::GuiState,
+    ) -> Self {
+        use crate::util::BackgroundLoader;
+        Self {
+            ui_renderer,
+            editor_ui: {
+                let mut editor = crate::ui::EditorUI::with_theme(theme);
+                editor.show_grid = preferences.show_grid;
+                editor.show_stats = preferences.show_stats;
+                editor.set_font_scale(preferences.font_scale);
+                editor.left_panel_width = gui_state.left_panel_width;
+                editor.right_panel_width = gui_state.right_panel_width;
+                editor.asset_browser.panel_height = gui_state.asset_browser_height;
+                editor
+            },
+            gui_state,
+            background_loader: BackgroundLoader::new(),
+            thumbnail_texture_handles: HashMap::new(),
+            entity_instance_map: std::collections::HashMap::new(),
+            entity_to_instance_indices: std::collections::HashMap::new(),
+            pending_pick: None,
+            stencil_indicator_bindless_index: None,
+            gizmo_state: crate::gizmo::GizmoState::default(),
+            gizmo_resources: crate::gizmo::GizmoResources::default(),
+            billboard_resources: crate::billboard::BillboardResources::default(),
+            prev_mouse_screen: None,
+        }
+    }
 }
 
 /// Debug-only state behind debug_assertions gate.
@@ -182,27 +219,11 @@ impl ApplicationHandler for Application {
         _device_id: DeviceId,
         event: DeviceEvent,
     ) {
-        if let DeviceEvent::MouseMotion { delta } = event {
-            // Don't track mouse motion for orbit camera when gizmo is active
-            #[cfg(feature = "editor")]
-            if self.editor.gizmo_state.is_dragging() {
-                return;
-            }
-            let input = self
-                .world
-                .get_resource::<crate::input::InputState>()
-                .unwrap();
-            let should_track = input.is_action_pressed(Action::LookEnable)
-                || input.is_action_pressed(Action::PanEnable);
-            if should_track {
-                let current_delta = input.mouse_delta;
-                if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {
-                    input.mouse_delta = (
-                        current_delta.0 + delta.0 as f32,
-                        current_delta.1 + delta.1 as f32,
-                    );
-                }
-            }
+        if let DeviceEvent::MouseMotion { delta } = event
+            && self.should_track_mouse_motion()
+        {
+            let (dx, dy) = (delta.0 as f32, delta.1 as f32);
+            self.forward_mouse_delta(dx, dy);
         }
     }
 
@@ -221,46 +242,10 @@ impl ApplicationHandler for Application {
             let mouse_combo = MouseCombo::with_modifiers(*button, self.current_modifiers);
             let binding = InputBinding::Mouse(mouse_combo);
 
-            #[cfg(feature = "editor")]
-            if let ElementState::Pressed = state {
-                let mouse_pos = self.ui_context.input().mouse_pos;
-                self.editor
-                    .editor_ui
-                    .update_focused_panel_from_click(mouse_pos);
-
-                // Trigger GPU picking on left-click in viewport
-                if *button == winit::event::MouseButton::Left
-                    && self.editor.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
-                    && self
-                        .editor
-                        .editor_ui
-                        .last_viewport_bounds
-                        .contains(mouse_pos)
-                {
-                    // Check if the click hits a gizmo axis first
-                    self.editor.gizmo_state.consumed_click = false;
-
-                    if let Some(axis) = self.hit_test_gizmo(mouse_pos) {
-                        self.begin_gizmo_drag(axis, mouse_pos);
-                    } else {
-                        // Store viewport-relative logical coordinates for the picking readback.
-                        let vp = self.editor.editor_ui.last_viewport_bounds;
-                        let rel_x = mouse_pos.x() - vp.min.x();
-                        let rel_y = mouse_pos.y() - vp.min.y();
-                        self.editor.pending_pick = Some((self.frame_count, rel_x, rel_y));
-                    }
-                }
-            }
+            self.on_mouse_input(state, button);
 
             if let Some(action) = self.input_mapper.get_action(&binding) {
-                #[cfg(feature = "editor")]
-                let send_input = self.editor.editor_ui.focused_panel
-                    == crate::ui::FocusedPanel::Viewport
-                    && !self.editor.gizmo_state.is_dragging()
-                    && !self.editor.gizmo_state.consumed_click;
-
-                #[cfg(not(feature = "editor"))]
-                let send_input = true;
+                let send_input = self.should_send_game_input();
 
                 if send_input {
                     let pressed = matches!(state, ElementState::Pressed);
@@ -282,15 +267,6 @@ impl ApplicationHandler for Application {
                 self.ui_context
                     .input_mut()
                     .set_mouse_button_with_time(btn, pressed, time);
-            }
-
-            #[cfg(feature = "editor")]
-            // End gizmo drag on mouse release
-            if matches!(state, ElementState::Released)
-                && *button == winit::event::MouseButton::Left
-                && self.editor.gizmo_state.is_dragging()
-            {
-                self.editor.gizmo_state.end_drag();
             }
         }
 
@@ -324,8 +300,7 @@ impl ApplicationHandler for Application {
                                 .set_tonemap_texture_index("tonemap", slot)
                                 .expect("Failed to update tonemap texture index");
                         } else if name == "viewport_0" {
-                            #[cfg(feature = "editor")]
-                            self.editor.editor_ui.set_viewport_bindless_index(slot);
+                            self.on_viewport_texture_recreated(slot);
                         }
                     }
 
@@ -355,10 +330,7 @@ impl ApplicationHandler for Application {
                 let logical_y = position.y as f32 / self.scale_factor;
                 let mouse_pos = Vec2::new(logical_x, logical_y);
                 self.ui_context.input_mut().set_mouse_pos(mouse_pos);
-
-                // Gizmo hover and drag updates
-                #[cfg(feature = "editor")]
-                self.update_gizmo_interaction(mouse_pos);
+                self.on_cursor_moved(mouse_pos);
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let scroll = match delta {
@@ -374,43 +346,7 @@ impl ApplicationHandler for Application {
                     }
                 };
                 self.ui_context.input_mut().scroll_delta = scroll;
-
-                // Forward scroll to ECS input state for orbit camera zoom.
-                // Skip if a floating panel/popup was covering the mouse in the
-                // previous frame (hover_z_index > DEFAULT means UI claimed it).
-                #[cfg(feature = "editor")]
-                {
-                    let mouse_pos = self.ui_context.input().mouse_pos;
-                    let ui_claimed = self.ui_context.hover_z_index() > katla_ui::z_index::DEFAULT;
-                    if !ui_claimed
-                        && self
-                            .editor
-                            .editor_ui
-                            .last_viewport_bounds
-                            .contains(mouse_pos)
-                    {
-                        let wheel_y = match delta {
-                            winit::event::MouseScrollDelta::LineDelta(_, y) => y,
-                            winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
-                        };
-                        if let Some(input) =
-                            self.world.get_resource_mut::<crate::input::InputState>()
-                        {
-                            input.mouse_wheel_delta += wheel_y;
-                        }
-                    }
-                }
-
-                #[cfg(not(feature = "editor"))]
-                {
-                    let wheel_y = match delta {
-                        winit::event::MouseScrollDelta::LineDelta(_, y) => y,
-                        winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
-                    };
-                    if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {
-                        input.mouse_wheel_delta += wheel_y;
-                    }
-                }
+                self.forward_scroll_to_camera(delta);
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -432,63 +368,10 @@ impl ApplicationHandler for Application {
                     let key_combo = KeyCombo::with_modifiers(keycode, self.current_modifiers);
                     let binding = InputBinding::Keyboard(key_combo);
 
-                    // Focus camera on selected entity with 'F'
-                    #[cfg(feature = "editor")]
-                    if event.state == ElementState::Pressed
-                        && keycode == KeyCode::KeyF
-                        && self.editor.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
-                        && !self.current_modifiers.control_key()
-                        && !self.current_modifiers.shift_key()
-                        && !self.current_modifiers.alt_key()
-                        && let Some(entity_id) = self.editor.editor_ui.selected_entity
-                    {
-                        self.focus_camera_on_entity(entity_id);
-                    }
-
-                    // Toggle particle inspector with Ctrl+P
-                    #[cfg(feature = "editor")]
-                    if event.state == ElementState::Pressed
-                        && keycode == KeyCode::KeyP
-                        && self.current_modifiers.control_key()
-                    {
-                        let state = &mut self.editor.editor_ui.particle_inspector_state;
-                        if state.panel.is_visible() {
-                            state.panel.close();
-                        } else {
-                            state.panel.open();
-                        }
-                        info!(
-                            "Particle inspector: {}",
-                            if state.panel.is_visible() {
-                                "visible"
-                            } else {
-                                "hidden"
-                            }
-                        );
-                    }
-
-                    // Save scene with Ctrl+S (suppressed when TextInput or modal is focused)
-                    #[cfg(feature = "editor")]
-                    if event.state == ElementState::Pressed
-                        && keycode == KeyCode::KeyS
-                        && self.current_modifiers.control_key()
-                        && !self.current_modifiers.shift_key()
-                        && !self.current_modifiers.alt_key()
-                        && !self.editor.editor_ui.prev_want_capture_keyboard
-                    {
-                        self.editor
-                            .editor_ui
-                            .pending_actions
-                            .push(crate::ui::EditorAction::SaveScene);
-                    }
+                    self.on_keyboard_input(&event, keycode, event_loop);
 
                     if let Some(action) = self.input_mapper.get_action(&binding) {
-                        #[cfg(feature = "editor")]
-                        let send_input = self.editor.editor_ui.focused_panel
-                            == crate::ui::FocusedPanel::Viewport;
-
-                        #[cfg(not(feature = "editor"))]
-                        let send_input = true;
+                        let send_input = self.should_send_game_input();
 
                         if send_input {
                             let pressed = matches!(event.state, ElementState::Pressed);
@@ -507,31 +390,6 @@ impl ApplicationHandler for Application {
                             ElementState::Released => {
                                 self.ui_context.input_mut().add_key_release(key)
                             }
-                        }
-                    }
-
-                    #[cfg(feature = "editor")]
-                    if event.state == ElementState::Pressed
-                        && self.editor.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
-                        && !self.ui_context.input().want_capture_keyboard
-                    {
-                        // Gizmo mode shortcuts
-                        if keycode == KeyCode::KeyW {
-                            self.editor
-                                .gizmo_state
-                                .set_mode(crate::gizmo::GizmoMode::Translate);
-                        } else if keycode == KeyCode::KeyE {
-                            self.editor
-                                .gizmo_state
-                                .set_mode(crate::gizmo::GizmoMode::Rotate);
-                        } else if keycode == KeyCode::KeyR {
-                            self.editor
-                                .gizmo_state
-                                .set_mode(crate::gizmo::GizmoMode::Scale);
-                        }
-
-                        if keycode == KeyCode::Escape {
-                            event_loop.exit()
                         }
                     }
                 }
@@ -571,5 +429,35 @@ impl Application {
     /// Get the default PBR material handle.
     pub fn default_material(&self) -> katla_gfx::MaterialHandle {
         self.default_material_handle
+    }
+
+    /// Forward mouse motion delta to the ECS input state for orbit/pan camera.
+    fn forward_mouse_delta(&mut self, dx: f32, dy: f32) {
+        let input = self
+            .world
+            .get_resource::<crate::input::InputState>()
+            .unwrap();
+        let should_track = input.is_action_pressed(Action::LookEnable)
+            || input.is_action_pressed(Action::PanEnable);
+        if should_track {
+            let current_delta = input.mouse_delta;
+            if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {
+                input.mouse_delta = (current_delta.0 + dx, current_delta.1 + dy);
+            }
+        }
+    }
+
+    /// Forward scroll wheel delta to the ECS input state for orbit camera zoom.
+    fn forward_scroll_to_camera(&mut self, delta: winit::event::MouseScrollDelta) {
+        let wheel_y = match delta {
+            winit::event::MouseScrollDelta::LineDelta(_, y) => y,
+            winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+        };
+
+        let wheel_y = self.filter_scroll_for_editor(wheel_y);
+
+        if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {
+            input.mouse_wheel_delta += wheel_y;
+        }
     }
 }
