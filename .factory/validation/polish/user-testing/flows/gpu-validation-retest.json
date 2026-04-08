@@ -1,0 +1,21 @@
+{
+  "assertionId": "VAL-CROSS-006",
+  "status": "pass",
+  "evidence": {
+    "commandsRun": [
+      {
+        "command": "cargo run -p katla_gfx --example picking_validation --features validation",
+        "exitCode": 0,
+        "observation": "All 5 picking validations passed: single_object, two_objects, background_zero, id_encoding_sequence, max_instance_id. Process exited with code 0."
+      },
+      {
+        "command": "cargo run -p katla_gfx --example outline_validation --features validation",
+        "exitCode": 0,
+        "observation": "All 6 outline validations passed: depth_prepass, stencil_indicator, outline_present, overlay_tonemap, self_occlusion, two_plane_self_occlusion. Process exited with code 0."
+      }
+    ]
+  },
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["cargo"]
+}
