@@ -1,3 +1,5 @@
+extern crate self as katla_ecs;
+
 pub mod components;
 pub mod entity;
 pub mod events;
@@ -7,6 +9,15 @@ pub mod spawn;
 pub(crate) mod storage;
 pub mod system;
 pub mod world;
+
+#[cfg(feature = "editor")]
+pub mod inspect;
+
+#[cfg(feature = "editor")]
+pub mod agent;
+
+#[cfg(feature = "editor")]
+pub mod scene_tool;
 
 // Internal implementation modules
 mod entity_allocator;
@@ -22,3 +33,6 @@ pub use spawn::Spawnable;
 pub(crate) use storage::ComponentStorageManager;
 pub use system::{System, SystemExecutionOrder};
 pub use world::World;
+
+#[cfg(feature = "editor")]
+pub use inspect::{FieldConstraints, FieldInfo, FieldKind, FieldMut, Inspect};
