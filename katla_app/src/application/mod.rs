@@ -104,6 +104,10 @@ pub(crate) struct EditorState {
     pub(crate) billboard_resources: crate::billboard::BillboardResources,
     /// Previous frame's mouse screen position (for gizmo rotation drag delta).
     pub(crate) prev_mouse_screen: Option<(f32, f32)>,
+    /// Component registry for AI agent scene tools.
+    pub(crate) component_registry: katla_ecs::scene_tool::ComponentRegistry,
+    /// Agent harness for AI co-creator execution.
+    pub(crate) agent_harness: katla_ecs::agent::AgentHarness,
 }
 
 #[cfg(feature = "editor")]
@@ -139,6 +143,9 @@ impl EditorState {
             gizmo_resources: crate::gizmo::GizmoResources::default(),
             billboard_resources: crate::billboard::BillboardResources::default(),
             prev_mouse_screen: None,
+            component_registry:
+                crate::application::editor::component_registry::build_editor_component_registry(),
+            agent_harness: katla_ecs::agent::AgentHarness::new(),
         }
     }
 }

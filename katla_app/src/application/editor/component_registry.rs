@@ -1,0 +1,325 @@
+use katla_ecs::EntityId;
+use katla_ecs::World;
+use katla_ecs::inspect::{FieldMut, Inspect};
+use katla_ecs::scene_tool::SceneToolError;
+use katla_ecs::scene_tool::registry::{ComponentRegistry, ComponentRegistryEntry, FieldValue};
+
+use crate::components::{
+    DragComponent, MassComponent, NameComponent, PerspectiveComponent, PointLight,
+};
+
+fn field_type_mismatch(field_name: &str, expected: &str, value: FieldValue) -> SceneToolError {
+    SceneToolError::InvalidFieldValue {
+        field: field_name.to_string(),
+        expected_type: expected.to_string(),
+        got: value.type_name().to_string(),
+    }
+}
+
+fn register_name_component(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "NameComponent",
+        has_component: |world: &World, entity: EntityId| {
+            world.get_component::<NameComponent>(entity).is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, NameComponent::new("Unnamed"));
+        },
+        get_fields: |_world: &World, _entity: EntityId| NameComponent::fields(),
+        get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
+            let comp = world.get_component_mut::<NameComponent>(entity)?;
+            let field_mut = comp.field_mut(field_name)?;
+            Some(match field_mut {
+                FieldMut::String(v) => FieldValue::String(v.clone()),
+                _ => FieldValue::Unknown,
+            })
+        },
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let comp = world
+                .get_component_mut::<NameComponent>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "NameComponent".to_string(),
+                })?;
+            let field_mut =
+                comp.field_mut(field_name)
+                    .ok_or_else(|| SceneToolError::FieldNotFound {
+                        component: "NameComponent".to_string(),
+                        field: field_name.to_string(),
+                    })?;
+            match (field_mut, value) {
+                (FieldMut::String(ref mut target), FieldValue::String(v)) => {
+                    **target = v;
+                    Ok(())
+                }
+                (_, v) => Err(field_type_mismatch(field_name, "String", v)),
+            }
+        },
+    });
+}
+
+fn register_point_light(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "PointLight",
+        has_component: |world: &World, entity: EntityId| {
+            world.get_component::<PointLight>(entity).is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, PointLight::default());
+        },
+        get_fields: |_world: &World, _entity: EntityId| PointLight::fields(),
+        get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
+            let comp = world.get_component_mut::<PointLight>(entity)?;
+            let field_mut = comp.field_mut(field_name)?;
+            Some(match field_mut {
+                FieldMut::F32(v) => FieldValue::F32(*v),
+                _ => FieldValue::Unknown,
+            })
+        },
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let comp = world
+                .get_component_mut::<PointLight>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "PointLight".to_string(),
+                })?;
+            let field_mut =
+                comp.field_mut(field_name)
+                    .ok_or_else(|| SceneToolError::FieldNotFound {
+                        component: "PointLight".to_string(),
+                        field: field_name.to_string(),
+                    })?;
+            match (field_mut, value) {
+                (FieldMut::F32(ref mut target), FieldValue::F32(v)) => {
+                    **target = v;
+                    Ok(())
+                }
+                (_, v) => Err(field_type_mismatch(field_name, "f32", v)),
+            }
+        },
+    });
+}
+
+fn register_mass_component(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "MassComponent",
+        has_component: |world: &World, entity: EntityId| {
+            world.get_component::<MassComponent>(entity).is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, MassComponent::default());
+        },
+        get_fields: |_world: &World, _entity: EntityId| MassComponent::fields(),
+        get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
+            let comp = world.get_component_mut::<MassComponent>(entity)?;
+            let field_mut = comp.field_mut(field_name)?;
+            Some(match field_mut {
+                FieldMut::F32(v) => FieldValue::F32(*v),
+                _ => FieldValue::Unknown,
+            })
+        },
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let comp = world
+                .get_component_mut::<MassComponent>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "MassComponent".to_string(),
+                })?;
+            let field_mut =
+                comp.field_mut(field_name)
+                    .ok_or_else(|| SceneToolError::FieldNotFound {
+                        component: "MassComponent".to_string(),
+                        field: field_name.to_string(),
+                    })?;
+            match (field_mut, value) {
+                (FieldMut::F32(ref mut target), FieldValue::F32(v)) => {
+                    **target = v;
+                    Ok(())
+                }
+                (_, v) => Err(field_type_mismatch(field_name, "f32", v)),
+            }
+        },
+    });
+}
+
+fn register_drag_component(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "DragComponent",
+        has_component: |world: &World, entity: EntityId| {
+            world.get_component::<DragComponent>(entity).is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, DragComponent::default());
+        },
+        get_fields: |_world: &World, _entity: EntityId| DragComponent::fields(),
+        get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
+            let comp = world.get_component_mut::<DragComponent>(entity)?;
+            let field_mut = comp.field_mut(field_name)?;
+            Some(match field_mut {
+                FieldMut::F32(v) => FieldValue::F32(*v),
+                _ => FieldValue::Unknown,
+            })
+        },
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let comp = world
+                .get_component_mut::<DragComponent>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "DragComponent".to_string(),
+                })?;
+            let field_mut =
+                comp.field_mut(field_name)
+                    .ok_or_else(|| SceneToolError::FieldNotFound {
+                        component: "DragComponent".to_string(),
+                        field: field_name.to_string(),
+                    })?;
+            match (field_mut, value) {
+                (FieldMut::F32(ref mut target), FieldValue::F32(v)) => {
+                    **target = v;
+                    Ok(())
+                }
+                (_, v) => Err(field_type_mismatch(field_name, "f32", v)),
+            }
+        },
+    });
+}
+
+fn register_perspective_component(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "PerspectiveComponent",
+        has_component: |world: &World, entity: EntityId| {
+            world
+                .get_component::<PerspectiveComponent>(entity)
+                .is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, PerspectiveComponent::default());
+        },
+        get_fields: |_world: &World, _entity: EntityId| PerspectiveComponent::fields(),
+        get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
+            let comp = world.get_component_mut::<PerspectiveComponent>(entity)?;
+            let field_mut = comp.field_mut(field_name)?;
+            Some(match field_mut {
+                FieldMut::F32(v) => FieldValue::F32(*v),
+                _ => FieldValue::Unknown,
+            })
+        },
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let comp = world
+                .get_component_mut::<PerspectiveComponent>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "PerspectiveComponent".to_string(),
+                })?;
+            let field_mut =
+                comp.field_mut(field_name)
+                    .ok_or_else(|| SceneToolError::FieldNotFound {
+                        component: "PerspectiveComponent".to_string(),
+                        field: field_name.to_string(),
+                    })?;
+            match (field_mut, value) {
+                (FieldMut::F32(ref mut target), FieldValue::F32(v)) => {
+                    **target = v;
+                    Ok(())
+                }
+                (_, v) => Err(field_type_mismatch(field_name, "f32", v)),
+            }
+        },
+    });
+}
+
+pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
+    let mut registry = ComponentRegistry::new();
+    register_name_component(&mut registry);
+    register_point_light(&mut registry);
+    register_mass_component(&mut registry);
+    register_drag_component(&mut registry);
+    register_perspective_component(&mut registry);
+    registry
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_registry_contains_expected_types() {
+        let registry = build_editor_component_registry();
+        assert!(registry.is_registered("NameComponent"));
+        assert!(registry.is_registered("PointLight"));
+        assert!(registry.is_registered("MassComponent"));
+        assert!(registry.is_registered("DragComponent"));
+        assert!(registry.is_registered("PerspectiveComponent"));
+    }
+
+    #[test]
+    fn test_registry_excludes_complex_types() {
+        let registry = build_editor_component_registry();
+        assert!(!registry.is_registered("TransformComponent"));
+        assert!(!registry.is_registered("DrawableComponent"));
+        assert!(!registry.is_registered("ParticleEmitterComponent"));
+    }
+
+    #[test]
+    fn test_name_component_field_access() {
+        let mut world = World::new();
+        let registry = build_editor_component_registry();
+        let entity = world.create_entity();
+        world.add_component(entity, NameComponent::new("Test"));
+
+        let entry = registry.get("NameComponent").unwrap();
+        assert!((entry.has_component)(&world, entity));
+
+        let value = (entry.get_field_value)(&mut world, entity, "name").unwrap();
+        assert_eq!(value.as_string(), Some("Test"));
+    }
+
+    #[test]
+    fn test_point_light_f32_fields() {
+        let mut world = World::new();
+        let registry = build_editor_component_registry();
+        let entity = world.create_entity();
+        world.add_component(entity, PointLight::new([1.0, 0.5, 0.0], 10.0, 50.0));
+
+        let entry = registry.get("PointLight").unwrap();
+        let intensity = (entry.get_field_value)(&mut world, entity, "intensity").unwrap();
+        assert_eq!(intensity.as_f32(), Some(10.0));
+
+        let range = (entry.get_field_value)(&mut world, entity, "range").unwrap();
+        assert_eq!(range.as_f32(), Some(50.0));
+    }
+
+    #[test]
+    fn test_set_field_value() {
+        let mut world = World::new();
+        let registry = build_editor_component_registry();
+        let entity = world.create_entity();
+        world.add_component(entity, MassComponent { mass: 1.0 });
+
+        let entry = registry.get("MassComponent").unwrap();
+        (entry.set_field_value)(&mut world, entity, "mass", FieldValue::F32(5.0)).unwrap();
+
+        let comp = world.get_component::<MassComponent>(entity).unwrap();
+        assert!((comp.mass - 5.0).abs() < 1e-6);
+    }
+}
