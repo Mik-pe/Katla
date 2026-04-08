@@ -12,13 +12,19 @@ impl GlyphRenderPool {
         Self { ctx: None }
     }
 
-    /// Return a `(RenderContext, Pixmap)` pair that is at least `width` ×
-    /// `height` pixels.
+    /// Execute `f` with a borrowed `(RenderContext, Pixmap)` pair that is at
+    /// least `width` × `height` pixels.
     ///
     /// If the cached pair is large enough it is reused (the context is reset
     /// and the pixmap is cleared via memset).  Otherwise a new pair is
     /// allocated that exactly matches the requested dimensions.
-    pub fn acquire(&mut self, width: u16, height: u16) -> (RenderContext, Pixmap) {
+    ///
+    /// The closure-based approach ensures the pool retains ownership of the
+    /// pair — the caller cannot forget to return it.
+    pub fn acquire<F, R>(&mut self, width: u16, height: u16, f: F) -> R
+    where
+        F: FnOnce(&mut RenderContext, &mut Pixmap) -> R,
+    {
         let needs_realloc = match &self.ctx {
             None => true,
             Some((ctx, _pix)) => ctx.width() < width || ctx.height() < height,
@@ -30,7 +36,7 @@ impl GlyphRenderPool {
             self.ctx = Some((ctx, pix));
         }
 
-        let (mut ctx, mut pix) = self.ctx.take().unwrap();
+        let (ctx, pix) = self.ctx.as_mut().unwrap();
 
         // Clear all accumulated rendering state so the context is fresh.
         ctx.reset();
@@ -39,6 +45,6 @@ impl GlyphRenderPool {
         // glyph pollutes the result.
         pix.data_as_u8_slice_mut().fill(0);
 
-        (ctx, pix)
+        f(ctx, pix)
     }
 }
