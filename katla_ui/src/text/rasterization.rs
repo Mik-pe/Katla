@@ -225,11 +225,16 @@ impl super::FontSystem {
                 ctx.flush();
                 ctx.render_to_pixmap(pixmap);
 
+                let pixmap_width = pixmap.width() as usize;
                 let pixel_data = pixmap.data_as_u8_slice();
                 let mut alpha = vec![0u8; glyph_width * glyph_height];
-                for i in 0..glyph_width * glyph_height {
-                    let coverage = pixel_data[i * 4 + 3] as f32 / 255.0;
-                    alpha[i] = (coverage_to_alpha(coverage) * 255.0) as u8;
+                for y in 0..glyph_height {
+                    for x in 0..glyph_width {
+                        let src_idx = (y * pixmap_width + x) * 4 + 3;
+                        let dst_idx = y * glyph_width + x;
+                        let coverage = pixel_data[src_idx] as f32 / 255.0;
+                        alpha[dst_idx] = (coverage_to_alpha(coverage) * 255.0) as u8;
+                    }
                 }
                 alpha
             });
