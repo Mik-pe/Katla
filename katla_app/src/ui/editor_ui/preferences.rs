@@ -35,6 +35,7 @@ pub enum PreferencesTab {
     Appearance,
     Editor,
     Keybindings,
+    Ai,
     About,
 }
 
@@ -44,6 +45,7 @@ impl PreferencesTab {
             PreferencesTab::Appearance,
             PreferencesTab::Editor,
             PreferencesTab::Keybindings,
+            PreferencesTab::Ai,
             PreferencesTab::About,
         ]
     }
@@ -53,6 +55,7 @@ impl PreferencesTab {
             PreferencesTab::Appearance => "Appearance",
             PreferencesTab::Editor => "Editor",
             PreferencesTab::Keybindings => "Keybindings",
+            PreferencesTab::Ai => "AI",
             PreferencesTab::About => "About",
         }
     }
@@ -62,6 +65,7 @@ impl PreferencesTab {
             PreferencesTab::Appearance => ForkAwesome::PAINT_BRUSH,
             PreferencesTab::Editor => ForkAwesome::PENCIL,
             PreferencesTab::Keybindings => ForkAwesome::KEY,
+            PreferencesTab::Ai => ForkAwesome::CUBE,
             PreferencesTab::About => ForkAwesome::INFO_CIRCLE,
         }
     }
@@ -91,6 +95,8 @@ pub struct PreferencesPanelState {
     pub panel: DraggablePanelState,
     pub current_tab: PreferencesTab,
     pub scroll_state: ScrollAreaState,
+    /// Snapshot of LLM config, refreshed from EditorState each frame.
+    pub llm_config: katla_agent::LlmConfig,
 }
 
 /// Actions emitted by the preferences panel.
@@ -103,6 +109,13 @@ pub enum PreferencesAction {
     SetSnapToGrid(bool),
     SetCameraSpeed(f32),
     SetGridSize(f32),
+    SetLlmProvider(String),
+    SetLlmApiKey(String),
+    SetLlmBaseUrl(String),
+    SetLlmModel(String),
+    SetLlmMaxTokens(u32),
+    SetLlmTemperature(f32),
+    SaveLlmConfig,
 }
 
 pub struct PreferencesPanel<'a> {
@@ -249,6 +262,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
 
                 let current_tab = self.state.current_tab;
                 let editor_settings = self.editor_settings.clone();
+                let llm_config = self.state.llm_config.clone();
                 let theme = self.theme;
                 let theme_key = self.theme_key;
                 let show_grid = self.preferences.show_grid;
@@ -297,6 +311,15 @@ impl<'a> Widget for PreferencesPanel<'a> {
                             PreferencesTab::Keybindings => {
                                 build_keybindings_tab(ui, theme, cursor, content_width, row_height)
                             }
+                            PreferencesTab::Ai => build_ai_tab(
+                                ui,
+                                theme,
+                                cursor,
+                                content_width,
+                                row_height,
+                                &llm_config,
+                                pending_actions,
+                            ),
                             PreferencesTab::About => {
                                 build_about_tab(ui, theme, cursor, content_width)
                             }
@@ -699,4 +722,199 @@ fn themed_select_button(
     );
 
     clicked
+}
+
+fn build_ai_tab(
+    ui: &mut UiContext,
+    theme: &Theme,
+    cursor: Vec2,
+    content_width: f32,
+    row_height: f32,
+    llm_config: &katla_agent::LlmConfig,
+    pending_actions: &mut Vec<PreferencesAction>,
+) -> f32 {
+    use katla_agent::config::LlmProviderKind;
+
+    ui.set_cursor(cursor);
+    ui.label_auto_colored("LLM Provider", theme.text_secondary);
+    ui.spacing(24.0);
+
+    let col_width = (content_width - 8.0) / 3.0;
+    let spacing = 4.0;
+
+    let providers = [
+        (LlmProviderKind::Disabled, "Disabled"),
+        (LlmProviderKind::OpenAi, "OpenAI"),
+        (LlmProviderKind::OpenAiCompatible, "OpenAI Compatible"),
+    ];
+
+    ui.begin_grid(3, col_width, row_height, spacing);
+    for (kind, label) in providers.iter() {
+        let btn_bounds = ui.grid_item(Vec2::new(col_width, row_height));
+        let is_selected = llm_config.provider == *kind;
+
+        if themed_select_button(
+            ui,
+            &format!("llm_provider_{:?}", kind),
+            label,
+            btn_bounds,
+            is_selected,
+            theme,
+        ) {
+            let key = match kind {
+                LlmProviderKind::Disabled => "disabled",
+                LlmProviderKind::OpenAi => "open_ai",
+                LlmProviderKind::OpenAiCompatible => "open_ai_compatible",
+            };
+            pending_actions.push(PreferencesAction::SetLlmProvider(key.to_string()));
+        }
+    }
+    ui.end_grid();
+
+    ui.spacing(row_height + 16.0);
+
+    // Status section
+    if llm_config.provider == LlmProviderKind::Disabled {
+        ui.label_auto_colored(
+            "Configure an LLM provider to enable AI-powered scene building",
+            theme.text_muted,
+        );
+        ui.spacing(20.0);
+    } else {
+        let provider_name = match llm_config.provider {
+            LlmProviderKind::OpenAi => "OpenAI",
+            LlmProviderKind::OpenAiCompatible => "OpenAI Compatible",
+            LlmProviderKind::Disabled => unreachable!(),
+        };
+        let status = format!("AI: Configured ({}, {})", provider_name, llm_config.model);
+        ui.label_auto_colored(&status, theme.success);
+        ui.spacing(20.0);
+    }
+
+    // When not Disabled, show configuration fields
+    if llm_config.provider != LlmProviderKind::Disabled {
+        // API Key (starts empty for security — user types a fresh value)
+        ui.label_auto_colored("API Key", theme.text_secondary);
+        ui.spacing(20.0);
+
+        let api_key_bounds =
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
+        let mut api_key = String::new();
+        let api_key_response = ui.add(
+            katla_ui::widgets::TextInput::new("api_key", &mut api_key)
+                .bounds(api_key_bounds)
+                .id("llm_api_key")
+                .placeholder("Enter API key..."),
+        );
+        if api_key_response.changed {
+            pending_actions.push(PreferencesAction::SetLlmApiKey(api_key));
+        }
+        ui.spacing(row_height + 8.0);
+
+        // Model
+        ui.label_auto_colored("Model", theme.text_secondary);
+        ui.spacing(20.0);
+
+        let model_bounds =
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
+        let mut model = llm_config.model.clone();
+        let model_response = ui.add(
+            katla_ui::widgets::TextInput::new("model", &mut model)
+                .bounds(model_bounds)
+                .id("llm_model")
+                .placeholder("gpt-4o"),
+        );
+        if model_response.changed {
+            pending_actions.push(PreferencesAction::SetLlmModel(model));
+        }
+        ui.spacing(row_height + 8.0);
+
+        // Base URL (only for OpenAI Compatible)
+        if llm_config.provider == LlmProviderKind::OpenAiCompatible {
+            ui.label_auto_colored("Base URL", theme.text_secondary);
+            ui.spacing(20.0);
+
+            let url_bounds =
+                Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
+            let mut base_url = llm_config.base_url.clone().unwrap_or_default();
+            let url_response = ui.add(
+                katla_ui::widgets::TextInput::new("base_url", &mut base_url)
+                    .bounds(url_bounds)
+                    .id("llm_base_url")
+                    .placeholder("http://localhost:11434/v1"),
+            );
+            if url_response.changed {
+                pending_actions.push(PreferencesAction::SetLlmBaseUrl(base_url));
+            }
+            ui.spacing(row_height + 8.0);
+        }
+
+        // Temperature
+        ui.label_auto_colored(
+            &format!("Temperature: {:.2}", llm_config.temperature),
+            theme.text_secondary,
+        );
+        ui.spacing(20.0);
+
+        let slider_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, 20.0));
+        let mut temperature = llm_config.temperature;
+        let temp_response = ui.add(
+            katla_ui::widgets::Slider::new("temperature", &mut temperature, 0.0..=2.0)
+                .bounds(slider_bounds)
+                .id("llm_temperature"),
+        );
+        if temp_response.changed {
+            pending_actions.push(PreferencesAction::SetLlmTemperature(temperature));
+        }
+
+        ui.spacing(40.0);
+
+        // Max Tokens display
+        ui.label_auto_colored(
+            &format!("Max Tokens: {}", llm_config.max_tokens),
+            theme.text_secondary,
+        );
+        ui.spacing(24.0);
+
+        let token_sizes = [1024, 2048, 4096, 8192];
+        let btn_width = (content_width - 3.0 * 8.0) / 4.0;
+        let spacing = 8.0;
+
+        ui.begin_grid(4, btn_width, row_height, spacing);
+        for &tokens in token_sizes.iter() {
+            let btn_bounds = ui.grid_item(Vec2::new(btn_width, row_height));
+            let is_selected = llm_config.max_tokens == tokens;
+            let text = format!("{}", tokens);
+            if themed_select_button(
+                ui,
+                &format!("max_tokens_{}", tokens),
+                &text,
+                btn_bounds,
+                is_selected,
+                theme,
+            ) {
+                pending_actions.push(PreferencesAction::SetLlmMaxTokens(tokens));
+            }
+        }
+        ui.end_grid();
+
+        ui.spacing(row_height + 16.0);
+
+        // Save button
+        let save_btn_bounds =
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
+        if themed_select_button(
+            ui,
+            "llm_save_config",
+            "Save Configuration",
+            save_btn_bounds,
+            false,
+            theme,
+        ) {
+            pending_actions.push(PreferencesAction::SaveLlmConfig);
+        }
+        ui.spacing(row_height + 8.0);
+    }
+
+    ui.cursor().y()
 }

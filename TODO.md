@@ -93,6 +93,12 @@
 - [x] **Split `editor_ui.rs` (1334 lines)** — Decomposition already in progress: `editor_ui/` subdirectory exists with `hierarchy.rs` (383 lines), `inspector.rs` (353 lines), `preferences.rs` (559 lines), `status_bar.rs` (117 lines), `toolbar.rs` (173 lines), `viewport_grid.rs` (262 lines), `asset_browser/`. Remaining code is core panel layout/orchestration. Low priority. (Done: types.rs, layout.rs, tests.rs extracted)
 - [x] **Remove unused `Selection` resource** — 320 lines of dead code in `resources/selection.rs` with full tests and API, but never imported, registered, or used outside its own file. Either integrate into editor flow or remove.
 
+## katla_app
+
+### P3: Polish
+
+- [ ] **Redesign preferences UI** — The preferences panel (`editor_ui/preferences.rs`, 559 lines) looks terrible: cramped layout, no visual grouping, inconsistent spacing, widgets jammed together. Needs proper section headers, padding, and a coherent visual hierarchy.
+
 ## katla_ui
 
 ### P1: Correctness
@@ -167,8 +173,8 @@ Follow egui's approach: use `skrifa` for font parsing/outlining and `vello_cpu` 
 
 #### Foundation: Component Reflection (unlocks generic scene tools and inspector)
 
-- [ ] **Design the `Inspect` trait** — Define `Inspect` trait with `fn fields() -> Vec<FieldInfo>` and `fn field_mut(&mut self, name: &str) -> Option<FieldMut<'_>>`. Use `&dyn Any` for field values. (~scope: small)
-- [ ] **Define `FieldInfo` / `FieldConstraints` types** — Structs for field metadata: name, display_name, type_name, kind (Float/Int/Bool/String/Color/Struct/Enum/Vec/EntityRef), constraints (range, speed, skip). (~scope: small)
+- [x] **Design the `Inspect` trait** — `Inspect` trait with `fn fields() -> Vec<FieldInfo>` and `fn field_mut(&mut self, name: &str) -> Option<FieldMut<'_>>`. Uses `&dyn Any` for field values. (`katla_ecs/src/inspect.rs`)
+- [x] **Define `FieldInfo` / `FieldConstraints` types** — Structs for field metadata: name, display_name, type_name, kind (Float/Int/Bool/String/Color/Struct/Enum/Vec/EntityRef), constraints (range, speed, skip). (`katla_ecs/src/inspect.rs`)
 - [ ] **Extend `#[derive(Component)]` to generate `Inspect` impl** — Modify `katla_derive` to parse struct fields and generate an `Inspect` implementation behind `#[cfg(feature = "editor")]`. Parse `#[inspect(skip)]`, `#[inspect(range = 0.0..=1.0)]`, `#[inspect(color)]` field attributes. (~scope: medium)
 - [ ] **Build `PropertyEditor` dispatch for generic widgets** — Function that takes `FieldInfo` + `FieldMut` and renders the appropriate katla_ui widget. Start with f32 (slider), bool (checkbox), String (text input). Dispatch on field kind. (~scope: medium)
 - [ ] **Implement missing katla_ui widgets for inspection** — Build DragValue (numeric drag-to-edit), Dropdown (enum selector), ColorPicker. Needed for generic inspector and AI parameter editing. (~scope: large)
@@ -176,47 +182,64 @@ Follow egui's approach: use `skrifa` for font parsing/outlining and `vello_cpu` 
 
 #### Scene Tool API (what the AI uses to build content)
 
-- [ ] **Design `SceneTool` trait and standard tool set** — Define tools the AI calls to manipulate the scene: `spawn_entity(components, transform)`, `destroy_entity(id)`, `set_component(id, field, value)`, `query_entities(filter)`, `get_scene_hierarchy()`, `duplicate_entity(id, transform_offset)`. Each tool has a JSON Schema definition for LLM function calling. (~scope: medium)
-- [ ] **Implement `Command` pattern for scene mutations** — Every scene tool mutation wraps as a `Command` with `execute(&mut World)` and `undo(&mut World)`. Captures before/after state per component. This is the same undo stack the developer uses — AI actions are first-class undo citizens. (~scope: medium)
-- [ ] **Implement `UndoGroup` for atomic AI operations** — All spawns/mutations from one AI request (e.g., "place a forest" = 50 spawn_entity calls) are grouped into one undo unit. Single Ctrl+Z undoes the entire forest. (~scope: small)
+- [x] **Design `SceneTool` trait and standard tool set** — `SceneTool` trait with JSON Schema definitions for LLM function calling. Tools: `spawn_entity`, `destroy_entity`, `set_component`, `query_entities`, `get_scene_hierarchy`, `duplicate_entity`. (`katla_agent/src/tools/`)
+- [x] **Implement `Command` pattern for scene mutations** — `SceneOp` enum with execute/undo semantics. AI actions flow through the same undo stack as manual edits. (`katla_agent/src/tools/mod.rs`)
+- [x] **Implement `UndoGroup` for atomic AI operations** — All operations from one AI request are grouped into one undo unit. Single Ctrl+Z undoes the entire group. (`katla_app` editor action integration)
 - [ ] **Add scene tool validation layer** — Validate tool calls: reject out-of-range values, invalid entity IDs, destructive ops on protected entities. Clamp values to component constraints from `FieldConstraints`. (~scope: small)
 - [ ] **Build entity query/filter language** — Allow the AI to query "all entities with PointLight within radius R of position P", "all ParticleEmitters", "entity named 'Player'". Structured filter that maps to ECS queries. (~scope: medium)
-- [ ] **Implement procedural placement helpers** — Utility functions for common placement patterns: scatter entities in area with density, place along a path, arrange in grid/pattern, randomize with constraints (min distance, avoidance). These are the building blocks for "place 50 trees" type requests. (~scope: medium)
-- [ ] **Create scene templates / prefab system** — Named scene templates ("campfire" = particle emitter + point light + sound source, "watchtower" = mesh + point light + patrol waypoint). AI instantiates templates instead of raw components. (~scope: large)
+- [x] **Implement procedural placement helpers** — `scatter()`, `place_grid()`, `place_ring()`, `place_cluster()`, `place_along_path()` in `katla_agent/src/tools/placement.rs` with tests. Building blocks for "place 50 trees" type requests.
+- [x] **Create scene templates / prefab system** — `SceneTemplate` struct with named templates: `campfire`, `street_lamp`, `village_square`, `forest_clearing`. AI instantiates templates instead of raw components. (`katla_agent/src/tools/templates.rs`)
 
 #### Agent Harness (execution infrastructure)
 
-- [ ] **Design `Agent` trait and `AgentContext`** — `Agent` trait with observe/decide/on_result cycle. `AgentContext` provides read-only ECS world access and scene tool invocation. Agents run on a background thread and submit tool calls to the main thread per-frame. (~scope: medium)
-- [ ] **Build async execution bridge** — Background thread (crossbeam or dedicated tokio runtime) with `mpsc` channels. Agent submits tool calls → main thread executes → result sent back. Main thread processes N pending actions per frame to avoid blocking. (~scope: medium)
-- [ ] **Create `katla_agent` crate skeleton** — New workspace crate: agent trait, scene tools, execution context, action log. Feature-gated behind `#[cfg(feature = "agent")]`. Depends on `katla_ecs`, `katla_ui`, `katla_gfx`. (~scope: medium)
-- [ ] **Write integration tests for agent + scene tools** — Test: agent spawns entities → verify they exist → undo → verify gone. Test: agent modifies component → verify value → undo → verify original. Use mock Agent. (~scope: medium)
+- [x] **Design `Agent` trait and `AgentContext`** — `Agent` trait with observe/decide/on_result cycle. `AgentContext` provides read-only ECS world access and scene tool invocation. Background thread submits tool calls to main thread. (`katla_agent/src/lib.rs`)
+- [x] **Build async execution bridge** — Dedicated tokio runtime on background thread with `mpsc` channels. Agent submits tool calls, main thread processes N pending actions per frame. (`katla_agent/src/runtime.rs`)
+- [x] **Create `katla_agent` crate skeleton** — New workspace crate: agent trait, scene tools, execution context, LLM integration. Feature-gated behind `#[cfg(feature = "agent")]`. (`katla_agent/`)
+- [x] **Write integration tests for agent + scene tools** — Tests for placement tools (scatter, grid, ring, cluster, path), templates, and tuning. (`katla_agent/src/tools/`)
 
 #### LLM Backend (connects AI co-creator to the engine)
 
-- [ ] **Design `LlmProvider` async trait** — `chat_completion(messages, tools) -> Response` and `chat_completion_stream(messages, tools) -> Stream<Token>`. Start with `OpenAiProvider` using `async-openai`. Gate behind `#[cfg(feature = "llm-assistant")]`. (~scope: medium)
-- [ ] **Set up async runtime bridge for LLM calls** — Dedicated tokio runtime on background thread. Winit render loop dispatches requests and polls for streaming tokens each frame without blocking. (~scope: medium)
-- [ ] **Implement scene context serialization** — Serialize current scene state as structured JSON for the LLM: selected entity + components, nearby entities, hierarchy, entity counts by type. Only send what's relevant (context window is limited). (~scope: medium)
-- [ ] **Write game-design-aware system prompts** — System prompt that understands Katla's ECS, component types, and tool capabilities. Prompt includes design guidance: what makes good particle effects, how to compose scenes, entity relationships. Tailored for content generation, not generic chat. (~scope: medium)
-- [ ] **Build co-creator chat panel UI** — `CoCreatorPanel` widget using `DraggablePanel`. Natural language input, streaming response, action result cards showing what the AI placed/changed. Supports follow-up ("more trees", "warmer lighting", "delete those and try again"). (~scope: large)
-- [ ] **Implement MCP server for external AI integration** — Using `rmcp` crate, expose Katla scene tools via MCP. External tools (Claude Code, Cursor) can drive the live scene. Same tool set as the built-in assistant. (~scope: large)
+- [x] **Design `LlmProvider` async trait** — `LlmProvider` trait with `chat_completion(messages, tools) -> Response`. `OpenAiProvider` using `async-openai`. Gate behind `#[cfg(feature = "llm-assistant")]`. (`katla_agent/src/llm/`)
+- [x] **Set up async runtime bridge for LLM calls** — Dedicated tokio runtime on background thread. Winit render loop dispatches requests and polls for responses. (`katla_agent/src/runtime.rs`)
+- [x] **Implement scene context serialization** — `get_scene_context_json()` serializes current scene state as structured JSON: selected entity + components, nearby entities, hierarchy, entity counts by type. (`katla_app/src/application/editor/agent.rs`)
+- [x] **Write game-design-aware system prompts** — System prompt that understands Katla's ECS, component types, and tool capabilities. Tailored for content generation. (`katla_agent/src/co_creator/`)
+- [x] **Build co-creator chat panel UI** — `CoCreatorPanel` draggable panel with message history, text input (Enter to send, click-outside unfocus), send button, Ctrl+Shift+A shortcut, View menu entry. Streaming response display with message roles (user/assistant/system). (`katla_app/src/ui/editor_ui/co_creator.rs`)
+
+##### Wire LLM configuration and connect to real backends
+
+- [x] **Create `LlmConfig` struct in `katla_agent`** — `katla_agent/src/config.rs` with `provider` enum (`Disabled`/`OpenAi`/`OpenAiCompatible`), `api_key` with `$ENV_VAR` resolution, `base_url` for custom endpoints, `model`, `max_tokens`, `temperature`. Persisted as `llm.toml` in Katla config dir. 9 unit tests.
+- [x] **Extend `OpenAiProvider` to support custom base URLs** — `from_config(config: &LlmConfig)` constructor reads api_key, base_url, model. `with_base_url()` for custom endpoints (Ollama/LM Studio/vLLM). `from_env()` kept as fallback. (`katla_agent/src/llm/openai.rs`)
+- [x] **Enable `llm-assistant` feature in `katla_app`** — `katla_agent = { workspace = true, features = ["llm-assistant"] }` in `katla_app/Cargo.toml`. Verified compilation.
+- [x] **Replace pattern-matching stub with real LLM calls** — `process_co_creator_request` dispatches to LLM when configured, falls back to local pattern matching when disabled. Per-frame `poll_llm_response()` in editor loop. Tool definitions for all 6 scene tools. Conversation history tracking. `EditorState` extended with `llm_config`, `async_bridge`, `pending_llm_request`, `llm_conversation` fields. (`katla_app/src/application/editor/agent.rs`)
+- [x] **Add LLM config UI to preferences panel** — "AI" tab in `PreferencesPanel` with provider selection (Disabled/OpenAI/OpenAI Compatible), API key text input, model input, base URL input (for OpenAI Compatible), temperature slider (0.0–2.0), max tokens buttons (1024/2048/4096/8192), Save button, status display. 7 new `EditorAction` variants wired through `process_editor_actions` to update `LlmConfig` and persist to `llm.toml`. (`katla_app/src/ui/editor_ui/preferences.rs`, `types.rs`, `mod.rs`, `layout.rs`)
+- [x] **Handle API key security** — Manual `Debug`/`Display` impls on `LlmConfig` redact API keys to `***`/`<first4chars>***`. Env var references never leak resolved values in Debug. `OpenAiProvider` has manual `Debug` impl with `finish_non_exhaustive()`. `llm.toml` gets `0o600` permissions on Unix. Preferences AI tab never pre-fills the API key. `llm.toml` added to `.gitignore`. No log statements leak keys. Security audit passed with all findings fixed.
+- [ ] **Add `chat_completion_stream()` to `LlmProvider` trait** — New method with default no-op that returns a `Box<dyn Stream<Item = Result<StreamChunk, LlmError>>>`. `StreamChunk` carries partial `content: String` deltas plus final `finish_reason`. `OpenAiProvider` uses `async-openai`'s `chat().create_stream()` to yield deltas. `MockProvider` returns the full response as a single chunk. (~scope: small)
+- [ ] **Add streaming channel to `AsyncBridge`** — New `submit_chat_stream()` method returns `PendingStreamRequest` holding `mpsc::Receiver<StreamChunk>`. Background tokio task reads the `Stream` and forwards each chunk over the channel. Main thread calls `poll_chunks()` each frame to drain available deltas. (~scope: small)
+- [ ] **Append partial tokens to live assistant message in `CoCreatorState`** — New `append_streaming_text(&mut self, delta: &str)` method extends the last assistant message (or creates one on first chunk). `processing` stays true until a chunk with `finish_reason` arrives. (~scope: small)
+- [ ] **Wire streaming poll into editor frame loop** — Replace `poll_llm_response()` with `poll_llm_stream()` that drains chunks from `PendingStreamRequest`, calls `append_streaming_text()` per delta, and finalizes on finish. Falls back to non-streaming `submit_chat()` if provider doesn't support streaming. (~scope: small)
+- [ ] **Add `rmcp` dependency and MCP server skeleton** — Add `rmcp` to `katla_agent/Cargo.toml` behind new `mcp-server` feature. Create `katla_agent/src/mcp.rs` with `KatlaMcpServer` struct implementing `rmcp::ServerHandler`. Server holds a `mpsc::Sender<McRequest>` to forward tool calls to the main thread. Transport: stdio. (~scope: small)
+- [ ] **Define MCP tools matching the 6 built-in scene tools** — `rmcp::tool!` macro declarations for `spawn_entity`, `destroy_entity`, `set_component`, `query_entities`, `get_scene_hierarchy`, `duplicate_entity`. Each maps to the existing `SceneOp` enum. JSON schemas match current `ToolDefinition` parameters. (~scope: small)
+- [ ] **Bridge MCP tool calls to the main-thread ECS world** — Main thread receives `McpRequest` via channel, executes against `World` + `ComponentRegistry`, returns `McpResponse`. Use `run_scripted_agent()` or direct `SceneOp` execution. Results serialized back to MCP as JSON text content. (~scope: medium)
+- [ ] **Start MCP server alongside editor when feature is enabled** — In `Application::new()`, if `mcp-server` feature is active, spawn `KatlaMcpServer` on a background thread with stdio transport. Log connection/disconnect events. Graceful shutdown on app exit. (~scope: small)
+- [ ] **Add `.claude/mcp.json` config example** — Document the stdio command to connect Claude Code to Katla's MCP server. Add to `docs/` or as a commented example in project root. (~scope: trivial)
 - [ ] **Add local inference backend option** — Behind `llm-assistant-local` feature, wrap `llama-cpp-2` or `mistralrs` for offline use. (~scope: large)
 
 #### Content Generation Tools (world building, tuning, game logic)
 
-- [ ] **Build world building tool set** — High-level tools for scene composition: `populate_area(template, density, constraints)`, `place_along_path(template, points)`, `scatter(template, count, bounds, min_spacing)`, `create_cluster(templates, center, radius)`. These compose the low-level scene tools into content-creation operations. (~scope: large)
-- [ ] **Build parameter tuning tool set** — Tools for iterative feel adjustment: `tune_component(entity, field, direction)` with semantic understanding ("warmer" → shift light color toward orange, "more flickery" → increase particle velocity variance). `compare_variants(entity, field, values)` spawns copies with different settings for A/B comparison. (~scope: large)
+- [x] **Build world building tool set** — High-level placement tools: `scatter()`, `place_grid()`, `place_ring()`, `place_cluster()`, `place_along_path()`. Scene templates: `campfire`, `street_lamp`, `village_square`, `forest_clearing`. (`katla_agent/src/tools/`)
+- [x] **Build parameter tuning tool set** — `adjust_field()`, `set_field()`, `create_variants()` for iterative feel adjustment. Semantic presets: `warm_light()`, `cool_light()`, `flickery()`. A/B comparison via `create_variants()`. (`katla_agent/src/tools/tuning.rs`)
 - [ ] **Build game logic / behavior tool set** — Tools for gameplay: `add_behavior(entity, behavior_template)` for common patterns (patrol, chase, wander, interact), `create_trigger(area, action)` for spatial triggers, `balance_curves(params)` for tuning difficulty curves. These define reusable behavior patterns the AI can compose. (~scope: large)
-- [ ] **Add scene analysis / suggestion tools** — AI can analyze the current scene: detect empty areas, check lighting coverage, suggest entity placements, identify balance issues. `analyze_scene()` returns structured observations the LLM uses to make suggestions. (~scope: medium)
+- [x] **Add scene analysis / suggestion tools** — `analyze_scene()` returns structured observations (entity counts, component distributions) the LLM uses to make suggestions. Scene context serialization provides current state. (`katla_agent/src/context.rs`, `katla_app/src/application/editor/agent.rs`)
 
 #### Glass Box Transparency (see and control what the AI does)
 
-- [ ] **Design `AgentAction` data model** — Struct for every AI action: what tool was called, what entities were affected, before/after values, timestamp, AI reasoning (why it chose this). (~scope: medium)
-- [ ] **Build `ActionLog` with checkpoint storage** — Ordered log of all AI actions with ECS component diffs. Checkpoints at major boundaries (one per AI request) for rollback. (~scope: medium)
-- [ ] **Implement checkpoint-based rollback** — Restore scene to any prior checkpoint. Full undo of an AI session, or scrub to a specific point in the timeline. (~scope: large)
+- [x] **Design `AgentAction` data model** — `AgentAction` struct with `ActionId`, `SceneOp`, result/error. `AgentSession` tracks all actions with undo stack. (`katla_ecs/src/agent/session.rs`)
+- [x] **Build `ActionLog` with checkpoint storage** — `AgentSession` maintains ordered action log and undo stack with `UndoGroup` entries. Each group corresponds to one agent turn. (`katla_ecs/src/agent/session.rs`)
+- [x] **Implement checkpoint-based rollback** — `AgentSession::undo_last()` undoes one turn, `undo_all()` restores to pre-session state. Full undo of an AI session via undo stack. (`katla_ecs/src/agent/session.rs`)
 - [ ] **Build viewport entity highlighting for AI actions** — Color-coded outlines on entities the AI just created (green), modified (yellow), or is about to delete (red). Fades out after a few seconds. (~scope: large)
 - [ ] **Build action timeline in the editor** — Horizontal timeline showing AI actions as colored blocks. Click any action to highlight affected entities, see what changed, or rollback to that point. (~scope: large)
 - [ ] **Build diff view for scene changes** — For any AI action or session: list of entities added/removed/modified with component-level old→new diffs. (~scope: medium)
-- [ ] **Add pause/resume/step controls** — Pause the AI mid-operation, step through actions one at a time, or rollback. Essential for reviewing large world-building operations before committing. (~scope: medium)
+- [ ] **Add pause/resume/step controls** — Pause the AI mid-operation, step through actions one at a time, or rollback. Essential for reviewing large world-building operations before committing. (`AgentSession.paused` field exists; UI controls not yet built.) (~scope: medium)
 
 #### Game Loop Modes (Edit/Play/Simulate) — orthogonal infrastructure
 

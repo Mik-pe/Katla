@@ -108,6 +108,14 @@ pub(crate) struct EditorState {
     pub(crate) component_registry: katla_ecs::scene_tool::ComponentRegistry,
     /// Agent harness for AI co-creator execution.
     pub(crate) agent_harness: katla_ecs::agent::AgentHarness,
+    /// LLM configuration (API key, model, endpoint).
+    pub(crate) llm_config: katla_agent::LlmConfig,
+    /// Async bridge for background LLM calls.
+    pub(crate) async_bridge: Option<katla_agent::AsyncBridge>,
+    /// Pending LLM streaming request being processed.
+    pub(crate) pending_llm_stream: Option<katla_agent::PendingStreamRequest>,
+    /// LLM conversation history (separate from UI message list).
+    pub(crate) llm_conversation: Vec<katla_agent::ChatMessage>,
 }
 
 #[cfg(feature = "editor")]
@@ -146,6 +154,10 @@ impl EditorState {
             component_registry:
                 crate::application::editor::component_registry::build_editor_component_registry(),
             agent_harness: katla_ecs::agent::AgentHarness::new(),
+            llm_config: katla_agent::LlmConfig::load(),
+            async_bridge: katla_agent::AsyncBridge::new().ok(),
+            pending_llm_stream: None,
+            llm_conversation: Vec::new(),
         }
     }
 }
@@ -396,6 +408,28 @@ impl ApplicationHandler for Application {
                             ElementState::Pressed => self.ui_context.input_mut().add_key_press(key),
                             ElementState::Released => {
                                 self.ui_context.input_mut().add_key_release(key)
+                            }
+                        }
+                    }
+
+                    // Forward printable characters from logical key to UI.
+                    // IME::Commit only fires for composed text (CJK etc.),
+                    // not for simple ASCII keypresses on Windows.
+                    if event.state == ElementState::Pressed {
+                        let ctrl_held = self
+                            .current_modifiers
+                            .contains(winit::keyboard::ModifiersState::CONTROL);
+
+                        if !ctrl_held {
+                            if let winit::keyboard::Key::Character(ch) = &event.logical_key {
+                                for c in ch.chars() {
+                                    self.ui_context.input_mut().add_char(c);
+                                }
+                            } else if matches!(
+                                &event.logical_key,
+                                winit::keyboard::Key::Named(winit::keyboard::NamedKey::Space)
+                            ) {
+                                self.ui_context.input_mut().add_char(' ');
                             }
                         }
                     }
