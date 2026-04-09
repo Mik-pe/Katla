@@ -517,6 +517,7 @@ pub struct TextInput<'a> {
     text: &'a mut String,
     placeholder: Option<&'a str>,
     show_clear: bool,
+    multiline: bool,
     bounds: Rect2D,
     id: Option<&'a str>,
 }
@@ -529,6 +530,7 @@ impl<'a> TextInput<'a> {
             text,
             placeholder: None,
             show_clear: false,
+            multiline: false,
             bounds: Rect2D::from_size(Vec2::new(
                 DEFAULTS.text_input_default_width,
                 DEFAULTS.text_input_default_height,
@@ -546,6 +548,12 @@ impl<'a> TextInput<'a> {
     /// Show a clear button (X) on the right side when text is non-empty.
     pub fn show_clear(mut self, show: bool) -> Self {
         self.show_clear = show;
+        self
+    }
+
+    /// Enable multiline input. Shift+Enter inserts a newline, Enter submits.
+    pub fn multiline(mut self, multiline: bool) -> Self {
+        self.multiline = multiline;
         self
     }
 
@@ -583,6 +591,7 @@ impl<'a> crate::Widget for TextInput<'a> {
             self.bounds,
             self.placeholder,
             self.show_clear,
+            self.multiline,
         )
     }
 }
