@@ -21,6 +21,7 @@ fn test_preferences_tab_click_does_not_close_panel() {
         },
         current_tab: PreferencesTab::Appearance,
         scroll_state: Default::default(),
+        llm_config: katla_agent::LlmConfig::default(),
     };
 
     let preferences = crate::Preferences::default();

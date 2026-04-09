@@ -1,8 +1,13 @@
+#[cfg(feature = "llm-assistant")]
 pub mod co_creator;
+
 pub mod context;
 pub mod tools;
 
+#[cfg(feature = "llm-assistant")]
 pub use co_creator::CoCreatorAgent;
+#[cfg(feature = "llm-assistant")]
+pub use co_creator::{LocalAction, LocalResponse, StreamEvent};
 pub use context::{SceneContext, serialize_scene_context};
 pub use tools::{placement, templates, tuning};
 

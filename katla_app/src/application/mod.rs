@@ -112,10 +112,8 @@ pub(crate) struct EditorState {
     pub(crate) llm_config: katla_agent::LlmConfig,
     /// Async bridge for background LLM calls.
     pub(crate) async_bridge: Option<katla_agent::AsyncBridge>,
-    /// Pending LLM streaming request being processed.
-    pub(crate) pending_llm_stream: Option<katla_agent::PendingStreamRequest>,
-    /// LLM conversation history (separate from UI message list).
-    pub(crate) llm_conversation: Vec<katla_agent::ChatMessage>,
+    /// Co-creator agent: single source of truth for conversation state and LLM interaction.
+    pub(crate) co_creator_agent: katla_agent::CoCreatorAgent,
     /// MCP server bridge for external AI tool integration.
     #[cfg(feature = "mcp")]
     pub(crate) mcp_state: crate::application::editor::mcp::McpState,
@@ -159,8 +157,7 @@ impl EditorState {
             agent_harness: katla_ecs::agent::AgentHarness::new(),
             llm_config: katla_agent::LlmConfig::load(),
             async_bridge: katla_agent::AsyncBridge::new().ok(),
-            pending_llm_stream: None,
-            llm_conversation: Vec::new(),
+            co_creator_agent: katla_agent::CoCreatorAgent::new(),
             #[cfg(feature = "mcp")]
             mcp_state: crate::application::editor::mcp::McpState::new(),
         }
