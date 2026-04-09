@@ -87,6 +87,38 @@ impl CoCreatorState {
         });
         self.processing = false;
     }
+
+    /// Append a streaming text delta to the last assistant message.
+    ///
+    /// If the last message is an assistant message and we're processing,
+    /// appends to it. Otherwise creates a new assistant message.
+    pub fn append_streaming_text(&mut self, delta: &str) {
+        if self.processing {
+            if let Some(last) = self.messages.last_mut() {
+                if last.role == MessageRole::Assistant {
+                    last.text.push_str(delta);
+                    return;
+                }
+            }
+        }
+        self.messages.push(ChatMessage {
+            role: MessageRole::Assistant,
+            text: delta.to_string(),
+        });
+        self.processing = true;
+    }
+
+    /// Finalize the streaming response.
+    ///
+    /// Sets processing to false and removes empty assistant messages.
+    pub fn finalize_streaming(&mut self) {
+        self.processing = false;
+        if let Some(last) = self.messages.last() {
+            if last.role == MessageRole::Assistant && last.text.trim().is_empty() {
+                self.messages.pop();
+            }
+        }
+    }
 }
 
 impl Default for CoCreatorState {
@@ -170,6 +202,7 @@ pub fn draw_co_creator_panel(
     let processing = state.processing;
     let mut input_text = state.input_text.clone();
     let mut send_clicked = false;
+    let mut enter_pressed = false;
 
     let panel_style = style.draggable_panel_style();
 
@@ -239,12 +272,13 @@ pub fn draw_co_creator_panel(
             let send_bounds =
                 Rect2D::from_origin_size(Vec2::new(send_x, input_y), Vec2::new(60.0, 28.0));
 
-            ui.add(
+            let input_response = ui.add(
                 TextInput::new("co_creator_input", &mut input_text)
                     .bounds(input_bounds)
                     .placeholder("Ask the AI...")
                     .id("co_creator_input"),
             );
+            enter_pressed = input_response.enter_pressed;
 
             let response = ui.add(
                 Button::new("Send")
@@ -260,7 +294,7 @@ pub fn draw_co_creator_panel(
 
     // Process send after the closure returns (panel state borrow released)
     let mut submitted_text: Option<String> = None;
-    if send_clicked {
+    if send_clicked || enter_pressed {
         let text = state.input_text.clone();
         state.submit_message(&text);
         if !text.trim().is_empty() {

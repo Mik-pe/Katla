@@ -2,6 +2,8 @@
 
 pub mod agent;
 pub mod component_registry;
+#[cfg(feature = "mcp")]
+pub(crate) mod mcp;
 
 use std::collections::{HashMap, HashSet};
 
@@ -609,6 +611,13 @@ pub fn process_editor_actions(app: &mut Application) {
 
     // Poll for pending LLM stream chunks each frame
     agent::poll_llm_stream(app);
+
+    // Poll for MCP server requests
+    #[cfg(feature = "mcp")]
+    {
+        let registry = &app.editor.component_registry;
+        app.editor.mcp_state.poll(&mut app.world, registry);
+    }
 
     // Update OS cursor based on UI request
     use winit::window::CursorIcon;

@@ -23,7 +23,7 @@ toml = { workspace = true, optional = true }
 futures = { version = "0.3", optional = true }
 
 # Optional MCP server dependencies
-rmcp = { version = "1.3", optional = true, features = ["server", "transport-io"] }
+rmcp = { version = "1.3", optional = true, features = ["server", "transport-io", "macros"] }
 schemars = { version = "1", optional = true }
 async-trait = { version = "0.1", optional = true }
 
