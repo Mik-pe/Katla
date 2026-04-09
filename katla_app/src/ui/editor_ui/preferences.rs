@@ -15,6 +15,23 @@ use crate::Preferences;
 
 use super::Theme;
 
+// --- Spacing & sizing constants ---
+
+/// Horizontal padding on each side of the tab content area.
+const HORIZONTAL_PADDING: f32 = 16.0;
+/// Standard height for interactive rows (buttons, toggles, text inputs).
+const ROW_HEIGHT: f32 = 28.0;
+/// Gap between a section header and its first widget.
+const HEADER_TO_WIDGET: f32 = 12.0;
+/// Gap between related widgets within a section.
+const WIDGET_GAP: f32 = 8.0;
+/// Gap between sections (separator to next header).
+const SECTION_GAP: f32 = 20.0;
+/// Gap between a label and its associated widget.
+const LABEL_GAP: f32 = 8.0;
+/// Grid cell spacing for button grids.
+const GRID_SPACING: f32 = 8.0;
+
 impl From<&Theme> for DraggablePanelStyle {
     fn from(theme: &Theme) -> Self {
         Self {
@@ -276,12 +293,12 @@ impl<'a> Widget for PreferencesPanel<'a> {
                     scroll_bounds,
                     move |ui| {
                         let scroll_offset = ui.scroll_offset();
-                        let content_width = panel_width - 32.0;
-                        let row_height = 28.0;
-                        let spacing = 8.0;
+                        let content_width = panel_width - HORIZONTAL_PADDING * 2.0;
 
-                        let cursor =
-                            Vec2::new(panel_bounds.min.x() + 16.0, content_start_y - scroll_offset);
+                        let cursor = Vec2::new(
+                            panel_bounds.min.x() + HORIZONTAL_PADDING,
+                            content_start_y - scroll_offset,
+                        );
 
                         let final_y = match current_tab {
                             PreferencesTab::Appearance => build_appearance_tab(
@@ -290,8 +307,6 @@ impl<'a> Widget for PreferencesPanel<'a> {
                                 &AppearanceTabParams {
                                     cursor,
                                     content_width,
-                                    _row_height: row_height,
-                                    spacing,
                                     current_theme_key: theme_key,
                                     show_grid,
                                     show_stats,
@@ -304,19 +319,17 @@ impl<'a> Widget for PreferencesPanel<'a> {
                                 theme,
                                 cursor,
                                 content_width,
-                                row_height,
                                 &editor_settings,
                                 pending_actions,
                             ),
                             PreferencesTab::Keybindings => {
-                                build_keybindings_tab(ui, theme, cursor, content_width, row_height)
+                                build_keybindings_tab(ui, theme, cursor, content_width)
                             }
                             PreferencesTab::Ai => build_ai_tab(
                                 ui,
                                 theme,
                                 cursor,
                                 content_width,
-                                row_height,
                                 &llm_config,
                                 pending_actions,
                             ),
@@ -325,7 +338,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
                             }
                         };
 
-                        final_y - content_start_y + scroll_offset + 16.0
+                        final_y - content_start_y + scroll_offset + SECTION_GAP
                     },
                 );
             },
@@ -335,11 +348,31 @@ impl<'a> Widget for PreferencesPanel<'a> {
     }
 }
 
+// --- Shared helpers ---
+
+/// Draw a section header: tinted background bar with text label.
+fn draw_section_header(ui: &mut UiContext, theme: &Theme, text: &str, content_width: f32) {
+    let header_height = 24.0;
+    let bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, header_height));
+    ui.draw_rect(bounds, theme.background_light);
+
+    let font_size = ui.scaled_font_size(FontSize::Small);
+    let text_size = ui.measure_text(text, font_size);
+    ui.draw_text(
+        text,
+        Vec2::new(
+            bounds.min.x() + 8.0,
+            bounds.center().y() - text_size.y() * 0.5,
+        ),
+        theme.text_secondary,
+        font_size,
+    );
+    ui.spacing(header_height + HEADER_TO_WIDGET);
+}
+
 struct AppearanceTabParams<'a> {
     cursor: Vec2,
     content_width: f32,
-    _row_height: f32,
-    spacing: f32,
     current_theme_key: &'a str,
     show_grid: bool,
     show_stats: bool,
@@ -353,20 +386,17 @@ fn build_appearance_tab(
     pending_actions: &mut Vec<PreferencesAction>,
 ) -> f32 {
     let content_width = params.content_width;
-    let spacing = params.spacing;
     let current_theme_key = params.current_theme_key;
     let show_grid = params.show_grid;
     let show_stats = params.show_stats;
     let font_scale = params.font_scale;
 
     ui.set_cursor(params.cursor);
-    ui.label_auto_colored("Color Theme", theme.text_secondary);
-    ui.spacing(20.0);
-    ui.label_auto_colored("Color Theme", theme.text_secondary);
-    ui.spacing(20.0);
 
-    let col_width = (content_width - spacing) / 2.0;
-    let row_height = 24.0;
+    // --- Color Theme section ---
+    draw_section_header(ui, theme, "COLOR THEME", content_width);
+
+    let col_width = (content_width - GRID_SPACING) / 2.0;
 
     let theme_names = [
         ("catppuccin", "Catppuccin"),
@@ -384,9 +414,9 @@ fn build_appearance_tab(
         ("solarized_dark", "Solarized Dark"),
     ];
 
-    ui.begin_grid(2, col_width, row_height, spacing);
+    ui.begin_grid(2, col_width, ROW_HEIGHT, GRID_SPACING);
     for (key, display_name) in theme_names.iter() {
-        let btn_bounds = ui.grid_item(Vec2::new(col_width, row_height));
+        let btn_bounds = ui.grid_item(Vec2::new(col_width, ROW_HEIGHT));
         let is_selected = *key == current_theme_key;
 
         if themed_select_button(
@@ -402,13 +432,13 @@ fn build_appearance_tab(
     }
     ui.end_grid();
 
-    ui.spacing(row_height * 7.0 + 4.0 + 16.0);
+    ui.spacing(ROW_HEIGHT * 7.0 + GRID_SPACING + SECTION_GAP);
 
-    ui.label_auto_colored("View Options", theme.text_secondary);
-    ui.spacing(24.0);
+    // --- View Options section ---
+    draw_section_header(ui, theme, "VIEW OPTIONS", content_width);
 
     let grid_btn_bounds =
-        Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
+        Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, ROW_HEIGHT));
     if ui
         .add(
             ToggleButton::new(show_grid, "Show Grid")
@@ -421,10 +451,10 @@ fn build_appearance_tab(
     {
         pending_actions.push(PreferencesAction::ToggleGrid);
     }
-    ui.spacing(row_height + 4.0);
+    ui.spacing(ROW_HEIGHT + WIDGET_GAP);
 
     let stats_btn_bounds =
-        Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
+        Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, ROW_HEIGHT));
     if ui
         .add(
             ToggleButton::new(show_stats, "Show Stats Panel")
@@ -437,10 +467,10 @@ fn build_appearance_tab(
     {
         pending_actions.push(PreferencesAction::ToggleStats);
     }
-    ui.spacing(row_height + 16.0);
+    ui.spacing(ROW_HEIGHT + SECTION_GAP);
 
-    ui.label_auto_colored("Font Scale", theme.text_secondary);
-    ui.spacing(24.0);
+    // --- Font Scale section ---
+    draw_section_header(ui, theme, "FONT SCALE", content_width);
 
     let font_scales = [
         (0.75, "75%"),
@@ -452,11 +482,11 @@ fn build_appearance_tab(
         (1.75, "175%"),
         (2.0, "200%"),
     ];
-    let scale_btn_width = (content_width - 3.0 * spacing) / 4.0;
+    let scale_btn_width = (content_width - 3.0 * GRID_SPACING) / 4.0;
 
-    ui.begin_grid(4, scale_btn_width, row_height, spacing);
+    ui.begin_grid(4, scale_btn_width, ROW_HEIGHT, GRID_SPACING);
     for (scale, label) in font_scales.iter() {
-        let btn_bounds = ui.grid_item(Vec2::new(scale_btn_width, row_height));
+        let btn_bounds = ui.grid_item(Vec2::new(scale_btn_width, ROW_HEIGHT));
         let is_selected = (font_scale - scale).abs() < 0.01;
 
         if themed_select_button(
@@ -480,16 +510,16 @@ fn build_editor_tab(
     theme: &Theme,
     cursor: Vec2,
     content_width: f32,
-    row_height: f32,
     editor_settings: &EditorSettings,
     pending_actions: &mut Vec<PreferencesAction>,
 ) -> f32 {
     ui.set_cursor(cursor);
-    ui.label_auto_colored("Editor Settings", theme.text_secondary);
-    ui.spacing(24.0);
+
+    // --- Snapping section ---
+    draw_section_header(ui, theme, "SNAPPING", content_width);
 
     let snap_btn_bounds =
-        Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
+        Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, ROW_HEIGHT));
     if ui
         .add(
             ToggleButton::new(editor_settings.snap_to_grid, "Snap to Grid")
@@ -504,14 +534,14 @@ fn build_editor_tab(
             !editor_settings.snap_to_grid,
         ));
     }
-    ui.spacing(row_height + ui.scaled_font_size(FontSize::Medium));
+    ui.spacing(ROW_HEIGHT + SECTION_GAP);
 
-    ui.label_auto_colored("Camera Speed", theme.text_secondary);
-    ui.spacing(20.0);
+    // --- Camera section ---
+    draw_section_header(ui, theme, "CAMERA", content_width);
 
-    let speed_text = format!("{:.0}", editor_settings.camera_speed);
+    let speed_text = format!("Speed: {:.0}", editor_settings.camera_speed);
     ui.label_auto_colored(&speed_text, theme.text_primary);
-    ui.spacing(20.0);
+    ui.spacing(LABEL_GAP);
 
     let slider_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, 20.0));
     let mut camera_speed = editor_settings.camera_speed;
@@ -524,21 +554,17 @@ fn build_editor_tab(
         pending_actions.push(PreferencesAction::SetCameraSpeed(camera_speed));
     }
 
-    ui.spacing(40.0);
+    ui.spacing(20.0 + SECTION_GAP);
 
-    ui.label_auto_colored(
-        &format!("Grid Size: {:.1}", editor_settings.grid_size),
-        theme.text_secondary,
-    );
-    ui.spacing(24.0);
+    // --- Grid section ---
+    draw_section_header(ui, theme, "GRID", content_width);
 
     let sizes = [0.5, 1.0, 2.0, 5.0, 10.0];
-    let btn_width = (content_width - 4.0 * 8.0) / 5.0;
-    let spacing = 8.0;
+    let btn_width = (content_width - 4.0 * GRID_SPACING) / 5.0;
 
-    ui.begin_grid(5, btn_width, row_height, spacing);
+    ui.begin_grid(5, btn_width, ROW_HEIGHT, GRID_SPACING);
     for &size in sizes.iter() {
-        let btn_bounds = ui.grid_item(Vec2::new(btn_width, row_height));
+        let btn_bounds = ui.grid_item(Vec2::new(btn_width, ROW_HEIGHT));
         let is_selected = (editor_settings.grid_size - size).abs() < 0.01;
         let text = format!("{:.1}", size);
         if themed_select_button(
@@ -557,59 +583,171 @@ fn build_editor_tab(
     ui.cursor().y()
 }
 
+/// A single keybinding entry for display.
+struct ShortcutEntry {
+    keys: &'static str,
+    description: &'static str,
+    section: &'static str,
+}
+
 fn build_keybindings_tab(
     ui: &mut UiContext,
     theme: &Theme,
     cursor: Vec2,
     content_width: f32,
-    row_height: f32,
 ) -> f32 {
     ui.set_cursor(cursor);
-    ui.label_auto_colored("Keyboard Shortcuts", theme.text_secondary);
-    ui.spacing(24.0);
 
     let shortcuts = [
-        ("Delete", "Delete selected entity"),
-        ("↑ / ↓", "Navigate entity list"),
-        ("← / →", "Collapse/Expand hierarchy"),
-        ("Escape", "Deselect / Close panel"),
-        ("T", "Test mesh spawn"),
+        // Viewport / Camera
+        ShortcutEntry {
+            keys: "W / E / R",
+            description: "Gizmo mode: Translate / Rotate / Scale",
+            section: "Viewport",
+        },
+        ShortcutEntry {
+            keys: "F",
+            description: "Focus camera on selected entity",
+            section: "Viewport",
+        },
+        ShortcutEntry {
+            keys: "RMB Drag",
+            description: "Orbit camera",
+            section: "Viewport",
+        },
+        ShortcutEntry {
+            keys: "Ctrl+RMB Drag",
+            description: "Pan camera",
+            section: "Viewport",
+        },
+        ShortcutEntry {
+            keys: "Shift",
+            description: "Sprint (fast camera)",
+            section: "Viewport",
+        },
+        ShortcutEntry {
+            keys: "L",
+            description: "Enable camera look",
+            section: "Viewport",
+        },
+        // Scene
+        ShortcutEntry {
+            keys: "Ctrl+S",
+            description: "Save scene",
+            section: "Scene",
+        },
+        ShortcutEntry {
+            keys: "Ctrl+P",
+            description: "Toggle Particle Inspector",
+            section: "Scene",
+        },
+        ShortcutEntry {
+            keys: "Ctrl+Shift+A",
+            description: "Toggle AI Co-Creator panel",
+            section: "Scene",
+        },
+        ShortcutEntry {
+            keys: "Delete",
+            description: "Delete selected entity",
+            section: "Scene",
+        },
+        // Navigation
+        ShortcutEntry {
+            keys: "Esc",
+            description: "Exit application",
+            section: "Navigation",
+        },
+        ShortcutEntry {
+            keys: "Space",
+            description: "Jump",
+            section: "Navigation",
+        },
+        ShortcutEntry {
+            keys: "↑ / ↓",
+            description: "Navigate entity list",
+            section: "Navigation",
+        },
+        ShortcutEntry {
+            keys: "← / →",
+            description: "Collapse / Expand hierarchy",
+            section: "Navigation",
+        },
+        // Movement
+        ShortcutEntry {
+            keys: "W A S D",
+            description: "Move forward / left / back / right",
+            section: "Movement",
+        },
+        ShortcutEntry {
+            keys: "Q / E",
+            description: "Move down / up",
+            section: "Movement",
+        },
+        ShortcutEntry {
+            keys: "Shift",
+            description: "Sprint",
+            section: "Movement",
+        },
     ];
 
-    for (key, desc) in shortcuts {
-        let row_bounds =
-            Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
-        ui.draw_rect(row_bounds, theme.button_bg);
+    let badge_width = 120.0;
+    let badge_height = ROW_HEIGHT;
+    let small_font = ui.scaled_font_size(FontSize::Small);
+    let medium_font = ui.scaled_font_size(FontSize::Medium);
 
-        let badge_width = 60.0;
+    let mut current_section = "";
+
+    for shortcut in &shortcuts {
+        // Draw section header when section changes
+        if shortcut.section != current_section {
+            if !current_section.is_empty() {
+                ui.spacing(WIDGET_GAP);
+            }
+            current_section = shortcut.section;
+            draw_section_header(ui, theme, shortcut.section, content_width);
+        }
+
+        let row_bounds =
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, badge_height));
+
+        // Alternating row backgrounds
+        let row_bg = if ui.cursor().y() as u32 % 2 == 0 {
+            theme.button_bg
+        } else {
+            theme.panel_bg
+        };
+        ui.draw_rect(row_bounds, row_bg);
+
+        // Key badge
         let badge_bounds =
-            Rect2D::from_origin_size(ui.cursor(), Vec2::new(badge_width, row_height));
+            Rect2D::from_origin_size(ui.cursor(), Vec2::new(badge_width, badge_height));
         ui.draw_rect(badge_bounds, theme.background_light);
-        let key_size = ui.measure_text(key, ui.scaled_font_size(FontSize::Small));
+        let key_size = ui.measure_text(shortcut.keys, small_font);
         ui.draw_text(
-            key,
+            shortcut.keys,
             Vec2::new(
                 badge_bounds.center().x() - key_size.x() * 0.5,
                 badge_bounds.center().y() - key_size.y() * 0.5,
             ),
             theme.text_accent,
-            ui.scaled_font_size(FontSize::Small),
+            small_font,
         );
 
+        // Description
         ui.draw_text(
-            desc,
+            shortcut.description,
             Vec2::new(
-                ui.cursor().x() + badge_width + ui.scaled_font_size(FontSize::Medium),
+                ui.cursor().x() + badge_width + medium_font,
                 ui.cursor().y() + 6.0,
             ),
             theme.text_primary,
-            ui.scaled_font_size(FontSize::Medium),
+            medium_font,
         );
 
-        ui.spacing(row_height + 4.0);
+        ui.spacing(badge_height + WIDGET_GAP);
     }
 
-    ui.spacing(16.0);
+    ui.spacing(SECTION_GAP);
     ui.label_auto_colored("Custom keybindings coming soon", theme.text_muted);
 
     ui.cursor().y()
@@ -724,23 +862,49 @@ fn themed_select_button(
     clicked
 }
 
+/// Draw an inline label+input row. Returns the full-width text input bounds.
+fn inline_field_row(
+    ui: &mut UiContext,
+    theme: &Theme,
+    label: &str,
+    label_width: f32,
+    content_width: f32,
+) -> Rect2D {
+    let row_y = ui.cursor().y();
+    let font_size = ui.scaled_font_size(FontSize::Small);
+
+    let label_size = ui.measure_text(label, font_size);
+    ui.draw_text(
+        label,
+        Vec2::new(ui.cursor().x(), row_y + (ROW_HEIGHT - label_size.y()) * 0.5),
+        theme.text_secondary,
+        font_size,
+    );
+
+    let input_x = ui.cursor().x() + label_width + WIDGET_GAP;
+    let input_width = content_width - label_width - WIDGET_GAP;
+    Rect2D::from_origin_size(
+        Vec2::new(input_x, row_y),
+        Vec2::new(input_width, ROW_HEIGHT),
+    )
+}
+
 fn build_ai_tab(
     ui: &mut UiContext,
     theme: &Theme,
     cursor: Vec2,
     content_width: f32,
-    row_height: f32,
     llm_config: &katla_agent::LlmConfig,
     pending_actions: &mut Vec<PreferencesAction>,
 ) -> f32 {
     use katla_agent::config::LlmProviderKind;
 
     ui.set_cursor(cursor);
-    ui.label_auto_colored("LLM Provider", theme.text_secondary);
-    ui.spacing(24.0);
 
-    let col_width = (content_width - 8.0) / 3.0;
-    let spacing = 4.0;
+    // --- Provider section ---
+    draw_section_header(ui, theme, "PROVIDER", content_width);
+
+    let col_width = (content_width - 2.0 * GRID_SPACING) / 3.0;
 
     let providers = [
         (LlmProviderKind::Disabled, "Disabled"),
@@ -748,9 +912,9 @@ fn build_ai_tab(
         (LlmProviderKind::OpenAiCompatible, "OpenAI Compatible"),
     ];
 
-    ui.begin_grid(3, col_width, row_height, spacing);
+    ui.begin_grid(3, col_width, ROW_HEIGHT, GRID_SPACING);
     for (kind, label) in providers.iter() {
-        let btn_bounds = ui.grid_item(Vec2::new(col_width, row_height));
+        let btn_bounds = ui.grid_item(Vec2::new(col_width, ROW_HEIGHT));
         let is_selected = llm_config.provider == *kind;
 
         if themed_select_button(
@@ -771,150 +935,146 @@ fn build_ai_tab(
     }
     ui.end_grid();
 
-    ui.spacing(row_height + 16.0);
+    ui.spacing(ROW_HEIGHT + WIDGET_GAP);
 
-    // Status section
+    // Status display
     if llm_config.provider == LlmProviderKind::Disabled {
         ui.label_auto_colored(
             "Configure an LLM provider to enable AI-powered scene building",
             theme.text_muted,
         );
-        ui.spacing(20.0);
-    } else {
-        let provider_name = match llm_config.provider {
-            LlmProviderKind::OpenAi => "OpenAI",
-            LlmProviderKind::OpenAiCompatible => "OpenAI Compatible",
-            LlmProviderKind::Disabled => unreachable!(),
-        };
-        let status = format!("AI: Configured ({}, {})", provider_name, llm_config.model);
-        ui.label_auto_colored(&status, theme.success);
-        ui.spacing(20.0);
+        ui.spacing(LABEL_GAP);
+        return ui.cursor().y();
     }
 
-    // When not Disabled, show configuration fields
-    if llm_config.provider != LlmProviderKind::Disabled {
-        // API Key (starts empty for security — user types a fresh value)
-        ui.label_auto_colored("API Key", theme.text_secondary);
-        ui.spacing(20.0);
+    let provider_name = match llm_config.provider {
+        LlmProviderKind::OpenAi => "OpenAI",
+        LlmProviderKind::OpenAiCompatible => "OpenAI Compatible",
+        LlmProviderKind::Disabled => unreachable!(),
+    };
+    let status = format!("AI: Configured ({}, {})", provider_name, llm_config.model);
+    ui.label_auto_colored(&status, theme.success);
+    ui.spacing(SECTION_GAP);
 
-        let api_key_bounds =
-            Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
-        let mut api_key = String::new();
-        let api_key_response = ui.add(
-            katla_ui::widgets::TextInput::new("api_key", &mut api_key)
-                .bounds(api_key_bounds)
-                .id("llm_api_key")
-                .placeholder("Enter API key..."),
+    // --- Credentials section ---
+    draw_section_header(ui, theme, "CREDENTIALS", content_width);
+
+    // API Key — full width since keys are long and sensitive
+    let api_key_bounds =
+        Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, ROW_HEIGHT));
+    let mut api_key = String::new();
+    let api_key_response = ui.add(
+        katla_ui::widgets::TextInput::new("api_key", &mut api_key)
+            .bounds(api_key_bounds)
+            .id("llm_api_key")
+            .placeholder("Enter API key..."),
+    );
+    if api_key_response.changed {
+        pending_actions.push(PreferencesAction::SetLlmApiKey(api_key));
+    }
+    ui.spacing(ROW_HEIGHT + SECTION_GAP);
+
+    // --- Model Settings section ---
+    draw_section_header(ui, theme, "MODEL SETTINGS", content_width);
+
+    let label_width = content_width * 0.3;
+
+    // Model — inline label + input
+    let model_bounds = inline_field_row(ui, theme, "Model", label_width, content_width);
+    let mut model = llm_config.model.clone();
+    let model_response = ui.add(
+        katla_ui::widgets::TextInput::new("model", &mut model)
+            .bounds(model_bounds)
+            .id("llm_model")
+            .placeholder("gpt-4o"),
+    );
+    if model_response.changed {
+        pending_actions.push(PreferencesAction::SetLlmModel(model));
+    }
+    ui.spacing(ROW_HEIGHT + WIDGET_GAP);
+
+    // Base URL (only for OpenAI Compatible) — inline label + input
+    if llm_config.provider == LlmProviderKind::OpenAiCompatible {
+        let url_bounds = inline_field_row(ui, theme, "Base URL", label_width, content_width);
+        let mut base_url = llm_config.base_url.clone().unwrap_or_default();
+        let url_response = ui.add(
+            katla_ui::widgets::TextInput::new("base_url", &mut base_url)
+                .bounds(url_bounds)
+                .id("llm_base_url")
+                .placeholder("http://localhost:11434/v1"),
         );
-        if api_key_response.changed {
-            pending_actions.push(PreferencesAction::SetLlmApiKey(api_key));
+        if url_response.changed {
+            pending_actions.push(PreferencesAction::SetLlmBaseUrl(base_url));
         }
-        ui.spacing(row_height + 8.0);
+        ui.spacing(ROW_HEIGHT + WIDGET_GAP);
+    }
 
-        // Model
-        ui.label_auto_colored("Model", theme.text_secondary);
-        ui.spacing(20.0);
+    // Temperature — inline label + slider
+    let temp_label = format!("Temperature: {:.2}", llm_config.temperature);
+    let temp_bounds = inline_field_row(ui, theme, &temp_label, label_width, content_width);
+    let slider_bounds =
+        Rect2D::from_origin_size(temp_bounds.min, Vec2::new(temp_bounds.width(), 20.0));
+    let mut temperature = llm_config.temperature;
+    let temp_response = ui.add(
+        katla_ui::widgets::Slider::new("temperature", &mut temperature, 0.0..=2.0)
+            .bounds(slider_bounds)
+            .id("llm_temperature"),
+    );
+    if temp_response.changed {
+        pending_actions.push(PreferencesAction::SetLlmTemperature(temperature));
+    }
 
-        let model_bounds =
-            Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
-        let mut model = llm_config.model.clone();
-        let model_response = ui.add(
-            katla_ui::widgets::TextInput::new("model", &mut model)
-                .bounds(model_bounds)
-                .id("llm_model")
-                .placeholder("gpt-4o"),
-        );
-        if model_response.changed {
-            pending_actions.push(PreferencesAction::SetLlmModel(model));
-        }
-        ui.spacing(row_height + 8.0);
+    ui.spacing(20.0 + WIDGET_GAP);
 
-        // Base URL (only for OpenAI Compatible)
-        if llm_config.provider == LlmProviderKind::OpenAiCompatible {
-            ui.label_auto_colored("Base URL", theme.text_secondary);
-            ui.spacing(20.0);
+    // Max Tokens — inline label + button row
+    let tokens_label = format!("Max Tokens: {}", llm_config.max_tokens);
+    let _tokens_bounds = inline_field_row(ui, theme, &tokens_label, label_width, content_width);
+    // Drop back to cursor to draw the button grid under the label
+    let btn_row_y = ui.cursor().y();
+    ui.spacing(LABEL_GAP);
 
-            let url_bounds =
-                Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
-            let mut base_url = llm_config.base_url.clone().unwrap_or_default();
-            let url_response = ui.add(
-                katla_ui::widgets::TextInput::new("base_url", &mut base_url)
-                    .bounds(url_bounds)
-                    .id("llm_base_url")
-                    .placeholder("http://localhost:11434/v1"),
-            );
-            if url_response.changed {
-                pending_actions.push(PreferencesAction::SetLlmBaseUrl(base_url));
-            }
-            ui.spacing(row_height + 8.0);
-        }
+    let token_sizes = [1024, 2048, 4096, 8192];
+    let btn_width = (content_width - 3.0 * GRID_SPACING) / 4.0;
 
-        // Temperature
-        ui.label_auto_colored(
-            &format!("Temperature: {:.2}", llm_config.temperature),
-            theme.text_secondary,
-        );
-        ui.spacing(20.0);
-
-        let slider_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, 20.0));
-        let mut temperature = llm_config.temperature;
-        let temp_response = ui.add(
-            katla_ui::widgets::Slider::new("temperature", &mut temperature, 0.0..=2.0)
-                .bounds(slider_bounds)
-                .id("llm_temperature"),
-        );
-        if temp_response.changed {
-            pending_actions.push(PreferencesAction::SetLlmTemperature(temperature));
-        }
-
-        ui.spacing(40.0);
-
-        // Max Tokens display
-        ui.label_auto_colored(
-            &format!("Max Tokens: {}", llm_config.max_tokens),
-            theme.text_secondary,
-        );
-        ui.spacing(24.0);
-
-        let token_sizes = [1024, 2048, 4096, 8192];
-        let btn_width = (content_width - 3.0 * 8.0) / 4.0;
-        let spacing = 8.0;
-
-        ui.begin_grid(4, btn_width, row_height, spacing);
-        for &tokens in token_sizes.iter() {
-            let btn_bounds = ui.grid_item(Vec2::new(btn_width, row_height));
-            let is_selected = llm_config.max_tokens == tokens;
-            let text = format!("{}", tokens);
-            if themed_select_button(
-                ui,
-                &format!("max_tokens_{}", tokens),
-                &text,
-                btn_bounds,
-                is_selected,
-                theme,
-            ) {
-                pending_actions.push(PreferencesAction::SetLlmMaxTokens(tokens));
-            }
-        }
-        ui.end_grid();
-
-        ui.spacing(row_height + 16.0);
-
-        // Save button
-        let save_btn_bounds =
-            Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, row_height));
+    ui.begin_grid(4, btn_width, ROW_HEIGHT, GRID_SPACING);
+    for &tokens in token_sizes.iter() {
+        let btn_bounds = ui.grid_item(Vec2::new(btn_width, ROW_HEIGHT));
+        let is_selected = llm_config.max_tokens == tokens;
+        let text = format!("{}", tokens);
         if themed_select_button(
             ui,
-            "llm_save_config",
-            "Save Configuration",
-            save_btn_bounds,
-            false,
+            &format!("max_tokens_{}", tokens),
+            &text,
+            btn_bounds,
+            is_selected,
             theme,
         ) {
-            pending_actions.push(PreferencesAction::SaveLlmConfig);
+            pending_actions.push(PreferencesAction::SetLlmMaxTokens(tokens));
         }
-        ui.spacing(row_height + 8.0);
     }
+    ui.end_grid();
+
+    // Fix: the _tokens_bounds inline row pushed cursor past the label, but we already
+    // drew the grid below it. The grid items use their own cursor, so this is fine.
+    // Just undo the extra label spacing for the grid since we already drew it.
+    let _ = btn_row_y;
+
+    ui.spacing(ROW_HEIGHT + SECTION_GAP);
+
+    // --- Save button ---
+    let save_btn_bounds =
+        Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, ROW_HEIGHT));
+    if themed_select_button(
+        ui,
+        "llm_save_config",
+        "Save Configuration",
+        save_btn_bounds,
+        false,
+        theme,
+    ) {
+        pending_actions.push(PreferencesAction::SaveLlmConfig);
+    }
+    ui.spacing(ROW_HEIGHT + WIDGET_GAP);
 
     ui.cursor().y()
 }
