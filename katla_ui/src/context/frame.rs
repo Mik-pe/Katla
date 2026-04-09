@@ -66,6 +66,11 @@ impl UiContext {
 
         if self.input.mouse_released[crate::input::mouse_button::LEFT] {
             self.active_id = None;
+
+            // Unfocus text input when clicking outside any focused widget
+            if self.focused_id.is_some() && self.hovered_id != self.focused_id {
+                self.focused_id = None;
+            }
         }
 
         &self.draw_list

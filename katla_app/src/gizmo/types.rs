@@ -40,6 +40,57 @@ pub enum GizmoAxis {
     Z,
 }
 
+/// Which plane is being manipulated (for 2-axis drag).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GizmoPlane {
+    XY,
+    XZ,
+    YZ,
+}
+
+impl GizmoPlane {
+    pub fn normal(self) -> Vec3 {
+        match self {
+            GizmoPlane::XY => Vec3::new(0.0, 0.0, 1.0),
+            GizmoPlane::XZ => Vec3::new(0.0, 1.0, 0.0),
+            GizmoPlane::YZ => Vec3::new(1.0, 0.0, 0.0),
+        }
+    }
+
+    pub fn axes(self) -> (GizmoAxis, GizmoAxis) {
+        match self {
+            GizmoPlane::XY => (GizmoAxis::X, GizmoAxis::Y),
+            GizmoPlane::XZ => (GizmoAxis::X, GizmoAxis::Z),
+            GizmoPlane::YZ => (GizmoAxis::Y, GizmoAxis::Z),
+        }
+    }
+
+    pub fn color(self) -> GizmoColor {
+        match self {
+            GizmoPlane::XY => GizmoColor::Blue,
+            GizmoPlane::XZ => GizmoColor::Yellow,
+            GizmoPlane::YZ => GizmoColor::Cyan,
+        }
+    }
+}
+
+/// A handle on the gizmo that can be dragged (axis or plane).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GizmoHandle {
+    Axis(GizmoAxis),
+    Plane(GizmoPlane),
+}
+
+impl GizmoHandle {
+    /// Returns the axis if this is an Axis handle, None for Plane handles.
+    pub fn axis(self) -> Option<GizmoAxis> {
+        match self {
+            GizmoHandle::Axis(a) => Some(a),
+            GizmoHandle::Plane(_) => None,
+        }
+    }
+}
+
 impl GizmoAxis {
     pub fn direction(self) -> Vec3 {
         match self {
@@ -135,10 +186,10 @@ impl Default for GizmoResources {
 pub struct GizmoState {
     /// Current transform mode.
     pub mode: GizmoMode,
-    /// Currently hovered axis (for highlight feedback).
-    pub hovered_axis: Option<GizmoAxis>,
-    /// Currently dragged axis (during mouse drag).
-    pub active_axis: Option<GizmoAxis>,
+    /// Currently hovered handle (for highlight feedback).
+    pub hovered_handle: Option<GizmoHandle>,
+    /// Currently dragged handle (during mouse drag).
+    pub active_handle: Option<GizmoHandle>,
     /// World-space position of the gizmo origin (selected entity position).
     pub origin: Vec3,
     /// Entity being manipulated.
@@ -161,8 +212,8 @@ impl Default for GizmoState {
     fn default() -> Self {
         Self {
             mode: GizmoMode::Translate,
-            hovered_axis: None,
-            active_axis: None,
+            hovered_handle: None,
+            active_handle: None,
             origin: Vec3::new(0.0, 0.0, 0.0),
             entity: None,
             drag_start_world: None,
@@ -179,8 +230,8 @@ impl GizmoState {
     pub fn set_mode(&mut self, mode: GizmoMode) {
         if self.mode != mode {
             self.mode = mode;
-            self.active_axis = None;
-            self.hovered_axis = None;
+            self.active_handle = None;
+            self.hovered_handle = None;
         }
     }
 
@@ -188,24 +239,24 @@ impl GizmoState {
     pub fn set_entity(&mut self, entity_id: EntityId, position: Vec3) {
         self.entity = Some(entity_id);
         self.origin = position;
-        self.active_axis = None;
-        self.hovered_axis = None;
+        self.active_handle = None;
+        self.hovered_handle = None;
     }
 
     pub fn clear_entity(&mut self) {
         self.entity = None;
-        self.active_axis = None;
-        self.hovered_axis = None;
+        self.active_handle = None;
+        self.hovered_handle = None;
     }
 
     /// Check if the gizmo is currently being dragged.
     pub fn is_dragging(&self) -> bool {
-        self.active_axis.is_some()
+        self.active_handle.is_some()
     }
 
-    /// Begin dragging an axis.
-    pub fn begin_drag(&mut self, axis: GizmoAxis, world_pos: Vec3, entity_pos: Vec3) {
-        self.active_axis = Some(axis);
+    /// Begin dragging a handle.
+    pub fn begin_drag(&mut self, handle: GizmoHandle, world_pos: Vec3, entity_pos: Vec3) {
+        self.active_handle = Some(handle);
         self.drag_start_world = Some(world_pos);
         self.drag_start_origin = Some(entity_pos);
         self.consumed_click = true;
@@ -213,7 +264,7 @@ impl GizmoState {
 
     /// End the current drag.
     pub fn end_drag(&mut self) {
-        self.active_axis = None;
+        self.active_handle = None;
         self.drag_start_world = None;
         self.drag_start_origin = None;
         self.drag_start_rotation = None;
@@ -352,10 +403,14 @@ pub struct HitTestParams<'a> {
 /// Hit-test the gizmo axes against a screen-space mouse position.
 ///
 /// For translate and scale modes, projects each axis endpoint to screen space
-/// and finds the closest axis within a pixel threshold.
+/// Hit-test the gizmo axes and planes against a screen-space mouse position.
+///
+/// For translate and scale modes, projects each axis endpoint to screen space
+/// and finds the closest axis within a pixel threshold. Also tests plane handles
+/// (XY, XZ, YZ quads near origin). Axis handles have priority over plane handles.
 /// For rotate mode, projects the rotation ring to screen space and checks
 /// distance to the circle arc.
-pub fn hit_test_axes(params: &HitTestParams) -> Option<GizmoAxis> {
+pub fn hit_test_axes(params: &HitTestParams) -> Option<GizmoHandle> {
     let origin_screen = world_to_screen(
         params.gizmo_origin,
         params.view_matrix,
@@ -364,8 +419,14 @@ pub fn hit_test_axes(params: &HitTestParams) -> Option<GizmoAxis> {
     )?;
 
     match params.mode {
-        GizmoMode::Rotate => hit_test_rotate_rings(params, origin_screen),
-        _ => hit_test_linear_axes(params, origin_screen),
+        GizmoMode::Rotate => hit_test_rotate_rings(params, origin_screen).map(GizmoHandle::Axis),
+        _ => {
+            let axis_hit = hit_test_linear_axes(params, origin_screen);
+            if axis_hit.is_some() {
+                return axis_hit.map(GizmoHandle::Axis);
+            }
+            hit_test_plane_handles(params, origin_screen)
+        }
     }
 }
 
@@ -433,6 +494,74 @@ fn hit_test_rotate_rings(params: &HitTestParams, _origin_screen: (f32, f32)) -> 
     }
 
     best_axis
+}
+
+/// Hit-test plane handles (small quads near origin between two axes).
+///
+/// Projects the quad corners to screen space and tests if the mouse is inside
+/// the screen-space quad.
+fn hit_test_plane_handles(
+    params: &HitTestParams,
+    _origin_screen: (f32, f32),
+) -> Option<GizmoHandle> {
+    let plane_size = params.gizmo_scale * 0.3;
+
+    for plane in [GizmoPlane::XY, GizmoPlane::XZ, GizmoPlane::YZ] {
+        let (a1, a2) = plane.axes();
+        let d1 = a1.direction();
+        let d2 = a2.direction();
+
+        let origin = params.gizmo_origin;
+        let c0 = origin;
+        let c1 = origin + d1 * plane_size;
+        let c2 = origin + d1 * plane_size + d2 * plane_size;
+        let c3 = origin + d2 * plane_size;
+
+        let corners_3d = [c0, c1, c2, c3];
+
+        let mut corners_screen = [(0.0f32, 0.0f32); 4];
+        let mut all_visible = true;
+        for (i, corner) in corners_3d.iter().enumerate() {
+            if let Some(s) = world_to_screen(
+                *corner,
+                params.view_matrix,
+                params.proj_matrix,
+                params.viewport,
+            ) {
+                corners_screen[i] = s;
+            } else {
+                all_visible = false;
+                break;
+            }
+        }
+
+        if !all_visible {
+            continue;
+        }
+
+        if point_in_quad_2d(params.mouse_screen, corners_screen) {
+            return Some(GizmoHandle::Plane(plane));
+        }
+    }
+
+    None
+}
+
+/// Test if a 2D point is inside a convex quad defined by 4 screen-space corners.
+fn point_in_quad_2d(p: (f32, f32), corners: [(f32, f32); 4]) -> bool {
+    for i in 0..4 {
+        let a = corners[i];
+        let b = corners[(i + 1) % 4];
+        let edge_x = b.0 - a.0;
+        let edge_y = b.1 - a.1;
+        let to_p_x = p.0 - a.0;
+        let to_p_y = p.1 - a.1;
+        let cross = edge_x * to_p_y - edge_y * to_p_x;
+        if cross < 0.0 {
+            return false;
+        }
+    }
+    true
 }
 
 /// 2D distance from a point to a line segment.
@@ -540,6 +669,46 @@ pub fn compute_scale_delta(
     Some(delta.dot(axis.direction()))
 }
 
+/// Apply a translate drag on a plane to get the new position delta.
+///
+/// Projects the mouse ray onto the plane and returns the full 3D delta
+/// projected onto the two axes of the plane.
+pub fn compute_translate_plane_delta(
+    plane: GizmoPlane,
+    ray_origin: Vec3,
+    ray_dir: Vec3,
+    gizmo_origin: Vec3,
+) -> Option<Vec3> {
+    let plane_normal = plane.normal();
+    let hit = ray_plane_intersection(ray_origin, ray_dir, gizmo_origin, plane_normal)?;
+
+    let delta = hit - gizmo_origin;
+    let (a1, a2) = plane.axes();
+    let d1 = a1.direction();
+    let d2 = a2.direction();
+
+    Some(d1 * delta.dot(d1) + d2 * delta.dot(d2))
+}
+
+/// Apply a scale drag on a plane to get the scale deltas along both axes.
+///
+/// Projects the mouse ray onto the plane and returns the signed distances
+/// from the gizmo origin along both plane axes.
+pub fn compute_scale_plane_delta(
+    plane: GizmoPlane,
+    ray_origin: Vec3,
+    ray_dir: Vec3,
+    gizmo_origin: Vec3,
+) -> Option<(f32, f32)> {
+    let plane_normal = plane.normal();
+    let hit = ray_plane_intersection(ray_origin, ray_dir, gizmo_origin, plane_normal)?;
+
+    let delta = hit - gizmo_origin;
+    let (a1, a2) = plane.axes();
+
+    Some((delta.dot(a1.direction()), delta.dot(a2.direction())))
+}
+
 /// Build a plane normal for dragging along an axis, perpendicular to the camera view.
 ///
 /// Returns None if no valid plane can be constructed (axis parallel to camera forward
@@ -563,16 +732,17 @@ fn build_axis_drag_plane_normal(axis: GizmoAxis, camera_forward: Vec3) -> Option
 
 /// Generate draw calls for the translate gizmo.
 ///
-/// Produces three colored arrow shafts + cone tips along X, Y, Z axes.
+/// Produces three colored arrow shafts + cone tips along X, Y, Z axes,
+/// plus plane indicator quads for XY, XZ, YZ planes.
 pub fn generate_translate_draw_calls(
     resources: &GizmoResources,
     origin: Vec3,
     scale: f32,
-    hovered_axis: Option<GizmoAxis>,
-    active_axis: Option<GizmoAxis>,
+    hovered_handle: Option<GizmoHandle>,
+    active_handle: Option<GizmoHandle>,
     next_instance_index: &mut u32,
 ) -> Vec<DrawCall> {
-    let mut draws = Vec::with_capacity(6);
+    let mut draws = Vec::with_capacity(9);
 
     let shaft_length = scale * 1.2;
     let shaft_radius = scale * 0.025;
@@ -580,7 +750,8 @@ pub fn generate_translate_draw_calls(
     let tip_radius = scale * 0.08;
 
     for axis in [GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z] {
-        let is_highlighted = hovered_axis == Some(axis) || active_axis == Some(axis);
+        let handle = GizmoHandle::Axis(axis);
+        let is_highlighted = hovered_handle == Some(handle) || active_handle == Some(handle);
         let color = if is_highlighted {
             axis.color().highlight_color()
         } else {
@@ -621,6 +792,16 @@ pub fn generate_translate_draw_calls(
         );
     }
 
+    generate_plane_quads(
+        resources,
+        origin,
+        scale,
+        hovered_handle,
+        active_handle,
+        next_instance_index,
+        &mut draws,
+    );
+
     draws
 }
 
@@ -631,8 +812,8 @@ pub fn generate_rotate_draw_calls(
     resources: &GizmoResources,
     origin: Vec3,
     scale: f32,
-    hovered_axis: Option<GizmoAxis>,
-    active_axis: Option<GizmoAxis>,
+    hovered_handle: Option<GizmoHandle>,
+    active_handle: Option<GizmoHandle>,
     next_instance_index: &mut u32,
 ) -> Vec<DrawCall> {
     let mut draws = Vec::with_capacity(3);
@@ -640,7 +821,8 @@ pub fn generate_rotate_draw_calls(
     let ring_radius = scale * 1.0;
 
     for axis in [GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z] {
-        let is_highlighted = hovered_axis == Some(axis) || active_axis == Some(axis);
+        let handle = GizmoHandle::Axis(axis);
+        let is_highlighted = hovered_handle == Some(handle) || active_handle == Some(handle);
         let color = if is_highlighted {
             axis.color().highlight_color()
         } else {
@@ -673,23 +855,25 @@ pub fn generate_rotate_draw_calls(
 
 /// Generate draw calls for the scale gizmo.
 ///
-/// Produces three colored axes with cube-shaped tips (instead of cones).
+/// Produces three colored axes with cube-shaped tips (instead of cones),
+/// plus plane indicator quads for XY, XZ, YZ planes.
 pub fn generate_scale_draw_calls(
     resources: &GizmoResources,
     origin: Vec3,
     scale: f32,
-    hovered_axis: Option<GizmoAxis>,
-    active_axis: Option<GizmoAxis>,
+    hovered_handle: Option<GizmoHandle>,
+    active_handle: Option<GizmoHandle>,
     next_instance_index: &mut u32,
 ) -> Vec<DrawCall> {
-    let mut draws = Vec::with_capacity(6);
+    let mut draws = Vec::with_capacity(9);
 
     let shaft_length = scale * 1.0;
     let shaft_radius = scale * 0.025;
     let cube_size = scale * 0.12;
 
     for axis in [GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z] {
-        let is_highlighted = hovered_axis == Some(axis) || active_axis == Some(axis);
+        let handle = GizmoHandle::Axis(axis);
+        let is_highlighted = hovered_handle == Some(handle) || active_handle == Some(handle);
         let color = if is_highlighted {
             axis.color().highlight_color()
         } else {
@@ -728,7 +912,76 @@ pub fn generate_scale_draw_calls(
         );
     }
 
+    generate_plane_quads(
+        resources,
+        origin,
+        scale,
+        hovered_handle,
+        active_handle,
+        next_instance_index,
+        &mut draws,
+    );
+
     draws
+}
+
+/// Generate small filled quads in the corner between two axes for each plane.
+/// Uses the cube mesh with a flattened scale to create thin quads.
+fn generate_plane_quads(
+    resources: &GizmoResources,
+    origin: Vec3,
+    scale: f32,
+    hovered_handle: Option<GizmoHandle>,
+    active_handle: Option<GizmoHandle>,
+    next_instance_index: &mut u32,
+    draws: &mut Vec<DrawCall>,
+) {
+    let plane_size = scale * 0.3;
+    let thickness = scale * 0.01;
+
+    for plane in [GizmoPlane::XY, GizmoPlane::XZ, GizmoPlane::YZ] {
+        let handle = GizmoHandle::Plane(plane);
+        let is_highlighted = hovered_handle == Some(handle) || active_handle == Some(handle);
+
+        let gizmo_color = plane.color();
+        let color = if is_highlighted {
+            let base = gizmo_color.color();
+            Color::new(base.r, base.g, base.b, 0.8)
+        } else {
+            let base = gizmo_color.color();
+            Color::new(base.r, base.g, base.b, 0.4)
+        };
+
+        let (a1, a2) = plane.axes();
+        let d1 = a1.direction();
+        let d2 = a2.direction();
+        let normal = plane.normal();
+
+        let center = origin + (d1 + d2) * (plane_size * 0.5);
+
+        let sx = d1 * plane_size;
+        let sy = d2 * plane_size;
+        let sz = normal * thickness;
+
+        let scale_vec = Vec3::new(
+            (sx.x().abs() + sy.x().abs() + sz.x().abs()).max(thickness),
+            (sx.y().abs() + sy.y().abs() + sz.y().abs()).max(thickness),
+            (sx.z().abs() + sy.z().abs() + sz.z().abs()).max(thickness),
+        );
+
+        let translation = mat4_from_translation(center);
+        let scale_mat = Mat4::from_scale(scale_vec);
+
+        let idx = *next_instance_index;
+        *next_instance_index += 1;
+
+        draws.push(
+            DrawCall::new(resources.cube_mesh, resources.material)
+                .with_transform((translation * scale_mat).to_array())
+                .with_color(color.to_array())
+                .with_instance_index(idx),
+        );
+    }
 }
 
 /// Build a transform matrix for a cylinder oriented along an arbitrary axis.
