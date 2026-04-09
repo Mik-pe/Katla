@@ -3,7 +3,7 @@ use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::markdown::{MarkdownColors, draw_markdown_segments, parse_markdown_line, wrap_lines};
 use katla_ui::widgets::{Button, TextInput};
 use katla_ui::widgets::{DraggablePanelConfig, DraggablePanelState, DraggablePanelStyle};
-use katla_ui::{FontSize, UiContext};
+use katla_ui::{FontSize, ScrollArea, ScrollAreaState, UiContext};
 
 use super::Theme;
 
@@ -26,6 +26,8 @@ pub struct CoCreatorState {
     pub processing: bool,
     /// Status message shown when idle.
     pub status_message: String,
+    /// Scroll state for the message area.
+    pub scroll_state: ScrollAreaState,
 }
 
 impl CoCreatorState {
@@ -36,6 +38,7 @@ impl CoCreatorState {
             messages: Vec::new(),
             processing: false,
             status_message: "Type a request below.".to_string(),
+            scroll_state: ScrollAreaState::default(),
         }
     }
 
@@ -203,6 +206,7 @@ pub fn draw_co_creator_panel(
         .collect();
     let processing = state.processing;
     let mut input_text = state.input_text.clone();
+    let mut scroll_state = state.scroll_state;
     let mut send_clicked = false;
     let mut enter_pressed = false;
 
@@ -220,65 +224,90 @@ pub fn draw_co_creator_panel(
             let content_x = frame.panel_bounds.min.x() + 8.0;
             let content_width = frame.panel_bounds.width() - 16.0;
             let header_height = 32.0;
-            let input_height = 60.0;
             let bottom_padding = 8.0;
+
+            let line_count = input_text.lines().count().max(1);
+            let input_height = (line_count.min(5) as f32) * 28.0;
 
             let msg_area_top = frame.panel_bounds.min.y() + header_height + 8.0;
             let msg_area_bottom = frame.panel_bounds.max.y() - input_height - bottom_padding;
 
             let font_size = ui.scaled_font_size(FontSize::Small);
 
-            // Message area
-            ui.begin_column();
-            ui.set_cursor(Vec2::new(content_x, msg_area_top));
+            // Message area with scroll
+            let msg_area_bounds = Rect2D::from_origin_size(
+                Vec2::new(content_x, msg_area_top),
+                Vec2::new(content_width, msg_area_bottom - msg_area_top),
+            );
 
-            if messages.is_empty() {
-                ui.draw_text(&status_message, ui.cursor(), style.text_muted, font_size);
-            } else {
-                for (role, text) in &messages {
-                    let color = match role {
-                        MessageRole::User => style.user_msg_color,
-                        MessageRole::Assistant => style.assistant_msg_color,
-                        MessageRole::System => style.system_msg_color,
-                        MessageRole::Tool => style.system_msg_color,
-                    };
+            let scroll_config = ScrollArea::new("co_creator_msgs")
+                .max_height(msg_area_bounds.height())
+                .stick_to_bottom(true);
 
-                    let prefix = match role {
-                        MessageRole::User => "You: ",
-                        MessageRole::Assistant => "AI: ",
-                        MessageRole::System => "> ",
-                        MessageRole::Tool => "> ",
-                    };
+            scroll_state = ui.scroll_area(scroll_config, scroll_state, msg_area_bounds, |ui| {
+                let scroll_off = ui.scroll_offset();
+                let mut y = msg_area_top - scroll_off;
 
-                    let full_text = format!("{prefix}{text}");
+                if messages.is_empty() {
+                    ui.draw_text(
+                        &status_message,
+                        Vec2::new(content_x, y),
+                        style.text_muted,
+                        font_size,
+                    );
+                    y += font_size + 2.0;
+                } else {
+                    for (role, text) in &messages {
+                        let color = match role {
+                            MessageRole::User => style.user_msg_color,
+                            MessageRole::Assistant => style.assistant_msg_color,
+                            MessageRole::System => style.system_msg_color,
+                            MessageRole::Tool => style.system_msg_color,
+                        };
 
-                    for line in wrap_lines(&full_text, content_width, font_size, ui) {
-                        let segments = parse_markdown_line(&line);
-                        draw_markdown_segments(
-                            ui,
-                            &segments,
-                            ui.cursor(),
-                            color,
-                            font_size,
-                            &md_colors,
-                        );
-                        ui.spacing(font_size + 2.0);
+                        let prefix = match role {
+                            MessageRole::User => "You: ",
+                            MessageRole::Assistant => "AI: ",
+                            MessageRole::System => "> ",
+                            MessageRole::Tool => "> ",
+                        };
+
+                        let full_text = format!("{prefix}{text}");
+
+                        for line in wrap_lines(&full_text, content_width, font_size, ui) {
+                            let segments = parse_markdown_line(&line);
+                            draw_markdown_segments(
+                                ui,
+                                &segments,
+                                Vec2::new(content_x, y),
+                                color,
+                                font_size,
+                                &md_colors,
+                            );
+                            y += font_size + 2.0;
+                        }
+                        y += 4.0;
                     }
-                    ui.spacing(4.0);
                 }
-            }
 
-            if processing {
-                ui.draw_text("Processing...", ui.cursor(), style.text_muted, font_size);
-            }
+                if processing {
+                    ui.draw_text(
+                        "Processing...",
+                        Vec2::new(content_x, y),
+                        style.text_muted,
+                        font_size,
+                    );
+                    y += font_size + 2.0;
+                }
 
-            ui.end_column();
+                y - msg_area_top + scroll_off
+            });
 
             // Input area
             let input_y = msg_area_bottom + 4.0;
             let input_bounds = Rect2D::from_origin_size(
                 Vec2::new(content_x, input_y),
-                Vec2::new(content_width - 70.0, 28.0),
+                Vec2::new(content_width - 70.0, input_height),
             );
 
             let send_x = content_x + content_width - 60.0;
@@ -289,6 +318,7 @@ pub fn draw_co_creator_panel(
                 TextInput::new("co_creator_input", &mut input_text)
                     .bounds(input_bounds)
                     .placeholder("Ask the AI...")
+                    .multiline(true)
                     .id("co_creator_input"),
             );
             enter_pressed = input_response.enter_pressed;
@@ -304,6 +334,7 @@ pub fn draw_co_creator_panel(
 
     // Sync input text back from the closure's local copy
     state.input_text = input_text;
+    state.scroll_state = scroll_state;
 
     // Process send after the closure returns (panel state borrow released)
     let mut submitted_text: Option<String> = None;
