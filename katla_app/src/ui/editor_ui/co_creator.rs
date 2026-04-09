@@ -1,5 +1,6 @@
 use katla_agent::MessageRole;
 use katla_math::{Color, Rect2D, Vec2};
+use katla_ui::markdown::{MarkdownColors, draw_markdown_segments, parse_markdown_line, wrap_lines};
 use katla_ui::widgets::{Button, TextInput};
 use katla_ui::widgets::{DraggablePanelConfig, DraggablePanelState, DraggablePanelStyle};
 use katla_ui::{FontSize, UiContext};
@@ -158,6 +159,16 @@ impl CoCreatorStyle {
             text_muted: self.text_muted,
         }
     }
+
+    pub fn markdown_colors(&self) -> MarkdownColors {
+        MarkdownColors::new(
+            self.user_msg_color,
+            Color::new(0.6, 0.85, 0.65, 1.0),
+            Color::new(0.15, 0.15, 0.2, 0.8),
+            Color::WHITE,
+            self.text_muted,
+        )
+    }
 }
 
 /// Whether the co-creator panel submitted a message this frame.
@@ -196,6 +207,7 @@ pub fn draw_co_creator_panel(
     let mut enter_pressed = false;
 
     let panel_style = style.draggable_panel_style();
+    let md_colors = style.markdown_colors();
 
     katla_ui::widgets::DraggablePanel::show(
         ui,
@@ -240,8 +252,16 @@ pub fn draw_co_creator_panel(
 
                     let full_text = format!("{prefix}{text}");
 
-                    for line in wrap_text(&full_text, content_width, font_size, ui) {
-                        ui.draw_text(&line, ui.cursor(), color, font_size);
+                    for line in wrap_lines(&full_text, content_width, font_size, ui) {
+                        let segments = parse_markdown_line(&line);
+                        draw_markdown_segments(
+                            ui,
+                            &segments,
+                            ui.cursor(),
+                            color,
+                            font_size,
+                            &md_colors,
+                        );
                         ui.spacing(font_size + 2.0);
                     }
                     ui.spacing(4.0);
@@ -303,39 +323,8 @@ pub fn draw_co_creator_panel(
     }
 }
 
-/// Simple word-wrap: split text into lines that fit within max_width.
-fn wrap_text(text: &str, max_width: f32, font_size: f32, ui: &UiContext) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut current_line = String::new();
-
-    for word in text.split_whitespace() {
-        let test_line = if current_line.is_empty() {
-            word.to_string()
-        } else {
-            format!("{current_line} {word}")
-        };
-
-        let measured = ui.measure_text(&test_line, font_size);
-
-        if measured.x() > max_width && !current_line.is_empty() {
-            lines.push(current_line);
-            current_line = word.to_string();
-        } else {
-            current_line = test_line;
-        }
-    }
-
-    if !current_line.is_empty() {
-        lines.push(current_line);
-    }
-
-    if lines.is_empty() {
-        lines.push(String::new());
-    }
-
-    lines
-}
-
+/// Word-wrap text preserving explicit newlines.
+///
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,12 +396,5 @@ mod tests {
 
         state.close();
         assert!(!state.is_open());
-    }
-
-    #[test]
-    fn test_wrap_text_short_line() {
-        let text = "hello world";
-        let words: Vec<&str> = text.split_whitespace().collect();
-        assert_eq!(words, vec!["hello", "world"]);
     }
 }
