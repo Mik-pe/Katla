@@ -4,7 +4,9 @@ use std::pin::Pin;
 use futures::Stream;
 use futures::StreamExt;
 
-use super::{ChatMessage, ChatResponse, FinishReason, LlmError, LlmProvider, StreamChunk, ToolDefinition};
+use super::{
+    ChatMessage, ChatResponse, FinishReason, LlmError, LlmProvider, StreamChunk, ToolDefinition,
+};
 
 use std::fmt;
 
@@ -234,10 +236,9 @@ impl LlmProvider for OpenAiProvider {
             |(client_opt, request_opt, stream_opt)| async move {
                 if let Some(mut stream) = stream_opt {
                     match stream.next().await {
-                        Some(Ok(chunk)) => Some((
-                            convert_stream_chunk(chunk),
-                            (None, None, Some(stream)),
-                        )),
+                        Some(Ok(chunk)) => {
+                            Some((convert_stream_chunk(chunk), (None, None, Some(stream))))
+                        }
                         Some(Err(e)) => {
                             Some((Err(LlmError::Api(e.to_string())), (None, None, None)))
                         }
@@ -245,19 +246,15 @@ impl LlmProvider for OpenAiProvider {
                     }
                 } else if let (Some(client), Some(request)) = (client_opt, request_opt) {
                     match client.chat().create_stream(request).await {
-                        Ok(mut stream) => {
-                            match stream.next().await {
-                                Some(Ok(chunk)) => Some((
-                                    convert_stream_chunk(chunk),
-                                    (None, None, Some(stream)),
-                                )),
-                                Some(Err(e)) => Some((
-                                    Err(LlmError::Api(e.to_string())),
-                                    (None, None, None),
-                                )),
-                                None => None,
+                        Ok(mut stream) => match stream.next().await {
+                            Some(Ok(chunk)) => {
+                                Some((convert_stream_chunk(chunk), (None, None, Some(stream))))
                             }
-                        }
+                            Some(Err(e)) => {
+                                Some((Err(LlmError::Api(e.to_string())), (None, None, None)))
+                            }
+                            None => None,
+                        },
                         Err(e) => Some((Err(LlmError::Api(e.to_string())), (None, None, None))),
                     }
                 } else {

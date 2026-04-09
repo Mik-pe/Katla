@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "katla": {
+      "command": "cargo",
+      "args": ["run", "--features", "mcp"]
+    }
+  }
+}

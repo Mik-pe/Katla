@@ -4,6 +4,7 @@ pub mod openai;
 pub use mock::MockProvider;
 pub use openai::OpenAiProvider;
 
+use futures::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::future::Future;
@@ -57,6 +58,13 @@ pub enum FinishReason {
     Length,
 }
 
+/// A single chunk from a streaming chat completion response.
+#[derive(Debug, Clone)]
+pub struct StreamChunk {
+    pub content_delta: String,
+    pub finish_reason: Option<FinishReason>,
+}
+
 /// Trait for LLM providers (OpenAI, local, mock, etc.).
 pub trait LlmProvider: Send + Sync {
     /// Send a chat completion request with optional tool definitions.
@@ -65,6 +73,25 @@ pub trait LlmProvider: Send + Sync {
         messages: &[ChatMessage],
         tools: &[ToolDefinition],
     ) -> Pin<Box<dyn Future<Output = Result<ChatResponse, LlmError>> + Send + '_>>;
+
+    /// Send a streaming chat completion request.
+    ///
+    /// Default implementation falls back to a non-streaming call, returning the
+    /// full response as a single chunk.
+    fn chat_completion_stream(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamChunk, LlmError>> + Send + '_>> {
+        let future = self.chat_completion(messages, tools);
+        Box::pin(futures::stream::once(async move {
+            let response = future.await?;
+            Ok(StreamChunk {
+                content_delta: response.message.content,
+                finish_reason: Some(response.finish_reason),
+            })
+        }))
+    }
 }
 
 /// Error type for LLM operations.

@@ -223,11 +223,11 @@ Follow egui's approach: use `skrifa` for font parsing/outlining and `vello_cpu` 
 - [x] **Add streaming channel to `AsyncBridge`** — `submit_chat_stream()` returns `PendingStreamRequest` with `poll_chunks()` (drains all available) and `is_done()`. Background tokio task forwards stream chunks over `mpsc::channel`. (`katla_agent/src/runtime.rs`)
 - [x] **Append partial tokens to live assistant message in `CoCreatorState`** — `append_streaming_text()` extends last assistant message or creates new one. `finalize_streaming()` sets `processing = false` and removes empty assistant messages. (`katla_app/src/ui/editor_ui/co_creator.rs`)
 - [x] **Wire streaming poll into editor frame loop** — `submit_llm_stream_request()` replaces `submit_llm_request()`. `poll_llm_stream()` drains chunks, appends deltas, finalizes on finish reason. `EditorState.pending_llm_stream` replaces `pending_llm_request`. (`katla_app/src/application/editor/agent.rs`, `mod.rs`)
-- [ ] **Add `rmcp` dependency and MCP server skeleton** — Add `rmcp` to `katla_agent/Cargo.toml` behind new `mcp-server` feature. Create `katla_agent/src/mcp.rs` with `KatlaMcpServer` struct implementing `rmcp::ServerHandler`. Server holds a `mpsc::Sender<McRequest>` to forward tool calls to the main thread. Transport: stdio. (~scope: small)
-- [ ] **Define MCP tools matching the 6 built-in scene tools** — `rmcp::tool!` macro declarations for `spawn_entity`, `destroy_entity`, `set_component`, `query_entities`, `get_scene_hierarchy`, `duplicate_entity`. Each maps to the existing `SceneOp` enum. JSON schemas match current `ToolDefinition` parameters. (~scope: small)
-- [ ] **Bridge MCP tool calls to the main-thread ECS world** — Main thread receives `McpRequest` via channel, executes against `World` + `ComponentRegistry`, returns `McpResponse`. Use `run_scripted_agent()` or direct `SceneOp` execution. Results serialized back to MCP as JSON text content. (~scope: medium)
-- [ ] **Start MCP server alongside editor when feature is enabled** — In `Application::new()`, if `mcp-server` feature is active, spawn `KatlaMcpServer` on a background thread with stdio transport. Log connection/disconnect events. Graceful shutdown on app exit. (~scope: small)
-- [ ] **Add `.claude/mcp.json` config example** — Document the stdio command to connect Claude Code to Katla's MCP server. Add to `docs/` or as a commented example in project root. (~scope: trivial)
+- [x] **Add `rmcp` dependency and MCP server skeleton** — `rmcp` v1.3 with `server`, `transport-io`, `macros` features behind `mcp-server` feature gate. `KatlaMcpServer` struct with `ToolRouter` + `mpsc::Sender` for forwarding ops. `ServerHandler` impl via `#[rmcp::tool_handler]`. `start_mcp_server_thread()` spawns tokio runtime with stdio transport. (`katla_agent/src/mcp.rs`, `Cargo.toml`)
+- [x] **Define MCP tools matching the 6 built-in scene tools** — `#[rmcp::tool_router]` impl with 6 `#[rmcp::tool]` methods: `spawn_entity`, `destroy_entity`, `set_field`, `query_entities`, `get_scene_hierarchy`, `duplicate_entity`. Parameter structs with `Deserialize + JsonSchema`. Each creates `McpOp` and forwards via channel. (`katla_agent/src/mcp.rs`)
+- [x] **Bridge MCP tool calls to the main-thread ECS world** — `McpBridge::poll_requests()` drains channel. `McpOp::to_scene_op()` converts to `SceneOp`. `McpState::poll()` in `katla_app` executes via `SceneToolExecutor::execute()`, sends `McpResponse` back through oneshot channel. (`katla_app/src/application/editor/mcp.rs`)
+- [x] **Start MCP server alongside editor when feature is enabled** — `mcp = ["katla_agent/mcp-server"]` feature in `katla_app`. `McpState` in `EditorState` behind `#[cfg(feature = "mcp")]`. Background thread starts on init. `poll()` called each frame. (`katla_app/Cargo.toml`, `application/editor/mod.rs`, `application/mod.rs`)
+- [x] **Add `.claude/mcp.json` config example** — `.claude/mcp.json` with `katla` server using `cargo run --features mcp`.
 - [ ] **Add local inference backend option** — Behind `llm-assistant-local` feature, wrap `llama-cpp-2` or `mistralrs` for offline use. (~scope: large)
 
 #### Content Generation Tools (world building, tuning, game logic)
@@ -277,3 +277,53 @@ Follow egui's approach: use `skrifa` for font parsing/outlining and `vello_cpu` 
 
 - [x] **Upgrade skrifa to latest and deduplicate** — Upgraded to `skrifa 0.40`, replaced custom `BoundsPen` with `ControlBoundsPen`. Single version in lockfile, no duplicates.
 - [x] **Pool `vello_cpu::RenderContext` for CJK workloads** — Currently a fresh `RenderContext` + `Pixmap` is allocated per glyph cache miss. Acceptable for pre-cached ASCII but wasteful for runtime CJK input. Reuse a shared context or pool buffers. (Done: GlyphRenderPool with closure-based acquire pattern)
+
+## Refactoring — Code Quality Sweeps
+
+> Semi-large refactors identified by crate audit. Each item is broken into subtasks sized for a single worker session.
+
+### P1: katla_gfx — Consolidate renderer subsystem boilerplate (~800-1000 lines)
+
+The renderer subsystems (shadow, outline, depth prepass, light culling) each independently implement the same patterns: InitContext structs, shader loading blocks, and raw Vulkan descriptor set lifecycles. Consolidating these eliminates duplication, reduces bug surface area, and makes adding new render passes easier.
+
+- [ ] **Create unified `RendererInitContext` struct** — Replace 4 near-identical `*InitContext` structs (`ShadowInitContext`, `OutlineInitContext`, `DepthPrepassInitContext`, `LightInitContext`) with a single `RendererInitContext<'a>` in a new `renderer/context.rs` (or `renderer/mod.rs`). Fields: `context`, `material_compiler`, `storage_descriptor_set`, `shared_empty_descriptor_layout`, `bindless_descriptor_layout` (Option), `asset_registry`. Subsystems that need extra data accept it as additional parameters. Update all 8 call sites in `renderer/shadow.rs`, `renderer/outline.rs`, `renderer/depth_prepass.rs`, `renderer/light_culling.rs`. (~scope: medium)
+- [ ] **Extract `load_vert_frag_shaders()` helper** — 15 near-identical shader-loading blocks across `renderer/shadow.rs` (lines 387-405, 485-503), `renderer/depth_prepass.rs` (lines 52-68, 112-127, 180-195), `renderer/particle_init.rs` (lines 91-114), `renderer/fullscreen_shader.rs`. Add a helper method on `MaterialCompiler` or a free function: `fn load_vert_frag_shaders(cache: &mut ShaderCache, path: &Path, name: &str) -> Result<(vk::ShaderModule, vk::ShaderModule), RendererError>`. Replace all 15 sites. (~scope: medium)
+- [ ] **Create `DescriptorSetAllocator` helper** — 11+ sites manually follow the same raw Vulkan sequence: define bindings -> create layout -> create pool -> allocate sets -> write descriptors -> destroy on drop. Create a `DescriptorSetBundle` or builder in `vulkan/descriptor_allocator.rs` that encapsulates the layout+pool+sets lifecycle. Replace sites in `renderer/shadow.rs:110-197,260-340`, `renderer/outline.rs:220-290`, `vulkan/material/storage_uniform.rs:114-137`, `vulkan/bindless_texture.rs:142-168`, `render_graph/descriptor_sets/compositing.rs:110-191`, `particles/descriptors.rs:73-384`, `lighting.rs:224-268`, `compute.rs:429-487`, `animation/pose_compute.rs:827-901`, `render_graph/frame/ui_rendering.rs:223-241`. (~scope: large)
+
+### P2: katla_agent — Unify CoCreatorAgent with LLM system (~200+ lines)
+
+`CoCreatorAgent` (`co_creator/mod.rs`) is disconnected from the LLM system. `katla_app` bypasses it entirely: builds its own `Vec<ChatMessage>` history, calls `AsyncBridge` directly, defines its own `ChatMessage`/`MessageRole` types, and has its own `build_tool_definitions()` + `process_local_request()`. Agent logic belongs in the agent crate.
+
+- [ ] **Unify `ChatMessage`/`MessageRole` types** — Remove duplicate `ChatMessage { role: MessageRole, text: String }` and `MessageRole` from `katla_app/src/ui/editor_ui/co_creator.rs`. Have the UI layer use `katla_agent::llm::ChatMessage` / `MessageRole` directly, or add a lightweight display-oriented `From` impl. Update all references in `co_creator.rs`. (~scope: small)
+- [ ] **Move `build_tool_definitions()` into `katla_agent`** — The function lives in `katla_app/src/application/editor/agent.rs` (~90 lines) but builds `ToolDefinition` structs that are `katla_agent` types. Move it to `katla_agent/src/co_creator/tools.rs` or `katla_agent/src/tools/`. Update `agent.rs` to call the agent crate. (~scope: small)
+- [ ] **Move `process_local_request()` into `katla_agent`** — Pattern-matching fallback for tool calls lives in `katla_app/src/application/editor/agent.rs`. Move to `katla_agent/src/co_creator/local_handler.rs`. The handler receives scene context and returns tool call results. (~scope: small)
+- [ ] **Rewire `CoCreatorAgent` to hold typed conversation history** — Replace `Vec<(String, String)>` with `Vec<ChatMessage>` in `CoCreatorAgent`. Wire `observe()`/`on_result()` to use typed messages. Make the agent the single source of truth for conversation state instead of `EditorState.llm_conversation`. (~scope: medium)
+- [ ] **Wire `CoCreatorAgent` to `AsyncBridge` for LLM calls** — Instead of `katla_app` calling `AsyncBridge::submit_chat_stream()` directly, have `CoCreatorAgent` own or reference the bridge. The app asks the agent to submit a request; the agent handles streaming internally. (~scope: medium)
+- [ ] **Remove dead code in `CoCreatorAgent`** — `pending_request`, `next_op`, and `messages` fields are set but never queried by the app. Once the agent is properly wired, remove the unused fields and the old stringly-typed message system. (~scope: small)
+
+### P2: katla_math — Deduplicate scalar/SSE Quat implementations (~200-220 lines)
+
+`scalar/quat.rs` (~280 lines) and `sse/quat.rs` (~310 lines) share ~75% identical code. Only 6 methods genuinely benefit from SIMD (`new`, `identity`, `normalize`, `conjugate`, `dot`, `length_squared`, `slerp`). The rest are copy-pasted pure scalar math. `Mat4` already follows the correct pattern: shared impls in `src/mat4.rs`, platform-specific primitives only in `scalar/` and `sse/`.
+
+- [ ] **Move shared Quat methods to `src/quat.rs`** — Move these identical impls from both `scalar/quat.rs` and `sse/quat.rs` into `src/quat.rs`: `from_axis_angle`, `from_rotation_between`, `new_from_yaw_pitch`, `is_normalized`, `rotate_vec3`, `make_mat4`, `to_mat3`, `rotation_matrix_elements`, `from_euler`, `to_euler`, `From<Mat3>`, `From<Mat4>`, `Mul<Vec3> for Quat`, `Mul for Quat`. Only keep platform-specific storage + SIMD primitives in the platform files. (~scope: medium)
+
+### P2: katla_ui — Split `widgets/mod.rs` monolith (1163 lines)
+
+A single file contains 13+ unrelated widget builder types. Each widget follows the same boilerplate pattern (~40-80 lines): struct definition, `new()` constructor, `bounds()`/`id()`/`at_cursor()` setters, `Widget` impl. Additionally, `WidgetDefaults` const in `style.rs` duplicates `UiStyle::default_dimensions()` values, and `context/widgets/basic.rs` hardcodes slider dimensions instead of reading from style.
+
+- [ ] **Split `widgets/mod.rs` into per-widget files** — Create `button.rs` (Button + ImageButton), `checkbox.rs` (Checkbox + ToggleButton + ToggleButtonParams), `slider.rs` (Slider), `text_input.rs` (TextInput), `label.rs` (Label + Badge + Separator + Spacer), `radio.rs` (RadioButton), `progress.rs` (ProgressBar), `collapsible.rs` (Collapsible). `mod.rs` becomes re-exports only (~30 lines). (~scope: medium)
+- [ ] **Fix hardcoded slider dimensions in `basic.rs`** — `context/widgets/basic.rs:212-225` uses `let track_height = 4.0; let grab_size = 12.0;` hardcoded. Replace with `ui.style.slider_track_height` and `ui.style.slider_grab_size` which exist in `UiStyle` (style.rs:277-279). (~scope: small)
+- [ ] **Eliminate `WidgetDefaults` const duplication** — `WidgetDefaults` const in `style.rs:798-831` duplicates the same values as `UiStyle::default_dimensions()`. Remove `WidgetDefaults` and have widget `new()` methods read from a shared default source. (~scope: small)
+
+### P3: katla_app — Split `builder.rs` (959 lines)
+
+`builder.rs` mixes four concerns: ApplicationBuilder struct + builder API, renderer + frame graph initialization (~420 lines of GPU setup), Application::build() assembly with font-loading boilerplate, and tests. The `build_frame_graph()` method alone is ~290 lines of straight-line GPU setup.
+
+- [ ] **Extract renderer init from `builder.rs`** — Move `init_renderer()` + `build_frame_graph()` (~420 lines) into `application/renderer_init.rs`. `builder.rs` shrinks from 959 to ~530 lines. (~scope: medium)
+- [ ] **Extract font loading helper** — `build()` lines 668-740 have two identical font-loading blocks: `if path.exists() { match std::fs::read() { ... } }`. Extract `fn load_font(ui_context, path, font_id, precache_fn)` helper to deduplicate ~40 lines. (~scope: small)
+
+### P3: katla_ecs — Reorganize `world.rs` (1594 lines)
+
+65% of `world.rs` is inline tests (1040 lines of `#[cfg(test)] mod tests`). The crate's own pattern (agent, scene_tool) already separates tests into dedicated files.
+
+- [ ] **Move `world.rs` inline tests to `world/tests.rs`** — Rename `world.rs` to `world/mod.rs`. Extract the entire `#[cfg(test)] mod tests` block (lines 555-1594) into `world/tests.rs`. Replace with `#[cfg(test)] mod tests;` in `mod.rs`. Optionally also split `storage.rs` and `sparse_set.rs` inline tests. Zero logic changes. (~scope: small)

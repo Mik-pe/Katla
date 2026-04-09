@@ -29,3 +29,12 @@ pub use llm::openai::OpenAiProvider;
 
 #[cfg(feature = "llm-assistant")]
 pub use runtime::{AsyncBridge, PendingChatRequest, PendingStreamRequest};
+
+#[cfg(feature = "mcp-server")]
+pub mod mcp;
+
+#[cfg(feature = "mcp-server")]
+pub use mcp::{
+    KatlaMcpServer, McpBridge, McpOp, McpResponse, McpToolResult, PendingMcpRequest,
+    start_mcp_server_thread,
+};

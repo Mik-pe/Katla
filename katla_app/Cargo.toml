@@ -7,6 +7,7 @@ edition = "2024"
 [features]
 default = ["editor"]
 editor = ["katla_ecs/editor"]
+mcp = ["katla_agent/mcp-server"]
 
 [dependencies]
 katla_math = { workspace = true }
