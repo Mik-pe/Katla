@@ -32,6 +32,8 @@ pub struct Response {
     pub active: bool,
     /// Widget value changed (for sliders, text inputs, checkboxes).
     pub changed: bool,
+    /// Enter was pressed while this text input was focused.
+    pub enter_pressed: bool,
     /// Widget bounds.
     pub bounds: Rect2D,
     /// Mouse delta since last frame (for dragging).
@@ -48,6 +50,7 @@ impl Response {
             hovered: false,
             active: false,
             changed: false,
+            enter_pressed: false,
             bounds,
             drag_delta: Vec2::new(0.0, 0.0),
             double_clicked: false,
@@ -61,6 +64,7 @@ impl Response {
             hovered: true,
             active: false,
             changed: true,
+            enter_pressed: false,
             bounds,
             drag_delta: Vec2::new(0.0, 0.0),
             double_clicked: false,
@@ -74,6 +78,7 @@ impl Response {
             hovered: true,
             active: false,
             changed: false,
+            enter_pressed: false,
             bounds,
             drag_delta: Vec2::new(0.0, 0.0),
             double_clicked: false,
@@ -87,6 +92,7 @@ impl Response {
             hovered: true,
             active: true,
             changed: false,
+            enter_pressed: false,
             bounds,
             drag_delta: Vec2::new(0.0, 0.0),
             double_clicked: false,
@@ -110,6 +116,7 @@ impl Response {
             hovered: self.hovered || other.hovered,
             active: self.active || other.active,
             changed: self.changed || other.changed,
+            enter_pressed: self.enter_pressed || other.enter_pressed,
             bounds: self.bounds.union(&other.bounds),
             drag_delta: self.drag_delta + other.drag_delta,
             double_clicked: self.double_clicked || other.double_clicked,
@@ -145,6 +152,7 @@ impl Response {
             hovered,
             active,
             changed: clicked,
+            enter_pressed: false,
             bounds,
             drag_delta,
             double_clicked,

@@ -300,6 +300,9 @@ impl UiContext {
             }
         }
 
+        // Check for Enter press while focused (read outside the mutable borrow above)
+        let enter_pressed = focused && self.input.key_pressed(KeyCode::Enter);
+
         // Draw background
         self.draw_rect(bounds, self.style.input_bg);
 
@@ -385,6 +388,7 @@ impl UiContext {
 
         let mut response = Response::interactive(false, hovered, focused, bounds, &self.input);
         response.changed = changed;
+        response.enter_pressed = enter_pressed;
         response
     }
 
