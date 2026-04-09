@@ -1,3 +1,4 @@
+use katla_agent::MessageRole;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::widgets::{Button, TextInput};
 use katla_ui::widgets::{DraggablePanelConfig, DraggablePanelState, DraggablePanelStyle};
@@ -5,19 +6,11 @@ use katla_ui::{FontSize, UiContext};
 
 use super::Theme;
 
-/// A single chat message in the co-creator panel.
+/// A display-oriented chat message for the co-creator panel.
 #[derive(Debug, Clone)]
-pub struct ChatMessage {
+pub struct DisplayMessage {
     pub role: MessageRole,
     pub text: String,
-}
-
-/// Role of a chat message sender.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MessageRole {
-    User,
-    Assistant,
-    System,
 }
 
 /// State for the co-creator chat panel.
@@ -26,8 +19,8 @@ pub struct CoCreatorState {
     pub panel: DraggablePanelState,
     /// Current text in the input field.
     pub input_text: String,
-    /// Chat message history.
-    pub messages: Vec<ChatMessage>,
+    /// Chat message history for display.
+    pub messages: Vec<DisplayMessage>,
     /// Whether we're waiting for an agent response.
     pub processing: bool,
     /// Status message shown when idle.
@@ -62,7 +55,7 @@ impl CoCreatorState {
         if text.trim().is_empty() {
             return;
         }
-        self.messages.push(ChatMessage {
+        self.messages.push(DisplayMessage {
             role: MessageRole::User,
             text: text.to_string(),
         });
@@ -72,7 +65,7 @@ impl CoCreatorState {
 
     /// Add an assistant response.
     pub fn add_assistant_message(&mut self, text: &str) {
-        self.messages.push(ChatMessage {
+        self.messages.push(DisplayMessage {
             role: MessageRole::Assistant,
             text: text.to_string(),
         });
@@ -81,7 +74,7 @@ impl CoCreatorState {
 
     /// Add a system message (errors, status).
     pub fn add_system_message(&mut self, text: &str) {
-        self.messages.push(ChatMessage {
+        self.messages.push(DisplayMessage {
             role: MessageRole::System,
             text: text.to_string(),
         });
@@ -93,15 +86,14 @@ impl CoCreatorState {
     /// If the last message is an assistant message and we're processing,
     /// appends to it. Otherwise creates a new assistant message.
     pub fn append_streaming_text(&mut self, delta: &str) {
-        if self.processing {
-            if let Some(last) = self.messages.last_mut() {
-                if last.role == MessageRole::Assistant {
-                    last.text.push_str(delta);
-                    return;
-                }
-            }
+        if self.processing
+            && let Some(last) = self.messages.last_mut()
+            && last.role == MessageRole::Assistant
+        {
+            last.text.push_str(delta);
+            return;
         }
-        self.messages.push(ChatMessage {
+        self.messages.push(DisplayMessage {
             role: MessageRole::Assistant,
             text: delta.to_string(),
         });
@@ -113,10 +105,11 @@ impl CoCreatorState {
     /// Sets processing to false and removes empty assistant messages.
     pub fn finalize_streaming(&mut self) {
         self.processing = false;
-        if let Some(last) = self.messages.last() {
-            if last.role == MessageRole::Assistant && last.text.trim().is_empty() {
-                self.messages.pop();
-            }
+        if let Some(last) = self.messages.last()
+            && last.role == MessageRole::Assistant
+            && last.text.trim().is_empty()
+        {
+            self.messages.pop();
         }
     }
 }
@@ -191,13 +184,11 @@ pub fn draw_co_creator_panel(
         };
     }
 
-    // Snapshot immutable data for rendering inside the closure to avoid
-    // borrowing `state.panel` (mutable) and `state.messages` (shared) simultaneously.
     let status_message = state.status_message.clone();
     let messages: Vec<(MessageRole, String)> = state
         .messages
         .iter()
-        .map(|m| (m.role, m.text.clone()))
+        .map(|m| (m.role.clone(), m.text.clone()))
         .collect();
     let processing = state.processing;
     let mut input_text = state.input_text.clone();
@@ -237,12 +228,14 @@ pub fn draw_co_creator_panel(
                         MessageRole::User => style.user_msg_color,
                         MessageRole::Assistant => style.assistant_msg_color,
                         MessageRole::System => style.system_msg_color,
+                        MessageRole::Tool => style.system_msg_color,
                     };
 
                     let prefix = match role {
                         MessageRole::User => "You: ",
                         MessageRole::Assistant => "AI: ",
                         MessageRole::System => "> ",
+                        MessageRole::Tool => "> ",
                     };
 
                     let full_text = format!("{prefix}{text}");
@@ -418,9 +411,6 @@ mod tests {
 
     #[test]
     fn test_wrap_text_short_line() {
-        // This test verifies wrap_text handles a simple string.
-        // Since measure_text requires a real UiContext, we test the logic
-        // with a mock approach: just verify the function structure.
         let text = "hello world";
         let words: Vec<&str> = text.split_whitespace().collect();
         assert_eq!(words, vec!["hello", "world"]);
