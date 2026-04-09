@@ -106,6 +106,7 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
                     frame_count: app.frame_count,
                     loader: &mut app.editor.background_loader,
                     thumbnail_texture_handles: &app.editor.thumbnail_texture_handles,
+                    llm_config: &app.editor.llm_config,
                 },
             )
             .clone()
@@ -573,8 +574,41 @@ pub fn process_editor_actions(app: &mut Application) {
             EditorAction::CoCreatorRequest(text) => {
                 agent::process_co_creator_request(app, &text);
             }
+            EditorAction::SetLlmProvider(key) => {
+                use katla_agent::config::LlmProviderKind;
+                app.editor.llm_config.provider = match key.as_str() {
+                    "open_ai" => LlmProviderKind::OpenAi,
+                    "open_ai_compatible" => LlmProviderKind::OpenAiCompatible,
+                    _ => LlmProviderKind::Disabled,
+                };
+            }
+            EditorAction::SetLlmApiKey(key) => {
+                app.editor.llm_config.api_key = key;
+            }
+            EditorAction::SetLlmBaseUrl(url) => {
+                app.editor.llm_config.base_url = if url.is_empty() { None } else { Some(url) };
+            }
+            EditorAction::SetLlmModel(model) => {
+                app.editor.llm_config.model = model;
+            }
+            EditorAction::SetLlmMaxTokens(tokens) => {
+                app.editor.llm_config.max_tokens = tokens;
+            }
+            EditorAction::SetLlmTemperature(temp) => {
+                app.editor.llm_config.temperature = temp.clamp(0.0, 2.0);
+            }
+            EditorAction::SaveLlmConfig => {
+                if let Err(e) = app.editor.llm_config.save() {
+                    log::error!("Failed to save LLM config: {}", e);
+                } else {
+                    info!("LLM configuration saved");
+                }
+            }
         }
     }
+
+    // Poll for pending LLM stream chunks each frame
+    agent::poll_llm_stream(app);
 
     // Update OS cursor based on UI request
     use winit::window::CursorIcon;

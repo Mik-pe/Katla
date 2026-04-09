@@ -55,6 +55,7 @@ pub struct EditorRenderParams<'a> {
     pub frame_count: usize,
     pub loader: &'a mut BackgroundLoader,
     pub thumbnail_texture_handles: &'a std::collections::HashMap<std::path::PathBuf, TextureHandle>,
+    pub llm_config: &'a katla_agent::LlmConfig,
 }
 
 /// Game Engine Editor UI state.
@@ -304,6 +305,31 @@ impl EditorUI {
             }
             PreferencesAction::SetGridSize(value) => {
                 self.editor_settings.grid_size = value;
+            }
+            PreferencesAction::SetLlmProvider(value) => {
+                self.pending_actions
+                    .push(EditorAction::SetLlmProvider(value));
+            }
+            PreferencesAction::SetLlmApiKey(value) => {
+                self.pending_actions.push(EditorAction::SetLlmApiKey(value));
+            }
+            PreferencesAction::SetLlmBaseUrl(value) => {
+                self.pending_actions
+                    .push(EditorAction::SetLlmBaseUrl(value));
+            }
+            PreferencesAction::SetLlmModel(value) => {
+                self.pending_actions.push(EditorAction::SetLlmModel(value));
+            }
+            PreferencesAction::SetLlmMaxTokens(value) => {
+                self.pending_actions
+                    .push(EditorAction::SetLlmMaxTokens(value));
+            }
+            PreferencesAction::SetLlmTemperature(value) => {
+                self.pending_actions
+                    .push(EditorAction::SetLlmTemperature(value));
+            }
+            PreferencesAction::SaveLlmConfig => {
+                self.pending_actions.push(EditorAction::SaveLlmConfig);
             }
         }
     }

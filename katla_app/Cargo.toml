@@ -15,7 +15,7 @@ katla_ecs = { workspace = true }
 katla_ui = { workspace = true }
 katla_icons = { workspace = true }
 katla_derive = { workspace = true }
-katla_agent = { workspace = true }
+katla_agent = { workspace = true, features = ["llm-assistant"] }
 ash = { workspace = true }
 bytemuck = { workspace = true }
 byteorder = { workspace = true }

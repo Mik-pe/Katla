@@ -26,6 +26,9 @@ impl EditorUI {
         // scroll before background panels. Visual order is handled by z-index
         // sorting in the draw list, not render order.
         if self.preferences_panel_state.panel.is_visible() {
+            // Sync LLM config snapshot into panel state each frame
+            self.preferences_panel_state.llm_config = params.llm_config.clone();
+
             let theme_key = self.theme_key();
             let mut actions = Vec::new();
             ui.add(PreferencesPanel::new(
