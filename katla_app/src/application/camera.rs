@@ -55,7 +55,7 @@ impl Camera {
 
     pub fn get_proj_mat(&self, world: &World) -> Mat4 {
         if let Some(projection) = world.get_component::<PerspectiveComponent>(self.entity) {
-            Mat4::create_proj(projection.fov, projection.aspect_ratio, projection.near)
+            Mat4::create_proj_reverse_z(projection.fov, projection.aspect_ratio, projection.near)
         } else {
             Mat4::identity()
         }

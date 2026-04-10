@@ -1177,7 +1177,7 @@ mod tests {
     }
 
     fn make_proj(fov: f32, aspect: f32, near: f32) -> Mat4 {
-        Mat4::create_proj(fov, aspect, near)
+        Mat4::create_proj_reverse_z(fov, aspect, near)
     }
 
     fn viewport(w: f32, h: f32) -> Rect2D {

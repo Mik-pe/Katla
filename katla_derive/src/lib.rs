@@ -163,6 +163,12 @@ fn field_mut_arm(field_name: &str, ty: &Type) -> proc_macro2::TokenStream {
         "u32" => quote! {
             #field_name => Some(::katla_ecs::inspect::FieldMut::U32(&mut self.#ident))
         },
+        "i64" => quote! {
+            #field_name => Some(::katla_ecs::inspect::FieldMut::I64(&mut self.#ident))
+        },
+        "u64" => quote! {
+            #field_name => Some(::katla_ecs::inspect::FieldMut::U64(&mut self.#ident))
+        },
         "bool" => quote! {
             #field_name => Some(::katla_ecs::inspect::FieldMut::Bool(&mut self.#ident))
         },

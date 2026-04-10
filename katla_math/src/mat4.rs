@@ -108,7 +108,7 @@ impl Mat4 {
         ])
     }
 
-    pub fn create_proj(fov_angles: f32, aspect_ratio: f32, near: f32) -> Self {
+    pub fn create_proj_reverse_z(fov_angles: f32, aspect_ratio: f32, near: f32) -> Self {
         let f = 1.0 / f32::tan(f32::to_radians(fov_angles) / 2.0);
         Self([
             Vec4::new(f / aspect_ratio, 0.0, 0.0, 0.0),

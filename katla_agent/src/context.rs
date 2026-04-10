@@ -99,6 +99,8 @@ fn field_value_to_json(value: &FieldValue) -> serde_json::Value {
         FieldValue::F64(v) => serde_json::json!(*v),
         FieldValue::I32(v) => serde_json::json!(*v),
         FieldValue::U32(v) => serde_json::json!(*v),
+        FieldValue::I64(v) => serde_json::json!(*v),
+        FieldValue::U64(v) => serde_json::json!(*v),
         FieldValue::Bool(v) => serde_json::json!(*v),
         FieldValue::String(v) => serde_json::json!(v),
         FieldValue::Unknown => serde_json::json!(null),

@@ -128,7 +128,7 @@ impl Frustum {
         near: f32,
     ) -> Self {
         let view = Mat4::create_lookat(position, target, up);
-        let proj = Mat4::create_proj(fov, aspect, near);
+        let proj = Mat4::create_proj_reverse_z(fov, aspect, near);
         Self::from_projection_view_matrix(&proj, &view)
     }
 
