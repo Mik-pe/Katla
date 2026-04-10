@@ -97,29 +97,6 @@ pub enum EditorAction {
     ToggleParticleEmitter,
     /// Reset the global particle system (clear all particles).
     ResetParticleSystem,
-    /// Update entity transform (committed on slider release).
-    UpdateTransform {
-        entity_id: EntityId,
-        position: Vec3,
-        rotation: Vec3,
-        scale: Vec3,
-    },
-    /// Update point light properties (committed on slider release).
-    UpdatePointLight {
-        entity_id: EntityId,
-        color: [f32; 3],
-        intensity: f32,
-        range: f32,
-    },
-    /// Update particle emitter properties (committed on slider release).
-    UpdateParticleEmitter {
-        entity_id: EntityId,
-        emit_rate: f32,
-        velocity_magnitude: f32,
-        base_lifetime: f32,
-        gravity: f32,
-        base_scale: f32,
-    },
     /// Set the gizmo transform mode.
     SetGizmoMode(u8), // 0=Translate, 1=Rotate, 2=Scale
     /// AI Co-Creator request from the chat panel.

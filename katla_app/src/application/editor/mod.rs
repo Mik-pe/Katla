@@ -7,7 +7,7 @@ pub(crate) mod mcp;
 
 use std::collections::{HashMap, HashSet};
 
-use log::{debug, info};
+use log::info;
 
 use katla_ecs::EntityId;
 use katla_gfx::renderer::UIDrawList;
@@ -144,8 +144,7 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
 /// Apply real-time inspector slider changes to ECS components during drag.
 ///
 /// Compares the inspector editing state against the current ECS component values.
-/// If they differ, updates the ECS component immediately (for viewport feedback)
-/// and pushes an EditorAction to commit the final value on slider release.
+/// If they differ, updates the ECS component immediately (for viewport feedback).
 fn apply_inspector_slider_changes(app: &mut Application) {
     use crate::ui::InspectorEditState;
 
@@ -190,21 +189,11 @@ fn apply_inspector_slider_changes(app: &mut Application) {
             if scale_changed {
                 transform.transform.scale = scale_vec;
             }
-
-            app.editor
-                .editor_ui
-                .pending_actions
-                .push(EditorAction::UpdateTransform {
-                    entity_id,
-                    position: pos_vec,
-                    rotation: rot_vec,
-                    scale: scale_vec,
-                });
         }
     }
 
     // PointLight
-    if let Some(light) = app.world.get_component::<PointLight>(entity_id) {
+    if let Some(light) = app.world.get_component_mut::<PointLight>(entity_id) {
         let color_changed = (light_color[0] - light.color[0]).abs() > 1e-3
             || (light_color[1] - light.color[1]).abs() > 1e-3
             || (light_color[2] - light.color[2]).abs() > 1e-3;
@@ -212,22 +201,16 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         let range_changed = (*light_range - light.range).abs() > 1e-4;
 
         if color_changed || intensity_changed || range_changed {
-            app.editor
-                .editor_ui
-                .pending_actions
-                .push(EditorAction::UpdatePointLight {
-                    entity_id,
-                    color: *light_color,
-                    intensity: *light_intensity,
-                    range: *light_range,
-                });
+            light.color = *light_color;
+            light.intensity = *light_intensity;
+            light.range = *light_range;
         }
     }
 
     // ParticleEmitter
     if let Some(emitter) = app
         .world
-        .get_component::<ParticleEmitterComponent>(entity_id)
+        .get_component_mut::<ParticleEmitterComponent>(entity_id)
     {
         let rate_changed = (*emit_rate - emitter.config.emit_rate).abs() > 1e-4;
         let vel_changed = (*velocity - emitter.config.velocity_magnitude).abs() > 1e-4;
@@ -236,17 +219,11 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         let scale_changed = (*particle_scale - emitter.config.base_scale).abs() > 1e-4;
 
         if rate_changed || vel_changed || life_changed || grav_changed || scale_changed {
-            app.editor
-                .editor_ui
-                .pending_actions
-                .push(EditorAction::UpdateParticleEmitter {
-                    entity_id,
-                    emit_rate: *emit_rate,
-                    velocity_magnitude: *velocity,
-                    base_lifetime: *lifetime,
-                    gravity: *gravity,
-                    base_scale: *particle_scale,
-                });
+            emitter.config.emit_rate = *emit_rate;
+            emitter.config.velocity_magnitude = *velocity;
+            emitter.config.base_lifetime = *lifetime;
+            emitter.config.gravity = *gravity;
+            emitter.config.base_scale = *particle_scale;
         }
     }
 }
@@ -490,78 +467,6 @@ pub fn process_editor_actions(app: &mut Application) {
                     }
 
                     info!("Particle system reset complete");
-                }
-            }
-            EditorAction::UpdateTransform {
-                entity_id,
-                position,
-                rotation,
-                scale,
-            } => {
-                if let Some(transform) =
-                    app.world.get_component_mut::<TransformComponent>(entity_id)
-                {
-                    transform.transform.position = position;
-                    transform.transform.rotation =
-                        katla_math::Quat::from_euler(rotation.x(), rotation.y(), rotation.z());
-                    transform.transform.scale = scale;
-                    debug!(
-                        "Transform updated for entity {:?}: pos=({:.2}, {:.2}, {:.2}) rot=({:.1}, {:.1}, {:.1}) scale=({:.2}, {:.2}, {:.2})",
-                        entity_id,
-                        position.x(),
-                        position.y(),
-                        position.z(),
-                        rotation.x(),
-                        rotation.y(),
-                        rotation.z(),
-                        scale.x(),
-                        scale.y(),
-                        scale.z(),
-                    );
-                }
-            }
-            EditorAction::UpdatePointLight {
-                entity_id,
-                color,
-                intensity,
-                range,
-            } => {
-                if let Some(light) = app.world.get_component_mut::<PointLight>(entity_id) {
-                    light.color = color;
-                    light.intensity = intensity;
-                    light.range = range;
-                    debug!(
-                        "PointLight updated for entity {:?}: color=({:.2}, {:.2}, {:.2}) intensity={:.2} range={:.2}",
-                        entity_id, color[0], color[1], color[2], intensity, range,
-                    );
-                }
-            }
-            EditorAction::UpdateParticleEmitter {
-                entity_id,
-                emit_rate,
-                velocity_magnitude,
-                base_lifetime,
-                gravity,
-                base_scale,
-            } => {
-                if let Some(emitter) = app
-                    .world
-                    .get_component_mut::<ParticleEmitterComponent>(entity_id)
-                {
-                    emitter.config.emit_rate = emit_rate;
-                    emitter.config.velocity_magnitude = velocity_magnitude;
-                    emitter.config.base_lifetime = base_lifetime;
-                    emitter.config.gravity = gravity;
-                    emitter.config.base_scale = base_scale;
-                    debug!(
-                        "ParticleEmitter updated for entity {:?}: rate={:.1} vel={:.1} life={:.2} grav={:.1} scale={:.2}",
-                        entity_id,
-                        emit_rate,
-                        velocity_magnitude,
-                        base_lifetime,
-                        gravity,
-                        base_scale,
-                    );
                 }
             }
             EditorAction::SetGizmoMode(mode_id) => {

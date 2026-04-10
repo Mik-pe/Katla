@@ -208,6 +208,9 @@ pub struct Application {
     pub(crate) minimized: bool,
     /// Tracks GPU resource reference counts for automatic cleanup on entity/component destruction.
     pub(crate) gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker,
+    /// Reusable buffer for collecting point lights each frame. Cleared and refilled
+    /// in collect_and_upload_lights to avoid per-frame Vec allocation.
+    pub(crate) point_lights_buffer: Vec<katla_gfx::PointLightGPU>,
     /// Editor-only state (UI, picking, gizmos, billboards)
     #[cfg(feature = "editor")]
     pub(crate) editor: EditorState,
