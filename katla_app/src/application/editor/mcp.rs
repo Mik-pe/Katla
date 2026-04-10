@@ -8,8 +8,8 @@ pub(crate) struct McpState {
 
 impl McpState {
     pub(crate) fn new() -> Self {
-        let (server, bridge) = McpBridge::new();
-        start_mcp_server_thread(server);
+        let (server, bridge, shutdown_rx) = McpBridge::new();
+        start_mcp_server_thread(server, shutdown_rx);
         info!("MCP server bridge initialized");
         Self { bridge }
     }
