@@ -15,6 +15,7 @@
 
 pub mod builder;
 pub(crate) mod camera;
+pub(crate) mod clipboard;
 #[cfg(feature = "editor")]
 pub mod editor;
 #[cfg(feature = "editor")]
@@ -164,15 +165,6 @@ impl EditorState {
     }
 }
 
-/// Debug-only state behind debug_assertions gate.
-#[cfg(debug_assertions)]
-pub(crate) struct DebugState {
-    /// Flag to trigger particle debug readback at frame 10
-    pub(crate) particle_readback_pending: bool,
-    /// Flag to ensure particle debug readback only happens once
-    pub(crate) particle_readback_done: bool,
-}
-
 /// Main application struct containing all engine state.
 pub struct Application {
     pub(crate) window: Window,
@@ -214,9 +206,6 @@ pub struct Application {
     /// Editor-only state (UI, picking, gizmos, billboards)
     #[cfg(feature = "editor")]
     pub(crate) editor: EditorState,
-    /// Debug-only state (particle readback)
-    #[cfg(debug_assertions)]
-    pub(crate) debug: DebugState,
     /// Hook called once after build(), before the event loop.
     pub(crate) on_init: Option<builder::InitHook>,
     /// Hook called each frame between world.update(dt) and rendering.
