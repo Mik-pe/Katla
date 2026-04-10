@@ -84,6 +84,12 @@
 
 ---
 
+### 86. Remove particle debug readback from katla_app debug builds
+- **Crate:** katla_app
+- **Files:** `katla_app/src/application/builder.rs` (lines 204-212), `katla_app/src/application/renderer.rs` (lines 170-195), `katla_app/src/application/mod.rs` (lines 169-176), `katla_app/src/application/init.rs` (lines 144-158)
+- **Issue:** Debug builds initialize and trigger a one-time particle debug readback at frame 10. This was added to stabilize the particle system but is no longer needed in the app — debug readback should only live in the `particle_validation` example in katla_gfx.
+- **Fix:** Remove all `#[cfg(debug_assertions)]` blocks related to particle debug readback from katla_app: `DebugState` struct, `init_debug_readback()` call in builder, frame 10 trigger logic in renderer, `debug_readback` flag in init.rs frame graph passes, and the `particle_debug_readback` field on `Frame`.
+
 ## P2: Missing Features
 
 ### 21. No undo/redo system in the editor
@@ -157,11 +163,7 @@
 
 ## P3: Improvements
 
-### 33. Add `#[inline]` to hot-path methods across math crate
-- **Crate:** katla_math
-- **Files:** `src/mat3.rs`, `src/mat4.rs`, `src/transform.rs`, SSE/scalar `quat.rs`
-- **Issue:** Per AGENTS.md "Mark hot path functions with #[inline]", many hot-path methods are missing it: `Mat3::identity/mul/transpose/inverse/to_mat4`, `Mat4::identity/mul/inverse/decompose/from_rotaxis/from_trs`, `Transform::new/make_mat4/inverse/forward`, `Quat::from_axis_angle/slerp/make_mat4`.
-- **Fix:** Add `#[inline]` to these methods.
+~~### 33. Add `#[inline]` to hot-path methods across math crate~~ — Fixed in 6a186a1. Added #[inline] to Mat3/Mat4/Transform/Quat hot-path methods.
 
 ### 34. Add `#[inline]` to hot-path ECS methods
 - **Crate:** katla_ecs
@@ -223,11 +225,7 @@
 - **Issue:** A `transfer_queue` and `transfer_command_pool` are created but never used. All transfers go through the graphics queue.
 - **Fix:** Either use the transfer queue for staging copies, or remove the dead infrastructure.
 
-### 46. `OutlineSubsystem::destroy` doesn't zero out pipeline handles
-- **Crate:** katla_gfx
-- **File:** `src/renderer/outline.rs`
-- **Issue:** `destroy()` frees resources but doesn't set pipeline handles to `PipelineHandle::NONE`. Double-destroy or use-after-destroy would use stale handles.
-- **Fix:** Zero out all pipeline handles in `destroy()` like `DepthPrepassSubsystem` does.
+~~### 46. `OutlineSubsystem::destroy` doesn't zero out pipeline handles~~ — Fixed in 6a186a1. All 8 pipeline handles zeroed in destroy().
 
 ### 47. `TextureManager::from_vulkan_resources()` is a stub returning handle 0
 - **Crate:** katla_gfx
@@ -269,11 +267,7 @@
 - **Issue:** ~120 identical `EditorAction::UpdateTransform` actions during a 2-second slider drag at 60fps. All are processed redundantly.
 - **Fix:** Only push action on final value change (mouse release), or mark intermediates as "preview".
 
-### 55. `destroyed_entities.contains()` is O(n) per component removal event
-- **Crate:** katla_app
-- **File:** `src/gpu_cleanup.rs` (lines 35-47)
-- **Issue:** Uses `Vec` for `destroyed_entities`, making filter O(n*m).
-- **Fix:** Change to `HashSet<_>`.
+~~### 55. `destroyed_entities.contains()` is O(n) per component removal event~~ — Fixed in 6a186a1. Changed Vec to HashSet for O(1) lookups.
 
 ### 56. `create_variants` ignores component/field/values parameters
 - **Crate:** katla_agent
