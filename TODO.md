@@ -169,16 +169,9 @@
 - **Issue:** `ComponentStorage::insert/remove`, `ComponentStorageManager::add_component/get_component`, `EntityAllocator::allocate/deallocate`, `SparseSet::insert/remove` lack `#[inline]`.
 - **Fix:** Add `#[inline]`.
 
-### 35. Add `#[inline]` to hot-path UI text methods
-- **Crate:** katla_ui
-- **Files:** `src/context/drawing.rs` (`font_ascent`, `line_height`), `src/text/measurement.rs` (`measure_text`)
-- **Fix:** Add `#[inline]`.
+~~### 35. Add `#[inline]` to hot-path UI text methods~~ — Fixed in 8a5e7a0. Added #[inline] to measure_text, font_ascent, line_height.
 
-### 36. Replace `unwrap()` with `expect()` in production UI code
-- **Crate:** katla_ui
-- **Files:** `src/context/widgets/basic.rs` (lines 337/343/350), `src/context/widgets/scroll_area.rs` (line 168), `src/text/glyph_pool.rs` (line 39)
-- **Issue:** Per AGENTS.md "avoid unwrap() in production". These are guaranteed safe by construction but should use `expect()`.
-- **Fix:** Replace with `.expect("text input state must exist after insertion")` etc.
+~~### 36. Replace `unwrap()` with `expect()` in production UI code~~ — Fixed in 8a5e7a0. Replaced 5 unwrap() calls with expect() across basic.rs, scroll_area.rs, glyph_pool.rs.
 
 ### 37. Remove deprecated `button_height_*` style fields
 - **Crate:** katla_ui
@@ -210,11 +203,7 @@
 - **Issue:** Both fields are `Copy` but `AABB` only derives `Clone, Debug`. Every use by value requires `.clone()`.
 - **Fix:** Add `#[derive(Copy)]`.
 
-### 42. `Transform` missing `PartialEq` derive
-- **Crate:** katla_math
-- **File:** `src/transform.rs`
-- **Issue:** Derives `Debug, Copy, Clone` but not `PartialEq`. Makes it harder to test and compare transforms.
-- **Fix:** Add `#[derive(PartialEq)]`.
+~~### 42. `Transform` missing `PartialEq` derive~~ — Fixed in 8a5e7a0. Added PartialEq derive to Transform and implemented it for SSE Quat.
 
 ### 43. Radio button renders as square instead of circle
 - **Crate:** katla_ui
@@ -248,11 +237,7 @@
 
 ~~### 48. Stale TODO comments in renderer module~~ — Fixed in 4486cb4. Removed stale viewport/ui extraction TODOs.
 
-### 49. `katla_derive` uses edition 2021 instead of workspace edition 2024
-- **Crate:** katla_derive
-- **File:** `Cargo.toml`
-- **Issue:** Workspace root uses `edition = "2024"` but `katla_derive/Cargo.toml` has `edition = "2021"`.
-- **Fix:** Update to `edition = "2024"`.
+~~### 49. `katla_derive` uses edition 2021 instead of workspace edition 2024~~ — Fixed in 8a5e7a0. Updated to edition 2024.
 
 ### 50. `Barrier::deduce_transition_masks` panics on unsupported layout transitions
 - **Crate:** katla_gfx
