@@ -34,6 +34,7 @@ impl<T: Component> ComponentStorage<T> {
     ///
     /// If the entity already has this component type, it will be replaced.
     /// Marks the entity as changed for change detection.
+    #[inline]
     pub fn insert(&mut self, entity_id: EntityId, component: T) {
         self.storage.insert(entity_id, component);
         self.dirty.insert(entity_id, ());
@@ -42,6 +43,7 @@ impl<T: Component> ComponentStorage<T> {
     /// Removes a component for the given entity.
     ///
     /// Returns true if the component was removed, false if it didn't exist.
+    #[inline]
     pub fn remove(&mut self, entity_id: EntityId) -> bool {
         let removed = self.storage.remove(entity_id);
         if removed {
@@ -256,6 +258,7 @@ impl ComponentStorageManager {
     }
 
     /// Adds a component for the given entity.
+    #[inline]
     pub fn add_component<T: Component>(&mut self, entity_id: EntityId, component: T) {
         self.get_or_create_storage::<T>()
             .insert(entity_id, component);
@@ -273,6 +276,7 @@ impl ComponentStorageManager {
     }
 
     /// Gets a reference to a component for the given entity.
+    #[inline]
     pub fn get_component<T: Component>(&self, entity_id: EntityId) -> Option<&T> {
         self.get_storage::<T>()
             .and_then(|storage| storage.get(entity_id))
