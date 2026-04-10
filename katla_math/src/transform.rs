@@ -90,7 +90,7 @@ impl Transform {
     /// Get the inverse of this transform
     #[inline]
     pub fn inverse(&self) -> Self {
-        let inv_rot = self.rotation.inverse();
+        let inv_rot = self.rotation.conjugate_unit();
         let inv_scale = Vec3::new(
             if self.scale[0] != 0.0 {
                 1.0 / self.scale[0]

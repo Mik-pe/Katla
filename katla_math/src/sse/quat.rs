@@ -173,7 +173,8 @@ impl Quat {
         }
     }
 
-    pub fn inverse(&self) -> Self {
+    /// Returns the conjugate. Correct inverse only for unit quaternions.
+    pub fn conjugate_unit(&self) -> Self {
         self.conjugate()
     }
 

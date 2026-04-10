@@ -29,9 +29,9 @@ fn test_from_rotation_between_opposite() {
 }
 
 #[test]
-fn test_inverse() {
+fn test_conjugate_unit_inverse() {
     let q = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), std::f32::consts::FRAC_PI_4);
-    let inv = q.inverse();
+    let inv = q.conjugate_unit();
 
     // q * q^(-1) should be identity
     let result = q * inv;
@@ -47,7 +47,7 @@ fn test_conjugate_unit() {
     // For unit quaternions, conjugate equals inverse
     let q = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), std::f32::consts::FRAC_PI_4);
     let conj = q.conjugate();
-    let inv = q.inverse();
+    let inv = q.conjugate_unit();
 
     let (cx, cy, cz, cw) = conj.xyzw();
     let (ix, iy, iz, iw) = inv.xyzw();
