@@ -264,7 +264,7 @@ impl Application {
 
         let entity_count = self.world.entity_count();
         let mut drawable_count = 0;
-        let mut entity_map_entries = Vec::new();
+        self.editor.draw_entity_map_entries.clear();
 
         for (entity_id, drawable, transform) in self
             .world
@@ -307,7 +307,9 @@ impl Application {
 
             draw.submit();
 
-            entity_map_entries.push((frame.instance_count() - 1, entity_id));
+            self.editor
+                .draw_entity_map_entries
+                .push((frame.instance_count() - 1, entity_id));
 
             drawable_count += 1;
         }
@@ -318,7 +320,8 @@ impl Application {
             entity_count
         );
 
-        self.build_entity_instance_map(entity_map_entries);
+        let entries = std::mem::take(&mut self.editor.draw_entity_map_entries);
+        self.build_entity_instance_map(entries);
     }
 
     /// Get the viewport size in pixels.

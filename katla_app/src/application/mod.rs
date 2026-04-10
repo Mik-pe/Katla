@@ -85,6 +85,10 @@ pub(crate) struct EditorState {
     pub(crate) background_loader: BackgroundLoader,
     /// Mapping of thumbnail paths to their uploaded texture handles
     pub(crate) thumbnail_texture_handles: HashMap<PathBuf, katla_gfx::TextureHandle>,
+    /// Reusable buffer for collecting (instance_index, EntityId) pairs during
+    /// collect_draws_with_context. Cleared and refilled each frame to avoid
+    /// per-frame Vec allocation.
+    pub(crate) draw_entity_map_entries: Vec<(u32, katla_ecs::EntityId)>,
     /// Maps instance_index -> EntityId for resolving GPU picking results.
     /// Populated each frame during collect_draws_with_context.
     pub(crate) entity_instance_map: std::collections::HashMap<u32, katla_ecs::EntityId>,
@@ -145,6 +149,7 @@ impl EditorState {
             gui_state,
             background_loader: BackgroundLoader::new(),
             thumbnail_texture_handles: HashMap::new(),
+            draw_entity_map_entries: Vec::new(),
             entity_instance_map: std::collections::HashMap::new(),
             entity_to_instance_indices: std::collections::HashMap::new(),
             pending_pick: None,

@@ -40,6 +40,9 @@ pub enum McpOp {
     },
     QueryEntities {
         component_filter: String,
+        name_filter: Option<String>,
+        position: Option<[f32; 3]>,
+        radius: Option<f32>,
         limit: Option<usize>,
     },
     GetSceneHierarchy,
@@ -79,12 +82,15 @@ impl McpOp {
             },
             Self::QueryEntities {
                 component_filter,
+                name_filter,
+                position,
+                radius,
                 limit,
             } => SceneOp::QueryEntities {
                 component_filter: Some(component_filter),
-                name_filter: None,
-                position: None,
-                radius: None,
+                name_filter,
+                position,
+                radius,
                 limit,
             },
             Self::GetSceneHierarchy => SceneOp::GetSceneHierarchy,
@@ -114,17 +120,22 @@ pub struct McpResponse {
 
 pub struct McpBridge {
     receiver: mpsc::Receiver<PendingMcpRequest>,
+    shutdown_tx: tokio::sync::watch::Sender<bool>,
 }
 
 impl McpBridge {
-    pub fn new() -> (KatlaMcpServer, Self) {
+    pub fn new() -> (KatlaMcpServer, Self, tokio::sync::watch::Receiver<bool>) {
         let (tx, rx) = mpsc::channel();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         let server = KatlaMcpServer {
             tool_router: KatlaMcpServer::tool_router(),
             request_tx: tx,
         };
-        let bridge = McpBridge { receiver: rx };
-        (server, bridge)
+        let bridge = McpBridge {
+            receiver: rx,
+            shutdown_tx,
+        };
+        (server, bridge, shutdown_rx)
     }
 
     pub fn poll_requests(&self) -> Vec<PendingMcpRequest> {
@@ -134,15 +145,34 @@ impl McpBridge {
         }
         requests
     }
+
+    pub fn shutdown(&self) {
+        let _ = self.shutdown_tx.send(true);
+    }
 }
 
 /// Start the MCP server on a background thread with stdio transport.
-pub fn start_mcp_server_thread(server: KatlaMcpServer) {
+///
+/// The server runs until it either completes or a `true` value is sent
+/// through the `shutdown_rx` watch channel.
+pub fn start_mcp_server_thread(
+    server: KatlaMcpServer,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+) {
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let transport = (tokio::io::stdin(), tokio::io::stdout());
-            let _ = rmcp::serve_server(server, transport).await;
+            let result = tokio::select! {
+                result = rmcp::serve_server(server, transport) => result,
+                _ = shutdown_rx.changed() => {
+                    log::info!("MCP server shutting down");
+                    return;
+                }
+            };
+            if let Err(e) = result {
+                log::error!("MCP server error: {}", e);
+            }
         });
     });
 }
@@ -174,6 +204,12 @@ struct SetFieldParams {
 #[derive(Deserialize, JsonSchema)]
 struct QueryEntitiesParams {
     component_filter: String,
+    #[serde(default)]
+    name_filter: Option<String>,
+    #[serde(default)]
+    position: Option<[f32; 3]>,
+    #[serde(default)]
+    radius: Option<f32>,
     #[serde(default)]
     limit: Option<usize>,
 }
@@ -245,6 +281,9 @@ impl KatlaMcpServer {
     ) -> Json<McpToolResult> {
         let op = McpOp::QueryEntities {
             component_filter: params.component_filter,
+            name_filter: params.name_filter,
+            position: params.position,
+            radius: params.radius,
             limit: params.limit,
         };
         self.forward_op(op).await
