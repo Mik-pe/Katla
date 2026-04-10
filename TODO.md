@@ -277,10 +277,7 @@
 - **Issue:** Sparse array indexed by entity index. After creating/destroying many entities, the vec grows very large with mostly `None` entries.
 - **Fix:** Use paged/chunked sparse array or `HashMap` fallback for large indices.
 
-### 69. `query_changed` allocates `HashSet<EntityId>` every call
-- **Crate:** katla_ecs
-- **File:** `src/world.rs` (line ~251)
-- **Fix:** Accept pre-allocated set as out-parameter, or store reusable buffer in `World`.
+~~### 69. `query_changed` allocates `HashSet<EntityId>` every call~~ — Fixed in a4067ef. Reusable buffer stored in World, avoids per-frame allocation.
 
 ~~### 70. `ComponentRegistry::get` is O(n) linear scan by string comparison~~ — Fixed in dcc28d7. Changed from Vec to HashMap for O(1) lookups.
 
@@ -292,10 +289,7 @@
 
 ## P4: Nice-to-Have / Future
 
-### 73. Add unit tests for katla_icons (verify ForkAwesome codepoints)
-- **Crate:** katla_icons
-- **Issue:** Zero tests. Basic smoke tests would catch the 4 wrong codepoints.
-- **Fix:** Add tests verifying all codepoints are in valid ForkAwesome PUA range (F000-F3FF), no duplicates, `common_icons()` non-empty.
+~~### 73. Add unit tests for katla_icons (verify ForkAwesome codepoints)~~ — Fixed in a4067ef. Added 4 tests; caught and fixed REDO (F0E3→F01E) and PENCIL_ALT (duplicate→PENCIL_SQUARE F14B).
 
 ~~### 74. Add missing angle icons (ANGLE_LEFT, ANGLE_UP, ANGLE_DOWN)~~ — Fixed in b7089dd. Added ANGLE_LEFT, ANGLE_UP, ANGLE_DOWN to ForkAwesome.
 - **Crate:** katla_icons
@@ -329,10 +323,7 @@
 
 ~~### 81. `from_rows` naming in `Mat3` is misleading (actually column-major)~~ — Fixed in 37b3dbc. Renamed to `from_columns`.
 
-### 82. Tooltip convenience method on `Response`
-- **Crate:** katla_ui
-- **Issue:** Users must manually check `response.hovered` and call `tooltip()`. A `response.on_hover_tooltip(ui, text)` would be more ergonomic.
-- **Fix:** Add convenience method.
+~~### 82. Tooltip convenience method on `Response`~~ — Fixed in a4067ef. Added `Response::on_hover_tooltip(ui, text)`.
 
 ### 83. `collect_draws_with_context` allocates Vec and HashMap every frame
 - **Crate:** katla_app
