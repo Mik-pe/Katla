@@ -223,8 +223,8 @@ impl ForkAwesome {
 
     /// Trash/Delete icon
     pub const TRASH: char = '\u{F1F8}';
-    /// Trash Alt icon
-    pub const TRASH_ALT: char = '\u{F2ED}';
+    /// Trash Alt icon (fa-trash-o)
+    pub const TRASH_ALT: char = '\u{F014}';
     /// Lock icon
     pub const LOCK: char = '\u{F023}';
     /// Unlock icon
@@ -254,20 +254,20 @@ impl ForkAwesome {
 
     /// Wrench icon
     pub const WRENCH: char = '\u{F0AD}';
-    /// Hammer/Toolbox icon
-    pub const HAMMER: char = '\u{F6E3}';
+    /// Gavel/Hammer icon
+    pub const HAMMER: char = '\u{F0E3}';
     /// Magic Wand icon
     pub const MAGIC: char = '\u{F0D0}';
     /// Paint Brush icon
     pub const PAINT_BRUSH: char = '\u{F1FC}';
-    /// Pencil Alt icon
-    pub const PENCIL_ALT: char = '\u{F303}';
-    /// Ruler Combined icon
-    pub const RULER_COMBINED: char = '\u{F546}';
-    /// Ruler Horizontal icon
-    pub const RULER_HORIZONTAL: char = '\u{F547}';
-    /// Ruler Vertical icon
-    pub const RULER_VERTICAL: char = '\u{F548}';
+    /// Pencil icon (same as PENCIL, fa-pencil at F040)
+    pub const PENCIL_ALT: char = '\u{F040}';
+    /// Ruler Combined icon (fa-sliders, no ruler in ForkAwesome)
+    pub const RULER_COMBINED: char = '\u{F1DE}';
+    /// Ruler Horizontal icon (fa-arrows-h, no ruler in ForkAwesome)
+    pub const RULER_HORIZONTAL: char = '\u{F07E}';
+    /// Ruler Vertical icon (fa-arrows-v, no ruler in ForkAwesome)
+    pub const RULER_VERTICAL: char = '\u{F07D}';
     /// Sort icon
     pub const SORT: char = '\u{F0DC}';
     /// Sort Up icon

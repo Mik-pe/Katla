@@ -42,6 +42,18 @@ impl SceneManager {
     /// Queries all entities with `TransformComponent` and gathers their
     /// serializable data using `EntitySource` to determine origin.
     pub fn save_scene(app: &Application) -> Scene {
+        Self::save_scene_with_created_at(app, None)
+    }
+
+    /// Serialize the current world state into a `Scene` descriptor.
+    ///
+    /// If `existing_created_at` is provided, it is used as `created_at`
+    /// (preserving the original creation time across saves). Otherwise
+    /// `created_at` is set to the current time (first save).
+    pub fn save_scene_with_created_at(
+        app: &Application,
+        existing_created_at: Option<String>,
+    ) -> Scene {
         let mut scene = Scene::new("Untitled");
         scene.version = SCENE_VERSION;
         let timestamp = {
@@ -51,12 +63,9 @@ impl SceneManager {
                 .ok()
                 .map(|d| d.as_secs().to_string())
         };
-        scene.created_at = timestamp.clone();
+        scene.created_at = existing_created_at.or_else(|| timestamp.clone());
         scene.modified_at = timestamp;
         scene.engine_version = Some(env!("CARGO_PKG_VERSION").to_string());
-        // Note: save_scene creates a fresh Scene each time, so created_at always
-        // equals modified_at. To preserve the original created_at across save/load,
-        // callers should pass the loaded Scene through and only update modified_at.
 
         let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -207,8 +216,16 @@ impl SceneManager {
     }
 
     /// Save a scene to a RON file.
+    ///
+    /// Preserves the original `created_at` from the existing file (if any)
+    /// so that the creation timestamp survives across repeated saves.
     pub fn save_to_file(app: &Application, path: &Path) -> Result<(), String> {
-        let scene = Self::save_scene(app);
+        let existing_created_at = std::fs::read_to_string(path)
+            .ok()
+            .and_then(|content| ron::from_str::<Scene>(&content).ok())
+            .and_then(|scene| scene.created_at);
+
+        let scene = Self::save_scene_with_created_at(app, existing_created_at);
 
         let ron_string = ron::ser::to_string_pretty(&scene, ron_pretty_config())
             .map_err(|e| format!("Failed to serialize scene: {}", e))?;

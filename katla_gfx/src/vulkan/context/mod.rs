@@ -219,7 +219,7 @@ impl VulkanContext {
         let graphics_queue_idx = queue_indices.graphics_idx.ok_or_else(|| {
             RendererError::InitializationFailed("No graphics queue family found".to_string())
         })?;
-        let transfer_queue_idx = 0;
+        let transfer_queue_idx = queue_indices.transfer_idx.unwrap_or(graphics_queue_idx);
 
         let queue_create_infos = vec![
             vk::DeviceQueueCreateInfo::default()
@@ -367,7 +367,7 @@ impl VulkanContext {
         let graphics_queue_idx = queue_indices.graphics_idx.ok_or_else(|| {
             RendererError::InitializationFailed("No graphics queue family found".to_string())
         })?;
-        let transfer_queue_idx = queue_indices.transfer_idx.unwrap_or(0);
+        let transfer_queue_idx = queue_indices.transfer_idx.unwrap_or(graphics_queue_idx);
 
         let queue_create_infos = vec![
             vk::DeviceQueueCreateInfo::default()
