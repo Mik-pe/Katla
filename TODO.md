@@ -50,7 +50,7 @@
 - **Issue:** `transfer_queue_idx` is hardcoded to `0` instead of using the `transfer_idx` found by `find_queue_families()`. On GPUs where the graphics family index != 0, the transfer command pool will use the wrong queue family.
 - **Fix:** Use `queue_indices.transfer_idx.unwrap_or(graphics_queue_idx)`.
 
-### 15. `max_tokens` and `temperature` never sent to OpenAI API
+~~### 15. `max_tokens` and `temperature` never sent to OpenAI API~~ — Fixed in b7089dd. OpenAiProvider now stores and passes max_tokens/temperature to requests.
 - **Crate:** katla_agent
 - **File:** `src/llm/openai.rs` (lines 165-170, 232-237)
 - **Issue:** `LlmConfig` stores `max_tokens` and `temperature` but `OpenAiProvider` doesn't pass them to the request. The `CreateChatCompletionRequest` uses `..Default::default()` so both are always unset.
@@ -276,7 +276,7 @@
 - **Issue:** Conversion hardcodes `name_filter: None, position: None, radius: None`. MCP clients can't do spatial or name-based queries.
 - **Fix:** Extend `McpOp::QueryEntities` and MCP tool schema.
 
-### 60. `available_templates()` doesn't include `forest_clearing`
+~~### 60. `available_templates()` doesn't include `forest_clearing`~~ — False positive. Already present with test coverage.
 - **Crate:** katla_agent
 - **File:** `src/tools/templates.rs` (lines 58-63)
 - **Fix:** Add `("forest_clearing", "Ring of trees around a clearing")` to the list.
@@ -295,7 +295,7 @@
 
 ~~### 64. Add `nlerp` to `Quat`~~ — Fixed in dcc28d7. Added nlerp() to both SSE and scalar implementations with tests.
 
-### 65. Missing `Vec3` direction constants (FORWARD, UP, RIGHT, etc.)
+~~### 65. Missing `Vec3` direction constants (FORWARD, UP, RIGHT, etc.)~~ — Fixed in b7089dd. Added FORWARD/BACK/UP/DOWN/RIGHT/LEFT to Vec3.
 - **Crate:** katla_math
 - **Issue:** Common direction constants needed in a 3D engine are missing.
 - **Fix:** Add `pub const FORWARD/UP/RIGHT/LEFT/BACK/DOWN`.
@@ -346,7 +346,7 @@
 - **Issue:** Zero tests. Basic smoke tests would catch the 4 wrong codepoints.
 - **Fix:** Add tests verifying all codepoints are in valid ForkAwesome PUA range (F000-F3FF), no duplicates, `common_icons()` non-empty.
 
-### 74. Add missing angle icons (ANGLE_LEFT, ANGLE_UP, ANGLE_DOWN)
+~~### 74. Add missing angle icons (ANGLE_LEFT, ANGLE_UP, ANGLE_DOWN)~~ — Fixed in b7089dd. Added ANGLE_LEFT, ANGLE_UP, ANGLE_DOWN to ForkAwesome.
 - **Crate:** katla_icons
 - **Issue:** `ANGLE_RIGHT` exists but directional counterparts are missing. Used for submenu indicators.
 - **Fix:** Add `ANGLE_LEFT` (F104), `ANGLE_UP` (F106), `ANGLE_DOWN` (F107).
