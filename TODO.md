@@ -170,11 +170,7 @@
 
 ~~### 36. Replace `unwrap()` with `expect()` in production UI code~~ — Fixed in 8a5e7a0. Replaced 5 unwrap() calls with expect() across basic.rs, scroll_area.rs, glyph_pool.rs.
 
-### 37. Remove deprecated `button_height_*` style fields
-- **Crate:** katla_ui
-- **File:** `src/style.rs` (lines 199-204)
-- **Issue:** `button_height_small`, `button_height_medium`, `toolbar_height` are documented as "deprecated aliases, kept for compatibility". Per AGENTS.md: "No Backwards Compatibility — just remove the old code."
-- **Fix:** Remove these fields and update all usages.
+~~### 37. Remove deprecated `button_height_*` style fields~~ — Removed in dcc28d7. Deleted button_height_small, button_height_medium, toolbar_height from UiStyle and updated all references.
 
 ### 38. `Mat4::create_ortho` parameter order doesn't match standard convention
 - **Crate:** katla_math
@@ -232,11 +228,7 @@
 
 ~~### 49. `katla_derive` uses edition 2021 instead of workspace edition 2024~~ — Fixed in 8a5e7a0. Updated to edition 2024.
 
-### 50. `Barrier::deduce_transition_masks` panics on unsupported layout transitions
-- **Crate:** katla_gfx
-- **File:** `src/barrier.rs`
-- **Issue:** Panics instead of returning a `Result`. Crashes the app during development when adding new rendering passes.
-- **Fix:** Return a `Result` or use conservative fallback masks.
+~~### 50. `Barrier::deduce_transition_masks` panics on unsupported layout transitions~~ — Fixed in dcc28d7. Changed to return Result with warn fallback instead of panic.
 
 ### 51. Panic-based error messages in derive macro instead of `syn::Error`
 - **Crate:** katla_derive
@@ -301,10 +293,7 @@
 
 ~~### 63. Dead `_TAU` constant in placement tools~~ — Fixed in 4486cb4. Removed unused `_TAU` and `PI` import.
 
-### 64. Add `nlerp` to `Quat`
-- **Crate:** katla_math
-- **Issue:** Only `slerp` is available. `nlerp` is a faster approximation commonly used in game engines.
-- **Fix:** Add `pub fn nlerp(self, other: Quat, t: f32) -> Quat`.
+~~### 64. Add `nlerp` to `Quat`~~ — Fixed in dcc28d7. Added nlerp() to both SSE and scalar implementations with tests.
 
 ### 65. Missing `Vec3` direction constants (FORWARD, UP, RIGHT, etc.)
 - **Crate:** katla_math
@@ -334,10 +323,7 @@
 - **File:** `src/world.rs` (line ~251)
 - **Fix:** Accept pre-allocated set as out-parameter, or store reusable buffer in `World`.
 
-### 70. `ComponentRegistry::get` is O(n) linear scan by string comparison
-- **Crate:** katla_ecs
-- **File:** `src/scene_tool/registry.rs`
-- **Fix:** Use `HashMap<&'static str, Entry>` for O(1) lookups.
+~~### 70. `ComponentRegistry::get` is O(n) linear scan by string comparison~~ — Fixed in dcc28d7. Changed from Vec to HashMap for O(1) lookups.
 
 ### 71. Redundant debug particle readback in frame_loop
 - **Crate:** katla_app
