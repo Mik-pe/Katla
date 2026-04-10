@@ -5,6 +5,7 @@
 //! are no longer referenced.
 
 use std::any::TypeId;
+use std::collections::HashSet;
 
 use crate::components::DrawableComponent;
 use crate::gpu_resource_tracker::GpuResourceTracker;
@@ -23,7 +24,7 @@ pub fn process_gpu_cleanup_events(
     tracker: &mut GpuResourceTracker,
     renderer: &mut katla_gfx::renderer::VulkanRenderer,
 ) {
-    let destroyed_entities: Vec<_> = world
+    let destroyed_entities: HashSet<_> = world
         .entity_events()
         .iter()
         .filter_map(|event| {

@@ -36,6 +36,7 @@ impl Default for Mat3 {
 
 impl Mat3 {
     /// Create a 3x3 identity matrix
+    #[inline]
     pub fn identity() -> Mat3 {
         Mat3([
             Vec3::new(1.0, 0.0, 0.0),
@@ -78,6 +79,7 @@ impl Mat3 {
     }
 
     /// Multiply two 3x3 matrices
+    #[inline]
     pub fn mul(&self, rhs: &Mat3) -> Mat3 {
         Mat3([
             Vec3::new(
@@ -99,6 +101,7 @@ impl Mat3 {
     }
 
     /// Transpose the matrix
+    #[inline]
     pub fn transpose(&self) -> Mat3 {
         Mat3([
             Vec3::new(self[0][0], self[1][0], self[2][0]),
@@ -116,6 +119,7 @@ impl Mat3 {
 
     /// Calculate the inverse of the matrix
     /// Returns None if the matrix is singular (determinant is 0)
+    #[inline]
     pub fn inverse(&self) -> Option<Mat3> {
         let det = self.determinant();
         if det.abs() < 1e-6 {
@@ -211,6 +215,7 @@ impl From<Quat> for Mat3 {
 
 impl Mat3 {
     /// Convert 3x3 matrix to 4x4 matrix (embed in upper-left)
+    #[inline]
     pub fn to_mat4(&self) -> crate::Mat4 {
         crate::Mat4([
             crate::Vec4::new(self[0][0], self[0][1], self[0][2], 0.0),

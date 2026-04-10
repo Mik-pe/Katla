@@ -655,6 +655,15 @@ impl OutlineSubsystem {
             }
             self.params_descriptor_layout = vk::DescriptorSetLayout::null();
         }
+
+        self.stencil_mark_pipeline = PipelineHandle::NONE;
+        self.stencil_mark_skinned_pipeline = PipelineHandle::NONE;
+        self.occlusion_mark_pipeline = PipelineHandle::NONE;
+        self.occlusion_mark_skinned_pipeline = PipelineHandle::NONE;
+        self.outline_draw_pipeline = PipelineHandle::NONE;
+        self.outline_draw_skinned_pipeline = PipelineHandle::NONE;
+        self.stencil_indicator_pipeline = PipelineHandle::NONE;
+        self.stencil_indicator_skinned_pipeline = PipelineHandle::NONE;
     }
 }
 
