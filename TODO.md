@@ -36,11 +36,7 @@
 - **Issue:** The positive/negative corner selection only checks `normal.x() >= 0` and ignores the Y/Z sign of the normal. For normals like `(1, -1, 0)`, the test corners are wrong. The `frustum.rs::intersects_aabb` does this correctly.
 - **Fix:** Build positive/negative corners component-wise: for each axis, use `center + extent` if `normal[i] >= 0`, else `center - extent`.
 
-### 12. `Quat::slerp` doesn't handle quaternion double-cover (negation equivalence)
-- **Crate:** katla_math
-- **Files:** `src/sse/quat.rs`, `src/scalar/quat.rs`
-- **Issue:** When the dot product of the two quaternions is negative, `slerp` takes the "long way" around the 4D sphere instead of the shortest path. Standard practice is to negate one quaternion if dot < 0.
-- **Fix:** Add `if dot < 0.0 { b = -b; dot = -dot; }` after computing the dot product.
+~~### 12. `Quat::slerp` doesn't handle quaternion double-cover (negation equivalence)~~ — Fixed in 4486cb4. Added negation check in both SSE and scalar implementations.
 
 ### 13. `Mat4::inverse()` panics on singular matrices (produces NaN/inf)
 - **Crate:** katla_math
@@ -66,11 +62,7 @@
 - **Issue:** `frame_count += 1` is inside the `if let Some(max) = self.info.max_frames` block. In normal infinite mode, `frame_count` stays 0 forever, affecting FPS counters, UI display, and any frame-count-dependent logic.
 - **Fix:** Move `self.frame_count += 1` outside the `max_frames` guard.
 
-### 17. `RadioButton` builder ignores `id` field
-- **Crate:** katla_ui
-- **File:** `src/widgets/mod.rs` (~line 620)
-- **Issue:** `radio_button()` passes `self.label` as both the widget `id` and display `label`. The `self.id` field is never used. Two radio buttons with the same label in different groups will collide IDs.
-- **Fix:** Use `self.id.unwrap_or(self.label)` for the first argument.
+~~### 17. `RadioButton` builder ignores `id` field~~ — Fixed in 4486cb4. Added optional `id` field with `unwrap_or(label)` fallback.
 
 ### 18. `i64`/`u64` types get `FieldKind::Int` but no typed `FieldMut` accessor
 - **Crate:** katla_derive / katla_ecs
@@ -254,11 +246,7 @@
 - **Issue:** Always returns `TextureHandle::new(0)` (default white texture). Transient frame graph textures can't be wrapped for UI rendering.
 - **Fix:** Implement properly or remove the stub.
 
-### 48. Stale TODO comments in renderer module
-- **Crate:** katla_gfx
-- **File:** `src/renderer/mod.rs` (lines 6-7)
-- **Issue:** Two TODOs reference extracting viewport and UI code, but this has already been done.
-- **Fix:** Remove stale TODOs.
+~~### 48. Stale TODO comments in renderer module~~ — Fixed in 4486cb4. Removed stale viewport/ui extraction TODOs.
 
 ### 49. `katla_derive` uses edition 2021 instead of workspace edition 2024
 - **Crate:** katla_derive
@@ -331,56 +319,63 @@
 - **File:** `src/tools/templates.rs` (lines 58-63)
 - **Fix:** Add `("forest_clearing", "Ring of trees around a clearing")` to the list.
 
-### 61. Dead `_TAU` constant in placement tools
+### 61. AI LLM should not be able to delete the editor camera
 - **Crate:** katla_agent
-- **File:** `src/tools/placement.rs` (line 169)
-- **Fix:** Remove `const _TAU`.
+- **Issue:** The AI can issue `SceneOp::DeleteEntity` targeting the editor camera entity, breaking the viewport.
+- **Fix:** Filter out protected entities (editor camera, editor gizmo) from delete/spawn-modify operations in `SceneToolExecutor`.
 
-### 62. Add `nlerp` to `Quat`
+### 62. AI-spawned cubes don't appear in the 3D scene or hierarchy view
+- **Crate:** katla_agent / katla_app
+- **Issue:** When the AI tries spawning cubes via `SceneOp::SpawnEntity`, the entities are created but never render in the 3D viewport or show in the hierarchy panel. Likely missing component registration, transform initialization, or the entities aren't being added to the render/world correctly.
+- **Fix:** Debug the spawn path end-to-end: verify the entity gets all required components (Transform, Mesh, Material), is registered in the render world, and appears in hierarchy queries.
+
+~~### 63. Dead `_TAU` constant in placement tools~~ — Fixed in 4486cb4. Removed unused `_TAU` and `PI` import.
+
+### 64. Add `nlerp` to `Quat`
 - **Crate:** katla_math
 - **Issue:** Only `slerp` is available. `nlerp` is a faster approximation commonly used in game engines.
 - **Fix:** Add `pub fn nlerp(self, other: Quat, t: f32) -> Quat`.
 
-### 63. Missing `Vec3` direction constants (FORWARD, UP, RIGHT, etc.)
+### 65. Missing `Vec3` direction constants (FORWARD, UP, RIGHT, etc.)
 - **Crate:** katla_math
 - **Issue:** Common direction constants needed in a 3D engine are missing.
 - **Fix:** Add `pub const FORWARD/UP/RIGHT/LEFT/BACK/DOWN`.
 
-### 64. Missing `AABB`-Sphere intersection test
+### 66. Missing `AABB`-Sphere intersection test
 - **Crate:** katla_math
 - **File:** `src/aabb.rs`
 - **Issue:** Has AABB-AABB test but no AABB-Sphere, needed for frustum culling and broadphase.
 - **Fix:** Add `pub fn intersects_sphere(&self, sphere: &Sphere) -> bool`.
 
-### 65. `Sphere::create_from_verts` allocates unnecessarily
+### 67. `Sphere::create_from_verts` allocates unnecessarily
 - **Crate:** katla_math
 - **File:** `src/sphere.rs`
 - **Issue:** Immediately `.collect()`s into a `Vec<Vec3>`. Could compute bounds in a single pass.
 - **Fix:** Rewrite to compute bounds in single pass without allocation.
 
-### 66. `SparseSet` memory waste with large EntityId gaps
+### 68. `SparseSet` memory waste with large EntityId gaps
 - **Crate:** katla_ecs
 - **File:** `src/sparse_set.rs`
 - **Issue:** Sparse array indexed by entity index. After creating/destroying many entities, the vec grows very large with mostly `None` entries.
 - **Fix:** Use paged/chunked sparse array or `HashMap` fallback for large indices.
 
-### 67. `query_changed` allocates `HashSet<EntityId>` every call
+### 69. `query_changed` allocates `HashSet<EntityId>` every call
 - **Crate:** katla_ecs
 - **File:** `src/world.rs` (line ~251)
 - **Fix:** Accept pre-allocated set as out-parameter, or store reusable buffer in `World`.
 
-### 68. `ComponentRegistry::get` is O(n) linear scan by string comparison
+### 70. `ComponentRegistry::get` is O(n) linear scan by string comparison
 - **Crate:** katla_ecs
 - **File:** `src/scene_tool/registry.rs`
 - **Fix:** Use `HashMap<&'static str, Entry>` for O(1) lookups.
 
-### 69. Redundant debug particle readback in frame_loop
+### 71. Redundant debug particle readback in frame_loop
 - **Crate:** katla_app
 - **File:** `src/application/frame_loop.rs` (lines 136-175)
 - **Issue:** Large `#[cfg(debug_assertions)]` block at frame 10 reads debug data directly, but `renderer.rs` (lines 317-340) also sets up a frame graph readback. The direct read may race with frame graph execution.
 - **Fix:** Remove the direct `read_debug_data()` call, rely on frame graph mechanism.
 
-### 70. `InputMapper` binds `KeyF` to both `Interact` and focus-camera
+### 72. `InputMapper` binds `KeyF` to both `Interact` and focus-camera
 - **Crate:** katla_app
 - **Files:** `src/input/map.rs` (lines 51, 88), `src/application/gizmo.rs` (line 258)
 - **Issue:** Pressing F both triggers `Action::Interact` and focuses camera. `Interact` is a game action that shouldn't fire in the editor viewport.
@@ -390,60 +385,71 @@
 
 ## P4: Nice-to-Have / Future
 
-### 71. Add unit tests for katla_icons (verify ForkAwesome codepoints)
+### 73. Add unit tests for katla_icons (verify ForkAwesome codepoints)
 - **Crate:** katla_icons
 - **Issue:** Zero tests. Basic smoke tests would catch the 4 wrong codepoints.
 - **Fix:** Add tests verifying all codepoints are in valid ForkAwesome PUA range (F000-F3FF), no duplicates, `common_icons()` non-empty.
 
-### 72. Add missing angle icons (ANGLE_LEFT, ANGLE_UP, ANGLE_DOWN)
+### 74. Add missing angle icons (ANGLE_LEFT, ANGLE_UP, ANGLE_DOWN)
 - **Crate:** katla_icons
 - **Issue:** `ANGLE_RIGHT` exists but directional counterparts are missing. Used for submenu indicators.
 - **Fix:** Add `ANGLE_LEFT` (F104), `ANGLE_UP` (F106), `ANGLE_DOWN` (F107).
 
-### 73. Add streaming tests for `CoCreatorAgent` and `AsyncBridge`
+### 75. Add streaming tests for `CoCreatorAgent` and `AsyncBridge`
 - **Crate:** katla_agent
 - **Issue:** The core streaming loop and tool call accumulation are completely untested. `McpBridge` and `KatlaMcpServer` also have zero tests.
 - **Fix:** Add tests with mock provider returning streaming tool call data.
 
-### 74. Add MCP server graceful shutdown and error logging
+### 76. Add MCP server graceful shutdown and error logging
 - **Crate:** katla_agent
 - **File:** `src/mcp.rs` (lines 128-135)
 - **Issue:** No way to signal shutdown. `serve_server` errors silently swallowed.
 - **Fix:** Accept a `CancellationToken`, log errors on failure.
 
-### 75. No keyboard navigation (Tab between widgets)
+### 77. No keyboard navigation (Tab between widgets)
 - **Crate:** katla_ui
 - **Issue:** No tab-order system or focus ring. Only text inputs receive keyboard focus.
 - **Fix:** Implement focus chain with Tab/Shift+Tab navigation.
 
-### 76. `Fast inverse sqrt` uses single Newton-Raphson iteration
+### 78. `Fast inverse sqrt` uses single Newton-Raphson iteration
 - **Crate:** katla_math
 - **File:** `src/utils.rs`
 - **Issue:** ~1% accuracy. Modern CPUs have hardware `rsqrtss` and compilers optimize `1.0/x.sqrt()` better.
 - **Fix:** Add second iteration, or just use `1.0 / x.sqrt()`.
 
-### 77. `utils.rs` duplicates `f32` methods as free functions
+### 79. `utils.rs` duplicates `f32` methods as free functions
 - **Crate:** katla_math
 - **File:** `src/utils.rs`
 - **Issue:** `round()`, `ceil()`, `floor()`, etc. are thin wrappers over `f32` methods with no added value.
 - **Fix:** Remove or document why the free-function form is preferred.
 
-### 78. No archetype-based ECS storage for cache-friendly queries
+### 80. No archetype-based ECS storage for cache-friendly queries
 - **Crate:** katla_ecs
 - **Issue:** Multi-component queries iterate one sparse set and lookup others. Archetype-based storage would be more cache-friendly for common component tuples.
 - **Fix:** Future optimization if query performance becomes a bottleneck.
 
-### 79. `from_rows` naming in `Mat3` is misleading (actually column-major)
+### 81. `from_rows` naming in `Mat3` is misleading (actually column-major)
 - **Crate:** katla_math
 - **File:** `src/mat3.rs`
 - **Fix:** Rename to `from_columns` or document the column-major storage.
 
-### 80. Tooltip convenience method on `Response`
+### 82. Tooltip convenience method on `Response`
 - **Crate:** katla_ui
 - **Issue:** Users must manually check `response.hovered` and call `tooltip()`. A `response.on_hover_tooltip(ui, text)` would be more ergonomic.
 - **Fix:** Add convenience method.
 
-### 81. `collect_draws_with_context` allocates Vec and HashMap every frame
+### 83. `collect_draws_with_context` allocates Vec and HashMap every frame
 - **Crate:** katla_app
 - **File:** `src/application/renderer.rs` (lines 65-120)
 - **Fix:** Reuse buffers between frames by storing on `Application` or `EditorState`.
+
+### 84. Popup panels (preferences, AI chat) close when clicking outside them
+- **Crate:** katla_app
+- **Issue:** Clicking anywhere outside the preferences or AI chat panel dismisses/hides the panel. This is annoying — these are toggleable panels that should stay open until explicitly closed (e.g., via their toggle button or a close action).
+- **Fix:** Remove the click-outside-dismiss behavior for these panels. Only close them via their toggle button, close button, or Escape key.
+
+### 85. Clicks on overlying panels are forwarded to the 3D scene underneath
+- **Crate:** katla_app
+- **File:** `src/application/mod.rs` (input handling / editor UI)
+- **Issue:** When a panel (preferences, AI chat, etc.) is rendered on top of the 3D viewport, clicking on the panel still forwards the click to the 3D scene underneath. This causes unintended camera movement, entity selection, or gizmo interaction.
+- **Fix:** Check if a panel is focused/hovered before forwarding input to the viewport. Consume the click event when a panel is on top.
