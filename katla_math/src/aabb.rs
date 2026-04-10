@@ -1,4 +1,4 @@
-use crate::{Vec3, compute_bounds};
+use crate::{Sphere, Vec3, compute_bounds};
 
 #[derive(Clone, Copy, Debug)]
 pub struct AABB {
@@ -20,6 +20,22 @@ impl AABB {
         }
 
         true
+    }
+
+    #[inline]
+    pub fn intersects_sphere(&self, sphere: &Sphere) -> bool {
+        let min = self.center - self.extent;
+        let max = self.center + self.extent;
+
+        let closest_x = sphere.center[0].clamp(min[0], max[0]);
+        let closest_y = sphere.center[1].clamp(min[1], max[1]);
+        let closest_z = sphere.center[2].clamp(min[2], max[2]);
+
+        let dx = sphere.center[0] - closest_x;
+        let dy = sphere.center[1] - closest_y;
+        let dz = sphere.center[2] - closest_z;
+
+        dx * dx + dy * dy + dz * dz <= sphere.radius * sphere.radius
     }
 
     // This is a helper function to create an AABB from a list of vertices.

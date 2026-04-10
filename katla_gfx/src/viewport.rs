@@ -255,7 +255,7 @@ impl From<DepthFormat> for vk::Format {
 impl From<DepthFormat> for ImageFormat {
     fn from(format: DepthFormat) -> Self {
         match format {
-            DepthFormat::None => ImageFormat::R8G8B8A8Srgb, // Placeholder
+            DepthFormat::None => ImageFormat::Auto,
             DepthFormat::D32Sfloat => ImageFormat::D32Sfloat,
             DepthFormat::D32SfloatS8Uint => ImageFormat::D32SfloatS8Uint,
             DepthFormat::D24UnormS8Uint => ImageFormat::D24UnormS8Uint,

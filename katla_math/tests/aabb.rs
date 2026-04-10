@@ -1,5 +1,4 @@
-use katla_math::AABB;
-use katla_math::Vec3;
+use katla_math::{AABB, Sphere, Vec3};
 
 #[test]
 fn test_expand() {
@@ -66,4 +65,48 @@ fn test_aabb_create_from_verts() {
 
     assert_eq!(aabb.center, Vec3::new(0.0, 0.0, 0.0));
     assert_eq!(aabb.extent, Vec3::new(1.0, 1.0, 1.0));
+}
+
+#[test]
+fn test_aabb_intersects_sphere_inside() {
+    let aabb = AABB {
+        center: Vec3::new(0.0, 0.0, 0.0),
+        extent: Vec3::new(1.0, 1.0, 1.0),
+    };
+    let sphere = Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5);
+
+    assert!(aabb.intersects_sphere(&sphere));
+}
+
+#[test]
+fn test_aabb_intersects_sphere_overlapping() {
+    let aabb = AABB {
+        center: Vec3::new(0.0, 0.0, 0.0),
+        extent: Vec3::new(1.0, 1.0, 1.0),
+    };
+    let sphere = Sphere::new(Vec3::new(2.0, 0.0, 0.0), 1.5);
+
+    assert!(aabb.intersects_sphere(&sphere));
+}
+
+#[test]
+fn test_aabb_does_not_intersect_sphere() {
+    let aabb = AABB {
+        center: Vec3::new(0.0, 0.0, 0.0),
+        extent: Vec3::new(1.0, 1.0, 1.0),
+    };
+    let sphere = Sphere::new(Vec3::new(5.0, 5.0, 5.0), 1.0);
+
+    assert!(!aabb.intersects_sphere(&sphere));
+}
+
+#[test]
+fn test_aabb_intersects_sphere_touching() {
+    let aabb = AABB {
+        center: Vec3::new(0.0, 0.0, 0.0),
+        extent: Vec3::new(1.0, 1.0, 1.0),
+    };
+    let sphere = Sphere::new(Vec3::new(3.0, 0.0, 0.0), 2.0);
+
+    assert!(aabb.intersects_sphere(&sphere));
 }

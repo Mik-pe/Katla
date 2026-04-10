@@ -17,11 +17,11 @@ struct InspectAttr {
     display_name: Option<String>,
 }
 
-fn parse_inspect_attr(field: &Field) -> InspectAttr {
+fn parse_inspect_attr(field: &Field) -> Result<InspectAttr, syn::Error> {
     let mut attr = InspectAttr::default();
 
     for meta_item in field.attrs.iter().filter(|a| a.path().is_ident("inspect")) {
-        let _ = meta_item.parse_nested_meta(|meta| {
+        meta_item.parse_nested_meta(|meta| {
             if meta.path.is_ident("skip") {
                 attr.skip = true;
             } else if meta.path.is_ident("color") {
@@ -33,14 +33,24 @@ fn parse_inspect_attr(field: &Field) -> InspectAttr {
                 let _: syn::Token![,] = content.parse()?;
                 let max_val: Lit = content.parse()?;
                 let min: f32 = match min_val {
-                    Lit::Float(f) => f.base10_parse::<f32>().unwrap(),
-                    Lit::Int(i) => i.base10_parse::<f32>().unwrap(),
-                    _ => panic!("range() expects numeric literals"),
+                    Lit::Float(f) => f.base10_parse::<f32>()?,
+                    Lit::Int(i) => i.base10_parse::<f32>()?,
+                    ref other => {
+                        return Err(syn::Error::new_spanned(
+                            other,
+                            "range() expects numeric literals",
+                        ));
+                    }
                 };
                 let max: f32 = match max_val {
-                    Lit::Float(f) => f.base10_parse::<f32>().unwrap(),
-                    Lit::Int(i) => i.base10_parse::<f32>().unwrap(),
-                    _ => panic!("range() expects numeric literals"),
+                    Lit::Float(f) => f.base10_parse::<f32>()?,
+                    Lit::Int(i) => i.base10_parse::<f32>()?,
+                    ref other => {
+                        return Err(syn::Error::new_spanned(
+                            other,
+                            "range() expects numeric literals",
+                        ));
+                    }
                 };
                 attr.min = Some(min);
                 attr.max = Some(max);
@@ -48,23 +58,43 @@ fn parse_inspect_attr(field: &Field) -> InspectAttr {
                 let val = meta.value()?;
                 let lit: Lit = val.parse()?;
                 match lit {
-                    Lit::Float(f) => attr.speed = Some(f.base10_parse::<f32>().unwrap()),
-                    Lit::Int(i) => attr.speed = Some(i.base10_parse::<f32>().unwrap()),
-                    _ => panic!("speed() expects a numeric literal"),
+                    Lit::Float(f) => attr.speed = Some(f.base10_parse::<f32>()?),
+                    Lit::Int(i) => attr.speed = Some(i.base10_parse::<f32>()?),
+                    ref other => {
+                        return Err(syn::Error::new_spanned(
+                            other,
+                            "speed() expects a numeric literal",
+                        ));
+                    }
                 }
             } else if meta.path.is_ident("display_name") {
                 let val = meta.value()?;
                 let lit: Lit = val.parse()?;
                 match lit {
                     Lit::Str(s) => attr.display_name = Some(s.value()),
-                    _ => panic!("display_name expects a string literal"),
+                    ref other => {
+                        return Err(syn::Error::new_spanned(
+                            other,
+                            "display_name expects a string literal",
+                        ));
+                    }
                 }
+            } else {
+                let ident = meta
+                    .path
+                    .get_ident()
+                    .map(|i| i.to_string())
+                    .unwrap_or_default();
+                return Err(syn::Error::new_spanned(
+                    &meta.path,
+                    format!("unknown inspect attribute: `{ident}`"),
+                ));
             }
             Ok(())
-        });
+        })?;
     }
 
-    attr
+    Ok(attr)
 }
 
 fn make_display_name(field_name: &str) -> String {
@@ -217,7 +247,10 @@ fn generate_inspect_impl(input: &DeriveInput) -> proc_macro2::TokenStream {
             None => continue,
         };
 
-        let attr = parse_inspect_attr(field);
+        let attr = match parse_inspect_attr(field) {
+            Ok(attr) => attr,
+            Err(e) => return e.to_compile_error(),
+        };
 
         if attr.skip {
             continue;

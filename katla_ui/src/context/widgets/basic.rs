@@ -716,41 +716,32 @@ impl UiContext {
         let hovered = self.update_hover(widget_id, bounds);
         let active = self.active_id == Some(widget_id);
 
-        // Draw radio circle as a rectangle border + fill (simplified)
-        let center_x = bounds.min.x() + 10.0;
-        let center_y = bounds.center().y();
+        let center = Vec2::new(bounds.min.x() + 10.0, bounds.center().y());
         let radius = 8.0;
 
-        // Outer circle (border rect)
-        let outer_bounds = Rect2D::from_origin_size(
-            Vec2::new(center_x - radius, center_y - radius),
-            Vec2::new(radius * 2.0, radius * 2.0),
-        );
-        self.draw_rect_border(
-            outer_bounds,
-            Color::TRANSPARENT,
-            if is_selected {
-                self.style.checkbox_check
-            } else if hovered {
-                self.style.text_color
-            } else {
-                self.style.checkbox_border
-            },
-            1.0,
-        );
+        let border_color = if is_selected {
+            self.style.checkbox_check
+        } else if hovered {
+            self.style.text_color
+        } else {
+            self.style.checkbox_border
+        };
 
-        // Inner circle (filled when selected)
+        // Outer ring (filled border circle + inner fill)
+        self.draw_list.set_clip(self.clip_rect());
+        self.draw_list.add_circle(center, radius, border_color, 16);
+        self.draw_list
+            .add_circle(center, radius - 1.0, Color::TRANSPARENT, 16);
+
+        // Inner dot when selected
         if is_selected {
-            let inner_radius = radius * 0.5;
-            let inner_bounds = Rect2D::from_origin_size(
-                Vec2::new(center_x - inner_radius, center_y - inner_radius),
-                Vec2::new(inner_radius * 2.0, inner_radius * 2.0),
-            );
-            self.draw_rect(inner_bounds, self.style.checkbox_check);
+            self.draw_list.set_clip(self.clip_rect());
+            self.draw_list
+                .add_circle(center, radius * 0.5, self.style.checkbox_check, 12);
         }
 
         // Label
-        let label_pos = Vec2::new(center_x + radius + 8.0, bounds.min.y());
+        let label_pos = Vec2::new(center.x() + radius + 8.0, bounds.min.y());
         self.draw_text(
             label,
             label_pos,
