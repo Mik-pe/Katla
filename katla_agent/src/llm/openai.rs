@@ -25,6 +25,8 @@ use crate::config::LlmConfig;
 pub struct OpenAiProvider {
     client: OpenAIClient<OpenAIConfig>,
     model: String,
+    max_tokens: u32,
+    temperature: f32,
 }
 
 impl fmt::Debug for OpenAiProvider {
@@ -42,6 +44,8 @@ impl OpenAiProvider {
         Self {
             client,
             model: model.to_string(),
+            max_tokens: 4096,
+            temperature: 0.7,
         }
     }
 
@@ -53,6 +57,8 @@ impl OpenAiProvider {
         Self {
             client,
             model: model.to_string(),
+            max_tokens: 4096,
+            temperature: 0.7,
         }
     }
 
@@ -73,13 +79,25 @@ impl OpenAiProvider {
         Ok(match config.effective_base_url() {
             Some(url) => Self::with_base_url(&api_key, &config.model, url),
             None => Self::new(&api_key, &config.model),
-        })
+        }
+        .with_max_tokens(config.max_tokens)
+        .with_temperature(config.temperature))
     }
 
     pub fn from_env(model: &str) -> Result<Self, LlmError> {
         let api_key = std::env::var("OPENAI_API_KEY")
             .map_err(|_| LlmError::Config("OPENAI_API_KEY not set".to_string()))?;
         Ok(Self::new(&api_key, model))
+    }
+
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = max_tokens;
+        self
+    }
+
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = temperature;
+        self
     }
 }
 
@@ -97,22 +115,41 @@ fn convert_message(msg: &ChatMessage) -> Result<ChatCompletionRequestMessage, Ll
                 ..Default::default()
             },
         )),
-        super::MessageRole::Assistant => Ok(ChatCompletionRequestMessage::Assistant(
-            async_openai::types::ChatCompletionRequestAssistantMessage {
-                content: Some(
-                    async_openai::types::ChatCompletionRequestAssistantMessageContent::Text(
-                        msg.content.clone(),
+        super::MessageRole::Assistant => {
+            let tool_calls = msg.tool_calls.as_ref().map(|calls| {
+                calls
+                    .iter()
+                    .map(|tc| async_openai::types::ChatCompletionMessageToolCall {
+                        id: tc.id.clone(),
+                        r#type: async_openai::types::ChatCompletionToolType::Function,
+                        function: async_openai::types::FunctionCall {
+                            name: tc.name.clone(),
+                            arguments: tc.arguments.to_string(),
+                        },
+                    })
+                    .collect()
+            });
+            Ok(ChatCompletionRequestMessage::Assistant(
+                async_openai::types::ChatCompletionRequestAssistantMessage {
+                    content: Some(
+                        async_openai::types::ChatCompletionRequestAssistantMessageContent::Text(
+                            msg.content.clone(),
+                        ),
                     ),
-                ),
-                ..Default::default()
-            },
-        )),
-        super::MessageRole::Tool => Ok(ChatCompletionRequestMessage::Tool(
-            ChatCompletionRequestToolMessage {
-                content: ChatCompletionRequestToolMessageContent::Text(msg.content.clone()),
-                ..Default::default()
-            },
-        )),
+                    tool_calls,
+                    ..Default::default()
+                },
+            ))
+        }
+        super::MessageRole::Tool => {
+            let tool_call_id = msg.tool_call_id.clone().unwrap_or_default();
+            Ok(ChatCompletionRequestMessage::Tool(
+                ChatCompletionRequestToolMessage {
+                    content: ChatCompletionRequestToolMessageContent::Text(msg.content.clone()),
+                    tool_call_id,
+                },
+            ))
+        }
     }
 }
 
@@ -146,6 +183,8 @@ impl LlmProvider for OpenAiProvider {
         let mut request = async_openai::types::CreateChatCompletionRequest {
             model: self.model.clone(),
             messages: openai_messages,
+            max_completion_tokens: Some(self.max_tokens),
+            temperature: Some(self.temperature),
             ..Default::default()
         };
 
@@ -192,6 +231,7 @@ impl LlmProvider for OpenAiProvider {
                     role: super::MessageRole::Assistant,
                     content,
                     tool_calls,
+                    tool_call_id: None,
                 },
                 finish_reason,
             })
@@ -217,6 +257,8 @@ impl LlmProvider for OpenAiProvider {
         let mut request = async_openai::types::CreateChatCompletionRequest {
             model: self.model.clone(),
             messages: openai_messages,
+            max_completion_tokens: Some(self.max_tokens),
+            temperature: Some(self.temperature),
             ..Default::default()
         };
 
@@ -276,14 +318,34 @@ fn convert_stream_chunk(
             async_openai::types::FinishReason::Length => FinishReason::Length,
             _ => FinishReason::Stop,
         });
+
+        let tool_call_deltas = choice
+            .delta
+            .tool_calls
+            .as_ref()
+            .map(|calls| {
+                calls
+                    .iter()
+                    .map(|tc| super::ToolCallDelta {
+                        index: tc.index as usize,
+                        id: tc.id.clone(),
+                        name: tc.function.as_ref().and_then(|f| f.name.clone()),
+                        arguments_delta: tc.function.as_ref().and_then(|f| f.arguments.clone()),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Ok(StreamChunk {
             content_delta,
             finish_reason,
+            tool_call_deltas,
         })
     } else {
         Ok(StreamChunk {
             content_delta: String::new(),
             finish_reason: None,
+            tool_call_deltas: Vec::new(),
         })
     }
 }

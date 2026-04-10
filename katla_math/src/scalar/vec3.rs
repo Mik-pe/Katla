@@ -19,6 +19,12 @@ impl Vec3 {
     pub const X_AXIS: Vec3 = Vec3([1.0, 0.0, 0.0, 0.0]);
     pub const Y_AXIS: Vec3 = Vec3([0.0, 1.0, 0.0, 0.0]);
     pub const Z_AXIS: Vec3 = Vec3([0.0, 0.0, 1.0, 0.0]);
+    pub const FORWARD: Vec3 = Vec3([0.0, 0.0, -1.0, 0.0]);
+    pub const BACK: Vec3 = Vec3([0.0, 0.0, 1.0, 0.0]);
+    pub const UP: Vec3 = Vec3([0.0, 1.0, 0.0, 0.0]);
+    pub const DOWN: Vec3 = Vec3([0.0, -1.0, 0.0, 0.0]);
+    pub const RIGHT: Vec3 = Vec3([1.0, 0.0, 0.0, 0.0]);
+    pub const LEFT: Vec3 = Vec3([-1.0, 0.0, 0.0, 0.0]);
 
     #[inline]
     pub fn new(x: f32, y: f32, z: f32) -> Vec3 {
