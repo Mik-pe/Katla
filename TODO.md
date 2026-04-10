@@ -18,11 +18,7 @@
 
 ## P1: Bugs
 
-### 9. UI vertex buffer overflow crash when UI data exceeds 1MB pre-allocation
-- **Crate:** katla_gfx
-- **Files:** `src/renderer/mod.rs` (line 82 — `VertexBuffer::new(context, 1024*1024, 65536)`), `src/render_graph/frame/ui_rendering.rs` (line 128 — `vb.upload_data(vertex_bytes)`)
-- **Issue:** `UiFrameResources::new()` pre-allocates 1MB vertex and index buffers. When `upload_data()` receives data larger than `buf_size`, it panics with "Too little memory allocated for buffer of size N". Complex UIs with many draw calls can easily exceed 1MB.
-- **Fix:** Add resize logic in `get_or_update_ui_buffers()` — when data exceeds buffer capacity, destroy and recreate the buffer with 2x the required size.
+~~### 9. UI vertex buffer overflow crash when UI data exceeds 1MB pre-allocation~~ — Fixed in 37b3dbc. BufferObject auto-resizes with 2x growth on overflow.
 
 ~~### 10. `Mat2::mul()` has incorrect matrix multiplication indices~~ — Fixed in c3f7b51.
 - **Crate:** katla_math
@@ -38,11 +34,7 @@
 
 ~~### 12. `Quat::slerp` doesn't handle quaternion double-cover (negation equivalence)~~ — Fixed in 4486cb4. Added negation check in both SSE and scalar implementations.
 
-### 13. `Mat4::inverse()` panics on singular matrices (produces NaN/inf)
-- **Crate:** katla_math
-- **File:** `src/mat4.rs`
-- **Issue:** `Mat2::inverse()` and `Mat3::inverse()` correctly return `Option<Mat>` but `Mat4::inverse()` returns `Self` unconditionally, dividing by determinant=0.
-- **Fix:** Change to return `Option<Mat4>` and check `det.abs() < epsilon`.
+~~### 13. `Mat4::inverse()` panics on singular matrices (produces NaN/inf)~~ — Fixed in 37b3dbc. Now returns `Option<Mat4>` matching Mat3::inverse() pattern.
 
 ~~### 14. Transfer queue hardcoded to family index 0~~ — Fixed in b1b222f. Uses queue_indices.transfer_idx.unwrap_or(graphics_queue_idx).
 - **Crate:** katla_gfx
@@ -368,10 +360,7 @@
 - **Issue:** Multi-component queries iterate one sparse set and lookup others. Archetype-based storage would be more cache-friendly for common component tuples.
 - **Fix:** Future optimization if query performance becomes a bottleneck.
 
-### 81. `from_rows` naming in `Mat3` is misleading (actually column-major)
-- **Crate:** katla_math
-- **File:** `src/mat3.rs`
-- **Fix:** Rename to `from_columns` or document the column-major storage.
+~~### 81. `from_rows` naming in `Mat3` is misleading (actually column-major)~~ — Fixed in 37b3dbc. Renamed to `from_columns`.
 
 ### 82. Tooltip convenience method on `Response`
 - **Crate:** katla_ui
