@@ -136,10 +136,7 @@
 - **Issue:** `get_kerning()` always returns 0.0 with a TODO comment. Character pairs like "AV", "To" have incorrect spacing.
 - **Fix:** Implement GPOS kerning via skrifa's API.
 
-### 31. Selection clearing via Escape key
-- **Crate:** katla_app
-- **Issue:** No keyboard shortcut to deselect the current entity selection. Users must click empty space.
-- **Fix:** Bind Escape to clear selection when viewport is focused and an entity is selected.
+~~### 31. Selection clearing via Escape key~~ — False positive. Already implemented at `layout.rs:135`: `self.selected_entity = None` on Escape key press.
 
 ### 32. `pace` keybinding / camera speed control
 - **Crate:** katla_app
@@ -164,11 +161,7 @@
 
 ~~### 39. `Mat4::create_proj` semantics unclear (infinite reverse-Z, no `far` parameter)~~ — Fixed in 9ff0698. Renamed to `create_proj_reverse_z` to communicate infinite reverse-Z semantics.
 
-### 40. `Quat::inverse()` is actually `conjugate()` — misleading for non-unit quaternions
-- **Crate:** katla_math
-- **Files:** `src/sse/quat.rs`, `src/scalar/quat.rs`
-- **Issue:** `inverse()` returns `conjugate()` which is only correct for unit quaternions.
-- **Fix:** Rename to `inverse_unit()` or divide by `length_squared()`. Document the precondition.
+~~### 40. `Quat::inverse()` is actually `conjugate()` — misleading for non-unit quaternions~~ — Fixed in 13b353e. Renamed to `conjugate_unit()` with doc comment clarifying unit-quat precondition.
 
 ~~### 41. `AABB` missing `Copy` derive~~ — Fixed in c3f7b51. Added Copy derive.
 - **Crate:** katla_math
@@ -186,11 +179,7 @@
 
 ~~### 44. `DrawCall::instances` is a `Vec<InstanceData>` — heap allocation per draw call~~ — Fixed in f74b05c. Changed to SmallVec<[InstanceData; 1]> to avoid heap allocation for single-instance draws.
 
-### 45. Unused transfer queue infrastructure
-- **Crate:** katla_gfx
-- **File:** `src/vulkan/context/mod.rs`
-- **Issue:** A `transfer_queue` and `transfer_command_pool` are created but never used. All transfers go through the graphics queue.
-- **Fix:** Either use the transfer queue for staging copies, or remove the dead infrastructure.
+~~### 45. Unused transfer queue infrastructure~~ — False positive. Transfer queue and command pool are used by `picking.rs` and `readback.rs` for GPU readback operations.
 
 ~~### 46. `OutlineSubsystem::destroy` doesn't zero out pipeline handles~~ — Fixed in 6a186a1. All 8 pipeline handles zeroed in destroy().
 
@@ -256,6 +245,14 @@
 - **Crate:** katla_agent
 - **File:** `src/tools/templates.rs` (lines 58-63)
 - **Fix:** Add `("forest_clearing", "Ring of trees around a clearing")` to the list.
+
+### 88. AI assistant cannot read or set generic component attributes
+- **Crate:** katla_agent
+- **Issue:** The AI has no tools to read or modify generic attributes on existing components, such as mesh colors, textures, or material properties. It can spawn entities with templates but cannot inspect or mutate individual fields on already-placed components. Without a read/get tool, the AI also lacks the schema knowledge of which attributes exist and what parameter types they expect.
+- **Fix:** Add two scene ops / tools:
+  - `GetComponentAttributes(entity_id, component_name)` — returns the list of settable fields, their types, and current values for a given component on an entity.
+  - `SetComponentAttribute(entity_id, component_name, field_path, value)` — mutates a single field on an existing component.
+  Both should leverage the existing inspector/`#[inspect]` infrastructure to discover fields and types.
 
 ### 61. AI LLM should not be able to delete the editor camera
 - **Crate:** katla_agent
@@ -337,11 +334,7 @@
 
 ~~### 78. `Fast inverse sqrt` uses single Newton-Raphson iteration~~ — Fixed in f74b05c. Added second iteration for ~0.1% accuracy.
 
-### 79. `utils.rs` duplicates `f32` methods as free functions
-- **Crate:** katla_math
-- **File:** `src/utils.rs`
-- **Issue:** `round()`, `ceil()`, `floor()`, etc. are thin wrappers over `f32` methods with no added value.
-- **Fix:** Remove or document why the free-function form is preferred.
+~~### 79. `utils.rs` duplicates `f32` methods as free functions~~ — Fixed in 13b353e. Removed 40 unused utility functions, kept only `compute_bounds()`.
 
 ### 80. No archetype-based ECS storage for cache-friendly queries
 - **Crate:** katla_ecs
