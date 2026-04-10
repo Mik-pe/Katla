@@ -88,6 +88,9 @@ impl ForkAwesome {
     pub const CARET_RIGHT: char = '\u{F0DA}';
     /// Angle Right icon - for submenu indicators
     pub const ANGLE_RIGHT: char = '\u{F105}';
+    pub const ANGLE_LEFT: char = '\u{F104}';
+    pub const ANGLE_UP: char = '\u{F106}';
+    pub const ANGLE_DOWN: char = '\u{F107}';
     /// Expand/Arrows Alt icon
     pub const EXPAND: char = '\u{F0B2}';
     /// Compress icon
