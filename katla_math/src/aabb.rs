@@ -1,6 +1,6 @@
 use crate::{Vec3, compute_bounds};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct AABB {
     pub center: Vec3,
     pub extent: Vec3,

@@ -54,14 +54,16 @@ impl Mat2 {
     /// Multiply two 2x2 matrices
     #[inline]
     pub fn mul(&self, rhs: &Mat2) -> Mat2 {
+        // Standard matrix multiplication with column-major storage m[col][row]
+        // result[col][row] = sum over k of self[k][row] * rhs[col][k]
         Mat2([
             Vec2::new(
-                self[0][0] * rhs[0][0] + self[1][0] * rhs[1][0],
-                self[0][1] * rhs[0][0] + self[1][1] * rhs[1][0],
+                self[0][0] * rhs[0][0] + self[1][0] * rhs[0][1],
+                self[0][1] * rhs[0][0] + self[1][1] * rhs[0][1],
             ),
             Vec2::new(
-                self[0][0] * rhs[0][1] + self[1][0] * rhs[1][1],
-                self[0][1] * rhs[0][1] + self[1][1] * rhs[1][1],
+                self[0][0] * rhs[1][0] + self[1][0] * rhs[1][1],
+                self[0][1] * rhs[1][0] + self[1][1] * rhs[1][1],
             ),
         ])
     }
