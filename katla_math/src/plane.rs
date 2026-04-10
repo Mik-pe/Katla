@@ -67,34 +67,46 @@ impl Plane {
 
     /// Check if the plane intersects an AABB
     pub fn intersects_aabb(&self, aabb: &AABB) -> bool {
-        // Get the positive and negative corners based on the plane normal
-        let (positive, negative) = if self.normal.x() >= 0.0 {
-            (
-                Vec3::new(
-                    aabb.center.x() + aabb.extent.x(),
-                    aabb.center.y() + aabb.extent.y(),
-                    aabb.center.z() + aabb.extent.z(),
-                ),
-                Vec3::new(
-                    aabb.center.x() - aabb.extent.x(),
-                    aabb.center.y() - aabb.extent.y(),
-                    aabb.center.z() - aabb.extent.z(),
-                ),
-            )
-        } else {
-            (
-                Vec3::new(
-                    aabb.center.x() - aabb.extent.x(),
-                    aabb.center.y() + aabb.extent.y(),
-                    aabb.center.z() + aabb.extent.z(),
-                ),
-                Vec3::new(
-                    aabb.center.x() + aabb.extent.x(),
-                    aabb.center.y() - aabb.extent.y(),
-                    aabb.center.z() - aabb.extent.z(),
-                ),
-            )
-        };
+        let positive = Vec3::new(
+            aabb.center.x()
+                + if self.normal.x() >= 0.0 {
+                    aabb.extent.x()
+                } else {
+                    -aabb.extent.x()
+                },
+            aabb.center.y()
+                + if self.normal.y() >= 0.0 {
+                    aabb.extent.y()
+                } else {
+                    -aabb.extent.y()
+                },
+            aabb.center.z()
+                + if self.normal.z() >= 0.0 {
+                    aabb.extent.z()
+                } else {
+                    -aabb.extent.z()
+                },
+        );
+        let negative = Vec3::new(
+            aabb.center.x()
+                - if self.normal.x() >= 0.0 {
+                    aabb.extent.x()
+                } else {
+                    -aabb.extent.x()
+                },
+            aabb.center.y()
+                - if self.normal.y() >= 0.0 {
+                    aabb.extent.y()
+                } else {
+                    -aabb.extent.y()
+                },
+            aabb.center.z()
+                - if self.normal.z() >= 0.0 {
+                    aabb.extent.z()
+                } else {
+                    -aabb.extent.z()
+                },
+        );
 
         let pos_dist = self.distance_to_point(positive);
         let neg_dist = self.distance_to_point(negative);

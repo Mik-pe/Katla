@@ -274,8 +274,9 @@ impl Application {
         }
 
         // Handle max_frames limit (after readback to ensure last frame's readback is queued)
+        self.frame_count += 1;
+
         if let Some(max) = self.info.max_frames {
-            self.frame_count += 1;
             if self.frame_count >= max {
                 info!("Rendered {} frames, exiting", self.frame_count);
                 // Call cleanup directly since exiting() may not be triggered
