@@ -5,7 +5,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Field, Fields, Lit, Type, TypePath};
+use syn::{Data, DeriveInput, Field, Fields, Lit, Type, TypePath, parse_macro_input};
 
 #[derive(Default)]
 struct InspectAttr {

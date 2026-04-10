@@ -25,6 +25,16 @@ const SHUFFLE_W: i32 = 0b11_11_11_11; // Broadcast element 3 (w)
 #[repr(C, align(16))]
 pub struct Quat(pub __m128);
 
+impl PartialEq for Quat {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        unsafe {
+            let cmp = _mm_cmpeq_ps(self.0, other.0);
+            _mm_movemask_ps(cmp) == 0b1111
+        }
+    }
+}
+
 impl Index<usize> for Quat {
     type Output = f32;
 

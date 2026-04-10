@@ -183,6 +183,7 @@ impl UiContext {
     }
 
     /// Measure text dimensions in logical pixels.
+    #[inline]
     pub fn measure_text(&self, text: &str, size: f32) -> Vec2 {
         self.fonts
             .measure_text(self.current_font, text, size, self.scale_factor)
@@ -191,6 +192,7 @@ impl UiContext {
     /// Get the font ascent (baseline to font top) in logical pixels.
     ///
     /// This is needed for proper text positioning.
+    #[inline]
     pub(crate) fn font_ascent(&self, size: f32) -> f32 {
         self.fonts
             .get_font_metrics(self.current_font, size, self.scale_factor)
@@ -201,6 +203,7 @@ impl UiContext {
     /// Get the line height for a font size (ascent - descent + small gap).
     ///
     /// This is used for multiline text spacing.
+    #[inline]
     pub(crate) fn line_height(&self, size: f32) -> f32 {
         self.fonts
             .get_font_metrics(self.current_font, size, self.scale_factor)

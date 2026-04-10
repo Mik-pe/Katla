@@ -334,20 +334,29 @@ impl UiContext {
                     }
                     best_offset
                 };
-                let state = self.text_input_states.get_mut(&widget_id).unwrap();
+                let state = self
+                    .text_input_states
+                    .get_mut(&widget_id)
+                    .expect("text input state must exist after insertion");
                 state.cursor = click_pos;
                 state.selection_anchor = click_pos;
             }
 
             if clear_clicked {
-                let state = self.text_input_states.get_mut(&widget_id).unwrap();
+                let state = self
+                    .text_input_states
+                    .get_mut(&widget_id)
+                    .expect("text input state must exist after insertion");
                 state.clear();
             }
 
             // Handle keyboard input when focused
             if focused {
                 self.input.want_capture_keyboard = true;
-                let state = self.text_input_states.get_mut(&widget_id).unwrap();
+                let state = self
+                    .text_input_states
+                    .get_mut(&widget_id)
+                    .expect("text input state must exist after insertion");
 
                 // Helper: delete selection
                 let delete_selection =
