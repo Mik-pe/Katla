@@ -107,11 +107,7 @@
 - **Issue:** History grows unbounded. No truncation, no token counting, no pruning of old messages. Long sessions will hit context window limits or cost excessive tokens.
 - **Fix:** Add `clear_history()`, `truncate_history(max_messages)`, and a token budget system.
 
-### 26. No timeout on LLM requests
-- **Crate:** katla_agent
-- **Files:** `src/runtime.rs`, `src/llm/openai.rs`
-- **Issue:** `LlmError::Timeout` exists but is never used. If the LLM provider hangs, the pending request never completes.
-- **Fix:** Wrap async calls with `tokio::time::timeout()`.
+~~### 26. No timeout on LLM requests~~ — Fixed in 16568d0. `submit_chat` wrapped with 120s timeout, `submit_chat_stream` with 30s per-chunk timeout.
 
 ### 27. No parent-child entity hierarchy in ECS
 - **Crate:** katla_ecs
@@ -130,7 +126,7 @@
 - **Issue:** `FieldKind` has variants for `Struct`, `Enum`, `Vec`, `EntityRef` but the derive macro has no attributes to annotate fields with these kinds. They silently become `FieldKind::Unknown`.
 - **Fix:** Add `#[inspect(enum)]`, `#[inspect(struct)]`, `#[inspect(vec)]`, `#[inspect(entity_ref)]` attribute support.
 
-### 30. Text kerning not implemented (returns 0.0)
+~~### 30. Text kerning not implemented (returns 0.0)~~ — Fixed in 16568d0. Implemented kern table lookup via skrifa with Format 0 and Format 2 subtable support.
 - **Crate:** katla_ui
 - **File:** `src/text/measurement.rs` (line 33)
 - **Issue:** `get_kerning()` always returns 0.0 with a TODO comment. Character pairs like "AV", "To" have incorrect spacing.
@@ -209,7 +205,7 @@
 - **Issue:** `save_scene()` always sets both `created_at` and `modified_at` to now. Original creation time is lost.
 - **Fix:** Preserve original `created_at` across saves.
 
-### 54. `apply_inspector_slider_changes` pushes duplicate EditorActions every frame during drag
+~~### 54. `apply_inspector_slider_changes` pushes duplicate EditorActions every frame during drag~~ — Fixed in 16568d0. Removed redundant EditorAction pushes; ECS components are now mutated directly during drag.
 - **Crate:** katla_app
 - **File:** `src/application/editor/mod.rs` (lines 159-244)
 - **Issue:** ~120 identical `EditorAction::UpdateTransform` actions during a 2-second slider drag at 60fps. All are processed redundantly.
@@ -325,7 +321,7 @@
 
 ~~### 82. Tooltip convenience method on `Response`~~ — Fixed in a4067ef. Added `Response::on_hover_tooltip(ui, text)`.
 
-~~### 83. `collect_draws_with_context` allocates Vec and HashMap every frame~~ — Fixed in b96aee7. Added reusable draw_entity_map_entries buffer on EditorState.
+~~### 83. `collect_draws_with_context` allocates Vec and HashMap every frame~~ — Fixed in b96aee7 + 16568d0. Added reusable draw_entity_map_entries buffer on EditorState and point_lights_buffer on Application.
 - **Crate:** katla_app
 - **File:** `src/application/renderer.rs` (lines 65-120)
 - **Fix:** Reuse buffers between frames by storing on `Application` or `EditorState`.
