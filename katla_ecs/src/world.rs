@@ -7,6 +7,7 @@ use crate::resource::ResourceStorage;
 use crate::storage::ComponentStorageManager;
 use crate::system::{OrderedSystem, System, SystemExecutionOrder};
 use std::cell::UnsafeCell;
+use std::collections::HashSet;
 
 /// World is the central manager for the ECS framework.
 ///
@@ -45,6 +46,8 @@ pub struct World {
     entity_events: Vec<EntityEvent>,
     /// Component events emitted during the current frame
     component_events: Vec<ComponentEvent>,
+    /// Reusable buffer for query_changed to avoid per-frame allocation
+    changed_ids_buffer: HashSet<EntityId>,
 }
 
 impl World {
@@ -57,6 +60,7 @@ impl World {
             resources: ResourceStorage::new(),
             entity_events: Vec::new(),
             component_events: Vec::new(),
+            changed_ids_buffer: HashSet::new(),
         }
     }
 
@@ -283,12 +287,14 @@ impl World {
         Q: crate::query::QueryData,
     {
         let type_ids = Q::type_ids_for_changed();
-        let changed_ids: std::collections::HashSet<EntityId> =
-            self.storage.get_mut().collect_changed_entity_ids(&type_ids);
+        self.changed_ids_buffer.clear();
+        self.storage
+            .get_mut()
+            .collect_changed_entity_ids_into(&type_ids, &mut self.changed_ids_buffer);
 
         QueryChangedIter {
             inner: self.storage.get_mut().query::<Q>(),
-            changed_ids,
+            changed_ids: std::mem::take(&mut self.changed_ids_buffer),
         }
     }
 
@@ -535,7 +541,7 @@ impl Drop for World {
 /// component types have been mutated (union semantics).
 pub struct QueryChangedIter<'a, Q: crate::query::QueryData> {
     inner: Q::Iter<'a>,
-    changed_ids: std::collections::HashSet<EntityId>,
+    changed_ids: HashSet<EntityId>,
 }
 
 impl<'a, Q: crate::query::QueryData> Iterator for QueryChangedIter<'a, Q> {

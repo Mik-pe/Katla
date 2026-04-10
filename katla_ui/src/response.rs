@@ -1,5 +1,6 @@
 use katla_math::{Rect2D, Vec2};
 
+use crate::context::UiContext;
 use crate::input::{UiInputState, mouse_button};
 
 /// Response from a widget interaction.
@@ -18,9 +19,7 @@ use crate::input::{UiInputState, mouse_button};
 /// if resp.double_clicked() {
 ///     // Handle double-click
 /// }
-/// if resp.hovered {
-///     ui.tooltip("Click this button");
-/// }
+/// resp.on_hover_tooltip(ui, "Click this button");
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Response {
@@ -107,6 +106,13 @@ impl Response {
     /// Check if the widget is being dragged.
     pub fn is_dragging(&self) -> bool {
         self.active && (self.drag_delta.x().abs() > 0.0 || self.drag_delta.y().abs() > 0.0)
+    }
+
+    /// Show a tooltip when this widget is hovered.
+    pub fn on_hover_tooltip(self, ui: &mut UiContext, text: &str) {
+        if self.hovered {
+            ui.tooltip(text);
+        }
     }
 
     /// Combine two responses (union of interactions).

@@ -340,21 +340,19 @@ impl ComponentStorageManager {
         }
     }
 
-    /// Collects entity IDs that have been modified since the last `clear_changed()` call.
-    ///
-    /// Iterates only dirty entities in the specified type storages — O(dirty_entities)
-    /// instead of O(all_entities * type_ids).
-    pub(crate) fn collect_changed_entity_ids(
+    /// Collects entity IDs that have been modified since the last `clear_changed()` call
+    /// into an existing `HashSet`, clearing it first.
+    pub(crate) fn collect_changed_entity_ids_into(
         &self,
         type_ids: &[std::any::TypeId],
-    ) -> std::collections::HashSet<EntityId> {
-        let mut changed = std::collections::HashSet::<EntityId>::new();
+        out: &mut std::collections::HashSet<EntityId>,
+    ) {
+        out.clear();
         for &type_id in type_ids {
             if let Some(storage) = self.storages.get(&type_id) {
-                storage.collect_dirty_entity_ids(&mut changed);
+                storage.collect_dirty_entity_ids(out);
             }
         }
-        changed
     }
 
     /// Returns a raw pointer to `self` for use with the `get_two_storage_mut`
