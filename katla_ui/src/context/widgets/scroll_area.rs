@@ -165,7 +165,9 @@ impl UiContext {
         let content_height = content(self);
 
         // Get the state back (it was modified by the closure via scroll_offset, scroll_to_y)
-        let mut state = self.scroll_area_state.unwrap();
+        let mut state = self
+            .scroll_area_state
+            .expect("scroll area state must be set before use");
 
         // Update content height
         let prev_content_height = state.content_height;

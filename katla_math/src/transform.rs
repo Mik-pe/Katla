@@ -2,7 +2,7 @@ use std::ops::Mul;
 
 use crate::{Mat4, Quat, Vec3, Vec4};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Transform {
     pub position: Vec3,
     pub scale: Vec3,

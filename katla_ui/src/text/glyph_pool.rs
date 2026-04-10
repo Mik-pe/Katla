@@ -36,7 +36,10 @@ impl GlyphRenderPool {
             self.ctx = Some((ctx, pix));
         }
 
-        let (ctx, pix) = self.ctx.as_mut().unwrap();
+        let (ctx, pix) = self
+            .ctx
+            .as_mut()
+            .expect("glyph pool must be initialized before use");
 
         // Clear all accumulated rendering state so the context is fresh.
         ctx.reset();

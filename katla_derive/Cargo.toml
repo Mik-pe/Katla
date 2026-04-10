@@ -2,7 +2,7 @@
 name = "katla_derive"
 version = "0.1.0"
 authors = ["Mik-pe <mikael.pettersson201@gmail.com>"]
-edition = "2021"
+edition = "2024"
 
 [lib]
 proc-macro = true

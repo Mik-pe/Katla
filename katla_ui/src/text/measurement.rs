@@ -46,6 +46,7 @@ impl super::FontSystem {
     ///
     /// Returns dimensions in logical pixels.
     /// This method includes kerning between character pairs.
+    #[inline]
     pub fn measure_text(&self, font_id: FontId, text: &str, size: f32, scale_factor: f32) -> Vec2 {
         let font = match self.get_font(font_id) {
             Some(f) => f,
