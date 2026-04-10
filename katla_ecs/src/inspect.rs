@@ -43,6 +43,8 @@ pub enum FieldMut<'a> {
     F64(&'a mut f64),
     I32(&'a mut i32),
     U32(&'a mut u32),
+    I64(&'a mut i64),
+    U64(&'a mut u64),
     Bool(&'a mut bool),
     String(&'a mut String),
     Unknown(&'a mut dyn Any),
