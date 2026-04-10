@@ -1,4 +1,4 @@
-use crate::{Vec3, compute_bounds};
+use crate::Vec3;
 
 const KINDA_SMALL_NUMBER: f32 = 0.00001f32;
 
@@ -36,11 +36,30 @@ impl Sphere {
     where
         I: IntoIterator<Item = &'a [f32; 3]>,
     {
-        let vec3s: Vec<Vec3> = verts
-            .into_iter()
-            .map(|v| Vec3::new(v[0], v[1], v[2]))
-            .collect();
-        let (min, max) = compute_bounds(&vec3s);
+        let mut min = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
+        let mut max = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
+
+        for v in verts {
+            let p = Vec3::new(v[0], v[1], v[2]);
+            if p[0] < min[0] {
+                min[0] = p[0];
+            }
+            if p[1] < min[1] {
+                min[1] = p[1];
+            }
+            if p[2] < min[2] {
+                min[2] = p[2];
+            }
+            if p[0] > max[0] {
+                max[0] = p[0];
+            }
+            if p[1] > max[1] {
+                max[1] = p[1];
+            }
+            if p[2] > max[2] {
+                max[2] = p[2];
+            }
+        }
 
         let extent = (max - min).mul(0.5);
         let center = min + extent;

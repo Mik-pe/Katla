@@ -392,6 +392,7 @@ pub fn fast_inverse_sqrt(x: f32) -> f32 {
     i = 0x5f3759df - (i >> 1);
     let mut y = f32::from_bits(i);
     y = y * (1.5 - (xhalf * y * y));
+    y = y * (1.5 - (xhalf * y * y));
     y
 }
 

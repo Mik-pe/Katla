@@ -89,7 +89,7 @@ impl Mat4 {
         ])
     }
 
-    pub fn create_ortho(bottom: f32, top: f32, left: f32, right: f32, near: f32, far: f32) -> Self {
+    pub fn create_ortho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Self {
         Self([
             Vec4::new(
                 2.0 / (right - left),
