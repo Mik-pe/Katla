@@ -171,7 +171,16 @@ impl Quat {
         a.normalize();
         b.normalize();
 
-        let cs = a.dot(b);
+        let mut cs = a.dot(b);
+        if cs < 0.0 {
+            b = Quat {
+                x: -b.x,
+                y: -b.y,
+                z: -b.z,
+                w: -b.w,
+            };
+            cs = -cs;
+        }
 
         let angle = f32::acos(cs);
         let mut out = Self::identity();
