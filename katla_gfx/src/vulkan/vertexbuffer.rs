@@ -54,6 +54,7 @@ struct BufferObject {
     buf_size: vk::DeviceSize,
     count: u32,
     context: Rc<VulkanContext>,
+    buffer_usage: vk::BufferUsageFlags,
 }
 
 impl Drop for BufferObject {
@@ -73,13 +74,28 @@ pub struct IndexBuffer {
 }
 
 impl BufferObject {
+    fn resize(&mut self, min_size: vk::DeviceSize) {
+        if let Some(allocation) = self.allocation.take() {
+            self.context.free_buffer(self.buffer, allocation);
+        }
+        let new_size = min_size * 2;
+        let create_info = vk::BufferCreateInfo::default()
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .usage(self.buffer_usage)
+            .size(new_size);
+        let (buffer, allocation) = self
+            .context
+            .allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
+            .expect("Failed to resize buffer");
+        self.buffer = buffer;
+        self.allocation = Some(allocation);
+        self.buf_size = new_size;
+    }
+
     fn upload_data(&mut self, data: &[u8]) {
         let data_size = std::mem::size_of_val(data) as vk::DeviceSize;
         if self.buf_size < data_size {
-            panic!(
-                "Too little memory allocated for buffer of size {}",
-                data_size
-            );
+            self.resize(data_size);
         }
         if let Some(allocation) = &self.allocation {
             let mapped_ptr = self
@@ -115,6 +131,7 @@ impl IndexBuffer {
                 buf_size,
                 count,
                 context,
+                buffer_usage: vk::BufferUsageFlags::INDEX_BUFFER,
             }
         };
         Self { buffer, index_type }
@@ -150,6 +167,7 @@ impl VertexBuffer {
                 buf_size,
                 count,
                 context,
+                buffer_usage: vk::BufferUsageFlags::VERTEX_BUFFER,
             }
         };
         Self { buffer }

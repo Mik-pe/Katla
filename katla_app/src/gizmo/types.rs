@@ -310,7 +310,7 @@ pub fn screen_to_ray(
     proj_matrix: &Mat4,
 ) -> (Vec3, Vec3) {
     let vp = *proj_matrix * *view_matrix;
-    let inv_vp = vp.inverse();
+    let inv_vp = vp.inverse().unwrap_or_else(Mat4::identity);
 
     // Convert screen pos to NDC (-1 to 1)
     let ndc_x = ((screen_pos.0 - viewport.0) / viewport.2) * 2.0 - 1.0;

@@ -37,14 +37,25 @@ fn test_mul_associative() {
 #[test]
 fn test_inverse_identity() {
     let identity = Mat4::default();
-    let inv = identity.inverse();
+    let inv = identity.inverse().unwrap();
     assert_eq!(identity, inv);
+}
+
+#[test]
+fn test_inverse_singular() {
+    let m = Mat4([
+        Vec4::new(1.0, 2.0, 3.0, 4.0),
+        Vec4::new(5.0, 6.0, 7.0, 8.0),
+        Vec4::new(9.0, 10.0, 11.0, 12.0),
+        Vec4::new(13.0, 14.0, 15.0, 16.0),
+    ]);
+    assert!(m.inverse().is_none());
 }
 
 #[test]
 fn test_inverse_translation() {
     let m = Mat4::from_translation([5.0, 10.0, 15.0]);
-    let inv = m.inverse();
+    let inv = m.inverse().unwrap();
     let result = m.mul(&inv);
     let identity = Mat4::default();
 
@@ -55,7 +66,7 @@ fn test_inverse_translation() {
 fn test_inverse_rotation() {
     let angle = std::f32::consts::PI / 4.0;
     let m = Mat4::from_rotaxis(&angle, [0.0, 1.0, 0.0]);
-    let inv = m.inverse();
+    let inv = m.inverse().unwrap();
     let result = m.mul(&inv);
     let identity = Mat4::default();
     assert_eq!(identity, result);

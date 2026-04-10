@@ -1101,7 +1101,7 @@ fn unproject_to_ground_plane_impl(
     let ndc_y = ((screen_pos.y() - viewport.min.y()) / viewport.height()) * 2.0 - 1.0;
 
     let vp = proj_mat * view_mat;
-    let inv_vp = vp.inverse();
+    let inv_vp = vp.inverse().unwrap_or_else(katla_math::Mat4::identity);
 
     // Unproject two points at different depths to get the ray direction.
     // Reverse-Z infinite projection: ndc_z=1 is near plane, ndc_z=0 is infinity.
@@ -1171,7 +1171,9 @@ mod tests {
         let rotation = Quat::from_euler(pitch, yaw, 0.0);
         let rotation_mat = rotation.make_mat4();
         let fwd = rotation_mat * Vec3::new(0.0, 0.0, -1.0);
-        Mat4::create_lookat(position, position + fwd, Vec3::new(0.0, 1.0, 0.0)).inverse()
+        Mat4::create_lookat(position, position + fwd, Vec3::new(0.0, 1.0, 0.0))
+            .inverse()
+            .unwrap_or_else(Mat4::identity)
     }
 
     fn make_proj(fov: f32, aspect: f32, near: f32) -> Mat4 {

@@ -157,14 +157,15 @@ impl Mat4 {
             - self[0][3] * self[1][2] * self[2][0] * self[3][1]
     }
 
-    pub fn calc_inv_det(&self) -> f32 {
-        1.0f32 / self.calc_det()
-    }
-
     #[inline]
-    pub fn inverse(&self) -> Self {
-        let inv_det = self.calc_inv_det();
-        Self([
+    pub fn inverse(&self) -> Option<Mat4> {
+        let det = self.calc_det();
+        if det.abs() < 1e-6 {
+            return None;
+        }
+
+        let inv_det = 1.0 / det;
+        Some(Self([
             Vec4::new(
                 (self[1][1] * self[2][2] * self[3][3]
                     + self[1][2] * self[2][3] * self[3][1]
@@ -285,7 +286,7 @@ impl Mat4 {
                     - self[0][2] * self[1][1] * self[2][0])
                     * inv_det,
             ),
-        ])
+        ]))
     }
 
     pub fn from_scale(scale: crate::Vec3) -> Self {
@@ -334,7 +335,7 @@ impl Mat4 {
             (self[2][0] * self[2][0] + self[2][1] * self[2][1] + self[2][2] * self[2][2]).sqrt();
         let scale = crate::Vec3::new(sx, sy, sz);
 
-        let mat3 = crate::Mat3::from_rows(
+        let mat3 = crate::Mat3::from_columns(
             crate::Vec3::new(self[0][0] / sx, self[0][1] / sx, self[0][2] / sx),
             crate::Vec3::new(self[1][0] / sy, self[1][1] / sy, self[1][2] / sy),
             crate::Vec3::new(self[2][0] / sz, self[2][1] / sz, self[2][2] / sz),

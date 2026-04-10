@@ -2,7 +2,7 @@ use katla_math::{Mat3, Mat4, Quat, Vec3};
 
 #[test]
 fn test_mat3_determinant_singular() {
-    let m = Mat3::from_rows(
+    let m = Mat3::from_columns(
         Vec3::new(1.0, 2.0, 3.0),
         Vec3::new(4.0, 5.0, 6.0),
         Vec3::new(7.0, 8.0, 9.0),
@@ -15,7 +15,7 @@ fn test_mat3_determinant_singular() {
 
 #[test]
 fn test_mat3_inverse_singular() {
-    let m = Mat3::from_rows(
+    let m = Mat3::from_columns(
         Vec3::new(1.0, 2.0, 3.0),
         Vec3::new(4.0, 5.0, 6.0),
         Vec3::new(7.0, 8.0, 9.0),
@@ -37,7 +37,7 @@ fn test_mat3_inverse_then_mul_is_identity() {
 
 #[test]
 fn test_mat3_transpose() {
-    let m = Mat3::from_rows(
+    let m = Mat3::from_columns(
         Vec3::new(1.0, 2.0, 3.0),
         Vec3::new(4.0, 5.0, 6.0),
         Vec3::new(7.0, 8.0, 9.0),
@@ -52,7 +52,7 @@ fn test_mat3_transpose() {
 
 #[test]
 fn test_mat3_transpose_twice() {
-    let m = Mat3::from_rows(
+    let m = Mat3::from_columns(
         Vec3::new(1.0, 2.0, 3.0),
         Vec3::new(4.0, 5.0, 6.0),
         Vec3::new(7.0, 8.0, 9.0),
