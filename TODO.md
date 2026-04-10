@@ -44,7 +44,7 @@
 - **Issue:** `Mat2::inverse()` and `Mat3::inverse()` correctly return `Option<Mat>` but `Mat4::inverse()` returns `Self` unconditionally, dividing by determinant=0.
 - **Fix:** Change to return `Option<Mat4>` and check `det.abs() < epsilon`.
 
-### 14. Transfer queue hardcoded to family index 0
+~~### 14. Transfer queue hardcoded to family index 0~~ — Fixed in b1b222f. Uses queue_indices.transfer_idx.unwrap_or(graphics_queue_idx).
 - **Crate:** katla_gfx
 - **File:** `src/vulkan/context/mod.rs` (lines ~213, ~310)
 - **Issue:** `transfer_queue_idx` is hardcoded to `0` instead of using the `transfer_idx` found by `find_queue_families()`. On GPUs where the graphics family index != 0, the transfer command pool will use the wrong queue family.
@@ -76,7 +76,7 @@
 - **Issue:** `let _ = meta_item.parse_nested_meta(...)` discards errors. Invalid `#[inspect(range("bad"))]` syntax silently does nothing.
 - **Fix:** Propagate the error via `syn::Error::new_spanned()`.
 
-### 20. Incorrect ForkAwesome codepoints in katla_icons
+~~### 20. Incorrect ForkAwesome codepoints in katla_icons~~ — Fixed in b1b222f. Remapped to valid ForkAwesome equivalents.
 - **Crate:** katla_icons
 - **File:** `src/lib.rs`
 - **Issue:** `PENCIL_ALT` (F303), `TRASH_ALT` (F2ED), `HAMMER` (F6E3), `RULER_COMBINED/HORIZONTAL/VERTICAL` (F546-F548) are Font Awesome 5+ codepoints that don't exist in ForkAwesome. They render as blank/missing glyphs. Currently unused but will break when used.
@@ -230,7 +230,7 @@
 
 ~~### 50. `Barrier::deduce_transition_masks` panics on unsupported layout transitions~~ — Fixed in dcc28d7. Changed to return Result with warn fallback instead of panic.
 
-### 51. Panic-based error messages in derive macro instead of `syn::Error`
+~~### 51. Panic-based error messages in derive macro instead of `syn::Error`~~ — Fixed in 7014013 (as part of #19). All panic! calls converted to syn::Error::new_spanned().
 - **Crate:** katla_derive
 - **File:** `src/lib.rs` (lines ~50, ~59, ~65, ~68)
 - **Issue:** `panic!("range() expects numeric literals")` etc. produce ugly errors without file/line context.
@@ -242,7 +242,7 @@
 - **Issue:** Semantically wrong placeholder. Could cause incorrect behavior if used.
 - **Fix:** Return `ImageFormat::Auto` or handle `None` at call site.
 
-### 53. `created_at` timestamp always overwritten on scene save
+~~### 53. `created_at` timestamp always overwritten on scene save~~ — Fixed in b1b222f. Preserves original created_at, only updates modified_at.
 - **Crate:** katla_app
 - **File:** `src/scene/serialization.rs` (lines 35-41)
 - **Issue:** `save_scene()` always sets both `created_at` and `modified_at` to now. Original creation time is lost.
