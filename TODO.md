@@ -183,11 +183,7 @@
 
 ~~### 46. `OutlineSubsystem::destroy` doesn't zero out pipeline handles~~ — Fixed in 6a186a1. All 8 pipeline handles zeroed in destroy().
 
-### 47. `TextureManager::from_vulkan_resources()` is a stub returning handle 0
-- **Crate:** katla_gfx
-- **File:** `src/texture/manager.rs` (line ~183)
-- **Issue:** Always returns `TextureHandle::new(0)` (default white texture). Transient frame graph textures can't be wrapped for UI rendering.
-- **Fix:** Implement properly or remove the stub.
+~~### 47. `TextureManager::from_vulkan_resources()` is a stub returning handle 0~~ — Removed in 2659e2e. No callers; proper implementation would require rearchitecting Texture ownership.
 
 ~~### 48. Stale TODO comments in renderer module~~ — Fixed in 4486cb4. Removed stale viewport/ui extraction TODOs.
 
@@ -221,17 +217,9 @@
 
 ~~### 55. `destroyed_entities.contains()` is O(n) per component removal event~~ — Fixed in 6a186a1. Changed Vec to HashSet for O(1) lookups.
 
-### 56. `create_variants` ignores component/field/values parameters
-- **Crate:** katla_agent
-- **File:** `src/tools/tuning.rs` (lines 33-46)
-- **Issue:** Only uses `values.len()` for iteration count. Never actually sets different variant values on duplicates.
-- **Fix:** Return a two-phase operation plan (duplicate, then set field once entity IDs are known).
+~~### 56. `create_variants` ignores component/field/values parameters~~ — Fixed in 2659e2e. Added VariantsPlan struct with two-phase execution (duplicates + field_sets).
 
-### 57. `scatter()` with `min_spacing` returns fewer entities than requested without warning
-- **Crate:** katla_agent
-- **File:** `src/tools/placement.rs` (lines 19-56)
-- **Issue:** Entities too close are silently skipped. The grid is sized for `count` but positions are dropped.
-- **Fix:** Return actual count placed, or retry with adjusted jitter.
+~~### 57. `scatter()` with `min_spacing` returns fewer entities than requested without warning~~ — Fixed in 2659e2e. Added ScatterResult struct reporting count_placed vs count_requested.
 
 ~~### 58. `place_cluster()` radius distribution uses wrong formula~~ — Fixed in 93644a9. Changed cbrt(sqrt(t)) to cbrt(t) for correct t^(1/3).
 
@@ -246,13 +234,15 @@
 - **File:** `src/tools/templates.rs` (lines 58-63)
 - **Fix:** Add `("forest_clearing", "Ring of trees around a clearing")` to the list.
 
-### 88. AI assistant cannot read or set generic component attributes
+### 88. AI assistant cannot query, add, read, or set generic components and attributes
 - **Crate:** katla_agent
-- **Issue:** The AI has no tools to read or modify generic attributes on existing components, such as mesh colors, textures, or material properties. It can spawn entities with templates but cannot inspect or mutate individual fields on already-placed components. Without a read/get tool, the AI also lacks the schema knowledge of which attributes exist and what parameter types they expect.
-- **Fix:** Add two scene ops / tools:
+- **Issue:** The AI has no tools to discover which components exist, add components to entities, or read/modify generic attributes on existing components (e.g. mesh colors, textures, material properties). It can spawn entities with templates but cannot dynamically compose entities or inspect/mutate individual fields. Without discovery and read tools, the AI lacks schema knowledge of which components and attributes are available and what parameter types they expect.
+- **Fix:** Add four scene ops / tools:
+  - `ListAvailableComponents()` — returns all registered component types and their settable fields/types.
+  - `AddComponent(entity_id, component_name)` — adds a component with default values to an existing entity.
   - `GetComponentAttributes(entity_id, component_name)` — returns the list of settable fields, their types, and current values for a given component on an entity.
   - `SetComponentAttribute(entity_id, component_name, field_path, value)` — mutates a single field on an existing component.
-  Both should leverage the existing inspector/`#[inspect]` infrastructure to discover fields and types.
+  All should leverage the existing inspector/`#[inspect]` infrastructure to discover fields and types.
 
 ### 61. AI LLM should not be able to delete the editor camera
 - **Crate:** katla_agent
@@ -296,11 +286,7 @@
 
 ~~### 71. Redundant debug particle readback in frame_loop~~ — Fixed in 9ff0698. Removed direct read_debug_data() call at frame 10, frame graph mechanism handles readback.
 
-### 72. `InputMapper` binds `KeyF` to both `Interact` and focus-camera
-- **Crate:** katla_app
-- **Files:** `src/input/map.rs` (lines 51, 88), `src/application/gizmo.rs` (line 258)
-- **Issue:** Pressing F both triggers `Action::Interact` and focuses camera. `Interact` is a game action that shouldn't fire in the editor viewport.
-- **Fix:** Gate `Action::Interact` on a game-play mode flag, or unmap when editor is active.
+~~### 72. `InputMapper` binds `KeyF` to both `Interact` and focus-camera~~ — Fixed in 2659e2e. Removed KeyF->Interact binding; Interact remains on MouseLeft.
 
 ---
 
