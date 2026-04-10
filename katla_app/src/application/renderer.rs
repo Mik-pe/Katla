@@ -54,7 +54,12 @@ impl Application {
             [0.0, 0.0, 0.0, 1.0]
         };
 
-        let inv_view_proj = (proj_mat * view_mat).inverse();
+        let inv_view_proj = {
+            use katla_math::Mat4;
+            (proj_mat * view_mat)
+                .inverse()
+                .unwrap_or_else(Mat4::identity)
+        };
 
         // Wait for the current frame's previous GPU submission to complete
         // before writing to per-frame storage buffers.

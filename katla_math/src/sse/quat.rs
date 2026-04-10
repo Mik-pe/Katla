@@ -270,7 +270,7 @@ impl Quat {
     pub fn to_mat3(self) -> Mat3 {
         let (m00, m01, m02, m10, m11, m12, m20, m21, m22) = self.rotation_matrix_elements();
 
-        Mat3::from_rows(
+        Mat3::from_columns(
             Vec3::new(m00, m01, m02),
             Vec3::new(m10, m11, m12),
             Vec3::new(m20, m21, m22),

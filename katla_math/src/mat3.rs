@@ -73,9 +73,9 @@ impl Mat3 {
         Self::from_rotation(q)
     }
 
-    /// Create a 3x3 matrix from row vectors.
-    pub fn from_rows(row0: Vec3, row1: Vec3, row2: Vec3) -> Self {
-        Mat3([row0, row1, row2])
+    /// Create a 3x3 matrix from column vectors.
+    pub fn from_columns(col0: Vec3, col1: Vec3, col2: Vec3) -> Self {
+        Mat3([col0, col1, col2])
     }
 
     /// Multiply two 3x3 matrices
