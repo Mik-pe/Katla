@@ -131,9 +131,6 @@ impl ImageBarrier {
     /// | UNDEFINED | DEPTH_STENCIL_ATTACHMENT | TOP_OF_PIPE | EARLY_FRAGMENT_TESTS | NONE | DEPTH_STENCIL_* |
     /// | UNDEFINED | SHADER_READ_ONLY | TOP_OF_PIPE | FRAGMENT_SHADER | NONE | SHADER_READ |
     ///
-    /// # Panics
-    ///
-    /// Panics if the transition is not in the supported table.
     pub fn transition(
         cmd_buffer: &vk::CommandBuffer,
         device: &ash::Device,
@@ -163,7 +160,18 @@ impl ImageBarrier {
         subresource_range: vk::ImageSubresourceRange,
     ) {
         let (src_stage, dst_stage, src_access, dst_access) =
-            Self::deduce_transition_masks(old_layout, new_layout);
+            match Self::deduce_transition_masks(old_layout, new_layout) {
+                Ok(masks) => masks,
+                Err(e) => {
+                    log::warn!("{e}");
+                    (
+                        PipelineStage2Flags::TOP_OF_PIPE,
+                        PipelineStage2Flags::TOP_OF_PIPE,
+                        AccessFlags2::NONE,
+                        AccessFlags2::NONE,
+                    )
+                }
+            };
 
         let barrier = ImageMemoryBarrier2::new(VkImage::new(image))
             .src_stage(src_stage)
@@ -286,191 +294,171 @@ impl ImageBarrier {
     // Internal Helpers
     //=========================================================================
 
-    /// Deduce pipeline stages and access masks for a layout transition.
-    ///
-    /// Returns (src_stage, dst_stage, src_access, dst_access).
     fn deduce_transition_masks(
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
-    ) -> (
-        PipelineStage2Flags,
-        PipelineStage2Flags,
-        AccessFlags2,
-        AccessFlags2,
-    ) {
-        // UNDEFINED -> TRANSFER_DST_OPTIMAL
+    ) -> Result<
+        (
+            PipelineStage2Flags,
+            PipelineStage2Flags,
+            AccessFlags2,
+            AccessFlags2,
+        ),
+        String,
+    > {
         if old_layout == vk::ImageLayout::UNDEFINED
             && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
         {
-            return (
+            return Ok((
                 PipelineStage2Flags::TOP_OF_PIPE,
                 PipelineStage2Flags::TRANSFER,
                 AccessFlags2::NONE,
                 AccessFlags2::TRANSFER_WRITE,
-            );
+            ));
         }
 
-        // TRANSFER_DST_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
         if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
             && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
         {
-            return (
+            return Ok((
                 PipelineStage2Flags::TRANSFER,
                 PipelineStage2Flags::FRAGMENT_SHADER,
                 AccessFlags2::TRANSFER_WRITE,
                 AccessFlags2::SHADER_READ,
-            );
+            ));
         }
 
-        // SHADER_READ_ONLY_OPTIMAL -> TRANSFER_DST_OPTIMAL
         if old_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
             && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL
         {
-            return (
+            return Ok((
                 PipelineStage2Flags::FRAGMENT_SHADER,
                 PipelineStage2Flags::TRANSFER,
                 AccessFlags2::SHADER_READ,
                 AccessFlags2::TRANSFER_WRITE,
-            );
+            ));
         }
 
-        // UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL
         // Note: Use COLOR_ATTACHMENT_OUTPUT as src_stage to synchronize with
         // vkAcquireNextImageKHR for swapchain images. Also fixes READ_AFTER_WRITE
         // hazards when LOAD_OP_LOAD is used.
         if old_layout == vk::ImageLayout::UNDEFINED
             && new_layout == vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
         {
-            return (
+            return Ok((
                 PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
                 PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
                 AccessFlags2::COLOR_ATTACHMENT_WRITE,
                 AccessFlags2::COLOR_ATTACHMENT_WRITE | AccessFlags2::COLOR_ATTACHMENT_READ,
-            );
+            ));
         }
 
-        // COLOR_ATTACHMENT_OPTIMAL -> PRESENT_SRC_KHR
         if old_layout == vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
             && new_layout == vk::ImageLayout::PRESENT_SRC_KHR
         {
-            return (
+            return Ok((
                 PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
                 PipelineStage2Flags::BOTTOM_OF_PIPE,
                 AccessFlags2::COLOR_ATTACHMENT_WRITE,
                 AccessFlags2::NONE,
-            );
+            ));
         }
 
-        // UNDEFINED -> DEPTH_STENCIL_ATTACHMENT_OPTIMAL
         if old_layout == vk::ImageLayout::UNDEFINED
             && new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
         {
-            return (
+            return Ok((
                 PipelineStage2Flags::TOP_OF_PIPE,
                 PipelineStage2Flags::EARLY_FRAGMENT_TESTS,
                 AccessFlags2::NONE,
                 AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
                     | AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
-            );
+            ));
         }
 
-        // UNDEFINED -> SHADER_READ_ONLY_OPTIMAL
         if old_layout == vk::ImageLayout::UNDEFINED
             && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
         {
-            return (
+            return Ok((
                 PipelineStage2Flags::TOP_OF_PIPE,
                 PipelineStage2Flags::FRAGMENT_SHADER,
                 AccessFlags2::NONE,
                 AccessFlags2::SHADER_READ,
-            );
+            ));
         }
 
-        // COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL (render-to-texture)
         if old_layout == vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
             && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
         {
-            return (
+            return Ok((
                 PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
                 PipelineStage2Flags::FRAGMENT_SHADER,
                 AccessFlags2::COLOR_ATTACHMENT_WRITE | AccessFlags2::COLOR_ATTACHMENT_READ,
                 AccessFlags2::SHADER_READ,
-            );
+            ));
         }
 
-        // SHADER_READ_ONLY_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL (texture reuse)
-        // Used when a texture that was sampled needs to become a render target again
         if old_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
             && new_layout == vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
         {
-            return (
+            return Ok((
                 PipelineStage2Flags::FRAGMENT_SHADER,
                 PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
                 AccessFlags2::SHADER_READ,
                 AccessFlags2::COLOR_ATTACHMENT_WRITE | AccessFlags2::COLOR_ATTACHMENT_READ,
-            );
+            ));
         }
 
-        // No-op transition: same layout
-        // This can happen when a resource stays in the same layout across passes
         if old_layout == new_layout {
-            return (
+            return Ok((
                 PipelineStage2Flags::TOP_OF_PIPE,
                 PipelineStage2Flags::TOP_OF_PIPE,
                 AccessFlags2::NONE,
                 AccessFlags2::NONE,
-            );
+            ));
         }
 
-        // PRESENT_SRC_KHR -> COLOR_ATTACHMENT_OPTIMAL
-        // Used when transitioning swapchain image from presentation back to rendering.
-        // After presentation completes, the image is in PRESENT_SRC_KHR and needs to
-        // transition back to COLOR_ATTACHMENT for the next frame's rendering.
         // Note: dst_access includes COLOR_ATTACHMENT_READ to support LOAD_OP_LOAD
         if old_layout == vk::ImageLayout::PRESENT_SRC_KHR
             && new_layout == vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
         {
-            return (
+            return Ok((
                 PipelineStage2Flags::BOTTOM_OF_PIPE,
                 PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
                 AccessFlags2::NONE,
                 AccessFlags2::COLOR_ATTACHMENT_WRITE | AccessFlags2::COLOR_ATTACHMENT_READ,
-            );
+            ));
         }
 
-        // DEPTH_STENCIL_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
-        // After rendering shadow depth, transition for sampling in lighting pass
         if old_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
             && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
         {
-            return (
+            return Ok((
                 PipelineStage2Flags::EARLY_FRAGMENT_TESTS
                     | PipelineStage2Flags::LATE_FRAGMENT_TESTS,
                 PipelineStage2Flags::FRAGMENT_SHADER,
                 AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
                     | AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
                 AccessFlags2::SHADER_READ,
-            );
+            ));
         }
 
-        // SHADER_READ_ONLY_OPTIMAL -> DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-        // Transition back for re-rendering shadow map next frame
         if old_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
             && new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
         {
-            return (
+            return Ok((
                 PipelineStage2Flags::FRAGMENT_SHADER,
                 PipelineStage2Flags::EARLY_FRAGMENT_TESTS,
                 AccessFlags2::SHADER_READ,
                 AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ
                     | AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
-            );
+            ));
         }
 
-        panic!(
+        Err(format!(
             "Unsupported layout transition: {:?} -> {:?}",
             old_layout, new_layout
-        );
+        ))
     }
 }
 
@@ -483,7 +471,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        );
+        )
+        .unwrap();
 
         assert_eq!(src_stage, PipelineStage2Flags::TOP_OF_PIPE);
         assert_eq!(dst_stage, PipelineStage2Flags::TRANSFER);
@@ -496,7 +485,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        );
+        )
+        .unwrap();
 
         assert_eq!(src_stage, PipelineStage2Flags::TRANSFER);
         assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
@@ -509,7 +499,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        );
+        )
+        .unwrap();
 
         assert_eq!(src_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
         assert_eq!(dst_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
@@ -525,7 +516,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             vk::ImageLayout::PRESENT_SRC_KHR,
-        );
+        )
+        .unwrap();
 
         assert_eq!(src_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
         assert_eq!(dst_stage, PipelineStage2Flags::BOTTOM_OF_PIPE);
@@ -538,7 +530,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::PRESENT_SRC_KHR,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        );
+        )
+        .unwrap();
 
         assert_eq!(src_stage, PipelineStage2Flags::BOTTOM_OF_PIPE);
         assert_eq!(dst_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
@@ -554,7 +547,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        );
+        )
+        .unwrap();
 
         assert_eq!(src_stage, PipelineStage2Flags::TOP_OF_PIPE);
         assert_eq!(dst_stage, PipelineStage2Flags::EARLY_FRAGMENT_TESTS);
@@ -571,7 +565,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             src_stage,
@@ -591,7 +586,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        );
+        )
+        .unwrap();
 
         assert_eq!(src_stage, PipelineStage2Flags::FRAGMENT_SHADER);
         assert_eq!(dst_stage, PipelineStage2Flags::EARLY_FRAGMENT_TESTS);
@@ -608,7 +604,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        );
+        )
+        .unwrap();
 
         assert_eq!(src_stage, PipelineStage2Flags::FRAGMENT_SHADER);
         assert_eq!(dst_stage, PipelineStage2Flags::TRANSFER);
@@ -617,12 +614,12 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Unsupported layout transition")]
     fn test_deduce_unsupported_transition() {
-        ImageBarrier::deduce_transition_masks(
+        let result = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
             vk::ImageLayout::PRESENT_SRC_KHR,
         );
+        assert!(result.is_err());
     }
 
     //=========================================================================
@@ -642,7 +639,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        );
+        )
+        .unwrap();
         assert_eq!(src_stage, PipelineStage2Flags::TOP_OF_PIPE);
         assert_eq!(dst_stage, PipelineStage2Flags::TRANSFER);
         assert_eq!(src_access, AccessFlags2::NONE);
@@ -652,7 +650,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        );
+        )
+        .unwrap();
         assert_eq!(src_stage, PipelineStage2Flags::TRANSFER);
         assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
         assert_eq!(src_access, AccessFlags2::TRANSFER_WRITE);
@@ -672,7 +671,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        );
+        )
+        .unwrap();
         assert_eq!(src_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
         assert_eq!(dst_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
         assert_eq!(src_access, AccessFlags2::COLOR_ATTACHMENT_WRITE);
@@ -685,7 +685,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             vk::ImageLayout::PRESENT_SRC_KHR,
-        );
+        )
+        .unwrap();
         assert_eq!(src_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
         assert_eq!(dst_stage, PipelineStage2Flags::BOTTOM_OF_PIPE);
         assert_eq!(src_access, AccessFlags2::COLOR_ATTACHMENT_WRITE);
@@ -704,7 +705,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        );
+        )
+        .unwrap();
         assert_eq!(src_stage, PipelineStage2Flags::FRAGMENT_SHADER);
         assert_eq!(dst_stage, PipelineStage2Flags::TRANSFER);
         assert_eq!(src_access, AccessFlags2::SHADER_READ);
@@ -714,7 +716,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        );
+        )
+        .unwrap();
         assert_eq!(src_stage, PipelineStage2Flags::TRANSFER);
         assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
         assert_eq!(src_access, AccessFlags2::TRANSFER_WRITE);
@@ -732,7 +735,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        );
+        )
+        .unwrap();
         assert_eq!(src_stage, PipelineStage2Flags::TOP_OF_PIPE);
         assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
         assert_eq!(src_access, AccessFlags2::NONE);
@@ -742,7 +746,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        );
+        )
+        .unwrap();
         assert_eq!(src_stage, PipelineStage2Flags::TOP_OF_PIPE);
         assert_eq!(dst_stage, PipelineStage2Flags::EARLY_FRAGMENT_TESTS);
         assert_eq!(src_access, AccessFlags2::NONE);
@@ -765,7 +770,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        );
+        )
+        .unwrap();
         assert_eq!(src_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
         assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
         assert_eq!(
@@ -787,7 +793,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        );
+        )
+        .unwrap();
         assert_eq!(src_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
         assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
         assert_eq!(
@@ -800,7 +807,8 @@ mod tests {
         let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        );
+        )
+        .unwrap();
         assert_eq!(src_stage, PipelineStage2Flags::FRAGMENT_SHADER);
         assert_eq!(dst_stage, PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT);
         assert_eq!(src_access, AccessFlags2::SHADER_READ);

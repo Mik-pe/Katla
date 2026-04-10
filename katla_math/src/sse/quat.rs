@@ -234,6 +234,28 @@ impl Quat {
     }
 
     #[inline]
+    pub fn nlerp(mut a: Quat, mut b: Quat, t: f32) -> Self {
+        a.normalize();
+        b.normalize();
+
+        if a.dot(b) < 0.0 {
+            unsafe {
+                b.0 = _mm_mul_ps(b.0, _mm_set_ps1(-1.0));
+            }
+        }
+
+        unsafe {
+            let one_minus_t = _mm_set_ps1(1.0 - t);
+            let t_broadcast = _mm_set_ps1(t);
+            let a_scaled = _mm_mul_ps(a.0, one_minus_t);
+            let b_scaled = _mm_mul_ps(b.0, t_broadcast);
+            let mut out = Quat(_mm_add_ps(a_scaled, b_scaled));
+            out.normalize();
+            out
+        }
+    }
+
+    #[inline]
     pub fn make_mat4(&self) -> Mat4 {
         let (m00, m01, m02, m10, m11, m12, m20, m21, m22) = self.rotation_matrix_elements();
 
@@ -410,5 +432,63 @@ impl Mul<Vec3> for Quat {
         let q = Vec3::new(self[0], self[1], self[2]);
         let t = 2.0 * q.cross(v);
         v + (self[3] * t) + q.cross(t)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn quat_approx_eq(a: Quat, b: Quat, epsilon: f32) -> bool {
+        (a[0] - b[0]).abs() < epsilon
+            && (a[1] - b[1]).abs() < epsilon
+            && (a[2] - b[2]).abs() < epsilon
+            && (a[3] - b[3]).abs() < epsilon
+    }
+
+    #[test]
+    fn test_nlerp_identity() {
+        let a = Quat::identity();
+        let b = Quat::identity();
+        let result = Quat::nlerp(a, b, 0.5);
+        assert!(quat_approx_eq(result, Quat::identity(), 1e-5));
+    }
+
+    #[test]
+    fn test_nlerp_t_zero() {
+        let a = Quat::from_axis_angle(Vec3::Y_AXIS, 0.0);
+        let b = Quat::from_axis_angle(Vec3::Y_AXIS, core::f32::consts::FRAC_PI_2);
+        let result = Quat::nlerp(a, b, 0.0);
+        assert!(quat_approx_eq(result, a, 1e-5));
+    }
+
+    #[test]
+    fn test_nlerp_t_one() {
+        let a = Quat::from_axis_angle(Vec3::Y_AXIS, 0.0);
+        let b = Quat::from_axis_angle(Vec3::Y_AXIS, core::f32::consts::FRAC_PI_2);
+        let result = Quat::nlerp(a, b, 1.0);
+        assert!(quat_approx_eq(result, b, 1e-5));
+    }
+
+    #[test]
+    fn test_nlerp_double_cover() {
+        let a = Quat::identity();
+        let b_neg = Quat::new(-0.0, -0.0, -0.0, -1.0);
+        let result = Quat::nlerp(a, b_neg, 0.5);
+        assert!(result.is_normalized());
+    }
+
+    #[test]
+    fn test_nlerp_result_normalized() {
+        let a = Quat::from_axis_angle(Vec3::X_AXIS, 0.3);
+        let b = Quat::from_axis_angle(Vec3::Y_AXIS, 1.2);
+        for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let result = Quat::nlerp(a, b, t);
+            assert!(
+                result.is_normalized(),
+                "nlerp result not normalized at t={}",
+                t
+            );
+        }
     }
 }

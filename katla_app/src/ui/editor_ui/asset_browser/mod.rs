@@ -59,8 +59,8 @@ pub fn build_asset_browser(
     }
 
     // Header with breadcrumbs and controls
-    let header_height = ui.style().button_height_small;
-    let toolbar_height = ui.style().toolbar_height;
+    let header_height = 24.0;
+    let toolbar_height = 32.0;
     let header_bounds =
         Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), header_height));
     ui.draw_rect(header_bounds, theme.panel_header);
@@ -201,7 +201,7 @@ pub fn build_asset_browser(
         state.navigate_to_segment(idx, thumbnail_texture_handles);
     }
 
-    let nav_btn_size = ui.style().button_height_small;
+    let nav_btn_size = 24.0;
     let mut nav_x = bounds.max.x() - nav_btn_size - 4.0;
 
     // Refresh button

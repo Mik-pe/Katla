@@ -134,7 +134,7 @@ impl UiContext {
         use crate::widgets::Button;
         let bounds = Rect2D::from_origin_size(
             self.cursor(),
-            katla_math::Vec2::new(width, self.style.button_height_medium),
+            katla_math::Vec2::new(width, self.style.button_default_height),
         );
         self.add(Button::new(text).bounds(bounds))
     }
