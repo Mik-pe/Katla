@@ -94,10 +94,6 @@ impl Default for InputMapper {
             Action::MoveDown,
         );
         action_map.insert(
-            InputBinding::Keyboard(KeyCombo::key(KeyCode::KeyF)),
-            Action::Interact,
-        );
-        action_map.insert(
             InputBinding::Keyboard(KeyCombo::key(KeyCode::KeyI)),
             Action::Inventory,
         );

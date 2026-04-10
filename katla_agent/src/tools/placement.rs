@@ -1,17 +1,28 @@
 use katla_ecs::scene_tool::SceneOp;
 use std::f32::consts::TAU;
 
+/// Result of a scatter placement, carrying both the spawn ops and placement counts.
+pub struct ScatterResult {
+    pub ops: Vec<SceneOp>,
+    pub count_requested: usize,
+    pub count_placed: usize,
+}
+
 /// Scatter entities randomly in a rectangular area using a grid + jitter approach.
-/// Returns one `SpawnEntity` op per entity.
+/// Returns a `ScatterResult` with spawn ops and actual placement counts.
 pub fn scatter(
     count: usize,
     center: [f32; 3],
     bounds: [f32; 3],
     min_spacing: f32,
     name_prefix: &str,
-) -> Vec<SceneOp> {
+) -> ScatterResult {
     if count == 0 {
-        return vec![];
+        return ScatterResult {
+            ops: vec![],
+            count_requested: 0,
+            count_placed: 0,
+        };
     }
 
     let side = f32::ceil(f32::sqrt(count as f32)) as usize;
@@ -65,7 +76,8 @@ pub fn scatter(
         }
     }
 
-    positions
+    let count_placed = positions.len();
+    let ops = positions
         .into_iter()
         .enumerate()
         .map(|(i, pos)| SceneOp::SpawnEntity {
@@ -74,7 +86,13 @@ pub fn scatter(
             scale: [1.0, 1.0, 1.0],
             name: Some(format!("{name_prefix}_{i}")),
         })
-        .collect()
+        .collect();
+
+    ScatterResult {
+        ops,
+        count_requested: count,
+        count_placed,
+    }
 }
 
 /// Place entities along a polyline path with even spacing.

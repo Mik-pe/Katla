@@ -3,17 +3,19 @@ use katla_ecs::scene_tool::SceneOp;
 
 #[test]
 fn test_scatter_count() {
-    let ops = placement::scatter(10, [0.0, 0.0, 0.0], [5.0, 0.0, 5.0], 0.0, "Obj");
-    assert_eq!(ops.len(), 10);
+    let result = placement::scatter(10, [0.0, 0.0, 0.0], [5.0, 0.0, 5.0], 0.0, "Obj");
+    assert_eq!(result.ops.len(), 10);
+    assert_eq!(result.count_requested, 10);
+    assert_eq!(result.count_placed, 10);
 }
 
 #[test]
 fn test_scatter_within_bounds() {
     let center = [0.0, 0.0, 0.0];
     let bounds = [10.0, 0.0, 10.0];
-    let ops = placement::scatter(20, center, bounds, 0.0, "Obj");
+    let result = placement::scatter(20, center, bounds, 0.0, "Obj");
 
-    for op in &ops {
+    for op in &result.ops {
         if let SceneOp::SpawnEntity { position, .. } = op {
             assert!(
                 (position[0] - center[0]).abs() <= bounds[0] + 1.0,
@@ -31,8 +33,10 @@ fn test_scatter_within_bounds() {
 
 #[test]
 fn test_scatter_zero_count() {
-    let ops = placement::scatter(0, [0.0, 0.0, 0.0], [5.0, 0.0, 5.0], 0.0, "Obj");
-    assert!(ops.is_empty());
+    let result = placement::scatter(0, [0.0, 0.0, 0.0], [5.0, 0.0, 5.0], 0.0, "Obj");
+    assert!(result.ops.is_empty());
+    assert_eq!(result.count_requested, 0);
+    assert_eq!(result.count_placed, 0);
 }
 
 #[test]
@@ -156,4 +160,44 @@ fn test_path_single_point() {
     let ops = placement::place_along_path(&points, 1.0, "Path");
     // Total length is 0, which is less than spacing, so no entities
     assert!(ops.is_empty());
+}
+
+#[test]
+fn test_scatter_min_spacing_fewer_placed() {
+    // Small bounds with large min_spacing: not all requested entities can fit.
+    let result = placement::scatter(20, [0.0, 0.0, 0.0], [1.0, 0.0, 1.0], 10.0, "Obj");
+
+    assert_eq!(result.count_requested, 20);
+    assert!(
+        result.count_placed < result.count_requested,
+        "Expected fewer placed than requested with large min_spacing, got {} placed of {} requested",
+        result.count_placed,
+        result.count_requested
+    );
+    assert_eq!(result.ops.len(), result.count_placed);
+
+    // Verify all placed entities respect min_spacing
+    let positions: Vec<[f32; 3]> = result
+        .ops
+        .iter()
+        .map(|op| {
+            if let SceneOp::SpawnEntity { position, .. } = op {
+                *position
+            } else {
+                panic!("Expected SpawnEntity");
+            }
+        })
+        .collect();
+
+    for i in 0..positions.len() {
+        for j in (i + 1)..positions.len() {
+            let dx = positions[i][0] - positions[j][0];
+            let dz = positions[i][2] - positions[j][2];
+            let dist = f32::sqrt(dx * dx + dz * dz);
+            assert!(
+                dist >= 10.0 - 0.01,
+                "Entities {i} and {j} too close: {dist} < 10.0"
+            );
+        }
+    }
 }

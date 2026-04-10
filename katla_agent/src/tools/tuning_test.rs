@@ -55,10 +55,11 @@ fn test_set_field() {
 #[test]
 fn test_create_variants_count() {
     let source = EntityId::from_raw(1);
-    let ops = tuning::create_variants(source, "PointLight", "intensity", &[0.5, 1.0, 2.0], 3.0);
-    assert_eq!(ops.len(), 3);
+    let plan = tuning::create_variants(source, "PointLight", "intensity", &[0.5, 1.0, 2.0], 3.0);
+    assert_eq!(plan.duplicates.len(), 3);
+    assert_eq!(plan.field_sets.len(), 3);
 
-    for op in &ops {
+    for op in &plan.duplicates {
         assert!(matches!(op, SceneOp::DuplicateEntity { .. }));
     }
 }
@@ -66,12 +67,12 @@ fn test_create_variants_count() {
 #[test]
 fn test_create_variants_spacing() {
     let source = EntityId::from_raw(1);
-    let ops = tuning::create_variants(source, "PointLight", "intensity", &[1.0, 2.0], 5.0);
+    let plan = tuning::create_variants(source, "PointLight", "intensity", &[1.0, 2.0], 5.0);
 
     if let SceneOp::DuplicateEntity {
         position_offset: Some(offset),
         ..
-    } = &ops[0]
+    } = &plan.duplicates[0]
     {
         assert!((offset[0] - 5.0).abs() < 0.01);
     }
@@ -79,10 +80,29 @@ fn test_create_variants_spacing() {
     if let SceneOp::DuplicateEntity {
         position_offset: Some(offset),
         ..
-    } = &ops[1]
+    } = &plan.duplicates[1]
     {
         assert!((offset[0] - 10.0).abs() < 0.01);
     }
+}
+
+#[test]
+fn test_create_variants_field_sets() {
+    let source = EntityId::from_raw(1);
+    let plan = tuning::create_variants(source, "PointLight", "intensity", &[0.5, 1.0, 2.0], 3.0);
+
+    assert_eq!(
+        plan.field_sets[0],
+        ("PointLight".into(), "intensity".into(), 0.5)
+    );
+    assert_eq!(
+        plan.field_sets[1],
+        ("PointLight".into(), "intensity".into(), 1.0)
+    );
+    assert_eq!(
+        plan.field_sets[2],
+        ("PointLight".into(), "intensity".into(), 2.0)
+    );
 }
 
 #[test]

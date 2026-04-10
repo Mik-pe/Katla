@@ -1,6 +1,18 @@
 use katla_ecs::EntityId;
 use katla_ecs::scene_tool::SceneOp;
 
+/// A two-phase plan for creating entity variants with different field values.
+///
+/// Phase 1: Execute `duplicates` to create new entities and collect their IDs.
+/// Phase 2: For each resulting entity, apply the corresponding field setting from
+/// `field_sets` (indexed by position).
+pub struct VariantsPlan {
+    /// Duplicate ops to execute first.
+    pub duplicates: Vec<SceneOp>,
+    /// Per-variant field settings: (component, field, value) for each duplicate.
+    pub field_sets: Vec<(String, String, f32)>,
+}
+
 /// Adjust a field value by a relative amount (e.g., +10%, -20%).
 /// Returns a `SetField` op with the new absolute value.
 pub fn adjust_field(
@@ -28,19 +40,19 @@ pub fn set_field(entity: EntityId, component: &str, field: &str, value: f32) -> 
     }
 }
 
-/// Generate A/B comparison variants: create duplicates with different position offsets.
-/// Returns `DuplicateEntity` ops for each variant value.
+/// Generate A/B comparison variants: duplicate an entity and assign different field values.
 ///
-/// Note: Setting the field on each duplicate requires a second pass after execution,
-/// since the duplicate's `EntityId` isn't known until the executor runs.
+/// Returns a [`VariantsPlan`] containing duplicate ops and the field settings to apply
+/// after execution. The caller must execute phase 1 (duplicates), collect the resulting
+/// entity IDs, then execute phase 2 (`SetField` ops using those IDs).
 pub fn create_variants(
     source: EntityId,
-    _component: &str,
-    _field: &str,
+    component: &str,
+    field: &str,
     values: &[f32],
     spacing: f32,
-) -> Vec<SceneOp> {
-    values
+) -> VariantsPlan {
+    let duplicates: Vec<SceneOp> = values
         .iter()
         .enumerate()
         .map(|(i, _)| {
@@ -50,7 +62,17 @@ pub fn create_variants(
                 position_offset: Some(offset),
             }
         })
-        .collect()
+        .collect();
+
+    let field_sets: Vec<(String, String, f32)> = values
+        .iter()
+        .map(|v| (component.to_string(), field.to_string(), *v))
+        .collect();
+
+    VariantsPlan {
+        duplicates,
+        field_sets,
+    }
 }
 
 /// Semantic tuning presets for common adjustments.
