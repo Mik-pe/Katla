@@ -172,11 +172,7 @@
 
 ~~### 37. Remove deprecated `button_height_*` style fields~~ — Removed in dcc28d7. Deleted button_height_small, button_height_medium, toolbar_height from UiStyle and updated all references.
 
-### 38. `Mat4::create_ortho` parameter order doesn't match standard convention
-- **Crate:** katla_math
-- **File:** `src/mat4.rs`
-- **Issue:** Signature is `create_ortho(bottom, top, left, right, near, far)` but standard convention (GLM/Vulkan) is `(left, right, bottom, top, near, far)`. Symmetric tests hide the bug.
-- **Fix:** Reorder parameters to match convention, update callers.
+~~### 38. `Mat4::create_ortho` parameter order doesn't match standard convention~~ — Fixed in f74b05c. Reordered to (left, right, bottom, top, near, far) matching GLM/Vulkan convention.
 
 ### 39. `Mat4::create_proj` semantics unclear (infinite reverse-Z, no `far` parameter)
 - **Crate:** katla_math
@@ -204,11 +200,7 @@
 - **Issue:** Uses `draw_rect_border` and `draw_rect` producing a square. Radio buttons should be circular.
 - **Fix:** Use `add_circle` or `add_convex_poly` for circular shapes.
 
-### 44. `DrawCall::instances` is a `Vec<InstanceData>` — heap allocation per draw call
-- **Crate:** katla_gfx
-- **File:** `src/renderer/types.rs`
-- **Issue:** For single-instance draws (common case), 96 bytes + heap allocation overhead. Hundreds of draw calls = unnecessary allocation pressure.
-- **Fix:** Use `SmallVec<[InstanceData; 1]>` or `ArrayVec<InstanceData, 4>`.
+~~### 44. `DrawCall::instances` is a `Vec<InstanceData>` — heap allocation per draw call~~ — Fixed in f74b05c. Changed to SmallVec<[InstanceData; 1]> to avoid heap allocation for single-instance draws.
 
 ### 45. Unused transfer queue infrastructure
 - **Crate:** katla_gfx
@@ -306,11 +298,7 @@
 - **Issue:** Has AABB-AABB test but no AABB-Sphere, needed for frustum culling and broadphase.
 - **Fix:** Add `pub fn intersects_sphere(&self, sphere: &Sphere) -> bool`.
 
-### 67. `Sphere::create_from_verts` allocates unnecessarily
-- **Crate:** katla_math
-- **File:** `src/sphere.rs`
-- **Issue:** Immediately `.collect()`s into a `Vec<Vec3>`. Could compute bounds in a single pass.
-- **Fix:** Rewrite to compute bounds in single pass without allocation.
+~~### 67. `Sphere::create_from_verts` allocates unnecessarily~~ — Fixed in f74b05c. Rewritten to compute bounds inline in a single pass without Vec allocation.
 
 ### 68. `SparseSet` memory waste with large EntityId gaps
 - **Crate:** katla_ecs
@@ -367,11 +355,7 @@
 - **Issue:** No tab-order system or focus ring. Only text inputs receive keyboard focus.
 - **Fix:** Implement focus chain with Tab/Shift+Tab navigation.
 
-### 78. `Fast inverse sqrt` uses single Newton-Raphson iteration
-- **Crate:** katla_math
-- **File:** `src/utils.rs`
-- **Issue:** ~1% accuracy. Modern CPUs have hardware `rsqrtss` and compilers optimize `1.0/x.sqrt()` better.
-- **Fix:** Add second iteration, or just use `1.0 / x.sqrt()`.
+~~### 78. `Fast inverse sqrt` uses single Newton-Raphson iteration~~ — Fixed in f74b05c. Added second iteration for ~0.1% accuracy.
 
 ### 79. `utils.rs` duplicates `f32` methods as free functions
 - **Crate:** katla_math
