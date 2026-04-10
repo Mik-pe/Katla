@@ -24,13 +24,13 @@
 - **Issue:** `UiFrameResources::new()` pre-allocates 1MB vertex and index buffers. When `upload_data()` receives data larger than `buf_size`, it panics with "Too little memory allocated for buffer of size N". Complex UIs with many draw calls can easily exceed 1MB.
 - **Fix:** Add resize logic in `get_or_update_ui_buffers()` — when data exceeds buffer capacity, destroy and recreate the buffer with 2x the required size.
 
-### 10. `Mat2::mul()` has incorrect matrix multiplication indices
+~~### 10. `Mat2::mul()` has incorrect matrix multiplication indices~~ — Fixed in c3f7b51.
 - **Crate:** katla_math
 - **File:** `src/mat2.rs`
 - **Issue:** `Mat2::mul(&self, rhs)` computes `self[1][0] * rhs[1][0]` where it should compute `self[1][0] * rhs[0][1]`. The `impl Mul<Mat2> for Mat2` has the correct implementation. The `mul()` method produces wrong results for asymmetric matrices.
 - **Fix:** Fix the index pattern in `mul()` to match `impl Mul`.
 
-### 11. `plane::intersects_aabb` only accounts for X component of normal when selecting corners
+~~### 11. `plane::intersects_aabb` only accounts for X component of normal when selecting corners~~ — Fixed in c3f7b51. Component-wise corner selection now checks all axes.
 - **Crate:** katla_math
 - **File:** `src/plane.rs`
 - **Issue:** The positive/negative corner selection only checks `normal.x() >= 0` and ignores the Y/Z sign of the normal. For normals like `(1, -1, 0)`, the test corners are wrong. The `frustum.rs::intersects_aabb` does this correctly.
@@ -60,7 +60,7 @@
 - **Issue:** `LlmConfig` stores `max_tokens` and `temperature` but `OpenAiProvider` doesn't pass them to the request. The `CreateChatCompletionRequest` uses `..Default::default()` so both are always unset.
 - **Fix:** Store config values in `OpenAiProvider` and set `request.max_tokens = Some(...)` and `request.temperature = Some(...)`.
 
-### 16. `frame_count` never increments in normal (infinite) mode
+~~### 16. `frame_count` never increments in normal (infinite) mode~~ — Fixed in c3f7b51. Increment moved outside max_frames guard.
 - **Crate:** katla_app
 - **File:** `src/application/frame_loop.rs` (lines 277-278)
 - **Issue:** `frame_count += 1` is inside the `if let Some(max) = self.info.max_frames` block. In normal infinite mode, `frame_count` stays 0 forever, affecting FPS counters, UI display, and any frame-count-dependent logic.
@@ -212,7 +212,7 @@
 - **Issue:** `inverse()` returns `conjugate()` which is only correct for unit quaternions.
 - **Fix:** Rename to `inverse_unit()` or divide by `length_squared()`. Document the precondition.
 
-### 41. `AABB` missing `Copy` derive
+~~### 41. `AABB` missing `Copy` derive~~ — Fixed in c3f7b51. Added Copy derive.
 - **Crate:** katla_math
 - **File:** `src/aabb.rs`
 - **Issue:** Both fields are `Copy` but `AABB` only derives `Clone, Debug`. Every use by value requires `.clone()`.
