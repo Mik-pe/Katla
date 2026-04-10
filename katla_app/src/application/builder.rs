@@ -29,7 +29,6 @@ use std::{cell::RefCell, rc::Rc, time::Instant};
 use katla_ecs::{System, SystemExecutionOrder, World};
 use katla_gfx::renderer::VulkanRenderer;
 use katla_ui::{FontId, ForkAwesome};
-use log::{info, warn};
 use winit::dpi::LogicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::ModifiersState;
@@ -200,17 +199,6 @@ impl ApplicationBuilder {
         renderer
             .init_particle_system()
             .expect("Failed to initialize particle system");
-
-        // Initialize particle debug readback in debug builds
-        #[cfg(debug_assertions)]
-        {
-            info!("Initializing particle debug readback");
-            if let Some(ref mut particle_system) = renderer.particle_system
-                && let Err(e) = particle_system.init_debug_readback()
-            {
-                warn!("Failed to initialize particle debug readback: {}", e);
-            }
-        }
 
         renderer
     }
@@ -627,6 +615,12 @@ impl ApplicationBuilder {
         // Create UI context and load default font
         let mut ui_context = katla_ui::UiContext::new();
 
+        // Set up OS clipboard for copy/cut/paste
+        match crate::application::clipboard::OsClipboard::new() {
+            Ok(cb) => ui_context.set_clipboard_provider(Box::new(cb)),
+            Err(e) => log::warn!("Failed to initialize clipboard: {}", e),
+        }
+
         // Load default font for text rendering
         let font_path = resources.font_path("roboto-regular.ttf");
         if font_path.exists() {
@@ -794,11 +788,6 @@ impl ApplicationBuilder {
             gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(
                 katla_gfx::MaterialHandle::NONE,
             ),
-            #[cfg(debug_assertions)]
-            debug: super::DebugState {
-                particle_readback_pending: false,
-                particle_readback_done: false,
-            },
             on_init: self.on_init,
             on_update: self.on_update,
             on_shutdown: self.on_shutdown,

@@ -84,11 +84,10 @@
 
 ---
 
-### 86. Remove particle debug readback from katla_app debug builds
+### ~~86. Remove particle debug readback from katla_app debug builds~~ ✓
 - **Crate:** katla_app
-- **Files:** `katla_app/src/application/builder.rs` (lines 204-212), `katla_app/src/application/renderer.rs` (lines 170-195), `katla_app/src/application/mod.rs` (lines 169-176), `katla_app/src/application/init.rs` (lines 144-158)
-- **Issue:** Debug builds initialize and trigger a one-time particle debug readback at frame 10. This was added to stabilize the particle system but is no longer needed in the app — debug readback should only live in the `particle_validation` example in katla_gfx.
-- **Fix:** Remove all `#[cfg(debug_assertions)]` blocks related to particle debug readback from katla_app: `DebugState` struct, `init_debug_readback()` call in builder, frame 10 trigger logic in renderer, `debug_readback` flag in init.rs frame graph passes, and the `particle_debug_readback` field on `Frame`.
+- **Files:** `katla_app/src/application/builder.rs`, `katla_app/src/application/renderer.rs`, `katla_app/src/application/mod.rs`, `katla_app/src/application/init.rs`, `katla_gfx/src/render_graph/frame/mod.rs`, `katla_gfx/src/render_graph/frame_graph.rs`
+- **Done:** Removed `DebugState` struct, `debug` field on Application, `#[cfg(debug_assertions)]` init/trigger/readback blocks from builder/renderer/init, and `particle_debug_readback` field from Frame and FrameGraph params.
 
 ## P2: Missing Features
 
@@ -424,3 +423,15 @@
 - **File:** `src/application/mod.rs` (input handling / editor UI)
 - **Issue:** When a panel (preferences, AI chat, etc.) is rendered on top of the 3D viewport, clicking on the panel still forwards the click to the 3D scene underneath. This causes unintended camera movement, entity selection, or gizmo interaction.
 - **Fix:** Check if a panel is focused/hovered before forwarding input to the viewport. Consume the click event when a panel is on top.
+
+### 86. Use serde JSON derives for tool call arguments instead of raw strings
+- **Crate:** katla_agent
+- **File:** `src/llm/mock.rs`, `src/co_creator/mod.rs`
+- **Issue:** Tool call arguments and stream chunks use raw `String` / `serde_json::Value` instead of typed serde-deserialized structs. `ToolCallAccumulator` accumulates `arguments` as a `String`, `MockStreamProvider::tool_call()` takes `&str` for arguments, and `tool_call_to_scene_op()` manually extracts fields from `serde_json::Value`. This is error-prone and verbose.
+- **Fix:** Define typed argument structs (e.g. `SpawnEntityArgs`, `DestroyEntityArgs`) with `#[derive(Deserialize)]`, accumulate arguments into a `Vec<u8>` / `String` buffer, then deserialize into the typed struct. Remove all manual `args.get("field").and_then(|v| v.as_str())` patterns.
+
+### 87. Add undo/redo for AI agent actions
+- **Crate:** katla_agent / katla_app
+- **Files:** `katla_agent/src/co_creator/mod.rs`, `katla_app/src/application/editor/agent.rs`
+- **Issue:** When the AI spawns, destroys, or modifies entities via tool calls, there is no way for the user to reverse those actions. The `SceneToolExecutor` already produces `UndoGroup`s from each operation, but they are discarded (the `_undo_group` is unused in `execute_tool_call`). Long chains of AI operations cannot be rolled back, which is dangerous if the AI makes a mistake.
+- **Fix:** Collect `UndoGroup`s produced by `SceneToolExecutor::execute()` into a per-session undo stack on the `CoCreatorAgent` or `EditorState`. Add an `undo_last_agent_action()` method that calls `SceneToolExecutor::undo()` on the most recent group. Expose this to the user via a button in the AI panel or Ctrl+Z when the AI panel is focused. Composite operations (e.g. a template that spawns N entities) should produce a single undo group so the user can reverse the whole operation in one step.

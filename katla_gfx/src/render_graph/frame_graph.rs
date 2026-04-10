@@ -26,7 +26,6 @@ pub(super) struct FrameParams {
     pub particle_simulate_workgroup_count: u32,
     pub animation_skeleton_count: u32,
     pub skeleton_copy_commands: Vec<(u32, u32, u32)>,
-    pub particle_debug_readback: bool,
 }
 
 impl Default for FrameParams {
@@ -38,7 +37,6 @@ impl Default for FrameParams {
             particle_simulate_workgroup_count: 1,
             animation_skeleton_count: 0,
             skeleton_copy_commands: Vec::new(),
-            particle_debug_readback: false,
         }
     }
 }
@@ -314,11 +312,6 @@ impl FrameGraph {
     /// Set skeleton copy commands for this frame.
     pub fn set_skeleton_copy_commands(&mut self, commands: Vec<(u32, u32, u32)>) {
         self.params.skeleton_copy_commands = commands;
-    }
-
-    /// Set whether to trigger particle debug readback this frame.
-    pub fn set_particle_debug_readback(&mut self, enabled: bool) {
-        self.params.particle_debug_readback = enabled;
     }
 
     /// Cleanup and destroy all transient textures.

@@ -90,7 +90,6 @@ impl Application {
                     .with_compute_fn(|frame, cmd, _pipeline_handle| {
                         let workgroup_count = frame.particle_simulate_workgroup_count();
                         let emit_ran = frame.particle_emit_ran;
-                        let debug_readback = frame.particle_debug_readback;
 
                         {
                             let renderer = frame.renderer_mut();
@@ -141,22 +140,6 @@ impl Application {
                             ) {
                                 log::warn!("Failed to record draw command dispatch: {}", e);
                             }
-
-                            if debug_readback {
-                                log::info!("Recording particle debug readback after simulate pass");
-                                particle_system
-                                    .record_debug_readback(cmd.vk_command_buffer(), current_frame)
-                                    .map_err(|e| {
-                                        RenderGraphError::VulkanError(format!(
-                                            "Particle debug readback failed: {}",
-                                            e
-                                        ))
-                                    })?;
-                            }
-                        }
-
-                        if debug_readback {
-                            frame.particle_debug_readback = false;
                         }
 
                         Ok(())

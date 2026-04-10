@@ -168,33 +168,6 @@ impl Application {
                         simulate_workgroups
                     );
 
-                    // DEBUG: Record particle data readback at frame 10 (in debug builds)
-                    #[cfg(debug_assertions)]
-                    {
-                        // Only trigger debug readback once to avoid WRITE_AFTER_WRITE hazards
-                        // when writing to the same staging buffers multiple consecutive frames
-                        if frame_count == 10 && !self.debug.particle_readback_done {
-                            if particle_system.has_debug_readback() {
-                                // We'll record the copy during frame graph execution
-                                // Just mark that we want to read back this frame
-                                log::info!(
-                                    "Frame {}: Triggering particle debug readback (once only)",
-                                    frame_count
-                                );
-
-                                // Store a flag to trigger readback after frame execution
-                                self.debug.particle_readback_pending = true;
-                                // Set flag in frame graph to record copy commands during execution
-                                self.frame_graph.set_particle_debug_readback(true);
-                            } else {
-                                log::warn!(
-                                    "Frame {}: Particle debug readback not initialized",
-                                    frame_count
-                                );
-                            }
-                        }
-                    }
-
                     // Update frame graph with workgroup counts for this frame
                     self.frame_graph
                         .set_particle_emit_workgroup_count(emit_workgroups);
@@ -246,51 +219,6 @@ impl Application {
         }) {
             log::error!("Frame render failed, skipping frame: {}", e);
             return;
-        }
-
-        #[cfg(debug_assertions)]
-        {
-            if self.debug.particle_readback_pending {
-                self.debug.particle_readback_pending = false;
-
-                if let Some(ref mut particle_system) = self.renderer.particle_system {
-                    match particle_system.read_debug_data() {
-                        Ok(debug_data) => {
-                            log::info!("=== PARTICLE DEBUG READBACK ===");
-                            log::info!("{}", debug_data.summary());
-
-                            // Print first 10 particles to see if they're moving
-                            debug_data.print_particles(10);
-
-                            // Check dead list initialization
-                            log::info!("=== Checking dead list initialization ===");
-                            debug_data.print_dead_indices(10);
-
-                            // Mark readback as done so we don't trigger it again
-                            self.debug.particle_readback_done = true;
-                            log::info!("Particle debug readback complete (will not trigger again)");
-
-                            // Check specifically for the test particle at index 0
-                            if !debug_data.particles.is_empty() {
-                                let test_particle = &debug_data.particles[0];
-                                log::info!(
-                                    "TEST PARTICLE [0]: pos=({:.2},{:.2},{:.2}) vel=({:.2},{:.2},{:.2}) lifetime={:.2}",
-                                    test_particle.position[0],
-                                    test_particle.position[1],
-                                    test_particle.position[2],
-                                    test_particle.velocity[0],
-                                    test_particle.velocity[1],
-                                    test_particle.velocity[2],
-                                    test_particle.lifetime
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("Failed to read particle debug data: {}", e);
-                        }
-                    }
-                }
-            }
         }
     }
 

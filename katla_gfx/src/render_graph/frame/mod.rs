@@ -35,8 +35,6 @@ pub struct Frame<'a> {
     pub(super) depth_buffer_written: bool,
     /// Whether the particle emit compute pass ran this frame.
     pub particle_emit_ran: bool,
-    /// Whether to trigger particle debug readback this frame.
-    pub particle_debug_readback: bool,
 }
 
 /// Data for a single pass execution.
@@ -78,7 +76,6 @@ impl<'a> Frame<'a> {
             temporary_buffers: Vec::new(),
             depth_buffer_written: false,
             particle_emit_ran: false,
-            particle_debug_readback: graph.params.particle_debug_readback,
         }
     }
 
