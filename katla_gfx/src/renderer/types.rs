@@ -3,6 +3,8 @@
 //! This module provides types that avoid exposing ash::vk to the application layer.
 //! Mesh and material data is registered with the renderer and referenced via opaque handles.
 
+use smallvec::{SmallVec, smallvec};
+
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle};
 use crate::vertex::VertexUI;
 
@@ -129,8 +131,8 @@ impl InstanceData {
 /// FrameContext and used by the shader via `@builtin(instance_index)`.
 ///
 /// # Instances
-/// Every draw call uses `instances` (a `Vec<InstanceData>`). Single-object draws use
-/// a single-element vec; multi-instance draws use N elements. The render pass always
+/// Every draw call uses `instances` (a `SmallVec<[InstanceData; 1]>`). Single-object draws use
+/// a single-element smallvec; multi-instance draws use N elements. The render pass always
 /// reads per-instance data from `instances[0]`.
 #[derive(Clone, Debug)]
 pub struct DrawCall {
@@ -152,7 +154,7 @@ pub struct DrawCall {
     /// Whether this draw call is a billboard (camera-facing icon).
     pub is_billboard: bool,
     /// Per-instance data (transform, color, PBR). Always contains at least one element.
-    pub instances: Vec<InstanceData>,
+    pub instances: SmallVec<[InstanceData; 1]>,
 }
 
 impl DrawCall {
@@ -167,7 +169,7 @@ impl DrawCall {
             sort_key: None,
             skeleton: SkeletonHandle::NONE,
             is_billboard: false,
-            instances: vec![InstanceData::default()],
+            instances: smallvec![InstanceData::default()],
         }
     }
 
@@ -189,7 +191,7 @@ impl DrawCall {
             sort_key: None,
             skeleton: SkeletonHandle::NONE,
             is_billboard: false,
-            instances,
+            instances: instances.into_iter().collect(),
         }
     }
 
