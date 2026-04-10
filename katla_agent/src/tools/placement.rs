@@ -1,5 +1,4 @@
 use katla_ecs::scene_tool::SceneOp;
-use std::f32::consts::PI;
 use std::f32::consts::TAU;
 
 /// Scatter entities randomly in a rectangular area using a grid + jitter approach.
@@ -244,7 +243,3 @@ pub fn place_cluster(
         })
         .collect()
 }
-
-/// 2π constant (full turn).
-/// This is re-exported for convenience since we use TAU above.
-const _TAU: f32 = 2.0 * PI;

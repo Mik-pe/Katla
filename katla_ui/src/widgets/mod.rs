@@ -897,6 +897,7 @@ pub struct RadioButton<'a> {
     value: &'a mut usize,
     index: usize,
     label: &'a str,
+    id: Option<&'a str>,
     bounds: Rect2D,
 }
 
@@ -912,11 +913,17 @@ impl<'a> RadioButton<'a> {
             value,
             index,
             label,
+            id: None,
             bounds: Rect2D::from_size(Vec2::new(
                 DEFAULTS.radio_button_default_width,
                 DEFAULTS.radio_button_default_height,
             )),
         }
+    }
+
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
     }
 
     /// Set the button bounds.
@@ -940,7 +947,13 @@ impl<'a> RadioButton<'a> {
 
 impl<'a> crate::Widget for RadioButton<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        ui.radio_button(self.label, self.value, self.index, self.label, self.bounds)
+        ui.radio_button(
+            self.id.unwrap_or(self.label),
+            self.value,
+            self.index,
+            self.label,
+            self.bounds,
+        )
     }
 }
 
