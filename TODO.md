@@ -70,7 +70,7 @@
 - **Issue:** `infer_field_kind()` maps `i64`/`u64` to `FieldKind::Int`, but `field_mut_arm()` has no match arms for them. They fall to `Unknown` — the inspector can't edit them.
 - **Fix:** Either add `I64`/`U64` variants to `FieldMut` + derive, or remove `i64`/`u64` from `infer_field_kind()`.
 
-### 19. Silent parse error swallowing in `#[inspect]` attribute
+~~### 19. Silent parse error swallowing in `#[inspect]` attribute~~ — Fixed in 7014013. Parse errors now propagate via syn::Error::new_spanned().
 - **Crate:** katla_derive
 - **File:** `src/lib.rs` (`parse_inspect_attr()`)
 - **Issue:** `let _ = meta_item.parse_nested_meta(...)` discards errors. Invalid `#[inspect(range("bad"))]` syntax silently does nothing.
@@ -198,7 +198,7 @@
 
 ~~### 42. `Transform` missing `PartialEq` derive~~ — Fixed in 8a5e7a0. Added PartialEq derive to Transform and implemented it for SSE Quat.
 
-### 43. Radio button renders as square instead of circle
+~~### 43. Radio button renders as square instead of circle~~ — Fixed in 7014013. Uses add_circle for circular rendering.
 - **Crate:** katla_ui
 - **File:** `src/context/widgets/basic.rs` (lines 464-489)
 - **Issue:** Uses `draw_rect_border` and `draw_rect` producing a square. Radio buttons should be circular.
@@ -236,7 +236,7 @@
 - **Issue:** `panic!("range() expects numeric literals")` etc. produce ugly errors without file/line context.
 - **Fix:** Use `syn::Error::new_spanned()` for span-accurate compile errors.
 
-### 52. `DepthFormat::None` maps to `ImageFormat::R8G8B8A8Srgb` placeholder
+~~### 52. `DepthFormat::None` maps to `ImageFormat::R8G8B8A8Srgb` placeholder~~ — Fixed in 7014013. Now maps to ImageFormat::Auto.
 - **Crate:** katla_gfx
 - **File:** `src/viewport.rs`
 - **Issue:** Semantically wrong placeholder. Could cause incorrect behavior if used.
@@ -300,7 +300,7 @@
 - **Issue:** Common direction constants needed in a 3D engine are missing.
 - **Fix:** Add `pub const FORWARD/UP/RIGHT/LEFT/BACK/DOWN`.
 
-### 66. Missing `AABB`-Sphere intersection test
+~~### 66. Missing `AABB`-Sphere intersection test~~ — Fixed in 7014013. Added intersects_sphere with closest-point algorithm and 4 tests.
 - **Crate:** katla_math
 - **File:** `src/aabb.rs`
 - **Issue:** Has AABB-AABB test but no AABB-Sphere, needed for frustum culling and broadphase.
