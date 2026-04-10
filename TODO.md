@@ -101,7 +101,7 @@
 - **Issue:** `UiStyle` has `combo_bg`, `combo_border`, `combo_hovered`, `combo_text` fields but no combo box widget exists. Commonly needed for settings panels and inspectors.
 - **Fix:** Implement a `ComboBox` builder widget.
 
-### 25. No `clear_history()` or token budget on `CoCreatorAgent`
+~~### 25. No `clear_history()` or token budget on `CoCreatorAgent`~~ — Fixed in b96aee7. Added clear_history() and truncate_history(max_messages) methods.
 - **Crate:** katla_agent
 - **File:** `src/co_creator/mod.rs`
 - **Issue:** History grows unbounded. No truncation, no token counting, no pruning of old messages. Long sessions will hit context window limits or cost excessive tokens.
@@ -223,7 +223,7 @@
 
 ~~### 58. `place_cluster()` radius distribution uses wrong formula~~ — Fixed in 93644a9. Changed cbrt(sqrt(t)) to cbrt(t) for correct t^(1/3).
 
-### 59. `McpOp::QueryEntities` loses `name_filter`, `position`, `radius` fields
+~~### 59. `McpOp::QueryEntities` loses `name_filter`, `position`, `radius` fields~~ — Fixed in b96aee7. Extended QueryEntitiesParams and McpOp with name_filter, position, radius fields.
 - **Crate:** katla_agent
 - **File:** `src/mcp.rs` (lines 67-73)
 - **Issue:** Conversion hardcodes `name_filter: None, position: None, radius: None`. MCP clients can't do spatial or name-based queries.
@@ -301,7 +301,7 @@
 - **Issue:** The core streaming loop and tool call accumulation are completely untested. `McpBridge` and `KatlaMcpServer` also have zero tests.
 - **Fix:** Add tests with mock provider returning streaming tool call data.
 
-### 76. Add MCP server graceful shutdown and error logging
+~~### 76. Add MCP server graceful shutdown and error logging~~ — Fixed in b96aee7. Added watch channel shutdown signal, tokio::select! for graceful termination, and log::error for server failures.
 - **Crate:** katla_agent
 - **File:** `src/mcp.rs` (lines 128-135)
 - **Issue:** No way to signal shutdown. `serve_server` errors silently swallowed.
@@ -325,7 +325,7 @@
 
 ~~### 82. Tooltip convenience method on `Response`~~ — Fixed in a4067ef. Added `Response::on_hover_tooltip(ui, text)`.
 
-### 83. `collect_draws_with_context` allocates Vec and HashMap every frame
+~~### 83. `collect_draws_with_context` allocates Vec and HashMap every frame~~ — Fixed in b96aee7. Added reusable draw_entity_map_entries buffer on EditorState.
 - **Crate:** katla_app
 - **File:** `src/application/renderer.rs` (lines 65-120)
 - **Fix:** Reuse buffers between frames by storing on `Application` or `EditorState`.
