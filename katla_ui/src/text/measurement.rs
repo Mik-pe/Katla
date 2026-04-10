@@ -4,6 +4,7 @@ use katla_math::Vec2;
 use skrifa::{
     MetadataProvider,
     instance::{LocationRef, Size},
+    raw::TableProvider,
 };
 
 impl super::FontSystem {
@@ -30,16 +31,69 @@ impl super::FontSystem {
     /// Get kerning between two characters.
     ///
     /// Returns the kerning adjustment in logical pixels.
-    // TODO: Add GPOS kerning support via skrifa's GPOS table access
     pub fn get_kerning(
         &self,
-        _font_id: FontId,
-        _left: char,
-        _right: char,
-        _size: f32,
-        _scale_factor: f32,
+        font_id: FontId,
+        left: char,
+        right: char,
+        size: f32,
+        scale_factor: f32,
     ) -> f32 {
-        0.0
+        let font = match self.get_font(font_id) {
+            Some(f) => f,
+            None => return 0.0,
+        };
+
+        let glyph_left = match font.charmap().map(left) {
+            Some(id) => id,
+            None => return 0.0,
+        };
+        let glyph_right = match font.charmap().map(right) {
+            Some(id) => id,
+            None => return 0.0,
+        };
+
+        let kern_table = match font.kern() {
+            Ok(kern) => kern,
+            Err(_) => return 0.0,
+        };
+
+        let mut total_kerning = 0i32;
+        for subtable in kern_table.subtables().flatten() {
+            if !subtable.is_horizontal() || subtable.is_cross_stream() {
+                continue;
+            }
+            if let Ok(kind) = subtable.kind() {
+                let value = match kind {
+                    skrifa::raw::tables::kern::SubtableKind::Format0(t) => {
+                        t.kerning(glyph_left, glyph_right)
+                    }
+                    skrifa::raw::tables::kern::SubtableKind::Format2(t) => {
+                        t.kerning(glyph_left, glyph_right)
+                    }
+                    _ => None,
+                };
+                if let Some(v) = value {
+                    total_kerning += v;
+                }
+            }
+        }
+
+        if total_kerning == 0 {
+            return 0.0;
+        }
+
+        let physical_size = size * scale_factor;
+        let units_per_em = match font.head() {
+            Ok(head) => head.units_per_em(),
+            Err(_) => return 0.0,
+        };
+        if units_per_em == 0 {
+            return 0.0;
+        }
+
+        let scale = physical_size / units_per_em as f32;
+        (total_kerning as f32 * scale) / scale_factor
     }
 
     /// Measure text dimensions without rendering.

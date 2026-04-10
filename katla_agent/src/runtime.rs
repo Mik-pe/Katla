@@ -1,4 +1,5 @@
 use std::sync::mpsc;
+use std::time::Duration;
 
 use crate::llm::{ChatMessage, ChatResponse, LlmError, LlmProvider, StreamChunk, ToolDefinition};
 
@@ -37,7 +38,13 @@ impl AsyncBridge {
     ) -> PendingChatRequest {
         let (tx, rx) = mpsc::channel();
         self.runtime.spawn(async move {
-            let result = provider.chat_completion(&messages, &tools).await;
+            let result = tokio::time::timeout(
+                Duration::from_secs(120),
+                provider.chat_completion(&messages, &tools),
+            )
+            .await
+            .map_err(|_| LlmError::Timeout)
+            .and_then(|r| r);
             let _ = tx.send(result);
         });
         PendingChatRequest { receiver: rx }
@@ -54,8 +61,21 @@ impl AsyncBridge {
         self.runtime.spawn(async move {
             use futures::StreamExt;
             let mut stream = std::pin::pin!(provider.chat_completion_stream(&messages, &tools));
-            while let Some(item) = stream.next().await {
+            loop {
+                let next = tokio::time::timeout(Duration::from_secs(30), stream.next()).await;
+                let item = match next {
+                    Ok(Some(item)) => item,
+                    Ok(None) => break,
+                    Err(_) => Err(LlmError::Timeout),
+                };
+                let is_done = match &item {
+                    Ok(c) => c.finish_reason.is_some(),
+                    Err(_) => true,
+                };
                 if tx.send(item).is_err() {
+                    break;
+                }
+                if is_done {
                     break;
                 }
             }

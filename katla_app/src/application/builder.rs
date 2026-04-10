@@ -788,6 +788,7 @@ impl ApplicationBuilder {
             gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(
                 katla_gfx::MaterialHandle::NONE,
             ),
+            point_lights_buffer: Vec::new(),
             on_init: self.on_init,
             on_update: self.on_update,
             on_shutdown: self.on_shutdown,
