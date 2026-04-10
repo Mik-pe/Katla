@@ -100,8 +100,8 @@ impl Quat {
         }
     }
 
+    #[inline]
     pub fn from_axis_angle(axis: Vec3, angle: f32) -> Quat {
-        let axis = axis.normalize();
         let factor = f32::sin(angle / 2.0);
 
         let x = axis.x() * factor;
@@ -233,6 +233,7 @@ impl Quat {
         out
     }
 
+    #[inline]
     pub fn make_mat4(&self) -> Mat4 {
         let (m00, m01, m02, m10, m11, m12, m20, m21, m22) = self.rotation_matrix_elements();
 

@@ -16,6 +16,7 @@ impl Default for Transform {
 }
 
 impl Transform {
+    #[inline]
     pub fn new() -> Self {
         Self {
             position: Vec3::new(0.0, 0.0, 0.0),
@@ -56,6 +57,7 @@ impl Transform {
         }
     }
 
+    #[inline]
     pub fn make_mat4(&self) -> Mat4 {
         let scale_mat = Mat4([
             Vec4::new(self.scale[0], 0.0, 0.0, 0.0),
@@ -86,6 +88,7 @@ impl Transform {
     }
 
     /// Get the inverse of this transform
+    #[inline]
     pub fn inverse(&self) -> Self {
         let inv_rot = self.rotation.inverse();
         let inv_scale = Vec3::new(
@@ -145,6 +148,7 @@ impl Transform {
     }
 
     /// Get the forward direction vector from this transform's rotation
+    #[inline]
     pub fn forward(&self) -> Vec3 {
         self.rotation * Vec3::new(0.0, 0.0, -1.0)
     }

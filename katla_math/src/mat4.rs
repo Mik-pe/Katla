@@ -21,6 +21,7 @@ impl Mat4 {
         ])
     }
 
+    #[inline]
     pub fn from_rotaxis(angle: &f32, axis: [f32; 3]) -> Self {
         let cos_part = angle.cos();
         let sin_part = angle.sin();
@@ -48,6 +49,7 @@ impl Mat4 {
         ])
     }
 
+    #[inline]
     pub fn identity() -> Self {
         Self([
             Vec4::new(1.0, 0.0, 0.0, 0.0),
@@ -57,6 +59,7 @@ impl Mat4 {
         ])
     }
 
+    #[inline]
     pub fn mul(&self, rhs: &Self) -> Self {
         Self([
             Vec4::new(
@@ -158,6 +161,7 @@ impl Mat4 {
         1.0f32 / self.calc_det()
     }
 
+    #[inline]
     pub fn inverse(&self) -> Self {
         let inv_det = self.calc_inv_det();
         Self([
@@ -306,6 +310,7 @@ impl Mat4 {
         Self(m.0)
     }
 
+    #[inline]
     pub fn from_trs(translation: crate::Vec3, rotation: crate::Quat, scale: crate::Vec3) -> Self {
         let scale_mat = Self::from_scale(scale);
         let rot_mat = Self::from_rotation(rotation);
@@ -317,6 +322,7 @@ impl Mat4 {
         crate::Vec3::new(self[3][0], self[3][1], self[3][2])
     }
 
+    #[inline]
     pub fn decompose(&self) -> crate::Transform {
         let translation = crate::Vec3::new(self[3][0], self[3][1], self[3][2]);
 
