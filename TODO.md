@@ -56,11 +56,7 @@
 
 ~~### 17. `RadioButton` builder ignores `id` field~~ — Fixed in 4486cb4. Added optional `id` field with `unwrap_or(label)` fallback.
 
-### 18. `i64`/`u64` types get `FieldKind::Int` but no typed `FieldMut` accessor
-- **Crate:** katla_derive / katla_ecs
-- **File:** `katla_derive/src/lib.rs` (`field_mut_arm()`)
-- **Issue:** `infer_field_kind()` maps `i64`/`u64` to `FieldKind::Int`, but `field_mut_arm()` has no match arms for them. They fall to `Unknown` — the inspector can't edit them.
-- **Fix:** Either add `I64`/`U64` variants to `FieldMut` + derive, or remove `i64`/`u64` from `infer_field_kind()`.
+~~### 18. `i64`/`u64` types get `FieldKind::Int` but no typed `FieldMut` accessor~~ — Fixed in 9ff0698. Added I64/U64 variants to FieldMut, FieldValue, derive macro, and agent context.
 
 ~~### 19. Silent parse error swallowing in `#[inspect]` attribute~~ — Fixed in 7014013. Parse errors now propagate via syn::Error::new_spanned().
 - **Crate:** katla_derive
@@ -166,11 +162,7 @@
 
 ~~### 38. `Mat4::create_ortho` parameter order doesn't match standard convention~~ — Fixed in f74b05c. Reordered to (left, right, bottom, top, near, far) matching GLM/Vulkan convention.
 
-### 39. `Mat4::create_proj` semantics unclear (infinite reverse-Z, no `far` parameter)
-- **Crate:** katla_math
-- **File:** `src/mat4.rs`
-- **Issue:** Function name `create_proj` doesn't communicate that it's infinite reverse-Z. Callers expecting a standard perspective projection get incorrect results.
-- **Fix:** Rename to `create_proj_reverse_z` or add a `far` parameter variant.
+~~### 39. `Mat4::create_proj` semantics unclear (infinite reverse-Z, no `far` parameter)~~ — Fixed in 9ff0698. Renamed to `create_proj_reverse_z` to communicate infinite reverse-Z semantics.
 
 ### 40. `Quat::inverse()` is actually `conjugate()` — misleading for non-unit quaternions
 - **Crate:** katla_math
@@ -305,11 +297,7 @@
 
 ~~### 70. `ComponentRegistry::get` is O(n) linear scan by string comparison~~ — Fixed in dcc28d7. Changed from Vec to HashMap for O(1) lookups.
 
-### 71. Redundant debug particle readback in frame_loop
-- **Crate:** katla_app
-- **File:** `src/application/frame_loop.rs` (lines 136-175)
-- **Issue:** Large `#[cfg(debug_assertions)]` block at frame 10 reads debug data directly, but `renderer.rs` (lines 317-340) also sets up a frame graph readback. The direct read may race with frame graph execution.
-- **Fix:** Remove the direct `read_debug_data()` call, rely on frame graph mechanism.
+~~### 71. Redundant debug particle readback in frame_loop~~ — Fixed in 9ff0698. Removed direct read_debug_data() call at frame 10, frame graph mechanism handles readback.
 
 ### 72. `InputMapper` binds `KeyF` to both `Interact` and focus-camera
 - **Crate:** katla_app
