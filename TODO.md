@@ -165,11 +165,7 @@
 
 ~~### 33. Add `#[inline]` to hot-path methods across math crate~~ — Fixed in 6a186a1. Added #[inline] to Mat3/Mat4/Transform/Quat hot-path methods.
 
-### 34. Add `#[inline]` to hot-path ECS methods
-- **Crate:** katla_ecs
-- **Files:** `src/storage.rs`, `src/entity_allocator.rs`, `src/sparse_set.rs`
-- **Issue:** `ComponentStorage::insert/remove`, `ComponentStorageManager::add_component/get_component`, `EntityAllocator::allocate/deallocate`, `SparseSet::insert/remove` lack `#[inline]`.
-- **Fix:** Add `#[inline]`.
+~~### 34. Add `#[inline]` to hot-path ECS methods~~ — Fixed in 93644a9. Added #[inline] to storage, entity_allocator, sparse_set methods.
 
 ~~### 35. Add `#[inline]` to hot-path UI text methods~~ — Fixed in 8a5e7a0. Added #[inline] to measure_text, font_ascent, line_height.
 
@@ -281,11 +277,7 @@
 - **Issue:** Entities too close are silently skipped. The grid is sized for `count` but positions are dropped.
 - **Fix:** Return actual count placed, or retry with adjusted jitter.
 
-### 58. `place_cluster()` radius distribution uses wrong formula
-- **Crate:** katla_agent
-- **File:** `src/tools/placement.rs` (line 119)
-- **Issue:** `r = radius * cbrt(sqrt(t))` gives `t^(1/6)` instead of `t^(1/3)`. Points concentrate too close to center.
-- **Fix:** Use `r = radius * cbrt(t)`.
+~~### 58. `place_cluster()` radius distribution uses wrong formula~~ — Fixed in 93644a9. Changed cbrt(sqrt(t)) to cbrt(t) for correct t^(1/3).
 
 ### 59. `McpOp::QueryEntities` loses `name_filter`, `position`, `radius` fields
 - **Crate:** katla_agent
