@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 
 use crate::inspect::FieldInfo;
@@ -116,39 +117,39 @@ pub struct ComponentRegistryEntry {
 /// Components register themselves to enable the scene tool system to find and
 /// manipulate them by string name at runtime.
 pub struct ComponentRegistry {
-    entries: Vec<ComponentRegistryEntry>,
+    entries: HashMap<&'static str, ComponentRegistryEntry>,
 }
 
 impl ComponentRegistry {
     pub fn new() -> Self {
         Self {
-            entries: Vec::new(),
+            entries: HashMap::new(),
         }
     }
 
     /// Register a component type by providing a registry entry.
     pub fn register(&mut self, entry: ComponentRegistryEntry) {
-        self.entries.push(entry);
+        self.entries.insert(entry.type_name, entry);
     }
 
     /// Look up a registry entry by component type name.
     pub fn get(&self, type_name: &str) -> Option<&ComponentRegistryEntry> {
-        self.entries.iter().find(|e| e.type_name == type_name)
+        self.entries.get(type_name)
     }
 
     /// Iterate over all registered entries.
-    pub fn entries(&self) -> &[ComponentRegistryEntry] {
-        &self.entries
+    pub fn entries(&self) -> impl Iterator<Item = &ComponentRegistryEntry> {
+        self.entries.values()
     }
 
     /// Check if a component type is registered.
     pub fn is_registered(&self, type_name: &str) -> bool {
-        self.entries.iter().any(|e| e.type_name == type_name)
+        self.entries.contains_key(type_name)
     }
 
     /// List all registered component type names.
     pub fn type_names(&self) -> Vec<&'static str> {
-        self.entries.iter().map(|e| e.type_name).collect()
+        self.entries.keys().copied().collect()
     }
 }
 

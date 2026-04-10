@@ -338,14 +338,6 @@ pub struct UiStyle {
     /// Default badge height.
     pub badge_default_height: f32,
 
-    // Button heights (deprecated aliases, kept for compatibility)
-    /// Small button height (compact UI).
-    pub button_height_small: f32,
-    /// Medium button height (standard).
-    pub button_height_medium: f32,
-    /// Toolbar height.
-    pub toolbar_height: f32,
-
     // Icon sizes
     /// Small icon size (12px) - navigation, inline icons.
     pub icon_size_small: f32,
@@ -605,10 +597,6 @@ impl UiStyle {
             badge_default_width: 60.0,
             badge_default_height: 20.0,
 
-            button_height_small: 24.0,
-            button_height_medium: 28.0,
-            toolbar_height: 32.0,
-
             icon_size_small: 12.0,
             icon_size_medium: 16.0,
             icon_size_large: 28.0,
@@ -757,9 +745,6 @@ impl UiStyle {
         s.title_bar_height = 22.0;
         s.graph_label_height = 16.0;
         s.separator_height = 6.0;
-        s.button_height_small = 22.0;
-        s.button_height_medium = 26.0;
-        s.toolbar_height = 28.0;
         s.icon_size_large = 26.0;
         s.button_default_width = 100.0;
         s.button_default_height = 28.0;
