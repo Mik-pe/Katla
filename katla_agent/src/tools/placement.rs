@@ -229,7 +229,7 @@ pub fn place_cluster(
             let azimuth = golden_angle * i as f32;
 
             // Map from unit sphere to radius
-            let r = radius * f32::cbrt(f32::sqrt(t)); // cube root for volume-uniform distribution
+            let r = radius * f32::cbrt(t);
             let x = center[0] + r * f32::sin(inclination) * f32::cos(azimuth);
             let y = center[1] + r * f32::sin(inclination) * f32::sin(azimuth);
             let z = center[2] + r * f32::cos(inclination);

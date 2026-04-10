@@ -101,6 +101,7 @@ where
     ///
     /// If the key already exists, the value is updated.
     /// If the key doesn't exist, a new entry is created.
+    #[inline]
     pub fn insert(&mut self, key: K, value: V) {
         let idx = key.sparse_index();
         self.ensure_sparse_capacity(idx);
@@ -117,6 +118,7 @@ where
     /// Removes the value for the given key.
     ///
     /// Returns true if the key existed and was removed, false otherwise.
+    #[inline]
     pub fn remove(&mut self, key: K) -> bool {
         let idx = key.sparse_index();
         if idx < self.sparse.len()

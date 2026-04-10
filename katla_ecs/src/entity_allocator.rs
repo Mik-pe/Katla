@@ -31,6 +31,7 @@ impl EntityAllocator {
     /// Allocates a new entity ID.
     ///
     /// Reuses freed slots when available, otherwise allocates a new slot.
+    #[inline]
     pub fn allocate(&mut self) -> EntityId {
         self.live_count += 1;
 
@@ -51,6 +52,7 @@ impl EntityAllocator {
     ///
     /// Returns `true` if the entity was valid and deallocated, `false` otherwise.
     /// Increments the generation counter to invalidate stale references.
+    #[inline]
     pub fn deallocate(&mut self, id: EntityId) -> bool {
         let index = id.index() as usize;
 
