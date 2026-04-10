@@ -1,6 +1,6 @@
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::{FontSize, UiContext, mouse_button};
+use katla_ui::{FontSize, UiContext, mouse_button, widgets::RadioButton};
 
 use super::{
     EditorAction, EditorRenderParams, EditorUI, PanelResizeEdge, SpawnableModel,
@@ -311,54 +311,33 @@ impl EditorUI {
 
         // Gizmo mode buttons (positioned inside viewport, top-left)
         {
-            let gizmo_modes: &[(u8, &str)] = &[(0, "W:Move"), (1, "E:Rotate"), (2, "R:Scale")];
-            let gizmo_button_width = 65.0;
-            let gizmo_button_height = 24.0;
+            let gizmo_modes: &[(usize, &str)] = &[(0, "W:Move"), (1, "E:Rotate"), (2, "R:Scale")];
+            let gizmo_button_width = 85.0;
+            let gizmo_button_height = 22.0;
             let gizmo_padding = 8.0;
             let gizmo_start_x = viewport_bounds.min.x() + gizmo_padding;
-            let gizmo_start_y = viewport_bounds.min.y() + gizmo_padding + 16.0; // below viewport label
+            let gizmo_start_y = viewport_bounds.min.y() + gizmo_padding + 16.0;
 
-            for &(mode_id, label) in gizmo_modes {
-                let index = mode_id as usize;
+            let mut selected = self.gizmo_mode as usize;
+
+            for &(index, label) in gizmo_modes {
                 let btn_x = gizmo_start_x + index as f32 * (gizmo_button_width + 2.0);
                 let btn_bounds = Rect2D::from_origin_size(
-                    katla_math::Vec2::new(btn_x, gizmo_start_y),
-                    katla_math::Vec2::new(gizmo_button_width, gizmo_button_height),
+                    Vec2::new(btn_x, gizmo_start_y),
+                    Vec2::new(gizmo_button_width, gizmo_button_height),
                 );
 
-                let is_active = self.gizmo_mode == mode_id;
-                let bg = if is_active {
-                    self.theme.highlight
-                } else {
-                    Color::new(0.0, 0.0, 0.0, 0.5)
-                };
-
-                let text_color = if is_active {
-                    self.theme.text_primary
-                } else {
-                    self.theme.text_muted
-                };
-
-                if ui.mouse_clicked(katla_ui::input::mouse_button::LEFT)
-                    && btn_bounds.contains(ui.mouse_pos())
+                if ui
+                    .add(
+                        RadioButton::new(&mut selected, index, label)
+                            .bounds(btn_bounds)
+                            .id(&format!("gizmo_{label}")),
+                    )
+                    .changed
                 {
                     self.pending_actions
-                        .push(EditorAction::SetGizmoMode(mode_id));
+                        .push(EditorAction::SetGizmoMode(selected as u8));
                 }
-
-                if btn_bounds.contains(ui.mouse_pos()) && !is_active {
-                    ui.draw_rect(btn_bounds, self.theme.button_hover);
-                } else {
-                    ui.draw_rect(btn_bounds, bg);
-                }
-
-                let font_size = ui.scaled_font_size(FontSize::Small);
-                let text_size = ui.measure_text(label, font_size);
-                let text_pos = katla_math::Vec2::new(
-                    btn_bounds.min.x() + (btn_bounds.width() - text_size.x()) * 0.5,
-                    btn_bounds.min.y() + (btn_bounds.height() - text_size.y()) * 0.5,
-                );
-                ui.draw_text(label, text_pos, text_color, font_size);
             }
         }
 
