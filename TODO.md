@@ -96,10 +96,7 @@
 - **Issue:** When an entity with `ParticleEmitterComponent` is destroyed, the GPU emitter is not cleaned up. `EditorAction::DeleteEntity` handles it manually, but programmatic entity destruction leaks GPU emitters.
 - **Fix:** In `ParticleSystem::update()`, iterate active emitter handles and check if owning entity still exists. Or add entity destruction hooks to ECS.
 
-### 24. No combo box / dropdown select widget
-- **Crate:** katla_ui
-- **Issue:** `UiStyle` has `combo_bg`, `combo_border`, `combo_hovered`, `combo_text` fields but no combo box widget exists. Commonly needed for settings panels and inspectors.
-- **Fix:** Implement a `ComboBox` builder widget.
+~~### 24. No combo box / dropdown select widget~~ — Fixed in f5cf41f. Added ComboBox builder widget with trigger button, dropdown popup, and selection support.
 
 ~~### 25. No `clear_history()` or token budget on `CoCreatorAgent`~~ — Fixed in b96aee7. Added clear_history() and truncate_history(max_messages) methods.
 - **Crate:** katla_agent
@@ -121,10 +118,7 @@
 - **Issue:** Queries only support positive component inclusion. No way to query for entities with A but NOT B.
 - **Fix:** Add `Without<T>` and `With<T>` filter types.
 
-### 29. No `#[inspect(enum)]` / `#[inspect(struct)]` / `#[inspect(vec)]` attribute support
-- **Crate:** katla_derive
-- **Issue:** `FieldKind` has variants for `Struct`, `Enum`, `Vec`, `EntityRef` but the derive macro has no attributes to annotate fields with these kinds. They silently become `FieldKind::Unknown`.
-- **Fix:** Add `#[inspect(enum)]`, `#[inspect(struct)]`, `#[inspect(vec)]`, `#[inspect(entity_ref)]` attribute support.
+~~### 29. No `#[inspect(enum)]` / `#[inspect(struct)]` / `#[inspect(vec)]` attribute support~~ — Fixed in 66cb756. Added ExplicitFieldKind enum and parsing for enum, struct, vec, entity_ref attributes.
 
 ~~### 30. Text kerning not implemented (returns 0.0)~~ — Fixed in 16568d0. Implemented kern table lookup via skrifa with Format 0 and Format 2 subtable support.
 - **Crate:** katla_ui
@@ -134,10 +128,7 @@
 
 ~~### 31. Selection clearing via Escape key~~ — False positive. Already implemented at `layout.rs:135`: `self.selected_entity = None` on Escape key press.
 
-### 32. `pace` keybinding / camera speed control
-- **Crate:** katla_app
-- **Issue:** No adjustable camera movement speed. Users cannot control the pace of camera navigation.
-- **Fix:** Add scroll-wheel or modifier key camera speed adjustment (e.g., Shift = fast, Ctrl = slow).
+~~### 32. `pace` keybinding / camera speed control~~ — Fixed in 34d4bf6. Shift = 3x speed, Ctrl = 0.3x speed, configurable base speed via EditorSettings.
 
 ---
 
@@ -242,10 +233,7 @@
 
 ~~### 61. AI LLM should not be able to delete the editor camera~~ — Fixed in 409ddf6. Both LLM and MCP paths now check protected entities (camera/gizmo) before executing destructive ops.
 
-### 62. AI-spawned cubes don't appear in the 3D scene or hierarchy view
-- **Crate:** katla_agent / katla_app
-- **Issue:** When the AI tries spawning cubes via `SceneOp::SpawnEntity`, the entities are created but never render in the 3D viewport or show in the hierarchy panel. Likely missing component registration, transform initialization, or the entities aren't being added to the render/world correctly.
-- **Fix:** Debug the spawn path end-to-end: verify the entity gets all required components (Transform, Mesh, Material), is registered in the render world, and appears in hierarchy queries.
+~~### 62. AI-spawned cubes don't appear in the 3D scene or hierarchy view~~ — Fixed in 6d4051a. `attach_spawn_visuals()` adds TransformComponent, DrawableComponent with cube mesh, and EntitySource to AI-spawned entities.
 
 ~~### 63. Dead `_TAU` constant in placement tools~~ — Fixed in 4486cb4. Removed unused `_TAU` and `PI` import.
 
