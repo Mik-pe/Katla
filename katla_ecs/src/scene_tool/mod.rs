@@ -77,6 +77,44 @@ pub enum SceneOp {
     },
 }
 
+/// Operations for project resource files (scenes, particles, materials, etc).
+#[derive(Debug, Clone)]
+pub enum ResourceOp {
+    /// List resource files under a directory path.
+    ListResources {
+        /// Directory path relative to project root (e.g., "assets/particles").
+        path: String,
+        /// Optional file extension filter (e.g., "json", "katla").
+        filter: Option<String>,
+    },
+    /// Read a resource file's content as a string.
+    ReadResource {
+        /// File path relative to project root.
+        path: String,
+    },
+    /// Write content to an existing resource file.
+    WriteResource {
+        /// File path relative to project root.
+        path: String,
+        /// New file content.
+        content: String,
+    },
+    /// Create a new resource file with optional template.
+    CreateResource {
+        /// File path relative to project root.
+        path: String,
+        /// Optional template name for content generation.
+        template: Option<String>,
+        /// Initial file content (if no template).
+        content: Option<String>,
+    },
+    /// Delete a resource file.
+    DeleteResource {
+        /// File path relative to project root.
+        path: String,
+    },
+}
+
 /// Error type for scene tool operations.
 #[derive(Debug, Clone)]
 pub enum SceneToolError {
