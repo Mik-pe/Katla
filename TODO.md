@@ -592,7 +592,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Crate:** katla_ui
 - **Issue:** `layout.rs` in the editor has ~80 lines of resize handle logic (left panel, right panel, asset browser). It tracks `resizing_panel: Option<PanelResizeEdge>`, clamps widths, and changes the cursor to resize cursors. Any editor with side panels needs this. Currently it's raw mouse-state checking scattered across `build()`.
 - **Sub-tasks:**
-  - [ ] 121a. Add `ResizeHandle` builder widget with `horizontal()`/`vertical()` constructors, `min_width()`, `max_width()`, tracks hover + drag state via `active_id` internally (medium, low risk)
+  - [x] ~~121a. Add `ResizeHandle` builder widget with `horizontal()`/`vertical()` constructors, `min_width()`, `max_width()`, tracks hover + drag state via `active_id` internally~~ — Done in 956f2f8. ResizeHandle with drag tracking, cursor change, value clamping.
   - [ ] 121b. Handle cursor change to `ResizeHorizontal`/`ResizeVertical` on hover, and clamp returned value on drag (small, low risk)
   - [ ] 121c. Migrate the three resize handles in `layout.rs` (left panel, right panel, asset browser) to `ResizeHandle` widget (small, low risk)
   - **Recommended order:** 121a → 121b → 121c
@@ -661,7 +661,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] ~~129d. Wire `ResourceOp` into `execute_tool_call()`~~ — Done in 7c4281a. Full resource file executor with sandboxed paths.
   - [ ] 129e. Add content generation support — AI can generate particle JSON (ask for "fire emitter", "rain", "sparkles"), material TOML, and simple scene files from natural language descriptions. Provide resource-type templates and a `generate_resource` tool that accepts a description and type (medium, medium risk)
   - [ ] 129f. Add `load_scene` / `save_scene` resource ops that go through the existing `SceneSerialization` infrastructure, so the AI can save the current scene state or load a named scene (medium, medium risk)
-  - [ ] 129g. Update the system prompt in `katla_agent/src/co_creator/prompt.rs` to describe resource capabilities, available asset directories, and supported file types (small, low risk)
+  - [x] ~~129g. Update the system prompt in `katla_agent/src/co_creator/prompt.rs` to describe resource capabilities, available asset directories, and supported file types~~ — Done in 956f2f8. Resource tools and supported types documented.
   - **Recommended order:** 129a → 129b → 129c → 129d → 129e → 129f → 129g
 
 ### 130. AI agent can only spawn cubes — extend `spawn_entity` to support all primitives and GLTF models
@@ -677,7 +677,7 @@ These items identify code that currently lives in katla_app but is generic enoug
     - [x] ~~130a. Extend `SpawnEntityArgs` with `shape` and shape-specific parameters~~ — Done in d7beebd. 8 new optional fields in args and tool schema.
     - [x] ~~130b. Extend spawn_entity tool schema with shape params~~ — Done in d7beebd (part of 130a).
     - [x] ~~130c. Extend `SceneOp::SpawnEntity` with primitive field~~ — Done in 7c4281a. Uses Option<String> mapped to EntitySource in katla_app.
-    - [ ] 130d. Rewrite `attach_spawn_visuals()` to match on `args.shape` and call the appropriate `renderer.create_*_mesh()` method, attaching the correct `EntitySource` variant (medium, low risk)
+    - [x] ~~130d. Rewrite `attach_spawn_visuals()` to match on `args.shape` and call the appropriate `renderer.create_*_mesh()` method~~ — Done in 956f2f8. Dispatches on shape string to create correct mesh and EntitySource.
     - [ ] 130e. Add `spawn_model` tool, `SpawnModelArgs` struct, `SceneOp::SpawnModel` variant, and executor that calls `Application::spawn_gltf_model()` (medium, medium risk)
-    - [ ] 130f. Update system prompt to list available shapes and mention `spawn_model` for loading resources (small, low risk)
+    - [x] ~~130f. Update system prompt to list available shapes and mention `spawn_model` for loading resources~~ — Done in 956f2f8. Shape parameter and resource tools documented in system prompt.
     - **Recommended order:** 130a → 130b → 130c → 130d → 130e → 130f
