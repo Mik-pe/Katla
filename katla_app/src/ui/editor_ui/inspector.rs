@@ -1,11 +1,11 @@
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::{
-    FontSize, Response, UiContext, Widget, mouse_button,
+    FontSize, Response, UiContext, Widget,
     widgets::{Button, Slider},
 };
 
-use super::{EditorAction, EntityInfo, FocusedPanel, Theme};
+use super::{EditorAction, EntityInfo, Theme};
 
 const ROW_HEIGHT: f32 = 18.0;
 
@@ -28,7 +28,6 @@ pub struct Inspector<'a> {
     pub bounds: Rect2D,
     pub selected_entity: &'a mut Option<EntityId>,
     pub entities: &'a [EntityInfo],
-    pub focused_panel: &'a mut FocusedPanel,
     pub pending_actions: &'a mut Vec<EditorAction>,
     pub theme: &'a Theme,
     pub edit: &'a mut InspectorEditState,
@@ -39,7 +38,6 @@ impl<'a> Inspector<'a> {
         bounds: Rect2D,
         selected_entity: &'a mut Option<EntityId>,
         entities: &'a [EntityInfo],
-        focused_panel: &'a mut FocusedPanel,
         pending_actions: &'a mut Vec<EditorAction>,
         theme: &'a Theme,
         edit: &'a mut InspectorEditState,
@@ -48,7 +46,6 @@ impl<'a> Inspector<'a> {
             bounds,
             selected_entity,
             entities,
-            focused_panel,
             pending_actions,
             theme,
             edit,
@@ -139,14 +136,6 @@ fn scalar_slider_row(
 
 impl<'a> Widget for Inspector<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        if ui.is_hovered(self.bounds)
-            && (ui.mouse_down(mouse_button::LEFT)
-                || ui.mouse_down(mouse_button::RIGHT)
-                || ui.mouse_down(mouse_button::MIDDLE))
-        {
-            *self.focused_panel = FocusedPanel::Inspector;
-        }
-
         ui.draw_rect(self.bounds, self.theme.panel_bg);
         ui.draw_rect_border(
             self.bounds,

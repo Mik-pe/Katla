@@ -250,12 +250,12 @@ impl EditorUI {
             Vec2::new(0.0, panel_top),
             Vec2::new(self.left_panel_width, panel_height),
         );
+        ui.register_panel(1, left_panel_bounds);
         ui.add(hierarchy::Hierarchy::new(
             left_panel_bounds,
             &mut self.hierarchy_state,
             &mut self.selected_entity,
             entities,
-            &mut self.focused_panel,
             &mut self.pending_actions,
             &self.theme,
         ));
@@ -272,11 +272,11 @@ impl EditorUI {
             Vec2::new(right_panel_x, panel_top),
             Vec2::new(self.right_panel_width, panel_height),
         );
+        ui.register_panel(2, right_panel_bounds);
         ui.add(inspector::Inspector::new(
             right_panel_bounds,
             &mut self.selected_entity,
             entities,
-            &mut self.focused_panel,
             &mut self.pending_actions,
             &self.theme,
             &mut self.inspector_edit,
@@ -302,12 +302,12 @@ impl EditorUI {
         self.last_viewport_bounds = viewport_bounds;
         self.last_screen_size = screen_size;
 
+        ui.register_panel(3, viewport_bounds);
         let grid_response = ui.add(viewport_grid::ViewportGrid::new(
             viewport_bounds,
             &self.viewport_grid_state,
             &self.viewport_texture_ids,
             &self.theme,
-            &mut self.focused_panel,
         ));
 
         if grid_response.hovered {
@@ -357,12 +357,13 @@ impl EditorUI {
             Vec2::new(0.0, panel_bottom),
             Vec2::new(screen_size.x(), asset_browser_height),
         );
+        ui.register_panel(4, asset_browser_bounds);
         build_asset_browser(
             &mut self.asset_browser,
             ui,
             &self.theme,
             asset_browser_bounds,
-            &mut self.focused_panel,
+            self.focused_panel == super::FocusedPanel::AssetBrowser,
             loader,
             thumbnail_texture_handles,
         );
@@ -519,6 +520,16 @@ impl EditorUI {
             theme: &self.theme,
             save_confirmation_timer: self.save_confirmation_timer,
         }));
+
+        if let Some(panel_id) = ui.focused_panel() {
+            self.focused_panel = match panel_id {
+                1 => super::FocusedPanel::Hierarchy,
+                2 => super::FocusedPanel::Inspector,
+                3 => super::FocusedPanel::Viewport,
+                4 => super::FocusedPanel::AssetBrowser,
+                _ => self.focused_panel,
+            };
+        }
 
         if self.asset_browser.is_dragging
             && let Some(drag_idx) = self.asset_browser.drag_asset

@@ -5,39 +5,30 @@
 
 use crate::resources::viewport_state::{ViewportGridState, ViewportLayout};
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::{Response, TextureId, UiContext, Widget, mouse_button};
+use katla_ui::{Response, TextureId, UiContext, Widget};
 
-use super::{FocusedPanel, Theme};
+use super::Theme;
 
 /// Widget that displays multiple viewports in a grid layout.
 pub struct ViewportGrid<'a> {
-    /// The bounds of the entire grid.
     pub bounds: Rect2D,
-    /// The grid state (layout, active viewport, etc.).
     pub state: &'a ViewportGridState,
-    /// Texture IDs for each viewport slot (indexed 0-3).
     pub texture_ids: &'a [Option<TextureId>; 4],
-    /// The UI theme.
     pub theme: &'a Theme,
-    /// The currently focused panel.
-    pub focused_panel: &'a mut FocusedPanel,
 }
 
 impl<'a> ViewportGrid<'a> {
-    /// Creates a new viewport grid widget.
     pub fn new(
         bounds: Rect2D,
         state: &'a ViewportGridState,
         texture_ids: &'a [Option<TextureId>; 4],
         theme: &'a Theme,
-        focused_panel: &'a mut FocusedPanel,
     ) -> Self {
         Self {
             bounds,
             state,
             texture_ids,
             theme,
-            focused_panel,
         }
     }
 
@@ -137,15 +128,6 @@ impl<'a> Widget for ViewportGrid<'a> {
             }
         }
 
-        // Handle focus on any click (left, right, middle)
-        if ui.is_hovered(self.bounds)
-            && (ui.mouse_down(mouse_button::LEFT)
-                || ui.mouse_down(mouse_button::RIGHT)
-                || ui.mouse_down(mouse_button::MIDDLE))
-        {
-            *self.focused_panel = FocusedPanel::Viewport;
-        }
-
         // Return hovered response if any viewport is hovered
         if hovered_slot.is_some() {
             Response::hovered(self.bounds)
@@ -173,8 +155,7 @@ mod tests {
         let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(800.0, 600.0));
 
         let theme = Theme::default();
-        let mut focused = FocusedPanel::None;
-        let mut grid = ViewportGrid::new(bounds, &state, &texture_ids, &theme, &mut focused);
+        let mut grid = ViewportGrid::new(bounds, &state, &texture_ids, &theme);
         test_fn(&mut grid, &theme);
     }
 

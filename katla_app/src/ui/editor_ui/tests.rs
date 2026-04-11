@@ -88,7 +88,6 @@ fn test_hierarchy_entity_selection_works() {
 
     let mut state = HierarchyState::default();
     let mut selected_entity = None;
-    let mut focused_panel = FocusedPanel::None;
     let mut pending_actions = Vec::new();
 
     let mut world = katla_ecs::World::new();
@@ -142,7 +141,6 @@ fn test_hierarchy_entity_selection_works() {
         &mut state,
         &mut selected_entity,
         &entities,
-        &mut focused_panel,
         &mut pending_actions,
         &theme,
     );
