@@ -126,6 +126,10 @@ pub(crate) struct EditorState {
     pub(crate) redo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
     pub(crate) agent_undo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
     pub(crate) agent_redo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
+    /// Whether an inspector slider was being dragged last frame.
+    pub(crate) inspector_slider_was_active: bool,
+    /// Pre-drag snapshot of ECS values for undo.
+    pub(crate) inspector_drag_snapshot: Option<editor::InspectorDragSnapshot>,
 }
 
 #[cfg(feature = "editor")]
@@ -174,6 +178,8 @@ impl EditorState {
             redo_stack: Vec::new(),
             agent_undo_stack: Vec::new(),
             agent_redo_stack: Vec::new(),
+            inspector_slider_was_active: false,
+            inspector_drag_snapshot: None,
         }
     }
 

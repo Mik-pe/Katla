@@ -23,6 +23,165 @@ use crate::ui::{EditorAction, EntityInfo, ParticleEmitterInfo, PointLightInfo};
 
 use super::Application;
 
+/// Snapshot of ECS component values before an inspector slider drag.
+pub(crate) struct InspectorDragSnapshot {
+    entity: EntityId,
+    position: Vec3,
+    rotation_euler: (f32, f32, f32),
+    scale: Vec3,
+    light_color: Option<[f32; 3]>,
+    light_intensity: Option<f32>,
+    light_range: Option<f32>,
+    emit_rate: Option<f32>,
+    velocity: Option<f32>,
+    lifetime: Option<f32>,
+    gravity: Option<f32>,
+    particle_scale: Option<f32>,
+}
+
+/// Command that restores inspector properties to pre-drag values.
+struct InspectorDragUndo {
+    entity: EntityId,
+    snapshot: InspectorDragSnapshot,
+    executed: bool,
+}
+
+impl InspectorDragUndo {
+    fn new(snapshot: InspectorDragSnapshot) -> Self {
+        Self {
+            entity: snapshot.entity,
+            snapshot,
+            executed: true,
+        }
+    }
+}
+
+impl SceneCommand for InspectorDragUndo {
+    fn execute(&mut self, world: &mut katla_ecs::World) -> Result<(), SceneToolError> {
+        if !world.entity_exists(self.entity) {
+            return Err(SceneToolError::EntityNotFound(self.entity));
+        }
+        apply_inspector_snapshot(world, self.entity, &self.snapshot);
+        self.executed = true;
+        Ok(())
+    }
+
+    fn undo(&mut self, world: &mut katla_ecs::World) -> Result<(), SceneToolError> {
+        if !world.entity_exists(self.entity) {
+            return Err(SceneToolError::EntityNotFound(self.entity));
+        }
+        apply_inspector_snapshot(world, self.entity, &self.snapshot);
+        self.executed = false;
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Inspector drag on entity {}", self.entity)
+    }
+
+    fn affected_entities(&self) -> Vec<EntityId> {
+        vec![self.entity]
+    }
+}
+
+fn apply_inspector_snapshot(
+    world: &mut katla_ecs::World,
+    entity: EntityId,
+    snapshot: &InspectorDragSnapshot,
+) {
+    if let Some(transform) = world.get_component_mut::<TransformComponent>(entity) {
+        transform.transform.position = snapshot.position;
+        transform.transform.rotation = katla_math::Quat::from_euler(
+            snapshot.rotation_euler.0,
+            snapshot.rotation_euler.1,
+            snapshot.rotation_euler.2,
+        );
+        transform.transform.scale = snapshot.scale;
+    }
+    if let Some(light) = world.get_component_mut::<PointLight>(entity) {
+        if let Some(color) = snapshot.light_color {
+            light.color = color;
+        }
+        if let Some(intensity) = snapshot.light_intensity {
+            light.intensity = intensity;
+        }
+        if let Some(range) = snapshot.light_range {
+            light.range = range;
+        }
+    }
+    if let Some(emitter) = world.get_component_mut::<ParticleEmitterComponent>(entity) {
+        if let Some(rate) = snapshot.emit_rate {
+            emitter.config.emit_rate = rate;
+        }
+        if let Some(vel) = snapshot.velocity {
+            emitter.config.velocity_magnitude = vel;
+        }
+        if let Some(life) = snapshot.lifetime {
+            emitter.config.base_lifetime = life;
+        }
+        if let Some(grav) = snapshot.gravity {
+            emitter.config.gravity = grav;
+        }
+        if let Some(sc) = snapshot.particle_scale {
+            emitter.config.base_scale = sc;
+        }
+    }
+}
+
+/// Snapshot current ECS component values for the inspector drag undo.
+fn snapshot_inspector_state(app: &Application, entity: EntityId) -> InspectorDragSnapshot {
+    let (position, rotation_euler, scale) =
+        if let Some(transform) = app.world.get_component::<TransformComponent>(entity) {
+            let euler = transform.transform.rotation.to_euler();
+            (
+                transform.transform.position,
+                (euler.0, euler.1, euler.2),
+                transform.transform.scale,
+            )
+        } else {
+            (
+                Vec3::new(0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0),
+                Vec3::new(1.0, 1.0, 1.0),
+            )
+        };
+
+    let (light_color, light_intensity, light_range) =
+        if let Some(light) = app.world.get_component::<PointLight>(entity) {
+            (Some(light.color), Some(light.intensity), Some(light.range))
+        } else {
+            (None, None, None)
+        };
+
+    let (emit_rate, velocity, lifetime, gravity, particle_scale) =
+        if let Some(emitter) = app.world.get_component::<ParticleEmitterComponent>(entity) {
+            (
+                Some(emitter.config.emit_rate),
+                Some(emitter.config.velocity_magnitude),
+                Some(emitter.config.base_lifetime),
+                Some(emitter.config.gravity),
+                Some(emitter.config.base_scale),
+            )
+        } else {
+            (None, None, None, None, None)
+        };
+
+    InspectorDragSnapshot {
+        entity,
+        position,
+        rotation_euler,
+        scale,
+        light_color,
+        light_intensity,
+        light_range,
+        emit_rate,
+        velocity,
+        lifetime,
+        gravity,
+        particle_scale,
+    }
+}
+
 /// Command that reverses a spawn by destroying the entity.
 /// Undo re-creates the entity (no component restoration for editor spawns).
 struct EditorSpawnCommand {
@@ -155,6 +314,7 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     // Apply real-time inspector slider changes to ECS during drag.
     // This happens every frame while a slider is being dragged so the viewport updates immediately.
     // Must happen before borrowing ui_renderer to avoid double mutable borrow.
+    handle_inspector_drag_undo(app);
     apply_inspector_slider_changes(app);
 
     // Convert draw list to GPU format
@@ -177,6 +337,173 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     } else {
         None
     }
+}
+
+/// Detect inspector slider drag start/end and manage undo snapshots.
+///
+/// Compares inspector edit state before and after UI render to detect active slider dragging.
+/// On drag start, snapshots pre-drag ECS values. On drag end, pushes an UndoGroup.
+fn handle_inspector_drag_undo(app: &mut Application) {
+    let entity_id = match app.editor.editor_ui.inspector_edit_entity {
+        Some(id) => id,
+        None => {
+            app.editor.inspector_slider_was_active = false;
+            app.editor.inspector_drag_snapshot = None;
+            return;
+        }
+    };
+
+    let edit = &app.editor.editor_ui.inspector_edit;
+    let slider_active = inspector_values_differ_from_ecs(entity_id, edit, &app.world);
+
+    let was_active = app.editor.inspector_slider_was_active;
+
+    if slider_active && !was_active {
+        app.editor.inspector_drag_snapshot = Some(snapshot_inspector_state(app, entity_id));
+    }
+
+    if !slider_active && was_active {
+        if let Some(snapshot) = app.editor.inspector_drag_snapshot.take() {
+            if inspector_snapshot_differs_from_ecs(entity_id, &snapshot, &app.world) {
+                let mut undo_group = UndoGroup::new("Inspector slider drag");
+                undo_group
+                    .commands
+                    .push(Box::new(InspectorDragUndo::new(snapshot)));
+                app.editor.push_undo(undo_group);
+            }
+        }
+    }
+
+    app.editor.inspector_slider_was_active = slider_active;
+    if !slider_active {
+        app.editor.inspector_drag_snapshot = None;
+    }
+}
+
+/// Check if the current inspector edit state differs from ECS component values.
+fn inspector_values_differ_from_ecs(
+    entity: EntityId,
+    edit: &crate::ui::InspectorEditState,
+    world: &katla_ecs::World,
+) -> bool {
+    if let Some(transform) = world.get_component::<TransformComponent>(entity) {
+        let pos_vec = Vec3::new(edit.pos[0], edit.pos[1], edit.pos[2]);
+        let rot_vec = Vec3::new(edit.rot[0], edit.rot[1], edit.rot[2]);
+        let scale_vec = Vec3::new(edit.scale[0], edit.scale[1], edit.scale[2]);
+
+        if (pos_vec - transform.transform.position).length() > 1e-4 {
+            return true;
+        }
+        let euler = transform.transform.rotation.to_euler();
+        if (rot_vec.x() - euler.0).abs() > 1e-3
+            || (rot_vec.y() - euler.1).abs() > 1e-3
+            || (rot_vec.z() - euler.2).abs() > 1e-3
+        {
+            return true;
+        }
+        if (scale_vec - transform.transform.scale).length() > 1e-4 {
+            return true;
+        }
+    }
+
+    if let Some(light) = world.get_component::<PointLight>(entity) {
+        if (edit.light_color[0] - light.color[0]).abs() > 1e-3
+            || (edit.light_color[1] - light.color[1]).abs() > 1e-3
+            || (edit.light_color[2] - light.color[2]).abs() > 1e-3
+        {
+            return true;
+        }
+        if (edit.light_intensity - light.intensity).abs() > 1e-4 {
+            return true;
+        }
+        if (edit.light_range - light.range).abs() > 1e-4 {
+            return true;
+        }
+    }
+
+    if let Some(emitter) = world.get_component::<ParticleEmitterComponent>(entity) {
+        if (edit.emit_rate - emitter.config.emit_rate).abs() > 1e-4 {
+            return true;
+        }
+        if (edit.velocity - emitter.config.velocity_magnitude).abs() > 1e-4 {
+            return true;
+        }
+        if (edit.lifetime - emitter.config.base_lifetime).abs() > 1e-4 {
+            return true;
+        }
+        if (edit.gravity - emitter.config.gravity).abs() > 1e-4 {
+            return true;
+        }
+        if (edit.particle_scale - emitter.config.base_scale).abs() > 1e-4 {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Check if a pre-drag snapshot differs from current ECS values.
+fn inspector_snapshot_differs_from_ecs(
+    entity: EntityId,
+    snapshot: &InspectorDragSnapshot,
+    world: &katla_ecs::World,
+) -> bool {
+    if let Some(transform) = world.get_component::<TransformComponent>(entity) {
+        if (snapshot.position - transform.transform.position).length() > 1e-4 {
+            return true;
+        }
+        if (snapshot.scale - transform.transform.scale).length() > 1e-4 {
+            return true;
+        }
+    }
+    if let Some(light) = world.get_component::<PointLight>(entity) {
+        if let Some(color) = snapshot.light_color {
+            if (color[0] - light.color[0]).abs() > 1e-3
+                || (color[1] - light.color[1]).abs() > 1e-3
+                || (color[2] - light.color[2]).abs() > 1e-3
+            {
+                return true;
+            }
+        }
+        if let Some(intensity) = snapshot.light_intensity {
+            if (intensity - light.intensity).abs() > 1e-4 {
+                return true;
+            }
+        }
+        if let Some(range) = snapshot.light_range {
+            if (range - light.range).abs() > 1e-4 {
+                return true;
+            }
+        }
+    }
+    if let Some(emitter) = world.get_component::<ParticleEmitterComponent>(entity) {
+        if let Some(rate) = snapshot.emit_rate {
+            if (rate - emitter.config.emit_rate).abs() > 1e-4 {
+                return true;
+            }
+        }
+        if let Some(vel) = snapshot.velocity {
+            if (vel - emitter.config.velocity_magnitude).abs() > 1e-4 {
+                return true;
+            }
+        }
+        if let Some(life) = snapshot.lifetime {
+            if (life - emitter.config.base_lifetime).abs() > 1e-4 {
+                return true;
+            }
+        }
+        if let Some(grav) = snapshot.gravity {
+            if (grav - emitter.config.gravity).abs() > 1e-4 {
+                return true;
+            }
+        }
+        if let Some(sc) = snapshot.particle_scale {
+            if (sc - emitter.config.base_scale).abs() > 1e-4 {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Apply real-time inspector slider changes to ECS components during drag.

@@ -11,3 +11,10 @@ editor = ["serde_json"]
 katla_derive = { workspace = true }
 paste = { workspace = true }
 serde_json = { workspace = true, optional = true }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "ecs_benchmarks"
+harness = false
