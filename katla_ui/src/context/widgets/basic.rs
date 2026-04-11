@@ -25,6 +25,7 @@ impl UiContext {
         border_color: Option<Color>,
     ) -> Response {
         let widget_id = self.generate_id(id);
+        self.register_focusable(widget_id, bounds);
 
         let hovered = self.update_hover(widget_id, bounds);
         let click_result = self.click_interaction(
@@ -68,6 +69,9 @@ impl UiContext {
         enabled: bool,
     ) -> Response {
         let widget_id = self.generate_id(id);
+        if enabled {
+            self.register_focusable(widget_id, bounds);
+        }
 
         let hovered = self.update_hover(widget_id, bounds) && enabled;
         let click_result = self.click_interaction(
@@ -124,6 +128,7 @@ impl UiContext {
         bounds: Rect2D,
     ) -> Response {
         let widget_id = self.generate_id(id);
+        self.register_focusable(widget_id, bounds);
 
         let hovered = self.update_hover(widget_id, bounds);
         let click_result = self.click_interaction(
@@ -185,6 +190,7 @@ impl UiContext {
         bounds: Rect2D,
     ) -> Response {
         let widget_id = self.generate_id(id);
+        self.register_focusable(widget_id, bounds);
 
         let hovered = self.update_hover(widget_id, bounds);
         let active = self.active_id == Some(widget_id);
@@ -250,6 +256,7 @@ impl UiContext {
     ) -> Response {
         let widget_id = self.generate_id(id);
         let hovered = self.update_hover(widget_id, bounds);
+        self.register_focusable(widget_id, bounds);
 
         let clear_size = bounds.height();
         let clear_bounds = Rect2D::from_origin_size(
@@ -713,6 +720,7 @@ impl UiContext {
     ) -> Response {
         let is_selected = *value == index;
         let widget_id = self.generate_id(id);
+        self.register_focusable(widget_id, bounds);
         let hovered = self.update_hover(widget_id, bounds);
         let active = self.active_id == Some(widget_id);
 
@@ -782,6 +790,7 @@ impl UiContext {
         open: &mut bool,
     ) -> Response {
         let widget_id = self.generate_id(id);
+        self.register_focusable(widget_id, bounds);
 
         let hovered = self.update_hover(widget_id, bounds);
         let clicked = self

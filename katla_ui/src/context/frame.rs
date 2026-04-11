@@ -53,6 +53,7 @@ impl UiContext {
         self.clip_stack
             .push(katla_math::Rect2D::from_size(screen_size));
         self.scratch_points.clear();
+        self.focusable_widgets.clear();
     }
 
     /// End the frame and get the draw list.
@@ -60,6 +61,19 @@ impl UiContext {
     /// After calling this, render the draw list using `UiRenderer`.
     pub fn end(&mut self) -> &crate::draw_list::DrawList {
         debug_assert!(self.in_frame, "end() called without begin()");
+
+        // Handle Tab/Shift+Tab keyboard navigation
+        self.handle_tab_navigation();
+
+        // Draw focus ring on the currently focused widget
+        if let Some(focused) = self.focused_id
+            && let Some((_, bounds)) = self.focusable_widgets.iter().find(|(id, _)| *id == focused)
+        {
+            self.draw_list
+                .set_clip(katla_math::Rect2D::from_size(self.screen_size));
+            self.draw_list
+                .add_rect(bounds.inflate(2.0), self.style.focus_ring_color);
+        }
 
         self.draw_list.finalize();
         self.in_frame = false;
@@ -74,5 +88,43 @@ impl UiContext {
         }
 
         &self.draw_list
+    }
+
+    fn handle_tab_navigation(&mut self) {
+        let shift = self.input.is_key_down(crate::input::KeyCode::Shift);
+        if !self.input.key_pressed(crate::input::KeyCode::Tab) {
+            return;
+        }
+        if self.focusable_widgets.is_empty() {
+            return;
+        }
+
+        // If a text input is focused and Ctrl is held, don't tab-navigate
+        // (Ctrl+Tab may have different meaning)
+        if self.input.is_key_down(crate::input::KeyCode::Control) {
+            return;
+        }
+
+        let count = self.focusable_widgets.len();
+        let current_index = self
+            .focused_id
+            .and_then(|fid| self.focusable_widgets.iter().position(|(id, _)| *id == fid))
+            .unwrap_or(count); // "past the end" = no selection
+
+        let next_index = if shift {
+            if current_index == 0 || current_index == count {
+                count - 1
+            } else {
+                current_index - 1
+            }
+        } else {
+            if current_index >= count - 1 {
+                0
+            } else {
+                current_index + 1
+            }
+        };
+
+        self.focused_id = Some(self.focusable_widgets[next_index].0);
     }
 }
