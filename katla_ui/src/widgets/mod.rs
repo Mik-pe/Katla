@@ -513,6 +513,163 @@ impl<'a> crate::Widget for Slider<'a> {
 }
 
 // =============================================================================
+// LabeledSlider Widget
+// =============================================================================
+
+/// A slider with a label and optional value display in a single row.
+///
+/// Layout: `[label (label_width)] [slider (fills remaining)] [value text (if show_value)]`
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::LabeledSlider;
+///
+/// let mut intensity = 50.0;
+/// let resp = ui.add(LabeledSlider::new("Intensity", &mut intensity, 0.0..=100.0)
+///     .bounds(row_bounds)
+///     .label_width(90.0)
+///     .show_value(true)
+///     .precision(2));
+/// ```
+pub struct LabeledSlider<'a> {
+    label: &'a str,
+    value: &'a mut f32,
+    range: std::ops::RangeInclusive<f32>,
+    bounds: Rect2D,
+    label_width: f32,
+    show_value: bool,
+    precision: usize,
+    id: Option<&'a str>,
+}
+
+impl<'a> LabeledSlider<'a> {
+    /// Create a new labeled slider with label, value, and range.
+    ///
+    /// Defaults: `label_width` = 80.0, `show_value` = true, `precision` = 1.
+    pub fn new(label: &'a str, value: &'a mut f32, range: std::ops::RangeInclusive<f32>) -> Self {
+        Self {
+            label,
+            value,
+            range,
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.slider_default_width,
+                DEFAULTS.slider_default_height,
+            )),
+            label_width: 80.0,
+            show_value: true,
+            precision: 1,
+            id: None,
+        }
+    }
+
+    /// Set the total row bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set the width allocated for the label text.
+    pub fn label_width(mut self, w: f32) -> Self {
+        self.label_width = w;
+        self
+    }
+
+    /// Whether to show the formatted value on the right side.
+    pub fn show_value(mut self, show: bool) -> Self {
+        self.show_value = show;
+        self
+    }
+
+    /// Set the decimal places for value display.
+    pub fn precision(mut self, p: usize) -> Self {
+        self.precision = p;
+        self
+    }
+
+    /// Set a custom widget ID.
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Position the labeled slider at the current cursor position with default size.
+    pub fn at_cursor(mut self, ui: &UiContext) -> Self {
+        self.bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(
+                ui.style.slider_default_width,
+                ui.style.slider_default_height,
+            ),
+        );
+        self
+    }
+}
+
+impl<'a> crate::Widget for LabeledSlider<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let font_size = ui.style.font_size;
+        let text_color = ui.style.text_color;
+        let label_text_size = ui.measure_text(self.label, font_size);
+
+        // Draw label text vertically centered in the label region
+        let label_x = self.bounds.min.x();
+        let label_y = self.bounds.center().y() - label_text_size.y() * 0.5;
+        ui.draw_text(
+            self.label,
+            Vec2::new(label_x, label_y),
+            text_color,
+            font_size,
+        );
+
+        // Measure value text width if showing
+        let value_text_width = if self.show_value {
+            let value_text = format!("{:.1$}", *self.value, self.precision);
+            let size = ui.measure_text(&value_text, font_size);
+            size.x() + 8.0 // padding
+        } else {
+            0.0
+        };
+
+        // Slider fills the space between label and value text
+        let slider_x = self.bounds.min.x() + self.label_width;
+        let slider_width = (self.bounds.max.x() - value_text_width) - slider_x;
+        let slider_bounds = Rect2D::from_origin_size(
+            Vec2::new(slider_x, self.bounds.min.y()),
+            Vec2::new(slider_width.max(0.0), self.bounds.height()),
+        );
+
+        let slider_id = self.id.unwrap_or(self.label);
+        let response = ui.add(
+            Slider::new(slider_id, self.value, self.range.clone())
+                .bounds(slider_bounds)
+                .show_value(false),
+        );
+
+        // Draw value text on the right side
+        if self.show_value {
+            let value_text = format!("{:.1$}", *self.value, self.precision);
+            let value_text_size = ui.measure_text(&value_text, font_size);
+            let value_x = self.bounds.max.x() - value_text_size.x();
+            let value_y = self.bounds.center().y() - value_text_size.y() * 0.5;
+            ui.draw_text(
+                &value_text,
+                Vec2::new(value_x, value_y),
+                text_color,
+                font_size,
+            );
+        }
+
+        let mut result = Response::new(self.bounds);
+        result.changed = response.changed;
+        result.hovered = response.hovered;
+        result.active = response.active;
+        result.clicked = response.clicked;
+        result
+    }
+}
+
+// =============================================================================
 // TextInput Widget
 // =============================================================================
 
@@ -1192,8 +1349,7 @@ where
 
 mod draggable_panel;
 pub use draggable_panel::{
-    DraggablePanel, DraggablePanelConfig, DraggablePanelFrame, DraggablePanelState,
-    DraggablePanelStyle, PanelState,
+    DraggablePanel, DraggablePanelConfig, DraggablePanelFrame, DraggablePanelState, PanelState,
 };
 
 mod list_view;

@@ -2,7 +2,7 @@ use katla_math::{Color, Rect2D, Vec2};
 
 use crate::input::mouse_button;
 use crate::widgets::Button;
-use crate::{FontSize, UiContext};
+use crate::{FontSize, UiContext, z_index};
 
 /// Visibility state for a floating panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -90,17 +90,6 @@ impl DraggablePanelState {
     }
 }
 
-/// Colors needed by [`DraggablePanel`] to draw the panel chrome.
-#[derive(Debug, Clone)]
-pub struct DraggablePanelStyle {
-    pub panel_bg: Color,
-    pub panel_border: Color,
-    pub panel_header: Color,
-    pub background_light: Color,
-    pub text_primary: Color,
-    pub text_muted: Color,
-}
-
 /// Layout info passed to the content closure.
 pub struct DraggablePanelFrame {
     pub panel_bounds: Rect2D,
@@ -113,7 +102,6 @@ pub struct DraggablePanelFrame {
 /// DraggablePanel::show(
 ///     ui,
 ///     &mut state,
-///     &style,
 ///     DraggablePanelConfig::new("my_panel", "Title")
 ///         .size(450.0, 500.0)
 ///         .screen_size(screen_size),
@@ -174,7 +162,6 @@ impl DraggablePanel {
     pub fn show<F>(
         ui: &mut UiContext,
         state: &mut DraggablePanelState,
-        style: &DraggablePanelStyle,
         config: DraggablePanelConfig<'_>,
         content: F,
     ) where
@@ -242,8 +229,6 @@ impl DraggablePanel {
         let panel_bounds =
             Rect2D::from_origin_size(panel_pos, Vec2::new(panel_width, panel_height));
 
-        // Click-outside detection (computed before with_z_index since it only
-        // uses panel_bounds and mouse state, not z-index)
         let mouse_in_panel = panel_bounds.contains(ui.mouse_pos());
         let mouse_clicked_outside = close_on_outside_click
             && !state.dragging
@@ -253,7 +238,14 @@ impl DraggablePanel {
 
         let mut close_clicked = false;
 
-        ui.with_z_index(crate::z_index::PANEL, |ui| {
+        let window_bg = ui.style.window_bg;
+        let window_border = ui.style.window_border;
+        let window_title_bg = ui.style.window_title_bg;
+        let window_title_bg_active = ui.style.window_title_bg_active;
+        let text_disabled = ui.style.text_disabled;
+        let text_color = ui.style.text_color;
+
+        ui.with_z_index(z_index::PANEL, |ui| {
             // Shadow
             let shadow_offset = Vec2::new(6.0, 6.0);
             let shadow_bounds = Rect2D::new(
@@ -263,8 +255,8 @@ impl DraggablePanel {
             ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.6));
 
             // Panel body
-            ui.draw_rect(panel_bounds, style.panel_bg);
-            ui.draw_rect_border(panel_bounds, style.panel_bg, style.panel_border, 1.0);
+            ui.draw_rect(panel_bounds, window_bg);
+            ui.draw_rect_border(panel_bounds, window_bg, window_border, 1.0);
 
             // Title bar
             let title_bounds = Rect2D::from_origin_size(
@@ -272,9 +264,9 @@ impl DraggablePanel {
                 Vec2::new(panel_width, title_bar_height),
             );
             let title_color = if state.dragging || can_drag {
-                style.background_light
+                window_title_bg_active
             } else {
-                style.panel_header
+                window_title_bg
             };
             ui.draw_rect(title_bounds, title_color);
 
@@ -286,7 +278,7 @@ impl DraggablePanel {
                 ui.draw_line(
                     Vec2::new(handle_x, line_y),
                     Vec2::new(handle_x + 40.0, line_y),
-                    style.text_muted,
+                    text_disabled,
                     1.0,
                 );
             }
@@ -299,7 +291,7 @@ impl DraggablePanel {
             ui.draw_text(
                 title,
                 title_pos,
-                style.text_primary,
+                text_color,
                 ui.scaled_font_size(FontSize::Large),
             );
 

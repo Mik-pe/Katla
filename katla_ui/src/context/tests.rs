@@ -1126,9 +1126,7 @@ fn test_scroll_consumed_by_first_scroll_area() {
 /// false due to hover_z_index being higher.
 #[test]
 fn test_scroll_blocked_by_floating_panel() {
-    use crate::widgets::{
-        DraggablePanel, DraggablePanelConfig, DraggablePanelState, DraggablePanelStyle,
-    };
+    use crate::widgets::{DraggablePanel, DraggablePanelConfig, DraggablePanelState};
 
     let scroll_bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 400.0));
 
@@ -1136,15 +1134,6 @@ fn test_scroll_blocked_by_floating_panel() {
     let mut panel_state = DraggablePanelState {
         visibility: crate::widgets::PanelState::Visible,
         ..Default::default()
-    };
-
-    let style = DraggablePanelStyle {
-        panel_bg: katla_math::Color::new(0.2, 0.2, 0.2, 1.0),
-        panel_border: katla_math::Color::BLACK,
-        panel_header: katla_math::Color::new(0.3, 0.3, 0.3, 1.0),
-        background_light: katla_math::Color::new(0.4, 0.4, 0.4, 1.0),
-        text_primary: katla_math::Color::WHITE,
-        text_muted: katla_math::Color::new(0.6, 0.6, 0.6, 1.0),
     };
 
     // Mouse is inside both the panel and the scroll area
@@ -1156,7 +1145,6 @@ fn test_scroll_blocked_by_floating_panel() {
     DraggablePanel::show(
         &mut ctx,
         &mut panel_state,
-        &style,
         DraggablePanelConfig::new("test_panel", "Test")
             .size(300.0, 300.0)
             .screen_size(Vec2::new(800.0, 600.0)),

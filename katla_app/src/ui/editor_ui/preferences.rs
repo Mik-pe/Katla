@@ -5,10 +5,7 @@
 use katla_math::{Rect2D, Vec2};
 use katla_ui::{
     FontId, FontSize, ForkAwesome, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
-    widgets::{
-        Button, DraggablePanel, DraggablePanelConfig, DraggablePanelState, DraggablePanelStyle,
-        ToggleButton,
-    },
+    widgets::{Button, DraggablePanel, DraggablePanelConfig, DraggablePanelState, ToggleButton},
 };
 
 use crate::Preferences;
@@ -31,19 +28,6 @@ const SECTION_GAP: f32 = 20.0;
 const LABEL_GAP: f32 = 8.0;
 /// Grid cell spacing for button grids.
 const GRID_SPACING: f32 = 8.0;
-
-impl From<&Theme> for DraggablePanelStyle {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            panel_bg: theme.panel_bg,
-            panel_border: theme.panel_border,
-            panel_header: theme.panel_header,
-            background_light: theme.background_light,
-            text_primary: theme.text_primary,
-            text_muted: theme.text_muted,
-        }
-    }
-}
 
 /// Preferences panel tabs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -161,7 +145,6 @@ impl<'a> PreferencesPanel<'a> {
 
 impl<'a> Widget for PreferencesPanel<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let style = DraggablePanelStyle::from(self.theme);
         let panel_width = 450.0;
         let panel_height = 500.0;
         let title_bar_height = DraggablePanel::title_bar_height();
@@ -172,7 +155,6 @@ impl<'a> Widget for PreferencesPanel<'a> {
         DraggablePanel::show(
             ui,
             &mut self.state.panel,
-            &style,
             DraggablePanelConfig::new("prefs", "Preferences")
                 .size(panel_width, panel_height)
                 .screen_size(self.screen_size)
