@@ -71,6 +71,12 @@ impl Application {
         self.timer.add_timestamp();
         let dt = self.timer.get_delta() as f32;
 
+        // Sync editor camera speed to input state before systems run
+        #[cfg(feature = "editor")]
+        if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {
+            input.camera_speed = self.editor.editor_ui.editor_settings().camera_speed;
+        }
+
         // Update world (runs animation systems)
         debug!("Updating world...");
         self.world.update(dt);

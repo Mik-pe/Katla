@@ -27,6 +27,16 @@ fn compute_movement_direction(input: &InputState) -> Vec3 {
     Vec3::new(x, y, z)
 }
 
+fn compute_speed_multiplier(input: &InputState) -> f32 {
+    if input.is_action_pressed(Action::Sprint) {
+        3.0
+    } else if input.is_action_pressed(Action::Slow) {
+        0.3
+    } else {
+        1.0
+    }
+}
+
 pub struct FlyCameraLookSystem;
 
 impl System for FlyCameraLookSystem {
@@ -36,12 +46,13 @@ impl System for FlyCameraLookSystem {
         };
         let should_look = input.is_action_pressed(Action::LookEnable);
         let input_dir = compute_movement_direction(input);
+        let speed = input.camera_speed * compute_speed_multiplier(input);
 
         let delta = input.mouse_delta;
         let has_movement_input = input_dir.length_squared() > 0.0;
 
         // Collect all updates first
-        let transform_updates: Vec<(katla_ecs::EntityId, Quat, f32, bool)> = world
+        let transform_updates: Vec<(katla_ecs::EntityId, Quat, bool)> = world
             .query::<(
                 &FlyCameraControllerComponent,
                 &mut FlyCameraLookComponent,
@@ -57,22 +68,16 @@ impl System for FlyCameraLookSystem {
                     (
                         entity,
                         Quat::new_from_yaw_pitch(look.yaw, look.pitch),
-                        ctrl.speed,
                         has_movement_input,
                     )
                 } else {
-                    (
-                        entity,
-                        transform.transform.rotation,
-                        ctrl.speed,
-                        has_movement_input,
-                    )
+                    (entity, transform.transform.rotation, has_movement_input)
                 }
             })
             .collect();
 
         // Apply transform updates
-        for (entity, rotation, _speed, _has_input) in &transform_updates {
+        for (entity, rotation, _has_input) in &transform_updates {
             if let Some(transform) =
                 world.get_component_mut::<crate::components::TransformComponent>(*entity)
             {
@@ -81,22 +86,18 @@ impl System for FlyCameraLookSystem {
         }
 
         // Apply force/velocity updates
-        for (entity, rotation, speed, has_input) in transform_updates {
+        for (entity, rotation, has_input) in transform_updates {
             if has_input {
-                // Apply movement force in the direction of camera rotation
                 if let Some(force) = world.get_component_mut::<ForceComponent>(entity) {
                     let world_dir = rotation.rotate_vec3(input_dir);
                     force.force += world_dir.mul(speed);
                 }
             } else {
-                // No input - directly reduce velocity for smooth stopping
                 if let Some(velocity) = world.get_component_mut::<VelocityComponent>(entity) {
-                    let speed = velocity.velocity.length();
-                    if speed > 0.01 {
-                        // Reduce velocity by a percentage each frame (exponential decay)
-                        velocity.velocity *= 0.85; // Adjust for faster/slower stop
+                    let vel_speed = velocity.velocity.length();
+                    if vel_speed > 0.01 {
+                        velocity.velocity *= 0.85;
                     } else {
-                        // Stop completely when very slow
                         velocity.velocity = Vec3::new(0.0, 0.0, 0.0);
                     }
                 }

@@ -627,6 +627,11 @@ fn build_keybindings_tab(
             section: "Viewport",
         },
         ShortcutEntry {
+            keys: "Ctrl",
+            description: "Slow camera",
+            section: "Viewport",
+        },
+        ShortcutEntry {
             keys: "L",
             description: "Enable camera look",
             section: "Viewport",

@@ -388,7 +388,15 @@ impl ApplicationHandler for Application {
 
                     self.on_keyboard_input(&event, keycode, event_loop);
 
-                    if let Some(action) = self.input_mapper.get_action(&binding) {
+                    // Try lookup with current modifiers first, then fall back to
+                    // no-modifiers. This allows Shift+W to still trigger MoveForward
+                    // while Shift alone triggers Sprint.
+                    let action = self.input_mapper.get_action(&binding).or_else(|| {
+                        let plain = InputBinding::Keyboard(KeyCombo::key(keycode));
+                        self.input_mapper.get_action(&plain)
+                    });
+
+                    if let Some(action) = action {
                         let send_input = self.should_send_game_input();
 
                         if send_input {
