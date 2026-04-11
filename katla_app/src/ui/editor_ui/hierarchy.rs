@@ -303,18 +303,7 @@ impl<'a> Widget for Hierarchy<'a> {
         }
 
         if self.entities.is_empty() {
-            let empty_text = "No entities in scene";
-            let empty_size = ui.measure_text(empty_text, ui.scaled_font_size(FontSize::Medium));
-            let empty_pos = Vec2::new(
-                self.bounds.center().x() - empty_size.x() * 0.5,
-                self.bounds.center().y() - empty_size.y() * 0.5,
-            );
-            ui.draw_text(
-                empty_text,
-                empty_pos,
-                self.theme.text_muted,
-                ui.scaled_font_size(FontSize::Medium),
-            );
+            ui.draw_empty_state(self.bounds, "No entities in scene");
         }
 
         let mut clicked_action: Option<&str> = None;

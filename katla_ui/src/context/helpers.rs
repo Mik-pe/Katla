@@ -4,7 +4,7 @@
 //! reducing boilerplate and ensuring consistent styling across the application.
 
 use crate::{FontSize, UiContext};
-use katla_math::Vec2;
+use katla_math::{Rect2D, Vec2};
 
 impl UiContext {
     /// Display a labeled property row (label: value on same line).
@@ -98,17 +98,21 @@ impl UiContext {
     /// ui.separator_line();
     /// ```
     pub fn separator_line(&mut self) {
-        let clip = self.clip_rect();
         let y = self.cursor().y();
-        let padding = 8.0;
+        let start_x = self.cursor().x();
+        let width = {
+            let clip = self.clip_rect();
+            clip.max.x() - start_x
+        };
+        let padding = self.style.window_padding;
 
         self.draw_line(
-            Vec2::new(clip.min.x() + padding, y),
-            Vec2::new(clip.max.x() - padding, y),
+            Vec2::new(start_x, y),
+            Vec2::new(start_x + width - padding * 2.0, y),
             self.style.separator,
             1.0,
         );
-        self.spacing(8.0);
+        self.spacing(self.style.separator_height);
     }
 
     /// Display a separator text (vertical bar "|") with spacing.
@@ -143,6 +147,16 @@ impl UiContext {
         self.header(title);
         content(self);
         self.separator_line();
+    }
+
+    pub fn draw_empty_state(&mut self, bounds: Rect2D, text: &str) {
+        let font_size = self.scaled_font_size(FontSize::Medium);
+        let text_size = self.measure_text(text, font_size);
+        let pos = Vec2::new(
+            bounds.center().x() - text_size.x() * 0.5,
+            bounds.center().y() - text_size.y() * 0.5,
+        );
+        self.draw_text(text, pos, self.style.text_disabled, font_size);
     }
 
     pub fn truncate_text(&self, text: &str, max_width: f32, font_size: f32) -> String {

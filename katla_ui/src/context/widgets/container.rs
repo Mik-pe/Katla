@@ -5,7 +5,7 @@
 
 use katla_math::{Rect2D, Vec2};
 
-use super::super::{UiContext, WindowState};
+use super::super::{UiContext, WindowGuard, WindowState};
 
 impl UiContext {
     /// Begin a window container with an optional title bar.
@@ -73,5 +73,43 @@ impl UiContext {
     /// End a window container.
     pub fn end_window(&mut self) {
         self.pop_clip();
+    }
+
+    /// Begin a window container with an RAII guard that pops the clip on drop.
+    ///
+    /// # Example
+    /// ```ignore
+    /// {
+    ///     let win = ui.begin_window_guard("my_window", Some("Title"), bounds);
+    ///     let cursor = win.state.content_cursor;
+    ///     // draw content
+    /// } // auto-pops clip
+    /// ```
+    pub fn begin_window_guard(
+        &mut self,
+        id: &str,
+        title: Option<&str>,
+        bounds: Rect2D,
+    ) -> WindowGuard<'_> {
+        let state = self.begin_window(id, title, bounds);
+        WindowGuard { state, ctx: self }
+    }
+
+    /// Execute a closure within a window context, automatically managing the clip.
+    ///
+    /// # Example
+    /// ```ignore
+    /// ui.with_window("my_window", Some("Title"), bounds, |ui, state| {
+    ///     ui.label(state.content_cursor, "Hello");
+    /// }); // auto-pops clip
+    /// ```
+    pub fn with_window<F, R>(&mut self, id: &str, title: Option<&str>, bounds: Rect2D, f: F) -> R
+    where
+        F: FnOnce(&mut Self, &WindowState) -> R,
+    {
+        let state = self.begin_window(id, title, bounds);
+        let result = f(self, &state);
+        self.end_window();
+        result
     }
 }

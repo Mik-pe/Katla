@@ -790,18 +790,7 @@ pub fn build_asset_browser(
                 } else {
                     "No matching assets"
                 };
-                let empty_size =
-                    ui.measure_text(empty_text, ui.scaled_font_size(katla_ui::FontSize::Medium));
-                let empty_pos = Vec2::new(
-                    content_bounds.center().x() - empty_size.x() * 0.5,
-                    content_bounds.center().y() - empty_size.y() * 0.5,
-                );
-                ui.draw_text(
-                    empty_text,
-                    empty_pos,
-                    theme.text_muted,
-                    ui.scaled_font_size(katla_ui::FontSize::Medium),
-                );
+                ui.draw_empty_state(content_bounds, empty_text);
             }
 
             let total_rows = state.assets.len().div_ceil(col_count);

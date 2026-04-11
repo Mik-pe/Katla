@@ -162,16 +162,6 @@ impl CoCreatorStyle {
             text_muted: self.text_muted,
         }
     }
-
-    pub fn markdown_colors(&self) -> MarkdownColors {
-        MarkdownColors::new(
-            self.user_msg_color,
-            Color::new(0.6, 0.85, 0.65, 1.0),
-            Color::new(0.15, 0.15, 0.2, 0.8),
-            Color::WHITE,
-            self.text_muted,
-        )
-    }
 }
 
 /// Whether the co-creator panel submitted a message this frame.
@@ -211,7 +201,7 @@ pub fn draw_co_creator_panel(
     let mut enter_pressed = false;
 
     let panel_style = style.draggable_panel_style();
-    let md_colors = style.markdown_colors();
+    let md_colors = MarkdownColors::from_style(ui.style());
 
     katla_ui::widgets::DraggablePanel::show(
         ui,

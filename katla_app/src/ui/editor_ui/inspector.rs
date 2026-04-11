@@ -411,18 +411,7 @@ impl<'a> Widget for Inspector<'a> {
                 *self.selected_entity = None;
             }
         } else {
-            let no_selection = "No entity selected";
-            let no_sel_size = ui.measure_text(no_selection, ui.scaled_font_size(FontSize::Medium));
-            let no_sel_pos = Vec2::new(
-                self.bounds.center().x() - no_sel_size.x() * 0.5,
-                self.bounds.center().y() - no_sel_size.y() * 0.5,
-            );
-            ui.draw_text(
-                no_selection,
-                no_sel_pos,
-                self.theme.text_muted,
-                ui.scaled_font_size(FontSize::Medium),
-            );
+            ui.draw_empty_state(self.bounds, "No entity selected");
         }
 
         ui.end_column();

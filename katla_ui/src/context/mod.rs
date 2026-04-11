@@ -100,6 +100,29 @@ impl Drop for ZGuard<'_> {
     }
 }
 
+/// RAII guard for window clip management.
+///
+/// Automatically pops the clip when dropped.
+///
+/// # Example
+/// ```ignore
+/// {
+///     let win = ui.begin_window_guard("my_window", Some("Title"), bounds);
+///     // draw window content using win.state
+/// } // auto-pops clip
+/// ```
+pub struct WindowGuard<'a> {
+    /// Window state for accessing cursor/bounds info.
+    pub state: WindowState,
+    ctx: &'a mut UiContext,
+}
+
+impl Drop for WindowGuard<'_> {
+    fn drop(&mut self) {
+        self.ctx.pop_clip();
+    }
+}
+
 /// Main context for immediate mode UI rendering.
 ///
 /// This is the primary API for building UI. Typical usage:

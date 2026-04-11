@@ -10,7 +10,7 @@
 
 use katla_math::{Color, Vec2};
 
-use crate::UiContext;
+use crate::{UiContext, style::UiStyle};
 
 /// A segment of text with uniform formatting style.
 #[derive(Debug, Clone)]
@@ -54,7 +54,6 @@ impl MarkdownColors {
         }
     }
 
-    /// A sensible default using a blue accent for bold and green for code.
     pub fn defaults() -> Self {
         Self {
             bold: Color::new(0.4, 0.7, 1.0, 1.0),
@@ -62,6 +61,16 @@ impl MarkdownColors {
             code_background: Color::new(0.15, 0.15, 0.2, 0.8),
             header: Color::WHITE,
             bullet_marker: Color::new(0.6, 0.6, 0.65, 1.0),
+        }
+    }
+
+    pub fn from_style(style: &UiStyle) -> Self {
+        Self {
+            bold: style.input_border_focused,
+            code_text: style.slider_grab,
+            code_background: style.window_bg,
+            header: style.text_color,
+            bullet_marker: style.text_disabled,
         }
     }
 }
