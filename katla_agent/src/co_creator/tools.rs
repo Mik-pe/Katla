@@ -49,6 +49,26 @@ pub struct DuplicateEntityArgs {
     pub position_offset: Option<[f32; 3]>,
 }
 
+/// Typed arguments for the `list_available_components` tool.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct ListAvailableComponentsArgs {}
+
+/// Typed arguments for the `add_component` tool.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct AddComponentArgs {
+    pub entity_id: u64,
+    pub component: String,
+}
+
+/// Typed arguments for the `get_component_attributes` tool.
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetComponentAttributesArgs {
+    pub entity_id: u64,
+    pub component: String,
+}
+
 /// Build tool definitions for the LLM's function calling.
 pub fn build_tool_definitions() -> Vec<ToolDefinition> {
     use serde_json::json;
@@ -153,6 +173,42 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["entity_id"]
             }),
         },
+        ToolDefinition {
+            name: "list_available_components".to_string(),
+            description:
+                "List all registered component types with their settable fields and types."
+                    .to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {}
+            }),
+        },
+        ToolDefinition {
+            name: "add_component".to_string(),
+            description: "Add a component with default values to an existing entity.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "entity_id": { "type": "integer", "description": "The entity ID to add the component to" },
+                    "component": { "type": "string", "description": "Component type name" }
+                },
+                "required": ["entity_id", "component"]
+            }),
+        },
+        ToolDefinition {
+            name: "get_component_attributes".to_string(),
+            description:
+                "Get settable fields, types, and current values for a component on an entity."
+                    .to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "entity_id": { "type": "integer", "description": "The entity ID" },
+                    "component": { "type": "string", "description": "Component type name" }
+                },
+                "required": ["entity_id", "component"]
+            }),
+        },
     ]
 }
 
@@ -170,5 +226,8 @@ mod tests {
         assert!(tools.iter().any(|t| t.name == "query_entities"));
         assert!(tools.iter().any(|t| t.name == "get_scene_hierarchy"));
         assert!(tools.iter().any(|t| t.name == "duplicate_entity"));
+        assert!(tools.iter().any(|t| t.name == "list_available_components"));
+        assert!(tools.iter().any(|t| t.name == "add_component"));
+        assert!(tools.iter().any(|t| t.name == "get_component_attributes"));
     }
 }

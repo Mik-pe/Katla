@@ -50,6 +50,15 @@ pub enum McpOp {
         entity_id: u64,
         position_offset: Option<[f32; 3]>,
     },
+    ListAvailableComponents,
+    AddComponent {
+        entity_id: u64,
+        component: String,
+    },
+    GetComponentAttributes {
+        entity_id: u64,
+        component: String,
+    },
 }
 
 impl McpOp {
@@ -100,6 +109,21 @@ impl McpOp {
             } => SceneOp::DuplicateEntity {
                 entity: katla_ecs::EntityId::from_raw(entity_id),
                 position_offset,
+            },
+            Self::ListAvailableComponents => SceneOp::ListAvailableComponents,
+            Self::AddComponent {
+                entity_id,
+                component,
+            } => SceneOp::AddComponent {
+                entity: katla_ecs::EntityId::from_raw(entity_id),
+                component,
+            },
+            Self::GetComponentAttributes {
+                entity_id,
+                component,
+            } => SceneOp::GetComponentAttributes {
+                entity: katla_ecs::EntityId::from_raw(entity_id),
+                component,
             },
         }
     }
@@ -221,6 +245,18 @@ struct DuplicateEntityParams {
     position_offset: Option<[f32; 3]>,
 }
 
+#[derive(Deserialize, JsonSchema, Default)]
+struct AddComponentParams {
+    entity_id: u64,
+    component: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct GetComponentAttributesParams {
+    entity_id: u64,
+    component: String,
+}
+
 #[rmcp::tool_router]
 impl KatlaMcpServer {
     #[rmcp::tool(
@@ -308,6 +344,44 @@ impl KatlaMcpServer {
         let op = McpOp::DuplicateEntity {
             entity_id: params.entity_id,
             position_offset: params.position_offset,
+        };
+        self.forward_op(op).await
+    }
+
+    #[rmcp::tool(
+        name = "list_available_components",
+        description = "List all registered component types with their settable fields and types"
+    )]
+    async fn list_available_components(&self) -> Json<McpToolResult> {
+        self.forward_op(McpOp::ListAvailableComponents).await
+    }
+
+    #[rmcp::tool(
+        name = "add_component",
+        description = "Add a component with default values to an existing entity"
+    )]
+    async fn add_component(
+        &self,
+        Parameters(params): Parameters<AddComponentParams>,
+    ) -> Json<McpToolResult> {
+        let op = McpOp::AddComponent {
+            entity_id: params.entity_id,
+            component: params.component,
+        };
+        self.forward_op(op).await
+    }
+
+    #[rmcp::tool(
+        name = "get_component_attributes",
+        description = "Get settable fields, types, and current values for a component on an entity"
+    )]
+    async fn get_component_attributes(
+        &self,
+        Parameters(params): Parameters<GetComponentAttributesParams>,
+    ) -> Json<McpToolResult> {
+        let op = McpOp::GetComponentAttributes {
+            entity_id: params.entity_id,
+            component: params.component,
         };
         self.forward_op(op).await
     }
