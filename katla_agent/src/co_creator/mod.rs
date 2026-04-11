@@ -15,7 +15,8 @@ mod tools;
 pub use tools::build_tool_definitions;
 #[cfg(feature = "llm-assistant")]
 pub use tools::{
-    DestroyEntityArgs, DuplicateEntityArgs, GetSceneHierarchyArgs, QueryEntitiesArgs, SetFieldArgs,
+    AddComponentArgs, DestroyEntityArgs, DuplicateEntityArgs, GetComponentAttributesArgs,
+    GetSceneHierarchyArgs, ListAvailableComponentsArgs, QueryEntitiesArgs, SetFieldArgs,
     SpawnEntityArgs,
 };
 

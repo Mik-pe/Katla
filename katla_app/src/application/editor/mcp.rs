@@ -37,13 +37,19 @@ impl McpState {
 
             let result = SceneToolExecutor::execute(scene_op, world, registry);
             let response = match result {
-                Ok((tool_result, _undo_group)) => McpResponse {
-                    result: Ok(serde_json::json!({
+                Ok((tool_result, _undo_group)) => {
+                    let mut json = serde_json::json!({
                         "success": tool_result.success,
                         "message": tool_result.message,
                         "affected_entities": tool_result.affected_entities.iter().map(|id| id.id()).collect::<Vec<u64>>(),
-                    })),
-                },
+                    });
+                    if let Some(data) = tool_result.data {
+                        json.as_object_mut()
+                            .unwrap()
+                            .insert("data".to_string(), data);
+                    }
+                    McpResponse { result: Ok(json) }
+                }
                 Err(e) => McpResponse {
                     result: Err(format!("{:?}", e)),
                 },
@@ -57,7 +63,9 @@ fn check_protected_entity(op: &SceneOp, protected: &ProtectedEntities) -> Result
     let target = match op {
         SceneOp::DestroyEntity { entity }
         | SceneOp::SetField { entity, .. }
-        | SceneOp::DuplicateEntity { entity, .. } => Some(*entity),
+        | SceneOp::DuplicateEntity { entity, .. }
+        | SceneOp::AddComponent { entity, .. }
+        | SceneOp::GetComponentAttributes { entity, .. } => Some(*entity),
         _ => None,
     };
 

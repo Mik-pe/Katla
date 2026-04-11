@@ -553,3 +553,170 @@ fn test_duplicate_without_offset() {
     undo_group.undo_all(&mut world).unwrap();
     assert!(!world.entity_exists(duplicate));
 }
+
+#[test]
+fn test_list_available_components() {
+    let mut world = World::new();
+    let registry = build_test_registry();
+
+    let op = SceneOp::ListAvailableComponents;
+    let (result, _) = SceneToolExecutor::execute(op, &mut world, &registry).unwrap();
+    assert!(result.success);
+    assert!(result.data.is_some());
+
+    let data = result.data.unwrap();
+    let components = data.get("components").unwrap().as_array().unwrap();
+    assert_eq!(components.len(), 3);
+
+    let type_names: Vec<&str> = components
+        .iter()
+        .filter_map(|c| c.get("type_name").and_then(|v| v.as_str()))
+        .collect();
+    assert!(type_names.contains(&"TestTransform"));
+    assert!(type_names.contains(&"TestName"));
+    assert!(type_names.contains(&"TestLight"));
+
+    for comp in components {
+        let fields = comp.get("fields").unwrap().as_array().unwrap();
+        for field in fields {
+            assert!(field.get("name").is_some());
+            assert!(field.get("type").is_some());
+        }
+    }
+}
+
+#[test]
+fn test_add_component() {
+    let mut world = World::new();
+    let registry = build_test_registry();
+
+    let entity = world.create_entity();
+
+    let op = SceneOp::AddComponent {
+        entity,
+        component: "TestName".to_string(),
+    };
+    let (result, _) = SceneToolExecutor::execute(op, &mut world, &registry).unwrap();
+    assert!(result.success);
+
+    let name = world.get_component::<TestName>(entity).unwrap();
+    assert_eq!(name.name, "");
+}
+
+#[test]
+fn test_add_component_already_exists() {
+    let mut world = World::new();
+    let registry = build_test_registry();
+
+    let entity = world.create_entity();
+    world.add_component(entity, TestName::default());
+
+    let op = SceneOp::AddComponent {
+        entity,
+        component: "TestName".to_string(),
+    };
+    let result = SceneToolExecutor::execute(op, &mut world, &registry);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_add_component_unregistered() {
+    let mut world = World::new();
+    let registry = build_test_registry();
+
+    let entity = world.create_entity();
+
+    let op = SceneOp::AddComponent {
+        entity,
+        component: "FakeComponent".to_string(),
+    };
+    let result = SceneToolExecutor::execute(op, &mut world, &registry);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_add_component_nonexistent_entity() {
+    let mut world = World::new();
+    let registry = build_test_registry();
+
+    let fake_id = EntityId::from_raw(999999);
+    let op = SceneOp::AddComponent {
+        entity: fake_id,
+        component: "TestName".to_string(),
+    };
+    let result = SceneToolExecutor::execute(op, &mut world, &registry);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_get_component_attributes() {
+    let mut world = World::new();
+    let registry = build_test_registry();
+
+    let entity = world.create_entity();
+    world.add_component(
+        entity,
+        TestLight {
+            intensity: 5.0,
+            enabled: true,
+        },
+    );
+
+    let op = SceneOp::GetComponentAttributes {
+        entity,
+        component: "TestLight".to_string(),
+    };
+    let (result, _) = SceneToolExecutor::execute(op, &mut world, &registry).unwrap();
+    assert!(result.success);
+    assert!(result.data.is_some());
+
+    let data = result.data.unwrap();
+    let fields = data.get("fields").unwrap().as_array().unwrap();
+    assert_eq!(fields.len(), 2);
+
+    let field_names: Vec<&str> = fields
+        .iter()
+        .filter_map(|f| f.get("name").and_then(|v| v.as_str()))
+        .collect();
+    assert!(field_names.contains(&"intensity"));
+    assert!(field_names.contains(&"enabled"));
+
+    let intensity_field = fields
+        .iter()
+        .find(|f| f.get("name").and_then(|v| v.as_str()) == Some("intensity"))
+        .unwrap();
+    assert_eq!(
+        intensity_field.get("value").unwrap().as_f64().unwrap() as f32,
+        5.0
+    );
+}
+
+#[test]
+fn test_get_component_attributes_not_present() {
+    let mut world = World::new();
+    let registry = build_test_registry();
+
+    let entity = world.create_entity();
+
+    let op = SceneOp::GetComponentAttributes {
+        entity,
+        component: "TestLight".to_string(),
+    };
+    let result = SceneToolExecutor::execute(op, &mut world, &registry);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_get_component_attributes_unregistered() {
+    let mut world = World::new();
+    let registry = build_test_registry();
+
+    let entity = world.create_entity();
+
+    let op = SceneOp::GetComponentAttributes {
+        entity,
+        component: "FakeComponent".to_string(),
+    };
+    let result = SceneToolExecutor::execute(op, &mut world, &registry);
+    assert!(result.is_err());
+}

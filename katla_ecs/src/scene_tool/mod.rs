@@ -27,6 +27,7 @@ pub struct ToolResult {
     pub success: bool,
     pub message: String,
     pub affected_entities: Vec<EntityId>,
+    pub data: Option<serde_json::Value>,
 }
 
 /// Parameters for scene tool operations.
@@ -63,6 +64,12 @@ pub enum SceneOp {
         entity: EntityId,
         position_offset: Option<[f32; 3]>,
     },
+    /// List all registered component types with their fields and types.
+    ListAvailableComponents,
+    /// Add a component with default values to an existing entity.
+    AddComponent { entity: EntityId, component: String },
+    /// Get settable fields, types, and current values for a component on an entity.
+    GetComponentAttributes { entity: EntityId, component: String },
 }
 
 /// Error type for scene tool operations.

@@ -46,6 +46,13 @@ impl SceneToolExecutor {
                 entity,
                 position_offset,
             } => Self::exec_duplicate(world, registry, entity, position_offset),
+            SceneOp::ListAvailableComponents => Self::exec_list_components(world, registry),
+            SceneOp::AddComponent { entity, component } => {
+                Self::exec_add_component(world, registry, entity, component)
+            }
+            SceneOp::GetComponentAttributes { entity, component } => {
+                Self::exec_get_component_attributes(world, registry, entity, component)
+            }
         }
     }
 
@@ -124,6 +131,7 @@ impl SceneToolExecutor {
                 success: true,
                 message: format!("Spawned entity {entity}"),
                 affected_entities: vec![entity],
+                data: None,
             },
             group,
         ))
@@ -151,6 +159,7 @@ impl SceneToolExecutor {
                 success: true,
                 message: format!("Destroyed entity {entity}"),
                 affected_entities: vec![entity],
+                data: None,
             },
             group,
         ))
@@ -206,6 +215,7 @@ impl SceneToolExecutor {
                 success: true,
                 message: format!("Set {component}.{field} on entity {entity}"),
                 affected_entities: vec![entity],
+                data: None,
             },
             group,
         ))
@@ -239,6 +249,7 @@ impl SceneToolExecutor {
                 success: true,
                 message: format!("Found {count} entities: {}", names.join(", ")),
                 affected_entities: entities,
+                data: None,
             },
             UndoGroup::new("Query (no undo)"),
         ))
@@ -253,6 +264,7 @@ impl SceneToolExecutor {
                 success: true,
                 message: format!("Scene has {count} entities"),
                 affected_entities: entities,
+                data: None,
             },
             UndoGroup::new("GetSceneHierarchy (no undo)"),
         ))
@@ -319,8 +331,143 @@ impl SceneToolExecutor {
                 success: true,
                 message: format!("Duplicated entity {source} -> {duplicate}"),
                 affected_entities: vec![duplicate],
+                data: None,
             },
             group,
+        ))
+    }
+
+    fn exec_list_components(
+        world: &mut World,
+        registry: &ComponentRegistry,
+    ) -> Result<(ToolResult, UndoGroup), SceneToolError> {
+        let mut components = Vec::new();
+        let dummy_entity = crate::EntityId::from_raw(0);
+        for entry in registry.entries() {
+            let fields: Vec<serde_json::Value> = (entry.get_fields)(world, dummy_entity)
+                .into_iter()
+                .map(|f| {
+                    serde_json::json!({
+                        "name": f.name,
+                        "display_name": f.display_name,
+                        "type": f.type_name,
+                    })
+                })
+                .collect();
+            components.push(serde_json::json!({
+                "type_name": entry.type_name,
+                "fields": fields,
+            }));
+        }
+
+        Ok((
+            ToolResult {
+                success: true,
+                message: format!("{} component types registered", components.len()),
+                affected_entities: vec![],
+                data: Some(serde_json::json!({ "components": components })),
+            },
+            UndoGroup::new("ListAvailableComponents (no undo)"),
+        ))
+    }
+
+    fn exec_add_component(
+        world: &mut World,
+        registry: &ComponentRegistry,
+        entity: crate::EntityId,
+        component: String,
+    ) -> Result<(ToolResult, UndoGroup), SceneToolError> {
+        if !world.entity_exists(entity) {
+            return Err(SceneToolError::EntityNotFound(entity));
+        }
+
+        let entry = registry
+            .get(&component)
+            .ok_or_else(|| SceneToolError::ComponentNotFound {
+                entity,
+                component: component.clone(),
+            })?;
+
+        if (entry.has_component)(world, entity) {
+            return Err(SceneToolError::WorldError(format!(
+                "Entity {entity} already has component '{component}'"
+            )));
+        }
+
+        (entry.create_default)(world, entity);
+
+        Ok((
+            ToolResult {
+                success: true,
+                message: format!("Added {component} to entity {entity}"),
+                affected_entities: vec![entity],
+                data: None,
+            },
+            UndoGroup::new(format!("Add {component} to entity {entity}")),
+        ))
+    }
+
+    fn exec_get_component_attributes(
+        world: &mut World,
+        registry: &ComponentRegistry,
+        entity: crate::EntityId,
+        component: String,
+    ) -> Result<(ToolResult, UndoGroup), SceneToolError> {
+        if !world.entity_exists(entity) {
+            return Err(SceneToolError::EntityNotFound(entity));
+        }
+
+        let entry = registry
+            .get(&component)
+            .ok_or_else(|| SceneToolError::ComponentNotFound {
+                entity,
+                component: component.clone(),
+            })?;
+
+        if !(entry.has_component)(world, entity) {
+            return Err(SceneToolError::ComponentNotFound {
+                entity,
+                component: component.clone(),
+            });
+        }
+
+        let fields = (entry.get_fields)(world, entity);
+        let mut field_values = Vec::new();
+        for field_info in &fields {
+            let value = (entry.get_field_value)(world, entity, field_info.name);
+            field_values.push(serde_json::json!({
+                "name": field_info.name,
+                "display_name": field_info.display_name,
+                "type": field_info.type_name,
+                "value": value.map(|v| match v {
+                    FieldValue::F32(v) => serde_json::json!(v),
+                    FieldValue::F64(v) => serde_json::json!(v),
+                    FieldValue::I32(v) => serde_json::json!(v),
+                    FieldValue::U32(v) => serde_json::json!(v),
+                    FieldValue::I64(v) => serde_json::json!(v),
+                    FieldValue::U64(v) => serde_json::json!(v),
+                    FieldValue::Bool(v) => serde_json::json!(v),
+                    FieldValue::String(v) => serde_json::json!(v),
+                    FieldValue::Unknown => serde_json::json!(null),
+                }).unwrap_or(serde_json::json!(null)),
+            }));
+        }
+
+        Ok((
+            ToolResult {
+                success: true,
+                message: format!(
+                    "{component} on entity {entity} has {} fields",
+                    field_values.len()
+                ),
+                affected_entities: vec![entity],
+                data: Some(serde_json::json!({
+                    "component": component,
+                    "entity": entity.to_string(),
+                    "fields": field_values,
+                })),
+            },
+            UndoGroup::new("GetComponentAttributes (no undo)"),
         ))
     }
 

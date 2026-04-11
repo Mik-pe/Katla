@@ -215,12 +215,17 @@ fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) 
             for &entity in &result.affected_entities {
                 attach_spawn_visuals(app, entity, tool_call);
             }
-            serde_json::to_string(&serde_json::json!({
+            let mut json = serde_json::json!({
                 "success": result.success,
                 "message": result.message,
                 "entities": result.affected_entities.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
-            }))
-            .unwrap_or(result.message)
+            });
+            if let Some(data) = result.data {
+                json.as_object_mut()
+                    .unwrap()
+                    .insert("data".to_string(), data);
+            }
+            serde_json::to_string(&json).unwrap_or(result.message)
         }
         Err(e) => format!("Error: {e}"),
     }
@@ -281,7 +286,9 @@ fn check_protected_entity(op: &SceneOp, app: &super::super::Application) -> Resu
     let target = match op {
         SceneOp::DestroyEntity { entity }
         | SceneOp::SetField { entity, .. }
-        | SceneOp::DuplicateEntity { entity, .. } => Some(*entity),
+        | SceneOp::DuplicateEntity { entity, .. }
+        | SceneOp::AddComponent { entity, .. }
+        | SceneOp::GetComponentAttributes { entity, .. } => Some(*entity),
         _ => None,
     };
 
@@ -306,8 +313,9 @@ fn check_protected_entity(op: &SceneOp, app: &super::super::Application) -> Resu
 /// Convert a ToolCall's arguments into a SceneOp.
 fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
     use katla_agent::co_creator::{
-        DestroyEntityArgs, DuplicateEntityArgs, GetSceneHierarchyArgs, QueryEntitiesArgs,
-        SetFieldArgs, SpawnEntityArgs,
+        AddComponentArgs, DestroyEntityArgs, DuplicateEntityArgs, GetComponentAttributesArgs,
+        GetSceneHierarchyArgs, ListAvailableComponentsArgs, QueryEntitiesArgs, SetFieldArgs,
+        SpawnEntityArgs,
     };
 
     match tool_call.name.as_str() {
@@ -360,6 +368,29 @@ fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
             Ok(SceneOp::DuplicateEntity {
                 entity: EntityId::from_raw(args.entity_id),
                 position_offset: args.position_offset,
+            })
+        }
+        "list_available_components" => {
+            let _args: ListAvailableComponentsArgs =
+                serde_json::from_value(tool_call.arguments.clone())
+                    .map_err(|e| format!("Invalid list_available_components args: {e}"))?;
+            Ok(SceneOp::ListAvailableComponents)
+        }
+        "add_component" => {
+            let args: AddComponentArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid add_component args: {e}"))?;
+            Ok(SceneOp::AddComponent {
+                entity: EntityId::from_raw(args.entity_id),
+                component: args.component,
+            })
+        }
+        "get_component_attributes" => {
+            let args: GetComponentAttributesArgs =
+                serde_json::from_value(tool_call.arguments.clone())
+                    .map_err(|e| format!("Invalid get_component_attributes args: {e}"))?;
+            Ok(SceneOp::GetComponentAttributes {
+                entity: EntityId::from_raw(args.entity_id),
+                component: args.component,
             })
         }
         _ => Err(format!("Unknown tool: {}", tool_call.name)),
@@ -415,6 +446,33 @@ fn format_tool_call_summary(tc: &ToolCall) -> String {
             let args: DuplicateEntityArgs =
                 serde_json::from_value(tc.arguments.clone()).unwrap_or_default();
             format!("Duplicate entity {}", args.entity_id)
+        }
+        "list_available_components" => "List available components".to_string(),
+        "add_component" => {
+            let comp = tc
+                .arguments
+                .get("component")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let eid = tc
+                .arguments
+                .get("entity_id")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            format!("Add {comp} to entity {eid}")
+        }
+        "get_component_attributes" => {
+            let comp = tc
+                .arguments
+                .get("component")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let eid = tc
+                .arguments
+                .get("entity_id")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            format!("Get attributes of {comp} on entity {eid}")
         }
         _ => tc.name.clone(),
     }
