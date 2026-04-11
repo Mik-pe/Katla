@@ -358,7 +358,12 @@
 - **Crate:** katla_app / katla_ui
 - **Files:** `katla_app/src/ui/theme.rs`, `katla_ui/src/style.rs`
 - **Issue:** `Theme` and `ColorScheme`/`UiStyle` define overlapping color sets for the same UI elements (buttons, panels, text, selections, popups, etc.). `Theme::apply_to_style()` manually maps each field, and `DraggablePanelStyle` in `widgets/draggable_panel.rs` duplicates yet a third set of panel colors. Three separate color definitions for "button background" is a maintenance trap — adding a new theme requires updating all three.
-- **Fix:** Extend `ColorScheme` in katla_ui with the editor-specific colors that `Theme` adds (entity type colors, status colors, viewport border, etc.). Remove `Theme` from katla_app entirely and have the 13 named themes as `ColorScheme` constructors. Remove `DraggablePanelStyle` in favor of reading from `ui.style`. `apply_to_style()` becomes unnecessary since the style IS the color scheme.
+- **Sub-tasks:**
+  - [ ] 89a. Extend `ColorScheme` with editor-specific semantic fields (status colors, entity type colors, accent, highlight, viewport border) and add `from_style()`/`apply_to_style()` round-trip (medium, low risk)
+  - [ ] 89b. Convert all 13 `Theme` constructors to `ColorScheme` constructors using the `theme!` macro pattern (medium, low risk)
+  - [ ] 89c. Remove `DraggablePanelStyle` — have `DraggablePanel::show()` read from `ui.style` directly (small, low risk)
+  - [ ] 89d. Replace `Theme` usage across katla_app with `ColorScheme` + `UiStyle::with_colors()`, remove `katla_app/src/ui/theme.rs` (medium, medium risk)
+  - **Recommended order:** 89a → 89b → 89c → 89d
 
 ### 90. `DraggablePanelStyle` is a redundant copy of `Theme` panel colors
 - **Crate:** katla_ui
@@ -369,7 +374,11 @@
 ### 91. `Response::on_hover_tooltip` takes `&mut UiContext` — deferred tooltip API
 - **Crate:** katla_ui
 - **Issue:** UI-23 in the existing UI TODO list identifies this. Adding here as a concrete actionable item since it affects ergonomics across the editor. Currently `resp.on_hover_tooltip(ui, "text")` works, but in many call sites (e.g., `if resp.hovered { ui.tooltip("text"); }`) the borrow is manually split. A deferred tooltip stored on the response or context would clean up many patterns.
-- **Fix:** Store a `tooltip_text: Option<String>` on the Response or UiContext. Add `Response::tooltip(self, text)` that stores the text. In `end()`, render all pending tooltips at z_index::TOOLTIP. This removes the need for `&mut UiContext` at the tooltip call site.
+- **Sub-tasks:**
+  - [ ] 91a. Add `pending_tooltips: Vec<(WidgetId, String)>` to `UiContext`, add `Response::tooltip(self, text)` that pushes to it (small, low risk)
+  - [ ] 91b. Render pending tooltips in `end()` at `z_index::TOOLTIP` for hovered widgets (small, low risk)
+  - [ ] 91c. Migrate existing `on_hover_tooltip()` callers to the deferred API (small, low risk)
+  - **Recommended order:** 91a → 91b → 91c
 
 ### 92. `UiContext::add()` always advances cursor — provide opt-out for overlay widgets
 - **Crate:** katla_ui
@@ -381,7 +390,10 @@
 - **Crate:** katla_ui
 - **File:** `katla_ui/src/context/widgets/basic.rs`
 - **Issue:** Related to UI-09 in the existing list. The `text_input()` method snapshots ~20 individual input fields into local variables before the mutable borrow of `self.text_input_states`. This pattern is fragile — adding a new input field requires remembering to snapshot it. The root cause is that `self.input` and `self.text_input_states` are both fields of `UiContext`, so borrowing both mutably triggers borrow checker conflicts.
-- **Fix:** Extract the text input editing logic into a standalone function that takes `(text: &mut String, state: &mut TextInputState, input: &UiInputState, clipboard: &mut dyn ClipboardProvider, max_len: usize)` and returns `(changed, enter_pressed)`. Call it from `text_input()` after the ID/state setup. This eliminates all 20 snapshot variables.
+- **Sub-tasks:**
+  - [ ] 93a. Extract `apply_text_edits(text, state, input, clipboard, max_len) -> (changed, enter_pressed)` as a standalone free function in `basic.rs` (medium, low risk)
+  - [ ] 93b. Refactor `text_input()` to call the extracted function, removing all 20 snapshot variables (small, low risk)
+  - **Recommended order:** 93a → 93b
 
 ### 94. `DrawList::convert_draw_list` in katla_app assigns texture indices per-vertex inefficiently
 - **Crate:** katla_app
@@ -393,7 +405,11 @@
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/context/drawing.rs`, `katla_ui/src/style.rs`
 - **Issue:** `UiStyle` defines `window_rounding`, `button_rounding`, `input_rounding`, `popup_rounding`, and `menu_rounding` but no widget uses them. All rectangles are drawn with sharp corners. The `DrawList` has no rounded rect primitive (UI-24 mentions pre-tessellated corners). This makes the UI look blockier than intended.
-- **Fix:** Add `UiContext::draw_rounded_rect(bounds, color, radius)` that tessellates the rect with corner arcs. Use `DrawList::add_convex_poly` for each corner quadrant. Update `button_with_colors()`, `checkbox()`, `text_input()`, combo box, and popup backgrounds to use their respective `style.*_rounding` values.
+- **Sub-tasks:**
+  - [ ] 95a. Add `DrawList::add_rounded_rect(bounds, color, radius)` with corner arc tessellation using `add_convex_poly` (medium, low risk)
+  - [ ] 95b. Add `UiContext::draw_rounded_rect(bounds, color, radius)` wrapper, update `button_with_colors()`, `checkbox()`, `text_input()`, combo box to use respective `style.*_rounding` values (medium, low risk)
+  - [ ] 95c. Update popup/menu background rendering to use `style.popup_rounding`/`style.menu_rounding` (small, low risk)
+  - **Recommended order:** 95a → 95b → 95c
 
 ~~### 96. `container.rs` `begin_window` hardcodes title bar height instead of using `style.title_bar_height`~~ — Fixed in bd0f57a. Now reads `self.style.title_bar_height`.
 
@@ -415,7 +431,10 @@
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/context/widgets/basic.rs`, `katla_ui/src/widgets/mod.rs`
 - **Issue:** The slider has no visible value display. Users can't see the current value while dragging. The `Slider` builder has no `.format()` or `.show_value()` method. Every slider in the editor (camera speed, font scale, transform sliders) needs to manually draw the value text alongside the slider.
-- **Fix:** Add `.show_value(bool)` and `.format(fn(f32) -> String)` to `Slider` builder. In `slider()`, when `show_value` is true, draw the formatted value text centered on or beside the grab handle.
+- **Sub-tasks:**
+  - [ ] 102a. Add `show_value: bool`, `value_precision: usize`, and `value_format: Option<Box<dyn Fn(f32) -> String>>` fields to `Slider` builder (small, low risk)
+  - [ ] 102b. In `slider()`, render formatted value text beside or centered on the grab handle when `show_value` is true, using `style.font_size` (small, low risk)
+  - **Recommended order:** 102a → 102b
 
 ### 103. `FontSize::to_pixels()` is not used consistently — raw `f32` font sizes leak into the API
 - **Crate:** katla_ui
@@ -426,7 +445,11 @@
 - **Crate:** katla_ui
 - **File:** `katla_ui/src/context/mod.rs`
 - **Issue:** `FontSystem` contains the font atlas texture, glyph cache (HashMap with thousands of entries), and loaded font data. It's owned by `UiContext` and recreated if you create a new context. In a multi-window scenario (future), each window would duplicate all font data. The font atlas texture is also separate from the `UIRenderer` texture registry, requiring manual sync.
-- **Fix:** Wrap `FontSystem` in `Arc<RwLock<FontSystem>>` or use a handle-based approach so multiple `UiContext` instances can share the same font data. Alternatively, move `FontSystem` out of `UiContext` and pass it as a reference to `begin()`.
+- **Sub-tasks:**
+  - [ ] 104a. Wrap `FontSystem` in `Arc<RefCell<FontSystem>>` so `UiContext` holds a shared reference; `UiContext::new()` creates owned, add `UiContext::with_shared_fonts(fonts)` (medium, medium risk)
+  - [ ] 104b. Update all `self.fonts` access sites in `UiContext` methods to go through the `RefCell` borrow (small, low risk)
+  - [ ] 104c. Add `UiContext::fonts_arc()` to clone the Arc for sharing across multiple contexts (small, low risk)
+  - **Recommended order:** 104a → 104b → 104c
 
 ### 105. `MarkdownColors` is not derived from the current `UiStyle`/`Theme`
 - **Crate:** katla_ui
@@ -474,11 +497,21 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Crate:** katla_app → katla_ui
 - **Files:** `katla_app/src/ui/theme.rs` → `katla_ui/src/style/`
 - **Issue:** The 13 named themes (Catppuccin, Nord, Tokyo Night, Dracula, Gruvbox, One Dark, Material Palenight, Ayu Dark, GitHub Dark, Monokai, Rose Pine, Kanagawa, Solarized Dark) are pure color data with no dependency on katla_app. Any app using katla_ui would want theme presets. Right now they're locked behind katla_app's editor feature gate. The `theme!` macro and `Theme::by_name()` + `Theme::all_names()` are fully self-contained. Ties into #89 (deduplicating Theme vs ColorScheme) — if we extend `ColorScheme` to cover all editor colors, these 13 themes become `ColorScheme` constructors and live naturally in katla_ui.
-- **Fix:** Extend `ColorScheme` with the editor-specific semantic fields (status colors, entity type colors, viewport border, accent). Move the 13 theme constructors into `katla_ui/src/style/themes.rs` as `ColorScheme::catppuccin()`, etc. Remove `Theme` from katla_app. `apply_to_style()` becomes a one-liner: `UiStyle::with_colors(ColorScheme::nord())`.
+- **Sub-tasks:**
+  - [ ] 113a. Create `katla_ui/src/style/themes.rs`, move `theme!` macro and 13 theme constructors as `ColorScheme` methods (depends on 89a/89b) (medium, low risk)
+  - [ ] 113b. Add `ColorScheme::by_name(name) -> Option<ColorScheme>` and `ColorScheme::all_names() -> &'static [&'static str]` (small, low risk)
+  - [ ] 113c. Update `katla_app` references to use `ColorScheme::catppuccin()` etc. instead of `Theme::catppuccin()` (small, low risk)
+  - [ ] 113d. Remove `katla_app/src/ui/theme.rs`, update `mod.rs` re-exports (small, low risk)
+  - **Recommended order:** 89a → 89b → 113a → 113b → 113c → 113d
 
 ### 114. Add `Panel` / `PanelHeader` widget to katla_ui
 - **Crate:** katla_ui (new)
 - **Issue:** Every panel in the editor (hierarchy, inspector, asset browser, preferences, particle inspector, co-creator) hand-rolls the same pattern: draw `panel_bg` rect, draw `panel_border`, draw `panel_header` rect at the top, draw title text centered in the header. This is ~15 lines repeated verbatim in 6 places. A second app would need the same pattern.
+- **Sub-tasks:**
+  - [ ] 114a. Add `Panel` builder struct with `bounds()`, `header_height()`, `title()`, `subtitle()` fields, and `PanelGuard` RAII struct with `Drop` for clip cleanup (small, low risk)
+  - [ ] 114b. Implement `Widget for Panel` — draws bg from `style.window_bg`, border from `style.window_border`, header from `style.window_title_bg`, title text centered, pushes clip, returns `PanelGuard` (medium, low risk)
+  - [ ] 114c. Migrate one panel (e.g., hierarchy or inspector) to use `Panel` widget as proof of concept (small, low risk)
+  - **Recommended order:** 114a → 114b → 114c
 - **Fix:** Add a `Panel` builder widget to katla_ui:
   ```rust
   ui.add(Panel::new("Hierarchy")
@@ -494,6 +527,10 @@ These items identify code that currently lives in katla_app but is generic enoug
 ### 115. Add `LabeledSlider` widget to katla_ui
 - **Crate:** katla_ui (new)
 - **Issue:** The `inspector.rs` file defines `vec3_slider_row()` and `scalar_slider_row()` — local functions that compose a label, a `Slider`, and a value display into a row. This is the most common slider usage pattern in any editor UI (every property inspector, every settings panel). The `toolbar.rs`/`preferences.rs` build the same pattern manually. A second app would need it too. Related to #102 (slider value display).
+- **Sub-tasks:**
+  - [ ] 115a. Add `LabeledSlider` builder with `label`, `value`, `range`, `label_width`, `precision`, `show_value` fields; renders label + `Slider` + formatted value text in a single row (medium, low risk)
+  - [ ] 115b. Add `Vec3Slider` builder for X/Y/Z axis rows with configurable axis labels and colors per axis (medium, low risk)
+  - **Recommended order:** 102 → 115a → 115b
 - **Fix:** Add `LabeledSlider` builder widget to katla_ui:
   ```rust
   ui.add(LabeledSlider::new("Intensity", &mut value, 0.0..=100.0)
@@ -512,6 +549,11 @@ These items identify code that currently lives in katla_app but is generic enoug
 ### 116. Add `Selectable` list item widget to katla_ui (cross-reference UI-15)
 - **Crate:** katla_ui
 - **Issue:** UI-15 already identifies this gap. Adding more context: the hierarchy panel, asset browser, and any future list UI all implement the same selectable-item pattern manually: check hover, draw selection bg, handle click, handle right-click. A generic `Selectable` widget that handles highlight-on-hover, click, right-click, selected state, and drag detection would eliminate hundreds of lines of ad-hoc interaction code across the editor.
+- **Sub-tasks:**
+  - [ ] 116a. Add `right_clicked: bool` and `middle_clicked: bool` to `Response`, populated in `Response::interactive()` (small, low risk) — overlaps with #117, do either one
+  - [ ] 116b. Add `Selectable` builder widget with `bounds()`, `selected()`, `interactive()` that draws selection bg from `style.selectable_*` and returns a `Response` with click/right-click (medium, low risk)
+  - [ ] 116c. Migrate hierarchy entity items to `Selectable` widget as proof of concept (medium, low risk)
+  - **Recommended order:** 116a → 116b → 116c
 - **Fix:** Add `Selectable` widget:
   ```rust
   let resp = ui.add(Selectable::new("item_label")
@@ -527,11 +569,20 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Crate:** katla_ui
 - **File:** `katla_ui/src/response.rs`
 - **Issue:** `Response` has `clicked` (left click) and `double_clicked` but no `right_clicked`. Every widget that handles right-click (hierarchy items, asset items, entity rows) does `if resp.hovered && ui.mouse_clicked(RIGHT)` manually. Similarly, there's no `drag_started`/`drag_ended` — the `DraggablePanel` and asset browser implement drag detection ad-hoc. A second consumer would need these primitives.
-- **Fix:** Add `right_clicked: bool` and `middle_clicked: bool` fields to `Response`. Populate them in `Response::interactive()`. For drag: add `drag_started: bool` (true on the frame active_id is first set while mouse moves past a threshold) and `drag_ended: bool` (true on the frame active_id is released after a drag).
+- **Sub-tasks:**
+  - [ ] 117a. Add `right_clicked: bool`, `middle_clicked: bool` fields to `Response` and populate in `Response::interactive()` (small, low risk)
+  - [ ] 117b. Add `drag_started: bool` and `drag_ended: bool` fields — track via `active_id` transitions and mouse delta threshold in `Response::interactive()` (medium, medium risk)
+  - [ ] 117c. Migrate existing manual right-click/drag checks in hierarchy and asset browser to use Response fields (small, low risk)
+  - **Recommended order:** 117a → 117b → 117c
 
 ### 118. Add `MenuBar` widget to katla_ui
 - **Crate:** katla_ui
 - **Issue:** The toolbar in `katla_app` manually draws a horizontal bar and places `menu_bar_dropdown()` calls with manual spacing and cursor management. This is a standard editor pattern. A `MenuBar` widget would provide the common container with automatic layout.
+- **Sub-tasks:**
+  - [ ] 118a. Add `MenuBar` builder struct with `bounds()`, `height()`, and `menu(label, callback)` that collects menu entries; wraps `begin_row()`/`end_row()` and `menu_bar_dropdown()` calls automatically (medium, low risk)
+  - [ ] 118b. Add `right_side()` closure for centered/right-aligned content (title, status indicators) (small, low risk)
+  - [ ] 118c. Migrate `toolbar.rs` to use `MenuBar` widget (small, medium risk)
+  - **Recommended order:** 118a → 118b → 118c
 - **Fix:** Add `MenuBar` builder:
   ```rust
   ui.add(MenuBar::new(screen_size, toolbar_height)
@@ -547,6 +598,12 @@ These items identify code that currently lives in katla_app but is generic enoug
 ### 119. Add `StatusBar` widget to katla_ui
 - **Crate:** katla_ui
 - **Issue:** `status_bar.rs` builds a standard status bar: background rect, top border, left-aligned items (FPS, frame count, entities), right-aligned items (mode indicator, theme name). This is the same in any editor. The widget reads from `Theme` for colors — with #113, it would read from `ui.style`.
+- **Sub-tasks:**
+  - [ ] 119a. Add `StatusBar` builder with `bounds()`, `height()`, `left_items()`, `center_item()`, `right_items()` closures (small, low risk)
+  - [ ] 119b. Implement rendering: background from `style.window_bg`, top border from `style.separator`, `begin_row()` layout for left items, manual right-alignment for right items (medium, low risk)
+  - [ ] 119c. Add `ui.status_label(text, color)` and `ui.status_separator()` helpers for use inside closures (small, low risk)
+  - [ ] 119d. Migrate `status_bar.rs` to use `StatusBar` widget (small, low risk)
+  - **Recommended order:** 119a → 119b → 119c → 119d
 - **Fix:** Add `StatusBar` builder:
   ```rust
   ui.add(StatusBar::new(screen_size, 24.0)
@@ -572,6 +629,11 @@ These items identify code that currently lives in katla_app but is generic enoug
 ### 121. Add `ResizablePanel` / resize handle interaction to katla_ui
 - **Crate:** katla_ui
 - **Issue:** `layout.rs` in the editor has ~80 lines of resize handle logic (left panel, right panel, asset browser). It tracks `resizing_panel: Option<PanelResizeEdge>`, clamps widths, and changes the cursor to resize cursors. Any editor with side panels needs this. Currently it's raw mouse-state checking scattered across `build()`.
+- **Sub-tasks:**
+  - [ ] 121a. Add `ResizeHandle` builder widget with `horizontal()`/`vertical()` constructors, `min_width()`, `max_width()`, tracks hover + drag state via `active_id` internally (medium, low risk)
+  - [ ] 121b. Handle cursor change to `ResizeHorizontal`/`ResizeVertical` on hover, and clamp returned value on drag (small, low risk)
+  - [ ] 121c. Migrate the three resize handles in `layout.rs` (left panel, right panel, asset browser) to `ResizeHandle` widget (small, low risk)
+  - **Recommended order:** 121a → 121b → 121c
 - **Fix:** Add a `ResizeHandle` widget:
   ```rust
   let new_width = ui.add(ResizeHandle::horizontal(resize_bounds, current_width)
@@ -595,11 +657,22 @@ These items identify code that currently lives in katla_app but is generic enoug
 ### 124. Add `FocusablePanel` / panel focus tracking to katla_ui
 - **Crate:** katla_ui
 - **Issue:** Every panel in the editor (hierarchy, inspector, asset browser, viewport) checks `if ui.is_hovered(bounds) && (mouse_down[LEFT] || mouse_down[RIGHT] || mouse_down[MIDDLE]) { *focused_panel = FocusedPanel::X; }` on every frame. This is the same 5-line pattern repeated 5 times. A second app with panels would need it. The focus tracking itself (`FocusedPanel` enum) is app-specific, but the hover-click detection and focus ring drawing could be provided by the UI layer.
-- **Fix:** Add `ui.register_panel("hierarchy", bounds)` in the widget. After `end()`, the app can query `ui.focused_panel()` to get the ID of the topmost panel the mouse clicked in. The UI tracks this internally by checking hover + click across all registered panels. Optionally draws a focus ring using `style.focus_ring_color`.
+- **Sub-tasks:**
+  - [ ] 124a. Add `panel_regions: Vec<(u64, Rect2D)>` to `UiContext`, add `register_panel(id, bounds)` method and `focused_panel() -> Option<u64>` query (small, low risk)
+  - [ ] 124b. In `end()`, detect which registered panel received a click and store its ID as the focused panel (small, low risk)
+  - [ ] 124c. Migrate the 5 manual focus checks in `layout.rs` panels to `register_panel()` + `focused_panel()` (small, low risk)
+  - **Recommended order:** 124a → 124b → 124c
 
 ### 125. Add `TreeNode` / `TreeView` widget to katla_ui (extends UI-19)
 - **Crate:** katla_ui
 - **Issue:** UI-19 identifies the need for a Tree widget. Adding implementation context from the hierarchy: the hierarchy panel manually handles indentation (depth * 16.0px), tree guide lines, expand/collapse icons, child visibility filtering via `is_entity_visible()`, and depth-aware click targets. A `TreeNode` widget would handle all of this generically, leaving the app to provide only the data (name, icon, depth, has_children, is_expanded).
+- **Sub-tasks:**
+  - [ ] 125a. Add `TreeItem` data struct and `TreeState` (expanded set, selected ID, scroll state) to katla_ui (small, low risk)
+  - [ ] 125b. Add `TreeView` builder with `data()`, `expanded()`, `selected()`, `indent_per_level()`, `row_height()`, virtualizes rendering via `ListView`-style scroll offset calculation (large, medium risk)
+  - [ ] 125c. Add expand/collapse toggle rendering (chevron icon + click handling that updates the expanded set) (medium, low risk)
+  - [ ] 125d. Add selection highlight, keyboard navigation (arrow up/down, left/right for expand/collapse), and tree guide lines (medium, low risk)
+  - [ ] 125e. Migrate hierarchy panel to `TreeView` widget (medium, medium risk)
+  - **Recommended order:** 125a → 125b → 125c → 125d → 125e
 - **Fix:** Add `TreeView` virtualized tree widget:
   ```rust
   ui.add(TreeView::new("hierarchy", &mut scroll_state)
