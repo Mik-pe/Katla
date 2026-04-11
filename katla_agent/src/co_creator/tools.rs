@@ -120,6 +120,24 @@ pub struct CreateResourceArgs {
     pub content: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct GenerateResourceArgs {
+    pub path: String,
+    pub resource_type: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LoadSceneArgs {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct SaveSceneArgs {
+    pub path: Option<String>,
+}
+
 /// Build tool definitions for the LLM's function calling.
 pub fn build_tool_definitions() -> Vec<ToolDefinition> {
     use serde_json::json;
@@ -378,6 +396,57 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["path"]
             }),
         },
+        ToolDefinition {
+            name: "generate_resource".to_string(),
+            description: "Generate a resource file from a natural language description. Creates particle systems, materials, or scenes based on descriptive keywords.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path relative to project root (e.g. 'assets/particles/fire.json')"
+                    },
+                    "resource_type": {
+                        "type": "string",
+                        "enum": ["particle_system", "material", "scene"],
+                        "description": "Type of resource to generate"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Natural language description of what to generate (e.g. 'a campfire with sparks', 'metallic blue material', 'empty night scene')"
+                    }
+                },
+                "required": ["path", "resource_type", "description"]
+            }),
+        },
+        ToolDefinition {
+            name: "load_scene".to_string(),
+            description: "Load a scene from a .katla file, replacing all entities in the current scene.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the .katla scene file relative to project root (e.g., 'assets/scenes/default.katla')"
+                    }
+                },
+                "required": ["path"]
+            }),
+        },
+        ToolDefinition {
+            name: "save_scene".to_string(),
+            description: "Save the current scene to a .katla file.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to save the scene file relative to project root. Defaults to 'assets/scenes/default.katla' if not specified."
+                    }
+                },
+                "required": []
+            }),
+        },
     ]
 }
 
@@ -404,5 +473,8 @@ mod tests {
         assert!(tools.iter().any(|t| t.name == "write_resource"));
         assert!(tools.iter().any(|t| t.name == "create_resource"));
         assert!(tools.iter().any(|t| t.name == "spawn_model"));
+        assert!(tools.iter().any(|t| t.name == "generate_resource"));
+        assert!(tools.iter().any(|t| t.name == "load_scene"));
+        assert!(tools.iter().any(|t| t.name == "save_scene"));
     }
 }

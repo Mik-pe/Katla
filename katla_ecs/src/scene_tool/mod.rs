@@ -120,6 +120,15 @@ pub enum ResourceOp {
         /// File path relative to project root.
         path: String,
     },
+    /// Generate a resource file from a natural language description.
+    GenerateResource {
+        /// File path relative to project root.
+        path: String,
+        /// Resource type: "particle_system", "material", or "scene".
+        resource_type: String,
+        /// Natural language description of what to generate.
+        description: String,
+    },
 }
 
 /// Error type for scene tool operations.

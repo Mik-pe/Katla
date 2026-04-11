@@ -127,8 +127,7 @@ impl UiContext {
     ///
     /// Supports multiline text with `\n` characters.
     pub fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
-        // Get the font atlas texture handle
-        let font_atlas = self.fonts.atlas_id();
+        let font_atlas = self.fonts.borrow().atlas_id();
 
         // Calculate subpixel bin from TEXT START position.
         // All characters share the same bin so the text moves as a unit.
@@ -155,7 +154,7 @@ impl UiContext {
             }
 
             // Get glyph with the shared subpixel bin
-            if let Some(glyph) = self.fonts.get_or_rasterize(
+            if let Some(glyph) = self.fonts.borrow_mut().get_or_rasterize(
                 self.current_font,
                 c,
                 size,
@@ -196,6 +195,7 @@ impl UiContext {
     #[inline]
     pub fn measure_text(&self, text: &str, size: f32) -> Vec2 {
         self.fonts
+            .borrow()
             .measure_text(self.current_font, text, size, self.scale_factor)
     }
 
@@ -217,6 +217,7 @@ impl UiContext {
     #[inline]
     pub(crate) fn font_ascent(&self, size: f32) -> f32 {
         self.fonts
+            .borrow()
             .get_font_metrics(self.current_font, size, self.scale_factor)
             .map(|(ascent, _, _)| ascent)
             .unwrap_or(size * 0.75) // Fallback heuristic
@@ -228,6 +229,7 @@ impl UiContext {
     #[inline]
     pub(crate) fn line_height(&self, size: f32) -> f32 {
         self.fonts
+            .borrow()
             .get_font_metrics(self.current_font, size, self.scale_factor)
             .map(|(ascent, descent, line_gap)| ascent - descent + line_gap)
             .unwrap_or(size * 1.2) // Fallback heuristic
@@ -282,17 +284,18 @@ impl UiContext {
         ref_font: FontId,
     ) {
         // Get the font atlas texture handle
-        let font_atlas = self.fonts.atlas_id();
+        let font_atlas = self.fonts.borrow().atlas_id();
 
         // Get text font metrics
         let text_ascent = self
             .fonts
+            .borrow()
             .get_font_metrics(ref_font, size, self.scale_factor)
             .map(|(a, _, _)| a)
             .unwrap_or(size * 0.75);
 
         // Get icon's actual rendered size
-        let icon_glyph = self.fonts.get_or_rasterize(
+        let icon_glyph = self.fonts.borrow_mut().get_or_rasterize(
             FontId::ICON,
             icon,
             size,
@@ -325,16 +328,19 @@ impl UiContext {
         let prev_font = self.current_font;
         self.current_font = FontId::ICON;
 
-        let font_atlas = self.fonts.atlas_id();
+        let font_atlas = self.fonts.borrow().atlas_id();
         let (_, subpixel_bin) = SubpixelBin::new(bounds.center().x());
 
         let mut buf = [0u8; 4];
         let icon_str = icon.encode_utf8(&mut buf);
 
-        if let Some(glyph) =
-            self.fonts
-                .get_or_rasterize(FontId::ICON, icon, size, self.scale_factor, subpixel_bin)
-        {
+        if let Some(glyph) = self.fonts.borrow_mut().get_or_rasterize(
+            FontId::ICON,
+            icon,
+            size,
+            self.scale_factor,
+            subpixel_bin,
+        ) {
             if glyph.size.x() > 0.0 && glyph.size.y() > 0.0 {
                 let draw_pos = center_in_bounds(bounds, glyph.size);
 

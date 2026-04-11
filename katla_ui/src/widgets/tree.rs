@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use katla_math::{Rect2D, Vec2};
 
+use crate::input::KeyCode;
 use crate::{Response, ScrollArea, ScrollAreaState, UiContext, Widget};
 
 /// A single item in a tree view.
@@ -217,6 +218,18 @@ impl Widget for TreeView<'_> {
                         ui.draw_rect(item_bounds, hovered_color);
                     }
 
+                    let guide_color = ui.style.border;
+                    for depth_level in 0..item.depth {
+                        let guide_x =
+                            bounds.min.x() + depth_level as f32 * indent_per_level + item_spacing;
+                        ui.draw_line(
+                            Vec2::new(guide_x, item_bounds.min.y()),
+                            Vec2::new(guide_x, item_bounds.max.y()),
+                            guide_color,
+                            1.0,
+                        );
+                    }
+
                     let indent = item.depth as f32 * indent_per_level;
                     let arrow_x = bounds.min.x() + indent + item_spacing;
                     let arrow_y = item_bounds.center().y() - font_size * 0.5;
@@ -281,6 +294,49 @@ impl Widget for TreeView<'_> {
         }
         if let Some(id) = row_clicked {
             state.selected = Some(id);
+        }
+
+        if let Some(selected_id) = state.selected {
+            if let Some(vis_pos) = visible_indices
+                .iter()
+                .position(|&idx| self.data[idx].id == selected_id)
+            {
+                let data_idx = visible_indices[vis_pos];
+                let item = &self.data[data_idx];
+
+                if ui.key_pressed(KeyCode::ArrowDown) {
+                    if vis_pos + 1 < visible_count {
+                        state.selected = Some(self.data[visible_indices[vis_pos + 1]].id);
+                    }
+                } else if ui.key_pressed(KeyCode::ArrowUp) {
+                    if vis_pos > 0 {
+                        state.selected = Some(self.data[visible_indices[vis_pos - 1]].id);
+                    }
+                } else if ui.key_pressed(KeyCode::ArrowRight) {
+                    if item.has_children && !state.is_expanded(item.id) {
+                        state.toggle_expanded(item.id);
+                    } else if vis_pos + 1 < visible_count {
+                        let next_idx = visible_indices[vis_pos + 1];
+                        if self.data[next_idx].depth == item.depth + 1 {
+                            state.selected = Some(self.data[next_idx].id);
+                        }
+                    }
+                } else if ui.key_pressed(KeyCode::ArrowLeft) {
+                    if item.has_children && state.is_expanded(item.id) {
+                        state.toggle_expanded(item.id);
+                    } else if item.depth > 0 {
+                        for &idx in &visible_indices[..vis_pos] {
+                            if self.data[idx].depth == item.depth - 1 {
+                                state.selected = Some(self.data[idx].id);
+                            }
+                        }
+                    }
+                }
+            }
+        } else if !visible_indices.is_empty()
+            && (ui.key_pressed(KeyCode::ArrowDown) || ui.key_pressed(KeyCode::ArrowUp))
+        {
+            state.selected = Some(self.data[visible_indices[0]].id);
         }
 
         let mut response = Response::new(bounds);
