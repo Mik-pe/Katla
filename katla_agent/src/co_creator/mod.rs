@@ -13,6 +13,11 @@ mod tools;
 
 #[cfg(feature = "llm-assistant")]
 pub use tools::build_tool_definitions;
+#[cfg(feature = "llm-assistant")]
+pub use tools::{
+    DestroyEntityArgs, DuplicateEntityArgs, GetSceneHierarchyArgs, QueryEntitiesArgs, SetFieldArgs,
+    SpawnEntityArgs,
+};
 
 /// Accumulates fragments of a single tool call across streaming chunks.
 #[derive(Debug, Clone, Default)]

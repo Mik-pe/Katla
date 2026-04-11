@@ -19,7 +19,7 @@ fn test_preferences_tab_click_does_not_close_panel() {
             dragging: false,
             drag_offset: Vec2::new(0.0, 0.0),
         },
-        current_tab: PreferencesTab::Appearance,
+        current_tab: PreferencesTab::General,
         scroll_state: Default::default(),
         llm_config: katla_agent::LlmConfig::default(),
     };
@@ -30,7 +30,7 @@ fn test_preferences_tab_click_does_not_close_panel() {
     let theme_key = "catppuccin";
     let mut actions = Vec::new();
 
-    let tab_x = 100.0 + 450.0 / 4.0;
+    let tab_x = 100.0 + 450.0 / 3.0;
     let tab_y = 100.0 + 32.0;
 
     ui.input_mut().mouse_pos = Vec2::new(tab_x + 10.0, tab_y + 10.0);
@@ -75,8 +75,8 @@ fn test_preferences_tab_click_does_not_close_panel() {
 
     assert_eq!(
         state.current_tab,
-        PreferencesTab::Editor,
-        "tab should change to Editor after clicking it"
+        PreferencesTab::Viewport,
+        "tab should change to Viewport after clicking it"
     );
 }
 

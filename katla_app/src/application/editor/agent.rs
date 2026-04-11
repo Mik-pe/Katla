@@ -220,7 +220,7 @@ fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) 
                 "message": result.message,
                 "entities": result.affected_entities.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
             }))
-            .unwrap_or_else(|_| result.message)
+            .unwrap_or(result.message)
         }
         Err(e) => format!("Error: {e}"),
     }
@@ -235,22 +235,20 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
 
     use crate::components::{DrawableComponent, TransformComponent};
     use crate::scene::entity_source::EntitySource;
+    use katla_agent::co_creator::SpawnEntityArgs;
     use katla_math::Vec3;
+
+    let args: SpawnEntityArgs = serde_json::from_value(tc.arguments.clone()).unwrap_or_default();
 
     if app
         .world
         .get_component::<TransformComponent>(entity)
         .is_none()
     {
-        let position = tc.arguments.get("position").and_then(|v| v.as_array());
-        let pos = match position {
-            Some(arr) if arr.len() >= 3 => Vec3::new(
-                arr[0].as_f64().unwrap_or(0.0) as f32,
-                arr[1].as_f64().unwrap_or(0.0) as f32,
-                arr[2].as_f64().unwrap_or(0.0) as f32,
-            ),
-            _ => Vec3::new(0.0, 0.0, 0.0),
-        };
+        let pos = args
+            .position
+            .map(|arr| Vec3::new(arr[0], arr[1], arr[2]))
+            .unwrap_or(Vec3::new(0.0, 0.0, 0.0));
         app.world
             .add_component(entity, TransformComponent::from_position(pos));
     }
@@ -260,15 +258,7 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
         .get_component::<DrawableComponent>(entity)
         .is_none()
     {
-        let scale = tc.arguments.get("scale").and_then(|v| v.as_array());
-        let size = match scale {
-            Some(arr) if arr.len() >= 3 => [
-                arr[0].as_f64().unwrap_or(1.0) as f32,
-                arr[1].as_f64().unwrap_or(1.0) as f32,
-                arr[2].as_f64().unwrap_or(1.0) as f32,
-            ],
-            _ => [1.0, 1.0, 1.0],
-        };
+        let size = args.scale.unwrap_or([1.0, 1.0, 1.0]);
         let mesh_handle = app.renderer.create_cube_mesh(size);
         let material_handle = app.default_material();
         let drawable = DrawableComponent::with_handles_and_color(
@@ -315,146 +305,89 @@ fn check_protected_entity(op: &SceneOp, app: &super::super::Application) -> Resu
 
 /// Convert a ToolCall's arguments into a SceneOp.
 fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
-    let args = &tool_call.arguments;
+    use katla_agent::co_creator::{
+        DestroyEntityArgs, DuplicateEntityArgs, GetSceneHierarchyArgs, QueryEntitiesArgs,
+        SetFieldArgs, SpawnEntityArgs,
+    };
+
     match tool_call.name.as_str() {
         "spawn_entity" => {
-            let position = json_array_to_f32_3(args, "position", [0.0, 0.0, 0.0])?;
-            let rotation = json_array_to_f32_3(args, "rotation", [0.0, 0.0, 0.0])?;
-            let scale = json_array_to_f32_3(args, "scale", [1.0, 1.0, 1.0])?;
-            let name = args.get("name").and_then(|v| v.as_str()).map(String::from);
+            let args: SpawnEntityArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid spawn_entity args: {e}"))?;
             Ok(SceneOp::SpawnEntity {
-                position,
-                rotation,
-                scale,
-                name,
+                position: args.position.unwrap_or([0.0, 0.0, 0.0]),
+                rotation: args.rotation.unwrap_or([0.0, 0.0, 0.0]),
+                scale: args.scale.unwrap_or([1.0, 1.0, 1.0]),
+                name: args.name,
             })
         }
         "destroy_entity" => {
-            let entity = json_entity_id(args, "entity_id")?;
-            Ok(SceneOp::DestroyEntity { entity })
+            let args: DestroyEntityArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid destroy_entity args: {e}"))?;
+            Ok(SceneOp::DestroyEntity {
+                entity: EntityId::from_raw(args.entity_id),
+            })
         }
         "set_field" => {
-            let entity = json_entity_id(args, "entity_id")?;
-            let component = args
-                .get("component")
-                .and_then(|v| v.as_str())
-                .ok_or("missing 'component'")?
-                .to_string();
-            let field = args
-                .get("field")
-                .and_then(|v| v.as_str())
-                .ok_or("missing 'field'")?
-                .to_string();
-            let value = args.get("value").cloned().ok_or("missing 'value'")?;
+            let args: SetFieldArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid set_field args: {e}"))?;
             Ok(SceneOp::SetField {
-                entity,
-                component,
-                field,
-                value,
+                entity: EntityId::from_raw(args.entity_id),
+                component: args.component,
+                field: args.field,
+                value: args.value,
             })
         }
         "query_entities" => {
-            let component_filter = args
-                .get("component_filter")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-            let limit = args
-                .get("limit")
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize);
+            let args: QueryEntitiesArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid query_entities args: {e}"))?;
             Ok(SceneOp::QueryEntities {
-                component_filter,
+                component_filter: args.component_filter,
                 name_filter: None,
                 position: None,
                 radius: None,
-                limit,
+                limit: args.limit.map(|n| n as usize),
             })
         }
-        "get_scene_hierarchy" => Ok(SceneOp::GetSceneHierarchy),
+        "get_scene_hierarchy" => {
+            let _args: GetSceneHierarchyArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid get_scene_hierarchy args: {e}"))?;
+            Ok(SceneOp::GetSceneHierarchy)
+        }
         "duplicate_entity" => {
-            let entity = json_entity_id(args, "entity_id")?;
-            let position_offset = args
-                .get("position_offset")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    let vals: Vec<f32> = arr
-                        .iter()
-                        .filter_map(|v| v.as_f64().map(|n| n as f32))
-                        .collect();
-                    if vals.len() == 3 {
-                        Some([vals[0], vals[1], vals[2]])
-                    } else {
-                        None
-                    }
-                })
-                .flatten();
+            let args: DuplicateEntityArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid duplicate_entity args: {e}"))?;
             Ok(SceneOp::DuplicateEntity {
-                entity,
-                position_offset,
+                entity: EntityId::from_raw(args.entity_id),
+                position_offset: args.position_offset,
             })
         }
         _ => Err(format!("Unknown tool: {}", tool_call.name)),
     }
 }
 
-fn json_array_to_f32_3(
-    args: &serde_json::Value,
-    key: &str,
-    default: [f32; 3],
-) -> Result<[f32; 3], String> {
-    let arr = args.get(key).and_then(|v| v.as_array());
-    match arr {
-        Some(arr) if arr.len() >= 3 => {
-            let vals: Vec<f32> = arr
-                .iter()
-                .take(3)
-                .filter_map(|v| v.as_f64().map(|n| n as f32))
-                .collect();
-            if vals.len() == 3 {
-                Ok([vals[0], vals[1], vals[2]])
-            } else {
-                Ok(default)
-            }
-        }
-        _ => Ok(default),
-    }
-}
-
-fn json_entity_id(args: &serde_json::Value, key: &str) -> Result<EntityId, String> {
-    let raw = args
-        .get(key)
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| format!("missing '{key}'"))?;
-    Ok(EntityId::from_raw(raw))
-}
-
 fn format_tool_call_summary(tc: &ToolCall) -> String {
+    use katla_agent::co_creator::{DestroyEntityArgs, DuplicateEntityArgs, SpawnEntityArgs};
+
     match tc.name.as_str() {
         "spawn_entity" => {
-            let pos = tc.arguments.get("position").and_then(|v| v.as_array());
-            match pos {
-                Some(arr) if arr.len() >= 3 => {
-                    let coords: Vec<String> = arr
-                        .iter()
-                        .take(3)
-                        .map(|v| format!("{:.1}", v.as_f64().unwrap_or(0.0)))
-                        .collect();
-                    let name = tc.arguments.get("name").and_then(|v| v.as_str());
-                    match name {
-                        Some(n) => format!("Spawn \"{n}\" at ({})", coords.join(", ")),
-                        None => format!("Spawn entity at ({})", coords.join(", ")),
+            let args: SpawnEntityArgs =
+                serde_json::from_value(tc.arguments.clone()).unwrap_or_default();
+            match args.position {
+                Some(pos) => {
+                    let coords = format!("{:.1}, {:.1}, {:.1}", pos[0], pos[1], pos[2]);
+                    match args.name {
+                        Some(n) => format!("Spawn \"{n}\" at ({coords})"),
+                        None => format!("Spawn entity at ({coords})"),
                     }
                 }
-                _ => "Spawn entity".to_string(),
+                None => "Spawn entity".to_string(),
             }
         }
         "destroy_entity" => {
-            let id = tc
-                .arguments
-                .get("entity_id")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            format!("Destroy entity {id}")
+            let args: DestroyEntityArgs =
+                serde_json::from_value(tc.arguments.clone()).unwrap_or_default();
+            format!("Destroy entity {}", args.entity_id)
         }
         "set_field" => {
             let comp = tc
@@ -479,12 +412,9 @@ fn format_tool_call_summary(tc: &ToolCall) -> String {
         }
         "get_scene_hierarchy" => "Get scene hierarchy".to_string(),
         "duplicate_entity" => {
-            let id = tc
-                .arguments
-                .get("entity_id")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            format!("Duplicate entity {id}")
+            let args: DuplicateEntityArgs =
+                serde_json::from_value(tc.arguments.clone()).unwrap_or_default();
+            format!("Duplicate entity {}", args.entity_id)
         }
         _ => tc.name.clone(),
     }

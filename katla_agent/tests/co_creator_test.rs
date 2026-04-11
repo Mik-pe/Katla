@@ -96,7 +96,7 @@ fn test_streaming_tool_call_accumulation() {
     let provider = Arc::new(MockStreamProvider::tool_call(
         "call_1",
         "spawn_entity",
-        r#"{"position":[1,2,3],"name":"TestCube"}"#,
+        &serde_json::json!({"position":[1,2,3],"name":"TestCube"}),
     ));
     let mut agent = CoCreatorAgent::new();
 
@@ -185,7 +185,7 @@ fn test_tool_result_added_to_history() {
     let provider = Arc::new(MockStreamProvider::tool_call(
         "call_42",
         "spawn_entity",
-        r#"{"position":[0,0,0]}"#,
+        &serde_json::json!({"position":[0,0,0]}),
     ));
     let mut agent = CoCreatorAgent::new();
 

@@ -49,41 +49,33 @@ impl From<&Theme> for DraggablePanelStyle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PreferencesTab {
     #[default]
-    Appearance,
-    Editor,
-    Keybindings,
+    General,
+    Viewport,
     Ai,
-    About,
 }
 
 impl PreferencesTab {
     pub fn all() -> &'static [PreferencesTab] {
         &[
-            PreferencesTab::Appearance,
-            PreferencesTab::Editor,
-            PreferencesTab::Keybindings,
+            PreferencesTab::General,
+            PreferencesTab::Viewport,
             PreferencesTab::Ai,
-            PreferencesTab::About,
         ]
     }
 
     pub fn name(&self) -> &'static str {
         match self {
-            PreferencesTab::Appearance => "Appearance",
-            PreferencesTab::Editor => "Editor",
-            PreferencesTab::Keybindings => "Keybindings",
+            PreferencesTab::General => "General",
+            PreferencesTab::Viewport => "Viewport",
             PreferencesTab::Ai => "AI",
-            PreferencesTab::About => "About",
         }
     }
 
     pub fn icon(&self) -> char {
         match self {
-            PreferencesTab::Appearance => ForkAwesome::PAINT_BRUSH,
-            PreferencesTab::Editor => ForkAwesome::PENCIL,
-            PreferencesTab::Keybindings => ForkAwesome::KEY,
+            PreferencesTab::General => ForkAwesome::PAINT_BRUSH,
+            PreferencesTab::Viewport => ForkAwesome::CUBE,
             PreferencesTab::Ai => ForkAwesome::CUBE,
-            PreferencesTab::About => ForkAwesome::INFO_CIRCLE,
         }
     }
 }
@@ -181,7 +173,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
             ui,
             &mut self.state.panel,
             &style,
-            DraggablePanelConfig::new("prefs", "Settings")
+            DraggablePanelConfig::new("prefs", "Preferences")
                 .size(panel_width, panel_height)
                 .screen_size(self.screen_size)
                 .close_on_outside_click(false),
@@ -302,30 +294,27 @@ impl<'a> Widget for PreferencesPanel<'a> {
                         );
 
                         let final_y = match current_tab {
-                            PreferencesTab::Appearance => build_appearance_tab(
+                            PreferencesTab::General => build_general_tab(
                                 ui,
                                 theme,
-                                &AppearanceTabParams {
+                                &GeneralTabParams {
                                     cursor,
                                     content_width,
                                     current_theme_key: theme_key,
-                                    show_grid,
-                                    show_stats,
                                     font_scale,
                                 },
                                 pending_actions,
                             ),
-                            PreferencesTab::Editor => build_editor_tab(
+                            PreferencesTab::Viewport => build_viewport_tab(
                                 ui,
                                 theme,
                                 cursor,
                                 content_width,
                                 &editor_settings,
+                                show_grid,
+                                show_stats,
                                 pending_actions,
                             ),
-                            PreferencesTab::Keybindings => {
-                                build_keybindings_tab(ui, theme, cursor, content_width)
-                            }
                             PreferencesTab::Ai => build_ai_tab(
                                 ui,
                                 theme,
@@ -334,9 +323,6 @@ impl<'a> Widget for PreferencesPanel<'a> {
                                 &llm_config,
                                 pending_actions,
                             ),
-                            PreferencesTab::About => {
-                                build_about_tab(ui, theme, cursor, content_width)
-                            }
                         };
 
                         final_y - content_start_y + scroll_offset + SECTION_GAP
@@ -371,25 +357,21 @@ fn draw_section_header(ui: &mut UiContext, theme: &Theme, text: &str, content_wi
     ui.spacing(header_height + HEADER_TO_WIDGET);
 }
 
-struct AppearanceTabParams<'a> {
+struct GeneralTabParams<'a> {
     cursor: Vec2,
     content_width: f32,
     current_theme_key: &'a str,
-    show_grid: bool,
-    show_stats: bool,
     font_scale: f32,
 }
 
-fn build_appearance_tab(
+fn build_general_tab(
     ui: &mut UiContext,
     theme: &Theme,
-    params: &AppearanceTabParams,
+    params: &GeneralTabParams,
     pending_actions: &mut Vec<PreferencesAction>,
 ) -> f32 {
     let content_width = params.content_width;
     let current_theme_key = params.current_theme_key;
-    let show_grid = params.show_grid;
-    let show_stats = params.show_stats;
     let font_scale = params.font_scale;
 
     ui.set_cursor(params.cursor);
@@ -397,7 +379,7 @@ fn build_appearance_tab(
     // --- Color Theme section ---
     draw_section_header(ui, theme, "COLOR THEME", content_width);
 
-    let col_width = (content_width - GRID_SPACING) / 2.0;
+    let col_width = (content_width - 2.0 * GRID_SPACING) / 3.0;
 
     let theme_names = [
         ("catppuccin", "Catppuccin"),
@@ -415,7 +397,7 @@ fn build_appearance_tab(
         ("solarized_dark", "Solarized Dark"),
     ];
 
-    ui.begin_grid(2, col_width, ROW_HEIGHT, GRID_SPACING);
+    ui.begin_grid(3, col_width, ROW_HEIGHT, GRID_SPACING);
     for (key, display_name) in theme_names.iter() {
         let btn_bounds = ui.grid_item(Vec2::new(col_width, ROW_HEIGHT));
         let is_selected = *key == current_theme_key;
@@ -433,10 +415,42 @@ fn build_appearance_tab(
     }
     ui.end_grid();
 
-    ui.spacing(ROW_HEIGHT * 7.0 + GRID_SPACING + SECTION_GAP);
+    ui.spacing(SECTION_GAP);
 
-    // --- View Options section ---
-    draw_section_header(ui, theme, "VIEW OPTIONS", content_width);
+    // --- Font Scale section ---
+    draw_section_header(ui, theme, "FONT SCALE", content_width);
+
+    let scale_text = format!("Scale: {:.0}%", font_scale * 100.0);
+    ui.label_auto_colored(&scale_text, theme.text_primary);
+    ui.spacing(LABEL_GAP);
+    let slider_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, 20.0));
+    let mut scale = font_scale;
+    let response = ui.add(
+        katla_ui::widgets::Slider::new("font_scale_slider", &mut scale, 0.75..=2.0)
+            .bounds(slider_bounds)
+            .id("font_scale_slider"),
+    );
+    if response.changed {
+        pending_actions.push(PreferencesAction::SetFontScale(scale));
+    }
+
+    ui.cursor().y()
+}
+
+fn build_viewport_tab(
+    ui: &mut UiContext,
+    theme: &Theme,
+    cursor: Vec2,
+    content_width: f32,
+    editor_settings: &EditorSettings,
+    show_grid: bool,
+    show_stats: bool,
+    pending_actions: &mut Vec<PreferencesAction>,
+) -> f32 {
+    ui.set_cursor(cursor);
+
+    // --- Display section ---
+    draw_section_header(ui, theme, "DISPLAY", content_width);
 
     let grid_btn_bounds =
         Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, ROW_HEIGHT));
@@ -470,54 +484,31 @@ fn build_appearance_tab(
     }
     ui.spacing(ROW_HEIGHT + SECTION_GAP);
 
-    // --- Font Scale section ---
-    draw_section_header(ui, theme, "FONT SCALE", content_width);
+    // --- Grid section ---
+    draw_section_header(ui, theme, "GRID", content_width);
 
-    let font_scales = [
-        (0.75, "75%"),
-        (0.9, "90%"),
-        (1.0, "100%"),
-        (1.1, "110%"),
-        (1.25, "125%"),
-        (1.5, "150%"),
-        (1.75, "175%"),
-        (2.0, "200%"),
-    ];
-    let scale_btn_width = (content_width - 3.0 * GRID_SPACING) / 4.0;
+    let sizes = [0.5, 1.0, 2.0, 5.0, 10.0];
+    let btn_width = (content_width - 4.0 * GRID_SPACING) / 5.0;
 
-    ui.begin_grid(4, scale_btn_width, ROW_HEIGHT, GRID_SPACING);
-    for (scale, label) in font_scales.iter() {
-        let btn_bounds = ui.grid_item(Vec2::new(scale_btn_width, ROW_HEIGHT));
-        let is_selected = (font_scale - scale).abs() < 0.01;
-
+    ui.begin_grid(5, btn_width, ROW_HEIGHT, GRID_SPACING);
+    for &size in sizes.iter() {
+        let btn_bounds = ui.grid_item(Vec2::new(btn_width, ROW_HEIGHT));
+        let is_selected = (editor_settings.grid_size - size).abs() < 0.01;
+        let text = format!("{:.1}", size);
         if themed_select_button(
             ui,
-            &format!("font_scale_{}", scale),
-            label,
+            &format!("grid_size_{}", size),
+            &text,
             btn_bounds,
             is_selected,
             theme,
         ) {
-            pending_actions.push(PreferencesAction::SetFontScale(*scale));
+            pending_actions.push(PreferencesAction::SetGridSize(size));
         }
     }
     ui.end_grid();
 
-    ui.cursor().y()
-}
-
-fn build_editor_tab(
-    ui: &mut UiContext,
-    theme: &Theme,
-    cursor: Vec2,
-    content_width: f32,
-    editor_settings: &EditorSettings,
-    pending_actions: &mut Vec<PreferencesAction>,
-) -> f32 {
-    ui.set_cursor(cursor);
-
-    // --- Snapping section ---
-    draw_section_header(ui, theme, "SNAPPING", content_width);
+    ui.spacing(ROW_HEIGHT + WIDGET_GAP);
 
     let snap_btn_bounds =
         Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, ROW_HEIGHT));
@@ -546,287 +537,31 @@ fn build_editor_tab(
 
     let slider_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, 20.0));
     let mut camera_speed = editor_settings.camera_speed;
-    let slider_response = ui.add(
+    let response = ui.add(
         katla_ui::widgets::Slider::new("camera_speed_slider", &mut camera_speed, 5.0..=200.0)
             .bounds(slider_bounds)
             .id("camera_speed_slider"),
     );
-    if slider_response.changed {
+    if response.changed {
         pending_actions.push(PreferencesAction::SetCameraSpeed(camera_speed));
     }
-
+    ui.spacing(4.0);
+    let tiny_font = ui.scaled_font_size(FontSize::XSmall);
+    ui.draw_text(
+        "5",
+        Vec2::new(slider_bounds.min.x(), ui.cursor().y()),
+        theme.text_muted,
+        tiny_font,
+    );
+    let max_label = "200";
+    let max_size = ui.measure_text(max_label, tiny_font);
+    ui.draw_text(
+        max_label,
+        Vec2::new(slider_bounds.max.x() - max_size.x(), ui.cursor().y()),
+        theme.text_muted,
+        tiny_font,
+    );
     ui.spacing(20.0 + SECTION_GAP);
-
-    // --- Grid section ---
-    draw_section_header(ui, theme, "GRID", content_width);
-
-    let sizes = [0.5, 1.0, 2.0, 5.0, 10.0];
-    let btn_width = (content_width - 4.0 * GRID_SPACING) / 5.0;
-
-    ui.begin_grid(5, btn_width, ROW_HEIGHT, GRID_SPACING);
-    for &size in sizes.iter() {
-        let btn_bounds = ui.grid_item(Vec2::new(btn_width, ROW_HEIGHT));
-        let is_selected = (editor_settings.grid_size - size).abs() < 0.01;
-        let text = format!("{:.1}", size);
-        if themed_select_button(
-            ui,
-            &format!("grid_size_{}", size),
-            &text,
-            btn_bounds,
-            is_selected,
-            theme,
-        ) {
-            pending_actions.push(PreferencesAction::SetGridSize(size));
-        }
-    }
-    ui.end_grid();
-
-    ui.cursor().y()
-}
-
-/// A single keybinding entry for display.
-struct ShortcutEntry {
-    keys: &'static str,
-    description: &'static str,
-    section: &'static str,
-}
-
-fn build_keybindings_tab(
-    ui: &mut UiContext,
-    theme: &Theme,
-    cursor: Vec2,
-    content_width: f32,
-) -> f32 {
-    ui.set_cursor(cursor);
-
-    let shortcuts = [
-        // Viewport / Camera
-        ShortcutEntry {
-            keys: "W / E / R",
-            description: "Gizmo mode: Translate / Rotate / Scale",
-            section: "Viewport",
-        },
-        ShortcutEntry {
-            keys: "F",
-            description: "Focus camera on selected entity",
-            section: "Viewport",
-        },
-        ShortcutEntry {
-            keys: "RMB Drag",
-            description: "Orbit camera",
-            section: "Viewport",
-        },
-        ShortcutEntry {
-            keys: "Ctrl+RMB Drag",
-            description: "Pan camera",
-            section: "Viewport",
-        },
-        ShortcutEntry {
-            keys: "Shift",
-            description: "Sprint (fast camera)",
-            section: "Viewport",
-        },
-        ShortcutEntry {
-            keys: "Ctrl",
-            description: "Slow camera",
-            section: "Viewport",
-        },
-        ShortcutEntry {
-            keys: "L",
-            description: "Enable camera look",
-            section: "Viewport",
-        },
-        // Scene
-        ShortcutEntry {
-            keys: "Ctrl+S",
-            description: "Save scene",
-            section: "Scene",
-        },
-        ShortcutEntry {
-            keys: "Ctrl+P",
-            description: "Toggle Particle Inspector",
-            section: "Scene",
-        },
-        ShortcutEntry {
-            keys: "Ctrl+Shift+A",
-            description: "Toggle AI Co-Creator panel",
-            section: "Scene",
-        },
-        ShortcutEntry {
-            keys: "Delete",
-            description: "Delete selected entity",
-            section: "Scene",
-        },
-        // Navigation
-        ShortcutEntry {
-            keys: "Esc",
-            description: "Exit application",
-            section: "Navigation",
-        },
-        ShortcutEntry {
-            keys: "Space",
-            description: "Jump",
-            section: "Navigation",
-        },
-        ShortcutEntry {
-            keys: "↑ / ↓",
-            description: "Navigate entity list",
-            section: "Navigation",
-        },
-        ShortcutEntry {
-            keys: "← / →",
-            description: "Collapse / Expand hierarchy",
-            section: "Navigation",
-        },
-        // Movement
-        ShortcutEntry {
-            keys: "W A S D",
-            description: "Move forward / left / back / right",
-            section: "Movement",
-        },
-        ShortcutEntry {
-            keys: "Q / E",
-            description: "Move down / up",
-            section: "Movement",
-        },
-        ShortcutEntry {
-            keys: "Shift",
-            description: "Sprint",
-            section: "Movement",
-        },
-    ];
-
-    let badge_width = 120.0;
-    let badge_height = ROW_HEIGHT;
-    let small_font = ui.scaled_font_size(FontSize::Small);
-    let medium_font = ui.scaled_font_size(FontSize::Medium);
-
-    let mut current_section = "";
-
-    for shortcut in &shortcuts {
-        // Draw section header when section changes
-        if shortcut.section != current_section {
-            if !current_section.is_empty() {
-                ui.spacing(WIDGET_GAP);
-            }
-            current_section = shortcut.section;
-            draw_section_header(ui, theme, shortcut.section, content_width);
-        }
-
-        let row_bounds =
-            Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, badge_height));
-
-        // Alternating row backgrounds
-        let row_bg = if ui.cursor().y() as u32 % 2 == 0 {
-            theme.button_bg
-        } else {
-            theme.panel_bg
-        };
-        ui.draw_rect(row_bounds, row_bg);
-
-        // Key badge
-        let badge_bounds =
-            Rect2D::from_origin_size(ui.cursor(), Vec2::new(badge_width, badge_height));
-        ui.draw_rect(badge_bounds, theme.background_light);
-        let key_size = ui.measure_text(shortcut.keys, small_font);
-        ui.draw_text(
-            shortcut.keys,
-            Vec2::new(
-                badge_bounds.center().x() - key_size.x() * 0.5,
-                badge_bounds.center().y() - key_size.y() * 0.5,
-            ),
-            theme.text_accent,
-            small_font,
-        );
-
-        // Description
-        ui.draw_text(
-            shortcut.description,
-            Vec2::new(
-                ui.cursor().x() + badge_width + medium_font,
-                ui.cursor().y() + 6.0,
-            ),
-            theme.text_primary,
-            medium_font,
-        );
-
-        ui.spacing(badge_height + WIDGET_GAP);
-    }
-
-    ui.spacing(SECTION_GAP);
-    ui.label_auto_colored("Custom keybindings coming soon", theme.text_muted);
-
-    ui.cursor().y()
-}
-
-fn build_about_tab(ui: &mut UiContext, theme: &Theme, cursor: Vec2, content_width: f32) -> f32 {
-    ui.set_cursor(cursor);
-    let center_x = cursor.x() + content_width * 0.5;
-
-    let title = "Katla Engine";
-    let title_size = ui.measure_text(title, ui.scaled_font_size(FontSize::Huge));
-    ui.draw_text(
-        title,
-        Vec2::new(center_x - title_size.x() * 0.5, ui.cursor().y()),
-        theme.text_primary,
-        ui.scaled_font_size(FontSize::Huge),
-    );
-    ui.spacing(40.0);
-
-    let version = "Version 0.1.0";
-    let version_size = ui.measure_text(version, ui.scaled_font_size(FontSize::Large));
-    ui.draw_text(
-        version,
-        Vec2::new(center_x - version_size.x() * 0.5, ui.cursor().y()),
-        theme.text_secondary,
-        ui.scaled_font_size(FontSize::Large),
-    );
-    ui.spacing(30.0);
-
-    let desc = "A Vulkan-based 3D game engine\nwritten in Rust with ECS architecture.";
-    for line in desc.split('\n') {
-        let line_size = ui.measure_text(line, ui.scaled_font_size(FontSize::Medium));
-        ui.draw_text(
-            line,
-            Vec2::new(center_x - line_size.x() * 0.5, ui.cursor().y()),
-            theme.text_muted,
-            ui.scaled_font_size(FontSize::Medium),
-        );
-        ui.spacing(20.0);
-    }
-
-    ui.spacing(30.0);
-
-    ui.draw_text(
-        "Features",
-        Vec2::new(center_x - 30.0, ui.cursor().y()),
-        theme.text_secondary,
-        ui.scaled_font_size(FontSize::Medium),
-    );
-    ui.spacing(24.0);
-
-    let features = [
-        "Vulkan 1.3 with Dynamic Rendering",
-        "ECS Architecture",
-        "Skeletal Animation",
-        "Particle Systems",
-        "Hot Reloadable Shaders",
-        "Immediate Mode UI",
-    ];
-
-    let check_icon = ForkAwesome::CHECK;
-    let font_size = ui.scaled_font_size(FontSize::Medium);
-    for feature in features {
-        ui.draw_icon_label(
-            check_icon,
-            feature,
-            Vec2::new(center_x - 100.0, ui.cursor().y()),
-            font_size,
-            font_size,
-            theme.success,
-        );
-        ui.spacing(18.0);
-    }
 
     ui.cursor().y()
 }
@@ -937,6 +672,7 @@ fn build_ai_tab(
                 LlmProviderKind::OpenAiCompatible => "open_ai_compatible",
             };
             pending_actions.push(PreferencesAction::SetLlmProvider(key.to_string()));
+            pending_actions.push(PreferencesAction::SaveLlmConfig);
         }
     }
     ui.end_grid();
@@ -977,6 +713,7 @@ fn build_ai_tab(
     );
     if api_key_response.changed {
         pending_actions.push(PreferencesAction::SetLlmApiKey(api_key));
+        pending_actions.push(PreferencesAction::SaveLlmConfig);
     }
     ui.spacing(ROW_HEIGHT + SECTION_GAP);
 
@@ -996,6 +733,7 @@ fn build_ai_tab(
     );
     if model_response.changed {
         pending_actions.push(PreferencesAction::SetLlmModel(model));
+        pending_actions.push(PreferencesAction::SaveLlmConfig);
     }
     ui.spacing(ROW_HEIGHT + WIDGET_GAP);
 
@@ -1011,6 +749,7 @@ fn build_ai_tab(
         );
         if url_response.changed {
             pending_actions.push(PreferencesAction::SetLlmBaseUrl(base_url));
+            pending_actions.push(PreferencesAction::SaveLlmConfig);
         }
         ui.spacing(ROW_HEIGHT + WIDGET_GAP);
     }
@@ -1028,6 +767,7 @@ fn build_ai_tab(
     );
     if temp_response.changed {
         pending_actions.push(PreferencesAction::SetLlmTemperature(temperature));
+        pending_actions.push(PreferencesAction::SaveLlmConfig);
     }
 
     ui.spacing(20.0 + WIDGET_GAP);
@@ -1056,6 +796,7 @@ fn build_ai_tab(
             theme,
         ) {
             pending_actions.push(PreferencesAction::SetLlmMaxTokens(tokens));
+            pending_actions.push(PreferencesAction::SaveLlmConfig);
         }
     }
     ui.end_grid();
@@ -1066,21 +807,6 @@ fn build_ai_tab(
     let _ = btn_row_y;
 
     ui.spacing(ROW_HEIGHT + SECTION_GAP);
-
-    // --- Save button ---
-    let save_btn_bounds =
-        Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, ROW_HEIGHT));
-    if themed_select_button(
-        ui,
-        "llm_save_config",
-        "Save Configuration",
-        save_btn_bounds,
-        false,
-        theme,
-    ) {
-        pending_actions.push(PreferencesAction::SaveLlmConfig);
-    }
-    ui.spacing(ROW_HEIGHT + WIDGET_GAP);
 
     ui.cursor().y()
 }
