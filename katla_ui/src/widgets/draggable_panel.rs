@@ -242,69 +242,8 @@ impl DraggablePanel {
         let panel_bounds =
             Rect2D::from_origin_size(panel_pos, Vec2::new(panel_width, panel_height));
 
-        ui.push_z_index(crate::z_index::PANEL);
-
-        // Shadow
-        let shadow_offset = Vec2::new(6.0, 6.0);
-        let shadow_bounds = Rect2D::new(
-            panel_bounds.min + shadow_offset,
-            panel_bounds.max + shadow_offset,
-        );
-        ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.6));
-
-        // Panel body
-        ui.draw_rect(panel_bounds, style.panel_bg);
-        ui.draw_rect_border(panel_bounds, style.panel_bg, style.panel_border, 1.0);
-
-        // Title bar
-        let title_bounds =
-            Rect2D::from_origin_size(panel_bounds.min, Vec2::new(panel_width, title_bar_height));
-        let title_color = if state.dragging || can_drag {
-            style.background_light
-        } else {
-            style.panel_header
-        };
-        ui.draw_rect(title_bounds, title_color);
-
-        // Drag handle
-        let handle_x = panel_bounds.min.x() + panel_width * 0.5 - 20.0;
-        let handle_y = panel_bounds.min.y() + 6.0;
-        for i in 0..3 {
-            let line_y = handle_y + i as f32 * 3.0;
-            ui.draw_line(
-                Vec2::new(handle_x, line_y),
-                Vec2::new(handle_x + 40.0, line_y),
-                style.text_muted,
-                1.0,
-            );
-        }
-
-        // Title text
-        let title_pos = Vec2::new(
-            panel_bounds.min.x() + ui.scaled_font_size(FontSize::Medium),
-            panel_bounds.min.y() + ui.scaled_font_size(FontSize::Large),
-        );
-        ui.draw_text(
-            title,
-            title_pos,
-            style.text_primary,
-            ui.scaled_font_size(FontSize::Large),
-        );
-
-        // Close button
-        let close_size = 24.0;
-        let close_bounds = Rect2D::from_origin_size(
-            Vec2::new(
-                panel_bounds.max.x() - close_size - 6.0,
-                panel_bounds.min.y() + 4.0,
-            ),
-            Vec2::new(close_size, close_size),
-        );
-        let close_clicked = ui
-            .add(Button::new("\u{00d7}").bounds(close_bounds).id("\x00close"))
-            .clicked;
-
-        // Click-outside detection
+        // Click-outside detection (computed before with_z_index since it only
+        // uses panel_bounds and mouse state, not z-index)
         let mouse_in_panel = panel_bounds.contains(ui.mouse_pos());
         let mouse_clicked_outside = close_on_outside_click
             && !state.dragging
@@ -312,11 +251,75 @@ impl DraggablePanel {
             && ui.mouse_clicked(mouse_button::LEFT)
             && !mouse_in_panel;
 
-        let frame = DraggablePanelFrame { panel_bounds };
+        let mut close_clicked = false;
 
-        content(ui, &frame);
+        ui.with_z_index(crate::z_index::PANEL, |ui| {
+            // Shadow
+            let shadow_offset = Vec2::new(6.0, 6.0);
+            let shadow_bounds = Rect2D::new(
+                panel_bounds.min + shadow_offset,
+                panel_bounds.max + shadow_offset,
+            );
+            ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.6));
 
-        ui.pop_z_index();
+            // Panel body
+            ui.draw_rect(panel_bounds, style.panel_bg);
+            ui.draw_rect_border(panel_bounds, style.panel_bg, style.panel_border, 1.0);
+
+            // Title bar
+            let title_bounds = Rect2D::from_origin_size(
+                panel_bounds.min,
+                Vec2::new(panel_width, title_bar_height),
+            );
+            let title_color = if state.dragging || can_drag {
+                style.background_light
+            } else {
+                style.panel_header
+            };
+            ui.draw_rect(title_bounds, title_color);
+
+            // Drag handle
+            let handle_x = panel_bounds.min.x() + panel_width * 0.5 - 20.0;
+            let handle_y = panel_bounds.min.y() + 6.0;
+            for i in 0..3 {
+                let line_y = handle_y + i as f32 * 3.0;
+                ui.draw_line(
+                    Vec2::new(handle_x, line_y),
+                    Vec2::new(handle_x + 40.0, line_y),
+                    style.text_muted,
+                    1.0,
+                );
+            }
+
+            // Title text
+            let title_pos = Vec2::new(
+                panel_bounds.min.x() + ui.scaled_font_size(FontSize::Medium),
+                panel_bounds.min.y() + ui.scaled_font_size(FontSize::Large),
+            );
+            ui.draw_text(
+                title,
+                title_pos,
+                style.text_primary,
+                ui.scaled_font_size(FontSize::Large),
+            );
+
+            // Close button
+            let close_size = 24.0;
+            let close_bounds = Rect2D::from_origin_size(
+                Vec2::new(
+                    panel_bounds.max.x() - close_size - 6.0,
+                    panel_bounds.min.y() + 4.0,
+                ),
+                Vec2::new(close_size, close_size),
+            );
+            close_clicked = ui
+                .add(Button::new("\u{00d7}").bounds(close_bounds).id("\x00close"))
+                .clicked;
+
+            let frame = DraggablePanelFrame { panel_bounds };
+
+            content(ui, &frame);
+        });
 
         if close_clicked || mouse_clicked_outside {
             state.close();

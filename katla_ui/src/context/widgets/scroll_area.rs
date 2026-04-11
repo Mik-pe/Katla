@@ -105,7 +105,11 @@ impl UiContext {
         let actual_height = bounds.height().min(max_height);
 
         // Calculate content width (leave room for scrollbar if needed)
-        let scrollbar_width = if show_scrollbar { 10.0 } else { 0.0 };
+        let scrollbar_width = if show_scrollbar {
+            self.style.scrollbar_width
+        } else {
+            0.0
+        };
         let content_width = bounds.width() - scrollbar_width;
 
         // Content area
@@ -188,7 +192,7 @@ impl UiContext {
 
         // Draw scrollbar if needed
         if show_scrollbar && content_height > bounds.height() {
-            let scrollbar_width = 10.0;
+            let scrollbar_width = self.style.scrollbar_width;
             let track_height = bounds.height();
             let handle_height =
                 (bounds.height() / content_height * track_height).clamp(20.0, track_height);
