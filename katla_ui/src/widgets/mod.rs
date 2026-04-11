@@ -1182,3 +1182,96 @@ pub use draggable_panel::{
 
 mod list_view;
 pub use list_view::ListView;
+
+// =============================================================================
+// ComboBox Widget
+// =============================================================================
+
+/// A combo box / dropdown select widget.
+///
+/// Shows the currently selected option. When clicked, opens a dropdown list
+/// of all options. Clicking an option selects it and closes the dropdown.
+/// Clicking outside closes without changing the selection.
+///
+/// # State Management
+///
+/// The `open` state is managed externally. Pass `&mut bool` to track
+/// whether the dropdown is open across frames.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::ComboBox;
+///
+/// let mut selected = 0;
+/// let mut open = false;
+/// let options = ["Low", "Medium", "High"];
+///
+/// if ui.add(ComboBox::new("quality", &mut selected, &options, &mut open)).changed {
+///     println!("Selected: {}", options[selected]);
+/// }
+/// ```
+pub struct ComboBox<'a> {
+    label: &'a str,
+    selected: &'a mut usize,
+    options: &'a [&'a str],
+    open: &'a mut bool,
+    bounds: Rect2D,
+    id: Option<&'a str>,
+}
+
+impl<'a> ComboBox<'a> {
+    /// Create a new combo box.
+    ///
+    /// # Arguments
+    /// * `label` - Label used for widget ID generation
+    /// * `selected` - Mutable reference to the selected index
+    /// * `options` - Slice of option labels
+    /// * `open` - Mutable reference to the dropdown open state
+    pub fn new(
+        label: &'a str,
+        selected: &'a mut usize,
+        options: &'a [&'a str],
+        open: &'a mut bool,
+    ) -> Self {
+        Self {
+            label,
+            selected,
+            options,
+            open,
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.combo_default_width,
+                DEFAULTS.combo_default_height,
+            )),
+            id: None,
+        }
+    }
+
+    /// Set the combo box bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set a custom ID (overrides label-based ID).
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Position the combo box at the current cursor position with default size.
+    pub fn at_cursor(mut self, ui: &UiContext) -> Self {
+        self.bounds = Rect2D::from_origin_size(
+            ui.cursor(),
+            Vec2::new(ui.style.combo_default_width, ui.style.combo_default_height),
+        );
+        self
+    }
+}
+
+impl<'a> crate::Widget for ComboBox<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let id = self.id.unwrap_or(self.label);
+        ui.combo_box(id, self.selected, self.options, self.bounds, self.open)
+    }
+}

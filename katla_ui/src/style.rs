@@ -337,6 +337,10 @@ pub struct UiStyle {
     pub badge_default_width: f32,
     /// Default badge height.
     pub badge_default_height: f32,
+    /// Default combo box width.
+    pub combo_default_width: f32,
+    /// Default combo box height.
+    pub combo_default_height: f32,
 
     // Icon sizes
     /// Small icon size (12px) - navigation, inline icons.
@@ -596,6 +600,8 @@ impl UiStyle {
             collapsible_default_height: 24.0,
             badge_default_width: 60.0,
             badge_default_height: 20.0,
+            combo_default_width: 150.0,
+            combo_default_height: 24.0,
 
             icon_size_small: 12.0,
             icon_size_medium: 16.0,
@@ -787,6 +793,8 @@ pub const DEFAULTS: WidgetDefaults = WidgetDefaults {
     collapsible_default_height: 24.0,
     badge_default_width: 60.0,
     badge_default_height: 20.0,
+    combo_default_width: 150.0,
+    combo_default_height: 24.0,
 };
 
 /// Widget default dimensions.
@@ -812,4 +820,6 @@ pub struct WidgetDefaults {
     pub collapsible_default_height: f32,
     pub badge_default_width: f32,
     pub badge_default_height: f32,
+    pub combo_default_width: f32,
+    pub combo_default_height: f32,
 }
