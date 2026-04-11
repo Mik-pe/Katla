@@ -375,8 +375,8 @@
 - **Crate:** katla_ui
 - **Issue:** UI-23 in the existing UI TODO list identifies this. Adding here as a concrete actionable item since it affects ergonomics across the editor. Currently `resp.on_hover_tooltip(ui, "text")` works, but in many call sites (e.g., `if resp.hovered { ui.tooltip("text"); }`) the borrow is manually split. A deferred tooltip stored on the response or context would clean up many patterns.
 - **Sub-tasks:**
-  - [ ] 91a. Add `pending_tooltips: Vec<(WidgetId, String)>` to `UiContext`, add `Response::tooltip(self, text)` that pushes to it (small, low risk)
-  - [ ] 91b. Render pending tooltips in `end()` at `z_index::TOOLTIP` for hovered widgets (small, low risk)
+  - [x] ~~91a. Add `pending_tooltips` to `UiContext`, add `Response::tooltip()`~~ — Done in 72821c8. Deferred tooltip with rendering in end().
+  - [x] ~~91b. Render pending tooltips in `end()` at `z_index::TOOLTIP`~~ — Done in 72821c8 (part of 91a).
   - [ ] 91c. Migrate existing `on_hover_tooltip()` callers to the deferred API (small, low risk)
   - **Recommended order:** 91a → 91b → 91c
 
@@ -388,7 +388,7 @@
 - **Issue:** Related to UI-09 in the existing list. The `text_input()` method snapshots ~20 individual input fields into local variables before the mutable borrow of `self.text_input_states`. This pattern is fragile — adding a new input field requires remembering to snapshot it. The root cause is that `self.input` and `self.text_input_states` are both fields of `UiContext`, so borrowing both mutably triggers borrow checker conflicts.
 - **Sub-tasks:**
   - [x] ~~93a. Extract `apply_text_edits` as a standalone free function~~ — Done in b49f35e. TextInputInput struct + snapshot function + apply_text_edits free function.
-  - [ ] 93b. Refactor `text_input()` to call the extracted function, removing all 20 snapshot variables (small, low risk)
+  - [x] ~~93b. Refactor `text_input()` to call the extracted function~~ — Done in b49f35e (part of 93a). Snapshot variables replaced with TextInputInput struct.
   - **Recommended order:** 93a → 93b
 
 ~~### 94. `DrawList::convert_draw_list` in katla_app assigns texture indices per-vertex inefficiently~~ — Fixed in 600ca16. Per-command vertex range scan replaces per-index loop.
@@ -399,7 +399,7 @@
 - **Issue:** `UiStyle` defines `window_rounding`, `button_rounding`, `input_rounding`, `popup_rounding`, and `menu_rounding` but no widget uses them. All rectangles are drawn with sharp corners. The `DrawList` has no rounded rect primitive (UI-24 mentions pre-tessellated corners). This makes the UI look blockier than intended.
 - **Sub-tasks:**
   - [x] ~~95a. Add `DrawList::add_rounded_rect(bounds, color, radius)`~~ — Done in b49f35e. Corner arc tessellation with auto-segment calculation and add_rect fallback.
-  - [ ] 95b. Add `UiContext::draw_rounded_rect(bounds, color, radius)` wrapper, update `button_with_colors()`, `checkbox()`, `text_input()`, combo box to use respective `style.*_rounding` values (medium, low risk)
+  - [x] ~~95b. Add `UiContext::draw_rounded_rect` wrapper, update widgets to use style rounding~~ — Done in 72821c8. Button, slider, text_input, combo, popup now use rounded rendering.
   - [ ] 95c. Update popup/menu background rendering to use `style.popup_rounding`/`style.menu_rounding` (small, low risk)
   - **Recommended order:** 95a → 95b → 95c
 
@@ -420,7 +420,7 @@
 - **Files:** `katla_ui/src/context/widgets/basic.rs`, `katla_ui/src/widgets/mod.rs`
 - **Issue:** The slider has no visible value display. Users can't see the current value while dragging. The `Slider` builder has no `.format()` or `.show_value()` method. Every slider in the editor (camera speed, font scale, transform sliders) needs to manually draw the value text alongside the slider.
 - **Sub-tasks:**
-  - [ ] 102a. Add `show_value: bool`, `value_precision: usize`, and `value_format: Option<Box<dyn Fn(f32) -> String>>` fields to `Slider` builder (small, low risk)
+  - [x] ~~102a. Add `show_value`, `value_precision` fields to `Slider` builder~~ — Done in 72821c8. Value rendered centered on slider when show_value is true.
   - [ ] 102b. In `slider()`, render formatted value text beside or centered on the grab handle when `show_value` is true, using `style.font_size` (small, low risk)
   - **Recommended order:** 102a → 102b
 
