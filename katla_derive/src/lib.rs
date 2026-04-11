@@ -7,6 +7,13 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Field, Fields, Lit, Type, TypePath, parse_macro_input};
 
+enum ExplicitFieldKind {
+    Enum,
+    Struct,
+    Vec,
+    EntityRef,
+}
+
 #[derive(Default)]
 struct InspectAttr {
     skip: bool,
@@ -15,6 +22,7 @@ struct InspectAttr {
     max: Option<f32>,
     speed: Option<f32>,
     display_name: Option<String>,
+    explicit_kind: Option<ExplicitFieldKind>,
 }
 
 fn parse_inspect_attr(field: &Field) -> Result<InspectAttr, syn::Error> {
@@ -79,6 +87,14 @@ fn parse_inspect_attr(field: &Field) -> Result<InspectAttr, syn::Error> {
                         ));
                     }
                 }
+            } else if meta.path.is_ident("enum") {
+                attr.explicit_kind = Some(ExplicitFieldKind::Enum);
+            } else if meta.path.is_ident("struct") {
+                attr.explicit_kind = Some(ExplicitFieldKind::Struct);
+            } else if meta.path.is_ident("vec") {
+                attr.explicit_kind = Some(ExplicitFieldKind::Vec);
+            } else if meta.path.is_ident("entity_ref") {
+                attr.explicit_kind = Some(ExplicitFieldKind::EntityRef);
             } else {
                 let ident = meta
                     .path
@@ -111,7 +127,29 @@ fn make_display_name(field_name: &str) -> String {
         .join(" ")
 }
 
-fn infer_field_kind(ty: &Type, is_color: bool) -> (proc_macro2::TokenStream, bool) {
+fn infer_field_kind(
+    ty: &Type,
+    is_color: bool,
+    explicit_kind: Option<&ExplicitFieldKind>,
+) -> (proc_macro2::TokenStream, bool) {
+    if let Some(kind) = explicit_kind {
+        let kind_tokens = match kind {
+            ExplicitFieldKind::Enum => {
+                quote! { ::katla_ecs::inspect::FieldKind::Enum { variants: &[] } }
+            }
+            ExplicitFieldKind::Struct => {
+                quote! { ::katla_ecs::inspect::FieldKind::Struct }
+            }
+            ExplicitFieldKind::Vec => {
+                quote! { ::katla_ecs::inspect::FieldKind::Vec }
+            }
+            ExplicitFieldKind::EntityRef => {
+                quote! { ::katla_ecs::inspect::FieldKind::EntityRef }
+            }
+        };
+        return (kind_tokens, false);
+    }
+
     let type_str = quote!(#ty).to_string().replace(' ', "");
 
     if is_color {
@@ -195,6 +233,10 @@ fn field_mut_arm(field_name: &str, ty: &Type) -> proc_macro2::TokenStream {
 /// - `range(min, max)` — set numeric range constraints
 /// - `speed(f32)` — set editor drag speed
 /// - `display_name = "Custom Name"` — override display name
+/// - `enum` — treat as an enum type
+/// - `struct` — treat as a nested struct
+/// - `vec` — treat as a vector/list
+/// - `entity_ref` — treat as an entity reference
 ///
 /// # Example
 ///
@@ -269,7 +311,7 @@ fn generate_inspect_impl(input: &DeriveInput) -> proc_macro2::TokenStream {
             .display_name
             .unwrap_or_else(|| make_display_name(&field_name));
 
-        let (kind, _is_primitive) = infer_field_kind(ty, attr.color);
+        let (kind, _is_primitive) = infer_field_kind(ty, attr.color, attr.explicit_kind.as_ref());
 
         let min_tokens = match attr.min {
             Some(v) => quote! { Some(#v) },
