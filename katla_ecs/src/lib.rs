@@ -28,6 +28,7 @@ mod sparse_set;
 pub use components::Component;
 pub use entity::EntityId;
 pub use events::{ComponentEvent, EntityEvent};
+pub use query::{FilteredQueryIter, QueryFilter, With, Without};
 pub use resource::Resource;
 pub use spawn::Spawnable;
 pub(crate) use storage::ComponentStorageManager;

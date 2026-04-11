@@ -298,6 +298,48 @@ impl World {
         }
     }
 
+    /// Query entities with additional filter conditions.
+    ///
+    /// Like [`query`](Self::query), but applies [`With<T>`](crate::query::With) and
+    /// [`Without<T>`](crate::query::Without) filters to exclude entities that don't match.
+    /// Filter types produce no output data — they only control which entities appear.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use katla_ecs::{World, Component, Without};
+    ///
+    /// #[derive(Component, Default)]
+    /// struct Position { x: f32, y: f32 }
+    ///
+    /// #[derive(Component, Default)]
+    /// struct Velocity { dx: f32, dy: f32 }
+    ///
+    /// #[derive(Component, Default)]
+    /// struct Static;
+    ///
+    /// let mut world = World::new();
+    /// world.spawn((Position { x: 1.0, y: 0.0 }, Velocity { dx: 1.0, dy: 0.0 }));
+    /// world.spawn((Position { x: 5.0, y: 0.0 }, Static));
+    ///
+    /// for (_id, pos) in world.query_filtered::<&Position, Without<Static>>() {
+    ///     assert_eq!(pos.x, 1.0);
+    /// }
+    /// ```
+    pub fn query_filtered<Q, F>(&mut self) -> crate::query::FilteredQueryIter<'_, Q, F>
+    where
+        Q: crate::query::QueryData,
+        F: crate::query::QueryFilter,
+    {
+        let storage_ptr = self.storage.get() as *const _;
+        let inner = self.storage.get_mut().query::<Q>();
+        crate::query::FilteredQueryIter {
+            inner,
+            storage_ptr,
+            _filter: std::marker::PhantomData,
+        }
+    }
+
     /// Resets change detection tracking for all component types.
     ///
     /// After this call, `query_changed` will return an empty iterator until
