@@ -85,6 +85,15 @@ pub struct SetParentArgs {
     pub parent_id: Option<u64>,
 }
 
+/// Typed arguments for the `spawn_model` tool.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct SpawnModelArgs {
+    pub path: String,
+    pub position: Option<[f32; 3]>,
+    pub default_animation: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct ListResourcesArgs {
@@ -346,6 +355,29 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["path"]
             }),
         },
+        ToolDefinition {
+            name: "spawn_model".to_string(),
+            description: "Spawn a GLTF model from the project's assets directory.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the GLTF file relative to the assets directory (e.g., 'models/character.glb')"
+                    },
+                    "position": {
+                        "type": "array",
+                        "items": { "type": "number" },
+                        "description": "Position [x, y, z] to spawn the model at"
+                    },
+                    "default_animation": {
+                        "type": "string",
+                        "description": "Optional name of the default animation to play"
+                    }
+                },
+                "required": ["path"]
+            }),
+        },
     ]
 }
 
@@ -371,5 +403,6 @@ mod tests {
         assert!(tools.iter().any(|t| t.name == "read_resource"));
         assert!(tools.iter().any(|t| t.name == "write_resource"));
         assert!(tools.iter().any(|t| t.name == "create_resource"));
+        assert!(tools.iter().any(|t| t.name == "spawn_model"));
     }
 }

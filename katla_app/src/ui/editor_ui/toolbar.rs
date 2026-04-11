@@ -69,18 +69,8 @@ impl<'a> Toolbar<'a> {
 impl<'a> Widget for Toolbar<'a> {
     fn ui(self, ui: &mut katla_ui::UiContext) -> katla_ui::Response {
         let theme = &self.theme;
-        let toolbar_bounds = Rect2D::from_origin_size(
-            Vec2::new(0.0, 0.0),
-            Vec2::new(self.screen_size.x(), self.height),
-        );
-
-        ui.draw_rect(toolbar_bounds, theme.background_dark);
-        ui.draw_line(
-            Vec2::new(0.0, self.height),
-            Vec2::new(self.screen_size.x(), self.height),
-            theme.separator,
-            1.0,
-        );
+        let menu_bar = katla_ui::widgets::MenuBar::new(self.screen_size.x(), self.height);
+        menu_bar.show(ui);
 
         let original_button_normal = ui.style().button_normal;
         ui.style_mut().button_normal = Color::TRANSPARENT;
@@ -88,9 +78,6 @@ impl<'a> Widget for Toolbar<'a> {
         let padding = 4.0;
         let menu_item_width = 50.0;
         let button_height = self.height;
-
-        ui.begin_row();
-        ui.set_cursor(Vec2::new(0.0, 0.0));
 
         let file_bounds =
             Rect2D::from_origin_size(ui.cursor(), Vec2::new(menu_item_width, button_height));
@@ -214,7 +201,7 @@ impl<'a> Widget for Toolbar<'a> {
         );
         ui.spacing(60.0 + padding);
 
-        ui.end_row();
+        menu_bar.end(ui);
 
         let title = "Katla Engine";
         let title_size = ui.measure_text(title, ui.scaled_font_size(FontSize::Medium));

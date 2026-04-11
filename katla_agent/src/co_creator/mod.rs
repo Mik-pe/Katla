@@ -18,7 +18,7 @@ pub use tools::{
     AddComponentArgs, CreateResourceArgs, DestroyEntityArgs, DuplicateEntityArgs,
     GetComponentAttributesArgs, GetSceneHierarchyArgs, ListAvailableComponentsArgs,
     ListResourcesArgs, QueryEntitiesArgs, ReadResourceArgs, SetFieldArgs, SetParentArgs,
-    SpawnEntityArgs, WriteResourceArgs,
+    SpawnEntityArgs, SpawnModelArgs, WriteResourceArgs,
 };
 
 /// Accumulates fragments of a single tool call across streaming chunks.

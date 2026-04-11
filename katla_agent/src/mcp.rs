@@ -85,6 +85,11 @@ pub enum McpOp {
         template: Option<String>,
         content: Option<String>,
     },
+    SpawnModel {
+        path: String,
+        position: [f32; 3],
+        default_animation: Option<String>,
+    },
 }
 
 impl McpOp {
@@ -177,6 +182,15 @@ impl McpOp {
                 path,
                 template,
                 content,
+            }),
+            Self::SpawnModel {
+                path,
+                position,
+                default_animation,
+            } => McpOpKind::Scene(SceneOp::SpawnModel {
+                path,
+                position,
+                default_animation,
             }),
         }
     }
@@ -343,6 +357,15 @@ struct CreateResourceParams {
     template: Option<String>,
     #[serde(default)]
     content: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema, Default)]
+struct SpawnModelParams {
+    path: String,
+    #[serde(default)]
+    position: Option<[f32; 3]>,
+    #[serde(default)]
+    default_animation: Option<String>,
 }
 
 #[rmcp::tool_router]
@@ -543,6 +566,22 @@ impl KatlaMcpServer {
             path: params.path,
             template: params.template,
             content: params.content,
+        };
+        self.forward_op(op).await
+    }
+
+    #[rmcp::tool(
+        name = "spawn_model",
+        description = "Spawn a GLTF model from the project's assets directory"
+    )]
+    async fn spawn_model(
+        &self,
+        Parameters(params): Parameters<SpawnModelParams>,
+    ) -> Json<McpToolResult> {
+        let op = McpOp::SpawnModel {
+            path: params.path,
+            position: params.position.unwrap_or([0.0, 0.0, 0.0]),
+            default_animation: params.default_animation,
         };
         self.forward_op(op).await
     }

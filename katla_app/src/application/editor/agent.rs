@@ -348,6 +348,10 @@ const RESOURCE_TOOL_NAMES: &[&str] = &[
 
 /// Execute a single tool call against the ECS world.
 fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
+    if tool_call.name == "spawn_model" {
+        return execute_spawn_model(app, tool_call);
+    }
+
     if RESOURCE_TOOL_NAMES.contains(&tool_call.name.as_str()) {
         let op = match tool_call_to_resource_op(tool_call) {
             Ok(op) => op,
@@ -676,6 +680,31 @@ fn tool_call_to_resource_op(tool_call: &ToolCall) -> Result<ResourceOp, String> 
             })
         }
         _ => Err(format!("Unknown resource tool: {}", tool_call.name)),
+    }
+}
+
+fn execute_spawn_model(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
+    use katla_agent::co_creator::SpawnModelArgs;
+
+    let args: SpawnModelArgs = match serde_json::from_value(tool_call.arguments.clone()) {
+        Ok(a) => a,
+        Err(e) => return format!("Error: invalid spawn_model args: {e}"),
+    };
+
+    let position = args.position.unwrap_or([0.0, 0.0, 0.0]);
+    let default_animation = args.default_animation.as_deref();
+
+    match app.spawn_gltf_model(&args.path, position, default_animation) {
+        Ok(entity) => {
+            let json = serde_json::json!({
+                "success": true,
+                "message": format!("Model '{}' spawned as entity {}", args.path, entity),
+                "entities": [entity.to_string()],
+            });
+            serde_json::to_string(&json)
+                .unwrap_or_else(|_| format!("Model '{}' spawned successfully", args.path))
+        }
+        Err(e) => format!("Error: failed to spawn model '{}': {}", args.path, e),
     }
 }
 
@@ -1012,6 +1041,14 @@ fn format_tool_call_summary(tc: &ToolCall) -> String {
                 .and_then(|v| v.as_str())
                 .unwrap_or("?");
             format!("Create {path}")
+        }
+        "spawn_model" => {
+            let path = tc
+                .arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            format!("Spawn model {path}")
         }
         _ => tc.name.clone(),
     }
