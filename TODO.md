@@ -345,7 +345,7 @@
   - [x] ~~88b. Capture UndoGroups in `execute_tool_call()`~~ — Done in 62c2288. Undo groups pushed to agent_undo_stack, redo cleared.
   - [ ] 88c. Handle GPU resource cleanup on undo — store GPU handle metadata per undo entry, release on undo (medium, medium risk)
   - [ ] 88d. Add `undo_last_agent_action()` method calling `SceneToolExecutor::undo()` with GPU cleanup (small, low risk)
-  - [ ] 88e. Add "Undo" button in AI co-creator panel, visible when undo stack non-empty (small, low risk)
+  - [x] ~~88e. Add "Undo" button in AI co-creator panel~~ — Done in d7beebd. Visible when undo stack non-empty, pops and calls SceneToolExecutor::undo().
   - [ ] 88f. Route local actions (`LocalAction::SpawnCube` etc.) through `SceneToolExecutor` so they produce UndoGroups (small, low risk)
   - [x] ~~88g. Clear undo/redo stacks on new scene~~ — Done in 62c2288. Both stacks cleared in NewScene handler.
   - **Recommended order:** 88a → 88b → 88c → 88d → 88e → 88f → 88g
@@ -566,7 +566,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Issue:** `status_bar.rs` builds a standard status bar: background rect, top border, left-aligned items (FPS, frame count, entities), right-aligned items (mode indicator, theme name). This is the same in any editor. The widget reads from `Theme` for colors — with #113, it would read from `ui.style`.
 - **Sub-tasks:**
   - [x] ~~119a. Add `StatusBar` builder~~ — Done in af7d24e. Background drawing with cursor positioning for status_label/status_separator.
-  - [ ] 119b. Implement rendering: background from `style.window_bg`, top border from `style.separator`, `begin_row()` layout for left items, manual right-alignment for right items (medium, low risk)
+  - [x] ~~119b. Implement StatusBar rendering~~ — Done in af7d24e (part of 119a). Background, border, cursor positioning.
   - [x] ~~119c. Add `ui.status_label` and `ui.status_separator` helpers~~ — Done in 62c2288. Draws text/line and advances cursor.
   - [ ] 119d. Migrate `status_bar.rs` to use `StatusBar` widget (small, low risk)
   - **Recommended order:** 119a → 119b → 119c → 119d
@@ -656,7 +656,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Scope:** `katla_agent` provides the tool definitions and MCP endpoint plumbing. `katla_ecs` extends `SceneOp` with resource variants. `katla_app` implements the actual file I/O, asset loading, and scene serialization in the executor.
 - **Sub-tasks:**
   - [x] ~~129a. Add `ResourceOp` enum~~ — Done in af7d24e. ListResources, ReadResource, WriteResource, CreateResource, DeleteResource.
-  - [ ] 129b. Add matching tool definitions in `katla_agent/src/co_creator/tools.rs` (`list_resources`, `read_resource`, `write_resource`, `create_resource`) and MCP ops in `katla_agent/src/mcp.rs` (small, low risk)
+  - [x] ~~129b. Add resource tool definitions and MCP ops~~ — Done in d7beebd. 4 tools + MCP endpoints + McpOpKind dispatch.
   - [ ] 129c. Implement `ResourceToolExecutor` in `katla_app` — `list_resources` discovers files under `assets/` recursively, `read_resource` reads file content as string, `write_resource` writes back with backup, `create_resource` creates from template or empty. All paths sandboxed to project directory (medium, low risk)
   - [ ] 129d. Wire `ResourceOp` into `execute_tool_call()` in `katla_app/src/application/editor/agent.rs` alongside existing `SceneOp` dispatch (small, low risk)
   - [ ] 129e. Add content generation support — AI can generate particle JSON (ask for "fire emitter", "rain", "sparkles"), material TOML, and simple scene files from natural language descriptions. Provide resource-type templates and a `generate_resource` tool that accepts a description and type (medium, medium risk)
@@ -674,7 +674,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - Add a `spawn_model` tool that takes a `path` (relative to project resources) + `position`, dispatching to `Application::spawn_gltf_model()` — the AI discovers available models via the `list_resources` tool from #129
   - Rewrite `attach_spawn_visuals()` to read the primitive type from the tool args and call the correct `create_*_mesh` method, attaching the right `EntitySource` variant
   - Sub-tasks:
-    - [ ] 130a. Extend `SpawnEntityArgs` with `shape: Option<String>` and shape-specific parameters (`radius`, `segments`, `rings`, `width`, `height`, `tube_radius`, `tube_segments`) (small, low risk)
+    - [x] ~~130a. Extend `SpawnEntityArgs` with `shape` and shape-specific parameters~~ — Done in d7beebd. 8 new optional fields in args and tool schema.
     - [ ] 130b. Extend the `spawn_entity` tool definition JSON schema with the new optional `shape` field and its sub-parameters (small, low risk)
     - [ ] 130c. Extend `SceneOp::SpawnEntity` with `primitive: Option<EntitySource>` field (small, low risk)
     - [ ] 130d. Rewrite `attach_spawn_visuals()` to match on `args.shape` and call the appropriate `renderer.create_*_mesh()` method, attaching the correct `EntitySource` variant (medium, low risk)
