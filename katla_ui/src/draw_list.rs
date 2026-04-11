@@ -302,6 +302,11 @@ impl DrawList {
         self.scratch_points = points;
     }
 
+    pub fn add_circle_auto(&mut self, center: Vec2, radius: f32, color: Color) {
+        let segments = (radius * std::f32::consts::PI * 2.0 / 4.0).ceil().max(8.0) as u32;
+        self.add_circle(center, radius, color, segments);
+    }
+
     /// Flush the current batch into pending batches.
     fn flush_batch(&mut self) {
         let index_count = self.indices.len() as u32;
