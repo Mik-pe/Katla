@@ -48,8 +48,12 @@ impl UiContext {
         };
 
         // Layout: label area at top, graph area below
-        let label_height = if label.is_some() { 18.0 } else { 0.0 };
-        let padding = 3.0;
+        let label_height = if label.is_some() {
+            self.style.graph_label_height
+        } else {
+            0.0
+        };
+        let padding = self.style.graph_padding;
 
         let graph_bounds = Rect2D::new(
             Vec2::new(

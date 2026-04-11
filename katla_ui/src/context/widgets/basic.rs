@@ -167,7 +167,7 @@ impl UiContext {
         // Draw label
         let text_size = self.measure_text(label, self.style.font_size);
         let label_pos = Vec2::new(
-            check_bounds.max.x() + 8.0,
+            check_bounds.max.x() + self.style.item_inner_spacing,
             bounds.center().y() - text_size.y() * 0.5,
         );
         self.draw_text(

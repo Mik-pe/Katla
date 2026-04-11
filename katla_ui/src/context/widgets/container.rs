@@ -17,7 +17,11 @@ impl UiContext {
         let window_id = self.generate_id(id);
 
         // Title bar height
-        let title_height = if title.is_some() { 25.0 } else { 0.0 };
+        let title_height = if title.is_some() {
+            self.style.title_bar_height
+        } else {
+            0.0
+        };
 
         // Draw window background
         self.draw_rect(bounds, self.style.window_bg);
