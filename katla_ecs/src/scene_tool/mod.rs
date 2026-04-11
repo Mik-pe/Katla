@@ -76,6 +76,12 @@ pub enum SceneOp {
         entity: EntityId,
         parent: Option<EntityId>,
     },
+    /// Spawn a GLTF model from the assets directory.
+    SpawnModel {
+        path: String,
+        position: [f32; 3],
+        default_animation: Option<String>,
+    },
 }
 
 /// Operations for project resource files (scenes, particles, materials, etc).

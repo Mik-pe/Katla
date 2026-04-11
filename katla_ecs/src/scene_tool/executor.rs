@@ -55,6 +55,9 @@ impl SceneToolExecutor {
                 Self::exec_get_component_attributes(world, registry, entity, component)
             }
             SceneOp::SetParent { entity, parent } => Self::exec_set_parent(world, entity, parent),
+            SceneOp::SpawnModel { .. } => Err(SceneToolError::WorldError(
+                "SpawnModel must be executed via Application::spawn_gltf_model".to_string(),
+            )),
         }
     }
 

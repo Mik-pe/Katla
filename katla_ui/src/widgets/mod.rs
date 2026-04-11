@@ -1958,20 +1958,29 @@ impl ResizeHandle {
 
 /// A horizontal menu bar widget drawn at the top of the screen.
 ///
-/// Draws a background rect with a bottom border line, begins a row layout,
-/// and positions the cursor for subsequent `menu_bar_dropdown()` calls.
+/// Uses a show/end pattern instead of the `Widget` trait so that callers
+/// can add left-aligned menu items, right-aligned content (title, status),
+/// and then close the row layout.
 ///
 /// # Example
 ///
 /// ```ignore
 /// use katla_ui::widgets::MenuBar;
 ///
-/// ui.add(MenuBar::new(screen_size.x(), 32.0));
+/// let bar = MenuBar::new(screen_size.x(), 32.0);
+/// bar.show(ui);
 ///
+/// // Left-side menus
 /// let file_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(50.0, 32.0));
 /// ui.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |ui, open| {
 ///     if ui.menu_item_clicked("New") { *open = false; }
 /// });
+///
+/// // Right-side content
+/// bar.right_side(ui);
+/// ui.draw_text("Katla Engine", ui.cursor(), text_color, font_size);
+///
+/// bar.end(ui);
 /// ```
 pub struct MenuBar {
     bounds: Rect2D,
@@ -2011,10 +2020,13 @@ impl MenuBar {
     pub fn bounds_val(&self) -> Rect2D {
         self.bounds
     }
-}
 
-impl crate::Widget for MenuBar {
-    fn ui(self, ui: &mut UiContext) -> Response {
+    /// Draw the menu bar background, border, begin a row layout, and position the cursor.
+    ///
+    /// After calling this, add left-aligned menu items via `menu_bar_dropdown()`.
+    /// When ready for right-aligned content, call `right_side()`.
+    /// When finished, call `end()`.
+    pub fn show(&self, ui: &mut UiContext) {
         ui.draw_rect(self.bounds, ui.style.menu_bg);
 
         ui.draw_line(
@@ -2026,8 +2038,24 @@ impl crate::Widget for MenuBar {
 
         ui.set_cursor(self.bounds.min);
         ui.begin_row();
+    }
 
-        Response::new(self.bounds)
+    /// Move the cursor to the right side of the menu bar for right-aligned content.
+    ///
+    /// Call this after adding left-side menu items. Subsequent draw calls will
+    /// position content near the right edge of the bar. The `padding` parameter
+    /// controls how far from the right edge the cursor is placed.
+    pub fn right_side(&self, ui: &mut UiContext, padding: f32) {
+        let right_x = (self.bounds.max.x() - padding).max(self.bounds.min.x());
+        ui.set_cursor(Vec2::new(right_x, self.bounds.min.y()));
+    }
+
+    /// End the menu bar row layout.
+    ///
+    /// Must be called after `show()` when all menu items and right-side content
+    /// have been drawn.
+    pub fn end(&self, ui: &mut UiContext) {
+        ui.end_row();
     }
 }
 
