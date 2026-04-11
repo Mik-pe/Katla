@@ -395,7 +395,11 @@ pub fn build_asset_browser(
 
                 let label_y = item_y + item_size + 2.0;
                 let max_label_width = item_size + item_padding;
-                let display_name = truncate_text(asset.name.as_str(), max_label_width, ui);
+                let display_name = ui.truncate_text(
+                    asset.name.as_str(),
+                    max_label_width,
+                    ui.scaled_font_size(katla_ui::FontSize::XSmall),
+                );
 
                 let label_size = ui.measure_text(
                     &display_name,
@@ -1103,25 +1107,4 @@ pub fn build_asset_browser(
             state.handle_keyboard(KeyCode::Backspace, thumbnail_texture_handles);
         }
     }
-}
-
-/// Truncate text to fit within a maximum width, adding ellipsis if needed.
-fn truncate_text(text: &str, max_width: f32, ui: &UiContext) -> String {
-    let font_size = ui.scaled_font_size(katla_ui::FontSize::XSmall);
-    let full_width = ui.measure_text(text, font_size).x();
-
-    if full_width <= max_width {
-        return text.to_string();
-    }
-
-    let mut chars: Vec<char> = text.chars().collect();
-    while !chars.is_empty() {
-        chars.pop();
-        let truncated = format!("{}...", chars.iter().collect::<String>());
-        if ui.measure_text(&truncated, font_size).x() <= max_width {
-            return truncated;
-        }
-    }
-
-    "...".to_string()
 }

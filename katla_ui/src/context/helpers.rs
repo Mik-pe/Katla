@@ -144,4 +144,42 @@ impl UiContext {
         content(self);
         self.separator_line();
     }
+
+    pub fn truncate_text(&self, text: &str, max_width: f32, font_size: f32) -> String {
+        let full_width = self.measure_text(text, font_size).x();
+        if full_width <= max_width {
+            return text.to_string();
+        }
+
+        let ellipsis = "...";
+        let ellipsis_width = self.measure_text(ellipsis, font_size).x();
+        let target_width = max_width - ellipsis_width;
+
+        if target_width <= 0.0 {
+            return ellipsis.to_string();
+        }
+
+        let char_indices: Vec<(usize, char)> = text.char_indices().collect();
+        let mut lo = 0usize;
+        let mut hi = char_indices.len();
+
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            let end = char_indices.get(mid).map(|(i, _)| *i).unwrap_or(text.len());
+            let width = self.measure_text(&text[..end], font_size).x();
+            if width <= target_width {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+
+        let end = if lo > 0 {
+            char_indices.get(lo - 1).map(|(i, _)| *i).unwrap_or(0)
+        } else {
+            0
+        };
+
+        format!("{}{}", &text[..end], ellipsis)
+    }
 }

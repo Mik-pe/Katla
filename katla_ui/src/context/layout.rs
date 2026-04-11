@@ -366,12 +366,10 @@ impl UiContext {
     pub fn end_grid(&mut self) {
         if let Some(layout) = self.layout_stack.pop() {
             let item_height = layout.max_item_size.y();
+            let total_height = item_height + layout.spacing;
 
-            // Move cursor below the grid content
-            self.cursor = Vec2::new(
-                layout.start_pos.x(),
-                layout.cursor.y() + item_height + layout.spacing,
-            );
+            self.cursor = Vec2::new(layout.start_pos.x(), layout.cursor.y() + total_height);
+            self.row_height = self.row_height.max(total_height);
         }
     }
 }

@@ -381,11 +381,15 @@ impl UiContext {
 
                 if key_backspace {
                     if !delete_selection(text, state) && state.cursor > 0 {
-                        let prev = text[..state.cursor]
-                            .char_indices()
-                            .next_back()
-                            .map(|(i, _)| i)
-                            .unwrap_or(0);
+                        let prev = if ctrl {
+                            prev_word_boundary(text, state.cursor)
+                        } else {
+                            text[..state.cursor]
+                                .char_indices()
+                                .next_back()
+                                .map(|(i, _)| i)
+                                .unwrap_or(0)
+                        };
                         text.drain(prev..state.cursor);
                         state.cursor = prev;
                         state.selection_anchor = prev;
@@ -395,11 +399,15 @@ impl UiContext {
 
                 if key_delete {
                     if !delete_selection(text, state) && state.cursor < text.len() {
-                        let next = text[state.cursor..]
-                            .char_indices()
-                            .nth(1)
-                            .map(|(i, _)| state.cursor + i)
-                            .unwrap_or(text.len());
+                        let next = if ctrl {
+                            next_word_boundary(text, state.cursor)
+                        } else {
+                            text[state.cursor..]
+                                .char_indices()
+                                .nth(1)
+                                .map(|(i, _)| state.cursor + i)
+                                .unwrap_or(text.len())
+                        };
                         text.drain(state.cursor..next);
                     }
                     changed = true;
@@ -737,15 +745,15 @@ impl UiContext {
 
         // Outer ring (filled border circle + inner fill)
         self.draw_list.set_clip(self.clip_rect());
-        self.draw_list.add_circle(center, radius, border_color, 16);
+        self.draw_list.add_circle_auto(center, radius, border_color);
         self.draw_list
-            .add_circle(center, radius - 1.0, Color::TRANSPARENT, 16);
+            .add_circle_auto(center, radius - 1.0, Color::TRANSPARENT);
 
         // Inner dot when selected
         if is_selected {
             self.draw_list.set_clip(self.clip_rect());
             self.draw_list
-                .add_circle(center, radius * 0.5, self.style.checkbox_check, 12);
+                .add_circle_auto(center, radius * 0.5, self.style.checkbox_check);
         }
 
         // Label
