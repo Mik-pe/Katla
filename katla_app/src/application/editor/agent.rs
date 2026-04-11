@@ -199,6 +199,126 @@ fn submit_continuation(app: &mut super::super::Application) {
     }
 }
 
+fn build_hierarchy_json(app: &super::super::Application) -> serde_json::Value {
+    use crate::components::{Children, NameComponent, Parent};
+
+    let entities: Vec<EntityId> = app.world.entity_ids().collect();
+
+    let mut parent_map = std::collections::HashMap::new();
+    for &entity in &entities {
+        if let Some(parent_comp) = app.world.get_component::<Parent>(entity) {
+            parent_map.insert(entity, parent_comp.parent);
+        }
+    }
+
+    let mut children_map: std::collections::HashMap<EntityId, Vec<EntityId>> =
+        std::collections::HashMap::new();
+    for &entity in &entities {
+        if let Some(children_comp) = app.world.get_component::<Children>(entity) {
+            children_map.insert(entity, children_comp.children.clone());
+        }
+    }
+
+    let mut name_map = std::collections::HashMap::new();
+    for &entity in &entities {
+        if let Some(name_comp) = app.world.get_component::<NameComponent>(entity) {
+            name_map.insert(entity, name_comp.name.clone());
+        }
+    }
+
+    let roots: Vec<EntityId> = entities
+        .iter()
+        .filter(|&&e| !parent_map.contains_key(&e))
+        .copied()
+        .collect();
+
+    fn build_tree(
+        entity: EntityId,
+        children_map: &std::collections::HashMap<EntityId, Vec<EntityId>>,
+        name_map: &std::collections::HashMap<EntityId, String>,
+        depth: usize,
+    ) -> serde_json::Value {
+        let name = name_map
+            .get(&entity)
+            .cloned()
+            .unwrap_or_else(|| entity.to_string());
+        let children = children_map
+            .get(&entity)
+            .map(|c| {
+                c.iter()
+                    .map(|&child| build_tree(child, children_map, name_map, depth + 1))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        serde_json::json!({
+            "id": entity.to_string(),
+            "name": name,
+            "depth": depth,
+            "children": children,
+        })
+    }
+
+    let tree: Vec<serde_json::Value> = roots
+        .iter()
+        .map(|&root| build_tree(root, &children_map, &name_map, 0))
+        .collect();
+
+    serde_json::json!({
+        "total_count": entities.len(),
+        "root_count": roots.len(),
+        "tree": tree,
+    })
+}
+
+fn set_parent_components(
+    app: &mut super::super::Application,
+    entity: EntityId,
+    new_parent: Option<EntityId>,
+) {
+    use crate::components::{Children, Parent};
+
+    let old_parent_id = app.world.get_component::<Parent>(entity).map(|p| p.parent);
+    if let Some(old_id) = old_parent_id {
+        if let Some(mut old_parent_children) = app.world.get_component_mut::<Children>(old_id) {
+            old_parent_children.children.retain(|&c| c != entity);
+        }
+    }
+    app.world.remove_component::<Parent>(entity);
+
+    if let Some(parent_id) = new_parent {
+        let mut has_cycle = false;
+        let mut visited = std::collections::HashSet::new();
+        let mut current = parent_id;
+        while visited.insert(current) {
+            if current == entity {
+                has_cycle = true;
+                break;
+            }
+            let next = app.world.get_component::<Parent>(current).map(|p| p.parent);
+            if let Some(next_id) = next {
+                current = next_id;
+            } else {
+                break;
+            }
+        }
+        if has_cycle {
+            log::warn!("SetParent rejected: would create cycle");
+            return;
+        }
+
+        app.world.add_component(entity, Parent::new(parent_id));
+        if let Some(mut children) = app.world.get_component_mut::<Children>(parent_id) {
+            if !children.children.contains(&entity) {
+                children.children.push(entity);
+            }
+        } else {
+            app.world
+                .add_component(parent_id, Children::new(vec![entity]));
+        }
+    }
+}
+
 /// Execute a single tool call against the ECS world.
 fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
     let op = match tool_call_to_scene_op(tool_call) {
@@ -210,8 +330,17 @@ fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) 
         return msg;
     }
 
+    let is_hierarchy_query = matches!(op, SceneOp::GetSceneHierarchy);
+    let set_parent_args = match &op {
+        SceneOp::SetParent { entity, parent } => Some((*entity, *parent)),
+        _ => None,
+    };
+
     match SceneToolExecutor::execute(op, &mut app.world, &app.editor.component_registry) {
         Ok((result, _undo_group)) => {
+            if let Some((entity, parent)) = set_parent_args {
+                set_parent_components(app, entity, parent);
+            }
             for &entity in &result.affected_entities {
                 attach_spawn_visuals(app, entity, tool_call);
             }
@@ -224,6 +353,12 @@ fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) 
                 json.as_object_mut()
                     .unwrap()
                     .insert("data".to_string(), data);
+            }
+            if is_hierarchy_query {
+                let hierarchy = build_hierarchy_json(app);
+                json.as_object_mut()
+                    .unwrap()
+                    .insert("hierarchy".to_string(), hierarchy);
             }
             serde_json::to_string(&json).unwrap_or(result.message)
         }
@@ -288,7 +423,8 @@ fn check_protected_entity(op: &SceneOp, app: &super::super::Application) -> Resu
         | SceneOp::SetField { entity, .. }
         | SceneOp::DuplicateEntity { entity, .. }
         | SceneOp::AddComponent { entity, .. }
-        | SceneOp::GetComponentAttributes { entity, .. } => Some(*entity),
+        | SceneOp::GetComponentAttributes { entity, .. }
+        | SceneOp::SetParent { entity, .. } => Some(*entity),
         _ => None,
     };
 
@@ -315,7 +451,7 @@ fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
     use katla_agent::co_creator::{
         AddComponentArgs, DestroyEntityArgs, DuplicateEntityArgs, GetComponentAttributesArgs,
         GetSceneHierarchyArgs, ListAvailableComponentsArgs, QueryEntitiesArgs, SetFieldArgs,
-        SpawnEntityArgs,
+        SetParentArgs, SpawnEntityArgs,
     };
 
     match tool_call.name.as_str() {
@@ -391,6 +527,14 @@ fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
             Ok(SceneOp::GetComponentAttributes {
                 entity: EntityId::from_raw(args.entity_id),
                 component: args.component,
+            })
+        }
+        "set_parent" => {
+            let args: SetParentArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid set_parent args: {e}"))?;
+            Ok(SceneOp::SetParent {
+                entity: EntityId::from_raw(args.entity_id),
+                parent: args.parent_id.map(EntityId::from_raw),
             })
         }
         _ => Err(format!("Unknown tool: {}", tool_call.name)),
@@ -473,6 +617,18 @@ fn format_tool_call_summary(tc: &ToolCall) -> String {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
             format!("Get attributes of {comp} on entity {eid}")
+        }
+        "set_parent" => {
+            let eid = tc
+                .arguments
+                .get("entity_id")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let pid = tc.arguments.get("parent_id").and_then(|v| v.as_u64());
+            match pid {
+                Some(p) => format!("Set parent of entity {eid} to {p}"),
+                None => format!("Unparent entity {eid}"),
+            }
         }
         _ => tc.name.clone(),
     }

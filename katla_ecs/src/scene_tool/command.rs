@@ -37,6 +37,13 @@ impl UndoGroup {
         Ok(())
     }
 
+    pub fn redo_all(&mut self, world: &mut World) -> Result<(), SceneToolError> {
+        for cmd in self.commands.iter_mut() {
+            cmd.execute(world)?;
+        }
+        Ok(())
+    }
+
     pub fn affected_entities(&self) -> Vec<EntityId> {
         self.commands
             .iter()

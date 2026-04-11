@@ -70,6 +70,11 @@ pub enum SceneOp {
     AddComponent { entity: EntityId, component: String },
     /// Get settable fields, types, and current values for a component on an entity.
     GetComponentAttributes { entity: EntityId, component: String },
+    /// Set or clear the parent of an entity.
+    SetParent {
+        entity: EntityId,
+        parent: Option<EntityId>,
+    },
 }
 
 /// Error type for scene tool operations.

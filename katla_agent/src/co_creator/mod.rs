@@ -17,7 +17,7 @@ pub use tools::build_tool_definitions;
 pub use tools::{
     AddComponentArgs, DestroyEntityArgs, DuplicateEntityArgs, GetComponentAttributesArgs,
     GetSceneHierarchyArgs, ListAvailableComponentsArgs, QueryEntitiesArgs, SetFieldArgs,
-    SpawnEntityArgs,
+    SetParentArgs, SpawnEntityArgs,
 };
 
 /// Accumulates fragments of a single tool call across streaming chunks.

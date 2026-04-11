@@ -53,6 +53,7 @@ impl SceneToolExecutor {
             SceneOp::GetComponentAttributes { entity, component } => {
                 Self::exec_get_component_attributes(world, registry, entity, component)
             }
+            SceneOp::SetParent { entity, parent } => Self::exec_set_parent(world, entity, parent),
         }
     }
 
@@ -259,12 +260,23 @@ impl SceneToolExecutor {
         let entities: Vec<crate::EntityId> = world.entity_ids().collect();
         let count = entities.len();
 
+        let entity_list: Vec<serde_json::Value> = entities
+            .iter()
+            .map(|&id| {
+                serde_json::json!({
+                    "id": id.to_string(),
+                })
+            })
+            .collect();
+
         Ok((
             ToolResult {
                 success: true,
                 message: format!("Scene has {count} entities"),
                 affected_entities: entities,
-                data: None,
+                data: Some(serde_json::json!({
+                    "entities": entity_list,
+                })),
             },
             UndoGroup::new("GetSceneHierarchy (no undo)"),
         ))
@@ -468,6 +480,44 @@ impl SceneToolExecutor {
                 })),
             },
             UndoGroup::new("GetComponentAttributes (no undo)"),
+        ))
+    }
+
+    fn exec_set_parent(
+        world: &mut World,
+        entity: crate::EntityId,
+        parent: Option<crate::EntityId>,
+    ) -> Result<(ToolResult, UndoGroup), SceneToolError> {
+        if !world.entity_exists(entity) {
+            return Err(SceneToolError::EntityNotFound(entity));
+        }
+        if let Some(parent_id) = parent {
+            if !world.entity_exists(parent_id) {
+                return Err(SceneToolError::EntityNotFound(parent_id));
+            }
+            if entity == parent_id {
+                return Err(SceneToolError::WorldError(
+                    "Cannot set entity as its own parent".to_string(),
+                ));
+            }
+        }
+
+        let message = match parent {
+            Some(p) => format!("Set parent of entity {entity} to {p}"),
+            None => format!("Cleared parent of entity {entity}"),
+        };
+
+        Ok((
+            ToolResult {
+                success: true,
+                message,
+                affected_entities: vec![entity],
+                data: Some(serde_json::json!({
+                    "entity": entity.to_string(),
+                    "parent": parent.map(|p| p.to_string()),
+                })),
+            },
+            UndoGroup::new("SetParent (no undo)"),
         ))
     }
 
