@@ -615,7 +615,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Sub-tasks:**
   - [x] ~~124a. Add `panel_regions`, `register_panel()`, `focused_panel()`~~ — Done in c7e8286. Focus detected on mouse click in end().
   - [x] ~~124b. In `end()`, detect which registered panel received a click~~ — Done in c7e8286 (part of 124a).
-  - [ ] 124c. Migrate the 5 manual focus checks in `layout.rs` panels to `register_panel()` + `focused_panel()` (small, low risk)
+  - [x] ~~124c. Migrate the 5 manual focus checks in `layout.rs` panels to `register_panel()` + `focused_panel()`~~ — Done in 458a7b3. Centralized panel registration in layout.rs, removed focused_panel params from all widgets.
   - **Recommended order:** 124a → 124b → 124c
 
 ### 125. Add `TreeNode` / `TreeView` widget to katla_ui (extends UI-19)
