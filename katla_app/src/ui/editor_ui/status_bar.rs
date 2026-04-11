@@ -1,5 +1,5 @@
-use katla_math::{Rect2D, Vec2};
-use katla_ui::{FontSize, Response, UiContext, Widget};
+use katla_math::Vec2;
+use katla_ui::{Response, UiContext, Widget, widgets::StatusBar as StatusBarWidget};
 
 use super::Theme;
 
@@ -48,23 +48,13 @@ impl<'a> StatusBar<'a> {
 
 impl<'a> Widget for StatusBar<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let bar_bounds = Rect2D::from_origin_size(
-            Vec2::new(0.0, self.screen_size.y() - self.height),
-            Vec2::new(self.screen_size.x(), self.height),
-        );
+        let y = self.screen_size.y() - self.height;
+        let bar = StatusBarWidget::new(self.screen_size.x(), self.height, y);
+        bar.show(ui);
 
-        ui.draw_rect(bar_bounds, self.theme.background_dark);
-        ui.draw_line(
-            bar_bounds.min,
-            Vec2::new(self.screen_size.x(), bar_bounds.min.y()),
-            self.theme.separator,
-            1.0,
-        );
+        let font_size = ui.style().font_size;
+        let bar_top_y = y + (self.height - font_size) * 0.5;
 
-        ui.begin_row();
-        ui.set_cursor(Vec2::new(8.0, bar_bounds.min.y() + 4.0));
-
-        let font_size = ui.scaled_font_size(FontSize::Small);
         let fps_text = format!("FPS: {:.0}", self.fps);
         let fps_color = if self.fps >= 55.0 {
             self.theme.success
@@ -73,19 +63,19 @@ impl<'a> Widget for StatusBar<'a> {
         } else {
             self.theme.error
         };
-        let fps_slot_width = ui.measure_text("FPS: 1000", font_size).x();
-        ui.draw_text(&fps_text, ui.cursor(), fps_color, font_size);
-        ui.spacing(fps_slot_width);
+        ui.status_label(&fps_text, fps_color);
 
-        ui.separator_text();
+        ui.status_separator();
 
         let frame_text = format!("Frame: {}", self.frame_count);
-        ui.label(&frame_text);
-        ui.separator_text();
+        ui.status_label(&frame_text, self.theme.text_secondary);
+
+        ui.status_separator();
 
         let entity_text = format!("Entities: {}", self.entity_count);
-        ui.label(&entity_text);
-        ui.separator_text();
+        ui.status_label(&entity_text, self.theme.text_secondary);
+
+        ui.status_separator();
 
         let selection_text = if self.selected_count > 0 {
             format!("Selected: {} / {}", self.selected_count, self.total_assets)
@@ -97,11 +87,7 @@ impl<'a> Widget for StatusBar<'a> {
         } else {
             self.theme.text_secondary
         };
-        ui.text_label_colored(&selection_text, selection_color);
-
-        ui.end_row();
-
-        let start_y = bar_bounds.min.y() + 4.0;
+        ui.status_label(&selection_text, selection_color);
 
         let mode_text = if self.is_playing {
             "PLAYING"
@@ -114,30 +100,33 @@ impl<'a> Widget for StatusBar<'a> {
             self.theme.text_secondary
         };
         let mode_size = ui.measure_text(mode_text, font_size);
-        let mode_pos = Vec2::new(self.screen_size.x() - mode_size.x() - 8.0, start_y);
+        let mode_pos = Vec2::new(self.screen_size.x() - mode_size.x() - 8.0, bar_top_y);
         ui.draw_text(mode_text, mode_pos, mode_color, font_size);
 
         let theme_text = format!("Theme: {}", self.theme.name);
         let theme_size = ui.measure_text(&theme_text, font_size);
         let theme_pos = Vec2::new(
             self.screen_size.x() - mode_size.x() - theme_size.x() - 100.0,
-            start_y,
+            bar_top_y,
         );
         ui.draw_text(&theme_text, theme_pos, self.theme.text_muted, font_size);
 
-        // Show transient save confirmation
         if self.save_confirmation_timer > 0.0 {
             let save_text = "✓ Scene saved";
             let save_size = ui.measure_text(save_text, font_size);
-            let save_x = bar_bounds.min.x() + (bar_bounds.width() - save_size.x()) * 0.5;
-            // Fade out over the last 0.5 seconds
+            let save_x = (self.screen_size.x() - save_size.x()) * 0.5;
             let alpha = if self.save_confirmation_timer < 0.5 {
                 self.save_confirmation_timer / 0.5
             } else {
                 1.0
             };
             let save_color = self.theme.success.with_alpha(alpha);
-            ui.draw_text(save_text, Vec2::new(save_x, start_y), save_color, font_size);
+            ui.draw_text(
+                save_text,
+                Vec2::new(save_x, bar_top_y),
+                save_color,
+                font_size,
+            );
         }
 
         Response::default()
