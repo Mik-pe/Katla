@@ -115,6 +115,10 @@ pub enum EditorAction {
     SetLlmTemperature(f32),
     /// Save the LLM configuration to disk.
     SaveLlmConfig,
+    /// Undo the last editor operation.
+    Undo,
+    /// Redo the last undone editor operation.
+    Redo,
 }
 
 /// Which panel is currently focused (receives input).

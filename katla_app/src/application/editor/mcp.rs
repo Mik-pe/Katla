@@ -3,6 +3,8 @@ use katla_ecs::EntityId;
 use katla_ecs::scene_tool::{ComponentRegistry, SceneOp, SceneToolExecutor};
 use log::info;
 
+use crate::components::{Children, Parent};
+
 pub(crate) struct ProtectedEntities {
     pub(crate) camera_entity: EntityId,
     pub(crate) gizmo_entity: Option<EntityId>,
@@ -33,6 +35,10 @@ impl McpState {
             if let Err(msg) = check_protected_entity(&scene_op, protected) {
                 let _ = req.response_tx.send(McpResponse { result: Err(msg) });
                 continue;
+            }
+
+            if let SceneOp::DestroyEntity { entity } = &scene_op {
+                cleanup_entity_hierarchy_world(world, *entity);
             }
 
             let result = SceneToolExecutor::execute(scene_op, world, registry);
@@ -83,4 +89,22 @@ fn check_protected_entity(op: &SceneOp, protected: &ProtectedEntities) -> Result
         ));
     }
     Ok(())
+}
+
+fn cleanup_entity_hierarchy_world(world: &mut katla_ecs::World, entity: EntityId) {
+    let grandparent = world.get_component::<Parent>(entity).map(|p| p.parent);
+
+    if let Some(parent_id) = grandparent
+        && let Some(parent_children) = world.get_component_mut::<Children>(parent_id)
+    {
+        parent_children.children.retain(|&c| c != entity);
+    }
+
+    if let Some(children_comp) = world.get_component::<Children>(entity) {
+        let child_ids: Vec<EntityId> = children_comp.children.clone();
+        let _ = children_comp;
+        for child_id in child_ids {
+            world.remove_component::<Parent>(child_id);
+        }
+    }
 }

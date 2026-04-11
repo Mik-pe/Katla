@@ -109,6 +109,8 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
                     loader: &mut app.editor.background_loader,
                     thumbnail_texture_handles: &app.editor.thumbnail_texture_handles,
                     llm_config: &app.editor.llm_config,
+                    undo_count: app.editor.undo_stack.len(),
+                    redo_count: app.editor.redo_stack.len(),
                 },
             )
             .clone()
@@ -281,6 +283,11 @@ pub fn process_editor_actions(app: &mut Application) {
                 let mut to_delete = vec![entity_id];
                 collect_children_recursive(app, entity_id, &mut to_delete);
 
+                // Clean up Parent/Children references for each entity before destroying
+                for &id in &to_delete {
+                    agent::cleanup_entity_hierarchy(app, id);
+                }
+
                 // Clean up particle emitters before destroying entities
                 for id in &to_delete {
                     if let Some(emitter) =
@@ -300,12 +307,23 @@ pub fn process_editor_actions(app: &mut Application) {
                 info!("Deleted entity {:?} and its children", entity_id);
             }
             EditorAction::DuplicateEntity(entity_id) => {
+                let source_parent = app
+                    .world
+                    .get_component::<crate::components::Parent>(entity_id)
+                    .map(|p| p.parent);
                 let mut ctx = DuplicateContext {
                     world: &mut app.world,
                     gpu_resource_tracker: &mut app.gpu_resource_tracker,
                     particle_system: &mut app.renderer.particle_system,
                 };
                 if let Some(new_entity_id) = duplicate_entity(&mut ctx, entity_id) {
+                    if let Some(parent_id) = source_parent {
+                        crate::application::editor::agent::set_parent_components(
+                            app,
+                            new_entity_id,
+                            Some(parent_id),
+                        );
+                    }
                     app.editor.editor_ui.selected_entity = Some(new_entity_id);
                     info!("Duplicated entity {:?} -> {:?}", entity_id, new_entity_id);
                 }
@@ -376,6 +394,12 @@ pub fn process_editor_actions(app: &mut Application) {
             }
             EditorAction::Quit => {
                 app.quit_requested = true;
+            }
+            EditorAction::Undo => {
+                app.editor.perform_undo(&mut app.world);
+            }
+            EditorAction::Redo => {
+                app.editor.perform_redo(&mut app.world);
             }
             EditorAction::SelectEntity(entity_id) => {
                 info!("Selected entity {:?}", entity_id);
