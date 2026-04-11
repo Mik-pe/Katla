@@ -229,6 +229,11 @@ impl Rect2D {
         self.min
     }
 
+    #[inline]
+    pub fn to_clip_array(&self) -> [f32; 4] {
+        [self.min.x(), self.min.y(), self.width(), self.height()]
+    }
+
     /// Lerp between two rectangles
     #[inline]
     pub fn lerp(&self, other: &Rect2D, t: f32) -> Rect2D {

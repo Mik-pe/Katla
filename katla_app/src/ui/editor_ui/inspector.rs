@@ -160,15 +160,7 @@ impl<'a> Widget for Inspector<'a> {
             self.bounds.min,
             Vec2::new(self.bounds.width(), header_height),
         );
-        ui.draw_rect(header_bounds, self.theme.panel_header);
-
-        let header_pos = Vec2::new(self.bounds.min.x() + 8.0, header_bounds.center().y() - 7.0);
-        ui.draw_text(
-            "Inspector",
-            header_pos,
-            self.theme.text_primary,
-            ui.scaled_font_size(FontSize::Medium),
-        );
+        ui.draw_panel_header(header_bounds, "Inspector");
 
         let selected = self
             .selected_entity

@@ -91,7 +91,6 @@ impl<'a> Widget for Hierarchy<'a> {
             self.bounds.min,
             Vec2::new(self.bounds.width(), header_height),
         );
-        ui.draw_rect(header_bounds, self.theme.panel_header);
 
         let visible_entities: Vec<&EntityInfo> = self
             .entities
@@ -100,13 +99,7 @@ impl<'a> Widget for Hierarchy<'a> {
             .collect();
 
         let header_text = format!("Hierarchy ({} entities)", visible_entities.len());
-        let header_pos = Vec2::new(self.bounds.min.x() + 8.0, header_bounds.center().y() - 7.0);
-        ui.draw_text(
-            &header_text,
-            header_pos,
-            self.theme.text_primary,
-            ui.scaled_font_size(FontSize::Medium),
-        );
+        ui.draw_panel_header(header_bounds, &header_text);
 
         let content_bounds = Rect2D::from_origin_size(
             Vec2::new(self.bounds.min.x(), self.bounds.min.y() + header_height),

@@ -10,7 +10,7 @@ use crate::input::mouse_button;
 use super::super::UiContext;
 
 /// Scroll area state tracked between frames.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct ScrollAreaState {
     /// Current scroll offset.
     pub scroll_offset: f32,
@@ -18,6 +18,19 @@ pub struct ScrollAreaState {
     pub content_height: f32,
     /// Whether to stick to bottom when content grows.
     pub stick_to_bottom: bool,
+    /// Whether the view was near the bottom before content grew.
+    pub at_bottom: bool,
+}
+
+impl Default for ScrollAreaState {
+    fn default() -> Self {
+        Self {
+            scroll_offset: 0.0,
+            content_height: 0.0,
+            stick_to_bottom: false,
+            at_bottom: true,
+        }
+    }
 }
 
 /// Scroll area options (builder pattern).
@@ -178,7 +191,7 @@ impl UiContext {
         state.content_height = content_height;
 
         // Handle stick_to_bottom
-        if state.stick_to_bottom && content_height > prev_content_height {
+        if state.stick_to_bottom && content_height > prev_content_height && state.at_bottom {
             let max_scroll = (content_height - bounds.height()).max(0.0);
             state.scroll_offset = max_scroll;
         }
@@ -186,6 +199,10 @@ impl UiContext {
         // Clamp scroll offset
         let max_scroll = (content_height - bounds.height()).max(0.0);
         state.scroll_offset = state.scroll_offset.clamp(0.0, max_scroll);
+
+        if state.stick_to_bottom {
+            state.at_bottom = max_scroll == 0.0 || state.scroll_offset >= max_scroll - 20.0;
+        }
 
         // Pop content clip
         self.pop_clip();

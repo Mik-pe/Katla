@@ -149,6 +149,16 @@ impl UiContext {
         self.separator_line();
     }
 
+    pub fn draw_panel_header(&mut self, bounds: Rect2D, title: &str) {
+        self.draw_rect(bounds, self.style.window_title_bg);
+        let text_size = self.measure_text(title, self.style.font_size);
+        let text_pos = Vec2::new(
+            bounds.min.x() + self.style.window_padding,
+            bounds.min.y() + (bounds.height() - text_size.y()) * 0.5,
+        );
+        self.draw_text(title, text_pos, self.style.text_color, self.style.font_size);
+    }
+
     pub fn draw_empty_state(&mut self, bounds: Rect2D, text: &str) {
         let font_size = self.scaled_font_size(FontSize::Medium);
         let text_size = self.measure_text(text, font_size);

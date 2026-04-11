@@ -3,7 +3,7 @@
 //! The draw list collects all UI primitives (rectangles, text, images)
 //! into batches that can be efficiently rendered by the GPU.
 
-use crate::types::{ClipRect, DrawCmd, TextureId, Vertex};
+use crate::types::{DrawCmd, TextureId, Vertex};
 use katla_math::{Color, Rect2D, Vec2};
 
 /// A list of draw commands and vertex data for UI rendering.
@@ -343,7 +343,7 @@ impl DrawList {
         self.commands
             .extend(self.pending_batches.iter().map(|batch| {
                 let clip_rect = if batch.clip_rect.min.x() < f32::MAX / 2.0 {
-                    Some(ClipRect::from_rect(&batch.clip_rect).to_array())
+                    Some(batch.clip_rect.to_clip_array())
                 } else {
                     None
                 };

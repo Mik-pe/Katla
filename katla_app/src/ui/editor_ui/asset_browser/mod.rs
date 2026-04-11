@@ -1008,13 +1008,7 @@ pub fn build_asset_browser(
             let dialog_width = dialog_bounds.width();
 
             let title_bounds = Rect2D::from_origin_size(dialog_pos, Vec2::new(dialog_width, 28.0));
-            ui.draw_rect(title_bounds, theme.panel_header);
-            ui.draw_text(
-                "Confirm Delete",
-                Vec2::new(dialog_pos.x() + 10.0, dialog_pos.y() + 7.0),
-                theme.text_primary,
-                ui.scaled_font_size(katla_ui::FontSize::Small),
-            );
+            ui.draw_panel_header(title_bounds, "Confirm Delete");
 
             ui.draw_text(
                 &state.confirm_dialog_message,
