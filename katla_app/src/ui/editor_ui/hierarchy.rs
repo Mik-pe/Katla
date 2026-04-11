@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::widgets::ListView;
+use katla_ui::widgets::{ListView, Panel};
 use katla_ui::{
     FontId, FontSize, ForkAwesome, Response, ScrollAreaState, UiContext, Widget,
     input::mouse_button,
@@ -67,20 +67,6 @@ impl<'a> Hierarchy<'a> {
 
 impl<'a> Widget for Hierarchy<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        ui.draw_rect(self.bounds, self.theme.panel_bg);
-        ui.draw_rect_border(
-            self.bounds,
-            self.theme.panel_bg,
-            self.theme.panel_border,
-            1.0,
-        );
-
-        let header_height = 24.0;
-        let header_bounds = Rect2D::from_origin_size(
-            self.bounds.min,
-            Vec2::new(self.bounds.width(), header_height),
-        );
-
         let visible_entities: Vec<&EntityInfo> = self
             .entities
             .iter()
@@ -88,12 +74,13 @@ impl<'a> Widget for Hierarchy<'a> {
             .collect();
 
         let header_text = format!("Hierarchy ({} entities)", visible_entities.len());
-        ui.draw_panel_header(header_bounds, &header_text);
-
-        let content_bounds = Rect2D::from_origin_size(
-            Vec2::new(self.bounds.min.x(), self.bounds.min.y() + header_height),
-            Vec2::new(self.bounds.width(), self.bounds.height() - header_height),
-        );
+        let content_bounds = {
+            let guard = Panel::new(&header_text)
+                .bounds(self.bounds)
+                .header_height(24.0)
+                .show(ui);
+            guard.content_bounds()
+        };
 
         let expanded_entities = self.state.expanded_entities.clone();
         let selected_entity = *self.selected_entity;
