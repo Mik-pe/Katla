@@ -1,10 +1,13 @@
 //! Sparse set implementation for O(1) lookup, insert, remove operations
 //! while maintaining contiguous storage for fast iteration.
 //!
-//! Uses a `Vec<Option<usize>>` sparse array indexed by key, providing true O(1)
-//! lookups with zero hashing overhead.
+//! Uses a paged sparse array where the index space is divided into fixed-size
+//! pages. Only pages that are actually used are allocated, avoiding memory
+//! waste when entity indices have large gaps.
 
 use std::collections::HashSet;
+
+const PAGE_SIZE: usize = 1024;
 
 /// Trait for keys that can be used as indices into the sparse array.
 ///
@@ -36,19 +39,26 @@ impl SparseKey for usize {
     }
 }
 
+type Page = Box<[Option<usize>; PAGE_SIZE]>;
+
+fn new_page() -> Page {
+    Box::new([None; PAGE_SIZE])
+}
+
 /// A sparse set data structure that provides O(1) operations while
 /// maintaining contiguous storage for iteration.
 ///
 /// Internally uses:
 /// - `dense`: Stores (K, V) pairs contiguously for iteration
-/// - `sparse`: Vec indexed by key's sparse_index(), mapping to dense array index
+/// - `pages`: Paged sparse array mapping key index → index in dense array.
+///   Only pages that contain at least one entry are allocated.
 ///
 /// # Type Parameters
 /// - `K`: Key type (must implement `SparseKey`)
 /// - `V`: Value type
 ///
 /// # Performance
-/// - Insert: O(1) amortized (sparse vec may grow)
+/// - Insert: O(1) amortized
 /// - Remove: O(1)
 /// - Get/Contains: O(1) with zero hashing
 /// - Iterate: O(n) with excellent cache locality
@@ -72,9 +82,9 @@ where
     /// Dense array storing (Key, Value) pairs contiguously
     dense: Vec<(K, V)>,
 
-    /// Sparse vec mapping key index → index in dense array.
-    /// `None` means the key is not present.
-    sparse: Vec<Option<usize>>,
+    /// Paged sparse array mapping key index → index in dense array.
+    /// Each page covers `PAGE_SIZE` indices. Only allocated pages exist.
+    pages: Vec<Option<Page>>,
 }
 
 impl<K, V> SparseSet<K, V>
@@ -85,16 +95,14 @@ where
     pub fn new() -> Self {
         Self {
             dense: Vec::new(),
-            sparse: Vec::new(),
+            pages: Vec::new(),
         }
     }
 
-    /// Ensures the sparse vec is large enough to hold the given index.
+    /// Returns the page index and offset for a given sparse index.
     #[inline]
-    fn ensure_sparse_capacity(&mut self, index: usize) {
-        if index >= self.sparse.len() {
-            self.sparse.resize(index + 1, None);
-        }
+    fn page_coords(index: usize) -> (usize, usize) {
+        (index / PAGE_SIZE, index % PAGE_SIZE)
     }
 
     /// Inserts or updates a key-value pair.
@@ -104,14 +112,29 @@ where
     #[inline]
     pub fn insert(&mut self, key: K, value: V) {
         let idx = key.sparse_index();
-        self.ensure_sparse_capacity(idx);
+        let (page_idx, offset) = Self::page_coords(idx);
 
-        if let Some(&dense_idx) = self.sparse[idx].as_ref() {
+        // Check if the key already exists before potential page allocation
+        let existing = self
+            .pages
+            .get(page_idx)
+            .and_then(|p| p.as_ref())
+            .and_then(|page| page[offset]);
+
+        if let Some(dense_idx) = existing {
             self.dense[dense_idx].1 = value;
         } else {
             let dense_idx = self.dense.len();
             self.dense.push((key, value));
-            self.sparse[idx] = Some(dense_idx);
+
+            if page_idx >= self.pages.len() {
+                self.pages.resize_with(page_idx + 1, || None);
+            }
+            let page = &mut self.pages[page_idx];
+            if page.is_none() {
+                *page = Some(new_page());
+            }
+            page.as_mut().unwrap()[offset] = Some(dense_idx);
         }
     }
 
@@ -121,28 +144,46 @@ where
     #[inline]
     pub fn remove(&mut self, key: K) -> bool {
         let idx = key.sparse_index();
-        if idx < self.sparse.len()
-            && let Some(dense_idx) = self.sparse[idx].take()
-        {
-            self.dense.swap_remove(dense_idx);
+        let (page_idx, offset) = Self::page_coords(idx);
 
-            if let Some((moved_key, _)) = self.dense.get(dense_idx) {
-                self.sparse[moved_key.sparse_index()] = Some(dense_idx);
+        let page = match self.pages.get_mut(page_idx) {
+            Some(Some(page)) => page,
+            _ => return false,
+        };
+
+        let Some(dense_idx) = page[offset].take() else {
+            return false;
+        };
+
+        self.dense.swap_remove(dense_idx);
+
+        if let Some((moved_key, _)) = self.dense.get(dense_idx) {
+            let moved_idx = moved_key.sparse_index();
+            let (moved_page, moved_offset) = Self::page_coords(moved_idx);
+            // SAFETY: moved_key was already in the set, so its page exists.
+            unsafe {
+                let page = self
+                    .pages
+                    .get_unchecked_mut(moved_page)
+                    .as_mut()
+                    .unwrap_unchecked();
+                page[moved_offset] = Some(dense_idx);
             }
-
-            return true;
         }
-        false
+
+        true
     }
 
     /// Gets a reference to the value for the given key.
     #[inline]
     pub fn get(&self, key: K) -> Option<&V> {
         let idx = key.sparse_index();
-        self.sparse
-            .get(idx)
+        let (page_idx, offset) = Self::page_coords(idx);
+        self.pages
+            .get(page_idx)
             .and_then(|opt| opt.as_ref())
-            .and_then(|&dense_idx| self.dense.get(dense_idx))
+            .and_then(|page| page[offset])
+            .and_then(|dense_idx| self.dense.get(dense_idx))
             .map(|(_, value)| value)
     }
 
@@ -150,20 +191,24 @@ where
     #[inline]
     pub fn get_mut(&mut self, key: K) -> Option<&mut V> {
         let idx = key.sparse_index();
-        if let Some(&dense_idx) = self.sparse.get(idx).and_then(|opt| opt.as_ref()) {
-            self.dense.get_mut(dense_idx).map(|(_, value)| value)
-        } else {
-            None
-        }
+        let (page_idx, offset) = Self::page_coords(idx);
+        let dense_idx = self
+            .pages
+            .get(page_idx)
+            .and_then(|opt| opt.as_ref())
+            .and_then(|page| page[offset])?;
+        self.dense.get_mut(dense_idx).map(|(_, value)| value)
     }
 
     /// Returns true if the key exists in the set.
     #[inline]
     pub fn contains(&self, key: K) -> bool {
         let idx = key.sparse_index();
-        self.sparse
-            .get(idx)
-            .map(|opt| opt.is_some())
+        let (page_idx, offset) = Self::page_coords(idx);
+        self.pages
+            .get(page_idx)
+            .and_then(|opt| opt.as_ref())
+            .map(|page| page[offset].is_some())
             .unwrap_or(false)
     }
 
@@ -215,7 +260,7 @@ where
     /// Clears all entries from the set.
     pub fn clear(&mut self) {
         self.dense.clear();
-        self.sparse.clear();
+        self.pages.clear();
     }
 
     /// Retains only the entries whose keys are in the provided set.
@@ -450,21 +495,25 @@ mod tests {
     }
 
     #[test]
-    fn test_sparse_set_sparse_vec_grows_with_large_indices() {
+    fn test_sparse_set_large_index_only_allocates_needed_pages() {
         let mut set: SparseSet<usize, i32> = SparseSet::new();
 
-        // Insert a key with a large index — sparse vec should grow
         set.insert(50000, 42);
         assert_eq!(set.get(50000), Some(&42));
         assert_eq!(set.len(), 1);
 
-        // Sparse vec should have at least 50001 entries
-        assert!(set.sparse.len() > 50000);
+        // Only 1 page should be allocated for index 50000 (page 48)
+        assert_eq!(set.pages.len(), 49); // pages 0..=48
+        let allocated_pages: Vec<_> = set.pages.iter().filter(|p| p.is_some()).collect();
+        assert_eq!(allocated_pages.len(), 1);
 
-        // Small index should also work after growing
+        // Small index should also work — allocates a second page
         set.insert(0, 1);
         assert_eq!(set.get(0), Some(&1));
         assert_eq!(set.len(), 2);
+
+        let allocated_pages: Vec<_> = set.pages.iter().filter(|p| p.is_some()).collect();
+        assert_eq!(allocated_pages.len(), 2);
     }
 
     #[test]
@@ -489,7 +538,7 @@ mod tests {
         assert_eq!(set.len(), 0);
         assert_eq!(set.get(0), None);
         assert_eq!(set.get(100), None);
-        assert!(set.sparse.is_empty());
+        assert!(set.pages.is_empty());
     }
 
     #[test]
@@ -507,5 +556,29 @@ mod tests {
         assert!(keys.contains(&1));
         assert!(keys.contains(&2));
         assert!(keys.contains(&3));
+    }
+
+    #[test]
+    fn test_sparse_set_memory_efficiency_with_sparse_indices() {
+        let mut set: SparseSet<usize, i32> = SparseSet::new();
+
+        // Insert 3 entries spread far apart
+        set.insert(0, 1);
+        set.insert(100_000, 2);
+        set.insert(1_000_000, 3);
+
+        assert_eq!(set.len(), 3);
+
+        // Only 3 pages should be allocated (one per distant index)
+        let allocated_pages: Vec<_> = set.pages.iter().filter(|p| p.is_some()).collect();
+        assert_eq!(allocated_pages.len(), 3);
+
+        // Flat vec would have required 1_000_001 entries (8MB+).
+        // Paged approach uses 3 pages × 1024 × 8 bytes = ~24KB + page vec overhead.
+        let total_entries: usize = set.pages.iter().filter(|p| p.is_some()).count() * PAGE_SIZE;
+        assert!(
+            total_entries < 10_000,
+            "paged allocation should be far smaller than flat 1M entries"
+        );
     }
 }
