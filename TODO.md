@@ -209,15 +209,7 @@
 - **File:** `src/tools/templates.rs` (lines 58-63)
 - **Fix:** Add `("forest_clearing", "Ring of trees around a clearing")` to the list.
 
-### 88. AI assistant cannot query, add, read, or set generic components and attributes
-- **Crate:** katla_agent
-- **Issue:** The AI has no tools to discover which components exist, add components to entities, or read/modify generic attributes on existing components (e.g. mesh colors, textures, material properties). It can spawn entities with templates but cannot dynamically compose entities or inspect/mutate individual fields. Without discovery and read tools, the AI lacks schema knowledge of which components and attributes are available and what parameter types they expect.
-- **Fix:** Add four scene ops / tools:
-  - `ListAvailableComponents()` — returns all registered component types and their settable fields/types.
-  - `AddComponent(entity_id, component_name)` — adds a component with default values to an existing entity.
-  - `GetComponentAttributes(entity_id, component_name)` — returns the list of settable fields, their types, and current values for a given component on an entity.
-  - `SetComponentAttribute(entity_id, component_name, field_path, value)` — mutates a single field on an existing component.
-  All should leverage the existing inspector/`#[inspect]` infrastructure to discover fields and types.
+~~### 88. AI assistant cannot query, add, read, or set generic components and attributes~~ — Fixed in 42902a3. Added ListAvailableComponents, AddComponent, GetComponentAttributes, SetComponentAttribute tools with MCP endpoints and protected entity checks.
 
 ~~### 61. AI LLM should not be able to delete the editor camera~~ — Fixed in 409ddf6. Both LLM and MCP paths now check protected entities (camera/gizmo) before executing destructive ops.
 
@@ -240,11 +232,7 @@
 
 ~~### 67. `Sphere::create_from_verts` allocates unnecessarily~~ — False positive. Bounds already computed inline in single pass without Vec allocation using generic iterator `I: IntoIterator<Item = &'a [f32; 3]>`.
 
-### 68. `SparseSet` memory waste with large EntityId gaps
-- **Crate:** katla_ecs
-- **File:** `src/sparse_set.rs`
-- **Issue:** Sparse array indexed by entity index. After creating/destroying many entities, the vec grows very large with mostly `None` entries.
-- **Fix:** Use paged/chunked sparse array or `HashMap` fallback for large indices.
+~~### 68. `SparseSet` memory waste with large EntityId gaps~~ — Fixed in 25349ef. Replaced flat Vec with paged sparse array (1024-entry pages), only allocates used pages.
 
 ~~### 69. `query_changed` allocates `HashSet<EntityId>` every call~~ — Fixed in a4067ef. Reusable buffer stored in World, avoids per-frame allocation.
 
@@ -273,10 +261,7 @@
 - **Issue:** No way to signal shutdown. `serve_server` errors silently swallowed.
 - **Fix:** Accept a `CancellationToken`, log errors on failure.
 
-### 77. No keyboard navigation (Tab between widgets)
-- **Crate:** katla_ui
-- **Issue:** No tab-order system or focus ring. Only text inputs receive keyboard focus.
-- **Fix:** Implement focus chain with Tab/Shift+Tab navigation.
+~~### 77. No keyboard navigation (Tab between widgets)~~ — Fixed in ffd0b78. Widgets register as focusable during layout, Tab/Shift+Tab cycles focus, focus ring visual on focused widget.
 
 ~~### 78. `Fast inverse sqrt` uses single Newton-Raphson iteration~~ — Fixed in f74b05c. Added second iteration for ~0.1% accuracy.
 
