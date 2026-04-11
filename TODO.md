@@ -432,9 +432,9 @@
 - **File:** `katla_ui/src/context/mod.rs`
 - **Issue:** `FontSystem` contains the font atlas texture, glyph cache (HashMap with thousands of entries), and loaded font data. It's owned by `UiContext` and recreated if you create a new context. In a multi-window scenario (future), each window would duplicate all font data. The font atlas texture is also separate from the `UIRenderer` texture registry, requiring manual sync.
 - **Sub-tasks:**
-  - [ ] 104a. Wrap `FontSystem` in `Arc<RefCell<FontSystem>>` so `UiContext` holds a shared reference; `UiContext::new()` creates owned, add `UiContext::with_shared_fonts(fonts)` (medium, medium risk)
-  - [ ] 104b. Update all `self.fonts` access sites in `UiContext` methods to go through the `RefCell` borrow (small, low risk)
-  - [ ] 104c. Add `UiContext::fonts_arc()` to clone the Arc for sharing across multiple contexts (small, low risk)
+  - [x] ~~104a. Wrap `FontSystem` in `Arc<RefCell<FontSystem>>` so `UiContext` holds a shared reference; `UiContext::new()` creates owned, add `UiContext::with_shared_fonts(fonts)`~~ — Done in d24d889. Uses Rc<RefCell<FontSystem>> with with_shared_fonts() and fonts_rc().
+  - [x] ~~104b. Update all `self.fonts` access sites in `UiContext` methods to go through the `RefCell` borrow~~ — Done in d24d889 (part of 104a). All sites use borrow()/borrow_mut().
+  - [x] ~~104c. Add `UiContext::fonts_arc()` to clone the Arc for sharing across multiple contexts~~ — Done in d24d889 (part of 104a). Added fonts_rc() method.
   - **Recommended order:** 104a → 104b → 104c
 
 ~~### 105. `MarkdownColors` is not derived from the current `UiStyle`/`Theme`~~ — Fixed in f762059. Added MarkdownColors::from_style(), removed manual construction in co-creator.
@@ -624,8 +624,8 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Sub-tasks:**
   - [x] ~~125a. Add `TreeItem` data struct and `TreeState`~~ — Done in c7e8286. TreeItem with id/label/depth/has_children, TreeState with expanded set and scroll offset.
   - [x] ~~125b. Add `TreeView` builder with `data()`, `expanded()`, `selected()`, `indent_per_level()`, `row_height()`, virtualizes rendering via `ListView`-style scroll offset calculation~~ — Done in 8313e3e. TreeView widget with virtualized rendering, expand/collapse, selection.
-  - [ ] 125c. Add expand/collapse toggle rendering (chevron icon + click handling that updates the expanded set) (medium, low risk)
-  - [ ] 125d. Add selection highlight, keyboard navigation (arrow up/down, left/right for expand/collapse), and tree guide lines (medium, low risk)
+  - [x] ~~125c. Add expand/collapse toggle rendering (chevron icon + click handling that updates the expanded set)~~ — Done in 8313e3e (part of 125b). Chevron rendering and toggle click in TreeView.
+  - [x] ~~125d. Add selection highlight, keyboard navigation (arrow up/down, left/right for expand/collapse), and tree guide lines~~ — Done in d24d889. Tree guide lines + full arrow key navigation added.
   - [ ] 125e. Migrate hierarchy panel to `TreeView` widget (medium, medium risk)
   - **Recommended order:** 125a → 125b → 125c → 125d → 125e
 - **Fix:** Add `TreeView` virtualized tree widget:
@@ -659,8 +659,8 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] ~~129b. Add resource tool definitions and MCP ops~~ — Done in d7beebd. 4 tools + MCP endpoints + McpOpKind dispatch.
   - ~~129c. Implement `ResourceToolExecutor` in `katla_app`~~ — Already implemented. `execute_resource_op()` with list/read/write/create + sandboxing + templates all present in agent.rs.
   - [x] ~~129d. Wire `ResourceOp` into `execute_tool_call()`~~ — Done in 7c4281a. Full resource file executor with sandboxed paths.
-  - [ ] 129e. Add content generation support — AI can generate particle JSON (ask for "fire emitter", "rain", "sparkles"), material TOML, and simple scene files from natural language descriptions. Provide resource-type templates and a `generate_resource` tool that accepts a description and type (medium, medium risk)
-  - [ ] 129f. Add `load_scene` / `save_scene` resource ops that go through the existing `SceneSerialization` infrastructure, so the AI can save the current scene state or load a named scene (medium, medium risk)
+  - ~~129e. Add content generation support — AI can generate particle JSON (ask for "fire emitter", "rain", "sparkles"), material TOML, and simple scene files from natural language descriptions. Provide resource-type templates and a `generate_resource` tool that accepts a description and type~~ — Done in d24d889. generate_resource tool with keyword-based particle/material/scene generation.
+  - [x] ~~129f. Add `load_scene` / `save_scene` resource ops that go through the existing `SceneSerialization` infrastructure, so the AI can save the current scene state or load a named scene~~ — Done in d24d889. load_scene/save_scene tools with MCP endpoints.
   - [x] ~~129g. Update the system prompt in `katla_agent/src/co_creator/prompt.rs` to describe resource capabilities, available asset directories, and supported file types~~ — Done in 956f2f8. Resource tools and supported types documented.
   - **Recommended order:** 129a → 129b → 129c → 129d → 129e → 129f → 129g
 
