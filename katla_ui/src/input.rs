@@ -310,13 +310,13 @@ pub enum KeyCode {
     Delete,
     Insert,
 
-    // Clipboard
-    Cut,   // Usually Ctrl+X
-    Copy,  // Usually Ctrl+C
-    Paste, // Usually Ctrl+V
-
     // Text selection
     A, // Select all (Ctrl+A)
+
+    // Clipboard shortcuts (checked with Ctrl held)
+    C,
+    X,
+    V,
 
     // Other common keys
     Space,

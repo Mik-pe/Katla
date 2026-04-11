@@ -22,12 +22,62 @@ use crate::draw_list::DrawList;
 use crate::input::UiInputState;
 use crate::style::UiStyle;
 use crate::text::{FontId, FontSystem};
+use crate::widget::ClipboardProvider;
 
 pub use popup::{CloseBehavior, Popup, PopupPosition, PopupStyle};
 pub use widgets::{ScrollArea, ScrollAreaState};
 
 /// ID type for UI elements.
 pub type WidgetId = u64;
+
+/// Per-widget state tracked for text input fields across frames.
+#[derive(Debug, Clone)]
+pub struct TextInputState {
+    /// Byte offset of the cursor within the text.
+    pub cursor: usize,
+    /// Byte offset of the selection anchor (the other end of the selection).
+    /// When equal to `cursor`, there is no selection.
+    pub selection_anchor: usize,
+}
+
+impl Default for TextInputState {
+    fn default() -> Self {
+        Self {
+            cursor: 0,
+            selection_anchor: 0,
+        }
+    }
+}
+
+impl TextInputState {
+    /// Create a new state with cursor and anchor at the end of the text.
+    pub fn at_end(text: &str) -> Self {
+        let len = text.len();
+        Self {
+            cursor: len,
+            selection_anchor: len,
+        }
+    }
+
+    /// Returns the byte range of the current selection.
+    /// The range is sorted so start <= end.
+    pub fn selection_range(&self) -> (usize, usize) {
+        let start = self.cursor.min(self.selection_anchor);
+        let end = self.cursor.max(self.selection_anchor);
+        (start, end)
+    }
+
+    /// Whether there is an active selection.
+    pub fn has_selection(&self) -> bool {
+        self.cursor != self.selection_anchor
+    }
+
+    /// Reset both cursor and anchor to 0.
+    pub fn clear(&mut self) {
+        self.cursor = 0;
+        self.selection_anchor = 0;
+    }
+}
 
 /// RAII guard for Z-index management.
 ///
@@ -135,6 +185,10 @@ pub struct UiContext {
     scroll_area_show_scrollbar: bool,
     /// Scratch buffer for graph widget point computation (avoids per-frame allocation).
     scratch_points: Vec<Vec2>,
+    /// Per-widget text input state (cursor, selection).
+    pub(crate) text_input_states: std::collections::HashMap<WidgetId, TextInputState>,
+    /// Clipboard provider for copy/cut/paste.
+    clipboard: Option<Box<dyn ClipboardProvider>>,
 }
 
 impl UiContext {
@@ -178,6 +232,8 @@ impl UiContext {
             scratch_points: Vec::new(),
             time: 0.0,
             last_input_time: 0.0,
+            text_input_states: std::collections::HashMap::new(),
+            clipboard: None,
         }
     }
 
@@ -221,6 +277,11 @@ impl UiContext {
     /// Access the font system mutably.
     pub fn fonts_mut(&mut self) -> &mut FontSystem {
         &mut self.fonts
+    }
+
+    /// Set the clipboard provider for copy/cut/paste operations.
+    pub fn set_clipboard_provider(&mut self, provider: Box<dyn ClipboardProvider>) {
+        self.clipboard = Some(provider);
     }
 
     // -------------------------------------------------------------------------
