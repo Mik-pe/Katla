@@ -86,7 +86,7 @@
 - **Sub-tasks:**
   - [x] 21a. Add `undo_stack: Vec<UndoGroup>` and `redo_stack: Vec<UndoGroup>` to `EditorState`, with `push_undo()`, `perform_undo()`, `perform_redo()` helpers (small, low risk) — Done in f34a0d0. Also added `redo_all()` to `UndoGroup`.
   - [x] 21b. Add Ctrl+Z / Ctrl+Shift+Z keyboard shortcuts in `handle_editor_keyboard_shortcuts()` (small, low risk) — Done in f34a0d0. Guards with prev_want_capture_keyboard.
-  - [ ] 21c. Capture UndoGroups from `EditorAction::DeleteEntity`, `DuplicateEntity`, `SpawnModel` in `process_editor_actions()` via `ComponentRegistry` snapshots (medium, medium risk)
+  - [x] ~~21c. Capture UndoGroups from `EditorAction::DeleteEntity`, `DuplicateEntity`, `SpawnModel` in `process_editor_actions()` via `ComponentRegistry` snapshots~~ — Done in 771aeef (as part of 88f). All three actions now push UndoGroups to undo_stack.
   - [ ] 21d. Capture slider drag start/end values for undo — snapshot pre-drag ECS values on drag start, push `SetFieldCommand`-based `UndoGroup` on drag end (medium, medium risk)
   - [x] ~~21e. Add Undo/Redo items to Edit menu in toolbar~~ — Already implemented. Toolbar has Undo/Redo with icons, keyboard shortcuts, and enabled/disabled states.
   - **Recommended order:** 21a → 21b → 21c → 21d → 21e
@@ -546,8 +546,8 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Issue:** The toolbar in `katla_app` manually draws a horizontal bar and places `menu_bar_dropdown()` calls with manual spacing and cursor management. This is a standard editor pattern. A `MenuBar` widget would provide the common container with automatic layout.
 - **Sub-tasks:**
   - [x] ~~118a. Add `MenuBar` builder struct with `bounds()`, `height()`, and `menu(label, callback)` that collects menu entries; wraps `begin_row()`/`end_row()` and `menu_bar_dropdown()` calls automatically~~ — Done in 771aeef. MenuBar widget with bg, border, row layout, cursor positioning.
-  - [ ] 118b. Add `right_side()` closure for centered/right-aligned content (title, status indicators) (small, low risk)
-  - [ ] 118c. Migrate `toolbar.rs` to use `MenuBar` widget (small, medium risk)
+  - [x] ~~118b. Add `right_side()` closure for centered/right-aligned content (title, status indicators)~~ — Done in 8dc2cf6. MenuBar.show()/right_side()/end() pattern.
+  - [x] ~~118c. Migrate `toolbar.rs` to use `MenuBar` widget~~ — Done in 8dc2cf6. Toolbar uses MenuBar::show()/end() instead of manual draw_rect/draw_line.
   - **Recommended order:** 118a → 118b → 118c
 - **Fix:** Add `MenuBar` builder:
   ```rust
@@ -678,6 +678,6 @@ These items identify code that currently lives in katla_app but is generic enoug
     - [x] ~~130b. Extend spawn_entity tool schema with shape params~~ — Done in d7beebd (part of 130a).
     - [x] ~~130c. Extend `SceneOp::SpawnEntity` with primitive field~~ — Done in 7c4281a. Uses Option<String> mapped to EntitySource in katla_app.
     - [x] ~~130d. Rewrite `attach_spawn_visuals()` to match on `args.shape` and call the appropriate `renderer.create_*_mesh()` method~~ — Done in 956f2f8. Dispatches on shape string to create correct mesh and EntitySource.
-    - [ ] 130e. Add `spawn_model` tool, `SpawnModelArgs` struct, `SceneOp::SpawnModel` variant, and executor that calls `Application::spawn_gltf_model()` (medium, medium risk)
+    - [x] ~~130e. Add `spawn_model` tool, `SpawnModelArgs` struct, `SceneOp::SpawnModel` variant, and executor that calls `Application::spawn_gltf_model()`~~ — Done in 8dc2cf6. Full tool + MCP endpoint + executor with GLTF loading.
     - [x] ~~130f. Update system prompt to list available shapes and mention `spawn_model` for loading resources~~ — Done in 956f2f8. Shape parameter and resource tools documented in system prompt.
     - **Recommended order:** 130a → 130b → 130c → 130d → 130e → 130f
