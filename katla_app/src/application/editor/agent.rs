@@ -271,7 +271,27 @@ fn build_hierarchy_json(app: &super::super::Application) -> serde_json::Value {
     })
 }
 
-fn set_parent_components(
+pub(crate) fn cleanup_entity_hierarchy(app: &mut super::super::Application, entity: EntityId) {
+    use crate::components::{Children, Parent};
+
+    let grandparent = app.world.get_component::<Parent>(entity).map(|p| p.parent);
+
+    if let Some(parent_id) = grandparent
+        && let Some(parent_children) = app.world.get_component_mut::<Children>(parent_id)
+    {
+        parent_children.children.retain(|&c| c != entity);
+    }
+
+    if let Some(children_comp) = app.world.get_component::<Children>(entity) {
+        let child_ids: Vec<EntityId> = children_comp.children.clone();
+        let _ = children_comp;
+        for child_id in child_ids {
+            app.world.remove_component::<Parent>(child_id);
+        }
+    }
+}
+
+pub(crate) fn set_parent_components(
     app: &mut super::super::Application,
     entity: EntityId,
     new_parent: Option<EntityId>,
@@ -279,10 +299,10 @@ fn set_parent_components(
     use crate::components::{Children, Parent};
 
     let old_parent_id = app.world.get_component::<Parent>(entity).map(|p| p.parent);
-    if let Some(old_id) = old_parent_id {
-        if let Some(mut old_parent_children) = app.world.get_component_mut::<Children>(old_id) {
-            old_parent_children.children.retain(|&c| c != entity);
-        }
+    if let Some(old_id) = old_parent_id
+        && let Some(old_parent_children) = app.world.get_component_mut::<Children>(old_id)
+    {
+        old_parent_children.children.retain(|&c| c != entity);
     }
     app.world.remove_component::<Parent>(entity);
 
@@ -308,7 +328,7 @@ fn set_parent_components(
         }
 
         app.world.add_component(entity, Parent::new(parent_id));
-        if let Some(mut children) = app.world.get_component_mut::<Children>(parent_id) {
+        if let Some(children) = app.world.get_component_mut::<Children>(parent_id) {
             if !children.children.contains(&entity) {
                 children.children.push(entity);
             }
@@ -335,11 +355,31 @@ fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) 
         SceneOp::SetParent { entity, parent } => Some((*entity, *parent)),
         _ => None,
     };
+    let destroy_entity_id = match &op {
+        SceneOp::DestroyEntity { entity } => Some(*entity),
+        _ => None,
+    };
+    let source_parent = match &op {
+        SceneOp::DuplicateEntity { entity, .. } => app
+            .world
+            .get_component::<crate::components::Parent>(*entity)
+            .map(|p| p.parent),
+        _ => None,
+    };
+
+    if let Some(entity) = destroy_entity_id {
+        cleanup_entity_hierarchy(app, entity);
+    }
 
     match SceneToolExecutor::execute(op, &mut app.world, &app.editor.component_registry) {
         Ok((result, _undo_group)) => {
             if let Some((entity, parent)) = set_parent_args {
                 set_parent_components(app, entity, parent);
+            }
+            if let Some(parent_id) = source_parent
+                && let Some(&new_entity) = result.affected_entities.first()
+            {
+                set_parent_components(app, new_entity, Some(parent_id));
             }
             for &entity in &result.affected_entities {
                 attach_spawn_visuals(app, entity, tool_call);

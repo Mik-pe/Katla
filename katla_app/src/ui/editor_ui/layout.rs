@@ -145,6 +145,9 @@ impl EditorUI {
             self.asset_browser.panel_height
         };
 
+        self.toolbar_state.undo_count = params.undo_count;
+        self.toolbar_state.redo_count = params.redo_count;
+
         ui.add(toolbar::Toolbar::new(
             screen_size,
             toolbar_height,

@@ -56,6 +56,8 @@ pub struct EditorRenderParams<'a> {
     pub loader: &'a mut BackgroundLoader,
     pub thumbnail_texture_handles: &'a std::collections::HashMap<std::path::PathBuf, TextureHandle>,
     pub llm_config: &'a katla_agent::LlmConfig,
+    pub undo_count: usize,
+    pub redo_count: usize,
 }
 
 /// Game Engine Editor UI state.

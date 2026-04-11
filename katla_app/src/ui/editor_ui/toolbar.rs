@@ -35,6 +35,8 @@ pub struct ToolbarState {
     pub view_menu_open: bool,
     pub create_menu_open: bool,
     pub pending_actions: Vec<EditorAction>,
+    pub undo_count: usize,
+    pub redo_count: usize,
 }
 
 pub struct Toolbar<'a> {
@@ -127,6 +129,27 @@ impl<'a> Widget for Toolbar<'a> {
             edit_bounds,
             &mut self.state.edit_menu_open,
             |ui, open| {
+                let can_undo = self.state.undo_count > 0;
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Undo",
+                    katla_ui::ForkAwesome::UNDO,
+                    can_undo,
+                    "Ctrl+Z",
+                ) {
+                    self.state.pending_actions.push(EditorAction::Undo);
+                    *open = false;
+                }
+                let can_redo = self.state.redo_count > 0;
+                if ui.menu_item_clicked_with_icon_and_shortcut(
+                    "Redo",
+                    katla_ui::ForkAwesome::REDO,
+                    can_redo,
+                    "Ctrl+Shift+Z",
+                ) {
+                    self.state.pending_actions.push(EditorAction::Redo);
+                    *open = false;
+                }
+                ui.menu_separator();
                 if ui.menu_item_clicked("Preferences...") {
                     self.state
                         .pending_actions
