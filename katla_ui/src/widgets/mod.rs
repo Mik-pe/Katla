@@ -1347,6 +1347,111 @@ where
     }
 }
 
+// =============================================================================
+// Selectable Widget
+// =============================================================================
+
+/// A selectable item widget with highlight-on-hover, click, and right-click support.
+///
+/// Used for list items, tree nodes, and asset browser entries.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::Selectable;
+///
+/// let resp = ui.add(Selectable::new("Item 1").selected(true).bounds(item_bounds));
+/// if resp.clicked {
+///     // handle selection
+/// }
+/// if resp.right_clicked {
+///     // handle context menu
+/// }
+/// ```
+pub struct Selectable<'a> {
+    label: &'a str,
+    selected: bool,
+    bounds: Rect2D,
+    id: Option<&'a str>,
+}
+
+impl<'a> Selectable<'a> {
+    pub fn new(label: &'a str) -> Self {
+        Self {
+            label,
+            selected: false,
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.label_default_width,
+                DEFAULTS.label_default_height,
+            )),
+            id: None,
+        }
+    }
+
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
+    }
+}
+
+impl<'a> crate::Widget for Selectable<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let widget_id = ui.generate_id(self.id.unwrap_or(self.label));
+        ui.register_focusable(widget_id, self.bounds);
+
+        let hovered = ui.update_hover(widget_id, self.bounds);
+        let click_result = ui.click_interaction(
+            widget_id,
+            hovered,
+            self.bounds,
+            crate::context::interaction::ClickConfig::POPUP_AWARE,
+        );
+        let clicked = click_result.is_clicked();
+        let active = click_result.is_active();
+
+        let bg_color = if self.selected {
+            ui.style.selectable_selected
+        } else if hovered {
+            ui.style.selectable_hovered
+        } else {
+            Color::TRANSPARENT
+        };
+
+        ui.draw_rect(self.bounds, bg_color);
+
+        let text_size = ui.measure_text(self.label, ui.style.font_size);
+        let text_pos = Vec2::new(
+            self.bounds.min.x() + ui.style.item_inner_spacing,
+            self.bounds.center().y() - text_size.y() * 0.5,
+        );
+        ui.draw_text(
+            self.label,
+            text_pos,
+            ui.style.text_color,
+            ui.style.font_size,
+        );
+
+        Response::interactive(
+            clicked,
+            hovered,
+            active,
+            self.bounds,
+            &ui.input,
+            Some(widget_id),
+        )
+    }
+}
+
 mod draggable_panel;
 pub use draggable_panel::{
     DraggablePanel, DraggablePanelConfig, DraggablePanelFrame, DraggablePanelState, PanelState,
@@ -1354,6 +1459,9 @@ pub use draggable_panel::{
 
 mod list_view;
 pub use list_view::ListView;
+
+mod tree;
+pub use tree::{TreeItem, TreeState};
 
 // =============================================================================
 // ComboBox Widget

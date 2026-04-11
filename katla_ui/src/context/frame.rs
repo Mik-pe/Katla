@@ -54,6 +54,7 @@ impl UiContext {
             .push(katla_math::Rect2D::from_size(screen_size));
         self.scratch_points.clear();
         self.pending_tooltips.clear();
+        self.panel_regions.clear();
         self.input.prev_active_id = self.active_id;
         self.focusable_widgets.clear();
     }
@@ -85,6 +86,19 @@ impl UiContext {
 
         self.draw_list.finalize();
         self.in_frame = false;
+
+        if self.input.mouse_pressed[crate::input::mouse_button::LEFT]
+            || self.input.mouse_pressed[crate::input::mouse_button::RIGHT]
+            || self.input.mouse_pressed[crate::input::mouse_button::MIDDLE]
+        {
+            let mouse = self.input.mouse_pos;
+            self.focused_panel_id = self
+                .panel_regions
+                .iter()
+                .rev()
+                .find(|(_, bounds)| bounds.contains(mouse))
+                .map(|(id, _)| *id);
+        }
 
         if self.input.mouse_released[crate::input::mouse_button::LEFT] {
             self.active_id = None;
