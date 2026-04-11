@@ -69,6 +69,13 @@ impl UiContext {
         }
 
         // Use Response builder for consistent construction
-        Response::interactive(clicked, hovered, active, params.bounds, &self.input)
+        Response::interactive(
+            clicked,
+            hovered,
+            active,
+            params.bounds,
+            &self.input,
+            Some(widget_id),
+        )
     }
 }

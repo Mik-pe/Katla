@@ -53,6 +53,7 @@ impl UiContext {
         self.clip_stack
             .push(katla_math::Rect2D::from_size(screen_size));
         self.scratch_points.clear();
+        self.input.prev_active_id = self.active_id;
         self.focusable_widgets.clear();
     }
 

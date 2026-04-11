@@ -100,6 +100,9 @@ pub struct UiInputState {
     pub cursor: MouseCursor,
     /// Whether scroll wheel input was consumed this frame.
     pub(crate) scroll_consumed: bool,
+    /// The widget that was active (pressed/dragged) in the previous frame.
+    /// Set by UiContext at the start of each frame.
+    pub(crate) prev_active_id: Option<u64>,
 }
 
 impl UiInputState {
@@ -125,6 +128,7 @@ impl UiInputState {
             want_capture_keyboard: false,
             cursor: MouseCursor::Arrow,
             scroll_consumed: false,
+            prev_active_id: None,
         }
     }
 

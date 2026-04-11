@@ -307,6 +307,64 @@ impl DrawList {
         self.add_circle(center, radius, color, segments);
     }
 
+    pub fn add_rounded_rect(&mut self, bounds: Rect2D, color: Color, radius: f32) {
+        let r = radius.min(bounds.width() * 0.5).min(bounds.height() * 0.5);
+        if r < 0.5 {
+            self.add_rect(bounds, color);
+            return;
+        }
+
+        let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 4.0).ceil() as u32).max(2);
+
+        self.scratch_points.clear();
+
+        let min = bounds.min;
+        let max = bounds.max;
+
+        // Top-left corner
+        let cx = min.x() + r;
+        let cy = min.y() + r;
+        for i in 0..=segments_per_corner {
+            let angle = std::f32::consts::PI
+                + (i as f32 / segments_per_corner as f32) * std::f32::consts::FRAC_PI_2;
+            self.scratch_points
+                .push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
+        }
+
+        // Top-right corner
+        let cx = max.x() - r;
+        let cy = min.y() + r;
+        for i in 0..=segments_per_corner {
+            let angle = std::f32::consts::FRAC_PI_2 * 3.0
+                + (i as f32 / segments_per_corner as f32) * std::f32::consts::FRAC_PI_2;
+            self.scratch_points
+                .push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
+        }
+
+        // Bottom-right corner
+        let cx = max.x() - r;
+        let cy = max.y() - r;
+        for i in 0..=segments_per_corner {
+            let angle = (i as f32 / segments_per_corner as f32) * std::f32::consts::FRAC_PI_2;
+            self.scratch_points
+                .push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
+        }
+
+        // Bottom-left corner
+        let cx = min.x() + r;
+        let cy = max.y() - r;
+        for i in 0..=segments_per_corner {
+            let angle = std::f32::consts::FRAC_PI_2
+                + (i as f32 / segments_per_corner as f32) * std::f32::consts::FRAC_PI_2;
+            self.scratch_points
+                .push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
+        }
+
+        let points = std::mem::take(&mut self.scratch_points);
+        self.add_convex_poly(&points, color);
+        self.scratch_points = points;
+    }
+
     /// Flush the current batch into pending batches.
     fn flush_batch(&mut self) {
         let index_count = self.indices.len() as u32;
