@@ -88,7 +88,7 @@
   - [x] 21b. Add Ctrl+Z / Ctrl+Shift+Z keyboard shortcuts in `handle_editor_keyboard_shortcuts()` (small, low risk) — Done in f34a0d0. Guards with prev_want_capture_keyboard.
   - [ ] 21c. Capture UndoGroups from `EditorAction::DeleteEntity`, `DuplicateEntity`, `SpawnModel` in `process_editor_actions()` via `ComponentRegistry` snapshots (medium, medium risk)
   - [ ] 21d. Capture slider drag start/end values for undo — snapshot pre-drag ECS values on drag start, push `SetFieldCommand`-based `UndoGroup` on drag end (medium, medium risk)
-  - [ ] 21e. Add Undo/Redo items to Edit menu in toolbar (small, low risk)
+  - [x] ~~21e. Add Undo/Redo items to Edit menu in toolbar~~ — Already implemented. Toolbar has Undo/Redo with icons, keyboard shortcuts, and enabled/disabled states.
   - **Recommended order:** 21a → 21b → 21c → 21d → 21e
 
 ~~### 22. No texture/mesh/material destroy API on `VulkanRenderer`~~ — False positive. `destroy_api.rs` already implements `destroy_texture`, `destroy_mesh`, `destroy_material`, and `destroy_skeleton` with bindless slot release and tests.
@@ -111,9 +111,9 @@
 - **Sub-tasks:**
   - [x] 27a. Add `SceneOp::SetParent { entity, parent: Option<EntityId> }` with cycle detection and automatic `Parent`/`Children` maintenance (medium, low risk) — Done in f34a0d0. Executor validates entities, set_parent_components() maintains Parent/Children with cycle detection. Tool/MCP endpoints added.
   - [x] 27b. Rewrite `exec_hierarchy()` to return structured JSON tree with parent/depth info instead of flat list (small, low risk) — Done in f34a0d0. build_hierarchy_json() returns recursive tree with id/name/depth/children.
-  - [ ] 27c. Update `exec_destroy` to clean up `Parent`/`Children` of destroyed entity (cascade or re-parent) (small, low risk)
-  - [ ] 27d. Update `exec_duplicate` to optionally preserve hierarchy (small, low risk)
-  - [ ] 27e. Add `set_parent` agent tool and MCP endpoint (small, low risk)
+  - [x] ~~27c. Update `exec_destroy` to clean up `Parent`/`Children` of destroyed entity~~ — Already implemented. `process_editor_actions()` calls `cleanup_entity_hierarchy()` before destroy, and `execute_tool_call()` does the same for AI actions.
+  - [x] ~~27d. Update `exec_duplicate` to optionally preserve hierarchy~~ — Already implemented. Both `process_editor_actions()` and `execute_tool_call()` call `set_parent_components()` with the source entity's parent after duplication.
+  - [x] ~~27e. Add `set_parent` agent tool and MCP endpoint~~ — Already implemented. `set_parent` tool, MCP endpoint, `SetParentArgs`, `SceneOp::SetParent`, and system prompt entry all exist.
 
 ### ~~28. No query filtering (`Without<T>`, `With<T>`)~~ — Fixed. Added `With<T>`/`Without<T>` marker types, `QueryFilter` trait with tuple support, `FilteredQueryIter` wrapper, and `World::query_filtered()` method with 9 tests.
 
@@ -387,7 +387,7 @@
 - **File:** `katla_ui/src/context/widgets/basic.rs`
 - **Issue:** Related to UI-09 in the existing list. The `text_input()` method snapshots ~20 individual input fields into local variables before the mutable borrow of `self.text_input_states`. This pattern is fragile — adding a new input field requires remembering to snapshot it. The root cause is that `self.input` and `self.text_input_states` are both fields of `UiContext`, so borrowing both mutably triggers borrow checker conflicts.
 - **Sub-tasks:**
-  - [ ] 93a. Extract `apply_text_edits(text, state, input, clipboard, max_len) -> (changed, enter_pressed)` as a standalone free function in `basic.rs` (medium, low risk)
+  - [x] ~~93a. Extract `apply_text_edits` as a standalone free function~~ — Done in b49f35e. TextInputInput struct + snapshot function + apply_text_edits free function.
   - [ ] 93b. Refactor `text_input()` to call the extracted function, removing all 20 snapshot variables (small, low risk)
   - **Recommended order:** 93a → 93b
 
@@ -398,7 +398,7 @@
 - **Files:** `katla_ui/src/context/drawing.rs`, `katla_ui/src/style.rs`
 - **Issue:** `UiStyle` defines `window_rounding`, `button_rounding`, `input_rounding`, `popup_rounding`, and `menu_rounding` but no widget uses them. All rectangles are drawn with sharp corners. The `DrawList` has no rounded rect primitive (UI-24 mentions pre-tessellated corners). This makes the UI look blockier than intended.
 - **Sub-tasks:**
-  - [ ] 95a. Add `DrawList::add_rounded_rect(bounds, color, radius)` with corner arc tessellation using `add_convex_poly` (medium, low risk)
+  - [x] ~~95a. Add `DrawList::add_rounded_rect(bounds, color, radius)`~~ — Done in b49f35e. Corner arc tessellation with auto-segment calculation and add_rect fallback.
   - [ ] 95b. Add `UiContext::draw_rounded_rect(bounds, color, radius)` wrapper, update `button_with_colors()`, `checkbox()`, `text_input()`, combo box to use respective `style.*_rounding` values (medium, low risk)
   - [ ] 95c. Update popup/menu background rendering to use `style.popup_rounding`/`style.menu_rounding` (small, low risk)
   - **Recommended order:** 95a → 95b → 95c
@@ -536,7 +536,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Issue:** `Response` has `clicked` (left click) and `double_clicked` but no `right_clicked`. Every widget that handles right-click (hierarchy items, asset items, entity rows) does `if resp.hovered && ui.mouse_clicked(RIGHT)` manually. Similarly, there's no `drag_started`/`drag_ended` — the `DraggablePanel` and asset browser implement drag detection ad-hoc. A second consumer would need these primitives.
 - **Sub-tasks:**
   - [x] 117a. Add `right_clicked: bool`, `middle_clicked: bool` fields to `Response` and populate in `Response::interactive()` (small, low risk) — Done in ed50fcf.
-  - [ ] 117b. Add `drag_started: bool` and `drag_ended: bool` fields — track via `active_id` transitions and mouse delta threshold in `Response::interactive()` (medium, medium risk)
+  - [x] ~~117b. Add `drag_started` and `drag_ended` fields~~ — Done in b49f35e. Tracks via prev_active_id transitions in UiInputState with 2px mouse delta threshold.
   - [ ] 117c. Migrate existing manual right-click/drag checks in hierarchy and asset browser to use Response fields (small, low risk)
   - **Recommended order:** 117a → 117b → 117c
 
