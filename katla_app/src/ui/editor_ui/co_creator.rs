@@ -2,7 +2,7 @@ use katla_agent::MessageRole;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::markdown::{MarkdownColors, draw_markdown_segments, parse_markdown_line, wrap_lines};
 use katla_ui::widgets::{Button, TextInput};
-use katla_ui::widgets::{DraggablePanelConfig, DraggablePanelState, DraggablePanelStyle};
+use katla_ui::widgets::{DraggablePanelConfig, DraggablePanelState};
 use katla_ui::{FontSize, ScrollArea, ScrollAreaState, UiContext};
 
 use super::Theme;
@@ -151,17 +151,6 @@ impl CoCreatorStyle {
             text_muted: theme.text_muted,
         }
     }
-
-    pub fn draggable_panel_style(&self) -> DraggablePanelStyle {
-        DraggablePanelStyle {
-            panel_bg: self.panel_bg,
-            panel_border: self.panel_border,
-            panel_header: self.panel_header,
-            background_light: self.background_light,
-            text_primary: self.text_primary,
-            text_muted: self.text_muted,
-        }
-    }
 }
 
 /// Whether the co-creator panel submitted a message this frame.
@@ -200,13 +189,11 @@ pub fn draw_co_creator_panel(
     let mut send_clicked = false;
     let mut enter_pressed = false;
 
-    let panel_style = style.draggable_panel_style();
     let md_colors = MarkdownColors::from_style(ui.style());
 
     katla_ui::widgets::DraggablePanel::show(
         ui,
         &mut state.panel,
-        &panel_style,
         DraggablePanelConfig::new("co_creator", "AI Co-Creator")
             .size(400.0, 500.0)
             .screen_size(screen_size)

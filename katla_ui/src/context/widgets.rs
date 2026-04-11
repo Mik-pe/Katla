@@ -81,6 +81,20 @@ impl UiContext {
         }
     }
 
+    /// Create a hit-test response for a given bounds.
+    ///
+    /// Returns a [`crate::Response`] populated with `hovered`, `right_clicked`,
+    /// `middle_clicked`, and other interaction state for the given rectangle.
+    /// Useful for custom list/grid items rendered inside callbacks where no
+    /// widget produces a Response.
+    ///
+    /// This does **not** register the area as a focusable widget or set an
+    /// active/hovered widget ID — it only reads current input state.
+    pub fn sense(&self, bounds: Rect2D) -> crate::Response {
+        let hovered = self.is_hovered(bounds);
+        crate::Response::interactive(false, hovered, false, bounds, &self.input, None)
+    }
+
     pub(crate) fn update_hover(&mut self, id: super::WidgetId, bounds: Rect2D) -> bool {
         let hovered = self.is_hovered(bounds);
         if hovered {

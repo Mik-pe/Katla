@@ -423,7 +423,8 @@ pub fn build_asset_browser(
                     drag_start_index = Some(i);
                 }
 
-                if is_hovered && !ui.has_open_popup() && ui.mouse_clicked(mouse_button::RIGHT) {
+                let sense = ui.sense(item_bounds);
+                if sense.right_clicked && !ui.has_open_popup() {
                     right_clicked_index = Some(i);
                     state.selected_index = Some(i);
                 }
@@ -823,7 +824,8 @@ pub fn build_asset_browser(
             }
         }
 
-        if !clicked_on_asset && ui.mouse_clicked(mouse_button::RIGHT) {
+        let content_sense = ui.sense(content_bounds);
+        if !clicked_on_asset && content_sense.right_clicked {
             state.context_menu_asset = None;
             state.context_menu_open = true;
         }
