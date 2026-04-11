@@ -274,6 +274,8 @@ pub struct UiStyle {
     pub item_inner_spacing: f32,
     /// Indent for nested items.
     pub indent_spacing: f32,
+    /// Scrollbar width.
+    pub scrollbar_width: f32,
 
     // Widget dimensions
     /// Slider track height.
@@ -579,6 +581,7 @@ impl UiStyle {
             item_spacing: 8.0,
             item_inner_spacing: 4.0,
             indent_spacing: 20.0,
+            scrollbar_width: 10.0,
 
             slider_track_height: 4.0,
             slider_grab_size: 12.0,
@@ -760,6 +763,7 @@ impl UiStyle {
         s.item_spacing = 6.0;
         s.item_inner_spacing = 3.0;
         s.indent_spacing = 18.0;
+        s.scrollbar_width = 10.0;
         s.checkbox_size = 18.0;
         s.panel_padding = 6.0;
         s.title_bar_height = 22.0;

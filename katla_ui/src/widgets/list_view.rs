@@ -92,7 +92,8 @@ where
             .take()
             .expect("render_each callback required");
 
-        let total_content_height = self.item_count as f32 * self.row_height + 4.0;
+        let padding = ui.style.item_inner_spacing;
+        let total_content_height = self.item_count as f32 * self.row_height + padding * 2.0;
         let row_height = self.row_height;
         let item_count = self.item_count;
         let bounds = self.bounds;
@@ -105,14 +106,16 @@ where
                 let scroll_offset = ui.scroll_offset();
                 let visible_height = bounds.height();
 
-                let first_visible_row = (scroll_offset / row_height).floor() as usize;
+                let first_visible_row =
+                    ((scroll_offset - padding).max(0.0) / row_height).floor() as usize;
                 let last_visible_row =
-                    ((scroll_offset + visible_height) / row_height).ceil() as usize;
+                    ((scroll_offset - padding + visible_height) / row_height).ceil() as usize;
                 let first_row = first_visible_row.min(item_count);
                 let last_row = last_visible_row.min(item_count);
 
                 for index in first_row..last_row {
-                    let item_y = bounds.min.y() + 2.0 + index as f32 * row_height - scroll_offset;
+                    let item_y =
+                        bounds.min.y() + padding + index as f32 * row_height - scroll_offset;
                     let item_bounds = Rect2D::from_origin_size(
                         Vec2::new(bounds.min.x(), item_y),
                         Vec2::new(bounds.width(), row_height),

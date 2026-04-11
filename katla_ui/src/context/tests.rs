@@ -1520,9 +1520,9 @@ fn test_list_view_provides_correct_bounds() {
     let _draw_list = ctx.end();
 
     let fb = first_bounds.expect("first item should have been rendered");
-    // First item y should be at bounds.min.y + 2.0 (the 2.0 padding)
+    let padding = ctx.style.item_inner_spacing;
     assert!(
-        (fb.min.y() - (list_bounds.min.y() + 2.0)).abs() < 0.01,
+        (fb.min.y() - (list_bounds.min.y() + padding)).abs() < 0.01,
         "First item y should be at list top + padding, got {}",
         fb.min.y()
     );

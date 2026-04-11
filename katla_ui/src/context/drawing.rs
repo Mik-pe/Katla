@@ -355,7 +355,7 @@ impl UiContext {
     ) -> f32 {
         let icon_y = position.y();
         self.draw_icon(icon, position, icon_size, color);
-        let text_x = position.x() + icon_size + 4.0;
+        let text_x = position.x() + icon_size + self.style.item_inner_spacing;
         self.draw_text(text, Vec2::new(text_x, icon_y), color, text_size);
         text_x + self.measure_text(text, text_size).x()
     }
