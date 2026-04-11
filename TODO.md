@@ -361,7 +361,7 @@
 - **Sub-tasks:**
   - [ ] 89a. Extend `ColorScheme` with editor-specific semantic fields (status colors, entity type colors, accent, highlight, viewport border) and add `from_style()`/`apply_to_style()` round-trip (medium, low risk)
   - [ ] 89b. Convert all 13 `Theme` constructors to `ColorScheme` constructors using the `theme!` macro pattern (medium, low risk)
-  - [ ] 89c. Remove `DraggablePanelStyle` — have `DraggablePanel::show()` read from `ui.style` directly (small, low risk)
+  - [x] ~~89c. Remove `DraggablePanelStyle`~~ — Done in cb0d7cc. DraggablePanel now reads from ui.style directly.
   - [ ] 89d. Replace `Theme` usage across katla_app with `ColorScheme` + `UiStyle::with_colors()`, remove `katla_app/src/ui/theme.rs` (medium, medium risk)
   - **Recommended order:** 89a → 89b → 89c → 89d
 
@@ -377,7 +377,7 @@
 - **Sub-tasks:**
   - [x] ~~91a. Add `pending_tooltips` to `UiContext`, add `Response::tooltip()`~~ — Done in 72821c8. Deferred tooltip with rendering in end().
   - [x] ~~91b. Render pending tooltips in `end()` at `z_index::TOOLTIP`~~ — Done in 72821c8 (part of 91a).
-  - [ ] 91c. Migrate existing `on_hover_tooltip()` callers to the deferred API (small, low risk)
+  - [x] ~~91c. Migrate existing `on_hover_tooltip()` callers to the deferred API~~ — No callers to migrate outside katla_ui itself. Both old and new APIs coexist.
   - **Recommended order:** 91a → 91b → 91c
 
 ~~### 92. `UiContext::add()` always advances cursor — provide opt-out for overlay widgets~~ — Fixed in 600ca16. Added add_overlay() that skips cursor advance.
@@ -400,7 +400,7 @@
 - **Sub-tasks:**
   - [x] ~~95a. Add `DrawList::add_rounded_rect(bounds, color, radius)`~~ — Done in b49f35e. Corner arc tessellation with auto-segment calculation and add_rect fallback.
   - [x] ~~95b. Add `UiContext::draw_rounded_rect` wrapper, update widgets to use style rounding~~ — Done in 72821c8. Button, slider, text_input, combo, popup now use rounded rendering.
-  - [ ] 95c. Update popup/menu background rendering to use `style.popup_rounding`/`style.menu_rounding` (small, low risk)
+  - [x] ~~95c. Update popup/menu background rendering to use style rounding~~ — Done in 72821c8 (part of 95b). draw_popup_background uses draw_rounded_rect with popup_rounding.
   - **Recommended order:** 95a → 95b → 95c
 
 ~~### 96. `container.rs` `begin_window` hardcodes title bar height instead of using `style.title_bar_height`~~ — Fixed in bd0f57a. Now reads `self.style.title_bar_height`.
@@ -421,7 +421,7 @@
 - **Issue:** The slider has no visible value display. Users can't see the current value while dragging. The `Slider` builder has no `.format()` or `.show_value()` method. Every slider in the editor (camera speed, font scale, transform sliders) needs to manually draw the value text alongside the slider.
 - **Sub-tasks:**
   - [x] ~~102a. Add `show_value`, `value_precision` fields to `Slider` builder~~ — Done in 72821c8. Value rendered centered on slider when show_value is true.
-  - [ ] 102b. In `slider()`, render formatted value text beside or centered on the grab handle when `show_value` is true, using `style.font_size` (small, low risk)
+  - [x] ~~102b. In `slider()`, render formatted value text~~ — Done in 72821c8 (part of 102a). Value centered in slider bounds when show_value is true.
   - **Recommended order:** 102a → 102b
 
 ~~### 103. `FontSize::to_pixels()` is not used consistently — raw `f32` font sizes leak into the API~~ — Fixed in 600ca16. Added draw_text_styled/measure_text_styled convenience methods.
@@ -493,7 +493,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Crate:** katla_ui (new)
 - **Issue:** The `inspector.rs` file defines `vec3_slider_row()` and `scalar_slider_row()` — local functions that compose a label, a `Slider`, and a value display into a row. This is the most common slider usage pattern in any editor UI (every property inspector, every settings panel). The `toolbar.rs`/`preferences.rs` build the same pattern manually. A second app would need it too. Related to #102 (slider value display).
 - **Sub-tasks:**
-  - [ ] 115a. Add `LabeledSlider` builder with `label`, `value`, `range`, `label_width`, `precision`, `show_value` fields; renders label + `Slider` + formatted value text in a single row (medium, low risk)
+  - [x] ~~115a. Add `LabeledSlider` builder~~ — Done in cb0d7cc. Label + Slider + value text in a single row.
   - [ ] 115b. Add `Vec3Slider` builder for X/Y/Z axis rows with configurable axis labels and colors per axis (medium, low risk)
   - **Recommended order:** 102 → 115a → 115b
 - **Fix:** Add `LabeledSlider` builder widget to katla_ui:
@@ -515,7 +515,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Crate:** katla_ui
 - **Issue:** UI-15 already identifies this gap. Adding more context: the hierarchy panel, asset browser, and any future list UI all implement the same selectable-item pattern manually: check hover, draw selection bg, handle click, handle right-click. A generic `Selectable` widget that handles highlight-on-hover, click, right-click, selected state, and drag detection would eliminate hundreds of lines of ad-hoc interaction code across the editor.
 - **Sub-tasks:**
-  - [ ] 116a. Add `right_clicked: bool` and `middle_clicked: bool` to `Response`, populated in `Response::interactive()` (small, low risk) — overlaps with #117, do either one
+  - [x] ~~116a. Add `right_clicked` and `middle_clicked` to `Response`~~ — Already done in ed50fcf (as part of 117a).
   - [ ] 116b. Add `Selectable` builder widget with `bounds()`, `selected()`, `interactive()` that draws selection bg from `style.selectable_*` and returns a `Response` with click/right-click (medium, low risk)
   - [ ] 116c. Migrate hierarchy entity items to `Selectable` widget as proof of concept (medium, low risk)
   - **Recommended order:** 116a → 116b → 116c
@@ -537,7 +537,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Sub-tasks:**
   - [x] 117a. Add `right_clicked: bool`, `middle_clicked: bool` fields to `Response` and populate in `Response::interactive()` (small, low risk) — Done in ed50fcf.
   - [x] ~~117b. Add `drag_started` and `drag_ended` fields~~ — Done in b49f35e. Tracks via prev_active_id transitions in UiInputState with 2px mouse delta threshold.
-  - [ ] 117c. Migrate existing manual right-click/drag checks in hierarchy and asset browser to use Response fields (small, low risk)
+  - [x] ~~117c. Migrate manual right-click/drag checks to Response fields~~ — Done in cb0d7cc. Hierarchy and asset browser use resp.right_clicked via ui.sense().
   - **Recommended order:** 117a → 117b → 117c
 
 ### 118. Add `MenuBar` widget to katla_ui
