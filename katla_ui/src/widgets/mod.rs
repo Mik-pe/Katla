@@ -1953,6 +1953,85 @@ impl ResizeHandle {
 }
 
 // =============================================================================
+// MenuBar Widget
+// =============================================================================
+
+/// A horizontal menu bar widget drawn at the top of the screen.
+///
+/// Draws a background rect with a bottom border line, begins a row layout,
+/// and positions the cursor for subsequent `menu_bar_dropdown()` calls.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::MenuBar;
+///
+/// ui.add(MenuBar::new(screen_size.x(), 32.0));
+///
+/// let file_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(50.0, 32.0));
+/// ui.menu_bar_dropdown("file", "File", file_bounds, &mut file_open, |ui, open| {
+///     if ui.menu_item_clicked("New") { *open = false; }
+/// });
+/// ```
+pub struct MenuBar {
+    bounds: Rect2D,
+}
+
+impl MenuBar {
+    /// Create a new menu bar spanning `width` with the given `height` at the top of the screen.
+    pub fn new(width: f32, height: f32) -> Self {
+        Self {
+            bounds: Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(width, height)),
+        }
+    }
+
+    /// Override the bounds entirely.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set the y-position while keeping width and height.
+    pub fn y_position(mut self, y: f32) -> Self {
+        self.bounds = Rect2D::from_origin_size(
+            Vec2::new(self.bounds.min.x(), y),
+            Vec2::new(self.bounds.width(), self.bounds.height()),
+        );
+        self
+    }
+
+    /// Override the height while keeping position and width.
+    pub fn height(mut self, height: f32) -> Self {
+        self.bounds =
+            Rect2D::from_origin_size(self.bounds.min, Vec2::new(self.bounds.width(), height));
+        self
+    }
+
+    /// Return the menu bar bounds.
+    pub fn bounds_val(&self) -> Rect2D {
+        self.bounds
+    }
+}
+
+impl crate::Widget for MenuBar {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        ui.draw_rect(self.bounds, ui.style.menu_bg);
+
+        ui.draw_line(
+            Vec2::new(self.bounds.min.x(), self.bounds.max.y()),
+            Vec2::new(self.bounds.max.x(), self.bounds.max.y()),
+            ui.style.separator,
+            1.0,
+        );
+
+        ui.set_cursor(self.bounds.min);
+        ui.begin_row();
+
+        Response::new(self.bounds)
+    }
+}
+
+// =============================================================================
 // StatusBar Widget
 // =============================================================================
 

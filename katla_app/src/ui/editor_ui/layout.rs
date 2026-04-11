@@ -1,9 +1,12 @@
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2, Vec3};
-use katla_ui::{FontSize, UiContext, mouse_button, widgets::RadioButton};
+use katla_ui::{
+    FontSize, UiContext,
+    widgets::{RadioButton, ResizeHandle},
+};
 
 use super::{
-    EditorAction, EditorRenderParams, EditorUI, PanelResizeEdge, SpawnableModel,
+    EditorAction, EditorRenderParams, EditorUI, SpawnableModel,
     asset_browser::{AssetAction, AssetType, build_asset_browser},
     co_creator, hierarchy, inspector,
     preferences::PreferencesPanel,
@@ -191,59 +194,30 @@ impl EditorUI {
             Vec2::new(screen_size.x(), resize_handle_width),
         );
 
-        if let Some(resize_edge) = self.resizing_panel {
-            if ui.mouse_down(mouse_button::LEFT) {
-                let mouse_x = ui.mouse_pos().x();
-                let mouse_y = ui.mouse_pos().y();
+        let max_left_width =
+            (screen_size.x() - self.right_panel_width - min_viewport_width).max(min_panel_width);
+        self.left_panel_width = ResizeHandle::horizontal(left_resize_bounds, self.left_panel_width)
+            .min_value(min_panel_width)
+            .max_value(max_left_width)
+            .show(ui);
 
-                match resize_edge {
-                    PanelResizeEdge::LeftPanelRight => {
-                        let max_width =
-                            (screen_size.x() - self.right_panel_width - min_viewport_width)
-                                .max(min_panel_width);
-                        self.left_panel_width = mouse_x.clamp(min_panel_width, max_width).round();
-                    }
-                    PanelResizeEdge::RightPanelLeft => {
-                        let min_x = self.left_panel_width + min_viewport_width;
-                        let max_width = (screen_size.x() - min_x).max(min_panel_width);
-                        self.right_panel_width = (screen_size.x() - mouse_x)
-                            .clamp(min_panel_width, max_width)
-                            .round();
-                    }
-                    PanelResizeEdge::AssetBrowserTop => {
-                        let max_height = (screen_size.y()
-                            - status_bar_height
-                            - toolbar_height
-                            - min_viewport_width)
-                            .max(min_asset_browser_height);
-                        self.asset_browser.panel_height =
-                            (screen_size.y() - mouse_y - status_bar_height)
-                                .clamp(min_asset_browser_height, max_height)
-                                .round();
-                    }
-                }
-            } else {
-                self.resizing_panel = None;
-            }
-        }
+        let max_right_width =
+            (screen_size.x() - self.left_panel_width - min_viewport_width).max(min_panel_width);
+        self.right_panel_width =
+            ResizeHandle::horizontal(right_resize_bounds, self.right_panel_width)
+                .min_value(min_panel_width)
+                .max_value(max_right_width)
+                .show(ui);
 
-        if self.resizing_panel.is_none() {
-            if ui.is_hovered(left_resize_bounds) {
-                ui.set_mouse_cursor(katla_ui::input::MouseCursor::ResizeHorizontal);
-                if ui.mouse_clicked(mouse_button::LEFT) {
-                    self.resizing_panel = Some(PanelResizeEdge::LeftPanelRight);
-                }
-            } else if ui.is_hovered(right_resize_bounds) {
-                ui.set_mouse_cursor(katla_ui::input::MouseCursor::ResizeHorizontal);
-                if ui.mouse_clicked(mouse_button::LEFT) {
-                    self.resizing_panel = Some(PanelResizeEdge::RightPanelLeft);
-                }
-            } else if ui.is_hovered(asset_resize_bounds) && !self.asset_browser.collapsed {
-                ui.set_mouse_cursor(katla_ui::input::MouseCursor::ResizeVertical);
-                if ui.mouse_clicked(mouse_button::LEFT) {
-                    self.resizing_panel = Some(PanelResizeEdge::AssetBrowserTop);
-                }
-            }
+        if !self.asset_browser.collapsed {
+            let max_height =
+                (screen_size.y() - status_bar_height - toolbar_height - min_viewport_width)
+                    .max(min_asset_browser_height);
+            self.asset_browser.panel_height =
+                ResizeHandle::vertical(asset_resize_bounds, self.asset_browser.panel_height)
+                    .min_value(min_asset_browser_height)
+                    .max_value(max_height)
+                    .show(ui);
         }
 
         let left_panel_bounds = Rect2D::from_origin_size(

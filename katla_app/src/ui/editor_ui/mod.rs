@@ -75,8 +75,6 @@ pub struct EditorUI {
     pub left_panel_width: f32,
     /// Right panel (inspector) width in pixels.
     pub right_panel_width: f32,
-    /// Which panel resize handle is being dragged (if any).
-    resizing_panel: Option<types::PanelResizeEdge>,
     /// Play mode active.
     pub is_playing: bool,
     /// Grid visibility.
@@ -136,7 +134,6 @@ impl EditorUI {
             hierarchy_state: HierarchyState::default(),
             left_panel_width: 220.0,
             right_panel_width: 280.0,
-            resizing_panel: None,
             is_playing: false,
             show_grid: true,
             show_stats: true,
