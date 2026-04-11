@@ -81,8 +81,15 @@
 
 ### 21. No undo/redo system in the editor
 - **Crate:** katla_app
-- **Issue:** Destructive operations (delete entity, transform changes) have no undo. Slider drgs push `EditorAction::UpdateTransform` every frame (~120 identical actions during a 2s drag at 60fps), making a simple action stack impractical.
-- **Fix:** Implement a command pattern with undo support. First fix the duplicate slider action issue (only push final value on mouse release).
+- **Issue:** Destructive operations (delete entity, transform changes) have no undo. Slider drags now mutate ECS directly (#54 fix), but there is no undo stack to reverse them.
+- **Existing infrastructure:** `UndoGroup`/`SceneCommand` already exist in `katla_ecs/src/scene_tool/command.rs` with spawn, destroy, set-field, duplicate commands. `SceneToolExecutor::execute()` already returns `(ToolResult, UndoGroup)`. `AgentSession` has `push_undo()`/`undo_last()`/`undo_all()` pattern.
+- **Sub-tasks:**
+  - [ ] 21a. Add `undo_stack: Vec<UndoGroup>` and `redo_stack: Vec<UndoGroup>` to `EditorState`, with `push_undo()`, `perform_undo()`, `perform_redo()` helpers (small, low risk)
+  - [ ] 21b. Add Ctrl+Z / Ctrl+Shift+Z keyboard shortcuts in `handle_editor_keyboard_shortcuts()` (small, low risk)
+  - [ ] 21c. Capture UndoGroups from `EditorAction::DeleteEntity`, `DuplicateEntity`, `SpawnModel` in `process_editor_actions()` via `ComponentRegistry` snapshots (medium, medium risk)
+  - [ ] 21d. Capture slider drag start/end values for undo — snapshot pre-drag ECS values on drag start, push `SetFieldCommand`-based `UndoGroup` on drag end (medium, medium risk)
+  - [ ] 21e. Add Undo/Redo items to Edit menu in toolbar (small, low risk)
+  - **Recommended order:** 21a → 21b → 21c → 21d → 21e
 
 ~~### 22. No texture/mesh/material destroy API on `VulkanRenderer`~~ — False positive. `destroy_api.rs` already implements `destroy_texture`, `destroy_mesh`, `destroy_material`, and `destroy_skeleton` with bindless slot release and tests.
 
@@ -99,10 +106,14 @@
 ~~### 26. No timeout on LLM requests~~ — Fixed in 16568d0. `submit_chat` wrapped with 120s timeout, `submit_chat_stream` with 30s per-chunk timeout.
 
 ### 27. No parent-child entity hierarchy in ECS
-- **Crate:** katla_ecs
-- **File:** `src/scene_tool/mod.rs`
-- **Issue:** `SceneOp::GetSceneHierarchy` exists but returns all entities flat. No `Parent(EntityId)` / `Children(Vec<EntityId>)` components, no hierarchy traversal.
-- **Fix:** Add `Parent`/`Children` components with automatic maintenance and hierarchy traversal.
+- **Crate:** katla_ecs / katla_app
+- **Issue:** `SceneOp::GetSceneHierarchy` returns all entities flat. `Parent`/`Children` components already exist in `katla_app/src/components/scene/relationship.rs` with serialization and transform hierarchy support, but there is no `SetParent` scene op, no automatic hierarchy maintenance on destroy/duplicate, and no structured hierarchy output.
+- **Sub-tasks:**
+  - [ ] 27a. Add `SceneOp::SetParent { entity, parent: Option<EntityId> }` with cycle detection and automatic `Parent`/`Children` maintenance (medium, low risk)
+  - [ ] 27b. Rewrite `exec_hierarchy()` to return structured JSON tree with parent/depth info instead of flat list (small, low risk)
+  - [ ] 27c. Update `exec_destroy` to clean up `Parent`/`Children` of destroyed entity (cascade or re-parent) (small, low risk)
+  - [ ] 27d. Update `exec_duplicate` to optionally preserve hierarchy (small, low risk)
+  - [ ] 27e. Add `set_parent` agent tool and MCP endpoint (small, low risk)
 
 ### ~~28. No query filtering (`Without<T>`, `With<T>`)~~ — Fixed. Added `With<T>`/`Without<T>` marker types, `QueryFilter` trait with tuple support, `FilteredQueryIter` wrapper, and `World::query_filtered()` method with 9 tests.
 
@@ -269,8 +280,14 @@
 
 ### 80. No archetype-based ECS storage for cache-friendly queries
 - **Crate:** katla_ecs
-- **Issue:** Multi-component queries iterate one sparse set and lookup others. Archetype-based storage would be more cache-friendly for common component tuples.
-- **Fix:** Future optimization if query performance becomes a bottleneck.
+- **Issue:** Multi-component queries iterate one sparse set and lookup others (random-access indirection per entity per component). Archetype-based storage would group entities with the same component set into contiguous SoA columns for cache-friendly iteration.
+- **Recommendation:** Implement as a parallel/opt-in storage option, not a full replacement. The existing sparse-set system provides excellent O(1) random access. Archetype storage should be opt-in for entity groups where multi-component iteration is a measured bottleneck.
+- **Sub-tasks:**
+  - [ ] 80a. Core `Archetype` and `ComponentColumn` data structures — type-erased SoA column storage with contiguous iteration (large, medium risk)
+  - [ ] 80b. `ArchetypeRegistry` — manages archetype instances, entity-to-archetype mapping, component add/remove migration with edge caching (large, medium risk)
+  - [ ] 80c. `ArchetypeQueryData` trait and macro-generated tuple impls — new query entry point `World::archetype_query::<Q>()` alongside existing `query()` (large, high risk)
+  - [ ] 80d. Dual-storage World integration — `spawn_archetype()` coexisting with `spawn()`, `get_component()` dispatches to correct storage (medium, medium risk)
+  - [ ] 80e. Criterion benchmarks comparing sparse-set vs archetype for 1-4 component queries at 1K/10K/100K entities (small, low risk)
 
 ~~### 81. `from_rows` naming in `Mat3` is misleading (actually column-major)~~ — Fixed in 37b3dbc. Renamed to `from_columns`.
 
@@ -321,6 +338,14 @@
 
 ### 88. Add undo/redo for AI agent actions
 - **Crate:** katla_agent / katla_app
-- **Files:** `katla_agent/src/co_creator/mod.rs`, `katla_app/src/application/editor/agent.rs`
-- **Issue:** When the AI spawns, destroys, or modifies entities via tool calls, there is no way for the user to reverse those actions. The `SceneToolExecutor` already produces `UndoGroup`s from each operation, but they are discarded (the `_undo_group` is unused in `execute_tool_call`). Long chains of AI operations cannot be rolled back, which is dangerous if the AI makes a mistake.
-- **Fix:** Collect `UndoGroup`s produced by `SceneToolExecutor::execute()` into a per-session undo stack on the `CoCreatorAgent` or `EditorState`. Add an `undo_last_agent_action()` method that calls `SceneToolExecutor::undo()` on the most recent group. Expose this to the user via a button in the AI panel or Ctrl+Z when the AI panel is focused. Composite operations (e.g. a template that spawns N entities) should produce a single undo group so the user can reverse the whole operation in one step.
+- **Issue:** `SceneToolExecutor::execute()` already returns `(ToolResult, UndoGroup)` but the `_undo_group` is discarded in `execute_tool_call()`. No way to reverse AI operations.
+- **Key complication:** `attach_spawn_visuals()` adds GPU resources outside the `UndoGroup`. Undo must also release GPU handles tracked in `GpuResourceTracker`.
+- **Sub-tasks:**
+  - [ ] 88a. Add `agent_undo_stack: Vec<UndoGroup>` and `agent_redo_stack` to `EditorState` (small, low risk)
+  - [ ] 88b. Capture UndoGroups in `execute_tool_call()` — change signature to return `(String, Option<UndoGroup>)`, collect into composite per-turn group (small, low risk)
+  - [ ] 88c. Handle GPU resource cleanup on undo — store GPU handle metadata per undo entry, release on undo (medium, medium risk)
+  - [ ] 88d. Add `undo_last_agent_action()` method calling `SceneToolExecutor::undo()` with GPU cleanup (small, low risk)
+  - [ ] 88e. Add "Undo" button in AI co-creator panel, visible when undo stack non-empty (small, low risk)
+  - [ ] 88f. Route local actions (`LocalAction::SpawnCube` etc.) through `SceneToolExecutor` so they produce UndoGroups (small, low risk)
+  - [ ] 88g. Clear undo/redo stacks on new scene / clear history (trivial, no risk)
+  - **Recommended order:** 88a → 88b → 88c → 88d → 88e → 88f → 88g
