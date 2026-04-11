@@ -65,6 +65,9 @@ pub struct ColorScheme {
     pub scrollbar_track: Color,
     pub scrollbar_handle: Color,
     pub scrollbar_handle_hovered: Color,
+
+    /// Focus ring color drawn around the focused widget during Tab navigation.
+    pub focus_ring_color: Color,
 }
 
 /// Predefined font sizes in points.
@@ -361,6 +364,9 @@ pub struct UiStyle {
     pub scrollbar_handle: Color,
     /// Scrollbar handle color when hovered.
     pub scrollbar_handle_hovered: Color,
+
+    /// Focus ring color drawn around the focused widget during Tab navigation.
+    pub focus_ring_color: Color,
 }
 
 impl ColorScheme {
@@ -421,6 +427,8 @@ impl ColorScheme {
             scrollbar_track: Color::from_rgb_hex(0x1a1a1a),
             scrollbar_handle: Color::from_rgb_hex(0x505050),
             scrollbar_handle_hovered: Color::from_rgb_hex(0x606060),
+
+            focus_ring_color: Color::from_rgb_hex(0x4a9eff),
         }
     }
 
@@ -481,6 +489,8 @@ impl ColorScheme {
             scrollbar_track: Color::from_rgb_hex(0xe0e0e0),
             scrollbar_handle: Color::from_rgb_hex(0xa0a0a0),
             scrollbar_handle_hovered: Color::from_rgb_hex(0x808080),
+
+            focus_ring_color: Color::from_rgb_hex(0x4a9eff),
         }
     }
 
@@ -541,6 +551,8 @@ impl ColorScheme {
             scrollbar_track: Color::from_rgb_hex(0x1f1f1f),
             scrollbar_handle: Color::from_rgb_hex(0x555555),
             scrollbar_handle_hovered: Color::from_rgb_hex(0x666666),
+
+            focus_ring_color: Color::from_rgb_hex(0x4a9eff),
         }
     }
 }
@@ -652,6 +664,7 @@ impl UiStyle {
             scrollbar_track: Color::BLACK,
             scrollbar_handle: Color::BLACK,
             scrollbar_handle_hovered: Color::BLACK,
+            focus_ring_color: Color::BLACK,
         }
     }
 
@@ -718,6 +731,7 @@ impl UiStyle {
         self.scrollbar_track = c.scrollbar_track;
         self.scrollbar_handle = c.scrollbar_handle;
         self.scrollbar_handle_hovered = c.scrollbar_handle_hovered;
+        self.focus_ring_color = c.focus_ring_color;
     }
 
     /// Create a dark theme style.

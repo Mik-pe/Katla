@@ -189,6 +189,9 @@ pub struct UiContext {
     pub(crate) text_input_states: std::collections::HashMap<WidgetId, TextInputState>,
     /// Clipboard provider for copy/cut/paste.
     clipboard: Option<Box<dyn ClipboardProvider>>,
+    /// Focusable widgets registered during this frame's layout pass.
+    /// Each entry is (widget_id, bounds), collected in layout order for Tab navigation.
+    pub(crate) focusable_widgets: Vec<(WidgetId, Rect2D)>,
 }
 
 impl UiContext {
@@ -234,6 +237,7 @@ impl UiContext {
             last_input_time: 0.0,
             text_input_states: std::collections::HashMap::new(),
             clipboard: None,
+            focusable_widgets: Vec::new(),
         }
     }
 
