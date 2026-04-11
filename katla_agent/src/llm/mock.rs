@@ -83,7 +83,10 @@ impl MockStreamProvider {
     }
 
     /// Create a provider that streams a tool call with the given name and arguments.
-    pub fn tool_call(id: &str, name: &str, arguments: &str) -> Self {
+    ///
+    /// The `arguments` value is serialized to a JSON string for the streaming delta.
+    pub fn tool_call(id: &str, name: &str, arguments: &impl serde::Serialize) -> Self {
+        let args_str = serde_json::to_string(arguments).unwrap_or_default();
         Self::new(vec![
             Ok(StreamChunk {
                 content_delta: String::new(),
@@ -102,7 +105,7 @@ impl MockStreamProvider {
                     index: 0,
                     id: None,
                     name: None,
-                    arguments_delta: Some(arguments.to_string()),
+                    arguments_delta: Some(args_str),
                 }],
             }),
             Ok(StreamChunk {

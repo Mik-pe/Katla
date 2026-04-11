@@ -1,4 +1,53 @@
+use serde::Deserialize;
+
 use crate::llm::ToolDefinition;
+
+/// Typed arguments for the `spawn_entity` tool.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct SpawnEntityArgs {
+    pub position: Option<[f32; 3]>,
+    pub rotation: Option<[f32; 3]>,
+    pub scale: Option<[f32; 3]>,
+    pub name: Option<String>,
+}
+
+/// Typed arguments for the `destroy_entity` tool.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct DestroyEntityArgs {
+    pub entity_id: u64,
+}
+
+/// Typed arguments for the `set_field` tool.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SetFieldArgs {
+    pub entity_id: u64,
+    pub component: String,
+    pub field: String,
+    pub value: serde_json::Value,
+}
+
+/// Typed arguments for the `query_entities` tool.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct QueryEntitiesArgs {
+    pub component_filter: Option<String>,
+    pub limit: Option<u64>,
+}
+
+/// Typed arguments for the `get_scene_hierarchy` tool.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct GetSceneHierarchyArgs {}
+
+/// Typed arguments for the `duplicate_entity` tool.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct DuplicateEntityArgs {
+    pub entity_id: u64,
+    pub position_offset: Option<[f32; 3]>,
+}
 
 /// Build tool definitions for the LLM's function calling.
 pub fn build_tool_definitions() -> Vec<ToolDefinition> {
