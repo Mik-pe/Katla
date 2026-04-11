@@ -463,11 +463,7 @@
 
 ~~### 108. `ListView` virtualization y-offset calculation ignores content padding~~ — Fixed. Uses `ui.style.item_inner_spacing` for symmetric top/bottom padding and updated virtualization row calculation.
 
-### 109. `begin_grid`/`end_grid` doesn't restore cursor X position correctly
-- **Crate:** katla_ui
-- **File:** `katla_ui/src/context/layout.rs`
-- **Issue:** `end_grid()` sets `self.cursor = Vec2::new(layout.start_pos.x(), layout.cursor.y() + item_height + layout.spacing)`. If the grid is inside a horizontal row, the cursor Y jumps down but the parent row doesn't know about the grid's height. This causes overlapping widgets when a grid is placed inside a row.
-- **Fix:** After popping the layout, update `self.row_height` with the total grid height. Same pattern as `end_row()` which updates `row_height`.
+~~### 109. `begin_grid`/`end_grid` doesn't restore cursor X position correctly~~ — Fixed in ac55b21. end_grid now updates row_height with total grid height.
 
 ### 110. `separator_line()` in helpers reads clip rect for width — fragile with nested clips
 - **Crate:** katla_ui
@@ -475,11 +471,7 @@
 - **Issue:** `separator_line()` uses `clip.min.x()` and `clip.max.x()` to determine line endpoints. If called inside a scroll area or popup, the clip rect is the scroll content area, which may be much larger than the intended panel width. The separator line extends across the entire clip region, potentially overflowing the visual panel boundary.
 - **Fix:** Accept an explicit `width` parameter or use `available_width()` (if UI-07 is implemented). Alternatively, track the "content width" set by the current container (window/panel) and use that instead of clip rect.
 
-### 111. `DrawList::add_circle` takes `segments` as a count — should auto-calculate from radius
-- **Crate:** katla_ui
-- **File:** `katla_ui/src/draw_list.rs`
-- **Issue:** Callers pass arbitrary segment counts (`16`, `12` in radio button). Small circles with 12 segments look polygonal; large circles with 16 segments look faceted. The ideal segment count scales with the circle's screen-space size.
-- **Fix:** Add `add_circle_auto(center, radius, color)` that calculates segments as `(radius * std::f32::consts::PI * 2.0 / 4.0).ceil().max(8.0) as u32` (4px per segment, minimum 8). Keep `add_circle` for callers that want explicit control.
+~~### 111. `DrawList::add_circle` takes `segments` as a count — should auto-calculate from radius~~ — Fixed in ac55b21. Added add_circle_auto with radius-based segment calculation, updated callers.
 
 ### 112. `ClipRect` duplicates `Rect2D` functionality — consider using `Rect2D` directly in `DrawCmd`
 - **Crate:** katla_ui
@@ -643,11 +635,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   ```
   Handles hover cursor change, drag, clamping, and returns the new dimension. Also `ResizeHandle::vertical()` for asset browser.
 
-### 122. Add `truncate_text` utility to katla_ui
-- **Crate:** katla_ui
-- **File:** Currently in `katla_app/src/ui/editor_ui/asset_browser/mod.rs`
-- **Issue:** `truncate_text()` measures text and adds "..." when it overflows a max width. The asset browser needs it, but any grid/list UI with constrained cell widths would need it too. This is a text layout primitive that belongs next to `measure_text()`.
-- **Fix:** Add `UiContext::truncate_text(text, max_width, font_size) -> String` or a standalone `truncate_text(text, max_width, |t| measure(t)) -> Cow<str>` in the text module.
+~~### 122. Add `truncate_text` utility to katla_ui~~ — Fixed in ac55b21. Added UiContext::truncate_text with binary search, removed local function from asset_browser.
 
 ### 123. Add `draw_empty_state` / centered placeholder text to katla_ui
 - **Crate:** katla_ui
@@ -687,3 +675,55 @@ These items identify code that currently lives in katla_app but is generic enoug
       }));
   ```
   Handles indentation, expand/collapse toggle, selection, keyboard navigation.
+
+### 126. `TextInput` text overflows bounds — no horizontal scroll offset tracking
+- **Crate:** katla_ui
+- **File:** `katla_ui/src/context/widgets/basic.rs`
+- **Issue:** When the entered text is wider than the input field bounds, the text is clipped but there is no horizontal scroll offset to keep the cursor visible. The `text_pos.x` is always computed as `bounds.min.x() + padding` — it never shifts left to reveal text beyond the right edge. In every other text input (browser, VS Code, Notepad), typing past the right edge scrolls the content so the cursor remains visible. The AI assistant input, preferences fields, asset search, and rename inputs all have this problem.
+- **Sub-tasks:**
+  - [ ] 126a. Add `scroll_offset: f32` field to `TextInputState`, representing the horizontal pixel offset of the text content within the input bounds (small, low risk)
+  - [ ] 126b. After cursor position changes (typing, arrow keys, click, paste), compute `cursor_x = measure_text(&text[..cursor])` and adjust `scroll_offset` so that `cursor_x - scroll_offset` falls within `[padding, text_area_width - padding]` — clamp to keep text from scrolling past the start (small, low risk)
+  - [ ] 126c. Apply `scroll_offset` to `text_pos.x` and selection/cursor drawing positions so text shifts left as the cursor moves past the right edge (small, low risk)
+  - [ ] 126d. Handle mouse click-to-position: account for `scroll_offset` when converting click X coordinate to a byte offset in the text (small, low risk)
+  - **Recommended order:** 126a → 126b → 126c → 126d
+
+~~### 127. `TextInput` Ctrl+Backspace / Ctrl+Delete don't delete whole words~~ — Fixed in ac55b21. Uses prev_word_boundary/next_word_boundary when Ctrl is held.
+
+### 128. `ScrollArea` with `stick_to_bottom` jumps to bottom while user is scrolled up
+- **Crate:** katla_ui
+- **File:** `katla_ui/src/context/widgets/scroll_area.rs`
+- **Issue:** The `stick_to_bottom` logic forces `scroll_offset` to `max_scroll` whenever `content_height > prev_content_height`. This means that if the user scrolls up to read earlier messages, any content height change (streaming token, layout reflow, new message) will snap the view back to the bottom. The scroll jumps unexpectedly and the user can't browse earlier content while new content is arriving. This is especially noticeable in the AI co-creator panel where streaming tokens change content height every frame.
+- **Fix:** Track whether the user was at the bottom *before* the content height change. Only snap to bottom if the user was already scrolled to within a small threshold (e.g. 20px) of `max_scroll` before the content grew. Add an `at_bottom: bool` field to `ScrollAreaState` that gets set to `true` when `scroll_offset >= max_scroll - threshold` after each frame. The `stick_to_bottom` logic should check `state.at_bottom` instead of (or in addition to) `content_height > prev_content_height`. Also consider resetting `at_bottom = true` when the user actively sends a new message (app-level opt-in).
+
+### 129. AI agent cannot access project resources (scenes, particles, shaders, materials)
+- **Crates:** katla_agent / katla_ecs / katla_app
+- **Files:** `katla_ecs/src/scene_tool/mod.rs`, `katla_agent/src/co_creator/tools.rs`, `katla_agent/src/mcp.rs`, `katla_app/src/application/editor/agent.rs`
+- **Issue:** The AI co-creator can only manipulate live ECS entities via `SceneOp` (spawn, destroy, set_field, query, etc.). It has zero visibility into project resources — no way to list, read, create, or edit resource files like scene files (`assets/scenes/*.katla`), particle definitions (`assets/particles/*.json`), shaders, materials, or images. Every other game editor AI (Unity Muse, Unreal ML Deformer) can browse project files. This severely limits the AI's usefulness: it can't tune particle emitter JSON, create new particle presets, save/load scenes, read shader source to diagnose visual bugs, or generate new content files.
+- **Scope:** `katla_agent` provides the tool definitions and MCP endpoint plumbing. `katla_ecs` extends `SceneOp` with resource variants. `katla_app` implements the actual file I/O, asset loading, and scene serialization in the executor.
+- **Sub-tasks:**
+  - [ ] 129a. Add `ResourceOp` enum to `katla_ecs` alongside `SceneOp` — `ListResources { path, filter }`, `ReadResource { path }`, `WriteResource { path, content }`, `CreateResource { path, template, content }`, `DeleteResource { path }` (small, low risk)
+  - [ ] 129b. Add matching tool definitions in `katla_agent/src/co_creator/tools.rs` (`list_resources`, `read_resource`, `write_resource`, `create_resource`) and MCP ops in `katla_agent/src/mcp.rs` (small, low risk)
+  - [ ] 129c. Implement `ResourceToolExecutor` in `katla_app` — `list_resources` discovers files under `assets/` recursively, `read_resource` reads file content as string, `write_resource` writes back with backup, `create_resource` creates from template or empty. All paths sandboxed to project directory (medium, low risk)
+  - [ ] 129d. Wire `ResourceOp` into `execute_tool_call()` in `katla_app/src/application/editor/agent.rs` alongside existing `SceneOp` dispatch (small, low risk)
+  - [ ] 129e. Add content generation support — AI can generate particle JSON (ask for "fire emitter", "rain", "sparkles"), material TOML, and simple scene files from natural language descriptions. Provide resource-type templates and a `generate_resource` tool that accepts a description and type (medium, medium risk)
+  - [ ] 129f. Add `load_scene` / `save_scene` resource ops that go through the existing `SceneSerialization` infrastructure, so the AI can save the current scene state or load a named scene (medium, medium risk)
+  - [ ] 129g. Update the system prompt in `katla_agent/src/co_creator/prompt.rs` to describe resource capabilities, available asset directories, and supported file types (small, low risk)
+  - **Recommended order:** 129a → 129b → 129c → 129d → 129e → 129f → 129g
+
+### 130. AI agent can only spawn cubes — extend `spawn_entity` to support all primitives and GLTF models
+- **Crates:** katla_ecs / katla_agent / katla_app
+- **Files:** `katla_ecs/src/scene_tool/mod.rs`, `katla_agent/src/co_creator/tools.rs`, `katla_app/src/application/editor/agent.rs`, `katla_app/src/scene/entity_source.rs`
+- **Issue:** `SceneOp::SpawnEntity` creates a bare entity, and `attach_spawn_visuals()` hardcodes `create_cube_mesh` for every AI-spawned entity regardless of what the user asked for. The AI cannot spawn spheres, planes, cylinders, cones, tori, or load GLTF models. The renderer already has `create_cube_mesh`, `create_sphere_mesh`, `create_plane_mesh`, `create_cylinder_mesh`, `create_cone_mesh`, `create_torus_mesh` — all with full parameter support. `EntitySource` already has matching variants (`Cube`, `Sphere`, `Plane`, `Cylinder`, `Torus`, `GltfModel`). `spawn_gltf_model()` exists on Application. The infrastructure is all there, just not wired to the AI tools.
+- **Fix:**
+  - Extend `SceneOp::SpawnEntity` (or add a new `SpawnPrimitive` variant) to carry a `primitive: Option<EntitySource>` field so the executor knows what mesh to create
+  - Extend `SpawnEntityArgs` and the `spawn_entity` tool schema with an optional `shape` field accepting `"cube"`, `"sphere"`, `"plane"`, `"cylinder"`, `"cone"`, `"torus"` plus shape-specific params (`radius`, `segments`, `width`, `height`, etc.)
+  - Add a `spawn_model` tool that takes a `path` (relative to project resources) + `position`, dispatching to `Application::spawn_gltf_model()` — the AI discovers available models via the `list_resources` tool from #129
+  - Rewrite `attach_spawn_visuals()` to read the primitive type from the tool args and call the correct `create_*_mesh` method, attaching the right `EntitySource` variant
+  - Sub-tasks:
+    - [ ] 130a. Extend `SpawnEntityArgs` with `shape: Option<String>` and shape-specific parameters (`radius`, `segments`, `rings`, `width`, `height`, `tube_radius`, `tube_segments`) (small, low risk)
+    - [ ] 130b. Extend the `spawn_entity` tool definition JSON schema with the new optional `shape` field and its sub-parameters (small, low risk)
+    - [ ] 130c. Extend `SceneOp::SpawnEntity` with `primitive: Option<EntitySource>` field (small, low risk)
+    - [ ] 130d. Rewrite `attach_spawn_visuals()` to match on `args.shape` and call the appropriate `renderer.create_*_mesh()` method, attaching the correct `EntitySource` variant (medium, low risk)
+    - [ ] 130e. Add `spawn_model` tool, `SpawnModelArgs` struct, `SceneOp::SpawnModel` variant, and executor that calls `Application::spawn_gltf_model()` (medium, medium risk)
+    - [ ] 130f. Update system prompt to list available shapes and mention `spawn_model` for loading resources (small, low risk)
+    - **Recommended order:** 130a → 130b → 130c → 130d → 130e → 130f
