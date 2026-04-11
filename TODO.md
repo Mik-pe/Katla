@@ -346,7 +346,7 @@
   - [ ] 88c. Handle GPU resource cleanup on undo — store GPU handle metadata per undo entry, release on undo (medium, medium risk)
   - [x] ~~88d. Add `undo_last_agent_action()` method~~ — Done in 7c4281a. perform_agent_undo and perform_agent_redo on EditorState.
   - [x] ~~88e. Add "Undo" button in AI co-creator panel~~ — Done in d7beebd. Visible when undo stack non-empty, pops and calls SceneToolExecutor::undo().
-  - [ ] 88f. Route local actions (`LocalAction::SpawnCube` etc.) through `SceneToolExecutor` so they produce UndoGroups (small, low risk)
+  - [x] ~~88f. Route local actions (`LocalAction::SpawnCube` etc.) through `SceneToolExecutor` so they produce UndoGroups~~ — Done in 771aeef. SpawnModel, DeleteEntity, DuplicateEntity now capture UndoGroups via push_undo().
   - [x] ~~88g. Clear undo/redo stacks on new scene~~ — Done in 62c2288. Both stacks cleared in NewScene handler.
   - **Recommended order:** 88a → 88b → 88c → 88d → 88e → 88f → 88g
 
@@ -545,7 +545,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Crate:** katla_ui
 - **Issue:** The toolbar in `katla_app` manually draws a horizontal bar and places `menu_bar_dropdown()` calls with manual spacing and cursor management. This is a standard editor pattern. A `MenuBar` widget would provide the common container with automatic layout.
 - **Sub-tasks:**
-  - [ ] 118a. Add `MenuBar` builder struct with `bounds()`, `height()`, and `menu(label, callback)` that collects menu entries; wraps `begin_row()`/`end_row()` and `menu_bar_dropdown()` calls automatically (medium, low risk)
+  - [x] ~~118a. Add `MenuBar` builder struct with `bounds()`, `height()`, and `menu(label, callback)` that collects menu entries; wraps `begin_row()`/`end_row()` and `menu_bar_dropdown()` calls automatically~~ — Done in 771aeef. MenuBar widget with bg, border, row layout, cursor positioning.
   - [ ] 118b. Add `right_side()` closure for centered/right-aligned content (title, status indicators) (small, low risk)
   - [ ] 118c. Migrate `toolbar.rs` to use `MenuBar` widget (small, medium risk)
   - **Recommended order:** 118a → 118b → 118c
@@ -593,8 +593,8 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Issue:** `layout.rs` in the editor has ~80 lines of resize handle logic (left panel, right panel, asset browser). It tracks `resizing_panel: Option<PanelResizeEdge>`, clamps widths, and changes the cursor to resize cursors. Any editor with side panels needs this. Currently it's raw mouse-state checking scattered across `build()`.
 - **Sub-tasks:**
   - [x] ~~121a. Add `ResizeHandle` builder widget with `horizontal()`/`vertical()` constructors, `min_width()`, `max_width()`, tracks hover + drag state via `active_id` internally~~ — Done in 956f2f8. ResizeHandle with drag tracking, cursor change, value clamping.
-  - [ ] 121b. Handle cursor change to `ResizeHorizontal`/`ResizeVertical` on hover, and clamp returned value on drag (small, low risk)
-  - [ ] 121c. Migrate the three resize handles in `layout.rs` (left panel, right panel, asset browser) to `ResizeHandle` widget (small, low risk)
+  - [x] ~~121b. Handle cursor change to `ResizeHorizontal`/`ResizeVertical` on hover, and clamp returned value on drag~~ — Done in 956f2f8 (part of 121a). Cursor change + clamping built into ResizeHandle.
+  - [x] ~~121c. Migrate the three resize handles in `layout.rs` (left panel, right panel, asset browser) to `ResizeHandle` widget~~ — Done in 771aeef. Removed PanelResizeEdge enum, 3 ResizeHandle calls replace ~40 lines of manual logic.
   - **Recommended order:** 121a → 121b → 121c
 - **Fix:** Add a `ResizeHandle` widget:
   ```rust
