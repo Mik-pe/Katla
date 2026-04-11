@@ -380,11 +380,7 @@
   - [ ] 91c. Migrate existing `on_hover_tooltip()` callers to the deferred API (small, low risk)
   - **Recommended order:** 91a → 91b → 91c
 
-### 92. `UiContext::add()` always advances cursor — provide opt-out for overlay widgets
-- **Crate:** katla_ui
-- **Files:** `katla_ui/src/context/mod.rs`, `katla_ui/src/widgets/mod.rs`
-- **Issue:** `add()` calls `advance_cursor()` after every widget. Overlay widgets like `Separator`, `Badge`, and custom overlays that position themselves manually still advance the layout cursor. This makes it impossible to place a badge overlaying a button without the cursor jumping. Other immediate-mode UIs like egui differentiate between "sized" and "unsized" widgets.
-- **Fix:** Add `add_sized()` (advances cursor) and `add_overlay()` (does not advance). Keep `add()` as `add_sized()` for backward compatibility. Alternatively, let widgets return an `Option<Vec2>` size — `None` means don't advance.
+~~### 92. `UiContext::add()` always advances cursor — provide opt-out for overlay widgets~~ — Fixed in 600ca16. Added add_overlay() that skips cursor advance.
 
 ### 93. `text_input` borrows `self.input` fields individually to avoid borrow conflicts
 - **Crate:** katla_ui
@@ -395,11 +391,7 @@
   - [ ] 93b. Refactor `text_input()` to call the extracted function, removing all 20 snapshot variables (small, low risk)
   - **Recommended order:** 93a → 93b
 
-### 94. `DrawList::convert_draw_list` in katla_app assigns texture indices per-vertex inefficiently
-- **Crate:** katla_app
-- **File:** `katla_app/src/ui/renderer.rs`
-- **Issue:** `convert_draw_list()` iterates all indices in all commands to mark vertex texture indices, creating a `Vec<u32>` with one entry per vertex. For a frame with 10K vertices and 50 commands, this is O(commands * indices_per_command + vertices). The draw list already guarantees that all vertices in a command share the same texture, so the mapping is command-based, not vertex-based.
-- **Fix:** Build a `Vec<u32>` of per-command bindless indices (one per command, not per vertex). During vertex conversion, determine which command a vertex belongs to by binary search on `index_offset`. Or better: iterate commands and batch-convert vertices per command, avoiding the per-vertex lookup entirely.
+~~### 94. `DrawList::convert_draw_list` in katla_app assigns texture indices per-vertex inefficiently~~ — Fixed in 600ca16. Per-command vertex range scan replaces per-index loop.
 
 ### 95. No `draw_rounded_rect` in UiContext despite style having rounding fields
 - **Crate:** katla_ui
@@ -432,10 +424,7 @@
   - [ ] 102b. In `slider()`, render formatted value text beside or centered on the grab handle when `show_value` is true, using `style.font_size` (small, low risk)
   - **Recommended order:** 102a → 102b
 
-### 103. `FontSize::to_pixels()` is not used consistently — raw `f32` font sizes leak into the API
-- **Crate:** katla_ui
-- **Issue:** `UiStyle` stores `font_size: f32` in pixels, `FontSize` enum converts to pixels, `scaled_font_size()` takes `FontSize` and returns `f32`, but `draw_text()`, `measure_text()`, `draw_icon()` all take raw `f32` size. The `XSmall`/`Small`/`Medium`/`Large`/`XLarge` enum is only used in ~5 places. Raw pixel values like `14.0` and `12.0` appear throughout the codebase.
-- **Fix:** This is a design choice, not a bug, but consider: add `draw_text_styled(text, pos, color, FontSize)` and `measure_text_styled(text, FontSize)` convenience methods that call `to_pixels_scaled(font_scale)` internally. This gives a typed entry point for the common case while keeping the raw f32 for advanced use.
+~~### 103. `FontSize::to_pixels()` is not used consistently — raw `f32` font sizes leak into the API~~ — Fixed in 600ca16. Added draw_text_styled/measure_text_styled convenience methods.
 
 ### 104. `FontSystem` is embedded in `UiContext` — prevents sharing font data across contexts
 - **Crate:** katla_ui
@@ -653,16 +642,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   ```
   Handles indentation, expand/collapse toggle, selection, keyboard navigation.
 
-### 126. `TextInput` text overflows bounds — no horizontal scroll offset tracking
-- **Crate:** katla_ui
-- **File:** `katla_ui/src/context/widgets/basic.rs`
-- **Issue:** When the entered text is wider than the input field bounds, the text is clipped but there is no horizontal scroll offset to keep the cursor visible. The `text_pos.x` is always computed as `bounds.min.x() + padding` — it never shifts left to reveal text beyond the right edge. In every other text input (browser, VS Code, Notepad), typing past the right edge scrolls the content so the cursor remains visible. The AI assistant input, preferences fields, asset search, and rename inputs all have this problem.
-- **Sub-tasks:**
-  - [ ] 126a. Add `scroll_offset: f32` field to `TextInputState`, representing the horizontal pixel offset of the text content within the input bounds (small, low risk)
-  - [ ] 126b. After cursor position changes (typing, arrow keys, click, paste), compute `cursor_x = measure_text(&text[..cursor])` and adjust `scroll_offset` so that `cursor_x - scroll_offset` falls within `[padding, text_area_width - padding]` — clamp to keep text from scrolling past the start (small, low risk)
-  - [ ] 126c. Apply `scroll_offset` to `text_pos.x` and selection/cursor drawing positions so text shifts left as the cursor moves past the right edge (small, low risk)
-  - [ ] 126d. Handle mouse click-to-position: account for `scroll_offset` when converting click X coordinate to a byte offset in the text (small, low risk)
-  - **Recommended order:** 126a → 126b → 126c → 126d
+~~### 126. `TextInput` text overflows bounds — no horizontal scroll offset tracking~~ — Fixed in 600ca16. Added scroll_offset to TextInputState with auto-scroll to keep cursor visible.
 
 ~~### 127. `TextInput` Ctrl+Backspace / Ctrl+Delete don't delete whole words~~ — Fixed in ac55b21. Uses prev_word_boundary/next_word_boundary when Ctrl is held.
 
