@@ -85,6 +85,7 @@ pub fn scatter(
             rotation: [0.0, 0.0, 0.0],
             scale: [1.0, 1.0, 1.0],
             name: Some(format!("{name_prefix}_{i}")),
+            primitive: None,
         })
         .collect();
 
@@ -130,6 +131,7 @@ pub fn place_along_path(points: &[[f32; 3]], spacing: f32, name_prefix: &str) ->
             rotation: [0.0, 0.0, 0.0],
             scale: [1.0, 1.0, 1.0],
             name: Some(format!("{name_prefix}_{idx}")),
+            primitive: None,
         });
         distance += spacing;
         idx += 1;
@@ -196,6 +198,7 @@ pub fn place_grid(
                 rotation: [0.0, 0.0, 0.0],
                 scale: [1.0, 1.0, 1.0],
                 name: Some(format!("{name_prefix}_{row}_{col}")),
+                primitive: None,
             });
         }
     }
@@ -220,6 +223,7 @@ pub fn place_ring(count: usize, center: [f32; 3], radius: f32, name_prefix: &str
                 rotation: [0.0, 0.0, 0.0],
                 scale: [1.0, 1.0, 1.0],
                 name: Some(format!("{name_prefix}_{i}")),
+                primitive: None,
             }
         })
         .collect()
@@ -257,6 +261,7 @@ pub fn place_cluster(
                 rotation: [0.0, 0.0, 0.0],
                 scale: [1.0, 1.0, 1.0],
                 name: Some(format!("{name_prefix}_{i}")),
+                primitive: None,
             }
         })
         .collect()

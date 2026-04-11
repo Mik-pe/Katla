@@ -100,6 +100,7 @@ impl McpOp {
                 rotation,
                 scale,
                 name,
+                primitive: None,
             }),
             Self::DestroyEntity { entity_id } => McpOpKind::Scene(SceneOp::DestroyEntity {
                 entity: katla_ecs::EntityId::from_raw(entity_id),

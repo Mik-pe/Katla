@@ -26,6 +26,7 @@ impl SceneToolExecutor {
                 rotation,
                 scale,
                 name,
+                primitive: _,
             } => Self::exec_spawn(world, registry, position, rotation, scale, name),
             SceneOp::DestroyEntity { entity } => Self::exec_destroy(world, registry, entity),
             SceneOp::SetField {
