@@ -67,6 +67,27 @@ impl DraggablePanelState {
     pub fn is_just_opened(&self) -> bool {
         self.visibility.is_just_opened()
     }
+
+    /// Compute the panel's screen-space bounds from its stored position (or
+    /// default centered position) and the given panel size and screen size.
+    ///
+    /// Returns `None` if the panel is hidden.
+    pub fn bounds(&self, panel_width: f32, panel_height: f32, screen_size: Vec2) -> Option<Rect2D> {
+        if !self.is_visible() {
+            return None;
+        }
+
+        let default_pos = Vec2::new(
+            screen_size.x() * 0.5 - panel_width * 0.5,
+            screen_size.y() * 0.5 - panel_height * 0.5,
+        );
+        let pos = self.position.unwrap_or(default_pos);
+
+        Some(Rect2D::from_origin_size(
+            pos,
+            Vec2::new(panel_width, panel_height),
+        ))
+    }
 }
 
 /// Colors needed by [`DraggablePanel`] to draw the panel chrome.
@@ -107,6 +128,7 @@ pub struct DraggablePanelConfig<'a> {
     panel_width: f32,
     panel_height: f32,
     screen_size: Vec2,
+    close_on_outside_click: bool,
 }
 
 impl<'a> DraggablePanelConfig<'a> {
@@ -118,6 +140,7 @@ impl<'a> DraggablePanelConfig<'a> {
             panel_width: 300.0,
             panel_height: 300.0,
             screen_size: Vec2::new(800.0, 600.0),
+            close_on_outside_click: true,
         }
     }
 
@@ -131,6 +154,12 @@ impl<'a> DraggablePanelConfig<'a> {
     /// Set the screen/viewport size used for centering and clamping.
     pub fn screen_size(mut self, screen_size: Vec2) -> Self {
         self.screen_size = screen_size;
+        self
+    }
+
+    /// Set whether clicking outside the panel closes it.
+    pub fn close_on_outside_click(mut self, value: bool) -> Self {
+        self.close_on_outside_click = value;
         self
     }
 }
@@ -159,6 +188,7 @@ impl DraggablePanel {
             panel_width,
             panel_height,
             screen_size,
+            close_on_outside_click,
         } = config;
 
         if !state.is_visible() {
@@ -278,7 +308,8 @@ impl DraggablePanel {
 
         // Click-outside detection
         let mouse_in_panel = panel_bounds.contains(ui.mouse_pos());
-        let mouse_clicked_outside = !state.dragging
+        let mouse_clicked_outside = close_on_outside_click
+            && !state.dragging
             && !state.visibility.is_just_opened()
             && ui.mouse_clicked(mouse_button::LEFT)
             && !mouse_in_panel;

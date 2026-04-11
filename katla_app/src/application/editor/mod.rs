@@ -521,7 +521,13 @@ pub fn process_editor_actions(app: &mut Application) {
     #[cfg(feature = "mcp")]
     {
         let registry = &app.editor.component_registry;
-        app.editor.mcp_state.poll(&mut app.world, registry);
+        let protected = mcp::ProtectedEntities {
+            camera_entity: app.camera.borrow().entity,
+            gizmo_entity: app.editor.gizmo_state.entity,
+        };
+        app.editor
+            .mcp_state
+            .poll(&mut app.world, registry, &protected);
     }
 
     // Update OS cursor based on UI request

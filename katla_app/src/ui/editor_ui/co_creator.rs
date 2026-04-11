@@ -219,7 +219,8 @@ pub fn draw_co_creator_panel(
         &panel_style,
         DraggablePanelConfig::new("co_creator", "AI Co-Creator")
             .size(400.0, 500.0)
-            .screen_size(screen_size),
+            .screen_size(screen_size)
+            .close_on_outside_click(false),
         |ui, frame| {
             let content_x = frame.panel_bounds.min.x() + 8.0;
             let content_width = frame.panel_bounds.width() - 16.0;

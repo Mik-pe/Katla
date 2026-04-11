@@ -289,6 +289,7 @@ impl EditorUI {
             viewport_bounds.height().max(1.0) as u32,
         );
         self.last_viewport_bounds = viewport_bounds;
+        self.last_screen_size = screen_size;
 
         let grid_response = ui.add(viewport_grid::ViewportGrid::new(
             viewport_bounds,
