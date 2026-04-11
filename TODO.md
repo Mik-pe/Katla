@@ -461,11 +461,7 @@
 
 ~~### 111. `DrawList::add_circle` takes `segments` as a count — should auto-calculate from radius~~ — Fixed in ac55b21. Added add_circle_auto with radius-based segment calculation, updated callers.
 
-### 112. `ClipRect` duplicates `Rect2D` functionality — consider using `Rect2D` directly in `DrawCmd`
-- **Crate:** katla_ui
-- **Files:** `katla_ui/src/types.rs`, `katla_ui/src/draw_list.rs`
-- **Issue:** `ClipRect` has `x, y, width, height` fields and `to_array()`. `Rect2D` has `min, max` with `width()`/`height()` methods. `DrawCmd.clip_rect` is `Option<[f32; 4]>` (a raw array) instead of `Option<Rect2D>`. The conversion chain is: `Rect2D -> ClipRect -> [f32; 4]` but could be simplified to `Rect2D -> [f32; 4]` directly.
-- **Fix:** Remove `ClipRect` struct. Change `DrawCmd.clip_rect` to `Option<Rect2D>` or keep the array but add a `Rect2D::to_clip_array()` method. Remove the `ClipRect` intermediary in `DrawList::finalize()`.
+~~### 112. `ClipRect` duplicates `Rect2D` functionality — consider using `Rect2D` directly in `DrawCmd`~~ — Fixed in ed50fcf. Removed ClipRect, added Rect2D::to_clip_array().
 
 ---
 
@@ -550,7 +546,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **File:** `katla_ui/src/response.rs`
 - **Issue:** `Response` has `clicked` (left click) and `double_clicked` but no `right_clicked`. Every widget that handles right-click (hierarchy items, asset items, entity rows) does `if resp.hovered && ui.mouse_clicked(RIGHT)` manually. Similarly, there's no `drag_started`/`drag_ended` — the `DraggablePanel` and asset browser implement drag detection ad-hoc. A second consumer would need these primitives.
 - **Sub-tasks:**
-  - [ ] 117a. Add `right_clicked: bool`, `middle_clicked: bool` fields to `Response` and populate in `Response::interactive()` (small, low risk)
+  - [x] 117a. Add `right_clicked: bool`, `middle_clicked: bool` fields to `Response` and populate in `Response::interactive()` (small, low risk) — Done in ed50fcf.
   - [ ] 117b. Add `drag_started: bool` and `drag_ended: bool` fields — track via `active_id` transitions and mouse delta threshold in `Response::interactive()` (medium, medium risk)
   - [ ] 117c. Migrate existing manual right-click/drag checks in hierarchy and asset browser to use Response fields (small, low risk)
   - **Recommended order:** 117a → 117b → 117c
@@ -600,11 +596,7 @@ These items identify code that currently lives in katla_app but is generic enoug
       }));
   ```
 
-### 120. Add `panel_header` / `section_header` helper to katla_ui context
-- **Crate:** katla_ui
-- **File:** `katla_ui/src/context/helpers.rs`
-- **Issue:** `helpers.rs` already has `header()` and `section()` but they're minimal — just text + spacing. The inspector and hierarchy panels need a styled header with background color, proper vertical centering, and optional icon/badge. Six panels in the editor build this pattern manually. With #114 (Panel widget) the header is internal, but a standalone `draw_panel_header()` helper for custom panels is still useful.
-- **Fix:** Add `draw_panel_header(ui, bounds, title, icon: Option<char>)` that draws the header background from `style.window_title_bg`, centers text vertically, optionally draws an icon, and returns the content area below.
+~~### 120. Add `panel_header` / `section_header` helper to katla_ui context~~ — Fixed in ed50fcf. Added draw_panel_header, replaced 3 manual patterns.
 
 ### 121. Add `ResizablePanel` / resize handle interaction to katla_ui
 - **Crate:** katla_ui
@@ -674,11 +666,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 
 ~~### 127. `TextInput` Ctrl+Backspace / Ctrl+Delete don't delete whole words~~ — Fixed in ac55b21. Uses prev_word_boundary/next_word_boundary when Ctrl is held.
 
-### 128. `ScrollArea` with `stick_to_bottom` jumps to bottom while user is scrolled up
-- **Crate:** katla_ui
-- **File:** `katla_ui/src/context/widgets/scroll_area.rs`
-- **Issue:** The `stick_to_bottom` logic forces `scroll_offset` to `max_scroll` whenever `content_height > prev_content_height`. This means that if the user scrolls up to read earlier messages, any content height change (streaming token, layout reflow, new message) will snap the view back to the bottom. The scroll jumps unexpectedly and the user can't browse earlier content while new content is arriving. This is especially noticeable in the AI co-creator panel where streaming tokens change content height every frame.
-- **Fix:** Track whether the user was at the bottom *before* the content height change. Only snap to bottom if the user was already scrolled to within a small threshold (e.g. 20px) of `max_scroll` before the content grew. Add an `at_bottom: bool` field to `ScrollAreaState` that gets set to `true` when `scroll_offset >= max_scroll - threshold` after each frame. The `stick_to_bottom` logic should check `state.at_bottom` instead of (or in addition to) `content_height > prev_content_height`. Also consider resetting `at_bottom = true` when the user actively sends a new message (app-level opt-in).
+~~### 128. `ScrollArea` with `stick_to_bottom` jumps to bottom while user is scrolled up~~ — Fixed in ed50fcf. Added at_bottom tracking, only snaps when user was near bottom.
 
 ### 129. AI agent cannot access project resources (scenes, particles, shaders, materials)
 - **Crates:** katla_agent / katla_ecs / katla_app
