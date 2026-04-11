@@ -516,7 +516,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Issue:** UI-15 already identifies this gap. Adding more context: the hierarchy panel, asset browser, and any future list UI all implement the same selectable-item pattern manually: check hover, draw selection bg, handle click, handle right-click. A generic `Selectable` widget that handles highlight-on-hover, click, right-click, selected state, and drag detection would eliminate hundreds of lines of ad-hoc interaction code across the editor.
 - **Sub-tasks:**
   - [x] ~~116a. Add `right_clicked` and `middle_clicked` to `Response`~~ — Already done in ed50fcf (as part of 117a).
-  - [ ] 116b. Add `Selectable` builder widget with `bounds()`, `selected()`, `interactive()` that draws selection bg from `style.selectable_*` and returns a `Response` with click/right-click (medium, low risk)
+  - [x] ~~116b. Add `Selectable` builder widget~~ — Done in c7e8286. Draws selection/hover bg, returns Response with click/right-click.
   - [ ] 116c. Migrate hierarchy entity items to `Selectable` widget as proof of concept (medium, low risk)
   - **Recommended order:** 116a → 116b → 116c
 - **Fix:** Add `Selectable` widget:
@@ -612,7 +612,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Crate:** katla_ui
 - **Issue:** Every panel in the editor (hierarchy, inspector, asset browser, viewport) checks `if ui.is_hovered(bounds) && (mouse_down[LEFT] || mouse_down[RIGHT] || mouse_down[MIDDLE]) { *focused_panel = FocusedPanel::X; }` on every frame. This is the same 5-line pattern repeated 5 times. A second app with panels would need it. The focus tracking itself (`FocusedPanel` enum) is app-specific, but the hover-click detection and focus ring drawing could be provided by the UI layer.
 - **Sub-tasks:**
-  - [ ] 124a. Add `panel_regions: Vec<(u64, Rect2D)>` to `UiContext`, add `register_panel(id, bounds)` method and `focused_panel() -> Option<u64>` query (small, low risk)
+  - [x] ~~124a. Add `panel_regions`, `register_panel()`, `focused_panel()`~~ — Done in c7e8286. Focus detected on mouse click in end().
   - [ ] 124b. In `end()`, detect which registered panel received a click and store its ID as the focused panel (small, low risk)
   - [ ] 124c. Migrate the 5 manual focus checks in `layout.rs` panels to `register_panel()` + `focused_panel()` (small, low risk)
   - **Recommended order:** 124a → 124b → 124c
@@ -621,7 +621,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Crate:** katla_ui
 - **Issue:** UI-19 identifies the need for a Tree widget. Adding implementation context from the hierarchy: the hierarchy panel manually handles indentation (depth * 16.0px), tree guide lines, expand/collapse icons, child visibility filtering via `is_entity_visible()`, and depth-aware click targets. A `TreeNode` widget would handle all of this generically, leaving the app to provide only the data (name, icon, depth, has_children, is_expanded).
 - **Sub-tasks:**
-  - [ ] 125a. Add `TreeItem` data struct and `TreeState` (expanded set, selected ID, scroll state) to katla_ui (small, low risk)
+  - [x] ~~125a. Add `TreeItem` data struct and `TreeState`~~ — Done in c7e8286. TreeItem with id/label/depth/has_children, TreeState with expanded set and scroll offset.
   - [ ] 125b. Add `TreeView` builder with `data()`, `expanded()`, `selected()`, `indent_per_level()`, `row_height()`, virtualizes rendering via `ListView`-style scroll offset calculation (large, medium risk)
   - [ ] 125c. Add expand/collapse toggle rendering (chevron icon + click handling that updates the expanded set) (medium, low risk)
   - [ ] 125d. Add selection highlight, keyboard navigation (arrow up/down, left/right for expand/collapse), and tree guide lines (medium, low risk)
