@@ -15,7 +15,7 @@
 //!   UIDrawList { VertexUI, indices, UiDrawCommand }
 //! ```
 
-use katla_math::{Rect2D, Vec2};
+use katla_math::Vec2;
 
 /// Opaque texture identifier.
 ///
@@ -129,44 +129,5 @@ impl DrawCmd {
 impl Default for DrawCmd {
     fn default() -> Self {
         Self::new(0, 0, None, TextureId::NONE)
-    }
-}
-
-/// A rect for clipping (convenience type).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ClipRect {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-}
-
-impl ClipRect {
-    /// Create a new clip rect.
-    #[inline]
-    pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
-    }
-
-    /// Convert to array format for GPU.
-    #[inline]
-    pub const fn to_array(&self) -> [f32; 4] {
-        [self.x, self.y, self.width, self.height]
-    }
-
-    /// Create from Rect2D.
-    #[inline]
-    pub fn from_rect(rect: &Rect2D) -> Self {
-        Self {
-            x: rect.min.x(),
-            y: rect.min.y(),
-            width: rect.width(),
-            height: rect.height(),
-        }
     }
 }

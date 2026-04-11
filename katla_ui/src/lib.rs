@@ -63,5 +63,5 @@ pub use input::{KeyCode, MouseCursor, UiInputState, mouse_button};
 pub use response::Response;
 pub use style::{DEFAULTS, FontSize, UiStyle};
 pub use text::FontId;
-pub use types::{ClipRect, DrawCmd, TextureId, Vertex};
+pub use types::{DrawCmd, TextureId, Vertex};
 pub use widget::{ClipboardProvider, Widget};

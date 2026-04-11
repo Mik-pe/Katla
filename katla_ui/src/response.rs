@@ -39,6 +39,10 @@ pub struct Response {
     pub drag_delta: Vec2,
     /// Whether this was a double-click.
     pub double_clicked: bool,
+    /// Widget was right-clicked this frame.
+    pub right_clicked: bool,
+    /// Widget was middle-clicked this frame.
+    pub middle_clicked: bool,
 }
 
 impl Response {
@@ -53,6 +57,8 @@ impl Response {
             bounds,
             drag_delta: Vec2::new(0.0, 0.0),
             double_clicked: false,
+            right_clicked: false,
+            middle_clicked: false,
         }
     }
 
@@ -67,6 +73,8 @@ impl Response {
             bounds,
             drag_delta: Vec2::new(0.0, 0.0),
             double_clicked: false,
+            right_clicked: false,
+            middle_clicked: false,
         }
     }
 
@@ -81,6 +89,8 @@ impl Response {
             bounds,
             drag_delta: Vec2::new(0.0, 0.0),
             double_clicked: false,
+            right_clicked: false,
+            middle_clicked: false,
         }
     }
 
@@ -95,6 +105,8 @@ impl Response {
             bounds,
             drag_delta: Vec2::new(0.0, 0.0),
             double_clicked: false,
+            right_clicked: false,
+            middle_clicked: false,
         }
     }
 
@@ -126,6 +138,8 @@ impl Response {
             bounds: self.bounds.union(&other.bounds),
             drag_delta: self.drag_delta + other.drag_delta,
             double_clicked: self.double_clicked || other.double_clicked,
+            right_clicked: self.right_clicked || other.right_clicked,
+            middle_clicked: self.middle_clicked || other.middle_clicked,
         }
     }
 
@@ -147,6 +161,8 @@ impl Response {
         input: &UiInputState,
     ) -> Self {
         let double_clicked = clicked && input.mouse_double_clicked(mouse_button::LEFT);
+        let right_clicked = hovered && input.mouse_pressed[mouse_button::RIGHT];
+        let middle_clicked = hovered && input.mouse_pressed[mouse_button::MIDDLE];
         let drag_delta = if active {
             input.mouse_delta
         } else {
@@ -162,6 +178,8 @@ impl Response {
             bounds,
             drag_delta,
             double_clicked,
+            right_clicked,
+            middle_clicked,
         }
     }
 }
