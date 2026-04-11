@@ -419,11 +419,7 @@
 
 ~~### 99. `DraggablePanel::show` calls `push_z_index`/`pop_z_index` manually instead of using `z_guard` or `with_z_index`~~ — Fixed. Restructured to use `ui.with_z_index()` with close/outside-click handling after the block.
 
-### 100. `begin_window`/`end_window` has no RAII guard — clip leak on early return
-- **Crate:** katla_ui
-- **File:** `katla_ui/src/context/widgets/container.rs`
-- **Issue:** `begin_window()` calls `push_clip()` but relies on the user calling `end_window()` for `pop_clip()`. If code between begin/end returns early or panics, the clip stack is corrupted. Every other push/pop pattern in the codebase (z_index, layout) has RAII guards.
-- **Fix:** Return a `WindowGuard` struct from `begin_window()` that implements `Drop` and calls `pop_clip()`. The guard provides `content_cursor()` and `bounds()` accessors.
+~~### 100. `begin_window`/`end_window` has no RAII guard — clip leak on early return~~ — Fixed in f762059. Added WindowGuard (RAII) and with_window (closure) APIs.
 
 ~~### 101. `scroll_area` scrollbar width hardcoded to `10.0` in two places~~ — Fixed. Added `scrollbar_width: f32` to `UiStyle`, replaced all hardcoded values.
 
@@ -451,11 +447,7 @@
   - [ ] 104c. Add `UiContext::fonts_arc()` to clone the Arc for sharing across multiple contexts (small, low risk)
   - **Recommended order:** 104a → 104b → 104c
 
-### 105. `MarkdownColors` is not derived from the current `UiStyle`/`Theme`
-- **Crate:** katla_ui
-- **File:** `katla_ui/src/markdown.rs`
-- **Issue:** `MarkdownColors::defaults()` uses hardcoded blue/green colors that don't match any theme. When the user switches to Nord or Tokyo Night, markdown text still uses the same blue accent. `draw_markdown_segments` requires passing colors explicitly instead of reading from the style.
-- **Fix:** Add `MarkdownColors::from_style(style: &UiStyle)` that derives bold/code/header/bullet colors from the style's accent colors (e.g., `input_border_focused` for bold, `slider_grab` for code text, `text_color` for headers). Update callers to use it.
+~~### 105. `MarkdownColors` is not derived from the current `UiStyle`/`Theme`~~ — Fixed in f762059. Added MarkdownColors::from_style(), removed manual construction in co-creator.
 
 ~~### 106. `draw_icon_label` hardcoded spacing `4.0` between icon and text~~ — Fixed. Now uses `self.style.item_inner_spacing`.
 
@@ -465,11 +457,7 @@
 
 ~~### 109. `begin_grid`/`end_grid` doesn't restore cursor X position correctly~~ — Fixed in ac55b21. end_grid now updates row_height with total grid height.
 
-### 110. `separator_line()` in helpers reads clip rect for width — fragile with nested clips
-- **Crate:** katla_ui
-- **File:** `katla_ui/src/context/helpers.rs`
-- **Issue:** `separator_line()` uses `clip.min.x()` and `clip.max.x()` to determine line endpoints. If called inside a scroll area or popup, the clip rect is the scroll content area, which may be much larger than the intended panel width. The separator line extends across the entire clip region, potentially overflowing the visual panel boundary.
-- **Fix:** Accept an explicit `width` parameter or use `available_width()` (if UI-07 is implemented). Alternatively, track the "content width" set by the current container (window/panel) and use that instead of clip rect.
+~~### 110. `separator_line()` in helpers reads clip rect for width — fragile with nested clips~~ — Fixed in f762059. Uses cursor position and style.window_padding/separator_height.
 
 ~~### 111. `DrawList::add_circle` takes `segments` as a count — should auto-calculate from radius~~ — Fixed in ac55b21. Added add_circle_auto with radius-based segment calculation, updated callers.
 
@@ -637,10 +625,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 
 ~~### 122. Add `truncate_text` utility to katla_ui~~ — Fixed in ac55b21. Added UiContext::truncate_text with binary search, removed local function from asset_browser.
 
-### 123. Add `draw_empty_state` / centered placeholder text to katla_ui
-- **Crate:** katla_ui
-- **Issue:** Four places in the editor draw centered "No entities in scene" / "No assets found" / "No matching assets" / "No entity selected" text. All follow the same pattern: `measure_text`, compute center, `draw_text` with `text_muted` color. This is a universal empty-state pattern.
-- **Fix:** Add `ui.draw_empty_state(bounds, "No items found")` that measures, centers, and draws with `style.text_disabled`.
+~~### 123. Add `draw_empty_state` / centered placeholder text to katla_ui~~ — Fixed in f762059. Added UiContext::draw_empty_state, replaced 4 manual patterns.
 
 ### 124. Add `FocusablePanel` / panel focus tracking to katla_ui
 - **Crate:** katla_ui
