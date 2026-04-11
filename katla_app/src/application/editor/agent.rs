@@ -344,12 +344,21 @@ const RESOURCE_TOOL_NAMES: &[&str] = &[
     "read_resource",
     "write_resource",
     "create_resource",
+    "generate_resource",
 ];
 
 /// Execute a single tool call against the ECS world.
 fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
     if tool_call.name == "spawn_model" {
         return execute_spawn_model(app, tool_call);
+    }
+
+    if tool_call.name == "load_scene" {
+        return execute_load_scene(app, tool_call);
+    }
+
+    if tool_call.name == "save_scene" {
+        return execute_save_scene(app, tool_call);
     }
 
     if RESOURCE_TOOL_NAMES.contains(&tool_call.name.as_str()) {
@@ -645,7 +654,8 @@ fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
 
 fn tool_call_to_resource_op(tool_call: &ToolCall) -> Result<ResourceOp, String> {
     use katla_agent::co_creator::{
-        CreateResourceArgs, ListResourcesArgs, ReadResourceArgs, WriteResourceArgs,
+        CreateResourceArgs, GenerateResourceArgs, ListResourcesArgs, ReadResourceArgs,
+        WriteResourceArgs,
     };
 
     match tool_call.name.as_str() {
@@ -679,6 +689,15 @@ fn tool_call_to_resource_op(tool_call: &ToolCall) -> Result<ResourceOp, String> 
                 content: args.content,
             })
         }
+        "generate_resource" => {
+            let args: GenerateResourceArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid generate_resource args: {e}"))?;
+            Ok(ResourceOp::GenerateResource {
+                path: args.path,
+                resource_type: args.resource_type,
+                description: args.description,
+            })
+        }
         _ => Err(format!("Unknown resource tool: {}", tool_call.name)),
     }
 }
@@ -708,6 +727,54 @@ fn execute_spawn_model(app: &mut super::super::Application, tool_call: &ToolCall
     }
 }
 
+fn execute_load_scene(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
+    use katla_agent::co_creator::LoadSceneArgs;
+
+    let args: LoadSceneArgs = match serde_json::from_value(tool_call.arguments.clone()) {
+        Ok(a) => a,
+        Err(e) => return format!("Error: invalid load_scene args: {e}"),
+    };
+
+    let path = std::path::Path::new(&args.path);
+    match crate::scene::SceneManager::load_from_file(app, path) {
+        Ok(()) => {
+            app.editor.editor_ui.selected_entity = None;
+            let json = serde_json::json!({
+                "success": true,
+                "message": format!("Scene loaded from '{}'", args.path),
+            });
+            serde_json::to_string(&json)
+                .unwrap_or_else(|_| format!("Scene loaded from '{}'", args.path))
+        }
+        Err(e) => format!("Error: failed to load scene '{}': {}", args.path, e),
+    }
+}
+
+fn execute_save_scene(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
+    use katla_agent::co_creator::SaveSceneArgs;
+
+    let args: SaveSceneArgs = match serde_json::from_value(tool_call.arguments.clone()) {
+        Ok(a) => a,
+        Err(e) => return format!("Error: invalid save_scene args: {e}"),
+    };
+
+    let path_str = args
+        .path
+        .unwrap_or_else(|| crate::scene::DEFAULT_SCENE_PATH.to_string());
+    let path = std::path::Path::new(&path_str);
+    match crate::scene::SceneManager::save_to_file(app, path) {
+        Ok(()) => {
+            let json = serde_json::json!({
+                "success": true,
+                "message": format!("Scene saved to '{}'", path_str),
+            });
+            serde_json::to_string(&json)
+                .unwrap_or_else(|_| format!("Scene saved to '{}'", path_str))
+        }
+        Err(e) => format!("Error: failed to save scene '{}': {}", path_str, e),
+    }
+}
+
 fn execute_resource_op(app: &super::super::Application, op: ResourceOp) -> String {
     match op {
         ResourceOp::ListResources { path, filter } => {
@@ -723,6 +790,11 @@ fn execute_resource_op(app: &super::super::Application, op: ResourceOp) -> Strin
         ResourceOp::DeleteResource { .. } => {
             "Error: delete_resource not yet implemented".to_string()
         }
+        ResourceOp::GenerateResource {
+            path,
+            resource_type,
+            description,
+        } => execute_generate_resource(app, &path, &resource_type, &description),
     }
 }
 
@@ -921,6 +993,293 @@ fn generate_template_content(template: &str) -> String {
     }
 }
 
+fn execute_generate_resource(
+    app: &super::super::Application,
+    path: &str,
+    resource_type: &str,
+    description: &str,
+) -> String {
+    let project_root = resolve_project_root(app);
+    let file_path = match sandbox_path(&project_root, path) {
+        Ok(p) => p,
+        Err(e) => return format!("Error: {e}"),
+    };
+
+    if file_path.exists() {
+        return format!("Error: file already exists: {path} (use write_resource to modify)");
+    }
+
+    let body = generate_resource_content(resource_type, description);
+
+    if let Some(parent) = file_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            return format!("Error creating parent directory: {e}");
+        }
+    }
+
+    match std::fs::write(&file_path, &body) {
+        Ok(()) => {
+            let json = serde_json::json!({
+                "success": true,
+                "message": format!("Generated {path} as {resource_type} ({} bytes)", body.len()),
+                "path": path,
+                "resource_type": resource_type,
+            });
+            serde_json::to_string(&json).unwrap()
+        }
+        Err(e) => format!("Error creating file: {e}"),
+    }
+}
+
+fn generate_resource_content(resource_type: &str, description: &str) -> String {
+    match resource_type {
+        "particle_system" => generate_particle_system(description),
+        "material" => generate_material(description),
+        "scene" => generate_scene(description),
+        _ => serde_json::json!({
+            "version": 1,
+            "description": description
+        })
+        .to_string(),
+    }
+}
+
+fn generate_particle_system(description: &str) -> String {
+    let desc = description.to_lowercase();
+
+    let (
+        rate,
+        lifetime_min,
+        lifetime_max,
+        vel_x,
+        vel_y,
+        vel_z,
+        color_start,
+        color_end,
+        size_start,
+        size_end,
+    ) = if desc.contains("fire") || desc.contains("flame") || desc.contains("campfire") {
+        (
+            150.0,
+            0.3,
+            1.5,
+            0.0,
+            3.0,
+            0.0,
+            [1.0, 0.3, 0.0],
+            [1.0, 0.8, 0.0],
+            0.15,
+            0.02,
+        )
+    } else if desc.contains("rain") {
+        (
+            500.0,
+            0.3,
+            0.8,
+            0.0,
+            -8.0,
+            0.0,
+            [0.5, 0.6, 0.8],
+            [0.3, 0.4, 0.7],
+            0.02,
+            0.01,
+        )
+    } else if desc.contains("snow") {
+        (
+            80.0,
+            2.0,
+            5.0,
+            0.1,
+            -1.0,
+            0.1,
+            [0.95, 0.95, 1.0],
+            [0.8, 0.8, 0.9],
+            0.05,
+            0.03,
+        )
+    } else if desc.contains("spark") || desc.contains("sparkle") || desc.contains("firework") {
+        (
+            200.0,
+            0.2,
+            0.8,
+            0.0,
+            2.0,
+            0.0,
+            [1.0, 1.0, 0.5],
+            [1.0, 0.5, 0.0],
+            0.04,
+            0.01,
+        )
+    } else if desc.contains("smoke") || desc.contains("steam") {
+        (
+            40.0,
+            1.0,
+            4.0,
+            0.0,
+            1.5,
+            0.0,
+            [0.5, 0.5, 0.5],
+            [0.3, 0.3, 0.3],
+            0.3,
+            0.8,
+        )
+    } else if desc.contains("dust") || desc.contains("sand") {
+        (
+            60.0,
+            1.0,
+            3.0,
+            0.2,
+            0.3,
+            0.2,
+            [0.8, 0.7, 0.5],
+            [0.6, 0.5, 0.3],
+            0.03,
+            0.06,
+        )
+    } else if desc.contains("magic") || desc.contains("enchant") || desc.contains("mystic") {
+        (
+            120.0,
+            0.5,
+            2.0,
+            0.0,
+            2.0,
+            0.0,
+            [0.5, 0.0, 1.0],
+            [0.0, 0.5, 1.0],
+            0.08,
+            0.02,
+        )
+    } else if desc.contains("explosion") || desc.contains("burst") {
+        (
+            300.0,
+            0.1,
+            0.6,
+            0.0,
+            0.0,
+            0.0,
+            [1.0, 0.6, 0.0],
+            [0.5, 0.1, 0.0],
+            0.2,
+            0.02,
+        )
+    } else {
+        (
+            100.0,
+            0.5,
+            2.0,
+            0.0,
+            1.0,
+            0.0,
+            [1.0, 1.0, 1.0],
+            [0.5, 0.5, 0.5],
+            0.1,
+            0.02,
+        )
+    };
+
+    serde_json::json!({
+        "version": 1,
+        "emitter": {
+            "rate": rate,
+            "lifetime": [lifetime_min, lifetime_max],
+            "velocity": [vel_x, vel_y, vel_z],
+        },
+        "appearance": {
+            "color_start": color_start,
+            "color_end": color_end,
+            "size_start": size_start,
+            "size_end": size_end,
+        }
+    })
+    .to_string()
+}
+
+fn generate_material(description: &str) -> String {
+    let desc = description.to_lowercase();
+
+    let (base_color, metallic, roughness, emissive) =
+        if desc.contains("gold") || desc.contains("brass") {
+            ([1.0, 0.84, 0.0], 0.9, 0.2, [0.0, 0.0, 0.0])
+        } else if desc.contains("metal") || desc.contains("steel") || desc.contains("iron") {
+            ([0.7, 0.7, 0.75], 1.0, 0.3, [0.0, 0.0, 0.0])
+        } else if desc.contains("chrome") || desc.contains("mirror") {
+            ([0.9, 0.9, 0.9], 1.0, 0.05, [0.0, 0.0, 0.0])
+        } else if desc.contains("rubber") || desc.contains("plastic") {
+            ([0.3, 0.3, 0.3], 0.0, 0.9, [0.0, 0.0, 0.0])
+        } else if desc.contains("wood") {
+            ([0.6, 0.4, 0.2], 0.0, 0.8, [0.0, 0.0, 0.0])
+        } else if desc.contains("glass") || desc.contains("crystal") {
+            ([0.9, 0.95, 1.0], 0.1, 0.1, [0.1, 0.1, 0.15])
+        } else if desc.contains("neon")
+            || desc.contains("glow")
+            || desc.contains("emissive")
+            || desc.contains("luminous")
+        {
+            (
+                [0.2, 0.2, 0.2],
+                0.0,
+                0.5,
+                if desc.contains("red") {
+                    [2.0, 0.0, 0.0]
+                } else if desc.contains("green") {
+                    [0.0, 2.0, 0.0]
+                } else if desc.contains("blue") {
+                    [0.0, 0.0, 2.0]
+                } else if desc.contains("pink") || desc.contains("magenta") {
+                    [2.0, 0.0, 1.0]
+                } else {
+                    [0.0, 2.0, 1.0]
+                },
+            )
+        } else if desc.contains("red") {
+            ([0.8, 0.1, 0.1], 0.0, 0.5, [0.0, 0.0, 0.0])
+        } else if desc.contains("blue") {
+            ([0.1, 0.2, 0.8], 0.0, 0.5, [0.0, 0.0, 0.0])
+        } else if desc.contains("green") {
+            ([0.1, 0.6, 0.1], 0.0, 0.5, [0.0, 0.0, 0.0])
+        } else if desc.contains("stone") || desc.contains("concrete") || desc.contains("rock") {
+            ([0.5, 0.5, 0.5], 0.0, 0.95, [0.0, 0.0, 0.0])
+        } else {
+            ([0.8, 0.8, 0.8], 0.0, 0.5, [0.0, 0.0, 0.0])
+        };
+
+    serde_json::json!({
+        "version": 1,
+        "shader": "pbr",
+        "properties": {
+            "base_color": base_color,
+            "metallic": metallic,
+            "roughness": roughness,
+            "emissive": emissive,
+        }
+    })
+    .to_string()
+}
+
+fn generate_scene(description: &str) -> String {
+    let desc = description.to_lowercase();
+
+    let (ambient_color, ambient_intensity) = if desc.contains("night") || desc.contains("dark") {
+        ([0.05, 0.05, 0.1], 0.1)
+    } else if desc.contains("sunset") || desc.contains("dawn") {
+        ([0.8, 0.4, 0.2], 0.4)
+    } else if desc.contains("indoor") || desc.contains("interior") {
+        ([0.9, 0.85, 0.7], 0.3)
+    } else {
+        ([0.9, 0.95, 1.0], 0.5)
+    };
+
+    serde_json::json!({
+        "version": 1,
+        "settings": {
+            "ambient_color": ambient_color,
+            "ambient_intensity": ambient_intensity,
+        },
+        "entities": []
+    })
+    .to_string()
+}
+
 fn format_tool_call_summary(tc: &ToolCall) -> String {
     use katla_agent::co_creator::{DestroyEntityArgs, DuplicateEntityArgs, SpawnEntityArgs};
 
@@ -1049,6 +1408,35 @@ fn format_tool_call_summary(tc: &ToolCall) -> String {
                 .and_then(|v| v.as_str())
                 .unwrap_or("?");
             format!("Spawn model {path}")
+        }
+        "load_scene" => {
+            let path = tc
+                .arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            format!("Load scene {path}")
+        }
+        "save_scene" => {
+            let path = tc
+                .arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("default");
+            format!("Save scene to {path}")
+        }
+        "generate_resource" => {
+            let rtype = tc
+                .arguments
+                .get("resource_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let path = tc
+                .arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            format!("Generate {rtype} -> {path}")
         }
         _ => tc.name.clone(),
     }

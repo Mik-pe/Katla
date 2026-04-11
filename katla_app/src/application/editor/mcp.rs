@@ -24,7 +24,7 @@ impl McpState {
 
     pub(crate) fn poll(
         &mut self,
-        world: &mut katla_ecs::World,
+        app: &mut crate::application::Application,
         registry: &ComponentRegistry,
         protected: &ProtectedEntities,
     ) {
@@ -36,15 +36,54 @@ impl McpState {
                         McpResponse { result: Err(msg) }
                     } else {
                         if let SceneOp::DestroyEntity { entity } = &scene_op {
-                            cleanup_entity_hierarchy_world(world, *entity);
+                            cleanup_entity_hierarchy_world(&mut app.world, *entity);
                         }
-                        execute_scene_op(scene_op, world, registry)
+                        execute_scene_op(scene_op, &mut app.world, registry)
                     }
                 }
                 McpOpKind::Resource(resource_op) => execute_resource_op(resource_op),
+                McpOpKind::LoadScene { path } => execute_load_scene(app, &path),
+                McpOpKind::SaveScene { path } => execute_save_scene(app, path.as_deref()),
             };
             let _ = req.response_tx.send(response);
         }
+    }
+}
+
+fn execute_load_scene(app: &mut crate::application::Application, path: &str) -> McpResponse {
+    let file_path = std::path::Path::new(path);
+    match crate::scene::SceneManager::load_from_file(app, file_path) {
+        Ok(()) => {
+            app.editor.editor_ui.selected_entity = None;
+            McpResponse {
+                result: Ok(serde_json::json!({
+                    "success": true,
+                    "message": format!("Scene loaded from '{path}'"),
+                })),
+            }
+        }
+        Err(e) => McpResponse {
+            result: Err(format!("Failed to load scene '{path}': {e}")),
+        },
+    }
+}
+
+fn execute_save_scene(
+    app: &mut crate::application::Application,
+    path: Option<&str>,
+) -> McpResponse {
+    let path_str = path.unwrap_or(crate::scene::DEFAULT_SCENE_PATH).to_string();
+    let file_path = std::path::Path::new(&path_str);
+    match crate::scene::SceneManager::save_to_file(app, file_path) {
+        Ok(()) => McpResponse {
+            result: Ok(serde_json::json!({
+                "success": true,
+                "message": format!("Scene saved to '{path_str}'"),
+            })),
+        },
+        Err(e) => McpResponse {
+            result: Err(format!("Failed to save scene '{path_str}': {e}")),
+        },
     }
 }
 

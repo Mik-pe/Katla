@@ -16,6 +16,9 @@ mod popup;
 mod widgets;
 pub mod z_index;
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use katla_math::{Color, Rect2D, Vec2};
 
 use crate::draw_list::DrawList;
@@ -140,8 +143,8 @@ pub struct UiContext {
     pub(crate) input: UiInputState,
     /// Style configuration.
     pub(crate) style: UiStyle,
-    /// Font system for text rendering.
-    pub(crate) fonts: FontSystem,
+    /// Font system for text rendering (shared via Rc<RefCell<>>).
+    pub(crate) fonts: Rc<RefCell<FontSystem>>,
     /// Currently active font.
     pub(crate) current_font: FontId,
     /// Current screen size (logical pixels).
@@ -234,7 +237,7 @@ impl UiContext {
             draw_list: DrawList::new(),
             input: UiInputState::new(),
             style: UiStyle::dark(),
-            fonts: FontSystem::new(),
+            fonts: Rc::new(RefCell::new(FontSystem::new())),
             current_font: FontId::DEFAULT,
             screen_size: Vec2::new(0.0, 0.0),
             scale_factor: 1.0,
@@ -285,6 +288,14 @@ impl UiContext {
         }
     }
 
+    /// Create a new UI context sharing an existing font system.
+    pub fn with_shared_fonts(fonts: Rc<RefCell<FontSystem>>) -> Self {
+        Self {
+            fonts,
+            ..Self::new()
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Field Accessors
     // -------------------------------------------------------------------------
@@ -310,13 +321,18 @@ impl UiContext {
     }
 
     /// Access the font system.
-    pub fn fonts(&self) -> &FontSystem {
-        &self.fonts
+    pub fn fonts(&self) -> std::cell::Ref<'_, FontSystem> {
+        self.fonts.borrow()
     }
 
     /// Access the font system mutably.
-    pub fn fonts_mut(&mut self) -> &mut FontSystem {
-        &mut self.fonts
+    pub fn fonts_mut(&self) -> std::cell::RefMut<'_, FontSystem> {
+        self.fonts.borrow_mut()
+    }
+
+    /// Clone the shared font system handle.
+    pub fn fonts_rc(&self) -> Rc<RefCell<FontSystem>> {
+        Rc::clone(&self.fonts)
     }
 
     /// Set the clipboard provider for copy/cut/paste operations.

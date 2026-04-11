@@ -222,26 +222,39 @@ impl SceneCommand for EditorSpawnCommand {
 /// into the CPU atlas) and BEFORE `render_frame()` (which samples from the GPU atlas).
 /// Calling it after render_frame causes a one-frame lag where the GPU has stale data.
 pub fn upload_font_atlas(app: &mut Application) {
-    if app.ui_context.fonts().atlas_needs_update() {
-        let (width, height) = app.ui_context.fonts().atlas_size();
-        let data = app.ui_context.fonts().atlas_data();
-
-        if app.ui_context.fonts().atlas_was_resized() {
-            app.renderer.create_ui_font_atlas(width, height, data);
-
-            if let Some(bindless_slot) = app.renderer.ui_renderer.font_atlas_bindless_slot() {
-                app.editor
-                    .ui_renderer
-                    .set_font_atlas_bindless_slot(bindless_slot);
-            }
-
-            app.ui_context.fonts_mut().clear_atlas_resized();
+    let (needs_update, width, height, was_resized) = {
+        let fonts = app.ui_context.fonts();
+        let needs_update = fonts.atlas_needs_update();
+        if !needs_update {
+            (false, 0, 0, false)
         } else {
-            app.renderer.update_ui_font_atlas(width, height, data);
+            let (w, h) = fonts.atlas_size();
+            let resized = fonts.atlas_was_resized();
+            (true, w, h, resized)
+        }
+    };
+
+    if !needs_update {
+        return;
+    }
+
+    let data = app.ui_context.fonts().atlas_data().to_vec();
+
+    if was_resized {
+        app.renderer.create_ui_font_atlas(width, height, &data);
+
+        if let Some(bindless_slot) = app.renderer.ui_renderer.font_atlas_bindless_slot() {
+            app.editor
+                .ui_renderer
+                .set_font_atlas_bindless_slot(bindless_slot);
         }
 
-        app.ui_context.fonts_mut().mark_atlas_updated();
+        app.ui_context.fonts_mut().clear_atlas_resized();
+    } else {
+        app.renderer.update_ui_font_atlas(width, height, &data);
     }
+
+    app.ui_context.fonts_mut().mark_atlas_updated();
 }
 
 /// Generate UI draw list for the current frame.
@@ -940,9 +953,7 @@ pub fn process_editor_actions(app: &mut Application) {
             camera_entity: app.camera.borrow().entity,
             gizmo_entity: app.editor.gizmo_state.entity,
         };
-        app.editor
-            .mcp_state
-            .poll(&mut app.world, registry, &protected);
+        app.editor.mcp_state.poll(app, registry, &protected);
     }
 
     // Update OS cursor based on UI request

@@ -25,6 +25,8 @@ pub struct PendingMcpRequest {
 pub enum McpOpKind {
     Scene(SceneOp),
     Resource(ResourceOp),
+    LoadScene { path: String },
+    SaveScene { path: Option<String> },
 }
 
 #[derive(Debug, Clone)]
@@ -89,6 +91,12 @@ pub enum McpOp {
         path: String,
         position: [f32; 3],
         default_animation: Option<String>,
+    },
+    LoadScene {
+        path: String,
+    },
+    SaveScene {
+        path: Option<String>,
     },
 }
 
@@ -192,6 +200,8 @@ impl McpOp {
                 position,
                 default_animation,
             }),
+            Self::LoadScene { path } => McpOpKind::LoadScene { path },
+            Self::SaveScene { path } => McpOpKind::SaveScene { path },
         }
     }
 }
@@ -366,6 +376,17 @@ struct SpawnModelParams {
     position: Option<[f32; 3]>,
     #[serde(default)]
     default_animation: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct LoadSceneParams {
+    path: String,
+}
+
+#[derive(Deserialize, JsonSchema, Default)]
+struct SaveSceneParams {
+    #[serde(default)]
+    path: Option<String>,
 }
 
 #[rmcp::tool_router]
@@ -583,6 +604,30 @@ impl KatlaMcpServer {
             position: params.position.unwrap_or([0.0, 0.0, 0.0]),
             default_animation: params.default_animation,
         };
+        self.forward_op(op).await
+    }
+
+    #[rmcp::tool(
+        name = "load_scene",
+        description = "Load a scene from a .katla file, replacing all entities in the current scene"
+    )]
+    async fn load_scene(
+        &self,
+        Parameters(params): Parameters<LoadSceneParams>,
+    ) -> Json<McpToolResult> {
+        let op = McpOp::LoadScene { path: params.path };
+        self.forward_op(op).await
+    }
+
+    #[rmcp::tool(
+        name = "save_scene",
+        description = "Save the current scene to a .katla file"
+    )]
+    async fn save_scene(
+        &self,
+        Parameters(params): Parameters<SaveSceneParams>,
+    ) -> Json<McpToolResult> {
+        let op = McpOp::SaveScene { path: params.path };
         self.forward_op(op).await
     }
 }

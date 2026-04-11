@@ -626,7 +626,8 @@ impl ApplicationBuilder {
         if font_path.exists() {
             match std::fs::read(&font_path) {
                 Ok(font_bytes) => {
-                    match ui_context.fonts_mut().add_font(&font_bytes) {
+                    let font_result = ui_context.fonts_mut().add_font(&font_bytes);
+                    match font_result {
                         Ok(font_id) => {
                             // Precache common ASCII characters at typical UI sizes
                             // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
@@ -713,10 +714,16 @@ impl ApplicationBuilder {
         let mut renderer = Self::init_renderer(&event_loop, &window, &info, &resources);
 
         // Upload initial font atlas texture to GPU
-        let (atlas_width, atlas_height) = ui_context.fonts().atlas_size();
-        let atlas_data = ui_context.fonts().atlas_data();
-        let font_atlas_handle =
-            renderer.create_ui_font_atlas(atlas_width, atlas_height, atlas_data);
+        let (font_atlas_handle, atlas_width, atlas_height) = {
+            let fonts = ui_context.fonts();
+            let (atlas_width, atlas_height) = fonts.atlas_size();
+            let atlas_data = fonts.atlas_data();
+            (
+                renderer.create_ui_font_atlas(atlas_width, atlas_height, atlas_data),
+                atlas_width,
+                atlas_height,
+            )
+        };
 
         log::info!(
             "Uploaded font atlas texture: {}x{}, handle={:?}, handle_index={}",
