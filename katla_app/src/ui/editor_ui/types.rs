@@ -138,14 +138,3 @@ pub enum FocusedPanel {
     /// Asset browser panel.
     AssetBrowser,
 }
-
-/// Panel resize edge for dragging.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PanelResizeEdge {
-    /// Left panel right edge.
-    LeftPanelRight,
-    /// Right panel left edge.
-    RightPanelLeft,
-    /// Asset browser top edge.
-    AssetBrowserTop,
-}

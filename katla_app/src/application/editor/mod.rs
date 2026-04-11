@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use log::info;
 
 use katla_ecs::EntityId;
+use katla_ecs::scene_tool::{SceneCommand, SceneOp, SceneToolError, UndoGroup};
 use katla_gfx::renderer::UIDrawList;
 use katla_math::{Vec2, Vec3, Vec4};
 
@@ -21,6 +22,40 @@ use crate::components::{
 use crate::ui::{EditorAction, EntityInfo, ParticleEmitterInfo, PointLightInfo};
 
 use super::Application;
+
+/// Command that reverses a spawn by destroying the entity.
+/// Undo re-creates the entity (no component restoration for editor spawns).
+struct EditorSpawnCommand {
+    entity: EntityId,
+}
+
+impl EditorSpawnCommand {
+    fn new(entity: EntityId) -> Self {
+        Self { entity }
+    }
+}
+
+impl SceneCommand for EditorSpawnCommand {
+    fn execute(&mut self, world: &mut katla_ecs::World) -> Result<(), SceneToolError> {
+        if world.entity_exists(self.entity) {
+            world.destroy_entity(self.entity);
+        }
+        Ok(())
+    }
+
+    fn undo(&mut self, world: &mut katla_ecs::World) -> Result<(), SceneToolError> {
+        let _ = world;
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Destroy spawned entity {}", self.entity)
+    }
+
+    fn affected_entities(&self) -> Vec<EntityId> {
+        vec![self.entity]
+    }
+}
 
 /// Upload font atlas texture to GPU if it has been modified.
 ///
@@ -244,23 +279,18 @@ pub fn process_editor_actions(app: &mut Application) {
                 use crate::ui::SpawnableModel;
 
                 let pos = [position.x(), position.y(), position.z()];
-                match model_type {
-                    SpawnableModel::Cube => {
-                        app.spawn_test_cube(pos, [1.0, 1.0, 1.0]);
-                    }
-                    SpawnableModel::Sphere => {
-                        app.spawn_sphere(pos, 0.7, 32, 16);
-                    }
-                    SpawnableModel::Cylinder => {
-                        app.spawn_cylinder(pos, 1.5, 0.5, 32);
-                    }
-                    SpawnableModel::Plane => {
-                        app.spawn_plane(pos, 5.0, 5.0);
-                    }
-                    SpawnableModel::Torus => {
-                        app.spawn_torus(pos, 0.8, 0.2, 32, 16);
-                    }
-                }
+                let spawned_entity = match model_type {
+                    SpawnableModel::Cube => app.spawn_test_cube(pos, [1.0, 1.0, 1.0]),
+                    SpawnableModel::Sphere => app.spawn_sphere(pos, 0.7, 32, 16),
+                    SpawnableModel::Cylinder => app.spawn_cylinder(pos, 1.5, 0.5, 32),
+                    SpawnableModel::Plane => app.spawn_plane(pos, 5.0, 5.0),
+                    SpawnableModel::Torus => app.spawn_torus(pos, 0.8, 0.2, 32, 16),
+                };
+                let mut undo_group = UndoGroup::new("Spawn model");
+                undo_group
+                    .commands
+                    .push(Box::new(EditorSpawnCommand::new(spawned_entity)));
+                app.editor.push_undo(undo_group);
             }
             EditorAction::SpawnModelAtPath { path, screen_pos } => {
                 let world_pos = unproject_to_ground_plane(app, screen_pos);
@@ -273,10 +303,21 @@ pub fn process_editor_actions(app: &mut Application) {
                     world_pos.y(),
                     world_pos.z()
                 );
-                if let Err(e) =
-                    app.spawn_gltf_model(&path, [world_pos.x(), world_pos.y(), world_pos.z()], None)
-                {
-                    log::error!("Failed to spawn GLTF model '{}': {}", path.display(), e);
+                match app.spawn_gltf_model(
+                    &path,
+                    [world_pos.x(), world_pos.y(), world_pos.z()],
+                    None,
+                ) {
+                    Ok(spawned_entity) => {
+                        let mut undo_group = UndoGroup::new("Spawn GLTF model");
+                        undo_group
+                            .commands
+                            .push(Box::new(EditorSpawnCommand::new(spawned_entity)));
+                        app.editor.push_undo(undo_group);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to spawn GLTF model '{}': {}", path.display(), e);
+                    }
                 }
             }
             EditorAction::DeleteEntity(entity_id) => {
@@ -290,9 +331,9 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
 
                 // Clean up particle emitters before destroying entities
-                for id in &to_delete {
+                for &id in &to_delete {
                     if let Some(emitter) =
-                        app.world.get_component_mut::<ParticleEmitterComponent>(*id)
+                        app.world.get_component_mut::<ParticleEmitterComponent>(id)
                         && let Some(handle) = emitter.emitter_handle.take()
                         && let Some(ps) = &mut app.renderer.particle_system
                     {
@@ -301,10 +342,19 @@ pub fn process_editor_actions(app: &mut Application) {
                     }
                 }
 
-                // Delete in reverse order (children before parents)
+                // Build undo group by snapshotting and destroying each entity via SceneToolExecutor
+                let mut undo_group = UndoGroup::new(format!("Delete entity {}", entity_id));
                 for id in to_delete.into_iter().rev() {
-                    app.world.destroy_entity(id);
+                    let op = SceneOp::DestroyEntity { entity: id };
+                    if let Ok((_, cmd_group)) = katla_ecs::scene_tool::SceneToolExecutor::execute(
+                        op,
+                        &mut app.world,
+                        &app.editor.component_registry,
+                    ) {
+                        undo_group.commands.extend(cmd_group.commands);
+                    }
                 }
+                app.editor.push_undo(undo_group);
                 info!("Deleted entity {:?} and its children", entity_id);
             }
             EditorAction::DuplicateEntity(entity_id) => {
@@ -325,6 +375,14 @@ pub fn process_editor_actions(app: &mut Application) {
                             Some(parent_id),
                         );
                     }
+                    let mut undo_group = UndoGroup::new(format!(
+                        "Duplicate entity {} -> {}",
+                        entity_id, new_entity_id
+                    ));
+                    undo_group
+                        .commands
+                        .push(Box::new(EditorSpawnCommand::new(new_entity_id)));
+                    app.editor.push_undo(undo_group);
                     app.editor.editor_ui.selected_entity = Some(new_entity_id);
                     info!("Duplicated entity {:?} -> {:?}", entity_id, new_entity_id);
                 }
