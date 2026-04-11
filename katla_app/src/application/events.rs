@@ -27,6 +27,9 @@ impl Application {
             KeyCode::Insert => UiKey::Insert,
             KeyCode::Space => UiKey::Space,
             KeyCode::KeyA => UiKey::A,
+            KeyCode::KeyC => UiKey::C,
+            KeyCode::KeyX => UiKey::X,
+            KeyCode::KeyV => UiKey::V,
             _ => return None,
         })
     }
