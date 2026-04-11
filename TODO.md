@@ -344,7 +344,7 @@
   - [x] ~~88a. Add `agent_undo_stack` and `agent_redo_stack` to `EditorState`~~ — Done in 62c2288.
   - [x] ~~88b. Capture UndoGroups in `execute_tool_call()`~~ — Done in 62c2288. Undo groups pushed to agent_undo_stack, redo cleared.
   - [ ] 88c. Handle GPU resource cleanup on undo — store GPU handle metadata per undo entry, release on undo (medium, medium risk)
-  - [ ] 88d. Add `undo_last_agent_action()` method calling `SceneToolExecutor::undo()` with GPU cleanup (small, low risk)
+  - [x] ~~88d. Add `undo_last_agent_action()` method~~ — Done in 7c4281a. perform_agent_undo and perform_agent_redo on EditorState.
   - [x] ~~88e. Add "Undo" button in AI co-creator panel~~ — Done in d7beebd. Visible when undo stack non-empty, pops and calls SceneToolExecutor::undo().
   - [ ] 88f. Route local actions (`LocalAction::SpawnCube` etc.) through `SceneToolExecutor` so they produce UndoGroups (small, low risk)
   - [x] ~~88g. Clear undo/redo stacks on new scene~~ — Done in 62c2288. Both stacks cleared in NewScene handler.
@@ -658,7 +658,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] ~~129a. Add `ResourceOp` enum~~ — Done in af7d24e. ListResources, ReadResource, WriteResource, CreateResource, DeleteResource.
   - [x] ~~129b. Add resource tool definitions and MCP ops~~ — Done in d7beebd. 4 tools + MCP endpoints + McpOpKind dispatch.
   - [ ] 129c. Implement `ResourceToolExecutor` in `katla_app` — `list_resources` discovers files under `assets/` recursively, `read_resource` reads file content as string, `write_resource` writes back with backup, `create_resource` creates from template or empty. All paths sandboxed to project directory (medium, low risk)
-  - [ ] 129d. Wire `ResourceOp` into `execute_tool_call()` in `katla_app/src/application/editor/agent.rs` alongside existing `SceneOp` dispatch (small, low risk)
+  - [x] ~~129d. Wire `ResourceOp` into `execute_tool_call()`~~ — Done in 7c4281a. Full resource file executor with sandboxed paths.
   - [ ] 129e. Add content generation support — AI can generate particle JSON (ask for "fire emitter", "rain", "sparkles"), material TOML, and simple scene files from natural language descriptions. Provide resource-type templates and a `generate_resource` tool that accepts a description and type (medium, medium risk)
   - [ ] 129f. Add `load_scene` / `save_scene` resource ops that go through the existing `SceneSerialization` infrastructure, so the AI can save the current scene state or load a named scene (medium, medium risk)
   - [ ] 129g. Update the system prompt in `katla_agent/src/co_creator/prompt.rs` to describe resource capabilities, available asset directories, and supported file types (small, low risk)
@@ -675,8 +675,8 @@ These items identify code that currently lives in katla_app but is generic enoug
   - Rewrite `attach_spawn_visuals()` to read the primitive type from the tool args and call the correct `create_*_mesh` method, attaching the right `EntitySource` variant
   - Sub-tasks:
     - [x] ~~130a. Extend `SpawnEntityArgs` with `shape` and shape-specific parameters~~ — Done in d7beebd. 8 new optional fields in args and tool schema.
-    - [ ] 130b. Extend the `spawn_entity` tool definition JSON schema with the new optional `shape` field and its sub-parameters (small, low risk)
-    - [ ] 130c. Extend `SceneOp::SpawnEntity` with `primitive: Option<EntitySource>` field (small, low risk)
+    - [x] ~~130b. Extend spawn_entity tool schema with shape params~~ — Done in d7beebd (part of 130a).
+    - [x] ~~130c. Extend `SceneOp::SpawnEntity` with primitive field~~ — Done in 7c4281a. Uses Option<String> mapped to EntitySource in katla_app.
     - [ ] 130d. Rewrite `attach_spawn_visuals()` to match on `args.shape` and call the appropriate `renderer.create_*_mesh()` method, attaching the correct `EntitySource` variant (medium, low risk)
     - [ ] 130e. Add `spawn_model` tool, `SpawnModelArgs` struct, `SceneOp::SpawnModel` variant, and executor that calls `Application::spawn_gltf_model()` (medium, medium risk)
     - [ ] 130f. Update system prompt to list available shapes and mention `spawn_model` for loading resources (small, low risk)
