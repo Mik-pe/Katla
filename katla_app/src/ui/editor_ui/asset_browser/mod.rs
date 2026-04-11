@@ -17,7 +17,6 @@ use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::widgets::ImageButton;
 use katla_ui::{ForkAwesome, KeyCode, ScrollArea, TextureId, UiContext, mouse_button};
 
-use super::FocusedPanel;
 use crate::ui::theme::Theme;
 
 pub use state::AssetBrowserState;
@@ -31,11 +30,10 @@ pub fn build_asset_browser(
     ui: &mut UiContext,
     theme: &Theme,
     bounds: Rect2D,
-    focused_panel: &mut FocusedPanel,
+    is_focused: bool,
     loader: &mut crate::util::BackgroundLoader,
     thumbnail_texture_handles: &HashMap<PathBuf, TextureHandle>,
 ) {
-    let is_focused = *focused_panel == FocusedPanel::AssetBrowser;
     // Auto-rescan if needed
     if state.needs_rescan() {
         state.scan_directory(thumbnail_texture_handles);
@@ -43,15 +41,6 @@ pub fn build_asset_browser(
 
     // Panel background
     ui.draw_rect(bounds, theme.panel_bg);
-
-    // Focus this panel when clicked (any button)
-    if ui.is_hovered(bounds)
-        && (ui.mouse_down(mouse_button::LEFT)
-            || ui.mouse_down(mouse_button::RIGHT)
-            || ui.mouse_down(mouse_button::MIDDLE))
-    {
-        *focused_panel = FocusedPanel::AssetBrowser;
-    }
 
     // Draw focus indicator border if focused
     if is_focused {

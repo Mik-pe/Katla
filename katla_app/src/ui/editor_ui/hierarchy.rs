@@ -8,7 +8,7 @@ use katla_ui::{
     input::mouse_button,
 };
 
-use super::{EditorAction, EntityInfo, FocusedPanel, Theme};
+use super::{EditorAction, EntityInfo, Theme};
 
 #[derive(Debug, Clone, Default)]
 pub struct HierarchyState {
@@ -41,7 +41,6 @@ pub struct Hierarchy<'a> {
     pub state: &'a mut HierarchyState,
     pub selected_entity: &'a mut Option<EntityId>,
     pub entities: &'a [EntityInfo],
-    pub focused_panel: &'a mut FocusedPanel,
     pub pending_actions: &'a mut Vec<EditorAction>,
     pub theme: &'a Theme,
 }
@@ -52,7 +51,6 @@ impl<'a> Hierarchy<'a> {
         state: &'a mut HierarchyState,
         selected_entity: &'a mut Option<EntityId>,
         entities: &'a [EntityInfo],
-        focused_panel: &'a mut FocusedPanel,
         pending_actions: &'a mut Vec<EditorAction>,
         theme: &'a Theme,
     ) -> Self {
@@ -61,7 +59,6 @@ impl<'a> Hierarchy<'a> {
             state,
             selected_entity,
             entities,
-            focused_panel,
             pending_actions,
             theme,
         }
@@ -70,14 +67,6 @@ impl<'a> Hierarchy<'a> {
 
 impl<'a> Widget for Hierarchy<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        if ui.is_hovered(self.bounds)
-            && (ui.mouse_down(mouse_button::LEFT)
-                || ui.mouse_down(mouse_button::RIGHT)
-                || ui.mouse_down(mouse_button::MIDDLE))
-        {
-            *self.focused_panel = FocusedPanel::Hierarchy;
-        }
-
         ui.draw_rect(self.bounds, self.theme.panel_bg);
         ui.draw_rect_border(
             self.bounds,
