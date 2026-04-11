@@ -122,6 +122,8 @@ pub(crate) struct EditorState {
     /// MCP server bridge for external AI tool integration.
     #[cfg(feature = "mcp")]
     pub(crate) mcp_state: crate::application::editor::mcp::McpState,
+    pub(crate) undo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
+    pub(crate) redo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
 }
 
 #[cfg(feature = "editor")]
@@ -166,7 +168,34 @@ impl EditorState {
             co_creator_agent: katla_agent::CoCreatorAgent::new(),
             #[cfg(feature = "mcp")]
             mcp_state: crate::application::editor::mcp::McpState::new(),
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         }
+    }
+
+    pub(crate) fn push_undo(&mut self, group: katla_ecs::scene_tool::UndoGroup) {
+        self.redo_stack.clear();
+        self.undo_stack.push(group);
+    }
+
+    pub(crate) fn perform_undo(&mut self, world: &mut katla_ecs::World) -> bool {
+        if let Some(mut group) = self.undo_stack.pop() {
+            if group.undo_all(world).is_ok() {
+                self.redo_stack.push(group);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub(crate) fn perform_redo(&mut self, world: &mut katla_ecs::World) -> bool {
+        if let Some(mut group) = self.redo_stack.pop() {
+            if group.redo_all(world).is_ok() {
+                self.undo_stack.push(group);
+                return true;
+            }
+        }
+        false
     }
 }
 

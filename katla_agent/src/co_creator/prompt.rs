@@ -14,6 +14,7 @@ You have access to scene tools:
 - query_entities(component_filter, limit) — Find entities
 - get_scene_hierarchy() — List all entities
 - duplicate_entity(entity_id, position_offset) — Copy an entity
+- set_parent(entity_id, parent_id) — Set or clear parent (null to unparent)
 
 When the user asks you to do something:
 1. Understand what they want

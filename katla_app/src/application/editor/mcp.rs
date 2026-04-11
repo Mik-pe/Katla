@@ -65,7 +65,8 @@ fn check_protected_entity(op: &SceneOp, protected: &ProtectedEntities) -> Result
         | SceneOp::SetField { entity, .. }
         | SceneOp::DuplicateEntity { entity, .. }
         | SceneOp::AddComponent { entity, .. }
-        | SceneOp::GetComponentAttributes { entity, .. } => Some(*entity),
+        | SceneOp::GetComponentAttributes { entity, .. }
+        | SceneOp::SetParent { entity, .. } => Some(*entity),
         _ => None,
     };
 

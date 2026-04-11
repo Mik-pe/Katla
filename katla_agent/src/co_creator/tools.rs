@@ -69,6 +69,14 @@ pub struct GetComponentAttributesArgs {
     pub component: String,
 }
 
+/// Typed arguments for the `set_parent` tool.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct SetParentArgs {
+    pub entity_id: u64,
+    pub parent_id: Option<u64>,
+}
+
 /// Build tool definitions for the LLM's function calling.
 pub fn build_tool_definitions() -> Vec<ToolDefinition> {
     use serde_json::json;
@@ -209,6 +217,20 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["entity_id", "component"]
             }),
         },
+        ToolDefinition {
+            name: "set_parent".to_string(),
+            description:
+                "Set or clear the parent of an entity. Pass null for parent_id to unparent."
+                    .to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "entity_id": { "type": "integer", "description": "The entity to reparent" },
+                    "parent_id": { "type": "integer", "description": "New parent entity ID, or null to clear" }
+                },
+                "required": ["entity_id"]
+            }),
+        },
     ]
 }
 
@@ -229,5 +251,6 @@ mod tests {
         assert!(tools.iter().any(|t| t.name == "list_available_components"));
         assert!(tools.iter().any(|t| t.name == "add_component"));
         assert!(tools.iter().any(|t| t.name == "get_component_attributes"));
+        assert!(tools.iter().any(|t| t.name == "set_parent"));
     }
 }

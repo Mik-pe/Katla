@@ -59,6 +59,10 @@ pub enum McpOp {
         entity_id: u64,
         component: String,
     },
+    SetParent {
+        entity_id: u64,
+        parent_id: Option<u64>,
+    },
 }
 
 impl McpOp {
@@ -124,6 +128,13 @@ impl McpOp {
             } => SceneOp::GetComponentAttributes {
                 entity: katla_ecs::EntityId::from_raw(entity_id),
                 component,
+            },
+            Self::SetParent {
+                entity_id,
+                parent_id,
+            } => SceneOp::SetParent {
+                entity: katla_ecs::EntityId::from_raw(entity_id),
+                parent: parent_id.map(katla_ecs::EntityId::from_raw),
             },
         }
     }
@@ -257,6 +268,13 @@ struct GetComponentAttributesParams {
     component: String,
 }
 
+#[derive(Deserialize, JsonSchema, Default)]
+struct SetParentParams {
+    entity_id: u64,
+    #[serde(default)]
+    parent_id: Option<u64>,
+}
+
 #[rmcp::tool_router]
 impl KatlaMcpServer {
     #[rmcp::tool(
@@ -382,6 +400,21 @@ impl KatlaMcpServer {
         let op = McpOp::GetComponentAttributes {
             entity_id: params.entity_id,
             component: params.component,
+        };
+        self.forward_op(op).await
+    }
+
+    #[rmcp::tool(
+        name = "set_parent",
+        description = "Set or clear the parent of an entity"
+    )]
+    async fn set_parent(
+        &self,
+        Parameters(params): Parameters<SetParentParams>,
+    ) -> Json<McpToolResult> {
+        let op = McpOp::SetParent {
+            entity_id: params.entity_id,
+            parent_id: params.parent_id,
         };
         self.forward_op(op).await
     }

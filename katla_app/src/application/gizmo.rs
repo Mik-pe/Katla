@@ -510,6 +510,28 @@ impl Application {
                 co_creator.open();
             }
         }
+
+        if keycode == KeyCode::KeyZ
+            && self.current_modifiers.control_key()
+            && !self.current_modifiers.shift_key()
+            && !self.current_modifiers.alt_key()
+            && !self.editor.editor_ui.prev_want_capture_keyboard
+        {
+            if self.editor.perform_undo(&mut self.world) {
+                info!("Undo performed");
+            }
+        }
+
+        if keycode == KeyCode::KeyZ
+            && self.current_modifiers.control_key()
+            && self.current_modifiers.shift_key()
+            && !self.current_modifiers.alt_key()
+            && !self.editor.editor_ui.prev_want_capture_keyboard
+        {
+            if self.editor.perform_redo(&mut self.world) {
+                info!("Redo performed");
+            }
+        }
     }
 
     /// Handle gizmo mode shortcuts (W/E/R) and Escape in viewport.
