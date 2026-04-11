@@ -401,11 +401,7 @@
 
 ~~### 98. `DraggablePanel` hardcodes `TITLE_BAR_HEIGHT = 32.0` instead of using `style.title_bar_height`~~ — Fixed in bd0f57a. Removed const, now reads `ui.style.title_bar_height`.
 
-### 99. `DraggablePanel::show` calls `push_z_index`/`pop_z_index` manually instead of using `z_guard` or `with_z_index`
-- **Crate:** katla_ui
-- **File:** `katla_ui/src/widgets/draggable_panel.rs`
-- **Issue:** Uses `ui.push_z_index(z_index::PANEL)` at the start and `ui.pop_z_index()` at the end, but early returns (`close_clicked || mouse_clicked_outside`) happen AFTER `pop_z_index`. If the content closure panics, the z-index is leaked. The `with_z_index()` method exists specifically for this pattern and is exception-safe.
-- **Fix:** Restructure to wrap the entire panel drawing + content in `ui.with_z_index(z_index::PANEL, |ui| { ... })`, then handle close/outside-click after.
+~~### 99. `DraggablePanel::show` calls `push_z_index`/`pop_z_index` manually instead of using `z_guard` or `with_z_index`~~ — Fixed. Restructured to use `ui.with_z_index()` with close/outside-click handling after the block.
 
 ### 100. `begin_window`/`end_window` has no RAII guard — clip leak on early return
 - **Crate:** katla_ui
@@ -413,11 +409,7 @@
 - **Issue:** `begin_window()` calls `push_clip()` but relies on the user calling `end_window()` for `pop_clip()`. If code between begin/end returns early or panics, the clip stack is corrupted. Every other push/pop pattern in the codebase (z_index, layout) has RAII guards.
 - **Fix:** Return a `WindowGuard` struct from `begin_window()` that implements `Drop` and calls `pop_clip()`. The guard provides `content_cursor()` and `bounds()` accessors.
 
-### 101. `scroll_area` scrollbar width hardcoded to `10.0` in two places
-- **Crate:** katla_ui
-- **File:** `katla_ui/src/context/widgets/scroll_area.rs`
-- **Issue:** The scrollbar width `10.0` appears three times: line for `scrollbar_width`, and again inside the "Draw scrollbar" section. The value is not configurable and doesn't match any style field.
-- **Fix:** Add `scrollbar_width: f32` to `UiStyle` (default 10.0). Use it in `scroll_area()`.
+~~### 101. `scroll_area` scrollbar width hardcoded to `10.0` in two places~~ — Fixed. Added `scrollbar_width: f32` to `UiStyle`, replaced all hardcoded values.
 
 ### 102. Slider lacks value label and format customization
 - **Crate:** katla_ui
@@ -442,19 +434,11 @@
 - **Issue:** `MarkdownColors::defaults()` uses hardcoded blue/green colors that don't match any theme. When the user switches to Nord or Tokyo Night, markdown text still uses the same blue accent. `draw_markdown_segments` requires passing colors explicitly instead of reading from the style.
 - **Fix:** Add `MarkdownColors::from_style(style: &UiStyle)` that derives bold/code/header/bullet colors from the style's accent colors (e.g., `input_border_focused` for bold, `slider_grab` for code text, `text_color` for headers). Update callers to use it.
 
-### 106. `draw_icon_label` hardcoded spacing `4.0` between icon and text
-- **Crate:** katla_ui
-- **File:** `katla_ui/src/context/drawing.rs`
-- **Issue:** `draw_icon_label()` uses a hardcoded `4.0` gap between icon and text. Should use `self.style.item_inner_spacing`.
-- **Fix:** Replace `4.0` with `self.style.item_inner_spacing`.
+~~### 106. `draw_icon_label` hardcoded spacing `4.0` between icon and text~~ — Fixed. Now uses `self.style.item_inner_spacing`.
 
 ~~### 107. `checkbox()` label offset hardcoded to `8.0` from check bounds~~ — Fixed in bd0f57a. Now reads `self.style.item_inner_spacing`.
 
-### 108. `ListView` virtualization y-offset calculation ignores content padding
-- **Crate:** katla_ui
-- **File:** `katla_ui/src/widgets/list_view.rs`
-- **Issue:** Items are positioned at `bounds.min.y() + 2.0 + index * row_height - scroll_offset` with a hardcoded `2.0` padding. The scroll area's internal content height is `item_count * row_height + 4.0` (adding 4px for top+bottom padding), but the items only account for 2px at the top. This means the last item's bottom 2px is clipped.
-- **Fix:** Use a consistent padding constant from style (e.g., `item_inner_spacing`) for both the item positioning and the total content height calculation. Ensure top and bottom padding are symmetric.
+~~### 108. `ListView` virtualization y-offset calculation ignores content padding~~ — Fixed. Uses `ui.style.item_inner_spacing` for symmetric top/bottom padding and updated virtualization row calculation.
 
 ### 109. `begin_grid`/`end_grid` doesn't restore cursor X position correctly
 - **Crate:** katla_ui
