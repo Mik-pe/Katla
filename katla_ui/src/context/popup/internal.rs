@@ -63,7 +63,7 @@ impl UiContext {
         self.draw_rect(shadow_bounds, self.style.popup_shadow);
 
         // Background
-        self.draw_rect(bounds, self.style.popup_bg);
+        self.draw_rounded_rect(bounds, self.style.popup_bg, self.style.popup_rounding);
 
         // Border
         self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);

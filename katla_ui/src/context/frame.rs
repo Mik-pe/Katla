@@ -53,6 +53,7 @@ impl UiContext {
         self.clip_stack
             .push(katla_math::Rect2D::from_size(screen_size));
         self.scratch_points.clear();
+        self.pending_tooltips.clear();
         self.input.prev_active_id = self.active_id;
         self.focusable_widgets.clear();
     }
@@ -74,6 +75,12 @@ impl UiContext {
                 .set_clip(katla_math::Rect2D::from_size(self.screen_size));
             self.draw_list
                 .add_rect(bounds.inflate(2.0), self.style.focus_ring_color);
+        }
+
+        // Render deferred tooltips
+        let tooltips = std::mem::take(&mut self.pending_tooltips);
+        for (_, text) in tooltips {
+            self.tooltip(&text);
         }
 
         self.draw_list.finalize();
