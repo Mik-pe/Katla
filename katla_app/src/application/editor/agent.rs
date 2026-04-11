@@ -524,6 +524,7 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
         app.world.add_component(entity, drawable);
         app.world.add_component(entity, entity_source);
     }
+    crate::application::editor::record_entity_gpu_handles(app, entity);
 }
 
 /// Check if the operation targets a protected entity (editor camera, gizmo, etc.).

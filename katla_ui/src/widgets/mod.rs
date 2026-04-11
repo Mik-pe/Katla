@@ -1748,7 +1748,7 @@ mod list_view;
 pub use list_view::ListView;
 
 mod tree;
-pub use tree::{TreeItem, TreeState, TreeView};
+pub use tree::{RenderItemFn, RowInfo, TreeItem, TreeState, TreeView};
 
 // =============================================================================
 // ComboBox Widget
