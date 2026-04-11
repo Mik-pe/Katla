@@ -240,10 +240,7 @@
   - `SetComponentAttribute(entity_id, component_name, field_path, value)` — mutates a single field on an existing component.
   All should leverage the existing inspector/`#[inspect]` infrastructure to discover fields and types.
 
-### 61. AI LLM should not be able to delete the editor camera
-- **Crate:** katla_agent
-- **Issue:** The AI can issue `SceneOp::DeleteEntity` targeting the editor camera entity, breaking the viewport.
-- **Fix:** Filter out protected entities (editor camera, editor gizmo) from delete/spawn-modify operations in `SceneToolExecutor`.
+~~### 61. AI LLM should not be able to delete the editor camera~~ — Fixed in 409ddf6. Both LLM and MCP paths now check protected entities (camera/gizmo) before executing destructive ops.
 
 ### 62. AI-spawned cubes don't appear in the 3D scene or hierarchy view
 - **Crate:** katla_agent / katla_app
@@ -326,16 +323,9 @@
 - **File:** `src/application/renderer.rs` (lines 65-120)
 - **Fix:** Reuse buffers between frames by storing on `Application` or `EditorState`.
 
-### 84. Popup panels (preferences, AI chat) close when clicking outside them
-- **Crate:** katla_app
-- **Issue:** Clicking anywhere outside the preferences or AI chat panel dismisses/hides the panel. This is annoying — these are toggleable panels that should stay open until explicitly closed (e.g., via their toggle button or a close action).
-- **Fix:** Remove the click-outside-dismiss behavior for these panels. Only close them via their toggle button, close button, or Escape key.
+~~### 84. Popup panels (preferences, AI chat) close when clicking outside them~~ — Fixed in 409ddf6. Added close_on_outside_click option to DraggablePanel, disabled for preferences and AI panels.
 
-### 85. Clicks on overlying panels are forwarded to the 3D scene underneath
-- **Crate:** katla_app
-- **File:** `src/application/mod.rs` (input handling / editor UI)
-- **Issue:** When a panel (preferences, AI chat, etc.) is rendered on top of the 3D viewport, clicking on the panel still forwards the click to the 3D scene underneath. This causes unintended camera movement, entity selection, or gizmo interaction.
-- **Fix:** Check if a panel is focused/hovered before forwarding input to the viewport. Consume the click event when a panel is on top.
+~~### 85. Clicks on overlying panels are forwarded to the 3D scene underneath~~ — Fixed in 409ddf6. update_focused_panel_from_click now checks floating panel bounds before forwarding clicks to viewport.
 
 ### 86. Use serde JSON derives for tool call arguments instead of raw strings
 - **Crate:** katla_agent
