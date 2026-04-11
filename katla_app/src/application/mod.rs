@@ -124,6 +124,8 @@ pub(crate) struct EditorState {
     pub(crate) mcp_state: crate::application::editor::mcp::McpState,
     pub(crate) undo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
     pub(crate) redo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
+    pub(crate) agent_undo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
+    pub(crate) agent_redo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
 }
 
 #[cfg(feature = "editor")]
@@ -170,6 +172,8 @@ impl EditorState {
             mcp_state: crate::application::editor::mcp::McpState::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            agent_undo_stack: Vec::new(),
+            agent_redo_stack: Vec::new(),
         }
     }
 

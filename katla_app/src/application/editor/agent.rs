@@ -372,7 +372,9 @@ fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) 
     }
 
     match SceneToolExecutor::execute(op, &mut app.world, &app.editor.component_registry) {
-        Ok((result, _undo_group)) => {
+        Ok((result, undo_group)) => {
+            app.editor.agent_undo_stack.push(undo_group);
+            app.editor.agent_redo_stack.clear();
             if let Some((entity, parent)) = set_parent_args {
                 set_parent_components(app, entity, parent);
             }

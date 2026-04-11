@@ -390,6 +390,8 @@ pub fn process_editor_actions(app: &mut Application) {
                     app.world.destroy_entity(id);
                 }
                 app.editor.editor_ui.selected_entity = None;
+                app.editor.agent_undo_stack.clear();
+                app.editor.agent_redo_stack.clear();
                 info!("New scene created");
             }
             EditorAction::Quit => {

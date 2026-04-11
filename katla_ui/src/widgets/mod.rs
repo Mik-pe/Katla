@@ -670,6 +670,177 @@ impl<'a> crate::Widget for LabeledSlider<'a> {
 }
 
 // =============================================================================
+// Vec3Slider Widget
+// =============================================================================
+
+/// A three-axis slider widget for Vec3/f32[3] values with colored axis labels.
+///
+/// Layout: `[label (above)] then per row: [axis_label (20px)] [slider] [value (40px)]`
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::Vec3Slider;
+///
+/// let mut position = [10.0, 20.0, 30.0];
+/// let resp = ui.add(Vec3Slider::new("Position", &mut position, -100.0..=100.0)
+///     .bounds(row_bounds)
+///     .precision(2));
+/// ```
+pub struct Vec3Slider<'a> {
+    label: &'a str,
+    values: &'a mut [f32; 3],
+    range: std::ops::RangeInclusive<f32>,
+    bounds: Rect2D,
+    label_width: f32,
+    axis_labels: [&'a str; 3],
+    axis_colors: [Color; 3],
+    precision: usize,
+    id: Option<&'a str>,
+}
+
+const DEFAULT_AXIS_COLORS: [Color; 3] = [
+    Color::rgb(0.9, 0.3, 0.3),
+    Color::rgb(0.3, 0.9, 0.3),
+    Color::rgb(0.3, 0.5, 0.9),
+];
+
+impl<'a> Vec3Slider<'a> {
+    pub fn new(
+        label: &'a str,
+        values: &'a mut [f32; 3],
+        range: std::ops::RangeInclusive<f32>,
+    ) -> Self {
+        Self {
+            label,
+            values,
+            range,
+            bounds: Rect2D::from_size(Vec2::new(
+                DEFAULTS.slider_default_width,
+                DEFAULTS.slider_default_height * 3.0,
+            )),
+            label_width: 80.0,
+            axis_labels: ["X", "Y", "Z"],
+            axis_colors: DEFAULT_AXIS_COLORS,
+            precision: 1,
+            id: None,
+        }
+    }
+
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    pub fn label_width(mut self, w: f32) -> Self {
+        self.label_width = w;
+        self
+    }
+
+    pub fn axis_labels(mut self, labels: [&'a str; 3]) -> Self {
+        self.axis_labels = labels;
+        self
+    }
+
+    pub fn axis_colors(mut self, colors: [Color; 3]) -> Self {
+        self.axis_colors = colors;
+        self
+    }
+
+    pub fn precision(mut self, p: usize) -> Self {
+        self.precision = p;
+        self
+    }
+
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
+    }
+}
+
+impl<'a> crate::Widget for Vec3Slider<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let font_size = ui.style.font_size;
+        let text_color = ui.style.text_color;
+        let axis_label_width = 20.0;
+        let value_text_width = 40.0;
+        let base_id = self.id.unwrap_or(self.label);
+
+        let label_text_size = ui.measure_text(self.label, font_size);
+
+        // Draw main label above the rows
+        let label_x = self.bounds.min.x();
+        let label_y = self.bounds.min.y();
+        ui.draw_text(
+            self.label,
+            Vec2::new(label_x, label_y),
+            text_color,
+            font_size,
+        );
+
+        let label_height = label_text_size.y() + 2.0;
+        let total_slider_height = self.bounds.height() - label_height;
+        let row_height = total_slider_height / 3.0;
+
+        let mut combined = Response::new(self.bounds);
+        combined.changed = false;
+
+        for i in 0..3 {
+            let row_y = self.bounds.min.y() + label_height + row_height * i as f32;
+            let row_bounds = Rect2D::from_origin_size(
+                Vec2::new(self.bounds.min.x(), row_y),
+                Vec2::new(self.bounds.width(), row_height),
+            );
+
+            // Draw axis label with axis color
+            let axis_label = self.axis_labels[i];
+            let axis_color = self.axis_colors[i];
+            let axis_label_size = ui.measure_text(axis_label, font_size);
+            let axis_label_y = row_bounds.center().y() - axis_label_size.y() * 0.5;
+            ui.draw_text(
+                axis_label,
+                Vec2::new(row_bounds.min.x(), axis_label_y),
+                axis_color,
+                font_size,
+            );
+
+            // Slider occupies the space between axis label and value text
+            let slider_x = row_bounds.min.x() + axis_label_width;
+            let slider_width = (row_bounds.max.x() - value_text_width) - slider_x;
+            let slider_bounds = Rect2D::from_origin_size(
+                Vec2::new(slider_x, row_bounds.min.y()),
+                Vec2::new(slider_width.max(0.0), row_bounds.height()),
+            );
+
+            let slider_id = format!("{}_{}", base_id, i);
+            let response = ui.add(
+                Slider::new(&slider_id, &mut self.values[i], self.range.clone())
+                    .bounds(slider_bounds)
+                    .show_value(false),
+            );
+
+            // Draw value text on the right
+            let value_text = format!("{:.1$}", self.values[i], self.precision);
+            let value_text_size = ui.measure_text(&value_text, font_size);
+            let value_x = row_bounds.max.x() - value_text_size.x();
+            let value_y = row_bounds.center().y() - value_text_size.y() * 0.5;
+            ui.draw_text(
+                &value_text,
+                Vec2::new(value_x, value_y),
+                text_color,
+                font_size,
+            );
+
+            combined.changed |= response.changed;
+            combined.hovered |= response.hovered;
+            combined.active |= response.active;
+        }
+
+        combined
+    }
+}
+
+// =============================================================================
 // TextInput Widget
 // =============================================================================
 
