@@ -1,7 +1,7 @@
 pub mod mock;
 pub mod openai;
 
-pub use mock::MockProvider;
+pub use mock::{MockProvider, MockStreamProvider};
 pub use openai::OpenAiProvider;
 
 use futures::Stream;
@@ -17,6 +17,8 @@ pub struct ChatMessage {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,11 +60,21 @@ pub enum FinishReason {
     Length,
 }
 
+/// A delta fragment for a tool call being streamed.
+#[derive(Debug, Clone)]
+pub struct ToolCallDelta {
+    pub index: usize,
+    pub id: Option<String>,
+    pub name: Option<String>,
+    pub arguments_delta: Option<String>,
+}
+
 /// A single chunk from a streaming chat completion response.
 #[derive(Debug, Clone)]
 pub struct StreamChunk {
     pub content_delta: String,
     pub finish_reason: Option<FinishReason>,
+    pub tool_call_deltas: Vec<ToolCallDelta>,
 }
 
 /// Trait for LLM providers (OpenAI, local, mock, etc.).
@@ -89,13 +101,14 @@ pub trait LlmProvider: Send + Sync {
             Ok(StreamChunk {
                 content_delta: response.message.content,
                 finish_reason: Some(response.finish_reason),
+                tool_call_deltas: Vec::new(),
             })
         }))
     }
 }
 
 /// Error type for LLM operations.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LlmError {
     Network(String),
     Api(String),

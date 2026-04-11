@@ -64,5 +64,6 @@ pub fn available_templates() -> Vec<(&'static str, &'static str)> {
         ("campfire", "Warm point light simulating a campfire"),
         ("street_lamp", "Street lamp with overhead light"),
         ("village_square", "Grid of lights around a central point"),
+        ("forest_clearing", "Ring of trees around a clearing"),
     ]
 }

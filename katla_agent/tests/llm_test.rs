@@ -12,6 +12,7 @@ fn test_mock_provider_simple() {
         role: MessageRole::User,
         content: "Hi".to_string(),
         tool_calls: None,
+        tool_call_id: None,
     }];
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -33,6 +34,7 @@ fn test_mock_provider_multiple_responses() {
                 role: MessageRole::Assistant,
                 content: "First".to_string(),
                 tool_calls: None,
+                tool_call_id: None,
             },
             finish_reason: FinishReason::Stop,
         },
@@ -41,6 +43,7 @@ fn test_mock_provider_multiple_responses() {
                 role: MessageRole::Assistant,
                 content: "Second".to_string(),
                 tool_calls: None,
+                tool_call_id: None,
             },
             finish_reason: FinishReason::Stop,
         },
@@ -50,6 +53,7 @@ fn test_mock_provider_multiple_responses() {
         role: MessageRole::User,
         content: "Hi".to_string(),
         tool_calls: None,
+        tool_call_id: None,
     }];
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -71,6 +75,7 @@ fn test_mock_provider_exhausted_responses() {
         role: MessageRole::User,
         content: "Hi".to_string(),
         tool_calls: None,
+        tool_call_id: None,
     }];
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -88,6 +93,7 @@ fn test_chat_message_serialization() {
             name: "spawn_entity".to_string(),
             arguments: serde_json::json!({"position": [0, 0, 0]}),
         }]),
+        tool_call_id: None,
     };
 
     let json = serde_json::to_string(&msg).unwrap();
@@ -130,6 +136,7 @@ fn test_async_bridge_submit_and_poll() {
         role: MessageRole::User,
         content: "Test".to_string(),
         tool_calls: None,
+        tool_call_id: None,
     }];
 
     let pending = bridge.submit_chat(provider, messages, vec![]);

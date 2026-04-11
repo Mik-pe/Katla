@@ -26,7 +26,7 @@ pub use config::LlmConfig;
 #[cfg(feature = "llm-assistant")]
 pub use llm::{
     ChatMessage, ChatResponse, FinishReason, LlmError, MessageRole, StreamChunk, ToolCall,
-    ToolDefinition,
+    ToolCallDelta, ToolDefinition,
 };
 
 #[cfg(feature = "llm-assistant")]

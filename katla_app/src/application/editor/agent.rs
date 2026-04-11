@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use katla_agent::serialize_scene_context;
-use katla_agent::{LocalAction, OpenAiProvider, StreamEvent};
+use katla_agent::{LocalAction, OpenAiProvider, StreamEvent, ToolCall};
 use katla_ecs::EntityId;
 use katla_ecs::agent::{Agent, AgentAction, AgentSession, Observation};
-use katla_ecs::scene_tool::ComponentRegistry;
-use katla_ecs::scene_tool::SceneOp;
+use katla_ecs::scene_tool::{ComponentRegistry, SceneOp, SceneToolExecutor};
 use katla_math::Vec3;
 use log::warn;
 
@@ -119,11 +118,15 @@ pub(crate) fn poll_llm_stream(app: &mut super::super::Application) {
                     .co_creator
                     .add_system_message("Response was truncated due to token limit.");
             }
-            StreamEvent::ToolCall => {
+            StreamEvent::ToolCall(tool_calls) => {
+                let mut summaries = Vec::new();
+                for tc in &tool_calls {
+                    summaries.push(format_tool_call_summary(tc));
+                }
                 app.editor
                     .editor_ui
                     .co_creator
-                    .add_system_message("(Tool calling not yet wired)");
+                    .add_system_message(&format!("Calling: {}", summaries.join(", ")));
             }
             StreamEvent::Error(msg) => {
                 app.editor
@@ -134,7 +137,7 @@ pub(crate) fn poll_llm_stream(app: &mut super::super::Application) {
         }
     }
 
-    // If streaming just finished, finalize the response
+    // If streaming just finished, finalize and handle tool calls
     if !app.editor.co_creator_agent.is_streaming() {
         let full_text = app
             .editor
@@ -146,7 +149,356 @@ pub(crate) fn poll_llm_stream(app: &mut super::super::Application) {
             .unwrap_or_default();
         app.editor.co_creator_agent.finalize_response(&full_text);
         app.editor.editor_ui.co_creator.finalize_streaming();
+
+        // Execute pending tool calls and continue the conversation
+        if app.editor.co_creator_agent.has_pending_tool_calls() {
+            execute_and_continue_tool_calls(app);
+        }
     }
+}
+
+/// Execute pending tool calls and submit results back to the LLM.
+fn execute_and_continue_tool_calls(app: &mut super::super::Application) {
+    let tool_calls = app.editor.co_creator_agent.take_pending_tool_calls();
+
+    for tc in &tool_calls {
+        let result = execute_tool_call(app, tc);
+        let display = format_tool_call_result(tc, &result);
+        app.editor.editor_ui.co_creator.add_system_message(&display);
+        app.editor
+            .co_creator_agent
+            .add_tool_result(tc.id.clone(), result);
+    }
+
+    submit_continuation(app);
+}
+
+/// Submit a continuation request to the LLM after tool results.
+fn submit_continuation(app: &mut super::super::Application) {
+    let Some(ref bridge) = app.editor.async_bridge else {
+        return;
+    };
+
+    let scene_context_json = get_scene_context_json(
+        &mut app.world,
+        &app.editor.component_registry,
+        app.editor.editor_ui.selected_entity,
+    );
+
+    match OpenAiProvider::from_config(&app.editor.llm_config) {
+        Ok(provider) => {
+            app.editor.co_creator_agent.submit_continuation(
+                bridge,
+                Arc::new(provider),
+                &scene_context_json,
+            );
+        }
+        Err(e) => {
+            warn!("Failed to create LLM provider for continuation: {}", e);
+        }
+    }
+}
+
+/// Execute a single tool call against the ECS world.
+fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
+    let op = match tool_call_to_scene_op(tool_call) {
+        Ok(op) => op,
+        Err(e) => return format!("Error: {e}"),
+    };
+
+    if let Err(msg) = check_protected_entity(&op, app) {
+        return msg;
+    }
+
+    match SceneToolExecutor::execute(op, &mut app.world, &app.editor.component_registry) {
+        Ok((result, _undo_group)) => {
+            for &entity in &result.affected_entities {
+                attach_spawn_visuals(app, entity, tool_call);
+            }
+            serde_json::to_string(&serde_json::json!({
+                "success": result.success,
+                "message": result.message,
+                "entities": result.affected_entities.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+            }))
+            .unwrap_or_else(|_| result.message)
+        }
+        Err(e) => format!("Error: {e}"),
+    }
+}
+
+/// After a spawn, ensure the entity has a TransformComponent and a default mesh
+/// so it appears in both the hierarchy panel and the 3D viewport.
+fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, tc: &ToolCall) {
+    if tc.name != "spawn_entity" {
+        return;
+    }
+
+    use crate::components::{DrawableComponent, TransformComponent};
+    use crate::scene::entity_source::EntitySource;
+    use katla_math::Vec3;
+
+    if app
+        .world
+        .get_component::<TransformComponent>(entity)
+        .is_none()
+    {
+        let position = tc.arguments.get("position").and_then(|v| v.as_array());
+        let pos = match position {
+            Some(arr) if arr.len() >= 3 => Vec3::new(
+                arr[0].as_f64().unwrap_or(0.0) as f32,
+                arr[1].as_f64().unwrap_or(0.0) as f32,
+                arr[2].as_f64().unwrap_or(0.0) as f32,
+            ),
+            _ => Vec3::new(0.0, 0.0, 0.0),
+        };
+        app.world
+            .add_component(entity, TransformComponent::from_position(pos));
+    }
+
+    if app
+        .world
+        .get_component::<DrawableComponent>(entity)
+        .is_none()
+    {
+        let scale = tc.arguments.get("scale").and_then(|v| v.as_array());
+        let size = match scale {
+            Some(arr) if arr.len() >= 3 => [
+                arr[0].as_f64().unwrap_or(1.0) as f32,
+                arr[1].as_f64().unwrap_or(1.0) as f32,
+                arr[2].as_f64().unwrap_or(1.0) as f32,
+            ],
+            _ => [1.0, 1.0, 1.0],
+        };
+        let mesh_handle = app.renderer.create_cube_mesh(size);
+        let material_handle = app.default_material();
+        let drawable = DrawableComponent::with_handles_and_color(
+            mesh_handle,
+            material_handle,
+            katla_math::Color::WHITE.to_linear(),
+        );
+        app.gpu_resource_tracker.track_drawable(
+            mesh_handle,
+            material_handle,
+            drawable.skeleton_handle,
+        );
+        app.world.add_component(entity, drawable);
+        app.world.add_component(entity, EntitySource::Cube { size });
+    }
+}
+
+/// Check if the operation targets a protected entity (editor camera, gizmo, etc.).
+fn check_protected_entity(op: &SceneOp, app: &super::super::Application) -> Result<(), String> {
+    let target = match op {
+        SceneOp::DestroyEntity { entity }
+        | SceneOp::SetField { entity, .. }
+        | SceneOp::DuplicateEntity { entity, .. } => Some(*entity),
+        _ => None,
+    };
+
+    let Some(entity) = target else { return Ok(()) };
+
+    let cam_entity = app.camera.borrow().entity;
+    let gizmo_entity = app.editor.gizmo_state.entity;
+
+    if entity == cam_entity {
+        return Err(format!(
+            "Error: Entity {entity} is the editor camera and cannot be modified"
+        ));
+    }
+    if gizmo_entity == Some(entity) {
+        return Err(format!(
+            "Error: Entity {entity} is the editor gizmo and cannot be modified"
+        ));
+    }
+    Ok(())
+}
+
+/// Convert a ToolCall's arguments into a SceneOp.
+fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
+    let args = &tool_call.arguments;
+    match tool_call.name.as_str() {
+        "spawn_entity" => {
+            let position = json_array_to_f32_3(args, "position", [0.0, 0.0, 0.0])?;
+            let rotation = json_array_to_f32_3(args, "rotation", [0.0, 0.0, 0.0])?;
+            let scale = json_array_to_f32_3(args, "scale", [1.0, 1.0, 1.0])?;
+            let name = args.get("name").and_then(|v| v.as_str()).map(String::from);
+            Ok(SceneOp::SpawnEntity {
+                position,
+                rotation,
+                scale,
+                name,
+            })
+        }
+        "destroy_entity" => {
+            let entity = json_entity_id(args, "entity_id")?;
+            Ok(SceneOp::DestroyEntity { entity })
+        }
+        "set_field" => {
+            let entity = json_entity_id(args, "entity_id")?;
+            let component = args
+                .get("component")
+                .and_then(|v| v.as_str())
+                .ok_or("missing 'component'")?
+                .to_string();
+            let field = args
+                .get("field")
+                .and_then(|v| v.as_str())
+                .ok_or("missing 'field'")?
+                .to_string();
+            let value = args.get("value").cloned().ok_or("missing 'value'")?;
+            Ok(SceneOp::SetField {
+                entity,
+                component,
+                field,
+                value,
+            })
+        }
+        "query_entities" => {
+            let component_filter = args
+                .get("component_filter")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let limit = args
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize);
+            Ok(SceneOp::QueryEntities {
+                component_filter,
+                name_filter: None,
+                position: None,
+                radius: None,
+                limit,
+            })
+        }
+        "get_scene_hierarchy" => Ok(SceneOp::GetSceneHierarchy),
+        "duplicate_entity" => {
+            let entity = json_entity_id(args, "entity_id")?;
+            let position_offset = args
+                .get("position_offset")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    let vals: Vec<f32> = arr
+                        .iter()
+                        .filter_map(|v| v.as_f64().map(|n| n as f32))
+                        .collect();
+                    if vals.len() == 3 {
+                        Some([vals[0], vals[1], vals[2]])
+                    } else {
+                        None
+                    }
+                })
+                .flatten();
+            Ok(SceneOp::DuplicateEntity {
+                entity,
+                position_offset,
+            })
+        }
+        _ => Err(format!("Unknown tool: {}", tool_call.name)),
+    }
+}
+
+fn json_array_to_f32_3(
+    args: &serde_json::Value,
+    key: &str,
+    default: [f32; 3],
+) -> Result<[f32; 3], String> {
+    let arr = args.get(key).and_then(|v| v.as_array());
+    match arr {
+        Some(arr) if arr.len() >= 3 => {
+            let vals: Vec<f32> = arr
+                .iter()
+                .take(3)
+                .filter_map(|v| v.as_f64().map(|n| n as f32))
+                .collect();
+            if vals.len() == 3 {
+                Ok([vals[0], vals[1], vals[2]])
+            } else {
+                Ok(default)
+            }
+        }
+        _ => Ok(default),
+    }
+}
+
+fn json_entity_id(args: &serde_json::Value, key: &str) -> Result<EntityId, String> {
+    let raw = args
+        .get(key)
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| format!("missing '{key}'"))?;
+    Ok(EntityId::from_raw(raw))
+}
+
+fn format_tool_call_summary(tc: &ToolCall) -> String {
+    match tc.name.as_str() {
+        "spawn_entity" => {
+            let pos = tc.arguments.get("position").and_then(|v| v.as_array());
+            match pos {
+                Some(arr) if arr.len() >= 3 => {
+                    let coords: Vec<String> = arr
+                        .iter()
+                        .take(3)
+                        .map(|v| format!("{:.1}", v.as_f64().unwrap_or(0.0)))
+                        .collect();
+                    let name = tc.arguments.get("name").and_then(|v| v.as_str());
+                    match name {
+                        Some(n) => format!("Spawn \"{n}\" at ({})", coords.join(", ")),
+                        None => format!("Spawn entity at ({})", coords.join(", ")),
+                    }
+                }
+                _ => "Spawn entity".to_string(),
+            }
+        }
+        "destroy_entity" => {
+            let id = tc
+                .arguments
+                .get("entity_id")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            format!("Destroy entity {id}")
+        }
+        "set_field" => {
+            let comp = tc
+                .arguments
+                .get("component")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let field = tc
+                .arguments
+                .get("field")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            format!("Set {comp}.{field}")
+        }
+        "query_entities" => {
+            let filter = tc
+                .arguments
+                .get("component_filter")
+                .and_then(|v| v.as_str())
+                .unwrap_or("*");
+            format!("Query {filter}")
+        }
+        "get_scene_hierarchy" => "Get scene hierarchy".to_string(),
+        "duplicate_entity" => {
+            let id = tc
+                .arguments
+                .get("entity_id")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            format!("Duplicate entity {id}")
+        }
+        _ => tc.name.clone(),
+    }
+}
+
+fn format_tool_call_result(tc: &ToolCall, result: &str) -> String {
+    let summary = format_tool_call_summary(tc);
+    // Truncate very long results for display
+    let display_result = if result.len() > 200 {
+        format!("{}...", &result[..200])
+    } else {
+        result.to_string()
+    };
+    format!("{summary} -> {display_result}")
 }
 
 /// Execute local pattern-matching fallback via the CoCreatorAgent.
@@ -284,5 +636,37 @@ mod tests {
         let json = get_scene_context_json(&mut world, &registry, Some(entity));
         assert!(json.contains("TestEntity"));
         assert!(json.contains("entity_count"));
+    }
+
+    #[test]
+    fn test_tool_call_to_scene_op_spawn() {
+        let tc = ToolCall {
+            id: "call_1".to_string(),
+            name: "spawn_entity".to_string(),
+            arguments: serde_json::json!({
+                "position": [1.0, 2.0, 3.0],
+                "name": "TestCube"
+            }),
+        };
+        let op = tool_call_to_scene_op(&tc).unwrap();
+        match op {
+            SceneOp::SpawnEntity { position, name, .. } => {
+                assert_eq!(position, [1.0, 2.0, 3.0]);
+                assert_eq!(name, Some("TestCube".to_string()));
+            }
+            _ => panic!("Expected SpawnEntity"),
+        }
+    }
+
+    #[test]
+    fn test_tool_call_to_scene_op_unknown() {
+        let tc = ToolCall {
+            id: "call_x".to_string(),
+            name: "unknown_tool".to_string(),
+            arguments: serde_json::json!({}),
+        };
+        let result = tool_call_to_scene_op(&tc);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown tool"));
     }
 }

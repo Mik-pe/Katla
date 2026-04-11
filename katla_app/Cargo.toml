@@ -29,6 +29,7 @@ approx = { workspace = true }
 log = { workspace = true }
 clap = { workspace = true }
 dirs = { workspace = true }
+arboard = { workspace = true }
 png = { workspace = true }
 ron = { workspace = true }
 serde = { workspace = true }

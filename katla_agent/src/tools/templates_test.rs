@@ -57,4 +57,5 @@ fn test_available_templates() {
     assert!(list.iter().any(|(name, _)| *name == "campfire"));
     assert!(list.iter().any(|(name, _)| *name == "street_lamp"));
     assert!(list.iter().any(|(name, _)| *name == "village_square"));
+    assert!(list.iter().any(|(name, _)| *name == "forest_clearing"));
 }
