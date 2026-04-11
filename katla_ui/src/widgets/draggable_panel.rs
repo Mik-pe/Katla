@@ -171,8 +171,6 @@ impl<'a> DraggablePanelConfig<'a> {
 pub struct DraggablePanel;
 
 impl DraggablePanel {
-    const TITLE_BAR_HEIGHT: f32 = 32.0;
-
     pub fn show<F>(
         ui: &mut UiContext,
         state: &mut DraggablePanelState,
@@ -195,7 +193,7 @@ impl DraggablePanel {
             return;
         }
 
-        let title_bar_height = Self::TITLE_BAR_HEIGHT;
+        let title_bar_height = ui.style.title_bar_height;
 
         let default_pos = Vec2::new(
             screen_size.x() * 0.5 - panel_width * 0.5,
@@ -327,6 +325,6 @@ impl DraggablePanel {
     }
 
     pub fn title_bar_height() -> f32 {
-        Self::TITLE_BAR_HEIGHT
+        25.0
     }
 }
