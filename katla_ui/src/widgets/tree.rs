@@ -1,5 +1,9 @@
 use std::collections::HashSet;
 
+use katla_math::{Rect2D, Vec2};
+
+use crate::{Response, ScrollArea, ScrollAreaState, UiContext, Widget};
+
 /// A single item in a tree view.
 #[derive(Debug, Clone)]
 pub struct TreeItem {
@@ -51,5 +55,238 @@ impl TreeState {
 
     pub fn collapse_all(&mut self) {
         self.expanded.clear();
+    }
+}
+
+/// A virtualized tree view widget with expand/collapse and selection support.
+///
+/// Renders only visible rows for efficient handling of large trees.
+/// Each row shows indentation, an expand/collapse toggle, and a label.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::{TreeView, TreeItem, TreeState};
+///
+/// let mut tree_state = TreeState::new();
+/// let items = vec![
+///     TreeItem { id: 1, label: "Root".into(), depth: 0, has_children: true },
+///     TreeItem { id: 2, label: "Child".into(), depth: 1, has_children: false },
+/// ];
+///
+/// let resp = ui.add(TreeView::new("scene_tree", &mut tree_state)
+///     .data(items)
+///     .bounds(my_bounds)
+///     .row_height(22.0)
+///     .indent_per_level(16.0));
+/// ```
+pub struct TreeView<'a> {
+    id: &'a str,
+    state: &'a mut TreeState,
+    bounds: Rect2D,
+    data: Vec<TreeItem>,
+    row_height: f32,
+    indent_per_level: f32,
+}
+
+impl<'a> TreeView<'a> {
+    pub fn new(id: &'a str, state: &'a mut TreeState) -> Self {
+        Self {
+            id,
+            state,
+            bounds: Rect2D::default(),
+            data: Vec::new(),
+            row_height: 22.0,
+            indent_per_level: 16.0,
+        }
+    }
+
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    pub fn data(mut self, data: Vec<TreeItem>) -> Self {
+        self.data = data;
+        self
+    }
+
+    pub fn selected(self, _id: Option<u64>) -> Self {
+        self
+    }
+
+    pub fn row_height(mut self, h: f32) -> Self {
+        self.row_height = h;
+        self
+    }
+
+    pub fn indent_per_level(mut self, indent: f32) -> Self {
+        self.indent_per_level = indent;
+        self
+    }
+
+    fn compute_visible_items(&self) -> Vec<usize> {
+        let mut visible = Vec::new();
+        let mut parent_stack: Vec<u64> = Vec::new();
+
+        for (i, item) in self.data.iter().enumerate() {
+            while parent_stack.len() > item.depth as usize {
+                parent_stack.pop();
+            }
+
+            if item.depth == 0 {
+                visible.push(i);
+            } else if let Some(&parent_id) = parent_stack.last() {
+                if self.state.is_expanded(parent_id) {
+                    visible.push(i);
+                } else {
+                    continue;
+                }
+            }
+
+            if item.has_children {
+                parent_stack.push(item.id);
+            }
+        }
+
+        visible
+    }
+}
+
+impl Widget for TreeView<'_> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let visible_indices = self.compute_visible_items();
+        let visible_count = visible_indices.len();
+        let bounds = self.bounds;
+        let row_height = self.row_height;
+        let indent_per_level = self.indent_per_level;
+
+        let scroll_state = ScrollAreaState {
+            scroll_offset: self.state.scroll_offset,
+            content_height: 0.0,
+            stick_to_bottom: false,
+            at_bottom: false,
+        };
+
+        let state_ptr = self.state as *mut TreeState;
+
+        let mut toggle_clicked: Option<u64> = None;
+        let mut row_clicked: Option<u64> = None;
+        let mut row_right_clicked: Option<u64> = None;
+
+        let scroll_result = ui.scroll_area(
+            ScrollArea::new(self.id).max_height(bounds.height()),
+            scroll_state,
+            bounds,
+            |ui| {
+                let scroll_offset = ui.scroll_offset();
+                let padding = ui.style.item_inner_spacing;
+                let total_content_height = visible_count as f32 * row_height + padding * 2.0;
+
+                let first_visible_row =
+                    ((scroll_offset - padding).max(0.0) / row_height).floor() as usize;
+                let last_visible_row =
+                    ((scroll_offset - padding + bounds.height()) / row_height).ceil() as usize;
+                let first_row = first_visible_row.min(visible_count);
+                let last_row = last_visible_row.min(visible_count);
+
+                let font_size = ui.style.font_size;
+                let selected_color = ui.style.selectable_selected;
+                let hovered_color = ui.style.selectable_hovered;
+                let text_color = ui.style.text_color;
+                let arrow_color = ui.style.text_disabled;
+                let item_spacing = ui.style.item_inner_spacing;
+
+                for vis_idx in first_row..last_row {
+                    let data_idx = visible_indices[vis_idx];
+                    let item = &self.data[data_idx];
+
+                    let item_y =
+                        bounds.min.y() + padding + vis_idx as f32 * row_height - scroll_offset;
+                    let item_bounds = Rect2D::from_origin_size(
+                        Vec2::new(bounds.min.x(), item_y),
+                        Vec2::new(bounds.width(), row_height),
+                    );
+
+                    let is_selected = self.state.selected == Some(item.id);
+                    let row_hovered = ui.is_hovered(item_bounds);
+
+                    if is_selected {
+                        ui.draw_rect(item_bounds, selected_color);
+                    } else if row_hovered {
+                        ui.draw_rect(item_bounds, hovered_color);
+                    }
+
+                    let indent = item.depth as f32 * indent_per_level;
+                    let arrow_x = bounds.min.x() + indent + item_spacing;
+                    let arrow_y = item_bounds.center().y() - font_size * 0.5;
+
+                    if item.has_children {
+                        let arrow_char = if self.state.is_expanded(item.id) {
+                            '▼'
+                        } else {
+                            '▶'
+                        };
+                        let arrow_text = arrow_char.to_string();
+                        let arrow_size = ui.measure_text(&arrow_text, font_size);
+                        ui.draw_text(
+                            &arrow_text,
+                            Vec2::new(arrow_x, arrow_y),
+                            arrow_color,
+                            font_size,
+                        );
+
+                        let chevron_bounds = Rect2D::from_origin_size(
+                            Vec2::new(arrow_x, item_y),
+                            Vec2::new(arrow_size.x().max(12.0), row_height),
+                        );
+                        let chevron_hovered = ui.is_hovered(chevron_bounds);
+                        if chevron_hovered
+                            && ui.input.mouse_pressed[crate::input::mouse_button::LEFT]
+                        {
+                            toggle_clicked = Some(item.id);
+                        }
+                    }
+
+                    let label_x = arrow_x + indent_per_level;
+                    let label_y = item_bounds.center().y() - font_size * 0.5;
+                    ui.draw_text(
+                        &item.label,
+                        Vec2::new(label_x, label_y),
+                        text_color,
+                        font_size,
+                    );
+
+                    if row_hovered
+                        && ui.input.mouse_pressed[crate::input::mouse_button::LEFT]
+                        && toggle_clicked.is_none()
+                    {
+                        row_clicked = Some(item.id);
+                    }
+
+                    if row_hovered && ui.input.mouse_pressed[crate::input::mouse_button::RIGHT] {
+                        row_right_clicked = Some(item.id);
+                    }
+                }
+
+                total_content_height
+            },
+        );
+
+        let state = unsafe { &mut *state_ptr };
+        state.scroll_offset = scroll_result.scroll_offset;
+
+        if let Some(id) = toggle_clicked {
+            state.toggle_expanded(id);
+        }
+        if let Some(id) = row_clicked {
+            state.selected = Some(id);
+        }
+
+        let mut response = Response::new(bounds);
+        response.clicked = row_clicked.is_some() || toggle_clicked.is_some();
+        response.right_clicked = row_right_clicked.is_some();
+        response.changed = row_clicked.is_some();
+        response
     }
 }
