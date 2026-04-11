@@ -84,17 +84,9 @@
 - **Issue:** Destructive operations (delete entity, transform changes) have no undo. Slider drgs push `EditorAction::UpdateTransform` every frame (~120 identical actions during a 2s drag at 60fps), making a simple action stack impractical.
 - **Fix:** Implement a command pattern with undo support. First fix the duplicate slider action issue (only push final value on mouse release).
 
-### 22. No texture/mesh/material destroy API on `VulkanRenderer`
-- **Crate:** katla_gfx
-- **File:** `src/renderer/mod.rs`
-- **Issue:** Resources can be created but never freed. Dynamic scenes accumulate GPU memory. Bindless texture slots (capped at 4096) will eventually exhaust.
-- **Fix:** Add `destroy_texture(TextureHandle)`, `destroy_mesh(MeshHandle)` that unregister from bindless and free GPU resources.
+~~### 22. No texture/mesh/material destroy API on `VulkanRenderer`~~ — False positive. `destroy_api.rs` already implements `destroy_texture`, `destroy_mesh`, `destroy_material`, and `destroy_skeleton` with bindless slot release and tests.
 
-### 23. Particle emitter GPU resources not cleaned up on entity destruction
-- **Crate:** katla_app
-- **File:** `src/systems/particle_system.rs` (line 110)
-- **Issue:** When an entity with `ParticleEmitterComponent` is destroyed, the GPU emitter is not cleaned up. `EditorAction::DeleteEntity` handles it manually, but programmatic entity destruction leaks GPU emitters.
-- **Fix:** In `ParticleSystem::update()`, iterate active emitter handles and check if owning entity still exists. Or add entity destruction hooks to ECS.
+### ~~23. Particle emitter GPU resources not cleaned up on entity destruction~~ — Fixed. `ParticleSystem` now tracks entity-to-handle mappings via `entity_emitters` HashMap and destroys GPU emitters for entities that no longer exist.
 
 ~~### 24. No combo box / dropdown select widget~~ — Fixed in f5cf41f. Added ComboBox builder widget with trigger button, dropdown popup, and selection support.
 
@@ -112,11 +104,7 @@
 - **Issue:** `SceneOp::GetSceneHierarchy` exists but returns all entities flat. No `Parent(EntityId)` / `Children(Vec<EntityId>)` components, no hierarchy traversal.
 - **Fix:** Add `Parent`/`Children` components with automatic maintenance and hierarchy traversal.
 
-### 28. No query filtering (`Without<T>`, `With<T>`)
-- **Crate:** katla_ecs
-- **File:** `src/query/mod.rs`
-- **Issue:** Queries only support positive component inclusion. No way to query for entities with A but NOT B.
-- **Fix:** Add `Without<T>` and `With<T>` filter types.
+### ~~28. No query filtering (`Without<T>`, `With<T>`)~~ — Fixed. Added `With<T>`/`Without<T>` marker types, `QueryFilter` trait with tuple support, `FilteredQueryIter` wrapper, and `World::query_filtered()` method with 9 tests.
 
 ~~### 29. No `#[inspect(enum)]` / `#[inspect(struct)]` / `#[inspect(vec)]` attribute support~~ — Fixed in 66cb756. Added ExplicitFieldKind enum and parsing for enum, struct, vec, entity_ref attributes.
 
@@ -277,10 +265,7 @@
 - **Issue:** `ANGLE_RIGHT` exists but directional counterparts are missing. Used for submenu indicators.
 - **Fix:** Add `ANGLE_LEFT` (F104), `ANGLE_UP` (F106), `ANGLE_DOWN` (F107).
 
-### 75. Add streaming tests for `CoCreatorAgent` and `AsyncBridge`
-- **Crate:** katla_agent
-- **Issue:** The core streaming loop and tool call accumulation are completely untested. `McpBridge` and `KatlaMcpServer` also have zero tests.
-- **Fix:** Add tests with mock provider returning streaming tool call data.
+~~### 75. Add streaming tests for `CoCreatorAgent` and `AsyncBridge`~~ — False positive. `co_creator_test.rs` already has 8 streaming tests covering text chunks, tool call accumulation, errors, truncation, bridge end-to-end, and finalization.
 
 ~~### 76. Add MCP server graceful shutdown and error logging~~ — Fixed in b96aee7. Added watch channel shutdown signal, tokio::select! for graceful termination, and log::error for server failures.
 - **Crate:** katla_agent
@@ -321,7 +306,35 @@
 - **Issue:** Tool call arguments and stream chunks use raw `String` / `serde_json::Value` instead of typed serde-deserialized structs. `ToolCallAccumulator` accumulates `arguments` as a `String`, `MockStreamProvider::tool_call()` takes `&str` for arguments, and `tool_call_to_scene_op()` manually extracts fields from `serde_json::Value`. This is error-prone and verbose.
 - **Fix:** Define typed argument structs (e.g. `SpawnEntityArgs`, `DestroyEntityArgs`) with `#[derive(Deserialize)]`, accumulate arguments into a `Vec<u8>` / `String` buffer, then deserialize into the typed struct. Remove all manual `args.get("field").and_then(|v| v.as_str())` patterns.
 
-### 87. Add undo/redo for AI agent actions
+### 87. Preferences panel UX reorganization
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/preferences.rs`, `katla_app/src/ui/editor_ui/mod.rs`, `katla_app/src/ui/editor_ui/layout.rs`, `katla_app/src/ui/editor_ui/toolbar.rs`, `katla_app/src/preferences.rs`
+- **Issue:** The preferences panel has structural UX problems that make it harder to use than it should be:
+  1. **Settings scattered across wrong tabs.** "Show Grid" and "Show Stats Panel" are on the Appearance tab but are viewport visibility toggles, not appearance settings. "Snap to Grid" is on the Editor tab while grid visibility is on Appearance. Grid size, grid visibility, and snap-to-grid are the same feature split across two tabs.
+  2. **Two tabs contain no settings.** Keybindings is read-only with a "coming soon" message -- raises an expectation it can't fulfill. About is metadata (version, features list), not a setting. Both inflate the tab count without adding configurability.
+  3. **Inconsistent save semantics.** Appearance and Editor tabs apply changes instantly. The AI tab requires an explicit "Save Configuration" button. The user doesn't know which model applies where.
+  4. **Font Scale uses 8 preset buttons for a continuous value.** 75%-200% in fixed steps wastes space and prevents fine-tuning (e.g. 1.15x). Camera speed correctly uses a slider for the same kind of continuous range.
+  5. **Panel title says "Settings" but menu item says "Preferences..."**. Two different names for the same dialog.
+  6. **Theme grid uses 2 columns for 13 items** producing 7 rows with a lone orphan button, requiring excessive scrolling. 3 columns would fit in the 450px panel width and reduce to ~5 rows.
+  7. **Hardcoded spacing after theme grid** (`ROW_HEIGHT * 7.0 + GRID_SPACING + SECTION_GAP`) breaks if themes are added or removed.
+  8. **Editor tab is sparse.** Only 3 controls (snap toggle, camera slider, grid size buttons) while two related viewport controls sit on a different tab.
+  9. **About tab hardcodes version string** instead of using `env!("CARGO_PKG_VERSION")`.
+  10. **Camera speed slider has no context.** Label says "Speed: 50" but the user has no reference for whether that's slow or fast. Min/max labels would help.
+- **Fix:**
+  - Reorganize tabs to reflect user mental models:
+    - **General** tab: Theme selection, Font Scale (change to slider).
+    - **Viewport** tab: Show Grid, Grid Size, Show Stats, Snap to Grid, Camera Speed. All grid-related settings live together.
+    - **AI** tab: Keep as-is but make save behavior consistent with other tabs (auto-save on change, remove explicit Save button).
+  - Remove Keybindings tab. Move to a standalone Help > Keyboard Shortcuts window (or add it back when editable).
+  - Remove About tab. Move to Help > About menu item.
+  - Rename panel title to match menu item (both "Preferences" or both "Settings").
+  - Change Font Scale from button grid to slider (0.75–2.0, matching camera speed pattern).
+  - Change theme grid from 2-column to 3-column layout.
+  - Replace hardcoded theme grid spacing with dynamic calculation based on item count.
+  - Use `env!("CARGO_PKG_VERSION")` for version string.
+  - Add min/max labels to camera speed slider for context.
+
+### 88. Add undo/redo for AI agent actions
 - **Crate:** katla_agent / katla_app
 - **Files:** `katla_agent/src/co_creator/mod.rs`, `katla_app/src/application/editor/agent.rs`
 - **Issue:** When the AI spawns, destroys, or modifies entities via tool calls, there is no way for the user to reverse those actions. The `SceneToolExecutor` already produces `UndoGroup`s from each operation, but they are discarded (the `_undo_group` is unused in `execute_tool_call`). Long chains of AI operations cannot be rolled back, which is dangerous if the AI makes a mistake.
