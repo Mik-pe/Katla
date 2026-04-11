@@ -238,7 +238,7 @@
 - **Issue:** Has AABB-AABB test but no AABB-Sphere, needed for frustum culling and broadphase.
 - **Fix:** Add `pub fn intersects_sphere(&self, sphere: &Sphere) -> bool`.
 
-~~### 67. `Sphere::create_from_verts` allocates unnecessarily~~ — Fixed in f74b05c. Rewritten to compute bounds inline in a single pass without Vec allocation.
+~~### 67. `Sphere::create_from_verts` allocates unnecessarily~~ — False positive. Bounds already computed inline in single pass without Vec allocation using generic iterator `I: IntoIterator<Item = &'a [f32; 3]>`.
 
 ### 68. `SparseSet` memory waste with large EntityId gaps
 - **Crate:** katla_ecs
@@ -300,13 +300,13 @@
 
 ~~### 85. Clicks on overlying panels are forwarded to the 3D scene underneath~~ — Fixed in 409ddf6. update_focused_panel_from_click now checks floating panel bounds before forwarding clicks to viewport.
 
-### 86. Use serde JSON derives for tool call arguments instead of raw strings
+~~### 86. Use serde JSON derives for tool call arguments instead of raw strings~~ — Fixed in 37ab58a. Added typed Deserialize structs (SpawnEntityArgs, DestroyEntityArgs, etc.) replacing all manual args.get() patterns.
 - **Crate:** katla_agent
 - **File:** `src/llm/mock.rs`, `src/co_creator/mod.rs`
 - **Issue:** Tool call arguments and stream chunks use raw `String` / `serde_json::Value` instead of typed serde-deserialized structs. `ToolCallAccumulator` accumulates `arguments` as a `String`, `MockStreamProvider::tool_call()` takes `&str` for arguments, and `tool_call_to_scene_op()` manually extracts fields from `serde_json::Value`. This is error-prone and verbose.
 - **Fix:** Define typed argument structs (e.g. `SpawnEntityArgs`, `DestroyEntityArgs`) with `#[derive(Deserialize)]`, accumulate arguments into a `Vec<u8>` / `String` buffer, then deserialize into the typed struct. Remove all manual `args.get("field").and_then(|v| v.as_str())` patterns.
 
-### 87. Preferences panel UX reorganization
+~~### 87. Preferences panel UX reorganization~~ — Fixed in 37ab58a. Consolidated to 3 tabs (General, Viewport, AI), 3-column theme grid, font scale slider, auto-save AI config.
 - **Crate:** katla_app
 - **Files:** `katla_app/src/ui/editor_ui/preferences.rs`, `katla_app/src/ui/editor_ui/mod.rs`, `katla_app/src/ui/editor_ui/layout.rs`, `katla_app/src/ui/editor_ui/toolbar.rs`, `katla_app/src/preferences.rs`
 - **Issue:** The preferences panel has structural UX problems that make it harder to use than it should be:
