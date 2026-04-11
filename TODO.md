@@ -476,7 +476,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Sub-tasks:**
   - [x] ~~114a. Add `Panel` builder struct with `PanelGuard`~~ — Done in af7d24e. Draws bg, border, header, title, returns RAII guard.
   - [x] ~~114b. Implement Panel rendering~~ — Done in af7d24e (part of 114a). show() draws chrome and pushes clip.
-  - [ ] 114c. Migrate one panel (e.g., hierarchy or inspector) to use `Panel` widget as proof of concept (small, low risk)
+  - [x] ~~114c. Migrate one panel (e.g., hierarchy or inspector) to use `Panel` widget as proof of concept~~ — Done in b925486. Hierarchy panel uses Panel::show() widget.
   - **Recommended order:** 114a → 114b → 114c
 - **Fix:** Add a `Panel` builder widget to katla_ui:
   ```rust
@@ -518,7 +518,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Sub-tasks:**
   - [x] ~~116a. Add `right_clicked` and `middle_clicked` to `Response`~~ — Already done in ed50fcf (as part of 117a).
   - [x] ~~116b. Add `Selectable` builder widget~~ — Done in c7e8286. Draws selection/hover bg, returns Response with click/right-click.
-  - [ ] 116c. Migrate hierarchy entity items to `Selectable` widget as proof of concept (medium, low risk)
+  - [x] ~~116c. Migrate hierarchy entity items to `Selectable` widget as proof of concept~~ — Done in b925486. Entity rows use Selectable widget with resp.clicked/right_clicked.
   - **Recommended order:** 116a → 116b → 116c
 - **Fix:** Add `Selectable` widget:
   ```rust
@@ -568,7 +568,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] ~~119a. Add `StatusBar` builder~~ — Done in af7d24e. Background drawing with cursor positioning for status_label/status_separator.
   - [x] ~~119b. Implement StatusBar rendering~~ — Done in af7d24e (part of 119a). Background, border, cursor positioning.
   - [x] ~~119c. Add `ui.status_label` and `ui.status_separator` helpers~~ — Done in 62c2288. Draws text/line and advances cursor.
-  - [ ] 119d. Migrate `status_bar.rs` to use `StatusBar` widget (small, low risk)
+  - [x] ~~119d. Migrate `status_bar.rs` to use `StatusBar` widget~~ — Done in b925486. Uses StatusBar widget + status_label/status_separator helpers.
   - **Recommended order:** 119a → 119b → 119c → 119d
 - **Fix:** Add `StatusBar` builder:
   ```rust
