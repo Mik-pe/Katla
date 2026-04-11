@@ -130,6 +130,8 @@ pub(crate) struct EditorState {
     pub(crate) inspector_slider_was_active: bool,
     /// Pre-drag snapshot of ECS values for undo.
     pub(crate) inspector_drag_snapshot: Option<editor::InspectorDragSnapshot>,
+    /// Maps entity ID to GPU handles for cleanup when entity is destroyed via undo/redo.
+    pub(crate) entity_gpu_handles: HashMap<katla_ecs::EntityId, editor::GpuCleanupData>,
 }
 
 #[cfg(feature = "editor")]
@@ -180,6 +182,7 @@ impl EditorState {
             agent_redo_stack: Vec::new(),
             inspector_slider_was_active: false,
             inspector_drag_snapshot: None,
+            entity_gpu_handles: HashMap::new(),
         }
     }
 

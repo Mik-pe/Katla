@@ -1,12 +1,9 @@
 use std::collections::HashSet;
 
 use katla_ecs::EntityId;
-use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::widgets::{ListView, Panel};
-use katla_ui::{
-    FontId, FontSize, ForkAwesome, Response, ScrollAreaState, UiContext, Widget,
-    input::mouse_button,
-};
+use katla_math::{Rect2D, Vec2};
+use katla_ui::widgets::{Panel, RowInfo, TreeItem, TreeState, TreeView};
+use katla_ui::{FontId, FontSize, ForkAwesome, Response, ScrollAreaState, UiContext, Widget};
 
 use super::{EditorAction, EntityInfo, Theme};
 
@@ -67,13 +64,13 @@ impl<'a> Hierarchy<'a> {
 
 impl<'a> Widget for Hierarchy<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let visible_entities: Vec<&EntityInfo> = self
+        let visible_count = self
             .entities
             .iter()
             .filter(|e| is_entity_visible(e, self.entities, &self.state.expanded_entities))
-            .collect();
+            .count();
 
-        let header_text = format!("Hierarchy ({} entities)", visible_entities.len());
+        let header_text = format!("Hierarchy ({} entities)", visible_count);
         let content_bounds = {
             let guard = Panel::new(&header_text)
                 .bounds(self.bounds)
@@ -82,100 +79,53 @@ impl<'a> Widget for Hierarchy<'a> {
             guard.content_bounds()
         };
 
-        let expanded_entities = self.state.expanded_entities.clone();
-        let selected_entity = *self.selected_entity;
-        let indent_per_level = 16.0;
+        let entities = self.entities;
+        let theme = self.theme;
+        let bounds_width = self.bounds.width();
 
-        let mut toggle_entity: Option<EntityId> = None;
-        let mut clicked_entity: Option<EntityId> = None;
-        let mut right_clicked_entity: Option<EntityId> = None;
+        let items: Vec<TreeItem> = entities
+            .iter()
+            .map(|e| TreeItem {
+                id: e.id.id(),
+                label: e.name.clone(),
+                depth: e.depth,
+                has_children: e.has_children,
+            })
+            .collect();
 
-        if !visible_entities.is_empty() {
-            let theme = self.theme;
-            let list_origin_x = self.bounds.min.x();
-            let list_width = self.bounds.width();
+        let mut tree_state = TreeState {
+            expanded: self
+                .state
+                .expanded_entities
+                .iter()
+                .map(|id| id.id())
+                .collect(),
+            selected: self.selected_entity.map(|id| id.id()),
+            scroll_offset: self.state.scroll_state.scroll_offset,
+        };
 
+        let response = if !items.is_empty() {
             ui.add(
-                ListView::new("hierarchy_scroll", &mut self.state.scroll_state)
+                TreeView::new("hierarchy_tree", &mut tree_state)
                     .bounds(content_bounds)
-                    .item_count(visible_entities.len())
+                    .data(items)
                     .row_height(22.0)
-                    .render_each(|ui: &mut UiContext, index, row_bounds| {
-                        let entity = visible_entities[index];
-                        let indent = entity.depth as f32 * indent_per_level;
-                        let item_x = list_origin_x + indent;
-                        let item_width = list_width - indent;
-
-                        let item_bounds = Rect2D::from_origin_size(
-                            Vec2::new(item_x, row_bounds.min.y()),
-                            Vec2::new(item_width, row_bounds.height()),
-                        );
-
-                        let is_selected = Some(entity.id) == selected_entity;
-                        let is_hovered = ui.is_hovered(item_bounds);
-
-                        let bg_color = if is_selected {
-                            theme.selection
-                        } else if is_hovered {
-                            theme.selection_hover
-                        } else {
-                            Color::TRANSPARENT
-                        };
-
-                        if bg_color != Color::TRANSPARENT {
-                            ui.draw_rect(item_bounds, bg_color);
-                        }
+                    .indent_per_level(16.0)
+                    .render_item(move |ui: &mut UiContext, item: &TreeItem, info: &RowInfo| {
+                        let entity = entities
+                            .iter()
+                            .find(|e| e.id.id() == item.id)
+                            .expect("TreeItem id must correspond to an EntityInfo");
 
                         if entity.depth > 0 {
-                            let line_x = item_x - 8.0;
+                            let line_x = info.bounds.min.x() - 8.0;
                             ui.draw_line(
-                                Vec2::new(line_x, row_bounds.min.y()),
-                                Vec2::new(line_x, row_bounds.max.y()),
+                                Vec2::new(line_x, info.bounds.min.y()),
+                                Vec2::new(line_x, info.bounds.max.y()),
                                 theme.separator,
                                 1.0,
                             );
                         }
-
-                        let text_x = if entity.has_children {
-                            let is_expanded = expanded_entities.contains(&entity.id);
-                            let icon = if is_expanded {
-                                ForkAwesome::CHEVRON_DOWN
-                            } else {
-                                ForkAwesome::CHEVRON_RIGHT
-                            };
-                            let triangle_bounds = Rect2D::from_origin_size(
-                                Vec2::new(item_x + 2.0, row_bounds.min.y()),
-                                Vec2::new(16.0, row_bounds.height()),
-                            );
-                            let triangle_hovered = ui.is_hovered(triangle_bounds);
-
-                            let triangle_color = if triangle_hovered {
-                                theme.text_primary
-                            } else {
-                                theme.text_secondary
-                            };
-
-                            ui.draw_icon_aligned(
-                                icon,
-                                Vec2::new(item_x + 3.0, row_bounds.min.y() + 3.0),
-                                ui.scaled_font_size(FontSize::Medium),
-                                triangle_color,
-                                FontId::DEFAULT,
-                            );
-
-                            if ui.mouse_clicked(mouse_button::LEFT) && triangle_hovered {
-                                toggle_entity = Some(entity.id);
-                            }
-
-                            item_x + 18.0
-                        } else {
-                            let dot_pos = Vec2::new(item_x + 6.0, row_bounds.min.y() + 8.0);
-                            ui.draw_rect(
-                                Rect2D::from_origin_size(dot_pos, Vec2::new(4.0, 4.0)),
-                                theme.text_muted,
-                            );
-                            item_x + 18.0
-                        };
 
                         let entity_icon = match entity.entity_type.as_str() {
                             "Mesh" => ForkAwesome::CUBE,
@@ -195,13 +145,13 @@ impl<'a> Widget for Hierarchy<'a> {
 
                         ui.draw_icon_aligned(
                             entity_icon,
-                            Vec2::new(text_x, row_bounds.min.y() + 3.0),
+                            Vec2::new(info.content_x, info.bounds.min.y() + 3.0),
                             ui.scaled_font_size(FontSize::Medium),
                             entity_icon_color,
                             FontId::DEFAULT,
                         );
 
-                        let name_pos = Vec2::new(text_x + 16.0, row_bounds.min.y() + 3.0);
+                        let name_pos = Vec2::new(info.content_x + 16.0, info.bounds.min.y() + 3.0);
                         ui.draw_text(
                             &entity.name,
                             name_pos,
@@ -219,8 +169,8 @@ impl<'a> Widget for Hierarchy<'a> {
                         let badge_size =
                             ui.measure_text(badge_text, ui.scaled_font_size(FontSize::XSmall));
                         let badge_pos = Vec2::new(
-                            item_bounds.max.x() - badge_size.x() - 8.0,
-                            row_bounds.min.y() + 5.0,
+                            info.bounds.min.x() + bounds_width - badge_size.x() - 8.0,
+                            info.bounds.min.y() + 5.0,
                         );
                         ui.draw_text(
                             badge_text,
@@ -228,49 +178,36 @@ impl<'a> Widget for Hierarchy<'a> {
                             badge_color,
                             ui.scaled_font_size(FontSize::XSmall),
                         );
-
-                        let triangle_width = if entity.has_children { 18.0 } else { 0.0 };
-                        let select_bounds = Rect2D::from_origin_size(
-                            Vec2::new(item_x + triangle_width, row_bounds.min.y()),
-                            Vec2::new(item_width - triangle_width, row_bounds.height()),
-                        );
-                        let select_hovered = ui.is_hovered(select_bounds);
-
-                        if ui.mouse_clicked(mouse_button::LEFT)
-                            && select_hovered
-                            && !ui.has_open_popup()
-                        {
-                            clicked_entity = Some(entity.id);
-                        }
-
-                        let sense = ui.sense(item_bounds);
-                        if sense.right_clicked && !ui.has_open_popup() {
-                            right_clicked_entity = Some(entity.id);
-                        }
                     }),
-            );
-        }
+            )
+        } else {
+            ui.draw_empty_state(self.bounds, "No entities in scene");
+            Response::default()
+        };
 
-        if let Some(entity_id) = toggle_entity {
-            if self.state.expanded_entities.contains(&entity_id) {
-                self.state.expanded_entities.remove(&entity_id);
-            } else {
-                self.state.expanded_entities.insert(entity_id);
+        self.state.expanded_entities = tree_state
+            .expanded
+            .iter()
+            .map(|&id| EntityId::from_raw(id))
+            .collect();
+        self.state.scroll_state.scroll_offset = tree_state.scroll_offset;
+
+        if let Some(selected_u64) = tree_state.selected {
+            let new_selected = EntityId::from_raw(selected_u64);
+            if *self.selected_entity != Some(new_selected) {
+                *self.selected_entity = Some(new_selected);
+                self.pending_actions
+                    .push(EditorAction::SelectEntity(new_selected));
             }
         }
-        if let Some(entity_id) = clicked_entity {
-            *self.selected_entity = Some(entity_id);
-            self.pending_actions
-                .push(EditorAction::SelectEntity(entity_id));
-        }
-        if let Some(entity_id) = right_clicked_entity {
-            *self.selected_entity = Some(entity_id);
-            self.state.context_entity = Some(entity_id);
-            self.state.context_menu_open = true;
-        }
 
-        if self.entities.is_empty() {
-            ui.draw_empty_state(self.bounds, "No entities in scene");
+        if response.right_clicked {
+            if let Some(selected_u64) = tree_state.selected {
+                let entity_id = EntityId::from_raw(selected_u64);
+                *self.selected_entity = Some(entity_id);
+                self.state.context_entity = Some(entity_id);
+                self.state.context_menu_open = true;
+            }
         }
 
         let mut clicked_action: Option<&str> = None;

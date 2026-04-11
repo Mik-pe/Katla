@@ -182,6 +182,13 @@ fn snapshot_inspector_state(app: &Application, entity: EntityId) -> InspectorDra
     }
 }
 
+/// GPU handles associated with a spawned entity, used for cleanup on undo/redo.
+pub(crate) struct GpuCleanupData {
+    pub(crate) mesh_handle: katla_gfx::MeshHandle,
+    pub(crate) material_handle: katla_gfx::MaterialHandle,
+    pub(crate) skeleton_handle: katla_gfx::SkeletonHandle,
+}
+
 /// Command that reverses a spawn by destroying the entity.
 /// Undo re-creates the entity (no component restoration for editor spawns).
 struct EditorSpawnCommand {
@@ -630,6 +637,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 undo_group
                     .commands
                     .push(Box::new(EditorSpawnCommand::new(spawned_entity)));
+                record_entity_gpu_handles(app, spawned_entity);
                 app.editor.push_undo(undo_group);
             }
             EditorAction::SpawnModelAtPath { path, screen_pos } => {
@@ -653,6 +661,7 @@ pub fn process_editor_actions(app: &mut Application) {
                         undo_group
                             .commands
                             .push(Box::new(EditorSpawnCommand::new(spawned_entity)));
+                        record_entity_gpu_handles(app, spawned_entity);
                         app.editor.push_undo(undo_group);
                     }
                     Err(e) => {
@@ -696,6 +705,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
                 app.editor.push_undo(undo_group);
                 info!("Deleted entity {:?} and its children", entity_id);
+                info!("Deleted entity {:?} and its children", entity_id);
             }
             EditorAction::DuplicateEntity(entity_id) => {
                 let source_parent = app
@@ -722,6 +732,7 @@ pub fn process_editor_actions(app: &mut Application) {
                     undo_group
                         .commands
                         .push(Box::new(EditorSpawnCommand::new(new_entity_id)));
+                    record_entity_gpu_handles(app, new_entity_id);
                     app.editor.push_undo(undo_group);
                     app.editor.editor_ui.selected_entity = Some(new_entity_id);
                     info!("Duplicated entity {:?} -> {:?}", entity_id, new_entity_id);
@@ -791,6 +802,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 app.editor.editor_ui.selected_entity = None;
                 app.editor.agent_undo_stack.clear();
                 app.editor.agent_redo_stack.clear();
+                app.editor.entity_gpu_handles.clear();
                 info!("New scene created");
             }
             EditorAction::Quit => {
@@ -798,12 +810,15 @@ pub fn process_editor_actions(app: &mut Application) {
             }
             EditorAction::Undo => {
                 app.editor.perform_undo(&mut app.world);
+                process_gpu_cleanup_for_destroyed_entities(app);
             }
             EditorAction::Redo => {
                 app.editor.perform_redo(&mut app.world);
+                process_gpu_cleanup_for_destroyed_entities(app);
             }
             EditorAction::AgentUndo => {
                 app.editor.perform_agent_undo(&mut app.world);
+                process_gpu_cleanup_for_destroyed_entities(app);
             }
             EditorAction::SelectEntity(entity_id) => {
                 info!("Selected entity {:?}", entity_id);
@@ -1416,6 +1431,54 @@ pub fn collect_children_recursive(
         for child_id in &children.children {
             result.push(*child_id);
             collect_children_recursive(app, *child_id, result);
+        }
+    }
+}
+
+/// Record GPU handles for a spawned entity so they can be released on undo.
+pub fn record_entity_gpu_handles(app: &mut Application, entity: EntityId) {
+    if let Some(drawable) = app.world.get_component::<DrawableComponent>(entity) {
+        app.editor.entity_gpu_handles.insert(
+            entity,
+            GpuCleanupData {
+                mesh_handle: drawable.mesh_handle,
+                material_handle: drawable.material_handle,
+                skeleton_handle: drawable.skeleton_handle,
+            },
+        );
+    }
+}
+
+/// Release GPU resources for entities that have been destroyed via undo/redo.
+///
+/// Checks `EditorState::entity_gpu_handles` for entries whose entity no longer
+/// exists in the world, releases those handles via the GPU resource tracker,
+/// and destroys the underlying GPU objects.
+pub fn process_gpu_cleanup_for_destroyed_entities(app: &mut Application) {
+    let destroyed_entities: Vec<EntityId> = app
+        .editor
+        .entity_gpu_handles
+        .keys()
+        .filter(|id| !app.world.entity_exists(**id))
+        .copied()
+        .collect();
+
+    for entity in destroyed_entities {
+        if let Some(cleanup) = app.editor.entity_gpu_handles.remove(&entity) {
+            let to_destroy = app.gpu_resource_tracker.release_drawable(
+                cleanup.mesh_handle,
+                cleanup.material_handle,
+                cleanup.skeleton_handle,
+            );
+            for handle in &to_destroy.meshes {
+                app.renderer.destroy_mesh(*handle);
+            }
+            for handle in &to_destroy.materials {
+                app.renderer.destroy_material(*handle);
+            }
+            for handle in &to_destroy.skeletons {
+                app.renderer.destroy_skeleton(*handle);
+            }
         }
     }
 }

@@ -68,6 +68,55 @@ pub struct ColorScheme {
 
     /// Focus ring color drawn around the focused widget during Tab navigation.
     pub focus_ring_color: Color,
+
+    // Editor-specific semantic colors
+    /// Status: success (green).
+    pub success: Color,
+    /// Status: warning (yellow/amber).
+    pub warning: Color,
+    /// Status: error (red).
+    pub error: Color,
+
+    /// Entity type color for mesh entities.
+    pub entity_mesh: Color,
+    /// Entity type color for light entities.
+    pub entity_light: Color,
+    /// Entity type color for particle entities.
+    pub entity_particle: Color,
+    /// Entity type color for empty entities.
+    pub entity_empty: Color,
+
+    /// Accent color for emphasized elements.
+    pub accent: Color,
+    /// Highlight color for focused/important elements.
+    pub highlight: Color,
+
+    /// Selection background color.
+    pub selection: Color,
+    /// Selection background when hovered.
+    pub selection_hover: Color,
+
+    /// Viewport border color.
+    pub viewport_border: Color,
+
+    /// Darker background variant.
+    pub background_dark: Color,
+    /// Medium background variant.
+    pub background_medium: Color,
+
+    /// Primary text color (high contrast).
+    pub text_primary: Color,
+    /// Secondary text color (medium contrast).
+    pub text_secondary: Color,
+    /// Muted text color (low contrast).
+    pub text_muted: Color,
+
+    /// Panel background color.
+    pub panel_bg: Color,
+    /// Panel border color.
+    pub panel_border: Color,
+    /// Panel header background color.
+    pub panel_header: Color,
 }
 
 /// Predefined font sizes in points.
@@ -431,6 +480,34 @@ impl ColorScheme {
             scrollbar_handle_hovered: Color::from_rgb_hex(0x606060),
 
             focus_ring_color: Color::from_rgb_hex(0x4a9eff),
+
+            success: Color::from_rgb_hex(0xa6da95),
+            warning: Color::from_rgb_hex(0xf9e2af),
+            error: Color::from_rgb_hex(0xf38ba8),
+
+            entity_mesh: Color::from_rgb_hex(0xa6da95),
+            entity_light: Color::from_rgb_hex(0xf9e2af),
+            entity_particle: Color::from_rgb_hex(0xfab387),
+            entity_empty: Color::from_rgb_hex(0x6c7086),
+
+            accent: Color::from_rgb_hex(0xa6da95),
+            highlight: Color::from_rgb_hex(0xf5c2e7),
+
+            selection: Color::new(0.29, 0.62, 1.0, 0.4),
+            selection_hover: Color::from_rgb_hex(0x505050),
+
+            viewport_border: Color::from_rgb_hex(0x4a9eff),
+
+            background_dark: Color::from_rgb_hex(0x181825),
+            background_medium: Color::from_rgb_hex(0x313244),
+
+            text_primary: Color::from_rgb_hex(0xcdd6f4),
+            text_secondary: Color::from_rgb_hex(0xbac2de),
+            text_muted: Color::from_rgb_hex(0x6c7086),
+
+            panel_bg: Color::from_rgb_hex(0x1e1e2e),
+            panel_border: Color::from_rgb_hex(0x45475a),
+            panel_header: Color::from_rgb_hex(0x313244),
         }
     }
 
@@ -493,6 +570,34 @@ impl ColorScheme {
             scrollbar_handle_hovered: Color::from_rgb_hex(0x808080),
 
             focus_ring_color: Color::from_rgb_hex(0x4a9eff),
+
+            success: Color::from_rgb_hex(0x40a02b),
+            warning: Color::from_rgb_hex(0xdf8e1d),
+            error: Color::from_rgb_hex(0xd20f39),
+
+            entity_mesh: Color::from_rgb_hex(0x40a02b),
+            entity_light: Color::from_rgb_hex(0xdf8e1d),
+            entity_particle: Color::from_rgb_hex(0xfe640b),
+            entity_empty: Color::from_rgb_hex(0x9ca0b0),
+
+            accent: Color::from_rgb_hex(0x40a02b),
+            highlight: Color::from_rgb_hex(0xea76cb),
+
+            selection: Color::new(0.13, 0.44, 0.82, 0.3),
+            selection_hover: Color::from_rgb_hex(0xd0d0d0),
+
+            viewport_border: Color::from_rgb_hex(0x4a9eff),
+
+            background_dark: Color::from_rgb_hex(0xe0e0e0),
+            background_medium: Color::from_rgb_hex(0xe8e8e8),
+
+            text_primary: Color::from_rgb_hex(0x222222),
+            text_secondary: Color::from_rgb_hex(0x555555),
+            text_muted: Color::from_rgb_hex(0x888888),
+
+            panel_bg: Color::from_rgb_hex(0xf0f0f0),
+            panel_border: Color::from_rgb_hex(0xc0c0c0),
+            panel_header: Color::from_rgb_hex(0xe0e0e0),
         }
     }
 
@@ -555,7 +660,130 @@ impl ColorScheme {
             scrollbar_handle_hovered: Color::from_rgb_hex(0x666666),
 
             focus_ring_color: Color::from_rgb_hex(0x4a9eff),
+
+            success: Color::from_rgb_hex(0x4ec9b0),
+            warning: Color::from_rgb_hex(0xdcdcaa),
+            error: Color::from_rgb_hex(0xf44747),
+
+            entity_mesh: Color::from_rgb_hex(0x4ec9b0),
+            entity_light: Color::from_rgb_hex(0xdcdcaa),
+            entity_particle: Color::from_rgb_hex(0xce9178),
+            entity_empty: Color::from_rgb_hex(0x6a9955),
+
+            accent: Color::from_rgb_hex(0x4ec9b0),
+            highlight: Color::from_rgb_hex(0x569cd6),
+
+            selection: Color::new(0.2, 0.4, 0.64, 0.5),
+            selection_hover: Color::from_rgb_hex(0x4a4a4a),
+
+            viewport_border: Color::from_rgb_hex(0x3465a4),
+
+            background_dark: Color::from_rgb_hex(0x1a1a1a),
+            background_medium: Color::from_rgb_hex(0x3a3a3a),
+
+            text_primary: Color::from_rgb_hex(0xeeeeee),
+            text_secondary: Color::from_rgb_hex(0xbbbbbb),
+            text_muted: Color::from_rgb_hex(0x777777),
+
+            panel_bg: Color::from_rgb_hex(0x2b2b2b),
+            panel_border: Color::from_rgb_hex(0x555555),
+            panel_header: Color::from_rgb_hex(0x1f1f1f),
         }
+    }
+
+    /// Extract a `ColorScheme` from an existing [`UiStyle`].
+    pub fn from_style(style: &UiStyle) -> Self {
+        Self {
+            window_bg: style.window_bg,
+            window_title_bg: style.window_title_bg,
+            window_title_bg_active: style.window_title_bg_active,
+            window_title_text: style.window_title_text,
+            window_border: style.window_border,
+
+            button_normal: style.button_normal,
+            button_hovered: style.button_hovered,
+            button_active: style.button_active,
+            button_text: style.button_text,
+
+            input_bg: style.input_bg,
+            input_border: style.input_border,
+            input_text: style.input_text,
+            input_cursor: style.input_cursor,
+            input_border_focused: style.input_border_focused,
+            input_selection: style.input_selection,
+
+            text_color: style.text_color,
+            text_disabled: style.text_disabled,
+            text_hint: style.text_hint,
+
+            checkbox_bg: style.checkbox_bg,
+            checkbox_check: style.checkbox_check,
+            checkbox_border: style.checkbox_border,
+
+            slider_track: style.slider_track,
+            slider_grab: style.slider_grab,
+            slider_grab_hovered: style.slider_grab_hovered,
+            slider_grab_active: style.slider_grab_active,
+
+            separator: style.separator,
+            border: style.border,
+
+            menu_bg: style.menu_bg,
+            menu_hovered: style.menu_hovered,
+            menu_active: style.menu_active,
+            menu_border: style.menu_border,
+
+            popup_bg: style.popup_bg,
+            popup_border: style.popup_border,
+            popup_shadow: style.popup_shadow,
+
+            selectable_hovered: style.selectable_hovered,
+            selectable_selected: style.selectable_selected,
+
+            combo_bg: style.combo_bg,
+            combo_border: style.combo_border,
+            combo_hovered: style.combo_hovered,
+            combo_text: style.combo_text,
+
+            scrollbar_track: style.scrollbar_track,
+            scrollbar_handle: style.scrollbar_handle,
+            scrollbar_handle_hovered: style.scrollbar_handle_hovered,
+
+            focus_ring_color: style.focus_ring_color,
+
+            success: Color::from_rgb_hex(0xa6da95),
+            warning: Color::from_rgb_hex(0xf9e2af),
+            error: Color::from_rgb_hex(0xf38ba8),
+
+            entity_mesh: Color::from_rgb_hex(0xa6da95),
+            entity_light: Color::from_rgb_hex(0xf9e2af),
+            entity_particle: Color::from_rgb_hex(0xfab387),
+            entity_empty: Color::from_rgb_hex(0x6c7086),
+
+            accent: Color::from_rgb_hex(0xa6da95),
+            highlight: Color::from_rgb_hex(0xf5c2e7),
+
+            selection: style.selectable_selected,
+            selection_hover: style.selectable_hovered,
+
+            viewport_border: Color::from_rgb_hex(0x4a9eff),
+
+            background_dark: Color::from_rgb_hex(0x181825),
+            background_medium: Color::from_rgb_hex(0x313244),
+
+            text_primary: style.text_color,
+            text_secondary: style.text_disabled,
+            text_muted: style.text_hint,
+
+            panel_bg: style.window_bg,
+            panel_border: style.window_border,
+            panel_header: style.window_title_bg,
+        }
+    }
+
+    /// Write this color scheme back into a [`UiStyle`], overwriting all color fields.
+    pub fn apply_to_style(&self, style: &mut UiStyle) {
+        style.apply_colors(self.clone());
     }
 }
 

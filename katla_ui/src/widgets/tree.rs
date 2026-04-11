@@ -5,6 +5,21 @@ use katla_math::{Rect2D, Vec2};
 use crate::input::KeyCode;
 use crate::{Response, ScrollArea, ScrollAreaState, UiContext, Widget};
 
+/// Layout info provided to a custom tree row renderer.
+pub struct RowInfo {
+    /// Full bounds of the row.
+    pub bounds: Rect2D,
+    /// X position where content should start (after indentation + chevron area).
+    pub content_x: f32,
+    /// Whether this row is selected.
+    pub is_selected: bool,
+    /// Whether this row is hovered.
+    pub is_hovered: bool,
+}
+
+/// Callback type for custom per-row rendering in a TreeView.
+pub type RenderItemFn<'a> = dyn FnMut(&mut UiContext, &TreeItem, &RowInfo) + 'a;
+
 /// A single item in a tree view.
 #[derive(Debug, Clone)]
 pub struct TreeItem {
@@ -88,6 +103,7 @@ pub struct TreeView<'a> {
     data: Vec<TreeItem>,
     row_height: f32,
     indent_per_level: f32,
+    render_item: Option<Box<RenderItemFn<'a>>>,
 }
 
 impl<'a> TreeView<'a> {
@@ -99,6 +115,7 @@ impl<'a> TreeView<'a> {
             data: Vec::new(),
             row_height: 22.0,
             indent_per_level: 16.0,
+            render_item: None,
         }
     }
 
@@ -123,6 +140,14 @@ impl<'a> TreeView<'a> {
 
     pub fn indent_per_level(mut self, indent: f32) -> Self {
         self.indent_per_level = indent;
+        self
+    }
+
+    pub fn render_item<F>(mut self, f: F) -> Self
+    where
+        F: FnMut(&mut UiContext, &TreeItem, &RowInfo) + 'a,
+    {
+        self.render_item = Some(Box::new(f));
         self
     }
 
@@ -174,6 +199,8 @@ impl Widget for TreeView<'_> {
         let mut toggle_clicked: Option<u64> = None;
         let mut row_clicked: Option<u64> = None;
         let mut row_right_clicked: Option<u64> = None;
+
+        let mut render_item = self.render_item;
 
         let scroll_result = ui.scroll_area(
             ScrollArea::new(self.id).max_height(bounds.height()),
@@ -261,14 +288,25 @@ impl Widget for TreeView<'_> {
                         }
                     }
 
-                    let label_x = arrow_x + indent_per_level;
-                    let label_y = item_bounds.center().y() - font_size * 0.5;
-                    ui.draw_text(
-                        &item.label,
-                        Vec2::new(label_x, label_y),
-                        text_color,
-                        font_size,
-                    );
+                    let content_x = arrow_x + indent_per_level;
+
+                    if let Some(ref mut render_fn) = render_item {
+                        let row_info = RowInfo {
+                            bounds: item_bounds,
+                            content_x,
+                            is_selected,
+                            is_hovered: row_hovered,
+                        };
+                        render_fn(ui, item, &row_info);
+                    } else {
+                        let label_y = item_bounds.center().y() - font_size * 0.5;
+                        ui.draw_text(
+                            &item.label,
+                            Vec2::new(content_x, label_y),
+                            text_color,
+                            font_size,
+                        );
+                    }
 
                     if row_hovered
                         && ui.input.mouse_pressed[crate::input::mouse_button::LEFT]
