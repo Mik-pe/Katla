@@ -1,6 +1,6 @@
-use katla_agent::{McpBridge, McpResponse, start_mcp_server_thread};
+use katla_agent::{McpBridge, McpOpKind, McpResponse, start_mcp_server_thread};
 use katla_ecs::EntityId;
-use katla_ecs::scene_tool::{ComponentRegistry, SceneOp, SceneToolExecutor};
+use katla_ecs::scene_tool::{ComponentRegistry, ResourceOp, SceneOp, SceneToolExecutor};
 use log::info;
 
 use crate::components::{Children, Parent};
@@ -30,38 +30,53 @@ impl McpState {
     ) {
         let requests = self.bridge.poll_requests();
         for req in requests {
-            let scene_op = req.op.to_scene_op();
-
-            if let Err(msg) = check_protected_entity(&scene_op, protected) {
-                let _ = req.response_tx.send(McpResponse { result: Err(msg) });
-                continue;
-            }
-
-            if let SceneOp::DestroyEntity { entity } = &scene_op {
-                cleanup_entity_hierarchy_world(world, *entity);
-            }
-
-            let result = SceneToolExecutor::execute(scene_op, world, registry);
-            let response = match result {
-                Ok((tool_result, _undo_group)) => {
-                    let mut json = serde_json::json!({
-                        "success": tool_result.success,
-                        "message": tool_result.message,
-                        "affected_entities": tool_result.affected_entities.iter().map(|id| id.id()).collect::<Vec<u64>>(),
-                    });
-                    if let Some(data) = tool_result.data {
-                        json.as_object_mut()
-                            .unwrap()
-                            .insert("data".to_string(), data);
+            let response = match req.op.into_op() {
+                McpOpKind::Scene(scene_op) => {
+                    if let Err(msg) = check_protected_entity(&scene_op, protected) {
+                        McpResponse { result: Err(msg) }
+                    } else {
+                        if let SceneOp::DestroyEntity { entity } = &scene_op {
+                            cleanup_entity_hierarchy_world(world, *entity);
+                        }
+                        execute_scene_op(scene_op, world, registry)
                     }
-                    McpResponse { result: Ok(json) }
                 }
-                Err(e) => McpResponse {
-                    result: Err(format!("{:?}", e)),
-                },
+                McpOpKind::Resource(resource_op) => execute_resource_op(resource_op),
             };
             let _ = req.response_tx.send(response);
         }
+    }
+}
+
+fn execute_scene_op(
+    scene_op: SceneOp,
+    world: &mut katla_ecs::World,
+    registry: &ComponentRegistry,
+) -> McpResponse {
+    let result = SceneToolExecutor::execute(scene_op, world, registry);
+    match result {
+        Ok((tool_result, _undo_group)) => {
+            let mut json = serde_json::json!({
+                "success": tool_result.success,
+                "message": tool_result.message,
+                "affected_entities": tool_result.affected_entities.iter().map(|id| id.id()).collect::<Vec<u64>>(),
+            });
+            if let Some(data) = tool_result.data {
+                json.as_object_mut()
+                    .unwrap()
+                    .insert("data".to_string(), data);
+            }
+            McpResponse { result: Ok(json) }
+        }
+        Err(e) => McpResponse {
+            result: Err(format!("{:?}", e)),
+        },
+    }
+}
+
+fn execute_resource_op(op: ResourceOp) -> McpResponse {
+    McpResponse {
+        result: Err(format!("Resource operation not yet implemented: {:?}", op)),
     }
 }
 

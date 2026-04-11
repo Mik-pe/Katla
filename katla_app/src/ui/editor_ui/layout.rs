@@ -64,11 +64,19 @@ impl EditorUI {
         // Co-Creator chat panel
         if self.co_creator.is_open() {
             let style = co_creator::CoCreatorStyle::from_theme(&self.theme);
-            let response =
-                co_creator::draw_co_creator_panel(ui, &mut self.co_creator, &style, screen_size);
+            let response = co_creator::draw_co_creator_panel(
+                ui,
+                &mut self.co_creator,
+                &style,
+                screen_size,
+                params.agent_undo_count,
+            );
             if let Some(text) = response.submitted_text {
                 self.pending_actions
                     .push(EditorAction::CoCreatorRequest(text));
+            }
+            if response.undo_clicked {
+                self.pending_actions.push(EditorAction::AgentUndo);
             }
         }
 

@@ -9,7 +9,7 @@ use rmcp::model::ServerInfo;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use katla_ecs::scene_tool::SceneOp;
+use katla_ecs::scene_tool::{ResourceOp, SceneOp};
 
 pub struct KatlaMcpServer {
     tool_router: ToolRouter<Self>,
@@ -19,6 +19,12 @@ pub struct KatlaMcpServer {
 pub struct PendingMcpRequest {
     pub op: McpOp,
     pub response_tx: tokio::sync::oneshot::Sender<McpResponse>,
+}
+
+#[derive(Debug, Clone)]
+pub enum McpOpKind {
+    Scene(SceneOp),
+    Resource(ResourceOp),
 }
 
 #[derive(Debug, Clone)]
@@ -63,79 +69,114 @@ pub enum McpOp {
         entity_id: u64,
         parent_id: Option<u64>,
     },
+    ListResources {
+        path: Option<String>,
+        filter: Option<String>,
+    },
+    ReadResource {
+        path: String,
+    },
+    WriteResource {
+        path: String,
+        content: String,
+    },
+    CreateResource {
+        path: String,
+        template: Option<String>,
+        content: Option<String>,
+    },
 }
 
 impl McpOp {
-    pub fn to_scene_op(self) -> SceneOp {
+    pub fn into_op(self) -> McpOpKind {
         match self {
             Self::SpawnEntity {
                 position,
                 rotation,
                 scale,
                 name,
-            } => SceneOp::SpawnEntity {
+            } => McpOpKind::Scene(SceneOp::SpawnEntity {
                 position,
                 rotation,
                 scale,
                 name,
-            },
-            Self::DestroyEntity { entity_id } => SceneOp::DestroyEntity {
+            }),
+            Self::DestroyEntity { entity_id } => McpOpKind::Scene(SceneOp::DestroyEntity {
                 entity: katla_ecs::EntityId::from_raw(entity_id),
-            },
+            }),
             Self::SetField {
                 entity_id,
                 component,
                 field,
                 value,
-            } => SceneOp::SetField {
+            } => McpOpKind::Scene(SceneOp::SetField {
                 entity: katla_ecs::EntityId::from_raw(entity_id),
                 component,
                 field,
                 value,
-            },
+            }),
             Self::QueryEntities {
                 component_filter,
                 name_filter,
                 position,
                 radius,
                 limit,
-            } => SceneOp::QueryEntities {
+            } => McpOpKind::Scene(SceneOp::QueryEntities {
                 component_filter: Some(component_filter),
                 name_filter,
                 position,
                 radius,
                 limit,
-            },
-            Self::GetSceneHierarchy => SceneOp::GetSceneHierarchy,
+            }),
+            Self::GetSceneHierarchy => McpOpKind::Scene(SceneOp::GetSceneHierarchy),
             Self::DuplicateEntity {
                 entity_id,
                 position_offset,
-            } => SceneOp::DuplicateEntity {
+            } => McpOpKind::Scene(SceneOp::DuplicateEntity {
                 entity: katla_ecs::EntityId::from_raw(entity_id),
                 position_offset,
-            },
-            Self::ListAvailableComponents => SceneOp::ListAvailableComponents,
+            }),
+            Self::ListAvailableComponents => McpOpKind::Scene(SceneOp::ListAvailableComponents),
             Self::AddComponent {
                 entity_id,
                 component,
-            } => SceneOp::AddComponent {
+            } => McpOpKind::Scene(SceneOp::AddComponent {
                 entity: katla_ecs::EntityId::from_raw(entity_id),
                 component,
-            },
+            }),
             Self::GetComponentAttributes {
                 entity_id,
                 component,
-            } => SceneOp::GetComponentAttributes {
+            } => McpOpKind::Scene(SceneOp::GetComponentAttributes {
                 entity: katla_ecs::EntityId::from_raw(entity_id),
                 component,
-            },
+            }),
             Self::SetParent {
                 entity_id,
                 parent_id,
-            } => SceneOp::SetParent {
+            } => McpOpKind::Scene(SceneOp::SetParent {
                 entity: katla_ecs::EntityId::from_raw(entity_id),
                 parent: parent_id.map(katla_ecs::EntityId::from_raw),
-            },
+            }),
+            Self::ListResources { path, filter } => {
+                McpOpKind::Resource(ResourceOp::ListResources {
+                    path: path.unwrap_or_default(),
+                    filter,
+                })
+            }
+            Self::ReadResource { path } => McpOpKind::Resource(ResourceOp::ReadResource { path }),
+            Self::WriteResource { path, content } => {
+                McpOpKind::Resource(ResourceOp::WriteResource { path, content })
+            }
+            Self::CreateResource {
+                path,
+                template,
+                content,
+            } => McpOpKind::Resource(ResourceOp::CreateResource {
+                path,
+                template,
+                content,
+            }),
         }
     }
 }
@@ -273,6 +314,34 @@ struct SetParentParams {
     entity_id: u64,
     #[serde(default)]
     parent_id: Option<u64>,
+}
+
+#[derive(Deserialize, JsonSchema, Default)]
+struct ListResourcesParams {
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    filter: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct ReadResourceParams {
+    path: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct WriteResourceParams {
+    path: String,
+    content: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct CreateResourceParams {
+    path: String,
+    #[serde(default)]
+    template: Option<String>,
+    #[serde(default)]
+    content: Option<String>,
 }
 
 #[rmcp::tool_router]
@@ -415,6 +484,64 @@ impl KatlaMcpServer {
         let op = McpOp::SetParent {
             entity_id: params.entity_id,
             parent_id: params.parent_id,
+        };
+        self.forward_op(op).await
+    }
+
+    #[rmcp::tool(
+        name = "list_resources",
+        description = "List resource files in a project directory"
+    )]
+    async fn list_resources(
+        &self,
+        Parameters(params): Parameters<ListResourcesParams>,
+    ) -> Json<McpToolResult> {
+        let op = McpOp::ListResources {
+            path: params.path,
+            filter: params.filter,
+        };
+        self.forward_op(op).await
+    }
+
+    #[rmcp::tool(
+        name = "read_resource",
+        description = "Read a resource file's content as text"
+    )]
+    async fn read_resource(
+        &self,
+        Parameters(params): Parameters<ReadResourceParams>,
+    ) -> Json<McpToolResult> {
+        let op = McpOp::ReadResource { path: params.path };
+        self.forward_op(op).await
+    }
+
+    #[rmcp::tool(
+        name = "write_resource",
+        description = "Write content to an existing resource file"
+    )]
+    async fn write_resource(
+        &self,
+        Parameters(params): Parameters<WriteResourceParams>,
+    ) -> Json<McpToolResult> {
+        let op = McpOp::WriteResource {
+            path: params.path,
+            content: params.content,
+        };
+        self.forward_op(op).await
+    }
+
+    #[rmcp::tool(
+        name = "create_resource",
+        description = "Create a new resource file with optional template"
+    )]
+    async fn create_resource(
+        &self,
+        Parameters(params): Parameters<CreateResourceParams>,
+    ) -> Json<McpToolResult> {
+        let op = McpOp::CreateResource {
+            path: params.path,
+            template: params.template,
+            content: params.content,
         };
         self.forward_op(op).await
     }

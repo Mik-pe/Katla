@@ -58,6 +58,7 @@ pub struct EditorRenderParams<'a> {
     pub llm_config: &'a katla_agent::LlmConfig,
     pub undo_count: usize,
     pub redo_count: usize,
+    pub agent_undo_count: usize,
 }
 
 /// Game Engine Editor UI state.

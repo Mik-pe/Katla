@@ -40,6 +40,6 @@ pub mod mcp;
 
 #[cfg(feature = "mcp-server")]
 pub use mcp::{
-    KatlaMcpServer, McpBridge, McpOp, McpResponse, McpToolResult, PendingMcpRequest,
+    KatlaMcpServer, McpBridge, McpOp, McpOpKind, McpResponse, McpToolResult, PendingMcpRequest,
     start_mcp_server_thread,
 };
