@@ -1623,6 +1623,122 @@ impl<'a> crate::Widget for Selectable<'a> {
     }
 }
 
+// =============================================================================
+// Panel Widget
+// =============================================================================
+
+/// RAII guard for panel content rendering.
+///
+/// Restores clip state on drop.
+pub struct PanelGuard<'a> {
+    ui: &'a mut UiContext,
+    content_bounds: Rect2D,
+}
+
+impl<'a> PanelGuard<'a> {
+    /// Returns the content area bounds (below the header).
+    pub fn content_bounds(&self) -> Rect2D {
+        self.content_bounds
+    }
+}
+
+impl Drop for PanelGuard<'_> {
+    fn drop(&mut self) {
+        self.ui.pop_clip();
+    }
+}
+
+/// A panel builder for drawing panel chrome (background, border, header, title).
+///
+/// Returns a [`PanelGuard`] on `show()` that clips content to the panel area
+/// and restores clip state on drop.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::Panel;
+///
+/// let guard = Panel::new("Settings")
+///     .bounds(my_bounds)
+///     .show(ui);
+///
+/// // Render content inside the panel
+/// ui.add(Button::new("OK").at_cursor(ui));
+///
+/// // guard dropped here, clip restored
+/// ```
+pub struct Panel<'a> {
+    title: &'a str,
+    bounds: Rect2D,
+    header_height: f32,
+    id: Option<&'a str>,
+}
+
+impl<'a> Panel<'a> {
+    /// Create a new panel with a title.
+    pub fn new(title: &'a str) -> Self {
+        Self {
+            title,
+            bounds: Rect2D::from_size(Vec2::new(200.0, 200.0)),
+            header_height: 25.0,
+            id: None,
+        }
+    }
+
+    /// Set the panel bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set the header height.
+    pub fn header_height(mut self, height: f32) -> Self {
+        self.header_height = height;
+        self
+    }
+
+    /// Set a custom ID.
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Show the panel and return a guard for content rendering.
+    ///
+    /// The guard restores clip state on drop.
+    pub fn show(self, ui: &mut UiContext) -> PanelGuard<'_> {
+        let bounds = self.bounds;
+        let header_height = self.header_height;
+
+        ui.draw_rounded_rect(bounds, ui.style.window_bg, ui.style.window_rounding);
+        ui.draw_rect_border(bounds, Color::TRANSPARENT, ui.style.window_border, 1.0);
+
+        let header_bounds =
+            Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), header_height));
+        ui.draw_rect(header_bounds, ui.style.window_title_bg);
+
+        let title_size = ui.measure_text(self.title, ui.style.font_size);
+        let title_pos = Vec2::new(
+            bounds.min.x() + ui.style.window_padding,
+            header_bounds.center().y() - title_size.y() * 0.5,
+        );
+        ui.draw_text(
+            self.title,
+            title_pos,
+            ui.style.window_title_text,
+            ui.style.font_size,
+        );
+
+        let content_bounds = Rect2D::from_origin_size(
+            Vec2::new(bounds.min.x(), bounds.min.y() + header_height),
+            Vec2::new(bounds.width(), bounds.height() - header_height),
+        );
+        ui.push_clip(content_bounds);
+
+        PanelGuard { ui, content_bounds }
+    }
+}
+
 mod draggable_panel;
 pub use draggable_panel::{
     DraggablePanel, DraggablePanelConfig, DraggablePanelFrame, DraggablePanelState, PanelState,
@@ -1724,5 +1840,74 @@ impl<'a> crate::Widget for ComboBox<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
         let id = self.id.unwrap_or(self.label);
         ui.combo_box(id, self.selected, self.options, self.bounds, self.open)
+    }
+}
+
+// =============================================================================
+// StatusBar Widget
+// =============================================================================
+
+/// A status bar widget drawn at the bottom (or top) of the screen.
+///
+/// Draws a background rect with a top border line and positions the cursor
+/// for subsequent `status_label` / `status_separator` calls.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::StatusBar;
+///
+/// let bar = StatusBar::new(screen_size.x(), 24.0, screen_size.y() - 24.0);
+/// bar.show(ui);
+/// ui.status_label("FPS: 60", fps_color);
+/// ui.status_separator();
+/// ui.status_label("Frame: 1234", text_color);
+/// ```
+pub struct StatusBar {
+    bounds: Rect2D,
+}
+
+impl StatusBar {
+    /// Create a new status bar spanning `width` with the given `height` at `y_position`.
+    pub fn new(width: f32, height: f32, y_position: f32) -> Self {
+        Self {
+            bounds: Rect2D::from_origin_size(Vec2::new(0.0, y_position), Vec2::new(width, height)),
+        }
+    }
+
+    /// Override the bounds entirely.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Override the height while keeping position and width.
+    pub fn height(mut self, height: f32) -> Self {
+        self.bounds =
+            Rect2D::from_origin_size(self.bounds.min, Vec2::new(self.bounds.width(), height));
+        self
+    }
+
+    /// Draw the status bar background and top border, then position the cursor
+    /// for left-aligned content items.
+    pub fn show(&self, ui: &mut UiContext) {
+        ui.draw_line(
+            Vec2::new(self.bounds.min.x(), self.bounds.min.y()),
+            Vec2::new(self.bounds.max.x(), self.bounds.min.y()),
+            ui.style.separator,
+            1.0,
+        );
+        ui.draw_rect(self.bounds, ui.style.window_bg);
+
+        let padding = ui.style.window_padding;
+        ui.set_cursor(Vec2::new(
+            self.bounds.min.x() + padding,
+            self.bounds.min.y() + (self.bounds.height() - ui.style.font_size) * 0.5,
+        ));
+    }
+
+    /// Return the status bar bounds.
+    pub fn bounds_val(&self) -> Rect2D {
+        self.bounds
     }
 }
