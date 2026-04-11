@@ -4,7 +4,7 @@ use katla_agent::serialize_scene_context;
 use katla_agent::{LocalAction, OpenAiProvider, StreamEvent, ToolCall};
 use katla_ecs::EntityId;
 use katla_ecs::agent::{Agent, AgentAction, AgentSession, Observation};
-use katla_ecs::scene_tool::{ComponentRegistry, SceneOp, SceneToolExecutor};
+use katla_ecs::scene_tool::{ComponentRegistry, ResourceOp, SceneOp, SceneToolExecutor};
 use katla_math::Vec3;
 use log::warn;
 
@@ -339,8 +339,23 @@ pub(crate) fn set_parent_components(
     }
 }
 
+const RESOURCE_TOOL_NAMES: &[&str] = &[
+    "list_resources",
+    "read_resource",
+    "write_resource",
+    "create_resource",
+];
+
 /// Execute a single tool call against the ECS world.
 fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
+    if RESOURCE_TOOL_NAMES.contains(&tool_call.name.as_str()) {
+        let op = match tool_call_to_resource_op(tool_call) {
+            Ok(op) => op,
+            Err(e) => return format!("Error: {e}"),
+        };
+        return execute_resource_op(app, op);
+    }
+
     let op = match tool_call_to_scene_op(tool_call) {
         Ok(op) => op,
         Err(e) => return format!("Error: {e}"),
@@ -505,6 +520,7 @@ fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
                 rotation: args.rotation.unwrap_or([0.0, 0.0, 0.0]),
                 scale: args.scale.unwrap_or([1.0, 1.0, 1.0]),
                 name: args.name,
+                primitive: args.shape,
             })
         }
         "destroy_entity" => {
@@ -580,6 +596,259 @@ fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
             })
         }
         _ => Err(format!("Unknown tool: {}", tool_call.name)),
+    }
+}
+
+fn tool_call_to_resource_op(tool_call: &ToolCall) -> Result<ResourceOp, String> {
+    use katla_agent::co_creator::{
+        CreateResourceArgs, ListResourcesArgs, ReadResourceArgs, WriteResourceArgs,
+    };
+
+    match tool_call.name.as_str() {
+        "list_resources" => {
+            let args: ListResourcesArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid list_resources args: {e}"))?;
+            Ok(ResourceOp::ListResources {
+                path: args.path.unwrap_or_else(|| "assets".to_string()),
+                filter: args.filter,
+            })
+        }
+        "read_resource" => {
+            let args: ReadResourceArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid read_resource args: {e}"))?;
+            Ok(ResourceOp::ReadResource { path: args.path })
+        }
+        "write_resource" => {
+            let args: WriteResourceArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid write_resource args: {e}"))?;
+            Ok(ResourceOp::WriteResource {
+                path: args.path,
+                content: args.content,
+            })
+        }
+        "create_resource" => {
+            let args: CreateResourceArgs = serde_json::from_value(tool_call.arguments.clone())
+                .map_err(|e| format!("Invalid create_resource args: {e}"))?;
+            Ok(ResourceOp::CreateResource {
+                path: args.path,
+                template: args.template,
+                content: args.content,
+            })
+        }
+        _ => Err(format!("Unknown resource tool: {}", tool_call.name)),
+    }
+}
+
+fn execute_resource_op(app: &super::super::Application, op: ResourceOp) -> String {
+    match op {
+        ResourceOp::ListResources { path, filter } => {
+            execute_list_resources(app, &path, filter.as_deref())
+        }
+        ResourceOp::ReadResource { path } => execute_read_resource(app, &path),
+        ResourceOp::WriteResource { path, content } => execute_write_resource(app, &path, &content),
+        ResourceOp::CreateResource {
+            path,
+            template,
+            content,
+        } => execute_create_resource(app, &path, template.as_deref(), content.as_deref()),
+        ResourceOp::DeleteResource { .. } => {
+            "Error: delete_resource not yet implemented".to_string()
+        }
+    }
+}
+
+fn resolve_project_root(app: &super::super::Application) -> std::path::PathBuf {
+    app.resources
+        .root
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
+}
+
+fn sandbox_path(
+    project_root: &std::path::Path,
+    relative: &str,
+) -> Result<std::path::PathBuf, String> {
+    if relative.contains("..") || std::path::Path::new(relative).is_absolute() {
+        return Err(format!("Path traversal rejected: {relative}"));
+    }
+    let resolved = project_root.join(relative);
+    Ok(resolved)
+}
+
+fn execute_list_resources(
+    app: &super::super::Application,
+    path: &str,
+    filter: Option<&str>,
+) -> String {
+    let project_root = resolve_project_root(app);
+    let dir_path = match sandbox_path(&project_root, path) {
+        Ok(p) => p,
+        Err(e) => return format!("Error: {e}"),
+    };
+
+    if !dir_path.exists() || !dir_path.is_dir() {
+        return format!("Error: directory not found: {path}");
+    }
+
+    let mut entries = Vec::new();
+    if let Err(e) = collect_entries(&dir_path, path, filter, &mut entries) {
+        return format!("Error listing directory: {e}");
+    }
+
+    let json = serde_json::json!({
+        "path": path,
+        "count": entries.len(),
+        "entries": entries,
+    });
+    serde_json::to_string(&json)
+        .unwrap_or_else(|_| "Error: failed to serialize results".to_string())
+}
+
+fn collect_entries(
+    dir: &std::path::Path,
+    prefix: &str,
+    filter: Option<&str>,
+    out: &mut Vec<serde_json::Value>,
+) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        let relative = if prefix.is_empty() || prefix == "." {
+            name.clone()
+        } else {
+            format!("{prefix}/{name}")
+        };
+        let metadata = entry.metadata()?;
+        if metadata.is_dir() {
+            collect_entries(&entry.path(), &relative, filter, out)?;
+        } else {
+            if let Some(ext) = filter {
+                let matches = entry.path().extension().map(|e| e == ext).unwrap_or(false);
+                if !matches {
+                    continue;
+                }
+            }
+            out.push(serde_json::json!({
+                "name": name,
+                "path": relative,
+                "size": metadata.len(),
+            }));
+        }
+    }
+    Ok(())
+}
+
+fn execute_read_resource(app: &super::super::Application, path: &str) -> String {
+    let project_root = resolve_project_root(app);
+    let file_path = match sandbox_path(&project_root, path) {
+        Ok(p) => p,
+        Err(e) => return format!("Error: {e}"),
+    };
+
+    if !file_path.exists() {
+        return format!("Error: file not found: {path}");
+    }
+
+    match std::fs::read_to_string(&file_path) {
+        Ok(content) => {
+            let json = serde_json::json!({
+                "path": path,
+                "content": content,
+            });
+            serde_json::to_string(&json).unwrap_or(content)
+        }
+        Err(e) => format!("Error reading file: {e}"),
+    }
+}
+
+fn execute_write_resource(app: &super::super::Application, path: &str, content: &str) -> String {
+    let project_root = resolve_project_root(app);
+    let file_path = match sandbox_path(&project_root, path) {
+        Ok(p) => p,
+        Err(e) => return format!("Error: {e}"),
+    };
+
+    if !file_path.exists() {
+        return format!("Error: file not found: {path} (use create_resource to create new files)");
+    }
+
+    match std::fs::write(&file_path, content) {
+        Ok(()) => {
+            let json = serde_json::json!({
+                "success": true,
+                "message": format!("Wrote {} bytes to {path}", content.len()),
+                "path": path,
+            });
+            serde_json::to_string(&json).unwrap()
+        }
+        Err(e) => format!("Error writing file: {e}"),
+    }
+}
+
+fn execute_create_resource(
+    app: &super::super::Application,
+    path: &str,
+    template: Option<&str>,
+    content: Option<&str>,
+) -> String {
+    let project_root = resolve_project_root(app);
+    let file_path = match sandbox_path(&project_root, path) {
+        Ok(p) => p,
+        Err(e) => return format!("Error: {e}"),
+    };
+
+    if file_path.exists() {
+        return format!("Error: file already exists: {path} (use write_resource to modify)");
+    }
+
+    let body = match template {
+        Some(tpl) => generate_template_content(tpl),
+        None => content.unwrap_or("").to_string(),
+    };
+
+    if let Some(parent) = file_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            return format!("Error creating parent directory: {e}");
+        }
+    }
+
+    match std::fs::write(&file_path, &body) {
+        Ok(()) => {
+            let json = serde_json::json!({
+                "success": true,
+                "message": format!("Created {path} ({} bytes)", body.len()),
+                "path": path,
+            });
+            serde_json::to_string(&json).unwrap()
+        }
+        Err(e) => format!("Error creating file: {e}"),
+    }
+}
+
+fn generate_template_content(template: &str) -> String {
+    match template {
+        "scene" => serde_json::json!({
+            "version": 1,
+            "entities": []
+        })
+        .to_string(),
+        "material" => serde_json::json!({
+            "version": 1,
+            "shader": "pbr",
+            "properties": {}
+        })
+        .to_string(),
+        "particle_system" => serde_json::json!({
+            "version": 1,
+            "emitter": {
+                "rate": 100.0,
+                "lifetime": [0.5, 2.0],
+                "velocity": [0.0, 1.0, 0.0],
+            }
+        })
+        .to_string(),
+        _ => format!("{{ \"template\": \"{template}\" }}"),
     }
 }
 
@@ -672,6 +941,38 @@ fn format_tool_call_summary(tc: &ToolCall) -> String {
                 None => format!("Unparent entity {eid}"),
             }
         }
+        "list_resources" => {
+            let path = tc
+                .arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("assets");
+            format!("List resources in {path}")
+        }
+        "read_resource" => {
+            let path = tc
+                .arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            format!("Read {path}")
+        }
+        "write_resource" => {
+            let path = tc
+                .arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            format!("Write {path}")
+        }
+        "create_resource" => {
+            let path = tc
+                .arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            format!("Create {path}")
+        }
         _ => tc.name.clone(),
     }
 }
@@ -759,12 +1060,14 @@ mod tests {
                 rotation: [0.0, 0.0, 0.0],
                 scale: [1.0, 1.0, 1.0],
                 name: Some("Entity A".to_string()),
+                primitive: None,
             },
             SceneOp::SpawnEntity {
                 position: [1.0, 0.0, 0.0],
                 rotation: [0.0, 0.0, 0.0],
                 scale: [1.0, 1.0, 1.0],
                 name: Some("Entity B".to_string()),
+                primitive: None,
             },
         ];
 
@@ -802,6 +1105,7 @@ mod tests {
             rotation: [0.0, 0.0, 0.0],
             scale: [1.0, 1.0, 1.0],
             name: Some("TempEntity".to_string()),
+            primitive: None,
         }];
 
         let mut session = run_scripted_agent(ops, &mut world, &registry).unwrap();

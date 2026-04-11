@@ -183,6 +183,7 @@ fn test_spawn_entity_and_undo() {
         rotation: [0.0, 0.0, 0.0],
         scale: [1.0, 1.0, 1.0],
         name: Some("TestEntity".to_string()),
+        primitive: None,
     };
 
     let (result, mut undo_group) = SceneToolExecutor::execute(op, &mut world, &registry).unwrap();
@@ -396,6 +397,7 @@ fn test_undo_group_multiple_spawns() {
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: Some(format!("Entity{i}")),
+            primitive: None,
         };
         let (result, mut inner_group) =
             SceneToolExecutor::execute(op, &mut world, &registry).unwrap();

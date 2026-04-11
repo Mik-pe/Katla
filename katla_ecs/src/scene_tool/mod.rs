@@ -39,6 +39,7 @@ pub enum SceneOp {
         rotation: [f32; 3],
         scale: [f32; 3],
         name: Option<String>,
+        primitive: Option<String>,
     },
     /// Destroy an entity.
     DestroyEntity { entity: EntityId },

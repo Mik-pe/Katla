@@ -211,6 +211,16 @@ impl EditorState {
         }
         false
     }
+
+    pub(crate) fn perform_agent_redo(&mut self, world: &mut katla_ecs::World) -> bool {
+        if let Some(mut group) = self.agent_redo_stack.pop() {
+            if group.redo_all(world).is_ok() {
+                self.agent_undo_stack.push(group);
+                return true;
+            }
+        }
+        false
+    }
 }
 
 /// Main application struct containing all engine state.

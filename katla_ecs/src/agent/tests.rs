@@ -247,18 +247,21 @@ fn test_sync_agent_spawns_entities() {
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: Some("A".to_string()),
+            primitive: None,
         }),
         Some(SceneOp::SpawnEntity {
             position: [1.0, 0.0, 0.0],
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: Some("B".to_string()),
+            primitive: None,
         }),
         Some(SceneOp::SpawnEntity {
             position: [2.0, 0.0, 0.0],
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: Some("C".to_string()),
+            primitive: None,
         }),
     ]);
 
@@ -311,12 +314,14 @@ fn test_sync_agent_session_actions() {
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: None,
+            primitive: None,
         }),
         Some(SceneOp::SpawnEntity {
             position: [1.0; 3],
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: None,
+            primitive: None,
         }),
     ]);
 
@@ -339,12 +344,14 @@ fn test_session_undo_last() {
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: Some("Keep".to_string()),
+            primitive: None,
         }),
         Some(SceneOp::SpawnEntity {
             position: [1.0; 3],
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: Some("Undo".to_string()),
+            primitive: None,
         }),
     ]);
 
@@ -370,18 +377,21 @@ fn test_session_undo_all() {
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: None,
+            primitive: None,
         }),
         Some(SceneOp::SpawnEntity {
             position: [1.0; 3],
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: None,
+            primitive: None,
         }),
         Some(SceneOp::SpawnEntity {
             position: [2.0; 3],
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: None,
+            primitive: None,
         }),
     ]);
 
@@ -455,6 +465,7 @@ fn test_harness_channels() {
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: Some("ChanneledEntity".to_string()),
+            primitive: None,
         }))
         .unwrap();
 
@@ -505,12 +516,14 @@ fn test_agent_observes_each_step() {
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: None,
+            primitive: None,
         }),
         Some(SceneOp::SpawnEntity {
             position: [1.0; 3],
             rotation: [0.0; 3],
             scale: [1.0; 3],
             name: None,
+            primitive: None,
         }),
     ]);
 

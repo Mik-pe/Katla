@@ -15,9 +15,10 @@ mod tools;
 pub use tools::build_tool_definitions;
 #[cfg(feature = "llm-assistant")]
 pub use tools::{
-    AddComponentArgs, DestroyEntityArgs, DuplicateEntityArgs, GetComponentAttributesArgs,
-    GetSceneHierarchyArgs, ListAvailableComponentsArgs, QueryEntitiesArgs, SetFieldArgs,
-    SetParentArgs, SpawnEntityArgs,
+    AddComponentArgs, CreateResourceArgs, DestroyEntityArgs, DuplicateEntityArgs,
+    GetComponentAttributesArgs, GetSceneHierarchyArgs, ListAvailableComponentsArgs,
+    ListResourcesArgs, QueryEntitiesArgs, ReadResourceArgs, SetFieldArgs, SetParentArgs,
+    SpawnEntityArgs, WriteResourceArgs,
 };
 
 /// Accumulates fragments of a single tool call across streaming chunks.

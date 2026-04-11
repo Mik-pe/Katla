@@ -20,6 +20,7 @@ pub fn campfire(position: [f32; 3]) -> SceneTemplate {
             rotation: [0.0, 0.0, 0.0],
             scale: [1.0, 1.0, 1.0],
             name: Some("Campfire".to_string()),
+            primitive: None,
         }],
     }
 }
@@ -34,6 +35,7 @@ pub fn street_lamp(position: [f32; 3]) -> SceneTemplate {
             rotation: [0.0, 0.0, 0.0],
             scale: [1.0, 1.0, 1.0],
             name: Some("StreetLamp".to_string()),
+            primitive: None,
         }],
     }
 }
