@@ -2,6 +2,7 @@
 //!
 //! Low-level drawing functions for rectangles, text, images, lines, and icons.
 
+use crate::style::FontSize;
 use crate::types::TextureId;
 use katla_math::{Color, Rect2D, Vec2};
 
@@ -187,6 +188,18 @@ impl UiContext {
     pub fn measure_text(&self, text: &str, size: f32) -> Vec2 {
         self.fonts
             .measure_text(self.current_font, text, size, self.scale_factor)
+    }
+
+    #[inline]
+    pub fn draw_text_styled(&mut self, text: &str, position: Vec2, color: Color, size: FontSize) {
+        let font_size = self.scaled_font_size(size);
+        self.draw_text(text, position, color, font_size);
+    }
+
+    #[inline]
+    pub fn measure_text_styled(&self, text: &str, size: FontSize) -> Vec2 {
+        let font_size = self.scaled_font_size(size);
+        self.measure_text(text, font_size)
     }
 
     /// Get the font ascent (baseline to font top) in logical pixels.

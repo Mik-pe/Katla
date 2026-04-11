@@ -38,6 +38,8 @@ pub struct TextInputState {
     /// Byte offset of the selection anchor (the other end of the selection).
     /// When equal to `cursor`, there is no selection.
     pub selection_anchor: usize,
+    /// Horizontal scroll offset so the cursor stays visible.
+    pub scroll_offset: f32,
 }
 
 impl Default for TextInputState {
@@ -45,6 +47,7 @@ impl Default for TextInputState {
         Self {
             cursor: 0,
             selection_anchor: 0,
+            scroll_offset: 0.0,
         }
     }
 }
@@ -56,6 +59,7 @@ impl TextInputState {
         Self {
             cursor: len,
             selection_anchor: len,
+            scroll_offset: 0.0,
         }
     }
 
@@ -339,6 +343,10 @@ impl UiContext {
             response.bounds.height(),
         ));
         response
+    }
+
+    pub fn add_overlay<W: crate::Widget>(&mut self, widget: W) -> crate::Response {
+        widget.ui(self)
     }
 
     // -------------------------------------------------------------------------

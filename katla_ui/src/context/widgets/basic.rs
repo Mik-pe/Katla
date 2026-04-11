@@ -321,7 +321,12 @@ impl UiContext {
             // Handle click-to-position cursor
             if hovered && !clear_hovered && mouse_pressed_left {
                 let text_x = bounds.min.x() + padding;
-                let rel_x = mouse_pos_x - text_x;
+                let scroll = self
+                    .text_input_states
+                    .get(&widget_id)
+                    .map(|s| s.scroll_offset)
+                    .unwrap_or(0.0);
+                let rel_x = mouse_pos_x - text_x + scroll;
                 let click_pos = if rel_x <= 0.0 {
                     0
                 } else {
@@ -594,6 +599,28 @@ impl UiContext {
                     self.focused_id = None;
                 }
             }
+
+            // Adjust scroll offset to keep cursor visible
+            {
+                let cursor = self
+                    .text_input_states
+                    .get(&widget_id)
+                    .expect("text input state must exist")
+                    .cursor;
+                let text_before_cursor = &text[..cursor];
+                let cursor_x = self.measure_text(text_before_cursor, font_size).x();
+                let text_area_w = bounds.width() - padding * 2.0;
+                let state = self
+                    .text_input_states
+                    .get_mut(&widget_id)
+                    .expect("text input state must exist");
+                if cursor_x - state.scroll_offset > text_area_w {
+                    state.scroll_offset = cursor_x - text_area_w + padding;
+                }
+                if cursor_x - state.scroll_offset < 0.0 {
+                    state.scroll_offset = (cursor_x - padding).max(0.0);
+                }
+            }
         }
 
         let enter_pressed = if multiline {
@@ -623,9 +650,15 @@ impl UiContext {
                 .contract(padding);
         self.push_clip(text_bounds);
 
+        let scroll_offset = self
+            .text_input_states
+            .get(&widget_id)
+            .map(|s| s.scroll_offset)
+            .unwrap_or(0.0);
+
         let text_size = self.measure_text(text, self.style.font_size);
         let text_pos = Vec2::new(
-            bounds.min.x() + padding,
+            bounds.min.x() + padding - scroll_offset,
             bounds.center().y() - text_size.y() * 0.5,
         );
 
