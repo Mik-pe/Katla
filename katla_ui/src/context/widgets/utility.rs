@@ -36,6 +36,31 @@ impl UiContext {
         );
     }
 
+    /// Draw a status bar label at the current cursor position and advance the cursor.
+    pub fn status_label(&mut self, text: &str, color: Color) {
+        let text_size = self.measure_text(text, self.style.font_size);
+        let pos = self.cursor();
+        self.draw_text(text, pos, color, self.style.font_size);
+        self.set_cursor(Vec2::new(
+            pos.x() + text_size.x() + self.style.item_spacing,
+            pos.y(),
+        ));
+    }
+
+    /// Draw a vertical separator line for status bars at the current cursor position.
+    pub fn status_separator(&mut self) {
+        let pos = self.cursor();
+        let height = self.style.font_size;
+        let x = pos.x() + self.style.item_spacing * 0.5;
+        self.draw_line(
+            Vec2::new(x, pos.y()),
+            Vec2::new(x, pos.y() + height),
+            self.style.separator,
+            1.0,
+        );
+        self.set_cursor(Vec2::new(pos.x() + self.style.item_spacing, pos.y()));
+    }
+
     /// Draw an image.
     pub fn image(
         &mut self,
