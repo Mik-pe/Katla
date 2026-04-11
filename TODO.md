@@ -341,13 +341,13 @@
 - **Issue:** `SceneToolExecutor::execute()` already returns `(ToolResult, UndoGroup)` but the `_undo_group` is discarded in `execute_tool_call()`. No way to reverse AI operations.
 - **Key complication:** `attach_spawn_visuals()` adds GPU resources outside the `UndoGroup`. Undo must also release GPU handles tracked in `GpuResourceTracker`.
 - **Sub-tasks:**
-  - [ ] 88a. Add `agent_undo_stack: Vec<UndoGroup>` and `agent_redo_stack` to `EditorState` (small, low risk)
-  - [ ] 88b. Capture UndoGroups in `execute_tool_call()` — change signature to return `(String, Option<UndoGroup>)`, collect into composite per-turn group (small, low risk)
+  - [x] ~~88a. Add `agent_undo_stack` and `agent_redo_stack` to `EditorState`~~ — Done in 62c2288.
+  - [x] ~~88b. Capture UndoGroups in `execute_tool_call()`~~ — Done in 62c2288. Undo groups pushed to agent_undo_stack, redo cleared.
   - [ ] 88c. Handle GPU resource cleanup on undo — store GPU handle metadata per undo entry, release on undo (medium, medium risk)
   - [ ] 88d. Add `undo_last_agent_action()` method calling `SceneToolExecutor::undo()` with GPU cleanup (small, low risk)
   - [ ] 88e. Add "Undo" button in AI co-creator panel, visible when undo stack non-empty (small, low risk)
   - [ ] 88f. Route local actions (`LocalAction::SpawnCube` etc.) through `SceneToolExecutor` so they produce UndoGroups (small, low risk)
-  - [ ] 88g. Clear undo/redo stacks on new scene / clear history (trivial, no risk)
+  - [x] ~~88g. Clear undo/redo stacks on new scene~~ — Done in 62c2288. Both stacks cleared in NewScene handler.
   - **Recommended order:** 88a → 88b → 88c → 88d → 88e → 88f → 88g
 
 ---
@@ -365,7 +365,8 @@
   - [ ] 89d. Replace `Theme` usage across katla_app with `ColorScheme` + `UiStyle::with_colors()`, remove `katla_app/src/ui/theme.rs` (medium, medium risk)
   - **Recommended order:** 89a → 89b → 89c → 89d
 
-### 90. `DraggablePanelStyle` is a redundant copy of `Theme` panel colors
+### ~~90. `DraggablePanelStyle` is a redundant copy of `Theme` panel colors~~
+- Removed in cb0d7cc. DraggablePanel now reads directly from `ui.style`.
 - **Crate:** katla_ui
 - **File:** `katla_ui/src/widgets/draggable_panel.rs`
 - **Issue:** Every call site constructs a `DraggablePanelStyle` by copying colors from `Theme` (e.g., `DraggablePanelStyle { panel_bg: theme.panel_bg, ... }`). The panel should read directly from `ui.style` fields like `window_bg`, `window_border`, `window_title_bg`, `button_text`, etc. This eliminates 8 fields of duplicate state and makes `DraggablePanel::show()` simpler to call.
@@ -494,7 +495,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Issue:** The `inspector.rs` file defines `vec3_slider_row()` and `scalar_slider_row()` — local functions that compose a label, a `Slider`, and a value display into a row. This is the most common slider usage pattern in any editor UI (every property inspector, every settings panel). The `toolbar.rs`/`preferences.rs` build the same pattern manually. A second app would need it too. Related to #102 (slider value display).
 - **Sub-tasks:**
   - [x] ~~115a. Add `LabeledSlider` builder~~ — Done in cb0d7cc. Label + Slider + value text in a single row.
-  - [ ] 115b. Add `Vec3Slider` builder for X/Y/Z axis rows with configurable axis labels and colors per axis (medium, low risk)
+  - [x] ~~115b. Add `Vec3Slider` builder for X/Y/Z axis rows~~ — Done in 62c2288. Per-axis labels, colors, sliders with value display.
   - **Recommended order:** 102 → 115a → 115b
 - **Fix:** Add `LabeledSlider` builder widget to katla_ui:
   ```rust
@@ -566,7 +567,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Sub-tasks:**
   - [ ] 119a. Add `StatusBar` builder with `bounds()`, `height()`, `left_items()`, `center_item()`, `right_items()` closures (small, low risk)
   - [ ] 119b. Implement rendering: background from `style.window_bg`, top border from `style.separator`, `begin_row()` layout for left items, manual right-alignment for right items (medium, low risk)
-  - [ ] 119c. Add `ui.status_label(text, color)` and `ui.status_separator()` helpers for use inside closures (small, low risk)
+  - [x] ~~119c. Add `ui.status_label` and `ui.status_separator` helpers~~ — Done in 62c2288. Draws text/line and advances cursor.
   - [ ] 119d. Migrate `status_bar.rs` to use `StatusBar` widget (small, low risk)
   - **Recommended order:** 119a → 119b → 119c → 119d
 - **Fix:** Add `StatusBar` builder:
@@ -613,7 +614,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Issue:** Every panel in the editor (hierarchy, inspector, asset browser, viewport) checks `if ui.is_hovered(bounds) && (mouse_down[LEFT] || mouse_down[RIGHT] || mouse_down[MIDDLE]) { *focused_panel = FocusedPanel::X; }` on every frame. This is the same 5-line pattern repeated 5 times. A second app with panels would need it. The focus tracking itself (`FocusedPanel` enum) is app-specific, but the hover-click detection and focus ring drawing could be provided by the UI layer.
 - **Sub-tasks:**
   - [x] ~~124a. Add `panel_regions`, `register_panel()`, `focused_panel()`~~ — Done in c7e8286. Focus detected on mouse click in end().
-  - [ ] 124b. In `end()`, detect which registered panel received a click and store its ID as the focused panel (small, low risk)
+  - [x] ~~124b. In `end()`, detect which registered panel received a click~~ — Done in c7e8286 (part of 124a).
   - [ ] 124c. Migrate the 5 manual focus checks in `layout.rs` panels to `register_panel()` + `focused_panel()` (small, low risk)
   - **Recommended order:** 124a → 124b → 124c
 
