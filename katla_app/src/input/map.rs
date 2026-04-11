@@ -129,6 +129,10 @@ impl Default for InputMapper {
             )),
             Action::PanEnable,
         );
+        action_map.insert(
+            InputBinding::Keyboard(KeyCombo::key(KeyCode::ControlLeft)),
+            Action::Slow,
+        );
 
         Self { action_map }
     }

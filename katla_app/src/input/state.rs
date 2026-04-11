@@ -20,6 +20,7 @@ pub struct InputState {
     pub mouse_wheel_delta: f32,
     pub mouse_buttons: [ButtonState; 5],
     pub keyboard_keys: [bool; Action::COUNT],
+    pub camera_speed: f32,
 }
 
 impl Default for InputState {
@@ -36,6 +37,7 @@ impl InputState {
             mouse_wheel_delta: 0.0,
             mouse_buttons: [ButtonState::Released; 5],
             keyboard_keys: [false; Action::COUNT],
+            camera_speed: 50.0,
         }
     }
 

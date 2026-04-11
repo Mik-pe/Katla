@@ -462,6 +462,10 @@ impl EditorUI {
             self.save_confirmation_timer = (self.save_confirmation_timer - dt).max(0.0);
         }
     }
+
+    pub fn editor_settings(&self) -> &EditorSettings {
+        &self.editor_settings
+    }
 }
 
 impl Default for EditorUI {
