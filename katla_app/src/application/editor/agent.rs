@@ -455,8 +455,48 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
         .get_component::<DrawableComponent>(entity)
         .is_none()
     {
-        let size = args.scale.unwrap_or([1.0, 1.0, 1.0]);
-        let mesh_handle = app.renderer.create_cube_mesh(size);
+        let shape = args.shape.as_deref().unwrap_or("cube");
+        let scale = args.scale.unwrap_or([1.0, 1.0, 1.0]);
+
+        let (mesh_handle, entity_source) = match shape {
+            "sphere" => (
+                app.renderer.create_sphere_mesh(0.5, 32, 16),
+                EntitySource::Sphere {
+                    radius: 0.5,
+                    segments: 32,
+                    rings: 16,
+                },
+            ),
+            "plane" => (
+                app.renderer.create_plane_mesh(5.0, 5.0),
+                EntitySource::Plane {
+                    width: 5.0,
+                    height: 5.0,
+                },
+            ),
+            "cylinder" => (
+                app.renderer.create_cylinder_mesh(1.0, 0.5, 32),
+                EntitySource::Cylinder {
+                    height: 1.0,
+                    radius: 0.5,
+                    segments: 32,
+                },
+            ),
+            "torus" => (
+                app.renderer.create_torus_mesh(0.7, 0.2, 32, 16),
+                EntitySource::Torus {
+                    radius: 0.7,
+                    tube_radius: 0.2,
+                    segments: 32,
+                    tube_segments: 16,
+                },
+            ),
+            _ => (
+                app.renderer.create_cube_mesh(scale),
+                EntitySource::Cube { size: scale },
+            ),
+        };
+
         let material_handle = app.default_material();
         let drawable = DrawableComponent::with_handles_and_color(
             mesh_handle,
@@ -469,7 +509,7 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
             drawable.skeleton_handle,
         );
         app.world.add_component(entity, drawable);
-        app.world.add_component(entity, EntitySource::Cube { size });
+        app.world.add_component(entity, entity_source);
     }
 }
 
