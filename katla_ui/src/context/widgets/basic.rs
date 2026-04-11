@@ -767,6 +767,133 @@ impl UiContext {
 
         response
     }
+
+    /// Draw a combo box (internal - use `widgets::ComboBox` instead).
+    ///
+    /// Shows the currently selected option. When clicked, opens a dropdown popup
+    /// listing all options. Clicking an option selects it and closes the popup.
+    /// Clicking outside closes without changing the selection.
+    pub(crate) fn combo_box(
+        &mut self,
+        id: &str,
+        selected: &mut usize,
+        options: &[&str],
+        bounds: Rect2D,
+        open: &mut bool,
+    ) -> Response {
+        let widget_id = self.generate_id(id);
+
+        let hovered = self.update_hover(widget_id, bounds);
+        let clicked = self
+            .click_interaction(
+                widget_id,
+                hovered,
+                bounds,
+                super::super::interaction::ClickConfig::POPUP_BYPASS,
+            )
+            .is_clicked();
+
+        if clicked && !*open {
+            *open = true;
+        }
+
+        // Draw trigger button
+        let bg_color = if *open || hovered {
+            self.style.combo_hovered
+        } else {
+            self.style.combo_bg
+        };
+        self.draw_rect(bounds, bg_color);
+        self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.combo_border, 1.0);
+
+        // Draw selected text
+        let padding = self.style.text_input_padding;
+        let text = options.get(*selected).copied().unwrap_or("");
+        let text_size = self.measure_text(text, self.style.font_size);
+        let text_pos = Vec2::new(
+            bounds.min.x() + padding,
+            bounds.center().y() - text_size.y() * 0.5,
+        );
+        self.draw_text(text, text_pos, self.style.combo_text, self.style.font_size);
+
+        // Draw dropdown arrow on the right side
+        let arrow_size = self.style.font_size * 0.6;
+        let arrow_bounds = Rect2D::from_origin_size(
+            Vec2::new(bounds.max.x() - arrow_size - padding, bounds.min.y()),
+            Vec2::new(arrow_size + padding, bounds.height()),
+        );
+        let arrow_char = if *open { '▲' } else { '▼' };
+        let arrow_text_size = self.measure_text(&arrow_char.to_string(), arrow_size);
+        let arrow_pos = center_in_bounds(arrow_bounds, arrow_text_size);
+        self.draw_text(
+            &arrow_char.to_string(),
+            arrow_pos,
+            self.style.combo_text,
+            arrow_size,
+        );
+
+        let mut response = Response::interactive(clicked, hovered, false, bounds, &self.input);
+
+        // Draw dropdown popup when open
+        if *open {
+            let item_height = self.style.combo_default_height;
+            let popup_height = (options.len() as f32) * item_height;
+            let popup_bounds = Rect2D::from_origin_size(
+                Vec2::new(bounds.min.x(), bounds.max.y()),
+                Vec2::new(bounds.width(), popup_height),
+            );
+
+            self.dropdown(id, bounds, open, |ui, open_state| {
+                for (i, option) in options.iter().enumerate() {
+                    let item_bounds = Rect2D::from_origin_size(
+                        ui.popup_cursor,
+                        Vec2::new(popup_bounds.width(), item_height),
+                    );
+                    let item_hovered = ui.is_hovered(item_bounds);
+                    let is_selected = *selected == i;
+
+                    let bg = if item_hovered {
+                        ui.style.combo_hovered
+                    } else if is_selected {
+                        ui.style.selectable_selected
+                    } else {
+                        ui.style.combo_bg
+                    };
+                    ui.draw_rect(item_bounds, bg);
+
+                    let opt_text_size = ui.measure_text(option, ui.style.font_size);
+                    let opt_text_pos = Vec2::new(
+                        item_bounds.min.x() + padding,
+                        item_bounds.center().y() - opt_text_size.y() * 0.5,
+                    );
+                    ui.draw_text(
+                        option,
+                        opt_text_pos,
+                        ui.style.combo_text,
+                        ui.style.font_size,
+                    );
+
+                    ui.track_popup_item(item_bounds);
+
+                    if item_hovered && ui.input.mouse_pressed[mouse_button::LEFT] {
+                        *selected = i;
+                        response.changed = true;
+                        *open_state = false;
+                        ui.input.want_capture_mouse = true;
+                    }
+
+                    ui.popup_cursor =
+                        Vec2::new(ui.popup_cursor.x(), ui.popup_cursor.y() + item_height);
+                }
+            });
+
+            if !*open {
+                response.clicked = true;
+            }
+        }
+
+        response
+    }
 }
 
 /// Find the previous word boundary before `pos` in `text`.
