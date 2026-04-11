@@ -221,6 +221,10 @@ pub struct UiContext {
     pub(crate) focusable_widgets: Vec<(WidgetId, Rect2D)>,
     /// Tooltips deferred via `Response::tooltip()`, rendered in `end()`.
     pub(crate) pending_tooltips: Vec<(u64, String)>,
+    /// Panel regions registered during layout for focus tracking.
+    pub(crate) panel_regions: Vec<(u64, Rect2D)>,
+    /// Currently focused panel ID, determined by mouse click hit-testing.
+    focused_panel_id: Option<u64>,
 }
 
 impl UiContext {
@@ -268,6 +272,8 @@ impl UiContext {
             clipboard: None,
             focusable_widgets: Vec::new(),
             pending_tooltips: Vec::new(),
+            panel_regions: Vec::new(),
+            focused_panel_id: None,
         }
     }
 
@@ -316,6 +322,16 @@ impl UiContext {
     /// Set the clipboard provider for copy/cut/paste operations.
     pub fn set_clipboard_provider(&mut self, provider: Box<dyn ClipboardProvider>) {
         self.clipboard = Some(provider);
+    }
+
+    /// Register a panel region for focus tracking.
+    pub fn register_panel(&mut self, id: u64, bounds: Rect2D) {
+        self.panel_regions.push((id, bounds));
+    }
+
+    /// Get the currently focused panel ID, if any.
+    pub fn focused_panel(&self) -> Option<u64> {
+        self.focused_panel_id
     }
 
     // -------------------------------------------------------------------------
