@@ -109,19 +109,26 @@ impl UIRenderer {
         // Create a mapping from vertex index to texture index
         let mut vertex_texture_indices: Vec<u32> = vec![0; draw_list.vertices().len()];
 
-        // Assign texture indices to vertices based on which commands use them
+        // Assign texture indices per-command by scanning vertex ranges
         for cmd in draw_list.commands() {
             let bindless_index = texture_to_index.get(&cmd.texture).copied().unwrap_or(0);
             let index_start = cmd.index_offset as usize;
             let index_end = index_start + cmd.index_count as usize;
 
-            // Mark all vertices referenced by this command with its texture index
-            for i in index_start..index_end {
-                if i < draw_list.indices().len() {
-                    let vertex_idx = draw_list.indices()[i] as usize;
-                    if vertex_idx < vertex_texture_indices.len() {
-                        vertex_texture_indices[vertex_idx] = bindless_index;
-                    }
+            // Find the min/max vertex index used by this command's indices
+            let mut min_v = u32::MAX;
+            let mut max_v = 0u32;
+            for &idx in &draw_list.indices()[index_start..index_end] {
+                min_v = min_v.min(idx);
+                max_v = max_v.max(idx);
+            }
+
+            // Set texture index for the contiguous vertex range
+            if min_v <= max_v {
+                let start = min_v as usize;
+                let end = (max_v as usize) + 1;
+                for v in start..end {
+                    vertex_texture_indices[v] = bindless_index;
                 }
             }
         }
