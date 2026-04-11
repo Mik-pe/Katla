@@ -43,6 +43,10 @@ pub struct Response {
     pub right_clicked: bool,
     /// Widget was middle-clicked this frame.
     pub middle_clicked: bool,
+    /// Widget drag started this frame (mouse moved beyond threshold while pressed).
+    pub drag_started: bool,
+    /// Widget drag ended this frame (mouse released after dragging).
+    pub drag_ended: bool,
 }
 
 impl Response {
@@ -59,6 +63,8 @@ impl Response {
             double_clicked: false,
             right_clicked: false,
             middle_clicked: false,
+            drag_started: false,
+            drag_ended: false,
         }
     }
 
@@ -75,6 +81,8 @@ impl Response {
             double_clicked: false,
             right_clicked: false,
             middle_clicked: false,
+            drag_started: false,
+            drag_ended: false,
         }
     }
 
@@ -91,6 +99,8 @@ impl Response {
             double_clicked: false,
             right_clicked: false,
             middle_clicked: false,
+            drag_started: false,
+            drag_ended: false,
         }
     }
 
@@ -107,6 +117,8 @@ impl Response {
             double_clicked: false,
             right_clicked: false,
             middle_clicked: false,
+            drag_started: false,
+            drag_ended: false,
         }
     }
 
@@ -140,6 +152,8 @@ impl Response {
             double_clicked: self.double_clicked || other.double_clicked,
             right_clicked: self.right_clicked || other.right_clicked,
             middle_clicked: self.middle_clicked || other.middle_clicked,
+            drag_started: self.drag_started || other.drag_started,
+            drag_ended: self.drag_ended || other.drag_ended,
         }
     }
 
@@ -159,6 +173,7 @@ impl Response {
         active: bool,
         bounds: Rect2D,
         input: &UiInputState,
+        widget_id: Option<u64>,
     ) -> Self {
         let double_clicked = clicked && input.mouse_double_clicked(mouse_button::LEFT);
         let right_clicked = hovered && input.mouse_pressed[mouse_button::RIGHT];
@@ -168,6 +183,13 @@ impl Response {
         } else {
             Vec2::new(0.0, 0.0)
         };
+
+        let drag_threshold = 2.0;
+        let was_active = input.prev_active_id == widget_id;
+        let mouse_moving = input.mouse_delta.x().abs() > drag_threshold
+            || input.mouse_delta.y().abs() > drag_threshold;
+        let drag_started = active && !was_active && mouse_moving;
+        let drag_ended = !active && was_active;
 
         Self {
             clicked,
@@ -180,6 +202,8 @@ impl Response {
             double_clicked,
             right_clicked,
             middle_clicked,
+            drag_started,
+            drag_ended,
         }
     }
 }

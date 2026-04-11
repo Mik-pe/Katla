@@ -13,6 +13,281 @@ use crate::response::Response;
 use super::super::UiContext;
 use super::super::drawing::center_in_bounds;
 
+struct TextInputInput {
+    mouse_pressed_left: bool,
+    mouse_pos_x: f32,
+    key_backspace: bool,
+    key_delete: bool,
+    key_home: bool,
+    key_end: bool,
+    key_left: bool,
+    key_right: bool,
+    key_a: bool,
+    key_c: bool,
+    key_x: bool,
+    key_v: bool,
+    key_escape: bool,
+    key_enter: bool,
+    ctrl: bool,
+    shift: bool,
+    characters: Vec<char>,
+    max_len: usize,
+    font_size: f32,
+}
+
+fn snapshot_text_input_input(
+    input: &crate::input::UiInputState,
+    style: &crate::style::UiStyle,
+) -> TextInputInput {
+    TextInputInput {
+        mouse_pressed_left: input.mouse_pressed[mouse_button::LEFT],
+        mouse_pos_x: input.mouse_pos.x(),
+        key_backspace: input.key_pressed(KeyCode::Backspace),
+        key_delete: input.key_pressed(KeyCode::Delete),
+        key_home: input.key_pressed(KeyCode::Home),
+        key_end: input.key_pressed(KeyCode::End),
+        key_left: input.key_pressed(KeyCode::ArrowLeft),
+        key_right: input.key_pressed(KeyCode::ArrowRight),
+        key_a: input.key_pressed(KeyCode::A),
+        key_c: input.key_pressed(KeyCode::C),
+        key_x: input.key_pressed(KeyCode::X),
+        key_v: input.key_pressed(KeyCode::V),
+        key_escape: input.key_pressed(KeyCode::Escape),
+        key_enter: input.key_pressed(KeyCode::Enter),
+        ctrl: input.is_key_down(KeyCode::Control),
+        shift: input.is_key_down(KeyCode::Shift),
+        characters: input.characters.clone(),
+        max_len: style.text_input_max_length,
+        font_size: style.font_size,
+    }
+}
+
+fn apply_text_edits(
+    text: &mut String,
+    state: &mut crate::context::TextInputState,
+    inp: &TextInputInput,
+    clipboard: &mut Option<Box<dyn crate::widget::ClipboardProvider>>,
+    multiline: bool,
+) -> (bool, bool) {
+    let mut changed = false;
+
+    let delete_selection =
+        |text: &mut String, state: &mut crate::context::TextInputState| -> bool {
+            if state.has_selection() {
+                let (start, end) = state.selection_range();
+                text.drain(start..end);
+                state.cursor = start;
+                state.selection_anchor = start;
+                true
+            } else {
+                false
+            }
+        };
+
+    if inp.key_backspace {
+        if !delete_selection(text, state) && state.cursor > 0 {
+            let prev = if inp.ctrl {
+                prev_word_boundary(text, state.cursor)
+            } else {
+                text[..state.cursor]
+                    .char_indices()
+                    .next_back()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0)
+            };
+            text.drain(prev..state.cursor);
+            state.cursor = prev;
+            state.selection_anchor = prev;
+        }
+        changed = true;
+    }
+
+    if inp.key_delete {
+        if !delete_selection(text, state) && state.cursor < text.len() {
+            let next = if inp.ctrl {
+                next_word_boundary(text, state.cursor)
+            } else {
+                text[state.cursor..]
+                    .char_indices()
+                    .nth(1)
+                    .map(|(i, _)| state.cursor + i)
+                    .unwrap_or(text.len())
+            };
+            text.drain(state.cursor..next);
+        }
+        changed = true;
+    }
+
+    if inp.key_home {
+        if inp.shift {
+            state.cursor = 0;
+        } else {
+            state.cursor = 0;
+            state.selection_anchor = 0;
+        }
+    }
+
+    if inp.key_end {
+        let len = text.len();
+        if inp.shift {
+            state.cursor = len;
+        } else {
+            state.cursor = len;
+            state.selection_anchor = len;
+        }
+    }
+
+    if inp.key_left {
+        if inp.ctrl {
+            let new_pos = prev_word_boundary(text, state.cursor);
+            if inp.shift {
+                state.cursor = new_pos;
+            } else {
+                state.cursor = new_pos;
+                state.selection_anchor = new_pos;
+            }
+        } else if inp.shift {
+            if state.cursor > 0 {
+                let prev = text[..state.cursor]
+                    .char_indices()
+                    .next_back()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                state.cursor = prev;
+            }
+        } else if state.has_selection() {
+            let (start, _) = state.selection_range();
+            state.cursor = start;
+            state.selection_anchor = start;
+        } else if state.cursor > 0 {
+            let prev = text[..state.cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            state.cursor = prev;
+            state.selection_anchor = prev;
+        }
+    }
+
+    if inp.key_right {
+        if inp.ctrl {
+            let new_pos = next_word_boundary(text, state.cursor);
+            if inp.shift {
+                state.cursor = new_pos;
+            } else {
+                state.cursor = new_pos;
+                state.selection_anchor = new_pos;
+            }
+        } else if inp.shift {
+            if state.cursor < text.len() {
+                let next = text[state.cursor..]
+                    .char_indices()
+                    .nth(1)
+                    .map(|(i, _)| state.cursor + i)
+                    .unwrap_or(text.len());
+                state.cursor = next;
+            }
+        } else if state.has_selection() {
+            let (_, end) = state.selection_range();
+            state.cursor = end;
+            state.selection_anchor = end;
+        } else if state.cursor < text.len() {
+            let next = text[state.cursor..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| state.cursor + i)
+                .unwrap_or(text.len());
+            state.cursor = next;
+            state.selection_anchor = next;
+        }
+    }
+
+    if inp.ctrl && inp.key_a {
+        state.cursor = text.len();
+        state.selection_anchor = 0;
+    }
+
+    if inp.ctrl && inp.key_c && state.has_selection() {
+        let (start, end) = state.selection_range();
+        let copied = text[start..end].to_string();
+        if let Some(cb) = clipboard {
+            cb.set(&copied);
+        }
+    }
+
+    if inp.ctrl && inp.key_x && state.has_selection() {
+        let (start, end) = state.selection_range();
+        let cut = text[start..end].to_string();
+        text.drain(start..end);
+        state.cursor = start;
+        state.selection_anchor = start;
+        changed = true;
+        if let Some(cb) = clipboard {
+            cb.set(&cut);
+        }
+    }
+
+    if inp.ctrl && inp.key_v {
+        if let Some(cb) = clipboard {
+            if let Some(pasted) = cb.get() {
+                let available = inp.max_len.saturating_sub(text.len());
+                if available > 0 {
+                    if state.has_selection() {
+                        let (start, end) = state.selection_range();
+                        text.drain(start..end);
+                        state.cursor = start;
+                        state.selection_anchor = start;
+                    }
+                    let pasted_chars: String = pasted
+                        .chars()
+                        .filter(|c| *c >= ' ')
+                        .take(available)
+                        .collect();
+                    let insert_len = pasted_chars.len();
+                    text.insert_str(state.cursor, &pasted_chars);
+                    state.cursor += insert_len;
+                    state.selection_anchor = state.cursor;
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    if !inp.ctrl {
+        for c in inp.characters.iter().copied() {
+            if c >= ' ' && text.len() < inp.max_len {
+                if state.has_selection() {
+                    let (start, end) = state.selection_range();
+                    text.drain(start..end);
+                    state.cursor = start;
+                    state.selection_anchor = start;
+                }
+                text.insert(state.cursor, c);
+                let c_len = c.len_utf8();
+                state.cursor += c_len;
+                state.selection_anchor = state.cursor;
+                changed = true;
+            }
+        }
+
+        if multiline && inp.shift && inp.key_enter && text.len() < inp.max_len {
+            if state.has_selection() {
+                let (start, end) = state.selection_range();
+                text.drain(start..end);
+                state.cursor = start;
+                state.selection_anchor = start;
+            }
+            text.insert(state.cursor, '\n');
+            state.cursor += 1;
+            state.selection_anchor = state.cursor;
+            changed = true;
+        }
+    }
+
+    (changed, inp.key_escape)
+}
+
 impl UiContext {
     /// Draw a button with optional custom background colors and border.
     pub(crate) fn button_with_colors(
@@ -59,7 +334,14 @@ impl UiContext {
         let text_pos = center_in_bounds(bounds, text_size);
         self.draw_text(text, text_pos, self.style.text_color, self.style.font_size);
 
-        Response::interactive(clicked, hovered, active, bounds, &self.input)
+        Response::interactive(
+            clicked,
+            hovered,
+            active,
+            bounds,
+            &self.input,
+            Some(widget_id),
+        )
     }
     pub(crate) fn image_button(
         &mut self,
@@ -110,7 +392,14 @@ impl UiContext {
         let icon_size = bounds.height().min(bounds.width()) * 0.6;
         self.draw_icon_centered(icon, bounds, icon_size, icon_color);
 
-        let mut response = Response::interactive(clicked, hovered, active, bounds, &self.input);
+        let mut response = Response::interactive(
+            clicked,
+            hovered,
+            active,
+            bounds,
+            &self.input,
+            Some(widget_id),
+        );
         if !enabled {
             response.clicked = false;
             response.changed = false;
@@ -177,7 +466,14 @@ impl UiContext {
             self.style.font_size,
         );
 
-        Response::interactive(clicked, hovered, active, bounds, &self.input)
+        Response::interactive(
+            clicked,
+            hovered,
+            active,
+            bounds,
+            &self.input,
+            Some(widget_id),
+        )
     }
 
     /// Draw a slider (internal - use `widgets::Slider` instead).
@@ -239,7 +535,8 @@ impl UiContext {
         };
         self.draw_rect(grab_bounds, grab_color);
 
-        let mut response = Response::interactive(false, hovered, active, bounds, &self.input);
+        let mut response =
+            Response::interactive(false, hovered, active, bounds, &self.input, Some(widget_id));
         response.changed = changed;
         response
     }
@@ -266,29 +563,10 @@ impl UiContext {
         let clear_hovered = show_clear && !text.is_empty() && self.input.is_hovered(clear_bounds);
         let clear_clicked = clear_hovered && self.input.mouse_pressed[mouse_button::LEFT];
 
-        // Snapshot input flags before any mutable borrows
-        let mouse_pressed_left = self.input.mouse_pressed[mouse_button::LEFT];
-        let mouse_pos_x = self.input.mouse_pos.x();
-        let key_backspace = self.input.key_pressed(KeyCode::Backspace);
-        let key_delete = self.input.key_pressed(KeyCode::Delete);
-        let key_home = self.input.key_pressed(KeyCode::Home);
-        let key_end = self.input.key_pressed(KeyCode::End);
-        let key_left = self.input.key_pressed(KeyCode::ArrowLeft);
-        let key_right = self.input.key_pressed(KeyCode::ArrowRight);
-        let key_a = self.input.key_pressed(KeyCode::A);
-        let key_c = self.input.key_pressed(KeyCode::C);
-        let key_x = self.input.key_pressed(KeyCode::X);
-        let key_v = self.input.key_pressed(KeyCode::V);
-        let key_escape = self.input.key_pressed(KeyCode::Escape);
-        let key_enter = self.input.key_pressed(KeyCode::Enter);
-        let ctrl = self.input.is_key_down(KeyCode::Control);
-        let shift = self.input.is_key_down(KeyCode::Shift);
-        let characters: Vec<char> = self.input.characters.clone();
-        let max_len = self.style.text_input_max_length;
-        let font_size = self.style.font_size;
+        let inp = snapshot_text_input_input(&self.input, &self.style);
 
         // Focus on click (but not on clear button)
-        if hovered && !clear_hovered && mouse_pressed_left {
+        if hovered && !clear_hovered && inp.mouse_pressed_left {
             self.focused_id = Some(widget_id);
         }
 
@@ -319,28 +597,28 @@ impl UiContext {
             }
 
             // Handle click-to-position cursor
-            if hovered && !clear_hovered && mouse_pressed_left {
+            if hovered && !clear_hovered && inp.mouse_pressed_left {
                 let text_x = bounds.min.x() + padding;
                 let scroll = self
                     .text_input_states
                     .get(&widget_id)
                     .map(|s| s.scroll_offset)
                     .unwrap_or(0.0);
-                let rel_x = mouse_pos_x - text_x + scroll;
+                let rel_x = inp.mouse_pos_x - text_x + scroll;
                 let click_pos = if rel_x <= 0.0 {
                     0
                 } else {
                     let mut best_offset = text.len();
                     let mut best_dist = f32::MAX;
                     for (i, _) in text.char_indices() {
-                        let prefix_width = self.measure_text(&text[..i], font_size).x();
+                        let prefix_width = self.measure_text(&text[..i], inp.font_size).x();
                         let dist = (prefix_width - rel_x).abs();
                         if dist < best_dist {
                             best_dist = dist;
                             best_offset = i;
                         }
                     }
-                    let full_width = self.measure_text(text, font_size).x();
+                    let full_width = self.measure_text(text, inp.font_size).x();
                     if (full_width - rel_x).abs() < best_dist {
                         best_offset = text.len();
                     }
@@ -370,232 +648,13 @@ impl UiContext {
                     .get_mut(&widget_id)
                     .expect("text input state must exist after insertion");
 
-                // Helper: delete selection
-                let delete_selection =
-                    |text: &mut String, state: &mut super::super::TextInputState| -> bool {
-                        if state.has_selection() {
-                            let (start, end) = state.selection_range();
-                            text.drain(start..end);
-                            state.cursor = start;
-                            state.selection_anchor = start;
-                            true
-                        } else {
-                            false
-                        }
-                    };
-
-                if key_backspace {
-                    if !delete_selection(text, state) && state.cursor > 0 {
-                        let prev = if ctrl {
-                            prev_word_boundary(text, state.cursor)
-                        } else {
-                            text[..state.cursor]
-                                .char_indices()
-                                .next_back()
-                                .map(|(i, _)| i)
-                                .unwrap_or(0)
-                        };
-                        text.drain(prev..state.cursor);
-                        state.cursor = prev;
-                        state.selection_anchor = prev;
-                    }
+                let (edit_changed, escape_pressed) =
+                    apply_text_edits(text, state, &inp, &mut self.clipboard, multiline);
+                if edit_changed {
                     changed = true;
-                }
-
-                if key_delete {
-                    if !delete_selection(text, state) && state.cursor < text.len() {
-                        let next = if ctrl {
-                            next_word_boundary(text, state.cursor)
-                        } else {
-                            text[state.cursor..]
-                                .char_indices()
-                                .nth(1)
-                                .map(|(i, _)| state.cursor + i)
-                                .unwrap_or(text.len())
-                        };
-                        text.drain(state.cursor..next);
-                    }
-                    changed = true;
-                }
-
-                if key_home {
-                    if shift {
-                        state.cursor = 0;
-                    } else {
-                        state.cursor = 0;
-                        state.selection_anchor = 0;
-                    }
-                }
-
-                if key_end {
-                    let len = text.len();
-                    if shift {
-                        state.cursor = len;
-                    } else {
-                        state.cursor = len;
-                        state.selection_anchor = len;
-                    }
-                }
-
-                if key_left {
-                    if ctrl {
-                        let new_pos = prev_word_boundary(text, state.cursor);
-                        if shift {
-                            state.cursor = new_pos;
-                        } else {
-                            state.cursor = new_pos;
-                            state.selection_anchor = new_pos;
-                        }
-                    } else if shift {
-                        if state.cursor > 0 {
-                            let prev = text[..state.cursor]
-                                .char_indices()
-                                .next_back()
-                                .map(|(i, _)| i)
-                                .unwrap_or(0);
-                            state.cursor = prev;
-                        }
-                    } else if state.has_selection() {
-                        let (start, _) = state.selection_range();
-                        state.cursor = start;
-                        state.selection_anchor = start;
-                    } else if state.cursor > 0 {
-                        let prev = text[..state.cursor]
-                            .char_indices()
-                            .next_back()
-                            .map(|(i, _)| i)
-                            .unwrap_or(0);
-                        state.cursor = prev;
-                        state.selection_anchor = prev;
-                    }
-                }
-
-                if key_right {
-                    if ctrl {
-                        let new_pos = next_word_boundary(text, state.cursor);
-                        if shift {
-                            state.cursor = new_pos;
-                        } else {
-                            state.cursor = new_pos;
-                            state.selection_anchor = new_pos;
-                        }
-                    } else if shift {
-                        if state.cursor < text.len() {
-                            let next = text[state.cursor..]
-                                .char_indices()
-                                .nth(1)
-                                .map(|(i, _)| state.cursor + i)
-                                .unwrap_or(text.len());
-                            state.cursor = next;
-                        }
-                    } else if state.has_selection() {
-                        let (_, end) = state.selection_range();
-                        state.cursor = end;
-                        state.selection_anchor = end;
-                    } else if state.cursor < text.len() {
-                        let next = text[state.cursor..]
-                            .char_indices()
-                            .nth(1)
-                            .map(|(i, _)| state.cursor + i)
-                            .unwrap_or(text.len());
-                        state.cursor = next;
-                        state.selection_anchor = next;
-                    }
-                }
-
-                // Ctrl+A: select all
-                if ctrl && key_a {
-                    state.cursor = text.len();
-                    state.selection_anchor = 0;
-                }
-
-                // Ctrl+C: copy
-                if ctrl && key_c && state.has_selection() {
-                    let (start, end) = state.selection_range();
-                    let copied = text[start..end].to_string();
-                    if let Some(ref mut cb) = self.clipboard {
-                        cb.set(&copied);
-                    }
-                }
-
-                // Ctrl+X: cut
-                if ctrl && key_x && state.has_selection() {
-                    let (start, end) = state.selection_range();
-                    let cut = text[start..end].to_string();
-                    text.drain(start..end);
-                    state.cursor = start;
-                    state.selection_anchor = start;
-                    changed = true;
-                    if let Some(ref mut cb) = self.clipboard {
-                        cb.set(&cut);
-                    }
-                }
-
-                // Ctrl+V: paste
-                if ctrl && key_v {
-                    if let Some(ref mut cb) = self.clipboard {
-                        if let Some(pasted) = cb.get() {
-                            let available = max_len.saturating_sub(text.len());
-                            if available > 0 {
-                                if state.has_selection() {
-                                    let (start, end) = state.selection_range();
-                                    text.drain(start..end);
-                                    state.cursor = start;
-                                    state.selection_anchor = start;
-                                }
-                                let pasted_chars: String = pasted
-                                    .chars()
-                                    .filter(|c| *c >= ' ')
-                                    .take(available)
-                                    .collect();
-                                let insert_len = pasted_chars.len();
-                                text.insert_str(state.cursor, &pasted_chars);
-                                state.cursor += insert_len;
-                                state.selection_anchor = state.cursor;
-                                changed = true;
-                            }
-                        }
-                    }
-                }
-
-                // Character input (only when Ctrl is NOT held)
-                if !ctrl {
-                    for c in characters {
-                        if c >= ' ' && text.len() < max_len {
-                            if state.has_selection() {
-                                let (start, end) = state.selection_range();
-                                text.drain(start..end);
-                                state.cursor = start;
-                                state.selection_anchor = start;
-                            }
-                            text.insert(state.cursor, c);
-                            let c_len = c.len_utf8();
-                            state.cursor += c_len;
-                            state.selection_anchor = state.cursor;
-                            changed = true;
-                        }
-                    }
-
-                    // Multiline: Shift+Enter inserts a newline
-                    if multiline && shift && key_enter && text.len() < max_len {
-                        if state.has_selection() {
-                            let (start, end) = state.selection_range();
-                            text.drain(start..end);
-                            state.cursor = start;
-                            state.selection_anchor = start;
-                        }
-                        text.insert(state.cursor, '\n');
-                        state.cursor += 1;
-                        state.selection_anchor = state.cursor;
-                        changed = true;
-                    }
-                }
-
-                if changed {
                     self.last_input_time = self.time;
                 }
-
-                if key_escape {
+                if escape_pressed {
                     self.focused_id = None;
                 }
             }
@@ -608,7 +667,7 @@ impl UiContext {
                     .expect("text input state must exist")
                     .cursor;
                 let text_before_cursor = &text[..cursor];
-                let cursor_x = self.measure_text(text_before_cursor, font_size).x();
+                let cursor_x = self.measure_text(text_before_cursor, inp.font_size).x();
                 let text_area_w = bounds.width() - padding * 2.0;
                 let state = self
                     .text_input_states
@@ -624,9 +683,9 @@ impl UiContext {
         }
 
         let enter_pressed = if multiline {
-            focused && key_enter && !shift
+            focused && inp.key_enter && !inp.shift
         } else {
-            focused && key_enter
+            focused && inp.key_enter
         };
 
         // Draw background
@@ -744,7 +803,14 @@ impl UiContext {
             self.input.set_cursor(crate::input::MouseCursor::Text);
         }
 
-        let mut response = Response::interactive(false, hovered, focused, bounds, &self.input);
+        let mut response = Response::interactive(
+            false,
+            hovered,
+            focused,
+            bounds,
+            &self.input,
+            Some(widget_id),
+        );
         response.changed = changed;
         response.enter_pressed = enter_pressed;
         response
@@ -807,7 +873,14 @@ impl UiContext {
             )
             .is_clicked();
 
-        let mut response = Response::interactive(clicked, hovered, active, bounds, &self.input);
+        let mut response = Response::interactive(
+            clicked,
+            hovered,
+            active,
+            bounds,
+            &self.input,
+            Some(widget_id),
+        );
         response.changed = clicked && !is_selected;
 
         if response.changed {
@@ -882,7 +955,14 @@ impl UiContext {
             arrow_size,
         );
 
-        let mut response = Response::interactive(clicked, hovered, false, bounds, &self.input);
+        let mut response = Response::interactive(
+            clicked,
+            hovered,
+            false,
+            bounds,
+            &self.input,
+            Some(widget_id),
+        );
 
         // Draw dropdown popup when open
         if *open {
