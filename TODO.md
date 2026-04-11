@@ -343,7 +343,7 @@
 - **Sub-tasks:**
   - [x] ~~88a. Add `agent_undo_stack` and `agent_redo_stack` to `EditorState`~~ — Done in 62c2288.
   - [x] ~~88b. Capture UndoGroups in `execute_tool_call()`~~ — Done in 62c2288. Undo groups pushed to agent_undo_stack, redo cleared.
-  - [ ] 88c. Handle GPU resource cleanup on undo — store GPU handle metadata per undo entry, release on undo (medium, medium risk)
+  - [x] ~~88c. Handle GPU resource cleanup on undo — store GPU handle metadata per undo entry, release on undo~~ — Done in a6a8a9f. GpuCleanupData tracked per entity, released after undo when entity destroyed.
   - [x] ~~88d. Add `undo_last_agent_action()` method~~ — Done in 7c4281a. perform_agent_undo and perform_agent_redo on EditorState.
   - [x] ~~88e. Add "Undo" button in AI co-creator panel~~ — Done in d7beebd. Visible when undo stack non-empty, pops and calls SceneToolExecutor::undo().
   - [x] ~~88f. Route local actions (`LocalAction::SpawnCube` etc.) through `SceneToolExecutor` so they produce UndoGroups~~ — Done in 771aeef. SpawnModel, DeleteEntity, DuplicateEntity now capture UndoGroups via push_undo().
@@ -359,7 +359,7 @@
 - **Files:** `katla_app/src/ui/theme.rs`, `katla_ui/src/style.rs`
 - **Issue:** `Theme` and `ColorScheme`/`UiStyle` define overlapping color sets for the same UI elements (buttons, panels, text, selections, popups, etc.). `Theme::apply_to_style()` manually maps each field, and `DraggablePanelStyle` in `widgets/draggable_panel.rs` duplicates yet a third set of panel colors. Three separate color definitions for "button background" is a maintenance trap — adding a new theme requires updating all three.
 - **Sub-tasks:**
-  - [ ] 89a. Extend `ColorScheme` with editor-specific semantic fields (status colors, entity type colors, accent, highlight, viewport border) and add `from_style()`/`apply_to_style()` round-trip (medium, low risk)
+  - [x] ~~89a. Extend `ColorScheme` with editor-specific semantic fields (status colors, entity type colors, accent, highlight, viewport border) and add `from_style()`/`apply_to_style()` round-trip~~ — Done in a6a8a9f. 20 new fields with from_style/apply_to_style methods.
   - [ ] 89b. Convert all 13 `Theme` constructors to `ColorScheme` constructors using the `theme!` macro pattern (medium, low risk)
   - [x] ~~89c. Remove `DraggablePanelStyle`~~ — Done in cb0d7cc. DraggablePanel now reads from ui.style directly.
   - [ ] 89d. Replace `Theme` usage across katla_app with `ColorScheme` + `UiStyle::with_colors()`, remove `katla_app/src/ui/theme.rs` (medium, medium risk)
@@ -626,7 +626,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] ~~125b. Add `TreeView` builder with `data()`, `expanded()`, `selected()`, `indent_per_level()`, `row_height()`, virtualizes rendering via `ListView`-style scroll offset calculation~~ — Done in 8313e3e. TreeView widget with virtualized rendering, expand/collapse, selection.
   - [x] ~~125c. Add expand/collapse toggle rendering (chevron icon + click handling that updates the expanded set)~~ — Done in 8313e3e (part of 125b). Chevron rendering and toggle click in TreeView.
   - [x] ~~125d. Add selection highlight, keyboard navigation (arrow up/down, left/right for expand/collapse), and tree guide lines~~ — Done in d24d889. Tree guide lines + full arrow key navigation added.
-  - [ ] 125e. Migrate hierarchy panel to `TreeView` widget (medium, medium risk)
+  - [x] ~~125e. Migrate hierarchy panel to `TreeView` widget~~ — Done in a6a8a9f. Hierarchy uses TreeView with render_item callback for custom icons/badges.
   - **Recommended order:** 125a → 125b → 125c → 125d → 125e
 - **Fix:** Add `TreeView` virtualized tree widget:
   ```rust
