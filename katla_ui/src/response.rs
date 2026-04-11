@@ -139,6 +139,13 @@ impl Response {
         }
     }
 
+    /// Defer a tooltip for rendering during `end()`.
+    pub fn tooltip(self, ui: &mut UiContext, text: impl Into<String>) {
+        if self.hovered {
+            ui.defer_tooltip(text);
+        }
+    }
+
     /// Combine two responses (union of interactions).
     pub fn union(self, other: Self) -> Self {
         Response {

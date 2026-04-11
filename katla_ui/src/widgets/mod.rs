@@ -441,6 +441,8 @@ pub struct Slider<'a> {
     range: std::ops::RangeInclusive<f32>,
     bounds: Rect2D,
     id: Option<&'a str>,
+    show_value: bool,
+    value_precision: usize,
 }
 
 impl<'a> Slider<'a> {
@@ -455,6 +457,8 @@ impl<'a> Slider<'a> {
                 DEFAULTS.slider_default_height,
             )),
             id: None,
+            show_value: false,
+            value_precision: 1,
         }
     }
 
@@ -467,6 +471,16 @@ impl<'a> Slider<'a> {
     /// Set a custom ID (overrides label-based ID).
     pub fn id(mut self, id: &'a str) -> Self {
         self.id = Some(id);
+        self
+    }
+
+    pub fn show_value(mut self, show: bool) -> Self {
+        self.show_value = show;
+        self
+    }
+
+    pub fn precision(mut self, p: usize) -> Self {
+        self.value_precision = p;
         self
     }
 
@@ -492,6 +506,8 @@ impl<'a> crate::Widget for Slider<'a> {
             *self.range.start(),
             *self.range.end(),
             self.bounds,
+            self.show_value,
+            self.value_precision,
         )
     }
 }

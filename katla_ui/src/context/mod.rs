@@ -219,6 +219,8 @@ pub struct UiContext {
     /// Focusable widgets registered during this frame's layout pass.
     /// Each entry is (widget_id, bounds), collected in layout order for Tab navigation.
     pub(crate) focusable_widgets: Vec<(WidgetId, Rect2D)>,
+    /// Tooltips deferred via `Response::tooltip()`, rendered in `end()`.
+    pub(crate) pending_tooltips: Vec<(u64, String)>,
 }
 
 impl UiContext {
@@ -265,6 +267,7 @@ impl UiContext {
             text_input_states: std::collections::HashMap::new(),
             clipboard: None,
             focusable_widgets: Vec::new(),
+            pending_tooltips: Vec::new(),
         }
     }
 
@@ -352,6 +355,11 @@ impl UiContext {
     // -------------------------------------------------------------------------
     // Z-Index Management
     // -------------------------------------------------------------------------
+
+    /// Defer a tooltip for rendering during `end()`.
+    pub fn defer_tooltip(&mut self, text: impl Into<String>) {
+        self.pending_tooltips.push((0, text.into()));
+    }
 }
 
 impl Default for UiContext {

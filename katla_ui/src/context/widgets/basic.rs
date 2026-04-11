@@ -322,7 +322,7 @@ impl UiContext {
         };
 
         // Draw button background
-        self.draw_rect(bounds, bg_color);
+        self.draw_rounded_rect(bounds, bg_color, self.style.button_rounding);
 
         // Draw border if specified
         if let Some(border_color) = border_color {
@@ -484,6 +484,8 @@ impl UiContext {
         min: f32,
         max: f32,
         bounds: Rect2D,
+        show_value: bool,
+        value_precision: usize,
     ) -> Response {
         let widget_id = self.generate_id(id);
         self.register_focusable(widget_id, bounds);
@@ -516,7 +518,11 @@ impl UiContext {
             Vec2::new(bounds.center().x(), bounds.center().y()),
             Vec2::new(bounds.width(), track_height),
         );
-        self.draw_rect(track_bounds, self.style.slider_track);
+        self.draw_rounded_rect(
+            track_bounds,
+            self.style.slider_track,
+            self.style.button_rounding,
+        );
 
         // Draw grab
         let t = (*value - min) / (max - min);
@@ -533,7 +539,19 @@ impl UiContext {
         } else {
             self.style.slider_grab
         };
-        self.draw_rect(grab_bounds, grab_color);
+        self.draw_rounded_rect(grab_bounds, grab_color, self.style.button_rounding);
+
+        if show_value {
+            let value_text = format!("{:.1$}", *value, value_precision);
+            let text_size = self.measure_text(&value_text, self.style.font_size);
+            let text_pos = center_in_bounds(bounds, text_size);
+            self.draw_text(
+                &value_text,
+                text_pos,
+                self.style.text_color,
+                self.style.font_size,
+            );
+        }
 
         let mut response =
             Response::interactive(false, hovered, active, bounds, &self.input, Some(widget_id));
@@ -689,7 +707,7 @@ impl UiContext {
         };
 
         // Draw background
-        self.draw_rect(bounds, self.style.input_bg);
+        self.draw_rounded_rect(bounds, self.style.input_bg, self.style.input_rounding);
 
         let border_color = if focused {
             self.style.input_border_focused
@@ -926,7 +944,7 @@ impl UiContext {
         } else {
             self.style.combo_bg
         };
-        self.draw_rect(bounds, bg_color);
+        self.draw_rounded_rect(bounds, bg_color, self.style.button_rounding);
         self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.combo_border, 1.0);
 
         // Draw selected text
