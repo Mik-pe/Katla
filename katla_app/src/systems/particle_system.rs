@@ -4,7 +4,10 @@
 //! particle system, ensuring that emitters are created, updated, and destroyed
 //! based on ECS entity lifecycle.
 
-use katla_ecs::World;
+use std::collections::HashMap;
+
+use katla_ecs::{EntityId, World};
+use katla_gfx::particles::EmitterHandle;
 use log::{debug, info, warn};
 
 use crate::components::ParticleEmitterComponent;
@@ -23,12 +26,16 @@ use crate::components::ParticleEmitterComponent;
 /// // Run each frame to sync emitters
 /// particle_system.update(&mut world, &mut renderer.particle_system);
 /// ```
-pub struct ParticleSystem {}
+pub struct ParticleSystem {
+    entity_emitters: HashMap<EntityId, EmitterHandle>,
+}
 
 impl ParticleSystem {
     /// Create a new particle system.
     pub fn new() -> Self {
-        Self {}
+        Self {
+            entity_emitters: HashMap::new(),
+        }
     }
 
     /// Update particle emitters from ECS components.
@@ -51,14 +58,32 @@ impl ParticleSystem {
             return;
         };
 
+        // Clean up GPU emitters for entities that no longer exist
+        let destroyed: Vec<EntityId> = self
+            .entity_emitters
+            .keys()
+            .filter(|id| !world.entity_exists(**id))
+            .copied()
+            .collect();
+        for entity_id in destroyed {
+            if let Some(handle) = self.entity_emitters.remove(&entity_id) {
+                ps.destroy_emitter(handle);
+                info!(
+                    "Destroyed particle emitter for destroyed entity {:?}",
+                    entity_id
+                );
+            }
+        }
+
         // Query all particle emitter components
-        for (_entity_id, emitter) in world.query::<&mut ParticleEmitterComponent>() {
+        for (entity_id, emitter) in world.query::<&mut ParticleEmitterComponent>() {
             if emitter.active {
                 // Initialize emitter if not already done
                 if emitter.emitter_handle.is_none() {
                     match ps.create_emitter(emitter.config) {
                         Ok(handle) => {
                             emitter.emitter_handle = Some(handle);
+                            self.entity_emitters.insert(entity_id, handle);
                             info!(
                                 "Created particle emitter at position {:?}",
                                 emitter.config.position
@@ -100,17 +125,12 @@ impl ParticleSystem {
             } else {
                 // Destroy emitter if component is inactive
                 if let Some(handle) = emitter.emitter_handle.take() {
+                    self.entity_emitters.remove(&entity_id);
                     ps.destroy_emitter(handle);
                     info!("Destroyed particle emitter for inactive component");
                 }
             }
         }
-
-        // Clean up emitters for entities that no longer exist.
-        // TODO: The ECS does not emit removal events, so we cannot detect
-        // destroyed entities automatically. Emitters are only cleaned up
-        // when ParticleEmitterComponent.active is set to false above.
-        // A future improvement would add entity removal hooks to the ECS.
     }
 }
 

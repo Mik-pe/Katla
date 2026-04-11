@@ -43,6 +43,9 @@
 
 #[macro_use]
 mod macros;
+pub mod filter;
+
+pub use filter::{FilteredQueryIter, QueryFilter, With, Without};
 
 use paste::paste;
 
