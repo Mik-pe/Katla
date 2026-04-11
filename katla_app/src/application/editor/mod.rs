@@ -111,6 +111,7 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
                     llm_config: &app.editor.llm_config,
                     undo_count: app.editor.undo_stack.len(),
                     redo_count: app.editor.redo_stack.len(),
+                    agent_undo_count: app.editor.agent_undo_stack.len(),
                 },
             )
             .clone()
@@ -402,6 +403,9 @@ pub fn process_editor_actions(app: &mut Application) {
             }
             EditorAction::Redo => {
                 app.editor.perform_redo(&mut app.world);
+            }
+            EditorAction::AgentUndo => {
+                app.editor.perform_agent_undo(&mut app.world);
             }
             EditorAction::SelectEntity(entity_id) => {
                 info!("Selected entity {:?}", entity_id);

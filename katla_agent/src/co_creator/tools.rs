@@ -10,6 +10,14 @@ pub struct SpawnEntityArgs {
     pub rotation: Option<[f32; 3]>,
     pub scale: Option<[f32; 3]>,
     pub name: Option<String>,
+    pub shape: Option<String>,
+    pub radius: Option<f32>,
+    pub segments: Option<u32>,
+    pub rings: Option<u32>,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    pub tube_radius: Option<f32>,
+    pub tube_segments: Option<u32>,
 }
 
 /// Typed arguments for the `destroy_entity` tool.
@@ -77,6 +85,32 @@ pub struct SetParentArgs {
     pub parent_id: Option<u64>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct ListResourcesArgs {
+    pub path: Option<String>,
+    pub filter: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReadResourceArgs {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WriteResourceArgs {
+    pub path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct CreateResourceArgs {
+    pub path: String,
+    pub template: Option<String>,
+    pub content: Option<String>,
+}
+
 /// Build tool definitions for the LLM's function calling.
 pub fn build_tool_definitions() -> Vec<ToolDefinition> {
     use serde_json::json;
@@ -106,6 +140,39 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
                     "name": {
                         "type": "string",
                         "description": "Optional entity name"
+                    },
+                    "shape": {
+                        "type": "string",
+                        "description": "Primitive shape: 'cube', 'sphere', 'plane', 'cylinder', 'cone', 'torus'. Default: 'cube'.",
+                        "enum": ["cube", "sphere", "plane", "cylinder", "cone", "torus"]
+                    },
+                    "radius": {
+                        "type": "number",
+                        "description": "Radius for sphere, cylinder, cone, torus (default: 0.5)"
+                    },
+                    "segments": {
+                        "type": "integer",
+                        "description": "Longitudinal segments for sphere, cylinder, cone, torus"
+                    },
+                    "rings": {
+                        "type": "integer",
+                        "description": "Latitudinal rings for sphere"
+                    },
+                    "width": {
+                        "type": "number",
+                        "description": "Width for plane"
+                    },
+                    "height": {
+                        "type": "number",
+                        "description": "Height for cylinder, cone, plane"
+                    },
+                    "tube_radius": {
+                        "type": "number",
+                        "description": "Tube radius for torus"
+                    },
+                    "tube_segments": {
+                        "type": "integer",
+                        "description": "Tube segments for torus"
                     }
                 },
                 "required": ["position"]
@@ -231,6 +298,54 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["entity_id"]
             }),
         },
+        ToolDefinition {
+            name: "list_resources".to_string(),
+            description: "List resource files in a project directory.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Directory path relative to project root" },
+                    "filter": { "type": "string", "description": "Optional file extension filter (e.g. 'json', 'katla')" }
+                },
+                "required": []
+            }),
+        },
+        ToolDefinition {
+            name: "read_resource".to_string(),
+            description: "Read a resource file's content as text.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "File path relative to project root" }
+                },
+                "required": ["path"]
+            }),
+        },
+        ToolDefinition {
+            name: "write_resource".to_string(),
+            description: "Write content to an existing resource file.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "File path relative to project root" },
+                    "content": { "type": "string", "description": "New file content" }
+                },
+                "required": ["path", "content"]
+            }),
+        },
+        ToolDefinition {
+            name: "create_resource".to_string(),
+            description: "Create a new resource file with optional template.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "File path relative to project root" },
+                    "template": { "type": "string", "description": "Optional template name for content generation" },
+                    "content": { "type": "string", "description": "Initial file content (if no template)" }
+                },
+                "required": ["path"]
+            }),
+        },
     ]
 }
 
@@ -252,5 +367,9 @@ mod tests {
         assert!(tools.iter().any(|t| t.name == "add_component"));
         assert!(tools.iter().any(|t| t.name == "get_component_attributes"));
         assert!(tools.iter().any(|t| t.name == "set_parent"));
+        assert!(tools.iter().any(|t| t.name == "list_resources"));
+        assert!(tools.iter().any(|t| t.name == "read_resource"));
+        assert!(tools.iter().any(|t| t.name == "write_resource"));
+        assert!(tools.iter().any(|t| t.name == "create_resource"));
     }
 }

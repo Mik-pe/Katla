@@ -1,7 +1,7 @@
 use katla_agent::MessageRole;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::markdown::{MarkdownColors, draw_markdown_segments, parse_markdown_line, wrap_lines};
-use katla_ui::widgets::{Button, TextInput};
+use katla_ui::widgets::{Button, ImageButton, TextInput};
 use katla_ui::widgets::{DraggablePanelConfig, DraggablePanelState};
 use katla_ui::{FontSize, ScrollArea, ScrollAreaState, UiContext};
 
@@ -159,6 +159,8 @@ pub struct CoCreatorResponse {
     pub submitted: bool,
     /// The submitted text, if any.
     pub submitted_text: Option<String>,
+    /// True if the user clicked the undo button this frame.
+    pub undo_clicked: bool,
 }
 
 /// Render the co-creator chat panel.
@@ -168,12 +170,14 @@ pub fn draw_co_creator_panel(
     state: &mut CoCreatorState,
     style: &CoCreatorStyle,
     screen_size: Vec2,
+    agent_undo_count: usize,
 ) -> CoCreatorResponse {
     if !state.is_open() {
         state.panel.mark_shown();
         return CoCreatorResponse {
             submitted: false,
             submitted_text: None,
+            undo_clicked: false,
         };
     }
 
@@ -188,6 +192,7 @@ pub fn draw_co_creator_panel(
     let mut scroll_state = state.scroll_state;
     let mut send_clicked = false;
     let mut enter_pressed = false;
+    let mut undo_clicked = false;
 
     let md_colors = MarkdownColors::from_style(ui.style());
 
@@ -211,6 +216,24 @@ pub fn draw_co_creator_panel(
             let msg_area_bottom = frame.panel_bounds.max.y() - input_height - bottom_padding;
 
             let font_size = ui.scaled_font_size(FontSize::Small);
+
+            if agent_undo_count > 0 {
+                let undo_bounds = Rect2D::from_origin_size(
+                    Vec2::new(
+                        frame.panel_bounds.max.x() - 40.0,
+                        frame.panel_bounds.min.y() + 2.0,
+                    ),
+                    Vec2::new(28.0, 28.0),
+                );
+                let response = ui.add(
+                    ImageButton::new(katla_ui::ForkAwesome::UNDO)
+                        .bounds(undo_bounds)
+                        .id("co_creator_undo"),
+                );
+                if response.clicked {
+                    undo_clicked = true;
+                }
+            }
 
             // Message area with scroll
             let msg_area_bounds = Rect2D::from_origin_size(
@@ -329,6 +352,7 @@ pub fn draw_co_creator_panel(
     CoCreatorResponse {
         submitted: submitted_text.is_some(),
         submitted_text,
+        undo_clicked,
     }
 }
 

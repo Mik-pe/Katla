@@ -119,6 +119,8 @@ pub enum EditorAction {
     Undo,
     /// Redo the last undone editor operation.
     Redo,
+    /// Undo the last AI agent operation.
+    AgentUndo,
 }
 
 /// Which panel is currently focused (receives input).
