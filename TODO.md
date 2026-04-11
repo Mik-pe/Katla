@@ -474,8 +474,8 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Crate:** katla_ui (new)
 - **Issue:** Every panel in the editor (hierarchy, inspector, asset browser, preferences, particle inspector, co-creator) hand-rolls the same pattern: draw `panel_bg` rect, draw `panel_border`, draw `panel_header` rect at the top, draw title text centered in the header. This is ~15 lines repeated verbatim in 6 places. A second app would need the same pattern.
 - **Sub-tasks:**
-  - [ ] 114a. Add `Panel` builder struct with `bounds()`, `header_height()`, `title()`, `subtitle()` fields, and `PanelGuard` RAII struct with `Drop` for clip cleanup (small, low risk)
-  - [ ] 114b. Implement `Widget for Panel` — draws bg from `style.window_bg`, border from `style.window_border`, header from `style.window_title_bg`, title text centered, pushes clip, returns `PanelGuard` (medium, low risk)
+  - [x] ~~114a. Add `Panel` builder struct with `PanelGuard`~~ — Done in af7d24e. Draws bg, border, header, title, returns RAII guard.
+  - [x] ~~114b. Implement Panel rendering~~ — Done in af7d24e (part of 114a). show() draws chrome and pushes clip.
   - [ ] 114c. Migrate one panel (e.g., hierarchy or inspector) to use `Panel` widget as proof of concept (small, low risk)
   - **Recommended order:** 114a → 114b → 114c
 - **Fix:** Add a `Panel` builder widget to katla_ui:
@@ -565,7 +565,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Crate:** katla_ui
 - **Issue:** `status_bar.rs` builds a standard status bar: background rect, top border, left-aligned items (FPS, frame count, entities), right-aligned items (mode indicator, theme name). This is the same in any editor. The widget reads from `Theme` for colors — with #113, it would read from `ui.style`.
 - **Sub-tasks:**
-  - [ ] 119a. Add `StatusBar` builder with `bounds()`, `height()`, `left_items()`, `center_item()`, `right_items()` closures (small, low risk)
+  - [x] ~~119a. Add `StatusBar` builder~~ — Done in af7d24e. Background drawing with cursor positioning for status_label/status_separator.
   - [ ] 119b. Implement rendering: background from `style.window_bg`, top border from `style.separator`, `begin_row()` layout for left items, manual right-alignment for right items (medium, low risk)
   - [x] ~~119c. Add `ui.status_label` and `ui.status_separator` helpers~~ — Done in 62c2288. Draws text/line and advances cursor.
   - [ ] 119d. Migrate `status_bar.rs` to use `StatusBar` widget (small, low risk)
@@ -655,7 +655,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Issue:** The AI co-creator can only manipulate live ECS entities via `SceneOp` (spawn, destroy, set_field, query, etc.). It has zero visibility into project resources — no way to list, read, create, or edit resource files like scene files (`assets/scenes/*.katla`), particle definitions (`assets/particles/*.json`), shaders, materials, or images. Every other game editor AI (Unity Muse, Unreal ML Deformer) can browse project files. This severely limits the AI's usefulness: it can't tune particle emitter JSON, create new particle presets, save/load scenes, read shader source to diagnose visual bugs, or generate new content files.
 - **Scope:** `katla_agent` provides the tool definitions and MCP endpoint plumbing. `katla_ecs` extends `SceneOp` with resource variants. `katla_app` implements the actual file I/O, asset loading, and scene serialization in the executor.
 - **Sub-tasks:**
-  - [ ] 129a. Add `ResourceOp` enum to `katla_ecs` alongside `SceneOp` — `ListResources { path, filter }`, `ReadResource { path }`, `WriteResource { path, content }`, `CreateResource { path, template, content }`, `DeleteResource { path }` (small, low risk)
+  - [x] ~~129a. Add `ResourceOp` enum~~ — Done in af7d24e. ListResources, ReadResource, WriteResource, CreateResource, DeleteResource.
   - [ ] 129b. Add matching tool definitions in `katla_agent/src/co_creator/tools.rs` (`list_resources`, `read_resource`, `write_resource`, `create_resource`) and MCP ops in `katla_agent/src/mcp.rs` (small, low risk)
   - [ ] 129c. Implement `ResourceToolExecutor` in `katla_app` — `list_resources` discovers files under `assets/` recursively, `read_resource` reads file content as string, `write_resource` writes back with backup, `create_resource` creates from template or empty. All paths sandboxed to project directory (medium, low risk)
   - [ ] 129d. Wire `ResourceOp` into `execute_tool_call()` in `katla_app/src/application/editor/agent.rs` alongside existing `SceneOp` dispatch (small, low risk)
