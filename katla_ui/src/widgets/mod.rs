@@ -1844,6 +1844,115 @@ impl<'a> crate::Widget for ComboBox<'a> {
 }
 
 // =============================================================================
+// ResizeHandle Widget
+// =============================================================================
+
+/// Direction of resize for a [`ResizeHandle`].
+pub enum ResizeDirection {
+    Horizontal,
+    Vertical,
+}
+
+/// A thin invisible hit-region that drives panel-edge resizing.
+///
+/// Returns the new clamped dimension after each frame. Cursor changes and
+/// drag tracking are handled internally so callers only need to feed the
+/// returned value back into their layout.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::ResizeHandle;
+///
+/// let new_width = ResizeHandle::horizontal(edge_bounds, panel_width)
+///     .min_value(120.0)
+///     .max_value(400.0)
+///     .show(ui);
+/// ```
+pub struct ResizeHandle {
+    bounds: Rect2D,
+    direction: ResizeDirection,
+    current_value: f32,
+    min_value: f32,
+    max_value: f32,
+}
+
+impl ResizeHandle {
+    /// Create a horizontal resize handle (left/right drag changes width).
+    pub fn horizontal(bounds: Rect2D, current_value: f32) -> Self {
+        Self {
+            bounds,
+            direction: ResizeDirection::Horizontal,
+            current_value,
+            min_value: 0.0,
+            max_value: f32::MAX,
+        }
+    }
+
+    /// Create a vertical resize handle (up/down drag changes height).
+    pub fn vertical(bounds: Rect2D, current_value: f32) -> Self {
+        Self {
+            bounds,
+            direction: ResizeDirection::Vertical,
+            current_value,
+            min_value: 0.0,
+            max_value: f32::MAX,
+        }
+    }
+
+    /// Set the minimum allowed value.
+    pub fn min_value(mut self, min: f32) -> Self {
+        self.min_value = min;
+        self
+    }
+
+    /// Set the maximum allowed value.
+    pub fn max_value(mut self, max: f32) -> Self {
+        self.max_value = max;
+        self
+    }
+
+    /// Process the resize interaction and return the new clamped dimension.
+    pub fn show(self, ui: &mut UiContext) -> f32 {
+        let id = ui.generate_id("resize_handle");
+        let hovered = ui.input.is_hovered(self.bounds);
+
+        if hovered {
+            match self.direction {
+                ResizeDirection::Horizontal => {
+                    ui.set_mouse_cursor(crate::input::MouseCursor::ResizeHorizontal)
+                }
+                ResizeDirection::Vertical => {
+                    ui.set_mouse_cursor(crate::input::MouseCursor::ResizeVertical)
+                }
+            }
+        }
+
+        let is_active = ui.active_id == Some(id);
+
+        if hovered && ui.input.mouse_pressed[crate::input::mouse_button::LEFT] && !is_active {
+            ui.active_id = Some(id);
+        }
+
+        if is_active {
+            let delta = match self.direction {
+                ResizeDirection::Horizontal => ui.input.mouse_delta.x(),
+                ResizeDirection::Vertical => ui.input.mouse_delta.y(),
+            };
+            let new_value = (self.current_value + delta).clamp(self.min_value, self.max_value);
+
+            if !ui.input.mouse_down[crate::input::mouse_button::LEFT] {
+                ui.active_id = None;
+            }
+
+            new_value
+        } else {
+            self.current_value
+        }
+    }
+}
+
+// =============================================================================
 // StatusBar Widget
 // =============================================================================
 
