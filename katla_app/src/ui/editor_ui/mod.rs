@@ -88,6 +88,8 @@ pub struct EditorUI {
     last_viewport_size: (u32, u32),
     /// Last known viewport panel bounds in logical screen coordinates.
     pub(crate) last_viewport_bounds: Rect2D,
+    /// Last known screen size (for computing floating panel default positions).
+    last_screen_size: Vec2,
 
     toolbar_state: ToolbarState,
     /// Current color theme.
@@ -139,6 +141,7 @@ impl EditorUI {
             pending_actions: Vec::new(),
             last_viewport_size: (800, 600),
             last_viewport_bounds: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(800.0, 600.0)),
+            last_screen_size: Vec2::new(800.0, 600.0),
             toolbar_state: ToolbarState::default(),
             theme: Theme::catppuccin(),
             asset_browser: AssetBrowserState::new(),
@@ -353,6 +356,37 @@ impl EditorUI {
         }
     }
 
+    /// Check if a screen-space point falls within any visible floating panel.
+    fn is_click_on_floating_panel(&self, pos: Vec2) -> bool {
+        let screen = self.last_screen_size;
+
+        if let Some(bounds) = self
+            .preferences_panel_state
+            .panel
+            .bounds(450.0, 500.0, screen)
+            && bounds.contains(pos)
+        {
+            return true;
+        }
+
+        if let Some(bounds) = self
+            .particle_inspector_state
+            .panel
+            .bounds(320.0, 600.0, screen)
+            && bounds.contains(pos)
+        {
+            return true;
+        }
+
+        if let Some(bounds) = self.co_creator.panel.bounds(400.0, 500.0, screen)
+            && bounds.contains(pos)
+        {
+            return true;
+        }
+
+        false
+    }
+
     /// Eagerly update focused panel based on click position.
     ///
     /// Called during `window_event` (before UI build) so that the first click
@@ -361,6 +395,10 @@ impl EditorUI {
     pub fn update_focused_panel_from_click(&mut self, mouse_pos: Vec2) {
         let toolbar_height = 32.0;
         if mouse_pos.y() < toolbar_height {
+            return;
+        }
+
+        if self.is_click_on_floating_panel(mouse_pos) {
             return;
         }
 

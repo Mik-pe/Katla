@@ -183,7 +183,8 @@ impl<'a> Widget for PreferencesPanel<'a> {
             &style,
             DraggablePanelConfig::new("prefs", "Settings")
                 .size(panel_width, panel_height)
-                .screen_size(self.screen_size),
+                .screen_size(self.screen_size)
+                .close_on_outside_click(false),
             |ui, frame| {
                 panel_bounds = frame.panel_bounds;
 
@@ -962,7 +963,7 @@ fn build_ai_tab(
     // API Key — full width since keys are long and sensitive
     let api_key_bounds =
         Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, ROW_HEIGHT));
-    let mut api_key = String::new();
+    let mut api_key = llm_config.api_key.clone();
     let api_key_response = ui.add(
         katla_ui::widgets::TextInput::new("api_key", &mut api_key)
             .bounds(api_key_bounds)
