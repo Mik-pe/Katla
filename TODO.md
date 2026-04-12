@@ -693,7 +693,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Use `style.panel_border` or `style.separator` from UiStyle.
 - **Severity:** HIGH
 
-### 132. Hardcoded marquee selection colors in asset browser
+~~### 132. Hardcoded marquee selection colors in asset browser~~ — Fixed in 94ab1e3. Uses `ui.style().selectable_selected.with_alpha()`.
 - **Crate:** katla_app
 - **Files:** `katla_app/src/ui/editor_ui/asset_browser/mod.rs` (lines 490, 494, 497-498)
 - **Issue:** Marquee (rubber-band) selection uses `Color::new(0.3, 0.5, 0.8, 0.4)`, `Color::new(0.3, 0.5, 0.8, 0.3)`, `Color::new(0.4, 0.6, 0.9, 0.8)`. Should use `style.selection` / `style.selection_hover` from ColorScheme.
@@ -707,7 +707,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Add `self.input.set_cursor(MouseCursor::Hand)` when hovered in `button_with_colors()`, `image_button()`, `checkbox()`, `radio_button()`, `combo_box()`, and `Selectable::ui()`.
 - **Severity:** HIGH
 
-### 134. Inspector panel has no scroll area
+~~### 134. Inspector panel has no scroll area~~ — Fixed in 94ab1e3. Wrapped content in scroll_area with ScrollAreaState.
 - **Crate:** katla_app
 - **Files:** `katla_app/src/ui/editor_ui/inspector.rs`
 - **Issue:** Inspector draws entity properties using `begin_column()`/`end_column()` without a scroll area. When an entity has many components, content overflows the panel bounds with no way to scroll. Other panels (hierarchy, asset browser) correctly use `scroll_area()`.
@@ -728,14 +728,14 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Use `theme.info` or `theme.highlight` — both are already semantically defined for accent purposes.
 - **Severity:** MEDIUM
 
-### 137. Hardcoded font size in viewport labels
+~~### 137. Hardcoded font size in viewport labels~~ — Fixed in 94ab1e3. Uses `ui.scaled_font_size(FontSize::Small)`.
 - **Crate:** katla_app
 - **Files:** `katla_app/src/ui/editor_ui/viewport_grid.rs` (line 126)
 - **Issue:** Viewport labels ("3D View", "Top-Left", etc.) use hardcoded `12.0` font size instead of `ui.scaled_font_size(FontSize::Small)`. Labels won't respect font scale setting.
 - **Fix:** Use `ui.scaled_font_size(FontSize::Small)`.
 - **Severity:** MEDIUM
 
-### 138. Panel widget ignores semantic panel theme colors
+~~### 138. Panel widget ignores semantic panel theme colors~~ — False positive. ColorScheme.panel_bg/header/border are populated from UiStyle.window_bg/title_bg/window_border via from_style(). Panel::show() already reads these theme-aware values.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/widgets/mod.rs`, Panel::show()
 - **Issue:** `Panel::show()` uses `ui.style.window_bg`, `ui.style.window_title_bg`, `ui.style.window_border` for chrome. ColorScheme has dedicated `panel_bg`, `panel_header`, `panel_border` colors specifically tuned for panels. The Panel widget ignores these.
@@ -784,7 +784,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Mark `defaults()` as `#[deprecated]` or remove it. All callers should use `from_style()`.
 - **Severity:** MEDIUM
 
-### 145. Hardcoded shadow color in DraggablePanel
+~~### 145. Hardcoded shadow color in DraggablePanel~~ — Fixed in 94ab1e3. Uses `ui.style.popup_shadow`.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/widgets/draggable_panel.rs` (line 255)
 - **Issue:** Floating panel shadow hardcoded as `Color::new(0.0, 0.0, 0.0, 0.6)` instead of using `style.popup_shadow` which already exists.
@@ -860,3 +860,34 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Bump to: `window_rounding: 6.0`, `button_rounding: 6.0`, `input_rounding: 4.0`, `popup_rounding: 6.0`, `window_padding: 10.0`. Keep `menu_rounding: 4.0` and `title_bar_height: 25.0`.
 - **Severity:** LOW
 - **Design rationale:** Industry survey of Unity, UE5, Godot 4.6, Blender, Dear ImGui, VS Code, JetBrains: all use 0-6px rounding. Values above 8px look mobile/app-like. Engine editors prioritize density over decoration.
+
+### 156. AI assistant markdown preview doesn't render like actual markdown
+- **Crate:** katla_ui / katla_app
+- **Files:** `katla_ui/src/markdown.rs`, `katla_app/src/ui/editor_ui/co_creator.rs`
+- **Issue:** The AI co-creator panel renders assistant messages as plain or minimally-styled text. Markdown formatting (headings, bold, italic, code blocks, lists, links) is either stripped or rendered without visual distinction. Users expect the AI assistant's responses to look like rendered markdown with clear sections, styled code blocks, proper list formatting, and visual hierarchy — similar to how markdown appears in ChatGPT, GitHub, or any modern AI chat interface.
+- **Fix:** Improve the markdown renderer in `katla_ui/src/markdown.rs` to properly render:
+  - Headings (H1-H4) with larger/bold text and spacing
+  - Bold and italic text with font weight/style changes
+  - Inline code with a distinct background and monospace font
+  - Code blocks with a background box and preserved whitespace
+  - Ordered and unordered lists with proper indentation and markers
+  - Links with accent color and underline
+  - Horizontal rules / separators
+  - Blockquotes with a left border
+  - Proper paragraph spacing between elements
+- **Severity:** MEDIUM
+
+### 157. Add dockable panel system with persistent state
+- **Crate:** katla_ui / katla_app
+- **Files:** `katla_ui/src/widgets/dock.rs` (new), `katla_ui/src/widgets/mod.rs`, `katla_app/src/ui/editor_ui/layout.rs`, `katla_app/src/ui/editor_ui/mod.rs`, `katla_app/src/ui/editor_ui/types.rs`, `katla_app/src/preferences.rs`
+- **Issue:** The editor layout in `layout.rs` uses hardcoded panel positions with manual `ResizeHandle` widgets, a `FocusedPanel` enum, and scattered `left_panel_width`/`right_panel_width`/`asset_browser_height` fields on `EditorUI`. Panels cannot be reordered, tabbed together, or undocked/re-docked. A proper dockable window system would let users customize their workspace layout and persist it across sessions.
+- **Sub-tasks:**
+  - [ ] 157a. Define `DockTree` data structure — a binary tree of `DockNode` where each node is either a `Split { direction: H/V, ratio: f32, children: [Box<DockNode>; 2] }` or a `Leaf { tabs: Vec<DockPanelId>, active_tab: usize, size: f32 }`. Include `DockLayout { root: DockNode, floating: Vec<FloatingDockWindow> }`. Place in `katla_ui/src/widgets/dock.rs`. — (medium, low risk)
+  - [ ] 157b. Add `DockTabBar` widget — renders a horizontal row of tab labels for a `Leaf` node, with active-tab highlighting, close buttons, and click-to-select. Detect drag-start on a tab for later dock-to-drag interaction. Place in `katla_ui/src/widgets/dock.rs`. — (medium, low risk)
+  - [ ] 157c. Add `DockArea` widget — takes a `DockLayout` and the full available bounds, recursively walks the `DockTree` computing split rects from ratios, and delegates each `Leaf` to render its `DockTabBar` + active panel content. Draws resize splitters between split children with drag-to-resize (reusing existing `ResizeHandle` pattern). — (large, medium risk)
+  - [ ] 157d. Add drag-to-dock interaction — when a tab is dragged out of its tab bar, show a floating preview and dock-zone overlays (center, left/right/top/bottom edges) on hover over other dock nodes. On drop, mutate the `DockTree` (e.g., split the target node or reparent). Dragging to empty space creates a new floating window. — (large, high risk)
+  - [ ] 157e. Add dock layout serialization/deserialization — derive `Serialize`/`Deserialize` on `DockTree`, `DockNode`, `DockLayout`. Add a `dock_layout` field to `Preferences` (via `preferences.toml`) using the existing `serde` + `toml` pattern. Save on layout change, load on startup with fallback to a default layout. — (small, low risk)
+  - [ ] 157f. Add `DockPanelId` enum and panel content registry — define `DockPanelId` variants for each editor panel (Hierarchy, Viewport, Inspector, AssetBrowser, CoCreator) in `katla_app`. Add a render callback map `HashMap<DockPanelId, fn(&mut UiContext, Rect2D, &mut EditorUI, &mut EditorRenderParams)>` so `DockArea` can dispatch content rendering by panel ID. — (medium, low risk)
+  - [ ] 157g. Integrate `DockArea` into `layout.rs` — replace the hardcoded panel positioning logic in `EditorUI::build()` with a single `DockArea` widget call. Remove `left_panel_width`, `right_panel_width`, `asset_browser.panel_height` fields from `EditorUI` (sizes are now in the dock tree). Keep toolbar and status bar outside the dock area. Update `FocusedPanel` to be derived from the active dock tab. — (large, high risk)
+  - [ ] 157h. Add state persistence for panel visibility and sizes — ensure open/closed panels, split ratios, active tabs, and floating window positions round-trip through `Preferences`. Add a default layout that matches the current editor arrangement (hierarchy left, viewport center, inspector right, asset browser bottom). — (small, low risk)
+  - **Recommended order:** 157a → 157b → 157c → 157f → 157g → 157e → 157h → 157d
