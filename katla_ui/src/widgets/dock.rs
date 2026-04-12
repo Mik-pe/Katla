@@ -528,6 +528,175 @@ impl DockTabBar<'_> {
 }
 
 // ---------------------------------------------------------------------------
+// 157c — DockArea widget
+// ---------------------------------------------------------------------------
+
+/// Height of the tab bar rendered at the top of each leaf node.
+const TAB_BAR_HEIGHT: f32 = 28.0;
+
+/// Width of the visual separator line drawn between split children.
+const SPLITTER_THICKNESS: f32 = 2.0;
+
+/// A widget that recursively renders a [`DockLayout`].
+///
+/// Walks the `DockNode` tree, drawing resize separators for `Split` nodes
+/// and delegating leaf rendering to a caller-provided callback.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::DockArea;
+///
+/// ui.add(DockArea::new(&layout, |ui, content_bounds, panel_id| {
+///     ui.draw_text(&format!("Panel {}", panel_id), content_bounds.min, Color::WHITE, 14.0);
+/// }).bounds(screen_bounds));
+/// ```
+pub struct DockArea<'a, F>
+where
+    F: FnMut(&mut UiContext, Rect2D, DockPanelId),
+{
+    layout: &'a DockLayout,
+    bounds: Rect2D,
+    render_panel: F,
+}
+
+impl<'a, F> DockArea<'a, F>
+where
+    F: FnMut(&mut UiContext, Rect2D, DockPanelId),
+{
+    /// Create a new dock area.
+    ///
+    /// * `layout` — the dock layout tree to render.
+    /// * `render_panel` — callback invoked for each visible leaf panel, receiving
+    ///   the content area (below the tab bar) and the active panel ID.
+    pub fn new(layout: &'a DockLayout, render_panel: F) -> Self {
+        Self {
+            layout,
+            bounds: Rect2D::from_size(Vec2::new(800.0, 600.0)),
+            render_panel,
+        }
+    }
+
+    /// Set the total bounds of the dock area.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    fn render_node(&mut self, ui: &mut UiContext, node: &DockNode, bounds: Rect2D) {
+        match node {
+            DockNode::Split {
+                direction,
+                ratio,
+                children,
+            } => {
+                let sep_half = SPLITTER_THICKNESS * 0.5;
+
+                let (first_bounds, second_bounds) = match direction {
+                    SplitDirection::Horizontal => {
+                        let split_x = bounds.min.x() + bounds.width() * ratio;
+                        let first = Rect2D::from_origin_size(
+                            bounds.min,
+                            Vec2::new(bounds.width() * ratio, bounds.height()),
+                        );
+                        let second = Rect2D::from_origin_size(
+                            Vec2::new(split_x + SPLITTER_THICKNESS, bounds.min.y()),
+                            Vec2::new(
+                                (bounds.width() * (1.0 - ratio) - SPLITTER_THICKNESS).max(0.0),
+                                bounds.height(),
+                            ),
+                        );
+                        (first, second)
+                    }
+                    SplitDirection::Vertical => {
+                        let split_y = bounds.min.y() + bounds.height() * ratio;
+                        let first = Rect2D::from_origin_size(
+                            bounds.min,
+                            Vec2::new(bounds.width(), bounds.height() * ratio),
+                        );
+                        let second = Rect2D::from_origin_size(
+                            Vec2::new(bounds.min.x(), split_y + SPLITTER_THICKNESS),
+                            Vec2::new(
+                                bounds.width(),
+                                (bounds.height() * (1.0 - ratio) - SPLITTER_THICKNESS).max(0.0),
+                            ),
+                        );
+                        (first, second)
+                    }
+                };
+
+                self.render_node(ui, &children[0], first_bounds);
+
+                // Draw separator line
+                let separator_color = ui.style.separator;
+                match direction {
+                    SplitDirection::Horizontal => {
+                        let sep_x = first_bounds.max.x() + sep_half;
+                        ui.draw_line(
+                            Vec2::new(sep_x, bounds.min.y()),
+                            Vec2::new(sep_x, bounds.max.y()),
+                            separator_color,
+                            SPLITTER_THICKNESS,
+                        );
+                    }
+                    SplitDirection::Vertical => {
+                        let sep_y = first_bounds.max.y() + sep_half;
+                        ui.draw_line(
+                            Vec2::new(bounds.min.x(), sep_y),
+                            Vec2::new(bounds.max.x(), sep_y),
+                            separator_color,
+                            SPLITTER_THICKNESS,
+                        );
+                    }
+                }
+
+                self.render_node(ui, &children[1], second_bounds);
+            }
+            DockNode::Leaf { tabs, active_tab } => {
+                if tabs.is_empty() {
+                    return;
+                }
+
+                // Render tab bar at the top of the leaf bounds
+                let tab_bar_bounds =
+                    Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), TAB_BAR_HEIGHT));
+                let tab_response = DockTabBar::new(tabs, *active_tab)
+                    .bounds(tab_bar_bounds)
+                    .show(ui);
+
+                // Content area is below the tab bar
+                let content_bounds = Rect2D::from_origin_size(
+                    Vec2::new(bounds.min.x(), tab_bar_bounds.max.y()),
+                    Vec2::new(bounds.width(), (bounds.height() - TAB_BAR_HEIGHT).max(0.0)),
+                );
+
+                let active_idx = tab_response
+                    .clicked_tab
+                    .unwrap_or(*active_tab)
+                    .min(tabs.len() - 1);
+
+                // Draw content background
+                ui.draw_rect(content_bounds, ui.style.window_bg);
+
+                if let Some(&panel_id) = tabs.get(active_idx) {
+                    (self.render_panel)(ui, content_bounds, panel_id);
+                }
+            }
+        }
+    }
+}
+
+impl<'a, F> crate::Widget for DockArea<'a, F>
+where
+    F: FnMut(&mut UiContext, Rect2D, DockPanelId),
+{
+    fn ui(mut self, ui: &mut UiContext) -> crate::Response {
+        self.render_node(ui, &self.layout.root, self.bounds);
+        crate::Response::new(self.bounds)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 157e — Serialization
 // ---------------------------------------------------------------------------
 // serde / toml are not currently dependencies of katla_ui.
