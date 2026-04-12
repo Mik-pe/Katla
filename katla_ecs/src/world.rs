@@ -406,7 +406,10 @@ impl World {
         // SAFETY: We have exclusive access to self.systems via the raw pointer in guard.
         // The systems vec is temporarily in guard.systems. If a panic occurs, the
         // Guard's Drop restores them. If no panic, we restore manually below.
-        let systems = guard.systems.as_mut().unwrap();
+        let systems = guard
+            .systems
+            .as_mut()
+            .expect("systems should be in guard during update");
 
         for ordered_system in systems.iter_mut() {
             if !ordered_system.system.is_enabled() {
@@ -417,7 +420,10 @@ impl World {
         }
 
         // Normal path: take systems out of guard and restore to self.systems
-        let systems = guard.systems.take().unwrap();
+        let systems = guard
+            .systems
+            .take()
+            .expect("systems should still be in guard after update loop");
         self.systems = systems;
 
         // Flush per-frame events
@@ -557,7 +563,9 @@ impl World {
         if !self.resources.contains::<R>() {
             self.resources.insert(R::default());
         }
-        self.resources.get_mut::<R>().unwrap()
+        self.resources
+            .get_mut::<R>()
+            .expect("resource was just inserted above")
     }
 }
 
