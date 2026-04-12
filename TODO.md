@@ -742,7 +742,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Use `panel_bg`, `panel_header`, `panel_border` from ColorScheme in Panel::show(). Map them into UiStyle or read from an extended style field.
 - **Severity:** MEDIUM
 
-### 139. Inconsistent panel chrome between hierarchy and inspector
+~~### 139. Inconsistent panel chrome between hierarchy and inspector~~ — Fixed in 6206627. Inspector now uses Panel::show() matching hierarchy.
 - **Crate:** katla_app
 - **Files:** `katla_app/src/ui/editor_ui/hierarchy.rs` vs `katla_app/src/ui/editor_ui/inspector.rs`
 - **Issue:** Hierarchy uses `Panel::show()` widget (header+bg+border chrome). Inspector draws its own bg, border, and header manually. These two approaches may diverge in appearance.
@@ -770,7 +770,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Replace magic numbers with style constants. `style.property_label_width` already exists but isn't used by the inspector.
 - **Severity:** MEDIUM
 
-### 143. Entity name/badge overlap in hierarchy
+~~### 143. Entity name/badge overlap in hierarchy~~ — Fixed in 6206627. Entity names truncated with truncate_text() before badge.
 - **Crate:** katla_app
 - **Files:** `katla_app/src/ui/editor_ui/hierarchy.rs` (lines 168-183)
 - **Issue:** Entity type badge text ("Mesh", "Particle Emitter") is positioned at `bounds.min.x() + bounds_width - badge_size.x() - 8.0`. Long entity names overlap with the badge text. No truncation of entity name to leave room.
@@ -791,7 +791,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Use `ui.style.popup_shadow`.
 - **Severity:** LOW
 
-### 146. GraphOptions hardcoded colors
+~~### 146. GraphOptions hardcoded colors~~ — Fixed in 6206627. Added from_style/fps_from_style/frame_time_from_style methods.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/context/mod.rs` (lines 444-446)
 - **Issue:** `GraphOptions::default()` uses hardcoded `Color::GREEN`, `Color::new(0.1, 0.1, 0.1, 0.9)`, etc. The `fps()` and `frame_time()` variants also hardcode colors.
@@ -819,7 +819,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Draw a small semi-transparent dark background behind viewport labels for consistent readability.
 - **Severity:** LOW
 
-### 150. Missing keyboard shortcut display in View menu
+~~### 150. Missing keyboard shortcut display in View menu~~ — N/A. View menu items (Grid, Stats) have no keyboard shortcuts defined, so there's nothing to display.
 - **Crate:** katla_app
 - **Files:** `katla_app/src/ui/editor_ui/toolbar.rs`
 - **Issue:** View menu toggle items ("Grid", "Stats") use `toggle_menu_item_clicked()` without shortcut display. Edit menu items correctly use `menu_item_clicked_with_icon_and_shortcut()`.
@@ -832,7 +832,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Issue:** Modal popup background overlay uses `Color::new(0.0, 0.0, 0.0, 0.5)` hardcoded. Should use `style.popup_shadow` or a dedicated modal overlay color from theme.
 - **Severity:** LOW
 
-### 152. Vec3Slider axis colors hardcoded — not theme-aware
+~~### 152. Vec3Slider axis colors hardcoded — not theme-aware~~ — Intentional. RGB axis colors (red/green/blue for X/Y/Z) are industry-standard in every 3D editor and should NOT vary by theme.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/widgets/mod.rs`, Vec3Slider DEFAULT_AXIS_COLORS
 - **Issue:** `DEFAULT_AXIS_COLORS` are `Color::rgb(0.9, 0.3, 0.3)`, `Color::rgb(0.3, 0.9, 0.3)`, `Color::rgb(0.3, 0.5, 0.9)` — hardcoded RGB. Inspector duplicates the same pattern for light color R/G/B sliders. Having these in the theme would allow colorblind-friendly palettes.
@@ -891,3 +891,34 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [ ] 157g. Integrate `DockArea` into `layout.rs` — replace the hardcoded panel positioning logic in `EditorUI::build()` with a single `DockArea` widget call. Remove `left_panel_width`, `right_panel_width`, `asset_browser.panel_height` fields from `EditorUI` (sizes are now in the dock tree). Keep toolbar and status bar outside the dock area. Update `FocusedPanel` to be derived from the active dock tab. — (large, high risk)
   - [ ] 157h. Add state persistence for panel visibility and sizes — ensure open/closed panels, split ratios, active tabs, and floating window positions round-trip through `Preferences`. Add a default layout that matches the current editor arrangement (hierarchy left, viewport center, inspector right, asset browser bottom). — (small, low risk)
   - **Recommended order:** 157a → 157b → 157c → 157f → 157g → 157e → 157h → 157d
+
+### 158. Add proper `TabBar` widget with SOTA visual design
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/widgets/mod.rs` (new widget), `katla_app/src/ui/editor_ui/preferences.rs`
+- **Issue:** The preferences panel renders tabs as flat colored rectangles (`draw_rect` + bottom line) — visually identical to buttons. There is no `TabBar` widget in katla_ui. Modern editors (VS Code, JetBrains, Unity, Godot 4) use clearly distinguishable tab designs: active tab blends into the content area (shared bottom edge), inactive tabs are visually recessed or muted, and hover states provide clear affordance. The current approach in `preferences.rs` lines 151-213 is ~60 lines of inline rendering that cannot be reused.
+- **Fix:** Add a `TabBar` builder widget to katla_ui with SOTA visual design:
+  - Active tab: no bottom border (merges with content panel), filled background matching content area
+  - Inactive tabs: subtle background, full border, slightly muted text
+  - Hover state: elevated background, lighter text
+  - Close button per tab (optional, for dockable panels)
+  - Bottom separator line across the full tab bar (stops at active tab)
+  - Icon + text support per tab
+  - Configurable via `UiStyle` fields: `tab_bar_height`, `tab_rounding`, `tab_inactive_bg`, `tab_active_bg`, `tab_hover_bg`, `tab_text`, `tab_active_text`, `tab_border`
+  - Migrate `preferences.rs` inline tab rendering to use `TabBar` widget
+- **Severity:** HIGH
+- **Design rationale:** VS Code uses bottom-blend active tabs with icon+text. JetBrains uses underlined active tab. Unity uses top-highlight + content-blend. Godot 4 uses bottom-blend with subtle rounding. The content-blend pattern (active tab shares background with panel below, no bottom border) is the most widely adopted and most readable.
+
+### 159. Audit and elevate overall UI polish to SOTA editor quality
+- **Crate:** katla_ui / katla_app
+- **Files:** `katla_ui/src/style.rs`, `katla_ui/src/widgets/mod.rs`, `katla_app/src/ui/editor_ui/` (all)
+- **Issue:** The current UI has accumulated individual fixes but lacks a cohesive visual identity matching modern engine editors. Specific gaps: no consistent hover/active/pressed state progression across widgets; no focus rings on text inputs; scrollbar styling is minimal (flat rect, no hover state, no track); menu items lack hover transition and checkmark/radio indicators; no subtle shadows or depth cues on floating panels; no consistent border treatment (some panels have borders, some don't); spacing and padding are inconsistent between panels. SOTA editors (Unity 6, Godot 4.6, Blender 4.x) have a unified visual language where every widget follows the same state/color/spacing system.
+- **Sub-tasks:**
+  - [ ] 159a. Add missing `UiStyle` fields for consistent widget states: `widget_hovered_bg`, `widget_active_bg`, `widget_pressed_bg`, `focus_ring_color`, `focus_ring_width`, `scrollbar_track_color`, `scrollbar_thumb_color`, `scrollbar_thumb_hover_color`, `menu_item_hover_bg`, `menu_item_active_bg`, `check_mark_color` — (small, low risk)
+  - [ ] 159b. Implement consistent 3-state rendering (hover → active → pressed) across all interactive widgets (Button, Checkbox, RadioButton, Selectable, ComboBox trigger, TabBar items) using the new style fields — (medium, low risk)
+  - [ ] 159c. Improve scrollbar visuals — track background, rounded thumb, thumb hover highlight, optional min-thumb size — (medium, low risk)
+  - [ ] 159d. Add focus ring rendering on focused TextInput and other focusable widgets — (small, low risk)
+  - [ ] 159e. Unify border treatment — decide: all panels get borders (like Blender) or no borders with shadow (like VS Code). Apply consistently — (small, low risk)
+  - [ ] 159f. Audit spacing/padding consistency across all panels — ensure `window_padding`, `item_spacing`, `item_inner_spacing` are used uniformly — (medium, low risk)
+  - **Recommended order:** 159a → 159b → 159c → 159d → 159e → 159f
+- **Severity:** MEDIUM
+- **Design rationale:** Unity 6, Godot 4.6, and Blender 4.x all share: (1) consistent 3-state widget feedback, (2) subtle depth via borders or shadows, (3) unified spacing system, (4) focus indicators for keyboard navigation, (5) themed scrollbars that don't look like afterthoughts. The gap between current state and SOTA is primarily consistency, not missing features.
