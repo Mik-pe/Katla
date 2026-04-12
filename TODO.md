@@ -360,9 +360,9 @@
 - **Issue:** `Theme` and `ColorScheme`/`UiStyle` define overlapping color sets for the same UI elements (buttons, panels, text, selections, popups, etc.). `Theme::apply_to_style()` manually maps each field, and `DraggablePanelStyle` in `widgets/draggable_panel.rs` duplicates yet a third set of panel colors. Three separate color definitions for "button background" is a maintenance trap — adding a new theme requires updating all three.
 - **Sub-tasks:**
   - [x] ~~89a. Extend `ColorScheme` with editor-specific semantic fields (status colors, entity type colors, accent, highlight, viewport border) and add `from_style()`/`apply_to_style()` round-trip~~ — Done in a6a8a9f. 20 new fields with from_style/apply_to_style methods.
-  - [ ] 89b. Convert all 13 `Theme` constructors to `ColorScheme` constructors using the `theme!` macro pattern (medium, low risk)
+  - [x] ~~89b. Convert all 13 `Theme` constructors to `ColorScheme` constructors using the `theme!` macro pattern~~ — Done in ae097ee. 13 ColorScheme constructors with color_scheme! macro.
   - [x] ~~89c. Remove `DraggablePanelStyle`~~ — Done in cb0d7cc. DraggablePanel now reads from ui.style directly.
-  - [ ] 89d. Replace `Theme` usage across katla_app with `ColorScheme` + `UiStyle::with_colors()`, remove `katla_app/src/ui/theme.rs` (medium, medium risk)
+  - [x] ~~89d. Replace `Theme` usage across katla_app with `ColorScheme` + `UiStyle::with_colors()`, remove `katla_app/src/ui/theme.rs`~~ — Done in ae097ee. All Theme refs replaced, theme.rs deleted (428 lines removed).
   - **Recommended order:** 89a → 89b → 89c → 89d
 
 ### ~~90. `DraggablePanelStyle` is a redundant copy of `Theme` panel colors~~
@@ -464,10 +464,10 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Files:** `katla_app/src/ui/theme.rs` → `katla_ui/src/style/`
 - **Issue:** The 13 named themes (Catppuccin, Nord, Tokyo Night, Dracula, Gruvbox, One Dark, Material Palenight, Ayu Dark, GitHub Dark, Monokai, Rose Pine, Kanagawa, Solarized Dark) are pure color data with no dependency on katla_app. Any app using katla_ui would want theme presets. Right now they're locked behind katla_app's editor feature gate. The `theme!` macro and `Theme::by_name()` + `Theme::all_names()` are fully self-contained. Ties into #89 (deduplicating Theme vs ColorScheme) — if we extend `ColorScheme` to cover all editor colors, these 13 themes become `ColorScheme` constructors and live naturally in katla_ui.
 - **Sub-tasks:**
-  - [ ] 113a. Create `katla_ui/src/style/themes.rs`, move `theme!` macro and 13 theme constructors as `ColorScheme` methods (depends on 89a/89b) (medium, low risk)
-  - [ ] 113b. Add `ColorScheme::by_name(name) -> Option<ColorScheme>` and `ColorScheme::all_names() -> &'static [&'static str]` (small, low risk)
-  - [ ] 113c. Update `katla_app` references to use `ColorScheme::catppuccin()` etc. instead of `Theme::catppuccin()` (small, low risk)
-  - [ ] 113d. Remove `katla_app/src/ui/theme.rs`, update `mod.rs` re-exports (small, low risk)
+  - [x] ~~113a. Create `katla_ui/src/style/themes.rs`, move `theme!` macro and 13 theme constructors as `ColorScheme` methods~~ — Done in ae097ee. 13 constructors added to ColorScheme via color_scheme! macro in style.rs.
+  - [x] ~~113b. Add `ColorScheme::by_name(name) -> Option<ColorScheme>` and `ColorScheme::all_names() -> &'static [&'static str]`~~ — Done in ae097ee. Both methods added to ColorScheme.
+  - [x] ~~113c. Update `katla_app` references to use `ColorScheme::catppuccin()` etc. instead of `Theme::catppuccin()`~~ — Done in ae097ee. All references updated across 15+ files.
+  - [x] ~~113d. Remove `katla_app/src/ui/theme.rs`, update `mod.rs` re-exports~~ — Done in ae097ee. theme.rs deleted, mod.rs updated.
   - **Recommended order:** 89a → 89b → 113a → 113b → 113c → 113d
 
 ### 114. Add `Panel` / `PanelHeader` widget to katla_ui
