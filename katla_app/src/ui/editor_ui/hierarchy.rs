@@ -68,7 +68,7 @@ impl<'a> Hierarchy<'a> {
 impl<'a> Widget for Hierarchy<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
         let search_field_height = 26.0;
-        let search_margin = 4.0;
+        let search_margin = ui.style().item_inner_spacing;
 
         let filtered_entities: Vec<&EntityInfo> = if self.search_filter.is_empty() {
             self.entities.iter().collect()
@@ -203,11 +203,14 @@ impl<'a> Widget for Hierarchy<'a> {
                         let badge_text = &entity.entity_type;
                         let badge_size =
                             ui.measure_text(badge_text, ui.scaled_font_size(FontSize::XSmall));
-                        let badge_x = info.bounds.min.x() + bounds_width - badge_size.x() - 8.0;
+                        let badge_x = info.bounds.min.x() + bounds_width
+                            - badge_size.x()
+                            - ui.style().panel_padding;
 
-                        let name_x = info.content_x + 16.0;
+                        let name_x = info.content_x + ui.style().indent_spacing;
                         let name_font_size = ui.scaled_font_size(FontSize::Medium);
-                        let max_name_width = (badge_x - name_x - 8.0).max(0.0);
+                        let max_name_width =
+                            (badge_x - name_x - ui.style().item_inner_spacing).max(0.0);
                         let display_name =
                             ui.truncate_text(&entity.name, max_name_width, name_font_size);
 

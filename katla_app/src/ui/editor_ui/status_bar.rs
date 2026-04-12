@@ -100,7 +100,10 @@ impl<'a> Widget for StatusBar<'a> {
             self.theme.text_secondary
         };
         let mode_size = ui.measure_text(mode_text, font_size);
-        let mode_pos = Vec2::new(self.screen_size.x() - mode_size.x() - 8.0, bar_top_y);
+        let mode_pos = Vec2::new(
+            self.screen_size.x() - mode_size.x() - ui.style().panel_padding,
+            bar_top_y,
+        );
         ui.draw_text(mode_text, mode_pos, mode_color, font_size);
 
         let theme_text = format!("ColorScheme: {}", self.theme.name);

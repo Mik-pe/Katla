@@ -244,9 +244,14 @@ impl<'a> Widget for PreferencesPanel<'a> {
                     );
                 }
 
-                let content_start_y =
-                    panel_bounds.min.y() + title_bar_height + tab_bar_height + 8.0;
-                let content_height = panel_height - title_bar_height - tab_bar_height - 16.0;
+                let content_start_y = panel_bounds.min.y()
+                    + title_bar_height
+                    + tab_bar_height
+                    + ui.style().panel_padding;
+                let content_height = panel_height
+                    - title_bar_height
+                    - tab_bar_height
+                    - 2.0 * ui.style().panel_padding;
                 let scroll_bounds = Rect2D::from_origin_size(
                     Vec2::new(panel_bounds.min.x(), content_start_y),
                     Vec2::new(panel_width, content_height),
@@ -330,7 +335,7 @@ fn draw_section_header(ui: &mut UiContext, theme: &ColorScheme, text: &str, cont
     ui.draw_text(
         text,
         Vec2::new(
-            bounds.min.x() + 8.0,
+            bounds.min.x() + ui.style().panel_padding,
             bounds.center().y() - text_size.y() * 0.5,
         ),
         theme.text_secondary,
