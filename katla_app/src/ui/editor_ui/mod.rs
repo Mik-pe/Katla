@@ -126,6 +126,8 @@ pub struct EditorUI {
     inspector_scroll_state: katla_ui::ScrollAreaState,
     /// Search/filter text for the hierarchy panel.
     hierarchy_search_filter: String,
+    /// Dockable panel layout.
+    dock_layout: katla_ui::widgets::DockLayout,
 }
 
 impl EditorUI {
@@ -174,6 +176,7 @@ impl EditorUI {
             co_creator: CoCreatorState::new(),
             inspector_scroll_state: katla_ui::ScrollAreaState::default(),
             hierarchy_search_filter: String::new(),
+            dock_layout: Self::default_dock_layout(),
         }
     }
 
@@ -470,6 +473,22 @@ impl EditorUI {
 
     pub fn editor_settings(&self) -> &EditorSettings {
         &self.editor_settings
+    }
+
+    fn default_dock_layout() -> katla_ui::widgets::DockLayout {
+        use katla_ui::widgets::{DockLayout, DockNode, SplitDirection};
+
+        let hierarchy = DockNode::leaf(EditorPanel::Hierarchy.id());
+        let viewport = DockNode::leaf(EditorPanel::Viewport.id());
+        let inspector = DockNode::leaf(EditorPanel::Inspector.id());
+        let asset_browser = DockNode::leaf(EditorPanel::AssetBrowser.id());
+
+        let right_bottom =
+            DockNode::split(SplitDirection::Horizontal, 0.5, inspector, asset_browser);
+        let right = DockNode::split(SplitDirection::Vertical, 0.7, viewport, right_bottom);
+        let root = DockNode::split(SplitDirection::Horizontal, 0.2, hierarchy, right);
+
+        DockLayout::new(root)
     }
 }
 

@@ -1,6 +1,58 @@
 use katla_ecs::EntityId;
 use katla_math::Vec3;
 
+/// Panel IDs for the dockable panel system.
+/// Each variant maps to a unique u64 ID used by the dock layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EditorPanel {
+    Hierarchy,
+    Viewport,
+    Inspector,
+    AssetBrowser,
+    CoCreator,
+    Preferences,
+    ParticleInspector,
+}
+
+impl EditorPanel {
+    pub fn id(self) -> u64 {
+        match self {
+            EditorPanel::Hierarchy => 1,
+            EditorPanel::Viewport => 2,
+            EditorPanel::Inspector => 3,
+            EditorPanel::AssetBrowser => 4,
+            EditorPanel::CoCreator => 5,
+            EditorPanel::Preferences => 6,
+            EditorPanel::ParticleInspector => 7,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            EditorPanel::Hierarchy => "Hierarchy",
+            EditorPanel::Viewport => "Viewport",
+            EditorPanel::Inspector => "Inspector",
+            EditorPanel::AssetBrowser => "Asset Browser",
+            EditorPanel::CoCreator => "AI Co-Creator",
+            EditorPanel::Preferences => "Preferences",
+            EditorPanel::ParticleInspector => "Particle Inspector",
+        }
+    }
+
+    pub fn from_id(id: u64) -> Option<Self> {
+        match id {
+            1 => Some(EditorPanel::Hierarchy),
+            2 => Some(EditorPanel::Viewport),
+            3 => Some(EditorPanel::Inspector),
+            4 => Some(EditorPanel::AssetBrowser),
+            5 => Some(EditorPanel::CoCreator),
+            6 => Some(EditorPanel::Preferences),
+            7 => Some(EditorPanel::ParticleInspector),
+            _ => None,
+        }
+    }
+}
+
 /// Model types that can be spawned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpawnableModel {
