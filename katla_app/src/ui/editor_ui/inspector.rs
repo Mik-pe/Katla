@@ -2,7 +2,7 @@ use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::{
     FontSize, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
-    widgets::{Button, Slider},
+    widgets::{Button, Panel, Slider},
 };
 
 use super::{ColorScheme, EditorAction, EntityInfo};
@@ -139,32 +139,21 @@ fn scalar_slider_row(
 
 impl<'a> Widget for Inspector<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        ui.draw_rect(self.bounds, self.theme.panel_bg);
-        ui.draw_rect_border(
-            self.bounds,
-            self.theme.panel_bg,
-            self.theme.panel_border,
-            1.0,
-        );
-
-        let header_height = 24.0;
-        let header_bounds = Rect2D::from_origin_size(
-            self.bounds.min,
-            Vec2::new(self.bounds.width(), header_height),
-        );
-        ui.draw_panel_header(header_bounds, "Inspector");
+        let content_bounds = {
+            let guard = Panel::new("Inspector")
+                .bounds(self.bounds)
+                .header_height(24.0)
+                .show(ui);
+            guard.content_bounds()
+        };
 
         let selected = self
             .selected_entity
             .and_then(|id| self.entities.iter().find(|e| e.id == id));
 
         let row_height = 18.0;
-        let content_x = self.bounds.min.x() + 8.0;
-        let content_width = self.bounds.width() - 2.0 * ui.style().panel_padding;
-        let content_bounds = Rect2D::from_origin_size(
-            Vec2::new(content_x, self.bounds.min.y() + header_height + 8.0),
-            Vec2::new(content_width, self.bounds.height() - header_height - 8.0),
-        );
+        let content_x = content_bounds.min.x() + 8.0;
+        let content_width = content_bounds.width() - 2.0 * ui.style().panel_padding;
 
         if let Some(entity) = selected {
             let theme = self.theme;

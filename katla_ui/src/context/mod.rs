@@ -452,6 +452,21 @@ impl Default for GraphOptions {
 }
 
 impl GraphOptions {
+    /// Create theme-aware default graph options.
+    pub fn from_style(style: &crate::style::UiStyle) -> Self {
+        Self {
+            min_value: None,
+            max_value: None,
+            line_color: style.text_color,
+            fill_color: Some(style.text_color.with_alpha(0.3)),
+            bg_color: style.window_bg.with_alpha(0.9),
+            grid_color: Some(style.separator.with_alpha(0.5)),
+            grid_lines: 4,
+            line_thickness: 2.0,
+            show_value: true,
+        }
+    }
+
     /// Create graph options for FPS display (0-120 range, green).
     pub fn fps() -> Self {
         Self {
@@ -463,6 +478,19 @@ impl GraphOptions {
         }
     }
 
+    /// Create theme-aware graph options for FPS display (0-120 range, green).
+    pub fn fps_from_style(style: &crate::style::UiStyle) -> Self {
+        Self {
+            min_value: Some(0.0),
+            max_value: Some(120.0),
+            line_color: Color::rgb(0.2, 0.9, 0.2),
+            fill_color: Some(Color::new(0.2, 0.9, 0.2, 0.25)),
+            bg_color: style.window_bg.with_alpha(0.9),
+            grid_color: Some(style.separator.with_alpha(0.5)),
+            ..Default::default()
+        }
+    }
+
     /// Create graph options for frame time display (0-50ms range, orange).
     pub fn frame_time() -> Self {
         Self {
@@ -470,6 +498,19 @@ impl GraphOptions {
             max_value: Some(50.0),
             line_color: Color::rgb(1.0, 0.6, 0.2),
             fill_color: Some(Color::new(1.0, 0.6, 0.2, 0.25)),
+            ..Default::default()
+        }
+    }
+
+    /// Create theme-aware graph options for frame time display (0-50ms range, orange).
+    pub fn frame_time_from_style(style: &crate::style::UiStyle) -> Self {
+        Self {
+            min_value: Some(0.0),
+            max_value: Some(50.0),
+            line_color: Color::rgb(1.0, 0.6, 0.2),
+            fill_color: Some(Color::new(1.0, 0.6, 0.2, 0.25)),
+            bg_color: style.window_bg.with_alpha(0.9),
+            grid_color: Some(style.separator.with_alpha(0.5)),
             ..Default::default()
         }
     }

@@ -151,14 +151,6 @@ impl<'a> Widget for Hierarchy<'a> {
                             FontId::DEFAULT,
                         );
 
-                        let name_pos = Vec2::new(info.content_x + 16.0, info.bounds.min.y() + 3.0);
-                        ui.draw_text(
-                            &entity.name,
-                            name_pos,
-                            theme.text_secondary,
-                            ui.scaled_font_size(FontSize::Medium),
-                        );
-
                         let badge_color = match entity.entity_type.as_str() {
                             "Mesh" => theme.entity_mesh,
                             "Particle Emitter" => theme.entity_particle,
@@ -168,10 +160,23 @@ impl<'a> Widget for Hierarchy<'a> {
                         let badge_text = &entity.entity_type;
                         let badge_size =
                             ui.measure_text(badge_text, ui.scaled_font_size(FontSize::XSmall));
-                        let badge_pos = Vec2::new(
-                            info.bounds.min.x() + bounds_width - badge_size.x() - 8.0,
-                            info.bounds.min.y() + 5.0,
+                        let badge_x = info.bounds.min.x() + bounds_width - badge_size.x() - 8.0;
+
+                        let name_x = info.content_x + 16.0;
+                        let name_font_size = ui.scaled_font_size(FontSize::Medium);
+                        let max_name_width = (badge_x - name_x - 8.0).max(0.0);
+                        let display_name =
+                            ui.truncate_text(&entity.name, max_name_width, name_font_size);
+
+                        let name_pos = Vec2::new(name_x, info.bounds.min.y() + 3.0);
+                        ui.draw_text(
+                            &display_name,
+                            name_pos,
+                            theme.text_secondary,
+                            name_font_size,
                         );
+
+                        let badge_pos = Vec2::new(badge_x, info.bounds.min.y() + 5.0);
                         ui.draw_text(
                             badge_text,
                             badge_pos,
