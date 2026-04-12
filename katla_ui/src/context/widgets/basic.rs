@@ -642,16 +642,45 @@ impl UiContext {
                 let click_pos = if rel_x <= 0.0 {
                     0
                 } else {
-                    let mut best_offset = text.len();
+                    let chars: Vec<(usize, char)> = text.char_indices().collect();
+                    let n = chars.len();
+                    let mut best_offset = 0usize;
                     let mut best_dist = f32::MAX;
-                    for (i, _) in text.char_indices() {
-                        let prefix_width = self.measure_text(&text[..i], inp.font_size).x();
-                        let dist = (prefix_width - rel_x).abs();
-                        if dist < best_dist {
-                            best_dist = dist;
-                            best_offset = i;
+
+                    // Check position 0 (before first char)
+                    let zero_dist = rel_x.abs();
+                    if zero_dist < best_dist {
+                        best_dist = zero_dist;
+                    }
+
+                    // Binary search: find the char index where width first exceeds rel_x
+                    let mut lo = 0usize;
+                    let mut hi = n;
+                    while lo < hi {
+                        let mid = lo + (hi - lo) / 2;
+                        let (byte_idx, _) = chars[mid];
+                        let width = self.measure_text(&text[..byte_idx], inp.font_size).x();
+                        if width < rel_x {
+                            lo = mid + 1;
+                        } else {
+                            hi = mid;
                         }
                     }
+
+                    // Check positions lo-1, lo, and n (past end) for closest match
+                    for &check in &[lo.saturating_sub(1), lo] {
+                        if check < n {
+                            let (byte_idx, _) = chars[check];
+                            let width = self.measure_text(&text[..byte_idx], inp.font_size).x();
+                            let dist = (width - rel_x).abs();
+                            if dist < best_dist {
+                                best_dist = dist;
+                                best_offset = byte_idx;
+                            }
+                        }
+                    }
+
+                    // Check position after last char
                     let full_width = self.measure_text(text, inp.font_size).x();
                     if (full_width - rel_x).abs() < best_dist {
                         best_offset = text.len();
