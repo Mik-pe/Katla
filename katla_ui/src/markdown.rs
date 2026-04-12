@@ -459,21 +459,27 @@ fn wrap_paragraph(
     out: &mut Vec<String>,
 ) {
     let mut current_line = String::new();
+    let mut current_width = 0.0f32;
+    let space_width = ui.measure_text(" ", font_size).x();
 
     for word in text.split_whitespace() {
-        let test_line = if current_line.is_empty() {
-            word.to_string()
-        } else {
-            format!("{current_line} {word}")
-        };
+        let word_width = ui.measure_text(word, font_size).x();
 
-        let measured = ui.measure_text(&test_line, font_size);
-
-        if measured.x() > max_width && !current_line.is_empty() {
-            out.push(current_line);
-            current_line = word.to_string();
+        if current_line.is_empty() {
+            current_line.push_str(word);
+            current_width = word_width;
         } else {
-            current_line = test_line;
+            let new_width = current_width + space_width + word_width;
+
+            if new_width > max_width {
+                out.push(current_line);
+                current_line = word.to_string();
+                current_width = word_width;
+            } else {
+                current_line.push(' ');
+                current_line.push_str(word);
+                current_width = new_width;
+            }
         }
     }
 

@@ -365,8 +365,16 @@ impl DrawList {
         }
 
         let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 4.0).ceil() as u32).max(2);
-        let points = generate_rounded_rect_points(bounds.min, bounds.max, r, segments_per_corner);
+        generate_rounded_rect_points_into(
+            bounds.min,
+            bounds.max,
+            r,
+            segments_per_corner,
+            &mut self.scratch_points,
+        );
+        let points = std::mem::take(&mut self.scratch_points);
         self.add_convex_poly(&points, color);
+        self.scratch_points = points;
     }
 
     /// Add a rounded rectangle border stroke.
@@ -397,10 +405,22 @@ impl DrawList {
         let inner_max = Vec2::new(bounds.max.x() - half_t, bounds.max.y() - half_t);
         let inner_r = (r - half_t).max(0.0);
 
-        let outer_points =
-            generate_rounded_rect_points(outer_min, outer_max, outer_r, segments_per_corner);
-        let inner_points =
-            generate_rounded_rect_points(inner_min, inner_max, inner_r, segments_per_corner);
+        generate_rounded_rect_points_into(
+            outer_min,
+            outer_max,
+            outer_r,
+            segments_per_corner,
+            &mut self.scratch_points,
+        );
+        let outer_points = std::mem::take(&mut self.scratch_points);
+        generate_rounded_rect_points_into(
+            inner_min,
+            inner_max,
+            inner_r,
+            segments_per_corner,
+            &mut self.scratch_points,
+        );
+        let inner_points = std::mem::take(&mut self.scratch_points);
 
         let n = outer_points.len();
         debug_assert_eq!(inner_points.len(), n);
@@ -425,6 +445,8 @@ impl DrawList {
             let ij = vertex_offset + n as u32 + j as u32;
             self.indices.extend_from_slice(&[oi, oj, ij, oi, ij, ii]);
         }
+
+        self.scratch_points = inner_points;
     }
 
     /// Add a sharp rectangle border stroke (4 rectangles).
@@ -550,17 +572,19 @@ impl DrawList {
     }
 }
 
-/// Generate the outline points of a rounded rectangle.
+/// Generate the outline points of a rounded rectangle into an existing buffer.
 ///
 /// Points are in counter-clockwise order starting from the top-left corner.
 /// Each corner arc uses `segments_per_corner` subdivisions.
-fn generate_rounded_rect_points(
+fn generate_rounded_rect_points_into(
     min: Vec2,
     max: Vec2,
     r: f32,
     segments_per_corner: u32,
-) -> Vec<Vec2> {
-    let mut points = Vec::with_capacity((segments_per_corner as usize + 1) * 4);
+    out: &mut Vec<Vec2>,
+) {
+    out.clear();
+    out.reserve((segments_per_corner as usize + 1) * 4);
 
     // Top-left corner
     let cx = min.x() + r;
@@ -568,7 +592,7 @@ fn generate_rounded_rect_points(
     for i in 0..=segments_per_corner {
         let angle = std::f32::consts::PI
             + (i as f32 / segments_per_corner as f32) * std::f32::consts::FRAC_PI_2;
-        points.push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
+        out.push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
     }
 
     // Top-right corner
@@ -577,7 +601,7 @@ fn generate_rounded_rect_points(
     for i in 0..=segments_per_corner {
         let angle = std::f32::consts::FRAC_PI_2 * 3.0
             + (i as f32 / segments_per_corner as f32) * std::f32::consts::FRAC_PI_2;
-        points.push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
+        out.push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
     }
 
     // Bottom-right corner
@@ -585,7 +609,7 @@ fn generate_rounded_rect_points(
     let cy = max.y() - r;
     for i in 0..=segments_per_corner {
         let angle = (i as f32 / segments_per_corner as f32) * std::f32::consts::FRAC_PI_2;
-        points.push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
+        out.push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
     }
 
     // Bottom-left corner
@@ -594,10 +618,8 @@ fn generate_rounded_rect_points(
     for i in 0..=segments_per_corner {
         let angle = std::f32::consts::FRAC_PI_2
             + (i as f32 / segments_per_corner as f32) * std::f32::consts::FRAC_PI_2;
-        points.push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
+        out.push(Vec2::new(cx + r * angle.cos(), cy + r * angle.sin()));
     }
-
-    points
 }
 
 // Safety: Vertex is POD and can be safely cast to bytes

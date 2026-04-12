@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::sync::VkImageView;
@@ -28,9 +28,9 @@ pub struct TransientTexture {
     /// This is CRITICAL for correct synchronization. Using the wrong old_layout
     /// in a barrier causes undefined behavior, including black screens.
     ///
-    /// Uses RefCell for interior mutability so layout can be updated during
+    /// Uses Cell for interior mutability so layout can be updated during
     /// frame execution even though Frame only has an immutable borrow of FrameGraph.
-    current_layout: RefCell<vk::ImageLayout>,
+    current_layout: Cell<vk::ImageLayout>,
 }
 
 impl TransientTexture {
@@ -52,18 +52,18 @@ impl TransientTexture {
             extent,
             bindless_slot: None,
             // Images are created with UNDEFINED layout
-            current_layout: RefCell::new(vk::ImageLayout::UNDEFINED),
+            current_layout: Cell::new(vk::ImageLayout::UNDEFINED),
         }
     }
 
     /// Get the current tracked GPU layout.
     pub fn current_layout(&self) -> vk::ImageLayout {
-        *self.current_layout.borrow()
+        self.current_layout.get()
     }
 
     /// Update the tracked layout after a barrier transition.
     pub(crate) fn set_layout(&self, new_layout: vk::ImageLayout) {
-        *self.current_layout.borrow_mut() = new_layout;
+        self.current_layout.set(new_layout);
     }
 
     /// Get the raw Vulkan image view handle.
