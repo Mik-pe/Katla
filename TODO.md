@@ -79,7 +79,7 @@
 
 ## P2: Missing Features
 
-### 21. No undo/redo system in the editor
+~~### 21. No undo/redo system in the editor~~ — Fixed. All subtasks complete.
 - **Crate:** katla_app
 - **Issue:** Destructive operations (delete entity, transform changes) have no undo. Slider drags now mutate ECS directly (#54 fix), but there is no undo stack to reverse them.
 - **Existing infrastructure:** `UndoGroup`/`SceneCommand` already exist in `katla_ecs/src/scene_tool/command.rs` with spawn, destroy, set-field, duplicate commands. `SceneToolExecutor::execute()` already returns `(ToolResult, UndoGroup)`. `AgentSession` has `push_undo()`/`undo_last()`/`undo_all()` pattern.
@@ -105,7 +105,7 @@
 
 ~~### 26. No timeout on LLM requests~~ — Fixed in 16568d0. `submit_chat` wrapped with 120s timeout, `submit_chat_stream` with 30s per-chunk timeout.
 
-### 27. No parent-child entity hierarchy in ECS
+~~### 27. No parent-child entity hierarchy in ECS~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ecs / katla_app
 - **Issue:** `SceneOp::GetSceneHierarchy` returns all entities flat. `Parent`/`Children` components already exist in `katla_app/src/components/scene/relationship.rs` with serialization and transform hierarchy support, but there is no `SetParent` scene op, no automatic hierarchy maintenance on destroy/duplicate, and no structured hierarchy output.
 - **Sub-tasks:**
@@ -336,7 +336,7 @@
   - Use `env!("CARGO_PKG_VERSION")` for version string.
   - Add min/max labels to camera speed slider for context.
 
-### 88. Add undo/redo for AI agent actions
+~~### 88. Add undo/redo for AI agent actions~~ — Fixed. All subtasks complete.
 - **Crate:** katla_agent / katla_app
 - **Issue:** `SceneToolExecutor::execute()` already returns `(ToolResult, UndoGroup)` but the `_undo_group` is discarded in `execute_tool_call()`. No way to reverse AI operations.
 - **Key complication:** `attach_spawn_visuals()` adds GPU resources outside the `UndoGroup`. Undo must also release GPU handles tracked in `GpuResourceTracker`.
@@ -354,7 +354,7 @@
 
 ## UI Review: Fixes & Improvements
 
-### 89. Deduplicate `Theme` in katla_app and `UiStyle`/`ColorScheme` in katla_ui
+~~### 89. Deduplicate `Theme` in katla_app and `UiStyle`/`ColorScheme` in katla_ui~~ — Fixed. All subtasks complete.
 - **Crate:** katla_app / katla_ui
 - **Files:** `katla_app/src/ui/theme.rs`, `katla_ui/src/style.rs`
 - **Issue:** `Theme` and `ColorScheme`/`UiStyle` define overlapping color sets for the same UI elements (buttons, panels, text, selections, popups, etc.). `Theme::apply_to_style()` manually maps each field, and `DraggablePanelStyle` in `widgets/draggable_panel.rs` duplicates yet a third set of panel colors. Three separate color definitions for "button background" is a maintenance trap — adding a new theme requires updating all three.
@@ -372,7 +372,7 @@
 - **Issue:** Every call site constructs a `DraggablePanelStyle` by copying colors from `Theme` (e.g., `DraggablePanelStyle { panel_bg: theme.panel_bg, ... }`). The panel should read directly from `ui.style` fields like `window_bg`, `window_border`, `window_title_bg`, `button_text`, etc. This eliminates 8 fields of duplicate state and makes `DraggablePanel::show()` simpler to call.
 - **Fix:** Remove `DraggablePanelStyle` struct. Have `DraggablePanel::show()` take only the config + state, and read colors from `ui.style` internally.
 
-### 91. `Response::on_hover_tooltip` takes `&mut UiContext` — deferred tooltip API
+~~### 91. `Response::on_hover_tooltip` takes `&mut UiContext` — deferred tooltip API~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui
 - **Issue:** UI-23 in the existing UI TODO list identifies this. Adding here as a concrete actionable item since it affects ergonomics across the editor. Currently `resp.on_hover_tooltip(ui, "text")` works, but in many call sites (e.g., `if resp.hovered { ui.tooltip("text"); }`) the borrow is manually split. A deferred tooltip stored on the response or context would clean up many patterns.
 - **Sub-tasks:**
@@ -383,7 +383,7 @@
 
 ~~### 92. `UiContext::add()` always advances cursor — provide opt-out for overlay widgets~~ — Fixed in 600ca16. Added add_overlay() that skips cursor advance.
 
-### 93. `text_input` borrows `self.input` fields individually to avoid borrow conflicts
+~~### 93. `text_input` borrows `self.input` fields individually to avoid borrow conflicts~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui
 - **File:** `katla_ui/src/context/widgets/basic.rs`
 - **Issue:** Related to UI-09 in the existing list. The `text_input()` method snapshots ~20 individual input fields into local variables before the mutable borrow of `self.text_input_states`. This pattern is fragile — adding a new input field requires remembering to snapshot it. The root cause is that `self.input` and `self.text_input_states` are both fields of `UiContext`, so borrowing both mutably triggers borrow checker conflicts.
@@ -394,7 +394,7 @@
 
 ~~### 94. `DrawList::convert_draw_list` in katla_app assigns texture indices per-vertex inefficiently~~ — Fixed in 600ca16. Per-command vertex range scan replaces per-index loop.
 
-### 95. No `draw_rounded_rect` in UiContext despite style having rounding fields
+~~### 95. No `draw_rounded_rect` in UiContext despite style having rounding fields~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/context/drawing.rs`, `katla_ui/src/style.rs`
 - **Issue:** `UiStyle` defines `window_rounding`, `button_rounding`, `input_rounding`, `popup_rounding`, and `menu_rounding` but no widget uses them. All rectangles are drawn with sharp corners. The `DrawList` has no rounded rect primitive (UI-24 mentions pre-tessellated corners). This makes the UI look blockier than intended.
@@ -416,7 +416,7 @@
 
 ~~### 101. `scroll_area` scrollbar width hardcoded to `10.0` in two places~~ — Fixed. Added `scrollbar_width: f32` to `UiStyle`, replaced all hardcoded values.
 
-### 102. Slider lacks value label and format customization
+~~### 102. Slider lacks value label and format customization~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/context/widgets/basic.rs`, `katla_ui/src/widgets/mod.rs`
 - **Issue:** The slider has no visible value display. Users can't see the current value while dragging. The `Slider` builder has no `.format()` or `.show_value()` method. Every slider in the editor (camera speed, font scale, transform sliders) needs to manually draw the value text alongside the slider.
@@ -427,7 +427,7 @@
 
 ~~### 103. `FontSize::to_pixels()` is not used consistently — raw `f32` font sizes leak into the API~~ — Fixed in 600ca16. Added draw_text_styled/measure_text_styled convenience methods.
 
-### 104. `FontSystem` is embedded in `UiContext` — prevents sharing font data across contexts
+~~### 104. `FontSystem` is embedded in `UiContext` — prevents sharing font data across contexts~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui
 - **File:** `katla_ui/src/context/mod.rs`
 - **Issue:** `FontSystem` contains the font atlas texture, glyph cache (HashMap with thousands of entries), and loaded font data. It's owned by `UiContext` and recreated if you create a new context. In a multi-window scenario (future), each window would duplicate all font data. The font atlas texture is also separate from the `UIRenderer` texture registry, requiring manual sync.
@@ -459,7 +459,7 @@
 
 These items identify code that currently lives in katla_app but is generic enough to belong in katla_ui — or missing pieces in katla_ui that a second app consumer would need to reinvent.
 
-### 113. Move `Theme` and its 13 named color schemes into katla_ui
+~~### 113. Move `Theme` and its 13 named color schemes into katla_ui~~ — Fixed. All subtasks complete.
 - **Crate:** katla_app → katla_ui
 - **Files:** `katla_app/src/ui/theme.rs` → `katla_ui/src/style/`
 - **Issue:** The 13 named themes (Catppuccin, Nord, Tokyo Night, Dracula, Gruvbox, One Dark, Material Palenight, Ayu Dark, GitHub Dark, Monokai, Rose Pine, Kanagawa, Solarized Dark) are pure color data with no dependency on katla_app. Any app using katla_ui would want theme presets. Right now they're locked behind katla_app's editor feature gate. The `theme!` macro and `Theme::by_name()` + `Theme::all_names()` are fully self-contained. Ties into #89 (deduplicating Theme vs ColorScheme) — if we extend `ColorScheme` to cover all editor colors, these 13 themes become `ColorScheme` constructors and live naturally in katla_ui.
@@ -470,7 +470,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] ~~113d. Remove `katla_app/src/ui/theme.rs`, update `mod.rs` re-exports~~ — Done in ae097ee. theme.rs deleted, mod.rs updated.
   - **Recommended order:** 89a → 89b → 113a → 113b → 113c → 113d
 
-### 114. Add `Panel` / `PanelHeader` widget to katla_ui
+~~### 114. Add `Panel` / `PanelHeader` widget to katla_ui~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui (new)
 - **Issue:** Every panel in the editor (hierarchy, inspector, asset browser, preferences, particle inspector, co-creator) hand-rolls the same pattern: draw `panel_bg` rect, draw `panel_border`, draw `panel_header` rect at the top, draw title text centered in the header. This is ~15 lines repeated verbatim in 6 places. A second app would need the same pattern.
 - **Sub-tasks:**
@@ -490,7 +490,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   ```
   Internally draws bg, border, header rect, title text. Returns a `PanelGuard` (RAII for clip). Reads all colors from `ui.style`.
 
-### 115. Add `LabeledSlider` widget to katla_ui
+~~### 115. Add `LabeledSlider` widget to katla_ui~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui (new)
 - **Issue:** The `inspector.rs` file defines `vec3_slider_row()` and `scalar_slider_row()` — local functions that compose a label, a `Slider`, and a value display into a row. This is the most common slider usage pattern in any editor UI (every property inspector, every settings panel). The `toolbar.rs`/`preferences.rs` build the same pattern manually. A second app would need it too. Related to #102 (slider value display).
 - **Sub-tasks:**
@@ -512,7 +512,7 @@ These items identify code that currently lives in katla_app but is generic enoug
       .axis_labels(["X", "Y", "Z"]));
   ```
 
-### 116. Add `Selectable` list item widget to katla_ui (cross-reference UI-15)
+~~### 116. Add `Selectable` list item widget to katla_ui (cross-reference UI-15)~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui
 - **Issue:** UI-15 already identifies this gap. Adding more context: the hierarchy panel, asset browser, and any future list UI all implement the same selectable-item pattern manually: check hover, draw selection bg, handle click, handle right-click. A generic `Selectable` widget that handles highlight-on-hover, click, right-click, selected state, and drag detection would eliminate hundreds of lines of ad-hoc interaction code across the editor.
 - **Sub-tasks:**
@@ -531,7 +531,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   ```
   Internally reads `style.selectable_hovered`/`selectable_selected` for colors. Adds `right_clicked: bool` to `Response` (currently missing — right-click is checked via `ui.input.mouse_clicked(RIGHT)`).
 
-### 117. Add `right_clicked` and `drag_started` / `drag_ended` to `Response`
+~~### 117. Add `right_clicked` and `drag_started` / `drag_ended` to `Response`~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui
 - **File:** `katla_ui/src/response.rs`
 - **Issue:** `Response` has `clicked` (left click) and `double_clicked` but no `right_clicked`. Every widget that handles right-click (hierarchy items, asset items, entity rows) does `if resp.hovered && ui.mouse_clicked(RIGHT)` manually. Similarly, there's no `drag_started`/`drag_ended` — the `DraggablePanel` and asset browser implement drag detection ad-hoc. A second consumer would need these primitives.
@@ -541,7 +541,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] ~~117c. Migrate manual right-click/drag checks to Response fields~~ — Done in cb0d7cc. Hierarchy and asset browser use resp.right_clicked via ui.sense().
   - **Recommended order:** 117a → 117b → 117c
 
-### 118. Add `MenuBar` widget to katla_ui
+~~### 118. Add `MenuBar` widget to katla_ui~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui
 - **Issue:** The toolbar in `katla_app` manually draws a horizontal bar and places `menu_bar_dropdown()` calls with manual spacing and cursor management. This is a standard editor pattern. A `MenuBar` widget would provide the common container with automatic layout.
 - **Sub-tasks:**
@@ -561,7 +561,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   ```
   Handles horizontal layout, z-index, styling from `ui.style`.
 
-### 119. Add `StatusBar` widget to katla_ui
+~~### 119. Add `StatusBar` widget to katla_ui~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui
 - **Issue:** `status_bar.rs` builds a standard status bar: background rect, top border, left-aligned items (FPS, frame count, entities), right-aligned items (mode indicator, theme name). This is the same in any editor. The widget reads from `Theme` for colors — with #113, it would read from `ui.style`.
 - **Sub-tasks:**
@@ -588,7 +588,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 
 ~~### 120. Add `panel_header` / `section_header` helper to katla_ui context~~ — Fixed in ed50fcf. Added draw_panel_header, replaced 3 manual patterns.
 
-### 121. Add `ResizablePanel` / resize handle interaction to katla_ui
+~~### 121. Add `ResizablePanel` / resize handle interaction to katla_ui~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui
 - **Issue:** `layout.rs` in the editor has ~80 lines of resize handle logic (left panel, right panel, asset browser). It tracks `resizing_panel: Option<PanelResizeEdge>`, clamps widths, and changes the cursor to resize cursors. Any editor with side panels needs this. Currently it's raw mouse-state checking scattered across `build()`.
 - **Sub-tasks:**
@@ -609,7 +609,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 
 ~~### 123. Add `draw_empty_state` / centered placeholder text to katla_ui~~ — Fixed in f762059. Added UiContext::draw_empty_state, replaced 4 manual patterns.
 
-### 124. Add `FocusablePanel` / panel focus tracking to katla_ui
+~~### 124. Add `FocusablePanel` / panel focus tracking to katla_ui~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui
 - **Issue:** Every panel in the editor (hierarchy, inspector, asset browser, viewport) checks `if ui.is_hovered(bounds) && (mouse_down[LEFT] || mouse_down[RIGHT] || mouse_down[MIDDLE]) { *focused_panel = FocusedPanel::X; }` on every frame. This is the same 5-line pattern repeated 5 times. A second app with panels would need it. The focus tracking itself (`FocusedPanel` enum) is app-specific, but the hover-click detection and focus ring drawing could be provided by the UI layer.
 - **Sub-tasks:**
@@ -618,7 +618,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] ~~124c. Migrate the 5 manual focus checks in `layout.rs` panels to `register_panel()` + `focused_panel()`~~ — Done in 458a7b3. Centralized panel registration in layout.rs, removed focused_panel params from all widgets.
   - **Recommended order:** 124a → 124b → 124c
 
-### 125. Add `TreeNode` / `TreeView` widget to katla_ui (extends UI-19)
+~~### 125. Add `TreeNode` / `TreeView` widget to katla_ui (extends UI-19)~~ — Fixed. All subtasks complete.
 - **Crate:** katla_ui
 - **Issue:** UI-19 identifies the need for a Tree widget. Adding implementation context from the hierarchy: the hierarchy panel manually handles indentation (depth * 16.0px), tree guide lines, expand/collapse icons, child visibility filtering via `is_entity_visible()`, and depth-aware click targets. A `TreeNode` widget would handle all of this generically, leaving the app to provide only the data (name, icon, depth, has_children, is_expanded).
 - **Sub-tasks:**
@@ -649,7 +649,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 
 ~~### 128. `ScrollArea` with `stick_to_bottom` jumps to bottom while user is scrolled up~~ — Fixed in ed50fcf. Added at_bottom tracking, only snaps when user was near bottom.
 
-### 129. AI agent cannot access project resources (scenes, particles, shaders, materials)
+~~### 129. AI agent cannot access project resources~~ — Fixed. All subtasks complete. (scenes, particles, shaders, materials)
 - **Crates:** katla_agent / katla_ecs / katla_app
 - **Files:** `katla_ecs/src/scene_tool/mod.rs`, `katla_agent/src/co_creator/tools.rs`, `katla_agent/src/mcp.rs`, `katla_app/src/application/editor/agent.rs`
 - **Issue:** The AI co-creator can only manipulate live ECS entities via `SceneOp` (spawn, destroy, set_field, query, etc.). It has zero visibility into project resources — no way to list, read, create, or edit resource files like scene files (`assets/scenes/*.katla`), particle definitions (`assets/particles/*.json`), shaders, materials, or images. Every other game editor AI (Unity Muse, Unreal ML Deformer) can browse project files. This severely limits the AI's usefulness: it can't tune particle emitter JSON, create new particle presets, save/load scenes, read shader source to diagnose visual bugs, or generate new content files.
@@ -664,7 +664,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] ~~129g. Update the system prompt in `katla_agent/src/co_creator/prompt.rs` to describe resource capabilities, available asset directories, and supported file types~~ — Done in 956f2f8. Resource tools and supported types documented.
   - **Recommended order:** 129a → 129b → 129c → 129d → 129e → 129f → 129g
 
-### 130. AI agent can only spawn cubes — extend `spawn_entity` to support all primitives and GLTF models
+~~### 130. AI agent can only spawn cubes~~ — Fixed. All subtasks complete. — extend `spawn_entity` to support all primitives and GLTF models
 - **Crates:** katla_ecs / katla_agent / katla_app
 - **Files:** `katla_ecs/src/scene_tool/mod.rs`, `katla_agent/src/co_creator/tools.rs`, `katla_app/src/application/editor/agent.rs`, `katla_app/src/scene/entity_source.rs`
 - **Issue:** `SceneOp::SpawnEntity` creates a bare entity, and `attach_spawn_visuals()` hardcodes `create_cube_mesh` for every AI-spawned entity regardless of what the user asked for. The AI cannot spawn spheres, planes, cylinders, cones, tori, or load GLTF models. The renderer already has `create_cube_mesh`, `create_sphere_mesh`, `create_plane_mesh`, `create_cylinder_mesh`, `create_cone_mesh`, `create_torus_mesh` — all with full parameter support. `EntitySource` already has matching variants (`Cube`, `Sphere`, `Plane`, `Cylinder`, `Torus`, `GltfModel`). `spawn_gltf_model()` exists on Application. The infrastructure is all there, just not wired to the AI tools.
@@ -756,7 +756,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Add `resp.on_hover_tooltip(ui, "...")` on icon-only buttons.
 - **Severity:** MEDIUM
 
-### 141. No search/filter in hierarchy panel
+~~### 141. No search/filter in hierarchy panel~~ — Fixed in 9214949. Added TextInput filter with case-insensitive name matching.
 - **Crate:** katla_app
 - **Files:** `katla_app/src/ui/editor_ui/hierarchy.rs`
 - **Issue:** Hierarchy shows all entities with no search/filter. The asset browser has a search field but hierarchy does not. For scenes with hundreds of entities, finding a specific entity requires manual scrolling. Standard feature in every modern engine editor.
@@ -838,7 +838,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Issue:** `DEFAULT_AXIS_COLORS` are `Color::rgb(0.9, 0.3, 0.3)`, `Color::rgb(0.3, 0.9, 0.3)`, `Color::rgb(0.3, 0.5, 0.9)` — hardcoded RGB. Inspector duplicates the same pattern for light color R/G/B sliders. Having these in the theme would allow colorblind-friendly palettes.
 - **Severity:** LOW
 
-### 153. Add gradient rect primitive to DrawList
+~~### 153. Add gradient rect primitive to DrawList~~ — Fixed in 9214949. Added add_gradient_rect with per-vertex corner colors.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/types.rs` (DrawList), `katla_ui/src/context/drawing.rs`
 - **Issue:** No `add_gradient_rect` primitive exists. The vertex format already has per-vertex RGBA color, so GPU interpolation is free — just needs different colors per corner vertex. Useful for subtle depth in title bars and slider grabs.
@@ -846,7 +846,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Severity:** LOW
 - **Design rationale:** Every professional engine editor uses flat colors. Gradients should be subliminal only — subtle darkening in title bars, slight highlight on active slider grabs. Never on buttons, panels, or backgrounds.
 
-### 154. Fix rounded border rendering — sharp borders on rounded widgets
+~~### 154. Fix rounded border rendering — sharp borders on rounded widgets~~ — Fixed in 9214949. Added add_rounded_rect_stroke, updated all rounded widgets.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/context/drawing.rs` (`draw_selection_border`), `katla_ui/src/types.rs` (DrawList)
 - **Issue:** `draw_selection_border()` draws 4 sharp rectangles (top/bottom/left/right bars). When used on rounded-corner widgets (text inputs, combo boxes, buttons), the sharp-cornered border overlaps the rounded fill, creating a visible mismatch at the corners. This is the single most visible quality issue in the current UI.
@@ -921,4 +921,4 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [ ] 159f. Audit spacing/padding consistency across all panels — ensure `window_padding`, `item_spacing`, `item_inner_spacing` are used uniformly — (medium, low risk)
   - **Recommended order:** 159a → 159b → 159c → 159d → 159e → 159f
 - **Severity:** MEDIUM
-- **Design rationale:** Unity 6, Godot 4.6, and Blender 4.x all share: (1) consistent 3-state widget feedback, (2) subtle depth via borders or shadows, (3) unified spacing system, (4) focus indicators for keyboard navigation, (5) themed scrollbars that don't look like afterthoughts. The gap between current state and SOTA is primarily consistency, not missing features.
+- **Design north star:** Apple Reality Composer Pro — sleek, minimal, purposeful. Key qualities to emulate (without macOS-specific glass/vibrancy): generous whitespace and consistent padding; thin 1px borders with low contrast (barely visible separators); flat monochrome iconography; muted color palette with one accent color; tabs as seamless content-area extensions (no chunky borders); compact but breathable inspector rows; smooth rounded corners on all interactive elements; clean typography hierarchy (weight/size, not color variety). This is the visual target — a modern, professional editor that feels calm and focused rather than busy. We're cross-platform Vulkan, so no platform-specific effects, but the underlying design language (restraint, consistency, breathing room) transfers directly.
