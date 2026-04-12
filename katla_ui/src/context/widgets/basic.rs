@@ -334,6 +334,10 @@ impl UiContext {
         let text_pos = center_in_bounds(bounds, text_size);
         self.draw_text(text, text_pos, self.style.text_color, self.style.font_size);
 
+        if hovered {
+            self.input.set_cursor(crate::input::MouseCursor::Hand);
+        }
+
         Response::interactive(
             clicked,
             hovered,
@@ -405,6 +409,9 @@ impl UiContext {
             response.changed = false;
             response.double_clicked = false;
         }
+        if hovered {
+            self.input.set_cursor(crate::input::MouseCursor::Hand);
+        }
         response
     }
 
@@ -466,6 +473,10 @@ impl UiContext {
             self.style.font_size,
         );
 
+        if hovered {
+            self.input.set_cursor(crate::input::MouseCursor::Hand);
+        }
+
         Response::interactive(
             clicked,
             hovered,
@@ -513,7 +524,7 @@ impl UiContext {
         }
 
         // Draw track
-        let track_height = 4.0;
+        let track_height = self.style.slider_track_height;
         let track_bounds = Rect2D::from_center_size(
             Vec2::new(bounds.center().x(), bounds.center().y()),
             Vec2::new(bounds.width(), track_height),
@@ -526,7 +537,7 @@ impl UiContext {
 
         // Draw grab
         let t = (*value - min) / (max - min);
-        let grab_size = 12.0;
+        let grab_size = self.style.slider_grab_size;
         let grab_pos = bounds.min.x() + t * (bounds.width() - grab_size);
         let grab_bounds = Rect2D::from_origin_size(
             Vec2::new(grab_pos, bounds.center().y() - grab_size * 0.5),
@@ -905,6 +916,10 @@ impl UiContext {
             *value = index;
         }
 
+        if hovered {
+            self.input.set_cursor(crate::input::MouseCursor::Hand);
+        }
+
         response
     }
 
@@ -1038,6 +1053,10 @@ impl UiContext {
             if !*open {
                 response.clicked = true;
             }
+        }
+
+        if hovered {
+            self.input.set_cursor(crate::input::MouseCursor::Hand);
         }
 
         response

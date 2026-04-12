@@ -1612,6 +1612,10 @@ impl<'a> crate::Widget for Selectable<'a> {
             ui.style.font_size,
         );
 
+        if hovered {
+            ui.input.set_cursor(crate::input::MouseCursor::Hand);
+        }
+
         Response::interactive(
             clicked,
             hovered,

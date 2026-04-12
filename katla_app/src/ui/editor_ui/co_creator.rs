@@ -140,7 +140,7 @@ pub struct CoCreatorStyle {
 impl CoCreatorStyle {
     pub fn from_theme(theme: &ColorScheme) -> Self {
         Self {
-            user_msg_color: Color::new(0.4, 0.7, 1.0, 1.0),
+            user_msg_color: theme.info,
             assistant_msg_color: theme.text_primary,
             system_msg_color: theme.text_muted,
             panel_bg: theme.panel_bg,
