@@ -957,7 +957,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [ ] 160b. Reuse buffers in `convert_draw_list` — store vertex/indices/commands Vecs on a persistent struct, clear() between frames instead of reallocating — (medium, low risk)
   - [ ] 160c. Cache text measurements in focused text_input — compute cursor/selection/scroll offsets from a single measurement pass — (medium, low risk)
   - [x] 160d. Use DrawList scratch buffer in `generate_rounded_rect_points` instead of allocating per call — (small, low risk) — Done in a4a27bc
-  - [ ] 160e. Batch font system borrow in draw_text — borrow RefCell once, iterate all glyphs, release once — (small, low risk)
+  - [x] 160e. Batch font system borrow in draw_text — borrow RefCell once, iterate all glyphs, release once — (small, low risk) — Done in 6724f1b
   - [x] 160f. Fix O(n²) markdown word-wrap — accumulate line width instead of re-measuring from scratch per word — (small, low risk) — Done in a4a27bc
   - [ ] 160g. Replace per-frame input characters clone with a slice reference or Arc — (small, low risk)
   - [ ] 160h. Use stack-allocated format buffer for slider value display (arrayvec or similar) — (small, low risk)
@@ -971,8 +971,8 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [ ] 161a. Replace `Rc<RefCell<Camera>>` with direct ownership — Camera is accessed ~20+ times per frame via `.borrow()` in gizmo, rendering, unprojection, agent. Single owner (Application). Make it a plain field and pass `&Camera` / `&mut Camera` references. — (large, medium risk)
   - [x] 161b. Replace `RefCell<vk::ImageLayout>` with `Cell<vk::ImageLayout>` in transient_texture.rs — `vk::ImageLayout` is `Copy`, so `Cell` is zero-cost vs `RefCell`'s runtime borrow counter. — (small, low risk) — Done in a4a27bc
   - [ ] 161c. Clean up `RefCell<Vec<Option<Box<CompositingDescriptorSet>>>` in frame_graph.rs — 4 layers of indirection. Consider `[Option<CompositingDescriptorSet>; 2]` with `Cell` or restructure the borrow. — (medium, low risk)
-  - [ ] 161d. Convert per-frame `unwrap()` calls in render graph to `expect()` with descriptive messages or `if let` / `match` — draw_helpers.rs, object_id_pass.rs, ui_rendering.rs, particles/buffer.rs all have `unwrap()` on pipeline/buffer lookups in the per-frame draw loop. — (small, low risk)
-  - [ ] 161e. Audit and clean up `unwrap()` in katla_ecs per-frame paths — world.rs system dispatch and resource access use `unwrap()` after `Option` insertion. Use `expect()` or restructure to avoid `Option` wrapping. — (small, low risk)
+  - [x] 161d. Convert per-frame `unwrap()` calls in render graph to `expect()` with descriptive messages or `if let` / `match` — draw_helpers.rs, object_id_pass.rs, ui_rendering.rs, particles/buffer.rs all have `unwrap()` on pipeline/buffer lookups in the per-frame draw loop. — (small, low risk) — Done in 6724f1b
+  - [x] 161e. Audit and clean up `unwrap()` in katla_ecs per-frame paths — world.rs system dispatch and resource access use `unwrap()` after `Option` insertion. Use `expect()` or restructure to avoid `Option` wrapping. — (small, low risk) — Done in 6724f1b
   - [ ] 161f. Evaluate `Rc<RefCell<FontSystem>>` in katla_ui — RefCell is on the hot text rendering path. Consider splitting: immutable shared `Rc<FontSystem>` for queries, `&mut FontSystem` only during atlas build. — (medium, medium risk)
   - **Recommended order:** 161b → 161d → 161e → 161c → 161f → 161a
 - **Severity:** MEDIUM
