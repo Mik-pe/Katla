@@ -284,9 +284,21 @@
 - **Recommendation:** Implement as a parallel/opt-in storage option, not a full replacement. The existing sparse-set system provides excellent O(1) random access. Archetype storage should be opt-in for entity groups where multi-component iteration is a measured bottleneck.
 - **Sub-tasks:**
   - [ ] 80a. Core `Archetype` and `ComponentColumn` data structures — type-erased SoA column storage with contiguous iteration (large, medium risk)
+    - [ ] 80a1. ComponentColumn type-erased column — `ComponentColumn` struct: `Vec<u8>` memory buffer, `TypeId`-keyed vtable for drop/copy/get/at operations. `push()`, `remove_swap()`, `get_row()`, `len()`. Unit tests with `i32` and `f32`. (small, low risk)
+    - [ ] 80a2. Archetype struct — `Archetype { columns: HashMap<TypeId, ComponentColumn>, entity_ids: Vec<EntityId>, archetype_id: ArchetypeId }`. Methods: `new_from_components()`, `add_entity()`, `remove_entity_swap()`, `get_column()`, `has_component()`. Unit tests. (small, low risk)
+    - [ ] 80a3. ArchetypeId and component signature — `ArchetypeId` newtype. `ComponentSignature` type (sorted `Vec<TypeId>` or `SmallVec<[TypeId; 4]>`). Signature-to-ArchetypeId mapping. `signature_for_add()` / `signature_for_remove()` helpers. (small, low risk)
+    - [ ] 80a4. Contiguous iteration — `ArchetypeIter` that yields `(EntityId, &[T1], &[T2], ...)` via column slices. Implement for 1-4 component tuples using macro. Benchmark against sparse set. (medium, medium risk)
   - [ ] 80b. `ArchetypeRegistry` — manages archetype instances, entity-to-archetype mapping, component add/remove migration with edge caching (large, medium risk)
+    - [ ] 80b1. ArchetypeRegistry struct — `HashMap<ComponentSignature, ArchetypeId>` → `Vec<Archetype>`. Methods: `get_or_create()`, `get()`, `archetype_for_signature()`. Entity-to-archetype mapping: `HashMap<EntityId, (ArchetypeId, usize)>`. (medium, low risk)
+    - [ ] 80b2. Component add/remove with migration — `add_component()` and `remove_component()` that move an entity between archetypes: create destination archetype if needed, copy all shared components, remove from source. Edge-cached `HashMap<(ArchetypeId, TypeId), ArchetypeId>` to avoid repeated lookups. (medium, medium risk)
+    - [ ] 80b3. Entity spawn/destroy through registry — `spawn_entity(components)` and `destroy_entity()` through the ArchetypeRegistry. Integration with EntityAllocator for ID generation. (small, low risk)
   - [ ] 80c. `ArchetypeQueryData` trait and macro-generated tuple impls — new query entry point `World::archetype_query::<Q>()` alongside existing `query()` (large, high risk)
+    - [ ] 80c1. QueryDescriptor and matching — `QueryDescriptor` that specifies required components. `Archetype::matches(descriptor)` method. Filter all archetypes to find matching ones. (small, low risk)
+    - [ ] 80c2. ArchetypeQueryData trait — trait for extracting typed references from archetype columns. Manual impls for `(T,)`, `(T1, T2)`, `(T1, T2, T3)`, `(T1, T2, T3, T4)`. (medium, medium risk)
+    - [ ] 80c3. World::archetype_query entry point — `World::archetype_query::<(T1, T2)>()` that finds matching archetypes and returns an iterator chaining them. Integration test: spawn 1000 entities with (Transform, Velocity), query and verify. (medium, medium risk)
   - [ ] 80d. Dual-storage World integration — `spawn_archetype()` coexisting with `spawn()`, `get_component()` dispatches to correct storage (medium, medium risk)
+    - [ ] 80d1. World fields for archetype storage — add `archetype_registry: ArchetypeRegistry` to World. `spawn_archetype()` method. `get_component()` dispatches to sparse-set first, then archetype storage. (medium, medium risk)
+    - [ ] 80d2. Integration test + benchmark comparison — end-to-end test: spawn mixed entities (some sparse, some archetype), query both, verify correctness. Run criterion benchmarks from 80e to compare. (small, low risk)
   - [x] ~~80e. Criterion benchmarks comparing sparse-set vs archetype for 1-4 component queries at 1K/10K/100K entities~~ — Done in 8313e3e. 7 benchmark groups at 1K/10K/100K scale.
 
 ~~### 81. `from_rows` naming in `Mat3` is misleading (actually column-major)~~ — Fixed in 37b3dbc. Renamed to `from_columns`.
@@ -882,10 +894,18 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] ~~157a. Define `DockTree` data structure~~ — Done in 965f279. DockNode/DockLayout in dock.rs.
   - [x] ~~157b. Add `DockTabBar` widget~~ — Done in 965f279. Active/inactive/hover states, close buttons.
   - [x] ~~157c. Add `DockArea` widget~~ — Done in f70c5e0. Recursive rendering with split separators and leaf tab bar + callback.
-  - [ ] 157d. Add drag-to-dock interaction — when a tab is dragged out of its tab bar, show a floating preview and dock-zone overlays (center, left/right/top/bottom edges) on hover over other dock nodes. On drop, mutate the `DockTree` (e.g., split the target node or reparent). Dragging to empty space creates a new floating window. — (large, high risk)
+  - [ ] 157d. Add drag-to-dock interaction — (large, high risk)
+    - [ ] 157d1. Tab drag detection — detect when a tab is being dragged (mouse held on tab + delta > threshold), show a floating label preview following the cursor. No dock mutation yet. (small, low risk)
+    - [ ] 157d2. Dock zone overlay rendering — when a tab is being dragged over a DockArea, render translucent overlay zones (center, left, right, top, bottom edges) on the hovered leaf node. Purely visual. (small, low risk)
+    - [ ] 157d3. Drop-based tree mutation — on mouse release over a dock zone, mutate the DockTree: split the target node or reparent. Handle the 5 zone types (center=tab-add, edges=split). (medium, medium risk)
+    - [ ] 157d4. Floating window creation — dragging a tab to empty space (outside any DockArea) creates a FloatingDockWindow. Dragging a floating window back onto a dock area re-docks it. (medium, medium risk)
   - [x] ~~157e. Add dock layout serialization/deserialization~~ — Done in 965f279. Stubs for to_string/from_string (serde not yet in katla_ui).
   - [x] ~~157f. Add `DockPanelId` enum and panel content registry~~ — Done in 2aa72b7. EditorPanel enum with 7 variants and stable IDs.
-  - [ ] 157g. Integrate `DockArea` into `layout.rs` — replace the hardcoded panel positioning logic in `EditorUI::build()` with a single `DockArea` widget call. Remove `left_panel_width`, `right_panel_width`, `asset_browser.panel_height` fields from `EditorUI` (sizes are now in the dock tree). Keep toolbar and status bar outside the dock area. Update `FocusedPanel` to be derived from the active dock tab. — (large, high risk)
+  - [ ] 157g. Integrate `DockArea` into `layout.rs` — (large, high risk)
+    - [ ] 157g1. Add DockLayout to EditorUI state — add `dock_layout: DockLayout` field to `EditorUI`, initialized with the default layout from 157h. Remove `left_panel_width`, `right_panel_width` size fields (sizes now in dock tree ratios). (small, low risk)
+    - [ ] 157g2. Replace left panel rendering — replace the hardcoded hierarchy panel positioning in `build()` with the DockArea widget rendering the hierarchy leaf. Keep right panel and asset browser hardcoded for now. (medium, low risk)
+    - [ ] 157g3. Replace right panel rendering — replace the hardcoded inspector panel positioning with DockArea-driven rendering. Now both side panels are dock-driven. (medium, low risk)
+    - [ ] 157g4. Replace asset browser and finalize — replace the hardcoded asset browser positioning. Remove all ResizeHandle calls for panels (DockArea handles splits). Remove `FocusedPanel` manual tracking in favor of dock-aware focus. Full integration complete. (medium, medium risk)
   - [x] ~~157h. Add state persistence for panel visibility and sizes~~ — Done in 2aa72b7. Default layout on EditorUI, full serde persistence deferred.
   - **Recommended order:** 157a → 157b → 157c → 157f → 157g → 157e → 157h → 157d
 
@@ -919,3 +939,91 @@ These items identify code that currently lives in katla_app but is generic enoug
   - **Recommended order:** 159a → 159b → 159c → 159d → 159e → 159f
 - **Severity:** MEDIUM
 - **Design north star:** Apple Reality Composer Pro — sleek, minimal, purposeful. Key qualities to emulate (without macOS-specific glass/vibrancy): generous whitespace and consistent padding; thin 1px borders with low contrast (barely visible separators); flat monochrome iconography; muted color palette with one accent color; tabs as seamless content-area extensions (no chunky borders); compact but breathable inspector rows; smooth rounded corners on all interactive elements; clean typography hierarchy (weight/size, not color variety). This is the visual target — a modern, professional editor that feels calm and focused rather than busy. We're cross-platform Vulkan, so no platform-specific effects, but the underlying design language (restraint, consistency, breathing room) transfers directly.
+
+### 160. UI performance audit and optimization
+- **Crate:** katla_ui / katla_app
+- **Files:** `katla_ui/src/context/widgets/basic.rs`, `katla_ui/src/draw_list.rs`, `katla_ui/src/context/drawing.rs`, `katla_ui/src/markdown.rs`, `katla_app/src/ui/renderer.rs`
+- **Issue:** The immediate-mode UI has several per-frame allocation and quadratic-complexity patterns that will degrade as the editor grows. Text handling is the primary hotspot. Key findings from audit:
+  1. **O(n²) text_input click-to-cursor** — `basic.rs:641-656` measures `text[..i]` for every character index to find cursor position on click. Should use binary search or accumulate widths incrementally.
+  2. **Per-frame Vec allocations in `convert_draw_list`** — `renderer.rs:98-109` allocates `HashMap<TextureId, u32>`, vertex index Vec, converted vertex Vec, index Vec, and command Vec every frame. Should reuse buffers.
+  3. **Repeated measure_text in focused text_input** — `basic.rs:698-828` measures the same text 4-5 times per frame (full text, pre-selection, selection, cursor position, scroll offset). Should cache or compute incrementally.
+  4. **Vec allocation per rounded rect** — `draw_list.rs:557` `generate_rounded_rect_points` creates a new Vec per call despite `DrawList` having a `scratch_points` field. Should use the scratch buffer.
+  5. **Per-character RefCell::borrow_mut() in draw_text** — `drawing.rs` acquires and releases the RefCell for every glyph rasterization. Should borrow once and iterate.
+  6. **Input characters clone per text_input widget** — `basic.rs:59` clones `Vec<char>` for every text_input on screen every frame, even when unfocused.
+  7. **O(n²) markdown word-wrap** — `markdown.rs:459-482` measures text for every incremental word addition during wrapping.
+  8. **format!() per slider per frame** — `basic.rs:561` heap-allocates a String for slider value display every frame.
+- **Sub-tasks:**
+  - [x] 160a. Fix O(n²) text_input click-to-cursor — use binary search or incremental width accumulation — (small, low risk) — Done in a4a27bc
+  - [ ] 160b. Reuse buffers in `convert_draw_list` — store vertex/indices/commands Vecs on a persistent struct, clear() between frames instead of reallocating — (medium, low risk)
+  - [ ] 160c. Cache text measurements in focused text_input — compute cursor/selection/scroll offsets from a single measurement pass — (medium, low risk)
+  - [x] 160d. Use DrawList scratch buffer in `generate_rounded_rect_points` instead of allocating per call — (small, low risk) — Done in a4a27bc
+  - [ ] 160e. Batch font system borrow in draw_text — borrow RefCell once, iterate all glyphs, release once — (small, low risk)
+  - [x] 160f. Fix O(n²) markdown word-wrap — accumulate line width instead of re-measuring from scratch per word — (small, low risk) — Done in a4a27bc
+  - [ ] 160g. Replace per-frame input characters clone with a slice reference or Arc — (small, low risk)
+  - [ ] 160h. Use stack-allocated format buffer for slider value display (arrayvec or similar) — (small, low risk)
+  - **Recommended order:** 160a → 160c → 160d → 160e → 160b → 160f → 160g → 160h
+- **Severity:** MEDIUM
+
+### 161. Clean up Option/RefCell/Rust antipatterns across the codebase
+- **Crates:** katla_app, katla_gfx, katla_ui, katla_ecs
+- **Issue:** The codebase has accumulated several Rust antipatterns: `Rc<RefCell<T>>` in per-frame hot paths, `RefCell` where `Cell` would suffice for `Copy` types, unnecessary `Option<Box<T>>` double-wrapping, and per-frame `unwrap()` calls that should use `expect()` or proper error propagation. These add runtime overhead, increase panic surface area, and make the code harder to reason about.
+- **Sub-tasks:**
+  - [ ] 161a. Replace `Rc<RefCell<Camera>>` with direct ownership — Camera is accessed ~20+ times per frame via `.borrow()` in gizmo, rendering, unprojection, agent. Single owner (Application). Make it a plain field and pass `&Camera` / `&mut Camera` references. — (large, medium risk)
+  - [x] 161b. Replace `RefCell<vk::ImageLayout>` with `Cell<vk::ImageLayout>` in transient_texture.rs — `vk::ImageLayout` is `Copy`, so `Cell` is zero-cost vs `RefCell`'s runtime borrow counter. — (small, low risk) — Done in a4a27bc
+  - [ ] 161c. Clean up `RefCell<Vec<Option<Box<CompositingDescriptorSet>>>` in frame_graph.rs — 4 layers of indirection. Consider `[Option<CompositingDescriptorSet>; 2]` with `Cell` or restructure the borrow. — (medium, low risk)
+  - [ ] 161d. Convert per-frame `unwrap()` calls in render graph to `expect()` with descriptive messages or `if let` / `match` — draw_helpers.rs, object_id_pass.rs, ui_rendering.rs, particles/buffer.rs all have `unwrap()` on pipeline/buffer lookups in the per-frame draw loop. — (small, low risk)
+  - [ ] 161e. Audit and clean up `unwrap()` in katla_ecs per-frame paths — world.rs system dispatch and resource access use `unwrap()` after `Option` insertion. Use `expect()` or restructure to avoid `Option` wrapping. — (small, low risk)
+  - [ ] 161f. Evaluate `Rc<RefCell<FontSystem>>` in katla_ui — RefCell is on the hot text rendering path. Consider splitting: immutable shared `Rc<FontSystem>` for queries, `&mut FontSystem` only during atlas build. — (medium, medium risk)
+  - **Recommended order:** 161b → 161d → 161e → 161c → 161f → 161a
+- **Severity:** MEDIUM
+
+### 162. UI panel rendering bug — black backgrounds and green glitch artifacts on resize
+- **Crate:** katla_gfx / katla_ui / katla_app
+- **Issue:** Two related visual bugs in the editor UI:
+  1. **Panel backgrounds render as black** — UI panels (hierarchy, inspector, asset browser) appear with black backgrounds instead of the themed `panel_bg` color. Likely a texture binding issue, missing clear, or incorrect blend mode in the UI render pass.
+  2. **Green glitch artifacts on panel resize** — When dragging resize handles to resize panels, green glitchy pixels leak around panel edges and bleed into adjacent UI elements. Green artifacts typically indicate uninitialized texture data, incorrect texture sampling (sampling from wrong texture/binding), or stale vertex/index buffer data being read during resize. The glitch may be caused by: UI texture atlas being sampled with wrong addressing mode (not clamp-to-edge), vertex buffer not being fully updated before the next frame's draw, or the UI render pass reading from a swapchain image that hasn't been properly transitioned.
+- **Investigation steps:**
+  - Check UI render pass blend mode and clear color
+  - Verify texture atlas binding and sampling mode (clamp-to-edge, not repeat)
+  - Check if vertex buffer updates are properly synchronized (no in-flight buffer being read while CPU writes)
+  - Verify swapchain image layout transitions around UI pass
+  - Check if the glyph atlas texture is being written to mid-frame (rasterize-on-demand during panel resize)
+- **Severity:** HIGH
+
+~~### 163. Fix Vulkan validation errors from `cargo run -- -s -v`~~ — Fixed. VUID-vkCmdBeginRendering-pRenderingInfo-09592 caused by two bugs: (1) barrier read-loop transitioned resources that the same pass also writes (wallhack overlay reads+writes viewport_0), (2) out-of-band particle rendering updated TransientTexture layout without updating the resource_states HashMap.
+- **Crate:** katla_gfx
+- **Issue:** Running the application with `cargo run -- -s -v` (limited-frame mode with validation layers enabled) produces Vulkan validation errors that need to be investigated and fixed. Run the command, collect the output, categorize the errors, and fix them. Common sources: incorrect image layout transitions, missing memory barriers, mismatched pipeline create info, missing descriptor set bindings, incorrect render pass compatibility, and synchronisation issues.
+- **Investigation steps:**
+  - Run `cargo run -- -s -v` and capture full stderr output
+  - Categorize errors by VUID (Vulkan Unique ID)
+  - Fix each category, prioritizing errors that occur in the per-frame loop over init errors
+  - Re-run to confirm zero validation errors
+- **Severity:** HIGH
+
+### 164. Replace string-based render graph pass identification with typed/state-driven system
+- **Crate:** katla_gfx
+- **Files:** `katla_gfx/src/render_graph/frame_graph.rs`, `katla_gfx/src/render_graph/frame/mod.rs`, `katla_gfx/src/renderer/mod.rs`
+- **Issue:** The render graph uses string names to identify passes and resources. `pass_names: HashMap<String, usize>` maps pass names to indices. `pass_index("geometry")` does a HashMap lookup by string. `frame/mod.rs` has `if pass.name == "geometry"` — a runtime string comparison for particle injection (but see 166 — making particles a proper pass eliminates this entirely). `set_tonemap_texture_index("tonemap", slot)` is a string-typed API. Resources are tracked by `"hdr_color"`, `"depth"`, `"color"` string keys in `resource_names: HashMap<String, ...>`. This is fragile: typos fail silently at runtime, string comparisons happen in the per-frame hot path, and there's no compile-time guarantee that pass/resource references are valid. Production render graphs (Halo's, Frostbite's, Unreal's RDG) use typed handles (`PassHandle`, `ResourceHandle`) with index-based lookups.
+- **Sub-tasks:**
+  - [ ] 164a. Add `PassId(u32)` / `ResourceId(u32)` typed handle types — thin newtype wrappers with `Copy`/`Eq`/`Hash` derives. Pass creation returns `PassId`, resource creation returns `ResourceId`. — (small, low risk)
+  - [ ] 164b. Replace `HashMap<String, usize>` with `Vec<PassDesc>` indexed by `PassId` — pass lookup becomes `O(1)` array index instead of HashMap lookup. `add_pass` returns `PassId`. — (medium, low risk)
+  - [ ] 164c. Replace remaining `pass.name` string checks with pass-type-based dispatch — after 166 removes the `if pass.name == "geometry"` particle hack, audit remaining string comparisons in the pass loop and replace with `PassKind` enum dispatch where appropriate. — (small, low risk)
+  - [ ] 164d. Replace `set_tonemap_texture_index("tonemap", slot)` with `PassId`-based API — `set_tonemap_texture_index(tonemap_pass_id, slot)`. Remove string from external API. — (small, low risk)
+  - [ ] 164e. Replace `resource_names: HashMap<String, ...>` with `ResourceId`-keyed storage — resource references become typed handles instead of string lookups. — (large, medium risk)
+  - [ ] 164f. Migrate all callers in `katla_gfx/src/renderer/` from string-based to typed-handle APIs — (medium, low risk)
+  - **Recommended order:** 166 (eliminates the biggest string hack) → 164a → 164b → 164c → 164d → 164f → 164e
+- **Severity:** MEDIUM
+
+### 165. Unify layout state tracking — eliminate split-brain between `resource_states` and `TransientTexture::current_layout`
+- **Crate:** katla_gfx
+- **Files:** `render_graph/frame/barriers.rs`, `render_graph/frame/mod.rs`, `render_graph/transient_texture.rs`
+- **Issue:** Image layout is tracked in two places: `Frame::resource_states` (HashMap, reset per frame) and `TransientTexture::current_layout` (RefCell, persists across frames). These can diverge when out-of-band code (e.g., `render_particles_to_texture`) updates one but not the other, causing the barrier system to skip transitions based on stale HashMap state while the GPU is in a different layout. This was the root cause of the VUID-vkCmdBeginRendering-pRenderingInfo-09592 validation errors (fixed in 163). The `ImageBarrier` helpers encapsulate GPU transitions but not state tracking — callers must manually update both trackers, and there is no enforcement.
+- **Fix:** Remove one tracking mechanism. Prefer keeping `TransientTexture::current_layout` as the single source of truth (it already persists correctly across frames) and derive all barrier decisions from it. Remove `Frame::resource_states` entirely, or if kept for non-transient resources (backbuffer), restrict its scope to those. All layout transitions must go through a single code path that updates the surviving tracker.
+- **Severity:** MEDIUM
+
+### 166. Make particle rendering a proper frame graph pass instead of out-of-band special case
+- **Crate:** katla_gfx
+- **Files:** `render_graph/frame/mod.rs` (the `if pass.name == "geometry"` block), `render_graph/frame/particle_rendering.rs`
+- **Issue:** Particle rendering is executed outside the normal pass loop via `if pass.name == "geometry"` in `execute_passes()`. It does its own barrier management, its own begin/end rendering, and its own layout tracking. This bypasses the render graph's barrier system, requiring manual synchronization with the resource state tracker. When the tracking diverges (see 165), validation errors result. The frame graph exists precisely to automate this.
+- **Fix:** Register a "particles" pass in the frame graph during `build_frame_graph()` with proper `.read()` and `.write()` declarations (reads hdr_color, writes hdr_color, uses depth). Remove the special-case block from `execute_passes()`. The render graph barrier system will then handle all layout transitions automatically. If pass ordering constraints are needed (particles must run after geometry), express this via the graph's dependency system.
+- **Severity:** MEDIUM
