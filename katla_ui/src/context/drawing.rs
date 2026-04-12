@@ -44,6 +44,23 @@ impl UiContext {
         }
     }
 
+    /// Draw a gradient rectangle with per-corner colors (TL, TR, BR, BL).
+    pub fn draw_gradient_rect(
+        &mut self,
+        bounds: Rect2D,
+        tl: Color,
+        tr: Color,
+        br: Color,
+        bl: Color,
+    ) {
+        self.draw_list.set_clip(self.clip_rect());
+        self.draw_list.add_gradient_rect(bounds, tl, tr, br, bl);
+
+        if self.z_index > z_index::DEFAULT {
+            self.register_hover_layer(self.z_index, bounds);
+        }
+    }
+
     /// Draw a rectangle with a border.
     pub fn draw_rect_border(
         &mut self,
@@ -54,6 +71,19 @@ impl UiContext {
     ) {
         self.draw_rect(bounds, fill);
         self.draw_selection_border(bounds, border, border_width);
+    }
+
+    /// Draw a rounded rectangle with a border stroke following the rounded path.
+    pub fn draw_rounded_rect_border(
+        &mut self,
+        bounds: Rect2D,
+        fill: Color,
+        border: Color,
+        border_width: f32,
+        radius: f32,
+    ) {
+        self.draw_rounded_rect(bounds, fill, radius);
+        self.draw_rounded_selection_border(bounds, border, border_width, radius);
     }
 
     /// Draw only a selection border (no fill).
@@ -88,6 +118,21 @@ impl UiContext {
             ),
             color,
         );
+    }
+
+    /// Draw only a rounded selection border (no fill).
+    ///
+    /// Draws a stroke along the rounded rect path instead of 4 sharp rectangles.
+    pub fn draw_rounded_selection_border(
+        &mut self,
+        bounds: Rect2D,
+        color: Color,
+        width: f32,
+        radius: f32,
+    ) {
+        self.draw_list.set_clip(self.clip_rect());
+        self.draw_list
+            .add_rounded_rect_stroke(bounds, color, radius, width);
     }
 
     /// Draw a textured image with explicit texture ID.

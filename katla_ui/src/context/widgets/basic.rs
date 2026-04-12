@@ -326,7 +326,12 @@ impl UiContext {
 
         // Draw border if specified
         if let Some(border_color) = border_color {
-            self.draw_selection_border(bounds, border_color, 1.0);
+            self.draw_rounded_selection_border(
+                bounds,
+                border_color,
+                1.0,
+                self.style.button_rounding,
+            );
         }
 
         // Draw button text
@@ -725,7 +730,7 @@ impl UiContext {
         } else {
             self.style.input_border
         };
-        self.draw_rect_border(bounds, Color::TRANSPARENT, border_color, 1.0);
+        self.draw_rounded_selection_border(bounds, border_color, 1.0, self.style.input_rounding);
 
         let padding = 4.0;
         let text_area_width = if show_clear && !text.is_empty() {
@@ -960,7 +965,12 @@ impl UiContext {
             self.style.combo_bg
         };
         self.draw_rounded_rect(bounds, bg_color, self.style.button_rounding);
-        self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.combo_border, 1.0);
+        self.draw_rounded_selection_border(
+            bounds,
+            self.style.combo_border,
+            1.0,
+            self.style.button_rounding,
+        );
 
         // Draw selected text
         let padding = self.style.text_input_padding;

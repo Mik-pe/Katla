@@ -1728,7 +1728,12 @@ impl<'a> Panel<'a> {
         let header_height = self.header_height;
 
         ui.draw_rounded_rect(bounds, ui.style.window_bg, ui.style.window_rounding);
-        ui.draw_rect_border(bounds, Color::TRANSPARENT, ui.style.window_border, 1.0);
+        ui.draw_rounded_selection_border(
+            bounds,
+            ui.style.window_border,
+            1.0,
+            ui.style.window_rounding,
+        );
 
         let header_bounds =
             Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), header_height));

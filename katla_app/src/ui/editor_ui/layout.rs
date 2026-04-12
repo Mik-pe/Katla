@@ -232,6 +232,7 @@ impl EditorUI {
             entities,
             &mut self.pending_actions,
             &self.theme,
+            &mut self.hierarchy_search_filter,
         ));
 
         ui.draw_rect(
