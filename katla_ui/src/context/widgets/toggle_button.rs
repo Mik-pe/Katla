@@ -69,6 +69,11 @@ impl UiContext {
         }
 
         // Use Response builder for consistent construction
+
+        if hovered {
+            self.input.set_cursor(crate::input::MouseCursor::Hand);
+        }
+
         Response::interactive(
             clicked,
             hovered,

@@ -1,5 +1,5 @@
 use katla_ecs::EntityId;
-use katla_math::{Color, Rect2D, Vec2, Vec3};
+use katla_math::{Rect2D, Vec2, Vec3};
 use katla_ui::{
     FontSize, UiContext,
     widgets::{RadioButton, ResizeHandle},
@@ -239,7 +239,7 @@ impl EditorUI {
                 Vec2::new(self.left_panel_width, panel_top),
                 Vec2::new(1.0, panel_height),
             ),
-            Color::new(0.3, 0.3, 0.3, 1.0),
+            ui.style().separator,
         );
 
         let right_panel_bounds = Rect2D::from_origin_size(
@@ -261,7 +261,7 @@ impl EditorUI {
                 Vec2::new(right_panel_x - 1.0, panel_top),
                 Vec2::new(1.0, panel_height),
             ),
-            Color::new(0.3, 0.3, 0.3, 1.0),
+            ui.style().separator,
         );
 
         let viewport_bounds = Rect2D::new(
@@ -469,7 +469,7 @@ impl EditorUI {
                 Vec2::new(0.0, panel_bottom),
                 Vec2::new(screen_size.x(), 1.0),
             ),
-            Color::new(0.3, 0.3, 0.3, 1.0),
+            ui.style().separator,
         );
 
         let selected_count = if self.asset_browser.selected_indices.is_empty() {
