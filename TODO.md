@@ -861,20 +861,17 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Severity:** LOW
 - **Design rationale:** Industry survey of Unity, UE5, Godot 4.6, Blender, Dear ImGui, VS Code, JetBrains: all use 0-6px rounding. Values above 8px look mobile/app-like. Engine editors prioritize density over decoration.
 
-### 156. AI assistant markdown preview doesn't render like actual markdown
+~~### 156. AI assistant markdown preview doesn't render like actual markdown~~ — Fixed in 86de440. Full markdown renderer with code blocks, italic, links, blockquotes, heading sizes.
 - **Crate:** katla_ui / katla_app
 - **Files:** `katla_ui/src/markdown.rs`, `katla_app/src/ui/editor_ui/co_creator.rs`
 - **Issue:** The AI co-creator panel renders assistant messages as plain or minimally-styled text. Markdown formatting (headings, bold, italic, code blocks, lists, links) is either stripped or rendered without visual distinction. Users expect the AI assistant's responses to look like rendered markdown with clear sections, styled code blocks, proper list formatting, and visual hierarchy — similar to how markdown appears in ChatGPT, GitHub, or any modern AI chat interface.
-- **Fix:** Improve the markdown renderer in `katla_ui/src/markdown.rs` to properly render:
-  - Headings (H1-H4) with larger/bold text and spacing
-  - Bold and italic text with font weight/style changes
-  - Inline code with a distinct background and monospace font
-  - Code blocks with a background box and preserved whitespace
-  - Ordered and unordered lists with proper indentation and markers
-  - Links with accent color and underline
-  - Horizontal rules / separators
-  - Blockquotes with a left border
-  - Proper paragraph spacing between elements
+- **Sub-tasks:**
+  - [x] ~~156a. Extend TextSegmentKind with Italic, CodeBlock, Link, Blockquote, HRule variants~~ — Done in 86de440.
+  - [x] ~~156b. Add heading size hierarchy (H1-H4)~~ — Done in 86de440.
+  - [x] ~~156c. Render inline code and code blocks~~ — Done in 86de440.
+  - [x] ~~156d. Render links and blockquotes~~ — Done in 86de440.
+  - [x] ~~156e. Improve paragraph spacing~~ — Done in 86de440.
+  - **Recommended order:** 156a → 156b → 156c → 156d → 156e
 - **Severity:** MEDIUM
 
 ### 157. Add dockable panel system with persistent state
