@@ -732,6 +732,26 @@ impl UiContext {
         };
         self.draw_rounded_selection_border(bounds, border_color, 1.0, self.style.input_rounding);
 
+        if focused {
+            let focus_ring_width = self.style.focus_ring_width;
+            let focus_bounds = Rect2D::from_origin_size(
+                Vec2::new(
+                    bounds.min.x() - focus_ring_width,
+                    bounds.min.y() - focus_ring_width,
+                ),
+                Vec2::new(
+                    bounds.width() + focus_ring_width * 2.0,
+                    bounds.height() + focus_ring_width * 2.0,
+                ),
+            );
+            self.draw_rounded_selection_border(
+                focus_bounds,
+                self.style.focus_ring_color,
+                focus_ring_width,
+                self.style.input_rounding,
+            );
+        }
+
         let padding = 4.0;
         let text_area_width = if show_clear && !text.is_empty() {
             bounds.width() - clear_size - padding
