@@ -892,7 +892,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [ ] 157h. Add state persistence for panel visibility and sizes — ensure open/closed panels, split ratios, active tabs, and floating window positions round-trip through `Preferences`. Add a default layout that matches the current editor arrangement (hierarchy left, viewport center, inspector right, asset browser bottom). — (small, low risk)
   - **Recommended order:** 157a → 157b → 157c → 157f → 157g → 157e → 157h → 157d
 
-### 158. Add proper `TabBar` widget with SOTA visual design
+~~### 158. Add proper `TabBar` widget with SOTA visual design~~ — Fixed in 4066c84. TabBar widget with active/inactive/hover states and bottom separator gap.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/widgets/mod.rs` (new widget), `katla_app/src/ui/editor_ui/preferences.rs`
 - **Issue:** The preferences panel renders tabs as flat colored rectangles (`draw_rect` + bottom line) — visually identical to buttons. There is no `TabBar` widget in katla_ui. Modern editors (VS Code, JetBrains, Unity, Godot 4) use clearly distinguishable tab designs: active tab blends into the content area (shared bottom edge), inactive tabs are visually recessed or muted, and hover states provide clear affordance. The current approach in `preferences.rs` lines 151-213 is ~60 lines of inline rendering that cannot be reused.
@@ -913,7 +913,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Files:** `katla_ui/src/style.rs`, `katla_ui/src/widgets/mod.rs`, `katla_app/src/ui/editor_ui/` (all)
 - **Issue:** The current UI has accumulated individual fixes but lacks a cohesive visual identity matching modern engine editors. Specific gaps: no consistent hover/active/pressed state progression across widgets; no focus rings on text inputs; scrollbar styling is minimal (flat rect, no hover state, no track); menu items lack hover transition and checkmark/radio indicators; no subtle shadows or depth cues on floating panels; no consistent border treatment (some panels have borders, some don't); spacing and padding are inconsistent between panels. SOTA editors (Unity 6, Godot 4.6, Blender 4.x) have a unified visual language where every widget follows the same state/color/spacing system.
 - **Sub-tasks:**
-  - [ ] 159a. Add missing `UiStyle` fields for consistent widget states: `widget_hovered_bg`, `widget_active_bg`, `widget_pressed_bg`, `focus_ring_color`, `focus_ring_width`, `scrollbar_track_color`, `scrollbar_thumb_color`, `scrollbar_thumb_hover_color`, `menu_item_hover_bg`, `menu_item_active_bg`, `check_mark_color` — (small, low risk)
+  - [x] ~~159a. Add missing `UiStyle` fields for consistent widget states~~ — Done in 4066c84.
   - [ ] 159b. Implement consistent 3-state rendering (hover → active → pressed) across all interactive widgets (Button, Checkbox, RadioButton, Selectable, ComboBox trigger, TabBar items) using the new style fields — (medium, low risk)
   - [ ] 159c. Improve scrollbar visuals — track background, rounded thumb, thumb hover highlight, optional min-thumb size — (medium, low risk)
   - [ ] 159d. Add focus ring rendering on focused TextInput and other focusable widgets — (small, low risk)
