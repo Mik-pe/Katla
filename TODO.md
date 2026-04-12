@@ -763,7 +763,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Add a search/filter TextInput at the top of the hierarchy panel, similar to asset browser's search field.
 - **Severity:** MEDIUM
 
-### 142. Inspector property rows use magic number layout constants
+~~### 142. Inspector property rows use magic number layout constants~~ — Fixed in a9640ad. Uses style.item_inner_spacing, property_label_width, panel_padding.
 - **Crate:** katla_app
 - **Files:** `katla_app/src/ui/editor_ui/inspector.rs`, `vec3_slider_row()` and `scalar_slider_row()`
 - **Issue:** Layout uses magic numbers: `indent = 8.0`, `value_label_width = 18.0`, `label_width = 90.0`, `ROW_HEIGHT = 18.0`. Should reference `ui.style.*` constants (e.g., `style.item_inner_spacing`, `style.property_label_width`, `style.panel_padding`).
@@ -777,7 +777,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Use `ui.truncate_text()` (already exists) to truncate entity names leaving space for the badge.
 - **Severity:** MEDIUM
 
-### 144. Markdown defaults() bypass theme system
+~~### 144. Markdown defaults() bypass theme system~~ — Fixed in a9640ad. Marked as #[deprecated], no callers existed.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/markdown.rs` (lines 59-63)
 - **Issue:** `MarkdownColors::defaults()` hardcodes all colors. `from_style()` does the right thing, but callers using `defaults()` get hardcoded colors. Future callers may accidentally use `defaults()`.
@@ -812,7 +812,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Auto-select text color based on background luminance (white for dark backgrounds, dark for light backgrounds).
 - **Severity:** LOW
 
-### 149. Viewport labels have no background — unreadable on bright content
+~~### 149. Viewport labels have no background — unreadable on bright content~~ — Fixed in a9640ad. Semi-transparent dark background rect behind labels.
 - **Crate:** katla_app
 - **Files:** `katla_app/src/ui/editor_ui/viewport_grid.rs` (line 124)
 - **Issue:** Viewport label uses `Color::WHITE.with_alpha(0.7)` with no background. On bright viewport content the label is hard to read.
@@ -853,7 +853,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Add `DrawList::add_rounded_rect_stroke(bounds, color, radius, thickness)` that draws the border as a stroke along the rounded rectangle path (not 4 separate rectangles). Update `draw_selection_border` and `draw_rect_border` to use the rounded stroke when a radius > 0 is provided.
 - **Severity:** HIGH
 
-### 155. Bump default rounding values for modern feel
+~~### 155. Bump default rounding values for modern feel~~ — Fixed in a9640ad. window/button/popup 4→6, input 2→4, padding 8→10.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/style.rs` (`UiStyle::default_dimensions()`)
 - **Issue:** Current defaults (window_rounding: 4.0, button_rounding: 4.0, input_rounding: 2.0) are conservative. Dear ImGui moved to 7px windows. Modern imgui themes (Moonlight) use 12px. Engine editors stay in the 4-6px range.
