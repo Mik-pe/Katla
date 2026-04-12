@@ -749,7 +749,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Both panels should use the same chrome mechanism. Inspector should use Panel::show() or both should use manual drawing, but not mixed.
 - **Severity:** MEDIUM
 
-### 140. No tooltips on icon-only toolbar buttons in asset browser
+~~### 140. No tooltips on icon-only toolbar buttons in asset browser~~ — Fixed in 0be1c25. Added on_hover_tooltip to refresh/forward/back buttons.
 - **Crate:** katla_app
 - **Files:** `katla_app/src/ui/editor_ui/asset_browser/mod.rs` (lines 208-236)
 - **Issue:** Asset browser navigation buttons (refresh, forward, back) and collapse toggle are icon-only with no tooltips. Users who don't recognize the icons have no way to discover their function. `Response::on_hover_tooltip()` is available but not used here.
@@ -798,14 +798,14 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Derive graph colors from the UiStyle system or theme semantic colors.
 - **Severity:** LOW
 
-### 147. Collapsible uses text arrow chars instead of icons
+~~### 147. Collapsible uses text arrow chars instead of icons~~ — Fixed in 0be1c25. Uses ForkAwesome::CHEVRON_DOWN/RIGHT in Collapsible and TreeView.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/widgets/mod.rs`, Collapsible widget (lines ~1070-1080), `katla_ui/src/widgets/tree.rs`
 - **Issue:** Collapsible and TreeView use Unicode `'▼'` and `'▶'` text characters for expand/collapse arrows. These may render inconsistently across fonts compared to icon font glyphs.
 - **Fix:** Use `ForkAwesome::CHEVRON_DOWN` / `ForkAwesome::CHEVRON_RIGHT` icon glyphs for consistent rendering.
 - **Severity:** LOW
 
-### 148. Badge widget forces white text
+~~### 148. Badge widget forces white text~~ — Fixed in 0be1c25. Auto-selects black/white text based on background luminance.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/widgets/mod.rs`, Badge widget
 - **Issue:** Badge text always rendered as `Color::WHITE`. For light-colored badge backgrounds (like `success` green), white text has poor contrast.
@@ -826,7 +826,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Use `menu_item_clicked_with_icon_and_shortcut()` for all menu items that have keyboard shortcuts.
 - **Severity:** LOW
 
-### 151. Popup modal overlay hardcoded color
+~~### 151. Popup modal overlay hardcoded color~~ — Fixed in 0be1c25. Uses `self.style.popup_shadow`.
 - **Crate:** katla_ui
 - **Files:** `katla_ui/src/context/popup/api.rs` (line 67)
 - **Issue:** Modal popup background overlay uses `Color::new(0.0, 0.0, 0.0, 0.5)` hardcoded. Should use `style.popup_shadow` or a dedicated modal overlay color from theme.
