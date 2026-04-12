@@ -1774,8 +1774,8 @@ pub use tree::{RenderItemFn, RowInfo, TreeItem, TreeState, TreeView};
 
 mod dock;
 pub use dock::{
-    DockLayout, DockNode, DockPanelId, DockTabBar, DockTabBarResponse, FloatingDockWindow,
-    SplitDirection,
+    DockArea, DockLayout, DockNode, DockPanelId, DockTabBar, DockTabBarResponse,
+    FloatingDockWindow, SplitDirection,
 };
 
 // =============================================================================
