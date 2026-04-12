@@ -1,7 +1,7 @@
 use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::{
-    FontSize, Response, UiContext, Widget,
+    FontSize, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
     widgets::{Button, Slider},
 };
 
@@ -31,6 +31,7 @@ pub struct Inspector<'a> {
     pub pending_actions: &'a mut Vec<EditorAction>,
     pub theme: &'a ColorScheme,
     pub edit: &'a mut InspectorEditState,
+    pub scroll_state: &'a mut ScrollAreaState,
 }
 
 impl<'a> Inspector<'a> {
@@ -41,6 +42,7 @@ impl<'a> Inspector<'a> {
         pending_actions: &'a mut Vec<EditorAction>,
         theme: &'a ColorScheme,
         edit: &'a mut InspectorEditState,
+        scroll_state: &'a mut ScrollAreaState,
     ) -> Self {
         Self {
             bounds,
@@ -49,6 +51,7 @@ impl<'a> Inspector<'a> {
             pending_actions,
             theme,
             edit,
+            scroll_state,
         }
     }
 }
@@ -158,244 +161,255 @@ impl<'a> Widget for Inspector<'a> {
         let row_height = 18.0;
         let content_x = self.bounds.min.x() + 8.0;
         let content_width = self.bounds.width() - 16.0;
-
-        ui.begin_column();
-        ui.set_cursor(Vec2::new(
-            content_x,
-            self.bounds.min.y() + header_height + 8.0,
-        ));
+        let content_bounds = Rect2D::from_origin_size(
+            Vec2::new(content_x, self.bounds.min.y() + header_height + 8.0),
+            Vec2::new(content_width, self.bounds.height() - header_height - 8.0),
+        );
 
         if let Some(entity) = selected {
-            // Entity name (read-only)
-            ui.draw_text(
-                &entity.name,
-                ui.cursor(),
-                self.theme.text_primary,
-                ui.scaled_font_size(FontSize::Large),
-            );
-            ui.spacing(row_height + 8.0);
+            let theme = self.theme;
+            let edit = self.edit;
+            let pending_actions = self.pending_actions;
+            let selected_entity = self.selected_entity;
 
-            // Transform section with interactive sliders
-            ui.draw_text(
-                "Transform",
-                ui.cursor(),
-                self.theme.text_accent,
-                ui.scaled_font_size(FontSize::Medium),
-            );
-            ui.spacing(row_height);
+            *self.scroll_state = ui.scroll_area(
+                ScrollArea::new("inspector_scroll").max_height(content_bounds.height()),
+                *self.scroll_state,
+                content_bounds,
+                |ui| {
+                    ui.set_cursor(Vec2::new(content_bounds.min.x(), content_bounds.min.y()));
 
-            vec3_slider_row(
-                ui,
-                self.theme,
-                "Position",
-                &mut self.edit.pos,
-                ["X", "Y", "Z"],
-                -100.0..=100.0,
-                content_width,
-            );
-
-            vec3_slider_row(
-                ui,
-                self.theme,
-                "Rotation",
-                &mut self.edit.rot,
-                ["X", "Y", "Z"],
-                -180.0..=180.0,
-                content_width,
-            );
-
-            vec3_slider_row(
-                ui,
-                self.theme,
-                "Scale",
-                &mut self.edit.scale,
-                ["X", "Y", "Z"],
-                0.01..=100.0,
-                content_width,
-            );
-
-            ui.spacing(4.0);
-            ui.separator_line();
-            ui.spacing(4.0);
-
-            // PointLight section (if entity has PointLight)
-            if entity.point_light.is_some() {
-                ui.draw_text(
-                    "Point Light",
-                    ui.cursor(),
-                    self.theme.text_accent,
-                    ui.scaled_font_size(FontSize::Medium),
-                );
-                ui.spacing(row_height);
-
-                // Color sliders (R, G, B)
-                let font_size = ui.scaled_font_size(FontSize::Small);
-                let indent = 8.0;
-                let value_label_width = 18.0;
-                let slider_area = content_width - indent - value_label_width;
-
-                for (i, axis_label) in ["R", "G", "B"].iter().enumerate() {
-                    let cursor = ui.cursor();
-                    let label_pos = Vec2::new(cursor.x() + indent, cursor.y());
-                    let color = match i {
-                        0 => Color::new(1.0, 0.3, 0.3, 1.0),
-                        1 => Color::new(0.3, 1.0, 0.3, 1.0),
-                        _ => Color::new(0.3, 0.3, 1.0, 1.0),
-                    };
-                    ui.draw_text(axis_label, label_pos, color, font_size);
-
-                    let slider_x = cursor.x() + indent + value_label_width;
-                    let slider_bounds = Rect2D::from_origin_size(
-                        Vec2::new(slider_x, cursor.y()),
-                        Vec2::new(slider_area, row_height),
+                    // Entity name (read-only)
+                    ui.draw_text(
+                        &entity.name,
+                        ui.cursor(),
+                        theme.text_primary,
+                        ui.scaled_font_size(FontSize::Large),
                     );
-                    let id = format!("light_color_{}", i);
-                    let _response = ui.add(
-                        Slider::new(&id, &mut self.edit.light_color[i], 0.0..=1.0)
-                            .bounds(slider_bounds)
-                            .id(&id),
-                    );
+                    ui.spacing(row_height + 8.0);
 
-                    let val_text = format!("{:.2}", self.edit.light_color[i]);
-                    let val_pos = Vec2::new(slider_x + slider_area + 4.0, cursor.y());
-                    ui.draw_text(&val_text, val_pos, self.theme.text_primary, font_size);
+                    // Transform section with interactive sliders
+                    ui.draw_text(
+                        "Transform",
+                        ui.cursor(),
+                        theme.text_accent,
+                        ui.scaled_font_size(FontSize::Medium),
+                    );
                     ui.spacing(row_height);
-                }
 
-                scalar_slider_row(
-                    ui,
-                    self.theme,
-                    "Intensity",
-                    &mut self.edit.light_intensity,
-                    0.0..=100.0,
-                    content_width,
-                    row_height,
-                );
+                    vec3_slider_row(
+                        ui,
+                        theme,
+                        "Position",
+                        &mut edit.pos,
+                        ["X", "Y", "Z"],
+                        -100.0..=100.0,
+                        content_width,
+                    );
 
-                scalar_slider_row(
-                    ui,
-                    self.theme,
-                    "Range",
-                    &mut self.edit.light_range,
-                    0.1..=100.0,
-                    content_width,
-                    row_height,
-                );
+                    vec3_slider_row(
+                        ui,
+                        theme,
+                        "Rotation",
+                        &mut edit.rot,
+                        ["X", "Y", "Z"],
+                        -180.0..=180.0,
+                        content_width,
+                    );
 
-                ui.spacing(4.0);
-                ui.separator_line();
-                ui.spacing(4.0);
-            }
+                    vec3_slider_row(
+                        ui,
+                        theme,
+                        "Scale",
+                        &mut edit.scale,
+                        ["X", "Y", "Z"],
+                        0.01..=100.0,
+                        content_width,
+                    );
 
-            // ParticleEmitter section (if entity has ParticleEmitter)
-            if entity.particle_emitter.is_some() {
-                ui.draw_text(
-                    "Particle Emitter",
-                    ui.cursor(),
-                    self.theme.text_accent,
-                    ui.scaled_font_size(FontSize::Medium),
-                );
-                ui.spacing(row_height);
+                    ui.spacing(4.0);
+                    ui.separator_line();
+                    ui.spacing(4.0);
 
-                scalar_slider_row(
-                    ui,
-                    self.theme,
-                    "Emit Rate",
-                    &mut self.edit.emit_rate,
-                    0.0..=1000.0,
-                    content_width,
-                    row_height,
-                );
+                    // PointLight section (if entity has PointLight)
+                    if entity.point_light.is_some() {
+                        ui.draw_text(
+                            "Point Light",
+                            ui.cursor(),
+                            theme.text_accent,
+                            ui.scaled_font_size(FontSize::Medium),
+                        );
+                        ui.spacing(row_height);
 
-                scalar_slider_row(
-                    ui,
-                    self.theme,
-                    "Velocity",
-                    &mut self.edit.velocity,
-                    0.0..=50.0,
-                    content_width,
-                    row_height,
-                );
+                        // Color sliders (R, G, B)
+                        let font_size = ui.scaled_font_size(FontSize::Small);
+                        let indent = 8.0;
+                        let value_label_width = 18.0;
+                        let slider_area = content_width - indent - value_label_width;
 
-                scalar_slider_row(
-                    ui,
-                    self.theme,
-                    "Lifetime",
-                    &mut self.edit.lifetime,
-                    0.1..=30.0,
-                    content_width,
-                    row_height,
-                );
+                        for (i, axis_label) in ["R", "G", "B"].iter().enumerate() {
+                            let cursor = ui.cursor();
+                            let label_pos = Vec2::new(cursor.x() + indent, cursor.y());
+                            let color = match i {
+                                0 => Color::new(1.0, 0.3, 0.3, 1.0),
+                                1 => Color::new(0.3, 1.0, 0.3, 1.0),
+                                _ => Color::new(0.3, 0.3, 1.0, 1.0),
+                            };
+                            ui.draw_text(axis_label, label_pos, color, font_size);
 
-                scalar_slider_row(
-                    ui,
-                    self.theme,
-                    "Gravity",
-                    &mut self.edit.gravity,
-                    -30.0..=30.0,
-                    content_width,
-                    row_height,
-                );
+                            let slider_x = cursor.x() + indent + value_label_width;
+                            let slider_bounds = Rect2D::from_origin_size(
+                                Vec2::new(slider_x, cursor.y()),
+                                Vec2::new(slider_area, row_height),
+                            );
+                            let id = format!("light_color_{}", i);
+                            let _response = ui.add(
+                                Slider::new(&id, &mut edit.light_color[i], 0.0..=1.0)
+                                    .bounds(slider_bounds)
+                                    .id(&id),
+                            );
 
-                scalar_slider_row(
-                    ui,
-                    self.theme,
-                    "Particle Scale",
-                    &mut self.edit.particle_scale,
-                    0.01..=5.0,
-                    content_width,
-                    row_height,
-                );
+                            let val_text = format!("{:.2}", edit.light_color[i]);
+                            let val_pos = Vec2::new(slider_x + slider_area + 4.0, cursor.y());
+                            ui.draw_text(&val_text, val_pos, theme.text_primary, font_size);
+                            ui.spacing(row_height);
+                        }
 
-                ui.spacing(4.0);
-                ui.separator_line();
-                ui.spacing(4.0);
-            }
+                        scalar_slider_row(
+                            ui,
+                            theme,
+                            "Intensity",
+                            &mut edit.light_intensity,
+                            0.0..=100.0,
+                            content_width,
+                            row_height,
+                        );
 
-            // Type and Components (read-only)
-            ui.draw_text(
-                "Type",
-                ui.cursor(),
-                self.theme.text_accent,
-                ui.scaled_font_size(FontSize::Medium),
+                        scalar_slider_row(
+                            ui,
+                            theme,
+                            "Range",
+                            &mut edit.light_range,
+                            0.1..=100.0,
+                            content_width,
+                            row_height,
+                        );
+
+                        ui.spacing(4.0);
+                        ui.separator_line();
+                        ui.spacing(4.0);
+                    }
+
+                    // ParticleEmitter section (if entity has ParticleEmitter)
+                    if entity.particle_emitter.is_some() {
+                        ui.draw_text(
+                            "Particle Emitter",
+                            ui.cursor(),
+                            theme.text_accent,
+                            ui.scaled_font_size(FontSize::Medium),
+                        );
+                        ui.spacing(row_height);
+
+                        scalar_slider_row(
+                            ui,
+                            theme,
+                            "Emit Rate",
+                            &mut edit.emit_rate,
+                            0.0..=1000.0,
+                            content_width,
+                            row_height,
+                        );
+
+                        scalar_slider_row(
+                            ui,
+                            theme,
+                            "Velocity",
+                            &mut edit.velocity,
+                            0.0..=50.0,
+                            content_width,
+                            row_height,
+                        );
+
+                        scalar_slider_row(
+                            ui,
+                            theme,
+                            "Lifetime",
+                            &mut edit.lifetime,
+                            0.1..=30.0,
+                            content_width,
+                            row_height,
+                        );
+
+                        scalar_slider_row(
+                            ui,
+                            theme,
+                            "Gravity",
+                            &mut edit.gravity,
+                            -30.0..=30.0,
+                            content_width,
+                            row_height,
+                        );
+
+                        scalar_slider_row(
+                            ui,
+                            theme,
+                            "Particle Scale",
+                            &mut edit.particle_scale,
+                            0.01..=5.0,
+                            content_width,
+                            row_height,
+                        );
+
+                        ui.spacing(4.0);
+                        ui.separator_line();
+                        ui.spacing(4.0);
+                    }
+
+                    // Type and Components (read-only)
+                    ui.draw_text(
+                        "Type",
+                        ui.cursor(),
+                        theme.text_accent,
+                        ui.scaled_font_size(FontSize::Medium),
+                    );
+                    ui.spacing(row_height);
+                    ui.label(&entity.entity_type);
+
+                    ui.draw_text(
+                        "Components",
+                        ui.cursor(),
+                        theme.text_accent,
+                        ui.scaled_font_size(FontSize::Medium),
+                    );
+                    ui.spacing(row_height);
+                    for component_name in &entity.components {
+                        ui.label(component_name);
+                    }
+
+                    ui.spacing(8.0);
+
+                    let delete_bounds = Rect2D::from_origin_size(
+                        Vec2::new(content_x, ui.cursor().y()),
+                        Vec2::new(content_width, 28.0),
+                    );
+                    if ui
+                        .add(
+                            Button::new("Delete Entity")
+                                .bounds(delete_bounds)
+                                .id("delete_entity"),
+                        )
+                        .clicked
+                    {
+                        pending_actions.push(EditorAction::DeleteEntity(entity.id));
+                        *selected_entity = None;
+                    }
+
+                    content_bounds.height() + 200.0
+                },
             );
-            ui.spacing(row_height);
-            ui.label(&entity.entity_type);
-
-            ui.draw_text(
-                "Components",
-                ui.cursor(),
-                self.theme.text_accent,
-                ui.scaled_font_size(FontSize::Medium),
-            );
-            ui.spacing(row_height);
-            for component_name in &entity.components {
-                ui.label(component_name);
-            }
-
-            ui.spacing(8.0);
-
-            let delete_bounds = Rect2D::from_origin_size(
-                Vec2::new(content_x, ui.cursor().y()),
-                Vec2::new(content_width, 28.0),
-            );
-            if ui
-                .add(
-                    Button::new("Delete Entity")
-                        .bounds(delete_bounds)
-                        .id("delete_entity"),
-                )
-                .clicked
-            {
-                self.pending_actions
-                    .push(EditorAction::DeleteEntity(entity.id));
-                *self.selected_entity = None;
-            }
         } else {
             ui.draw_empty_state(self.bounds, "No entity selected");
         }
-
-        ui.end_column();
 
         Response::default()
     }

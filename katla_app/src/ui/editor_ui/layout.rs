@@ -254,6 +254,7 @@ impl EditorUI {
             &mut self.pending_actions,
             &self.theme,
             &mut self.inspector_edit,
+            &mut self.inspector_scroll_state,
         ));
 
         ui.draw_rect(

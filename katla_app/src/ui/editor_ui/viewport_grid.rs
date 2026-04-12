@@ -5,7 +5,7 @@
 
 use crate::resources::viewport_state::{ViewportGridState, ViewportLayout};
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::{Response, TextureId, UiContext, Widget};
+use katla_ui::{FontSize, Response, TextureId, UiContext, Widget};
 
 use super::ColorScheme;
 
@@ -123,7 +123,7 @@ impl<'a> Widget for ViewportGrid<'a> {
                     label,
                     label_pos,
                     Color::WHITE.with_alpha(0.7),
-                    12.0, // font size
+                    ui.scaled_font_size(FontSize::Small),
                 );
             }
         }
