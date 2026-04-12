@@ -54,6 +54,7 @@ impl MarkdownColors {
         }
     }
 
+    #[deprecated(since = "0.1.0", note = "Use MarkdownColors::from_style() instead")]
     pub fn defaults() -> Self {
         Self {
             bold: Color::new(0.4, 0.7, 1.0, 1.0),

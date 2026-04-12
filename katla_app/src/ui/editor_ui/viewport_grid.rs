@@ -119,6 +119,16 @@ impl<'a> Widget for ViewportGrid<'a> {
                 };
                 let label_pos =
                     Vec2::new(viewport_bounds.min.x() + 8.0, viewport_bounds.min.y() + 8.0);
+                let label_size = ui.measure_text(label, ui.scaled_font_size(FontSize::Small));
+                let bg_padding = 4.0;
+                let bg_bounds = Rect2D::from_origin_size(
+                    Vec2::new(label_pos.x() - bg_padding, label_pos.y() - bg_padding),
+                    Vec2::new(
+                        label_size.x() + bg_padding * 2.0,
+                        label_size.y() + bg_padding * 2.0,
+                    ),
+                );
+                ui.draw_rect(bg_bounds, Color::new(0.0, 0.0, 0.0, 0.4));
                 ui.draw_text(
                     label,
                     label_pos,

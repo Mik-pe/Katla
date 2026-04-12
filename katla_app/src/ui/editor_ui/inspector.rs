@@ -71,7 +71,7 @@ fn vec3_slider_row(
     ui.draw_text(label, ui.cursor(), theme.text_accent, font_size);
     ui.spacing(row_height);
 
-    let indent = 8.0;
+    let indent = ui.style().item_inner_spacing;
     let value_label_width = 18.0;
     let slider_area = slider_width - indent - value_label_width;
 
@@ -115,7 +115,7 @@ fn scalar_slider_row(
     let font_size = ui.scaled_font_size(FontSize::Small);
     let cursor = ui.cursor();
 
-    let label_width = 90.0;
+    let label_width = ui.style().property_label_width;
     let value_label_width = 50.0;
     let slider_area = slider_width - label_width - value_label_width;
 
@@ -160,7 +160,7 @@ impl<'a> Widget for Inspector<'a> {
 
         let row_height = 18.0;
         let content_x = self.bounds.min.x() + 8.0;
-        let content_width = self.bounds.width() - 16.0;
+        let content_width = self.bounds.width() - 2.0 * ui.style().panel_padding;
         let content_bounds = Rect2D::from_origin_size(
             Vec2::new(content_x, self.bounds.min.y() + header_height + 8.0),
             Vec2::new(content_width, self.bounds.height() - header_height - 8.0),
@@ -243,7 +243,7 @@ impl<'a> Widget for Inspector<'a> {
 
                         // Color sliders (R, G, B)
                         let font_size = ui.scaled_font_size(FontSize::Small);
-                        let indent = 8.0;
+                        let indent = ui.style().item_inner_spacing;
                         let value_label_width = 18.0;
                         let slider_area = content_width - indent - value_label_width;
 
