@@ -1975,6 +1975,189 @@ impl ResizeHandle {
 }
 
 // =============================================================================
+// TabBar Widget
+// =============================================================================
+
+/// A horizontal tab bar widget with active tab highlighting.
+///
+/// Renders evenly distributed tabs with a bottom separator. The active tab
+/// has no bottom border (merges with the content panel below). Clicking a tab
+/// updates the active index.
+///
+/// # Example
+///
+/// ```ignore
+/// use katla_ui::widgets::TabBar;
+///
+/// let mut active_tab = 0;
+/// let tabs = ["Transform", "Material", "Physics"];
+/// let resp = ui.add(TabBar::new(&mut active_tab, tabs).bounds(tab_bounds));
+/// if resp.clicked {
+///     println!("Switched to tab: {}", tabs[active_tab]);
+/// }
+/// ```
+pub struct TabBar<'a> {
+    active: &'a mut usize,
+    tabs: &'a [&'a str],
+    bounds: Rect2D,
+    id: Option<&'a str>,
+}
+
+impl<'a> TabBar<'a> {
+    /// Create a new tab bar.
+    ///
+    /// # Arguments
+    /// * `active` - Mutable reference to the active tab index
+    /// * `tabs` - Slice of tab labels
+    pub fn new(active: &'a mut usize, tabs: &'a [&'a str]) -> Self {
+        Self {
+            active,
+            tabs,
+            bounds: Rect2D::from_size(Vec2::new(200.0, 28.0)),
+            id: None,
+        }
+    }
+
+    /// Set the tab bar bounds.
+    pub fn bounds(mut self, bounds: Rect2D) -> Self {
+        self.bounds = bounds;
+        self
+    }
+
+    /// Set a custom ID.
+    pub fn id(mut self, id: &'a str) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Position the tab bar at the current cursor position with default size.
+    pub fn at_cursor(mut self, ui: &UiContext) -> Self {
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(self.bounds.width(), 28.0));
+        self
+    }
+
+    /// Position the tab bar at the current cursor with custom width.
+    pub fn at_cursor_width(mut self, ui: &UiContext, width: f32) -> Self {
+        self.bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(width, 28.0));
+        self
+    }
+}
+
+impl<'a> crate::Widget for TabBar<'a> {
+    fn ui(self, ui: &mut UiContext) -> Response {
+        let tab_count = self.tabs.len();
+        if tab_count == 0 {
+            return Response::new(self.bounds);
+        }
+
+        let active_bg = ui.style.window_bg;
+        let inactive_bg = ui.style.window_title_bg;
+        let hover_bg = ui.style.button_hovered;
+        let active_text = ui.style.text_color;
+        let inactive_text = ui.style.text_disabled;
+        let separator_color = ui.style.separator;
+        let font_size = ui.style.font_size;
+
+        let tab_width = self.bounds.width() / tab_count as f32;
+        let separator_y = self.bounds.max.y();
+
+        // Draw bottom separator line across full width
+        ui.draw_line(
+            Vec2::new(self.bounds.min.x(), separator_y),
+            Vec2::new(self.bounds.max.x(), separator_y),
+            separator_color,
+            1.0,
+        );
+
+        let mut clicked = false;
+        let mut hovered_any = false;
+
+        for (i, tab_label) in self.tabs.iter().enumerate() {
+            let tab_min = Vec2::new(
+                self.bounds.min.x() + tab_width * i as f32,
+                self.bounds.min.y(),
+            );
+            let tab_bounds =
+                Rect2D::from_origin_size(tab_min, Vec2::new(tab_width, self.bounds.height()));
+            let tab_id = ui.generate_id(&format!("tab_{}", i));
+
+            ui.register_focusable(tab_id, tab_bounds);
+            let tab_hovered = ui.update_hover(tab_id, tab_bounds);
+
+            let is_active = i == *self.active;
+
+            // Draw tab background
+            let bg_color = if is_active {
+                active_bg
+            } else if tab_hovered {
+                hover_bg
+            } else {
+                inactive_bg
+            };
+            ui.draw_rect(tab_bounds, bg_color);
+
+            // If active, redraw separator line segments on either side (gap over active tab)
+            if is_active {
+                // Left gap segment
+                if i > 0 {
+                    ui.draw_line(
+                        Vec2::new(self.bounds.min.x(), separator_y),
+                        Vec2::new(tab_bounds.min.x(), separator_y),
+                        separator_color,
+                        1.0,
+                    );
+                }
+                // Right gap segment
+                if i < tab_count - 1 {
+                    ui.draw_line(
+                        Vec2::new(tab_bounds.max.x(), separator_y),
+                        Vec2::new(self.bounds.max.x(), separator_y),
+                        separator_color,
+                        1.0,
+                    );
+                }
+            }
+
+            // Draw tab text
+            let text_color = if is_active {
+                active_text
+            } else {
+                inactive_text
+            };
+            let text_size = ui.measure_text(tab_label, font_size);
+            let text_pos = Vec2::new(
+                tab_bounds.center().x() - text_size.x() * 0.5,
+                tab_bounds.center().y() - text_size.y() * 0.5,
+            );
+            ui.draw_text(tab_label, text_pos, text_color, font_size);
+
+            // Click detection
+            let click_result = ui.click_interaction(
+                tab_id,
+                tab_hovered,
+                tab_bounds,
+                crate::context::interaction::ClickConfig::POPUP_AWARE,
+            );
+            if click_result.is_clicked() && !is_active {
+                *self.active = i;
+                clicked = true;
+            }
+
+            if tab_hovered {
+                hovered_any = true;
+                ui.input.set_cursor(crate::input::MouseCursor::Hand);
+            }
+        }
+
+        let mut response = Response::new(self.bounds);
+        response.clicked = clicked;
+        response.hovered = hovered_any;
+        response.changed = clicked;
+        response
+    }
+}
+
+// =============================================================================
 // MenuBar Widget
 // =============================================================================
 
