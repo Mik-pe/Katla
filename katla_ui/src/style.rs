@@ -432,6 +432,38 @@ pub struct UiStyle {
 
     /// Focus ring color drawn around the focused widget during Tab navigation.
     pub focus_ring_color: Color,
+
+    // Widget state colors
+    /// Background color for hovered widgets.
+    pub widget_hovered_bg: Color,
+    /// Background color for active/focused widgets.
+    pub widget_active_bg: Color,
+    /// Background color for pressed widgets.
+    pub widget_pressed_bg: Color,
+    /// Width of the focus ring drawn around focused widgets.
+    pub focus_ring_width: f32,
+
+    // Menu colors
+    /// Background color for hovered menu items.
+    pub menu_item_hover_bg: Color,
+    /// Color for check marks in checkboxes and menus.
+    pub check_mark_color: Color,
+
+    // Tab bar colors
+    /// Height of the tab bar.
+    pub tab_bar_height: f32,
+    /// Background color for inactive tabs.
+    pub tab_inactive_bg: Color,
+    /// Background color for the active tab.
+    pub tab_active_bg: Color,
+    /// Background color for hovered tabs.
+    pub tab_hover_bg: Color,
+    /// Text color for inactive tabs.
+    pub tab_text: Color,
+    /// Text color for the active tab.
+    pub tab_active_text: Color,
+    /// Border color for tabs.
+    pub tab_border: Color,
 }
 
 impl ColorScheme {
@@ -1309,6 +1341,22 @@ impl UiStyle {
             scrollbar_handle: Color::BLACK,
             scrollbar_handle_hovered: Color::BLACK,
             focus_ring_color: Color::BLACK,
+
+            widget_hovered_bg: Color::from_rgb_hex(0x404040),
+            widget_active_bg: Color::from_rgb_hex(0x505050),
+            widget_pressed_bg: Color::from_rgb_hex(0x353535),
+            focus_ring_width: 2.0,
+
+            menu_item_hover_bg: Color::from_rgb_hex(0x404060),
+            check_mark_color: Color::from_rgb_hex(0xaabbcc),
+
+            tab_bar_height: 28.0,
+            tab_inactive_bg: Color::from_rgb_hex(0x2a2a2a),
+            tab_active_bg: Color::from_rgb_hex(0x1e1e2e),
+            tab_hover_bg: Color::from_rgb_hex(0x333344),
+            tab_text: Color::from_rgb_hex(0x888888),
+            tab_active_text: Color::from_rgb_hex(0xcccccc),
+            tab_border: Color::from_rgb_hex(0x404040),
         }
     }
 
