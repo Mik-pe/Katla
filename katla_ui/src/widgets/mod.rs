@@ -1772,6 +1772,12 @@ pub use list_view::ListView;
 mod tree;
 pub use tree::{RenderItemFn, RowInfo, TreeItem, TreeState, TreeView};
 
+mod dock;
+pub use dock::{
+    DockLayout, DockNode, DockPanelId, DockTabBar, DockTabBarResponse, FloatingDockWindow,
+    SplitDirection,
+};
+
 // =============================================================================
 // ComboBox Widget
 // =============================================================================
