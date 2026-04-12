@@ -235,13 +235,15 @@ impl UiContext {
             // Track
             self.draw_rect(scrollbar_bounds, self.style.scrollbar_track);
 
-            // Handle
-            let handle_color = if self.active_id.is_some() || self.is_hovered(handle_bounds) {
-                self.style.scrollbar_handle_hovered
-            } else {
-                self.style.scrollbar_handle
-            };
-            self.draw_rect(handle_bounds, handle_color);
+            // Handle (rounded, with hover highlight)
+            let handle_color =
+                if self.active_id == Some(scrollbar_id) || self.is_hovered(handle_bounds) {
+                    self.style.scrollbar_handle_hovered
+                } else {
+                    self.style.scrollbar_handle
+                };
+            let thumb_rounding = self.style.button_rounding.min(scrollbar_width * 0.5);
+            self.draw_rounded_rect(handle_bounds, handle_color, thumb_rounding);
         }
 
         // Clear stored state
