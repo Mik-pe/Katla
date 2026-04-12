@@ -306,7 +306,11 @@ impl<'a> Frame<'a> {
             }
 
             // vk::Buffer is Copy, so this is fine to return from the borrow
-            ui_resources.uniform_buffer.as_ref().unwrap().0
+            ui_resources
+                .uniform_buffer
+                .as_ref()
+                .expect("UI uniform buffer should be allocated before rendering")
+                .0
         };
 
         let uniform_ptr = {
@@ -316,7 +320,7 @@ impl<'a> Frame<'a> {
                 .ui_resources_mut()
                 .uniform_buffer
                 .as_ref()
-                .unwrap()
+                .expect("UI uniform buffer should be allocated before mapping")
                 .1;
             self.renderer.context.map_buffer(allocation)?
         };

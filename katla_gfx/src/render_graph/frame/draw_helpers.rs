@@ -122,12 +122,16 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
             // Switch pipeline if needed
             if target_variant != current_variant {
                 let (new_pipe, new_layout) = match target_variant {
-                    PipelineVariant::Skinned => {
-                        (skinned_pipeline.unwrap(), skinned_layout.unwrap())
-                    }
-                    PipelineVariant::Billboard => {
-                        (billboard_pipeline.unwrap(), billboard_layout.unwrap())
-                    }
+                    PipelineVariant::Skinned => (
+                        skinned_pipeline.expect("skinned pipeline required after is_skinned check"),
+                        skinned_layout.expect("skinned layout required after is_skinned check"),
+                    ),
+                    PipelineVariant::Billboard => (
+                        billboard_pipeline
+                            .expect("billboard pipeline required after is_billboard check"),
+                        billboard_layout
+                            .expect("billboard layout required after is_billboard check"),
+                    ),
                     PipelineVariant::Regular => (pipeline, layout),
                 };
                 unsafe {
@@ -156,7 +160,8 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
 
             // Bind skeleton descriptor set for skinned meshes
             if is_skinned {
-                let skel_layout = skinned_layout.unwrap();
+                let skel_layout = skinned_layout
+                    .expect("skinned layout required for skeleton descriptor binding");
                 let skeleton_ds = renderer
                     .get_skeleton_descriptor(draw_call.skeleton)
                     .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;

@@ -206,11 +206,19 @@ impl<'a> Frame<'a> {
                             self.renderer.context.device.cmd_bind_pipeline(
                                 cmd.vk_command_buffer(),
                                 vk::PipelineBindPoint::GRAPHICS,
-                                skinned_pipeline.unwrap(),
+                                skinned_pipeline.expect(
+                                    "skinned pipeline required for skinned draw call",
+                                ),
                             );
                         }
                         let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-                        cmd.bind_descriptor_sets(skinned_layout.unwrap(), 0, &[storage_ds], &[]);
+                        cmd.bind_descriptor_sets(
+                            skinned_layout
+                                .expect("skinned layout required for skinned pipeline switch"),
+                            0,
+                            &[storage_ds],
+                            &[],
+                        );
                     } else {
                         unsafe {
                             self.renderer.context.device.cmd_bind_pipeline(
@@ -232,7 +240,8 @@ impl<'a> Frame<'a> {
                         .get_skeleton_descriptor(draw_call.skeleton)
                         .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
                     cmd.bind_descriptor_sets(
-                        skinned_layout.unwrap(),
+                        skinned_layout
+                            .expect("skinned layout required for skeleton descriptor binding"),
                         2,
                         &[skeleton_ds.vk_set()],
                         &[],

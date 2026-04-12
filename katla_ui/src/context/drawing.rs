@@ -174,64 +174,76 @@ impl UiContext {
     pub fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
         let font_atlas = self.fonts.borrow().atlas_id();
 
-        // Calculate subpixel bin from TEXT START position.
-        // All characters share the same bin so the text moves as a unit.
         let (floor_x, subpixel_bin) = SubpixelBin::new(position.x());
         let start_x = floor_x as f32;
 
-        // Get line height for multiline support
         let line_height = self.line_height(size);
+        let font_ascent = self.font_ascent(size);
+        let baseline_y_start = (position.y() + font_ascent).round();
 
-        // Round Y position to integer for crisp vertical alignment
-        let mut baseline_y = (position.y() + self.font_ascent(size)).round();
+        struct GlyphEntry {
+            bounds: Rect2D,
+            uv_rect: Rect2D,
+            is_placeholder: bool,
+        }
 
-        // Cursor tracks offset relative to start_x
+        let mut glyphs = Vec::new();
         let mut cursor_offset = 0.0f32;
+        let mut current_baseline = baseline_y_start;
 
-        self.draw_list.set_clip(self.clip_rect());
-
-        for c in text.chars() {
-            // Handle newlines - move to next line
-            if c == '\n' {
-                cursor_offset = 0.0;
-                baseline_y += line_height;
-                continue;
-            }
-
-            // Get glyph with the shared subpixel bin
-            if let Some(glyph) = self.fonts.borrow_mut().get_or_rasterize(
-                self.current_font,
-                c,
-                size,
-                self.scale_factor,
-                subpixel_bin,
-            ) {
-                // Skip empty glyphs (spaces)
-                if glyph.size.x() == 0.0 || glyph.size.y() == 0.0 {
-                    cursor_offset += glyph.advance;
+        {
+            let mut fonts = self.fonts.borrow_mut();
+            for c in text.chars() {
+                if c == '\n' {
+                    cursor_offset = 0.0;
+                    current_baseline += line_height;
                     continue;
                 }
 
-                // Position is RELATIVE to the integer start position
-                let pos_x = start_x + cursor_offset + glyph.offset_x;
-                let pos_y = baseline_y - glyph.top_offset;
-
-                let bounds = Rect2D::from_origin_size(Vec2::new(pos_x, pos_y), glyph.size);
-
-                // Draw glyph as textured quad
-                self.draw_list
-                    .add_textured_rect(bounds, glyph.uv_rect, color, font_atlas);
-
-                cursor_offset += glyph.advance;
-            } else {
-                // No glyph available - draw placeholder
-                let placeholder_size = Vec2::new(size * 0.6, size);
-                let bounds = Rect2D::from_origin_size(
-                    Vec2::new(start_x + cursor_offset, baseline_y - self.font_ascent(size)),
-                    placeholder_size,
+                let glyph = fonts.get_or_rasterize(
+                    self.current_font,
+                    c,
+                    size,
+                    self.scale_factor,
+                    subpixel_bin,
                 );
-                self.draw_rect_border(bounds, Color::TRANSPARENT, color, 1.0);
-                cursor_offset += placeholder_size.x();
+                if let Some(glyph) = glyph {
+                    if glyph.size.x() == 0.0 || glyph.size.y() == 0.0 {
+                        cursor_offset += glyph.advance;
+                        continue;
+                    }
+
+                    let pos_x = start_x + cursor_offset + glyph.offset_x;
+                    let pos_y = current_baseline - glyph.top_offset;
+
+                    glyphs.push(GlyphEntry {
+                        bounds: Rect2D::from_origin_size(Vec2::new(pos_x, pos_y), glyph.size),
+                        uv_rect: glyph.uv_rect,
+                        is_placeholder: false,
+                    });
+                    cursor_offset += glyph.advance;
+                } else {
+                    let placeholder_size = Vec2::new(size * 0.6, size);
+                    glyphs.push(GlyphEntry {
+                        bounds: Rect2D::from_origin_size(
+                            Vec2::new(start_x + cursor_offset, current_baseline - font_ascent),
+                            placeholder_size,
+                        ),
+                        uv_rect: Rect2D::default(),
+                        is_placeholder: true,
+                    });
+                    cursor_offset += placeholder_size.x();
+                }
+            }
+        }
+
+        self.draw_list.set_clip(self.clip_rect());
+        for entry in &glyphs {
+            if entry.is_placeholder {
+                self.draw_rect_border(entry.bounds, Color::TRANSPARENT, color, 1.0);
+            } else {
+                self.draw_list
+                    .add_textured_rect(entry.bounds, entry.uv_rect, color, font_atlas);
             }
         }
     }
@@ -379,13 +391,14 @@ impl UiContext {
         let mut buf = [0u8; 4];
         let icon_str = icon.encode_utf8(&mut buf);
 
-        if let Some(glyph) = self.fonts.borrow_mut().get_or_rasterize(
+        let glyph = self.fonts.borrow_mut().get_or_rasterize(
             FontId::ICON,
             icon,
             size,
             self.scale_factor,
             subpixel_bin,
-        ) {
+        );
+        if let Some(glyph) = glyph {
             if glyph.size.x() > 0.0 && glyph.size.y() > 0.0 {
                 let draw_pos = center_in_bounds(bounds, glyph.size);
 
