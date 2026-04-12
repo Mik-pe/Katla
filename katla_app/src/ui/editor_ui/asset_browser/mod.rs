@@ -199,12 +199,12 @@ pub fn build_asset_browser(
         Vec2::new(nav_btn_size, nav_btn_size),
     );
 
-    if ui
-        .add(katla_ui::widgets::ImageButton::new(ForkAwesome::REFRESH).bounds(refresh_bounds))
-        .clicked
-    {
+    let refresh_resp =
+        ui.add(katla_ui::widgets::ImageButton::new(ForkAwesome::REFRESH).bounds(refresh_bounds));
+    if refresh_resp.clicked {
         state.refresh(thumbnail_texture_handles);
     }
+    refresh_resp.on_hover_tooltip(ui, "Refresh");
     nav_x -= nav_btn_size + 2.0;
 
     // Forward button
@@ -214,16 +214,15 @@ pub fn build_asset_browser(
     );
     let can_forward = state.can_go_forward();
 
-    if ui
-        .add(
-            ImageButton::new(ForkAwesome::ARROW_RIGHT)
-                .bounds(forward_bounds)
-                .enabled(can_forward),
-        )
-        .clicked
-    {
+    let forward_resp = ui.add(
+        ImageButton::new(ForkAwesome::ARROW_RIGHT)
+            .bounds(forward_bounds)
+            .enabled(can_forward),
+    );
+    if forward_resp.clicked {
         state.navigate_forward(thumbnail_texture_handles);
     }
+    forward_resp.on_hover_tooltip(ui, "Forward");
     nav_x -= nav_btn_size + 2.0;
 
     // Back button
@@ -233,16 +232,15 @@ pub fn build_asset_browser(
     );
     let can_back = state.can_go_back();
 
-    if ui
-        .add(
-            ImageButton::new(ForkAwesome::ARROW_LEFT)
-                .bounds(back_bounds)
-                .enabled(can_back),
-        )
-        .clicked
-    {
+    let back_resp = ui.add(
+        ImageButton::new(ForkAwesome::ARROW_LEFT)
+            .bounds(back_bounds)
+            .enabled(can_back),
+    );
+    if back_resp.clicked {
         state.navigate_back(thumbnail_texture_handles);
     }
+    back_resp.on_hover_tooltip(ui, "Back");
 
     // Search box (left of navigation buttons)
     let search_width = 100.0;

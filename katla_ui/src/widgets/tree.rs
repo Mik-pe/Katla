@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use katla_icons::ForkAwesome;
 use katla_math::{Rect2D, Vec2};
 
 use crate::input::KeyCode;
@@ -263,9 +264,9 @@ impl Widget for TreeView<'_> {
 
                     if item.has_children {
                         let arrow_char = if self.state.is_expanded(item.id) {
-                            '▼'
+                            ForkAwesome::CHEVRON_DOWN
                         } else {
-                            '▶'
+                            ForkAwesome::CHEVRON_RIGHT
                         };
                         let arrow_text = arrow_char.to_string();
                         let arrow_size = ui.measure_text(&arrow_text, font_size);

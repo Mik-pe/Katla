@@ -3,7 +3,7 @@
 //! All functions use `&mut bool` for open state, allowing the caller to control
 //! when popups open and close.
 
-use katla_math::{Color, Rect2D, Vec2};
+use katla_math::{Rect2D, Vec2};
 
 use super::super::{UiContext, z_index};
 use super::{Popup, PopupPosition, PopupStyle};
@@ -64,7 +64,7 @@ impl UiContext {
         // For modal, draw dark overlay first
         if config.style == PopupStyle::Modal {
             let screen_bounds = Rect2D::from_size(self.screen_size);
-            self.draw_rect(screen_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
+            self.draw_rect(screen_bounds, self.style.popup_shadow);
         }
 
         // Set up rendering state
