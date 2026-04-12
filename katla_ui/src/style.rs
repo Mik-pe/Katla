@@ -1203,10 +1203,10 @@ impl Default for ColorScheme {
 impl UiStyle {
     fn default_dimensions() -> Self {
         Self {
-            window_rounding: 4.0,
-            window_padding: 8.0,
-            button_rounding: 4.0,
-            input_rounding: 2.0,
+            window_rounding: 6.0,
+            window_padding: 10.0,
+            button_rounding: 6.0,
+            input_rounding: 4.0,
             font_size: FontSize::Medium.to_pixels(),
 
             text_input_max_length: 256,
@@ -1217,7 +1217,7 @@ impl UiStyle {
             menu_padding: 4.0,
             menu_min_width: 120.0,
 
-            popup_rounding: 4.0,
+            popup_rounding: 6.0,
 
             item_spacing: 8.0,
             item_inner_spacing: 4.0,
