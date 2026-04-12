@@ -7,14 +7,14 @@ use crate::resources::viewport_state::{ViewportGridState, ViewportLayout};
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::{Response, TextureId, UiContext, Widget};
 
-use super::Theme;
+use super::ColorScheme;
 
 /// Widget that displays multiple viewports in a grid layout.
 pub struct ViewportGrid<'a> {
     pub bounds: Rect2D,
     pub state: &'a ViewportGridState,
     pub texture_ids: &'a [Option<TextureId>; 4],
-    pub theme: &'a Theme,
+    pub theme: &'a ColorScheme,
 }
 
 impl<'a> ViewportGrid<'a> {
@@ -22,7 +22,7 @@ impl<'a> ViewportGrid<'a> {
         bounds: Rect2D,
         state: &'a ViewportGridState,
         texture_ids: &'a [Option<TextureId>; 4],
-        theme: &'a Theme,
+        theme: &'a ColorScheme,
     ) -> Self {
         Self {
             bounds,
@@ -148,13 +148,13 @@ mod tests {
 
     fn run_test<F>(layout: ViewportLayout, test_fn: F)
     where
-        F: FnOnce(&mut ViewportGrid, &Theme),
+        F: FnOnce(&mut ViewportGrid, &ColorScheme),
     {
         let state = create_test_state(layout);
         let texture_ids = [None; 4];
         let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(800.0, 600.0));
 
-        let theme = Theme::default();
+        let theme = ColorScheme::default();
         let mut grid = ViewportGrid::new(bounds, &state, &texture_ids, &theme);
         test_fn(&mut grid, &theme);
     }

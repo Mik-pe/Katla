@@ -139,7 +139,7 @@ impl EditorState {
     /// Construct EditorState from its component parts.
     pub(crate) fn new(
         ui_renderer: crate::ui::UIRenderer,
-        theme: crate::ui::Theme,
+        theme: crate::ui::ColorScheme,
         preferences: &Preferences,
         gui_state: crate::gui_state::GuiState,
     ) -> Self {

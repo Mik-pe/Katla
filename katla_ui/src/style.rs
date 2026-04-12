@@ -11,6 +11,9 @@ use katla_math::Color;
 /// build a complete style.
 #[derive(Debug, Clone)]
 pub struct ColorScheme {
+    /// Human-readable display name (e.g. "Catppuccin Mocha").
+    pub name: &'static str,
+
     pub window_bg: Color,
     pub window_title_bg: Color,
     pub window_title_bg_active: Color,
@@ -76,6 +79,8 @@ pub struct ColorScheme {
     pub warning: Color,
     /// Status: error (red).
     pub error: Color,
+    /// Status: info (blue/cyan).
+    pub info: Color,
 
     /// Entity type color for mesh entities.
     pub entity_mesh: Color,
@@ -99,10 +104,12 @@ pub struct ColorScheme {
     /// Viewport border color.
     pub viewport_border: Color,
 
+    /// Base background color.
+    pub background: Color,
     /// Darker background variant.
     pub background_dark: Color,
-    /// Medium background variant.
-    pub background_medium: Color,
+    /// Lighter background variant.
+    pub background_light: Color,
 
     /// Primary text color (high contrast).
     pub text_primary: Color,
@@ -110,6 +117,8 @@ pub struct ColorScheme {
     pub text_secondary: Color,
     /// Muted text color (low contrast).
     pub text_muted: Color,
+    /// Accent text color (for labels, material names).
+    pub text_accent: Color,
 
     /// Panel background color.
     pub panel_bg: Color,
@@ -117,6 +126,11 @@ pub struct ColorScheme {
     pub panel_border: Color,
     /// Panel header background color.
     pub panel_header: Color,
+
+    /// Button background (alias for button_normal, used by editor panels).
+    pub button_bg: Color,
+    /// Button hover (alias for button_hovered, used by editor panels).
+    pub button_hover: Color,
 }
 
 /// Predefined font sizes in points.
@@ -424,6 +438,7 @@ impl ColorScheme {
     /// Returns the color scheme for the dark theme.
     fn dark() -> Self {
         Self {
+            name: "Dark",
             window_bg: Color::from_rgb_hex(0x2a2a2a),
             window_title_bg: Color::from_rgb_hex(0x3a3a3a),
             window_title_bg_active: Color::from_rgb_hex(0x4a4a4a),
@@ -484,6 +499,7 @@ impl ColorScheme {
             success: Color::from_rgb_hex(0xa6da95),
             warning: Color::from_rgb_hex(0xf9e2af),
             error: Color::from_rgb_hex(0xf38ba8),
+            info: Color::from_rgb_hex(0x89d9eb),
 
             entity_mesh: Color::from_rgb_hex(0xa6da95),
             entity_light: Color::from_rgb_hex(0xf9e2af),
@@ -498,22 +514,28 @@ impl ColorScheme {
 
             viewport_border: Color::from_rgb_hex(0x4a9eff),
 
+            background: Color::from_rgb_hex(0x2a2a2a),
             background_dark: Color::from_rgb_hex(0x181825),
-            background_medium: Color::from_rgb_hex(0x313244),
+            background_light: Color::from_rgb_hex(0x313244),
 
             text_primary: Color::from_rgb_hex(0xcdd6f4),
             text_secondary: Color::from_rgb_hex(0xbac2de),
             text_muted: Color::from_rgb_hex(0x6c7086),
+            text_accent: Color::from_rgb_hex(0xa6da95),
 
             panel_bg: Color::from_rgb_hex(0x1e1e2e),
             panel_border: Color::from_rgb_hex(0x45475a),
             panel_header: Color::from_rgb_hex(0x313244),
+
+            button_bg: Color::from_rgb_hex(0x404040),
+            button_hover: Color::from_rgb_hex(0x505050),
         }
     }
 
     /// Returns the color scheme for the light theme.
     fn light() -> Self {
         Self {
+            name: "Light",
             window_bg: Color::from_rgb_hex(0xf0f0f0),
             window_title_bg: Color::from_rgb_hex(0xe0e0e0),
             window_title_bg_active: Color::from_rgb_hex(0xd0d0d0),
@@ -574,6 +596,7 @@ impl ColorScheme {
             success: Color::from_rgb_hex(0x40a02b),
             warning: Color::from_rgb_hex(0xdf8e1d),
             error: Color::from_rgb_hex(0xd20f39),
+            info: Color::from_rgb_hex(0x4a9eff),
 
             entity_mesh: Color::from_rgb_hex(0x40a02b),
             entity_light: Color::from_rgb_hex(0xdf8e1d),
@@ -588,22 +611,28 @@ impl ColorScheme {
 
             viewport_border: Color::from_rgb_hex(0x4a9eff),
 
+            background: Color::from_rgb_hex(0xf0f0f0),
             background_dark: Color::from_rgb_hex(0xe0e0e0),
-            background_medium: Color::from_rgb_hex(0xe8e8e8),
+            background_light: Color::from_rgb_hex(0xe8e8e8),
 
             text_primary: Color::from_rgb_hex(0x222222),
             text_secondary: Color::from_rgb_hex(0x555555),
             text_muted: Color::from_rgb_hex(0x888888),
+            text_accent: Color::from_rgb_hex(0x40a02b),
 
             panel_bg: Color::from_rgb_hex(0xf0f0f0),
             panel_border: Color::from_rgb_hex(0xc0c0c0),
             panel_header: Color::from_rgb_hex(0xe0e0e0),
+
+            button_bg: Color::from_rgb_hex(0xe0e0e0),
+            button_hover: Color::from_rgb_hex(0xd0d0d0),
         }
     }
 
     /// Returns the color scheme for the classic theme.
     fn classic() -> Self {
         Self {
+            name: "Classic",
             window_bg: Color::from_rgb_hex(0x2b2b2b),
             window_title_bg: Color::from_rgb_hex(0x1f1f1f),
             window_title_bg_active: Color::from_rgb_hex(0x3465a4),
@@ -664,6 +693,7 @@ impl ColorScheme {
             success: Color::from_rgb_hex(0x4ec9b0),
             warning: Color::from_rgb_hex(0xdcdcaa),
             error: Color::from_rgb_hex(0xf44747),
+            info: Color::from_rgb_hex(0x569cd6),
 
             entity_mesh: Color::from_rgb_hex(0x4ec9b0),
             entity_light: Color::from_rgb_hex(0xdcdcaa),
@@ -678,22 +708,350 @@ impl ColorScheme {
 
             viewport_border: Color::from_rgb_hex(0x3465a4),
 
+            background: Color::from_rgb_hex(0x2b2b2b),
             background_dark: Color::from_rgb_hex(0x1a1a1a),
-            background_medium: Color::from_rgb_hex(0x3a3a3a),
+            background_light: Color::from_rgb_hex(0x3a3a3a),
 
             text_primary: Color::from_rgb_hex(0xeeeeee),
             text_secondary: Color::from_rgb_hex(0xbbbbbb),
             text_muted: Color::from_rgb_hex(0x777777),
+            text_accent: Color::from_rgb_hex(0x4ec9b0),
 
             panel_bg: Color::from_rgb_hex(0x2b2b2b),
             panel_border: Color::from_rgb_hex(0x555555),
             panel_header: Color::from_rgb_hex(0x1f1f1f),
+
+            button_bg: Color::from_rgb_hex(0x4a4a4a),
+            button_hover: Color::from_rgb_hex(0x5a5a5a),
         }
     }
+}
 
+macro_rules! color_scheme {
+    (
+            name: $name:expr,
+            bg: $bg:expr, $bg_light:expr, $bg_dark:expr,
+            panel: $panel_bg:expr, $panel_header:expr, $panel_border:expr,
+            text: $text_primary:expr, $text_secondary:expr, $text_muted:expr, $text_accent:expr,
+            button: $button_bg:expr, $button_hover:expr, $button_active:expr, $button_text:expr,
+            selection: $selection:expr, $selection_hover:expr, $highlight:expr,
+            misc: $separator:expr, $border:expr,
+            entity: $mesh:expr, $particle:expr, $light:expr, $empty:expr,
+            status: $success:expr, $warning:expr, $error:expr, $info:expr,
+            viewport: $viewport_border:expr,
+            popup: $popup_bg:expr, $popup_border:expr,
+        ) => {
+        ColorScheme {
+            name: $name,
+            window_bg: Color::from_rgb_hex($panel_bg),
+            window_title_bg: Color::from_rgb_hex($panel_header),
+            window_title_bg_active: Color::from_rgb_hex($panel_header),
+            window_title_text: Color::from_rgb_hex($text_primary),
+            window_border: Color::from_rgb_hex($panel_border),
+
+            button_normal: Color::from_rgb_hex($button_bg),
+            button_hovered: Color::from_rgb_hex($button_hover),
+            button_active: Color::from_rgb_hex($button_active),
+            button_text: Color::from_rgb_hex($button_text),
+
+            input_bg: Color::from_rgb_hex($panel_bg),
+            input_border: Color::from_rgb_hex($border),
+            input_text: Color::from_rgb_hex($text_primary),
+            input_cursor: Color::from_rgb_hex($text_primary),
+            input_border_focused: Color::from_rgb_hex($highlight),
+            input_selection: Color::from_rgb_hex($selection).with_alpha(0.4),
+
+            text_color: Color::from_rgb_hex($text_primary),
+            text_disabled: Color::from_rgb_hex($text_muted),
+            text_hint: Color::from_rgb_hex($text_muted),
+
+            checkbox_bg: Color::from_rgb_hex($panel_bg),
+            checkbox_check: Color::from_rgb_hex($selection),
+            checkbox_border: Color::from_rgb_hex($border),
+
+            slider_track: Color::from_rgb_hex($border),
+            slider_grab: Color::from_rgb_hex($selection),
+            slider_grab_hovered: Color::from_rgb_hex($selection_hover),
+            slider_grab_active: Color::from_rgb_hex($selection),
+
+            separator: Color::from_rgb_hex($separator),
+            border: Color::from_rgb_hex($border),
+
+            menu_bg: Color::from_rgb_hex($popup_bg),
+            menu_hovered: Color::from_rgb_hex($selection_hover),
+            menu_active: Color::from_rgb_hex($selection),
+            menu_border: Color::from_rgb_hex($popup_border),
+
+            popup_bg: Color::from_rgb_hex($popup_bg),
+            popup_border: Color::from_rgb_hex($popup_border),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
+
+            selectable_hovered: Color::from_rgb_hex($selection_hover),
+            selectable_selected: Color::from_rgb_hex($selection),
+
+            combo_bg: Color::from_rgb_hex($button_bg),
+            combo_border: Color::from_rgb_hex($border),
+            combo_hovered: Color::from_rgb_hex($button_hover),
+            combo_text: Color::from_rgb_hex($text_primary),
+
+            scrollbar_track: Color::from_rgb_hex($bg_dark),
+            scrollbar_handle: Color::from_rgb_hex($border),
+            scrollbar_handle_hovered: Color::from_rgb_hex($panel_border),
+
+            focus_ring_color: Color::from_rgb_hex($selection),
+
+            success: Color::from_rgb_hex($success),
+            warning: Color::from_rgb_hex($warning),
+            error: Color::from_rgb_hex($error),
+            info: Color::from_rgb_hex($info),
+
+            entity_mesh: Color::from_rgb_hex($mesh),
+            entity_light: Color::from_rgb_hex($light),
+            entity_particle: Color::from_rgb_hex($particle),
+            entity_empty: Color::from_rgb_hex($empty),
+
+            accent: Color::from_rgb_hex($text_accent),
+            highlight: Color::from_rgb_hex($highlight),
+
+            selection: Color::from_rgb_hex($selection),
+            selection_hover: Color::from_rgb_hex($selection_hover),
+
+            viewport_border: Color::from_rgb_hex($viewport_border),
+
+            background: Color::from_rgb_hex($bg),
+            background_dark: Color::from_rgb_hex($bg_dark),
+            background_light: Color::from_rgb_hex($bg_light),
+
+            text_primary: Color::from_rgb_hex($text_primary),
+            text_secondary: Color::from_rgb_hex($text_secondary),
+            text_muted: Color::from_rgb_hex($text_muted),
+            text_accent: Color::from_rgb_hex($text_accent),
+
+            panel_bg: Color::from_rgb_hex($panel_bg),
+            panel_border: Color::from_rgb_hex($panel_border),
+            panel_header: Color::from_rgb_hex($panel_header),
+
+            button_bg: Color::from_rgb_hex($button_bg),
+            button_hover: Color::from_rgb_hex($button_hover),
+        }
+    };
+}
+
+impl ColorScheme {
+    pub fn catppuccin() -> Self {
+        color_scheme!(
+            name: "Catppuccin Mocha",
+            bg: 0x1E1E2E, 0x313244, 0x181825,
+            panel: 0x1E1E2E, 0x313244, 0x45475A,
+            text: 0xC9CBFF, 0xBABCF2, 0x6C7086, 0xA6DA95,
+            button: 0x313244, 0x45475A, 0x89B4FA, 0xC9CBFF,
+            selection: 0x89B4FA, 0x74C7EC, 0xF5C2E7,
+            misc: 0x45475A, 0x585B70,
+            entity: 0xA6DA95, 0xFAB387, 0xF9E2AF, 0x6C7086,
+            status: 0xA6DA95, 0xF9E2AF, 0xF38BA8, 0x89D9EB,
+            viewport: 0x89B4FA,
+            popup: 0x313244, 0x45475A,
+        )
+    }
+
+    pub fn nord() -> Self {
+        color_scheme!(
+            name: "Nord",
+            bg: 0x2E3440, 0x3B4252, 0x242933,
+            panel: 0x2E3440, 0x3B4252, 0x4C566A,
+            text: 0xECEFF4, 0xE5E9F0, 0xD8DEE9, 0xA3BE8C,
+            button: 0x3B4252, 0x434C5E, 0x81A1C1, 0xECEFF4,
+            selection: 0x81A1C1, 0x88C0D0, 0xB48EAD,
+            misc: 0x3B4252, 0x4C566A,
+            entity: 0xA3BE8C, 0xD08770, 0xEBCB8B, 0x4C566A,
+            status: 0xA3BE8C, 0xEBCB8B, 0xBF616A, 0x88C0D0,
+            viewport: 0x81A1C1,
+            popup: 0x3B4252, 0x4C566A,
+        )
+    }
+
+    pub fn tokyo_night() -> Self {
+        color_scheme!(
+            name: "Tokyo Night",
+            bg: 0x1A1B26, 0x242533, 0x161721,
+            panel: 0x1A1B26, 0x242533, 0x3B3E4D,
+            text: 0xC0CAF5, 0xA9B1D6, 0x565F89, 0x9ECE6A,
+            button: 0x242533, 0x3B3E4D, 0x7AA2F7, 0xC0CAF5,
+            selection: 0x364A8E, 0x3E59A6, 0xBB9AF7,
+            misc: 0x3B3E4D, 0x3B3E4D,
+            entity: 0x9ECE6A, 0xFF9E64, 0xE0AF68, 0x565F89,
+            status: 0x9ECE6A, 0xE0AF68, 0xF7768E, 0x7DCFEF,
+            viewport: 0x7AA2F7,
+            popup: 0x242533, 0x3B3E4D,
+        )
+    }
+
+    pub fn dracula() -> Self {
+        color_scheme!(
+            name: "Dracula",
+            bg: 0x282A36, 0x44475A, 0x21222E,
+            panel: 0x282A36, 0x343748, 0x44475A,
+            text: 0xF8F8F2, 0xE5E5E5, 0x6272A4, 0x50FA7B,
+            button: 0x44475A, 0x52576C, 0xBD93F9, 0xF8F8F2,
+            selection: 0xBD93F9, 0xCFA6FC, 0xFF79C6,
+            misc: 0x44475A, 0x52576C,
+            entity: 0x50FA7B, 0xFFB86C, 0xF1FA8C, 0x6272A4,
+            status: 0x50FA7B, 0xF1FA8C, 0xFF5555, 0x8BE9FD,
+            viewport: 0xBD93F9,
+            popup: 0x44475A, 0x6272A4,
+        )
+    }
+
+    pub fn gruvbox() -> Self {
+        color_scheme!(
+            name: "Gruvbox Dark",
+            bg: 0x282828, 0x3C3836, 0x1D2021,
+            panel: 0x282828, 0x3C3836, 0x504A45,
+            text: 0xEBDBB2, 0xD5C4A1, 0x928374, 0xB8BB26,
+            button: 0x3C3836, 0x504A45, 0xD79921, 0xEBDBB2,
+            selection: 0xD79921, 0xFABD2F, 0xFE8019,
+            misc: 0x3C3836, 0x504A45,
+            entity: 0xB8BB26, 0xFE8019, 0xFABD2F, 0x928374,
+            status: 0xB8BB26, 0xFABD2F, 0xFB4934, 0x83A598,
+            viewport: 0xD79921,
+            popup: 0x3C3836, 0x504A45,
+        )
+    }
+
+    pub fn one_dark() -> Self {
+        color_scheme!(
+            name: "One Dark",
+            bg: 0x282C34, 0x3E4451, 0x21252B,
+            panel: 0x282C34, 0x3E4451, 0x4B5263,
+            text: 0xABB2BF, 0x9DA5B4, 0x5C6370, 0x98C379,
+            button: 0x3E4451, 0x4B5263, 0x61AFEF, 0xABB2BF,
+            selection: 0x3E4451, 0x4B5263, 0xC678DD,
+            misc: 0x3E4451, 0x4B5263,
+            entity: 0x98C379, 0xD19A66, 0xE5C07B, 0x5C6370,
+            status: 0x98C379, 0xE5C07B, 0xE06C75, 0x61AFEF,
+            viewport: 0x61AFEF,
+            popup: 0x3E4451, 0x4B5263,
+        )
+    }
+
+    pub fn material_palenight() -> Self {
+        color_scheme!(
+            name: "Material Palenight",
+            bg: 0x292D3E, 0x3A3F5B, 0x1E2133,
+            panel: 0x292D3E, 0x3A3F5B, 0x414763,
+            text: 0xA6ACCD, 0x8A93B5, 0x676E95, 0xC3E88D,
+            button: 0x3A3F5B, 0x414763, 0x82AAFF, 0xA6ACCD,
+            selection: 0x676E95, 0x7A819D, 0xC792EA,
+            misc: 0x3A3F5B, 0x414763,
+            entity: 0xC3E88D, 0xF78C6C, 0xFFCB6B, 0x676E95,
+            status: 0xC3E88D, 0xFFCB6B, 0xFF5370, 0x82AAFF,
+            viewport: 0x82AAFF,
+            popup: 0x3A3F5B, 0x414763,
+        )
+    }
+
+    pub fn ayu_dark() -> Self {
+        color_scheme!(
+            name: "Ayu Dark",
+            bg: 0x0D1017, 0x1A1F29, 0x070A0F,
+            panel: 0x0D1017, 0x1A1F29, 0x2D3440,
+            text: 0xBFBDB6, 0xA8A49D, 0x5C6773, 0xBED9F5,
+            button: 0x1A1F29, 0x2D3440, 0x39BAE6, 0xBFBDB6,
+            selection: 0x1A1F29, 0x2D3440, 0xF07178,
+            misc: 0x1A1F29, 0x2D3440,
+            entity: 0x7FD962, 0xFF9940, 0xFFB454, 0x5C6773,
+            status: 0x7FD962, 0xFFB454, 0xF07178, 0x39BAE6,
+            viewport: 0x39BAE6,
+            popup: 0x1A1F29, 0x2D3440,
+        )
+    }
+
+    pub fn github_dark() -> Self {
+        color_scheme!(
+            name: "GitHub Dark",
+            bg: 0x0D1117, 0x161B22, 0x010409,
+            panel: 0x0D1117, 0x161B22, 0x30363D,
+            text: 0xE6EDF3, 0xC9D1D9, 0x7D8590, 0x3FB950,
+            button: 0x21262D, 0x30363D, 0x1F6FEB, 0xE6EDF3,
+            selection: 0x1F6FEB, 0x388BFD, 0xF778BA,
+            misc: 0x21262D, 0x30363D,
+            entity: 0x3FB950, 0xDB6D28, 0xD29922, 0x7D8590,
+            status: 0x3FB950, 0xD29922, 0xF85149, 0x58A6FF,
+            viewport: 0x30363D,
+            popup: 0x161B22, 0x30363D,
+        )
+    }
+
+    pub fn monokai() -> Self {
+        color_scheme!(
+            name: "Monokai",
+            bg: 0x272822, 0x3E3D32, 0x1E1F1C,
+            panel: 0x272822, 0x3E3D32, 0x49483E,
+            text: 0xF8F8F2, 0xCFCFC2, 0x75715E, 0xA6E22E,
+            button: 0x3E3D32, 0x49483E, 0x66D9EF, 0xF8F8F2,
+            selection: 0x49483E, 0x5A5950, 0xFD971F,
+            misc: 0x3E3D32, 0x49483E,
+            entity: 0xA6E22E, 0xFD971F, 0xE6DB74, 0x75715E,
+            status: 0xA6E22E, 0xE6DB74, 0xF92672, 0x66D9EF,
+            viewport: 0x66D9EF,
+            popup: 0x3E3D32, 0x49483E,
+        )
+    }
+
+    pub fn rose_pine() -> Self {
+        color_scheme!(
+            name: "Rosé Pine",
+            bg: 0x191724, 0x1F1D2E, 0x13111B,
+            panel: 0x191724, 0x1F1D2E, 0x26233A,
+            text: 0xE0DEF4, 0xC9C8D3, 0x6E6A86, 0x9CCFD8,
+            button: 0x1F1D2E, 0x26233A, 0xC4A7E7, 0xE0DEF4,
+            selection: 0x403D52, 0x524F67, 0xEBBCBA,
+            misc: 0x1F1D2E, 0x26233A,
+            entity: 0x9CCFD8, 0xF6C177, 0xEBBCBA, 0x6E6A86,
+            status: 0x9CCFD8, 0xF6C177, 0xEB6F92, 0x31748F,
+            viewport: 0xC4A7E7,
+            popup: 0x1F1D2E, 0x26233A,
+        )
+    }
+
+    pub fn kanagawa() -> Self {
+        color_scheme!(
+            name: "Kanagawa",
+            bg: 0x1F1F28, 0x2A2A3C, 0x16161D,
+            panel: 0x1F1F28, 0x2A2A3C, 0x363646,
+            text: 0xDCD7BA, 0xC8C093, 0x727169, 0x76946A,
+            button: 0x2A2A3C, 0x363646, 0x7E9CD8, 0xDCD7BA,
+            selection: 0x2D4F67, 0x3E5F7A, 0x957FB8,
+            misc: 0x2A2A3C, 0x363646,
+            entity: 0x76946A, 0xFFA066, 0xDCA561, 0x727169,
+            status: 0x76946A, 0xDCA561, 0xC34043, 0x7E9CD8,
+            viewport: 0x7E9CD8,
+            popup: 0x2A2A3C, 0x363646,
+        )
+    }
+
+    pub fn solarized_dark() -> Self {
+        color_scheme!(
+            name: "Solarized Dark",
+            bg: 0x002B36, 0x073642, 0x001E26,
+            panel: 0x002B36, 0x073642, 0x094959,
+            text: 0x839496, 0x657B83, 0x586E75, 0x859900,
+            button: 0x073642, 0x094959, 0x268BD2, 0x839496,
+            selection: 0x073642, 0x094959, 0xD33682,
+            misc: 0x073642, 0x094959,
+            entity: 0x859900, 0xCB4B16, 0xB58900, 0x586E75,
+            status: 0x859900, 0xB58900, 0xDC322F, 0x268BD2,
+            viewport: 0x268BD2,
+            popup: 0x073642, 0x094959,
+        )
+    }
+}
+
+impl ColorScheme {
     /// Extract a `ColorScheme` from an existing [`UiStyle`].
     pub fn from_style(style: &UiStyle) -> Self {
         Self {
+            name: "From Style",
             window_bg: style.window_bg,
             window_title_bg: style.window_title_bg,
             window_title_bg_active: style.window_title_bg_active,
@@ -754,6 +1112,7 @@ impl ColorScheme {
             success: Color::from_rgb_hex(0xa6da95),
             warning: Color::from_rgb_hex(0xf9e2af),
             error: Color::from_rgb_hex(0xf38ba8),
+            info: Color::from_rgb_hex(0x89d9eb),
 
             entity_mesh: Color::from_rgb_hex(0xa6da95),
             entity_light: Color::from_rgb_hex(0xf9e2af),
@@ -768,22 +1127,76 @@ impl ColorScheme {
 
             viewport_border: Color::from_rgb_hex(0x4a9eff),
 
+            background: style.window_bg,
             background_dark: Color::from_rgb_hex(0x181825),
-            background_medium: Color::from_rgb_hex(0x313244),
+            background_light: Color::from_rgb_hex(0x313244),
 
             text_primary: style.text_color,
             text_secondary: style.text_disabled,
             text_muted: style.text_hint,
+            text_accent: Color::from_rgb_hex(0xa6da95),
 
             panel_bg: style.window_bg,
             panel_border: style.window_border,
             panel_header: style.window_title_bg,
+
+            button_bg: style.button_normal,
+            button_hover: style.button_hovered,
         }
     }
 
     /// Write this color scheme back into a [`UiStyle`], overwriting all color fields.
     pub fn apply_to_style(&self, style: &mut UiStyle) {
         style.apply_colors(self.clone());
+    }
+
+    pub fn all_names() -> &'static [&'static str] {
+        &[
+            "dark",
+            "light",
+            "classic",
+            "catppuccin",
+            "nord",
+            "tokyo_night",
+            "dracula",
+            "gruvbox",
+            "one_dark",
+            "material_palenight",
+            "ayu_dark",
+            "github_dark",
+            "monokai",
+            "rose_pine",
+            "kanagawa",
+            "solarized_dark",
+        ]
+    }
+
+    pub fn by_name(name: &str) -> Option<ColorScheme> {
+        match name {
+            "dark" => Some(Self::dark()),
+            "light" => Some(Self::light()),
+            "classic" => Some(Self::classic()),
+            "catppuccin" => Some(Self::catppuccin()),
+            "nord" => Some(Self::nord()),
+            "tokyo_night" => Some(Self::tokyo_night()),
+            "dracula" => Some(Self::dracula()),
+            "gruvbox" => Some(Self::gruvbox()),
+            "one_dark" => Some(Self::one_dark()),
+            "material_palenight" => Some(Self::material_palenight()),
+            "ayu_dark" => Some(Self::ayu_dark()),
+            "github_dark" => Some(Self::github_dark()),
+            "monokai" => Some(Self::monokai()),
+            "rose_pine" => Some(Self::rose_pine()),
+            "kanagawa" => Some(Self::kanagawa()),
+            "solarized_dark" => Some(Self::solarized_dark()),
+            _ => None,
+        }
+    }
+}
+
+impl Default for ColorScheme {
+    fn default() -> Self {
+        Self::catppuccin()
     }
 }
 

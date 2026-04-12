@@ -8,7 +8,7 @@ use katla_ui::{
     widgets::{Button, DraggablePanel, DraggablePanelConfig, DraggablePanelState},
 };
 
-use crate::ui::Theme;
+use crate::ui::ColorScheme;
 
 /// State for the particle inspector floating panel.
 #[derive(Debug, Clone, Default)]
@@ -58,7 +58,7 @@ pub enum ParticleInspectorAction {
 pub struct ParticleInspector<'a> {
     pub state: &'a mut ParticleInspectorState,
     pub selected_emitter: &'a mut Option<EntityId>,
-    pub theme: &'a Theme,
+    pub theme: &'a ColorScheme,
     pub data: &'a ParticleInspectorData,
     pub pending_actions: &'a mut Vec<ParticleInspectorAction>,
 }
@@ -67,7 +67,7 @@ impl<'a> ParticleInspector<'a> {
     pub fn new(
         state: &'a mut ParticleInspectorState,
         selected_emitter: &'a mut Option<EntityId>,
-        theme: &'a Theme,
+        theme: &'a ColorScheme,
         data: &'a ParticleInspectorData,
         pending_actions: &'a mut Vec<ParticleInspectorAction>,
     ) -> Self {
@@ -225,7 +225,7 @@ impl<'a> Widget for ParticleInspector<'a> {
 struct InspectorLayout<'a> {
     cursor_x: f32,
     content_width: f32,
-    theme: &'a Theme,
+    theme: &'a ColorScheme,
 }
 
 fn render_emitter_config(

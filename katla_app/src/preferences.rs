@@ -4,7 +4,7 @@ use std::io;
 
 use log::warn;
 
-use crate::ui::Theme;
+use crate::ui::ColorScheme;
 
 /// Application preferences that persist between sessions.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -64,7 +64,7 @@ impl Preferences {
     }
 
     fn validate(&mut self) {
-        if Theme::by_name(&self.theme).is_none() {
+        if ColorScheme::by_name(&self.theme).is_none() {
             warn!("Unknown theme '{}', using default", self.theme);
             self.theme = "catppuccin".to_string();
         }

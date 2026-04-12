@@ -5,7 +5,7 @@ use katla_math::{Rect2D, Vec2};
 use katla_ui::widgets::{Panel, RowInfo, TreeItem, TreeState, TreeView};
 use katla_ui::{FontId, FontSize, ForkAwesome, Response, ScrollAreaState, UiContext, Widget};
 
-use super::{EditorAction, EntityInfo, Theme};
+use super::{ColorScheme, EditorAction, EntityInfo};
 
 #[derive(Debug, Clone, Default)]
 pub struct HierarchyState {
@@ -39,7 +39,7 @@ pub struct Hierarchy<'a> {
     pub selected_entity: &'a mut Option<EntityId>,
     pub entities: &'a [EntityInfo],
     pub pending_actions: &'a mut Vec<EditorAction>,
-    pub theme: &'a Theme,
+    pub theme: &'a ColorScheme,
 }
 
 impl<'a> Hierarchy<'a> {
@@ -49,7 +49,7 @@ impl<'a> Hierarchy<'a> {
         selected_entity: &'a mut Option<EntityId>,
         entities: &'a [EntityInfo],
         pending_actions: &'a mut Vec<EditorAction>,
-        theme: &'a Theme,
+        theme: &'a ColorScheme,
     ) -> Self {
         Self {
             bounds,

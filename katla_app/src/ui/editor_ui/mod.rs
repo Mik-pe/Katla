@@ -23,7 +23,7 @@ mod viewport_grid;
 use katla_ecs::EntityId;
 use katla_gfx::TextureHandle;
 use katla_math::{Rect2D, Vec2};
-use katla_ui::{DrawList, UiContext};
+use katla_ui::{ColorScheme, DrawList, UiContext};
 
 use crate::util::BackgroundLoader;
 
@@ -38,7 +38,6 @@ use crate::{
     },
 };
 
-use super::theme::Theme;
 use asset_browser::AssetBrowserState;
 use co_creator::CoCreatorState;
 
@@ -93,8 +92,8 @@ pub struct EditorUI {
     last_screen_size: Vec2,
 
     toolbar_state: ToolbarState,
-    /// Current color theme.
-    pub theme: Theme,
+    /// Current color scheme.
+    pub theme: ColorScheme,
     /// Asset browser panel state.
     pub asset_browser: AssetBrowserState,
     /// Currently focused panel (receives keyboard input).
@@ -143,7 +142,7 @@ impl EditorUI {
             last_viewport_bounds: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(800.0, 600.0)),
             last_screen_size: Vec2::new(800.0, 600.0),
             toolbar_state: ToolbarState::default(),
-            theme: Theme::catppuccin(),
+            theme: ColorScheme::catppuccin(),
             asset_browser: AssetBrowserState::new(),
             focused_panel: FocusedPanel::Viewport,
             viewport_grid_state: ViewportGridState::new(),
@@ -173,14 +172,14 @@ impl EditorUI {
     }
 
     /// Create editor with a specific theme.
-    pub fn with_theme(theme: Theme) -> Self {
+    pub fn with_theme(theme: ColorScheme) -> Self {
         let mut editor = Self::new();
         editor.theme = theme;
         editor
     }
 
     /// Set the editor theme.
-    pub fn set_theme(&mut self, theme: Theme) {
+    pub fn set_theme(&mut self, theme: ColorScheme) {
         self.theme = theme;
     }
 

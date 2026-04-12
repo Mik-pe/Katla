@@ -112,8 +112,8 @@ impl ApplicationBuilder {
     #[cfg(feature = "editor")]
     fn load_editor_state_static(
         preferences: &Preferences,
-    ) -> (crate::ui::Theme, crate::gui_state::GuiState) {
-        let theme = crate::ui::Theme::by_name(&preferences.theme).unwrap_or_default();
+    ) -> (crate::ui::ColorScheme, crate::gui_state::GuiState) {
+        let theme = crate::ui::ColorScheme::by_name(&preferences.theme).unwrap_or_default();
         let gui_state = crate::gui_state::GuiState::load();
         log::info!(
             "Loaded GUI state: left_panel={}, right_panel={}, asset_browser_height={}",

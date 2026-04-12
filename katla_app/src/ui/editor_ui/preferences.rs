@@ -10,7 +10,7 @@ use katla_ui::{
 
 use crate::Preferences;
 
-use super::Theme;
+use super::ColorScheme;
 
 // --- Spacing & sizing constants ---
 
@@ -116,7 +116,7 @@ pub struct PreferencesPanel<'a> {
     pub state: &'a mut PreferencesPanelState,
     pub preferences: &'a Preferences,
     pub editor_settings: &'a EditorSettings,
-    pub theme: &'a Theme,
+    pub theme: &'a ColorScheme,
     pub theme_key: &'a str,
     pub pending_actions: &'a mut Vec<PreferencesAction>,
 }
@@ -127,7 +127,7 @@ impl<'a> PreferencesPanel<'a> {
         state: &'a mut PreferencesPanelState,
         preferences: &'a Preferences,
         editor_settings: &'a EditorSettings,
-        theme: &'a Theme,
+        theme: &'a ColorScheme,
         theme_key: &'a str,
         pending_actions: &'a mut Vec<PreferencesAction>,
     ) -> Self {
@@ -320,7 +320,7 @@ impl<'a> Widget for PreferencesPanel<'a> {
 // --- Shared helpers ---
 
 /// Draw a section header: tinted background bar with text label.
-fn draw_section_header(ui: &mut UiContext, theme: &Theme, text: &str, content_width: f32) {
+fn draw_section_header(ui: &mut UiContext, theme: &ColorScheme, text: &str, content_width: f32) {
     let header_height = 24.0;
     let bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, header_height));
     ui.draw_rect(bounds, theme.background_light);
@@ -348,7 +348,7 @@ struct GeneralTabParams<'a> {
 
 fn build_general_tab(
     ui: &mut UiContext,
-    theme: &Theme,
+    theme: &ColorScheme,
     params: &GeneralTabParams,
     pending_actions: &mut Vec<PreferencesAction>,
 ) -> f32 {
@@ -421,7 +421,7 @@ fn build_general_tab(
 
 fn build_viewport_tab(
     ui: &mut UiContext,
-    theme: &Theme,
+    theme: &ColorScheme,
     cursor: Vec2,
     content_width: f32,
     editor_settings: &EditorSettings,
@@ -554,7 +554,7 @@ fn themed_select_button(
     label: &str,
     bounds: Rect2D,
     is_selected: bool,
-    theme: &Theme,
+    theme: &ColorScheme,
 ) -> bool {
     let clicked = ui.add(Button::new("").bounds(bounds).id(id)).clicked;
 
@@ -588,7 +588,7 @@ fn themed_select_button(
 /// Draw an inline label+input row. Returns the full-width text input bounds.
 fn inline_field_row(
     ui: &mut UiContext,
-    theme: &Theme,
+    theme: &ColorScheme,
     label: &str,
     label_width: f32,
     content_width: f32,
@@ -614,7 +614,7 @@ fn inline_field_row(
 
 fn build_ai_tab(
     ui: &mut UiContext,
-    theme: &Theme,
+    theme: &ColorScheme,
     cursor: Vec2,
     content_width: f32,
     llm_config: &katla_agent::LlmConfig,

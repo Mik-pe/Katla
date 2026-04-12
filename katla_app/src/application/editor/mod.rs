@@ -824,7 +824,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 info!("Selected entity {:?}", entity_id);
             }
             EditorAction::SetTheme(theme_key) => {
-                if let Some(theme) = crate::ui::Theme::by_name(&theme_key) {
+                if let Some(theme) = crate::ui::ColorScheme::by_name(&theme_key) {
                     app.editor.editor_ui.set_theme(theme);
                     app.preferences.theme = theme_key;
                     info!("Theme changed to: {}", app.editor.editor_ui.theme_name());
