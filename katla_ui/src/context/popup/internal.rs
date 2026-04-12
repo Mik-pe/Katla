@@ -1,6 +1,6 @@
 //! Internal popup helpers: position calculation, background drawing, close handling.
 
-use katla_math::{Color, Rect2D, Vec2};
+use katla_math::{Rect2D, Vec2};
 
 use super::super::UiContext;
 use super::{Popup, PopupPosition, PopupStyle};
@@ -66,7 +66,12 @@ impl UiContext {
         self.draw_rounded_rect(bounds, self.style.popup_bg, self.style.popup_rounding);
 
         // Border
-        self.draw_rect_border(bounds, Color::TRANSPARENT, self.style.popup_border, 1.0);
+        self.draw_rounded_selection_border(
+            bounds,
+            self.style.popup_border,
+            1.0,
+            self.style.popup_rounding,
+        );
     }
 
     /// Handle popup close behavior.

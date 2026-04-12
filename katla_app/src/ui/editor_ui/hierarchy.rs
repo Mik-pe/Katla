@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use katla_ecs::EntityId;
 use katla_math::{Rect2D, Vec2};
-use katla_ui::widgets::{Panel, RowInfo, TreeItem, TreeState, TreeView};
+use katla_ui::widgets::{Panel, RowInfo, TextInput, TreeItem, TreeState, TreeView};
 use katla_ui::{FontId, FontSize, ForkAwesome, Response, ScrollAreaState, UiContext, Widget};
 
 use super::{ColorScheme, EditorAction, EntityInfo};
@@ -40,6 +40,7 @@ pub struct Hierarchy<'a> {
     pub entities: &'a [EntityInfo],
     pub pending_actions: &'a mut Vec<EditorAction>,
     pub theme: &'a ColorScheme,
+    pub search_filter: &'a mut String,
 }
 
 impl<'a> Hierarchy<'a> {
@@ -50,6 +51,7 @@ impl<'a> Hierarchy<'a> {
         entities: &'a [EntityInfo],
         pending_actions: &'a mut Vec<EditorAction>,
         theme: &'a ColorScheme,
+        search_filter: &'a mut String,
     ) -> Self {
         Self {
             bounds,
@@ -58,14 +60,27 @@ impl<'a> Hierarchy<'a> {
             entities,
             pending_actions,
             theme,
+            search_filter,
         }
     }
 }
 
 impl<'a> Widget for Hierarchy<'a> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let visible_count = self
-            .entities
+        let search_field_height = 26.0;
+        let search_margin = 4.0;
+
+        let filtered_entities: Vec<&EntityInfo> = if self.search_filter.is_empty() {
+            self.entities.iter().collect()
+        } else {
+            let filter_lower = self.search_filter.to_lowercase();
+            self.entities
+                .iter()
+                .filter(|e| e.name.to_lowercase().contains(&filter_lower))
+                .collect()
+        };
+
+        let visible_count = filtered_entities
             .iter()
             .filter(|e| is_entity_visible(e, self.entities, &self.state.expanded_entities))
             .count();
@@ -79,11 +94,39 @@ impl<'a> Widget for Hierarchy<'a> {
             guard.content_bounds()
         };
 
+        let search_bounds = Rect2D::from_origin_size(
+            Vec2::new(
+                content_bounds.min.x() + search_margin,
+                content_bounds.min.y() + 2.0,
+            ),
+            Vec2::new(
+                content_bounds.width() - search_margin * 2.0,
+                search_field_height,
+            ),
+        );
+        ui.add(
+            TextInput::new("hierarchy_search", self.search_filter)
+                .bounds(search_bounds)
+                .placeholder("Filter entities...")
+                .show_clear(true),
+        );
+
+        let tree_bounds = Rect2D::from_origin_size(
+            Vec2::new(
+                content_bounds.min.x(),
+                content_bounds.min.y() + search_field_height + search_margin,
+            ),
+            Vec2::new(
+                content_bounds.width(),
+                (content_bounds.height() - search_field_height - search_margin).max(0.0),
+            ),
+        );
+
         let entities = self.entities;
         let theme = self.theme;
         let bounds_width = self.bounds.width();
 
-        let items: Vec<TreeItem> = entities
+        let items: Vec<TreeItem> = filtered_entities
             .iter()
             .map(|e| TreeItem {
                 id: e.id.id(),
@@ -107,7 +150,7 @@ impl<'a> Widget for Hierarchy<'a> {
         let response = if !items.is_empty() {
             ui.add(
                 TreeView::new("hierarchy_tree", &mut tree_state)
-                    .bounds(content_bounds)
+                    .bounds(tree_bounds)
                     .data(items)
                     .row_height(22.0)
                     .indent_per_level(16.0)

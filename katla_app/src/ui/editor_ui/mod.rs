@@ -124,6 +124,8 @@ pub struct EditorUI {
     pub co_creator: CoCreatorState,
     /// Inspector panel scroll state.
     inspector_scroll_state: katla_ui::ScrollAreaState,
+    /// Search/filter text for the hierarchy panel.
+    hierarchy_search_filter: String,
 }
 
 impl EditorUI {
@@ -171,6 +173,7 @@ impl EditorUI {
             gizmo_mode: 0,
             co_creator: CoCreatorState::new(),
             inspector_scroll_state: katla_ui::ScrollAreaState::default(),
+            hierarchy_search_filter: String::new(),
         }
     }
 
