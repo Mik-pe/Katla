@@ -26,7 +26,7 @@ fn test_preferences_tab_click_does_not_close_panel() {
 
     let preferences = crate::Preferences::default();
     let editor_settings = EditorSettings::default();
-    let theme = Theme::default();
+    let theme = ColorScheme::default();
     let theme_key = "catppuccin";
     let mut actions = Vec::new();
 
@@ -126,7 +126,7 @@ fn test_hierarchy_entity_selection_works() {
     ];
 
     let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(200.0, 400.0));
-    let theme = Theme::default();
+    let theme = ColorScheme::default();
 
     let header_height = 24.0;
     let content_padding = 4.0;

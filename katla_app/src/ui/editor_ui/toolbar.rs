@@ -3,7 +3,7 @@ use katla_ui::{FontSize, Response, Widget};
 
 use crate::{
     Preferences,
-    ui::{EditorAction, SpawnableModel, Theme, editor_ui::Panel},
+    ui::{ColorScheme, EditorAction, SpawnableModel, editor_ui::Panel},
 };
 
 impl SpawnableModel {
@@ -44,7 +44,7 @@ pub struct Toolbar<'a> {
     pub height: f32,
     /// Menu bar dropdown states
     pub state: &'a mut ToolbarState,
-    pub theme: &'a Theme,
+    pub theme: &'a ColorScheme,
     pub preferences: &'a Preferences,
 }
 
@@ -53,7 +53,7 @@ impl<'a> Toolbar<'a> {
         screen_size: Vec2,
         height: f32,
         state: &'a mut ToolbarState,
-        theme: &'a Theme,
+        theme: &'a ColorScheme,
         preferences: &'a Preferences,
     ) -> Self {
         Self {

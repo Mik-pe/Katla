@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use katla_gfx::TextureHandle;
 use katla_math::{Color, Vec2};
 
-use crate::ui::theme::Theme;
+use crate::ui::ColorScheme;
 
 /// Build a rectangle from two corner points (handles any ordering).
 #[inline]
@@ -126,7 +126,7 @@ impl AssetType {
     }
 
     /// Get icon color for this asset type.
-    pub fn color(&self, theme: &Theme) -> Color {
+    pub fn color(&self, theme: &ColorScheme) -> Color {
         match self {
             Self::Model => theme.entity_mesh,
             Self::Material => theme.text_accent,

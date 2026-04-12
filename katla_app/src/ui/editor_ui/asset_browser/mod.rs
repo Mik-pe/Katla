@@ -17,7 +17,7 @@ use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::widgets::ImageButton;
 use katla_ui::{ForkAwesome, KeyCode, ScrollArea, TextureId, UiContext, mouse_button};
 
-use crate::ui::theme::Theme;
+use crate::ui::ColorScheme;
 
 pub use state::AssetBrowserState;
 pub use types::{AssetAction, AssetType, ThumbnailState};
@@ -28,7 +28,7 @@ use types::rect_from_points;
 pub fn build_asset_browser(
     state: &mut AssetBrowserState,
     ui: &mut UiContext,
-    theme: &Theme,
+    theme: &ColorScheme,
     bounds: Rect2D,
     is_focused: bool,
     loader: &mut crate::util::BackgroundLoader,

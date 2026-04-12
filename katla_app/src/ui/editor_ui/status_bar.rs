@@ -1,7 +1,7 @@
 use katla_math::Vec2;
 use katla_ui::{Response, UiContext, Widget, widgets::StatusBar as StatusBarWidget};
 
-use super::Theme;
+use super::ColorScheme;
 
 pub struct StatusBarConfig<'a> {
     pub screen_size: Vec2,
@@ -12,7 +12,7 @@ pub struct StatusBarConfig<'a> {
     pub selected_count: usize,
     pub total_assets: usize,
     pub is_playing: bool,
-    pub theme: &'a Theme,
+    pub theme: &'a ColorScheme,
     pub save_confirmation_timer: f32,
 }
 
@@ -25,7 +25,7 @@ pub struct StatusBar<'a> {
     selected_count: usize,
     total_assets: usize,
     is_playing: bool,
-    theme: &'a Theme,
+    theme: &'a ColorScheme,
     save_confirmation_timer: f32,
 }
 
@@ -103,7 +103,7 @@ impl<'a> Widget for StatusBar<'a> {
         let mode_pos = Vec2::new(self.screen_size.x() - mode_size.x() - 8.0, bar_top_y);
         ui.draw_text(mode_text, mode_pos, mode_color, font_size);
 
-        let theme_text = format!("Theme: {}", self.theme.name);
+        let theme_text = format!("ColorScheme: {}", self.theme.name);
         let theme_size = ui.measure_text(&theme_text, font_size);
         let theme_pos = Vec2::new(
             self.screen_size.x() - mode_size.x() - theme_size.x() - 100.0,

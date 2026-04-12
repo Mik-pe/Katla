@@ -9,13 +9,13 @@ mod particle_inspector;
 #[cfg(feature = "editor")]
 mod particle_stats;
 pub mod renderer;
-pub mod theme;
 
 #[cfg(feature = "editor")]
 pub use editor_ui::{
     EditorAction, EditorRenderParams, EditorUI, EntityInfo, FocusedPanel, ParticleEmitterInfo,
     PointLightInfo, SpawnableModel, ThumbnailState, inspector::InspectorEditState,
 };
+pub use katla_ui::ColorScheme;
 #[cfg(feature = "editor")]
 pub use particle_inspector::{
     EmitterConfigView, ParticleInspector, ParticleInspectorAction, ParticleInspectorData,
@@ -24,4 +24,3 @@ pub use particle_inspector::{
 #[cfg(feature = "editor")]
 pub use particle_stats::ParticleStats;
 pub use renderer::UIRenderer;
-pub use theme::Theme;

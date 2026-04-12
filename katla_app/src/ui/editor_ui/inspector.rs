@@ -5,7 +5,7 @@ use katla_ui::{
     widgets::{Button, Slider},
 };
 
-use super::{EditorAction, EntityInfo, Theme};
+use super::{ColorScheme, EditorAction, EntityInfo};
 
 const ROW_HEIGHT: f32 = 18.0;
 
@@ -29,7 +29,7 @@ pub struct Inspector<'a> {
     pub selected_entity: &'a mut Option<EntityId>,
     pub entities: &'a [EntityInfo],
     pub pending_actions: &'a mut Vec<EditorAction>,
-    pub theme: &'a Theme,
+    pub theme: &'a ColorScheme,
     pub edit: &'a mut InspectorEditState,
 }
 
@@ -39,7 +39,7 @@ impl<'a> Inspector<'a> {
         selected_entity: &'a mut Option<EntityId>,
         entities: &'a [EntityInfo],
         pending_actions: &'a mut Vec<EditorAction>,
-        theme: &'a Theme,
+        theme: &'a ColorScheme,
         edit: &'a mut InspectorEditState,
     ) -> Self {
         Self {
@@ -56,7 +56,7 @@ impl<'a> Inspector<'a> {
 /// Draw a labeled slider row: label on the left, value display + slider on the right.
 fn vec3_slider_row(
     ui: &mut UiContext,
-    theme: &Theme,
+    theme: &ColorScheme,
     label: &str,
     values: &mut [f32; 3],
     axis_labels: [&str; 3],
@@ -102,7 +102,7 @@ fn vec3_slider_row(
 /// Draw a single labeled slider row with value display.
 fn scalar_slider_row(
     ui: &mut UiContext,
-    theme: &Theme,
+    theme: &ColorScheme,
     label: &str,
     value: &mut f32,
     range: std::ops::RangeInclusive<f32>,

@@ -5,7 +5,7 @@ use katla_ui::widgets::{Button, ImageButton, TextInput};
 use katla_ui::widgets::{DraggablePanelConfig, DraggablePanelState};
 use katla_ui::{FontSize, ScrollArea, ScrollAreaState, UiContext};
 
-use super::Theme;
+use super::ColorScheme;
 
 /// A display-oriented chat message for the co-creator panel.
 #[derive(Debug, Clone)]
@@ -138,7 +138,7 @@ pub struct CoCreatorStyle {
 }
 
 impl CoCreatorStyle {
-    pub fn from_theme(theme: &Theme) -> Self {
+    pub fn from_theme(theme: &ColorScheme) -> Self {
         Self {
             user_msg_color: Color::new(0.4, 0.7, 1.0, 1.0),
             assistant_msg_color: theme.text_primary,
