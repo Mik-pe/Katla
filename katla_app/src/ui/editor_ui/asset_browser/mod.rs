@@ -487,15 +487,18 @@ pub fn build_asset_browser(
                             && item_bounds.min.y() <= sel_rect.max.y()
                             && item_bounds.max.y() >= sel_rect.min.y()
                         {
-                            ui.draw_rect(item_bounds, Color::new(0.3, 0.5, 0.8, 0.4));
+                            ui.draw_rect(
+                                item_bounds,
+                                ui.style().selectable_selected.with_alpha(0.4),
+                            );
                         }
                     }
 
-                    ui.draw_rect(sel_rect, Color::new(0.3, 0.5, 0.8, 0.3));
+                    ui.draw_rect(sel_rect, ui.style().selectable_selected.with_alpha(0.3));
                     ui.draw_rect_border(
                         sel_rect,
-                        Color::new(0.3, 0.5, 0.8, 0.3),
-                        Color::new(0.4, 0.6, 0.9, 0.8),
+                        ui.style().selectable_selected.with_alpha(0.3),
+                        ui.style().selectable_selected.with_alpha(0.8),
                         1.0,
                     );
                 }

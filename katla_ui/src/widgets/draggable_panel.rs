@@ -1,4 +1,4 @@
-use katla_math::{Color, Rect2D, Vec2};
+use katla_math::{Rect2D, Vec2};
 
 use crate::input::mouse_button;
 use crate::widgets::Button;
@@ -252,7 +252,7 @@ impl DraggablePanel {
                 panel_bounds.min + shadow_offset,
                 panel_bounds.max + shadow_offset,
             );
-            ui.draw_rect(shadow_bounds, Color::new(0.0, 0.0, 0.0, 0.6));
+            ui.draw_rect(shadow_bounds, ui.style.popup_shadow);
 
             // Panel body
             ui.draw_rect(panel_bounds, window_bg);

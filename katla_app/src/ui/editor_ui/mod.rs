@@ -122,6 +122,8 @@ pub struct EditorUI {
     pub gizmo_mode: u8,
     /// AI Co-Creator chat panel state.
     pub co_creator: CoCreatorState,
+    /// Inspector panel scroll state.
+    inspector_scroll_state: katla_ui::ScrollAreaState,
 }
 
 impl EditorUI {
@@ -168,6 +170,7 @@ impl EditorUI {
             inspector_edit_entity: None,
             gizmo_mode: 0,
             co_creator: CoCreatorState::new(),
+            inspector_scroll_state: katla_ui::ScrollAreaState::default(),
         }
     }
 
