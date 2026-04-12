@@ -47,6 +47,7 @@ pub(crate) struct ToggleButtonParams<'a> {
 
 use crate::style::DEFAULTS;
 use crate::{Response, UiContext};
+use katla_icons::ForkAwesome;
 use katla_math::{Color, Rect2D, Vec2};
 
 // =============================================================================
@@ -1164,6 +1165,14 @@ impl crate::Widget for Badge<'_> {
         // Background
         ui.draw_rect(self.bounds, self.color);
 
+        // Auto-select text color based on background luminance
+        let lum = 0.299 * self.color.r + 0.587 * self.color.g + 0.114 * self.color.b;
+        let text_color = if lum > 0.5 {
+            Color::new(0.0, 0.0, 0.0, self.color.a)
+        } else {
+            Color::new(1.0, 1.0, 1.0, self.color.a)
+        };
+
         // Text
         ui.draw_text(
             self.text,
@@ -1171,7 +1180,7 @@ impl crate::Widget for Badge<'_> {
                 self.bounds.min.x() + padding,
                 self.bounds.min.y() + padding / 2.0,
             ),
-            Color::WHITE,
+            text_color,
             font_size,
         );
 
@@ -1473,7 +1482,11 @@ where
         }
 
         // Arrow icon (▶ or ▼)
-        let arrow = if *self.expanded { '▼' } else { '▶' };
+        let arrow = if *self.expanded {
+            ForkAwesome::CHEVRON_DOWN
+        } else {
+            ForkAwesome::CHEVRON_RIGHT
+        };
         let arrow_pos = Vec2::new(self.bounds.min.x() + 4.0, self.bounds.min.y() + 4.0);
         ui.draw_text(
             &arrow.to_string(),
