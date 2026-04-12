@@ -152,7 +152,7 @@ impl<'a> Widget for Inspector<'a> {
             .and_then(|id| self.entities.iter().find(|e| e.id == id));
 
         let row_height = 18.0;
-        let content_x = content_bounds.min.x() + 8.0;
+        let content_x = content_bounds.min.x() + ui.style().panel_padding;
         let content_width = content_bounds.width() - 2.0 * ui.style().panel_padding;
 
         if let Some(entity) = selected {
@@ -175,7 +175,7 @@ impl<'a> Widget for Inspector<'a> {
                         theme.text_primary,
                         ui.scaled_font_size(FontSize::Large),
                     );
-                    ui.spacing(row_height + 8.0);
+                    ui.spacing(row_height + ui.style().item_spacing);
 
                     // Transform section with interactive sliders
                     ui.draw_text(
@@ -216,9 +216,9 @@ impl<'a> Widget for Inspector<'a> {
                         content_width,
                     );
 
-                    ui.spacing(4.0);
+                    ui.spacing(ui.style().item_inner_spacing);
                     ui.separator_line();
-                    ui.spacing(4.0);
+                    ui.spacing(ui.style().item_inner_spacing);
 
                     // PointLight section (if entity has PointLight)
                     if entity.point_light.is_some() {
@@ -284,9 +284,9 @@ impl<'a> Widget for Inspector<'a> {
                             row_height,
                         );
 
-                        ui.spacing(4.0);
+                        ui.spacing(ui.style().item_inner_spacing);
                         ui.separator_line();
-                        ui.spacing(4.0);
+                        ui.spacing(ui.style().item_inner_spacing);
                     }
 
                     // ParticleEmitter section (if entity has ParticleEmitter)
@@ -349,9 +349,9 @@ impl<'a> Widget for Inspector<'a> {
                             row_height,
                         );
 
-                        ui.spacing(4.0);
+                        ui.spacing(ui.style().item_inner_spacing);
                         ui.separator_line();
-                        ui.spacing(4.0);
+                        ui.spacing(ui.style().item_inner_spacing);
                     }
 
                     // Type and Components (read-only)
@@ -375,7 +375,7 @@ impl<'a> Widget for Inspector<'a> {
                         ui.label(component_name);
                     }
 
-                    ui.spacing(8.0);
+                    ui.spacing(ui.style().panel_padding);
 
                     let delete_bounds = Rect2D::from_origin_size(
                         Vec2::new(content_x, ui.cursor().y()),

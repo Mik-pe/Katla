@@ -204,15 +204,16 @@ pub fn draw_co_creator_panel(
             .screen_size(screen_size)
             .close_on_outside_click(false),
         |ui, frame| {
-            let content_x = frame.panel_bounds.min.x() + 8.0;
-            let content_width = frame.panel_bounds.width() - 16.0;
+            let panel_padding = ui.style().panel_padding;
+            let content_x = frame.panel_bounds.min.x() + panel_padding;
+            let content_width = frame.panel_bounds.width() - 2.0 * panel_padding;
             let header_height = 32.0;
-            let bottom_padding = 8.0;
+            let bottom_padding = panel_padding;
 
             let line_count = input_text.lines().count().max(1);
             let input_height = (line_count.min(5) as f32) * 28.0;
 
-            let msg_area_top = frame.panel_bounds.min.y() + header_height + 8.0;
+            let msg_area_top = frame.panel_bounds.min.y() + header_height + panel_padding;
             let msg_area_bottom = frame.panel_bounds.max.y() - input_height - bottom_padding;
 
             let font_size = ui.scaled_font_size(FontSize::Small);
@@ -305,7 +306,7 @@ pub fn draw_co_creator_panel(
             });
 
             // Input area
-            let input_y = msg_area_bottom + 4.0;
+            let input_y = msg_area_bottom + ui.style().item_inner_spacing;
             let input_bounds = Rect2D::from_origin_size(
                 Vec2::new(content_x, input_y),
                 Vec2::new(content_width - 70.0, input_height),

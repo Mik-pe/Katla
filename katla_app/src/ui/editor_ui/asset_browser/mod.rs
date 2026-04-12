@@ -55,12 +55,15 @@ pub fn build_asset_browser(
     ui.draw_rect(header_bounds, theme.panel_header);
 
     // === HEADER: Title + Collapse Toggle ===
-    let padding = 8.0;
+    let padding = ui.style().panel_padding;
 
     // Collapse toggle button (left side)
     let toggle_size = 20.0;
     let toggle_bounds = Rect2D::from_origin_size(
-        Vec2::new(bounds.min.x() + 4.0, bounds.min.y() + 2.0),
+        Vec2::new(
+            bounds.min.x() + ui.style().item_inner_spacing,
+            bounds.min.y() + 2.0,
+        ),
         Vec2::new(toggle_size, toggle_size),
     );
     let toggle_icon = if state.collapsed {
@@ -78,7 +81,7 @@ pub fn build_asset_browser(
 
     // Title
     let title_pos = Vec2::new(
-        bounds.min.x() + toggle_size + 8.0,
+        bounds.min.x() + toggle_size + padding,
         header_bounds.center().y() - ui.scaled_font_size(katla_ui::FontSize::Medium) * 0.5,
     );
     ui.draw_text(
@@ -132,7 +135,8 @@ pub fn build_asset_browser(
     let mut breadcrumb_x = bounds.min.x() + padding;
     let breadcrumb_y =
         toolbar_bounds.center().y() - ui.scaled_font_size(katla_ui::FontSize::Small) * 0.5;
-    let breadcrumb_height = ui.scaled_font_size(katla_ui::FontSize::Small) + 4.0;
+    let breadcrumb_height =
+        ui.scaled_font_size(katla_ui::FontSize::Small) + ui.style().item_inner_spacing;
     let segments = state.path_segments();
 
     // Track breadcrumb clicks
@@ -246,7 +250,10 @@ pub fn build_asset_browser(
     let search_width = 100.0;
     let search_height = 20.0;
     let search_bounds = Rect2D::from_origin_size(
-        Vec2::new(back_bounds.min.x() - search_width - 8.0, toolbar_top + 4.0),
+        Vec2::new(
+            back_bounds.min.x() - search_width - padding,
+            toolbar_top + ui.style().item_inner_spacing,
+        ),
         Vec2::new(search_width, search_height),
     );
 
@@ -281,7 +288,7 @@ pub fn build_asset_browser(
             let scroll_offset = ui.scroll_offset();
 
             let item_size = ui.style().thumbnail_size;
-            let item_padding = 8.0;
+            let item_padding = ui.style().panel_padding;
             let col_count =
                 ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
             let row_height = item_size + 24.0;
@@ -792,7 +799,7 @@ pub fn build_asset_browser(
     // Get scroll offset for context menu (from state since scroll_area cleared it)
     let scroll_offset = state.scroll_state.scroll_offset;
     let item_size = ui.style().thumbnail_size;
-    let item_padding = 8.0;
+    let item_padding = ui.style().panel_padding;
     let col_count =
         ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
     let row_height = item_size + 24.0;
