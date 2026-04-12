@@ -908,7 +908,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Severity:** HIGH
 - **Design rationale:** VS Code uses bottom-blend active tabs with icon+text. JetBrains uses underlined active tab. Unity uses top-highlight + content-blend. Godot 4 uses bottom-blend with subtle rounding. The content-blend pattern (active tab shares background with panel below, no bottom border) is the most widely adopted and most readable.
 
-### 159. Audit and elevate overall UI polish to SOTA editor quality
+~~### 159. Audit and elevate overall UI polish to SOTA editor quality~~ — Fixed. All 6 subtasks complete (159a-f).
 - **Crate:** katla_ui / katla_app
 - **Files:** `katla_ui/src/style.rs`, `katla_ui/src/widgets/mod.rs`, `katla_app/src/ui/editor_ui/` (all)
 - **Issue:** The current UI has accumulated individual fixes but lacks a cohesive visual identity matching modern engine editors. Specific gaps: no consistent hover/active/pressed state progression across widgets; no focus rings on text inputs; scrollbar styling is minimal (flat rect, no hover state, no track); menu items lack hover transition and checkmark/radio indicators; no subtle shadows or depth cues on floating panels; no consistent border treatment (some panels have borders, some don't); spacing and padding are inconsistent between panels. SOTA editors (Unity 6, Godot 4.6, Blender 4.x) have a unified visual language where every widget follows the same state/color/spacing system.
