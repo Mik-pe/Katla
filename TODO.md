@@ -681,3 +681,182 @@ These items identify code that currently lives in katla_app but is generic enoug
     - [x] ~~130e. Add `spawn_model` tool, `SpawnModelArgs` struct, `SceneOp::SpawnModel` variant, and executor that calls `Application::spawn_gltf_model()`~~ — Done in 8dc2cf6. Full tool + MCP endpoint + executor with GLTF loading.
     - [x] ~~130f. Update system prompt to list available shapes and mention `spawn_model` for loading resources~~ — Done in 956f2f8. Shape parameter and resource tools documented in system prompt.
     - **Recommended order:** 130a → 130b → 130c → 130d → 130e → 130f
+
+---
+
+## UI Design Pattern Review
+
+~~### 131. Hardcoded panel divider colors in layout~~ — Fixed in 4abf4fc. Replaced with `ui.style().separator`.
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/layout.rs` (lines 242, 264, 472)
+- **Issue:** Panel border dividers between hierarchy/viewport/inspector/asset browser use `Color::new(0.3, 0.3, 0.3, 1.0)` — a hardcoded gray not from the theme. Will look wrong on light themes or any theme that doesn't match this gray.
+- **Fix:** Use `style.panel_border` or `style.separator` from UiStyle.
+- **Severity:** HIGH
+
+### 132. Hardcoded marquee selection colors in asset browser
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/asset_browser/mod.rs` (lines 490, 494, 497-498)
+- **Issue:** Marquee (rubber-band) selection uses `Color::new(0.3, 0.5, 0.8, 0.4)`, `Color::new(0.3, 0.5, 0.8, 0.3)`, `Color::new(0.4, 0.6, 0.9, 0.8)`. Should use `style.selection` / `style.selection_hover` from ColorScheme.
+- **Fix:** Use `style.selection` with alpha variants.
+- **Severity:** HIGH
+
+~~### 133. No hand cursor on any clickable widget~~ — Fixed in 4abf4fc. Hand cursor added to button, image_button, checkbox, radio_button, combo_box, toggle_button, and Selectable.
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/context/widgets/basic.rs`
+- **Issue:** Interactive widgets (buttons, checkboxes, radio buttons, combo boxes, selectables) do not set `MouseCursor::Hand` when hovered. Only the text input sets `MouseCursor::Text`. The `MouseCursor::Hand` variant exists in `input.rs` but is never used anywhere. This is fundamental interaction feedback missing across the entire UI.
+- **Fix:** Add `self.input.set_cursor(MouseCursor::Hand)` when hovered in `button_with_colors()`, `image_button()`, `checkbox()`, `radio_button()`, `combo_box()`, and `Selectable::ui()`.
+- **Severity:** HIGH
+
+### 134. Inspector panel has no scroll area
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/inspector.rs`
+- **Issue:** Inspector draws entity properties using `begin_column()`/`end_column()` without a scroll area. When an entity has many components, content overflows the panel bounds with no way to scroll. Other panels (hierarchy, asset browser) correctly use `scroll_area()`.
+- **Fix:** Wrap inspector content in `ui.scroll_area()` like hierarchy and asset browser do.
+- **Severity:** HIGH
+
+~~### 135. Slider ignores style dimensions — hardcodes track height and grab size~~ — Fixed in 4abf4fc. Uses `self.style.slider_track_height` and `self.style.slider_grab_size`.
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/context/widgets/basic.rs`, slider() method (lines ~399-410)
+- **Issue:** Slider hardcodes `track_height = 4.0` and `grab_size = 12.0` instead of using `self.style.slider_track_height` and `self.style.slider_grab_size` which exist in UiStyle. These style fields are dead configuration — changing them has no effect.
+- **Fix:** Replace hardcoded `4.0` with `self.style.slider_track_height` and `12.0` with `self.style.slider_grab_size`.
+- **Severity:** HIGH
+
+~~### 136. Hardcoded co-creator user message color~~ — Fixed in 4abf4fc. Uses `theme.info` instead of hardcoded blue.
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/co_creator.rs` (line 143)
+- **Issue:** `CoCreatorStyle::from_theme()` hardcodes `user_msg_color: Color::new(0.4, 0.7, 1.0, 1.0)` instead of deriving from theme. Light blue that will be nearly invisible on light themes.
+- **Fix:** Use `theme.info` or `theme.highlight` — both are already semantically defined for accent purposes.
+- **Severity:** MEDIUM
+
+### 137. Hardcoded font size in viewport labels
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/viewport_grid.rs` (line 126)
+- **Issue:** Viewport labels ("3D View", "Top-Left", etc.) use hardcoded `12.0` font size instead of `ui.scaled_font_size(FontSize::Small)`. Labels won't respect font scale setting.
+- **Fix:** Use `ui.scaled_font_size(FontSize::Small)`.
+- **Severity:** MEDIUM
+
+### 138. Panel widget ignores semantic panel theme colors
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/widgets/mod.rs`, Panel::show()
+- **Issue:** `Panel::show()` uses `ui.style.window_bg`, `ui.style.window_title_bg`, `ui.style.window_border` for chrome. ColorScheme has dedicated `panel_bg`, `panel_header`, `panel_border` colors specifically tuned for panels. The Panel widget ignores these.
+- **Fix:** Use `panel_bg`, `panel_header`, `panel_border` from ColorScheme in Panel::show(). Map them into UiStyle or read from an extended style field.
+- **Severity:** MEDIUM
+
+### 139. Inconsistent panel chrome between hierarchy and inspector
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/hierarchy.rs` vs `katla_app/src/ui/editor_ui/inspector.rs`
+- **Issue:** Hierarchy uses `Panel::show()` widget (header+bg+border chrome). Inspector draws its own bg, border, and header manually. These two approaches may diverge in appearance.
+- **Fix:** Both panels should use the same chrome mechanism. Inspector should use Panel::show() or both should use manual drawing, but not mixed.
+- **Severity:** MEDIUM
+
+### 140. No tooltips on icon-only toolbar buttons in asset browser
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/asset_browser/mod.rs` (lines 208-236)
+- **Issue:** Asset browser navigation buttons (refresh, forward, back) and collapse toggle are icon-only with no tooltips. Users who don't recognize the icons have no way to discover their function. `Response::on_hover_tooltip()` is available but not used here.
+- **Fix:** Add `resp.on_hover_tooltip(ui, "...")` on icon-only buttons.
+- **Severity:** MEDIUM
+
+### 141. No search/filter in hierarchy panel
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/hierarchy.rs`
+- **Issue:** Hierarchy shows all entities with no search/filter. The asset browser has a search field but hierarchy does not. For scenes with hundreds of entities, finding a specific entity requires manual scrolling. Standard feature in every modern engine editor.
+- **Fix:** Add a search/filter TextInput at the top of the hierarchy panel, similar to asset browser's search field.
+- **Severity:** MEDIUM
+
+### 142. Inspector property rows use magic number layout constants
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/inspector.rs`, `vec3_slider_row()` and `scalar_slider_row()`
+- **Issue:** Layout uses magic numbers: `indent = 8.0`, `value_label_width = 18.0`, `label_width = 90.0`, `ROW_HEIGHT = 18.0`. Should reference `ui.style.*` constants (e.g., `style.item_inner_spacing`, `style.property_label_width`, `style.panel_padding`).
+- **Fix:** Replace magic numbers with style constants. `style.property_label_width` already exists but isn't used by the inspector.
+- **Severity:** MEDIUM
+
+### 143. Entity name/badge overlap in hierarchy
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/hierarchy.rs` (lines 168-183)
+- **Issue:** Entity type badge text ("Mesh", "Particle Emitter") is positioned at `bounds.min.x() + bounds_width - badge_size.x() - 8.0`. Long entity names overlap with the badge text. No truncation of entity name to leave room.
+- **Fix:** Use `ui.truncate_text()` (already exists) to truncate entity names leaving space for the badge.
+- **Severity:** MEDIUM
+
+### 144. Markdown defaults() bypass theme system
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/markdown.rs` (lines 59-63)
+- **Issue:** `MarkdownColors::defaults()` hardcodes all colors. `from_style()` does the right thing, but callers using `defaults()` get hardcoded colors. Future callers may accidentally use `defaults()`.
+- **Fix:** Mark `defaults()` as `#[deprecated]` or remove it. All callers should use `from_style()`.
+- **Severity:** MEDIUM
+
+### 145. Hardcoded shadow color in DraggablePanel
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/widgets/draggable_panel.rs` (line 255)
+- **Issue:** Floating panel shadow hardcoded as `Color::new(0.0, 0.0, 0.0, 0.6)` instead of using `style.popup_shadow` which already exists.
+- **Fix:** Use `ui.style.popup_shadow`.
+- **Severity:** LOW
+
+### 146. GraphOptions hardcoded colors
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/context/mod.rs` (lines 444-446)
+- **Issue:** `GraphOptions::default()` uses hardcoded `Color::GREEN`, `Color::new(0.1, 0.1, 0.1, 0.9)`, etc. The `fps()` and `frame_time()` variants also hardcode colors.
+- **Fix:** Derive graph colors from the UiStyle system or theme semantic colors.
+- **Severity:** LOW
+
+### 147. Collapsible uses text arrow chars instead of icons
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/widgets/mod.rs`, Collapsible widget (lines ~1070-1080), `katla_ui/src/widgets/tree.rs`
+- **Issue:** Collapsible and TreeView use Unicode `'▼'` and `'▶'` text characters for expand/collapse arrows. These may render inconsistently across fonts compared to icon font glyphs.
+- **Fix:** Use `ForkAwesome::CHEVRON_DOWN` / `ForkAwesome::CHEVRON_RIGHT` icon glyphs for consistent rendering.
+- **Severity:** LOW
+
+### 148. Badge widget forces white text
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/widgets/mod.rs`, Badge widget
+- **Issue:** Badge text always rendered as `Color::WHITE`. For light-colored badge backgrounds (like `success` green), white text has poor contrast.
+- **Fix:** Auto-select text color based on background luminance (white for dark backgrounds, dark for light backgrounds).
+- **Severity:** LOW
+
+### 149. Viewport labels have no background — unreadable on bright content
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/viewport_grid.rs` (line 124)
+- **Issue:** Viewport label uses `Color::WHITE.with_alpha(0.7)` with no background. On bright viewport content the label is hard to read.
+- **Fix:** Draw a small semi-transparent dark background behind viewport labels for consistent readability.
+- **Severity:** LOW
+
+### 150. Missing keyboard shortcut display in View menu
+- **Crate:** katla_app
+- **Files:** `katla_app/src/ui/editor_ui/toolbar.rs`
+- **Issue:** View menu toggle items ("Grid", "Stats") use `toggle_menu_item_clicked()` without shortcut display. Edit menu items correctly use `menu_item_clicked_with_icon_and_shortcut()`.
+- **Fix:** Use `menu_item_clicked_with_icon_and_shortcut()` for all menu items that have keyboard shortcuts.
+- **Severity:** LOW
+
+### 151. Popup modal overlay hardcoded color
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/context/popup/api.rs` (line 67)
+- **Issue:** Modal popup background overlay uses `Color::new(0.0, 0.0, 0.0, 0.5)` hardcoded. Should use `style.popup_shadow` or a dedicated modal overlay color from theme.
+- **Severity:** LOW
+
+### 152. Vec3Slider axis colors hardcoded — not theme-aware
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/widgets/mod.rs`, Vec3Slider DEFAULT_AXIS_COLORS
+- **Issue:** `DEFAULT_AXIS_COLORS` are `Color::rgb(0.9, 0.3, 0.3)`, `Color::rgb(0.3, 0.9, 0.3)`, `Color::rgb(0.3, 0.5, 0.9)` — hardcoded RGB. Inspector duplicates the same pattern for light color R/G/B sliders. Having these in the theme would allow colorblind-friendly palettes.
+- **Severity:** LOW
+
+### 153. Add gradient rect primitive to DrawList
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/types.rs` (DrawList), `katla_ui/src/context/drawing.rs`
+- **Issue:** No `add_gradient_rect` primitive exists. The vertex format already has per-vertex RGBA color, so GPU interpolation is free — just needs different colors per corner vertex. Useful for subtle depth in title bars and slider grabs.
+- **Fix:** Add `DrawList::add_gradient_rect(bounds, top_left_color, top_right_color, bottom_left_color, bottom_right_color)` that sets per-vertex colors on the existing quad. Add `UiContext::draw_gradient_rect()` wrapper.
+- **Severity:** LOW
+- **Design rationale:** Every professional engine editor uses flat colors. Gradients should be subliminal only — subtle darkening in title bars, slight highlight on active slider grabs. Never on buttons, panels, or backgrounds.
+
+### 154. Fix rounded border rendering — sharp borders on rounded widgets
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/context/drawing.rs` (`draw_selection_border`), `katla_ui/src/types.rs` (DrawList)
+- **Issue:** `draw_selection_border()` draws 4 sharp rectangles (top/bottom/left/right bars). When used on rounded-corner widgets (text inputs, combo boxes, buttons), the sharp-cornered border overlaps the rounded fill, creating a visible mismatch at the corners. This is the single most visible quality issue in the current UI.
+- **Fix:** Add `DrawList::add_rounded_rect_stroke(bounds, color, radius, thickness)` that draws the border as a stroke along the rounded rectangle path (not 4 separate rectangles). Update `draw_selection_border` and `draw_rect_border` to use the rounded stroke when a radius > 0 is provided.
+- **Severity:** HIGH
+
+### 155. Bump default rounding values for modern feel
+- **Crate:** katla_ui
+- **Files:** `katla_ui/src/style.rs` (`UiStyle::default_dimensions()`)
+- **Issue:** Current defaults (window_rounding: 4.0, button_rounding: 4.0, input_rounding: 2.0) are conservative. Dear ImGui moved to 7px windows. Modern imgui themes (Moonlight) use 12px. Engine editors stay in the 4-6px range.
+- **Fix:** Bump to: `window_rounding: 6.0`, `button_rounding: 6.0`, `input_rounding: 4.0`, `popup_rounding: 6.0`, `window_padding: 10.0`. Keep `menu_rounding: 4.0` and `title_bar_height: 25.0`.
+- **Severity:** LOW
+- **Design rationale:** Industry survey of Unity, UE5, Godot 4.6, Blender, Dear ImGui, VS Code, JetBrains: all use 0-6px rounding. Values above 8px look mobile/app-like. Engine editors prioritize density over decoration.
