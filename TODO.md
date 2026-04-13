@@ -1051,7 +1051,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] 168d. Add `UnsafeWorldCell` wrapper — Done in 0c9221d. Thin newtype with storage()/storage_mut::<T>()/entities()/world(), Send+Sync impls, 7 tests.
   - [x] 168e. Annotate existing systems with component access — Done in ca63da4. Added component_access() to all 7 systems across physics, camera, transform, animation.
   - [ ] 168f. Integrate `SystemScheduler` into frame loop — replace sequential `world.update(dt)` with `scheduler.execute(&mut world, dt)`. — (medium, medium risk)
-  - [ ] 168g. Integration test — register 3 systems (A writes X, B writes Y, C reads X+Y), verify A+B run in parallel, C runs after both. — (small, low risk)
+  - [x] 168g. Integration test — Done in 10345cf. 3 tests verifying parallel group ordering, independent grouping, conflicting separation.
   - **Recommended order:** 168a → 168d → 168b → 168c → 168e → 168f → 168g
 - **Depends on:** 167 (rayon dependency), 168d should land before 168c
 - **Severity:** HIGH (fundamental scaling improvement — unlocks multi-core ECS)
@@ -1065,7 +1065,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] 169b. Create `ThreadPoolCommandPool` — Done in 21130e1. Per-thread CommandPool with allocate_secondary, reset_all, destroy, 4 tests.
   - [x] 169c. Parallel geometry pass recording — Done in 0c9221d. std::thread::scope-based parallel recording with secondary CBs, auto-threshold at 32+ draws, 8 tests.
   - [x] 169d. Parallel shadow pass recording — Done in ca63da4. Per-cascade secondary CBs via std::thread::scope, auto-threshold at 16+ draws, 9 tests.
-  - [ ] 169e. Benchmark — measure CPU time for command buffer recording before/after at 100/500/1000 draw calls. — (small, low risk)
+  - [x] 169e. Benchmark — Done in 10345cf. Criterion benchmark with sequential vs parallel comparison at 100/500/1000 draws.
   - **Recommended order:** 169a → 169b → 169c → 169d → 169e
 - **Severity:** HIGH (removes CPU bottleneck for complex scenes)
 
@@ -1074,11 +1074,11 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Files:** `katla_gfx/src/render_graph/frame_graph.rs`, `katla_gfx/src/render_graph/frame/mod.rs`, `katla_gfx/src/render_graph/frame/barriers.rs`
 - **Issue:** The frame graph executes passes sequentially in `execute_passes()`. Independent passes (e.g., shadow cascades, outline vs object-ID) that don't read/write the same resources could execute in parallel. The render graph already tracks `.reads()` and `.writes()` per pass — this is exactly the information needed to build a DAG and schedule independent passes concurrently.
 - **Sub-tasks:**
-  - [ ] 170a. Build pass dependency DAG at frame graph compile time — from existing `reads/writes` per pass, create edges where resource overlap exists. Topological sort determines execution order. (medium, low risk)
-    - [ ] 170a1. Define `PassDagNode` — `PassDagNode { pass_index: usize, reads: Vec<ResourceId>, writes: Vec<ResourceId>, predecessors: Vec<usize>, successors: Vec<usize> }`. (small, low risk)
-    - [ ] 170a2. Implement `build_pass_dag()` — iterate all pass pairs, add edge from A→B if A.writes ∩ (B.reads ∪ B.writes) != ∅ or B.writes ∩ A.reads != ∅. Respect existing execution order for ties. (medium, low risk)
-    - [ ] 170a3. Topological sort and validation — verify DAG is acyclic. Compute parallelism level (max number of concurrent passes). (small, low risk)
-    - [ ] 170a4. Store DAG in `ExecutionPlan` — replace flat pass order with DAG. Sequential execution becomes a simple topological-order walk. (small, low risk)
+  - [x] 170a. Build pass dependency DAG at frame graph compile time — Done in 10345cf. PassDagNode with RAW/WAW/WAR hazard edges, topological levels, parallel groups in ExecutionPlan. 9 tests.
+    - [x] 170a1. Define `PassDagNode` — Done in 10345cf
+    - [x] 170a2. Implement `build_pass_dag()` — Done in 10345cf. RAW/WAW/WAR hazard detection.
+    - [x] 170a3. Topological sort and validation — Done in 10345cf. BFS level computation.
+    - [x] 170a4. Store DAG in `ExecutionPlan` — Done in 10345cf. dag + parallel_groups fields.
   - [ ] 170b. Add parallel pass execution mode — `execute_passes_parallel()` using rayon `scope()`. Each pass records into its own secondary command buffer (requires 169a/169b). (large, medium risk)
     - [ ] 170b1. Allocate secondary CBs per pass — at frame start, allocate one secondary CB per pass from ThreadPoolCommandPool. Each pass records independently. (small, low risk)
     - [ ] 170b2. Implement DAG-based dispatch — using rayon `scope()`, dispatch passes whose predecessors are complete. Track completion with `AtomicUsize` counters per node. (medium, medium risk)
