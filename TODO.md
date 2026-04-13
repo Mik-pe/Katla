@@ -959,8 +959,8 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] 160d. Use DrawList scratch buffer in `generate_rounded_rect_points` instead of allocating per call — (small, low risk) — Done in a4a27bc
   - [x] 160e. Batch font system borrow in draw_text — borrow RefCell once, iterate all glyphs, release once — (small, low risk) — Done in 6724f1b
   - [x] 160f. Fix O(n²) markdown word-wrap — accumulate line width instead of re-measuring from scratch per word — (small, low risk) — Done in a4a27bc
-  - [ ] 160g. Replace per-frame input characters clone with a slice reference or Arc — (small, low risk)
-  - [ ] 160h. Use stack-allocated format buffer for slider value display (arrayvec or similar) — (small, low risk)
+  - ~~160g. Replace per-frame input characters clone with a slice reference or Arc — False positive. Clone is necessary because `self.input` is mutably accessed later in text_input (want_capture_keyboard). RefCell or restructuring would add more complexity than the clone saves.~~
+  - ~~160h. Use stack-allocated format buffer for slider value display (arrayvec or similar) — False positive. format!() is already gated behind `if show_value` and Slider defaults to show_value=false. LabeledSlider does format twice but only when actively rendered.~~
   - **Recommended order:** 160a → 160c → 160d → 160e → 160b → 160f → 160g → 160h
 - **Severity:** MEDIUM
 
