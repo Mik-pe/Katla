@@ -22,24 +22,54 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use itertools::Itertools;
+
 use super::error::RenderGraphError;
 use super::handles::ResourceId;
 use super::pass::PassDesc;
+
+/// Node in the pass dependency DAG.
+///
+/// Captures the resource reads/writes and predecessor/successor edges
+/// for a single pass, along with the topological level used for
+/// parallel scheduling.
+#[derive(Debug, Clone)]
+pub(crate) struct PassDagNode {
+    /// Index into the pass list.
+    pub pass_index: usize,
+    /// Resources this pass reads.
+    pub reads: Vec<ResourceId>,
+    /// Resources this pass writes.
+    pub writes: Vec<ResourceId>,
+    /// Indices of predecessor passes (must complete before this one).
+    pub predecessors: Vec<usize>,
+    /// Indices of successor passes (depend on this one).
+    pub successors: Vec<usize>,
+    /// Topological depth (0 for root passes).
+    pub level: usize,
+}
 
 /// Compiled execution plan for a render graph.
 ///
 /// Contains:
 /// - Topologically sorted pass indices
-/// - Resource state tracking info
+/// - Pass dependency DAG with predecessor/successor edges
+/// - Parallel groups of passes that can execute concurrently
 #[derive(Debug, Clone)]
 pub struct ExecutionPlan {
     pub(super) sorted_passes: Vec<usize>,
+    /// Pass dependency DAG nodes indexed by pass index.
+    pub(super) dag: Vec<PassDagNode>,
+    /// Groups of pass indices that can execute concurrently, ordered by level.
+    pub(super) parallel_groups: Vec<Vec<usize>>,
 }
 
 impl ExecutionPlan {
     fn new() -> Self {
         Self {
             sorted_passes: Vec::new(),
+            dag: Vec::new(),
+            parallel_groups: Vec::new(),
         }
     }
 }
@@ -67,6 +97,89 @@ impl From<&PassDesc> for PassInfo {
             writes: desc.writes.clone(),
         }
     }
+}
+
+/// Build a pass dependency DAG from the pass list.
+///
+/// For each pair of passes (i, j) where i < j, an edge i→j is added when:
+/// - i.writes ∩ j.reads ≠ ∅  (RAW: i produces what j consumes)
+/// - i.writes ∩ j.writes ≠ ∅  (WAW: both write the same resource)
+/// - i.reads ∩ j.writes ≠ ∅   (WAR: j overwrites what i reads)
+///
+/// Returns a DAG with topological levels computed via BFS from roots,
+/// plus parallel groups (passes at the same level can run concurrently).
+fn build_pass_dag(passes: &[PassInfo]) -> (Vec<PassDagNode>, Vec<Vec<usize>>) {
+    let n = passes.len();
+    let mut predecessors: Vec<HashSet<usize>> = vec![HashSet::new(); n];
+    let mut successors: Vec<HashSet<usize>> = vec![HashSet::new(); n];
+
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let pi_reads: HashSet<_> = passes[i].reads.iter().copied().collect();
+            let pi_writes: HashSet<_> = passes[i].writes.iter().copied().collect();
+            let pj_reads: HashSet<_> = passes[j].reads.iter().copied().collect();
+            let pj_writes: HashSet<_> = passes[j].writes.iter().copied().collect();
+
+            let depends = !pi_writes.is_disjoint(&pj_reads)
+                || !pi_writes.is_disjoint(&pj_writes)
+                || !pi_reads.is_disjoint(&pj_writes);
+
+            if depends {
+                predecessors[j].insert(i);
+                successors[i].insert(j);
+            }
+        }
+    }
+
+    // Compute topological levels via BFS from roots (passes with no predecessors).
+    let mut levels = vec![0usize; n];
+    let mut in_degree: Vec<usize> = predecessors.iter().map(|p| p.len()).collect();
+    let mut queue: VecDeque<usize> = VecDeque::new();
+
+    for (i, &degree) in in_degree.iter().enumerate() {
+        if degree == 0 {
+            queue.push_back(i);
+        }
+    }
+
+    let mut topo_order = Vec::with_capacity(n);
+    while let Some(node) = queue.pop_front() {
+        topo_order.push(node);
+        for &succ in &successors[node] {
+            levels[succ] = levels[succ].max(levels[node] + 1);
+            in_degree[succ] -= 1;
+            if in_degree[succ] == 0 {
+                queue.push_back(succ);
+            }
+        }
+    }
+
+    // Build parallel groups: group passes by their level.
+    let max_level = levels.iter().copied().max().unwrap_or(0);
+    let mut parallel_groups: Vec<Vec<usize>> = vec![Vec::new(); max_level + 1];
+    for (idx, &level) in levels.iter().enumerate() {
+        parallel_groups[level].push(idx);
+    }
+    // Remove empty trailing groups (shouldn't happen, but be safe).
+    while parallel_groups.last().is_some_and(|g| g.is_empty()) {
+        parallel_groups.pop();
+    }
+
+    // Build DAG nodes.
+    let dag: Vec<PassDagNode> = passes
+        .iter()
+        .enumerate()
+        .map(|(i, pass)| PassDagNode {
+            pass_index: i,
+            reads: pass.reads.clone(),
+            writes: pass.writes.clone(),
+            predecessors: predecessors[i].iter().copied().sorted().collect(),
+            successors: successors[i].iter().copied().sorted().collect(),
+            level: levels[i],
+        })
+        .collect();
+
+    (dag, parallel_groups)
 }
 
 /// Graph compiler - analyzes dependencies and creates execution plans.
@@ -281,8 +394,12 @@ impl GraphCompiler {
             .topological_sort()
             .map_err(RenderGraphError::DependencyCycle)?;
 
+        let (dag, parallel_groups) = build_pass_dag(&self.passes);
+
         let mut plan = ExecutionPlan::new();
         plan.sorted_passes = sorted_passes;
+        plan.dag = dag;
+        plan.parallel_groups = parallel_groups;
 
         Ok(plan)
     }
@@ -508,5 +625,163 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Cycle"));
+    }
+
+    // --- DAG tests ---
+
+    #[test]
+    fn test_dag_raw_write_read_edge() {
+        let passes = vec![
+            make_pass("A", vec![], vec![rid(0)]),
+            make_pass("B", vec![rid(0)], vec![]),
+        ];
+
+        let (dag, _groups) = build_pass_dag(&passes);
+
+        assert_eq!(dag[0].successors, vec![1usize]);
+        assert!(dag[0].predecessors.is_empty());
+        assert_eq!(dag[1].predecessors, vec![0usize]);
+        assert!(dag[1].successors.is_empty());
+    }
+
+    #[test]
+    fn test_dag_independent_passes_same_group() {
+        let passes = vec![
+            make_pass("A", vec![], vec![rid(0)]),
+            make_pass("B", vec![], vec![rid(1)]),
+        ];
+
+        let (dag, groups) = build_pass_dag(&passes);
+
+        assert!(dag[0].successors.is_empty());
+        assert!(dag[1].successors.is_empty());
+        assert!(dag[0].predecessors.is_empty());
+        assert!(dag[1].predecessors.is_empty());
+        assert_eq!(groups.len(), 1, "Independent passes should be in one group");
+        assert_eq!(groups[0].len(), 2);
+    }
+
+    #[test]
+    fn test_dag_fan_in_parallel() {
+        // A writes X, B writes Y, C reads X+Y → A+B at level 0, C at level 1
+        let passes = vec![
+            make_pass("A", vec![], vec![rid(0)]),
+            make_pass("B", vec![], vec![rid(1)]),
+            make_pass("C", vec![rid(0), rid(1)], vec![]),
+        ];
+
+        let (dag, groups) = build_pass_dag(&passes);
+
+        assert_eq!(dag[0].level, 0);
+        assert_eq!(dag[1].level, 0);
+        assert_eq!(dag[2].level, 1);
+        assert_eq!(dag[2].predecessors, vec![0, 1]);
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].len(), 2, "Level 0: A and B in parallel");
+        assert!(groups[0].contains(&0));
+        assert!(groups[0].contains(&1));
+        assert_eq!(groups[1], vec![2], "Level 1: C after A and B");
+    }
+
+    #[test]
+    fn test_dag_waw_edge() {
+        let passes = vec![
+            make_pass("A", vec![], vec![rid(0)]),
+            make_pass("B", vec![], vec![rid(0)]),
+        ];
+
+        let (dag, _groups) = build_pass_dag(&passes);
+
+        assert_eq!(dag[0].successors, vec![1]);
+        assert_eq!(dag[1].predecessors, vec![0]);
+    }
+
+    #[test]
+    fn test_dag_war_edge() {
+        let passes = vec![
+            make_pass("A", vec![rid(0)], vec![]),
+            make_pass("B", vec![], vec![rid(0)]),
+        ];
+
+        let (dag, _groups) = build_pass_dag(&passes);
+
+        assert_eq!(dag[0].successors, vec![1]);
+        assert_eq!(dag[1].predecessors, vec![0]);
+    }
+
+    #[test]
+    fn test_dag_levels_chain() {
+        let passes = vec![
+            make_pass("A", vec![], vec![rid(0)]),
+            make_pass("B", vec![rid(0)], vec![rid(1)]),
+            make_pass("C", vec![rid(1)], vec![]),
+        ];
+
+        let (dag, groups) = build_pass_dag(&passes);
+
+        assert_eq!(dag[0].level, 0);
+        assert_eq!(dag[1].level, 1);
+        assert_eq!(dag[2].level, 2);
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0], vec![0]);
+        assert_eq!(groups[1], vec![1]);
+        assert_eq!(groups[2], vec![2]);
+    }
+
+    #[test]
+    fn test_dag_diamond() {
+        let passes = vec![
+            make_pass("A", vec![], vec![rid(0)]),
+            make_pass("B", vec![rid(0)], vec![rid(1)]),
+            make_pass("C", vec![rid(0)], vec![rid(2)]),
+            make_pass("D", vec![rid(1), rid(2)], vec![]),
+        ];
+
+        let (dag, groups) = build_pass_dag(&passes);
+
+        assert_eq!(dag[0].level, 0);
+        assert_eq!(dag[1].level, 1);
+        assert_eq!(dag[2].level, 1);
+        assert_eq!(dag[3].level, 2);
+
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0], vec![0]);
+        assert_eq!(groups[1].len(), 2);
+        assert!(groups[1].contains(&1));
+        assert!(groups[1].contains(&2));
+        assert_eq!(groups[2], vec![3]);
+    }
+
+    #[test]
+    fn test_dag_single_pass() {
+        let passes = vec![make_pass("solo", vec![], vec![])];
+
+        let (dag, groups) = build_pass_dag(&passes);
+
+        assert_eq!(dag.len(), 1);
+        assert_eq!(dag[0].level, 0);
+        assert!(dag[0].predecessors.is_empty());
+        assert!(dag[0].successors.is_empty());
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0], vec![0]);
+    }
+
+    #[test]
+    fn test_dag_populated_in_execution_plan() {
+        let passes = vec![
+            make_pass("A", vec![], vec![rid(0)]),
+            make_pass("B", vec![rid(0)], vec![rid(1)]),
+            make_pass("C", vec![rid(1)], vec![]),
+        ];
+
+        let plan = GraphCompiler::new(passes).compile().unwrap();
+
+        assert_eq!(plan.dag.len(), 3);
+        assert_eq!(plan.parallel_groups.len(), 3);
+        assert_eq!(plan.dag[0].reads, Vec::<ResourceId>::new());
+        assert_eq!(plan.dag[0].writes, vec![rid(0)]);
+        assert_eq!(plan.dag[1].reads, vec![rid(0)]);
+        assert_eq!(plan.dag[1].writes, vec![rid(1)]);
     }
 }
