@@ -1,4 +1,4 @@
-use katla_ecs::{System, World};
+use katla_ecs::{ComponentAccess, System, World};
 
 use crate::components::{TransformComponent, VelocityComponent};
 
@@ -11,6 +11,13 @@ impl System for VelocitySystem {
         {
             transform.transform.position += velocity.velocity * delta_time;
         }
+    }
+
+    fn component_access() -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::write::<TransformComponent>(),
+            ComponentAccess::read::<VelocityComponent>(),
+        ]
     }
 }
 

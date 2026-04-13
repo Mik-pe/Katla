@@ -199,6 +199,12 @@ impl Application {
                         }
                     }
                 }
+                LoadResult::FullTextureLoaded { .. } => {
+                    // GPU upload handled by the caller
+                }
+                LoadResult::GltfModelLoaded { .. } => {
+                    // GPU upload handled by the caller
+                }
             }
         }
     }

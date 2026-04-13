@@ -1,4 +1,4 @@
-use katla_ecs::{System, World};
+use katla_ecs::{ComponentAccess, System, World};
 use katla_math::{Quat, Vec3};
 
 use crate::components::{OrbitCameraControllerComponent, TransformComponent};
@@ -100,5 +100,12 @@ impl System for OrbitCameraSystem {
                 transform.transform.rotation = rotation;
             }
         }
+    }
+
+    fn component_access() -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::write::<OrbitCameraControllerComponent>(),
+            ComponentAccess::write::<TransformComponent>(),
+        ]
     }
 }

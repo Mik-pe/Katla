@@ -1,4 +1,4 @@
-use katla_ecs::{System, World};
+use katla_ecs::{ComponentAccess, System, World};
 use katla_math::{Quat, Vec3};
 
 use crate::components::{
@@ -103,5 +103,15 @@ impl System for FlyCameraLookSystem {
                 }
             }
         }
+    }
+
+    fn component_access() -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::read::<FlyCameraControllerComponent>(),
+            ComponentAccess::write::<FlyCameraLookComponent>(),
+            ComponentAccess::write::<crate::components::TransformComponent>(),
+            ComponentAccess::write::<ForceComponent>(),
+            ComponentAccess::write::<VelocityComponent>(),
+        ]
     }
 }

@@ -43,6 +43,16 @@ pub enum LoadRequest {
         path: PathBuf,
         max_size: u32,
     },
+
+    /// Load a full-size texture with optional mipmap generation.
+    FullTexture {
+        id: LoadId,
+        path: PathBuf,
+        generate_mipmaps: bool,
+    },
+
+    /// Load a glTF model file.
+    GltfModel { id: LoadId, path: PathBuf },
 }
 
 /// Results from background loading.
@@ -56,6 +66,18 @@ pub enum LoadResult {
         height: u32,
         pixels: Vec<u8>, // RGBA8
     },
+
+    /// Full-size texture loaded.
+    FullTextureLoaded {
+        id: LoadId,
+        width: u32,
+        height: u32,
+        mip_levels: u32,
+        pixels: Vec<u8>, // RGBA8
+    },
+
+    /// glTF model loaded (CPU-side data only, GPU upload happens on main thread).
+    GltfModelLoaded { id: LoadId, path: PathBuf },
 
     /// Load failed.
     Failed {
@@ -121,6 +143,12 @@ impl BackgroundLoader {
                 LoadRequest::ImageThumbnail { id, path, max_size } => {
                     Self::load_image_thumbnail(id, &path, max_size)
                 }
+                LoadRequest::FullTexture {
+                    id,
+                    path,
+                    generate_mipmaps,
+                } => Self::load_full_texture(id, &path, generate_mipmaps),
+                LoadRequest::GltfModel { id, path } => Self::load_gltf_model(id, &path),
             };
 
             if result_tx.send(result).is_err() {
@@ -181,6 +209,78 @@ impl BackgroundLoader {
         }
     }
 
+    /// Load a full-size texture with optional mipmap generation.
+    fn load_full_texture(id: LoadId, path: &PathBuf, generate_mipmaps: bool) -> LoadResult {
+        debug!("Loading full texture: {:?}", path);
+
+        match image::open(path) {
+            Ok(img) => {
+                let rgba = img.to_rgba8();
+                let (width, height) = rgba.dimensions();
+                let pixels = rgba.into_raw();
+
+                let mip_levels = if generate_mipmaps {
+                    (width.max(height) as f32).log2().floor() as u32 + 1
+                } else {
+                    1
+                };
+
+                debug!(
+                    "Loaded full texture: {:?} ({}x{}, mip_levels={})",
+                    path, width, height, mip_levels
+                );
+
+                LoadResult::FullTextureLoaded {
+                    id,
+                    width,
+                    height,
+                    mip_levels,
+                    pixels,
+                }
+            }
+            Err(e) => {
+                warn!("Failed to load texture {:?}: {}", path, e);
+                LoadResult::Failed {
+                    id,
+                    path: path.clone(),
+                    error: e.to_string(),
+                }
+            }
+        }
+    }
+
+    /// Load a glTF model (stub - validates path exists, actual parsing in 171c).
+    fn load_gltf_model(id: LoadId, path: &PathBuf) -> LoadResult {
+        debug!("Loading glTF model: {:?}", path);
+
+        if !path.exists() {
+            warn!("glTF model not found: {:?}", path);
+            return LoadResult::Failed {
+                id,
+                path: path.clone(),
+                error: format!("File not found: {}", path.display()),
+            };
+        }
+
+        match gltf::import(path) {
+            Ok(_import) => {
+                debug!("glTF model parsed: {:?}", path);
+                LoadResult::GltfModelLoaded {
+                    id,
+                    path: path.clone(),
+                }
+            }
+            Err(e) => {
+                warn!("Failed to load glTF model {:?}: {}", path, e);
+                LoadResult::Failed {
+                    id,
+                    path: path.clone(),
+                    error: e.to_string(),
+                }
+            }
+        }
+    }
+
     /// Request an image thumbnail to be loaded.
     ///
     /// Returns the LoadId for tracking. Check `poll()` for the result.
@@ -200,6 +300,46 @@ impl BackgroundLoader {
 
         if let Err(e) = self.request_sender.send(request) {
             warn!("Failed to send thumbnail request: {}", e);
+        }
+
+        id
+    }
+
+    /// Request a full-size texture to be loaded.
+    ///
+    /// Returns the LoadId for tracking. Check `poll()` for the result.
+    pub fn request_full_texture(&mut self, path: PathBuf, generate_mipmaps: bool) -> LoadId {
+        let id = LoadId(self.next_load_id);
+        self.next_load_id += 1;
+
+        self.pending_loads.insert(id, path.clone());
+
+        let request = LoadRequest::FullTexture {
+            id,
+            path,
+            generate_mipmaps,
+        };
+
+        if let Err(e) = self.request_sender.send(request) {
+            warn!("Failed to send full texture request: {}", e);
+        }
+
+        id
+    }
+
+    /// Request a glTF model to be loaded.
+    ///
+    /// Returns the LoadId for tracking. Check `poll()` for the result.
+    pub fn request_gltf_model(&mut self, path: PathBuf) -> LoadId {
+        let id = LoadId(self.next_load_id);
+        self.next_load_id += 1;
+
+        self.pending_loads.insert(id, path.clone());
+
+        let request = LoadRequest::GltfModel { id, path };
+
+        if let Err(e) = self.request_sender.send(request) {
+            warn!("Failed to send glTF model request: {}", e);
         }
 
         id
@@ -258,6 +398,8 @@ impl LoadResult {
     pub fn id(&self) -> LoadId {
         match self {
             LoadResult::ImageThumbnailLoaded { id, .. } => *id,
+            LoadResult::FullTextureLoaded { id, .. } => *id,
+            LoadResult::GltfModelLoaded { id, .. } => *id,
             LoadResult::Failed { id, .. } => *id,
         }
     }
@@ -273,5 +415,33 @@ mod tests {
         let path = PathBuf::from("test.png");
         loader.request_thumbnail(path.clone(), 64);
         assert!(loader.is_loading(&path));
+    }
+
+    #[test]
+    fn test_full_texture_request() {
+        let mut loader = BackgroundLoader::new();
+        let path = PathBuf::from("test_texture.png");
+        let id = loader.request_full_texture(path.clone(), true);
+        assert!(id.0 > 0);
+        assert!(loader.is_loading(&path));
+    }
+
+    #[test]
+    fn test_gltf_model_request() {
+        let mut loader = BackgroundLoader::new();
+        let path = PathBuf::from("test_model.glb");
+        let id = loader.request_gltf_model(path.clone());
+        assert!(id.0 > 0);
+        assert!(loader.is_loading(&path));
+    }
+
+    #[test]
+    fn test_load_ids_increment() {
+        let mut loader = BackgroundLoader::new();
+        let id1 = loader.request_thumbnail(PathBuf::from("a.png"), 64);
+        let id2 = loader.request_full_texture(PathBuf::from("b.png"), false);
+        let id3 = loader.request_gltf_model(PathBuf::from("c.glb"));
+        assert!(id1.0 < id2.0);
+        assert!(id2.0 < id3.0);
     }
 }
