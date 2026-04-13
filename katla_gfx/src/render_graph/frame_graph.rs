@@ -79,7 +79,7 @@ pub struct FrameGraph {
     /// Per-frame compositing descriptor sets (one per frame in flight).
     /// Pre-allocated and reused each frame via update_textures().
     pub(super) compositing_descriptor_sets:
-        RefCell<Vec<Option<Box<crate::render_graph::descriptor_sets::CompositingDescriptorSet>>>>,
+        RefCell<[Option<crate::render_graph::descriptor_sets::CompositingDescriptorSet>; 2]>,
 }
 
 impl FrameGraph {
@@ -95,7 +95,7 @@ impl FrameGraph {
             transient_textures: Vec::new(),
             ldr_texture_base_index: None,
             params: FrameParams::default(),
-            compositing_descriptor_sets: RefCell::new(vec![None, None]),
+            compositing_descriptor_sets: RefCell::new([None, None]),
         }
     }
 
@@ -503,10 +503,7 @@ impl FrameGraph {
             self.transient_textures.push(frame_textures);
         }
 
-        // Ensure per-frame compositing descriptor set storage matches frame count
-        while self.compositing_descriptor_sets.borrow().len() < FRAMES_IN_FLIGHT {
-            self.compositing_descriptor_sets.borrow_mut().push(None);
-        }
+        // Per-frame compositing descriptor set storage is fixed at [None, None]
 
         Ok(())
     }

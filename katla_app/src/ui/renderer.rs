@@ -27,6 +27,13 @@ pub struct UIRenderer {
     /// Maps TextureHandle indices to their bindless texture slots.
     /// This allows us to look up the bindless index for thumbnails and other textures.
     bindless_slots: HashMap<u32, u32>,
+
+    // Reusable conversion buffers (cleared each frame, avoids reallocation)
+    texture_to_index: HashMap<TextureId, u32>,
+    vertex_texture_indices: Vec<u32>,
+    vertices: Vec<VertexUI>,
+    indices: Vec<u32>,
+    commands: Vec<UiDrawCommand>,
 }
 
 impl UIRenderer {
@@ -37,6 +44,11 @@ impl UIRenderer {
             font_atlas_bindless_slot: None,
             white_texture_bindless_slot: Some(0),
             bindless_slots: HashMap::new(),
+            texture_to_index: HashMap::new(),
+            vertex_texture_indices: Vec::new(),
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            commands: Vec::new(),
         }
     }
 
@@ -91,31 +103,40 @@ impl UIRenderer {
     ///
     /// A `UIDrawList` ready for GPU submission.
     pub fn convert_draw_list(
-        &self,
+        &mut self,
         draw_list: &DrawList,
         screen_size: [f32; 2],
         scale_factor: f32,
     ) -> UIDrawList {
-        // Build a map from TextureId to bindless index for this frame
-        let mut texture_to_index: HashMap<TextureId, u32> = HashMap::new();
+        // Clear reusable buffers (keeps allocated capacity)
+        self.texture_to_index.clear();
+        self.vertex_texture_indices.clear();
+        self.vertices.clear();
+        self.indices.clear();
+        self.commands.clear();
 
         // First pass: build texture mapping
         for cmd in draw_list.commands() {
-            texture_to_index
-                .entry(cmd.texture)
-                .or_insert_with(|| self.texture_id_to_bindless_index(cmd.texture));
+            if !self.texture_to_index.contains_key(&cmd.texture) {
+                let idx = self.texture_id_to_bindless_index(cmd.texture);
+                self.texture_to_index.insert(cmd.texture, idx);
+            }
         }
 
         // Create a mapping from vertex index to texture index
-        let mut vertex_texture_indices: Vec<u32> = vec![0; draw_list.vertices().len()];
+        self.vertex_texture_indices
+            .resize(draw_list.vertices().len(), 0);
 
         // Assign texture indices per-command by scanning vertex ranges
         for cmd in draw_list.commands() {
-            let bindless_index = texture_to_index.get(&cmd.texture).copied().unwrap_or(0);
+            let bindless_index = self
+                .texture_to_index
+                .get(&cmd.texture)
+                .copied()
+                .unwrap_or(0);
             let index_start = cmd.index_offset as usize;
             let index_end = index_start + cmd.index_count as usize;
 
-            // Find the min/max vertex index used by this command's indices
             let mut min_v = u32::MAX;
             let mut max_v = 0u32;
             for &idx in &draw_list.indices()[index_start..index_end] {
@@ -123,54 +144,49 @@ impl UIRenderer {
                 max_v = max_v.max(idx);
             }
 
-            // Set texture index for the contiguous vertex range
             if min_v <= max_v {
                 let start = min_v as usize;
                 let end = (max_v as usize) + 1;
                 for v in start..end {
-                    vertex_texture_indices[v] = bindless_index;
+                    self.vertex_texture_indices[v] = bindless_index;
                 }
             }
         }
 
-        // Now convert vertices with their texture indices
-        let vertices: Vec<VertexUI> = draw_list
-            .vertices()
-            .iter()
-            .enumerate()
-            .map(|(i, v)| {
-                let tex_index = vertex_texture_indices.get(i).copied().unwrap_or(0);
+        // Convert vertices with their texture indices
+        self.vertices
+            .extend(draw_list.vertices().iter().enumerate().map(|(i, v)| {
+                let tex_index = self.vertex_texture_indices.get(i).copied().unwrap_or(0);
                 VertexUI::new(
                     [v.pos.x(), v.pos.y()],
                     [v.uv.x(), v.uv.y()],
                     v.color,
                     tex_index,
                 )
-            })
-            .collect();
+            }));
 
         // Copy indices directly
-        let indices = draw_list.indices().to_vec();
+        self.indices.extend(draw_list.indices());
 
-        // Convert commands, resolving texture IDs to bindless indices (for validation)
-        let commands: Vec<UiDrawCommand> = draw_list
-            .commands()
-            .iter()
-            .map(|cmd| {
-                let bindless_index = texture_to_index.get(&cmd.texture).copied().unwrap_or(0);
-                UiDrawCommand::new(
-                    cmd.index_offset,
-                    cmd.index_count,
-                    cmd.clip_rect,
-                    TextureHandle::new(bindless_index),
-                )
-            })
-            .collect();
+        // Convert commands, resolving texture IDs to bindless indices
+        self.commands.extend(draw_list.commands().iter().map(|cmd| {
+            let bindless_index = self
+                .texture_to_index
+                .get(&cmd.texture)
+                .copied()
+                .unwrap_or(0);
+            UiDrawCommand::new(
+                cmd.index_offset,
+                cmd.index_count,
+                cmd.clip_rect,
+                TextureHandle::new(bindless_index),
+            )
+        }));
 
         UIDrawList {
-            vertices,
-            indices,
-            commands,
+            vertices: std::mem::take(&mut self.vertices),
+            indices: std::mem::take(&mut self.indices),
+            commands: std::mem::take(&mut self.commands),
             screen_size,
             scale_factor,
         }
@@ -245,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_convert_empty_draw_list() {
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let draw_list = DrawList::new();
 
         let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0], 1.0);
@@ -259,7 +275,7 @@ mod tests {
 
     #[test]
     fn test_convert_draw_list_with_vertices() {
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
         // Add a simple rect
@@ -284,7 +300,7 @@ mod tests {
     fn test_hidpi_scale_factor_in_draw_list() {
         // Test that scale_factor is included in UIDrawList for HiDPI coordinate conversion
         use katla_math::{Color, Rect2D, Vec2};
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
         // Add a rect with clipping
@@ -320,7 +336,7 @@ mod tests {
         // VAL-POS-001: Vertex positions in the draw list must match the requested bounds
         use katla_math::{Color, Rect2D, Vec2};
 
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
         // Draw a rect at specific logical coordinates
@@ -383,7 +399,7 @@ mod tests {
         // VAL-POS-001: Multiple elements must appear at their specified coordinates
         use katla_math::{Color, Rect2D, Vec2};
 
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
         // Draw multiple rects at different positions
@@ -438,7 +454,7 @@ mod tests {
         // VAL-POS-003: VertexUI conversion preserves positions
         use katla_math::{Color, Rect2D, Vec2};
 
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
         // Create vertices at known logical coordinates
@@ -474,7 +490,7 @@ mod tests {
         // VAL-POS-003: Coordinate transformation must preserve spatial relationships
         use katla_math::{Color, Rect2D, Vec2};
 
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
         // Create two rects with a specific spatial relationship
@@ -527,7 +543,7 @@ mod tests {
         // VAL-POS-003: Vertex colors must be preserved through conversion
         use katla_math::{Color, Rect2D, Vec2};
 
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
         // Draw rects with different colors
@@ -567,7 +583,7 @@ mod tests {
         // VAL-POS-003: UV coordinates must be preserved through conversion
         use katla_math::{Color, Rect2D, Vec2};
 
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
         // add_rect creates vertices with UV=(0, 0) for solid color rendering
@@ -592,7 +608,7 @@ mod tests {
         // FLOW-001: scale_factor flows through the rendering pipeline
         use katla_math::{Color, Rect2D, Vec2};
 
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
         draw_list.add_rect(
@@ -642,7 +658,7 @@ mod tests {
         // FLOW-001: clip_rect is in logical pixels, scaled to physical for Vulkan scissor
         use katla_math::{Color, Rect2D, Vec2};
 
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
         // Set a clip rect in logical pixels
@@ -698,7 +714,7 @@ mod tests {
         // FLOW-001: Metrics are consistent (logical units throughout)
         use katla_math::{Color, Rect2D, Vec2};
 
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
         // Draw a 100x50 rect at position (50, 75)
@@ -746,7 +762,7 @@ mod tests {
         // FLOW-001: UIDrawList.screen_size must be in logical pixels
         use katla_math::{Color, Rect2D, Vec2};
 
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
         draw_list.add_rect(
@@ -795,7 +811,7 @@ mod tests {
     #[test]
     fn test_bindless_texture_id_decoding() {
         // Test that bindless texture IDs (with high bit set) are correctly decoded
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
 
         const BINDLESS_FLAG: u64 = 1 << 63;
 
@@ -815,7 +831,7 @@ mod tests {
     #[test]
     fn test_bindless_texture_id_preserves_index() {
         // Test that different bindless indices are preserved correctly
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
 
         const BINDLESS_FLAG: u64 = 1 << 63;
 
@@ -854,7 +870,7 @@ mod tests {
     #[test]
     fn test_texture_id_none_returns_white_texture_slot() {
         // Test that TextureId::NONE uses white texture slot for solid color rendering
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
 
         // White texture is at slot 0 by default
         let none_index = renderer.texture_id_to_bindless_index(TextureId::NONE);
@@ -884,7 +900,7 @@ mod tests {
     #[test]
     fn test_viewport_bindless_texture_mapping() {
         // Test viewport bindless texture IDs are correctly mapped
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
 
         const BINDLESS_FLAG: u64 = 1 << 63;
 
@@ -904,7 +920,7 @@ mod tests {
     #[test]
     fn test_multi_viewport_bindless_indices() {
         // Test that multiple viewports can have different bindless indices
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
 
         const BINDLESS_FLAG: u64 = 1 << 63;
 
@@ -926,7 +942,7 @@ mod tests {
     #[test]
     fn test_bindless_flag_detection() {
         // Test that the high bit correctly identifies bindless textures
-        let renderer = UIRenderer::new();
+        let mut renderer = UIRenderer::new();
 
         const BINDLESS_FLAG: u64 = 1 << 63;
 
