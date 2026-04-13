@@ -5,6 +5,7 @@ pub mod entity;
 pub mod events;
 pub mod query;
 pub mod resource;
+pub(crate) mod scheduler;
 pub mod spawn;
 pub(crate) mod storage;
 pub mod system;

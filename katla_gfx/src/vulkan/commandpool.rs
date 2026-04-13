@@ -36,6 +36,14 @@ impl CommandPool {
         super::CommandBuffer::new_secondary(&self.device, self)
     }
 
+    pub fn reset(&self) {
+        unsafe {
+            self.device
+                .reset_command_pool(self.command_pool, vk::CommandPoolResetFlags::empty())
+                .expect("Failed to reset command pool");
+        }
+    }
+
     pub fn destroy(&self) {
         unsafe {
             self.device.destroy_command_pool(self.command_pool, None);
