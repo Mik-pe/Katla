@@ -34,7 +34,7 @@ use std::collections::HashSet;
 /// ```
 pub struct World {
     /// Entity allocator with generation-based IDs
-    entities: EntityAllocator,
+    pub(crate) entities: EntityAllocator,
     /// Component storage manager.
     /// Wrapped in UnsafeCell to support `query_ref` (immutable queries from &self).
     pub(crate) storage: UnsafeCell<ComponentStorageManager>,
@@ -602,6 +602,22 @@ impl World {
         self.resources
             .get_mut::<R>()
             .expect("resource was just inserted above")
+    }
+
+    /// Get unsafe cell access to this world.
+    ///
+    /// Used by the parallel scheduler for concurrent system execution.
+    ///
+    /// # Safety
+    /// Caller must ensure that the returned `UnsafeWorldCell` is not used
+    /// beyond the lifetime of the `&mut self` borrow, and that no other
+    /// mutable reference to `World` exists while the cell is in use.
+    pub(crate) unsafe fn as_unsafe_world_cell(
+        &mut self,
+    ) -> crate::unsafe_world_cell::UnsafeWorldCell {
+        // SAFETY: Caller has &mut self, so the pointer is valid and no other
+        // mutable references exist. The returned cell must not outlive this borrow.
+        unsafe { crate::unsafe_world_cell::UnsafeWorldCell::new(self as *mut World) }
     }
 }
 

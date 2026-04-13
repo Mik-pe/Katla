@@ -1,11 +1,19 @@
 use crate::render_graph::error::RenderGraphError;
+use crate::render_graph::frame::parallel_geometry::{RenderPassParams, execute_parallel_recording};
 use crate::render_graph::frame::{Frame, PassExecutionData};
-use crate::render_graph::pass::PassDesc;
+use crate::render_graph::pass::{PassDesc, PassKind};
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
+/// Minimum number of draw calls to justify parallel recording overhead.
+const PARALLEL_DRAW_THRESHOLD: usize = 32;
+
 impl<'a> Frame<'a> {
     /// Execute a graphics pass with dynamic rendering.
+    ///
+    /// Uses parallel secondary command buffer recording for geometry passes with
+    /// enough draw calls and no UI draw lists. Falls back to sequential recording
+    /// for small batches or passes with UI.
     pub(super) fn execute_graphics_pass(
         &mut self,
         cmd: &CommandBuffer,
@@ -19,6 +27,23 @@ impl<'a> Frame<'a> {
             data.draw_lists.len(),
             data.ui_draw_lists.len()
         );
+
+        let total_draws: usize = data.draw_lists.iter().map(|dl| dl.draws.len()).sum();
+        let use_parallel = pass.kind == Some(PassKind::Geometry)
+            && data.ui_draw_lists.is_empty()
+            && total_draws >= PARALLEL_DRAW_THRESHOLD;
+
+        // Resolve draw commands first (needs &mut self), before we borrow self for attachments.
+        let resolved_commands = if use_parallel {
+            log::debug!(
+                "[GRAPHICS] Parallel recording for '{}' ({} draws)",
+                pass.name,
+                total_draws
+            );
+            Some(self.resolve_draw_commands(&data.draw_lists, self.current_frame())?)
+        } else {
+            None
+        };
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
         let render_area = vk::Rect2D {
@@ -36,36 +61,53 @@ impl<'a> Frame<'a> {
 
         let (depth_attachment, stencil_attachment) = self.resolve_depth_attachment(pass)?;
 
-        cmd.begin_rendering(
-            &[color_attachment],
-            depth_attachment.as_ref(),
-            stencil_attachment.as_ref(),
-            render_area,
-            1,
-        );
+        if let Some(commands) = resolved_commands {
+            let params = RenderPassParams {
+                color_attachment,
+                depth_attachment,
+                stencil_attachment,
+                render_area,
+                extent,
+            };
+            execute_parallel_recording(
+                &self.renderer.context.device,
+                &self.renderer.context.gfx_cmdpool,
+                cmd,
+                &commands,
+                &params,
+            )
+        } else {
+            cmd.begin_rendering(
+                &[color_attachment],
+                depth_attachment.as_ref(),
+                stencil_attachment.as_ref(),
+                render_area,
+                1,
+            );
 
-        cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
-            0.0,
-            0.0,
-            extent.width as f32,
-            extent.height as f32,
-        )]);
-        cmd.set_scissor(&[crate::sync::Rect2D::from_extent(
-            extent.width,
-            extent.height,
-        )]);
+            cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
+                0.0,
+                0.0,
+                extent.width as f32,
+                extent.height as f32,
+            )]);
+            cmd.set_scissor(&[crate::sync::Rect2D::from_extent(
+                extent.width,
+                extent.height,
+            )]);
 
-        for draw_list in &data.draw_lists {
-            self.execute_draw_list(cmd, draw_list)?;
+            for draw_list in &data.draw_lists {
+                self.execute_draw_list(cmd, draw_list)?;
+            }
+
+            for ui_draw_list in &data.ui_draw_lists {
+                self.execute_ui_draw_list(cmd, pass, ui_draw_list)?;
+            }
+
+            cmd.end_rendering();
+
+            Ok(())
         }
-
-        for ui_draw_list in &data.ui_draw_lists {
-            self.execute_ui_draw_list(cmd, pass, ui_draw_list)?;
-        }
-
-        cmd.end_rendering();
-
-        Ok(())
     }
 
     /// Execute a fullscreen pass (draws a fullscreen triangle).

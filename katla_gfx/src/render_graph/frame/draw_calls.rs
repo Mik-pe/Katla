@@ -133,7 +133,10 @@ impl<'a> Frame<'a> {
     }
 
     /// Pre-compile all materials in a draw list before any draw calls execute.
-    fn ensure_materials_compiled(&mut self, draw_list: &DrawList) -> Result<(), RenderGraphError> {
+    pub(super) fn ensure_materials_compiled(
+        &mut self,
+        draw_list: &DrawList,
+    ) -> Result<(), RenderGraphError> {
         let mut materials_to_compile: Vec<(
             crate::handle::MaterialHandle,
             crate::texture::ImageFormat,

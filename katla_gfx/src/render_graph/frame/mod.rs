@@ -5,6 +5,7 @@ mod draw_calls;
 mod draw_helpers;
 mod graphics_pass;
 mod outline_pass;
+mod parallel_geometry;
 mod particle_rendering;
 mod shadow_pass;
 mod ui_rendering;
