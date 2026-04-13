@@ -502,3 +502,150 @@ impl HSV {
         Self { h, s, v }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOL: f32 = 1e-5;
+
+    fn approx_eq(a: f32, b: f32) -> bool {
+        (a - b).abs() < TOL
+    }
+
+    fn color_approx_eq(a: Color, b: Color) -> bool {
+        approx_eq(a.r, b.r) && approx_eq(a.g, b.g) && approx_eq(a.b, b.b) && approx_eq(a.a, b.a)
+    }
+
+    #[test]
+    fn test_color_new_rgb() {
+        let c = Color::new(0.1, 0.2, 0.3, 0.4);
+        assert!(approx_eq(c.r, 0.1));
+        assert!(approx_eq(c.g, 0.2));
+        assert!(approx_eq(c.b, 0.3));
+        assert!(approx_eq(c.a, 0.4));
+
+        let c2 = Color::rgb(0.5, 0.6, 0.7);
+        assert!(approx_eq(c2.a, 1.0));
+    }
+
+    #[test]
+    fn test_color_from_u8() {
+        let c = Color::from_u8(255, 128, 0);
+        assert!(approx_eq(c.r, 1.0));
+        assert!(approx_eq(c.g, 128.0 / 255.0));
+        assert!(approx_eq(c.b, 0.0));
+        assert!(approx_eq(c.a, 1.0));
+
+        let ca = Color::from_u8_rgba(255, 0, 0, 128);
+        assert!(approx_eq(ca.a, 128.0 / 255.0));
+    }
+
+    #[test]
+    fn test_color_from_hex() {
+        let red = Color::from_rgb_hex(0xFF0000);
+        assert!(approx_eq(red.r, 1.0));
+        assert!(approx_eq(red.g, 0.0));
+        assert!(approx_eq(red.b, 0.0));
+
+        let rgba = Color::from_rgba_hex(0xFF000080);
+        assert!(approx_eq(rgba.r, 1.0));
+        assert!(approx_eq(rgba.a, 128.0 / 255.0));
+    }
+
+    #[test]
+    fn test_color_to_bytes() {
+        let c = Color::from_u8(100, 150, 200);
+        let bytes = c.to_bytes();
+        assert_eq!(bytes[0], 100);
+        assert_eq!(bytes[1], 150);
+        assert_eq!(bytes[2], 200);
+        assert_eq!(bytes[3], 255);
+    }
+
+    #[test]
+    fn test_color_lerp() {
+        let result = Color::lerp(Color::RED, Color::BLUE, 0.5);
+        assert!(approx_eq(result.r, 0.5));
+        assert!(approx_eq(result.g, 0.0));
+        assert!(approx_eq(result.b, 0.5));
+        assert!(approx_eq(result.a, 1.0));
+    }
+
+    #[test]
+    fn test_color_with_alpha() {
+        let c = Color::RED.with_alpha(0.5);
+        assert!(approx_eq(c.r, 1.0));
+        assert!(approx_eq(c.a, 0.5));
+    }
+
+    #[test]
+    fn test_color_brightness() {
+        let c = Color::rgb(0.5, 0.5, 0.5).brightness(2.0);
+        assert!(approx_eq(c.r, 1.0));
+        assert!(approx_eq(c.g, 1.0));
+        assert!(approx_eq(c.b, 1.0));
+    }
+
+    #[test]
+    fn test_color_saturate() {
+        let c = Color::rgb(0.8, 0.2, 0.4);
+        let gray = c.saturate(0.0);
+        let expected = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
+        assert!(approx_eq(gray.r, expected));
+        assert!(approx_eq(gray.g, expected));
+        assert!(approx_eq(gray.b, expected));
+    }
+
+    #[test]
+    fn test_color_hsv_roundtrip() {
+        let c = Color::rgb(0.8, 0.2, 0.4);
+        let hsv = c.to_hsv();
+        let back = Color::from_hsv(hsv);
+        assert!(color_approx_eq(c, back));
+    }
+
+    #[test]
+    fn test_color_srgb_roundtrip() {
+        let c = Color::rgb(0.5, 0.3, 0.8);
+        let linear = c.to_linear();
+        let srgb = linear.to_srgb();
+        assert!(approx_eq(srgb.r, c.r));
+        assert!(approx_eq(srgb.g, c.g));
+        assert!(approx_eq(srgb.b, c.b));
+    }
+
+    #[test]
+    fn test_color_clamped() {
+        let c = Color::new(-0.5, 1.5, 2.0, -1.0).clamped();
+        assert!(approx_eq(c.r, 0.0));
+        assert!(approx_eq(c.g, 1.0));
+        assert!(approx_eq(c.b, 1.0));
+        assert!(approx_eq(c.a, 0.0));
+    }
+
+    #[test]
+    fn test_color_is_valid() {
+        assert!(Color::rgb(0.5, 0.5, 0.5).is_valid());
+        assert!(!Color::new(-0.1, 0.0, 0.0, 1.0).is_valid());
+        assert!(!Color::new(0.0, 1.1, 0.0, 1.0).is_valid());
+    }
+
+    #[test]
+    fn test_color_operators() {
+        let a = Color::rgb(0.3, 0.4, 0.5);
+        let b = Color::rgb(0.1, 0.2, 0.3);
+
+        let sum = a + b;
+        assert!(approx_eq(sum.r, 0.4));
+
+        let diff = a - b;
+        assert!(approx_eq(diff.r, 0.2));
+
+        let scaled = a * 2.0;
+        assert!(approx_eq(scaled.r, 0.6));
+
+        let comp = a * b;
+        assert!(approx_eq(comp.r, 0.03));
+    }
+}

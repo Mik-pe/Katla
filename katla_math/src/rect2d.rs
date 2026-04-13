@@ -249,3 +249,157 @@ impl Default for Rect2D {
         Self::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOL: f32 = 1e-5;
+
+    fn approx_eq(a: f32, b: f32) -> bool {
+        (a - b).abs() < TOL
+    }
+
+    #[test]
+    fn test_rect2d_new() {
+        let r = Rect2D::new(Vec2::new(1.0, 2.0), Vec2::new(5.0, 6.0));
+        assert!(approx_eq(r.min.x(), 1.0));
+        assert!(approx_eq(r.min.y(), 2.0));
+        assert!(approx_eq(r.max.x(), 5.0));
+        assert!(approx_eq(r.max.y(), 6.0));
+    }
+
+    #[test]
+    fn test_rect2d_from_origin_size() {
+        let r = Rect2D::from_origin_size(Vec2::new(1.0, 2.0), Vec2::new(3.0, 4.0));
+        assert!(approx_eq(r.min.x(), 1.0));
+        assert!(approx_eq(r.min.y(), 2.0));
+        assert!(approx_eq(r.max.x(), 4.0));
+        assert!(approx_eq(r.max.y(), 6.0));
+    }
+
+    #[test]
+    fn test_rect2d_width_height() {
+        let r = Rect2D::new(Vec2::new(1.0, 2.0), Vec2::new(5.0, 8.0));
+        assert!(approx_eq(r.width(), 4.0));
+        assert!(approx_eq(r.height(), 6.0));
+    }
+
+    #[test]
+    fn test_rect2d_center() {
+        let r = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(4.0, 6.0));
+        let c = r.center();
+        assert!(approx_eq(c.x(), 2.0));
+        assert!(approx_eq(c.y(), 3.0));
+    }
+
+    #[test]
+    fn test_rect2d_contains() {
+        let r = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0));
+        assert!(r.contains(Vec2::new(5.0, 5.0)));
+        assert!(r.contains(Vec2::new(0.0, 0.0)));
+        assert!(r.contains(Vec2::new(10.0, 10.0)));
+        assert!(!r.contains(Vec2::new(11.0, 5.0)));
+        assert!(!r.contains(Vec2::new(5.0, -1.0)));
+    }
+
+    #[test]
+    fn test_rect2d_contains_rect() {
+        let outer = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0));
+        let inner = Rect2D::new(Vec2::new(2.0, 2.0), Vec2::new(8.0, 8.0));
+        let partial = Rect2D::new(Vec2::new(5.0, 5.0), Vec2::new(15.0, 15.0));
+        let outside = Rect2D::new(Vec2::new(11.0, 11.0), Vec2::new(20.0, 20.0));
+        assert!(outer.contains_rect(&inner));
+        assert!(!outer.contains_rect(&partial));
+        assert!(!outer.contains_rect(&outside));
+    }
+
+    #[test]
+    fn test_rect2d_overlaps() {
+        let a = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0));
+        let b = Rect2D::new(Vec2::new(5.0, 5.0), Vec2::new(15.0, 15.0));
+        let c = Rect2D::new(Vec2::new(11.0, 11.0), Vec2::new(20.0, 20.0));
+        assert!(a.overlaps(&b));
+        assert!(!a.overlaps(&c));
+    }
+
+    #[test]
+    fn test_rect2d_union() {
+        let a = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(5.0, 5.0));
+        let b = Rect2D::new(Vec2::new(3.0, 3.0), Vec2::new(10.0, 10.0));
+        let u = a.union(&b);
+        assert!(approx_eq(u.min.x(), 0.0));
+        assert!(approx_eq(u.min.y(), 0.0));
+        assert!(approx_eq(u.max.x(), 10.0));
+        assert!(approx_eq(u.max.y(), 10.0));
+        assert!(u.contains_rect(&a));
+        assert!(u.contains_rect(&b));
+    }
+
+    #[test]
+    fn test_rect2d_intersection() {
+        let a = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(5.0, 5.0));
+        let b = Rect2D::new(Vec2::new(3.0, 3.0), Vec2::new(10.0, 10.0));
+        let inter = a.intersection(&b).unwrap();
+        assert!(approx_eq(inter.min.x(), 3.0));
+        assert!(approx_eq(inter.min.y(), 3.0));
+        assert!(approx_eq(inter.max.x(), 5.0));
+        assert!(approx_eq(inter.max.y(), 5.0));
+
+        let disjoint = Rect2D::new(Vec2::new(10.0, 10.0), Vec2::new(20.0, 20.0));
+        assert!(a.intersection(&disjoint).is_none());
+    }
+
+    #[test]
+    fn test_rect2d_inflate_contract() {
+        let r = Rect2D::new(Vec2::new(5.0, 5.0), Vec2::new(10.0, 10.0));
+        let inflated = r.inflate(2.0);
+        assert!(approx_eq(inflated.min.x(), 3.0));
+        assert!(approx_eq(inflated.max.x(), 12.0));
+        assert!(approx_eq(inflated.width(), 9.0));
+
+        let contracted = r.contract(1.0);
+        assert!(approx_eq(contracted.min.x(), 6.0));
+        assert!(approx_eq(contracted.max.x(), 9.0));
+    }
+
+    #[test]
+    fn test_rect2d_clamp() {
+        let r = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0));
+        let clamped = r.clamp(Vec2::new(-5.0, 15.0));
+        assert!(approx_eq(clamped.x(), 0.0));
+        assert!(approx_eq(clamped.y(), 10.0));
+    }
+
+    #[test]
+    fn test_rect2d_area_perimeter() {
+        let r = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(5.0, 10.0));
+        assert!(approx_eq(r.area(), 50.0));
+        assert!(approx_eq(r.perimeter(), 30.0));
+    }
+
+    #[test]
+    fn test_rect2d_is_empty() {
+        assert!(Rect2D::default().is_empty());
+        assert!(!Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)).is_empty());
+        assert!(Rect2D::new(Vec2::new(2.0, 2.0), Vec2::new(2.0, 5.0)).is_empty());
+    }
+
+    #[test]
+    fn test_rect2d_lerp() {
+        let a = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0));
+        let b = Rect2D::new(Vec2::new(10.0, 10.0), Vec2::new(20.0, 20.0));
+
+        let at_zero = a.lerp(&b, 0.0);
+        assert!(approx_eq(at_zero.min.x(), a.min.x()));
+        assert!(approx_eq(at_zero.max.x(), a.max.x()));
+
+        let at_one = a.lerp(&b, 1.0);
+        assert!(approx_eq(at_one.min.x(), b.min.x()));
+        assert!(approx_eq(at_one.max.x(), b.max.x()));
+
+        let at_half = a.lerp(&b, 0.5);
+        assert!(approx_eq(at_half.min.x(), 5.0));
+        assert!(approx_eq(at_half.max.x(), 15.0));
+    }
+}
