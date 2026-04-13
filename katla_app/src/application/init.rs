@@ -313,6 +313,9 @@ impl Application {
             info!("Added light culling compute pass to frame graph");
         }
 
+        // Re-resolve pass IDs after insert_pass calls may have shifted indices
+        self.pass_ids.refresh(&self.frame_graph);
+
         // Initialize transient textures and register with bindless system
         self.frame_graph
             .initialize_transient_textures(&self.renderer)
