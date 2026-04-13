@@ -331,7 +331,7 @@ impl Application {
 
         // Set HDR texture index on tonemap pass
         self.frame_graph
-            .set_tonemap_texture_index("tonemap", hdr_bindless_index)
+            .set_tonemap_texture_index(self.tonemap_pass_id, hdr_bindless_index)
             .expect("Failed to set tonemap texture index");
 
         // Register viewport texture with bindless system for viewport rendering

@@ -238,6 +238,8 @@ pub struct Application {
     pub(crate) renderer: VulkanRenderer,
     /// Frame graph for rendering (built once at startup)
     pub(crate) frame_graph: katla_gfx::FrameGraph,
+    /// Handle to the tonemap pass in the frame graph
+    pub(crate) tonemap_pass_id: katla_gfx::render_graph::PassId,
     pub(crate) camera: Rc<RefCell<Camera>>,
     pub(crate) gltf_cache: GltfCache,
     pub(crate) timer: Timer,
@@ -377,7 +379,7 @@ impl ApplicationHandler for Application {
                     for (name, slot) in recreated_textures {
                         if name == "hdr_color" {
                             self.frame_graph
-                                .set_tonemap_texture_index("tonemap", slot)
+                                .set_tonemap_texture_index(self.tonemap_pass_id, slot)
                                 .expect("Failed to update tonemap texture index");
                         } else if name == "viewport_0" {
                             self.on_viewport_texture_recreated(slot);

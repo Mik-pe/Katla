@@ -736,6 +736,10 @@ impl ApplicationBuilder {
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
         let mut frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
 
+        let tonemap_pass_id = frame_graph
+            .pass_id("tonemap")
+            .expect("Frame graph must contain a 'tonemap' pass");
+
         // Initialize transient textures so we can get shadow atlas ImageView
         frame_graph
             .initialize_transient_textures(&renderer)
@@ -771,6 +775,7 @@ impl ApplicationBuilder {
             window,
             renderer,
             frame_graph,
+            tonemap_pass_id,
             camera,
             gltf_cache: GltfCache::new(gltf_loader),
             timer: Timer::new(100),
