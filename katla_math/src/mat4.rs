@@ -118,6 +118,22 @@ impl Mat4 {
         ])
     }
 
+    #[inline]
+    pub fn create_proj_perspective(
+        fov_angles: f32,
+        aspect_ratio: f32,
+        near: f32,
+        far: f32,
+    ) -> Self {
+        let f = 1.0 / f32::tan(f32::to_radians(fov_angles) / 2.0);
+        Self([
+            Vec4::new(f / aspect_ratio, 0.0, 0.0, 0.0),
+            Vec4::new(0.0, -f, 0.0, 0.0),
+            Vec4::new(0.0, 0.0, far / (near - far), -1.0),
+            Vec4::new(0.0, 0.0, near * far / (near - far), 0.0),
+        ])
+    }
+
     pub fn create_lookat(from: crate::Vec3, to: crate::Vec3, up: crate::Vec3) -> Self {
         let dir_fwd = (to - from).normalize();
         let dir_right = dir_fwd.cross(up.normalize()).normalize();

@@ -145,8 +145,6 @@ impl Frustum {
 
     /// Check if an AABB intersects the frustum
     pub fn intersects_aabb(&self, aabb: &AABB) -> bool {
-        // AABB is potentially visible if it's in front of at least one plane
-        // or intersects with at least one plane
         let planes = [
             &self.left,
             &self.right,
@@ -156,9 +154,7 @@ impl Frustum {
             &self.far,
         ];
 
-        // If the AABB is completely behind any plane, it's outside
         for plane in &planes {
-            // Get the positive corner (most in the direction of the plane normal)
             let positive = Vec3::new(
                 if plane.normal.x() >= 0.0 {
                     aabb.center.x() + aabb.extent.x()
@@ -187,8 +183,6 @@ impl Frustum {
 
     /// Check if an AABB is fully contained within the frustum
     pub fn contains_aabb(&self, aabb: &AABB) -> bool {
-        // AABB is fully inside if all corners are inside
-        // Check the most extreme corner for each plane
         let planes = [
             &self.left,
             &self.right,
@@ -199,7 +193,6 @@ impl Frustum {
         ];
 
         for plane in &planes {
-            // Get the negative corner (most opposite to the plane normal)
             let negative = Vec3::new(
                 if plane.normal.x() >= 0.0 {
                     aabb.center.x() - aabb.extent.x()
@@ -238,10 +231,7 @@ impl Frustum {
         ];
 
         for plane in &planes {
-            // Distance from center to plane
             let dist = plane.distance_to_point(sphere.center);
-
-            // If center is behind the plane by more than radius, outside
             if dist < -sphere.radius {
                 return false;
             }
@@ -271,6 +261,54 @@ impl Frustum {
             Self::intersect_three_planes(&self.right, &self.bottom, &self.far).unwrap_or(origin);
 
         [ntl, ntr, nbl, nbr, ftl, ftr, fbl, fbr]
+    }
+
+    /// Get the 8 corner points of the frustum using a finite far distance.
+    ///
+    /// With infinite reverse-Z projection, the far plane is at infinity, so
+    /// `corners()` produces degenerate far corners. This method computes near
+    /// corners normally and extends each edge direction to `far_distance` from
+    /// the near plane along the near plane normal.
+    #[inline]
+    pub fn corners_with_far_distance(&self, far_distance: f32) -> [Vec3; 8] {
+        let origin = Vec3::new(0.0, 0.0, 0.0);
+        let ntl = Self::intersect_three_planes(&self.left, &self.top, &self.near).unwrap_or(origin);
+        let ntr =
+            Self::intersect_three_planes(&self.right, &self.top, &self.near).unwrap_or(origin);
+        let nbl =
+            Self::intersect_three_planes(&self.left, &self.bottom, &self.near).unwrap_or(origin);
+        let nbr =
+            Self::intersect_three_planes(&self.right, &self.bottom, &self.near).unwrap_or(origin);
+
+        let near_corners = [ntl, ntr, nbl, nbr];
+
+        // Get existing (degenerate) far corners from the matrix's far plane.
+        // The direction from near corner to existing far corner gives us the
+        // frustum edge direction. We extend this direction proportionally.
+        let existing = self.corners();
+
+        // Compute the distance along the near plane normal from near to existing-far.
+        let near_to_far_depth = (self.near.distance - self.far.distance).abs();
+        if near_to_far_depth < 1e-6 {
+            return [ntl, ntr, nbl, nbr, ntl, ntr, nbl, nbr];
+        }
+
+        // Scale factor: how much to extend from the near-to-existing-far distance
+        // to reach the desired far_distance from the near plane.
+        let scale = far_distance / near_to_far_depth;
+
+        let mut result = [Vec3::new(0.0, 0.0, 0.0); 8];
+        result[0] = ntl;
+        result[1] = ntr;
+        result[2] = nbl;
+        result[3] = nbr;
+
+        for i in 0..4 {
+            let edge_dir = existing[i + 4] - near_corners[i];
+            result[i + 4] = near_corners[i] + edge_dir * scale;
+        }
+
+        result
     }
 
     /// Find the intersection point of three planes
@@ -308,7 +346,37 @@ impl Frustum {
         let center = self.center();
         let corners = self.corners();
 
-        // Find the farthest corner
+        let mut max_dist = 0.0;
+        for corner in &corners {
+            let dist = (*corner - center).length();
+            if dist > max_dist {
+                max_dist = dist;
+            }
+        }
+
+        Sphere {
+            center,
+            radius: max_dist,
+        }
+    }
+
+    /// Calculate the center point of the frustum using a finite far distance.
+    #[inline]
+    pub fn center_with_far(&self, far_distance: f32) -> Vec3 {
+        let corners = self.corners_with_far_distance(far_distance);
+        let mut sum = Vec3::new(0.0, 0.0, 0.0);
+        for corner in &corners {
+            sum += *corner;
+        }
+        sum / 8.0
+    }
+
+    /// Calculate a bounding sphere that encloses the frustum using a finite far distance.
+    #[inline]
+    pub fn bounding_sphere_with_far(&self, far_distance: f32) -> Sphere {
+        let center = self.center_with_far(far_distance);
+        let corners = self.corners_with_far_distance(far_distance);
+
         let mut max_dist = 0.0;
         for corner in &corners {
             let dist = (*corner - center).length();
@@ -331,15 +399,14 @@ mod tests {
     #[test]
     fn test_frustum_from_camera() {
         let frustum = Frustum::from_camera(
-            Vec3::new(0.0, 0.0, 5.0), // position
-            Vec3::new(0.0, 0.0, 0.0), // target
-            Vec3::new(0.0, 1.0, 0.0), // up
-            90.0,                     // fov
-            16.0 / 9.0,               // aspect
-            0.1,                      // near
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            16.0 / 9.0,
+            0.1,
         );
 
-        // Origin should be in front of near plane
         assert!(frustum.near.distance_to_point(Vec3::new(0.0, 0.0, 0.0)) > 0.0);
     }
 
@@ -354,10 +421,7 @@ mod tests {
             0.1,
         );
 
-        // Origin should be inside
         assert!(frustum.contains_point(Vec3::new(0.0, 0.0, 0.0)));
-
-        // Point far outside should not be inside
         assert!(!frustum.contains_point(Vec3::new(100.0, 100.0, 100.0)));
     }
 
@@ -372,18 +436,207 @@ mod tests {
             0.1,
         );
 
-        // Sphere at origin should intersect
         let sphere = Sphere {
             center: Vec3::new(0.0, 0.0, 0.0),
             radius: 1.0,
         };
         assert!(frustum.intersects_sphere(&sphere));
 
-        // Sphere way off to the side should not intersect
         let far_sphere = Sphere {
             center: Vec3::new(100.0, 0.0, 0.0),
             radius: 1.0,
         };
         assert!(!frustum.intersects_sphere(&far_sphere));
+    }
+
+    #[test]
+    fn test_corners_with_far_distance() {
+        let frustum = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            1.0,
+            1.0,
+        );
+
+        let corners = frustum.corners_with_far_distance(100.0);
+        let camera = Vec3::new(0.0, 0.0, 5.0);
+
+        // Near corners should all be at the same distance from camera
+        let near_dist = (corners[0] - camera).length();
+        for i in 1..4 {
+            let dist = (corners[i] - camera).length();
+            assert!(
+                (dist - near_dist).abs() < 0.1,
+                "Near corner {i} at distance {dist}, expected ~{near_dist}"
+            );
+        }
+
+        // Far corners should all be at the same distance from camera
+        let far_dist = (corners[4] - camera).length();
+        for i in 5..8 {
+            let dist = (corners[i] - camera).length();
+            assert!(
+                (dist - far_dist).abs() < 1.0,
+                "Far corner {i} at distance {dist}, expected ~{far_dist}"
+            );
+        }
+
+        // Far depth along near plane normal should be approximately 100.0 from near plane
+        let near_depth =
+            frustum.near.distance_to_point(corners[0]) - frustum.near.distance_to_point(camera);
+        let far_depth =
+            frustum.near.distance_to_point(corners[4]) - frustum.near.distance_to_point(camera);
+        let extension = (far_depth - near_depth).abs();
+        assert!(
+            (extension - 100.0).abs() < 10.0,
+            "Far depth extension should be ~100.0 from near plane, got {extension}"
+        );
+
+        // All far corners should be farther from camera than near corners
+        for i in 0..4 {
+            let nd = (corners[i] - camera).length();
+            let fd = (corners[i + 4] - camera).length();
+            assert!(fd > nd, "Far corner {i} should be farther than near corner");
+        }
+    }
+
+    #[test]
+    fn test_corners_with_far_distance_symmetry() {
+        let frustum = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            1.0,
+            1.0,
+        );
+
+        let corners = frustum.corners_with_far_distance(50.0);
+
+        // NTL and NTR should have same Z, opposite X (symmetric about view axis)
+        assert!(
+            (corners[0].x() + corners[1].x()).abs() < 0.5,
+            "Near TL.x + TR.x should be ~0"
+        );
+        assert!(
+            (corners[0].z() - corners[1].z()).abs() < 0.1,
+            "Near TL.z should equal TR.z"
+        );
+
+        // Same symmetry for far corners
+        assert!(
+            (corners[4].x() + corners[5].x()).abs() < 0.5,
+            "Far TL.x + TR.x should be ~0"
+        );
+        assert!(
+            (corners[4].z() - corners[5].z()).abs() < 0.1,
+            "Far TL.z should equal TR.z"
+        );
+
+        // TL and BL should have same X, opposite Y
+        assert!(
+            (corners[0].x() - corners[2].x()).abs() < 0.1,
+            "Near TL.x should equal BL.x"
+        );
+        assert!(
+            (corners[0].y() + corners[2].y()).abs() < 0.5,
+            "Near TL.y + BL.y should be ~0"
+        );
+    }
+
+    #[test]
+    fn test_center_with_far() {
+        let frustum = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            1.0,
+            1.0,
+        );
+
+        let center = frustum.center_with_far(100.0);
+
+        // Center should be on or near the view axis
+        assert!(center.x().abs() < 1.0, "Center x should be ~0");
+        assert!(center.y().abs() < 1.0, "Center y should be ~0");
+
+        // Center z should be between near and far on the view axis
+        let near_z = frustum.corners_with_far_distance(100.0)[0].z();
+        let far_z = frustum.corners_with_far_distance(100.0)[4].z();
+        let z_min = near_z.min(far_z);
+        let z_max = near_z.max(far_z);
+        assert!(
+            center.z() >= z_min - 1.0 && center.z() <= z_max + 1.0,
+            "Center z={} should be between near z={} and far z={}",
+            center.z(),
+            z_min,
+            z_max
+        );
+    }
+
+    #[test]
+    fn test_bounding_sphere_with_far() {
+        let frustum = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            1.0,
+            1.0,
+        );
+
+        let sphere = frustum.bounding_sphere_with_far(100.0);
+
+        // The sphere should enclose all 8 corners
+        let corners = frustum.corners_with_far_distance(100.0);
+        for (i, corner) in corners.iter().enumerate() {
+            let dist = (*corner - sphere.center).length();
+            assert!(
+                dist <= sphere.radius + 0.5,
+                "Corner {i} at distance {dist} exceeds sphere radius {}",
+                sphere.radius
+            );
+        }
+
+        assert!(sphere.radius > 0.0);
+    }
+
+    #[test]
+    fn test_corners_degenerate_without_far_override() {
+        let frustum = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            1.0,
+            1.0,
+        );
+
+        let camera = Vec3::new(0.0, 0.0, 5.0);
+
+        // corners() with infinite reverse-Z: far corners are closer to camera than near corners
+        let corners_infinite = frustum.corners();
+        let near_dist = (corners_infinite[0] - camera).length();
+        let far_closer = corners_infinite[4..]
+            .iter()
+            .any(|c| (*c - camera).length() < near_dist);
+
+        // corners_with_far_distance: far corners should be farther
+        let corners_fixed = frustum.corners_with_far_distance(100.0);
+        let far_valid = corners_fixed[4..]
+            .iter()
+            .all(|c| (*c - camera).length() > (corners_fixed[0] - camera).length());
+
+        assert!(
+            far_closer,
+            "Far corners with infinite reverse-Z should be closer than near corners"
+        );
+        assert!(
+            far_valid,
+            "Far corners with far_distance should be farther than near corners"
+        );
     }
 }

@@ -217,3 +217,126 @@ impl Default for Mat2 {
         Self::identity()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOL: f32 = 1e-5;
+
+    fn approx_eq(a: f32, b: f32) -> bool {
+        (a - b).abs() < TOL
+    }
+
+    fn mat2_approx_eq(a: Mat2, b: Mat2) -> bool {
+        approx_eq(a[0][0], b[0][0])
+            && approx_eq(a[0][1], b[0][1])
+            && approx_eq(a[1][0], b[1][0])
+            && approx_eq(a[1][1], b[1][1])
+    }
+
+    #[test]
+    fn test_mat2_identity() {
+        let id = Mat2::identity();
+        let m = Mat2::new(3.0, 5.0, 7.0, 11.0);
+        assert!(mat2_approx_eq(id * m, m));
+        assert!(mat2_approx_eq(m * id, m));
+    }
+
+    #[test]
+    fn test_mat2_mul() {
+        let a = Mat2::new(1.0, 2.0, 3.0, 4.0);
+        let b = Mat2::new(5.0, 6.0, 7.0, 8.0);
+        let result = a * b;
+        assert!(mat2_approx_eq(result, Mat2::new(19.0, 22.0, 43.0, 50.0)));
+    }
+
+    #[test]
+    fn test_mat2_determinant() {
+        let m = Mat2::new(1.0, 2.0, 3.0, 4.0);
+        assert!(approx_eq(m.determinant(), -2.0));
+        assert!(approx_eq(Mat2::identity().determinant(), 1.0));
+    }
+
+    #[test]
+    fn test_mat2_inverse() {
+        let m = Mat2::new(1.0, 2.0, 3.0, 4.0);
+        let inv = m.inverse().expect("invertible");
+        assert!(mat2_approx_eq(m * inv, Mat2::identity()));
+        assert!(mat2_approx_eq(inv * m, Mat2::identity()));
+    }
+
+    #[test]
+    fn test_mat2_inverse_singular() {
+        let zero = Mat2::zero();
+        assert!(zero.inverse().is_none());
+    }
+
+    #[test]
+    fn test_mat2_transpose() {
+        let m = Mat2::new(1.0, 2.0, 3.0, 4.0);
+        assert!(mat2_approx_eq(m.transpose().transpose(), m));
+        let id = Mat2::identity();
+        assert!(mat2_approx_eq(id.transpose(), id));
+    }
+
+    #[test]
+    fn test_mat2_from_rotation() {
+        let rot = Mat2::from_rotation(std::f32::consts::FRAC_PI_2);
+        let v = Vec2::new(1.0, 0.0);
+        let result = rot * v;
+        assert!(approx_eq(result.x(), 0.0));
+        assert!(approx_eq(result.y(), 1.0));
+    }
+
+    #[test]
+    fn test_mat2_from_scale() {
+        let s = Vec2::new(2.0, 3.0);
+        let m = Mat2::from_scale(s);
+        let v = Vec2::new(1.0, 1.0);
+        let result = m * v;
+        assert!(approx_eq(result.x(), 2.0));
+        assert!(approx_eq(result.y(), 3.0));
+    }
+
+    #[test]
+    fn test_mat2_to_rotation() {
+        let angle = 1.23;
+        let m = Mat2::from_rotation(angle);
+        assert!(approx_eq(m.to_rotation(), angle));
+    }
+
+    #[test]
+    fn test_mat2_to_scale() {
+        let scale = Vec2::new(4.0, 5.0);
+        let m = Mat2::from_scale(scale);
+        assert!(approx_eq(m.to_scale().x(), scale.x()));
+        assert!(approx_eq(m.to_scale().y(), scale.y()));
+    }
+
+    #[test]
+    fn test_mat2_mul_vec() {
+        let m = Mat2::new(2.0, 0.0, 0.0, 3.0);
+        let v = Vec2::new(1.0, 1.0);
+        let result = m * v;
+        assert!(approx_eq(result.x(), 2.0));
+        assert!(approx_eq(result.y(), 3.0));
+    }
+
+    #[test]
+    fn test_mat2_mul_scalar() {
+        let m = Mat2::new(1.0, 2.0, 3.0, 4.0);
+        let result = m * 2.0;
+        assert!(mat2_approx_eq(result, Mat2::new(2.0, 4.0, 6.0, 8.0)));
+    }
+
+    #[test]
+    fn test_mat2_add_sub() {
+        let a = Mat2::new(1.0, 2.0, 3.0, 4.0);
+        let b = Mat2::new(5.0, 6.0, 7.0, 8.0);
+        let sum = a + b;
+        assert!(mat2_approx_eq(sum, Mat2::new(6.0, 8.0, 10.0, 12.0)));
+        let diff = sum - b;
+        assert!(mat2_approx_eq(diff, a));
+    }
+}

@@ -229,3 +229,115 @@ impl Mul<Vec3> for Transform {
         self.position + (self.scale * (self.rotation * v))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOL: f32 = 1e-5;
+
+    fn approx_eq(a: f32, b: f32) -> bool {
+        (a - b).abs() < TOL
+    }
+
+    fn vec3_approx_eq(a: Vec3, b: Vec3) -> bool {
+        approx_eq(a[0], b[0]) && approx_eq(a[1], b[1]) && approx_eq(a[2], b[2])
+    }
+
+    #[test]
+    fn test_transform_identity() {
+        let t = Transform::default();
+        assert!(vec3_approx_eq(t.position, Vec3::new(0.0, 0.0, 0.0)));
+        assert!(vec3_approx_eq(t.scale, Vec3::new(1.0, 1.0, 1.0)));
+    }
+
+    #[test]
+    fn test_transform_is_identity() {
+        assert!(Transform::default().is_identity());
+        assert!(!Transform::new_from_position(Vec3::new(1.0, 0.0, 0.0)).is_identity());
+    }
+
+    #[test]
+    fn test_transform_make_mat4() {
+        let t = Transform::default();
+        let m = t.make_mat4();
+        let id = Mat4::identity();
+        for col in 0..4 {
+            for row in 0..4 {
+                assert!(approx_eq(m[col][row], id[col][row]));
+            }
+        }
+    }
+
+    #[test]
+    fn test_transform_from_position() {
+        let t = Transform::new_from_position(Vec3::new(1.0, 2.0, 3.0));
+        assert!(vec3_approx_eq(t.position, Vec3::new(1.0, 2.0, 3.0)));
+    }
+
+    #[test]
+    fn test_transform_from_rotation() {
+        let q = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), std::f32::consts::FRAC_PI_2);
+        let t = Transform::new_from_rotation(q);
+        assert!(vec3_approx_eq(t.position, Vec3::new(0.0, 0.0, 0.0)));
+    }
+
+    #[test]
+    fn test_transform_inverse() {
+        let pos = Vec3::new(1.0, 2.0, 3.0);
+        let t = Transform::new_from_position(pos);
+        let inv = t.inverse();
+        let composed = t * inv;
+        assert!(vec3_approx_eq(composed.position, Vec3::new(0.0, 0.0, 0.0)));
+    }
+
+    #[test]
+    fn test_transform_compose() {
+        let parent = Transform::new_from_position(Vec3::new(10.0, 0.0, 0.0));
+        let child = Transform::new_from_position(Vec3::new(1.0, 0.0, 0.0));
+        let result = parent * child;
+        assert!(vec3_approx_eq(result.position, Vec3::new(11.0, 0.0, 0.0)));
+    }
+
+    #[test]
+    fn test_transform_forward() {
+        let t = Transform::default();
+        let fwd = t.forward();
+        assert!(approx_eq(fwd[0], 0.0));
+        assert!(approx_eq(fwd[1], 0.0));
+        assert!(approx_eq(fwd[2], -1.0));
+    }
+
+    #[test]
+    fn test_transform_up() {
+        let t = Transform::default();
+        let up = t.up();
+        assert!(approx_eq(up[0], 0.0));
+        assert!(approx_eq(up[1], 1.0));
+        assert!(approx_eq(up[2], 0.0));
+    }
+
+    #[test]
+    fn test_transform_right() {
+        let t = Transform::default();
+        let right = t.right();
+        assert!(approx_eq(right[0], 1.0));
+        assert!(approx_eq(right[1], 0.0));
+        assert!(approx_eq(right[2], 0.0));
+    }
+
+    #[test]
+    fn test_transform_lerp() {
+        let a = Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0));
+        let b = Transform::new_from_position(Vec3::new(10.0, 10.0, 10.0));
+
+        let at_zero = a.lerp(&b, 0.0);
+        assert!(vec3_approx_eq(at_zero.position, a.position));
+
+        let at_one = a.lerp(&b, 1.0);
+        assert!(vec3_approx_eq(at_one.position, b.position));
+
+        let at_half = a.lerp(&b, 0.5);
+        assert!(vec3_approx_eq(at_half.position, Vec3::new(5.0, 5.0, 5.0)));
+    }
+}

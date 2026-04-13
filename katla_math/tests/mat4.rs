@@ -253,6 +253,100 @@ fn test_create_proj_reverse_z() {
 }
 
 #[test]
+fn test_create_proj_perspective_near_plane() {
+    let fov = 90.0_f32;
+    let aspect = 1.0;
+    let near = 0.1_f32;
+    let far = 100.0_f32;
+    let m = Mat4::create_proj_perspective(fov, aspect, near, far);
+
+    // Point on the near plane along -Z: (0, 0, -near, 1)
+    let pt = Vec4::new(0.0, 0.0, -near, 1.0);
+    let clip = m * pt;
+    // After perspective divide, z_ndc should be 0
+    assert_relative_eq!(clip.z() / clip.w(), 0.0, epsilon = 1e-4);
+}
+
+#[test]
+fn test_create_proj_perspective_far_plane() {
+    let fov = 90.0_f32;
+    let aspect = 1.0;
+    let near = 0.1_f32;
+    let far = 100.0_f32;
+    let m = Mat4::create_proj_perspective(fov, aspect, near, far);
+
+    // Point on the far plane along -Z: (0, 0, -far, 1)
+    let pt = Vec4::new(0.0, 0.0, -far, 1.0);
+    let clip = m * pt;
+    // After perspective divide, z_ndc should be 1
+    assert_relative_eq!(clip.z() / clip.w(), 1.0, epsilon = 1e-4);
+}
+
+#[test]
+fn test_create_proj_perspective_clip_coords() {
+    let fov = 90.0_f32;
+    let aspect = 16.0 / 9.0;
+    let near = 1.0_f32;
+    let far = 10.0_f32;
+    let m = Mat4::create_proj_perspective(fov, aspect, near, far);
+
+    // Verify clip coordinates for a point at (0, 0, -5, 1)
+    let pt = Vec4::new(0.0, 0.0, -5.0, 1.0);
+    let clip = m * pt;
+
+    // x and y should be 0 for a point on the Z axis
+    assert_relative_eq!(clip.x(), 0.0, epsilon = 1e-4);
+    assert_relative_eq!(clip.y(), 0.0, epsilon = 1e-4);
+    // w should be 5 (positive z of the point)
+    assert_relative_eq!(clip.w(), 5.0, epsilon = 1e-4);
+    // z should map to something in [0, w*1] range
+    let z_ndc = clip.z() / clip.w();
+    assert!(z_ndc > 0.0 && z_ndc < 1.0);
+}
+
+#[test]
+fn test_create_proj_perspective_inverse() {
+    let fov = 90.0_f32;
+    let aspect = 1.0;
+    let near = 0.1_f32;
+    let far = 100.0_f32;
+    let m = Mat4::create_proj_perspective(fov, aspect, near, far);
+
+    let inv = m
+        .inverse()
+        .expect("perspective projection should be invertible");
+
+    // Round-trip: P * P^-1 should be identity
+    let result = m.mul(&inv);
+    let identity = Mat4::identity();
+    for i in 0..4 {
+        for j in 0..4 {
+            assert_relative_eq!(result[i][j], identity[i][j], epsilon = 1e-4);
+        }
+    }
+
+    // Inverse should correctly unproject a known point
+    let pt = Vec4::new(0.0, 0.0, -5.0, 1.0);
+    let clip = m * pt;
+    let unprojected = inv * clip;
+    assert_relative_eq!(
+        unprojected.x() / unprojected.w(),
+        pt.x() / pt.w(),
+        epsilon = 1e-3
+    );
+    assert_relative_eq!(
+        unprojected.y() / unprojected.w(),
+        pt.y() / pt.w(),
+        epsilon = 1e-3
+    );
+    assert_relative_eq!(
+        unprojected.z() / unprojected.w(),
+        pt.z() / pt.w(),
+        epsilon = 1e-3
+    );
+}
+
+#[test]
 #[should_panic(expected = "INDEXING OUT_OF_BOUNDS")]
 fn test_index_out_of_bounds() {
     let m = Mat4::default();
