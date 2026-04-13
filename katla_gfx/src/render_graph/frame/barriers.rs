@@ -9,7 +9,8 @@ impl<'a> Frame<'a> {
     /// Insert barriers for a pass.
     ///
     /// Computes required resource states based on pass reads/writes and
-    /// inserts layout transitions as needed.
+    /// inserts layout transitions as needed. Uses `TransientTexture::state()`
+    /// as the single source of truth for layout state.
     pub(super) fn insert_barriers(
         &mut self,
         cmd: &CommandBuffer,
@@ -65,11 +66,7 @@ impl<'a> Frame<'a> {
 
             let is_depth = transient.format == vk::Format::D32_SFLOAT;
 
-            let current_state = self
-                .resource_states
-                .get(write_name)
-                .copied()
-                .unwrap_or(ResourceState::Undefined);
+            let current_state = transient.state();
 
             let required_state = if is_depth {
                 ResourceState::DepthStencilAttachment
@@ -84,8 +81,6 @@ impl<'a> Frame<'a> {
                     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
                 };
 
-                // Get the ACTUAL GPU layout from the transient texture
-                // This persists across frames via RefCell
                 let old_layout = transient.current_layout();
 
                 log::debug!(
@@ -122,10 +117,8 @@ impl<'a> Frame<'a> {
                     );
                 }
 
-                // Update tracked state AND GPU layout (persist to TransientTexture for next frame)
-                self.resource_states
-                    .insert(write_name.clone(), required_state);
                 transient.set_layout(required_layout);
+                transient.set_state(required_state);
             }
         }
 
@@ -157,19 +150,13 @@ impl<'a> Frame<'a> {
                 transient.format
             );
 
-            let current_state = self
-                .resource_states
-                .get(read_name)
-                .copied()
-                .unwrap_or(ResourceState::Undefined);
+            let current_state = transient.state();
 
             let required_state = ResourceState::ShaderRead;
 
             if current_state != required_state {
                 let required_layout = vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL;
 
-                // Get the ACTUAL GPU layout from the transient texture
-                // This persists across frames via RefCell
                 let old_layout = transient.current_layout();
 
                 log::debug!(
@@ -206,10 +193,8 @@ impl<'a> Frame<'a> {
                     );
                 }
 
-                // Update tracked state AND GPU layout (persist to TransientTexture for next frame)
-                self.resource_states
-                    .insert(read_name.clone(), required_state);
                 transient.set_layout(required_layout);
+                transient.set_state(required_state);
             }
         }
 
@@ -264,11 +249,7 @@ impl<'a> Frame<'a> {
                 continue;
             }
 
-            let current_state = self
-                .resource_states
-                .get(write_name)
-                .copied()
-                .unwrap_or(ResourceState::ColorAttachment);
+            let current_state = transient.state();
 
             let needs_transition = current_state == ResourceState::ColorAttachment
                 || current_state == ResourceState::Undefined
@@ -310,9 +291,8 @@ impl<'a> Frame<'a> {
                     );
                 }
 
-                self.resource_states
-                    .insert(write_name.clone(), ResourceState::ShaderRead);
                 transient.set_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+                transient.set_state(ResourceState::ShaderRead);
             }
         }
 

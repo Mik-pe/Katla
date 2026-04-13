@@ -215,9 +215,10 @@ impl<'a> Frame<'a> {
 
         cmd.end_rendering();
 
-        if let Some(write_name) = pass.writes.first() {
-            self.resource_states
-                .insert(write_name.clone(), ResourceState::DepthStencilAttachment);
+        if let Some(write_name) = pass.writes.first()
+            && let Some(transient) = self.graph.transient_texture(write_name, frame_idx)
+        {
+            transient.set_state(ResourceState::DepthStencilAttachment);
         }
 
         Ok(())

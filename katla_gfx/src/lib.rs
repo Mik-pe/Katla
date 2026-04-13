@@ -271,8 +271,8 @@ pub use particles::{EmitterConfig, GlobalParticleSystem};
 // Render graph system - minimal public API
 pub use render_graph::{
     CompositingDescriptorSet, Frame, FrameGraph, FrameGraphBuilder, FullscreenPass, GeometryPass,
-    GraphResourceDesc, GraphResourceType, OverlayParams, OverlayPass, RenderGraphError, ShadowPass,
-    TonemapOperator, TonemapParams,
+    GraphResourceDesc, GraphResourceType, OutlinePass, OverlayParams, OverlayPass, ParticlePass,
+    RenderGraphError, ShadowPass, StencilIndicatorPass, TonemapOperator, TonemapParams,
 };
 
 /// Low-level Vulkan context - an escape hatch for advanced use cases.

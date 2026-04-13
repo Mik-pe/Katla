@@ -51,8 +51,8 @@ pub use handles::{PassId, ResourceId};
 pub use pass::{PassDesc, PassKind, PassType};
 pub use passes::{
     CompositePass, DepthPrepass, FullscreenPass, GeometryPass, OutlinePass, OverlayParams,
-    OverlayPass, ShadowPass, StencilIndicatorPass, TonemapOperator, TonemapParams, UIPass,
-    ViewportPass, ViewportRect,
+    OverlayPass, ParticlePass, ShadowPass, StencilIndicatorPass, TonemapOperator, TonemapParams,
+    UIPass, ViewportPass, ViewportRect,
 };
 pub use resource::{GraphResourceDesc, GraphResourceHandle, GraphResourceType, ResourceState};
 pub use transient_texture::TransientTexture;

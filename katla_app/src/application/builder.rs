@@ -516,6 +516,13 @@ impl ApplicationBuilder {
                     .material(geometry_material)
                     .read("shadow_atlas"),
             )
+            // Particle pass: renders GPU-simulated particles with alpha blending.
+            // Reads/writes hdr_color (loads existing geometry, composites particles).
+            // Depth testing reuses scene depth from the depth prepass.
+            .add_pass(
+                katla_gfx::ParticlePass::new("particles")
+                    .write_color("hdr_color", TextureImageFormat::R16G16B16A16Sfloat),
+            )
             // Outline pass: stencil-based selection highlight for editor.
             // Renders after geometry so the outline is drawn on top of the scene.
             // Only draws when entities are selected (filtered draw list).
