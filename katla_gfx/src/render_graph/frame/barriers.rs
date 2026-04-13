@@ -135,6 +135,13 @@ impl<'a> Frame<'a> {
                 continue;
             }
 
+            // Skip resources that are also written by this pass — the write barrier
+            // handles the layout transition to COLOR_ATTACHMENT_OPTIMAL, and the
+            // pass reads the resource as an input attachment or via subpass self-dependency.
+            if pass.writes.contains(read_name) {
+                continue;
+            }
+
             let Some(transient) = self
                 .graph
                 .transient_texture(read_name, self.current_frame())

@@ -656,10 +656,10 @@ impl ApplicationBuilder {
         if icon_font_path.exists() {
             match std::fs::read(&icon_font_path) {
                 Ok(font_bytes) => {
-                    match ui_context
+                    let icon_font_result = ui_context
                         .fonts_mut()
-                        .add_font_with_id(&font_bytes, FontId::ICON)
-                    {
+                        .add_font_with_id(&font_bytes, FontId::ICON);
+                    match icon_font_result {
                         Ok(()) => {
                             // Precache common icons at typical UI sizes
                             // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
