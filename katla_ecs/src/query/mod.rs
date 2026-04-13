@@ -44,8 +44,10 @@
 #[macro_use]
 mod macros;
 pub mod filter;
+pub mod par_query;
 
 pub use filter::{FilteredQueryIter, QueryFilter, With, Without};
+pub use par_query::ParQueryData;
 
 use paste::paste;
 

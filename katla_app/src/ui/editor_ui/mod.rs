@@ -128,6 +128,8 @@ pub struct EditorUI {
     hierarchy_search_filter: String,
     /// Dockable panel layout.
     dock_layout: katla_ui::widgets::DockLayout,
+    /// Enable the dockable panel layout (skeleton for visual verification).
+    use_dock_layout: bool,
 }
 
 impl EditorUI {
@@ -177,6 +179,7 @@ impl EditorUI {
             inspector_scroll_state: katla_ui::ScrollAreaState::default(),
             hierarchy_search_filter: String::new(),
             dock_layout: Self::default_dock_layout(),
+            use_dock_layout: false,
         }
     }
 
