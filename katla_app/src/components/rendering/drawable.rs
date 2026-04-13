@@ -1,6 +1,6 @@
 use katla_ecs::Component;
 use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
-use katla_math::Color;
+use katla_math::{AABB, Color};
 
 #[derive(Component)]
 pub struct DrawableComponent {
@@ -20,6 +20,8 @@ pub struct DrawableComponent {
     pub ao: f32,
     /// Emission texture bindless index (0 = no emission)
     pub emission: f32,
+    /// Local-space bounding box for frustum culling
+    pub bounds: Option<AABB>,
 }
 
 impl DrawableComponent {
@@ -34,6 +36,7 @@ impl DrawableComponent {
             roughness: 0.5,
             ao: 1.0,
             emission: 0.0,
+            bounds: None,
         }
     }
 
@@ -52,6 +55,7 @@ impl DrawableComponent {
             roughness: 0.5,
             ao: 1.0,
             emission: 0.0,
+            bounds: None,
         }
     }
 
@@ -73,12 +77,19 @@ impl DrawableComponent {
             roughness,
             ao,
             emission: 0.0,
+            bounds: None,
         }
     }
 
     /// Set skeleton handle for GPU skeletal animation
     pub fn with_skeleton(mut self, skeleton_handle: SkeletonHandle) -> Self {
         self.skeleton_handle = skeleton_handle;
+        self
+    }
+
+    /// Set local-space bounding box for frustum culling
+    pub fn with_bounds(mut self, bounds: AABB) -> Self {
+        self.bounds = Some(bounds);
         self
     }
 }

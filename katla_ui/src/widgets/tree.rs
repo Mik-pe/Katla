@@ -325,6 +325,10 @@ impl Widget for TreeView<'_> {
             },
         );
 
+        // SAFETY: state_ptr was created from &mut self.state on line 198.
+        // The mutable reference is reborrowed as a raw pointer for the closure,
+        // which only reads state fields. After the closure returns, we have
+        // exclusive access again to write back scroll_offset and selection.
         let state = unsafe { &mut *state_ptr };
         state.scroll_offset = scroll_result.scroll_offset;
 

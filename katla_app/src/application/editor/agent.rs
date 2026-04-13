@@ -511,11 +511,13 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
         };
 
         let material_handle = app.default_material();
+        let bounds = crate::application::spawning::local_bounds_for_source(&entity_source);
         let drawable = DrawableComponent::with_handles_and_color(
             mesh_handle,
             material_handle,
             katla_math::Color::WHITE.to_linear(),
-        );
+        )
+        .with_bounds(bounds);
         app.gpu_resource_tracker.track_drawable(
             mesh_handle,
             material_handle,

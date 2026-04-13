@@ -169,10 +169,11 @@ impl<'a> Frame<'a> {
         &self,
         pass: &PassDesc,
     ) -> Result<Option<vk::RenderingAttachmentInfo<'_>>, RenderGraphError> {
-        use super::frame_graph::BACKBUFFER_NAME;
         use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 
-        if pass.writes_to(BACKBUFFER_NAME) {
+        let backbuffer_id = self.graph.resource_id(BACKBUFFER_NAME);
+
+        if backbuffer_id.is_some_and(|id| pass.writes_to(id)) {
             let swapchain_view =
                 self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
 
@@ -196,14 +197,16 @@ impl<'a> Frame<'a> {
             ));
         }
 
-        let color_name = match pass.writes.first() {
-            Some(name) => name,
+        let &color_id = match pass.writes.first() {
+            Some(id) => id,
             None => return Ok(None),
         };
 
+        let color_name = self.graph.resource_name(color_id).unwrap_or("?");
+
         let transient = self
             .graph
-            .transient_texture(color_name, self.current_frame())
+            .transient_texture_by_id(color_id, self.current_frame())
             .ok_or_else(|| {
                 RenderGraphError::ResourceNotFound(format!(
                     "Color target '{}' not found. Use 'backbuffer' for swapchain or create a transient resource.",
@@ -217,7 +220,7 @@ impl<'a> Frame<'a> {
         let (load_op, store_op, clear_value) = pass
             .color_attachments
             .iter()
-            .find(|(name, ..)| name == color_name)
+            .find(|(id, ..)| *id == color_id)
             .map(|(_, _, load_op, store_op, clear_value)| {
                 (
                     match load_op {
@@ -274,7 +277,11 @@ impl<'a> Frame<'a> {
             let pass = &self.graph.passes[index];
             let data = self.pending.remove(&index).unwrap_or_default();
 
-            if pass.writes_to(BACKBUFFER_NAME) {
+            if self
+                .graph
+                .resource_id(BACKBUFFER_NAME)
+                .is_some_and(|id| pass.writes_to(id))
+            {
                 self.backbuffer_written = true;
             }
 

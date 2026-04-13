@@ -1343,6 +1343,7 @@ pub(crate) fn duplicate_entity(
             roughness: drawable.roughness,
             ao: drawable.ao,
             emission: drawable.emission,
+            bounds: drawable.bounds,
         };
         ctx.gpu_resource_tracker.track_drawable(
             new_drawable.mesh_handle,

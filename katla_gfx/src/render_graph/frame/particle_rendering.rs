@@ -33,8 +33,8 @@ impl<'a> Frame<'a> {
 
         let (depth_attachment, _stencil_attachment) = self.resolve_depth_attachment(pass)?;
 
-        let color_name = pass.writes.first().map(|s| s.as_str()).unwrap_or("");
-        let transient = self.graph.transient_texture(color_name, frame_idx);
+        let color_id = pass.writes.first().copied();
+        let transient = color_id.and_then(|id| self.graph.transient_texture_by_id(id, frame_idx));
         let extent = transient
             .map(|t| t.extent)
             .unwrap_or_else(|| self.renderer.frame_context.swapchain.get_extent());

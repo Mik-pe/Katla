@@ -36,14 +36,14 @@ impl<'a> Frame<'a> {
         let color_attachments: Vec<vk::RenderingAttachmentInfo> = pass
             .writes
             .iter()
-            .filter_map(|color_name| {
+            .filter_map(|&color_id| {
                 self.graph
-                    .transient_texture(color_name, frame_idx)
+                    .transient_texture_by_id(color_id, frame_idx)
                     .map(|transient| {
                         let (load_op, store_op, clear_value) = pass
                             .color_attachments
                             .iter()
-                            .find(|(name, ..)| name == color_name)
+                            .find(|(id, ..)| *id == color_id)
                             .map(|(_, _, load_op, store_op, clear_value)| {
                                 (
                                     match load_op {

@@ -45,12 +45,12 @@ impl<'a> Frame<'a> {
         );
 
         // Determine color attachment (should be hdr_color)
-        let color_attachment = if let Some(color_name) = pass.writes.first() {
-            if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
+        let color_attachment = if let Some(&color_id) = pass.writes.first() {
+            if let Some(transient) = self.graph.transient_texture_by_id(color_id, frame_idx) {
                 let (load_op, store_op, clear_value) = pass
                     .color_attachments
                     .iter()
-                    .find(|(name, ..)| name == color_name)
+                    .find(|(id, ..)| *id == color_id)
                     .map(|(_, _, load_op, store_op, clear_value)| {
                         (
                             match load_op {
@@ -93,7 +93,7 @@ impl<'a> Frame<'a> {
             } else {
                 log::debug!(
                     "[OUTLINE] Color target '{}' not found, skipping",
-                    color_name
+                    self.graph.resource_name(color_id).unwrap_or("?")
                 );
                 return Ok(());
             }
@@ -319,8 +319,8 @@ impl<'a> Frame<'a> {
             extent,
         };
 
-        let color_attachment = if let Some(color_name) = pass.writes.first() {
-            if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
+        let color_attachment = if let Some(&color_id) = pass.writes.first() {
+            if let Some(transient) = self.graph.transient_texture_by_id(color_id, frame_idx) {
                 vk::RenderingAttachmentInfo::default()
                     .image_view(transient.image_view.vk())
                     .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)

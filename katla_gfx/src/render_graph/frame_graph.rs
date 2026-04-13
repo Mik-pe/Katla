@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use super::builder::{InternalPassBuilder, PassBuilder};
 use super::compiler::{ExecutionPlan, GraphCompiler};
 use super::error::RenderGraphError;
-use super::handles::PassId;
+use super::handles::{PassId, ResourceId};
 use super::pass::PassDesc;
 use super::passes::geometry::GeometryPassData;
 use super::resource::{GraphResourceDesc, GraphResourceHandle};
@@ -49,8 +49,11 @@ pub struct FrameGraph {
     /// Pass descriptors in execution order.
     pub(super) passes: Vec<PassDesc>,
 
-    /// String -> handle mapping for resources.
-    pub(super) resource_names: HashMap<String, GraphResourceHandle>,
+    /// Resource descriptors indexed by ResourceId.
+    pub(super) resources: Vec<GraphResourceDesc>,
+
+    /// Name -> ResourceId mapping for resource lookup.
+    pub(super) resource_by_name: HashMap<String, ResourceId>,
 
     /// Pass name -> index mapping for execution context.
     pub(super) pass_names: HashMap<String, usize>,
@@ -64,10 +67,10 @@ pub struct FrameGraph {
     /// Transient resource descriptors (for lazy Vulkan resource creation).
     pub(super) transient_resources: Vec<GraphResourceDesc>,
 
-    /// Created transient textures (frame_idx -> name -> texture).
+    /// Created transient textures (frame_idx -> ResourceId -> texture).
     /// Double-buffered to match FRAMES_IN_FLIGHT - prevents race conditions
     /// where frame N+1 modifies layout tracking while frame N is still executing.
-    pub(super) transient_textures: Vec<HashMap<String, TransientTexture>>,
+    pub(super) transient_textures: Vec<HashMap<ResourceId, TransientTexture>>,
 
     /// Base bindless index for LDR texture (actual index = base + frame_idx).
     ldr_texture_base_index: Option<u32>,
@@ -88,7 +91,8 @@ impl FrameGraph {
     pub(crate) fn new() -> Self {
         Self {
             passes: Vec::new(),
-            resource_names: HashMap::new(),
+            resources: Vec::new(),
+            resource_by_name: HashMap::new(),
             pass_names: HashMap::new(),
             execution_plan: None,
             compiled: false,
@@ -121,11 +125,35 @@ impl FrameGraph {
         self.execution_plan = None;
     }
 
-    /// Import a resource into the graph.
-    pub(crate) fn import_resource(&mut self, name: impl Into<String>, handle: GraphResourceHandle) {
-        self.resource_names.insert(name.into(), handle);
+    /// Create or get a ResourceId for a named resource.
+    pub(crate) fn create_resource_id(&mut self, name: impl Into<String>) -> ResourceId {
+        let name = name.into();
+        if let Some(&id) = self.resource_by_name.get(&name) {
+            return id;
+        }
+        let id = ResourceId(self.resources.len() as u32);
+        self.resources.push(GraphResourceDesc {
+            name: name.clone(),
+            resource_type: super::resource::GraphResourceType::SampledImage,
+            format: crate::texture::ImageFormat::R8G8B8A8Unorm,
+            width: 0,
+            height: 0,
+            tracks_swapchain_size: false,
+        });
+        self.resource_by_name.insert(name, id);
         self.compiled = false;
         self.execution_plan = None;
+        id
+    }
+
+    /// Look up a ResourceId by name.
+    pub fn resource_id(&self, name: &str) -> Option<ResourceId> {
+        self.resource_by_name.get(name).copied()
+    }
+
+    /// Get the name of a resource by its ResourceId.
+    pub fn resource_name(&self, id: ResourceId) -> Option<&str> {
+        self.resources.get(id.0 as usize).map(|r| r.name.as_str())
     }
 
     /// Compile the graph for execution.
@@ -364,18 +392,22 @@ impl FrameGraph {
             .unwrap_or_else(|| (0..self.passes.len()).collect())
     }
 
+    /// Get a transient texture by ResourceId for a specific frame.
+    pub fn transient_texture_by_id(
+        &self,
+        id: ResourceId,
+        frame_idx: usize,
+    ) -> Option<&TransientTexture> {
+        self.transient_textures.get(frame_idx)?.get(&id)
+    }
+
     /// Get a transient texture by name for a specific frame.
-    ///
-    /// Transient textures are double-buffered to match FRAMES_IN_FLIGHT.
-    /// Each frame has its own set of textures to prevent race conditions.
     pub fn transient_texture(&self, name: &str, frame_idx: usize) -> Option<&TransientTexture> {
-        self.transient_textures.get(frame_idx)?.get(name)
+        let id = self.resource_by_name.get(name)?;
+        self.transient_texture_by_id(*id, frame_idx)
     }
 
     /// Get the ImageView of a transient texture by name (frame 0).
-    ///
-    /// Useful for external systems that need to reference transient textures
-    /// in descriptor sets (e.g., shadow atlas).
     pub fn transient_texture_view(&self, name: &str) -> Option<vk::ImageView> {
         self.transient_texture(name, 0).map(|t| t.image_view.vk())
     }
@@ -419,6 +451,12 @@ impl FrameGraph {
             let mut frame_textures = HashMap::new();
 
             for desc in &self.transient_resources {
+                let resource_id = self
+                    .resource_by_name
+                    .get(&desc.name)
+                    .copied()
+                    .unwrap_or(ResourceId(frame_textures.len() as u32));
+
                 let vk_format: vk::Format = desc.format.into();
 
                 // Create image
@@ -504,7 +542,7 @@ impl FrameGraph {
                     },
                 );
 
-                frame_textures.insert(desc.name.clone(), texture);
+                frame_textures.insert(resource_id, texture);
             }
 
             self.transient_textures.push(frame_textures);
@@ -554,9 +592,13 @@ impl FrameGraph {
             std::collections::HashMap::new();
 
         for frame_textures in &self.transient_textures {
-            for (name, texture) in frame_textures {
+            for (&resource_id, texture) in frame_textures {
                 if let Some(slot) = texture.bindless_slot {
-                    existing_slots.entry(name.clone()).or_default().push(slot);
+                    let name = self
+                        .resource_name(resource_id)
+                        .unwrap_or("unknown")
+                        .to_string();
+                    existing_slots.entry(name).or_default().push(slot);
                 }
             }
         }
@@ -579,10 +621,13 @@ impl FrameGraph {
         // Update all transient textures with their existing bindless slots
         let mut result = Vec::new();
         for (name, slots) in &existing_slots {
-            // Update each frame's texture with its existing slot
+            let resource_id = match self.resource_by_name.get(name) {
+                Some(&id) => id,
+                None => continue,
+            };
             for (frame_idx, slot) in slots.iter().enumerate() {
                 if let Some(frame_textures) = self.transient_textures.get_mut(frame_idx)
-                    && let Some(texture) = frame_textures.get_mut(name)
+                    && let Some(texture) = frame_textures.get_mut(&resource_id)
                 {
                     renderer
                         .update_bindless_texture(*slot, texture.image_view.vk())
@@ -663,7 +708,8 @@ impl FrameGraph {
         // Register each frame's texture and store the slot in the texture
         for frame_idx in 0..num_frames {
             if let Some(frame_textures) = self.transient_textures.get_mut(frame_idx)
-                && let Some(texture) = frame_textures.get_mut(name)
+                && let Some(&resource_id) = self.resource_by_name.get(name)
+                && let Some(texture) = frame_textures.get_mut(&resource_id)
             {
                 let slot = renderer
                     .register_bindless_texture(texture.image_view.vk())
@@ -681,10 +727,14 @@ impl FrameGraph {
         }
 
         // Get base slot from frame 0 for the return value
+        let resource_id = self
+            .resource_by_name
+            .get(name)
+            .ok_or_else(|| RenderGraphError::ResourceNotFound(name.to_string()))?;
         let base_slot = self
             .transient_textures
             .first()
-            .and_then(|textures| textures.get(name))
+            .and_then(|textures| textures.get(resource_id))
             .and_then(|texture| texture.bindless_slot)
             .ok_or_else(|| RenderGraphError::ResourceNotFound(name.to_string()))?;
 
@@ -828,72 +878,72 @@ impl FrameGraphBuilder {
     pub fn build(self) -> Result<FrameGraph, RenderGraphError> {
         let mut graph = FrameGraph::new();
 
-        // Import external resources
-        for (name, handle) in &self.resources {
-            graph.import_resource(name, *handle);
-        }
-
         // Store transient resource descriptors
         graph.transient_resources = self.transient_resources;
 
-        // Build a global resource map that includes all transient resources
-        // This ensures consistent handle assignment across all passes
-        let mut global_resource_map = HashMap::new();
-
-        // First, add all transient resources to the global map
-        for desc in &graph.transient_resources {
-            if !global_resource_map.contains_key(&desc.name) {
-                global_resource_map.insert(
-                    desc.name.clone(),
-                    GraphResourceHandle::new(global_resource_map.len() as u32),
-                );
-            }
+        // Register all resources in the ResourceId-keyed storage
+        let transient_names: Vec<String> = graph
+            .transient_resources
+            .iter()
+            .map(|d| d.name.clone())
+            .collect();
+        for name in &transient_names {
+            graph.create_resource_id(name);
         }
-
-        // Add external resources
-        for (name, handle) in &self.resources {
-            if !global_resource_map.contains_key(name) {
-                global_resource_map.insert(name.clone(), *handle);
-            }
+        for name in self.resources.keys() {
+            graph.create_resource_id(name);
         }
-
-        // Now add backbuffer and any other implicit resources
         for pass_builder in &self.pass_builders {
             for read_name in &pass_builder.reads {
-                if !global_resource_map.contains_key(read_name) {
-                    global_resource_map.insert(
-                        read_name.clone(),
-                        GraphResourceHandle::new(global_resource_map.len() as u32),
-                    );
-                }
+                graph.create_resource_id(read_name);
             }
             for write_name in &pass_builder.writes {
-                if !global_resource_map.contains_key(write_name) {
-                    global_resource_map.insert(
-                        write_name.clone(),
-                        GraphResourceHandle::new(global_resource_map.len() as u32),
-                    );
-                }
+                graph.create_resource_id(write_name);
             }
         }
 
-        // Import all resources from global map into graph
-        for (name, handle) in &global_resource_map {
-            graph.import_resource(name.clone(), *handle);
+        // Build a global resource map (name -> handle) for pass template build_fn compatibility
+        let mut global_resource_map = HashMap::new();
+        for (name, &resource_id) in &graph.resource_by_name {
+            global_resource_map.insert(name.clone(), GraphResourceHandle::new(resource_id.0));
+        }
+        for (name, handle) in &self.resources {
+            global_resource_map.insert(name.clone(), *handle);
         }
 
         // Build passes using the global resource map
         for pass_builder in self.pass_builders {
-            // Call the build function to validate resource references and get pass data
-            // Use the global resource map for consistent handle assignment
             let pass_data = (pass_builder.build_fn)(&global_resource_map)?;
 
-            // Create PassDesc with string-based resource references
+            let read_ids: Vec<ResourceId> = pass_builder
+                .reads
+                .iter()
+                .map(|name| {
+                    graph
+                        .resource_by_name
+                        .get(name)
+                        .copied()
+                        .unwrap_or_else(|| graph.create_resource_id(name))
+                })
+                .collect();
+
+            let write_ids: Vec<ResourceId> = pass_builder
+                .writes
+                .iter()
+                .map(|name| {
+                    graph
+                        .resource_by_name
+                        .get(name)
+                        .copied()
+                        .unwrap_or_else(|| graph.create_resource_id(name))
+                })
+                .collect();
+
             let mut pass = PassDesc::new(
                 pass_builder.name,
                 pass_builder.pass_type,
-                pass_builder.reads.clone(),
-                pass_builder.writes.clone(),
+                read_ids,
+                write_ids,
             );
 
             pass.pipeline = pass_builder.pipeline;
@@ -905,48 +955,34 @@ impl FrameGraphBuilder {
             pass.depth_attachment = pass_builder.depth_attachment;
             pass.kind = pass_builder.kind;
 
-            // Extract color attachment info from pass data (for geometry and depth prepass passes)
             if let Some(geom_data) = pass_data.downcast_ref::<GeometryPassData>() {
-                // Convert resolved handles back to resource names for color attachments
                 for (handle, format, load_op, store_op, clear_value) in &geom_data.colors {
-                    for (name, candidate_handle) in &global_resource_map {
-                        if *candidate_handle == *handle {
-                            pass.color_attachments.push((
-                                name.clone(),
-                                *format,
-                                *load_op,
-                                *store_op,
-                                *clear_value,
-                            ));
-                            break;
-                        }
-                    }
+                    pass.color_attachments.push((
+                        ResourceId(handle.index()),
+                        *format,
+                        *load_op,
+                        *store_op,
+                        *clear_value,
+                    ));
                 }
             } else if let Some(dp_data) =
                 pass_data
                     .downcast_ref::<crate::render_graph::passes::depth_prepass::DepthPrepassData>()
             {
                 for (handle, format, load_op, store_op, clear_value) in &dp_data.colors {
-                    for (name, candidate_handle) in &global_resource_map {
-                        if *candidate_handle == *handle {
-                            pass.color_attachments.push((
-                                name.clone(),
-                                *format,
-                                *load_op,
-                                *store_op,
-                                *clear_value,
-                            ));
-                            break;
-                        }
-                    }
+                    pass.color_attachments.push((
+                        ResourceId(handle.index()),
+                        *format,
+                        *load_op,
+                        *store_op,
+                        *clear_value,
+                    ));
                 }
             }
 
-            // Extract compositing viewport data (for compositing passes)
             if let Some(comp_data) =
                 pass_data.downcast_ref::<crate::render_graph::passes::CompositePassData>()
             {
-                // Store viewport data directly (handles are already resolved)
                 pass.compositing_viewports = Some(comp_data.viewports.clone());
             }
 
@@ -969,16 +1005,15 @@ mod tests {
     use super::super::pass::PassType;
     use super::*;
 
+    fn rid(n: u32) -> ResourceId {
+        ResourceId(n)
+    }
+
     #[test]
     fn test_frame_graph_add_and_index_passes() {
         let mut graph = FrameGraph::new();
-        let p1 = PassDesc::new("a", PassType::Graphics, vec![], vec!["r1".to_string()]);
-        let p2 = PassDesc::new(
-            "b",
-            PassType::Graphics,
-            vec!["r1".to_string()],
-            vec!["r2".to_string()],
-        );
+        let p1 = PassDesc::new("a", PassType::Graphics, vec![], vec![rid(1)]);
+        let p2 = PassDesc::new("b", PassType::Graphics, vec![rid(1)], vec![rid(2)]);
 
         graph.add_pass(p1);
         graph.add_pass(p2);
@@ -1023,5 +1058,14 @@ mod tests {
         let builder = FrameGraphBuilder::new().import_resource("ext", GraphResourceHandle::new(42));
 
         assert_eq!(builder.resources.len(), 1);
+    }
+
+    #[test]
+    fn test_resource_id_lookup() {
+        let mut graph = FrameGraph::new();
+        let id = graph.create_resource_id("hdr_color");
+        assert_eq!(graph.resource_id("hdr_color"), Some(id));
+        assert_eq!(graph.resource_name(id), Some("hdr_color"));
+        assert_eq!(graph.resource_id("nonexistent"), None);
     }
 }
