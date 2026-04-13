@@ -244,6 +244,25 @@ pub(crate) struct PassIds {
     pub(crate) wallhack_overlay: katla_gfx::render_graph::PassId,
 }
 
+impl PassIds {
+    /// Re-resolve all PassIds from the frame graph by name.
+    /// Must be called after any `insert_pass` calls that shift indices.
+    pub(crate) fn refresh(&mut self, graph: &katla_gfx::FrameGraph) {
+        self.depth_prepass = graph.pass_id("depth_prepass").unwrap_or(self.depth_prepass);
+        self.geometry = graph.pass_id("geometry").unwrap_or(self.geometry);
+        self.shadow = graph.pass_id("shadow").unwrap_or(self.shadow);
+        self.outline = graph.pass_id("outline").unwrap_or(self.outline);
+        self.stencil_indicator = graph
+            .pass_id("stencil_indicator")
+            .unwrap_or(self.stencil_indicator);
+        self.ui = graph.pass_id("ui").unwrap_or(self.ui);
+        self.tonemap = graph.pass_id("tonemap").unwrap_or(self.tonemap);
+        self.wallhack_overlay = graph
+            .pass_id("wallhack_overlay")
+            .unwrap_or(self.wallhack_overlay);
+    }
+}
+
 /// Main application struct containing all engine state.
 pub struct Application {
     pub(crate) window: Window,
