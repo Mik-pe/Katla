@@ -269,14 +269,13 @@ impl<'a> Frame<'a> {
             })?;
             existing.vk_set()
         } else {
-            let desc_set = Box::new(
+            let desc_set =
                 CompositingDescriptorSet::new(&context, &texture_views).map_err(|e| {
                     RenderGraphError::VulkanError(format!(
                         "Failed to create compositing descriptor set: {}",
                         e
                     ))
-                })?,
-            );
+                })?;
             let vk_set = desc_set.vk_set();
             sets[frame_idx] = Some(desc_set);
             vk_set

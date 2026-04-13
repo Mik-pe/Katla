@@ -130,12 +130,19 @@ fn test_hierarchy_entity_selection_works() {
 
     let header_height = 24.0;
     let content_padding = 4.0;
+    let search_field_height = 26.0;
     let item_height = 22.0;
-    let click_y = header_height + content_padding + item_height + item_height / 2.0;
+    let click_y = header_height
+        + content_padding
+        + search_field_height
+        + content_padding
+        + item_height
+        + item_height / 2.0;
     ui.input_mut().mouse_pos = Vec2::new(100.0, click_y);
     ui.input_mut().mouse_pressed[mouse_button::LEFT] = true;
     ui.input_mut().mouse_down[mouse_button::LEFT] = true;
 
+    let mut search_filter = String::new();
     let hierarchy = Hierarchy::new(
         bounds,
         &mut state,
@@ -143,6 +150,7 @@ fn test_hierarchy_entity_selection_works() {
         &entities,
         &mut pending_actions,
         &theme,
+        &mut search_filter,
     );
 
     ui.add(hierarchy);
