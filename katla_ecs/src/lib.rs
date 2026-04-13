@@ -19,6 +19,8 @@ pub mod agent;
 #[cfg(feature = "editor")]
 pub mod scene_tool;
 
+mod archetype;
+
 // Internal implementation modules
 mod entity_allocator;
 mod entity_slot;
