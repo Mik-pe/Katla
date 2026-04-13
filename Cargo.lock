@@ -2021,6 +2021,7 @@ dependencies = [
  "criterion",
  "katla_derive",
  "paste",
+ "rayon",
  "serde_json",
 ]
 

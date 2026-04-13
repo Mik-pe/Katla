@@ -2,7 +2,7 @@ use katla_ecs::EntityId;
 use katla_math::{Rect2D, Vec2, Vec3};
 use katla_ui::{
     FontSize, UiContext,
-    widgets::{RadioButton, ResizeHandle},
+    widgets::{DockArea, RadioButton, ResizeHandle},
 };
 
 use super::{
@@ -557,6 +557,57 @@ impl EditorUI {
                     ui.scaled_font_size(FontSize::XSmall),
                 );
             });
+        }
+
+        // Dockable layout skeleton — renders alongside the hardcoded layout for
+        // visual verification. Toggle via `use_dock_layout` on EditorUI.
+        if self.use_dock_layout {
+            let dock_bounds = Rect2D::from_origin_size(
+                Vec2::new(0.0, toolbar_height),
+                Vec2::new(screen_size.x(), screen_size.y() - toolbar_height),
+            );
+
+            let theme = &self.theme;
+            let entities_ref = entities;
+
+            ui.add(
+                DockArea::new(&self.dock_layout, |ui, content_bounds, panel_id| {
+                    let Some(panel) = super::EditorPanel::from_id(panel_id) else {
+                        return;
+                    };
+
+                    let label = panel.name();
+                    let text_size = ui.measure_text(label, ui.scaled_font_size(FontSize::Medium));
+                    let text_pos =
+                        Vec2::new(content_bounds.min.x() + 8.0, content_bounds.min.y() + 8.0);
+                    ui.draw_text(
+                        label,
+                        text_pos,
+                        theme.text_primary,
+                        ui.scaled_font_size(FontSize::Medium),
+                    );
+
+                    // Subtitle showing content_bounds dimensions for visual verification
+                    let dims = format!(
+                        "{:.0} x {:.0}",
+                        content_bounds.width(),
+                        content_bounds.height()
+                    );
+                    let _dims_size = ui.measure_text(&dims, ui.scaled_font_size(FontSize::XSmall));
+                    let dims_pos = Vec2::new(
+                        content_bounds.min.x() + 8.0,
+                        text_pos.y() + text_size.y() + 4.0,
+                    );
+                    ui.draw_text(
+                        &dims,
+                        dims_pos,
+                        theme.text_secondary,
+                        ui.scaled_font_size(FontSize::XSmall),
+                    );
+                    let _ = entities_ref;
+                })
+                .bounds(dock_bounds),
+            );
         }
     }
 }
