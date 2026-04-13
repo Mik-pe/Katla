@@ -81,6 +81,102 @@ impl Archetype {
     pub fn entity_ids(&self) -> &[EntityId] {
         &self.entity_ids
     }
+
+    pub fn column_slice<T: 'static>(&self) -> Option<&[T]> {
+        self.columns.get(&TypeId::of::<T>())?.as_slice()
+    }
+
+    pub fn column_slice_mut<T: 'static>(&mut self) -> Option<&mut [T]> {
+        self.columns.get_mut(&TypeId::of::<T>())?.as_slice_mut()
+    }
+
+    pub fn iter_1<A: 'static>(&self) -> Option<ArchetypeIter1<'_, A>> {
+        let slice = self.column_slice::<A>()?;
+        Some(ArchetypeIter1 {
+            inner: self.entity_ids.iter().zip(slice.iter()),
+        })
+    }
+
+    pub fn iter_2<A: 'static, B: 'static>(&self) -> Option<ArchetypeIter2<'_, A, B>> {
+        let a = self.column_slice::<A>()?;
+        let b = self.column_slice::<B>()?;
+        Some(ArchetypeIter2 {
+            inner: self.entity_ids.iter().zip(a.iter()).zip(b.iter()),
+        })
+    }
+
+    pub fn iter_3<A: 'static, B: 'static, C: 'static>(
+        &self,
+    ) -> Option<ArchetypeIter3<'_, A, B, C>> {
+        let a = self.column_slice::<A>()?;
+        let b = self.column_slice::<B>()?;
+        let c = self.column_slice::<C>()?;
+        Some(ArchetypeIter3 {
+            inner: self
+                .entity_ids
+                .iter()
+                .zip(a.iter())
+                .zip(b.iter())
+                .zip(c.iter()),
+        })
+    }
+}
+
+pub struct ArchetypeIter1<'a, A> {
+    inner: std::iter::Zip<std::slice::Iter<'a, EntityId>, std::slice::Iter<'a, A>>,
+}
+
+impl<'a, A> Iterator for ArchetypeIter1<'a, A> {
+    type Item = (EntityId, &'a A);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|(eid, a)| (*eid, a))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+pub struct ArchetypeIter2<'a, A, B> {
+    inner: std::iter::Zip<
+        std::iter::Zip<std::slice::Iter<'a, EntityId>, std::slice::Iter<'a, A>>,
+        std::slice::Iter<'a, B>,
+    >,
+}
+
+impl<'a, A, B> Iterator for ArchetypeIter2<'a, A, B> {
+    type Item = (EntityId, &'a A, &'a B);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|((eid, a), b)| (*eid, a, b))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+pub struct ArchetypeIter3<'a, A, B, C> {
+    inner: std::iter::Zip<
+        std::iter::Zip<
+            std::iter::Zip<std::slice::Iter<'a, EntityId>, std::slice::Iter<'a, A>>,
+            std::slice::Iter<'a, B>,
+        >,
+        std::slice::Iter<'a, C>,
+    >,
+}
+
+impl<'a, A, B, C> Iterator for ArchetypeIter3<'a, A, B, C> {
+    type Item = (EntityId, &'a A, &'a B, &'a C);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|(((eid, a), b), c)| (*eid, a, b, c))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
 }
 
 #[cfg(test)]
@@ -162,5 +258,81 @@ mod tests {
 
         arch.remove_entity_swap(0);
         assert!(arch.is_empty());
+    }
+
+    #[test]
+    fn test_iter_1() {
+        let mut arch = Archetype::new(ArchetypeId(1));
+        arch.push_component(10i32);
+        arch.push_entity(eid(0));
+        arch.push_component(20i32);
+        arch.push_entity(eid(1));
+        arch.push_component(30i32);
+        arch.push_entity(eid(2));
+
+        let results: Vec<_> = arch.iter_1::<i32>().unwrap().collect();
+        assert_eq!(
+            results,
+            &[(eid(0), &10i32), (eid(1), &20i32), (eid(2), &30i32),]
+        );
+    }
+
+    #[test]
+    fn test_iter_1_missing_column() {
+        let mut arch = Archetype::new(ArchetypeId(1));
+        arch.push_component(10i32);
+        arch.push_entity(eid(0));
+
+        assert!(arch.iter_1::<f32>().is_none());
+    }
+
+    #[test]
+    fn test_iter_2() {
+        let mut arch = Archetype::new(ArchetypeId(1));
+        arch.push_component(10i32);
+        arch.push_component(1.0f32);
+        arch.push_entity(eid(0));
+        arch.push_component(20i32);
+        arch.push_component(2.0f32);
+        arch.push_entity(eid(1));
+
+        let results: Vec<_> = arch.iter_2::<i32, f32>().unwrap().collect();
+        assert_eq!(
+            results,
+            &[(eid(0), &10i32, &1.0f32), (eid(1), &20i32, &2.0f32),]
+        );
+    }
+
+    #[test]
+    fn test_iter_2_missing_column() {
+        let mut arch = Archetype::new(ArchetypeId(1));
+        arch.push_component(10i32);
+        arch.push_entity(eid(0));
+
+        assert!(arch.iter_2::<i32, f32>().is_none());
+    }
+
+    #[test]
+    fn test_column_slice() {
+        let mut arch = Archetype::new(ArchetypeId(1));
+        arch.push_component(10i32);
+        arch.push_entity(eid(0));
+        arch.push_component(20i32);
+        arch.push_entity(eid(1));
+
+        let slice = arch.column_slice::<i32>().unwrap();
+        assert_eq!(slice, &[10, 20]);
+        assert!(arch.column_slice::<f32>().is_none());
+    }
+
+    #[test]
+    fn test_column_slice_mut() {
+        let mut arch = Archetype::new(ArchetypeId(1));
+        arch.push_component(10i32);
+        arch.push_entity(eid(0));
+
+        let slice = arch.column_slice_mut::<i32>().unwrap();
+        slice[0] = 99;
+        assert_eq!(arch.column_slice::<i32>().unwrap(), &[99]);
     }
 }

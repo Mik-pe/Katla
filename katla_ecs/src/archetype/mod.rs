@@ -3,7 +3,7 @@ mod column;
 mod registry;
 mod signature;
 
-pub use archetype::Archetype;
+pub use archetype::{Archetype, ArchetypeIter1, ArchetypeIter2, ArchetypeIter3};
 pub use column::ComponentColumn;
 pub use registry::ArchetypeRegistry;
 pub use signature::{

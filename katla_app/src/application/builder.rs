@@ -758,6 +758,9 @@ impl ApplicationBuilder {
             tonemap: frame_graph
                 .pass_id("tonemap")
                 .expect("Frame graph must contain a 'tonemap' pass"),
+            wallhack_overlay: frame_graph
+                .pass_id("wallhack_overlay")
+                .expect("Frame graph must contain a 'wallhack_overlay' pass"),
         };
 
         // Initialize transient textures so we can get shadow atlas ImageView

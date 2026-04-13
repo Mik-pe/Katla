@@ -744,22 +744,27 @@ impl FrameGraph {
     /// Set overlay texture indices for the wallhack overlay pass.
     pub fn set_overlay_texture_indices(
         &mut self,
-        pass_name: &str,
+        pass_id: PassId,
         ldr_texture_index: u32,
         stencil_indicator_index: u32,
     ) -> Result<(), RenderGraphError> {
-        let pass_idx = self.pass_names.get(pass_name).ok_or_else(|| {
-            RenderGraphError::ResourceNotFound(format!("Pass '{}' not found", pass_name))
-        })?;
+        let pass_idx = pass_id.0 as usize;
+        if pass_idx >= self.passes.len() {
+            return Err(RenderGraphError::ResourceNotFound(format!(
+                "PassId({}) out of bounds (max {})",
+                pass_id.0,
+                self.passes.len()
+            )));
+        }
 
-        if let Some(ref mut params) = self.passes[*pass_idx].overlay_params {
+        if let Some(ref mut params) = self.passes[pass_idx].overlay_params {
             params.ldr_texture_index = Some(ldr_texture_index);
             params.stencil_indicator_index = Some(stencil_indicator_index);
             Ok(())
         } else {
             Err(RenderGraphError::VulkanError(format!(
-                "Pass '{}' is not an overlay pass (no overlay_params found)",
-                pass_name
+                "PassId({}) is not an overlay pass (no overlay_params found)",
+                pass_id.0
             )))
         }
     }
