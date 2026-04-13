@@ -904,7 +904,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] ~~157f. Add `DockPanelId` enum and panel content registry~~ — Done in 2aa72b7. EditorPanel enum with 7 variants and stable IDs.
   - [ ] 157g. Integrate `DockArea` into `layout.rs` — (large, high risk)
     - [x] 157g1. Wire DockArea into `build()` as skeleton alongside existing layout — Done in 2b73fe8. Added `use_dock_layout` flag (default false) on EditorUI, DockArea::new() renders panel labels via EditorPanel match. Runs alongside hardcoded layout.
-    - [ ] 157g2. Extend DockArea with `register_panel()` calls and interactive ResizeHandle on Split nodes — each Leaf node must call `ui.register_panel()` for focus tracking. Each Split node must render interactive `ResizeHandle` instead of static `ui.draw_line()` separator, mutating split `ratio`. Requires changing `DockArea` to hold `&mut DockLayout`. (medium, medium risk)
+    - [x] 157g2. Extend DockArea with `register_panel()` calls and interactive ResizeHandle on Split nodes — Done in 0c9221d. register_panel in Leaf rendering, ResizeHandle replacing static separator in Split nodes, &mut DockLayout.
     - [ ] 157g3. Remove hardcoded left/right panel and ResizeHandle blocks — delete lines 90-279 of `layout.rs` (three ResizeHandle blocks, hardcoded bounds calculations, separator draws, direct `register_panel()` calls). Invoke DockArea for the dock area bounds. Extract `last_viewport_bounds` from DockArea callback. Remove `left_panel_width` and `right_panel_width` from EditorUI. Update `update_focused_panel_from_click` to hit-test against dock tree leaves. (medium, high risk)
     - [ ] 157g4. Remove hardcoded asset browser positioning; finalize — fold asset browser into DockArea as a dock leaf. Delete standalone ResizeHandle, asset bounds/register/separator code. Update `focused_panel` matching to derive from dock's registered panel IDs. Simplify `update_focused_panel_from_click` since `ui.focused_panel()` returns dock-aware IDs. (medium, high risk)
   - [x] ~~157h. Add state persistence for panel visibility and sizes~~ — Done in 2aa72b7. Default layout on EditorUI, full serde persistence deferred.
@@ -1048,7 +1048,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] 168a. Define `ComponentAccess` enum (`Read(TypeId)`, `Write(TypeId)`) and extend `System` trait with `fn component_access() -> Vec<ComponentAccess>` — Done in 7db0ae5. With helper constructors read::<T>()/write::<T>(), 3 tests.
   - [x] 168b. Create `scheduler.rs` with `SystemScheduler` — Done in 21130e1. Conflict-based DAG with topological group computation, 11 tests.
   - [ ] 168c. Implement parallel execution via `rayon::scope()` — walk the DAG in topological order, dispatch systems whose predecessors are complete to rayon workers. Use `AtomicUsize` counters per node for completion tracking. `UnsafeWorldCell`-style access to World from each system. — (large, medium risk)
-  - [ ] 168d. Add `UnsafeWorldCell` wrapper — thin newtype around `*mut World` with safe access methods for reads/writes. Replaces direct `UnsafeCell::get()` usage. — (medium, medium risk)
+  - [x] 168d. Add `UnsafeWorldCell` wrapper — Done in 0c9221d. Thin newtype with storage()/storage_mut::<T>()/entities()/world(), Send+Sync impls, 7 tests.
   - [ ] 168e. Annotate existing systems with component access — add `component_access()` to each system in katla_app. — (small, low risk)
   - [ ] 168f. Integrate `SystemScheduler` into frame loop — replace sequential `world.update(dt)` with `scheduler.execute(&mut world, dt)`. — (medium, medium risk)
   - [ ] 168g. Integration test — register 3 systems (A writes X, B writes Y, C reads X+Y), verify A+B run in parallel, C runs after both. — (small, low risk)
@@ -1063,7 +1063,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Sub-tasks:**
   - [x] 169a. Add `CommandBuffer::begin_secondary(inheritance_info)` and `end_secondary()` — Done in 7db0ae5. Secondary CB allocation, begin_secondary with inheritance info, execute_commands, 3 tests.
   - [x] 169b. Create `ThreadPoolCommandPool` — Done in 21130e1. Per-thread CommandPool with allocate_secondary, reset_all, destroy, 4 tests.
-  - [ ] 169c. Parallel geometry pass recording — split object list into N chunks. Each worker records a secondary CB with its draw calls. Primary CB begins render pass, calls `vkCmdExecuteCommands(secondaries)`, ends render pass. — (large, medium risk)
+  - [x] 169c. Parallel geometry pass recording — Done in 0c9221d. std::thread::scope-based parallel recording with secondary CBs, auto-threshold at 32+ draws, 8 tests.
   - [ ] 169d. Parallel shadow pass recording — split shadow cascades across threads. Each cascade's draw calls go into a separate secondary CB. — (medium, medium risk)
   - [ ] 169e. Benchmark — measure CPU time for command buffer recording before/after at 100/500/1000 draw calls. — (small, low risk)
   - **Recommended order:** 169a → 169b → 169c → 169d → 169e
