@@ -275,7 +275,7 @@ impl<'a> Frame<'a> {
         descriptor_set: vk::DescriptorSet,
         screen_size: [f32; 2],
     ) -> Result<(), RenderGraphError> {
-        let sampler = self.renderer.bindless_manager.shared_sampler();
+        let sampler = self.renderer.bindless_manager.ui_sampler();
 
         let uniform_data = [screen_size[0], screen_size[1], 0.0, 0.0];
         let uniform_bytes = bytemuck::cast_slice(&uniform_data);

@@ -11,6 +11,7 @@ pub(crate) mod skeleton_buffer;
 pub(crate) mod swapchain;
 pub(crate) mod swapdata;
 pub(crate) mod texture;
+pub(crate) mod thread_pool_command_pool;
 pub(crate) mod vertex_attr_set;
 pub(crate) mod vertex_attribute;
 pub(crate) mod vertexbinding;

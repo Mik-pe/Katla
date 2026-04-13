@@ -77,6 +77,8 @@ pub struct BindlessTextureManager {
     descriptor_set: VkDescriptorSet,
     /// Shared sampler for all textures.
     shared_sampler: VkSampler,
+    /// CLAMP_TO_EDGE sampler for UI textures (font atlas).
+    ui_sampler: VkSampler,
     /// Texture slots (Some = occupied, None = free).
     slots: Vec<Option<vk::ImageView>>,
     /// Stack of free slot indices for O(1) allocation.
@@ -104,6 +106,9 @@ impl BindlessTextureManager {
     pub fn new(context: Rc<VulkanContext>) -> Result<Self, RendererError> {
         // Create shared sampler with reasonable defaults
         let shared_sampler = context.create_sampler_repeat_anisotropic()?;
+
+        // Create CLAMP_TO_EDGE sampler for UI textures (prevents atlas edge wrapping)
+        let ui_sampler = context.create_sampler_clamp_edge_linear()?;
 
         // Create descriptor set layout
         // Binding 0: texture_2d array (SAMPLED_IMAGE, count = MAX_BINDLESS_TEXTURES)
@@ -203,6 +208,7 @@ impl BindlessTextureManager {
             descriptor_layout: VkDescriptorSetLayout::new(descriptor_layout),
             descriptor_set: VkDescriptorSet::new(descriptor_set),
             shared_sampler,
+            ui_sampler,
             slots,
             free_slots,
             device: context.device.clone(),
@@ -353,6 +359,14 @@ impl BindlessTextureManager {
     /// Get the shared sampler used by all textures in the bindless system.
     pub fn shared_sampler(&self) -> VkSampler {
         self.shared_sampler
+    }
+
+    /// Get the CLAMP_TO_EDGE sampler for UI textures.
+    ///
+    /// This sampler uses CLAMP_TO_EDGE addressing to prevent UV wrapping
+    /// artifacts at font atlas glyph boundaries during panel resize.
+    pub fn ui_sampler(&self) -> VkSampler {
+        self.ui_sampler
     }
 
     /// Get the bindless slot index for a texture handle.
@@ -576,6 +590,7 @@ impl Drop for BindlessTextureManager {
             self.device
                 .destroy_descriptor_set_layout(self.descriptor_layout.vk(), None);
             self.device.destroy_sampler(self.shared_sampler.vk(), None);
+            self.device.destroy_sampler(self.ui_sampler.vk(), None);
         }
     }
 }
