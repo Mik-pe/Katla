@@ -360,17 +360,28 @@ impl<'a> Frame<'a> {
                 self.depth_buffer_written = true;
             }
 
-            if pass.name == "geometry"
-                && let Some(ref particle_system) = self.renderer.particle_system
-                && particle_system.alive_count() > 0
-                && let Some(hdr_texture) = self
-                    .graph
-                    .transient_textures
-                    .get(frame_idx)
-                    .and_then(|m| m.get("hdr_color"))
-                && let Err(e) = self.render_particles_to_texture(&cmd, hdr_texture)
-            {
-                log::error!("Failed to render particles: {}", e);
+            if pass.name == "geometry" {
+                let particles_rendered = self
+                    .renderer
+                    .particle_system
+                    .as_ref()
+                    .is_some_and(|ps| ps.alive_count() > 0);
+                if particles_rendered {
+                    if let Some(hdr_texture) = self
+                        .graph
+                        .transient_textures
+                        .get(frame_idx)
+                        .and_then(|m| m.get("hdr_color"))
+                    {
+                        if let Err(e) = self.render_particles_to_texture(&cmd, hdr_texture) {
+                            log::error!("Failed to render particles: {}", e);
+                        }
+                        // Particle rendering transitions hdr_color to SHADER_READ_ONLY — keep
+                        // resource_states in sync so the outline pass pre-barrier is correct.
+                        self.resource_states
+                            .insert("hdr_color".to_string(), ResourceState::ShaderRead);
+                    }
+                }
             }
         }
 
