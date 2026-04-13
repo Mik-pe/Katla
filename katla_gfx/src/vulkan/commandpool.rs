@@ -32,6 +32,10 @@ impl CommandPool {
         command_buffers
     }
 
+    pub fn allocate_secondary(&self) -> super::CommandBuffer {
+        super::CommandBuffer::new_secondary(&self.device, self)
+    }
+
     pub fn destroy(&self) {
         unsafe {
             self.device.destroy_command_pool(self.command_pool, None);

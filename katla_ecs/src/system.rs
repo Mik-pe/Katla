@@ -1,4 +1,25 @@
+use std::any::TypeId;
+
 use crate::World;
+
+/// Describes how a system accesses a component type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ComponentAccess {
+    /// System reads the component (immutable access).
+    Read(TypeId),
+    /// System writes the component (mutable access).
+    Write(TypeId),
+}
+
+impl ComponentAccess {
+    pub fn read<T: 'static>() -> Self {
+        ComponentAccess::Read(TypeId::of::<T>())
+    }
+
+    pub fn write<T: 'static>() -> Self {
+        ComponentAccess::Write(TypeId::of::<T>())
+    }
+}
 
 /// System trait for the ECS framework.
 ///
@@ -51,6 +72,16 @@ pub trait System {
     /// Returns the name of this system for debugging purposes.
     fn name(&self) -> &str {
         std::any::type_name::<Self>()
+    }
+
+    /// Returns the component access patterns for this system.
+    ///
+    /// Used for parallel scheduling to detect conflicts between systems.
+    fn component_access() -> Vec<ComponentAccess>
+    where
+        Self: Sized,
+    {
+        Vec::new()
     }
 }
 
@@ -136,5 +167,26 @@ mod tests {
         system.update(&mut world, 0.016);
 
         assert_eq!(system.update_count, 1);
+    }
+
+    #[test]
+    fn test_component_access_read() {
+        let access = ComponentAccess::read::<TestComponent>();
+        assert_eq!(access, ComponentAccess::Read(TypeId::of::<TestComponent>()));
+    }
+
+    #[test]
+    fn test_component_access_write() {
+        let access = ComponentAccess::write::<TestComponent>();
+        assert_eq!(
+            access,
+            ComponentAccess::Write(TypeId::of::<TestComponent>())
+        );
+    }
+
+    #[test]
+    fn test_default_component_access_is_empty() {
+        let access = <TestSystem as System>::component_access();
+        assert!(access.is_empty());
     }
 }
