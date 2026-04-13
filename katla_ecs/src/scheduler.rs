@@ -1,6 +1,19 @@
 use std::sync::atomic::AtomicUsize;
 
 use crate::system::ComponentAccess;
+use crate::system::OrderedSystem;
+use crate::unsafe_world_cell::UnsafeWorldCell;
+
+#[derive(Copy, Clone)]
+struct SendPtr(*mut OrderedSystem);
+unsafe impl Send for SendPtr {}
+unsafe impl Sync for SendPtr {}
+
+impl SendPtr {
+    fn get(self) -> *mut OrderedSystem {
+        self.0
+    }
+}
 
 /// Node in the system dependency DAG.
 pub(crate) struct SystemNode {
@@ -60,8 +73,60 @@ impl SystemScheduler {
     }
 
     /// Get the execution groups (systems within each group can run in parallel).
+    #[cfg(test)]
     pub fn groups(&self) -> &[Vec<usize>] {
         &self.groups
+    }
+
+    /// Execute systems in parallel according to the computed groups.
+    ///
+    /// Systems within a group run in parallel via rayon. Groups run sequentially
+    /// in topological order. Single-system groups run on the current thread.
+    pub fn execute_parallel(
+        &self,
+        systems: &mut [OrderedSystem],
+        world_cell: UnsafeWorldCell,
+        delta_time: f32,
+    ) {
+        for group in &self.groups {
+            if group.len() <= 1 {
+                for &sys_idx in group {
+                    let ordered = &mut systems[sys_idx];
+                    if !ordered.system.is_enabled() {
+                        continue;
+                    }
+                    let world = unsafe { &mut *world_cell.as_ptr() };
+                    ordered.system.update(world, delta_time);
+                }
+                continue;
+            }
+
+            let enabled: Vec<usize> = group
+                .iter()
+                .filter(|&&idx| systems[idx].system.is_enabled())
+                .copied()
+                .collect();
+
+            if enabled.len() <= 1 {
+                for &sys_idx in &enabled {
+                    let world = unsafe { &mut *world_cell.as_ptr() };
+                    systems[sys_idx].system.update(world, delta_time);
+                }
+                continue;
+            }
+
+            let systems_ptr = SendPtr(systems.as_mut_ptr());
+            rayon::scope(|s| {
+                for &sys_idx in &enabled {
+                    let ptr = systems_ptr;
+                    s.spawn(move |_| {
+                        let ordered = unsafe { &mut *ptr.get().add(sys_idx) };
+                        let world = unsafe { &mut *world_cell.as_ptr() };
+                        ordered.system.update(world, delta_time);
+                    });
+                }
+            });
+        }
     }
 
     fn build_edges(&mut self) {

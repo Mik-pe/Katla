@@ -77,9 +77,9 @@ impl Application {
             input.camera_speed = self.editor.editor_ui.editor_settings().camera_speed;
         }
 
-        // Update world (runs animation systems)
+        // Update world (runs ECS systems in parallel where possible)
         debug!("Updating world...");
-        self.world.update(dt);
+        self.world.update_parallel(dt);
         debug!("World updated");
 
         // Clear per-frame mouse delta after the tick.

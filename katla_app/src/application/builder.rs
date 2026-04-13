@@ -145,6 +145,21 @@ impl ApplicationBuilder {
         self
     }
 
+    /// Add a system with component access patterns for parallel scheduling.
+    ///
+    /// Systems registered with access patterns can run in parallel with other
+    /// systems that access disjoint component types.
+    pub fn with_system_and_access(
+        mut self,
+        system: Box<dyn System>,
+        order: SystemExecutionOrder,
+        access: Vec<katla_ecs::ComponentAccess>,
+    ) -> Self {
+        self.world
+            .register_system_with_access(system, order, access);
+        self
+    }
+
     /// Register a hook that runs once after `build()` returns, before the event loop starts.
     ///
     /// Use this to spawn initial entities or configure application state that requires

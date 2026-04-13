@@ -4,6 +4,7 @@ use crate::entity::EntityId;
 use crate::entity_allocator::EntityAllocator;
 use crate::events::{ComponentEvent, EntityEvent};
 use crate::resource::ResourceStorage;
+use crate::scheduler::SystemScheduler;
 use crate::storage::ComponentStorageManager;
 use crate::system::{OrderedSystem, System, SystemExecutionOrder};
 use std::cell::UnsafeCell;
@@ -396,6 +397,23 @@ impl World {
         self.sort_systems();
     }
 
+    /// Registers a system with component access patterns for parallel scheduling.
+    ///
+    /// Systems registered with access patterns can be scheduled in parallel with
+    /// other systems that access disjoint component types. The scheduler uses these
+    /// patterns to build a dependency DAG and run non-conflicting systems concurrently.
+    pub fn register_system_with_access(
+        &mut self,
+        system: Box<dyn System>,
+        order: SystemExecutionOrder,
+        access: Vec<crate::system::ComponentAccess>,
+    ) {
+        let mut ordered_system = OrderedSystem::new_with_access(system, order, access);
+        ordered_system.system.initialize();
+        self.systems.push(ordered_system);
+        self.sort_systems();
+    }
+
     /// Sorts systems by their execution order.
     fn sort_systems(&mut self) {
         self.systems.sort_by(|a, b| a.order.cmp(&b.order));
@@ -467,6 +485,64 @@ impl World {
         self.component_events.clear();
 
         // Reset change detection so mutations in the next frame are tracked fresh
+        self.storage.get_mut().clear_changed();
+    }
+
+    /// Updates all systems using parallel execution.
+    ///
+    /// Systems are grouped by their component access patterns — systems that
+    /// access disjoint component types run in parallel via rayon. Systems that
+    /// conflict run sequentially in topological order.
+    pub fn update_parallel(&mut self, delta_time: f32) {
+        let access_patterns: Vec<(usize, Vec<crate::system::ComponentAccess>)> = self
+            .systems
+            .iter()
+            .enumerate()
+            .map(|(i, os)| (i, os.access_patterns.clone()))
+            .collect();
+
+        let scheduler = SystemScheduler::build(&access_patterns);
+
+        let systems = std::mem::take(&mut self.systems);
+
+        struct Guard<'a> {
+            dest: *mut Vec<OrderedSystem>,
+            systems: Option<Vec<OrderedSystem>>,
+            _marker: std::marker::PhantomData<&'a mut Vec<OrderedSystem>>,
+        }
+
+        impl Drop for Guard<'_> {
+            fn drop(&mut self) {
+                if let Some(systems) = self.systems.take() {
+                    unsafe {
+                        *self.dest = systems;
+                    }
+                }
+            }
+        }
+
+        let mut guard = Guard {
+            dest: &mut self.systems as *mut _,
+            systems: Some(systems),
+            _marker: std::marker::PhantomData,
+        };
+
+        let systems = guard
+            .systems
+            .as_mut()
+            .expect("systems should be in guard during update_parallel");
+
+        let world_cell = unsafe { self.as_unsafe_world_cell() };
+        scheduler.execute_parallel(systems, world_cell, delta_time);
+
+        let systems = guard
+            .systems
+            .take()
+            .expect("systems should still be in guard after parallel update");
+        self.systems = systems;
+
+        self.entity_events.clear();
+        self.component_events.clear();
         self.storage.get_mut().clear_changed();
     }
 
@@ -664,6 +740,7 @@ impl<'a, Q: crate::query::QueryData> Iterator for QueryChangedIter<'a, Q> {
 mod tests {
     use super::*;
     use crate::components::Component;
+    use crate::system::{ComponentAccess, OrderedSystem};
 
     #[derive(Component, Default)]
     struct TestComponent {
@@ -1829,5 +1906,220 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert!(results.contains(&id_both));
+    }
+
+    // --- Parallel system execution tests ---
+
+    #[test]
+    fn test_parallel_matches_sequential() {
+        #[derive(Component, Default)]
+        struct CompA {
+            value: i32,
+        }
+        #[derive(Component, Default)]
+        struct CompB {
+            value: i32,
+        }
+
+        struct WriteA;
+        impl System for WriteA {
+            fn update(&mut self, world: &mut World, _dt: f32) {
+                for (_id, a) in world.query::<&mut CompA>() {
+                    a.value = 42;
+                }
+            }
+        }
+
+        struct WriteB;
+        impl System for WriteB {
+            fn update(&mut self, world: &mut World, _dt: f32) {
+                for (_id, b) in world.query::<&mut CompB>() {
+                    b.value = 99;
+                }
+            }
+        }
+
+        // Build sequential world
+        let mut world_seq = World::new();
+        let e1 = world_seq.create_entity();
+        world_seq.add_component(e1, CompA::default());
+        world_seq.add_component(e1, CompB::default());
+
+        world_seq.register_system(Box::new(WriteA), SystemExecutionOrder::EARLY);
+        world_seq.register_system(Box::new(WriteB), SystemExecutionOrder::NORMAL);
+        world_seq.update(0.016);
+
+        let seq_a = world_seq.get_component::<CompA>(e1).unwrap().value;
+        let seq_b = world_seq.get_component::<CompB>(e1).unwrap().value;
+
+        // Build parallel world
+        let mut world_par = World::new();
+        let e1 = world_par.create_entity();
+        world_par.add_component(e1, CompA::default());
+        world_par.add_component(e1, CompB::default());
+
+        world_par.register_system(Box::new(WriteA), SystemExecutionOrder::EARLY);
+        world_par.register_system(Box::new(WriteB), SystemExecutionOrder::NORMAL);
+
+        // Overwrite with versions that have access patterns for parallel scheduling
+        world_par.systems.clear();
+        let mut sa = OrderedSystem::new_with_access(
+            Box::new(WriteA),
+            SystemExecutionOrder::EARLY,
+            vec![ComponentAccess::write::<CompA>()],
+        );
+        sa.system.initialize();
+        let mut sb = OrderedSystem::new_with_access(
+            Box::new(WriteB),
+            SystemExecutionOrder::NORMAL,
+            vec![ComponentAccess::write::<CompB>()],
+        );
+        sb.system.initialize();
+        world_par.systems.push(sa);
+        world_par.systems.push(sb);
+        world_par.sort_systems();
+
+        world_par.update_parallel(0.016);
+
+        assert_eq!(world_par.get_component::<CompA>(e1).unwrap().value, seq_a);
+        assert_eq!(world_par.get_component::<CompB>(e1).unwrap().value, seq_b);
+    }
+
+    #[test]
+    fn test_parallel_conflicting_systems_run_sequentially() {
+        #[derive(Component, Default)]
+        struct Counter {
+            value: i32,
+        }
+
+        struct IncrementSystem;
+        impl System for IncrementSystem {
+            fn update(&mut self, world: &mut World, _dt: f32) {
+                for (_id, c) in world.query::<&mut Counter>() {
+                    let prev = c.value;
+                    c.value = prev + 1;
+                }
+            }
+        }
+
+        let mut world = World::new();
+        let e = world.create_entity();
+        world.add_component(e, Counter { value: 0 });
+
+        // Two systems that both write Counter — they conflict, so scheduler
+        // must run them sequentially.
+        let sys1 = OrderedSystem::new_with_access(
+            Box::new(IncrementSystem),
+            SystemExecutionOrder::EARLY,
+            vec![ComponentAccess::write::<Counter>()],
+        );
+        let sys2 = OrderedSystem::new_with_access(
+            Box::new(IncrementSystem),
+            SystemExecutionOrder::NORMAL,
+            vec![ComponentAccess::write::<Counter>()],
+        );
+
+        world.systems.push(sys1);
+        world.systems.push(sys2);
+        world.sort_systems();
+
+        world.update_parallel(0.016);
+
+        // Both should have incremented, value should be 2
+        assert_eq!(world.get_component::<Counter>(e).unwrap().value, 2);
+    }
+
+    #[test]
+    fn test_parallel_disabled_systems_skipped() {
+        #[derive(Component, Default)]
+        struct Flag {
+            set: bool,
+        }
+
+        struct SetFlagSystem;
+        impl System for SetFlagSystem {
+            fn update(&mut self, world: &mut World, _dt: f32) {
+                for (_id, f) in world.query::<&mut Flag>() {
+                    f.set = true;
+                }
+            }
+        }
+
+        struct DisabledSystem;
+        impl System for DisabledSystem {
+            fn update(&mut self, _world: &mut World, _dt: f32) {
+                panic!("disabled system should not run");
+            }
+            fn is_enabled(&self) -> bool {
+                false
+            }
+        }
+
+        let mut world = World::new();
+        let e = world.create_entity();
+        world.add_component(e, Flag { set: false });
+
+        let sys_enabled = OrderedSystem::new_with_access(
+            Box::new(SetFlagSystem),
+            SystemExecutionOrder::EARLY,
+            vec![ComponentAccess::write::<Flag>()],
+        );
+        let sys_disabled = OrderedSystem::new_with_access(
+            Box::new(DisabledSystem),
+            SystemExecutionOrder::NORMAL,
+            Vec::new(),
+        );
+
+        world.systems.push(sys_enabled);
+        world.systems.push(sys_disabled);
+
+        world.update_parallel(0.016);
+
+        assert!(world.get_component::<Flag>(e).unwrap().set);
+    }
+
+    #[test]
+    fn test_parallel_events_flushed_after_update() {
+        #[derive(Component, Default)]
+        struct DummyComp {
+            _x: i32,
+        }
+
+        struct NoopSystem;
+        impl System for NoopSystem {
+            fn update(&mut self, _world: &mut World, _dt: f32) {}
+        }
+
+        let mut world = World::new();
+        let e = world.create_entity();
+        world.add_component(e, DummyComp::default());
+
+        assert!(!world.entity_events().is_empty());
+        assert!(!world.component_events().is_empty());
+
+        let sys = OrderedSystem::new_with_access(
+            Box::new(NoopSystem),
+            SystemExecutionOrder::NORMAL,
+            vec![],
+        );
+        world.systems.push(sys);
+
+        world.update_parallel(0.016);
+
+        assert!(world.entity_events().is_empty());
+        assert!(world.component_events().is_empty());
+    }
+
+    #[test]
+    fn test_parallel_empty_world_no_panic() {
+        let mut world = World::new();
+        world.update_parallel(0.016);
+    }
+
+    #[test]
+    fn test_parallel_no_systems_no_panic() {
+        let mut world = World::new();
+        world.create_entity();
+        world.update_parallel(0.016);
     }
 }

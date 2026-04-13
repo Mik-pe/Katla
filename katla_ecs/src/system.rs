@@ -109,11 +109,28 @@ impl Default for SystemExecutionOrder {
 pub struct OrderedSystem {
     pub system: Box<dyn System>,
     pub order: SystemExecutionOrder,
+    pub access_patterns: Vec<ComponentAccess>,
 }
 
 impl OrderedSystem {
     pub fn new(system: Box<dyn System>, order: SystemExecutionOrder) -> Self {
-        Self { system, order }
+        Self {
+            system,
+            order,
+            access_patterns: Vec::new(),
+        }
+    }
+
+    pub fn new_with_access(
+        system: Box<dyn System>,
+        order: SystemExecutionOrder,
+        access: Vec<ComponentAccess>,
+    ) -> Self {
+        Self {
+            system,
+            order,
+            access_patterns: access,
+        }
     }
 }
 
