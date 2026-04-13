@@ -62,21 +62,19 @@ impl Application {
             return None;
         }
 
-        let camera = self.camera.borrow();
-        let view_mat = camera.get_view_mat(&self.world);
-        let proj_mat = camera.get_proj_mat(&self.world);
-        drop(camera);
+        let view_mat = self.camera.get_view_mat(&self.world);
+        let proj_mat = self.camera.get_proj_mat(&self.world);
 
         let fov = self
             .world
-            .get_component::<PerspectiveComponent>(self.camera.borrow().entity)
+            .get_component::<PerspectiveComponent>(self.camera.entity)
             .map(|p| p.fov)
             .unwrap_or(60.0);
 
         let viewport_height = self.editor.editor_ui.viewport_size().1 as f32;
         let cam_pos = self
             .world
-            .get_component::<crate::components::TransformComponent>(self.camera.borrow().entity)
+            .get_component::<crate::components::TransformComponent>(self.camera.entity)
             .map(|t| t.transform.position)
             .unwrap_or(katla_math::Vec3::new(0.0, 2.0, 10.0));
 
@@ -112,10 +110,8 @@ impl Application {
             // Compute a world-space reference point on the drag plane
             let vp = &self.editor.editor_ui.last_viewport_bounds;
             let viewport = (vp.min.x(), vp.min.y(), vp.width(), vp.height());
-            let camera = self.camera.borrow();
-            let view_mat = camera.get_view_mat(&self.world);
-            let proj_mat = camera.get_proj_mat(&self.world);
-            drop(camera);
+            let view_mat = self.camera.get_view_mat(&self.world);
+            let proj_mat = self.camera.get_proj_mat(&self.world);
 
             let (ray_origin, ray_dir) = screen_to_ray(
                 (mouse_pos.x(), mouse_pos.y()),
@@ -124,7 +120,7 @@ impl Application {
                 &proj_mat,
             );
             {
-                let cam_rot = self.camera.borrow().get_view_rotation(&self.world);
+                let cam_rot = self.camera.get_view_rotation(&self.world);
                 let camera_forward = cam_rot * katla_math::Vec3::new(0.0, 0.0, -1.0);
 
                 let world_pos = match handle {
@@ -195,12 +191,10 @@ impl Application {
                 return;
             }
 
-            let camera = self.camera.borrow();
-            let view_mat = camera.get_view_mat(&self.world);
-            let proj_mat = camera.get_proj_mat(&self.world);
-            drop(camera);
+            let view_mat = self.camera.get_view_mat(&self.world);
+            let proj_mat = self.camera.get_proj_mat(&self.world);
 
-            let cam_rot = self.camera.borrow().get_view_rotation(&self.world);
+            let cam_rot = self.camera.get_view_rotation(&self.world);
             let camera_forward = cam_rot * katla_math::Vec3::new(0.0, 0.0, -1.0);
 
             let (ray_origin, ray_dir) =
@@ -210,17 +204,13 @@ impl Application {
             let scale_fallback_sensitivity = {
                 let fov = self
                     .world
-                    .get_component::<crate::components::PerspectiveComponent>(
-                        self.camera.borrow().entity,
-                    )
+                    .get_component::<crate::components::PerspectiveComponent>(self.camera.entity)
                     .map(|p| p.fov)
                     .unwrap_or(60.0);
                 let viewport_height = self.editor.editor_ui.viewport_size().1 as f32;
                 let cam_pos = self
                     .world
-                    .get_component::<crate::components::TransformComponent>(
-                        self.camera.borrow().entity,
-                    )
+                    .get_component::<crate::components::TransformComponent>(self.camera.entity)
                     .map(|t| t.transform.position)
                     .unwrap_or(katla_math::Vec3::new(0.0, 2.0, 10.0));
                 let gs = compute_gizmo_scale(

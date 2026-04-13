@@ -317,7 +317,7 @@ impl SceneManager {
         // Re-create the editor camera entity (destroyed by clear_entities).
         // The camera is EditorHidden so it is never saved to disk and must be
         // re-spawned on every scene load.
-        *app.camera.borrow_mut() = crate::application::camera::Camera::new(&mut app.world);
+        app.camera = crate::application::camera::Camera::new(&mut app.world);
 
         // Build a name -> entity_id mapping for parent resolution
         let mut name_to_entity: std::collections::HashMap<String, katla_ecs::EntityId> =

@@ -541,7 +541,7 @@ fn check_protected_entity(op: &SceneOp, app: &super::super::Application) -> Resu
 
     let Some(entity) = target else { return Ok(()) };
 
-    let cam_entity = app.camera.borrow().entity;
+    let cam_entity = app.camera.entity;
     let gizmo_entity = app.editor.gizmo_state.entity;
 
     if entity == cam_entity {

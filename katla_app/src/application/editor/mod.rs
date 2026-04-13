@@ -965,7 +965,7 @@ pub fn process_editor_actions(app: &mut Application) {
     {
         let registry = &app.editor.component_registry;
         let protected = mcp::ProtectedEntities {
-            camera_entity: app.camera.borrow().entity,
+            camera_entity: app.camera.entity,
             gizmo_entity: app.editor.gizmo_state.entity,
         };
         app.editor.mcp_state.poll(app, registry, &protected);
@@ -1544,11 +1544,9 @@ fn unproject_to_ground_plane_impl(
 fn unproject_to_ground_plane(app: &Application, screen_pos: Vec2) -> Vec3 {
     let viewport = app.editor.editor_ui.last_viewport_bounds;
 
-    let camera = app.camera.borrow();
-    let view_mat = camera.get_view_mat(&app.world);
-    let proj_mat = camera.get_proj_mat(&app.world);
-    let cam_entity = camera.entity;
-    drop(camera);
+    let view_mat = app.camera.get_view_mat(&app.world);
+    let proj_mat = app.camera.get_proj_mat(&app.world);
+    let cam_entity = app.camera.entity;
 
     let cam_pos = app
         .world

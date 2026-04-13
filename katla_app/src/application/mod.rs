@@ -36,7 +36,7 @@ mod spawning;
 use std::collections::HashMap;
 #[cfg(feature = "editor")]
 use std::path::PathBuf;
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use std::time::Instant;
 
 use log::{debug, info};
 use winit::keyboard::ModifiersState;
@@ -240,7 +240,7 @@ pub struct Application {
     pub(crate) frame_graph: katla_gfx::FrameGraph,
     /// Handle to the tonemap pass in the frame graph
     pub(crate) tonemap_pass_id: katla_gfx::render_graph::PassId,
-    pub(crate) camera: Rc<RefCell<Camera>>,
+    pub(crate) camera: Camera,
     pub(crate) gltf_cache: GltfCache,
     pub(crate) timer: Timer,
     pub(crate) info: ApplicationInfo,
@@ -397,9 +397,7 @@ impl ApplicationHandler for Application {
                     }
 
                     let aspect = extent.width as f32 / extent.height as f32;
-                    self.camera
-                        .borrow_mut()
-                        .aspect_ratio_changed(&mut self.world, aspect);
+                    self.camera.aspect_ratio_changed(&mut self.world, aspect);
                     info!("=== Resize complete ===");
                 } else if !self.minimized {
                     self.minimized = true;

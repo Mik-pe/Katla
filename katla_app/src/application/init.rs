@@ -481,7 +481,7 @@ impl Application {
             .max(0.5);
 
         // Distance to fit the object so it covers ~50% of the smaller viewport dimension.
-        let camera_entity = self.camera.borrow().entity;
+        let camera_entity = self.camera.entity;
         let fov_rad = self
             .world
             .get_component::<crate::components::PerspectiveComponent>(camera_entity)

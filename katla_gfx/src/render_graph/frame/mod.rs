@@ -324,7 +324,43 @@ impl<'a> Frame<'a> {
                             self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
                         }
                     }
-                    Some(super::pass::PassKind::Geometry) | None => {
+                    Some(super::pass::PassKind::Geometry) => {
+                        if let Some(material_handle) = pass.material {
+                            if pass.compositing_viewports.is_some() && data.draw_lists.is_empty() {
+                                self.execute_compositing_pass(&cmd, pass, material_handle)?;
+                            } else {
+                                self.execute_graphics_pass(&cmd, pass, data)?;
+                            }
+                        } else if pass.pipeline.is_some() && data.draw_lists.is_empty() {
+                            if let Some(pipeline) = pass.pipeline {
+                                self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
+                            }
+                        } else {
+                            self.execute_graphics_pass(&cmd, pass, data)?;
+                        }
+
+                        let particles_rendered = self
+                            .renderer
+                            .particle_system
+                            .as_ref()
+                            .is_some_and(|ps| ps.alive_count() > 0);
+                        if particles_rendered {
+                            if let Some(hdr_texture) = self
+                                .graph
+                                .transient_textures
+                                .get(frame_idx)
+                                .and_then(|m| m.get("hdr_color"))
+                            {
+                                if let Err(e) = self.render_particles_to_texture(&cmd, hdr_texture)
+                                {
+                                    log::error!("Failed to render particles: {}", e);
+                                }
+                                self.resource_states
+                                    .insert("hdr_color".to_string(), ResourceState::ShaderRead);
+                            }
+                        }
+                    }
+                    None => {
                         if let Some(material_handle) = pass.material {
                             if pass.compositing_viewports.is_some() && data.draw_lists.is_empty() {
                                 self.execute_compositing_pass(&cmd, pass, material_handle)?;
@@ -358,30 +394,6 @@ impl<'a> Frame<'a> {
 
             if pass.uses_depth {
                 self.depth_buffer_written = true;
-            }
-
-            if pass.name == "geometry" {
-                let particles_rendered = self
-                    .renderer
-                    .particle_system
-                    .as_ref()
-                    .is_some_and(|ps| ps.alive_count() > 0);
-                if particles_rendered {
-                    if let Some(hdr_texture) = self
-                        .graph
-                        .transient_textures
-                        .get(frame_idx)
-                        .and_then(|m| m.get("hdr_color"))
-                    {
-                        if let Err(e) = self.render_particles_to_texture(&cmd, hdr_texture) {
-                            log::error!("Failed to render particles: {}", e);
-                        }
-                        // Particle rendering transitions hdr_color to SHADER_READ_ONLY — keep
-                        // resource_states in sync so the outline pass pre-barrier is correct.
-                        self.resource_states
-                            .insert("hdr_color".to_string(), ResourceState::ShaderRead);
-                    }
-                }
             }
         }
 
