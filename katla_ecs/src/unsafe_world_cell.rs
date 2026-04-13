@@ -13,6 +13,7 @@ use std::cell::UnsafeCell;
 /// This is the building block for parallel system execution: the scheduler
 /// can hand out `UnsafeWorldCell` references to systems that access disjoint
 /// component types.
+#[derive(Copy, Clone)]
 pub(crate) struct UnsafeWorldCell(*mut World);
 
 impl UnsafeWorldCell {
@@ -24,6 +25,12 @@ impl UnsafeWorldCell {
     #[inline]
     pub unsafe fn new(world: *mut World) -> Self {
         Self(world)
+    }
+
+    /// Get the raw `*mut World` pointer.
+    #[inline]
+    pub fn as_ptr(&self) -> *mut World {
+        self.0
     }
 
     /// Get an immutable reference to the component storage.
