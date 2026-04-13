@@ -24,7 +24,7 @@
 //! handles it automatically.
 
 use std::ffi::CString;
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use std::time::Instant;
 
 use katla_ecs::{System, SystemExecutionOrder, World};
 use katla_gfx::renderer::VulkanRenderer;
@@ -600,7 +600,7 @@ impl ApplicationBuilder {
         };
 
         let mut world = self.world;
-        let camera = Rc::new(RefCell::new(Camera::new(&mut world)));
+        let camera = Camera::new(&mut world);
 
         let resources = ResourceManager::discover()?;
 
@@ -829,6 +829,8 @@ impl ApplicationBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
     use super::*;
     use katla_ecs::World;
 

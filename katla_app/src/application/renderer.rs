@@ -28,16 +28,13 @@ impl Application {
             16.0 / 9.0 // Fallback to default aspect ratio
         };
         self.camera
-            .borrow_mut()
             .aspect_ratio_changed(&mut self.world, viewport_aspect);
 
         let mut frame = FrameContext::new();
 
-        let camera = self.camera.borrow();
-        let view_mat = camera.get_view_mat(&self.world);
-        let proj_mat = camera.get_proj_mat(&self.world);
-        let camera_entity = camera.entity;
-        drop(camera);
+        let view_mat = self.camera.get_view_mat(&self.world);
+        let proj_mat = self.camera.get_proj_mat(&self.world);
+        let camera_entity = self.camera.entity;
 
         use crate::components::TransformComponent;
         let cam_pos = if let Some(transform) = self
@@ -470,21 +467,19 @@ impl Application {
         self.editor.gizmo_state.set_entity(entity_id, position);
 
         // Get camera FOV and viewport height for screen-space scaling
-        let camera = self.camera.borrow();
         let fov = if let Some(proj) = self
             .world
-            .get_component::<PerspectiveComponent>(camera.entity)
+            .get_component::<PerspectiveComponent>(self.camera.entity)
         {
             proj.fov
         } else {
             60.0
         };
-        drop(camera);
 
         let viewport_height = self.editor.editor_ui.viewport_size().1 as f32;
         let cam_pos = if let Some(t) = self
             .world
-            .get_component::<TransformComponent>(self.camera.borrow().entity)
+            .get_component::<TransformComponent>(self.camera.entity)
         {
             t.transform.position
         } else {
@@ -554,8 +549,7 @@ impl Application {
             return;
         }
 
-        let camera = self.camera.borrow();
-        let cam_entity = camera.entity;
+        let cam_entity = self.camera.entity;
 
         let (cam_pos, fov) = {
             let cam_pos = self
@@ -570,7 +564,6 @@ impl Application {
                 .unwrap_or(60.0);
             (cam_pos, fov)
         };
-        drop(camera);
 
         let viewport_height = self.editor.editor_ui.viewport_size().1 as f32;
         let fov_rad = fov.to_radians();
