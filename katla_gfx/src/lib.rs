@@ -45,7 +45,7 @@
 //!     .build()?;
 //!
 //! renderer.render(&mut graph, |frame| {
-//!     frame.submit("geometry", &draw_list);
+//!     frame.submit(geometry_pass_id, &draw_list);
 //! })?;
 //! ```
 //!

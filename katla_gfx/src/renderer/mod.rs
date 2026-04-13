@@ -1046,8 +1046,8 @@ impl VulkanRenderer {
     ///
     /// ```ignore
     /// renderer.render(&frame_graph, |frame| {
-    ///     frame.submit("geometry", &opaque_draw_list);
-    ///     frame.submit("geometry", &transparent_draw_list);
+    ///     frame.submit(geometry_pass_id, &opaque_draw_list);
+    ///     frame.submit(geometry_pass_id, &transparent_draw_list);
     ///     // Passes without draw lists (like tonemap) run automatically
     /// });
     /// ```

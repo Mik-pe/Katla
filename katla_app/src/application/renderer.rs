@@ -190,10 +190,12 @@ impl Application {
                 draw_list.len()
             );
 
+            let ids = &self.pass_ids;
+
             if !draw_list.is_empty() {
-                frame.submit("depth_prepass", &draw_list);
-                frame.submit("geometry", &draw_list);
-                frame.submit("shadow", &shadow_draw_list);
+                frame.submit(ids.depth_prepass, &draw_list);
+                frame.submit(ids.geometry, &draw_list);
+                frame.submit(ids.shadow, &shadow_draw_list);
                 log::debug!(
                     "Submitted {} draw calls to depth_prepass + geometry, {} to shadow",
                     draw_list.len(),
@@ -206,8 +208,8 @@ impl Application {
             if let Some(ref outline_dl) = outline_draw_list
                 && !outline_dl.is_empty()
             {
-                frame.submit("outline", outline_dl);
-                frame.submit("stencil_indicator", outline_dl);
+                frame.submit(ids.outline, outline_dl);
+                frame.submit(ids.stencil_indicator, outline_dl);
                 log::debug!(
                     "Submitted {} selected draw calls to outline + stencil_indicator passes",
                     outline_dl.len()
@@ -216,7 +218,7 @@ impl Application {
 
             if let Some(ref ui_list) = ui_draw_list {
                 log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
-                frame.submit_ui("ui", ui_list);
+                frame.submit_ui(ids.ui, ui_list);
             }
         }) {
             log::error!("Frame render failed, skipping frame: {}", e);
