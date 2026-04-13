@@ -2,7 +2,7 @@ use crate::animation::components::{
     AnimatedModel, AnimationEvent, AnimationPlayer, MorphTargetWeights,
 };
 use crate::animation::{ChannelPath, SampledValue};
-use katla_ecs::{EntityId, System};
+use katla_ecs::{ComponentAccess, EntityId, System};
 
 pub struct AnimationUpdateSystem;
 
@@ -109,6 +109,13 @@ impl System for AnimationUpdateSystem {
     fn name(&self) -> &str {
         "AnimationUpdateSystem"
     }
+
+    fn component_access() -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::read::<AnimatedModel>(),
+            ComponentAccess::write::<AnimationPlayer>(),
+        ]
+    }
 }
 
 pub struct MorphTargetSystem;
@@ -163,5 +170,13 @@ impl System for MorphTargetSystem {
 
     fn name(&self) -> &str {
         "MorphTargetSystem"
+    }
+
+    fn component_access() -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::read::<AnimationPlayer>(),
+            ComponentAccess::read::<AnimatedModel>(),
+            ComponentAccess::write::<MorphTargetWeights>(),
+        ]
     }
 }

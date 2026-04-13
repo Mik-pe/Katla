@@ -27,7 +27,7 @@
 //! world.update(0.016); // Apply gravity and update velocity
 //! ```
 
-use katla_ecs::{System, World};
+use katla_ecs::{ComponentAccess, System, World};
 
 use crate::components::{DragComponent, ForceComponent, MassComponent, VelocityComponent};
 
@@ -79,6 +79,16 @@ impl System for PhysicsSystem {
         for (_entity, force) in world.query::<&mut ForceComponent>() {
             force.force = katla_math::Vec3::default();
         }
+    }
+
+    fn component_access() -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::read::<VelocityComponent>(),
+            ComponentAccess::read::<DragComponent>(),
+            ComponentAccess::write::<ForceComponent>(),
+            ComponentAccess::read::<MassComponent>(),
+            ComponentAccess::write::<VelocityComponent>(),
+        ]
     }
 }
 
