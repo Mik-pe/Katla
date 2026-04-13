@@ -982,13 +982,11 @@ These items identify code that currently lives in katla_app but is generic enoug
   - **Recommended order:** 161b → 161d → 161e → 161c → 161f → 161a
 - **Severity:** MEDIUM
 
-### 162. UI panel rendering bug — black backgrounds and green glitch artifacts on resize
+~~### 162. UI panel rendering bug — black backgrounds and green glitch artifacts on resize~~ — Green glitch fixed in 21130e1 (CLAMP_TO_EDGE sampler for UI textures). Black backgrounds require runtime verification (likely alpha-blending semi-transparent panel_bg over dark clear color).
 - **Crate:** katla_gfx / katla_ui / katla_app
 - **Issue:** Two related visual bugs in the editor UI:
-  1. **Panel backgrounds render as black** — UI panels (hierarchy, inspector, asset browser) appear with black backgrounds instead of the themed `panel_bg` color. Likely caused by alpha-blending semi-transparent panel_bg over the swapchain clear color (0.1, 0.1, 0.1, 1.0) when the background pass skips its draw (hdr_texture_index is None).
-  2. **Green glitch artifacts on panel resize** — **Root cause confirmed**: shared sampler uses `REPEAT` address mode (in `context/samplers.rs`) for ALL textures including the font atlas. When clip rects change rapidly during resize, UV coordinates at atlas edges wrap to opposite side, sampling partially-initialized glyph data. **Fix**: Add a CLAMP_TO_EDGE sampler and use it for UI descriptor sets instead of the shared REPEAT sampler.
-- **Investigation status:** Code analysis complete. Green glitch root cause confirmed (REPEAT sampler). Black backgrounds likely alpha-blending-over-dark-clear-color, needs runtime verification.
-- **Investigation steps:**
+  1. **Panel backgrounds render as black** — UI panels (hierarchy, inspector, asset browser) appear with black backgrounds instead of the themed `panel_bg` color. Likely caused by alpha-blending semi-transparent panel_bg over the swapchain clear color (0.1, 0.1, 0.1, 1.0) when the background pass skips its draw (hdr_texture_index is None). Needs runtime verification.
+  2. **Green glitch artifacts on panel resize** — **Fixed**. Root cause: shared sampler used `REPEAT` address mode for ALL textures including font atlas. Fix: Added CLAMP_TO_EDGE sampler, used in UI descriptor set.
   - Check UI render pass blend mode and clear color
   - Verify texture atlas binding and sampling mode (clamp-to-edge, not repeat)
   - Check if vertex buffer updates are properly synchronized (no in-flight buffer being read while CPU writes)
@@ -1048,7 +1046,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Approach:** Extend the `System` trait with access metadata. Build a DAG at schedule-build time. Execute via rayon `scope()` where each system is a task that waits only on conflicting predecessors. The existing `UnsafeCell<ComponentStorageManager>` already allows multiple immutable borrows from disjoint TypeIds — this is the same soundness guarantee Bevy uses for `UnsafeWorldCell`.
 - **Sub-tasks:**
   - [x] 168a. Define `ComponentAccess` enum (`Read(TypeId)`, `Write(TypeId)`) and extend `System` trait with `fn component_access() -> Vec<ComponentAccess>` — Done in 7db0ae5. With helper constructors read::<T>()/write::<T>(), 3 tests.
-  - [ ] 168b. Create `scheduler.rs` with `SystemScheduler` — builds DAG from access conflicts: edge from A→B if A and B conflict (both Write same component, or Read+Write same component) and A has lower execution order. — (medium, medium risk)
+  - [x] 168b. Create `scheduler.rs` with `SystemScheduler` — Done in 21130e1. Conflict-based DAG with topological group computation, 11 tests.
   - [ ] 168c. Implement parallel execution via `rayon::scope()` — walk the DAG in topological order, dispatch systems whose predecessors are complete to rayon workers. Use `AtomicUsize` counters per node for completion tracking. `UnsafeWorldCell`-style access to World from each system. — (large, medium risk)
   - [ ] 168d. Add `UnsafeWorldCell` wrapper — thin newtype around `*mut World` with safe access methods for reads/writes. Replaces direct `UnsafeCell::get()` usage. — (medium, medium risk)
   - [ ] 168e. Annotate existing systems with component access — add `component_access()` to each system in katla_app. — (small, low risk)
@@ -1064,7 +1062,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Issue:** The renderer records all draw calls into a single primary command buffer on the main thread. For scenes with many draw calls (hundreds of objects, multiple render passes), command buffer recording is CPU-bound and becomes the bottleneck. SOTA engines (Frostbite, Unreal, Granite) record secondary command buffers in parallel on multiple threads, then submit them all to a single primary. Vulkan is explicitly designed for this — secondary command buffers can be recorded concurrently from multiple threads, each with its own command pool.
 - **Sub-tasks:**
   - [x] 169a. Add `CommandBuffer::begin_secondary(inheritance_info)` and `end_secondary()` — Done in 7db0ae5. Secondary CB allocation, begin_secondary with inheritance info, execute_commands, 3 tests.
-  - [ ] 169b. Create `ThreadPoolCommandPool` — manages `Vec<CommandPool>`, one per rayon worker thread. Pools are reset (not destroyed) per frame for allocation reuse. — (medium, low risk)
+  - [x] 169b. Create `ThreadPoolCommandPool` — Done in 21130e1. Per-thread CommandPool with allocate_secondary, reset_all, destroy, 4 tests.
   - [ ] 169c. Parallel geometry pass recording — split object list into N chunks. Each worker records a secondary CB with its draw calls. Primary CB begins render pass, calls `vkCmdExecuteCommands(secondaries)`, ends render pass. — (large, medium risk)
   - [ ] 169d. Parallel shadow pass recording — split shadow cascades across threads. Each cascade's draw calls go into a separate secondary CB. — (medium, medium risk)
   - [ ] 169e. Benchmark — measure CPU time for command buffer recording before/after at 100/500/1000 draw calls. — (small, low risk)
