@@ -1014,7 +1014,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] 164b. Replace `pass_names: HashMap<String, usize>` with `PassId`-indexed storage — Partially done in 7271697. `add_pass()` returns PassId, `set_tonemap_texture_index()` takes PassId, `pass_id()` lookup added. `pass_names` HashMap still exists for remaining string callers. — (medium, low risk)
   - [x] 164c. Replace `if pass.name == "geometry"` with `PassKind::Geometry` dispatch — Done in fd25124. String comparison replaced with enum match.
   - [x] 164d. Migrate `Frame` submission APIs from `&str` to `PassId` — Done in 83a1002. submit/submit_ui/dispatch/push_uniform all take PassId. PassIds struct on Application stores all pass handles.
-  - [ ] 164e. Replace `resource_names: HashMap<String, GraphResourceHandle>` with `ResourceId`-keyed storage — affects entire pipeline: `FrameGraphBuilder::build()` builds global resource map from strings; `PassDesc.reads/writes: Vec<String>` become `Vec<ResourceId>`; `PassDesc.color_attachments: Vec<(String, ...)>` becomes `Vec<(ResourceId, ...)>`; `PassDesc.writes_to()/reads_from()` change from `&str` to `ResourceId`; barrier generation in `frame/barriers.rs` and compositing in `frame/compositing.rs` use resource names as lookup keys. `GraphResourceDesc.name` stays as `String` for debugging. — (large, medium risk)
+  - [x] 164e. Replace `resource_names: HashMap<String, GraphResourceHandle>` with `ResourceId`-keyed storage — Done in f7ddd53. `resources: Vec<GraphResourceDesc>` + `resource_by_name: HashMap<String, ResourceId>` replaces string-keyed HashMap. `PassDesc.reads/writes` changed to `Vec<ResourceId>`. `transient_textures` keyed by ResourceId. All barrier, compositing, and pass lookups updated. `transient_texture_by_id()` added, `transient_texture()` kept as backward-compat wrapper.
   - [x] 164f. Migrate all `katla_app` callers from string-based to typed-handle APIs — Done in 5034003. `set_overlay_texture_indices` now takes PassId, `wallhack_overlay` added to PassIds struct, init.rs uses typed handle. — (medium, low risk)
   - **Recommended order:** 164b → 164c → 164d → 164f → 164e (164e is largest, do last)
 - **Severity:** MEDIUM
@@ -1075,9 +1075,19 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Files:** `katla_gfx/src/render_graph/frame_graph.rs`, `katla_gfx/src/render_graph/frame/mod.rs`, `katla_gfx/src/render_graph/frame/barriers.rs`
 - **Issue:** The frame graph executes passes sequentially in `execute_passes()`. Independent passes (e.g., shadow cascades, outline vs object-ID) that don't read/write the same resources could execute in parallel. The render graph already tracks `.reads()` and `.writes()` per pass — this is exactly the information needed to build a DAG and schedule independent passes concurrently.
 - **Sub-tasks:**
-  - [ ] 170a. Build pass dependency DAG at frame graph compile time — from existing `reads/writes` per pass, create edges where resource overlap exists. Topological sort determines execution order. — (medium, low risk)
-  - [ ] 170b. Add parallel pass execution mode — `execute_passes_parallel()` using rayon `scope()`. Each pass records into its own secondary command buffer (requires 169a/169b). — (large, medium risk)
-  - [ ] 170c. Integration test — create frame graph with 3 independent passes (A writes X, B writes Y, C reads X+Y). Verify A+B run in parallel, C runs after both. — (small, low risk)
+  - [ ] 170a. Build pass dependency DAG at frame graph compile time — from existing `reads/writes` per pass, create edges where resource overlap exists. Topological sort determines execution order. (medium, low risk)
+    - [ ] 170a1. Define `PassDagNode` — `PassDagNode { pass_index: usize, reads: Vec<ResourceId>, writes: Vec<ResourceId>, predecessors: Vec<usize>, successors: Vec<usize> }`. (small, low risk)
+    - [ ] 170a2. Implement `build_pass_dag()` — iterate all pass pairs, add edge from A→B if A.writes ∩ (B.reads ∪ B.writes) != ∅ or B.writes ∩ A.reads != ∅. Respect existing execution order for ties. (medium, low risk)
+    - [ ] 170a3. Topological sort and validation — verify DAG is acyclic. Compute parallelism level (max number of concurrent passes). (small, low risk)
+    - [ ] 170a4. Store DAG in `ExecutionPlan` — replace flat pass order with DAG. Sequential execution becomes a simple topological-order walk. (small, low risk)
+  - [ ] 170b. Add parallel pass execution mode — `execute_passes_parallel()` using rayon `scope()`. Each pass records into its own secondary command buffer (requires 169a/169b). (large, medium risk)
+    - [ ] 170b1. Allocate secondary CBs per pass — at frame start, allocate one secondary CB per pass from ThreadPoolCommandPool. Each pass records independently. (small, low risk)
+    - [ ] 170b2. Implement DAG-based dispatch — using rayon `scope()`, dispatch passes whose predecessors are complete. Track completion with `AtomicUsize` counters per node. (medium, medium risk)
+    - [ ] 170b3. Submit secondaries to primary — after all passes recorded, primary CB calls `vkCmdExecuteCommands(all_secondaries)` in topological order. (small, medium risk)
+    - [ ] 170b4. Handle barrier placement — insert `vkCmdPipelineBarrier` between passes that have resource dependencies. Barriers go into the primary CB between `vkCmdExecuteCommands` calls. (medium, medium risk)
+  - [ ] 170c. Integration test — create frame graph with 3 independent passes (A writes X, B writes Y, C reads X+Y). Verify A+B run in parallel, C runs after both. (small, low risk)
+    - [ ] 170c1. Create test frame graph — 3 passes with explicit reads/writes. Verify DAG has A and B as roots, C as dependent. (small, low risk)
+    - [ ] 170c2. Verify output correctness — compare parallel execution output with sequential execution output, pixel-by-pixel. (small, low risk)
   - **Recommended order:** 170a → 170b → 170c
 - **Depends on:** 164 (typed handles), 169a/169b (secondary command buffer infrastructure)
 - **Severity:** MEDIUM
@@ -1087,18 +1097,35 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Files:** `katla_app/src/util/background_loader.rs`, `katla_app/src/application/resource_loading.rs`, `katla_app/src/application/init.rs`
 - **Issue:** The `BackgroundLoader` only handles image thumbnails. Model loading (glTF parsing, vertex/index buffer preparation, skeleton extraction), texture loading (full-size mipmap generation), and shader compilation all happen on the main thread, causing frame hitches. A full async pipeline: (1) load bytes from disk on an IO thread, (2) parse/process on worker threads, (3) upload to GPU on the main thread.
 - **Sub-tasks:**
-  - [ ] 171a. Extend `LoadRequest` enum with model and texture variants — (small, low risk)
-  - [ ] 171b. Add worker thread pool (rayon or dedicated threads) — replace single background thread with a `rayon::ThreadPool`. — (medium, low risk)
-  - [ ] 171c. Off-thread glTF model loading — move model parsing to worker threads. — (large, medium risk)
-  - [ ] 171d. Off-thread texture processing — move full-size texture loading to worker threads. — (medium, low risk)
-  - [ ] 171e. Batch GPU upload on main thread — `poll()` returns completed loads, GPU upload happens in a single batch. — (medium, low risk)
-  - [ ] 171f. Loading screen / progress indicator in status bar. — (small, low risk)
+  - [ ] 171a. Extend `LoadRequest` enum with model and texture variants (small, low risk)
+    - [ ] 171a1. Add `LoadRequest::FullTexture { id, path, generate_mipmaps }` — full-size texture load with optional mipmap generation. (small, low risk)
+    - [ ] 171a2. Add `LoadRequest::GltfModel { id, path }` — glTF model file load. (small, low risk)
+    - [ ] 171a3. Add corresponding `LoadResult` variants — `FullTextureLoaded { id, width, height, mip_levels, pixels }`, `GltfModelLoaded { id, meshes, skeletons, materials }`. (small, low risk)
+  - [ ] 171b. Add worker thread pool (rayon or dedicated threads) — replace single background thread with a `rayon::ThreadPool`. (medium, low risk)
+    - [ ] 171b1. Replace `std::thread::spawn` with rayon pool — update `BackgroundLoader::new()` to create a `rayon::ThreadPoolBuilder::new().num_threads(2).build()`. Keep the mpsc channel for results. (small, low risk)
+    - [ ] 171b2. Update `submit()` to dispatch via pool — `self.pool.spawn(move || { ... })` instead of spawning a new thread per request. (small, low risk)
+    - [ ] 171b3. Support batch submission — `submit_batch(requests: Vec<LoadRequest>)` that dispatches all to the pool at once. (small, low risk)
+  - [ ] 171c. Off-thread glTF model loading — move model parsing to worker threads. (large, medium risk)
+    - [ ] 171c1. Implement glTF parsing on worker thread — `gltf::import(path)` on worker, extract meshes/primitives/nodes/materials. No GPU calls. (medium, medium risk)
+    - [ ] 171c2. Build vertex/index buffers on worker — construct `Vec<u8>` vertex data and `Vec<u32>` index data from parsed glTF primitives. CPU-only work. (medium, low risk)
+    - [ ] 171c3. Extract skeleton and animation data — parse joint hierarchies and bind poses into serializable structs for main-thread GPU upload. (medium, medium risk)
+    - [ ] 171c4. Integration test — load a glTF model via background loader, verify mesh data is correct. (small, low risk)
+  - [ ] 171d. Off-thread texture processing — move full-size texture loading to worker threads. (medium, low risk)
+    - [ ] 171d1. Implement full-size texture decode on worker — `image::open(path)` to RGBA8, optional mipmap generation via simple box filter. (small, low risk)
+    - [ ] 171d2. Implement compressed texture formats — decode to BC1/BC3 on worker thread (if basis_universal or similar crate available), fall back to RGBA8. (medium, medium risk)
+  - [ ] 171e. Batch GPU upload on main thread — `poll()` returns completed loads, GPU upload happens in a single batch. (medium, low risk)
+    - [ ] 171e1. Extend `poll()` to return new LoadResult variants — match on texture/model results, call appropriate GPU upload functions. (small, low risk)
+    - [ ] 171e2. Batch multiple uploads per frame — collect all completed loads from the channel, upload textures and meshes in a single batch. (small, low risk)
+    - [ ] 171e3. Rate-limit uploads to avoid frame spikes — cap GPU upload work per frame (e.g., max 3 textures or 1 model per frame), defer remaining to next frame. (small, low risk)
+  - [ ] 171f. Loading screen / progress indicator in status bar. (small, low risk)
+    - [ ] 171f1. Track pending load count — add `pending_count: AtomicUsize` to BackgroundLoader, increment on submit, decrement on poll. (small, low risk)
+    - [ ] 171f2. Display loading indicator in status bar — show spinner or "Loading X assets..." text when pending_count > 0, using existing `status_label()` helper. (small, low risk)
   - **Recommended order:** 171a → 171b → 171c → 171d → 171e → 171f
 - **Severity:** MEDIUM (eliminates frame hitches during asset loading)
 
 ~~### 172. Investigate app crash using `cargo run -- -s`~~ — Fixed in 71d16be. PassIds were stale after `insert_pass` calls shifted indices. Added `PassIds::refresh()` to re-resolve by name after all insertions. Application now runs cleanly with `cargo run -- -s` (exit code 0).
 
-### 173. Audit and reduce unsafe/raw pointer usage across the codebase
+~~### 173. Audit and reduce unsafe/raw pointer usage across the codebase~~ — Fixed in f7ddd53. Audited 77 unsafe blocks across katla_ecs (24), katla_ui (3), katla_math (~50). All are necessary (ECS interior mutability, SIMD intrinsics, type-erased storage, bytemuck FFI). Added missing SAFETY comment in tree.rs. Zero soundness bugs found. No safe alternatives exist for any of the patterns.
 - **Crates:** katla_gfx, katla_ecs, katla_ui, katla_math, katla_app
 - **Issue:** Raw pointers and `unsafe` blocks are a Rust antipattern when safer alternatives exist. `katla_gfx` has ~60 files with unsafe/raw pointer usage (Vulkan FFI is expected), but `katla_ecs` (7 files), `katla_ui` (2 files), and `katla_math` (3 files) should minimize unsafe to what's strictly necessary. Each `unsafe` block should have a `// SAFETY:` comment explaining why it's sound. Raw pointer casts (`as *const T`, `as *mut T`) outside of FFI bindings should be replaced with references, slices, or `UnsafeCell` where possible.
 - **Investigation steps:**
@@ -1110,7 +1137,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - Document or fix each finding
 - **Severity:** MEDIUM
 
-### 174. No CPU frustum culling — all entities drawn every frame
+~~### 174. No CPU frustum culling — all entities drawn every frame~~ — Fixed in f7ddd53. Added optional `bounds: Option<AABB>` to DrawableComponent, frustum construction from camera matrices, and per-entity frustum test in collect_draws_with_context(). Primitive entities get correct local AABBs on spawn.
 - **Crate:** katla_app
 - **Files:** `katla_app/src/application/renderer.rs`, `katla_math/src/frustum.rs`, `katla_math/src/aabb.rs`
 - **Issue:** The renderer submits draw calls for every entity in the scene regardless of visibility. `collect_draws_with_context()` iterates all drawables and builds a draw list with no frustum test. Light culling (Forward+ tile-based) and a depth prepass exist, but there is no CPU-side frustum culling to skip off-screen entities before GPU submission. `Frustum` and `AABB` structs exist in katla_math with `intersects_aabb()` already implemented, and `DrawableComponent` likely has or can derive an AABB. The infrastructure is there — it just isn't wired up.
@@ -1120,10 +1147,12 @@ These items identify code that currently lives in katla_app but is generic enoug
 ### 175. New-user perspective audit — what's missing for someone evaluating Katla as a game engine
 - **Crates:** all
 - **Issue:** Evaluate Katla from the perspective of a new user who doesn't know the codebase — someone looking for a game engine and trying to determine if Katla is a good fit. They need to answer practical questions like "how do I make a game?", "how do I render stuff?", "how do I add physics/audio/input?", "where's the documentation?". This audit should identify gaps in usability, documentation, onboarding, and feature completeness that would block or confuse a new user.
-- **Investigation steps:**
-  - Spawn a worker agent with the perspective of a new user evaluating Katla as a game engine
-  - Have them explore the codebase, README, docs/, examples, and asset directories
-  - List concrete gaps: missing examples, missing docs, missing features, confusing APIs, no quickstart guide, no API reference, etc.
-  - Categorize findings by severity (blocker vs nice-to-have)
-  - Create actionable TODO items from the findings
+- **Sub-tasks:**
+  - [ ] 175a. Audit README and top-level docs — evaluate whether README answers: what is this, how to build, how to run, what's the architecture, where to start reading code. Check docs/ for completeness. (small, low risk)
+  - [ ] 175b. Audit crate-level documentation — check if each crate's `lib.rs` has `//!` module docs explaining its purpose, public API, and usage patterns. A new user should understand each crate from its docs alone. (small, low risk)
+  - [ ] 175c. Audit public API surface — check that `pub` items have `///` doc comments. Identify `pub` items that should be `pub(crate)` (per AGENTS.md: prefer pub(crate) until proven public). (small, low risk)
+  - [ ] 175d. Check for examples and quickstart — verify `cargo run --example` examples exist and work. Identify missing examples (e.g., minimal scene setup, custom component + system, loading a model). (small, low risk)
+  - [ ] 175e. Identify missing engine features — catalog what a game engine needs that Katla lacks: physics, audio, input abstraction (beyond InputMapper), scene serialization format docs, asset pipeline docs, scripting/lua support, etc. (small, low risk)
+  - [ ] 175f. Compile findings into actionable TODO items — categorize each gap as blocker (prevents evaluation) or nice-to-have. Create concrete TODO entries with file paths and acceptance criteria. (small, low risk)
+- **Recommended order:** 175a → 175b → 175c → 175d → 175e → 175f
 - **Severity:** MEDIUM
