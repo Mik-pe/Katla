@@ -571,7 +571,7 @@ impl EditorUI {
             let entities_ref = entities;
 
             ui.add(
-                DockArea::new(&self.dock_layout, |ui, content_bounds, panel_id| {
+                DockArea::new(&mut self.dock_layout, |ui, content_bounds, panel_id| {
                     let Some(panel) = super::EditorPanel::from_id(panel_id) else {
                         return;
                     };

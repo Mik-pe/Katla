@@ -26,6 +26,7 @@ mod archetype;
 mod entity_allocator;
 mod entity_slot;
 mod sparse_set;
+pub(crate) mod unsafe_world_cell;
 
 // Re-export commonly used types for convenience
 pub use components::Component;

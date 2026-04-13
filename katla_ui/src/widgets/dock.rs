@@ -555,7 +555,7 @@ pub struct DockArea<'a, F>
 where
     F: FnMut(&mut UiContext, Rect2D, DockPanelId),
 {
-    layout: &'a DockLayout,
+    layout: &'a mut DockLayout,
     bounds: Rect2D,
     render_panel: F,
 }
@@ -566,10 +566,11 @@ where
 {
     /// Create a new dock area.
     ///
-    /// * `layout` — the dock layout tree to render.
+    /// * `layout` — the dock layout tree to render (mutable so resize handles
+    ///   can update split ratios).
     /// * `render_panel` — callback invoked for each visible leaf panel, receiving
     ///   the content area (below the tab bar) and the active panel ID.
-    pub fn new(layout: &'a DockLayout, render_panel: F) -> Self {
+    pub fn new(layout: &'a mut DockLayout, render_panel: F) -> Self {
         Self {
             layout,
             bounds: Rect2D::from_size(Vec2::new(800.0, 600.0)),
@@ -582,105 +583,136 @@ where
         self.bounds = bounds;
         self
     }
+}
 
-    fn render_node(&mut self, ui: &mut UiContext, node: &DockNode, bounds: Rect2D) {
-        match node {
-            DockNode::Split {
-                direction,
-                ratio,
-                children,
-            } => {
-                let sep_half = SPLITTER_THICKNESS * 0.5;
-
-                let (first_bounds, second_bounds) = match direction {
-                    SplitDirection::Horizontal => {
-                        let split_x = bounds.min.x() + bounds.width() * ratio;
-                        let first = Rect2D::from_origin_size(
-                            bounds.min,
-                            Vec2::new(bounds.width() * ratio, bounds.height()),
-                        );
-                        let second = Rect2D::from_origin_size(
-                            Vec2::new(split_x + SPLITTER_THICKNESS, bounds.min.y()),
-                            Vec2::new(
-                                (bounds.width() * (1.0 - ratio) - SPLITTER_THICKNESS).max(0.0),
-                                bounds.height(),
-                            ),
-                        );
-                        (first, second)
-                    }
-                    SplitDirection::Vertical => {
-                        let split_y = bounds.min.y() + bounds.height() * ratio;
-                        let first = Rect2D::from_origin_size(
-                            bounds.min,
-                            Vec2::new(bounds.width(), bounds.height() * ratio),
-                        );
-                        let second = Rect2D::from_origin_size(
-                            Vec2::new(bounds.min.x(), split_y + SPLITTER_THICKNESS),
-                            Vec2::new(
-                                bounds.width(),
-                                (bounds.height() * (1.0 - ratio) - SPLITTER_THICKNESS).max(0.0),
-                            ),
-                        );
-                        (first, second)
-                    }
-                };
-
-                self.render_node(ui, &children[0], first_bounds);
-
-                // Draw separator line
-                let separator_color = ui.style.separator;
-                match direction {
-                    SplitDirection::Horizontal => {
-                        let sep_x = first_bounds.max.x() + sep_half;
-                        ui.draw_line(
-                            Vec2::new(sep_x, bounds.min.y()),
-                            Vec2::new(sep_x, bounds.max.y()),
-                            separator_color,
-                            SPLITTER_THICKNESS,
-                        );
-                    }
-                    SplitDirection::Vertical => {
-                        let sep_y = first_bounds.max.y() + sep_half;
-                        ui.draw_line(
-                            Vec2::new(bounds.min.x(), sep_y),
-                            Vec2::new(bounds.max.x(), sep_y),
-                            separator_color,
-                            SPLITTER_THICKNESS,
-                        );
-                    }
+fn render_node<F: FnMut(&mut UiContext, Rect2D, DockPanelId)>(
+    render_panel: &mut F,
+    ui: &mut UiContext,
+    node: &mut DockNode,
+    bounds: Rect2D,
+) {
+    match node {
+        DockNode::Split {
+            direction,
+            ratio,
+            children,
+        } => {
+            let (first_bounds, second_bounds) = match direction {
+                SplitDirection::Horizontal => {
+                    let split_x = bounds.min.x() + bounds.width() * *ratio;
+                    let first = Rect2D::from_origin_size(
+                        bounds.min,
+                        Vec2::new(bounds.width() * *ratio, bounds.height()),
+                    );
+                    let second = Rect2D::from_origin_size(
+                        Vec2::new(split_x + SPLITTER_THICKNESS, bounds.min.y()),
+                        Vec2::new(
+                            (bounds.width() * (1.0 - *ratio) - SPLITTER_THICKNESS).max(0.0),
+                            bounds.height(),
+                        ),
+                    );
+                    (first, second)
                 }
+                SplitDirection::Vertical => {
+                    let split_y = bounds.min.y() + bounds.height() * *ratio;
+                    let first = Rect2D::from_origin_size(
+                        bounds.min,
+                        Vec2::new(bounds.width(), bounds.height() * *ratio),
+                    );
+                    let second = Rect2D::from_origin_size(
+                        Vec2::new(bounds.min.x(), split_y + SPLITTER_THICKNESS),
+                        Vec2::new(
+                            bounds.width(),
+                            (bounds.height() * (1.0 - *ratio) - SPLITTER_THICKNESS).max(0.0),
+                        ),
+                    );
+                    (first, second)
+                }
+            };
 
-                self.render_node(ui, &children[1], second_bounds);
+            render_node(render_panel, ui, &mut children[0], first_bounds);
+
+            let separator_color = ui.style.separator;
+            let handle_bounds = match direction {
+                SplitDirection::Horizontal => Rect2D::from_origin_size(
+                    Vec2::new(first_bounds.max.x(), bounds.min.y()),
+                    Vec2::new(SPLITTER_THICKNESS, bounds.height()),
+                ),
+                SplitDirection::Vertical => Rect2D::from_origin_size(
+                    Vec2::new(bounds.min.x(), first_bounds.max.y()),
+                    Vec2::new(bounds.width(), SPLITTER_THICKNESS),
+                ),
+            };
+
+            let new_ratio = match direction {
+                SplitDirection::Horizontal => {
+                    let current_width = *ratio * bounds.width();
+                    let new_width = super::ResizeHandle::horizontal(handle_bounds, current_width)
+                        .min_value(bounds.width() * 0.1)
+                        .max_value(bounds.width() * 0.9)
+                        .show(ui);
+                    (new_width / bounds.width()).clamp(0.1, 0.9)
+                }
+                SplitDirection::Vertical => {
+                    let current_height = *ratio * bounds.height();
+                    let new_height = super::ResizeHandle::vertical(handle_bounds, current_height)
+                        .min_value(bounds.height() * 0.1)
+                        .max_value(bounds.height() * 0.9)
+                        .show(ui);
+                    (new_height / bounds.height()).clamp(0.1, 0.9)
+                }
+            };
+            *ratio = new_ratio;
+
+            match direction {
+                SplitDirection::Horizontal => {
+                    let sep_x = first_bounds.max.x() + SPLITTER_THICKNESS * 0.5;
+                    ui.draw_line(
+                        Vec2::new(sep_x, bounds.min.y()),
+                        Vec2::new(sep_x, bounds.max.y()),
+                        separator_color,
+                        SPLITTER_THICKNESS,
+                    );
+                }
+                SplitDirection::Vertical => {
+                    let sep_y = first_bounds.max.y() + SPLITTER_THICKNESS * 0.5;
+                    ui.draw_line(
+                        Vec2::new(bounds.min.x(), sep_y),
+                        Vec2::new(bounds.max.x(), sep_y),
+                        separator_color,
+                        SPLITTER_THICKNESS,
+                    );
+                }
             }
-            DockNode::Leaf { tabs, active_tab } => {
-                if tabs.is_empty() {
-                    return;
-                }
 
-                // Render tab bar at the top of the leaf bounds
-                let tab_bar_bounds =
-                    Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), TAB_BAR_HEIGHT));
-                let tab_response = DockTabBar::new(tabs, *active_tab)
-                    .bounds(tab_bar_bounds)
-                    .show(ui);
+            render_node(render_panel, ui, &mut children[1], second_bounds);
+        }
+        DockNode::Leaf { tabs, active_tab } => {
+            if tabs.is_empty() {
+                return;
+            }
 
-                // Content area is below the tab bar
-                let content_bounds = Rect2D::from_origin_size(
-                    Vec2::new(bounds.min.x(), tab_bar_bounds.max.y()),
-                    Vec2::new(bounds.width(), (bounds.height() - TAB_BAR_HEIGHT).max(0.0)),
-                );
+            let tab_bar_bounds =
+                Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), TAB_BAR_HEIGHT));
+            let tab_response = DockTabBar::new(tabs, *active_tab)
+                .bounds(tab_bar_bounds)
+                .show(ui);
 
-                let active_idx = tab_response
-                    .clicked_tab
-                    .unwrap_or(*active_tab)
-                    .min(tabs.len() - 1);
+            let content_bounds = Rect2D::from_origin_size(
+                Vec2::new(bounds.min.x(), tab_bar_bounds.max.y()),
+                Vec2::new(bounds.width(), (bounds.height() - TAB_BAR_HEIGHT).max(0.0)),
+            );
 
-                // Draw content background
-                ui.draw_rect(content_bounds, ui.style.window_bg);
+            let active_idx = tab_response
+                .clicked_tab
+                .unwrap_or(*active_tab)
+                .min(tabs.len() - 1);
 
-                if let Some(&panel_id) = tabs.get(active_idx) {
-                    (self.render_panel)(ui, content_bounds, panel_id);
-                }
+            ui.draw_rect(content_bounds, ui.style.window_bg);
+
+            if let Some(&panel_id) = tabs.get(active_idx) {
+                ui.register_panel(panel_id, content_bounds);
+                render_panel(ui, content_bounds, panel_id);
             }
         }
     }
@@ -691,7 +723,12 @@ where
     F: FnMut(&mut UiContext, Rect2D, DockPanelId),
 {
     fn ui(mut self, ui: &mut UiContext) -> crate::Response {
-        self.render_node(ui, &self.layout.root, self.bounds);
+        render_node(
+            &mut self.render_panel,
+            ui,
+            &mut self.layout.root,
+            self.bounds,
+        );
         crate::Response::new(self.bounds)
     }
 }
