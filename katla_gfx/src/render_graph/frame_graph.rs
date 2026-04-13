@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use super::builder::{InternalPassBuilder, PassBuilder};
 use super::compiler::{ExecutionPlan, GraphCompiler};
 use super::error::RenderGraphError;
+use super::handles::PassId;
 use super::pass::PassDesc;
 use super::passes::geometry::GeometryPassData;
 use super::resource::{GraphResourceDesc, GraphResourceHandle};
@@ -100,12 +101,13 @@ impl FrameGraph {
     }
 
     /// Add a pass to the graph.
-    pub fn add_pass(&mut self, pass: PassDesc) {
+    pub fn add_pass(&mut self, pass: PassDesc) -> PassId {
         let index = self.passes.len();
         self.pass_names.insert(pass.name.clone(), index);
         self.passes.push(pass);
         self.compiled = false;
         self.execution_plan = None;
+        PassId(index as u32)
     }
 
     /// Insert a pass at a specific index, reindexing all subsequent passes.
@@ -269,6 +271,11 @@ impl FrameGraph {
     /// Get a pass index by name.
     pub(crate) fn pass_index(&self, name: &str) -> Option<usize> {
         self.pass_names.get(name).copied()
+    }
+
+    /// Get a pass handle by name.
+    pub fn pass_id(&self, name: &str) -> Option<PassId> {
+        self.pass_names.get(name).map(|&idx| PassId(idx as u32))
     }
 
     /// Get the base bindless index for the LDR (tonemapped) texture.
@@ -532,7 +539,7 @@ impl FrameGraph {
     /// // Update tonemap pass with new HDR texture slot
     /// for (name, slot) in recreated {
     ///     if name == "hdr_color" {
-    ///         frame_graph.set_tonemap_texture_index("tonemap", slot)?;
+    ///         frame_graph.set_tonemap_texture_index(tonemap_pass_id, slot)?;
     ///     }
     /// }
     /// ```
@@ -707,24 +714,29 @@ impl FrameGraph {
     ///
     /// // Register HDR texture and update params
     /// let hdr_slot = graph.register_transient_texture_bindless(&mut renderer, "hdr_color")?;
-    /// graph.set_tonemap_texture_index("tonemap", hdr_slot)?;
+    /// graph.set_tonemap_texture_index(tonemap_pass_id, hdr_slot)?;
     /// ```
     pub fn set_tonemap_texture_index(
         &mut self,
-        pass_name: &str,
+        pass_id: PassId,
         texture_index: u32,
     ) -> Result<(), RenderGraphError> {
-        let pass_idx = self.pass_names.get(pass_name).ok_or_else(|| {
-            RenderGraphError::ResourceNotFound(format!("Pass '{}' not found", pass_name))
-        })?;
+        let pass_idx = pass_id.0 as usize;
+        if pass_idx >= self.passes.len() {
+            return Err(RenderGraphError::ResourceNotFound(format!(
+                "PassId({}) out of bounds (max {})",
+                pass_id.0,
+                self.passes.len()
+            )));
+        }
 
-        if let Some(ref mut params) = self.passes[*pass_idx].tonemap_params {
+        if let Some(ref mut params) = self.passes[pass_idx].tonemap_params {
             params.hdr_texture_index = Some(texture_index);
             Ok(())
         } else {
             Err(RenderGraphError::VulkanError(format!(
-                "Pass '{}' is not a tonemap pass (no tonemap_params found)",
-                pass_name
+                "PassId({}) is not a tonemap pass (no tonemap_params found)",
+                pass_id.0
             )))
         }
     }

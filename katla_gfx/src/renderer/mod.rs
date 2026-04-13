@@ -735,17 +735,7 @@ impl VulkanRenderer {
 
         // Recreate transient textures with new dimensions
         match frame_graph.recreate_transient_textures(self, new_extent.width, new_extent.height) {
-            Ok(mut recreated_textures) => {
-                // Update internal references (tonemap HDR texture)
-                recreated_textures.retain(|(name, slot)| {
-                    if name == "hdr_color" {
-                        // Update tonemap pass with new HDR texture slot
-                        if let Err(e) = frame_graph.set_tonemap_texture_index("tonemap", *slot) {
-                            log::error!("Failed to update tonemap texture index: {}", e);
-                        }
-                    }
-                    true // Keep all entries for app layer
-                });
+            Ok(recreated_textures) => {
                 info!(
                     "Recreated {} transient textures for resize",
                     recreated_textures.len()
