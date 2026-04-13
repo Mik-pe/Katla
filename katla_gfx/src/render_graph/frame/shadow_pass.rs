@@ -30,7 +30,7 @@ impl<'a> Frame<'a> {
         let shadow_atlas = pass
             .writes
             .iter()
-            .find_map(|w| self.graph.transient_texture(w, frame_idx))
+            .find_map(|&id| self.graph.transient_texture_by_id(id, frame_idx))
             .ok_or_else(|| {
                 RenderGraphError::ResourceNotFound(
                     "Shadow pass has no depth texture to write to".to_string(),
@@ -215,8 +215,8 @@ impl<'a> Frame<'a> {
 
         cmd.end_rendering();
 
-        if let Some(write_name) = pass.writes.first()
-            && let Some(transient) = self.graph.transient_texture(write_name, frame_idx)
+        if let Some(&write_id) = pass.writes.first()
+            && let Some(transient) = self.graph.transient_texture_by_id(write_id, frame_idx)
         {
             transient.set_state(ResourceState::DepthStencilAttachment);
         }

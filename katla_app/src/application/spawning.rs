@@ -27,8 +27,11 @@ impl super::Application {
         let material_handle = self.default_material();
         let linear_color = color.to_linear();
 
+        let bounds = local_bounds_for_source(&source);
+
         let drawable =
-            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color);
+            DrawableComponent::with_handles_and_color(mesh_handle, material_handle, linear_color)
+                .with_bounds(bounds);
         self.gpu_resource_tracker.track_drawable(
             mesh_handle,
             material_handle,
@@ -114,6 +117,11 @@ impl super::Application {
         let material_handle = self.default_material();
         let linear_color = material.color.map(|c| c.to_linear()).unwrap_or_default();
 
+        let bounds = katla_math::AABB::from_min_max(
+            katla_math::Vec3::new(-radius, -radius, -radius),
+            katla_math::Vec3::new(radius, radius, radius),
+        );
+
         let drawable = DrawableComponent::with_handles_and_material(
             mesh_handle,
             material_handle,
@@ -121,7 +129,8 @@ impl super::Application {
             material.metallic,
             material.roughness,
             1.0,
-        );
+        )
+        .with_bounds(bounds);
         self.gpu_resource_tracker.track_drawable(
             mesh_handle,
             material_handle,
@@ -582,5 +591,37 @@ impl super::Application {
                 .collect(),
             _ => Vec::new(),
         }
+    }
+}
+
+pub(crate) fn local_bounds_for_source(source: &EntitySource) -> katla_math::AABB {
+    use katla_math::{AABB, Vec3};
+
+    match source {
+        EntitySource::Cube { size } => AABB::from_min_max(
+            Vec3::new(-size[0] / 2.0, -size[1] / 2.0, -size[2] / 2.0),
+            Vec3::new(size[0] / 2.0, size[1] / 2.0, size[2] / 2.0),
+        ),
+        EntitySource::Sphere { radius, .. } => AABB::from_min_max(
+            Vec3::new(-radius, -radius, -radius),
+            Vec3::new(*radius, *radius, *radius),
+        ),
+        EntitySource::Plane { width, height } => AABB::from_min_max(
+            Vec3::new(-width / 2.0, 0.0, -height / 2.0),
+            Vec3::new(*width / 2.0, 0.0, *height / 2.0),
+        ),
+        EntitySource::Cylinder { height, radius, .. } => AABB::from_min_max(
+            Vec3::new(-radius, -height / 2.0, -radius),
+            Vec3::new(*radius, *height / 2.0, *radius),
+        ),
+        EntitySource::Torus {
+            radius,
+            tube_radius,
+            ..
+        } => AABB::from_min_max(
+            Vec3::new(-radius - tube_radius, -tube_radius, -radius - tube_radius),
+            Vec3::new(radius + tube_radius, *tube_radius, radius + tube_radius),
+        ),
+        _ => AABB::from_min_max(Vec3::new(-0.5, -0.5, -0.5), Vec3::new(0.5, 0.5, 0.5)),
     }
 }

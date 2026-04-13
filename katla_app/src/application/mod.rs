@@ -30,7 +30,7 @@ mod no_editor_methods;
 mod picking;
 mod renderer;
 mod resource_loading;
-mod spawning;
+pub(crate) mod spawning;
 
 #[cfg(feature = "editor")]
 use std::collections::HashMap;

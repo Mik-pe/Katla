@@ -1,6 +1,7 @@
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
 use crate::render_graph::frame_graph::BACKBUFFER_NAME;
+use crate::render_graph::handles::ResourceId;
 use crate::render_graph::pass::PassDesc;
 use crate::render_graph::passes::ViewportRect;
 use crate::render_graph::resource::GraphResourceHandle;
@@ -95,7 +96,8 @@ impl<'a> Frame<'a> {
             extent,
         };
 
-        let color_attachment = if pass.writes_to(BACKBUFFER_NAME) {
+        let backbuffer_id = self.graph.resource_id(BACKBUFFER_NAME);
+        let color_attachment = if backbuffer_id.is_some_and(|id| pass.writes_to(id)) {
             let swapchain_view =
                 self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
             vk::RenderingAttachmentInfo::default()
@@ -108,9 +110,9 @@ impl<'a> Frame<'a> {
                         float32: [0.0, 0.0, 0.0, 1.0],
                     },
                 })
-        } else if let Some(color_name) = pass.writes.first() {
+        } else if let Some(&color_id) = pass.writes.first() {
             let frame_idx = self.current_frame();
-            if let Some(transient) = self.graph.transient_texture(color_name, frame_idx) {
+            if let Some(transient) = self.graph.transient_texture_by_id(color_id, frame_idx) {
                 vk::RenderingAttachmentInfo::default()
                     .image_view(transient.image_view.vk())
                     .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
@@ -124,7 +126,7 @@ impl<'a> Frame<'a> {
             } else {
                 return Err(RenderGraphError::ResourceNotFound(format!(
                     "Output target '{}' not found",
-                    color_name
+                    self.graph.resource_name(color_id).unwrap_or("?")
                 )));
             }
         } else {
@@ -211,16 +213,9 @@ impl<'a> Frame<'a> {
         for (handle, _rect) in viewports {
             let resource_name = self
                 .graph
-                .resource_names
-                .iter()
-                .find(|&(_, h)| *h == *handle)
-                .map(|(name, _)| name.clone())
-                .ok_or_else(|| {
-                    RenderGraphError::ResourceNotFound(format!(
-                        "Viewport texture handle {} not found in resource names",
-                        handle.index()
-                    ))
-                })?;
+                .resource_name(ResourceId(handle.index()))
+                .unwrap_or("?")
+                .to_string();
 
             log::debug!(
                 "[COMPOSITING] Looking up viewport texture: '{}' (handle={})",
@@ -228,9 +223,10 @@ impl<'a> Frame<'a> {
                 handle.index()
             );
 
+            let resource_id = ResourceId(handle.index());
             let transient = self
                 .graph
-                .transient_texture(&resource_name, frame_idx)
+                .transient_texture_by_id(resource_id, frame_idx)
                 .ok_or_else(|| {
                     log::error!(
                         "[COMPOSITING] Failed to find viewport texture '{}' for frame {}",

@@ -34,6 +34,7 @@ impl Application {
 
         let view_mat = self.camera.get_view_mat(&self.world);
         let proj_mat = self.camera.get_proj_mat(&self.world);
+        let frustum = katla_math::Frustum::from_projection_view_matrix(&proj_mat, &view_mat);
         let camera_entity = self.camera.entity;
 
         use crate::components::TransformComponent;
@@ -97,7 +98,7 @@ impl Application {
         frame.set_frame_uniforms(frame_uniforms.clone());
 
         // Collect draw calls from ECS world using FrameContext
-        self.collect_draws_with_context(&mut frame);
+        self.collect_draws_with_context(&mut frame, &frustum);
 
         // Collect point lights for Forward+ culling
         self.collect_and_upload_lights();
@@ -258,11 +259,16 @@ impl Application {
     ///
     /// This automatically allocates instance indices and builds the draw list.
     /// Also populates entity_instance_map for GPU picking resolution.
-    fn collect_draws_with_context(&mut self, frame: &mut FrameContext) {
+    fn collect_draws_with_context(
+        &mut self,
+        frame: &mut FrameContext,
+        frustum: &katla_math::Frustum,
+    ) {
         use crate::components::{DrawableComponent, TransformComponent};
 
         let entity_count = self.world.entity_count();
         let mut drawable_count = 0;
+        let mut culled_count = 0;
         self.editor.draw_entity_map_entries.clear();
 
         for (entity_id, drawable, transform) in self
@@ -277,6 +283,15 @@ impl Application {
             let material_handle = drawable.material_handle;
             if material_handle.is_none() {
                 continue;
+            }
+
+            if let Some(local_bounds) = drawable.bounds {
+                let world_mat = transform.transform.make_mat4();
+                let world_bounds = local_bounds.transform(&world_mat);
+                if !frustum.intersects_aabb(&world_bounds) {
+                    culled_count += 1;
+                    continue;
+                }
             }
 
             if !drawable.skeleton_handle.is_none() {
@@ -313,11 +328,20 @@ impl Application {
             drawable_count += 1;
         }
 
-        log::debug!(
-            "Submitted {} draw calls from {} entities",
-            drawable_count,
-            entity_count
-        );
+        if culled_count > 0 {
+            log::debug!(
+                "Submitted {} draw calls, culled {} off-screen ({} total entities)",
+                drawable_count,
+                culled_count,
+                entity_count
+            );
+        } else {
+            log::debug!(
+                "Submitted {} draw calls from {} entities",
+                drawable_count,
+                entity_count
+            );
+        }
 
         let entries = std::mem::take(&mut self.editor.draw_entity_map_entries);
         self.build_entity_instance_map(entries);

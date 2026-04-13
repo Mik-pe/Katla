@@ -1,6 +1,7 @@
 //! Pass types for render graph execution.
 
 use crate::render_graph::ViewportRect;
+use crate::render_graph::handles::ResourceId;
 use crate::render_graph::resource::GraphResourceHandle;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -55,10 +56,10 @@ pub enum PassKind {
 pub struct PassDesc {
     /// Human-readable name for debugging.
     pub name: String,
-    /// Names of resources this pass reads from.
-    pub reads: Vec<String>,
-    /// Names of resources this pass writes to.
-    pub writes: Vec<String>,
+    /// Resources this pass reads from.
+    pub reads: Vec<ResourceId>,
+    /// Resources this pass writes to.
+    pub writes: Vec<ResourceId>,
     /// Pass type (graphics, compute, transfer).
     pub pass_type: PassType,
     /// Optional pipeline handle (for fullscreen/compute passes).
@@ -72,7 +73,7 @@ pub struct PassDesc {
     /// Output color format (for material format inference).
     pub output_format: Option<crate::texture::ImageFormat>,
     /// Color attachment load/store ops for each write target.
-    pub color_attachments: Vec<(String, ImageFormat, LoadOp, StoreOp, ClearValue)>,
+    pub color_attachments: Vec<(ResourceId, ImageFormat, LoadOp, StoreOp, ClearValue)>,
     /// Whether this pass uses depth testing (default true for graphics passes).
     pub uses_depth: bool,
     /// Depth attachment load/store/clear configuration.
@@ -95,8 +96,8 @@ impl PassDesc {
     pub fn new(
         name: impl Into<String>,
         pass_type: PassType,
-        reads: Vec<String>,
-        writes: Vec<String>,
+        reads: Vec<ResourceId>,
+        writes: Vec<ResourceId>,
     ) -> Self {
         Self {
             name: name.into(),
@@ -137,16 +138,15 @@ impl PassDesc {
         self
     }
 
-    /// Check if this pass writes to a specific resource by name (no allocation).
     #[inline]
-    pub fn writes_to(&self, name: &str) -> bool {
-        self.writes.iter().any(|w| w == name)
+    pub fn writes_to(&self, id: ResourceId) -> bool {
+        self.writes.contains(&id)
     }
 
-    /// Check if this pass reads from a specific resource by name (no allocation).
+    /// Check if this pass reads from a specific resource.
     #[inline]
-    pub fn reads_from(&self, name: &str) -> bool {
-        self.reads.iter().any(|r| r == name)
+    pub fn reads_from(&self, id: ResourceId) -> bool {
+        self.reads.contains(&id)
     }
 }
 
@@ -154,9 +154,13 @@ impl PassDesc {
 mod tests {
     use super::*;
 
+    fn rid(n: u32) -> ResourceId {
+        ResourceId(n)
+    }
+
     #[test]
     fn test_pass_desc_with_pipeline() {
-        let desc = PassDesc::new("test", PassType::Graphics, vec![], vec!["out".to_string()])
+        let desc = PassDesc::new("test", PassType::Graphics, vec![], vec![rid(1)])
             .with_pipeline(crate::handle::PipelineHandle::new(42));
 
         assert_eq!(desc.pipeline.unwrap().index(), 42);
@@ -164,12 +168,7 @@ mod tests {
 
     #[test]
     fn test_pass_desc_defaults() {
-        let desc = PassDesc::new(
-            "test",
-            PassType::Graphics,
-            vec!["r".to_string()],
-            vec!["w".to_string()],
-        );
+        let desc = PassDesc::new("test", PassType::Graphics, vec![rid(1)], vec![rid(2)]);
         assert!(desc.pipeline.is_none());
         assert!(desc.tonemap_params.is_none());
         assert!(desc.material.is_none());
@@ -180,5 +179,14 @@ mod tests {
         assert!(desc.compute_fn.is_none());
         assert!(desc.kind.is_none());
         assert!(desc.uses_depth);
+    }
+
+    #[test]
+    fn test_pass_desc_writes_to_reads_from() {
+        let desc = PassDesc::new("test", PassType::Graphics, vec![rid(1)], vec![rid(2)]);
+        assert!(desc.reads_from(rid(1)));
+        assert!(!desc.reads_from(rid(2)));
+        assert!(desc.writes_to(rid(2)));
+        assert!(!desc.writes_to(rid(1)));
     }
 }

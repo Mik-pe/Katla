@@ -31,15 +31,15 @@ impl<'a> Frame<'a> {
         );
 
         // Color attachment: R32Uint transient texture
-        let color_attachment = if let Some(color_name) = pass.writes.first() {
+        let color_attachment = if let Some(&color_id) = pass.writes.first() {
             if let Some(transient) = self
                 .graph
-                .transient_texture(color_name, self.current_frame())
+                .transient_texture_by_id(color_id, self.current_frame())
             {
                 let (load_op, store_op, clear_value) = pass
                     .color_attachments
                     .iter()
-                    .find(|(name, ..)| name == color_name)
+                    .find(|(id, ..)| *id == color_id)
                     .map(|(_, _, load_op, store_op, clear_value)| {
                         (
                             match load_op {
@@ -82,7 +82,7 @@ impl<'a> Frame<'a> {
             } else {
                 return Err(RenderGraphError::ResourceNotFound(format!(
                     "Object-ID target '{}' not found",
-                    color_name
+                    self.graph.resource_name(color_id).unwrap_or("?")
                 )));
             }
         } else {

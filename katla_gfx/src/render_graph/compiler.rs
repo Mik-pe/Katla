@@ -23,6 +23,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::error::RenderGraphError;
+use super::handles::ResourceId;
 use super::pass::PassDesc;
 
 /// Compiled execution plan for a render graph.
@@ -54,8 +55,8 @@ struct DependencyNode {
 #[derive(Debug, Clone)]
 pub struct PassInfo {
     pub name: String,
-    pub reads: Vec<String>,
-    pub writes: Vec<String>,
+    pub reads: Vec<ResourceId>,
+    pub writes: Vec<ResourceId>,
 }
 
 impl From<&PassDesc> for PassInfo {
@@ -72,10 +73,10 @@ impl From<&PassDesc> for PassInfo {
 #[derive(Debug)]
 pub struct GraphCompiler {
     passes: Vec<PassInfo>,
-    /// Maps resource name -> pass indices that write to it
-    resource_writers: HashMap<String, Vec<usize>>,
-    /// Maps resource name -> pass indices that read from it
-    resource_readers: HashMap<String, Vec<usize>>,
+    /// Maps resource -> pass indices that write to it
+    resource_writers: HashMap<ResourceId, Vec<usize>>,
+    /// Maps resource -> pass indices that read from it
+    resource_readers: HashMap<ResourceId, Vec<usize>>,
     dependency_graph: Vec<DependencyNode>,
 }
 
@@ -107,13 +108,13 @@ impl GraphCompiler {
         for (pass_idx, pass) in self.passes.iter().enumerate() {
             for resource in &pass.writes {
                 self.resource_writers
-                    .entry(resource.clone())
+                    .entry(*resource)
                     .or_default()
                     .push(pass_idx);
             }
             for resource in &pass.reads {
                 self.resource_readers
-                    .entry(resource.clone())
+                    .entry(*resource)
                     .or_default()
                     .push(pass_idx);
             }
@@ -291,20 +292,24 @@ impl GraphCompiler {
 mod tests {
     use super::*;
 
-    fn make_pass(name: &str, reads: Vec<&str>, writes: Vec<&str>) -> PassInfo {
+    fn rid(n: u32) -> ResourceId {
+        ResourceId(n)
+    }
+
+    fn make_pass(name: &str, reads: Vec<ResourceId>, writes: Vec<ResourceId>) -> PassInfo {
         PassInfo {
             name: name.to_string(),
-            reads: reads.iter().map(|s| s.to_string()).collect(),
-            writes: writes.iter().map(|s| s.to_string()).collect(),
+            reads,
+            writes,
         }
     }
 
     #[test]
     fn test_topological_sort_simple() {
         let passes = vec![
-            make_pass("A", vec![], vec!["r0"]),
-            make_pass("B", vec!["r0"], vec!["r1"]),
-            make_pass("C", vec!["r1"], vec![]),
+            make_pass("A", vec![], vec![rid(0)]),
+            make_pass("B", vec![rid(0)], vec![rid(1)]),
+            make_pass("C", vec![rid(1)], vec![]),
         ];
 
         let mut compiler = GraphCompiler::new(passes);
@@ -322,8 +327,8 @@ mod tests {
     #[test]
     fn test_topological_sort_independent_passes() {
         let passes = vec![
-            make_pass("A", vec![], vec!["r0"]),
-            make_pass("B", vec![], vec!["r1"]),
+            make_pass("A", vec![], vec![rid(0)]),
+            make_pass("B", vec![], vec![rid(1)]),
             make_pass("C", vec![], vec![]),
         ];
 
@@ -337,8 +342,8 @@ mod tests {
     #[test]
     fn test_cycle_detection_no_cycle() {
         let passes = vec![
-            make_pass("A", vec![], vec!["r0"]),
-            make_pass("B", vec!["r0"], vec![]),
+            make_pass("A", vec![], vec![rid(0)]),
+            make_pass("B", vec![rid(0)], vec![]),
         ];
 
         let mut compiler = GraphCompiler::new(passes);
@@ -352,13 +357,13 @@ mod tests {
         let passes = vec![
             PassInfo {
                 name: "A".to_string(),
-                reads: vec!["r1".to_string()],
-                writes: vec!["r0".to_string()],
+                reads: vec![rid(1)],
+                writes: vec![rid(0)],
             },
             PassInfo {
                 name: "B".to_string(),
-                reads: vec!["r0".to_string()],
-                writes: vec!["r1".to_string()],
+                reads: vec![rid(0)],
+                writes: vec![rid(1)],
             },
         ];
 
@@ -371,9 +376,9 @@ mod tests {
     #[test]
     fn test_compile_full_workflow() {
         let passes = vec![
-            make_pass("Geometry", vec![], vec!["r0"]),
-            make_pass("Lighting", vec!["r0"], vec!["r1"]),
-            make_pass("PostProcess", vec!["r1"], vec![]),
+            make_pass("Geometry", vec![], vec![rid(0)]),
+            make_pass("Lighting", vec![rid(0)], vec![rid(1)]),
+            make_pass("PostProcess", vec![rid(1)], vec![]),
         ];
 
         let compiler = GraphCompiler::new(passes);
@@ -391,7 +396,7 @@ mod tests {
 
     #[test]
     fn test_execution_plan_accessors() {
-        let passes = vec![make_pass("A", vec![], vec!["r0"])];
+        let passes = vec![make_pass("A", vec![], vec![rid(0)])];
         let compiler = GraphCompiler::new(passes);
         let plan = compiler.compile().unwrap();
 
@@ -401,10 +406,10 @@ mod tests {
     #[test]
     fn test_complex_dependency_chain() {
         let passes = vec![
-            make_pass("Shadow", vec![], vec!["r0"]),
-            make_pass("Geometry", vec!["r0"], vec!["r1", "r2"]),
-            make_pass("Lighting", vec!["r0", "r1"], vec!["r3"]),
-            make_pass("PostProcess", vec!["r3"], vec![]),
+            make_pass("Shadow", vec![], vec![rid(0)]),
+            make_pass("Geometry", vec![rid(0)], vec![rid(1), rid(2)]),
+            make_pass("Lighting", vec![rid(0), rid(1)], vec![rid(3)]),
+            make_pass("PostProcess", vec![rid(3)], vec![]),
         ];
 
         let compiler = GraphCompiler::new(passes);
@@ -427,13 +432,11 @@ mod tests {
 
     #[test]
     fn test_diamond_dependency() {
-        // Diamond: A -> B, A -> C, B -> D, C -> D
-        // Verify D comes after both B and C in topological order
         let passes = vec![
-            make_pass("A", vec![], vec!["r_a"]),
-            make_pass("B", vec!["r_a"], vec!["r_b"]),
-            make_pass("C", vec!["r_a"], vec!["r_c"]),
-            make_pass("D", vec!["r_b", "r_c"], vec![]),
+            make_pass("A", vec![], vec![rid(0)]),
+            make_pass("B", vec![rid(0)], vec![rid(1)]),
+            make_pass("C", vec![rid(0)], vec![rid(2)]),
+            make_pass("D", vec![rid(1), rid(2)], vec![]),
         ];
 
         let compiler = GraphCompiler::new(passes);
@@ -454,11 +457,10 @@ mod tests {
 
     #[test]
     fn test_duplicate_resource_writers() {
-        // Two passes writing the same resource: last writer should create WAW dependency
         let passes = vec![
-            make_pass("Writer1", vec![], vec!["shared"]),
-            make_pass("Writer2", vec![], vec!["shared"]),
-            make_pass("Reader", vec!["shared"], vec![]),
+            make_pass("Writer1", vec![], vec![rid(0)]),
+            make_pass("Writer2", vec![], vec![rid(0)]),
+            make_pass("Reader", vec![rid(0)], vec![]),
         ];
 
         let compiler = GraphCompiler::new(passes);
@@ -488,8 +490,7 @@ mod tests {
 
     #[test]
     fn test_self_read_write_no_cycle() {
-        // A pass that reads and writes the same resource should NOT create a cycle
-        let passes = vec![make_pass("self_loop", vec!["r"], vec!["r"])];
+        let passes = vec![make_pass("self_loop", vec![rid(0)], vec![rid(0)])];
         let compiler = GraphCompiler::new(passes);
         let plan = compiler.compile().unwrap();
         assert_eq!(plan.sorted_passes.len(), 1);
@@ -497,11 +498,10 @@ mod tests {
 
     #[test]
     fn test_three_way_cycle() {
-        // A -> B -> C -> A (three-node cycle)
         let passes = vec![
-            make_pass("A", vec!["r_c"], vec!["r_a"]),
-            make_pass("B", vec!["r_a"], vec!["r_b"]),
-            make_pass("C", vec!["r_b"], vec!["r_c"]),
+            make_pass("A", vec![rid(2)], vec![rid(0)]),
+            make_pass("B", vec![rid(0)], vec![rid(1)]),
+            make_pass("C", vec![rid(1)], vec![rid(2)]),
         ];
 
         let result = GraphCompiler::new(passes).compile();

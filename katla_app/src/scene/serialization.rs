@@ -437,7 +437,10 @@ impl SceneManager {
                 mesh_handle,
                 material_handle,
                 linear_color,
-            );
+            )
+            .with_bounds(crate::application::spawning::local_bounds_for_source(
+                &desc.source,
+            ));
             app.gpu_resource_tracker.track_drawable(
                 mesh_handle,
                 material_handle,

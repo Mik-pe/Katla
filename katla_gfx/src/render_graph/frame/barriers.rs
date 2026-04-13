@@ -51,15 +51,15 @@ impl<'a> Frame<'a> {
             }
         }
 
-        for write_name in &pass.writes {
+        for &write_id in &pass.writes {
             // Skip backbuffer - it's managed by the swapchain
-            if write_name == BACKBUFFER_NAME {
+            if self.graph.resource_name(write_id) == Some(BACKBUFFER_NAME) {
                 continue;
             }
 
             let Some(transient) = self
                 .graph
-                .transient_texture(write_name, self.current_frame())
+                .transient_texture_by_id(write_id, self.current_frame())
             else {
                 continue;
             };
@@ -86,7 +86,7 @@ impl<'a> Frame<'a> {
                 log::debug!(
                     "[Barrier] Pass '{}' write '{}': {:?} -> {:?}",
                     pass.name,
-                    write_name,
+                    self.graph.resource_name(write_id).unwrap_or("?"),
                     old_layout,
                     required_layout
                 );
@@ -122,22 +122,20 @@ impl<'a> Frame<'a> {
             }
         }
 
-        for read_name in &pass.reads {
+        for &read_id in &pass.reads {
             // Skip backbuffer - not read by shaders
-            if read_name == BACKBUFFER_NAME {
+            if self.graph.resource_name(read_id) == Some(BACKBUFFER_NAME) {
                 continue;
             }
 
-            // Skip resources that are also written by this pass — the write barrier
-            // handles the layout transition to COLOR_ATTACHMENT_OPTIMAL, and the
-            // pass reads the resource as an input attachment or via subpass self-dependency.
-            if pass.writes.contains(read_name) {
+            // Skip resources that are also written by this pass
+            if pass.writes.contains(&read_id) {
                 continue;
             }
 
             let Some(transient) = self
                 .graph
-                .transient_texture(read_name, self.current_frame())
+                .transient_texture_by_id(read_id, self.current_frame())
             else {
                 continue;
             };
@@ -145,7 +143,7 @@ impl<'a> Frame<'a> {
             log::debug!(
                 "[BARRIER] Pass '{}' reading transient texture '{}': current_layout={:?}, format={:?}",
                 pass.name,
-                read_name,
+                self.graph.resource_name(read_id).unwrap_or("?"),
                 transient.current_layout(),
                 transient.format
             );
@@ -162,7 +160,7 @@ impl<'a> Frame<'a> {
                 log::debug!(
                     "[BARRIER] Pass '{}' transitioning '{}' from {:?} to {:?}",
                     pass.name,
-                    read_name,
+                    self.graph.resource_name(read_id).unwrap_or("?"),
                     old_layout,
                     required_layout
                 );
@@ -220,15 +218,15 @@ impl<'a> Frame<'a> {
         let cmd_vk = cmd.vk_command_buffer();
         let device = &self.renderer.context.device;
 
-        for write_name in &current_pass.writes {
+        for &write_id in &current_pass.writes {
             // Skip backbuffer
-            if write_name == BACKBUFFER_NAME {
+            if self.graph.resource_name(write_id) == Some(BACKBUFFER_NAME) {
                 continue;
             }
 
             let Some(transient) = self
                 .graph
-                .transient_texture(write_name, self.current_frame())
+                .transient_texture_by_id(write_id, self.current_frame())
             else {
                 continue;
             };
@@ -236,13 +234,12 @@ impl<'a> Frame<'a> {
             // Find the next pass that accesses this resource
             let next_access = self.graph.passes[pass_index + 1..]
                 .iter()
-                .find(|pass| pass.reads.contains(write_name) || pass.writes.contains(write_name));
+                .find(|pass| pass.reads.contains(&write_id) || pass.writes.contains(&write_id));
 
             // Only transition to SHADER_READ_ONLY if the next access is a read.
-            // If the next access is a write, the pre-barrier will handle it.
             let next_is_read = match next_access {
-                Some(pass) => pass.reads.contains(write_name) && !pass.writes.contains(write_name),
-                None => true, // No more accesses, can transition for potential future sampling
+                Some(pass) => pass.reads.contains(&write_id) && !pass.writes.contains(&write_id),
+                None => true,
             };
 
             if !next_is_read {
@@ -261,7 +258,7 @@ impl<'a> Frame<'a> {
                 log::debug!(
                     "[PostBarrier] Pass '{}' -> next read '{}': {:?} -> SHADER_READ_ONLY",
                     current_pass.name,
-                    write_name,
+                    self.graph.resource_name(write_id).unwrap_or("?"),
                     old_layout
                 );
 
