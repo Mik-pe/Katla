@@ -5,9 +5,16 @@ description: Pick TODO items from TODO.md, implement them via subagents, validat
 
 # TODO Worker
 
-Pick actionable TODO items from `TODO.md`, implement them in parallel via subagents, validate, commit, and tick them off.
+Pick actionable TODO items from `TODO.md`, implement them in parallel via subagents, validate, commit, and tick them off. Keep going — process batch after batch until no suitable candidates remain.
 
 ## Workflow
+
+### 0. Loop
+
+Repeat steps 1–5 continuously. After committing a batch, immediately rescan TODO.md and start the next batch. Only stop when:
+- All unchecked items are blocked, architectural megatasks, or otherwise unsuitable
+- A validation step fails and cannot be fixed within the batch
+- The user explicitly asks to stop
 
 ### 1. Scan TODO.md
 
@@ -42,6 +49,7 @@ After all subagents complete, launch a single validation subagent that:
 - Runs `cargo check` (full workspace)
 - Runs `cargo clippy` on affected crates
 - Runs `cargo test` on affected crates
+- If any modified crate is `katla_gfx`, also runs `cargo run -- -s -v` and checks that stderr contains zero `VUID` or `ERROR` lines from Vulkan validation layers
 - Reports any issues
 
 ### 5. Commit and tick off
@@ -79,6 +87,11 @@ cargo test -p <crate>    # Test affected crates
 cargo fmt                # Format before committing
 ```
 
+If `katla_gfx` was modified, also run:
+```bash
+cargo run -- -s -v       # 100-frame validation run, stderr must have zero VUID/ERROR lines
+```
+
 ## Project Constraints
 
 - **Dependency rules**: katla_gfx must NOT depend on katla_math, katla_ecs, katla_app, katla_ui. katla_ui can depend on katla_math and katla_gfx. katla_app can depend on all others.
@@ -88,16 +101,22 @@ cargo fmt                # Format before committing
 
 ## Response Format
 
-After completing a batch, report:
+After all batches are complete, report a summary:
 
 ```
-Completed:
+Batch 1:
 - [x] Item 1 — <brief summary of change>
 - [x] Item 2 — <brief summary of change>
 - ~~Item 3~~ — False positive: <reason>
 
+Batch 2:
+- [x] Item 4 — <brief summary of change>
+- [x] Item 5 — <brief summary of change>
+
 Commits:
+- <hash> <summary>
 - <hash> <summary>
 
 Remaining unchecked items: <count>
+Stopped because: <reason — e.g. "no more suitable candidates" or "validation failed on batch 2">
 ```
