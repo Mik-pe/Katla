@@ -1019,19 +1019,9 @@ These items identify code that currently lives in katla_app but is generic enoug
   - **Recommended order:** 164b → 164c → 164d → 164f → 164e (164e is largest, do last)
 - **Severity:** MEDIUM
 
-### 165. Unify layout state tracking — eliminate split-brain between `resource_states` and `TransientTexture::current_layout`
-- **Crate:** katla_gfx
-- **Files:** `render_graph/frame/barriers.rs`, `render_graph/frame/mod.rs`, `render_graph/transient_texture.rs`
-- **Issue:** Image layout is tracked in two places: `Frame::resource_states` (HashMap, reset per frame) and `TransientTexture::current_layout` (RefCell, persists across frames). These can diverge when out-of-band code (e.g., `render_particles_to_texture`) updates one but not the other, causing the barrier system to skip transitions based on stale HashMap state while the GPU is in a different layout. This was the root cause of the VUID-vkCmdBeginRendering-pRenderingInfo-09592 validation errors (fixed in 163). The `ImageBarrier` helpers encapsulate GPU transitions but not state tracking — callers must manually update both trackers, and there is no enforcement.
-- **Fix:** Remove one tracking mechanism. Prefer keeping `TransientTexture::current_layout` as the single source of truth (it already persists correctly across frames) and derive all barrier decisions from it. Remove `Frame::resource_states` entirely, or if kept for non-transient resources (backbuffer), restrict its scope to those. All layout transitions must go through a single code path that updates the surviving tracker.
-- **Severity:** MEDIUM
+~~### 165. Unify layout state tracking — eliminate split-brain between `resource_states` and `TransientTexture::current_layout`~~ — Fixed in 09eeea9. Removed `Frame::resource_states` HashMap, added `ResourceState` tracking to `TransientTexture` via Cell as single source of truth.
 
-### 166. Make particle rendering a proper frame graph pass instead of out-of-band special case
-- **Crate:** katla_gfx
-- **Files:** `render_graph/frame/mod.rs` (the `if pass.name == "geometry"` block), `render_graph/frame/particle_rendering.rs`
-- **Issue:** Particle rendering is executed outside the normal pass loop via `if pass.name == "geometry"` in `execute_passes()`. It does its own barrier management, its own begin/end rendering, and its own layout tracking. This bypasses the render graph's barrier system, requiring manual synchronization with the resource state tracker. When the tracking diverges (see 165), validation errors result. The frame graph exists precisely to automate this.
-- **Fix:** Register a "particles" pass in the frame graph during `build_frame_graph()` with proper `.read()` and `.write()` declarations (reads hdr_color, writes hdr_color, uses depth). Remove the special-case block from `execute_passes()`. The render graph barrier system will then handle all layout transitions automatically. If pass ordering constraints are needed (particles must run after geometry), express this via the graph's dependency system.
-- **Severity:** MEDIUM
+~~### 166. Make particle rendering a proper frame graph pass instead of out-of-band special case~~ — Fixed in 09eeea9. Added `ParticlePass` with proper read/write declarations, `PassKind::Particles` variant, removed out-of-band special case from `execute_passes()`.
 
 ---
 
@@ -1106,14 +1096,11 @@ These items identify code that currently lives in katla_app but is generic enoug
   - **Recommended order:** 171a → 171b → 171c → 171d → 171e → 171f
 - **Severity:** MEDIUM (eliminates frame hitches during asset loading)
 
-### 172. Investigate app crash using `cargo run -- -s`
-- **Crate:** katla_app / katla_gfx
-- **Issue:** Running `cargo run -- -s` (limited-frame mode, 25 frames) causes a crash. Reproduce, capture the panic/backtrace, identify root cause, and fix.
-- **Investigation steps:**
-  - Run `cargo run -- -s` and capture the full panic output and backtrace
-  - Identify the failing module and root cause
-  - Fix the crash
-  - Verify `cargo run -- -s` runs cleanly to completion (exit code 0)
+### 172. Fix compile error: `resource_states` field removed from `Frame` but callers not updated
+- **Crate:** katla_gfx
+- **Files:** `katla_gfx/src/render_graph/frame/mod.rs`, `katla_gfx/src/render_graph/frame/barriers.rs`, `katla_gfx/src/render_graph/frame/shadow_pass.rs`
+- **Issue:** The `resource_states: HashMap<String, ResourceState>` field was removed from the `Frame` struct (as part of TODO 165 — unifying layout state tracking), but 16 call sites across `barriers.rs`, `shadow_pass.rs`, and `mod.rs` still reference `self.resource_states` and `ResourceState::`. The code does not compile (`cargo build` or `cargo run` fails immediately with 16 errors). This blocks all development and testing.
+- **Fix:** Update `barriers.rs`, `shadow_pass.rs`, and `mod.rs` to derive resource layout state from `TransientTexture::current_layout` instead of the removed `resource_states` HashMap. Add `use crate::render_graph::ResourceState;` import where needed, and replace `self.resource_states.get(name)` lookups with lookups into the graph's transient texture registry via `self.graph.transient_textures()` or equivalent.
 - **Severity:** HIGH
 
 ### 173. Audit and reduce unsafe/raw pointer usage across the codebase
@@ -1128,7 +1115,14 @@ These items identify code that currently lives in katla_app but is generic enoug
   - Document or fix each finding
 - **Severity:** MEDIUM
 
-### 174. New-user perspective audit — what's missing for someone evaluating Katla as a game engine
+### 174. No CPU frustum culling — all entities drawn every frame
+- **Crate:** katla_app
+- **Files:** `katla_app/src/application/renderer.rs`, `katla_math/src/frustum.rs`, `katla_math/src/aabb.rs`
+- **Issue:** The renderer submits draw calls for every entity in the scene regardless of visibility. `collect_draws_with_context()` iterates all drawables and builds a draw list with no frustum test. Light culling (Forward+ tile-based) and a depth prepass exist, but there is no CPU-side frustum culling to skip off-screen entities before GPU submission. `Frustum` and `AABB` structs exist in katla_math with `intersects_aabb()` already implemented, and `DrawableComponent` likely has or can derive an AABB. The infrastructure is there — it just isn't wired up.
+- **Fix:** Compute frustum from camera each frame, test each drawable's AABB against it in `collect_draws_with_context()`, skip entities that fail the test. Track culled count for stats overlay. Requires `AABB` per drawable (may need to compute from mesh bounds + transform).
+- **Severity:** HIGH
+
+### 175. New-user perspective audit — what's missing for someone evaluating Katla as a game engine
 - **Crates:** all
 - **Issue:** Evaluate Katla from the perspective of a new user who doesn't know the codebase — someone looking for a game engine and trying to determine if Katla is a good fit. They need to answer practical questions like "how do I make a game?", "how do I render stuff?", "how do I add physics/audio/input?", "where's the documentation?". This audit should identify gaps in usability, documentation, onboarding, and feature completeness that would block or confuse a new user.
 - **Investigation steps:**
