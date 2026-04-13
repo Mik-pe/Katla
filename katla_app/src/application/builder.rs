@@ -736,9 +736,29 @@ impl ApplicationBuilder {
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
         let mut frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
 
-        let tonemap_pass_id = frame_graph
-            .pass_id("tonemap")
-            .expect("Frame graph must contain a 'tonemap' pass");
+        let pass_ids = super::PassIds {
+            depth_prepass: frame_graph
+                .pass_id("depth_prepass")
+                .expect("Frame graph must contain a 'depth_prepass' pass"),
+            geometry: frame_graph
+                .pass_id("geometry")
+                .expect("Frame graph must contain a 'geometry' pass"),
+            shadow: frame_graph
+                .pass_id("shadow")
+                .expect("Frame graph must contain a 'shadow' pass"),
+            outline: frame_graph
+                .pass_id("outline")
+                .expect("Frame graph must contain an 'outline' pass"),
+            stencil_indicator: frame_graph
+                .pass_id("stencil_indicator")
+                .expect("Frame graph must contain a 'stencil_indicator' pass"),
+            ui: frame_graph
+                .pass_id("ui")
+                .expect("Frame graph must contain a 'ui' pass"),
+            tonemap: frame_graph
+                .pass_id("tonemap")
+                .expect("Frame graph must contain a 'tonemap' pass"),
+        };
 
         // Initialize transient textures so we can get shadow atlas ImageView
         frame_graph
@@ -775,7 +795,7 @@ impl ApplicationBuilder {
             window,
             renderer,
             frame_graph,
-            tonemap_pass_id,
+            pass_ids,
             camera,
             gltf_cache: GltfCache::new(gltf_loader),
             timer: Timer::new(100),

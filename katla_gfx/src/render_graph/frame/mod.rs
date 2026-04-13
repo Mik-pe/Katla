@@ -14,6 +14,7 @@ use std::rc::Rc;
 
 use super::error::RenderGraphError;
 use super::frame_graph::{BACKBUFFER_NAME, FrameGraph};
+use super::handles::PassId;
 use super::pass::PassDesc;
 use super::resource::ResourceState;
 use crate::renderer::VulkanRenderer;
@@ -111,11 +112,8 @@ impl<'a> Frame<'a> {
     }
 
     /// Submit a draw list to a pass.
-    pub fn submit(&mut self, pass: &str, draw_list: &DrawList) -> &mut Self {
-        let index = self
-            .graph
-            .pass_index(pass)
-            .unwrap_or_else(|| panic!("Pass '{}' not found in graph", pass));
+    pub fn submit(&mut self, pass_id: PassId, draw_list: &DrawList) -> &mut Self {
+        let index = pass_id.0 as usize;
 
         self.pending
             .entry(index)
@@ -126,11 +124,8 @@ impl<'a> Frame<'a> {
     }
 
     /// Submit a UI draw list to a pass.
-    pub fn submit_ui(&mut self, pass: &str, ui_draw_list: &UIDrawList) -> &mut Self {
-        let index = self
-            .graph
-            .pass_index(pass)
-            .unwrap_or_else(|| panic!("Pass '{}' not found in graph", pass));
+    pub fn submit_ui(&mut self, pass_id: PassId, ui_draw_list: &UIDrawList) -> &mut Self {
+        let index = pass_id.0 as usize;
 
         let cmd_count = ui_draw_list.commands.len();
         self.pending
@@ -140,8 +135,8 @@ impl<'a> Frame<'a> {
             .push(ui_draw_list.clone());
 
         log::debug!(
-            "submit_ui: pass='{}', index={}, commands={}, pending UI lists now={}",
-            pass,
+            "submit_ui: pass_id={:?}, index={}, commands={}, pending UI lists now={}",
+            pass_id,
             index,
             cmd_count,
             self.pending[&index].ui_draw_lists.len()
@@ -151,22 +146,16 @@ impl<'a> Frame<'a> {
     }
 
     /// Dispatch compute workgroups for a pass.
-    pub fn dispatch(&mut self, pass: &str, x: u32, y: u32, z: u32) -> &mut Self {
-        let index = self
-            .graph
-            .pass_index(pass)
-            .unwrap_or_else(|| panic!("Pass '{}' not found in graph", pass));
+    pub fn dispatch(&mut self, pass_id: PassId, x: u32, y: u32, z: u32) -> &mut Self {
+        let index = pass_id.0 as usize;
 
         self.pending.entry(index).or_default().dispatch = Some((x, y, z));
         self
     }
 
     /// Push uniform data for a pass.
-    pub fn push_uniform(&mut self, pass: &str, data: &[u8]) -> &mut Self {
-        let index = self
-            .graph
-            .pass_index(pass)
-            .unwrap_or_else(|| panic!("Pass '{}' not found in graph", pass));
+    pub fn push_uniform(&mut self, pass_id: PassId, data: &[u8]) -> &mut Self {
+        let index = pass_id.0 as usize;
 
         self.pending
             .entry(index)

@@ -87,7 +87,7 @@ impl VulkanRenderer {
     ///
     /// // Render with frame graph
     /// renderer.render(&mut frame_graph, |frame| {
-    ///     frame.submit("geometry", &frame.draw_list());
+    ///     frame.submit(geometry_pass_id, &frame.draw_list());
     /// })?;
     /// ```
     pub fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError> {
@@ -176,7 +176,7 @@ impl VulkanRenderer {
     /// )?;
     ///
     /// renderer.render(&mut frame_graph, |frame| {
-    ///     frame.submit("geometry", &draw_list);
+    ///     frame.submit(geometry_pass_id, &draw_list);
     /// })?;
     /// ```
     ///

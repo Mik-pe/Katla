@@ -26,7 +26,7 @@
 //!
 //! // Execute every frame
 //! renderer.render(&frame_graph, |frame| {
-//!     frame.submit("geometry", &draw_list);
+//!     frame.submit(geometry_pass_id, &draw_list);
 //! });
 //! ```
 

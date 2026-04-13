@@ -232,14 +232,25 @@ impl EditorState {
     }
 }
 
+/// Cached pass IDs from the frame graph, resolved once at startup.
+pub(crate) struct PassIds {
+    pub(crate) depth_prepass: katla_gfx::render_graph::PassId,
+    pub(crate) geometry: katla_gfx::render_graph::PassId,
+    pub(crate) shadow: katla_gfx::render_graph::PassId,
+    pub(crate) outline: katla_gfx::render_graph::PassId,
+    pub(crate) stencil_indicator: katla_gfx::render_graph::PassId,
+    pub(crate) ui: katla_gfx::render_graph::PassId,
+    pub(crate) tonemap: katla_gfx::render_graph::PassId,
+}
+
 /// Main application struct containing all engine state.
 pub struct Application {
     pub(crate) window: Window,
     pub(crate) renderer: VulkanRenderer,
     /// Frame graph for rendering (built once at startup)
     pub(crate) frame_graph: katla_gfx::FrameGraph,
-    /// Handle to the tonemap pass in the frame graph
-    pub(crate) tonemap_pass_id: katla_gfx::render_graph::PassId,
+    /// Handles to frame graph passes used during rendering
+    pub(crate) pass_ids: PassIds,
     pub(crate) camera: Camera,
     pub(crate) gltf_cache: GltfCache,
     pub(crate) timer: Timer,
@@ -379,7 +390,7 @@ impl ApplicationHandler for Application {
                     for (name, slot) in recreated_textures {
                         if name == "hdr_color" {
                             self.frame_graph
-                                .set_tonemap_texture_index(self.tonemap_pass_id, slot)
+                                .set_tonemap_texture_index(self.pass_ids.tonemap, slot)
                                 .expect("Failed to update tonemap texture index");
                         } else if name == "viewport_0" {
                             self.on_viewport_texture_recreated(slot);

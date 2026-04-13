@@ -285,11 +285,8 @@ impl<'a> Frame<'a> {
         }
 
         // Use dispatch data if provided, otherwise use a default
-        let data = self
-            .pending
-            .get(&self.graph.pass_index(&pass.name).unwrap_or(0))
-            .cloned()
-            .unwrap_or_default();
+        let pass_index = self.graph.pass_index(&pass.name).unwrap_or(0);
+        let data = self.pending.get(&pass_index).cloned().unwrap_or_default();
         let (x, y, z) = data.dispatch.unwrap_or((64, 1, 1));
 
         unsafe {
