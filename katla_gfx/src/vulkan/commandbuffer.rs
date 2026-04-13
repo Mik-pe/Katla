@@ -30,6 +30,24 @@ impl CommandBuffer {
         }
     }
 
+    pub(crate) fn new_secondary(device: &Device, command_pool: &CommandPool) -> Self {
+        let create_info = vk::CommandBufferAllocateInfo::default()
+            .level(vk::CommandBufferLevel::SECONDARY)
+            .command_pool(command_pool.vk_command_pool())
+            .command_buffer_count(1);
+        let command_buffer: vk::CommandBuffer = unsafe {
+            device
+                .allocate_command_buffers(&create_info)
+                .expect("Failed to allocate secondary Vulkan command buffer")
+        }[0];
+
+        Self {
+            device: device.clone(),
+            command_pool: command_pool.vk_command_pool(),
+            command_buffer,
+        }
+    }
+
     /// Get the raw Vulkan command buffer handle.
     pub fn vk_command_buffer(&self) -> vk::CommandBuffer {
         self.command_buffer
@@ -70,6 +88,32 @@ impl CommandBuffer {
                 .end_command_buffer(self.command_buffer)
                 .map_err(|e| RendererError::VulkanError("Failed to end command buffer".into(), e))
         }
+    }
+
+    pub fn begin_secondary(
+        &self,
+        inheritance_info: vk::CommandBufferInheritanceInfo,
+    ) -> Result<(), RendererError> {
+        let begin_info = vk::CommandBufferBeginInfo::default()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+            .inheritance_info(&inheritance_info);
+        unsafe {
+            self.device
+                .begin_command_buffer(self.command_buffer, &begin_info)
+                .map_err(|e| {
+                    RendererError::VulkanError("Failed to begin secondary command buffer".into(), e)
+                })
+        }
+    }
+
+    pub fn execute_commands(&self, secondary: &[&CommandBuffer]) -> Result<(), RendererError> {
+        let buffers: Vec<vk::CommandBuffer> =
+            secondary.iter().map(|cb| cb.command_buffer).collect();
+        unsafe {
+            self.device
+                .cmd_execute_commands(self.command_buffer, &buffers);
+        }
+        Ok(())
     }
 
     // ========================================================================
@@ -633,5 +677,35 @@ mod tests {
         let size = std::mem::size_of::<TestPushConstants>();
         assert_eq!(size, 12);
         assert_eq!(size % 4, 0, "Push constants must be 4-byte aligned");
+    }
+
+    #[test]
+    fn test_secondary_command_buffer_inheritance_info_default() {
+        let info = vk::CommandBufferInheritanceInfo::default();
+        assert_eq!(
+            info.s_type,
+            vk::StructureType::COMMAND_BUFFER_INHERITANCE_INFO
+        );
+    }
+
+    #[test]
+    fn test_execute_commands_empty_slice() {
+        let buffers: Vec<CommandBuffer> = vec![];
+        let refs: Vec<&CommandBuffer> = buffers.iter().collect();
+        let vk_buffers: Vec<vk::CommandBuffer> =
+            refs.iter().map(|cb| cb.vk_command_buffer()).collect();
+        assert!(vk_buffers.is_empty());
+    }
+
+    #[test]
+    fn test_command_buffer_level_secondary_value() {
+        assert_eq!(
+            vk::CommandBufferLevel::SECONDARY,
+            vk::CommandBufferLevel::SECONDARY
+        );
+        assert_ne!(
+            vk::CommandBufferLevel::PRIMARY,
+            vk::CommandBufferLevel::SECONDARY
+        );
     }
 }
