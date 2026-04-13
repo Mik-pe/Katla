@@ -1096,12 +1096,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - **Recommended order:** 171a → 171b → 171c → 171d → 171e → 171f
 - **Severity:** MEDIUM (eliminates frame hitches during asset loading)
 
-### 172. Fix compile error: `resource_states` field removed from `Frame` but callers not updated
-- **Crate:** katla_gfx
-- **Files:** `katla_gfx/src/render_graph/frame/mod.rs`, `katla_gfx/src/render_graph/frame/barriers.rs`, `katla_gfx/src/render_graph/frame/shadow_pass.rs`
-- **Issue:** The `resource_states: HashMap<String, ResourceState>` field was removed from the `Frame` struct (as part of TODO 165 — unifying layout state tracking), but 16 call sites across `barriers.rs`, `shadow_pass.rs`, and `mod.rs` still reference `self.resource_states` and `ResourceState::`. The code does not compile (`cargo build` or `cargo run` fails immediately with 16 errors). This blocks all development and testing.
-- **Fix:** Update `barriers.rs`, `shadow_pass.rs`, and `mod.rs` to derive resource layout state from `TransientTexture::current_layout` instead of the removed `resource_states` HashMap. Add `use crate::render_graph::ResourceState;` import where needed, and replace `self.resource_states.get(name)` lookups with lookups into the graph's transient texture registry via `self.graph.transient_textures()` or equivalent.
-- **Severity:** HIGH
+~~### 172. Investigate app crash using `cargo run -- -s`~~ — Fixed in 71d16be. PassIds were stale after `insert_pass` calls shifted indices. Added `PassIds::refresh()` to re-resolve by name after all insertions. Application now runs cleanly with `cargo run -- -s` (exit code 0).
 
 ### 173. Audit and reduce unsafe/raw pointer usage across the codebase
 - **Crates:** katla_gfx, katla_ecs, katla_ui, katla_math, katla_app
