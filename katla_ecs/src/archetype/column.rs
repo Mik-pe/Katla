@@ -122,6 +122,41 @@ impl ComponentColumn {
     pub fn type_id(&self) -> TypeId {
         self.type_id
     }
+
+    pub fn as_slice<T: 'static>(&self) -> Option<&[T]> {
+        if TypeId::of::<T>() != self.type_id {
+            return None;
+        }
+        if self.vtable.size == 0 {
+            return Some(unsafe {
+                std::slice::from_raw_parts(std::ptr::NonNull::<T>::dangling().as_ptr(), self.len)
+            });
+        }
+        // SAFETY: type matches, data is properly aligned, len elements are initialized
+        unsafe {
+            let ptr = self.data.as_ptr().cast::<T>();
+            Some(std::slice::from_raw_parts(ptr, self.len))
+        }
+    }
+
+    pub fn as_slice_mut<T: 'static>(&mut self) -> Option<&mut [T]> {
+        if TypeId::of::<T>() != self.type_id {
+            return None;
+        }
+        if self.vtable.size == 0 {
+            return Some(unsafe {
+                std::slice::from_raw_parts_mut(
+                    std::ptr::NonNull::<T>::dangling().as_ptr(),
+                    self.len,
+                )
+            });
+        }
+        // SAFETY: type matches, data is properly aligned, len elements are initialized
+        unsafe {
+            let ptr = self.data.as_mut_ptr().cast::<T>();
+            Some(std::slice::from_raw_parts_mut(ptr, self.len))
+        }
+    }
 }
 
 impl Drop for ComponentColumn {

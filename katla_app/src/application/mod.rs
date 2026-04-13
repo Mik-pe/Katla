@@ -241,6 +241,7 @@ pub(crate) struct PassIds {
     pub(crate) stencil_indicator: katla_gfx::render_graph::PassId,
     pub(crate) ui: katla_gfx::render_graph::PassId,
     pub(crate) tonemap: katla_gfx::render_graph::PassId,
+    pub(crate) wallhack_overlay: katla_gfx::render_graph::PassId,
 }
 
 /// Main application struct containing all engine state.

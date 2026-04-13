@@ -370,7 +370,7 @@ impl Application {
 
             self.frame_graph
                 .set_overlay_texture_indices(
-                    "wallhack_overlay",
+                    self.pass_ids.wallhack_overlay,
                     viewport_bindless_index,
                     stencil_indicator_index,
                 )
