@@ -334,6 +334,71 @@ mod tests {
     }
 
     #[test]
+    fn test_parallel_schedule_ordering() {
+        // A writes X, B writes Y, C reads X+Y
+        // A and B should run in parallel, C must wait for both
+        let type_x = TypeId::of::<u32>();
+        let type_y = TypeId::of::<u64>();
+
+        let systems = make_systems(vec![
+            vec![ComponentAccess::Write(type_x)], // A (index 0)
+            vec![ComponentAccess::Write(type_y)], // B (index 1)
+            vec![ComponentAccess::Read(type_x), ComponentAccess::Read(type_y)], // C (index 2)
+        ]);
+
+        let scheduler = SystemScheduler::build(&systems);
+        let groups = scheduler.groups();
+
+        assert_eq!(groups.len(), 2);
+        assert!(groups[0].contains(&0)); // A
+        assert!(groups[0].contains(&1)); // B
+        assert!(groups[1].contains(&2)); // C
+    }
+
+    #[test]
+    fn test_all_independent_single_group() {
+        // A writes X, B writes Y, C writes Z — all in same group
+        let type_x = TypeId::of::<u32>();
+        let type_y = TypeId::of::<u64>();
+        let type_z = TypeId::of::<i32>();
+
+        let systems = make_systems(vec![
+            vec![ComponentAccess::Write(type_x)], // A
+            vec![ComponentAccess::Write(type_y)], // B
+            vec![ComponentAccess::Write(type_z)], // C
+        ]);
+
+        let scheduler = SystemScheduler::build(&systems);
+        let groups = scheduler.groups();
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].len(), 3);
+        assert!(groups[0].contains(&0));
+        assert!(groups[0].contains(&1));
+        assert!(groups[0].contains(&2));
+    }
+
+    #[test]
+    fn test_all_conflicting_separate_groups() {
+        // A writes X, B writes X, C writes X — all separate groups
+        let type_x = TypeId::of::<u32>();
+
+        let systems = make_systems(vec![
+            vec![ComponentAccess::Write(type_x)], // A
+            vec![ComponentAccess::Write(type_x)], // B
+            vec![ComponentAccess::Write(type_x)], // C
+        ]);
+
+        let scheduler = SystemScheduler::build(&systems);
+        let groups = scheduler.groups();
+
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0], vec![0]);
+        assert_eq!(groups[1], vec![1]);
+        assert_eq!(groups[2], vec![2]);
+    }
+
+    #[test]
     fn test_preserves_system_indices() {
         // Use non-sequential indices to verify original indices are preserved
         let systems: Vec<(usize, Vec<ComponentAccess>)> = vec![

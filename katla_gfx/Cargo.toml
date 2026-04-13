@@ -21,9 +21,15 @@ serde_json = { workspace = true }
 log = { workspace = true }
 bitflags = { workspace = true }
 smallvec = "1"
+itertools = { workspace = true }
 
 [dev-dependencies]
 env_logger = { workspace = true }
+criterion = "0.5"
+
+[[bench]]
+name = "command_buffer_recording"
+harness = false
 
 [[example]]
 name = "particle_validation"
