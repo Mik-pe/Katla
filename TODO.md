@@ -287,7 +287,7 @@
     - [x] 80a1. ComponentColumn type-erased column — `ComponentColumn` struct: `Vec<u8>` memory buffer, `TypeId`-keyed vtable for drop/copy/get/at operations. `push()`, `remove_swap()`, `get_row()`, `len()`. Unit tests with `i32` and `f32`. (small, low risk) — Done in fb0269d. VTable-based SoA column with alignment, drop, clone, 7 tests.
     - [x] 80a2. Archetype struct — Done in 7271697. Archetype with columns HashMap, entity_ids, archetype_id.
     - [x] 80a3. ArchetypeId and component signature — Done in 7271697. ArchetypeId newtype, ComponentSignature (Vec<TypeId> sorted), signature_for_add/remove helpers.
-    - [ ] 80a4. Contiguous iteration — `ArchetypeIter` that yields `(EntityId, &[T1], &[T2], ...)` via column slices. Implement for 1-4 component tuples using macro. Benchmark against sparse set. (medium, medium risk)
+    - [x] 80a4. Contiguous iteration — Done in 5034003. ArchetypeIter1/2/3 with typed column slices, as_slice/as_slice_mut on ComponentColumn, 6 tests.
   - [ ] 80b. `ArchetypeRegistry` — manages archetype instances, entity-to-archetype mapping, component add/remove migration with edge caching (large, medium risk)
     - [x] 80b1. ArchetypeRegistry struct — Done in 83a1002. Vec<Archetype> + signature_to_id HashMap + entity_locations HashMap.
     - [x] 80b2. EntityLocation map — Done in 83a1002 (included in ArchetypeRegistry). HashMap<EntityId, (ArchetypeId, usize)>.
@@ -978,7 +978,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] 161c. Clean up `RefCell<Vec<Option<Box<CompositingDescriptorSet>>>` in frame_graph.rs — 4 layers of indirection. Consider `[Option<CompositingDescriptorSet>; 2]` with `Cell` or restructure the borrow. — (medium, low risk) — Done in a1dd146. Reduced to `RefCell<[Option<CDS>; 2]>`, removed Vec and Box.
   - [x] 161d. Convert per-frame `unwrap()` calls in render graph to `expect()` with descriptive messages or `if let` / `match` — draw_helpers.rs, object_id_pass.rs, ui_rendering.rs, particles/buffer.rs all have `unwrap()` on pipeline/buffer lookups in the per-frame draw loop. — (small, low risk) — Done in 6724f1b
   - [x] 161e. Audit and clean up `unwrap()` in katla_ecs per-frame paths — world.rs system dispatch and resource access use `unwrap()` after `Option` insertion. Use `expect()` or restructure to avoid `Option` wrapping. — (small, low risk) — Done in 6724f1b
-  - [ ] 161f. Evaluate `Rc<RefCell<FontSystem>>` in katla_ui — RefCell is on the hot text rendering path. Consider splitting: immutable shared `Rc<FontSystem>` for queries, `&mut FontSystem` only during atlas build. — (medium, medium risk)
+  - [x] 161f. Evaluate `Rc<RefCell<FontSystem>>` in katla_ui — False positive. RefCell overhead is a single integer check vs CPU rasterization work. `get_or_rasterize` does read+write in one call (cache check then atlas mutation on miss), so the RefCell cannot be meaningfully split. `with_shared_fonts()` is never called, but RefCell is still needed for borrowing fonts separately from draw_list within `&mut self` methods. — (medium, medium risk)
   - **Recommended order:** 161b → 161d → 161e → 161c → 161f → 161a
 - **Severity:** MEDIUM
 
@@ -1015,7 +1015,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] 164c. Replace `if pass.name == "geometry"` with `PassKind::Geometry` dispatch — Done in fd25124. String comparison replaced with enum match.
   - [x] 164d. Migrate `Frame` submission APIs from `&str` to `PassId` — Done in 83a1002. submit/submit_ui/dispatch/push_uniform all take PassId. PassIds struct on Application stores all pass handles.
   - [ ] 164e. Replace `resource_names: HashMap<String, GraphResourceHandle>` with `ResourceId`-keyed storage — affects entire pipeline: `FrameGraphBuilder::build()` builds global resource map from strings; `PassDesc.reads/writes: Vec<String>` become `Vec<ResourceId>`; `PassDesc.color_attachments: Vec<(String, ...)>` becomes `Vec<(ResourceId, ...)>`; `PassDesc.writes_to()/reads_from()` change from `&str` to `ResourceId`; barrier generation in `frame/barriers.rs` and compositing in `frame/compositing.rs` use resource names as lookup keys. `GraphResourceDesc.name` stays as `String` for debugging. — (large, medium risk)
-  - [ ] 164f. Migrate all `katla_app` callers from string-based to typed-handle APIs — update `init.rs:324-372` to store `PassId`/`ResourceId` from graph construction, `renderer.rs:197-222` to use stored `PassId` for submit calls, `mod.rs:380` resize handler to use `PassId`. Requires 164b+164d. — (medium, low risk)
+  - [x] 164f. Migrate all `katla_app` callers from string-based to typed-handle APIs — Done in 5034003. `set_overlay_texture_indices` now takes PassId, `wallhack_overlay` added to PassIds struct, init.rs uses typed handle. — (medium, low risk)
   - **Recommended order:** 164b → 164c → 164d → 164f → 164e (164e is largest, do last)
 - **Severity:** MEDIUM
 
@@ -1105,3 +1105,36 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [ ] 171f. Loading screen / progress indicator in status bar. — (small, low risk)
   - **Recommended order:** 171a → 171b → 171c → 171d → 171e → 171f
 - **Severity:** MEDIUM (eliminates frame hitches during asset loading)
+
+### 172. Investigate app crash using `cargo run -- -s`
+- **Crate:** katla_app / katla_gfx
+- **Issue:** Running `cargo run -- -s` (limited-frame mode, 25 frames) causes a crash. Reproduce, capture the panic/backtrace, identify root cause, and fix.
+- **Investigation steps:**
+  - Run `cargo run -- -s` and capture the full panic output and backtrace
+  - Identify the failing module and root cause
+  - Fix the crash
+  - Verify `cargo run -- -s` runs cleanly to completion (exit code 0)
+- **Severity:** HIGH
+
+### 173. Audit and reduce unsafe/raw pointer usage across the codebase
+- **Crates:** katla_gfx, katla_ecs, katla_ui, katla_math, katla_app
+- **Issue:** Raw pointers and `unsafe` blocks are a Rust antipattern when safer alternatives exist. `katla_gfx` has ~60 files with unsafe/raw pointer usage (Vulkan FFI is expected), but `katla_ecs` (7 files), `katla_ui` (2 files), and `katla_math` (3 files) should minimize unsafe to what's strictly necessary. Each `unsafe` block should have a `// SAFETY:` comment explaining why it's sound. Raw pointer casts (`as *const T`, `as *mut T`) outside of FFI bindings should be replaced with references, slices, or `UnsafeCell` where possible.
+- **Investigation steps:**
+  - Audit all `unsafe` blocks in katla_ecs (world.rs, storage.rs, sparse_set.rs, query/, archetype/column.rs) — verify each has a SAFETY comment and no safer alternative exists
+  - Audit katla_ui unsafe (widgets/tree.rs, draw_list.rs) — determine if these can be replaced with safe abstractions
+  - Audit katla_math SSE code (sse/vec4.rs, sse/quat.rs, sse/mat4.rs) — verify SIMD intrinsics are correctly sound, add SAFETY comments
+  - Audit katla_app (application/init.rs) — check if the unsafe block is necessary or can be eliminated
+  - For katla_gfx: focus on non-Vulkan-FFI unsafe (render graph, frame execution) — these are more likely to have soundness bugs than ash-generated bindings
+  - Document or fix each finding
+- **Severity:** MEDIUM
+
+### 174. New-user perspective audit — what's missing for someone evaluating Katla as a game engine
+- **Crates:** all
+- **Issue:** Evaluate Katla from the perspective of a new user who doesn't know the codebase — someone looking for a game engine and trying to determine if Katla is a good fit. They need to answer practical questions like "how do I make a game?", "how do I render stuff?", "how do I add physics/audio/input?", "where's the documentation?". This audit should identify gaps in usability, documentation, onboarding, and feature completeness that would block or confuse a new user.
+- **Investigation steps:**
+  - Spawn a worker agent with the perspective of a new user evaluating Katla as a game engine
+  - Have them explore the codebase, README, docs/, examples, and asset directories
+  - List concrete gaps: missing examples, missing docs, missing features, confusing APIs, no quickstart guide, no API reference, etc.
+  - Categorize findings by severity (blocker vs nice-to-have)
+  - Create actionable TODO items from the findings
+- **Severity:** MEDIUM
