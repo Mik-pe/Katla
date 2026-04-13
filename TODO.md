@@ -903,7 +903,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] ~~157e. Add dock layout serialization/deserialization~~ — Done in 965f279. Stubs for to_string/from_string (serde not yet in katla_ui).
   - [x] ~~157f. Add `DockPanelId` enum and panel content registry~~ — Done in 2aa72b7. EditorPanel enum with 7 variants and stable IDs.
   - [ ] 157g. Integrate `DockArea` into `layout.rs` — (large, high risk)
-    - [ ] 157g1. Wire DockArea into `build()` as skeleton alongside existing layout — confirm `dock_layout: DockLayout` field exists on EditorUI, add `DockArea::new()` call inside `build()` that renders all four panels via match on EditorPanel. Runs alongside hardcoded layout for visual verification. No existing fields removed. (small, low risk)
+    - [x] 157g1. Wire DockArea into `build()` as skeleton alongside existing layout — Done in 2b73fe8. Added `use_dock_layout` flag (default false) on EditorUI, DockArea::new() renders panel labels via EditorPanel match. Runs alongside hardcoded layout.
     - [ ] 157g2. Extend DockArea with `register_panel()` calls and interactive ResizeHandle on Split nodes — each Leaf node must call `ui.register_panel()` for focus tracking. Each Split node must render interactive `ResizeHandle` instead of static `ui.draw_line()` separator, mutating split `ratio`. Requires changing `DockArea` to hold `&mut DockLayout`. (medium, medium risk)
     - [ ] 157g3. Remove hardcoded left/right panel and ResizeHandle blocks — delete lines 90-279 of `layout.rs` (three ResizeHandle blocks, hardcoded bounds calculations, separator draws, direct `register_panel()` calls). Invoke DockArea for the dock area bounds. Extract `last_viewport_bounds` from DockArea callback. Remove `left_panel_width` and `right_panel_width` from EditorUI. Update `update_focused_panel_from_click` to hit-test against dock tree leaves. (medium, high risk)
     - [ ] 157g4. Remove hardcoded asset browser positioning; finalize — fold asset browser into DockArea as a dock leaf. Delete standalone ResizeHandle, asset bounds/register/separator code. Update `focused_panel` matching to derive from dock's registered panel IDs. Simplify `update_focused_panel_from_click` since `ui.focused_panel()` returns dock-aware IDs. (medium, high risk)
@@ -1027,16 +1027,16 @@ These items identify code that currently lives in katla_app but is generic enoug
 
 ## P5: Multi-Threading & Parallelism
 
-### 167. Add rayon-based parallel query iteration to katla_ecs
+~~### 167. Add rayon-based parallel query iteration to katla_ecs~~ — Fixed in 2b73fe8. Added rayon dependency, ParQueryData trait with 1-4 component tuple impls (read-only), par_query() on World, 13 tests verifying correctness and sequential-vs-parallel parity.
 - **Crate:** katla_ecs
 - **Files:** `katla_ecs/src/query/macros.rs`, `katla_ecs/src/query/mod.rs`, `katla_ecs/src/storage.rs`, `katla_ecs/Cargo.toml`
 - **Issue:** All ECS queries are single-threaded despite using cache-friendly dense arrays (SparseSet dense Vec) that would trivially parallelize. For scenes with thousands of entities, iterating transform+velocity+force systems sequentially leaves CPU cores idle. Rayon's `par_iter()` on the dense entity list with per-chunk processing is the standard approach used by bevy_ecs, legion, and specs.
 - **Sub-tasks:**
-  - [ ] 167a. Add `rayon` dependency to `katla_ecs/Cargo.toml` — (small, low risk)
-  - [ ] 167b. Add `par_query` entry point on World — `World::par_query::<Q>(&self) -> ParQueryIter` that calls `Q::par_fetch(storage)`. Mirrors existing `query()` but returns a parallel iterator. — (small, low risk)
-  - [ ] 167c. Implement `ParQueryData` trait — mirrors `QueryData` but `par_fetch` returns a rayon `ParallelIterator`. Manual impls for arity 1-4 with all-ref/single-mut permutations (same pattern as existing macros). — (medium, medium risk)
-  - [ ] 167d. Chunk-based parallel sparse set iteration — split `SparseSet::dense` into N chunks, each chunk yields `(EntityId, &T)` for that range. — (medium, medium risk)
-  - [ ] 167e. Integration test — spawn 10K entities with (Transform, Velocity), verify par_query produces same results as sequential query. — (small, low risk)
+  - [x] 167a. Add `rayon` dependency to `katla_ecs/Cargo.toml` — Done in 2b73fe8
+  - [x] 167b. Add `par_query` entry point on World — Done in 2b73fe8. World::par_query::<Q>() returns impl ParallelIterator.
+  - [x] 167c. Implement `ParQueryData` trait — Done in 2b73fe8. Read-only impls for 1-4 component tuples.
+  - [x] 167d. Chunk-based parallel sparse set iteration — Done in 2b73fe8. Dense slice parallel iteration via rayon.
+  - [x] 167e. Integration test — Done in 2b73fe8. 13 tests verifying correctness and sequential-vs-parallel parity.
   - **Recommended order:** 167a → 167b → 167d → 167c → 167e
 - **Severity:** HIGH (highest ROI — low effort, high impact for entity-heavy scenes)
 
@@ -1144,7 +1144,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Fix:** Compute frustum from camera each frame, test each drawable's AABB against it in `collect_draws_with_context()`, skip entities that fail the test. Track culled count for stats overlay. Requires `AABB` per drawable (may need to compute from mesh bounds + transform).
 - **Severity:** HIGH
 
-### 175. New-user perspective audit — what's missing for someone evaluating Katla as a game engine
+~~### 175. New-user perspective audit — what's missing for someone evaluating Katla as a game engine~~ — Audit complete. Found 4 blockers (not on crates.io, no getting-started guide, shaders missing from repo, no hello-world example), 10 major gaps (no audio/physics/gamepad, no visual examples, no architecture docs), 7 minor issues, 6 nice-to-haves. Engine has strong technical foundations but no onboarding path for external users.
 - **Crates:** all
 - **Issue:** Evaluate Katla from the perspective of a new user who doesn't know the codebase — someone looking for a game engine and trying to determine if Katla is a good fit. They need to answer practical questions like "how do I make a game?", "how do I render stuff?", "how do I add physics/audio/input?", "where's the documentation?". This audit should identify gaps in usability, documentation, onboarding, and feature completeness that would block or confuse a new user.
 - **Sub-tasks:**
