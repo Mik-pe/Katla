@@ -72,6 +72,33 @@
 
 ---
 
+### 176. Frustum culling not working properly
+- **Crate:** katla_app / katla_math
+- **Files:** `katla_app/src/application/renderer.rs`, `katla_math/src/frustum.rs`, `katla_math/src/aabb.rs`, `katla_app/src/components/rendering/drawable.rs`
+- **Issue:** Frustum culling (added in #174) is not working correctly — entities that should be visible are being culled or entities that should be culled are still drawn. The frustum may be constructed from incorrect matrices, AABB bounds may be wrong, or the plane-AABB test may have a sign/convention error. Needs systematic TDD approach to identify and fix.
+- **Approach:** Test-driven development — first write tests that expose the bad state, then implement the fix.
+- **Sub-tasks:**
+  - [ ] 176a. Write failing tests for `Frustum::from_projection_view_matrix` — construct known camera configurations (forward-Z, reverse-Z, orthographic), verify each plane's normal direction and distance against hand-computed reference values. Test with the engine's actual `create_proj_reverse_z` + `create_lookat` matrices. (small, low risk)
+  - [ ] 176b. Write failing tests for `Frustum::intersects_aabb` — place known AABBs at known positions relative to a camera frustum (fully inside, fully outside each plane, straddling a plane, behind camera, at far distance). Verify correct inside/outside classification. (small, low risk)
+  - [ ] 176c. Write failing tests for `AABB::transform` — verify that axis-aligned bounding boxes are correctly transformed by translation, rotation, and scale matrices, producing a new AABB that encloses the rotated box. (small, low risk)
+  - [ ] 176d. Audit and verify `DrawableComponent::bounds` — check that primitive spawn functions (cube, sphere, plane, etc.) set correct local-space AABBs. A cube at origin with half-extents should have an AABB that matches the mesh geometry. (small, low risk)
+  - [ ] 176e. Investigate and fix based on test findings — likely culprits: plane extraction sign convention mismatch with reverse-Z projection, AABB transform not accounting for rotation correctly, or local bounds set to zero/wrong values on spawn. (medium, low risk)
+  - [ ] 176f. Add integration test — spawn entities at known positions relative to camera, verify culling matches expectation (visible entities drawn, off-screen entities culled). (small, low risk)
+  - **Recommended order:** 176a → 176b → 176c → 176d → 176e → 176f
+- **Severity:** HIGH
+
+### 177. UI panel backgrounds render as black; panels glitch on scroll/hover/resize
+- **Crate:** katla_gfx / katla_ui / katla_app
+- **Files:** `katla_gfx/src/render_graph/frame/`, `katla_app/src/application/renderer.rs`, `katla_ui/src/draw_list.rs`, `katla_app/src/ui/renderer.rs`
+- **Issue:** UI panels (hierarchy, inspector, asset browser, co-creator) render with solid black backgrounds instead of the themed `panel_bg` color. When scrolling or hovering over panel content, the panel turns glitchy — visual artifacts appear suggesting a synchronization or buffer update problem. Resizing panels also triggers similar corruption. Suspected causes: (1) alpha-blending semi-transparent `panel_bg` over a dark clear color when the background pass is skipped, (2) UI vertex buffer being written while GPU is still reading the previous frame's data (missing double-buffering or fence synchronization), (3) font atlas texture being rasterized into mid-frame during scroll/hover events causing sampling of partially-updated texture data. Related to #162 (partially fixed — green glitch from REPEAT sampler was resolved, but black backgrounds and scroll artifacts remain).
+- **Investigation steps:**
+  - Verify UI render pass clear color and blend state — check if the clear color bleeds through semi-transparent panel backgrounds
+  - Check if UI vertex buffer uses double-buffering or if a single buffer is mapped/written while the GPU reads it
+  - Verify font atlas texture updates are synchronized — new glyphs rasterized during scroll should not be sampled mid-update
+  - Check if the UI render pass correctly handles the case where no 3D scene is rendered (hdr_texture_index is None)
+  - Add fence-based synchronization between UI vertex upload and GPU consumption if missing
+- **Severity:** HIGH
+
 ### ~~86. Remove particle debug readback from katla_app debug builds~~ ✓
 - **Crate:** katla_app
 - **Files:** `katla_app/src/application/builder.rs`, `katla_app/src/application/renderer.rs`, `katla_app/src/application/mod.rs`, `katla_app/src/application/init.rs`, `katla_gfx/src/render_graph/frame/mod.rs`, `katla_gfx/src/render_graph/frame_graph.rs`
@@ -1047,10 +1074,10 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Sub-tasks:**
   - [x] 168a. Define `ComponentAccess` enum (`Read(TypeId)`, `Write(TypeId)`) and extend `System` trait with `fn component_access() -> Vec<ComponentAccess>` — Done in 7db0ae5. With helper constructors read::<T>()/write::<T>(), 3 tests.
   - [x] 168b. Create `scheduler.rs` with `SystemScheduler` — Done in 21130e1. Conflict-based DAG with topological group computation, 11 tests.
-  - [ ] 168c. Implement parallel execution via `rayon::scope()` — walk the DAG in topological order, dispatch systems whose predecessors are complete to rayon workers. Use `AtomicUsize` counters per node for completion tracking. `UnsafeWorldCell`-style access to World from each system. — (large, medium risk)
+  - [x] 168c. Implement parallel execution via `rayon::scope()` — Done in da658ca. execute_parallel() on SystemScheduler, per-group rayon dispatch, UnsafeWorldCell access.
   - [x] 168d. Add `UnsafeWorldCell` wrapper — Done in 0c9221d. Thin newtype with storage()/storage_mut::<T>()/entities()/world(), Send+Sync impls, 7 tests.
   - [x] 168e. Annotate existing systems with component access — Done in ca63da4. Added component_access() to all 7 systems across physics, camera, transform, animation.
-  - [ ] 168f. Integrate `SystemScheduler` into frame loop — replace sequential `world.update(dt)` with `scheduler.execute(&mut world, dt)`. — (medium, medium risk)
+  - [x] 168f. Integrate `SystemScheduler` into frame loop — Done in da658ca. Frame loop uses update_parallel(), all systems registered with access patterns.
   - [x] 168g. Integration test — Done in 10345cf. 3 tests verifying parallel group ordering, independent grouping, conflicting separation.
   - **Recommended order:** 168a → 168d → 168b → 168c → 168e → 168f → 168g
 - **Depends on:** 167 (rayon dependency), 168d should land before 168c
