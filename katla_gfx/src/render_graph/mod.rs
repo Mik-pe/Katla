@@ -36,6 +36,7 @@ pub mod descriptor_sets;
 mod error;
 mod frame;
 mod frame_graph;
+mod handles;
 mod pass;
 mod passes;
 mod resource;
@@ -46,6 +47,7 @@ pub use descriptor_sets::CompositingDescriptorSet;
 pub use error::RenderGraphError;
 pub use frame::Frame;
 pub use frame_graph::{BACKBUFFER_NAME, FrameGraph, FrameGraphBuilder};
+pub use handles::{PassId, ResourceId};
 pub use pass::{PassDesc, PassKind, PassType};
 pub use passes::{
     CompositePass, DepthPrepass, FullscreenPass, GeometryPass, OutlinePass, OverlayParams,

@@ -642,50 +642,49 @@ impl UiContext {
                 let click_pos = if rel_x <= 0.0 {
                     0
                 } else {
-                    let chars: Vec<(usize, char)> = text.char_indices().collect();
-                    let n = chars.len();
-                    let mut best_offset = 0usize;
-                    let mut best_dist = f32::MAX;
+                    let widths =
+                        measure_char_widths(text, &mut |s| self.measure_text(s, inp.font_size).x());
 
-                    // Check position 0 (before first char)
-                    let zero_dist = rel_x.abs();
-                    if zero_dist < best_dist {
-                        best_dist = zero_dist;
-                    }
+                    let full_width = widths.last().copied().unwrap_or(0.0);
+                    if (full_width - rel_x).abs() < rel_x {
+                        text.len()
+                    } else {
+                        let chars: Vec<(usize, char)> = text.char_indices().collect();
+                        let n = chars.len();
+                        let mut best_offset = 0usize;
+                        let mut best_dist = f32::MAX;
 
-                    // Binary search: find the char index where width first exceeds rel_x
-                    let mut lo = 0usize;
-                    let mut hi = n;
-                    while lo < hi {
-                        let mid = lo + (hi - lo) / 2;
-                        let (byte_idx, _) = chars[mid];
-                        let width = self.measure_text(&text[..byte_idx], inp.font_size).x();
-                        if width < rel_x {
-                            lo = mid + 1;
-                        } else {
-                            hi = mid;
+                        let zero_dist = rel_x.abs();
+                        if zero_dist < best_dist {
+                            best_dist = zero_dist;
                         }
-                    }
 
-                    // Check positions lo-1, lo, and n (past end) for closest match
-                    for &check in &[lo.saturating_sub(1), lo] {
-                        if check < n {
-                            let (byte_idx, _) = chars[check];
-                            let width = self.measure_text(&text[..byte_idx], inp.font_size).x();
-                            let dist = (width - rel_x).abs();
-                            if dist < best_dist {
-                                best_dist = dist;
-                                best_offset = byte_idx;
+                        let mut lo = 0usize;
+                        let mut hi = n;
+                        while lo < hi {
+                            let mid = lo + (hi - lo) / 2;
+                            let (_, _) = chars[mid];
+                            let width = widths[mid + 1];
+                            if width < rel_x {
+                                lo = mid + 1;
+                            } else {
+                                hi = mid;
                             }
                         }
-                    }
 
-                    // Check position after last char
-                    let full_width = self.measure_text(text, inp.font_size).x();
-                    if (full_width - rel_x).abs() < best_dist {
-                        best_offset = text.len();
+                        for &check in &[lo.saturating_sub(1), lo] {
+                            if check < n {
+                                let width = widths[check + 1];
+                                let dist = (width - rel_x).abs();
+                                if dist < best_dist {
+                                    best_dist = dist;
+                                    best_offset = chars[check].0;
+                                }
+                            }
+                        }
+
+                        best_offset
                     }
-                    best_offset
                 };
                 let state = self
                     .text_input_states
@@ -729,8 +728,7 @@ impl UiContext {
                     .get(&widget_id)
                     .expect("text input state must exist")
                     .cursor;
-                let text_before_cursor = &text[..cursor];
-                let cursor_x = self.measure_text(text_before_cursor, inp.font_size).x();
+                let cursor_x = self.measure_text(&text[..cursor], inp.font_size).x();
                 let text_area_w = bounds.width() - padding * 2.0;
                 let state = self
                     .text_input_states
@@ -804,58 +802,47 @@ impl UiContext {
             bounds.center().y() - text_size.y() * 0.5,
         );
 
-        // Draw selection highlight when focused
+        // Precompute widths for all char boundaries when focused
         if focused {
-            if let Some(state) = self.text_input_states.get(&widget_id) {
-                if state.has_selection() {
-                    let (sel_start, sel_end) = state.selection_range();
-                    let before_sel = self
-                        .measure_text(&text[..sel_start], self.style.font_size)
-                        .x();
-                    let sel_width = self
-                        .measure_text(&text[sel_start..sel_end], self.style.font_size)
-                        .x();
-                    let sel_rect = Rect2D::from_origin_size(
-                        Vec2::new(text_pos.x() + before_sel, text_pos.y()),
-                        Vec2::new(sel_width.max(1.0), text_size.y()),
-                    );
-                    self.draw_rect(sel_rect, self.style.input_selection);
-                }
-            }
-        }
+            let (has_selection, sel_range, cursor_byte) = {
+                let state = self
+                    .text_input_states
+                    .get(&widget_id)
+                    .expect("text input state must exist");
+                (state.has_selection(), state.selection_range(), state.cursor)
+            };
 
-        // Draw placeholder or text
-        if text.is_empty() && !focused {
-            if let Some(placeholder_text) = placeholder {
-                self.draw_text(
-                    placeholder_text,
-                    text_pos,
-                    self.style.text_hint,
-                    self.style.font_size,
+            let widths = measure_char_widths(text, &mut |s| {
+                self.measure_text(s, self.style.font_size).x()
+            });
+
+            // Draw selection highlight
+            if has_selection {
+                let (sel_start, sel_end) = sel_range;
+                let start_idx = char_index_for_byte(text, sel_start);
+                let end_idx = char_index_for_byte(text, sel_end);
+                let before_sel = widths[start_idx];
+                let sel_end_x = widths[end_idx];
+                let sel_width = sel_end_x - before_sel;
+                let sel_rect = Rect2D::from_origin_size(
+                    Vec2::new(text_pos.x() + before_sel, text_pos.y()),
+                    Vec2::new(sel_width.max(1.0), text_size.y()),
                 );
+                self.draw_rect(sel_rect, self.style.input_selection);
             }
-        } else {
+
+            // Draw text
             self.draw_text(text, text_pos, self.style.input_text, self.style.font_size);
-        }
 
-        self.pop_clip();
-
-        // Draw cursor when focused (with blink and grace period after typing)
-        if focused {
+            // Draw cursor (with blink and grace period after typing)
             let grace_period = 0.8;
             let time_since_input = self.time - self.last_input_time;
             let blink_on = self.time == 0.0
                 || time_since_input < grace_period
                 || ((self.time * 2.0 * std::f64::consts::PI).sin() > 0.0);
             if blink_on {
-                let cursor_byte = self
-                    .text_input_states
-                    .get(&widget_id)
-                    .map(|s| s.cursor)
-                    .unwrap_or(text.len());
-                let before_cursor = self
-                    .measure_text(&text[..cursor_byte], self.style.font_size)
-                    .x();
+                let cursor_idx = char_index_for_byte(text, cursor_byte);
+                let before_cursor = widths[cursor_idx];
                 let cursor_x = text_pos.x() + before_cursor;
                 self.draw_line(
                     Vec2::new(cursor_x, text_pos.y()),
@@ -864,7 +851,23 @@ impl UiContext {
                     self.style.text_input_cursor_width,
                 );
             }
+        } else {
+            // Draw placeholder or text
+            if text.is_empty() {
+                if let Some(placeholder_text) = placeholder {
+                    self.draw_text(
+                        placeholder_text,
+                        text_pos,
+                        self.style.text_hint,
+                        self.style.font_size,
+                    );
+                }
+            } else {
+                self.draw_text(text, text_pos, self.style.input_text, self.style.font_size);
+            }
         }
+
+        self.pop_clip();
 
         // Draw clear button
         if show_clear && !text.is_empty() {
@@ -1166,4 +1169,26 @@ fn next_word_boundary(text: &str, pos: usize) -> usize {
         }
     }
     text.len()
+}
+
+/// Measure cumulative widths at each char boundary in `text`.
+///
+/// Returns a Vec of length `chars.count() + 1` where `widths[i]` is the width
+/// of `text` up to (but not including) the i-th character. `widths[0] = 0.0`
+/// and `widths[n]` is the full text width.
+fn measure_char_widths(text: &str, measure: &mut impl FnMut(&str) -> f32) -> Vec<f32> {
+    let n = text.chars().count();
+    let mut widths = Vec::with_capacity(n + 1);
+    widths.push(0.0);
+    let mut byte_pos = 0;
+    for ch in text.chars() {
+        byte_pos += ch.len_utf8();
+        widths.push(measure(&text[..byte_pos]));
+    }
+    widths
+}
+
+/// Convert a byte offset in `text` to a char index.
+fn char_index_for_byte(text: &str, byte_offset: usize) -> usize {
+    text[..byte_offset].chars().count()
 }
