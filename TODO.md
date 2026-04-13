@@ -1049,7 +1049,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] 168b. Create `scheduler.rs` with `SystemScheduler` — Done in 21130e1. Conflict-based DAG with topological group computation, 11 tests.
   - [ ] 168c. Implement parallel execution via `rayon::scope()` — walk the DAG in topological order, dispatch systems whose predecessors are complete to rayon workers. Use `AtomicUsize` counters per node for completion tracking. `UnsafeWorldCell`-style access to World from each system. — (large, medium risk)
   - [x] 168d. Add `UnsafeWorldCell` wrapper — Done in 0c9221d. Thin newtype with storage()/storage_mut::<T>()/entities()/world(), Send+Sync impls, 7 tests.
-  - [ ] 168e. Annotate existing systems with component access — add `component_access()` to each system in katla_app. — (small, low risk)
+  - [x] 168e. Annotate existing systems with component access — Done in ca63da4. Added component_access() to all 7 systems across physics, camera, transform, animation.
   - [ ] 168f. Integrate `SystemScheduler` into frame loop — replace sequential `world.update(dt)` with `scheduler.execute(&mut world, dt)`. — (medium, medium risk)
   - [ ] 168g. Integration test — register 3 systems (A writes X, B writes Y, C reads X+Y), verify A+B run in parallel, C runs after both. — (small, low risk)
   - **Recommended order:** 168a → 168d → 168b → 168c → 168e → 168f → 168g
@@ -1064,7 +1064,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] 169a. Add `CommandBuffer::begin_secondary(inheritance_info)` and `end_secondary()` — Done in 7db0ae5. Secondary CB allocation, begin_secondary with inheritance info, execute_commands, 3 tests.
   - [x] 169b. Create `ThreadPoolCommandPool` — Done in 21130e1. Per-thread CommandPool with allocate_secondary, reset_all, destroy, 4 tests.
   - [x] 169c. Parallel geometry pass recording — Done in 0c9221d. std::thread::scope-based parallel recording with secondary CBs, auto-threshold at 32+ draws, 8 tests.
-  - [ ] 169d. Parallel shadow pass recording — split shadow cascades across threads. Each cascade's draw calls go into a separate secondary CB. — (medium, medium risk)
+  - [x] 169d. Parallel shadow pass recording — Done in ca63da4. Per-cascade secondary CBs via std::thread::scope, auto-threshold at 16+ draws, 9 tests.
   - [ ] 169e. Benchmark — measure CPU time for command buffer recording before/after at 100/500/1000 draw calls. — (small, low risk)
   - **Recommended order:** 169a → 169b → 169c → 169d → 169e
 - **Severity:** HIGH (removes CPU bottleneck for complex scenes)
@@ -1096,10 +1096,10 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Files:** `katla_app/src/util/background_loader.rs`, `katla_app/src/application/resource_loading.rs`, `katla_app/src/application/init.rs`
 - **Issue:** The `BackgroundLoader` only handles image thumbnails. Model loading (glTF parsing, vertex/index buffer preparation, skeleton extraction), texture loading (full-size mipmap generation), and shader compilation all happen on the main thread, causing frame hitches. A full async pipeline: (1) load bytes from disk on an IO thread, (2) parse/process on worker threads, (3) upload to GPU on the main thread.
 - **Sub-tasks:**
-  - [ ] 171a. Extend `LoadRequest` enum with model and texture variants (small, low risk)
-    - [ ] 171a1. Add `LoadRequest::FullTexture { id, path, generate_mipmaps }` — full-size texture load with optional mipmap generation. (small, low risk)
-    - [ ] 171a2. Add `LoadRequest::GltfModel { id, path }` — glTF model file load. (small, low risk)
-    - [ ] 171a3. Add corresponding `LoadResult` variants — `FullTextureLoaded { id, width, height, mip_levels, pixels }`, `GltfModelLoaded { id, meshes, skeletons, materials }`. (small, low risk)
+  - [x] 171a. Extend `LoadRequest` enum with model and texture variants — Done in ca63da4. FullTexture + GltfModel request/result variants, background loading with image::open and gltf::import.
+    - [x] 171a1. Add `LoadRequest::FullTexture { id, path, generate_mipmaps }` — Done in ca63da4
+    - [x] 171a2. Add `LoadRequest::GltfModel { id, path }` — Done in ca63da4
+    - [x] 171a3. Add corresponding `LoadResult` variants — Done in ca63da4. FullTextureLoaded { id, width, height, mip_levels, pixels }, GltfModelLoaded { id, path }.
   - [ ] 171b. Add worker thread pool (rayon or dedicated threads) — replace single background thread with a `rayon::ThreadPool`. (medium, low risk)
     - [ ] 171b1. Replace `std::thread::spawn` with rayon pool — update `BackgroundLoader::new()` to create a `rayon::ThreadPoolBuilder::new().num_threads(2).build()`. Keep the mpsc channel for results. (small, low risk)
     - [ ] 171b2. Update `submit()` to dispatch via pool — `self.pool.spawn(move || { ... })` instead of spawning a new thread per request. (small, low risk)
