@@ -289,8 +289,8 @@
     - [x] 80a3. ArchetypeId and component signature — Done in 7271697. ArchetypeId newtype, ComponentSignature (Vec<TypeId> sorted), signature_for_add/remove helpers.
     - [ ] 80a4. Contiguous iteration — `ArchetypeIter` that yields `(EntityId, &[T1], &[T2], ...)` via column slices. Implement for 1-4 component tuples using macro. Benchmark against sparse set. (medium, medium risk)
   - [ ] 80b. `ArchetypeRegistry` — manages archetype instances, entity-to-archetype mapping, component add/remove migration with edge caching (large, medium risk)
-    - [ ] 80b1. ArchetypeRegistry struct — `HashMap<ComponentSignature, ArchetypeId>` → `Vec<Archetype>`. Methods: `get_or_create()`, `get()`, `archetype_for_signature()`. (large, medium risk)
-    - [ ] 80b2. EntityLocation map — `SparseSet<EntityId, (ArchetypeId, u32)>` mapping from entity ID to archetype and row index. Needed for `get_component<T>(entity)`, `remove_component<T>(entity)`, `destroy_entity(entity)`. Must be kept in sync during migrations. (medium, low risk)
+    - [x] 80b1. ArchetypeRegistry struct — Done in 83a1002. Vec<Archetype> + signature_to_id HashMap + entity_locations HashMap.
+    - [x] 80b2. EntityLocation map — Done in 83a1002 (included in ArchetypeRegistry). HashMap<EntityId, (ArchetypeId, usize)>.
     - [ ] 80b3. Component add/remove with migration — `add_component()` and `remove_component()` that move entity between archetypes: copy shared components to destination, add new data, remove from source, update EntityLocation map. Edge-cached `HashMap<(ArchetypeId, TypeId), ArchetypeId>`. (large, high risk)
     - [ ] 80b4. Entity spawn/destroy through registry — `spawn_entity(components)` and `destroy_entity()` through ArchetypeRegistry. Integration with existing generation-based `EntityAllocator`. (medium, medium risk)
   - [ ] 80c. `ArchetypeQueryData` trait and macro-generated tuple impls — new query entry point `World::archetype_query::<Q>()` replacing existing `query()` per "no hybrid implementations" rule (large, high risk)
@@ -1013,7 +1013,7 @@ These items identify code that currently lives in katla_app but is generic enoug
   - [x] 164a. Add `PassId(u32)` / `ResourceId(u32)` typed handle types — thin newtype wrappers with `Copy`/`Eq`/`Hash` derives. Pass creation returns `PassId`, resource creation returns `ResourceId`. — (small, low risk) — Done in fb0269d. Types added in render_graph/handles.rs.
   - [x] 164b. Replace `pass_names: HashMap<String, usize>` with `PassId`-indexed storage — Partially done in 7271697. `add_pass()` returns PassId, `set_tonemap_texture_index()` takes PassId, `pass_id()` lookup added. `pass_names` HashMap still exists for remaining string callers. — (medium, low risk)
   - [x] 164c. Replace `if pass.name == "geometry"` with `PassKind::Geometry` dispatch — Done in fd25124. String comparison replaced with enum match.
-  - [ ] 164d. Migrate `Frame` submission APIs from `&str` to `PassId` — change `submit()`, `submit_ui()`, `dispatch()`, `push_uniform()` in `frame/mod.rs:113-170` to accept `PassId` instead of `&str`. Each currently does `self.graph.pass_index(pass).unwrap_or_else(|| panic!(...))` — replace with direct `PassId` usage. Update callers in `renderer.rs:197-222`. — (medium, low risk)
+  - [x] 164d. Migrate `Frame` submission APIs from `&str` to `PassId` — Done in 83a1002. submit/submit_ui/dispatch/push_uniform all take PassId. PassIds struct on Application stores all pass handles.
   - [ ] 164e. Replace `resource_names: HashMap<String, GraphResourceHandle>` with `ResourceId`-keyed storage — affects entire pipeline: `FrameGraphBuilder::build()` builds global resource map from strings; `PassDesc.reads/writes: Vec<String>` become `Vec<ResourceId>`; `PassDesc.color_attachments: Vec<(String, ...)>` becomes `Vec<(ResourceId, ...)>`; `PassDesc.writes_to()/reads_from()` change from `&str` to `ResourceId`; barrier generation in `frame/barriers.rs` and compositing in `frame/compositing.rs` use resource names as lookup keys. `GraphResourceDesc.name` stays as `String` for debugging. — (large, medium risk)
   - [ ] 164f. Migrate all `katla_app` callers from string-based to typed-handle APIs — update `init.rs:324-372` to store `PassId`/`ResourceId` from graph construction, `renderer.rs:197-222` to use stored `PassId` for submit calls, `mod.rs:380` resize handler to use `PassId`. Requires 164b+164d. — (medium, low risk)
   - **Recommended order:** 164b → 164c → 164d → 164f → 164e (164e is largest, do last)
@@ -1032,3 +1032,76 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Issue:** Particle rendering is executed outside the normal pass loop via `if pass.name == "geometry"` in `execute_passes()`. It does its own barrier management, its own begin/end rendering, and its own layout tracking. This bypasses the render graph's barrier system, requiring manual synchronization with the resource state tracker. When the tracking diverges (see 165), validation errors result. The frame graph exists precisely to automate this.
 - **Fix:** Register a "particles" pass in the frame graph during `build_frame_graph()` with proper `.read()` and `.write()` declarations (reads hdr_color, writes hdr_color, uses depth). Remove the special-case block from `execute_passes()`. The render graph barrier system will then handle all layout transitions automatically. If pass ordering constraints are needed (particles must run after geometry), express this via the graph's dependency system.
 - **Severity:** MEDIUM
+
+---
+
+## P5: Multi-Threading & Parallelism
+
+### 167. Add rayon-based parallel query iteration to katla_ecs
+- **Crate:** katla_ecs
+- **Files:** `katla_ecs/src/query/macros.rs`, `katla_ecs/src/query/mod.rs`, `katla_ecs/src/storage.rs`, `katla_ecs/Cargo.toml`
+- **Issue:** All ECS queries are single-threaded despite using cache-friendly dense arrays (SparseSet dense Vec) that would trivially parallelize. For scenes with thousands of entities, iterating transform+velocity+force systems sequentially leaves CPU cores idle. Rayon's `par_iter()` on the dense entity list with per-chunk processing is the standard approach used by bevy_ecs, legion, and specs.
+- **Sub-tasks:**
+  - [ ] 167a. Add `rayon` dependency to `katla_ecs/Cargo.toml` — (small, low risk)
+  - [ ] 167b. Add `par_query` entry point on World — `World::par_query::<Q>(&self) -> ParQueryIter` that calls `Q::par_fetch(storage)`. Mirrors existing `query()` but returns a parallel iterator. — (small, low risk)
+  - [ ] 167c. Implement `ParQueryData` trait — mirrors `QueryData` but `par_fetch` returns a rayon `ParallelIterator`. Manual impls for arity 1-4 with all-ref/single-mut permutations (same pattern as existing macros). — (medium, medium risk)
+  - [ ] 167d. Chunk-based parallel sparse set iteration — split `SparseSet::dense` into N chunks, each chunk yields `(EntityId, &T)` for that range. — (medium, medium risk)
+  - [ ] 167e. Integration test — spawn 10K entities with (Transform, Velocity), verify par_query produces same results as sequential query. — (small, low risk)
+  - **Recommended order:** 167a → 167b → 167d → 167c → 167e
+- **Severity:** HIGH (highest ROI — low effort, high impact for entity-heavy scenes)
+
+### 168. Add parallel ECS system scheduling based on component access conflicts
+- **Crate:** katla_ecs, katla_app
+- **Files:** `katla_ecs/src/system.rs`, `katla_ecs/src/world.rs`, `katla_ecs/src/scheduler.rs` (new), `katla_app/src/application/frame_loop.rs`
+- **Issue:** All systems run sequentially via `SystemExecutionOrder` sorting, even when they touch completely disjoint components (e.g., physics system touching Transform+Velocity vs animation system touching Skeleton+JointWeights). SOTA engines schedule independent systems in parallel using access-conflict analysis: if system A writes Transform and system B writes LightData, they can run concurrently. Bevy's `Schedule` builds an access-conflict DAG and dispatches independent systems to a thread pool.
+- **Approach:** Extend the `System` trait with access metadata. Build a DAG at schedule-build time. Execute via rayon `scope()` where each system is a task that waits only on conflicting predecessors. The existing `UnsafeCell<ComponentStorageManager>` already allows multiple immutable borrows from disjoint TypeIds — this is the same soundness guarantee Bevy uses for `UnsafeWorldCell`.
+- **Sub-tasks:**
+  - [ ] 168a. Define `ComponentAccess` enum (`Read(TypeId)`, `Write(TypeId)`) and extend `System` trait with `fn component_access() -> Vec<ComponentAccess>` (default empty for backward compat) — (small, low risk)
+  - [ ] 168b. Create `scheduler.rs` with `SystemScheduler` — builds DAG from access conflicts: edge from A→B if A and B conflict (both Write same component, or Read+Write same component) and A has lower execution order. — (medium, medium risk)
+  - [ ] 168c. Implement parallel execution via `rayon::scope()` — walk the DAG in topological order, dispatch systems whose predecessors are complete to rayon workers. Use `AtomicUsize` counters per node for completion tracking. `UnsafeWorldCell`-style access to World from each system. — (large, medium risk)
+  - [ ] 168d. Add `UnsafeWorldCell` wrapper — thin newtype around `*mut World` with safe access methods for reads/writes. Replaces direct `UnsafeCell::get()` usage. — (medium, medium risk)
+  - [ ] 168e. Annotate existing systems with component access — add `component_access()` to each system in katla_app. — (small, low risk)
+  - [ ] 168f. Integrate `SystemScheduler` into frame loop — replace sequential `world.update(dt)` with `scheduler.execute(&mut world, dt)`. — (medium, medium risk)
+  - [ ] 168g. Integration test — register 3 systems (A writes X, B writes Y, C reads X+Y), verify A+B run in parallel, C runs after both. — (small, low risk)
+  - **Recommended order:** 168a → 168d → 168b → 168c → 168e → 168f → 168g
+- **Depends on:** 167 (rayon dependency), 168d should land before 168c
+- **Severity:** HIGH (fundamental scaling improvement — unlocks multi-core ECS)
+
+### 169. Multi-threaded Vulkan command buffer recording with secondary command buffers
+- **Crate:** katla_gfx, katla_app
+- **Files:** `katla_gfx/src/render_graph/frame/mod.rs`, `katla_gfx/src/render_graph/frame/graphics_pass.rs`, `katla_gfx/src/vulkan/commandpool.rs`, `katla_gfx/src/vulkan/commandbuffer.rs`, `katla_gfx/src/vulkan/queue.rs`
+- **Issue:** The renderer records all draw calls into a single primary command buffer on the main thread. For scenes with many draw calls (hundreds of objects, multiple render passes), command buffer recording is CPU-bound and becomes the bottleneck. SOTA engines (Frostbite, Unreal, Granite) record secondary command buffers in parallel on multiple threads, then submit them all to a single primary. Vulkan is explicitly designed for this — secondary command buffers can be recorded concurrently from multiple threads, each with its own command pool.
+- **Sub-tasks:**
+  - [ ] 169a. Add `CommandBuffer::begin_secondary(inheritance_info)` and `end_secondary()` — secondary CBs require `VK_COMMAND_BUFFER_LEVEL_SECONDARY` at allocation time. — (medium, low risk)
+  - [ ] 169b. Create `ThreadPoolCommandPool` — manages `Vec<CommandPool>`, one per rayon worker thread. Pools are reset (not destroyed) per frame for allocation reuse. — (medium, low risk)
+  - [ ] 169c. Parallel geometry pass recording — split object list into N chunks. Each worker records a secondary CB with its draw calls. Primary CB begins render pass, calls `vkCmdExecuteCommands(secondaries)`, ends render pass. — (large, medium risk)
+  - [ ] 169d. Parallel shadow pass recording — split shadow cascades across threads. Each cascade's draw calls go into a separate secondary CB. — (medium, medium risk)
+  - [ ] 169e. Benchmark — measure CPU time for command buffer recording before/after at 100/500/1000 draw calls. — (small, low risk)
+  - **Recommended order:** 169a → 169b → 169c → 169d → 169e
+- **Severity:** HIGH (removes CPU bottleneck for complex scenes)
+
+### 170. Parallel render graph execution
+- **Crate:** katla_gfx
+- **Files:** `katla_gfx/src/render_graph/frame_graph.rs`, `katla_gfx/src/render_graph/frame/mod.rs`, `katla_gfx/src/render_graph/frame/barriers.rs`
+- **Issue:** The frame graph executes passes sequentially in `execute_passes()`. Independent passes (e.g., shadow cascades, outline vs object-ID) that don't read/write the same resources could execute in parallel. The render graph already tracks `.reads()` and `.writes()` per pass — this is exactly the information needed to build a DAG and schedule independent passes concurrently.
+- **Sub-tasks:**
+  - [ ] 170a. Build pass dependency DAG at frame graph compile time — from existing `reads/writes` per pass, create edges where resource overlap exists. Topological sort determines execution order. — (medium, low risk)
+  - [ ] 170b. Add parallel pass execution mode — `execute_passes_parallel()` using rayon `scope()`. Each pass records into its own secondary command buffer (requires 169a/169b). — (large, medium risk)
+  - [ ] 170c. Integration test — create frame graph with 3 independent passes (A writes X, B writes Y, C reads X+Y). Verify A+B run in parallel, C runs after both. — (small, low risk)
+  - **Recommended order:** 170a → 170b → 170c
+- **Depends on:** 164 (typed handles), 169a/169b (secondary command buffer infrastructure)
+- **Severity:** MEDIUM
+
+### 171. Expand background asset loading pipeline for all asset types
+- **Crate:** katla_app, katla_gfx
+- **Files:** `katla_app/src/util/background_loader.rs`, `katla_app/src/application/resource_loading.rs`, `katla_app/src/application/init.rs`
+- **Issue:** The `BackgroundLoader` only handles image thumbnails. Model loading (glTF parsing, vertex/index buffer preparation, skeleton extraction), texture loading (full-size mipmap generation), and shader compilation all happen on the main thread, causing frame hitches. A full async pipeline: (1) load bytes from disk on an IO thread, (2) parse/process on worker threads, (3) upload to GPU on the main thread.
+- **Sub-tasks:**
+  - [ ] 171a. Extend `LoadRequest` enum with model and texture variants — (small, low risk)
+  - [ ] 171b. Add worker thread pool (rayon or dedicated threads) — replace single background thread with a `rayon::ThreadPool`. — (medium, low risk)
+  - [ ] 171c. Off-thread glTF model loading — move model parsing to worker threads. — (large, medium risk)
+  - [ ] 171d. Off-thread texture processing — move full-size texture loading to worker threads. — (medium, low risk)
+  - [ ] 171e. Batch GPU upload on main thread — `poll()` returns completed loads, GPU upload happens in a single batch. — (medium, low risk)
+  - [ ] 171f. Loading screen / progress indicator in status bar. — (small, low risk)
+  - **Recommended order:** 171a → 171b → 171c → 171d → 171e → 171f
+- **Severity:** MEDIUM (eliminates frame hitches during asset loading)
