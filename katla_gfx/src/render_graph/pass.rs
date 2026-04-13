@@ -39,6 +39,8 @@ pub enum PassKind {
     Shadow,
     /// Geometry — renders 3D scene geometry with material.
     Geometry,
+    /// Particles — renders GPU particles with alpha blending.
+    Particles,
     /// Outline — stencil-based selection highlight.
     Outline,
     /// Stencil indicator — writes R8 mask where stencil==2.

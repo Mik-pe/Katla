@@ -16,7 +16,6 @@ use super::error::RenderGraphError;
 use super::frame_graph::{BACKBUFFER_NAME, FrameGraph};
 use super::handles::PassId;
 use super::pass::PassDesc;
-use super::resource::ResourceState;
 use crate::renderer::VulkanRenderer;
 use crate::renderer::types::{DrawList, UIDrawList};
 use ash::vk;
@@ -31,7 +30,8 @@ pub struct Frame<'a> {
     pub(super) renderer: &'a mut VulkanRenderer,
     pub(super) image_index: u32,
     pub(super) pending: HashMap<usize, PassExecutionData>,
-    pub(super) resource_states: HashMap<String, ResourceState>,
+    /// Whether the backbuffer has been written to this frame.
+    pub(super) backbuffer_written: bool,
     pub(super) temporary_buffers: Vec<(vk::Buffer, Allocation)>,
     pub(super) depth_buffer_written: bool,
     /// Whether the particle emit compute pass ran this frame.
@@ -62,18 +62,12 @@ impl<'a> Frame<'a> {
         image_index: u32,
         _frame_idx: usize,
     ) -> Self {
-        let resource_states: HashMap<String, ResourceState> = graph
-            .transient_resources
-            .iter()
-            .map(|desc| (desc.name.clone(), ResourceState::Undefined))
-            .collect();
-
         Self {
             graph,
             renderer,
             image_index,
             pending: HashMap::new(),
-            resource_states,
+            backbuffer_written: false,
             temporary_buffers: Vec::new(),
             depth_buffer_written: false,
             particle_emit_ran: false,
@@ -182,8 +176,7 @@ impl<'a> Frame<'a> {
             let swapchain_view =
                 self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
 
-            let backbuffer_written = self.resource_states.contains_key(BACKBUFFER_NAME);
-            let load_op = if backbuffer_written {
+            let load_op = if self.backbuffer_written {
                 vk::AttachmentLoadOp::LOAD
             } else {
                 vk::AttachmentLoadOp::CLEAR
@@ -218,7 +211,8 @@ impl<'a> Frame<'a> {
                 ))
             })?;
 
-        let resource_already_written = self.resource_states.contains_key(color_name);
+        let resource_already_written =
+            transient.state() != super::resource::ResourceState::Undefined;
 
         let (load_op, store_op, clear_value) = pass
             .color_attachments
@@ -281,8 +275,7 @@ impl<'a> Frame<'a> {
             let data = self.pending.remove(&index).unwrap_or_default();
 
             if pass.writes_to(BACKBUFFER_NAME) {
-                self.resource_states
-                    .insert(BACKBUFFER_NAME.to_string(), ResourceState::ColorAttachment);
+                self.backbuffer_written = true;
             }
 
             self.insert_barriers(&cmd, index)?;
@@ -327,27 +320,9 @@ impl<'a> Frame<'a> {
                         } else {
                             self.execute_graphics_pass(&cmd, pass, data)?;
                         }
-
-                        let particles_rendered = self
-                            .renderer
-                            .particle_system
-                            .as_ref()
-                            .is_some_and(|ps| ps.alive_count() > 0);
-                        if particles_rendered {
-                            if let Some(hdr_texture) = self
-                                .graph
-                                .transient_textures
-                                .get(frame_idx)
-                                .and_then(|m| m.get("hdr_color"))
-                            {
-                                if let Err(e) = self.render_particles_to_texture(&cmd, hdr_texture)
-                                {
-                                    log::error!("Failed to render particles: {}", e);
-                                }
-                                self.resource_states
-                                    .insert("hdr_color".to_string(), ResourceState::ShaderRead);
-                            }
-                        }
+                    }
+                    Some(super::pass::PassKind::Particles) => {
+                        self.execute_particle_pass(&cmd, pass)?;
                     }
                     None => {
                         if let Some(material_handle) = pass.material {
