@@ -334,6 +334,15 @@ impl System for TransformHierarchySystem {
             ComponentAccess::write::<WorldTransform>(),
         ]
     }
+
+    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::read::<TransformComponent>(),
+            ComponentAccess::read::<Parent>(),
+            ComponentAccess::read::<TransformDirty>(),
+            ComponentAccess::write::<WorldTransform>(),
+        ]
+    }
 }
 
 /// Hierarchy data collected from the world

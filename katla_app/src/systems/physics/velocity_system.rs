@@ -19,6 +19,13 @@ impl System for VelocitySystem {
             ComponentAccess::read::<VelocityComponent>(),
         ]
     }
+
+    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::write::<TransformComponent>(),
+            ComponentAccess::read::<VelocityComponent>(),
+        ]
+    }
 }
 
 #[cfg(test)]

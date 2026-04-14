@@ -116,6 +116,13 @@ impl System for AnimationUpdateSystem {
             ComponentAccess::write::<AnimationPlayer>(),
         ]
     }
+
+    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::read::<AnimatedModel>(),
+            ComponentAccess::write::<AnimationPlayer>(),
+        ]
+    }
 }
 
 pub struct MorphTargetSystem;
@@ -173,6 +180,14 @@ impl System for MorphTargetSystem {
     }
 
     fn component_access() -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::read::<AnimationPlayer>(),
+            ComponentAccess::read::<AnimatedModel>(),
+            ComponentAccess::write::<MorphTargetWeights>(),
+        ]
+    }
+
+    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
         vec![
             ComponentAccess::read::<AnimationPlayer>(),
             ComponentAccess::read::<AnimatedModel>(),
