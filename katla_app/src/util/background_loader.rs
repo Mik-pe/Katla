@@ -26,9 +26,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread::{self, JoinHandle};
 
 use log::{debug, warn};
+use rayon::ThreadPool;
 
 /// Unique identifier for load requests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -96,15 +96,15 @@ pub struct ThumbnailEntry {
 
 /// Background asset loader.
 ///
-/// Spawns a worker thread that processes load requests and returns
+/// Uses a rayon thread pool to process load requests and returns
 /// results via a channel. Call `poll()` each frame to check for completed loads.
 pub struct BackgroundLoader {
-    /// Sender for load requests to worker thread.
-    request_sender: Sender<LoadRequest>,
+    /// Rayon thread pool for background loading.
+    pool: ThreadPool,
     /// Receiver for completed load results.
     result_receiver: Receiver<LoadResult>,
-    /// Handle to worker thread (joined on drop).
-    _thread_handle: JoinHandle<()>,
+    /// Sender for load results (cloned into each pool task).
+    result_sender: Sender<LoadResult>,
     /// Paths currently being loaded.
     pending_loads: HashMap<LoadId, PathBuf>,
     /// Cache of loaded thumbnails by path.
@@ -114,31 +114,30 @@ pub struct BackgroundLoader {
 }
 
 impl BackgroundLoader {
-    /// Create a new background loader with a worker thread.
+    /// Create a new background loader with a rayon thread pool.
     pub fn new() -> Self {
-        let (request_tx, request_rx) = mpsc::channel::<LoadRequest>();
         let (result_tx, result_rx) = mpsc::channel::<LoadResult>();
 
-        // Spawn worker thread
-        let thread_handle = thread::spawn(move || {
-            Self::worker_thread(request_rx, result_tx);
-        });
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(2)
+            .thread_name(|idx| format!("bg-loader-{idx}"))
+            .build()
+            .expect("Failed to create background loader thread pool");
 
         Self {
-            request_sender: request_tx,
+            pool,
             result_receiver: result_rx,
-            _thread_handle: thread_handle,
+            result_sender: result_tx,
             pending_loads: HashMap::new(),
             thumbnail_cache: HashMap::new(),
             next_load_id: 1,
         }
     }
 
-    /// Worker thread that processes load requests.
-    fn worker_thread(request_rx: Receiver<LoadRequest>, result_tx: Sender<LoadResult>) {
-        debug!("Background loader thread started");
-
-        for request in request_rx {
+    /// Submit a single load request to the thread pool.
+    pub fn submit(&self, request: LoadRequest) {
+        let result_tx = self.result_sender.clone();
+        self.pool.spawn(move || {
             let result = match request {
                 LoadRequest::ImageThumbnail { id, path, max_size } => {
                     Self::load_image_thumbnail(id, &path, max_size)
@@ -152,12 +151,34 @@ impl BackgroundLoader {
             };
 
             if result_tx.send(result).is_err() {
-                debug!("Background loader thread: result channel closed, exiting");
-                break;
+                debug!("Background loader: result channel closed, dropping result");
             }
-        }
+        });
+    }
 
-        debug!("Background loader thread exiting");
+    /// Submit multiple load requests to the thread pool at once.
+    pub fn submit_batch(&self, requests: Vec<LoadRequest>) {
+        let result_tx = self.result_sender.clone();
+        for request in requests {
+            let tx = result_tx.clone();
+            self.pool.spawn(move || {
+                let result = match request {
+                    LoadRequest::ImageThumbnail { id, path, max_size } => {
+                        Self::load_image_thumbnail(id, &path, max_size)
+                    }
+                    LoadRequest::FullTexture {
+                        id,
+                        path,
+                        generate_mipmaps,
+                    } => Self::load_full_texture(id, &path, generate_mipmaps),
+                    LoadRequest::GltfModel { id, path } => Self::load_gltf_model(id, &path),
+                };
+
+                if tx.send(result).is_err() {
+                    debug!("Background loader: result channel closed, dropping result");
+                }
+            });
+        }
     }
 
     /// Load an image and resize it for thumbnail display.
@@ -297,10 +318,7 @@ impl BackgroundLoader {
         self.pending_loads.insert(id, path.clone());
 
         let request = LoadRequest::ImageThumbnail { id, path, max_size };
-
-        if let Err(e) = self.request_sender.send(request) {
-            warn!("Failed to send thumbnail request: {}", e);
-        }
+        self.submit(request);
 
         id
     }
@@ -319,10 +337,7 @@ impl BackgroundLoader {
             path,
             generate_mipmaps,
         };
-
-        if let Err(e) = self.request_sender.send(request) {
-            warn!("Failed to send full texture request: {}", e);
-        }
+        self.submit(request);
 
         id
     }
@@ -337,10 +352,7 @@ impl BackgroundLoader {
         self.pending_loads.insert(id, path.clone());
 
         let request = LoadRequest::GltfModel { id, path };
-
-        if let Err(e) = self.request_sender.send(request) {
-            warn!("Failed to send glTF model request: {}", e);
-        }
+        self.submit(request);
 
         id
     }

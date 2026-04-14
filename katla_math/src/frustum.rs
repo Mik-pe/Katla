@@ -1059,4 +1059,56 @@ mod tests {
             "Wide FOV should contain (0,0,-5)"
         );
     }
+
+    #[test]
+    fn test_frustum_culling_integration() {
+        // Camera at (0, 5, 10) looking at origin, 90 deg FOV
+        let frustum = Frustum::from_camera(
+            Vec3::new(0.0, 5.0, 10.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            16.0 / 9.0,
+            0.1,
+        );
+
+        let visible_extent = 0.5;
+        let visible_entities = [
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(3.0, 0.0, 0.0),
+            Vec3::new(-3.0, 0.0, 0.0),
+            Vec3::new(0.0, 3.0, 0.0),
+        ];
+
+        let hidden_entities = [
+            Vec3::new(0.0, 0.0, 20.0),
+            Vec3::new(50.0, 0.0, 0.0),
+            Vec3::new(-50.0, 0.0, 0.0),
+            Vec3::new(0.0, 50.0, 0.0),
+        ];
+
+        for pos in &visible_entities {
+            let aabb = AABB::from_min_max(
+                *pos - Vec3::new(visible_extent, visible_extent, visible_extent),
+                *pos + Vec3::new(visible_extent, visible_extent, visible_extent),
+            );
+            assert!(
+                frustum.intersects_aabb(&aabb),
+                "Entity at {:?} should be visible (inside frustum)",
+                pos
+            );
+        }
+
+        for pos in &hidden_entities {
+            let aabb = AABB::from_min_max(
+                *pos - Vec3::new(visible_extent, visible_extent, visible_extent),
+                *pos + Vec3::new(visible_extent, visible_extent, visible_extent),
+            );
+            assert!(
+                !frustum.intersects_aabb(&aabb),
+                "Entity at {:?} should be culled (outside frustum)",
+                pos
+            );
+        }
+    }
 }
