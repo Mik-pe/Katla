@@ -108,4 +108,11 @@ impl System for OrbitCameraSystem {
             ComponentAccess::write::<TransformComponent>(),
         ]
     }
+
+    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::write::<OrbitCameraControllerComponent>(),
+            ComponentAccess::write::<TransformComponent>(),
+        ]
+    }
 }

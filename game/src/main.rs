@@ -1,13 +1,10 @@
 use clap::Parser;
-use katla_app::animation::{AnimatedModel, AnimationPlayer, AnimationUpdateSystem};
+use katla_app::animation::AnimationUpdateSystem;
 use katla_app::application::ApplicationBuilder;
-use katla_app::components::{
-    DragComponent, OrbitCameraControllerComponent, Parent, TransformComponent, VelocityComponent,
-};
 use katla_app::systems::{
     OrbitCameraSystem, PhysicsSystem, TransformHierarchySystem, VelocitySystem,
 };
-use katla_ecs::{ComponentAccess, SystemExecutionOrder};
+use katla_ecs::SystemExecutionOrder;
 use log::info;
 
 /// Katla 3D Engine - Command line arguments
@@ -46,48 +43,18 @@ fn main() {
 
     // Build with conditional configuration
     let builder = ApplicationBuilder::new()
-        // Register systems with proper execution order and component access
-        .with_system_and_access(
+        // Register systems with proper execution order
+        .with_system(
             Box::new(TransformHierarchySystem::default()),
             SystemExecutionOrder::EARLY,
-            vec![
-                ComponentAccess::read::<TransformComponent>(),
-                ComponentAccess::read::<Parent>(),
-            ],
         )
-        .with_system_and_access(
+        .with_system(
             Box::new(AnimationUpdateSystem),
             SystemExecutionOrder::NORMAL,
-            vec![
-                ComponentAccess::read::<AnimatedModel>(),
-                ComponentAccess::write::<AnimationPlayer>(),
-            ],
         )
-        .with_system_and_access(
-            Box::new(OrbitCameraSystem),
-            SystemExecutionOrder::NORMAL,
-            vec![
-                ComponentAccess::write::<OrbitCameraControllerComponent>(),
-                ComponentAccess::write::<TransformComponent>(),
-            ],
-        )
-        .with_system_and_access(
-            Box::new(PhysicsSystem),
-            SystemExecutionOrder::NORMAL,
-            vec![
-                ComponentAccess::read::<VelocityComponent>(),
-                ComponentAccess::read::<DragComponent>(),
-                ComponentAccess::write::<VelocityComponent>(),
-            ],
-        )
-        .with_system_and_access(
-            Box::new(VelocitySystem),
-            SystemExecutionOrder::LATE,
-            vec![
-                ComponentAccess::write::<TransformComponent>(),
-                ComponentAccess::read::<VelocityComponent>(),
-            ],
-        );
+        .with_system(Box::new(OrbitCameraSystem), SystemExecutionOrder::NORMAL)
+        .with_system(Box::new(PhysicsSystem), SystemExecutionOrder::NORMAL)
+        .with_system(Box::new(VelocitySystem), SystemExecutionOrder::LATE);
 
     let result = if args.single_frame {
         builder

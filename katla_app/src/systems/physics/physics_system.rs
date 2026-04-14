@@ -90,6 +90,16 @@ impl System for PhysicsSystem {
             ComponentAccess::write::<VelocityComponent>(),
         ]
     }
+
+    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::read::<VelocityComponent>(),
+            ComponentAccess::read::<DragComponent>(),
+            ComponentAccess::write::<ForceComponent>(),
+            ComponentAccess::read::<MassComponent>(),
+            ComponentAccess::write::<VelocityComponent>(),
+        ]
+    }
 }
 
 #[cfg(test)]

@@ -76,11 +76,50 @@ pub trait System {
 
     /// Returns the component access patterns for this system.
     ///
-    /// Used for parallel scheduling to detect conflicts between systems.
+    /// Override this to declare which components your system reads or writes.
+    /// Used by the parallel scheduler to detect conflicts and run independent
+    /// systems concurrently.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use katla_ecs::{System, World, ComponentAccess, SystemExecutionOrder};
+    /// use katla_ecs::Component;
+    ///
+    /// #[derive(Component)]
+    /// struct Position { x: f32, y: f32 }
+    ///
+    /// #[derive(Component)]
+    /// struct Velocity { dx: f32, dy: f32 }
+    ///
+    /// struct MovementSystem;
+    ///
+    /// impl System for MovementSystem {
+    ///     fn update(&mut self, world: &mut World, dt: f32) { /* ... */ }
+    ///
+    ///     fn component_access() -> Vec<ComponentAccess>
+    ///     where Self: Sized
+    ///     {
+    ///         vec![
+    ///             ComponentAccess::write::<Position>(),
+    ///             ComponentAccess::read::<Velocity>(),
+    ///         ]
+    ///     }
+    /// }
+    /// ```
     fn component_access() -> Vec<ComponentAccess>
     where
         Self: Sized,
     {
+        Vec::new()
+    }
+
+    /// Trait-object-compatible version of [`component_access`](System::component_access).
+    ///
+    /// Returns the access patterns for this system. Concrete types that override
+    /// `component_access()` should also override this to return the same value.
+    /// The default returns an empty vec (no declared access = no parallelism).
+    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
         Vec::new()
     }
 }
@@ -118,18 +157,6 @@ impl OrderedSystem {
             system,
             order,
             access_patterns: Vec::new(),
-        }
-    }
-
-    pub fn new_with_access(
-        system: Box<dyn System>,
-        order: SystemExecutionOrder,
-        access: Vec<ComponentAccess>,
-    ) -> Self {
-        Self {
-            system,
-            order,
-            access_patterns: access,
         }
     }
 }

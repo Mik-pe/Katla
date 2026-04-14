@@ -114,4 +114,13 @@ impl System for FlyCameraLookSystem {
             ComponentAccess::write::<VelocityComponent>(),
         ]
     }
+
+    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
+        vec![
+            ComponentAccess::read::<FlyCameraControllerComponent>(),
+            ComponentAccess::write::<FlyCameraLookComponent>(),
+            ComponentAccess::write::<crate::components::TransformComponent>(),
+            ComponentAccess::write::<ForceComponent>(),
+        ]
+    }
 }
