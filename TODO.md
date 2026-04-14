@@ -83,7 +83,7 @@
   - [x] 176c. Write failing tests for `AABB::transform` — verify that axis-aligned bounding boxes are correctly transformed by translation, rotation, and scale matrices, producing a new AABB that encloses the rotated box. (small, low risk) — Done in a3777cb. 8 tests, all pass.
   - [x] 176d. Audit and verify `DrawableComponent::bounds` — check that primitive spawn functions (cube, sphere, plane, etc.) set correct local-space AABBs. A cube at origin with half-extents should have an AABB that matches the mesh geometry. (small, low risk) — Done in a3777cb. All 5 primitives correct. spawn_gltf_model and Spawner trait missing bounds (non-critical).
   - [x] 176e. Investigate and fix based on test findings — likely culprits: plane extraction sign convention mismatch with reverse-Z projection, AABB transform not accounting for rotation correctly, or local bounds set to zero/wrong values on spawn. (medium, low risk) — Done in a3777cb. Fixed from_projection_view_matrix to extract rows instead of columns (Gribb-Hartmann method). AABB transform and local bounds were already correct.
-  - [ ] 176f. Add integration test — spawn entities at known positions relative to camera, verify culling matches expectation (visible entities drawn, off-screen entities culled). (small, low risk)
+  - [x] 176f. Add integration test — spawn entities at known positions relative to camera, verify culling matches expectation (visible entities drawn, off-screen entities culled). (small, low risk) — Done in 2d1b1ec. 4 visible + 4 hidden entities tested against camera at (0,5,10).
   - **Recommended order:** 176a → 176b → 176c → 176d → 176e → 176f
 - **Severity:** HIGH
 
@@ -1127,10 +1127,10 @@ These items identify code that currently lives in katla_app but is generic enoug
     - [x] 171a1. Add `LoadRequest::FullTexture { id, path, generate_mipmaps }` — Done in ca63da4
     - [x] 171a2. Add `LoadRequest::GltfModel { id, path }` — Done in ca63da4
     - [x] 171a3. Add corresponding `LoadResult` variants — Done in ca63da4. FullTextureLoaded { id, width, height, mip_levels, pixels }, GltfModelLoaded { id, path }.
-  - [ ] 171b. Add worker thread pool (rayon or dedicated threads) — replace single background thread with a `rayon::ThreadPool`. (medium, low risk)
-    - [ ] 171b1. Replace `std::thread::spawn` with rayon pool — update `BackgroundLoader::new()` to create a `rayon::ThreadPoolBuilder::new().num_threads(2).build()`. Keep the mpsc channel for results. (small, low risk)
-    - [ ] 171b2. Update `submit()` to dispatch via pool — `self.pool.spawn(move || { ... })` instead of spawning a new thread per request. (small, low risk)
-    - [ ] 171b3. Support batch submission — `submit_batch(requests: Vec<LoadRequest>)` that dispatches all to the pool at once. (small, low risk)
+  - [x] 171b. Add worker thread pool (rayon or dedicated threads) — replace single background thread with a `rayon::ThreadPool`. (medium, low risk) — Done in 2d1b1ec. ThreadPool with 2 threads, submit_batch added.
+    - [x] 171b1. Replace `std::thread::spawn` with rayon pool — update `BackgroundLoader::new()` to create a `rayon::ThreadPoolBuilder::new().num_threads(2).build()`. Keep the mpsc channel for results. (small, low risk) — Done in 2d1b1ec.
+    - [x] 171b2. Update `submit()` to dispatch via pool — `self.pool.spawn(move || { ... })` instead of spawning a new thread per request. (small, low risk) — Done in 2d1b1ec.
+    - [x] 171b3. Support batch submission — `submit_batch(requests: Vec<LoadRequest>)` that dispatches all to the pool at once. (small, low risk) — Done in 2d1b1ec.
   - [ ] 171c. Off-thread glTF model loading — move model parsing to worker threads. (large, medium risk)
     - [ ] 171c1. Implement glTF parsing on worker thread — `gltf::import(path)` on worker, extract meshes/primitives/nodes/materials. No GPU calls. (medium, medium risk)
     - [ ] 171c2. Build vertex/index buffers on worker — construct `Vec<u8>` vertex data and `Vec<u32>` index data from parsed glTF primitives. CPU-only work. (medium, low risk)
@@ -1174,7 +1174,7 @@ These items identify code that currently lives in katla_app but is generic enoug
 - **Crates:** all
 - **Issue:** Evaluate Katla from the perspective of a new user who doesn't know the codebase — someone looking for a game engine and trying to determine if Katla is a good fit. They need to answer practical questions like "how do I make a game?", "how do I render stuff?", "how do I add physics/audio/input?", "where's the documentation?". This audit should identify gaps in usability, documentation, onboarding, and feature completeness that would block or confuse a new user.
 - **Sub-tasks:**
-  - [ ] 175a. Audit README and top-level docs — evaluate whether README answers: what is this, how to build, how to run, what's the architecture, where to start reading code. Check docs/ for completeness. (small, low risk)
+  - [x] 175a. Audit README and top-level docs — evaluate whether README answers: what is this, how to build, how to run, what's the architecture, where to start reading code. Check docs/ for completeness. (small, low risk) — Audit complete. README lacks architecture overview, prerequisites, "where to start" section. 3/6 crates missing module docs. katla_gfx has excellent docs.
   - [ ] 175b. Audit crate-level documentation — check if each crate's `lib.rs` has `//!` module docs explaining its purpose, public API, and usage patterns. A new user should understand each crate from its docs alone. (small, low risk)
   - [ ] 175c. Audit public API surface — check that `pub` items have `///` doc comments. Identify `pub` items that should be `pub(crate)` (per AGENTS.md: prefer pub(crate) until proven public). (small, low risk)
   - [ ] 175d. Check for examples and quickstart — verify `cargo run --example` examples exist and work. Identify missing examples (e.g., minimal scene setup, custom component + system, loading a model). (small, low risk)
