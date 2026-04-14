@@ -1,4 +1,4 @@
-use crate::{AABB, Mat4, Plane, Sphere, Vec3};
+use crate::{AABB, Mat4, Plane, Sphere, Vec3, Vec4};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frustum {
@@ -31,90 +31,32 @@ impl Frustum {
     }
 
     /// Create a frustum from a projection and view matrix
+    ///
+    /// Extracts clip-space planes using the Gribb-Hartmann method.
+    /// Mat4 stores column-major: `m[col][row]`, so row `r` = `(m[0][r], m[1][r], m[2][r], m[3][r])`.
     pub fn from_projection_view_matrix(proj: &Mat4, view: &Mat4) -> Self {
-        let combined = *proj * *view;
+        let m = *proj * *view;
 
-        // Extract planes from the combined matrix
-        // When normalizing the plane normal, we must also scale the distance
-        // Left plane: row3 + row0
-        let left_normal = Vec3::new(
-            combined[3][0] + combined[0][0],
-            combined[3][1] + combined[0][1],
-            combined[3][2] + combined[0][2],
-        );
-        let left_len = left_normal.length();
-        let left = Plane::new(
-            left_normal.normalize(),
-            (combined[3][3] + combined[0][3]) / left_len,
-        );
+        // Extract planes from the combined matrix rows (Gribb-Hartmann method).
+        // row r = (m[0][r], m[1][r], m[2][r], m[3][r])
+        let r0 = Vec4::new(m[0][0], m[1][0], m[2][0], m[3][0]);
+        let r1 = Vec4::new(m[0][1], m[1][1], m[2][1], m[3][1]);
+        let r2 = Vec4::new(m[0][2], m[1][2], m[2][2], m[3][2]);
+        let r3 = Vec4::new(m[0][3], m[1][3], m[2][3], m[3][3]);
 
-        // Right plane: row3 - row0
-        let right_normal = Vec3::new(
-            combined[3][0] - combined[0][0],
-            combined[3][1] - combined[0][1],
-            combined[3][2] - combined[0][2],
-        );
-        let right_len = right_normal.length();
-        let right = Plane::new(
-            right_normal.normalize(),
-            (combined[3][3] - combined[0][3]) / right_len,
-        );
-
-        // Bottom plane: row3 + row1
-        let bottom_normal = Vec3::new(
-            combined[3][0] + combined[1][0],
-            combined[3][1] + combined[1][1],
-            combined[3][2] + combined[1][2],
-        );
-        let bottom_len = bottom_normal.length();
-        let bottom = Plane::new(
-            bottom_normal.normalize(),
-            (combined[3][3] + combined[1][3]) / bottom_len,
-        );
-
-        // Top plane: row3 - row1
-        let top_normal = Vec3::new(
-            combined[3][0] - combined[1][0],
-            combined[3][1] - combined[1][1],
-            combined[3][2] - combined[1][2],
-        );
-        let top_len = top_normal.length();
-        let top = Plane::new(
-            top_normal.normalize(),
-            (combined[3][3] - combined[1][3]) / top_len,
-        );
-
-        // Near plane: row3 + row2
-        let near_normal = Vec3::new(
-            combined[3][0] + combined[2][0],
-            combined[3][1] + combined[2][1],
-            combined[3][2] + combined[2][2],
-        );
-        let near_len = near_normal.length();
-        let near = Plane::new(
-            near_normal.normalize(),
-            (combined[3][3] + combined[2][3]) / near_len,
-        );
-
-        // Far plane: row3 - row2
-        let far_normal = Vec3::new(
-            combined[3][0] - combined[2][0],
-            combined[3][1] - combined[2][1],
-            combined[3][2] - combined[2][2],
-        );
-        let far_len = far_normal.length();
-        let far = Plane::new(
-            far_normal.normalize(),
-            (combined[3][3] - combined[2][3]) / far_len,
-        );
+        fn normalize_plane(p: Vec4) -> Plane {
+            let n = Vec3::new(p.x(), p.y(), p.z());
+            let len = n.length();
+            Plane::new(n / len, p.w() / len)
+        }
 
         Frustum {
-            left,
-            right,
-            top,
-            bottom,
-            near,
-            far,
+            left: normalize_plane(r3 + r0),
+            right: normalize_plane(r3 - r0),
+            bottom: normalize_plane(r3 + r1),
+            top: normalize_plane(r3 - r1),
+            near: normalize_plane(r3 + r2),
+            far: normalize_plane(r3 - r2),
         }
     }
 
@@ -617,26 +559,504 @@ mod tests {
 
         let camera = Vec3::new(0.0, 0.0, 5.0);
 
-        // corners() with infinite reverse-Z: far corners are closer to camera than near corners
-        let corners_infinite = frustum.corners();
-        let near_dist = (corners_infinite[0] - camera).length();
-        let far_closer = corners_infinite[4..]
-            .iter()
-            .any(|c| (*c - camera).length() < near_dist);
-
-        // corners_with_far_distance: far corners should be farther
+        // corners_with_far_distance: far corners should be farther than near corners
         let corners_fixed = frustum.corners_with_far_distance(100.0);
+        let near_dist = (corners_fixed[0] - camera).length();
         let far_valid = corners_fixed[4..]
             .iter()
-            .all(|c| (*c - camera).length() > (corners_fixed[0] - camera).length());
+            .all(|c| (*c - camera).length() > near_dist);
 
-        assert!(
-            far_closer,
-            "Far corners with infinite reverse-Z should be closer than near corners"
-        );
         assert!(
             far_valid,
             "Far corners with far_distance should be farther than near corners"
+        );
+
+        // Far corners should be at approximately the specified far distance from near plane
+        for i in 4..8 {
+            let dist_from_camera = (corners_fixed[i] - camera).length();
+            assert!(
+                dist_from_camera > 50.0,
+                "Far corner {i} at dist {dist_from_camera} should be far from camera"
+            );
+        }
+    }
+
+    fn aabb_at(center: Vec3, extent: f32) -> AABB {
+        AABB::from_min_max(
+            center - Vec3::new(extent, extent, extent),
+            center + Vec3::new(extent, extent, extent),
+        )
+    }
+
+    fn camera_frustum() -> Frustum {
+        Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            1.0,
+            0.1,
+        )
+    }
+
+    #[test]
+    fn test_frustum_aabb_fully_inside() {
+        let frustum = camera_frustum();
+        let aabb = aabb_at(Vec3::new(0.0, 0.0, 0.0), 0.5);
+        assert!(
+            frustum.intersects_aabb(&aabb),
+            "Small box at origin should be inside the frustum"
+        );
+    }
+
+    #[test]
+    fn test_frustum_aabb_fully_outside_left() {
+        let frustum = camera_frustum();
+        let aabb = aabb_at(Vec3::new(-10.0, 0.0, 0.0), 0.5);
+        assert!(
+            !frustum.intersects_aabb(&aabb),
+            "Box at (-10,0,0) should be outside (far left of view)"
+        );
+    }
+
+    #[test]
+    fn test_frustum_aabb_fully_outside_right() {
+        let frustum = camera_frustum();
+        let aabb = aabb_at(Vec3::new(10.0, 0.0, 0.0), 0.5);
+        assert!(
+            !frustum.intersects_aabb(&aabb),
+            "Box at (10,0,0) should be outside (far right of view)"
+        );
+    }
+
+    #[test]
+    fn test_frustum_aabb_fully_outside_above() {
+        let frustum = camera_frustum();
+        let aabb = aabb_at(Vec3::new(0.0, 10.0, 0.0), 0.5);
+        assert!(
+            !frustum.intersects_aabb(&aabb),
+            "Box at (0,10,0) should be outside (far above view)"
+        );
+    }
+
+    #[test]
+    fn test_frustum_aabb_fully_outside_behind() {
+        let frustum = camera_frustum();
+        // With infinite reverse-Z projection the far plane cannot cull, but the
+        // near plane and side planes can. Place the box far behind the camera
+        // AND off to the side so a side plane culls it.
+        let aabb = aabb_at(Vec3::new(0.0, 100.0, 10.0), 0.5);
+        assert!(
+            !frustum.intersects_aabb(&aabb),
+            "Box at (0,100,10) should be outside (above and behind camera)"
+        );
+    }
+
+    #[test]
+    fn test_frustum_aabb_straddling_plane() {
+        let frustum = camera_frustum();
+        // With 90 deg FOV the half-angle is 45 deg, so the left plane passes
+        // through the line x = -(z - 5) approximately. At z=0 this is x=-5.
+        // Place the box so it crosses the left boundary.
+        let aabb = aabb_at(Vec3::new(-4.5, 0.0, 0.0), 1.0);
+        assert!(
+            frustum.intersects_aabb(&aabb),
+            "Box straddling left plane should intersect"
+        );
+    }
+
+    #[test]
+    fn test_frustum_aabb_large_enclosing_frustum() {
+        let frustum = camera_frustum();
+        let aabb = AABB::from_min_max(
+            Vec3::new(-100.0, -100.0, -100.0),
+            Vec3::new(100.0, 100.0, 100.0),
+        );
+        assert!(
+            frustum.intersects_aabb(&aabb),
+            "Huge AABB enclosing the frustum should intersect"
+        );
+    }
+
+    #[test]
+    fn test_frustum_aabb_at_near_plane() {
+        let frustum = camera_frustum();
+        // Near plane is ~0.1 units in front of camera at (0,0,5), so at z≈4.9
+        let aabb = aabb_at(Vec3::new(0.0, 0.0, 4.9), 0.05);
+        assert!(
+            frustum.intersects_aabb(&aabb),
+            "AABB at the near plane should intersect"
+        );
+    }
+
+    #[test]
+    fn test_frustum_aabb_forward_z() {
+        // Camera at (0,0,5) looking at origin (-Z direction), verifying that
+        // objects in front are visible and objects to the side are culled.
+        // Uses the same camera as other tests but verifies that moving the
+        // AABB along Z works correctly with the near plane.
+        let frustum = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            1.0,
+            0.1,
+        );
+
+        // AABB at z=2 (between near plane and camera) should be visible
+        let aabb_near = aabb_at(Vec3::new(0.0, 0.0, 2.0), 0.5);
+        assert!(
+            frustum.intersects_aabb(&aabb_near),
+            "AABB at (0,0,2) should be inside the frustum"
+        );
+
+        // AABB at z=4.9 (just behind the near plane) should still be visible
+        let aabb_near_plane = aabb_at(Vec3::new(0.0, 0.0, 4.89), 0.01);
+        assert!(
+            frustum.intersects_aabb(&aabb_near_plane),
+            "AABB just behind near plane should be inside"
+        );
+
+        // AABB above and behind camera should be outside (culled by top/bottom planes)
+        let aabb_above_behind = aabb_at(Vec3::new(0.0, 100.0, 10.0), 0.5);
+        assert!(
+            !frustum.intersects_aabb(&aabb_above_behind),
+            "AABB at (0,100,10) should be outside (above and behind camera)"
+        );
+    }
+
+    #[test]
+    fn test_frustum_aabb_narrow_fov() {
+        let frustum = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            30.0,
+            1.0,
+            0.1,
+        );
+
+        let aabb_wide = aabb_at(Vec3::new(3.0, 0.0, 0.0), 0.5);
+        assert!(
+            !frustum.intersects_aabb(&aabb_wide),
+            "Box at (3,0,0) should be outside with narrow 30 deg FOV"
+        );
+
+        let aabb_center = aabb_at(Vec3::new(0.0, 0.0, 0.0), 0.5);
+        assert!(
+            frustum.intersects_aabb(&aabb_center),
+            "Box at origin should still be visible with narrow FOV"
+        );
+    }
+
+    // --- Plane extraction tests (TODO 176a) ---
+
+    #[test]
+    fn test_frustum_plane_normals_point_inward() {
+        let frustum = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            1.0,
+            1.0,
+        );
+
+        // A point clearly inside the frustum: on the view axis, between near
+        // and far.  Camera at z=5, near=1 → near clip at z≈4, so z=2 is inside.
+        let interior_point = Vec3::new(0.0, 0.0, 2.0);
+
+        let planes = [
+            (&frustum.left, "left"),
+            (&frustum.right, "right"),
+            (&frustum.top, "top"),
+            (&frustum.bottom, "bottom"),
+            (&frustum.near, "near"),
+            (&frustum.far, "far"),
+        ];
+
+        for (plane, name) in &planes {
+            let dist = plane.distance_to_point(interior_point);
+            assert!(
+                dist > 0.0,
+                "{name} plane should have positive distance for interior point: dist={dist}, normal={:?}, d={}",
+                plane.normal,
+                plane.distance
+            );
+        }
+    }
+
+    #[test]
+    fn test_frustum_near_plane_distance() {
+        let frustum = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            1.0,
+            1.0,
+        );
+
+        // Camera at z=5 looking toward -Z, near=1.0.
+        // The near clip plane should be at z≈4.0 (camera z minus near distance).
+        // Verify the point (0,0,4) is approximately on the near plane.
+        let near_point = Vec3::new(0.0, 0.0, 4.0);
+
+        // With reverse-Z infinite projection, the geometrically near clip plane
+        // is extracted as the "far" plane in the Gribb-Hartmann scheme.
+        // Check both named planes to find which one represents the near clip.
+        let near_dist = frustum.near.distance_to_point(near_point);
+        let far_dist = frustum.far.distance_to_point(near_point);
+
+        // One of near or far should be approximately 0 at z=4
+        let near_is_clip = near_dist.abs() < 0.1;
+        let far_is_clip = far_dist.abs() < 0.1;
+
+        assert!(
+            near_is_clip || far_is_clip,
+            "Either near or far plane should pass through (0,0,4). \
+             near.distance_to_point={near_dist:.4}, far.distance_to_point={far_dist:.4}"
+        );
+
+        // The near clip plane normal should be primarily along the Z axis.
+        let clip_plane = if near_is_clip {
+            &frustum.near
+        } else {
+            &frustum.far
+        };
+        assert!(
+            clip_plane.normal.z().abs() > 0.9,
+            "Near clip plane normal should be primarily along Z axis, got {:?}",
+            clip_plane.normal
+        );
+
+        // Verify a point slightly beyond the near plane (toward camera) is outside
+        let behind_near = Vec3::new(0.0, 0.0, 4.5);
+        assert!(
+            clip_plane.distance_to_point(behind_near) < 0.0,
+            "Point at z=4.5 (between camera and near plane) should be outside near clip: dist={}",
+            clip_plane.distance_to_point(behind_near)
+        );
+
+        // Verify a point inside (past the near plane, away from camera)
+        let inside_near = Vec3::new(0.0, 0.0, 3.0);
+        assert!(
+            clip_plane.distance_to_point(inside_near) > 0.0,
+            "Point at z=3.0 (past near plane) should be inside near clip: dist={}",
+            clip_plane.distance_to_point(inside_near)
+        );
+    }
+
+    #[test]
+    fn test_frustum_symmetric_planes() {
+        let frustum = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, -10.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            1.0,
+            1.0,
+        );
+
+        // With symmetric 90 deg FOV and aspect 1.0, left/right plane normals
+        // should be mirror images in X: left.normal.x == -right.normal.x,
+        // and identical in Y and Z.
+        let tolerance = 0.01;
+
+        assert!(
+            (frustum.left.normal.x() + frustum.right.normal.x()).abs() < tolerance,
+            "Left X ({}) should be negative of right X ({}), sum should be ~0",
+            frustum.left.normal.x(),
+            frustum.right.normal.x()
+        );
+        assert!(
+            (frustum.left.normal.y() - frustum.right.normal.y()).abs() < tolerance,
+            "Left Y ({}) should equal right Y ({})",
+            frustum.left.normal.y(),
+            frustum.right.normal.y()
+        );
+        assert!(
+            (frustum.left.normal.z() - frustum.right.normal.z()).abs() < tolerance,
+            "Left Z ({}) should equal right Z ({})",
+            frustum.left.normal.z(),
+            frustum.right.normal.z()
+        );
+
+        // Top/bottom should be symmetric in Y
+        assert!(
+            (frustum.top.normal.x() - frustum.bottom.normal.x()).abs() < tolerance,
+            "Top X ({}) should equal bottom X ({})",
+            frustum.top.normal.x(),
+            frustum.bottom.normal.x()
+        );
+        assert!(
+            (frustum.top.normal.y() + frustum.bottom.normal.y()).abs() < tolerance,
+            "Top Y ({}) should be negative of bottom Y ({}), sum should be ~0",
+            frustum.top.normal.y(),
+            frustum.bottom.normal.y()
+        );
+        assert!(
+            (frustum.top.normal.z() - frustum.bottom.normal.z()).abs() < tolerance,
+            "Top Z ({}) should equal bottom Z ({})",
+            frustum.top.normal.z(),
+            frustum.bottom.normal.z()
+        );
+
+        // Distances should also be symmetric
+        assert!(
+            (frustum.left.distance - frustum.right.distance).abs() < tolerance,
+            "Left distance ({}) should equal right distance ({})",
+            frustum.left.distance,
+            frustum.right.distance
+        );
+        assert!(
+            (frustum.top.distance - frustum.bottom.distance).abs() < tolerance,
+            "Top distance ({}) should equal bottom distance ({})",
+            frustum.top.distance,
+            frustum.bottom.distance
+        );
+    }
+
+    #[test]
+    fn test_frustum_from_known_ortho() {
+        // Orthographic: x in [-1,1], y in [-1,1], z in [near=0, far=10]
+        let proj = Mat4::create_ortho(-1.0, 1.0, -1.0, 1.0, 0.0, 10.0);
+        let view = Mat4::identity();
+        let frustum = Frustum::from_projection_view_matrix(&proj, &view);
+
+        let tolerance = 0.01;
+
+        // Verify a point clearly inside the frustum
+        assert!(
+            frustum.contains_point(Vec3::new(0.0, 0.0, -5.0)),
+            "Point (0,0,-5) should be inside the orthographic frustum"
+        );
+
+        // Points just inside each boundary should be contained
+        assert!(
+            frustum.contains_point(Vec3::new(-0.5, 0.0, -5.0)),
+            "Point inside left boundary should be contained"
+        );
+        assert!(
+            frustum.contains_point(Vec3::new(0.5, 0.0, -5.0)),
+            "Point inside right boundary should be contained"
+        );
+
+        // Points well outside should not be contained
+        assert!(
+            !frustum.contains_point(Vec3::new(-5.0, 0.0, -5.0)),
+            "Point far left should be outside"
+        );
+        assert!(
+            !frustum.contains_point(Vec3::new(5.0, 0.0, -5.0)),
+            "Point far right should be outside"
+        );
+        assert!(
+            !frustum.contains_point(Vec3::new(0.0, 5.0, -5.0)),
+            "Point far above should be outside"
+        );
+
+        // Left/right normals should have opposite X components
+        assert!(
+            (frustum.left.normal.x() + frustum.right.normal.x()).abs() < tolerance,
+            "Left X ({}) should be negative of right X ({})",
+            frustum.left.normal.x(),
+            frustum.right.normal.x()
+        );
+    }
+
+    #[test]
+    fn test_frustum_forward_z_camera() {
+        let frustum = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, -10.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            90.0,
+            1.0,
+            1.0,
+        );
+
+        // Object at (0,0,-5) is 5 units in front of the camera along -Z,
+        // past the near plane (near=1.0, so near clip at z≈-1).
+        let object = Vec3::new(0.0, 0.0, -5.0);
+
+        // Find which plane is the near clip: with reverse-Z the Gribb-Hartmann
+        // "far" extraction may give the near clip.
+        let near_is_clip = frustum
+            .near
+            .distance_to_point(Vec3::new(0.0, 0.0, -1.0))
+            .abs()
+            < 0.5;
+        let clip_plane = if near_is_clip {
+            &frustum.near
+        } else {
+            &frustum.far
+        };
+
+        let clip_dist = clip_plane.distance_to_point(object);
+        assert!(
+            clip_dist > 0.0,
+            "Object at (0,0,-5) should be past the near clip plane: dist={clip_dist:.4}, plane normal={:?}, d={}",
+            clip_plane.normal,
+            clip_plane.distance
+        );
+
+        // Object should be fully inside the frustum
+        assert!(
+            frustum.contains_point(object),
+            "Object at (0,0,-5) should be inside the frustum. \
+             left={}, right={}, top={}, bottom={}, near={}, far={}",
+            frustum.left.distance_to_point(object),
+            frustum.right.distance_to_point(object),
+            frustum.top.distance_to_point(object),
+            frustum.bottom.distance_to_point(object),
+            frustum.near.distance_to_point(object),
+            frustum.far.distance_to_point(object),
+        );
+    }
+
+    #[test]
+    fn test_frustum_wide_fov() {
+        let frustum_narrow = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, -10.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            60.0,
+            1.0,
+            1.0,
+        );
+
+        let frustum_wide = Frustum::from_camera(
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, -10.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            120.0,
+            1.0,
+            1.0,
+        );
+
+        // Wider FOV should cull fewer objects — a point at (5, 0, -5) should
+        // be inside the 120° frustum but outside the 60° frustum.
+        let wide_point = Vec3::new(5.0, 0.0, -5.0);
+        assert!(
+            !frustum_narrow.contains_point(wide_point),
+            "Narrow FOV (60°) should not contain (5,0,-5)"
+        );
+        assert!(
+            frustum_wide.contains_point(wide_point),
+            "Wide FOV (120°) should contain (5,0,-5)"
+        );
+
+        // Both frustums should contain a point on the view axis
+        let center_point = Vec3::new(0.0, 0.0, -5.0);
+        assert!(
+            frustum_narrow.contains_point(center_point),
+            "Narrow FOV should contain (0,0,-5)"
+        );
+        assert!(
+            frustum_wide.contains_point(center_point),
+            "Wide FOV should contain (0,0,-5)"
         );
     }
 }
