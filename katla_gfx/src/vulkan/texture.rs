@@ -1,7 +1,7 @@
 use super::context::VulkanContext;
 use crate::barrier::ImageBarrier;
 use crate::sync::{VkDescriptorSet, VkImage, VkImageView, VkSampler};
-use crate::texture::ImageFormat;
+use crate::texture::{ImageFormat, TextureUsage};
 use crate::vulkan::context::VulkanFrameCtx;
 
 use std::mem::ManuallyDrop;
@@ -118,6 +118,7 @@ impl Texture {
             width,
             height,
             ImageFormat::R8G8B8A8Srgb,
+            crate::texture::TextureUsage::default(),
             &rgba_data,
         )
     }
@@ -141,6 +142,7 @@ impl Texture {
             desc.width,
             desc.height,
             desc.format,
+            desc.usage,
             pixel_data,
         )
     }
@@ -150,6 +152,7 @@ impl Texture {
         width: u32,
         height: u32,
         format: ImageFormat,
+        usage: crate::texture::TextureUsage,
         pixel_data: &[u8],
     ) -> Self {
         let extent = vk::Extent3D {
@@ -161,6 +164,17 @@ impl Texture {
         // Convert ImageFormat to vk::Format for internal use
         let vk_format: ash::vk::Format = format.into();
 
+        let mut vk_usage = vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED;
+        if usage.contains(crate::texture::TextureUsage::STORAGE) {
+            vk_usage |= vk::ImageUsageFlags::STORAGE;
+        }
+        if usage.contains(crate::texture::TextureUsage::COLOR_ATTACHMENT) {
+            vk_usage |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
+        }
+        if usage.contains(crate::texture::TextureUsage::DEPTH_STENCIL_ATTACHMENT) {
+            vk_usage |= vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
+        }
+
         //Create the image memory gpu_only:
         let create_info = vk::ImageCreateInfo::default()
             .extent(extent)
@@ -168,7 +182,7 @@ impl Texture {
             .mip_levels(1)
             .array_layers(1)
             .format(vk_format)
-            .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
+            .usage(vk_usage)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .tiling(vk::ImageTiling::OPTIMAL)
             .samples(vk::SampleCountFlags::TYPE_1)
@@ -497,7 +511,14 @@ impl Texture {
     pub fn create_default_albedo(context: Rc<VulkanContext>) -> Self {
         // White pixel: RGBA (255, 255, 255, 255)
         let pixel_data: [u8; 4] = [255, 255, 255, 255];
-        Self::create_image(context, 1, 1, ImageFormat::R8G8B8A8Srgb, &pixel_data)
+        Self::create_image(
+            context,
+            1,
+            1,
+            ImageFormat::R8G8B8A8Srgb,
+            TextureUsage::default(),
+            &pixel_data,
+        )
     }
 
     /// Create a default normal map (flat normal 1x1).
@@ -507,7 +528,14 @@ impl Texture {
     pub fn create_default_normal(context: Rc<VulkanContext>) -> Self {
         // Flat normal: RGB (128, 128, 255) = tangent-space Z-up normal
         let pixel_data: [u8; 4] = [128, 128, 255, 255];
-        Self::create_image(context, 1, 1, ImageFormat::R8G8B8A8Unorm, &pixel_data)
+        Self::create_image(
+            context,
+            1,
+            1,
+            ImageFormat::R8G8B8A8Unorm,
+            TextureUsage::default(),
+            &pixel_data,
+        )
     }
 
     /// Create a default metallic/roughness texture.
@@ -517,7 +545,14 @@ impl Texture {
     pub fn create_default_metallic_roughness(context: Rc<VulkanContext>) -> Self {
         // White: G=1, B=1 - material params multiply with 1.0
         let pixel_data: [u8; 4] = [255, 255, 255, 255];
-        Self::create_image(context, 1, 1, ImageFormat::R8G8B8A8Unorm, &pixel_data)
+        Self::create_image(
+            context,
+            1,
+            1,
+            ImageFormat::R8G8B8A8Unorm,
+            TextureUsage::default(),
+            &pixel_data,
+        )
     }
 
     /// Create a default occlusion texture (white 1x1).
@@ -526,7 +561,14 @@ impl Texture {
     pub fn create_default_occlusion(context: Rc<VulkanContext>) -> Self {
         // White pixel: full visibility
         let pixel_data: [u8; 4] = [255, 255, 255, 255];
-        Self::create_image(context, 1, 1, ImageFormat::R8G8B8A8Unorm, &pixel_data)
+        Self::create_image(
+            context,
+            1,
+            1,
+            ImageFormat::R8G8B8A8Unorm,
+            TextureUsage::default(),
+            &pixel_data,
+        )
     }
 
     /// Create a default emission texture (black 1x1).
@@ -535,7 +577,14 @@ impl Texture {
     pub fn create_default_emission(context: Rc<VulkanContext>) -> Self {
         // Black pixel: no emission
         let pixel_data: [u8; 4] = [0, 0, 0, 255];
-        Self::create_image(context, 1, 1, ImageFormat::R8G8B8A8Unorm, &pixel_data)
+        Self::create_image(
+            context,
+            1,
+            1,
+            ImageFormat::R8G8B8A8Unorm,
+            TextureUsage::default(),
+            &pixel_data,
+        )
     }
 
     /// Get the image view for this texture.

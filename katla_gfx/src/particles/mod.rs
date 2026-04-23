@@ -49,6 +49,7 @@ pub(super) struct ParticleDescriptors {
     pub(super) compute_push_layout: Option<vk::DescriptorSetLayout>,
     pub(super) render_push_layout: Option<vk::DescriptorSetLayout>,
     pub(super) draw_command_layout: Option<vk::DescriptorSetLayout>,
+    pub(super) particle_render_storage_layout: Option<vk::DescriptorSetLayout>,
     pub(super) compute_sets: [Option<vk::DescriptorSet>; 2],
     pub(super) draw_command_set: Option<vk::DescriptorSet>,
     pub(super) render_sets: [Option<vk::DescriptorSet>; 2],
@@ -124,6 +125,7 @@ impl GlobalParticleSystem {
                 compute_push_layout: None,
                 render_push_layout: None,
                 draw_command_layout: None,
+                particle_render_storage_layout: None,
                 compute_sets: [None, None],
                 draw_command_set: None,
                 render_sets: [None, None],
@@ -291,6 +293,13 @@ impl GlobalParticleSystem {
             }
         }
         if let Some(layout) = self.descriptors.draw_command_layout.take() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(layout, None);
+            }
+        }
+        if let Some(layout) = self.descriptors.particle_render_storage_layout.take() {
             unsafe {
                 self.context
                     .device

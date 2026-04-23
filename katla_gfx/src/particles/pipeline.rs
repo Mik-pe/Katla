@@ -196,12 +196,9 @@ impl GlobalParticleSystem {
         let pipeline_handle = asset_registry.register_pipeline(pipeline);
         self.pipelines.render = Some(pipeline_handle);
 
-        // Clean up the temporary layout (pipeline holds its own reference)
-        unsafe {
-            self.context
-                .device
-                .destroy_descriptor_set_layout(storage_layout, None);
-        }
+        // The pipeline layout holds a reference to the storage layout internally,
+        // so we store it for the lifetime of the particle system and clean up in destroy()
+        self.descriptors.particle_render_storage_layout = Some(storage_layout);
 
         info!("Created particle render pipeline");
         Ok(())
