@@ -5,7 +5,7 @@ use log::{debug, warn};
 
 use katla_ecs::EntityId;
 use katla_ecs::World;
-use katla_gfx::{PoseComputeBuffers, PoseComputePipeline};
+use katla_gfx::{PoseComputeBuffers, PoseComputePipeline, RendererError};
 
 use crate::animation::components::{AnimatedModel, AnimationPlayer};
 use crate::animation::gpu_clip_loader::{
@@ -91,7 +91,7 @@ impl GpuAnimationSystem {
         world: &mut World,
         pipeline: &mut PoseComputePipeline,
         buffers: &mut PoseComputeBuffers,
-    ) {
+    ) -> Result<(), RendererError> {
         let entities: Vec<_> = world
             .query::<(&AnimatedModel, &Skin, &Skeleton, &AnimationPlayer)>()
             .collect();
@@ -103,14 +103,14 @@ impl GpuAnimationSystem {
             self.upload_fingerprint = 0;
             self.max_skeletons = 0;
             self.max_joints = 0;
-            return;
+            return Ok(());
         }
 
         let fingerprint = Self::compute_fingerprint(&entities);
         let needs_upload = self.upload_fingerprint != fingerprint;
 
         if !needs_upload {
-            return;
+            return Ok(());
         }
 
         let mut all_clip_headers = Vec::new();
@@ -178,21 +178,22 @@ impl GpuAnimationSystem {
         self.max_skeletons = entities.len();
         self.max_joints = total_joints;
 
-        self.upload_static_data(pipeline, buffers);
+        self.upload_static_data(pipeline, buffers)?;
+        Ok(())
     }
 
     fn upload_static_data(
         &mut self,
         pipeline: &mut PoseComputePipeline,
         buffers: &mut PoseComputeBuffers,
-    ) {
+    ) -> Result<(), RendererError> {
         let data = match &self.gpu_data {
             Some(d) => d,
-            None => return,
+            None => return Ok(()),
         };
 
         if self.max_skeletons == 0 {
-            return;
+            return Ok(());
         }
 
         let headers_size =
@@ -204,25 +205,25 @@ impl GpuAnimationSystem {
 
         if let Err(e) = buffers.allocate_params(self.max_skeletons) {
             warn!("Failed to allocate pose compute params buffer: {}", e);
-            return;
+            return Ok(());
         }
         if let Err(e) =
             buffers.allocate_clip_data(headers_size, channels_size, times_size, values_size)
         {
             warn!("Failed to allocate pose compute clip data buffers: {}", e);
-            return;
+            return Ok(());
         }
         if let Err(e) = buffers.allocate_joints(self.max_joints) {
             warn!("Failed to allocate pose compute joints buffer: {}", e);
-            return;
+            return Ok(());
         }
         if let Err(e) = buffers.allocate_world(self.max_joints) {
             warn!("Failed to allocate pose compute world buffer: {}", e);
-            return;
+            return Ok(());
         }
         if let Err(e) = buffers.allocate_output(self.max_joints) {
             warn!("Failed to allocate pose compute output buffer: {}", e);
-            return;
+            return Ok(());
         }
 
         buffers.upload_clip_data(
@@ -233,7 +234,7 @@ impl GpuAnimationSystem {
         );
         buffers.upload_joints(&data.joint_infos);
 
-        pipeline.update_bindings(buffers);
+        pipeline.update_bindings(buffers)?;
 
         debug!(
             "Uploaded GPU animation static data: {} skeletons, {} joints, {} clips",
@@ -241,6 +242,7 @@ impl GpuAnimationSystem {
             self.max_joints,
             data.clip_headers.len(),
         );
+        Ok(())
     }
 
     /// Update per-frame animation parameters (time, clip index) for all

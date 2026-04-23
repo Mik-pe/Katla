@@ -1,4 +1,5 @@
 use crate::RendererError;
+use crate::barrier::ImageBarrier;
 use crate::vulkan::context::VulkanContext;
 use ash::vk;
 use gpu_allocator::vulkan::Allocation;
@@ -39,6 +40,7 @@ impl PickingSubsystem {
     /// * `context` - Vulkan context for GPU operations
     /// * `frame` - Current frame number for tracking
     /// * `object_id_image` - The Vulkan image containing object IDs (R32Uint)
+    /// * `current_layout` - The current layout of the object_id image (must match GPU state)
     /// * `x` - Pixel x coordinate (physical pixels)
     /// * `y` - Pixel y coordinate (physical pixels)
     pub fn queue_picking_readback(
@@ -46,6 +48,7 @@ impl PickingSubsystem {
         context: &Rc<VulkanContext>,
         frame: usize,
         object_id_image: vk::Image,
+        current_layout: vk::ImageLayout,
         x: u32,
         y: u32,
     ) -> Result<(), RendererError> {
@@ -85,34 +88,16 @@ impl PickingSubsystem {
 
         command_buffer.begin_single_time_command()?;
 
-        // Transition object-ID image from COLOR_ATTACHMENT to TRANSFER_SRC
-        let barrier = vk::ImageMemoryBarrier::default()
-            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
-            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(object_id_image)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            });
+        let cmd_vk = command_buffer.vk_command_buffer();
 
-        unsafe {
-            context.device.cmd_pipeline_barrier(
-                command_buffer.vk_command_buffer(),
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier],
-            );
-        }
+        // Transition object-ID image from its current layout to TRANSFER_SRC
+        ImageBarrier::transition(
+            &cmd_vk,
+            &context.device,
+            object_id_image,
+            current_layout,
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        );
 
         // Copy single pixel to staging buffer
         let buffer_image_copy = vk::BufferImageCopy::default()
@@ -144,34 +129,14 @@ impl PickingSubsystem {
             );
         }
 
-        // Transition back to COLOR_ATTACHMENT_OPTIMAL for next frame
-        let barrier_back = vk::ImageMemoryBarrier::default()
-            .src_access_mask(vk::AccessFlags::TRANSFER_READ)
-            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(object_id_image)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            });
-
-        unsafe {
-            context.device.cmd_pipeline_barrier(
-                command_buffer.vk_command_buffer(),
-                vk::PipelineStageFlags::TRANSFER,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier_back],
-            );
-        }
+        // Transition back to the original layout for the next frame's pre-barriers
+        ImageBarrier::transition(
+            &cmd_vk,
+            &context.device,
+            object_id_image,
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            current_layout,
+        );
 
         command_buffer.end_single_time_command()?;
 
@@ -313,17 +278,19 @@ impl super::VulkanRenderer {
     /// # Arguments
     /// * `frame` - Current frame number for tracking
     /// * `object_id_image` - The Vulkan image containing object IDs (R32Uint)
+    /// * `current_layout` - The current layout of the object_id image (must match GPU state)
     /// * `x` - Pixel x coordinate (physical pixels)
     /// * `y` - Pixel y coordinate (physical pixels)
     pub fn queue_picking_readback(
         &mut self,
         frame: usize,
         object_id_image: vk::Image,
+        current_layout: vk::ImageLayout,
         x: u32,
         y: u32,
     ) -> Result<(), RendererError> {
         self.picking
-            .queue_picking_readback(&self.context, frame, object_id_image, x, y)
+            .queue_picking_readback(&self.context, frame, object_id_image, current_layout, x, y)
     }
 
     /// Check if the pending picking readback is complete.

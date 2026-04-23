@@ -255,7 +255,10 @@ impl Application {
                         );
 
                         // Copy per-entity joint matrices from output buffer to SkeletonBuffers
-                        let output_buf = buffers.output_buffer();
+                        let output_buf = match buffers.output_buffer() {
+                            Ok(buf) => buf,
+                            Err(_) => return Ok(()),
+                        };
                         for &(handle_idx, joint_offset, joint_count) in &copy_cmds {
                             let handle = katla_gfx::SkeletonHandle::new(handle_idx);
                             renderer.copy_skeleton_from_compute_output(

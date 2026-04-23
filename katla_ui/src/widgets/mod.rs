@@ -1903,6 +1903,7 @@ pub struct ResizeHandle {
     current_value: f32,
     min_value: f32,
     max_value: f32,
+    inverted: bool,
 }
 
 impl ResizeHandle {
@@ -1914,6 +1915,7 @@ impl ResizeHandle {
             current_value,
             min_value: 0.0,
             max_value: f32::MAX,
+            inverted: false,
         }
     }
 
@@ -1925,6 +1927,7 @@ impl ResizeHandle {
             current_value,
             min_value: 0.0,
             max_value: f32::MAX,
+            inverted: false,
         }
     }
 
@@ -1937,6 +1940,13 @@ impl ResizeHandle {
     /// Set the maximum allowed value.
     pub fn max_value(mut self, max: f32) -> Self {
         self.max_value = max;
+        self
+    }
+
+    /// Negate the drag delta. Use for bottom or right edges where
+    /// dragging against the axis should increase the dimension.
+    pub fn inverted(mut self) -> Self {
+        self.inverted = true;
         self
     }
 
@@ -1963,10 +1973,11 @@ impl ResizeHandle {
         }
 
         if is_active {
-            let delta = match self.direction {
+            let raw_delta = match self.direction {
                 ResizeDirection::Horizontal => ui.input.mouse_delta.x(),
                 ResizeDirection::Vertical => ui.input.mouse_delta.y(),
             };
+            let delta = if self.inverted { -raw_delta } else { raw_delta };
             let new_value = (self.current_value + delta).clamp(self.min_value, self.max_value);
 
             if !ui.input.mouse_down[crate::input::mouse_button::LEFT] {

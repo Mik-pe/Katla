@@ -93,11 +93,21 @@ impl UiFrameResources {
             descriptor_sets.push(None);
         }
 
+        // UI uniform buffer (screen_size) - 16 bytes, CPU-visible
+        let uniform_buffer_info = vk::BufferCreateInfo::default()
+            .size(16) // 4 floats: screen_size[2] + padding[2]
+            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let (uniform_buffer, uniform_allocation) = context
+            .allocate_buffer(&uniform_buffer_info, gpu_allocator::MemoryLocation::CpuToGpu)
+            .expect("Failed to allocate UI uniform buffer");
+
         Self {
             vertex_buffers,
             index_buffers,
             descriptor_sets,
-            uniform_buffer: None,
+            uniform_buffer: Some((uniform_buffer, uniform_allocation)),
         }
     }
 }
@@ -1278,7 +1288,7 @@ impl VulkanRenderer {
 pub(crate) struct OutputRenderTarget {
     /// Color attachment image.
     pub(crate) color_image: vk::Image,
-    color_memory: Option<gpu_allocator::vulkan::Allocation>,
+    color_memory: gpu_allocator::vulkan::Allocation,
     pub(crate) color_image_view: vk::ImageView,
     /// Render extent (matches swapchain size).
     pub extent: vk::Extent2D,
@@ -1349,7 +1359,7 @@ impl OutputRenderTarget {
 
             Ok(Self {
                 color_image,
-                color_memory: Some(color_memory),
+                color_memory,
                 color_image_view,
                 extent,
                 context,
@@ -1365,9 +1375,8 @@ impl Drop for OutputRenderTarget {
                 .device
                 .destroy_image_view(self.color_image_view, None);
             self.context.device.destroy_image(self.color_image, None);
-            if let Some(memory) = self.color_memory.take() {
-                self.context.allocator.free(memory, "output render target");
-            }
+            let memory = std::ptr::read(&self.color_memory);
+            self.context.allocator.free(memory, "output render target");
         }
     }
 }

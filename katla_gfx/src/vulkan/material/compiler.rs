@@ -84,7 +84,7 @@ impl Default for MaterialOptions {
 pub(crate) struct MaterialCompiler {
     pub(crate) shader_cache: Rc<RefCell<ShaderCache>>,
     context: Rc<VulkanContext>,
-    storage_descriptor_layout: Option<vk::DescriptorSetLayout>,
+    storage_descriptor_layout: vk::DescriptorSetLayout,
     bindless_descriptor_layout: vk::DescriptorSetLayout,
     /// Skeleton descriptor layout (Set 2 for skinned meshes)
     skeleton_descriptor_layout: vk::DescriptorSetLayout,
@@ -206,7 +206,7 @@ impl MaterialCompiler {
         Ok(Self {
             shader_cache: Rc::new(RefCell::new(ShaderCache::new(context.device.clone()))),
             context,
-            storage_descriptor_layout: Some(storage_descriptor_layout),
+            storage_descriptor_layout,
             bindless_descriptor_layout,
             skeleton_descriptor_layout,
             compositing_descriptor_set_layout: None,
@@ -443,8 +443,7 @@ impl MaterialCompiler {
         }
 
         let mut layouts = vec![
-            self.storage_descriptor_layout
-                .expect("Storage descriptor layout not initialized"),
+            self.storage_descriptor_layout,
             self.bindless_descriptor_layout,
         ];
 
@@ -649,13 +648,10 @@ impl MaterialCompiler {
     /// Clean up descriptor layouts and pool.
     /// This is idempotent - can be called multiple times safely.
     pub(crate) fn destroy(&mut self) {
-        // Destroy storage descriptor layout (only if not already destroyed)
-        if let Some(layout) = self.storage_descriptor_layout.take() {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(layout, None);
-            }
+        unsafe {
+            self.context
+                .device
+                .destroy_descriptor_set_layout(self.storage_descriptor_layout, None);
         }
 
         // Destroy skeleton descriptor layout and pool

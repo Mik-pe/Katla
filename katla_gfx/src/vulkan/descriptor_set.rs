@@ -57,12 +57,12 @@ impl DescriptorSet {
         self.set
     }
 
-    /// Get the descriptor set layout.
+    /// Get the descriptor set layout, if one was stored during creation.
     ///
-    /// Panics if the layout was not stored during creation.
-    pub(crate) fn layout(&self) -> vk::DescriptorSetLayout {
+    /// Returns `None` for descriptor sets created via `from_raw()` without a layout
+    /// (e.g., UI descriptor sets whose layout is owned by the pipeline).
+    pub(crate) fn layout(&self) -> Option<vk::DescriptorSetLayout> {
         self.owned_layout
-            .expect("DescriptorSet layout not stored during creation")
     }
 }
 

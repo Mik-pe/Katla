@@ -48,8 +48,10 @@ impl From<vk::IndexType> for IndexType {
     }
 }
 
+use std::mem::ManuallyDrop;
+
 struct BufferObject {
-    allocation: Option<Allocation>,
+    allocation: ManuallyDrop<Allocation>,
     buffer: vk::Buffer,
     buf_size: vk::DeviceSize,
     count: u32,
@@ -59,9 +61,8 @@ struct BufferObject {
 
 impl Drop for BufferObject {
     fn drop(&mut self) {
-        if let Some(allocation) = self.allocation.take() {
-            self.context.free_buffer(self.buffer, allocation);
-        }
+        let allocation = unsafe { ManuallyDrop::take(&mut self.allocation) };
+        self.context.free_buffer(self.buffer, allocation);
     }
 }
 pub struct VertexBuffer {
@@ -75,9 +76,8 @@ pub struct IndexBuffer {
 
 impl BufferObject {
     fn resize(&mut self, min_size: vk::DeviceSize) {
-        if let Some(allocation) = self.allocation.take() {
-            self.context.free_buffer(self.buffer, allocation);
-        }
+        let old_allocation = unsafe { ManuallyDrop::take(&mut self.allocation) };
+        self.context.free_buffer(self.buffer, old_allocation);
         let new_size = min_size * 2;
         let create_info = vk::BufferCreateInfo::default()
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
@@ -88,7 +88,7 @@ impl BufferObject {
             .allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
             .expect("Failed to resize buffer");
         self.buffer = buffer;
-        self.allocation = Some(allocation);
+        self.allocation = ManuallyDrop::new(allocation);
         self.buf_size = new_size;
     }
 
@@ -97,14 +97,12 @@ impl BufferObject {
         if self.buf_size < data_size {
             self.resize(data_size);
         }
-        if let Some(allocation) = &self.allocation {
-            let mapped_ptr = self
-                .context
-                .map_buffer(allocation)
-                .expect("Failed to map buffer");
-            unsafe {
-                std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_ptr, data_size as usize);
-            }
+        let mapped_ptr = self
+            .context
+            .map_buffer(&self.allocation)
+            .expect("Failed to map buffer");
+        unsafe {
+            std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_ptr, data_size as usize);
         }
     }
 }
@@ -126,7 +124,7 @@ impl IndexBuffer {
                 .expect("Failed to allocate index buffer");
 
             BufferObject {
-                allocation: Some(allocation),
+                allocation: ManuallyDrop::new(allocation),
                 buffer,
                 buf_size,
                 count,
@@ -162,7 +160,7 @@ impl VertexBuffer {
                 .expect("Failed to allocate vertex buffer");
 
             BufferObject {
-                allocation: Some(allocation),
+                allocation: ManuallyDrop::new(allocation),
                 buffer,
                 buf_size,
                 count,

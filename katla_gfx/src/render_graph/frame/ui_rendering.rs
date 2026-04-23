@@ -283,33 +283,10 @@ impl<'a> Frame<'a> {
         let uniform_buffer = {
             let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
 
-            if ui_resources.uniform_buffer.is_none() {
-                let uniform_buffer_info = vk::BufferCreateInfo::default()
-                    .size(uniform_bytes.len() as vk::DeviceSize)
-                    .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-                    .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-                let (uniform_buffer, uniform_allocation) = self
-                    .renderer
-                    .context
-                    .allocate_buffer(
-                        &uniform_buffer_info,
-                        gpu_allocator::MemoryLocation::CpuToGpu,
-                    )
-                    .map_err(|e| {
-                        RenderGraphError::VulkanError(format!(
-                            "Failed to allocate UI uniform buffer: {}",
-                            e
-                        ))
-                    })?;
-                ui_resources.uniform_buffer = Some((uniform_buffer, uniform_allocation));
-            }
-
-            // vk::Buffer is Copy, so this is fine to return from the borrow
             ui_resources
                 .uniform_buffer
                 .as_ref()
-                .expect("UI uniform buffer should be allocated before rendering")
+                .expect("UI uniform buffer allocated in constructor")
                 .0
         };
 
@@ -320,7 +297,7 @@ impl<'a> Frame<'a> {
                 .ui_resources_mut()
                 .uniform_buffer
                 .as_ref()
-                .expect("UI uniform buffer should be allocated before mapping")
+                .expect("UI uniform buffer allocated in constructor")
                 .1;
             self.renderer.context.map_buffer(allocation)?
         };

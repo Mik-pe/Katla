@@ -5,6 +5,8 @@ use std::rc::Rc;
 use ash::vk;
 use bytemuck::{Pod, Zeroable};
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc};
+use std::mem::ManuallyDrop;
+
 use log::info;
 
 use crate::vulkan::context::VulkanContext;
@@ -135,15 +137,15 @@ pub struct GlobalParticleBuffer {
 
     /// Main particle storage buffer
     particle_buffer: vk::Buffer,
-    particle_allocation: Option<Allocation>,
+    particle_allocation: ManuallyDrop<Allocation>,
 
     /// Per-frame atomic counters [frames_in_flight]
     counters_buffers: [vk::Buffer; 2],
-    counters_allocations: [Option<Allocation>; 2],
+    counters_allocations: [ManuallyDrop<Allocation>; 2],
 
     /// Per-frame indirect draw command buffers [frames_in_flight]
     indirect_draw_buffers: [vk::Buffer; 2],
-    indirect_draw_allocations: [Option<Allocation>; 2],
+    indirect_draw_allocations: [ManuallyDrop<Allocation>; 2],
 
     /// Maximum particles
     max_particles: u32,
@@ -232,7 +234,7 @@ impl GlobalParticleBuffer {
         // Create per-frame counters buffers (CPU-visible for readback, double-buffered)
         let counters_size = std::mem::size_of::<ParticleCounters>();
         let mut counters_buffers = [vk::Buffer::null(); 2];
-        let mut counters_allocations = [None, None];
+        let mut counters_allocations_build: [Option<Allocation>; 2] = [None, None];
 
         for frame_idx in 0..2 {
             let counters_buffer_info = vk::BufferCreateInfo::default()
@@ -260,7 +262,7 @@ impl GlobalParticleBuffer {
                     .get_buffer_memory_requirements(counters_buffers[frame_idx])
             };
 
-            counters_allocations[frame_idx] = Some(
+            counters_allocations_build[frame_idx] = Some(
                 context
                     .allocator
                     .try_borrow_mut_string("particle_counters")?
@@ -282,8 +284,8 @@ impl GlobalParticleBuffer {
                     .device
                     .bind_buffer_memory(
                         counters_buffers[frame_idx],
-                        counters_allocations[frame_idx].as_ref().unwrap().memory(),
-                        counters_allocations[frame_idx].as_ref().unwrap().offset(),
+                        counters_allocations_build[frame_idx].as_ref().unwrap().memory(),
+                        counters_allocations_build[frame_idx].as_ref().unwrap().offset(),
                     )
                     .map_err(|e| {
                         format!("Failed to bind counters memory[{}]: {:?}", frame_idx, e)
@@ -291,7 +293,7 @@ impl GlobalParticleBuffer {
             }
 
             // Initialize counters
-            if let Some(mapped) = counters_allocations[frame_idx]
+            if let Some(mapped) = counters_allocations_build[frame_idx]
                 .as_ref()
                 .unwrap()
                 .mapped_ptr()
@@ -310,17 +312,22 @@ impl GlobalParticleBuffer {
                     );
                 }
                 let _ = context.flush_mapped_memory(
-                    counters_allocations[frame_idx].as_ref().unwrap(),
+                    counters_allocations_build[frame_idx].as_ref().unwrap(),
                     0,
                     std::mem::size_of::<ParticleCounters>() as u64,
                 );
             }
         }
 
+        let counters_allocations = [
+            ManuallyDrop::new(counters_allocations_build[0].take().unwrap()),
+            ManuallyDrop::new(counters_allocations_build[1].take().unwrap()),
+        ];
+
         // Create per-frame indirect draw command buffers (16 bytes each, double-buffered)
         let indirect_draw_size: u64 = 16;
         let mut indirect_draw_buffers = [vk::Buffer::null(); 2];
-        let mut indirect_draw_allocations = [None, None];
+        let mut indirect_draw_allocations_build: [Option<Allocation>; 2] = [None, None];
 
         for frame_idx in 0..2 {
             let indirect_draw_buffer_info = vk::BufferCreateInfo::default()
@@ -350,7 +357,7 @@ impl GlobalParticleBuffer {
                     .get_buffer_memory_requirements(indirect_draw_buffers[frame_idx])
             };
 
-            indirect_draw_allocations[frame_idx] = Some(
+            indirect_draw_allocations_build[frame_idx] = Some(
                 context
                     .allocator
                     .try_borrow_mut_string("particle_indirect_draw")?
@@ -375,11 +382,11 @@ impl GlobalParticleBuffer {
                     .device
                     .bind_buffer_memory(
                         indirect_draw_buffers[frame_idx],
-                        indirect_draw_allocations[frame_idx]
+                        indirect_draw_allocations_build[frame_idx]
                             .as_ref()
                             .unwrap()
                             .memory(),
-                        indirect_draw_allocations[frame_idx]
+                        indirect_draw_allocations_build[frame_idx]
                             .as_ref()
                             .unwrap()
                             .offset(),
@@ -392,6 +399,11 @@ impl GlobalParticleBuffer {
                     })?;
             }
         }
+
+        let indirect_draw_allocations = [
+            ManuallyDrop::new(indirect_draw_allocations_build[0].take().unwrap()),
+            ManuallyDrop::new(indirect_draw_allocations_build[1].take().unwrap()),
+        ];
 
         info!(
             "Created global particle buffer: {} particles ({} MB)",
@@ -431,7 +443,7 @@ impl GlobalParticleBuffer {
         Ok(Self {
             context,
             particle_buffer,
-            particle_allocation: Some(particle_allocation),
+            particle_allocation: ManuallyDrop::new(particle_allocation),
             counters_buffers,
             counters_allocations,
             indirect_draw_buffers,
@@ -699,16 +711,15 @@ impl GlobalParticleBuffer {
     /// Must be called after the GPU command buffer that wrote to counters has completed.
     pub fn get_alive_count(&self, frame_index: usize) -> Result<u32, String> {
         let fi = frame_index % 2;
-        if let Some(counters_allocation) = &self.counters_allocations[fi] {
-            let _ = self.context.invalidate_mapped_memory(
-                counters_allocation,
-                0,
-                std::mem::size_of::<ParticleCounters>() as u64,
-            );
-            if let Some(mapped) = counters_allocation.mapped_ptr() {
-                let counters = unsafe { &*(mapped.as_ptr() as *const ParticleCounters) };
-                return Ok(counters.alive_count);
-            }
+        let counters_allocation = &self.counters_allocations[fi];
+        let _ = self.context.invalidate_mapped_memory(
+            counters_allocation,
+            0,
+            std::mem::size_of::<ParticleCounters>() as u64,
+        );
+        if let Some(mapped) = counters_allocation.mapped_ptr() {
+            let counters = unsafe { &*(mapped.as_ptr() as *const ParticleCounters) };
+            return Ok(counters.alive_count);
         }
         Ok(0)
     }
@@ -719,18 +730,15 @@ impl GlobalParticleBuffer {
     /// Must be called after the GPU command buffer that wrote to counters has completed.
     pub fn get_dead_count(&self, frame_index: usize) -> Result<u32, String> {
         let fi = frame_index % 2;
-        if let Some(counters_allocation) = &self.counters_allocations[fi] {
-            let _ = self.context.invalidate_mapped_memory(
-                counters_allocation,
-                0,
-                std::mem::size_of::<ParticleCounters>() as u64,
-            );
-            if let Some(mapped) = counters_allocation.mapped_ptr() {
-                let counters = unsafe { &*(mapped.as_ptr() as *const ParticleCounters) };
-                Ok(counters.dead_count)
-            } else {
-                Ok(0)
-            }
+        let counters_allocation = &self.counters_allocations[fi];
+        let _ = self.context.invalidate_mapped_memory(
+            counters_allocation,
+            0,
+            std::mem::size_of::<ParticleCounters>() as u64,
+        );
+        if let Some(mapped) = counters_allocation.mapped_ptr() {
+            let counters = unsafe { &*(mapped.as_ptr() as *const ParticleCounters) };
+            Ok(counters.dead_count)
         } else {
             Ok(0)
         }
@@ -767,24 +775,21 @@ impl GlobalParticleBuffer {
 
         log::info!("  buffer destroy: freeing particle allocation");
         unsafe {
-            if let Some(alloc) = self.particle_allocation.take() {
-                self.context.allocator.free(alloc, "particle buffer");
-            }
+            let alloc = ManuallyDrop::take(&mut self.particle_allocation);
+            self.context.allocator.free(alloc, "particle buffer");
             for frame_idx in 0..2 {
                 log::info!(
                     "  buffer destroy: freeing counters allocation[{}]",
                     frame_idx
                 );
-                if let Some(alloc) = self.counters_allocations[frame_idx].take() {
-                    self.context.allocator.free(alloc, "particle counters");
-                }
+                let alloc = ManuallyDrop::take(&mut self.counters_allocations[frame_idx]);
+                self.context.allocator.free(alloc, "particle counters");
                 log::info!(
                     "  buffer destroy: freeing indirect draw allocation[{}]",
                     frame_idx
                 );
-                if let Some(alloc) = self.indirect_draw_allocations[frame_idx].take() {
-                    self.context.allocator.free(alloc, "particle indirect draw");
-                }
+                let alloc = ManuallyDrop::take(&mut self.indirect_draw_allocations[frame_idx]);
+                self.context.allocator.free(alloc, "particle indirect draw");
             }
             log::info!("  buffer destroy: destroying particle buffer");
             if self.particle_buffer != vk::Buffer::null() {

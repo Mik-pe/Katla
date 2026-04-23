@@ -16,7 +16,7 @@ pub struct RenderTexture {
     /// `None` if the depth format has no stencil component (e.g., D32_SFLOAT).
     pub(crate) depth_stencil_image_view: Option<VkImageView>,
     pub(crate) image: VkImage,
-    pub image_memory: Option<Allocation>,
+    pub image_memory: Allocation,
     pub context: Rc<VulkanContext>,
 }
 
@@ -29,10 +29,10 @@ impl RenderTexture {
             if let Some(ds_view) = self.depth_stencil_image_view.take() {
                 self.context.device.destroy_image_view(ds_view.vk(), None);
             }
-        }
-        let image_memory = self.image_memory.take();
 
-        self.context.free_image(self.image, image_memory.unwrap());
+            let image_memory = std::ptr::read(&self.image_memory);
+            self.context.free_image(self.image, image_memory);
+        }
     }
 }
 
@@ -70,17 +70,11 @@ impl VulkanFrameCtx {
     }
 
     pub fn init(context: &Rc<VulkanContext>) -> Result<Self, crate::error::RendererError> {
-        let swapchain_loader = context
-            .swapchain_loader
-            .as_ref()
-            .expect("Swapchain loader required for VulkanFrameCtx::init");
-        let surface_loader = context
-            .surface_loader
-            .as_ref()
-            .expect("Surface loader required for VulkanFrameCtx::init");
-        let surface = context
-            .surface
-            .expect("Surface required for VulkanFrameCtx::init");
+        let (swapchain_loader, surface_loader, surface) = context
+            .window_resources()
+            .ok_or_else(|| crate::error::RendererError::InitializationFailed(
+                "VulkanFrameCtx requires a window surface (not available in headless mode)".to_string(),
+            ))?;
 
         let swapchain = super::super::Swapchain::create_swapchain(
             swapchain_loader.clone(),
@@ -128,20 +122,12 @@ impl VulkanFrameCtx {
     }
 
     pub fn recreate_swapchain(&mut self) -> Result<(), crate::error::RendererError> {
-        let swapchain_loader = self
+        let (swapchain_loader, surface_loader, surface) = self
             .context
-            .swapchain_loader
-            .as_ref()
-            .expect("Swapchain loader required for recreate_swapchain");
-        let surface_loader = self
-            .context
-            .surface_loader
-            .as_ref()
-            .expect("Surface loader required for recreate_swapchain");
-        let surface = self
-            .context
-            .surface
-            .expect("Surface required for recreate_swapchain");
+            .window_resources()
+            .ok_or_else(|| crate::error::RendererError::InitializationFailed(
+                "VulkanFrameCtx requires a window surface (not available in headless mode)".to_string(),
+            ))?;
 
         let swapchain = super::super::Swapchain::create_swapchain(
             swapchain_loader.clone(),
@@ -265,7 +251,7 @@ fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D)
         image_view: VkImageView::new(image_view),
         depth_stencil_image_view,
         image: VkImage::new(depth_image),
-        image_memory: Some(image_memory),
+        image_memory,
         context,
     }
 }
