@@ -120,6 +120,7 @@ impl<'a> Frame<'a> {
         cmd: &CommandBuffer,
         pass: &PassDesc,
         pipeline_handle: crate::handle::PipelineHandle,
+        dispatch: Option<(u32, u32, u32)>,
     ) -> Result<(), RenderGraphError> {
         let current_frame = self.current_frame();
         log::debug!(
@@ -155,9 +156,7 @@ impl<'a> Frame<'a> {
             );
         }
 
-        let pass_index = self.graph.pass_index(&pass.name).unwrap_or(0);
-        let data = self.pending.get(&pass_index).cloned().unwrap_or_default();
-        let (x, y, z) = data.dispatch.unwrap_or((64, 1, 1));
+        let (x, y, z) = dispatch.unwrap_or((64, 1, 1));
 
         unsafe {
             device.cmd_dispatch(cmd.vk_command_buffer(), x, y, z);
