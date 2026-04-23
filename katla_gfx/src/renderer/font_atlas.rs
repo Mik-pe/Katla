@@ -49,7 +49,10 @@ impl VulkanRenderer {
                 if texture.width == width && texture.height == height {
                     texture.update_data(data);
                 } else {
+                    // Destroy old atlas before creating the new one
+                    let old_handle = handle;
                     let new_handle = self.create_ui_font_atlas(width, height, data);
+                    self.destroy_texture(old_handle);
                     self.ui_renderer.set_font_atlas(new_handle);
                 }
             }

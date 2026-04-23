@@ -38,6 +38,26 @@ impl From<ImageFormat> for vk::Format {
     }
 }
 
+impl ImageFormat {
+    /// Returns the bytes per pixel for this format.
+    pub fn bytes_per_pixel(&self) -> u32 {
+        match self {
+            ImageFormat::Auto => 4,
+            ImageFormat::R8Unorm => 1,
+            ImageFormat::Rg8Unorm => 2,
+            ImageFormat::R8G8B8A8Srgb
+            | ImageFormat::R8G8B8A8Unorm
+            | ImageFormat::B8G8R8A8Srgb
+            | ImageFormat::R32Sfloat
+            | ImageFormat::R32Uint => 4,
+            ImageFormat::R16G16B16A16Sfloat => 8,
+            ImageFormat::D32Sfloat | ImageFormat::D32SfloatS8Uint | ImageFormat::D24UnormS8Uint => {
+                4
+            }
+        }
+    }
+}
+
 impl TryFrom<vk::Format> for ImageFormat {
     type Error = ();
 

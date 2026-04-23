@@ -96,6 +96,15 @@ impl DeviceAddressBuffer {
         })
     }
 
+    /// Get the GPU device address of this buffer.
+    ///
+    /// This address can be passed to shaders via push constants or uniform buffers
+    /// for pointer-based buffer access.
+    pub fn device_address(&self) -> vk::DeviceAddress {
+        let info = vk::BufferDeviceAddressInfo::default().buffer(self.buffer);
+        unsafe { self.context.device.get_buffer_device_address(&info) }
+    }
+
     /// Map the buffer for CPU access.
     ///
     /// If the buffer is persistently mapped, returns the persistent mapping.
