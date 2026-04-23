@@ -34,7 +34,7 @@ impl Application {
 
         let view_mat = self.camera.get_view_mat(&self.world);
         let proj_mat = self.camera.get_proj_mat(&self.world);
-        let frustum = katla_math::Frustum::from_projection_view_matrix(&proj_mat, &view_mat);
+        let frustum = katla_math::Frustum::from_proj_and_view(&proj_mat, &view_mat);
         let camera_entity = self.camera.entity;
 
         use crate::components::TransformComponent;

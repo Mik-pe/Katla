@@ -61,14 +61,22 @@ impl Camera {
         }
     }
 
+    /// Returns the world-to-camera view matrix (inverse of look-at).
+    /// Used by GPU shaders as `frame_data.view`.
     pub fn get_view_mat(&self, world: &World) -> Mat4 {
+        self.get_lookat_mat(world)
+            .inverse()
+            .unwrap_or_else(Mat4::identity)
+    }
+
+    /// Returns the camera-to-world look-at matrix.
+    /// Used for frustum culling via `Frustum::from_proj_and_lookat`.
+    pub fn get_lookat_mat(&self, world: &World) -> Mat4 {
         let fwd = Vec3::new(0.0, 0.0, -1.0);
         let to = self.get_view_rotation(world) * fwd;
         if let Some(transform) = world.get_component::<TransformComponent>(self.entity) {
             let pos = transform.transform.position;
             Mat4::create_lookat(pos, pos + to, Vec3::new(0.0, 1.0, 0.0))
-                .inverse()
-                .unwrap_or_else(Mat4::identity)
         } else {
             Mat4::identity()
         }
