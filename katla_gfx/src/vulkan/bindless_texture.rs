@@ -233,7 +233,14 @@ impl BindlessTextureManager {
         ];
 
         for (slot_idx, (pixels, format)) in default_entries.iter().enumerate() {
-            let texture = Texture::create_image(context.clone(), 1, 1, *format, pixels);
+            let texture = Texture::create_image(
+                context.clone(),
+                1,
+                1,
+                *format,
+                crate::texture::TextureUsage::default(),
+                pixels,
+            );
 
             // Update descriptor set for this slot
             let image_info = [vk::DescriptorImageInfo::default()

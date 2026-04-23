@@ -109,5 +109,4 @@ impl Queue {
             self.device.destroy_fence(fence, None);
         }
     }
-
 }

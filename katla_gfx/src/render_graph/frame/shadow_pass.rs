@@ -88,89 +88,49 @@ impl<'a> Frame<'a> {
                 (None, None)
             };
 
-        let viewports = [
-            vk::Viewport {
-                x: 0.0,
-                y: half_h as f32,
-                width: half_w as f32,
-                height: half_h as f32,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            },
-            vk::Viewport {
-                x: half_w as f32,
-                y: half_h as f32,
-                width: half_w as f32,
-                height: half_h as f32,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            },
-            vk::Viewport {
-                x: 0.0,
-                y: 0.0,
-                width: half_w as f32,
-                height: half_h as f32,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            },
-            vk::Viewport {
-                x: half_w as f32,
-                y: 0.0,
-                width: half_w as f32,
-                height: half_h as f32,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            },
-        ];
-
-        let scissors = [
-            vk::Rect2D {
-                offset: vk::Offset2D {
-                    x: 0,
-                    y: half_h as i32,
-                },
-                extent: vk::Extent2D {
-                    width: half_w,
-                    height: half_h,
-                },
-            },
-            vk::Rect2D {
-                offset: vk::Offset2D {
-                    x: half_w as i32,
-                    y: half_h as i32,
-                },
-                extent: vk::Extent2D {
-                    width: half_w,
-                    height: half_h,
-                },
-            },
-            vk::Rect2D {
-                offset: vk::Offset2D { x: 0, y: 0 },
-                extent: vk::Extent2D {
-                    width: half_w,
-                    height: half_h,
-                },
-            },
-            vk::Rect2D {
-                offset: vk::Offset2D {
-                    x: half_w as i32,
-                    y: 0,
-                },
-                extent: vk::Extent2D {
-                    width: half_w,
-                    height: half_h,
-                },
-            },
-        ];
-
         let data = self
             .pending
             .remove(&self.graph.pass_index(&pass.name).unwrap_or(0))
             .unwrap_or_default();
 
         let num_cascades: u32 = self.renderer.shadow_cascade_count();
-
         let depth_bias = self.renderer.shadow_cascade_depth_bias();
+
+        // Build viewports and scissors dynamically based on cascade count
+        // Layout: 2x2 grid in the shadow atlas texture
+        //   [Cascade 2] [Cascade 3]
+        //   [Cascade 0] [Cascade 1]
+        let viewports: Vec<vk::Viewport> = (0..num_cascades)
+            .map(|i| {
+                let col = i % 2;
+                let row = 1 - (i / 2);
+                vk::Viewport {
+                    x: (col * half_w) as f32,
+                    y: (row * half_h) as f32,
+                    width: half_w as f32,
+                    height: half_h as f32,
+                    min_depth: 0.0,
+                    max_depth: 1.0,
+                }
+            })
+            .collect();
+
+        let scissors: Vec<vk::Rect2D> = (0..num_cascades)
+            .map(|i| {
+                let col = i % 2;
+                let row = 1 - (i / 2);
+                vk::Rect2D {
+                    offset: vk::Offset2D {
+                        x: (col * half_w) as i32,
+                        y: (row * half_h) as i32,
+                    },
+                    extent: vk::Extent2D {
+                        width: half_w,
+                        height: half_h,
+                    },
+                }
+            })
+            .collect();
 
         let mut extra_sets = Vec::new();
         if let Some(cascade_ds) = self.renderer.shadow_cascade_descriptor_set() {
