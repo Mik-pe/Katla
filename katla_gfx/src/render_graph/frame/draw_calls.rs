@@ -113,12 +113,34 @@ impl<'a> Frame<'a> {
                 .get_attribute_buffer(AttributeType::TexCoord0)
                 .map(|vb| vb.object())
                 .unwrap_or(vk::Buffer::null());
-            cmd.bind_vertex_buffers_at_locations(&[
-                (0, pos_buf),
-                (1, norm_buf),
-                (2, tang_buf),
-                (3, uv_buf),
-            ]);
+
+            if is_skinned {
+                let joints_buf = mesh
+                    .get_attribute_buffer(AttributeType::JointIndices)
+                    .map(|vb| vb.object())
+                    .unwrap_or(vk::Buffer::null());
+                let weights_buf = mesh
+                    .get_attribute_buffer(AttributeType::JointWeights)
+                    .map(|vb| vb.object())
+                    .unwrap_or(vk::Buffer::null());
+                cmd.bind_vertex_buffers_at_locations(&[
+                    (0, pos_buf),
+                    (1, norm_buf),
+                    (2, tang_buf),
+                    (3, uv_buf),
+                    (4, joints_buf),
+                    (5, weights_buf),
+                ]);
+            } else {
+                cmd.bind_vertex_buffers_at_locations(&[
+                    (0, pos_buf),
+                    (1, norm_buf),
+                    (2, tang_buf),
+                    (3, uv_buf),
+                    (4, vk::Buffer::null()),
+                    (5, vk::Buffer::null()),
+                ]);
+            }
 
             if let Some(ib) = &mesh.index_buffer {
                 cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
