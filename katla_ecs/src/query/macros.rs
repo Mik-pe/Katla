@@ -14,11 +14,14 @@
 // ── Internal helpers ──────────────────────────────────────────────────────
 
 /// Emits `assert_ne!` for every unique pair of the supplied type identifiers.
+/// Generates exactly C(N,2) comparisons — each element against all following elements.
 macro_rules! assert_all_ne {
     ($only:ident) => {};
     ($first:ident, $second:ident $(, $rest:ident)*) => {
         assert_ne!(TypeId::of::<$first>(), TypeId::of::<$second>(), "Cannot query the same component type twice");
-        assert_all_ne!($first $(, $rest)*);
+        $(
+            assert_ne!(TypeId::of::<$first>(), TypeId::of::<$rest>(), "Cannot query the same component type twice");
+        )*
         assert_all_ne!($second $(, $rest)*);
     };
 }

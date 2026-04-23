@@ -27,6 +27,16 @@ impl ComponentAccess {
 /// In this architecture, systems work directly with component storages for better
 /// cache locality and performance.
 ///
+/// # Parallel Safety
+///
+/// When using [`World::update_parallel`](crate::World::update_parallel), systems
+/// that access components **MUST** override [`component_access()`](System::component_access)
+/// and [`component_access_dyn()`](System::component_access_dyn) to declare their
+/// read/write patterns. A system that forgets to override these methods defaults to
+/// "no declared access" and the scheduler will assume it is safe to run in parallel
+/// with any other system — which can cause data races if the system actually reads
+/// or writes components.
+///
 /// # Examples
 ///
 /// ```
@@ -118,7 +128,12 @@ pub trait System {
     ///
     /// Returns the access patterns for this system. Concrete types that override
     /// `component_access()` should also override this to return the same value.
-    /// The default returns an empty vec (no declared access = no parallelism).
+    ///
+    /// **Warning:** The default returns an empty vec (no declared access). Systems
+    /// that access components MUST override both this method and `component_access()`
+    /// for safe parallel execution — otherwise the scheduler will assume the system
+    /// has no conflicts and may run it concurrently with systems that access the same
+    /// components, causing data races.
     fn component_access_dyn(&self) -> Vec<ComponentAccess> {
         Vec::new()
     }

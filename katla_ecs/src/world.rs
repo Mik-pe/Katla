@@ -371,6 +371,7 @@ impl World {
         Q: crate::query::QueryData,
         F: crate::query::QueryFilter,
     {
+        crate::query::assert_filter_query_disjoint::<Q, F>();
         let storage_ptr = self.storage.get() as *const _;
         let inner = self.storage.get_mut().query::<Q>();
         crate::query::FilteredQueryIter {

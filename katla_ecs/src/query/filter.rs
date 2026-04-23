@@ -3,6 +3,7 @@
 //! Provides [`With<T>`] and [`Without<T>`] marker types that can be combined
 //! into filter tuples and passed to [`World::query_filtered`](crate::World::query_filtered).
 
+use std::any::TypeId;
 use std::marker::PhantomData;
 
 use crate::components::Component;
@@ -28,6 +29,9 @@ pub trait QueryFilter {
     /// # Safety
     /// `storage` must be valid and not mutably aliased for the duration of the call.
     unsafe fn matches(storage: *const ComponentStorageManager, entity: EntityId) -> bool;
+
+    /// Returns the TypeIds of all component types referenced by this filter.
+    fn type_ids() -> Vec<TypeId>;
 }
 
 impl<T: Component + 'static> QueryFilter for With<T> {
@@ -38,6 +42,10 @@ impl<T: Component + 'static> QueryFilter for With<T> {
                 .get_storage::<T>()
                 .is_some_and(|s| s.contains(entity))
         }
+    }
+
+    fn type_ids() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
     }
 }
 
@@ -50,11 +58,19 @@ impl<T: Component + 'static> QueryFilter for Without<T> {
                 .is_some_and(|s| s.contains(entity))
         }
     }
+
+    fn type_ids() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
 }
 
 impl QueryFilter for () {
     unsafe fn matches(_storage: *const ComponentStorageManager, _entity: EntityId) -> bool {
         true
+    }
+
+    fn type_ids() -> Vec<TypeId> {
+        Vec::new()
     }
 }
 
@@ -62,6 +78,12 @@ impl<A: QueryFilter, B: QueryFilter> QueryFilter for (A, B) {
     unsafe fn matches(storage: *const ComponentStorageManager, entity: EntityId) -> bool {
         // SAFETY: Caller guarantees storage is valid for both sub-filters.
         unsafe { A::matches(storage, entity) && B::matches(storage, entity) }
+    }
+
+    fn type_ids() -> Vec<TypeId> {
+        let mut ids = A::type_ids();
+        ids.extend(B::type_ids());
+        ids
     }
 }
 
@@ -73,6 +95,13 @@ impl<A: QueryFilter, B: QueryFilter, C: QueryFilter> QueryFilter for (A, B, C) {
                 && B::matches(storage, entity)
                 && C::matches(storage, entity)
         }
+    }
+
+    fn type_ids() -> Vec<TypeId> {
+        let mut ids = A::type_ids();
+        ids.extend(B::type_ids());
+        ids.extend(C::type_ids());
+        ids
     }
 }
 
@@ -86,11 +115,24 @@ impl<A: QueryFilter, B: QueryFilter, C: QueryFilter, D: QueryFilter> QueryFilter
                 && D::matches(storage, entity)
         }
     }
+
+    fn type_ids() -> Vec<TypeId> {
+        let mut ids = A::type_ids();
+        ids.extend(B::type_ids());
+        ids.extend(C::type_ids());
+        ids.extend(D::type_ids());
+        ids
+    }
 }
 
 /// Filtering wrapper around any [`QueryData`] iterator.
 ///
 /// Yields only items whose entity satisfies the filter `F`.
+///
+/// # Panics
+///
+/// Panics at construction if any filter type overlaps with a query component type.
+/// Use the component directly in the query instead of filtering on it.
 pub struct FilteredQueryIter<'a, Q: QueryData, F: QueryFilter> {
     pub(crate) inner: Q::Iter<'a>,
     pub(crate) storage_ptr: *const ComponentStorageManager,
@@ -105,11 +147,28 @@ impl<'a, Q: QueryData, F: QueryFilter> Iterator for FilteredQueryIter<'a, Q, F> 
             let item = self.inner.next()?;
             let entity = Q::entity_id_from_item(&item);
             // SAFETY: storage_ptr borrows World's storage, which outlives the iterator.
-            // The inner query holds the mutable borrow, but filter checks are read-only
-            // against disjoint storages (filter types are always different from query types
-            // because With/Without produce no data).
+            // Overlap between filter and query types is checked at construction time
+            // in World::query_filtered, so filter accesses are always disjoint from
+            // any mutable query borrows.
             if unsafe { F::matches(self.storage_ptr, entity) } {
                 return Some(item);
+            }
+        }
+    }
+}
+
+/// Checks that filter types and query types are disjoint. Panics with a clear
+/// message if any type appears in both sets.
+pub(crate) fn assert_filter_query_disjoint<Q: QueryData, F: QueryFilter>() {
+    let query_ids = Q::type_ids_for_changed();
+    let filter_ids = F::type_ids();
+    for fid in &filter_ids {
+        for qid in &query_ids {
+            if fid == qid {
+                panic!(
+                    "Filter type overlaps with query component type — \
+                     use the component directly in the query instead"
+                );
             }
         }
     }
@@ -239,5 +298,29 @@ mod tests {
         let results: Vec<_> = world.query_filtered::<&Pos, Without<Vel>>().collect();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].1.x, 1.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Filter type overlaps with query component type")]
+    fn test_filter_overlap_with_query_panics() {
+        let mut world = World::new();
+        world.spawn((Pos { x: 1.0 },));
+
+        // With<Pos> overlaps with &Pos in the query — must panic
+        let _ = world
+            .query_filtered::<&Pos, With<Pos>>()
+            .collect::<Vec<_>>();
+    }
+
+    #[test]
+    #[should_panic(expected = "Filter type overlaps with query component type")]
+    fn test_filter_overlap_mut_query_panics() {
+        let mut world = World::new();
+        world.spawn((Pos { x: 1.0 }, Vel { dx: 0.1 }));
+
+        // Without<Vel> overlaps with &Vel in the query — must panic
+        let _ = world
+            .query_filtered::<(&mut Pos, &Vel), Without<Vel>>()
+            .collect::<Vec<_>>();
     }
 }
