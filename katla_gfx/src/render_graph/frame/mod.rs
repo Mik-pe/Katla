@@ -279,13 +279,10 @@ impl<'a> Frame<'a> {
             let pass = &self.graph.passes[index];
             let data = self.pending.remove(&index).unwrap_or_default();
 
-            if self
+            let writes_backbuffer = self
                 .graph
                 .resource_id(BACKBUFFER_NAME)
-                .is_some_and(|id| pass.writes_to(id))
-            {
-                self.backbuffer_written = true;
-            }
+                .is_some_and(|id| pass.writes_to(id));
 
             self.insert_barriers(&cmd, index)?;
 
@@ -353,7 +350,7 @@ impl<'a> Frame<'a> {
                     if let Some(ref compute_fn) = pass.compute_fn {
                         compute_fn(self, &cmd, pass.pipeline.unwrap_or_default())?;
                     } else if let Some(pipeline) = pass.pipeline {
-                        self.execute_compute_pass(&cmd, pass, pipeline)?;
+                        self.execute_compute_pass(&cmd, pass, pipeline, data.dispatch.clone())?;
                     } else {
                         log::warn!(
                             "Compute pass '{}' has no pipeline and no compute_fn",
@@ -365,6 +362,9 @@ impl<'a> Frame<'a> {
 
             self.insert_post_pass_barriers(&cmd, index)?;
 
+            if writes_backbuffer {
+                self.backbuffer_written = true;
+            }
             if pass.uses_depth {
                 self.depth_buffer_written = true;
             }
