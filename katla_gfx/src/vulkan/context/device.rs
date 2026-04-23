@@ -224,7 +224,7 @@ pub(super) unsafe fn is_physical_device_suitable(
         };
 
         if swapchain_support.surface_formats.is_empty()
-            && swapchain_support.present_modes.is_empty()
+            || swapchain_support.present_modes.is_empty()
         {
             score = 0;
         }
@@ -374,11 +374,13 @@ impl VulkanContext {
                     .get_physical_device_format_properties(self.physical_device, candidate)
             };
 
-            let has_features = format_props.optimal_tiling_features & features == features;
+            let has_features = if tiling == vk::ImageTiling::LINEAR {
+                format_props.linear_tiling_features & features == features
+            } else {
+                format_props.optimal_tiling_features & features == features
+            };
 
-            if has_features
-                && (tiling == vk::ImageTiling::LINEAR || tiling == vk::ImageTiling::OPTIMAL)
-            {
+            if has_features {
                 return Ok(candidate);
             }
         }

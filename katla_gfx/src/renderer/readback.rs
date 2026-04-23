@@ -171,6 +171,8 @@ impl VulkanRenderer {
                 match self.context.device.get_fence_status(readback.fence) {
                     Ok(true) => {
                         // Fence signaled - readback is complete!
+                        self.context
+                            .invalidate_mapped_memory(&readback.staging_allocation, 0, readback.buffer_size)?;
                         let mapped_ptr = self.context.map_buffer(&readback.staging_allocation)?;
                         let data =
                             std::slice::from_raw_parts(mapped_ptr, readback.buffer_size as usize);
@@ -229,6 +231,9 @@ impl VulkanRenderer {
                     .context
                     .device
                     .wait_for_fences(&[readback.fence], true, u64::MAX);
+
+                self.context
+                    .invalidate_mapped_memory(&readback.staging_allocation, 0, readback.buffer_size)?;
 
                 // Fence signaled - readback is complete!
                 let mapped_ptr = self
