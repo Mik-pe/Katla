@@ -189,7 +189,9 @@ impl StorageDescriptorSet {
 
     /// Get the descriptor set layout.
     pub fn layout(&self) -> vk::DescriptorSetLayout {
-        self.inner.layout()
+        self.inner
+            .layout()
+            .expect("StorageDescriptorSet always stores its layout")
     }
 }
 

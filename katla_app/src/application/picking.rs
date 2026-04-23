@@ -78,9 +78,11 @@ impl Application {
             let frame_idx = self.renderer.current_frame();
             if let Some(transient) = self.frame_graph.transient_texture("object_id", frame_idx) {
                 let image = transient.image;
+                let current_layout = transient.current_layout();
                 match self.renderer.queue_picking_readback(
                     self.frame_count,
                     image,
+                    current_layout,
                     physical_x,
                     physical_y,
                 ) {

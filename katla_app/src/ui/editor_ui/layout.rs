@@ -215,6 +215,7 @@ impl EditorUI {
                     .max(min_asset_browser_height);
             self.asset_browser.panel_height =
                 ResizeHandle::vertical(asset_resize_bounds, self.asset_browser.panel_height)
+                    .inverted()
                     .min_value(min_asset_browser_height)
                     .max_value(max_height)
                     .show(ui);

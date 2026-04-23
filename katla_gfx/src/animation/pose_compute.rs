@@ -407,40 +407,65 @@ impl PoseComputeBuffers {
 
     // -- Buffer accessors ----------------------------------------------------
 
-    pub fn params_buffer(&self) -> vk::Buffer {
-        self.params_buffer.unwrap_or(vk::Buffer::null())
+    /// Returns params buffer handle, or `Err` if not yet allocated.
+    pub fn params_buffer(&self) -> Result<vk::Buffer, RendererError> {
+        self.params_buffer
+            .ok_or(RendererError::InitializationFailed(
+                "Pose params buffer not allocated".into(),
+            ))
     }
 
     pub fn params_size(&self) -> u64 {
         self.params_size
     }
 
-    pub fn clip_headers_buffer(&self) -> vk::Buffer {
-        self.clip_headers_buffer.unwrap_or(vk::Buffer::null())
+    pub fn clip_headers_buffer(&self) -> Result<vk::Buffer, RendererError> {
+        self.clip_headers_buffer
+            .ok_or(RendererError::InitializationFailed(
+                "Pose clip headers buffer not allocated".into(),
+            ))
     }
 
-    pub fn channel_infos_buffer(&self) -> vk::Buffer {
-        self.channel_infos_buffer.unwrap_or(vk::Buffer::null())
+    pub fn channel_infos_buffer(&self) -> Result<vk::Buffer, RendererError> {
+        self.channel_infos_buffer
+            .ok_or(RendererError::InitializationFailed(
+                "Pose channel infos buffer not allocated".into(),
+            ))
     }
 
-    pub fn keyframe_times_buffer(&self) -> vk::Buffer {
-        self.keyframe_times_buffer.unwrap_or(vk::Buffer::null())
+    pub fn keyframe_times_buffer(&self) -> Result<vk::Buffer, RendererError> {
+        self.keyframe_times_buffer
+            .ok_or(RendererError::InitializationFailed(
+                "Pose keyframe times buffer not allocated".into(),
+            ))
     }
 
-    pub fn keyframe_values_buffer(&self) -> vk::Buffer {
-        self.keyframe_values_buffer.unwrap_or(vk::Buffer::null())
+    pub fn keyframe_values_buffer(&self) -> Result<vk::Buffer, RendererError> {
+        self.keyframe_values_buffer
+            .ok_or(RendererError::InitializationFailed(
+                "Pose keyframe values buffer not allocated".into(),
+            ))
     }
 
-    pub fn joints_buffer(&self) -> vk::Buffer {
-        self.joints_buffer.unwrap_or(vk::Buffer::null())
+    pub fn joints_buffer(&self) -> Result<vk::Buffer, RendererError> {
+        self.joints_buffer
+            .ok_or(RendererError::InitializationFailed(
+                "Pose joints buffer not allocated".into(),
+            ))
     }
 
-    pub fn world_buffer(&self) -> vk::Buffer {
-        self.world_buffer.unwrap_or(vk::Buffer::null())
+    pub fn world_buffer(&self) -> Result<vk::Buffer, RendererError> {
+        self.world_buffer
+            .ok_or(RendererError::InitializationFailed(
+                "Pose world buffer not allocated".into(),
+            ))
     }
 
-    pub fn output_buffer(&self) -> vk::Buffer {
-        self.output_buffer.unwrap_or(vk::Buffer::null())
+    pub fn output_buffer(&self) -> Result<vk::Buffer, RendererError> {
+        self.output_buffer
+            .ok_or(RendererError::InitializationFailed(
+                "Pose output buffer not allocated".into(),
+            ))
     }
 
     pub fn output_size(&self) -> u64 {
@@ -575,49 +600,49 @@ impl PoseComputePipeline {
     }
 
     /// Update the descriptor set with current buffer handles.
-    pub fn update_bindings(&mut self, buffers: &PoseComputeBuffers) {
+    pub fn update_bindings(&mut self, buffers: &PoseComputeBuffers) -> Result<(), RendererError> {
         let descriptor_set = match self.descriptor_set {
             Some(ds) => ds,
-            None => return,
+            None => return Ok(()),
         };
 
         let buf_params = [vk::DescriptorBufferInfo {
-            buffer: buffers.params_buffer(),
+            buffer: buffers.params_buffer()?,
             offset: 0,
             range: buffers.params_size(),
         }];
         let buf_clip_headers = [vk::DescriptorBufferInfo {
-            buffer: buffers.clip_headers_buffer(),
+            buffer: buffers.clip_headers_buffer()?,
             offset: 0,
             range: vk::WHOLE_SIZE,
         }];
         let buf_channel_infos = [vk::DescriptorBufferInfo {
-            buffer: buffers.channel_infos_buffer(),
+            buffer: buffers.channel_infos_buffer()?,
             offset: 0,
             range: vk::WHOLE_SIZE,
         }];
         let buf_keyframe_times = [vk::DescriptorBufferInfo {
-            buffer: buffers.keyframe_times_buffer(),
+            buffer: buffers.keyframe_times_buffer()?,
             offset: 0,
             range: vk::WHOLE_SIZE,
         }];
         let buf_keyframe_values = [vk::DescriptorBufferInfo {
-            buffer: buffers.keyframe_values_buffer(),
+            buffer: buffers.keyframe_values_buffer()?,
             offset: 0,
             range: vk::WHOLE_SIZE,
         }];
         let buf_joints = [vk::DescriptorBufferInfo {
-            buffer: buffers.joints_buffer(),
+            buffer: buffers.joints_buffer()?,
             offset: 0,
             range: vk::WHOLE_SIZE,
         }];
         let buf_world = [vk::DescriptorBufferInfo {
-            buffer: buffers.world_buffer(),
+            buffer: buffers.world_buffer()?,
             offset: 0,
             range: vk::WHOLE_SIZE,
         }];
         let buf_output = [vk::DescriptorBufferInfo {
-            buffer: buffers.output_buffer(),
+            buffer: buffers.output_buffer()?,
             offset: 0,
             range: buffers.output_size(),
         }];
@@ -686,6 +711,8 @@ impl PoseComputePipeline {
                 .device
                 .update_descriptor_sets(&descriptor_writes, &[]);
         }
+
+        Ok(())
     }
 
     /// Record a compute dispatch for pose evaluation.
@@ -749,10 +776,10 @@ impl PoseComputePipeline {
         dst_stage: vk::PipelineStageFlags2,
         dst_access: vk::AccessFlags2,
     ) {
-        let output_buf = buffers.output_buffer();
-        if output_buf == vk::Buffer::null() {
-            return;
-        }
+        let output_buf = match buffers.output_buffer() {
+            Ok(buf) => buf,
+            Err(_) => return,
+        };
 
         let barrier = vk::BufferMemoryBarrier2::default()
             .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)

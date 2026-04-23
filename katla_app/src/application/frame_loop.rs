@@ -110,7 +110,9 @@ impl Application {
             &mut self.renderer.animation_pipeline,
             &mut self.renderer.animation_buffers,
         ) {
-            gpu_anim.prepare(&mut self.world, pipeline, buffers);
+            gpu_anim.prepare(&mut self.world, pipeline, buffers).unwrap_or_else(|e| {
+                log::error!("GPU animation prepare failed: {:?}", e);
+            });
             gpu_anim.update_params(&mut self.world, buffers);
             self.frame_graph
                 .set_animation_skeleton_count(gpu_anim.skeleton_count() as u32);

@@ -966,7 +966,7 @@ fn main() -> ExitCode {
     }
 
     // Update descriptor bindings
-    pipeline.update_bindings(&buffers);
+    pipeline.update_bindings(&buffers)?;
 
     // Upload clip data via staging: the GPU-only buffers need data uploaded.
     // PoseComputeBuffers.upload_clip_data writes to CpuToGpu allocations.

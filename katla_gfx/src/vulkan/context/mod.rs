@@ -132,6 +132,20 @@ impl VulkanContext {
         }
     }
 
+    /// Get window surface resources (swapchain loader, surface loader, surface).
+    ///
+    /// Returns `None` in headless mode where no window surface exists.
+    /// Use this instead of repeatedly unwrapping the individual Option fields.
+    pub(crate) fn window_resources(
+        &self,
+    ) -> Option<(&Rc<SwapchainDevice>, &SurfaceInstance, vk::SurfaceKHR)> {
+        Some((
+            self.swapchain_loader.as_ref()?,
+            self.surface_loader.as_ref()?,
+            self.surface?,
+        ))
+    }
+
     /// Begin a one-time command buffer for transfer operations.
     /// NOTE: For better performance in multi-threaded scenarios, consider using
     /// per-thread command pools and dedicated transfer queues.
