@@ -1,9 +1,15 @@
 use katla_ecs::Component;
 use katla_math::Vec3;
 
-#[derive(Component, Default, Clone)]
+#[derive(Component, Clone)]
 pub struct MassComponent {
     pub mass: f32,
+}
+
+impl Default for MassComponent {
+    fn default() -> Self {
+        MassComponent { mass: 1.0 }
+    }
 }
 
 #[derive(Component, Default, Clone)]

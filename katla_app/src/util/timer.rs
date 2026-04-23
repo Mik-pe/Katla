@@ -28,8 +28,9 @@ impl Timer {
     }
 
     pub fn add_timestamp(&mut self) {
-        let in_timestamp = self.last_frame.elapsed().as_micros() as f64 / 1000.0;
-        self.delta = self.last_frame.elapsed().as_micros() as f64 / 1_000_000.0;
+        let elapsed = self.last_frame.elapsed();
+        let in_timestamp = elapsed.as_micros() as f64 / 1000.0;
+        self.delta = elapsed.as_micros() as f64 / 1_000_000.0;
 
         self.timestamps.push_back(in_timestamp);
         let mut sum_timestamps = 0.0;

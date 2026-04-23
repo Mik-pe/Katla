@@ -72,6 +72,8 @@ impl System for PhysicsSystem {
 
             if mass > 0.0 {
                 velocity.acceleration = force.force * (1.0 / mass);
+            } else {
+                velocity.acceleration = katla_math::Vec3::default();
             }
             velocity.velocity += velocity.acceleration * delta_time;
         }
