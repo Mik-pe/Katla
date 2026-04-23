@@ -175,6 +175,12 @@ pub struct VulkanRenderer {
     /// Shared empty descriptor set layout (no bindings).
     /// Used as a placeholder for Set 1 in skinned pipelines (outline, depth prepass, shadow).
     pub(crate) shared_empty_descriptor_layout: vk::DescriptorSetLayout,
+    /// Empty descriptor sets (one per frame) for binding at unused set slots.
+    /// Prevents VUID-vkCmdDrawIndexed-None-08600 when pipeline layouts declare
+    /// sets for light culling (3) and shadow (4) but those systems aren't ready.
+    empty_descriptor_sets: Vec<vk::DescriptorSet>,
+    /// Descriptor pool for allocating empty descriptor sets.
+    empty_descriptor_pool: vk::DescriptorPool,
     /// Depth prepass subsystem (depth-only pre-pass).
     depth_prepass: depth_prepass::DepthPrepassSubsystem,
     /// Outline highlight subsystem (stencil-based selection highlight).
@@ -265,6 +271,45 @@ impl VulkanRenderer {
                 })
         }
     }
+
+    fn create_empty_descriptor_sets(
+        context: &Rc<VulkanContext>,
+        layout: vk::DescriptorSetLayout,
+    ) -> Result<(vk::DescriptorPool, Vec<vk::DescriptorSet>), RendererError> {
+        // Include a dummy pool size for driver compatibility (some drivers reject
+        // pools with zero pool sizes even when allocating empty descriptor sets).
+        let dummy_pool_size = vk::DescriptorPoolSize::default()
+            .ty(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(FRAMES_IN_FLIGHT as u32);
+        let pool_info = vk::DescriptorPoolCreateInfo::default()
+            .max_sets(FRAMES_IN_FLIGHT as u32)
+            .pool_sizes(std::slice::from_ref(&dummy_pool_size));
+        let pool = unsafe {
+            context
+                .device
+                .create_descriptor_pool(&pool_info, None)
+                .map_err(|_| {
+                    RendererError::InitializationFailed(
+                        "Failed to create empty descriptor pool".to_string(),
+                    )
+                })
+        }?;
+        let layouts: Vec<_> = (0..FRAMES_IN_FLIGHT).map(|_| layout).collect();
+        let allocate_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(pool)
+            .set_layouts(&layouts);
+        let sets = unsafe {
+            context
+                .device
+                .allocate_descriptor_sets(&allocate_info)
+                .map_err(|_| {
+                    RendererError::InitializationFailed(
+                        "Failed to allocate empty descriptor sets".to_string(),
+                    )
+                })
+        }?;
+        Ok((pool, sets))
+    }
 }
 
 impl VulkanRenderer {
@@ -333,6 +378,8 @@ impl VulkanRenderer {
         info!("Compositing descriptor set layout created");
 
         let shared_empty_descriptor_layout = Self::create_empty_descriptor_set_layout(&context)?;
+        let (empty_descriptor_pool, empty_descriptor_sets) =
+            Self::create_empty_descriptor_sets(&context, shared_empty_descriptor_layout)?;
         let ui_renderer = ui_renderer::UIRenderer::new(&context);
 
         Ok(Self {
@@ -361,6 +408,8 @@ impl VulkanRenderer {
             animation_buffers: None,
             light_culling: light_culling::LightSubsystem::default(),
             shared_empty_descriptor_layout,
+            empty_descriptor_sets,
+            empty_descriptor_pool,
             shadow: shadow::ShadowSubsystem::default(),
             depth_prepass: depth_prepass::DepthPrepassSubsystem::default(),
             outline: outline::OutlineSubsystem::default(),
@@ -420,6 +469,17 @@ impl VulkanRenderer {
     /// Actual index for frame N is `base + N`.
     pub fn depth_texture_base_index(&self) -> Option<u32> {
         self.depth_texture_base_index
+    }
+
+    /// Get an empty descriptor set for the given frame index.
+    ///
+    /// Used as a fallback binding when a pipeline declares a descriptor set slot
+    /// but the corresponding system isn't active yet (e.g., shadow atlas not ready).
+    pub(crate) fn empty_descriptor_set(&self, frame_idx: usize) -> vk::DescriptorSet {
+        self.empty_descriptor_sets
+            .get(frame_idx)
+            .copied()
+            .unwrap_or(vk::DescriptorSet::null())
     }
 
     /// Initialize or resize the output render target.
@@ -674,6 +734,13 @@ impl VulkanRenderer {
         // Destroy descriptor set layouts AFTER device_wait_idle, since pipelines
         // in asset_registry still reference them until they are dropped.
         self.shadow.destroy_layouts(&self.context);
+        unsafe {
+            if self.empty_descriptor_pool != vk::DescriptorPool::null() {
+                self.context
+                    .device
+                    .destroy_descriptor_pool(self.empty_descriptor_pool, None);
+            }
+        }
         if self.shared_empty_descriptor_layout != vk::DescriptorSetLayout::null() {
             unsafe {
                 self.context

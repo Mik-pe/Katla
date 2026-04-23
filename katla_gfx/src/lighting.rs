@@ -440,7 +440,19 @@ impl LightCullingBuffers {
             .push_descriptor_khr
             .as_ref()
             .ok_or_else(|| "VK_KHR_push_descriptor not available".to_string())?;
+        self.push_fragment_descriptors_with_ext(push_descriptor, cmd, pipeline_layout)
+    }
 
+    /// Push fragment descriptors (Set 3) using an explicit push descriptor extension.
+    ///
+    /// Same as `push_fragment_descriptors` but takes the extension explicitly,
+    /// useful when the caller already has a reference to it.
+    pub fn push_fragment_descriptors_with_ext(
+        &self,
+        push_descriptor: &ash::khr::push_descriptor::Device,
+        cmd: vk::CommandBuffer,
+        pipeline_layout: vk::PipelineLayout,
+    ) -> Result<(), String> {
         let light_info = [vk::DescriptorBufferInfo::default()
             .buffer(self.light_buffer)
             .offset(0)
