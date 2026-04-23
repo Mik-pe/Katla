@@ -56,34 +56,39 @@ impl<'a> Inspector<'a> {
     }
 }
 
+/// Width reserved for the formatted value text ("0.00") next to sliders.
+const VALUE_TEXT_WIDTH: f32 = 36.0;
+
 /// Draw a labeled slider row: label on the left, value display + slider on the right.
+/// `axis_colors` overrides the label color per axis (e.g. for RGB sliders).
 fn vec3_slider_row(
     ui: &mut UiContext,
     theme: &ColorScheme,
     label: &str,
     values: &mut [f32; 3],
     axis_labels: [&str; 3],
+    axis_colors: Option<[Color; 3]>,
     range: std::ops::RangeInclusive<f32>,
-    slider_width: f32,
+    content_width: f32,
 ) {
-    let row_height = ROW_HEIGHT;
     let font_size = ui.scaled_font_size(FontSize::Small);
     ui.draw_text(label, ui.cursor(), theme.text_accent, font_size);
-    ui.spacing(row_height);
+    ui.spacing(ROW_HEIGHT);
 
     let indent = ui.style().item_inner_spacing;
-    let value_label_width = 18.0;
-    let slider_area = slider_width - indent - value_label_width;
+    let axis_label_width = 18.0;
+    let slider_area = content_width - indent - axis_label_width - VALUE_TEXT_WIDTH;
 
     for (i, (axis_label, val)) in axis_labels.iter().zip(values.iter_mut()).enumerate() {
         let cursor = ui.cursor();
         let label_pos = Vec2::new(cursor.x() + indent, cursor.y());
-        ui.draw_text(axis_label, label_pos, theme.text_muted, font_size);
+        let label_color = axis_colors.map(|c| c[i]).unwrap_or(theme.text_muted);
+        ui.draw_text(axis_label, label_pos, label_color, font_size);
 
-        let slider_x = cursor.x() + indent + value_label_width;
+        let slider_x = cursor.x() + indent + axis_label_width;
         let slider_bounds = Rect2D::from_origin_size(
             Vec2::new(slider_x, cursor.y()),
-            Vec2::new(slider_area, row_height),
+            Vec2::new(slider_area, ROW_HEIGHT),
         );
 
         let id = format!("{}_{}", label.to_lowercase(), i);
@@ -93,12 +98,11 @@ fn vec3_slider_row(
                 .id(&id),
         );
 
-        // Display current value next to slider
         let val_text = format!("{:.2}", val);
         let val_pos = Vec2::new(slider_x + slider_area + 4.0, cursor.y());
         ui.draw_text(&val_text, val_pos, theme.text_primary, font_size);
 
-        ui.spacing(row_height);
+        ui.spacing(ROW_HEIGHT);
     }
 }
 
@@ -109,22 +113,20 @@ fn scalar_slider_row(
     label: &str,
     value: &mut f32,
     range: std::ops::RangeInclusive<f32>,
-    slider_width: f32,
-    row_height: f32,
+    content_width: f32,
 ) {
     let font_size = ui.scaled_font_size(FontSize::Small);
     let cursor = ui.cursor();
 
     let label_width = ui.style().property_label_width;
-    let value_label_width = 50.0;
-    let slider_area = slider_width - label_width - value_label_width;
+    let slider_area = content_width - label_width - VALUE_TEXT_WIDTH;
 
     ui.draw_text(label, cursor, theme.text_muted, font_size);
 
     let slider_x = cursor.x() + label_width;
     let slider_bounds = Rect2D::from_origin_size(
         Vec2::new(slider_x, cursor.y()),
-        Vec2::new(slider_area, row_height),
+        Vec2::new(slider_area, ROW_HEIGHT),
     );
 
     let id = format!("slider_{}", label.to_lowercase().replace(' ', "_"));
@@ -134,7 +136,7 @@ fn scalar_slider_row(
     let val_pos = Vec2::new(slider_x + slider_area + 4.0, cursor.y());
     ui.draw_text(&val_text, val_pos, theme.text_primary, font_size);
 
-    ui.spacing(row_height);
+    ui.spacing(ROW_HEIGHT);
 }
 
 impl<'a> Widget for Inspector<'a> {
@@ -151,7 +153,6 @@ impl<'a> Widget for Inspector<'a> {
             .selected_entity
             .and_then(|id| self.entities.iter().find(|e| e.id == id));
 
-        let row_height = 18.0;
         let content_x = content_bounds.min.x() + ui.style().panel_padding;
         let content_width = content_bounds.width() - 2.0 * ui.style().panel_padding;
 
@@ -168,23 +169,21 @@ impl<'a> Widget for Inspector<'a> {
                 |ui| {
                     ui.set_cursor(Vec2::new(content_bounds.min.x(), content_bounds.min.y()));
 
-                    // Entity name (read-only)
                     ui.draw_text(
                         &entity.name,
                         ui.cursor(),
                         theme.text_primary,
                         ui.scaled_font_size(FontSize::Large),
                     );
-                    ui.spacing(row_height + ui.style().item_spacing);
+                    ui.spacing(ROW_HEIGHT + ui.style().item_spacing);
 
-                    // Transform section with interactive sliders
                     ui.draw_text(
                         "Transform",
                         ui.cursor(),
                         theme.text_accent,
                         ui.scaled_font_size(FontSize::Medium),
                     );
-                    ui.spacing(row_height);
+                    ui.spacing(ROW_HEIGHT);
 
                     vec3_slider_row(
                         ui,
@@ -192,6 +191,7 @@ impl<'a> Widget for Inspector<'a> {
                         "Position",
                         &mut edit.pos,
                         ["X", "Y", "Z"],
+                        None,
                         -100.0..=100.0,
                         content_width,
                     );
@@ -202,6 +202,7 @@ impl<'a> Widget for Inspector<'a> {
                         "Rotation",
                         &mut edit.rot,
                         ["X", "Y", "Z"],
+                        None,
                         -180.0..=180.0,
                         content_width,
                     );
@@ -212,6 +213,7 @@ impl<'a> Widget for Inspector<'a> {
                         "Scale",
                         &mut edit.scale,
                         ["X", "Y", "Z"],
+                        None,
                         0.01..=100.0,
                         content_width,
                     );
@@ -220,7 +222,6 @@ impl<'a> Widget for Inspector<'a> {
                     ui.separator_line();
                     ui.spacing(ui.style().item_inner_spacing);
 
-                    // PointLight section (if entity has PointLight)
                     if entity.point_light.is_some() {
                         ui.draw_text(
                             "Point Light",
@@ -228,41 +229,22 @@ impl<'a> Widget for Inspector<'a> {
                             theme.text_accent,
                             ui.scaled_font_size(FontSize::Medium),
                         );
-                        ui.spacing(row_height);
+                        ui.spacing(ROW_HEIGHT);
 
-                        // Color sliders (R, G, B)
-                        let font_size = ui.scaled_font_size(FontSize::Small);
-                        let indent = ui.style().item_inner_spacing;
-                        let value_label_width = 18.0;
-                        let slider_area = content_width - indent - value_label_width;
-
-                        for (i, axis_label) in ["R", "G", "B"].iter().enumerate() {
-                            let cursor = ui.cursor();
-                            let label_pos = Vec2::new(cursor.x() + indent, cursor.y());
-                            let color = match i {
-                                0 => Color::new(1.0, 0.3, 0.3, 1.0),
-                                1 => Color::new(0.3, 1.0, 0.3, 1.0),
-                                _ => Color::new(0.3, 0.3, 1.0, 1.0),
-                            };
-                            ui.draw_text(axis_label, label_pos, color, font_size);
-
-                            let slider_x = cursor.x() + indent + value_label_width;
-                            let slider_bounds = Rect2D::from_origin_size(
-                                Vec2::new(slider_x, cursor.y()),
-                                Vec2::new(slider_area, row_height),
-                            );
-                            let id = format!("light_color_{}", i);
-                            let _response = ui.add(
-                                Slider::new(&id, &mut edit.light_color[i], 0.0..=1.0)
-                                    .bounds(slider_bounds)
-                                    .id(&id),
-                            );
-
-                            let val_text = format!("{:.2}", edit.light_color[i]);
-                            let val_pos = Vec2::new(slider_x + slider_area + 4.0, cursor.y());
-                            ui.draw_text(&val_text, val_pos, theme.text_primary, font_size);
-                            ui.spacing(row_height);
-                        }
+                        vec3_slider_row(
+                            ui,
+                            theme,
+                            "Color",
+                            &mut edit.light_color,
+                            ["R", "G", "B"],
+                            Some([
+                                Color::new(1.0, 0.3, 0.3, 1.0),
+                                Color::new(0.3, 1.0, 0.3, 1.0),
+                                Color::new(0.3, 0.3, 1.0, 1.0),
+                            ]),
+                            0.0..=1.0,
+                            content_width,
+                        );
 
                         scalar_slider_row(
                             ui,
@@ -271,7 +253,6 @@ impl<'a> Widget for Inspector<'a> {
                             &mut edit.light_intensity,
                             0.0..=100.0,
                             content_width,
-                            row_height,
                         );
 
                         scalar_slider_row(
@@ -281,7 +262,6 @@ impl<'a> Widget for Inspector<'a> {
                             &mut edit.light_range,
                             0.1..=100.0,
                             content_width,
-                            row_height,
                         );
 
                         ui.spacing(ui.style().item_inner_spacing);
@@ -289,7 +269,6 @@ impl<'a> Widget for Inspector<'a> {
                         ui.spacing(ui.style().item_inner_spacing);
                     }
 
-                    // ParticleEmitter section (if entity has ParticleEmitter)
                     if entity.particle_emitter.is_some() {
                         ui.draw_text(
                             "Particle Emitter",
@@ -297,7 +276,7 @@ impl<'a> Widget for Inspector<'a> {
                             theme.text_accent,
                             ui.scaled_font_size(FontSize::Medium),
                         );
-                        ui.spacing(row_height);
+                        ui.spacing(ROW_HEIGHT);
 
                         scalar_slider_row(
                             ui,
@@ -306,7 +285,6 @@ impl<'a> Widget for Inspector<'a> {
                             &mut edit.emit_rate,
                             0.0..=1000.0,
                             content_width,
-                            row_height,
                         );
 
                         scalar_slider_row(
@@ -316,7 +294,6 @@ impl<'a> Widget for Inspector<'a> {
                             &mut edit.velocity,
                             0.0..=50.0,
                             content_width,
-                            row_height,
                         );
 
                         scalar_slider_row(
@@ -326,7 +303,6 @@ impl<'a> Widget for Inspector<'a> {
                             &mut edit.lifetime,
                             0.1..=30.0,
                             content_width,
-                            row_height,
                         );
 
                         scalar_slider_row(
@@ -336,7 +312,6 @@ impl<'a> Widget for Inspector<'a> {
                             &mut edit.gravity,
                             -30.0..=30.0,
                             content_width,
-                            row_height,
                         );
 
                         scalar_slider_row(
@@ -346,7 +321,6 @@ impl<'a> Widget for Inspector<'a> {
                             &mut edit.particle_scale,
                             0.01..=5.0,
                             content_width,
-                            row_height,
                         );
 
                         ui.spacing(ui.style().item_inner_spacing);
@@ -354,14 +328,13 @@ impl<'a> Widget for Inspector<'a> {
                         ui.spacing(ui.style().item_inner_spacing);
                     }
 
-                    // Type and Components (read-only)
                     ui.draw_text(
                         "Type",
                         ui.cursor(),
                         theme.text_accent,
                         ui.scaled_font_size(FontSize::Medium),
                     );
-                    ui.spacing(row_height);
+                    ui.spacing(ROW_HEIGHT);
                     ui.label(&entity.entity_type);
 
                     ui.draw_text(
@@ -370,7 +343,7 @@ impl<'a> Widget for Inspector<'a> {
                         theme.text_accent,
                         ui.scaled_font_size(FontSize::Medium),
                     );
-                    ui.spacing(row_height);
+                    ui.spacing(ROW_HEIGHT);
                     for component_name in &entity.components {
                         ui.label(component_name);
                     }
