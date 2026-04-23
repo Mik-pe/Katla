@@ -219,6 +219,7 @@ impl PickingSubsystem {
             unsafe {
                 match context.device.get_fence_status(readback.fence) {
                     Ok(true) => {
+                        context.invalidate_mapped_memory(&readback.staging_allocation, 0, 4)?;
                         let mapped_ptr = context.map_buffer(&readback.staging_allocation)?;
                         let data = std::ptr::read(mapped_ptr as *const u32);
 
@@ -260,6 +261,8 @@ impl PickingSubsystem {
                 let _ = context
                     .device
                     .wait_for_fences(&[readback.fence], true, u64::MAX);
+
+                context.invalidate_mapped_memory(&readback.staging_allocation, 0, 4)?;
 
                 let mapped_ptr = context
                     .map_buffer(&readback.staging_allocation)
