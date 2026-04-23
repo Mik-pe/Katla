@@ -64,10 +64,7 @@ impl VulkanRenderer {
         // Create a command buffer for the copy operation
         let command_buffer = crate::vulkan::commandbuffer::CommandBuffer::new(
             &self.context.device,
-            &crate::vulkan::commandpool::CommandPool {
-                device: self.context.device.clone(),
-                command_pool: self.context.transfer_command_pool,
-            },
+            &self.context.gfx_cmdpool,
         );
 
         // Begin command buffer
