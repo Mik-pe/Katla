@@ -232,8 +232,17 @@ impl Texture {
             let image_sampler = Self::create_texture_sampler(&context);
 
             let channels = match format {
-                ImageFormat::R8G8B8A8Srgb | ImageFormat::B8G8R8A8Srgb => 4,
-                _ => 4,
+                ImageFormat::R8Unorm => 1,
+                ImageFormat::Rg8Unorm => 2,
+                ImageFormat::R32Sfloat | ImageFormat::R32Uint => 1,
+                ImageFormat::R8G8B8A8Srgb
+                | ImageFormat::R8G8B8A8Unorm
+                | ImageFormat::B8G8R8A8Srgb => 4,
+                ImageFormat::R16G16B16A16Sfloat => 4,
+                ImageFormat::D32Sfloat
+                | ImageFormat::D32SfloatS8Uint
+                | ImageFormat::D24UnormS8Uint => 1,
+                ImageFormat::Auto => 4,
             };
 
             Self {
@@ -305,7 +314,8 @@ impl Texture {
     /// Dimensions must match current texture size.
     /// Uses staging buffer for transfer with proper synchronization.
     pub fn update_data(&self, pixel_data: &[u8]) {
-        let expected_size = (self.width * self.height * self.channels) as usize;
+        let bytes_per_pixel = self.format.bytes_per_pixel();
+        let expected_size = (self.width * self.height * bytes_per_pixel) as usize;
         if pixel_data.len() != expected_size {
             log::warn!(
                 "Texture::update_data: size mismatch (expected {}, got {})",
