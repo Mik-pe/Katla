@@ -538,7 +538,11 @@ impl ComputePassBuilder {
             pipeline_handle,
             descriptor_set,
             descriptor_pool,
-            descriptor_layout,
+            descriptor_layout: if self.use_push_descriptors {
+                vk::DescriptorSetLayout::null()
+            } else {
+                descriptor_layout
+            },
             push_descriptor_layout: if self.use_push_descriptors {
                 Some(descriptor_layout)
             } else {
