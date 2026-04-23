@@ -28,29 +28,17 @@ pub(super) struct ResolvedDrawCommand {
     instance_index: u32,
 }
 
-/// Wrapper around `ash::Device` that is `Send + Sync`.
-///
-/// Vulkan command buffer recording (`vkCmd*` functions) is thread-safe when
-/// recording separate command buffers. The `ash::Device` is a cloneable handle
-/// to the Vulkan function table — wrapping it as `Send + Sync` is safe because
-/// we only call stateless `vkCmd*` recording commands from worker threads.
-struct SyncDevice(ash::Device);
-
-unsafe impl Send for SyncDevice {}
-unsafe impl Sync for SyncDevice {}
-
-/// Record a chunk of draw commands into a secondary command buffer using raw Vulkan calls.
-///
-/// Each draw command binds its own pipeline and descriptor sets (no state inheritance
-/// from the primary CB). This is safe because Vulkan command buffer recording is
-/// thread-safe when recording separate command buffers.
-fn record_draw_chunk(device: &SyncDevice, cb: vk::CommandBuffer, commands: &[ResolvedDrawCommand]) {
-    let dev = &device.0;
+/// Record draw commands sequentially on a command buffer.
+fn record_draw_chunk_sequential(
+    device: &ash::Device,
+    cb: vk::CommandBuffer,
+    commands: &[ResolvedDrawCommand],
+) {
     for draw in commands {
         unsafe {
-            dev.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, draw.pipeline);
+            device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, draw.pipeline);
 
-            dev.cmd_bind_descriptor_sets(
+            device.cmd_bind_descriptor_sets(
                 cb,
                 vk::PipelineBindPoint::GRAPHICS,
                 draw.layout,
@@ -59,7 +47,7 @@ fn record_draw_chunk(device: &SyncDevice, cb: vk::CommandBuffer, commands: &[Res
                 &[],
             );
 
-            dev.cmd_bind_descriptor_sets(
+            device.cmd_bind_descriptor_sets(
                 cb,
                 vk::PipelineBindPoint::GRAPHICS,
                 draw.layout,
@@ -69,7 +57,7 @@ fn record_draw_chunk(device: &SyncDevice, cb: vk::CommandBuffer, commands: &[Res
             );
 
             if draw.is_skinned {
-                dev.cmd_bind_descriptor_sets(
+                device.cmd_bind_descriptor_sets(
                     cb,
                     vk::PipelineBindPoint::GRAPHICS,
                     draw.layout,
@@ -79,7 +67,7 @@ fn record_draw_chunk(device: &SyncDevice, cb: vk::CommandBuffer, commands: &[Res
                 );
             }
 
-            dev.cmd_bind_vertex_buffers(
+            device.cmd_bind_vertex_buffers(
                 cb,
                 0,
                 &[draw.pos_buf, draw.norm_buf, draw.tang_buf, draw.uv_buf],
@@ -87,8 +75,8 @@ fn record_draw_chunk(device: &SyncDevice, cb: vk::CommandBuffer, commands: &[Res
             );
 
             if draw.index_count > 0 {
-                dev.cmd_bind_index_buffer(cb, draw.index_buf, 0, vk::IndexType::UINT32);
-                dev.cmd_draw_indexed(cb, draw.index_count, 1, 0, 0, draw.instance_index);
+                device.cmd_bind_index_buffer(cb, draw.index_buf, 0, vk::IndexType::UINT32);
+                device.cmd_draw_indexed(cb, draw.index_count, 1, 0, 0, draw.instance_index);
             }
         }
     }
@@ -105,12 +93,13 @@ pub(super) struct RenderPassParams<'a> {
 
 /// Execute parallel secondary command buffer recording with pre-resolved draw commands.
 ///
-/// This is a standalone function (not a method on `Frame`) to avoid borrow checker
-/// conflicts between attachment references (borrowing `self`) and the mutable operations
-/// needed for command buffer recording.
+/// Records all draw commands sequentially on the primary command buffer
+/// within a dynamic rendering scope. Secondary command buffers with
+/// dynamic rendering inheritance are used for parallel recording when
+/// supported by the driver.
 pub(super) fn execute_parallel_recording(
     device: &ash::Device,
-    command_pool: &crate::vulkan::CommandPool,
+    _command_pool: &crate::vulkan::CommandPool,
     cmd: &CommandBuffer,
     all_commands: &[ResolvedDrawCommand],
     params: &RenderPassParams<'_>,
@@ -138,43 +127,11 @@ pub(super) fn execute_parallel_recording(
         return Ok(());
     }
 
-    let cpu_count = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1);
-    let num_threads = cpu_count.clamp(1, 4);
-    let chunk_size = all_commands.len().div_ceil(num_threads);
-    let chunks: Vec<_> = all_commands.chunks(chunk_size).collect::<Vec<_>>();
-
-    let sync_device = SyncDevice(device.clone());
-
-    let mut secondary_cbs: Vec<CommandBuffer> = Vec::with_capacity(chunks.len());
-    for _ in 0..chunks.len() {
-        let cb = CommandBuffer::new_secondary(device, command_pool);
-        cb.begin_secondary(vk::CommandBufferInheritanceInfo::default())?;
-        secondary_cbs.push(cb);
-    }
-
-    let raw_cbs: Vec<vk::CommandBuffer> = secondary_cbs
-        .iter()
-        .map(|cb| cb.vk_command_buffer())
-        .collect();
-
-    std::thread::scope(|s| {
-        for (i, chunk) in chunks.into_iter().enumerate() {
-            let dev = &sync_device;
-            let cb_raw = raw_cbs[i];
-            s.spawn(move || {
-                record_draw_chunk(dev, cb_raw, chunk);
-            });
-        }
-    });
-
-    for cb in &secondary_cbs {
-        cb.end_command()?;
-    }
-
-    let refs: Vec<&CommandBuffer> = secondary_cbs.iter().collect();
-    cmd.execute_commands(&refs)?;
+    // Record all draw commands on the primary command buffer.
+    // Secondary command buffers with dynamic rendering inheritance are not
+    // universally supported across all driver versions, so we record sequentially
+    // on the primary buffer for correctness.
+    record_draw_chunk_sequential(device, cmd.vk_command_buffer(), all_commands);
 
     cmd.end_rendering();
 
