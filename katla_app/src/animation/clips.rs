@@ -217,7 +217,11 @@ impl AnimationSampler {
 
         let t0 = self.inputs[index];
         let t1 = self.inputs[index + 1];
-        let alpha = (time - t0) / (t1 - t0);
+        let alpha = if (t1 - t0).abs() > f32::EPSILON {
+            (time - t0) / (t1 - t0)
+        } else {
+            0.0
+        };
 
         self.interpolate_values(index, index + 1, alpha)
     }

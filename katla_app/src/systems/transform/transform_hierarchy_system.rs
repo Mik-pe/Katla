@@ -119,7 +119,10 @@ impl TransformHierarchySystem {
         sorted
     }
 
-    /// Recursive DFS helper for topological sort.
+    /// Recursive DFS helper for topological sort (pre-order).
+    ///
+    /// Pushes the entity BEFORE recursing into children so that parents
+    /// always appear before their children in the sorted list.
     fn visit(
         entity: EntityId,
         sorted: &mut Vec<EntityId>,
@@ -146,6 +149,9 @@ impl TransformHierarchySystem {
         visiting.insert(entity);
         visited.insert(entity);
 
+        // Push BEFORE recursing so parents come before children in `sorted`
+        sorted.push(entity);
+
         // Recursively visit all children
         if let Some(children) = children_map.get(&entity) {
             for &child in children {
@@ -153,9 +159,7 @@ impl TransformHierarchySystem {
             }
         }
 
-        // All descendants processed, add this entity to sorted list
         visiting.remove(&entity);
-        sorted.push(entity);
     }
 
     /// Calculate world transform for an entity by traversing its ancestry.

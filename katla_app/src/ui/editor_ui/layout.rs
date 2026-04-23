@@ -542,8 +542,11 @@ impl EditorUI {
                 );
 
                 let max_chars = 12;
-                let display_name = if asset.name.len() > max_chars {
-                    format!("{}...", &asset.name[..max_chars])
+                let display_name = if asset.name.chars().count() > max_chars {
+                    format!(
+                        "{}...",
+                        asset.name.chars().take(max_chars).collect::<String>()
+                    )
                 } else {
                     asset.name.clone()
                 };
