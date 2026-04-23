@@ -197,6 +197,7 @@ impl EditorState {
                 self.redo_stack.push(group);
                 return true;
             }
+            self.undo_stack.push(group);
         }
         false
     }
@@ -207,6 +208,7 @@ impl EditorState {
                 self.undo_stack.push(group);
                 return true;
             }
+            self.redo_stack.push(group);
         }
         false
     }
@@ -217,6 +219,7 @@ impl EditorState {
                 self.agent_redo_stack.push(group);
                 return true;
             }
+            self.agent_undo_stack.push(group);
         }
         false
     }
@@ -227,6 +230,7 @@ impl EditorState {
                 self.agent_undo_stack.push(group);
                 return true;
             }
+            self.agent_redo_stack.push(group);
         }
         false
     }
@@ -467,10 +471,36 @@ impl ApplicationHandler for Application {
                     self.minimized = true;
                     debug!("Window occluded, skipping rendering");
                 } else if !occluded && self.minimized {
-                    self.minimized = false;
-                    info!("Window unoccluded, resuming rendering");
-                    if let Err(e) = self.renderer.recreate_swapchain(&mut self.frame_graph) {
-                        log::error!("Failed to recreate swapchain: {}", e);
+                    match self.renderer.recreate_swapchain(&mut self.frame_graph) {
+                        Ok(textures) => {
+                            self.minimized = false;
+                            info!("Window unoccluded, resuming rendering");
+
+                            let extent = self.renderer.swapchain_extent();
+                            for (name, slot) in textures {
+                                if name == "hdr_color" {
+                                    self.frame_graph
+                                        .set_tonemap_texture_index(self.pass_ids.tonemap, slot)
+                                        .expect("Failed to update tonemap texture index");
+                                } else if name == "viewport_0" {
+                                    self.on_viewport_texture_recreated(slot);
+                                }
+                            }
+                            for frame_idx in 0..2 {
+                                if let Some(view) = self
+                                    .frame_graph
+                                    .transient_texture_view_for_frame("shadow_atlas", frame_idx)
+                                {
+                                    self.renderer.set_shadow_atlas_view(frame_idx, view);
+                                }
+                            }
+                            let aspect = extent.width as f32 / extent.height as f32;
+                            self.camera.aspect_ratio_changed(&mut self.world, aspect);
+                            self.window.request_redraw();
+                        }
+                        Err(e) => {
+                            log::error!("Failed to recreate swapchain on unocclude: {}", e);
+                        }
                     }
                 }
             }

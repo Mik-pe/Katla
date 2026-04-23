@@ -307,31 +307,52 @@ impl<'a> DrawBuilder<'a> {
     /// This writes the per-object data to the storage buffer (at the allocated
     /// instance index) and adds the draw call to the frame's draw list.
     pub fn submit(self) {
-        let mut instance = if let Some(inst) = self.instances.first() {
-            inst.clone()
-        } else {
-            InstanceData::default()
-        };
-
-        // Apply builder overrides
-        if let Some(transform) = self.transform {
-            instance.model_matrix = transform;
-        }
-        if let Some(color) = self.color {
-            instance.color = color;
-        }
-        if let Some(metallic) = self.metallic {
-            instance.metallic = metallic;
-        }
-        if let Some(roughness) = self.roughness {
-            instance.roughness = roughness;
-        }
-        if let Some(ao) = self.ao {
-            instance.ao = ao;
-        }
+        let has_overrides = self.transform.is_some()
+            || self.color.is_some()
+            || self.metallic.is_some()
+            || self.roughness.is_some()
+            || self.ao.is_some();
 
         let instances = if self.instances.is_empty() {
+            let mut instance = InstanceData::default();
+            if let Some(transform) = self.transform {
+                instance.model_matrix = transform;
+            }
+            if let Some(color) = self.color {
+                instance.color = color;
+            }
+            if let Some(metallic) = self.metallic {
+                instance.metallic = metallic;
+            }
+            if let Some(roughness) = self.roughness {
+                instance.roughness = roughness;
+            }
+            if let Some(ao) = self.ao {
+                instance.ao = ao;
+            }
             vec![instance]
+        } else if has_overrides {
+            self.instances
+                .into_iter()
+                .map(|mut instance| {
+                    if let Some(transform) = self.transform {
+                        instance.model_matrix = transform;
+                    }
+                    if let Some(color) = self.color {
+                        instance.color = color;
+                    }
+                    if let Some(metallic) = self.metallic {
+                        instance.metallic = metallic;
+                    }
+                    if let Some(roughness) = self.roughness {
+                        instance.roughness = roughness;
+                    }
+                    if let Some(ao) = self.ao {
+                        instance.ao = ao;
+                    }
+                    instance
+                })
+                .collect()
         } else {
             self.instances
         };

@@ -59,10 +59,16 @@ impl ParticleSystem {
         };
 
         // Clean up GPU emitters for entities that no longer exist
+        // or no longer have a ParticleEmitterComponent
         let destroyed: Vec<EntityId> = self
             .entity_emitters
             .keys()
-            .filter(|id| !world.entity_exists(**id))
+            .filter(|id| {
+                !world.entity_exists(**id)
+                    || world
+                        .get_component::<ParticleEmitterComponent>(**id)
+                        .is_none()
+            })
             .copied()
             .collect();
         for entity_id in destroyed {
