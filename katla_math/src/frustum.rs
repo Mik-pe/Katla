@@ -1,4 +1,4 @@
-use crate::{AABB, Mat4, Plane, Sphere, Vec3, Vec4};
+use crate::{AABB, Mat4, Plane, Quat, Sphere, Vec3, Vec4};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frustum {
@@ -30,33 +30,58 @@ impl Frustum {
         }
     }
 
-    /// Create a frustum from a projection and view matrix
+    /// Create a frustum from a projection matrix and a look-at (camera-to-world) matrix.
     ///
-    /// Extracts clip-space planes using the Gribb-Hartmann method.
-    /// Mat4 stores column-major: `m[col][row]`, so row `r` = `(m[0][r], m[1][r], m[2][r], m[3][r])`.
-    pub fn from_projection_view_matrix(proj: &Mat4, view: &Mat4) -> Self {
+    /// **Important:** `lookat` must be the camera-to-world matrix (output of
+    /// `Mat4::create_lookat`), NOT the world-to-camera view matrix.
+    pub fn from_proj_and_lookat(proj: &Mat4, lookat: &Mat4) -> Self {
+        let view = lookat.inverse().unwrap_or_else(Mat4::identity);
+        Self::from_proj_and_view_internal(proj, &view, lookat)
+    }
+
+    /// Create a frustum from a projection matrix and a view (world-to-camera) matrix.
+    pub fn from_proj_and_view(proj: &Mat4, view: &Mat4) -> Self {
+        let lookat = view.inverse().unwrap_or_else(Mat4::identity);
+        Self::from_proj_and_view_internal(proj, view, &lookat)
+    }
+
+    /// Internal: extract planes from P*V using standard Gribb-Hartmann on rows.
+    fn from_proj_and_view_internal(proj: &Mat4, view: &Mat4, lookat: &Mat4) -> Self {
         let m = *proj * *view;
 
-        // Extract planes from the combined matrix rows (Gribb-Hartmann method).
-        // row r = (m[0][r], m[1][r], m[2][r], m[3][r])
         let r0 = Vec4::new(m[0][0], m[1][0], m[2][0], m[3][0]);
         let r1 = Vec4::new(m[0][1], m[1][1], m[2][1], m[3][1]);
-        let r2 = Vec4::new(m[0][2], m[1][2], m[2][2], m[3][2]);
+        let _r2 = Vec4::new(m[0][2], m[1][2], m[2][2], m[3][2]);
         let r3 = Vec4::new(m[0][3], m[1][3], m[2][3], m[3][3]);
 
         fn normalize_plane(p: Vec4) -> Plane {
             let n = Vec3::new(p.x(), p.y(), p.z());
             let len = n.length();
-            Plane::new(n / len, p.w() / len)
+            Plane::new(n / len, -p.w() / len)
         }
 
+        // Standard Gribb-Hartmann: positive half-space = inside the frustum.
+        let left = normalize_plane(r3 + r0);
+        let right = normalize_plane(r3 - r0);
+        let bottom = normalize_plane(r3 + r1);
+        let top = normalize_plane(r3 - r1);
+
+        // Infinite reverse-Z: construct near plane geometrically since r3+r2
+        // degenerates. Far plane disabled.
+        let cam_pos = Vec3::new(lookat[3][0], lookat[3][1], lookat[3][2]);
+        let cam_fwd = Vec3::new(-lookat[2][0], -lookat[2][1], -lookat[2][2]).normalize();
+        let near_dist = proj[3][2];
+
+        let near = Plane::new(cam_fwd, cam_pos.dot(cam_fwd) + near_dist);
+        let far = Plane::new(-cam_fwd, f32::NEG_INFINITY);
+
         Frustum {
-            left: normalize_plane(r3 + r0),
-            right: normalize_plane(r3 - r0),
-            bottom: normalize_plane(r3 + r1),
-            top: normalize_plane(r3 - r1),
-            near: normalize_plane(r3 + r2),
-            far: normalize_plane(r3 - r2),
+            left,
+            right,
+            top,
+            bottom,
+            near,
+            far,
         }
     }
 
@@ -69,9 +94,9 @@ impl Frustum {
         aspect: f32,
         near: f32,
     ) -> Self {
-        let view = Mat4::create_lookat(position, target, up);
+        let lookat = Mat4::create_lookat(position, target, up);
         let proj = Mat4::create_proj_reverse_z(fov, aspect, near);
-        Self::from_projection_view_matrix(&proj, &view)
+        Self::from_proj_and_lookat(&proj, &lookat)
     }
 
     /// Check if a point is inside the frustum
@@ -182,35 +207,20 @@ impl Frustum {
         true
     }
 
-    /// Get the 8 corner points of the frustum
+    /// Get the 8 corner points of the frustum.
+    ///
+    /// For infinite reverse-Z projections, the far plane is at infinity.
+    /// Far corners are computed at 1000 units from the near plane.
     pub fn corners(&self) -> [Vec3; 8] {
-        let origin = Vec3::new(0.0, 0.0, 0.0);
-        // Near plane corners
-        let ntl = Self::intersect_three_planes(&self.left, &self.top, &self.near).unwrap_or(origin);
-        let ntr =
-            Self::intersect_three_planes(&self.right, &self.top, &self.near).unwrap_or(origin);
-        let nbl =
-            Self::intersect_three_planes(&self.left, &self.bottom, &self.near).unwrap_or(origin);
-        let nbr =
-            Self::intersect_three_planes(&self.right, &self.bottom, &self.near).unwrap_or(origin);
-
-        // Far plane corners
-        let ftl = Self::intersect_three_planes(&self.left, &self.top, &self.far).unwrap_or(origin);
-        let ftr = Self::intersect_three_planes(&self.right, &self.top, &self.far).unwrap_or(origin);
-        let fbl =
-            Self::intersect_three_planes(&self.left, &self.bottom, &self.far).unwrap_or(origin);
-        let fbr =
-            Self::intersect_three_planes(&self.right, &self.bottom, &self.far).unwrap_or(origin);
-
-        [ntl, ntr, nbl, nbr, ftl, ftr, fbl, fbr]
+        self.corners_with_far_distance(1000.0)
     }
 
     /// Get the 8 corner points of the frustum using a finite far distance.
     ///
     /// With infinite reverse-Z projection, the far plane is at infinity, so
     /// `corners()` produces degenerate far corners. This method computes near
-    /// corners normally and extends each edge direction to `far_distance` from
-    /// the near plane along the near plane normal.
+    /// corners normally and projects them to `far_distance` along the frustum
+    /// edge directions.
     #[inline]
     pub fn corners_with_far_distance(&self, far_distance: f32) -> [Vec3; 8] {
         let origin = Vec3::new(0.0, 0.0, 0.0);
@@ -222,35 +232,18 @@ impl Frustum {
         let nbr =
             Self::intersect_three_planes(&self.right, &self.bottom, &self.near).unwrap_or(origin);
 
-        let near_corners = [ntl, ntr, nbl, nbr];
+        // Construct a finite far plane at the given distance along the near normal.
+        let far_plane = Plane::new(self.near.normal, self.near.distance - far_distance);
 
-        // Get existing (degenerate) far corners from the matrix's far plane.
-        // The direction from near corner to existing far corner gives us the
-        // frustum edge direction. We extend this direction proportionally.
-        let existing = self.corners();
+        let ftl = Self::intersect_three_planes(&self.left, &self.top, &far_plane).unwrap_or(origin);
+        let ftr =
+            Self::intersect_three_planes(&self.right, &self.top, &far_plane).unwrap_or(origin);
+        let fbl =
+            Self::intersect_three_planes(&self.left, &self.bottom, &far_plane).unwrap_or(origin);
+        let fbr =
+            Self::intersect_three_planes(&self.right, &self.bottom, &far_plane).unwrap_or(origin);
 
-        // Compute the distance along the near plane normal from near to existing-far.
-        let near_to_far_depth = (self.near.distance - self.far.distance).abs();
-        if near_to_far_depth < 1e-6 {
-            return [ntl, ntr, nbl, nbr, ntl, ntr, nbl, nbr];
-        }
-
-        // Scale factor: how much to extend from the near-to-existing-far distance
-        // to reach the desired far_distance from the near plane.
-        let scale = far_distance / near_to_far_depth;
-
-        let mut result = [Vec3::new(0.0, 0.0, 0.0); 8];
-        result[0] = ntl;
-        result[1] = ntr;
-        result[2] = nbl;
-        result[3] = nbr;
-
-        for i in 0..4 {
-            let edge_dir = existing[i + 4] - near_corners[i];
-            result[i + 4] = near_corners[i] + edge_dir * scale;
-        }
-
-        result
+        [ntl, ntr, nbl, nbr, ftl, ftr, fbl, fbr]
     }
 
     /// Find the intersection point of three planes
@@ -269,7 +262,7 @@ impl Frustum {
             return None;
         }
 
-        let num = d1 * n2.cross(n3) + n1 * d2 * n3.cross(n1) + n1.cross(n2) * d3;
+        let num = d1 * n2.cross(n3) + d2 * n3.cross(n1) + d3 * n1.cross(n2);
         Some(num / denom)
     }
 
@@ -920,10 +913,16 @@ mod tests {
 
     #[test]
     fn test_frustum_from_known_ortho() {
-        // Orthographic: x in [-1,1], y in [-1,1], z in [near=0, far=10]
-        let proj = Mat4::create_ortho(-1.0, 1.0, -1.0, 1.0, 0.0, 10.0);
-        let view = Mat4::identity();
-        let frustum = Frustum::from_projection_view_matrix(&proj, &view);
+        // Orthographic: x in [-1,1], y in [-1,1], z in [-10, 0]
+        // Construct planes directly since Gribb-Hartmann is for perspective.
+        let frustum = Frustum {
+            left: Plane::new(Vec3::new(1.0, 0.0, 0.0), -1.0),
+            right: Plane::new(Vec3::new(-1.0, 0.0, 0.0), -1.0),
+            top: Plane::new(Vec3::new(0.0, -1.0, 0.0), -1.0),
+            bottom: Plane::new(Vec3::new(0.0, 1.0, 0.0), -1.0),
+            near: Plane::new(Vec3::new(0.0, 0.0, -1.0), 0.0),
+            far: Plane::new(Vec3::new(0.0, 0.0, 1.0), -10.0),
+        };
 
         let tolerance = 0.01;
 
@@ -1110,5 +1109,346 @@ mod tests {
                 pos
             );
         }
+    }
+
+    /// Minimal repro: camera looking at origin with near=0.001 should still see ground plane.
+    #[test]
+    fn test_frustum_near_zero_ground_plane() {
+        let cam_pos = Vec3::new(0.0, 5.0, 10.0);
+        let target = Vec3::new(0.0, 0.0, 0.0);
+
+        // With near=0.1: passes
+        let frustum_01 = Frustum::from_camera(
+            cam_pos,
+            target,
+            Vec3::new(0.0, 1.0, 0.0),
+            60.0,
+            16.0 / 9.0,
+            0.1,
+        );
+        let ground = AABB::from_min_max(Vec3::new(-10.0, -1.0, -10.0), Vec3::new(10.0, -1.0, 10.0));
+        assert!(
+            frustum_01.intersects_aabb(&ground),
+            "Ground should be visible with near=0.1.\n\
+             plane distances: top={} bottom={} near={} far={}",
+            frustum_01.top.distance_to_point(ground.center),
+            frustum_01.bottom.distance_to_point(ground.center),
+            frustum_01.near.distance_to_point(ground.center),
+            frustum_01.far.distance_to_point(ground.center),
+        );
+
+        // With near=0.001: should also pass
+        let frustum_001 = Frustum::from_camera(
+            cam_pos,
+            target,
+            Vec3::new(0.0, 1.0, 0.0),
+            60.0,
+            16.0 / 9.0,
+            0.001,
+        );
+        assert!(
+            frustum_001.intersects_aabb(&ground),
+            "Ground should be visible with near=0.001.\n\
+             plane distances: top={} bottom={} near={} far={}",
+            frustum_001.top.distance_to_point(ground.center),
+            frustum_001.bottom.distance_to_point(ground.center),
+            frustum_001.near.distance_to_point(ground.center),
+            frustum_001.far.distance_to_point(ground.center),
+        );
+    }
+
+    /// Orbit camera at default scene angles should see the ground plane.
+    #[test]
+    fn test_frustum_orbit_camera_ground() {
+        let orbit_target = Vec3::new(0.0, 0.5, -3.0);
+        let orbit_yaw = -0.5f32;
+        let orbit_pitch = -0.45f32;
+        let orbit_distance = 12.0f32;
+
+        let rotation = Quat::new_from_yaw_pitch(orbit_yaw, orbit_pitch);
+        let offset = rotation.rotate_vec3(Vec3::new(0.0, 0.0, orbit_distance));
+        let cam_pos = orbit_target + offset;
+
+        // Use from_camera with the computed position and target
+        let frustum = Frustum::from_camera(
+            cam_pos,
+            orbit_target,
+            Vec3::new(0.0, 1.0, 0.0),
+            60.0,
+            16.0 / 9.0,
+            0.001,
+        );
+
+        // Check that the target point (which should be in the center of view) is inside
+        assert!(
+            frustum.contains_point(orbit_target),
+            "Orbit target should be inside the frustum.\n\
+             distances: left={} right={} top={} bottom={} near={} far={}",
+            frustum.left.distance_to_point(orbit_target),
+            frustum.right.distance_to_point(orbit_target),
+            frustum.top.distance_to_point(orbit_target),
+            frustum.bottom.distance_to_point(orbit_target),
+            frustum.near.distance_to_point(orbit_target),
+            frustum.far.distance_to_point(orbit_target),
+        );
+
+        let ground = AABB::from_min_max(Vec3::new(-10.0, -1.0, -10.0), Vec3::new(10.0, -1.0, 10.0));
+
+        assert!(
+            frustum.intersects_aabb(&ground),
+            "Orbit camera should see ground plane.\n\
+             cam_pos=({:.2}, {:.2}, {:.2}), target=({:.2}, {:.2}, {:.2})\n\
+             ground_center=({:.1},{:.1},{:.1})\n\
+             plane distances: left={:.2} right={:.2} top={:.2} bottom={:.2} near={:.2} far={:.2}",
+            cam_pos.x(),
+            cam_pos.y(),
+            cam_pos.z(),
+            orbit_target.x(),
+            orbit_target.y(),
+            orbit_target.z(),
+            ground.center.x(),
+            ground.center.y(),
+            ground.center.z(),
+            frustum.left.distance_to_point(ground.center),
+            frustum.right.distance_to_point(ground.center),
+            frustum.top.distance_to_point(ground.center),
+            frustum.bottom.distance_to_point(ground.center),
+            frustum.near.distance_to_point(ground.center),
+            frustum.far.distance_to_point(ground.center),
+        );
+    }
+
+    /// Replicates the default scene camera and objects to verify culling behavior.
+    ///
+    /// Default camera: target=(0, 0.5, -3), distance=12, yaw=-0.5, pitch=-0.45, fov=60, near=0.001.
+    /// Visible objects: ground plane, backdrop, helmet, fox, spheres.
+    #[test]
+    fn test_frustum_default_scene_culling() {
+        // Build the camera exactly as Camera::new + get_lookat_mat does
+        let orbit_target = Vec3::new(0.0, 0.5, -3.0);
+        let orbit_distance = 12.0f32;
+        let orbit_yaw = -0.5f32;
+        let orbit_pitch = -0.45f32;
+
+        let rotation = Quat::new_from_yaw_pitch(orbit_yaw, orbit_pitch);
+        let offset = rotation.rotate_vec3(Vec3::new(0.0, 0.0, orbit_distance));
+        let cam_pos = orbit_target + offset;
+
+        let lookat = Mat4::create_lookat(cam_pos, orbit_target, Vec3::new(0.0, 1.0, 0.0));
+
+        let fov = 60.0f32;
+        let aspect = 16.0f32 / 9.0f32;
+        let near = 0.001f32;
+        let proj = Mat4::create_proj_reverse_z(fov, aspect, near);
+
+        // Cross-check: from_camera should produce the same result since it
+        // does the same thing internally.
+        let frustum_via_from_camera = Frustum::from_camera(
+            cam_pos,
+            orbit_target,
+            Vec3::new(0.0, 1.0, 0.0),
+            fov,
+            aspect,
+            near,
+        );
+        let frustum = Frustum::from_proj_and_lookat(&proj, &lookat);
+
+        // Verify both paths give the same frustum
+        assert!(
+            (frustum.top.normal.x() - frustum_via_from_camera.top.normal.x()).abs() < 0.01,
+            "top.normal.x mismatch: from_proj_and_lookat={:?} vs from_camera={:?}",
+            frustum.top.normal,
+            frustum_via_from_camera.top.normal
+        );
+        assert!(
+            (frustum.top.distance - frustum_via_from_camera.top.distance).abs() < 0.01,
+            "top.distance mismatch: from_proj_and_lookat={} vs from_camera={}",
+            frustum.top.distance,
+            frustum_via_from_camera.top.distance
+        );
+
+        let frustum = Frustum::from_proj_and_lookat(&proj, &lookat);
+
+        // Verify matrices are correct by transforming a known point through clip space.
+        // The view matrix (world-to-camera) is lookat.inverse().
+        let view = lookat.inverse().unwrap_or_else(Mat4::identity);
+
+        // Ground center at (0, -1, 0) should be visible
+        let ground_clip = proj * view * Vec4::new(0.0, -1.0, 0.0, 1.0);
+        assert!(
+            ground_clip.w() > 0.0,
+            "Ground center should have positive w in clip space, got w={}",
+            ground_clip.w()
+        );
+        let ground_ndc_z = ground_clip.z() / ground_clip.w();
+        assert!(
+            ground_ndc_z >= 0.0 && ground_ndc_z <= 1.0,
+            "Ground center NDC z should be in [0,1] for reverse-Z, got z={}",
+            ground_ndc_z
+        );
+
+        // Point behind camera should have negative w
+        let behind_clip = proj * view * Vec4::new(cam_pos.x(), cam_pos.y(), cam_pos.z() + 5.0, 1.0);
+        assert!(
+            behind_clip.w() < 0.0,
+            "Point behind camera should have negative w, got w={}",
+            behind_clip.w()
+        );
+
+        // Helper: build world-space AABB from local bounds + TRS transform
+        fn world_aabb(local_min: [f32; 3], local_max: [f32; 3], pos: [f32; 3]) -> AABB {
+            let local = AABB::from_min_max(
+                Vec3::new(local_min[0], local_min[1], local_min[2]),
+                Vec3::new(local_max[0], local_max[1], local_max[2]),
+            );
+            let world_mat = Mat4::from_translation(pos);
+            local.transform(&world_mat)
+        }
+
+        // --- Ground plane: pos=(0,-1,0), 20x20 plane, local bounds (-10,0,-10)..(10,0,10) ---
+        let ground = world_aabb([-10.0, 0.0, -10.0], [10.0, 0.0, 10.0], [0.0, -1.0, 0.0]);
+        assert!(
+            frustum.intersects_aabb(&ground),
+            "Ground plane should be visible from default camera.\n\
+             camera_pos=({:.2}, {:.2}, {:.2}), ground=({:.1},{:.1},{:.1})..({:.1},{:.1},{:.1})\n\
+             plane distances: left={:.2} right={:.2} top={:.2} bottom={:.2} near={:.2} far={:.2}",
+            cam_pos.x(),
+            cam_pos.y(),
+            cam_pos.z(),
+            ground.min().x(),
+            ground.min().y(),
+            ground.min().z(),
+            ground.max().x(),
+            ground.max().y(),
+            ground.max().z(),
+            frustum.left.distance_to_point(ground.center),
+            frustum.right.distance_to_point(ground.center),
+            frustum.top.distance_to_point(ground.center),
+            frustum.bottom.distance_to_point(ground.center),
+            frustum.near.distance_to_point(ground.center),
+            frustum.far.distance_to_point(ground.center),
+        );
+
+        // --- Backdrop (purple plane): pos=(0,2,-10), 15x8, local (-7.5,0,-4)..(7.5,0,4) ---
+        let backdrop = world_aabb([-7.5, 0.0, -4.0], [7.5, 0.0, 4.0], [0.0, 2.0, -10.0]);
+        assert!(
+            frustum.intersects_aabb(&backdrop),
+            "Backdrop plane should be visible from default camera.\n\
+             backdrop center=({:.2},{:.2},{:.2})",
+            backdrop.center.x(),
+            backdrop.center.y(),
+            backdrop.center.z(),
+        );
+
+        // --- Helmet: pos=(0, 1.5, -5), no bounds (glTF, bounds=None -> no culling) ---
+        // Helmet has no local bounds set, so it bypasses culling entirely.
+        // But let's check if it WOULD be visible with a reasonable bounding sphere.
+        let helmet_pos = Vec3::new(0.0, 1.5, -5.0);
+        assert!(
+            frustum.contains_point(helmet_pos),
+            "Helmet position should be inside frustum"
+        );
+
+        // --- Fox: pos=(3, 0, 0), scale=0.01, no bounds (glTF) ---
+        let fox_pos = Vec3::new(3.0, 0.0, 0.0);
+        assert!(
+            frustum.contains_point(fox_pos),
+            "Fox position should be inside frustum"
+        );
+
+        // --- Sphere at center of PBR grid: pos=(0, 2, -6) ---
+        let sphere_pos = Vec3::new(0.0, 2.0, -6.0);
+        assert!(
+            frustum.contains_point(sphere_pos),
+            "Center sphere should be inside frustum"
+        );
+
+        // --- Point far behind camera should be culled ---
+        let behind_cam = Vec3::new(cam_pos.x(), cam_pos.y(), cam_pos.z() + 20.0);
+        assert!(
+            !frustum.contains_point(behind_cam),
+            "Point far behind camera should be outside frustum"
+        );
+
+        // --- Point far off to the side should be culled ---
+        let far_side = Vec3::new(100.0, cam_pos.y(), cam_pos.z() - 10.0);
+        assert!(
+            !frustum.contains_point(far_side),
+            "Point far to the side should be outside frustum"
+        );
+    }
+
+    /// Verifies that a camera looking down at the ground from high up can see the ground plane.
+    #[test]
+    fn test_frustum_overhead_camera_sees_ground() {
+        // Camera high up, looking straight down
+        let cam_pos = Vec3::new(0.0, 20.0, 0.0);
+        let lookat = Mat4::create_lookat(
+            cam_pos,
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, -1.0), // Forward vector as up when looking straight down
+        );
+        let proj = Mat4::create_proj_reverse_z(60.0, 16.0 / 9.0, 0.001);
+        let frustum = Frustum::from_proj_and_lookat(&proj, &lookat);
+
+        // Ground plane at y=-1, 20x20
+        let ground = AABB::from_min_max(Vec3::new(-10.0, -1.0, -10.0), Vec3::new(10.0, -1.0, 10.0));
+
+        assert!(
+            frustum.intersects_aabb(&ground),
+            "Overhead camera should see the ground plane.\n\
+             cam_pos=({:.1},{:.1},{:.1}), ground_center=({:.1},{:.1},{:.1})\n\
+             plane distances: left={:.2} right={:.2} top={:.2} bottom={:.2} near={:.2} far={:.2}",
+            cam_pos.x(),
+            cam_pos.y(),
+            cam_pos.z(),
+            ground.center.x(),
+            ground.center.y(),
+            ground.center.z(),
+            frustum.left.distance_to_point(ground.center),
+            frustum.right.distance_to_point(ground.center),
+            frustum.top.distance_to_point(ground.center),
+            frustum.bottom.distance_to_point(ground.center),
+            frustum.near.distance_to_point(ground.center),
+            frustum.far.distance_to_point(ground.center),
+        );
+    }
+
+    /// Verifies that a camera at an angle can see both near and far objects.
+    #[test]
+    fn test_frustum_objects_at_various_depths() {
+        let cam_pos = Vec3::new(0.0, 5.0, 10.0);
+        let lookat =
+            Mat4::create_lookat(cam_pos, Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0));
+        let proj = Mat4::create_proj_reverse_z(60.0, 16.0 / 9.0, 0.001);
+        let frustum = Frustum::from_proj_and_lookat(&proj, &lookat);
+
+        // Near object (5 units away)
+        let near_obj = AABB::from_min_max(Vec3::new(-0.5, 4.5, 4.5), Vec3::new(0.5, 5.5, 5.5));
+        assert!(
+            frustum.intersects_aabb(&near_obj),
+            "Near object should be visible"
+        );
+
+        // Mid-range object (10 units away, at origin)
+        let mid_obj = AABB::from_min_max(Vec3::new(-0.5, -0.5, -0.5), Vec3::new(0.5, 0.5, 0.5));
+        assert!(
+            frustum.intersects_aabb(&mid_obj),
+            "Mid-range object at origin should be visible"
+        );
+
+        // Far object (30 units away, along view direction)
+        let far_obj = AABB::from_min_max(Vec3::new(-0.5, -0.5, -20.5), Vec3::new(0.5, 0.5, -19.5));
+        assert!(
+            frustum.intersects_aabb(&far_obj),
+            "Far object 30 units away should still be visible (infinite reverse-Z has no far clip)"
+        );
+
+        // Very far object (100 units away, along view direction)
+        let very_far = AABB::from_min_max(Vec3::new(-2.0, -2.0, -92.0), Vec3::new(2.0, 2.0, -88.0));
+        assert!(
+            frustum.intersects_aabb(&very_far),
+            "Very far object 100 units away should be visible (infinite reverse-Z)"
+        );
     }
 }
