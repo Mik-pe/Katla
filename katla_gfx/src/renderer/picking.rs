@@ -80,10 +80,7 @@ impl PickingSubsystem {
 
         let command_buffer = crate::vulkan::commandbuffer::CommandBuffer::new(
             &context.device,
-            &crate::vulkan::commandpool::CommandPool {
-                device: context.device.clone(),
-                command_pool: context.transfer_command_pool,
-            },
+            &context.gfx_cmdpool,
         );
 
         command_buffer.begin_single_time_command()?;
