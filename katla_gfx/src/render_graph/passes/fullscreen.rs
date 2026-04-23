@@ -163,7 +163,7 @@ impl PassBuilder for FullscreenPass {
             build_fn: Box::new(
                 move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
             ),
-            uses_depth: true,
+            uses_depth: false,
             depth_attachment: None,
             kind: Some(PassKind::Fullscreen),
         }
