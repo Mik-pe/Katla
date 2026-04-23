@@ -47,7 +47,6 @@ impl UiContext {
         }
 
         self.popup_opened_this_frame = false;
-        self.popup_consume_click = false;
 
         self.clip_stack.clear();
         self.clip_stack

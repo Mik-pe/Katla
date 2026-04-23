@@ -626,8 +626,8 @@ impl UiContext {
                     .entry(widget_id)
                     .or_insert_with(|| super::super::TextInputState::at_end(text));
                 let len = text.len();
-                state.cursor = state.cursor.min(len);
-                state.selection_anchor = state.selection_anchor.min(len);
+                state.cursor = text.floor_char_boundary(state.cursor.min(len));
+                state.selection_anchor = text.floor_char_boundary(state.selection_anchor.min(len));
             }
 
             // Handle click-to-position cursor
@@ -1189,6 +1189,12 @@ fn measure_char_widths(text: &str, measure: &mut impl FnMut(&str) -> f32) -> Vec
 }
 
 /// Convert a byte offset in `text` to a char index.
+/// Clamps to valid char boundaries before slicing.
 fn char_index_for_byte(text: &str, byte_offset: usize) -> usize {
-    text[..byte_offset].chars().count()
+    let offset = byte_offset.min(text.len());
+    let clamped = match text.is_char_boundary(offset) {
+        true => offset,
+        false => text.floor_char_boundary(offset),
+    };
+    text[..clamped].chars().count()
 }

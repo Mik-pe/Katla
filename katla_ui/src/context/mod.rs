@@ -185,8 +185,6 @@ pub struct UiContext {
     pub(crate) popup_bounds: Option<Rect2D>,
     /// Whether a popup was opened this frame (prevents immediate close).
     popup_opened_this_frame: bool,
-    /// Whether a popup consumed the click this frame (prevents click-through).
-    popup_consume_click: bool,
     /// Current time in seconds (for cursor blink animation).
     pub(crate) time: f64,
     /// Time of last keyboard input (for cursor blink grace period).
@@ -257,7 +255,6 @@ impl UiContext {
             popup_position: None,
             popup_bounds: None,
             popup_opened_this_frame: false,
-            popup_consume_click: false,
             z_index: z_index::DEFAULT,
             z_stack: Vec::new(),
             hover_z_index: z_index::DEFAULT,

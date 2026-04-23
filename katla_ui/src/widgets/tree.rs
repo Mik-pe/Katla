@@ -195,13 +195,13 @@ impl Widget for TreeView<'_> {
             at_bottom: false,
         };
 
-        let state_ptr = self.state as *mut TreeState;
-
         let mut toggle_clicked: Option<u64> = None;
         let mut row_clicked: Option<u64> = None;
         let mut row_right_clicked: Option<u64> = None;
 
         let mut render_item = self.render_item;
+        let selected_id = self.state.selected;
+        let expanded = self.state.expanded.clone();
 
         let scroll_result = ui.scroll_area(
             ScrollArea::new(self.id).max_height(bounds.height()),
@@ -237,7 +237,7 @@ impl Widget for TreeView<'_> {
                         Vec2::new(bounds.width(), row_height),
                     );
 
-                    let is_selected = self.state.selected == Some(item.id);
+                    let is_selected = selected_id == Some(item.id);
                     let row_hovered = ui.is_hovered(item_bounds);
 
                     if is_selected {
@@ -263,7 +263,7 @@ impl Widget for TreeView<'_> {
                     let arrow_y = item_bounds.center().y() - font_size * 0.5;
 
                     if item.has_children {
-                        let arrow_char = if self.state.is_expanded(item.id) {
+                        let arrow_char = if expanded.contains(&item.id) {
                             ForkAwesome::CHEVRON_DOWN
                         } else {
                             ForkAwesome::CHEVRON_RIGHT
@@ -325,21 +325,16 @@ impl Widget for TreeView<'_> {
             },
         );
 
-        // SAFETY: state_ptr was created from &mut self.state on line 198.
-        // The mutable reference is reborrowed as a raw pointer for the closure,
-        // which only reads state fields. After the closure returns, we have
-        // exclusive access again to write back scroll_offset and selection.
-        let state = unsafe { &mut *state_ptr };
-        state.scroll_offset = scroll_result.scroll_offset;
+        self.state.scroll_offset = scroll_result.scroll_offset;
 
         if let Some(id) = toggle_clicked {
-            state.toggle_expanded(id);
+            self.state.toggle_expanded(id);
         }
         if let Some(id) = row_clicked {
-            state.selected = Some(id);
+            self.state.selected = Some(id);
         }
 
-        if let Some(selected_id) = state.selected {
+        if let Some(selected_id) = self.state.selected {
             if let Some(vis_pos) = visible_indices
                 .iter()
                 .position(|&idx| self.data[idx].id == selected_id)
@@ -349,28 +344,28 @@ impl Widget for TreeView<'_> {
 
                 if ui.key_pressed(KeyCode::ArrowDown) {
                     if vis_pos + 1 < visible_count {
-                        state.selected = Some(self.data[visible_indices[vis_pos + 1]].id);
+                        self.state.selected = Some(self.data[visible_indices[vis_pos + 1]].id);
                     }
                 } else if ui.key_pressed(KeyCode::ArrowUp) {
                     if vis_pos > 0 {
-                        state.selected = Some(self.data[visible_indices[vis_pos - 1]].id);
+                        self.state.selected = Some(self.data[visible_indices[vis_pos - 1]].id);
                     }
                 } else if ui.key_pressed(KeyCode::ArrowRight) {
-                    if item.has_children && !state.is_expanded(item.id) {
-                        state.toggle_expanded(item.id);
+                    if item.has_children && !self.state.is_expanded(item.id) {
+                        self.state.toggle_expanded(item.id);
                     } else if vis_pos + 1 < visible_count {
                         let next_idx = visible_indices[vis_pos + 1];
                         if self.data[next_idx].depth == item.depth + 1 {
-                            state.selected = Some(self.data[next_idx].id);
+                            self.state.selected = Some(self.data[next_idx].id);
                         }
                     }
                 } else if ui.key_pressed(KeyCode::ArrowLeft) {
-                    if item.has_children && state.is_expanded(item.id) {
-                        state.toggle_expanded(item.id);
+                    if item.has_children && self.state.is_expanded(item.id) {
+                        self.state.toggle_expanded(item.id);
                     } else if item.depth > 0 {
                         for &idx in &visible_indices[..vis_pos] {
                             if self.data[idx].depth == item.depth - 1 {
-                                state.selected = Some(self.data[idx].id);
+                                self.state.selected = Some(self.data[idx].id);
                             }
                         }
                     }
@@ -379,7 +374,7 @@ impl Widget for TreeView<'_> {
         } else if !visible_indices.is_empty()
             && (ui.key_pressed(KeyCode::ArrowDown) || ui.key_pressed(KeyCode::ArrowUp))
         {
-            state.selected = Some(self.data[visible_indices[0]].id);
+            self.state.selected = Some(self.data[visible_indices[0]].id);
         }
 
         let mut response = Response::new(bounds);

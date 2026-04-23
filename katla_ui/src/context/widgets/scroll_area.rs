@@ -154,13 +154,16 @@ impl UiContext {
         if self.active_id == Some(scrollbar_id) {
             if self.input.mouse_down[mouse_button::LEFT] {
                 let max_scroll = (state.content_height - actual_height).max(0.0);
-                let track_height = actual_height;
-                let handle_height =
-                    (actual_height / state.content_height).clamp(20.0, track_height);
-                let track_usable = track_height - handle_height;
+                if max_scroll > 0.0 {
+                    let track_height = actual_height;
+                    let handle_height =
+                        (actual_height / state.content_height).clamp(20.0, track_height);
+                    let track_usable = (track_height - handle_height).max(1.0);
 
-                let mouse_y = self.input.mouse_pos.y() - bounds.min.y() - handle_height * 0.5;
-                state.scroll_offset = (mouse_y / track_usable * max_scroll).clamp(0.0, max_scroll);
+                    let mouse_y = self.input.mouse_pos.y() - bounds.min.y() - handle_height * 0.5;
+                    state.scroll_offset =
+                        (mouse_y / track_usable * max_scroll).clamp(0.0, max_scroll);
+                }
             } else {
                 self.active_id = None;
             }
@@ -208,13 +211,13 @@ impl UiContext {
         self.pop_clip();
 
         // Draw scrollbar if needed
-        if show_scrollbar && content_height > bounds.height() {
+        if show_scrollbar && content_height > actual_height {
             let scrollbar_width = self.style.scrollbar_width;
-            let track_height = bounds.height();
+            let track_height = actual_height;
             let handle_height =
-                (bounds.height() / content_height * track_height).clamp(20.0, track_height);
-            let track_usable = track_height - handle_height;
-            let max_scroll = (content_height - bounds.height()).max(0.0);
+                (actual_height / content_height * track_height).clamp(20.0, track_height);
+            let track_usable = (track_height - handle_height).max(1.0);
+            let max_scroll = (content_height - actual_height).max(0.0);
 
             let handle_y = if max_scroll > 0.0 {
                 bounds.min.y() + (state.scroll_offset / max_scroll) * track_usable
