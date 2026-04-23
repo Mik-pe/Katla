@@ -37,8 +37,19 @@ impl VulkanRenderer {
     /// Create a 1x1 solid color texture.
     ///
     /// Useful for placeholder or fallback textures.
+    /// The texture is automatically registered with the bindless system.
     pub fn create_texture_solid(&mut self, color: [u8; 4]) -> TextureHandle {
-        self.texture_manager.create_solid(color)
+        let handle = self.texture_manager.create_solid(color);
+
+        if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
+            let slot = self
+                .bindless_manager
+                .register_texture(texture.image_view().vk())
+                .expect("Failed to register solid texture with bindless system");
+            self.texture_manager.register_bindless_slot(handle, slot);
+        }
+
+        handle
     }
 
     /// Get the default white texture.
