@@ -129,17 +129,6 @@ impl UiContext {
         let content_bounds =
             Rect2D::from_origin_size(bounds.min, Vec2::new(content_width, actual_height));
 
-        // Handle mouse wheel scrolling
-        if self.is_hovered(content_bounds) && !self.input.scroll_consumed {
-            let scroll_delta = self.input.scroll_delta.y() * 30.0;
-            if scroll_delta != 0.0 {
-                let max_scroll = (state.content_height - actual_height).max(0.0);
-                state.scroll_offset = (state.scroll_offset - scroll_delta).clamp(0.0, max_scroll);
-                self.input.scroll_consumed = true;
-            }
-        }
-
-        // Scrollbar dragging
         let scrollbar_bounds = Rect2D::from_origin_size(
             Vec2::new(bounds.max.x() - scrollbar_width, bounds.min.y()),
             Vec2::new(scrollbar_width, actual_height),
@@ -151,7 +140,22 @@ impl UiContext {
             self.pop_id();
             sid
         };
-        if self.active_id == Some(scrollbar_id) {
+
+        let is_active_scrollbar = self.active_id == Some(scrollbar_id);
+        let mouse_in_area = self.input.is_hovered(bounds) && self.z_index >= self.hover_z_index;
+
+        // Handle mouse wheel scrolling (works even when dragging scrollbar)
+        if mouse_in_area && !self.input.scroll_consumed && !is_active_scrollbar {
+            let scroll_delta = self.input.scroll_delta.y() * 30.0;
+            if scroll_delta != 0.0 {
+                let max_scroll = (state.content_height - actual_height).max(0.0);
+                state.scroll_offset = (state.scroll_offset - scroll_delta).clamp(0.0, max_scroll);
+                self.input.scroll_consumed = true;
+            }
+        }
+
+        // Scrollbar dragging
+        if is_active_scrollbar {
             if self.input.mouse_down[mouse_button::LEFT] {
                 let max_scroll = (state.content_height - actual_height).max(0.0);
                 if max_scroll > 0.0 {
@@ -167,7 +171,9 @@ impl UiContext {
             } else {
                 self.active_id = None;
             }
-        } else if self.is_hovered(scrollbar_bounds) && self.input.mouse_pressed[mouse_button::LEFT]
+        } else if mouse_in_area
+            && self.input.is_hovered(scrollbar_bounds)
+            && self.input.mouse_pressed[mouse_button::LEFT]
         {
             self.active_id = Some(scrollbar_id);
         }
@@ -240,7 +246,7 @@ impl UiContext {
 
             // Handle (rounded, with hover highlight)
             let handle_color =
-                if self.active_id == Some(scrollbar_id) || self.is_hovered(handle_bounds) {
+                if self.active_id == Some(scrollbar_id) || self.input.is_hovered(handle_bounds) {
                     self.style.scrollbar_handle_hovered
                 } else {
                     self.style.scrollbar_handle
