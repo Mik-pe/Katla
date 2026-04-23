@@ -30,6 +30,9 @@ pub(crate) struct ShadowSubsystem {
     descriptor_pool: Option<vk::DescriptorPool>,
     /// Per-frame descriptor sets (Set 4)
     descriptor_sets: Vec<vk::DescriptorSet>,
+    /// Fallback descriptor set bound at Set 4 when the shadow atlas isn't ready.
+    /// Allocated from the shadow descriptor layout with null resources.
+    fallback_descriptor_set: Option<vk::DescriptorSet>,
     /// Depth-only pipeline for shadow map rendering
     pipeline: Option<PipelineHandle>,
     /// Depth-only pipeline for skinned mesh shadow rendering
@@ -151,17 +154,17 @@ impl ShadowSubsystem {
         let pool_sizes = [
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::STORAGE_BUFFER)
-                .descriptor_count(FRAMES_IN_FLIGHT as u32),
+                .descriptor_count((FRAMES_IN_FLIGHT + 1) as u32),
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::SAMPLED_IMAGE)
-                .descriptor_count(FRAMES_IN_FLIGHT as u32),
+                .descriptor_count((FRAMES_IN_FLIGHT + 1) as u32),
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::SAMPLER)
-                .descriptor_count(FRAMES_IN_FLIGHT as u32),
+                .descriptor_count((FRAMES_IN_FLIGHT + 1) as u32),
         ];
 
         let pool_info = vk::DescriptorPoolCreateInfo::default()
-            .max_sets(FRAMES_IN_FLIGHT as u32)
+            .max_sets((FRAMES_IN_FLIGHT + 1) as u32)
             .pool_sizes(&pool_sizes)
             .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND);
 
@@ -195,6 +198,24 @@ impl ShadowSubsystem {
                 })?
         };
 
+        // Allocate a fallback descriptor set for when the shadow atlas isn't ready.
+        // This prevents VUID errors when the pipeline declares Set 4 but the atlas
+        // hasn't been created yet (e.g., first frame before shadow pass runs).
+        let fallback_layout = [shadow_descriptor_layout];
+        let fallback_info = vk::DescriptorSetAllocateInfo::default()
+            .descriptor_pool(shadow_descriptor_pool)
+            .set_layouts(&fallback_layout);
+        let fallback_descriptor_set = unsafe {
+            device
+                .allocate_descriptor_sets(&fallback_info)
+                .map_err(|e| {
+                    RendererError::InitializationFailed(format!(
+                        "Failed to allocate shadow fallback descriptor set: {:?}",
+                        e
+                    ))
+                })?
+        };
+
         // Create CSM cascade computation
         let shadow_csm = crate::shadow::CascadeShadowMap::new(params);
 
@@ -214,6 +235,7 @@ impl ShadowSubsystem {
         self.sampler = Some(shadow_sampler);
         self.descriptor_pool = Some(shadow_descriptor_pool);
         self.descriptor_sets = shadow_descriptor_sets;
+        self.fallback_descriptor_set = fallback_descriptor_set.into_iter().next();
 
         info!(
             "Shadow resources initialized (CSM, {} cascades)",
@@ -628,24 +650,31 @@ impl ShadowSubsystem {
     /// Upload shadow data and bind shadow descriptors for the current frame.
     ///
     /// Call this inside the render graph execution (after binding pipeline, before draw calls).
+    /// Returns false if shadow descriptors could not be bound (e.g., atlas not ready).
     pub fn bind_shadow_descriptors(
         &self,
         context: &Rc<VulkanContext>,
         frame_idx: usize,
         cmd: vk::CommandBuffer,
         pipeline_layout: vk::PipelineLayout,
-    ) {
+    ) -> bool {
         if let (Some(buffers), Some(&descriptor_set)) =
             (&self.buffers, self.descriptor_sets.get(frame_idx))
-            && let Err(e) = buffers.update_and_bind_descriptors(
+        {
+            if let Err(e) = buffers.update_and_bind_descriptors(
                 cmd,
                 &context.device,
                 pipeline_layout,
                 descriptor_set,
                 frame_idx,
-            )
-        {
-            log::warn!("Failed to bind shadow descriptors: {}", e);
+            ) {
+                log::warn!("Failed to bind shadow descriptors: {}", e);
+                false
+            } else {
+                true
+            }
+        } else {
+            false
         }
     }
 
@@ -659,6 +688,11 @@ impl ShadowSubsystem {
     /// Get the shadow descriptor set for the given frame.
     pub fn descriptor_set(&self, frame_idx: usize) -> Option<vk::DescriptorSet> {
         self.descriptor_sets.get(frame_idx).copied()
+    }
+
+    /// Get the fallback shadow descriptor set for binding when the atlas isn't ready.
+    pub fn fallback_descriptor_set(&self) -> Option<vk::DescriptorSet> {
+        self.fallback_descriptor_set
     }
 
     /// Get the cascade descriptor set for the given frame (Set 2).
@@ -832,6 +866,11 @@ impl super::VulkanRenderer {
         self.shadow.descriptor_set(self.current_frame())
     }
 
+    /// Get the fallback shadow descriptor set (bound when atlas isn't ready).
+    pub fn shadow_fallback_descriptor_set(&self) -> Option<vk::DescriptorSet> {
+        self.shadow.fallback_descriptor_set()
+    }
+
     /// Update the shadow atlas image view for a specific frame.
     pub fn set_shadow_atlas_view(&mut self, frame_idx: usize, view: vk::ImageView) {
         self.shadow.set_shadow_atlas_view(frame_idx, view);
@@ -843,17 +882,32 @@ impl super::VulkanRenderer {
     }
 
     /// Upload shadow data and bind shadow descriptors for the current frame.
+    ///
+    /// If shadow descriptors cannot be bound (e.g., atlas not ready), binds
+    /// the fallback shadow descriptor set at Set 4 to satisfy pipeline layout requirements.
     pub fn bind_shadow_descriptors(
         &self,
         cmd: vk::CommandBuffer,
         pipeline_layout: vk::PipelineLayout,
     ) {
-        self.shadow.bind_shadow_descriptors(
+        let bound = self.shadow.bind_shadow_descriptors(
             &self.context,
             self.current_frame(),
             cmd,
             pipeline_layout,
         );
+        if !bound && let Some(fallback_ds) = self.shadow.fallback_descriptor_set() {
+            unsafe {
+                self.context.device.cmd_bind_descriptor_sets(
+                    cmd,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipeline_layout,
+                    4,
+                    &[fallback_ds],
+                    &[],
+                );
+            }
+        }
     }
 
     /// Get the shadow depth pipeline handle.

@@ -69,12 +69,16 @@ impl<'a> Frame<'a> {
                 render_area,
                 extent,
             };
+            let lc_buffers = self.renderer.light_culling_buffers();
+            let push_descriptor_ext = self.renderer.context.push_descriptor_khr.as_ref();
             execute_parallel_recording(
                 &self.renderer.context.device,
                 &self.renderer.context.gfx_cmdpool,
                 cmd,
                 &commands,
                 &params,
+                lc_buffers,
+                push_descriptor_ext,
             )
         } else {
             cmd.begin_rendering(

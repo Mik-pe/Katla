@@ -26,6 +26,8 @@ pub(super) struct ResolvedDrawCommand {
     index_buf: vk::Buffer,
     index_count: u32,
     instance_index: u32,
+    /// Shadow descriptor set (Set 4) — null if shadow not ready.
+    shadow_ds: vk::DescriptorSet,
 }
 
 /// Record draw commands sequentially on a command buffer.
@@ -33,10 +35,25 @@ fn record_draw_chunk_sequential(
     device: &ash::Device,
     cb: vk::CommandBuffer,
     commands: &[ResolvedDrawCommand],
+    lc_buffers: Option<&crate::lighting::LightCullingBuffers>,
+    push_descriptor_ext: Option<&ash::khr::push_descriptor::Device>,
 ) {
+    let mut prev_layout = vk::PipelineLayout::null();
+
     for draw in commands {
         unsafe {
             device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, draw.pipeline);
+
+            // Push light culling descriptors (Set 3) when pipeline layout changes.
+            // Push descriptors are layout-specific and must be re-pushed for each new layout.
+            if draw.layout != prev_layout {
+                if let (Some(lc), Some(ext)) = (lc_buffers, push_descriptor_ext)
+                    && let Err(e) = lc.push_fragment_descriptors_with_ext(ext, cb, draw.layout)
+                {
+                    log::warn!("Failed to push light culling fragment descriptors: {}", e);
+                }
+                prev_layout = draw.layout;
+            }
 
             device.cmd_bind_descriptor_sets(
                 cb,
@@ -63,6 +80,17 @@ fn record_draw_chunk_sequential(
                     draw.layout,
                     2,
                     &[draw.skeleton_ds],
+                    &[],
+                );
+            }
+
+            if draw.shadow_ds != vk::DescriptorSet::null() {
+                device.cmd_bind_descriptor_sets(
+                    cb,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    draw.layout,
+                    4,
+                    &[draw.shadow_ds],
                     &[],
                 );
             }
@@ -103,6 +131,8 @@ pub(super) fn execute_parallel_recording(
     cmd: &CommandBuffer,
     all_commands: &[ResolvedDrawCommand],
     params: &RenderPassParams<'_>,
+    lc_buffers: Option<&crate::lighting::LightCullingBuffers>,
+    push_descriptor_ext: Option<&ash::khr::push_descriptor::Device>,
 ) -> Result<(), RenderGraphError> {
     cmd.begin_rendering(
         &[params.color_attachment],
@@ -131,7 +161,13 @@ pub(super) fn execute_parallel_recording(
     // Secondary command buffers with dynamic rendering inheritance are not
     // universally supported across all driver versions, so we record sequentially
     // on the primary buffer for correctness.
-    record_draw_chunk_sequential(device, cmd.vk_command_buffer(), all_commands);
+    record_draw_chunk_sequential(
+        device,
+        cmd.vk_command_buffer(),
+        all_commands,
+        lc_buffers,
+        push_descriptor_ext,
+    );
 
     cmd.end_rendering();
 
@@ -150,6 +186,12 @@ impl<'a> Frame<'a> {
         frame_idx: usize,
     ) -> Result<Vec<ResolvedDrawCommand>, RenderGraphError> {
         let mut commands = Vec::new();
+
+        let shadow_ds = self
+            .renderer
+            .shadow_descriptor_set()
+            .or_else(|| self.renderer.shadow_fallback_descriptor_set())
+            .unwrap_or(vk::DescriptorSet::null());
 
         for draw_list in draw_lists {
             self.ensure_materials_compiled(draw_list)?;
@@ -227,6 +269,7 @@ impl<'a> Frame<'a> {
                     index_buf,
                     index_count,
                     instance_index: draw_call.instance_index,
+                    shadow_ds,
                 });
             }
         }

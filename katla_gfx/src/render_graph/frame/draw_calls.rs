@@ -51,21 +51,28 @@ impl<'a> Frame<'a> {
                         pipeline,
                     );
                 }
-                // Layout may differ even with same pipeline (different material variants),
-                // so always rebind descriptor sets when pipeline changes.
-                let storage_ds =
-                    self.renderer.storage_descriptor_sets[self.renderer.current_frame()].vk_set();
+                let frame_idx = self.renderer.current_frame();
+
+                // Bind Set 0: storage uniforms
+                let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
                 cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
 
+                // Bind Set 1: bindless textures
                 let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();
                 cmd.bind_descriptor_sets(layout, 1, &[bindless_ds], &[]);
 
+                // Bind Set 2: skeleton (bound per-draw below) or empty placeholder
+                let empty_ds = self.renderer.empty_descriptor_set(frame_idx);
+                cmd.bind_descriptor_sets(layout, 2, &[empty_ds], &[]);
+
+                // Bind Set 3: light culling (push descriptors)
                 if let Some(lc) = self.renderer.light_culling_buffers()
                     && let Err(e) = lc.push_fragment_descriptors(cmd.vk_command_buffer(), layout)
                 {
                     log::warn!("Failed to push light culling fragment descriptors: {}", e);
                 }
 
+                // Bind Set 4: shadow descriptors
                 self.renderer
                     .bind_shadow_descriptors(cmd.vk_command_buffer(), layout);
 
