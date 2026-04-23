@@ -40,7 +40,7 @@ fn compute_speed_multiplier(input: &InputState) -> f32 {
 pub struct FlyCameraLookSystem;
 
 impl System for FlyCameraLookSystem {
-    fn update(&mut self, world: &mut World, _delta_time: f32) {
+    fn update(&mut self, world: &mut World, delta_time: f32) {
         let Some(input) = world.get_resource::<InputState>() else {
             return;
         };
@@ -90,13 +90,14 @@ impl System for FlyCameraLookSystem {
             if has_input {
                 if let Some(force) = world.get_component_mut::<ForceComponent>(entity) {
                     let world_dir = rotation.rotate_vec3(input_dir);
-                    force.force += world_dir.mul(speed);
+                    force.force += world_dir.mul(speed * delta_time);
                 }
             } else {
                 if let Some(velocity) = world.get_component_mut::<VelocityComponent>(entity) {
                     let vel_speed = velocity.velocity.length();
                     if vel_speed > 0.01 {
-                        velocity.velocity *= 0.85;
+                        let damping = 0.85_f32.powf(delta_time * 60.0);
+                        velocity.velocity *= damping;
                     } else {
                         velocity.velocity = Vec3::new(0.0, 0.0, 0.0);
                     }
@@ -121,6 +122,7 @@ impl System for FlyCameraLookSystem {
             ComponentAccess::write::<FlyCameraLookComponent>(),
             ComponentAccess::write::<crate::components::TransformComponent>(),
             ComponentAccess::write::<ForceComponent>(),
+            ComponentAccess::write::<VelocityComponent>(),
         ]
     }
 }

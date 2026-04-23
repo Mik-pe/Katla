@@ -364,19 +364,14 @@ impl BackgroundLoader {
     pub fn poll(&mut self) -> Vec<LoadResult> {
         let mut results = Vec::new();
 
-        // Use try_recv to avoid blocking
         while let Ok(result) = self.result_receiver.try_recv() {
-            // Remove from pending
             if let Some(path) = self.pending_loads.remove(&result.id()) {
-                // Cache thumbnails
                 if let LoadResult::ImageThumbnailLoaded { ref path, .. } = result {
                     self.thumbnail_cache
                         .insert(path.clone(), ThumbnailEntry { uploaded: false });
                 }
-                // Don't remove from pending_loads here - do it for all results
-                let _ = path; // Path was used above
+                let _ = path;
             }
-            self.pending_loads.remove(&result.id());
             results.push(result);
         }
 

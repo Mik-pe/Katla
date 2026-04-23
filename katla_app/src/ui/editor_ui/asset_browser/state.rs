@@ -67,6 +67,8 @@ pub struct AssetBrowserState {
     pub confirm_dialog_message: String,
     /// Pending action to confirm (stored until user responds)
     pub(crate) confirm_pending_action: Option<AssetAction>,
+    /// Last computed column count from the rendering pass, used for keyboard navigation.
+    pub(crate) last_col_count: usize,
 }
 
 impl AssetBrowserState {
@@ -106,6 +108,7 @@ impl AssetBrowserState {
             confirm_dialog_open: false,
             confirm_dialog_message: String::new(),
             confirm_pending_action: None,
+            last_col_count: 8,
         }
     }
 
@@ -381,8 +384,7 @@ impl AssetBrowserState {
             return None;
         }
 
-        // Get grid dimensions (approximate - will be recalculated in draw)
-        let col_count = 8; // Approximate
+        let col_count = self.last_col_count.max(1);
 
         match key {
             katla_ui::input::KeyCode::ArrowUp => {
@@ -455,7 +457,7 @@ impl AssetBrowserState {
     fn scroll_to_selected(&mut self) {
         let item_size = 64.0;
         let row_height = item_size + 24.0;
-        let col_count = 8;
+        let col_count = self.last_col_count.max(1);
 
         if let Some(idx) = self.selected_index {
             let row = idx / col_count;

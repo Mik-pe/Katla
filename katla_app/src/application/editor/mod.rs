@@ -210,7 +210,9 @@ impl SceneCommand for EditorSpawnCommand {
     }
 
     fn undo(&mut self, world: &mut katla_ecs::World) -> Result<(), SceneToolError> {
-        let _ = world;
+        if world.entity_exists(self.entity) {
+            world.destroy_entity(self.entity);
+        }
         Ok(())
     }
 

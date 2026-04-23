@@ -97,6 +97,12 @@ impl GpuAnimationSystem {
             .collect();
 
         if entities.is_empty() {
+            self.entity_clip_map.clear();
+            self.entity_order.clear();
+            self.gpu_data = None;
+            self.upload_fingerprint = 0;
+            self.max_skeletons = 0;
+            self.max_joints = 0;
             return;
         }
 
@@ -244,7 +250,6 @@ impl GpuAnimationSystem {
     /// assigned during `prepare()`.
     pub fn update_params(&self, world: &mut World, buffers: &mut PoseComputeBuffers) {
         let mut params = Vec::with_capacity(self.entity_order.len());
-        let mut joint_offset = 0u32;
 
         for entity in &self.entity_order {
             let clip_lookup = match self.entity_clip_map.get(entity) {
@@ -255,19 +260,14 @@ impl GpuAnimationSystem {
                 Some(p) => p,
                 None => continue,
             };
-            let skeleton = match world.get_component::<Skeleton>(*entity) {
-                Some(s) => s,
-                None => continue,
-            };
 
             let param = build_skeleton_params(
                 player,
                 &clip_lookup.clip_name_to_index,
-                joint_offset,
-                skeleton.joint_count() as u32,
+                clip_lookup.joint_offset,
+                clip_lookup.joint_count,
             );
             params.push(param);
-            joint_offset += skeleton.joint_count() as u32;
         }
 
         if !params.is_empty() {

@@ -205,13 +205,6 @@ impl GLTFModel {
 
     /// Parse a single GLTF node into vertex and index data.
     fn parse_node(&self, node: &gltf::Node) -> (Vec<VertexPBR>, Vec<u8>, u8, Sphere) {
-        let mut positions = vec![];
-        let mut normals = vec![];
-        let mut tangents = vec![];
-        let mut tex_coords = vec![];
-        let mut index_data = vec![];
-        let mut index_stride = 0u8;
-
         let parser = AttributeParser::new(&self.buffers);
 
         if let Some(mesh) = node.mesh() {
@@ -221,12 +214,23 @@ impl GLTFModel {
                 mesh.primitives().count()
             );
 
+            let mut all_vertex_data = Vec::new();
+            let mut all_index_data = Vec::new();
+            let mut index_stride = 0u8;
+            let mut combined_sphere = Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0);
+            let mut vertex_offset: u32 = 0;
+
             for (prim_idx, primitive) in mesh.primitives().enumerate() {
                 debug!(
                     "    Primitive {}: has_indices={}",
                     prim_idx,
                     primitive.indices().is_some()
                 );
+                let mut positions = vec![];
+                let mut normals = vec![];
+                let mut tangents = vec![];
+                let mut tex_coords = vec![];
+
                 for (semantic, accessor) in primitive.attributes() {
                     match semantic {
                         gltf::mesh::Semantic::Positions => {
@@ -251,29 +255,44 @@ impl GLTFModel {
                     }
                 }
 
+                let prim_vertex_count = positions.len();
+
+                if normals.is_empty() && !positions.is_empty() {
+                    warn!(
+                        "Mesh '{}' primitive {} has no normals, generating smooth normals from geometry",
+                        mesh.name().unwrap_or("unnamed"),
+                        prim_idx
+                    );
+                }
+
+                let (vertex_data, sphere) = build_vertex_data(
+                    positions.clone(),
+                    normals.clone(),
+                    tangents.clone(),
+                    tex_coords.clone(),
+                );
+
                 if let Some(indices) = primitive.indices()
                     && let Some((indices_data, stride)) = parser.parse_indices(indices)
                 {
-                    index_data = indices_data;
+                    let adjusted = Self::adjust_indices(&indices_data, stride, vertex_offset);
+                    all_index_data.extend(adjusted);
                     index_stride = stride;
                 }
+
+                if sphere.radius > combined_sphere.radius {
+                    combined_sphere = sphere;
+                }
+                all_vertex_data.extend(vertex_data);
+                vertex_offset += prim_vertex_count as u32;
             }
 
-            if normals.is_empty() {
-                warn!(
-                    "Mesh '{}' has no normals, generating smooth normals from geometry",
-                    mesh.name().unwrap_or("unnamed")
-                );
-                normals = generate_smooth_normals(&positions, &index_data, index_stride);
-            }
-
-            let (vertex_data, sphere) = build_vertex_data(
-                positions.clone(),
-                normals.clone(),
-                tangents.clone(),
-                tex_coords.clone(),
-            );
-            (vertex_data, index_data, index_stride, sphere)
+            (
+                all_vertex_data,
+                all_index_data,
+                index_stride,
+                combined_sphere,
+            )
         } else {
             (
                 vec![],
@@ -289,18 +308,23 @@ impl GLTFModel {
         &self,
         node: &gltf::Node,
     ) -> (Vec<VertexPBRSkinned>, Vec<u8>, u8, Sphere, bool) {
-        let mut positions = vec![];
-        let mut normals = vec![];
-        let mut tex_coords = vec![];
-        let mut joint_indices = vec![];
-        let mut joint_weights = vec![];
-        let mut index_data = vec![];
-        let mut index_stride = 0u8;
-
         let parser = AttributeParser::new(&self.buffers);
 
         if let Some(mesh) = node.mesh() {
+            let mut all_vertex_data = Vec::new();
+            let mut all_index_data = Vec::new();
+            let mut index_stride = 0u8;
+            let mut combined_sphere = Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0);
+            let mut vertex_offset: u32 = 0;
+            let mut any_skinning = false;
+
             for primitive in mesh.primitives() {
+                let mut positions = vec![];
+                let mut normals = vec![];
+                let mut tex_coords = vec![];
+                let mut joint_indices = vec![];
+                let mut joint_weights = vec![];
+
                 for (semantic, accessor) in primitive.attributes() {
                     match semantic {
                         gltf::mesh::Semantic::Positions => {
@@ -324,27 +348,45 @@ impl GLTFModel {
                     }
                 }
 
+                let prim_vertex_count = positions.len();
+
+                if normals.is_empty() {
+                    let dummy_indices = vec![];
+                    normals = generate_smooth_normals(&positions, &dummy_indices, 0);
+                }
+
+                let has_skinning = !joint_indices.is_empty() && !joint_weights.is_empty();
+                any_skinning = any_skinning || has_skinning;
+                let (vertex_data, sphere) = build_skinned_vertex_data(
+                    positions,
+                    normals,
+                    tex_coords,
+                    joint_indices,
+                    joint_weights,
+                );
+
                 if let Some(indices) = primitive.indices()
                     && let Some((indices_data, stride)) = parser.parse_indices(indices)
                 {
-                    index_data = indices_data;
+                    let adjusted = Self::adjust_indices(&indices_data, stride, vertex_offset);
+                    all_index_data.extend(adjusted);
                     index_stride = stride;
                 }
+
+                if sphere.radius > combined_sphere.radius {
+                    combined_sphere = sphere;
+                }
+                all_vertex_data.extend(vertex_data);
+                vertex_offset += prim_vertex_count as u32;
             }
 
-            if normals.is_empty() {
-                normals = generate_smooth_normals(&positions, &index_data, index_stride);
-            }
-
-            let has_skinning = !joint_indices.is_empty() && !joint_weights.is_empty();
-            let (vertex_data, sphere) = build_skinned_vertex_data(
-                positions,
-                normals,
-                tex_coords,
-                joint_indices,
-                joint_weights,
-            );
-            (vertex_data, index_data, index_stride, sphere, has_skinning)
+            (
+                all_vertex_data,
+                all_index_data,
+                index_stride,
+                combined_sphere,
+                any_skinning,
+            )
         } else {
             (
                 vec![],

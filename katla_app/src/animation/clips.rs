@@ -295,8 +295,44 @@ impl AnimationSampler {
         if let Some(ref translations) = self.translations {
             let result = Self::interpolate_cubic_vec3(translations, index0, index1, h, dt);
             SampledValue::Vec3(result)
-        } else if self.rotations.is_some() {
-            self.interpolate_values(index0, index1, h.h00 + h.h01)
+        } else if let Some(ref rotations) = self.rotations {
+            let q0 = katla_math::Quat::new(
+                rotations[index0 * 3 + 1][0],
+                rotations[index0 * 3 + 1][1],
+                rotations[index0 * 3 + 1][2],
+                rotations[index0 * 3 + 1][3],
+            );
+            let q1 = katla_math::Quat::new(
+                rotations[index1 * 3 + 1][0],
+                rotations[index1 * 3 + 1][1],
+                rotations[index1 * 3 + 1][2],
+                rotations[index1 * 3 + 1][3],
+            );
+            let m0 = katla_math::Quat::new(
+                rotations[index0 * 3 + 2][0] * dt,
+                rotations[index0 * 3 + 2][1] * dt,
+                rotations[index0 * 3 + 2][2] * dt,
+                rotations[index0 * 3 + 2][3] * dt,
+            );
+            let m1 = katla_math::Quat::new(
+                rotations[index1 * 3][0] * dt,
+                rotations[index1 * 3][1] * dt,
+                rotations[index1 * 3][2] * dt,
+                rotations[index1 * 3][3] * dt,
+            );
+
+            let (x0, y0, z0, w0) = q0.xyzw();
+            let (x1, y1, z1, w1) = q1.xyzw();
+            let (mx0, my0, mz0, mw0) = m0.xyzw();
+            let (mx1, my1, mz1, mw1) = m1.xyzw();
+
+            let result = [
+                h.h00 * x0 + h.h10 * mx0 + h.h01 * x1 + h.h11 * mx1,
+                h.h00 * y0 + h.h10 * my0 + h.h01 * y1 + h.h11 * my1,
+                h.h00 * z0 + h.h10 * mz0 + h.h01 * z1 + h.h11 * mz1,
+                h.h00 * w0 + h.h10 * mw0 + h.h01 * w1 + h.h11 * mw1,
+            ];
+            SampledValue::Quat(result)
         } else if let Some(ref scales) = self.scales {
             let result = Self::interpolate_cubic_vec3(scales, index0, index1, h, dt);
             SampledValue::Vec3(result)
@@ -314,10 +350,11 @@ impl AnimationSampler {
     }
 
     fn find_keyframe_index(&self, time: f32) -> usize {
-        match self
-            .inputs
-            .binary_search_by(|probe| probe.partial_cmp(&time).unwrap())
-        {
+        match self.inputs.binary_search_by(|probe| {
+            probe
+                .partial_cmp(&time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) {
             Ok(index) => index,
             Err(index) => {
                 if index == 0 {

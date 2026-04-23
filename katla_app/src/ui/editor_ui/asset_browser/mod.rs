@@ -291,6 +291,7 @@ pub fn build_asset_browser(
             let item_padding = ui.style().panel_padding;
             let col_count =
                 ((bounds.width() - item_padding) / (item_size + item_padding)).max(1.0) as usize;
+            state.last_col_count = col_count;
             let row_height = item_size + 24.0;
 
             let mut clicked_index: Option<usize> = None;
