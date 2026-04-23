@@ -110,15 +110,4 @@ impl Queue {
         }
     }
 
-    pub fn present(
-        &self,
-        signal_semaphores: &[Semaphore],
-        image_indices: &[u32],
-        swapchains: &[vk::SwapchainKHR],
-    ) {
-        let _present_info = vk::PresentInfoKHR::default()
-            .wait_semaphores(signal_semaphores)
-            .swapchains(swapchains)
-            .image_indices(image_indices);
-    }
 }

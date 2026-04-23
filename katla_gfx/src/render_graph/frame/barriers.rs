@@ -231,10 +231,18 @@ impl<'a> Frame<'a> {
                 continue;
             };
 
-            // Find the next pass that accesses this resource
-            let next_access = self.graph.passes[pass_index + 1..]
-                .iter()
-                .find(|pass| pass.reads.contains(&write_id) || pass.writes.contains(&write_id));
+            // Find the next pass in execution order that accesses this resource
+            let execution_order = self.graph.execution_order();
+            let current_pos = execution_order.iter().position(|&p| p == pass_index);
+            let next_access = current_pos.and_then(|pos| {
+                execution_order[pos + 1..]
+                    .iter()
+                    .find(|&&idx| {
+                        let p = &self.graph.passes[idx];
+                        p.reads.contains(&write_id) || p.writes.contains(&write_id)
+                    })
+                    .map(|&idx| &self.graph.passes[idx])
+            });
 
             // Only transition to SHADER_READ_ONLY if the next access is a read.
             let next_is_read = match next_access {

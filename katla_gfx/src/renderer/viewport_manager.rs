@@ -74,8 +74,8 @@ impl ViewportManager {
             return false;
         }
 
-        // Remove the viewport
-        self.viewports.remove(handle.0);
+        // Swap-remove to avoid shifting indices of subsequent viewports
+        self.viewports.swap_remove(handle.0);
 
         true
     }
