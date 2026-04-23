@@ -109,10 +109,19 @@ impl DockNode {
     }
 
     /// Remove a panel from the tree. Returns `true` if the panel was found.
+    ///
+    /// After removal, collapses any Split nodes whose children become empty
+    /// leaves, replacing the split with the non-empty sibling.
     pub fn remove_panel(&mut self, panel_id: DockPanelId) -> bool {
         match self {
             DockNode::Split { children, .. } => {
-                children[0].remove_panel(panel_id) || children[1].remove_panel(panel_id)
+                let found_in_first = children[0].remove_panel(panel_id);
+                let found_in_second = children[1].remove_panel(panel_id);
+                let found = found_in_first || found_in_second;
+                if found {
+                    self.collapse_empty_splits();
+                }
+                found
             }
             DockNode::Leaf { tabs, active_tab } => {
                 if let Some(pos) = tabs.iter().position(|&t| t == panel_id) {
@@ -126,6 +135,48 @@ impl DockNode {
                 }
             }
         }
+    }
+
+    /// Collapse splits where one or both children are empty leaves.
+    /// Replaces the split with its non-empty child, or becomes an empty leaf.
+    fn collapse_empty_splits(&mut self) {
+        if let DockNode::Split { children, .. } = self {
+            children[0].collapse_empty_splits();
+            children[1].collapse_empty_splits();
+
+            let first_empty = children[0].is_empty_leaf();
+            let second_empty = children[1].is_empty_leaf();
+
+            if first_empty && second_empty {
+                *self = DockNode::Leaf {
+                    tabs: Vec::new(),
+                    active_tab: 0,
+                };
+            } else if first_empty {
+                let replacement = std::mem::replace(
+                    &mut children[1],
+                    DockNode::Leaf {
+                        tabs: Vec::new(),
+                        active_tab: 0,
+                    },
+                );
+                *self = replacement;
+            } else if second_empty {
+                let replacement = std::mem::replace(
+                    &mut children[0],
+                    DockNode::Leaf {
+                        tabs: Vec::new(),
+                        active_tab: 0,
+                    },
+                );
+                *self = replacement;
+            }
+        }
+    }
+
+    /// Returns true if this is a leaf with no tabs.
+    fn is_empty_leaf(&self) -> bool {
+        matches!(self, DockNode::Leaf { tabs, .. } if tabs.is_empty())
     }
 
     /// Add a panel as a new tab to the leaf containing `target_panel_id`.
@@ -222,153 +273,10 @@ impl<'a> DockTabBar<'a> {
 
 impl Widget for DockTabBar<'_> {
     fn ui(self, ui: &mut UiContext) -> Response {
-        let tab_count = self.tabs.len();
-        if tab_count == 0 {
-            return Response::new(self.bounds);
-        }
-
-        let active_bg = ui.style.window_bg;
-        let inactive_bg = ui.style.window_title_bg;
-        let hover_bg = ui.style.button_hovered;
-        let active_text = ui.style.text_color;
-        let inactive_text = ui.style.text_disabled;
-        let separator_color = ui.style.separator;
-        let font_size = ui.style.font_size;
-
-        let tab_width = self.bounds.width() / tab_count as f32;
-        let separator_y = self.bounds.max.y();
-
-        // Bottom separator line across full width
-        ui.draw_line(
-            Vec2::new(self.bounds.min.x(), separator_y),
-            Vec2::new(self.bounds.max.x(), separator_y),
-            separator_color,
-            1.0,
-        );
-
-        let mut clicked_tab: Option<usize> = None;
-        let mut closed_tab: Option<usize> = None;
-        let mut hovered_any = false;
-
-        let id_prefix = self.id_base.unwrap_or("dock_tab");
-
-        for (i, _panel_id) in self.tabs.iter().enumerate() {
-            let tab_min_x = self.bounds.min.x() + tab_width * i as f32;
-            let tab_bounds = Rect2D::from_origin_size(
-                Vec2::new(tab_min_x, self.bounds.min.y()),
-                Vec2::new(tab_width, self.bounds.height()),
-            );
-            let tab_id = ui.generate_id(&format!("{}_{}", id_prefix, i));
-
-            ui.register_focusable(tab_id, tab_bounds);
-            let tab_hovered = ui.update_hover(tab_id, tab_bounds);
-            let is_active = i == self.active;
-
-            // Tab background
-            let bg_color = if is_active {
-                active_bg
-            } else if tab_hovered {
-                hover_bg
-            } else {
-                inactive_bg
-            };
-            ui.draw_rect(tab_bounds, bg_color);
-
-            // Active tab: redraw separator segments with a gap
-            if is_active {
-                if i > 0 {
-                    ui.draw_line(
-                        Vec2::new(self.bounds.min.x(), separator_y),
-                        Vec2::new(tab_bounds.min.x(), separator_y),
-                        separator_color,
-                        1.0,
-                    );
-                }
-                if i < tab_count - 1 {
-                    ui.draw_line(
-                        Vec2::new(tab_bounds.max.x(), separator_y),
-                        Vec2::new(self.bounds.max.x(), separator_y),
-                        separator_color,
-                        1.0,
-                    );
-                }
-            }
-
-            // Tab label (show panel ID as placeholder — callers can remap)
-            let label = format!("{}", self.tabs[i]);
-            let text_color = if is_active {
-                active_text
-            } else {
-                inactive_text
-            };
-
-            let close_btn_width = if self.close_buttons { 16.0 } else { 0.0 };
-            let label_area_width = (tab_width - close_btn_width).max(0.0);
-            let text_size = ui.measure_text(&label, font_size);
-            let text_pos = Vec2::new(
-                tab_bounds.min.x() + (label_area_width - text_size.x()) * 0.5,
-                tab_bounds.center().y() - text_size.y() * 0.5,
-            );
-            ui.draw_text(&label, text_pos, text_color, font_size);
-
-            // Close button
-            if self.close_buttons {
-                let close_x = tab_bounds.max.x() - close_btn_width;
-                let close_bounds = Rect2D::from_origin_size(
-                    Vec2::new(close_x, tab_bounds.min.y()),
-                    Vec2::new(close_btn_width, tab_bounds.height()),
-                );
-                let close_id = ui.generate_id(&format!("{}_close_{}", id_prefix, i));
-                ui.register_focusable(close_id, close_bounds);
-                let close_hovered = ui.update_hover(close_id, close_bounds);
-
-                let close_text_color = if close_hovered {
-                    active_text
-                } else {
-                    inactive_text
-                };
-                let close_size = ui.measure_text("×", font_size);
-                let close_pos = Vec2::new(
-                    close_bounds.center().x() - close_size.x() * 0.5,
-                    close_bounds.center().y() - close_size.y() * 0.5,
-                );
-                ui.draw_text("×", close_pos, close_text_color, font_size);
-
-                let close_click = ui.click_interaction(
-                    close_id,
-                    close_hovered,
-                    close_bounds,
-                    crate::context::interaction::ClickConfig::POPUP_AWARE,
-                );
-                if close_click.is_clicked() {
-                    closed_tab = Some(i);
-                }
-            }
-
-            // Tab click detection
-            let click_result = ui.click_interaction(
-                tab_id,
-                tab_hovered,
-                tab_bounds,
-                crate::context::interaction::ClickConfig::POPUP_AWARE,
-            );
-            if click_result.is_clicked() && !is_active {
-                clicked_tab = Some(i);
-            }
-
-            if tab_hovered {
-                hovered_any = true;
-                ui.input.set_cursor(crate::input::MouseCursor::Hand);
-            }
-        }
-
-        // Store the DockTabBarResponse for callers to retrieve via the Response.
-        // We encode it in a general Response — callers check clicked_tab / closed_tab
-        // via the dock_tab_bar helper method on Response (not added yet to avoid
-        // coupling; instead we return a Response and expose a standalone function).
-        let mut response = Response::new(self.bounds);
-        response.hovered = hovered_any;
-        response.clicked = clicked_tab.is_some() || closed_tab.is_some();
+        let bounds = self.bounds;
+        let result = self.show(ui);
+        let mut response = Response::new(bounds);
+        response.clicked = result.clicked_tab.is_some() || result.closed_tab.is_some();
         response
     }
 }

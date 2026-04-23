@@ -61,9 +61,6 @@ impl UiContext {
     /// mouse position. This is tracked automatically by `draw_rect` when
     /// drawing at a z-index above DEFAULT.
     pub fn is_hovered(&self, bounds: Rect2D) -> bool {
-        if self.popup_consume_click {
-            return false;
-        }
         if self.z_index < self.hover_z_index {
             return false;
         }

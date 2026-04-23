@@ -104,7 +104,8 @@ impl UiContext {
         );
 
         // Click detection
-        let clicked = hovered && self.input.mouse_clicked(mouse_button::LEFT);
+        let clicked =
+            hovered && self.active_id.is_none() && self.input.mouse_clicked(mouse_button::LEFT);
 
         // Advance cursor
         self.popup_cursor = Vec2::new(self.popup_cursor.x(), self.popup_cursor.y() + item_height);
@@ -199,6 +200,9 @@ impl UiContext {
         }
 
         // Click detection
-        enabled && hovered && self.input.mouse_clicked(mouse_button::LEFT)
+        enabled
+            && hovered
+            && self.active_id.is_none()
+            && self.input.mouse_clicked(mouse_button::LEFT)
     }
 }

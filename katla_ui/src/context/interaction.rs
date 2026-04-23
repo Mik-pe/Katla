@@ -12,7 +12,7 @@ pub(crate) struct ClickConfig {
     /// respond even when a popup is consuming clicks.
     ///
     /// When `true`, uses the pre-computed `hovered` state which respects
-    /// `popup_consume_click` and `active_id` checks.
+    /// `active_id` checks.
     pub popup_aware: bool,
 }
 
