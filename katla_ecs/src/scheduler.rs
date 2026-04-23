@@ -130,6 +130,11 @@ impl SystemScheduler {
     }
 
     fn build_edges(&mut self) {
+        // Systems are sorted by SystemExecutionOrder before the scheduler is built
+        // (see World::register_system → sort_systems → scheduler_cache = None, then
+        // update_parallel rebuilds from the already-sorted list).  Vector index therefore
+        // reflects execution order: lower index = earlier execution.  For mutual conflicts
+        // the edge direction i→j (later depends on earlier) preserves the intended order.
         let n = self.nodes.len();
         for i in 0..n {
             for j in (i + 1)..n {
