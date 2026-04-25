@@ -81,10 +81,8 @@ impl PickingSubsystem {
                 })?
         };
 
-        let command_buffer = crate::vulkan::commandbuffer::CommandBuffer::new(
-            &context.device,
-            &context.gfx_cmdpool,
-        );
+        let command_buffer =
+            crate::vulkan::commandbuffer::CommandBuffer::new(&context.device, &context.gfx_cmdpool);
 
         command_buffer.begin_single_time_command()?;
 
@@ -289,8 +287,14 @@ impl super::VulkanRenderer {
         x: u32,
         y: u32,
     ) -> Result<(), RendererError> {
-        self.picking
-            .queue_picking_readback(&self.context, frame, object_id_image, current_layout, x, y)
+        self.picking.queue_picking_readback(
+            &self.context,
+            frame,
+            object_id_image,
+            current_layout,
+            x,
+            y,
+        )
     }
 
     /// Check if the pending picking readback is complete.

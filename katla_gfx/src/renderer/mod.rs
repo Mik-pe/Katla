@@ -100,7 +100,10 @@ impl UiFrameResources {
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let (uniform_buffer, uniform_allocation) = context
-            .allocate_buffer(&uniform_buffer_info, gpu_allocator::MemoryLocation::CpuToGpu)
+            .allocate_buffer(
+                &uniform_buffer_info,
+                gpu_allocator::MemoryLocation::CpuToGpu,
+            )
             .expect("Failed to allocate UI uniform buffer");
 
         Self {
