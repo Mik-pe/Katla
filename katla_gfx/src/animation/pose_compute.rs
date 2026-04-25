@@ -455,10 +455,9 @@ impl PoseComputeBuffers {
     }
 
     pub fn world_buffer(&self) -> Result<vk::Buffer, RendererError> {
-        self.world_buffer
-            .ok_or(RendererError::InitializationFailed(
-                "Pose world buffer not allocated".into(),
-            ))
+        self.world_buffer.ok_or(RendererError::InitializationFailed(
+            "Pose world buffer not allocated".into(),
+        ))
     }
 
     pub fn output_buffer(&self) -> Result<vk::Buffer, RendererError> {

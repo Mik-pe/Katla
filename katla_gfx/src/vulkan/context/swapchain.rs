@@ -70,11 +70,13 @@ impl VulkanFrameCtx {
     }
 
     pub fn init(context: &Rc<VulkanContext>) -> Result<Self, crate::error::RendererError> {
-        let (swapchain_loader, surface_loader, surface) = context
-            .window_resources()
-            .ok_or_else(|| crate::error::RendererError::InitializationFailed(
-                "VulkanFrameCtx requires a window surface (not available in headless mode)".to_string(),
-            ))?;
+        let (swapchain_loader, surface_loader, surface) =
+            context.window_resources().ok_or_else(|| {
+                crate::error::RendererError::InitializationFailed(
+                    "VulkanFrameCtx requires a window surface (not available in headless mode)"
+                        .to_string(),
+                )
+            })?;
 
         let swapchain = super::super::Swapchain::create_swapchain(
             swapchain_loader.clone(),
@@ -122,12 +124,13 @@ impl VulkanFrameCtx {
     }
 
     pub fn recreate_swapchain(&mut self) -> Result<(), crate::error::RendererError> {
-        let (swapchain_loader, surface_loader, surface) = self
-            .context
-            .window_resources()
-            .ok_or_else(|| crate::error::RendererError::InitializationFailed(
-                "VulkanFrameCtx requires a window surface (not available in headless mode)".to_string(),
-            ))?;
+        let (swapchain_loader, surface_loader, surface) =
+            self.context.window_resources().ok_or_else(|| {
+                crate::error::RendererError::InitializationFailed(
+                    "VulkanFrameCtx requires a window surface (not available in headless mode)"
+                        .to_string(),
+                )
+            })?;
 
         let swapchain = super::super::Swapchain::create_swapchain(
             swapchain_loader.clone(),

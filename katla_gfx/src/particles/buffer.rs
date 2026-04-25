@@ -284,8 +284,14 @@ impl GlobalParticleBuffer {
                     .device
                     .bind_buffer_memory(
                         counters_buffers[frame_idx],
-                        counters_allocations_build[frame_idx].as_ref().unwrap().memory(),
-                        counters_allocations_build[frame_idx].as_ref().unwrap().offset(),
+                        counters_allocations_build[frame_idx]
+                            .as_ref()
+                            .unwrap()
+                            .memory(),
+                        counters_allocations_build[frame_idx]
+                            .as_ref()
+                            .unwrap()
+                            .offset(),
                     )
                     .map_err(|e| {
                         format!("Failed to bind counters memory[{}]: {:?}", frame_idx, e)

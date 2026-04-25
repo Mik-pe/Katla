@@ -10,7 +10,7 @@ use std::ops::Mul;
 const QUAT_NORMALIZED_THRESHOLD: f32 = 0.001;
 
 /// Quaternion - scalar implementation
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C, align(16))]
 pub struct Quat {
     x: f32,
