@@ -32,7 +32,7 @@ fn main() {
 
     info!("Katla 3D Engine starting...");
     if args.single_frame {
-        info!("Running in limited-frame mode (25 frames) for validation testing");
+        info!("Running in limited-frame mode (100 frames) for validation testing");
     }
     if args.gpu_validation {
         info!("GPU-assisted validation enabled");
