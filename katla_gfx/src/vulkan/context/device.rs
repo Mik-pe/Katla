@@ -101,6 +101,39 @@ pub(super) fn create_device(
     with_validation_layers: bool,
     enable_swapchain: bool,
 ) -> Result<Device, RendererError> {
+    match create_device_inner(
+        instance,
+        physical_device,
+        queue_create_infos.clone(),
+        with_validation_layers,
+        enable_swapchain,
+    ) {
+        Ok(device) => Ok(device),
+        Err(e) if with_validation_layers => {
+            log::warn!(
+                "Vulkan device creation with validation layers failed: {}",
+                e
+            );
+            log::warn!("Retrying without validation layers");
+            create_device_inner(
+                instance,
+                physical_device,
+                queue_create_infos,
+                false,
+                enable_swapchain,
+            )
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn create_device_inner(
+    instance: &Instance,
+    physical_device: vk::PhysicalDevice,
+    queue_create_infos: Vec<vk::DeviceQueueCreateInfo>,
+    with_validation_layers: bool,
+    enable_swapchain: bool,
+) -> Result<Device, RendererError> {
     let device_extensions = if enable_swapchain {
         vec![
             ash::khr::swapchain::NAME.as_ptr(),
@@ -285,83 +318,112 @@ impl VulkanContext {
         display: Option<&dyn raw_window_handle::HasDisplayHandle>,
         entry: &Entry,
     ) -> Result<Instance, RendererError> {
-        use ash::vk::{self, ValidationFeatureEnableEXT, ValidationFeaturesEXT};
-
-        if validation_mode.is_enabled() && !validation::check_validation_support(entry) {
-            return Err(RendererError::InitializationFailed(
-                "Validation layers requested, but unavailable".to_string(),
-            ));
-        }
-
-        let mut extension_names_raw = if let Some(d) = display {
-            let display_handle = d.display_handle().map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to get display handle: {:?}",
+        match create_instance_inner(validation_mode, app_name, engine_name, display, entry) {
+            Ok(instance) => Ok(instance),
+            Err(e) if validation_mode.is_enabled() => {
+                log::warn!(
+                    "Vulkan instance creation with validation layers failed: {}",
                     e
-                ))
-            })?;
-            ash_window::enumerate_required_extensions(display_handle.as_raw())
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to enumerate required extensions: {:?}",
-                        e
-                    ))
-                })?
-                .to_vec()
-        } else {
-            vec![]
-        };
-
-        let mut instance_layers = vec![];
-        if validation_mode.is_enabled() {
-            extension_names_raw.push(ash::ext::debug_utils::NAME.as_ptr());
-            instance_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
-        }
-
-        let app_info = vk::ApplicationInfo::default()
-            .application_name(app_name)
-            .application_version(0)
-            .engine_name(engine_name)
-            .engine_version(0)
-            .api_version(vk::make_api_version(0, 1, 3, 0));
-
-        let gpu_assisted_features = [
-            ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION,
-            ValidationFeatureEnableEXT::GPU_ASSISTED,
-            ValidationFeatureEnableEXT::GPU_ASSISTED_RESERVE_BINDING_SLOT,
-        ];
-        let standard_features = [ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION];
-
-        let mut validation_features = match validation_mode {
-            ValidationMode::GpuAssisted => Some(
-                ValidationFeaturesEXT::default()
-                    .enabled_validation_features(&gpu_assisted_features),
-            ),
-            ValidationMode::Enabled => Some(
-                ValidationFeaturesEXT::default().enabled_validation_features(&standard_features),
-            ),
-            ValidationMode::Disabled => None,
-        };
-
-        let mut create_info = vk::InstanceCreateInfo::default()
-            .application_info(&app_info)
-            .enabled_extension_names(&extension_names_raw)
-            .enabled_layer_names(&instance_layers);
-
-        if let Some(ref mut features) = validation_features {
-            create_info = create_info.push_next(features);
-        }
-
-        unsafe {
-            entry.create_instance(&create_info, None).map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to create Vulkan instance: {:?}",
-                    e
-                ))
-            })
+                );
+                log::warn!("Retrying without validation layers");
+                create_instance_inner(
+                    ValidationMode::Disabled,
+                    app_name,
+                    engine_name,
+                    display,
+                    entry,
+                )
+            }
+            Err(e) => Err(e),
         }
     }
+}
 
+fn create_instance_inner(
+    validation_mode: ValidationMode,
+    app_name: &CStr,
+    engine_name: &CStr,
+    display: Option<&dyn raw_window_handle::HasDisplayHandle>,
+    entry: &Entry,
+) -> Result<Instance, RendererError> {
+    use ash::vk::{self, ValidationFeatureEnableEXT, ValidationFeaturesEXT};
+
+    let mut extension_names_raw = if let Some(d) = display {
+        let display_handle = d.display_handle().map_err(|e| {
+            RendererError::InitializationFailed(format!("Failed to get display handle: {:?}", e))
+        })?;
+        ash_window::enumerate_required_extensions(display_handle.as_raw())
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to enumerate required extensions: {:?}",
+                    e
+                ))
+            })?
+            .to_vec()
+    } else {
+        vec![]
+    };
+
+    let mut instance_layers = vec![];
+    if validation_mode.is_enabled() {
+        if !validation::check_validation_support(entry) {
+            log::warn!("VK_LAYER_KHRONOS_validation not found, disabling validation layers");
+            return create_instance_inner(
+                ValidationMode::Disabled,
+                app_name,
+                engine_name,
+                display,
+                entry,
+            );
+        }
+        extension_names_raw.push(ash::ext::debug_utils::NAME.as_ptr());
+        instance_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
+    }
+
+    let app_info = vk::ApplicationInfo::default()
+        .application_name(app_name)
+        .application_version(0)
+        .engine_name(engine_name)
+        .engine_version(0)
+        .api_version(vk::make_api_version(0, 1, 3, 0));
+
+    let gpu_assisted_features = [
+        ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION,
+        ValidationFeatureEnableEXT::GPU_ASSISTED,
+        ValidationFeatureEnableEXT::GPU_ASSISTED_RESERVE_BINDING_SLOT,
+    ];
+    let standard_features = [ValidationFeatureEnableEXT::SYNCHRONIZATION_VALIDATION];
+
+    let mut validation_features = match validation_mode {
+        ValidationMode::GpuAssisted => Some(
+            ValidationFeaturesEXT::default().enabled_validation_features(&gpu_assisted_features),
+        ),
+        ValidationMode::Enabled => {
+            Some(ValidationFeaturesEXT::default().enabled_validation_features(&standard_features))
+        }
+        ValidationMode::Disabled => None,
+    };
+
+    let mut create_info = vk::InstanceCreateInfo::default()
+        .application_info(&app_info)
+        .enabled_extension_names(&extension_names_raw)
+        .enabled_layer_names(&instance_layers);
+
+    if let Some(ref mut features) = validation_features {
+        create_info = create_info.push_next(features);
+    }
+
+    unsafe {
+        entry.create_instance(&create_info, None).map_err(|e| {
+            RendererError::InitializationFailed(format!(
+                "Failed to create Vulkan instance: {:?}",
+                e
+            ))
+        })
+    }
+}
+
+impl VulkanContext {
     pub fn find_supported_format(
         &self,
         candidates: Vec<vk::Format>,
