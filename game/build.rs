@@ -27,13 +27,8 @@ fn main() {
                         println!("cargo:warning=Linked libvulkan.dylib -> {}", moltenvk);
                     }
                     Err(e) => {
-                        println!(
-                            "cargo:warning=Failed to symlink libvulkan.dylib: {}",
-                            e
-                        );
-                        println!(
-                            "cargo:warning=Install MoltenVK: brew install molten-vk"
-                        );
+                        println!("cargo:warning=Failed to symlink libvulkan.dylib: {}", e);
+                        println!("cargo:warning=Install MoltenVK: brew install molten-vk");
                     }
                 }
             } else {

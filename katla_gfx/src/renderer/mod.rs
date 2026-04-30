@@ -1378,7 +1378,10 @@ impl Drop for OutputRenderTarget {
                 .device
                 .destroy_image_view(self.color_image_view, None);
             self.context.device.destroy_image(self.color_image, None);
-            let memory = std::ptr::read(&self.color_memory);
+            let memory = std::mem::replace(
+                &mut self.color_memory,
+                gpu_allocator::vulkan::Allocation::default(),
+            );
             self.context.allocator.free(memory, "output render target");
         }
     }

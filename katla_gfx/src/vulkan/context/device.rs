@@ -317,9 +317,9 @@ impl VulkanContext {
         engine_name: &CStr,
         display: Option<&dyn raw_window_handle::HasDisplayHandle>,
         entry: &Entry,
-    ) -> Result<Instance, RendererError> {
+    ) -> Result<(Instance, bool), RendererError> {
         match create_instance_inner(validation_mode, app_name, engine_name, display, entry) {
-            Ok(instance) => Ok(instance),
+            Ok(instance) => Ok((instance, validation_mode.is_enabled())),
             Err(e) if validation_mode.is_enabled() => {
                 log::warn!(
                     "Vulkan instance creation with validation layers failed: {}",
@@ -333,6 +333,7 @@ impl VulkanContext {
                     display,
                     entry,
                 )
+                .map(|instance| (instance, false))
             }
             Err(e) => Err(e),
         }
