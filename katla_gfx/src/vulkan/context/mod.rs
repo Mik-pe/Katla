@@ -181,7 +181,7 @@ impl VulkanContext {
         let entry = unsafe { Entry::load() }.map_err(|e| {
             RendererError::InitializationFailed(format!("Failed to load Vulkan entry: {:?}", e))
         })?;
-        let instance = Self::create_instance(
+        let (instance, validation_layers_active) = Self::create_instance(
             validation_mode,
             &app_name,
             &engine_name,
@@ -197,7 +197,7 @@ impl VulkanContext {
 
         let debug_callback = validation::create_debug_messenger(
             &debug_utils_loader,
-            validation_mode.is_enabled(),
+            validation_layers_active,
             user_data,
         );
         let surface_loader = SurfaceInstance::new(&entry, &instance);
@@ -235,17 +235,28 @@ impl VulkanContext {
         })?;
         let transfer_queue_idx = queue_indices.transfer_idx.unwrap_or(graphics_queue_idx);
 
-        let queue_create_infos = vec![
-            vk::DeviceQueueCreateInfo::default()
-                .queue_family_index(graphics_queue_idx)
-                .queue_priorities(&[1.0]),
-        ];
+        let queue_create_infos = if transfer_queue_idx != graphics_queue_idx {
+            vec![
+                vk::DeviceQueueCreateInfo::default()
+                    .queue_family_index(graphics_queue_idx)
+                    .queue_priorities(&[1.0]),
+                vk::DeviceQueueCreateInfo::default()
+                    .queue_family_index(transfer_queue_idx)
+                    .queue_priorities(&[1.0]),
+            ]
+        } else {
+            vec![
+                vk::DeviceQueueCreateInfo::default()
+                    .queue_family_index(graphics_queue_idx)
+                    .queue_priorities(&[1.0]),
+            ]
+        };
 
         let device = device::create_device(
             &instance,
             physical_device,
             queue_create_infos,
-            validation_mode.is_enabled(),
+            validation_layers_active,
             true,
         )?;
 
@@ -308,7 +319,7 @@ impl VulkanContext {
             debug_utils_loader,
             debug_callback,
             validation_callback,
-            gpu_assisted_validation: validation_mode.is_gpu_assisted(),
+            gpu_assisted_validation: validation_layers_active && validation_mode.is_gpu_assisted(),
             push_descriptor_enabled: true,
             push_descriptor_khr,
             non_coherent_atom_size,
@@ -356,7 +367,7 @@ impl VulkanContext {
         let entry = unsafe { Entry::load() }.map_err(|e| {
             RendererError::InitializationFailed(format!("Failed to load Vulkan entry: {:?}", e))
         })?;
-        let instance =
+        let (instance, validation_layers_active) =
             Self::create_instance(validation_mode, &app_name, &engine_name, None, &entry)?;
         let debug_utils_loader = DebugInstance::new(&entry, &instance);
 
@@ -367,7 +378,7 @@ impl VulkanContext {
 
         let debug_callback = validation::create_debug_messenger(
             &debug_utils_loader,
-            validation_mode.is_enabled(),
+            validation_layers_active,
             user_data,
         );
 
@@ -383,18 +394,29 @@ impl VulkanContext {
         })?;
         let transfer_queue_idx = queue_indices.transfer_idx.unwrap_or(graphics_queue_idx);
 
-        let queue_create_infos = vec![
-            vk::DeviceQueueCreateInfo::default()
-                .queue_family_index(graphics_queue_idx)
-                .queue_priorities(&[1.0]),
-        ];
+        let queue_create_infos = if transfer_queue_idx != graphics_queue_idx {
+            vec![
+                vk::DeviceQueueCreateInfo::default()
+                    .queue_family_index(graphics_queue_idx)
+                    .queue_priorities(&[1.0]),
+                vk::DeviceQueueCreateInfo::default()
+                    .queue_family_index(transfer_queue_idx)
+                    .queue_priorities(&[1.0]),
+            ]
+        } else {
+            vec![
+                vk::DeviceQueueCreateInfo::default()
+                    .queue_family_index(graphics_queue_idx)
+                    .queue_priorities(&[1.0]),
+            ]
+        };
 
         // Create device WITHOUT swapchain extension
         let device = device::create_device(
             &instance,
             physical_device,
             queue_create_infos,
-            validation_mode.is_enabled(),
+            validation_layers_active,
             false,
         )?;
 
@@ -456,7 +478,7 @@ impl VulkanContext {
             debug_utils_loader,
             debug_callback,
             validation_callback,
-            gpu_assisted_validation: validation_mode.is_gpu_assisted(),
+            gpu_assisted_validation: validation_layers_active && validation_mode.is_gpu_assisted(),
             push_descriptor_enabled: true,
             push_descriptor_khr,
             non_coherent_atom_size,

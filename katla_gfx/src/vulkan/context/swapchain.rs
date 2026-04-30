@@ -30,7 +30,7 @@ impl RenderTexture {
                 self.context.device.destroy_image_view(ds_view.vk(), None);
             }
 
-            let image_memory = std::ptr::read(&self.image_memory);
+            let image_memory = std::mem::replace(&mut self.image_memory, Allocation::default());
             self.context.free_image(self.image, image_memory);
         }
     }
@@ -175,6 +175,7 @@ impl VulkanFrameCtx {
                     .destroy_image_view(image_view.vk(), None);
             }
             self.swapchain.destroy();
+            self.depth_render_textures.clear();
         }
     }
 }
