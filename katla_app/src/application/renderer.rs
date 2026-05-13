@@ -17,6 +17,15 @@ impl Application {
         delta_time: f32,
         frame_count: usize,
     ) {
+        // If the swapchain was signaled as out-of-date on the previous frame,
+        // recreate it before rendering. This handles the common macOS/MoltenVK
+        // case where the first few frames return VK_SUBOPTIMAL_KHR or
+        // VK_ERROR_OUT_OF_DATE_KHR until the CAMetalLayer.drawableSize settles.
+        if self.needs_swapchain_recreate {
+            self.needs_swapchain_recreate = false;
+            self.recreate_swapchain_resources();
+        }
+
         // Note: viewport bindless index is updated BEFORE generate_ui_draw_list()
         // in the RedrawRequested handler to ensure the UI samples from the
         // correct per-frame transient texture.
@@ -222,8 +231,19 @@ impl Application {
                 frame.submit_ui(ids.ui, ui_list);
             }
         }) {
-            log::error!("Frame render failed, skipping frame: {}", e);
-            return;
+            match &e {
+                katla_gfx::error::RendererError::SwapchainOutOfDate => {
+                    log::debug!("Swapchain out of date, triggering recreation on next frame");
+                    // Defer recreation to the next frame to avoid complex re-entrancy.
+                    // The next RedrawRequested will call recreate_swapchain via a flag.
+                    self.needs_swapchain_recreate = true;
+                    return;
+                }
+                _ => {
+                    log::error!("Frame render failed, skipping frame: {}", e);
+                    return;
+                }
+            }
         }
     }
 
@@ -294,7 +314,7 @@ impl Application {
                 }
             }
 
-            if !drawable.skeleton_handle.is_none() {
+            if drawable.skeleton_handle.is_some() {
                 // Skeleton matrices are computed on the GPU via the animation
                 // pose evaluation compute pass and copied to the per-entity
                 // SkeletonBuffer. No CPU upload needed.
@@ -305,7 +325,7 @@ impl Application {
                 .with_transform(transform.transform.make_mat4().to_array());
 
             // Skeleton for skinned meshes
-            if !drawable.skeleton_handle.is_none() {
+            if drawable.skeleton_handle.is_some() {
                 draw = draw.with_skeleton(drawable.skeleton_handle);
             }
 
@@ -666,5 +686,45 @@ impl Application {
                 .or_default()
                 .push(idx);
         }
+    }
+
+    /// Recreate the swapchain and update all dependent resources.
+    ///
+    /// This is called when:
+    /// - The window is resized (`WindowEvent::Resized`)
+    /// - The window is unoccluded (`WindowEvent::Occluded(false)`)
+    /// - `acquire_next_image` or `queue_present` returns `VK_SUBOPTIMAL_KHR` / `VK_ERROR_OUT_OF_DATE_KHR`
+    pub(crate) fn recreate_swapchain_resources(&mut self) {
+        let recreated_textures = match self.renderer.recreate_swapchain(&mut self.frame_graph) {
+            Ok(textures) => textures,
+            Err(e) => {
+                log::error!("Failed to recreate swapchain: {}", e);
+                return;
+            }
+        };
+
+        let extent = self.renderer.swapchain_extent();
+
+        for (name, slot) in recreated_textures {
+            if name == "hdr_color" {
+                self.frame_graph
+                    .set_tonemap_texture_index(self.pass_ids.tonemap, slot)
+                    .expect("Failed to update tonemap texture index");
+            } else if name == "viewport_0" {
+                self.on_viewport_texture_recreated(slot);
+            }
+        }
+
+        for frame_idx in 0..2 {
+            if let Some(view) = self
+                .frame_graph
+                .transient_texture_view_for_frame("shadow_atlas", frame_idx)
+            {
+                self.renderer.set_shadow_atlas_view(frame_idx, view);
+            }
+        }
+
+        let aspect = extent.width as f32 / extent.height as f32;
+        self.camera.aspect_ratio_changed(&mut self.world, aspect);
     }
 }

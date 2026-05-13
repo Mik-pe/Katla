@@ -305,6 +305,8 @@ pub struct Application {
         Option<crate::systems::gpu_animation_system::GpuAnimationSystem>,
     /// Whether the window is currently minimized (zero extent).
     pub(crate) minimized: bool,
+    /// Whether the swapchain needs recreation (set when acquire/present returns out-of-date).
+    pub(crate) needs_swapchain_recreate: bool,
     /// Tracks GPU resource reference counts for automatic cleanup on entity/component destruction.
     pub(crate) gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker,
     /// Reusable buffer for collecting point lights each frame. Cleared and refilled
@@ -398,41 +400,7 @@ impl ApplicationHandler for Application {
                         info!("Window restored from minimized");
                     }
 
-                    // Recreate swapchain and transient textures
-                    let recreated_textures =
-                        match self.renderer.recreate_swapchain(&mut self.frame_graph) {
-                            Ok(textures) => textures,
-                            Err(e) => {
-                                log::error!("Failed to recreate swapchain: {}", e);
-                                return;
-                            }
-                        };
-
-                    let extent = self.renderer.swapchain_extent();
-
-                    // Update bindless indices for recreated textures
-                    for (name, slot) in recreated_textures {
-                        if name == "hdr_color" {
-                            self.frame_graph
-                                .set_tonemap_texture_index(self.pass_ids.tonemap, slot)
-                                .expect("Failed to update tonemap texture index");
-                        } else if name == "viewport_0" {
-                            self.on_viewport_texture_recreated(slot);
-                        }
-                    }
-
-                    // Update shadow atlas views for all frames if recreated
-                    for frame_idx in 0..2 {
-                        if let Some(view) = self
-                            .frame_graph
-                            .transient_texture_view_for_frame("shadow_atlas", frame_idx)
-                        {
-                            self.renderer.set_shadow_atlas_view(frame_idx, view);
-                        }
-                    }
-
-                    let aspect = extent.width as f32 / extent.height as f32;
-                    self.camera.aspect_ratio_changed(&mut self.world, aspect);
+                    self.recreate_swapchain_resources();
                     info!("=== Resize complete ===");
                 } else if !self.minimized {
                     self.minimized = true;
@@ -471,37 +439,10 @@ impl ApplicationHandler for Application {
                     self.minimized = true;
                     debug!("Window occluded, skipping rendering");
                 } else if !occluded && self.minimized {
-                    match self.renderer.recreate_swapchain(&mut self.frame_graph) {
-                        Ok(textures) => {
-                            self.minimized = false;
-                            info!("Window unoccluded, resuming rendering");
-
-                            let extent = self.renderer.swapchain_extent();
-                            for (name, slot) in textures {
-                                if name == "hdr_color" {
-                                    self.frame_graph
-                                        .set_tonemap_texture_index(self.pass_ids.tonemap, slot)
-                                        .expect("Failed to update tonemap texture index");
-                                } else if name == "viewport_0" {
-                                    self.on_viewport_texture_recreated(slot);
-                                }
-                            }
-                            for frame_idx in 0..2 {
-                                if let Some(view) = self
-                                    .frame_graph
-                                    .transient_texture_view_for_frame("shadow_atlas", frame_idx)
-                                {
-                                    self.renderer.set_shadow_atlas_view(frame_idx, view);
-                                }
-                            }
-                            let aspect = extent.width as f32 / extent.height as f32;
-                            self.camera.aspect_ratio_changed(&mut self.world, aspect);
-                            self.window.request_redraw();
-                        }
-                        Err(e) => {
-                            log::error!("Failed to recreate swapchain on unocclude: {}", e);
-                        }
-                    }
+                    self.minimized = false;
+                    info!("Window unoccluded, resuming rendering");
+                    self.recreate_swapchain_resources();
+                    self.window.request_redraw();
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {

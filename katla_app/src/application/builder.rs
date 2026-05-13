@@ -124,11 +124,6 @@ impl ApplicationBuilder {
         (theme, gui_state)
     }
 
-    #[cfg(not(feature = "editor"))]
-    fn load_editor_state_static(_preferences: &Preferences) -> ((), ()) {
-        ((), ())
-    }
-
     pub fn with_system(mut self, system: Box<dyn System>, order: SystemExecutionOrder) -> Self {
         self.world.register_system(system, order);
         self
@@ -595,9 +590,8 @@ impl ApplicationBuilder {
 
         // Load user preferences and editor state before moving fields
         let preferences = Preferences::load();
+        #[cfg(feature = "editor")]
         let (theme, gui_state) = Self::load_editor_state_static(&preferences);
-        #[cfg(not(feature = "editor"))]
-        let _ = (theme, gui_state);
 
         let info = ApplicationInfo {
             name: self.app_name,
@@ -827,6 +821,7 @@ impl ApplicationBuilder {
             particle_system: crate::systems::ParticleSystem::new(),
             gpu_animation_system: None,
             minimized: false,
+            needs_swapchain_recreate: false,
             gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(
                 katla_gfx::MaterialHandle::NONE,
             ),
