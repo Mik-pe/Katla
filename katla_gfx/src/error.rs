@@ -36,6 +36,10 @@ pub enum RendererError {
     /// Swapchain error (acquire, present, etc.).
     SwapchainError(String),
 
+    /// Swapchain is out of date or suboptimal and needs recreation.
+    /// The caller should recreate the swapchain and retry.
+    SwapchainOutOfDate,
+
     /// Render graph error.
     RenderGraphError(RenderGraphError),
 
@@ -57,6 +61,7 @@ impl fmt::Display for RendererError {
                 write!(f, "Initialization failed: {}", msg)
             }
             RendererError::SwapchainError(msg) => write!(f, "Swapchain error: {}", msg),
+            RendererError::SwapchainOutOfDate => write!(f, "Swapchain out of date"),
             RendererError::RenderGraphError(err) => write!(f, "Render graph error: {}", err),
             RendererError::MaterialError(err) => write!(f, "Material error: {}", err),
             RendererError::ObjectLimitExceeded { index, limit } => {

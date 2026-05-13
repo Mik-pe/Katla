@@ -1147,7 +1147,7 @@ impl VulkanRenderer {
         let frame_idx = self.current_frame();
 
         // 2. Acquire next swapchain image
-        let (image_index, _is_suboptimal) = unsafe {
+        let acquire_result = unsafe {
             self.frame_context
                 .swapchain
                 .swapchain_loader
@@ -1157,13 +1157,25 @@ impl VulkanRenderer {
                     self.swap_data.image_available_semaphore(),
                     vk::Fence::null(),
                 )
+        };
+
+        let (image_index, is_suboptimal) = match acquire_result {
+            Ok(pair) => pair,
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                log::info!("Swapchain out of date at acquire, signaling recreation");
+                return Err(crate::error::RendererError::SwapchainOutOfDate);
+            }
+            Err(e) => {
+                return Err(crate::error::RendererError::SwapchainError(format!(
+                    "Failed to acquire swapchain image: {:?}",
+                    e
+                )));
+            }
+        };
+
+        if is_suboptimal {
+            log::debug!("Swapchain suboptimal at acquire, will recreate after present");
         }
-        .map_err(|e| {
-            crate::error::RendererError::SwapchainError(format!(
-                "Failed to acquire swapchain image: {:?}",
-                e
-            ))
-        })?;
 
         // Store image index for readback debugging
         self.last_presented_image_index = Some(image_index);
@@ -1266,16 +1278,35 @@ impl VulkanRenderer {
             .image_indices(&image_indices);
 
         unsafe {
-            self.frame_context
+            let present_result = self
+                .frame_context
                 .swapchain
                 .swapchain_loader
-                .queue_present(self.context.gfx_queue.vk_queue(), &present_info)
-                .map_err(|e| {
-                    crate::error::RendererError::SwapchainError(format!(
+                .queue_present(self.context.gfx_queue.vk_queue(), &present_info);
+
+            match present_result {
+                Ok(is_suboptimal) => {
+                    // Suboptimal is very common on macOS/MoltenVK (especially first frame).
+                    // Still rendered successfully, but signal that swapchain should be recreated.
+                    if is_suboptimal {
+                        log::debug!("Present suboptimal, signaling swapchain recreation");
+                        self.swap_data.step_frame();
+                        return Err(crate::error::RendererError::SwapchainOutOfDate);
+                    }
+                }
+                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                    // Frame was presented but swapchain is stale, signal recreation.
+                    log::debug!("Present out of date, signaling swapchain recreation");
+                    self.swap_data.step_frame();
+                    return Err(crate::error::RendererError::SwapchainOutOfDate);
+                }
+                Err(e) => {
+                    return Err(crate::error::RendererError::SwapchainError(format!(
                         "Failed to present: {:?}",
                         e
-                    ))
-                })?;
+                    )));
+                }
+            }
         }
 
         // 11. Advance to next frame

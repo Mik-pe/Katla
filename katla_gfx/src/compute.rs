@@ -102,7 +102,7 @@ impl ComputePass {
 
         if self.push_descriptor_layout.is_some() {
             push_descriptors(&self.context, &self.bindings, cmd, layout);
-        } else {
+        } else if self.descriptor_set != vk::DescriptorSet::null() {
             unsafe {
                 device.cmd_bind_descriptor_sets(
                     cmd,

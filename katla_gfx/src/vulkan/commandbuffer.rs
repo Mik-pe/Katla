@@ -315,6 +315,9 @@ impl CommandBuffer {
             return;
         }
         for &(first_binding, buf) in buffers {
+            if buf == vk::Buffer::null() {
+                continue;
+            }
             unsafe {
                 self.device.cmd_bind_vertex_buffers(
                     self.command_buffer,
@@ -427,6 +430,27 @@ impl CommandBuffer {
         descriptor_sets: &[vk::DescriptorSet],
         dynamic_offsets: &[u32],
     ) {
+        // MoltenVK defers command encoding to vkQueueSubmit time, where it
+        // dereferences descriptor set handles and pipeline layout. A null handle
+        // causes SIGSEGV (null + struct field offset).
+        if pipeline_layout == vk::PipelineLayout::null() {
+            log::error!(
+                "Attempted to bind descriptor sets with null pipeline layout at set {}",
+                first_set,
+            );
+            return;
+        }
+        if descriptor_sets
+            .iter()
+            .any(|ds| ds == &vk::DescriptorSet::null())
+        {
+            log::error!(
+                "Attempted to bind null descriptor set at set {} (layout {:?})",
+                first_set,
+                pipeline_layout,
+            );
+            return;
+        }
         unsafe {
             self.device.cmd_bind_descriptor_sets(
                 self.command_buffer,

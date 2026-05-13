@@ -41,6 +41,12 @@ fn record_draw_chunk_sequential(
     let mut prev_layout = vk::PipelineLayout::null();
 
     for draw in commands {
+        // Skip draws with null pipeline or layout (stale references after recompilation)
+        if draw.pipeline == vk::Pipeline::null() || draw.layout == vk::PipelineLayout::null() {
+            log::warn!("Skipping draw with null pipeline or layout");
+            continue;
+        }
+
         unsafe {
             device.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, draw.pipeline);
 
@@ -55,25 +61,29 @@ fn record_draw_chunk_sequential(
                 prev_layout = draw.layout;
             }
 
-            device.cmd_bind_descriptor_sets(
-                cb,
-                vk::PipelineBindPoint::GRAPHICS,
-                draw.layout,
-                0,
-                &[draw.storage_ds],
-                &[],
-            );
+            if draw.storage_ds != vk::DescriptorSet::null() {
+                device.cmd_bind_descriptor_sets(
+                    cb,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    draw.layout,
+                    0,
+                    &[draw.storage_ds],
+                    &[],
+                );
+            }
 
-            device.cmd_bind_descriptor_sets(
-                cb,
-                vk::PipelineBindPoint::GRAPHICS,
-                draw.layout,
-                1,
-                &[draw.bindless_ds],
-                &[],
-            );
+            if draw.bindless_ds != vk::DescriptorSet::null() {
+                device.cmd_bind_descriptor_sets(
+                    cb,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    draw.layout,
+                    1,
+                    &[draw.bindless_ds],
+                    &[],
+                );
+            }
 
-            if draw.is_skinned {
+            if draw.is_skinned && draw.skeleton_ds != vk::DescriptorSet::null() {
                 device.cmd_bind_descriptor_sets(
                     cb,
                     vk::PipelineBindPoint::GRAPHICS,
@@ -191,7 +201,7 @@ impl<'a> Frame<'a> {
             .renderer
             .shadow_descriptor_set()
             .or_else(|| self.renderer.shadow_fallback_descriptor_set())
-            .unwrap_or(vk::DescriptorSet::null());
+            .unwrap_or_else(|| self.renderer.empty_descriptor_set(frame_idx));
 
         for draw_list in draw_lists {
             self.ensure_materials_compiled(draw_list)?;

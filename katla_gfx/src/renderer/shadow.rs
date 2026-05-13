@@ -885,6 +885,7 @@ impl super::VulkanRenderer {
     ///
     /// If shadow descriptors cannot be bound (e.g., atlas not ready), binds
     /// the fallback shadow descriptor set at Set 4 to satisfy pipeline layout requirements.
+    /// If neither is available, binds the empty descriptor set to prevent MoltenVK crashes.
     pub fn bind_shadow_descriptors(
         &self,
         cmd: vk::CommandBuffer,
@@ -896,16 +897,23 @@ impl super::VulkanRenderer {
             cmd,
             pipeline_layout,
         );
-        if !bound && let Some(fallback_ds) = self.shadow.fallback_descriptor_set() {
-            unsafe {
-                self.context.device.cmd_bind_descriptor_sets(
-                    cmd,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    pipeline_layout,
-                    4,
-                    &[fallback_ds],
-                    &[],
-                );
+        if !bound {
+            let fallback = self
+                .shadow
+                .fallback_descriptor_set()
+                .filter(|ds| *ds != vk::DescriptorSet::null())
+                .unwrap_or_else(|| self.empty_descriptor_set(self.current_frame()));
+            if fallback != vk::DescriptorSet::null() {
+                unsafe {
+                    self.context.device.cmd_bind_descriptor_sets(
+                        cmd,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        pipeline_layout,
+                        4,
+                        &[fallback],
+                        &[],
+                    );
+                }
             }
         }
     }

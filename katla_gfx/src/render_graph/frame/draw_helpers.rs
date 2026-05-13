@@ -144,12 +144,26 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
                 let storage_ds = renderer.storage_descriptor_sets[frame_idx].vk_set();
                 cmd.bind_descriptor_sets(new_layout, 0, &[storage_ds], &[]);
 
-                // Billboard pipeline always needs bindless textures (Set 1) for alpha discard
-                let needs_textures =
-                    descriptors.bind_textures || target_variant == PipelineVariant::Billboard;
-                if needs_textures {
-                    let bindless_ds = renderer.bindless_manager.descriptor_set().vk();
-                    cmd.bind_descriptor_sets(new_layout, 1, &[bindless_ds], &[]);
+                // Set 1 binding depends on pipeline variant:
+                // - Billboard: bindless textures for alpha discard
+                // - Skinned: empty descriptor set (pipeline declares empty layout at Set 1)
+                // - Regular with bind_textures: bindless textures
+                // - Regular without bind_textures: may or may not have Set 1 (handled by extra_sets)
+                match target_variant {
+                    PipelineVariant::Billboard => {
+                        let bindless_ds = renderer.bindless_manager.descriptor_set().vk();
+                        cmd.bind_descriptor_sets(new_layout, 1, &[bindless_ds], &[]);
+                    }
+                    PipelineVariant::Skinned => {
+                        let empty_ds = renderer.empty_descriptor_set(frame_idx);
+                        cmd.bind_descriptor_sets(new_layout, 1, &[empty_ds], &[]);
+                    }
+                    PipelineVariant::Regular => {
+                        if descriptors.bind_textures {
+                            let bindless_ds = renderer.bindless_manager.descriptor_set().vk();
+                            cmd.bind_descriptor_sets(new_layout, 1, &[bindless_ds], &[]);
+                        }
+                    }
                 }
 
                 for &(set, ds) in &descriptors.extra_sets {

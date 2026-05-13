@@ -132,10 +132,12 @@ impl<'a> Frame<'a> {
             })
             .collect();
 
-        let mut extra_sets = Vec::new();
-        if let Some(cascade_ds) = self.renderer.shadow_cascade_descriptor_set() {
-            extra_sets.push((2u32, cascade_ds));
-        }
+        let cascade_ds = self
+            .renderer
+            .shadow_cascade_descriptor_set()
+            .unwrap_or_else(|| self.renderer.empty_descriptor_set(frame_idx));
+        let empty_ds = self.renderer.empty_descriptor_set(frame_idx);
+        let extra_sets = vec![(1u32, empty_ds), (2u32, cascade_ds)];
 
         let total_draws: usize = data.draw_lists.iter().map(|dl| dl.len()).sum();
         let use_parallel = total_draws >= PARALLEL_SHADOW_DRAW_THRESHOLD;
