@@ -115,7 +115,8 @@ git commit -m "Summary line
 - **katla_app** can depend on: `katla_gfx`, `katla_ecs`, `katla_math`, `katla_ui`
 
 ## Code Style
-  
+
+- **No `#[allow(dead_code)]`**: Never suppress dead code warnings. If code is unused, remove it. Use `#[cfg(...)]` to conditionally compile platform/feature-gated code instead.
 - **Naming**: `StructName`, `function_name`, `CONSTANT_NAME`, `type_param T`
 - **Tests**: Prefix with `test_` (`test_entity_id_creation`)
 - **Modules**: Prefer splitting into multiple files/private rust modules over large modules

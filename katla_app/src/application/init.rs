@@ -213,9 +213,9 @@ impl Application {
             Some(crate::systems::gpu_animation_system::GpuAnimationSystem::new());
 
         // Add animation compute pass to frame graph.
-        // Inserted at position 0 so it runs before other compute passes (light culling,
-        // particle emit/simulate) and all graphics passes. This ensures skeleton matrices
-        // are ready for the subsequent copy commands and vertex shader skinning.
+        // Inserted at position 0 so it runs before light_culling, particle passes,
+        // and all graphics passes. This ensures skeleton matrices are ready
+        // for the subsequent copy commands and vertex shader skinning.
         if let Some(pipeline_handle) = self.renderer.animation_pipeline_handle() {
             use katla_gfx::render_graph::{PassDesc, PassType, RenderGraphError};
             self.frame_graph.insert_pass(
@@ -297,12 +297,13 @@ impl Application {
         }
 
         // Add light culling compute pass to frame graph.
-        // This must run before geometry passes so culling results are available for PBR shading.
-        // Inserted at position 0 — after animation_pose_eval, before particle passes.
+        // This must run after animation_pose_eval (which computes skeleton matrices)
+        // and before particle passes and geometry rendering.
+        // Inserted at position 1 so it follows animation_pose_eval at position 0.
         if self.renderer.has_light_culling() {
             use katla_gfx::render_graph::{PassDesc, PassType, RenderGraphError};
             self.frame_graph.insert_pass(
-                0,
+                1,
                 PassDesc::new("light_culling", PassType::Compute, vec![], vec![]).with_compute_fn(
                     |frame, cmd, _pipeline_handle| {
                         let renderer = frame.renderer_mut();
