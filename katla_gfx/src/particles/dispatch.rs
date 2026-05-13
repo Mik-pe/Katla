@@ -286,20 +286,24 @@ impl GlobalParticleSystem {
         }
 
         if let Some(descriptor_set) = self.descriptors.compute_sets[frame_index % 2] {
-            log::debug!(
-                "Emit dispatch: Set 0 descriptor={:?}, particle_buffer={:?}",
-                descriptor_set,
-                self.buffer.particle_buffer(),
-            );
-            unsafe {
-                device.cmd_bind_descriptor_sets(
-                    command_buffer,
-                    vk::PipelineBindPoint::COMPUTE,
-                    vk_layout,
-                    0,
-                    std::slice::from_ref(&descriptor_set),
-                    &[],
+            if descriptor_set != vk::DescriptorSet::null() {
+                log::debug!(
+                    "Emit dispatch: Set 0 descriptor={:?}, particle_buffer={:?}",
+                    descriptor_set,
+                    self.buffer.particle_buffer(),
                 );
+                unsafe {
+                    device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::COMPUTE,
+                        vk_layout,
+                        0,
+                        std::slice::from_ref(&descriptor_set),
+                        &[],
+                    );
+                }
+            } else {
+                return Err("Emit compute descriptor set is null".to_string());
             }
         } else {
             return Err("Compute descriptor set not allocated".to_string());
@@ -388,15 +392,19 @@ impl GlobalParticleSystem {
         }
 
         if let Some(descriptor_set) = self.descriptors.compute_sets[frame_index % 2] {
-            unsafe {
-                device.cmd_bind_descriptor_sets(
-                    command_buffer,
-                    vk::PipelineBindPoint::COMPUTE,
-                    vk_layout,
-                    0,
-                    std::slice::from_ref(&descriptor_set),
-                    &[],
-                );
+            if descriptor_set != vk::DescriptorSet::null() {
+                unsafe {
+                    device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::COMPUTE,
+                        vk_layout,
+                        0,
+                        std::slice::from_ref(&descriptor_set),
+                        &[],
+                    );
+                }
+            } else {
+                return Err("Simulate compute descriptor set is null".to_string());
             }
         } else {
             return Err("Compute descriptor set not allocated".to_string());

@@ -70,29 +70,35 @@ impl GlobalParticleSystem {
         self.update_render_descriptor_binding(frame_index)?;
 
         if let Some(descriptor_set) = self.descriptors.render_sets[frame_index % 2] {
-            unsafe {
-                device.cmd_bind_descriptor_sets(
-                    command_buffer,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    layout,
-                    0,
-                    std::slice::from_ref(&descriptor_set),
-                    &[],
-                );
+            if descriptor_set != vk::DescriptorSet::null() {
+                unsafe {
+                    device.cmd_bind_descriptor_sets(
+                        command_buffer,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        layout,
+                        0,
+                        std::slice::from_ref(&descriptor_set),
+                        &[],
+                    );
+                }
+            } else {
+                return Err("Particle render descriptor set is null".to_string());
             }
         } else {
             return Err("Particle render descriptor set not allocated".to_string());
         }
 
-        unsafe {
-            device.cmd_bind_descriptor_sets(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                layout,
-                1,
-                std::slice::from_ref(&storage_descriptor_set),
-                &[],
-            );
+        if storage_descriptor_set != vk::DescriptorSet::null() {
+            unsafe {
+                device.cmd_bind_descriptor_sets(
+                    command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    layout,
+                    1,
+                    std::slice::from_ref(&storage_descriptor_set),
+                    &[],
+                );
+            }
         }
 
         if self.estimated_max_alive > 0 {

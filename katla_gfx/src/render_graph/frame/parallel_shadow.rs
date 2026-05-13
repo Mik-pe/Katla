@@ -77,6 +77,10 @@ fn record_shadow_cascade(
     let mut current_pipeline = vk::Pipeline::null();
 
     for draw in &cascade.draws {
+        if draw.pipeline == vk::Pipeline::null() || draw.layout == vk::PipelineLayout::null() {
+            continue;
+        }
+
         if draw.pipeline != current_pipeline {
             unsafe {
                 dev.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, draw.pipeline);
@@ -84,31 +88,35 @@ fn record_shadow_cascade(
             current_pipeline = draw.pipeline;
 
             unsafe {
-                dev.cmd_bind_descriptor_sets(
-                    cb,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    draw.layout,
-                    0,
-                    &[draw.storage_ds],
-                    &[],
-                );
-            }
-
-            for &(set, ds) in &draw.extra_sets {
-                unsafe {
+                if draw.storage_ds != vk::DescriptorSet::null() {
                     dev.cmd_bind_descriptor_sets(
                         cb,
                         vk::PipelineBindPoint::GRAPHICS,
                         draw.layout,
-                        set,
-                        &[ds],
+                        0,
+                        &[draw.storage_ds],
                         &[],
                     );
                 }
             }
+
+            for &(set, ds) in &draw.extra_sets {
+                if ds != vk::DescriptorSet::null() {
+                    unsafe {
+                        dev.cmd_bind_descriptor_sets(
+                            cb,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            draw.layout,
+                            set,
+                            &[ds],
+                            &[],
+                        );
+                    }
+                }
+            }
         }
 
-        if draw.is_skinned {
+        if draw.is_skinned && draw.skeleton_ds != vk::DescriptorSet::null() {
             unsafe {
                 dev.cmd_bind_descriptor_sets(
                     cb,

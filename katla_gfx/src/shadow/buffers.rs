@@ -153,14 +153,16 @@ impl ShadowBuffers {
         }
 
         unsafe {
-            device.cmd_bind_descriptor_sets(
-                cmd,
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline_layout,
-                4, // Set 4
-                &[descriptor_set],
-                &[],
-            );
+            if descriptor_set != vk::DescriptorSet::null() {
+                device.cmd_bind_descriptor_sets(
+                    cmd,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipeline_layout,
+                    4, // Set 4
+                    &[descriptor_set],
+                    &[],
+                );
+            }
         }
 
         Ok(())

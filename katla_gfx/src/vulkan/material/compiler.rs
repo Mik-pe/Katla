@@ -84,10 +84,10 @@ impl Default for MaterialOptions {
 pub(crate) struct MaterialCompiler {
     pub(crate) shader_cache: Rc<RefCell<ShaderCache>>,
     context: Rc<VulkanContext>,
-    storage_descriptor_layout: vk::DescriptorSetLayout,
+    storage_descriptor_layout: Option<vk::DescriptorSetLayout>,
     bindless_descriptor_layout: vk::DescriptorSetLayout,
     /// Skeleton descriptor layout (Set 2 for skinned meshes)
-    skeleton_descriptor_layout: vk::DescriptorSetLayout,
+    skeleton_descriptor_layout: Option<vk::DescriptorSetLayout>,
     /// Compositing descriptor set layout (Set 2 for compositing pass)
     /// Set dynamically when compiling compositing materials
     compositing_descriptor_set_layout: Option<vk::DescriptorSetLayout>,
@@ -96,13 +96,9 @@ pub(crate) struct MaterialCompiler {
     /// Shadow descriptor set layout (Set 4 for PBR materials with shadow mapping)
     shadow_descriptor_layout: Option<vk::DescriptorSetLayout>,
     /// Empty placeholder descriptor set layout (Set 2 for PBR materials without skeleton)
-    empty_descriptor_layout: vk::DescriptorSetLayout,
-    /// Flag to prevent double-free of empty descriptor layout
-    empty_descriptor_layout_destroyed: bool,
+    empty_descriptor_layout: Option<vk::DescriptorSetLayout>,
     /// Shared descriptor pool for skeleton descriptor sets
-    skeleton_descriptor_pool: vk::DescriptorPool,
-    /// Flag to prevent double-free of skeleton resources
-    skeleton_descriptor_destroyed: bool,
+    skeleton_descriptor_pool: Option<vk::DescriptorPool>,
     /// UI descriptor set layouts (created per UI material, tracked for cleanup)
     ui_descriptor_layouts: Vec<vk::DescriptorSetLayout>,
 }
@@ -206,16 +202,14 @@ impl MaterialCompiler {
         Ok(Self {
             shader_cache: Rc::new(RefCell::new(ShaderCache::new(context.device.clone()))),
             context,
-            storage_descriptor_layout,
+            storage_descriptor_layout: Some(storage_descriptor_layout),
             bindless_descriptor_layout,
-            skeleton_descriptor_layout,
+            skeleton_descriptor_layout: Some(skeleton_descriptor_layout),
             compositing_descriptor_set_layout: None,
             light_culling_descriptor_layout: None,
             shadow_descriptor_layout: None,
-            empty_descriptor_layout,
-            empty_descriptor_layout_destroyed: false,
-            skeleton_descriptor_pool,
-            skeleton_descriptor_destroyed: false,
+            empty_descriptor_layout: Some(empty_descriptor_layout),
+            skeleton_descriptor_pool: Some(skeleton_descriptor_pool),
             ui_descriptor_layouts: Vec::new(),
         })
     }
@@ -443,7 +437,7 @@ impl MaterialCompiler {
         }
 
         let mut layouts = vec![
-            self.storage_descriptor_layout,
+            self.storage_descriptor_layout.unwrap(),
             self.bindless_descriptor_layout,
         ];
 
@@ -455,12 +449,12 @@ impl MaterialCompiler {
                 layouts.push(layout);
             } else {
                 // Fallback: compositing not set up yet, use empty placeholder
-                layouts.push(self.empty_descriptor_layout);
+                layouts.push(self.empty_descriptor_layout.unwrap());
             }
         } else if matches!(options.vertex_type, VertexType::Skinned) {
-            layouts.push(self.skeleton_descriptor_layout);
+            layouts.push(self.skeleton_descriptor_layout.unwrap());
         } else if matches!(options.vertex_type, VertexType::Pbr) {
-            layouts.push(self.empty_descriptor_layout);
+            layouts.push(self.empty_descriptor_layout.unwrap());
         }
 
         // Add light culling descriptor set layout (Set 3) for PBR materials
@@ -528,12 +522,12 @@ impl MaterialCompiler {
 
     /// Get the skeleton descriptor pool for allocating skeleton descriptor sets.
     pub(crate) fn skeleton_descriptor_pool(&self) -> vk::DescriptorPool {
-        self.skeleton_descriptor_pool
+        self.skeleton_descriptor_pool.unwrap()
     }
 
     /// Get the skeleton descriptor layout.
     pub(crate) fn skeleton_descriptor_layout(&self) -> vk::DescriptorSetLayout {
-        self.skeleton_descriptor_layout
+        self.skeleton_descriptor_layout.unwrap()
     }
 
     /// Set the compositing descriptor set layout for compiling compositing materials.
@@ -648,40 +642,7 @@ impl MaterialCompiler {
     /// Clean up descriptor layouts and pool.
     /// This is idempotent - can be called multiple times safely.
     pub(crate) fn destroy(&mut self) {
-        unsafe {
-            self.context
-                .device
-                .destroy_descriptor_set_layout(self.storage_descriptor_layout, None);
-        }
-
-        // Destroy skeleton descriptor layout and pool
-        // Note: We use a flag to prevent double-free since these are not Option types
-        // Destroy is idempotent because skeleton_descriptor_destroyed prevents double-free
-        if !self.skeleton_descriptor_destroyed {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(self.skeleton_descriptor_layout, None);
-                self.context
-                    .device
-                    .destroy_descriptor_pool(self.skeleton_descriptor_pool, None);
-            }
-            self.skeleton_descriptor_destroyed = true;
-        }
-
-        // Destroy empty placeholder descriptor set layout
-        if !self.empty_descriptor_layout_destroyed {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(self.empty_descriptor_layout, None);
-            }
-            self.empty_descriptor_layout_destroyed = true;
-        }
-
-        // Destroy UI descriptor set layouts (created per UI material)
-        // drain() removes all elements, so this is idempotent
-        for layout in self.ui_descriptor_layouts.drain(..) {
+        if let Some(layout) = self.storage_descriptor_layout.take() {
             unsafe {
                 self.context
                     .device
@@ -689,7 +650,35 @@ impl MaterialCompiler {
             }
         }
 
-        // Note: bindless_descriptor_layout is owned by BindlessTextureManager, not us
+        if let Some(layout) = self.skeleton_descriptor_layout.take() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(layout, None);
+            }
+        }
+
+        if let Some(pool) = self.skeleton_descriptor_pool.take() {
+            unsafe {
+                self.context.device.destroy_descriptor_pool(pool, None);
+            }
+        }
+
+        if let Some(layout) = self.empty_descriptor_layout.take() {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(layout, None);
+            }
+        }
+
+        for layout in self.ui_descriptor_layouts.drain(..) {
+            unsafe {
+                self.context
+                    .device
+                    .destroy_descriptor_set_layout(layout, None);
+            }
+        }
     }
 }
 
