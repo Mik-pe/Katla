@@ -425,13 +425,15 @@ impl ApplicationHandler for Application {
             WindowEvent::MouseWheel { delta, .. } => {
                 let scroll = match delta {
                     winit::event::MouseScrollDelta::LineDelta(x, y) => {
-                        Vec2::new(x * 20.0, y * 20.0)
+                        Vec2::new(x, y)
                     }
                     winit::event::MouseScrollDelta::PixelDelta(pos) => {
-                        // Convert physical to logical pixels
+                        // Normalize trackpad pixel deltas to line-like units (~40px per line)
+                        // so the scroll_area multiplier produces consistent speeds
+                        let line_height = 40.0;
                         Vec2::new(
-                            pos.x as f32 / self.scale_factor,
-                            pos.y as f32 / self.scale_factor,
+                            pos.x as f32 / self.scale_factor / line_height,
+                            pos.y as f32 / self.scale_factor / line_height,
                         )
                     }
                 };
@@ -568,9 +570,12 @@ impl Application {
 
     /// Forward scroll wheel delta to the ECS input state for orbit camera zoom.
     fn forward_scroll_to_camera(&mut self, delta: winit::event::MouseScrollDelta) {
+        let line_height = 40.0;
         let wheel_y = match delta {
             winit::event::MouseScrollDelta::LineDelta(_, y) => y,
-            winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
+            winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                pos.y as f32 / self.scale_factor / line_height
+            }
         };
 
         let wheel_y = self.filter_scroll_for_editor(wheel_y);
