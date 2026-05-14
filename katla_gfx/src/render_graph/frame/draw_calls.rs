@@ -161,7 +161,7 @@ impl<'a> Frame<'a> {
         Ok(())
     }
 
-    /// Pre-compile all materials in a draw list before any draw calls execute.
+    /// Pre-compile all materials in a draw list.
     pub(super) fn ensure_materials_compiled(
         &mut self,
         draw_list: &DrawList,
@@ -188,6 +188,47 @@ impl<'a> Frame<'a> {
                 .map_err(|e| {
                     RenderGraphError::InvalidConfiguration(format!(
                         "Material recompilation failed: {}",
+                        e
+                    ))
+                })?;
+        }
+
+        Ok(())
+    }
+
+    /// Pre-compile all materials from ALL pending draw lists before command buffer recording.
+    pub(crate) fn pre_compile_materials(&mut self) -> Result<(), RenderGraphError> {
+        use std::collections::HashSet;
+
+        let mut materials_to_compile: Vec<(
+            crate::handle::MaterialHandle,
+            crate::texture::ImageFormat,
+        )> = Vec::new();
+        let mut seen = HashSet::new();
+
+        for data in self.pending.values() {
+            for draw_list in &data.draw_lists {
+                for draw_call in &draw_list.draws {
+                    if seen.insert(draw_call.material)
+                        && let Some(material) = self
+                            .renderer
+                            .asset_registry
+                            .get_material(draw_call.material)
+                        && !material.fully_compiled
+                    {
+                        materials_to_compile.push((draw_call.material, material.color_format));
+                    }
+                }
+            }
+        }
+
+        for (handle, format) in materials_to_compile {
+            log::debug!("pre_compile_materials: compiling material {:?}", handle);
+            self.renderer
+                .ensure_material_compiled(handle, format)
+                .map_err(|e| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Material pre-compilation failed: {}",
                         e
                     ))
                 })?;
