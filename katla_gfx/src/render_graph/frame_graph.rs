@@ -291,6 +291,7 @@ impl FrameGraph {
 
         let mut frame = super::frame::Frame::new(self, renderer, image_index, frame_idx);
         f(&mut frame);
+        frame.pre_compile_materials()?;
         frame.execute_passes()?;
 
         Ok(())
