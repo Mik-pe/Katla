@@ -424,9 +424,7 @@ impl ApplicationHandler for Application {
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let scroll = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(x, y) => {
-                        Vec2::new(x, y)
-                    }
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => Vec2::new(x, y),
                     winit::event::MouseScrollDelta::PixelDelta(pos) => {
                         // Normalize trackpad pixel deltas to line-like units (~40px per line)
                         // so the scroll_area multiplier produces consistent speeds

@@ -15,9 +15,10 @@ pub struct HierarchyState {
     pub context_entity: Option<EntityId>,
 }
 
-pub fn is_entity_visible(
+/// O(D) visibility check using a pre-built parent map.
+pub fn is_entity_visible_fast(
     entity: &EntityInfo,
-    all_entities: &[EntityInfo],
+    parent_map: &std::collections::HashMap<EntityId, Option<EntityId>>,
     expanded: &HashSet<EntityId>,
 ) -> bool {
     let mut current = entity.parent_id;
@@ -25,10 +26,7 @@ pub fn is_entity_visible(
         if !expanded.contains(&parent_id) {
             return false;
         }
-        current = all_entities
-            .iter()
-            .find(|e| e.id == parent_id)
-            .and_then(|e| e.parent_id);
+        current = parent_map.get(&parent_id).copied().flatten();
     }
     true
 }
@@ -80,9 +78,12 @@ impl<'a> Widget for Hierarchy<'a> {
                 .collect()
         };
 
+        let parent_map: std::collections::HashMap<EntityId, Option<EntityId>> =
+            self.entities.iter().map(|e| (e.id, e.parent_id)).collect();
+
         let visible_count = filtered_entities
             .iter()
-            .filter(|e| is_entity_visible(e, self.entities, &self.state.expanded_entities))
+            .filter(|e| is_entity_visible_fast(e, &parent_map, &self.state.expanded_entities))
             .count();
 
         let header_text = format!("Hierarchy ({} entities)", visible_count);
