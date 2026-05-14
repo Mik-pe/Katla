@@ -211,6 +211,7 @@ impl<'a> Frame<'a> {
                 bind_textures: false,
                 skeleton_set: 2,
                 extra_sets: Vec::new(),
+                skinned_extra_sets: Vec::new(),
             },
             billboard_pipeline,
             billboard_layout,
