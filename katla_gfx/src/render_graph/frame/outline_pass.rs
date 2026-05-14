@@ -33,10 +33,15 @@ impl<'a> Frame<'a> {
 
         let frame_idx = self.current_frame();
         let extent = self.renderer.frame_context.swapchain.get_extent();
-        let render_area = vk::Rect2D {
-            offset: vk::Offset2D { x: 0, y: 0 },
-            extent,
-        };
+
+        // Compute a tight scissor rect from the selected entity's screen-space bounds.
+        // This avoids clearing/loading/storing the full-resolution stencil buffer on
+        // tile-based GPUs (Apple Silicon), which is the main cause of the framerate
+        // drop when an entity is selected.
+        let scissor_rect =
+            compute_outline_scissor(&data.draw_lists, &self.renderer.frame_uniforms, extent);
+
+        let render_area = scissor_rect;
 
         log::debug!(
             "[OUTLINE] frame_idx={}, draw_lists={}",
@@ -146,6 +151,9 @@ impl<'a> Frame<'a> {
             1,
         );
 
+        // Viewport must match the geometry pass (full swapchain extent) so the
+        // projection matrix maps clip coords to the same pixel positions.
+        // Only the scissor is tightened to the outline region.
         cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
             0.0,
             0.0,
@@ -153,13 +161,12 @@ impl<'a> Frame<'a> {
             extent.height as f32,
         )]);
 
-        let scissor = crate::sync::Rect2D {
-            x: 0,
-            y: 0,
-            width: extent.width,
-            height: extent.height,
-        };
-        cmd.set_scissor(&[scissor]);
+        cmd.set_scissor(&[crate::sync::Rect2D {
+            x: render_area.offset.x,
+            y: render_area.offset.y,
+            width: render_area.extent.width,
+            height: render_area.extent.height,
+        }]);
 
         // === Sub-pass 1: Stencil Mark ===
         self.execute_stencil_mark(cmd, &data)?;
@@ -401,6 +408,11 @@ impl<'a> Frame<'a> {
             return Ok(());
         }
 
+        let indicator_scissor =
+            compute_outline_scissor(&data.draw_lists, &self.renderer.frame_uniforms, extent);
+
+        // Viewport must match the geometry pass (full swapchain extent) so the
+        // projection matrix maps clip coords to the same pixel positions.
         cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
             0.0,
             0.0,
@@ -408,13 +420,12 @@ impl<'a> Frame<'a> {
             extent.height as f32,
         )]);
 
-        let scissor = crate::sync::Rect2D {
-            x: 0,
-            y: 0,
-            width: extent.width,
-            height: extent.height,
-        };
-        cmd.set_scissor(&[scissor]);
+        cmd.set_scissor(&[crate::sync::Rect2D {
+            x: indicator_scissor.offset.x,
+            y: indicator_scissor.offset.y,
+            width: indicator_scissor.extent.width,
+            height: indicator_scissor.extent.height,
+        }]);
 
         let (pipeline, layout) = self
             .renderer
@@ -442,5 +453,101 @@ impl<'a> Frame<'a> {
         cmd.end_rendering();
 
         Ok(())
+    }
+}
+
+/// Compute a tight scissor rect around the selected entity's screen-space projection.
+///
+/// Transforms unit-cube corners through the model matrix to get world-space bounds,
+/// then projects to screen. Adds padding for the outline width.
+/// Falls back to full extent if projection fails.
+fn compute_outline_scissor(
+    draw_lists: &[std::rc::Rc<crate::renderer::types::DrawList>],
+    frame_uniforms: &crate::renderer::FrameUniforms,
+    extent: vk::Extent2D,
+) -> vk::Rect2D {
+    let view = &frame_uniforms.view_matrix;
+    let proj = &frame_uniforms.proj_matrix;
+
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+
+    let w = extent.width as f32;
+    let h = extent.height as f32;
+
+    for draw_list in draw_lists {
+        for draw_call in draw_list.iter() {
+            let Some(m) = draw_call.instances.first().map(|i| i.model_matrix) else {
+                continue;
+            };
+
+            for &(dx, dy, dz) in &[
+                (-1.0, -1.0, -1.0),
+                (1.0, -1.0, -1.0),
+                (-1.0, 1.0, -1.0),
+                (-1.0, -1.0, 1.0),
+                (1.0, 1.0, -1.0),
+                (1.0, -1.0, 1.0),
+                (-1.0, 1.0, 1.0),
+                (1.0, 1.0, 1.0),
+            ] {
+                // Transform corner through the full model matrix (M * corner).
+                // The model matrix includes rotation, scale, and translation.
+                let wx = m[0] * dx + m[4] * dy + m[8] * dz + m[12];
+                let wy = m[1] * dx + m[5] * dy + m[9] * dz + m[13];
+                let wz = m[2] * dx + m[6] * dy + m[10] * dz + m[14];
+
+                // proj * view * world_pos (combined into one step)
+                let vx = view[0] * wx + view[4] * wy + view[8] * wz + view[12];
+                let vy = view[1] * wx + view[5] * wy + view[9] * wz + view[13];
+                let vz = view[2] * wx + view[6] * wy + view[10] * wz + view[14];
+                let vw = view[3] * wx + view[7] * wy + view[11] * wz + view[15];
+
+                let clip_x = proj[0] * vx + proj[4] * vy + proj[8] * vz + proj[12] * vw;
+                let clip_y = proj[1] * vx + proj[5] * vy + proj[9] * vz + proj[13] * vw;
+                let clip_w = proj[3] * vx + proj[7] * vy + proj[11] * vz + proj[15] * vw;
+
+                if clip_w <= 1e-6 {
+                    continue;
+                }
+
+                let ndc_x = clip_x / clip_w;
+                let ndc_y = clip_y / clip_w;
+
+                let screen_x = (ndc_x * 0.5 + 0.5) * w;
+                let screen_y = (ndc_y * 0.5 + 0.5) * h;
+
+                min_x = min_x.min(screen_x);
+                min_y = min_y.min(screen_y);
+                max_x = max_x.max(screen_x);
+                max_y = max_y.max(screen_y);
+            }
+        }
+    }
+
+    if min_x > max_x || min_y > max_y {
+        return vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent,
+        };
+    }
+
+    let padding = compute_outline_width(h) * h * 0.5 + 8.0;
+    min_x = (min_x - padding).max(0.0);
+    min_y = (min_y - padding).max(0.0);
+    max_x = (max_x + padding).min(w);
+    max_y = (max_y + padding).min(h);
+
+    vk::Rect2D {
+        offset: vk::Offset2D {
+            x: min_x as i32,
+            y: min_y as i32,
+        },
+        extent: vk::Extent2D {
+            width: (max_x - min_x).max(1.0) as u32,
+            height: (max_y - min_y).max(1.0) as u32,
+        },
     }
 }
