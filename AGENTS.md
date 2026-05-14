@@ -100,6 +100,12 @@ git commit -m "Summary line
 - Detail three"
 ```
 
+## Matrix Conventions
+
+- **Column-major only.** All matrices (`Mat2`, `Mat3`, `Mat4`) use column-major storage where `m[col][row]`. This is the convention used by Vulkan/GLSL.
+- **Do NOT transpose or swap rows/columns** when reading or writing matrix code. Column-major and row-major have the same memory layout — there is no "swap" needed. When you see `m[0]`, that is column 0 (the first column), not a row.
+- If a function name explicitly says `row()` or `_row`, it is intentionally retrieving a row vector. Everything else operates on columns. Do not second-guess the indexing.
+
 ## Critical Architecture Rules
 
 ### Dependency Restrictions (Enforced Boundaries)
