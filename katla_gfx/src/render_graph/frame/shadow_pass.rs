@@ -213,6 +213,7 @@ impl<'a> Frame<'a> {
                         bind_textures: false,
                         skeleton_set: 3,
                         extra_sets: extra_sets.clone(),
+                        skinned_extra_sets: Vec::new(),
                     },
                     billboard_pipeline: None,
                     billboard_layout: None,

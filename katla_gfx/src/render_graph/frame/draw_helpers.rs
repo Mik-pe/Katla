@@ -23,6 +23,9 @@ pub(super) struct DescriptorConfig {
     pub skeleton_set: u32,
     /// Extra descriptor sets to bind after set 0 (e.g., shadow cascades).
     pub extra_sets: Vec<(u32, vk::DescriptorSet)>,
+    /// Extra descriptor sets to bind ONLY when the skinned pipeline variant is active.
+    /// Used by outline draw where params are at Set 1 (non-skinned) vs Set 3 (skinned).
+    pub skinned_extra_sets: Vec<(u32, vk::DescriptorSet)>,
 }
 
 /// Parameters for the shared skinned/non-skinned/billboard draw loop.
@@ -166,7 +169,16 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
                     }
                 }
 
-                for &(set, ds) in &descriptors.extra_sets {
+                // Bind extra sets — use skinned-specific sets when in skinned variant,
+                // otherwise use the regular extra sets.
+                let active_extra_sets = if target_variant == PipelineVariant::Skinned
+                    && !descriptors.skinned_extra_sets.is_empty()
+                {
+                    &descriptors.skinned_extra_sets
+                } else {
+                    &descriptors.extra_sets
+                };
+                for &(set, ds) in active_extra_sets {
                     cmd.bind_descriptor_sets(new_layout, set, &[ds], &[]);
                 }
                 current_variant = target_variant;

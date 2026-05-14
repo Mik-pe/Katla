@@ -194,7 +194,7 @@ impl<'a> Frame<'a> {
             .asset_registry
             .get_pipeline_vk_handles(self.renderer.outline.stencil_mark_skinned_pipeline);
 
-        self.draw_outline_meshes(cmd, data, pipeline, layout, skinned, Vec::new())
+        self.draw_outline_meshes(cmd, data, pipeline, layout, skinned, Vec::new(), Vec::new())
     }
 
     /// Promote stencil 1→2 where selected objects are occluded by scene geometry.
@@ -216,7 +216,7 @@ impl<'a> Frame<'a> {
             .asset_registry
             .get_pipeline_vk_handles(self.renderer.outline.occlusion_mark_skinned_pipeline);
 
-        self.draw_outline_meshes(cmd, data, pipeline, layout, skinned, Vec::new())
+        self.draw_outline_meshes(cmd, data, pipeline, layout, skinned, Vec::new(), Vec::new())
     }
 
     /// Render the outline shell with inverted culling where stencil != 1.
@@ -261,13 +261,22 @@ impl<'a> Frame<'a> {
             std::mem::size_of::<OutlinePushConstants>() as u64,
         );
 
-        // Non-skinned: outline params at set 1
-        // Skinned: outline params at set 3
+        // Non-skinned: outline params at set 1 (pipeline layout: [storage, outline_params])
+        // Skinned: outline params at set 3 (pipeline layout: [storage, empty, skeleton, outline_params])
         let params_ds = self.renderer.outline.params_descriptor_sets[frame_idx];
 
-        let extra_sets = vec![(1u32, params_ds), (3u32, params_ds)];
+        let extra_sets = vec![(1u32, params_ds)];
+        let skinned_extra_sets = vec![(3u32, params_ds)];
 
-        self.draw_outline_meshes(cmd, data, pipeline, layout, skinned, extra_sets)
+        self.draw_outline_meshes(
+            cmd,
+            data,
+            pipeline,
+            layout,
+            skinned,
+            extra_sets,
+            skinned_extra_sets,
+        )
     }
 
     fn draw_outline_meshes(
@@ -278,6 +287,7 @@ impl<'a> Frame<'a> {
         layout: vk::PipelineLayout,
         skinned: Option<(vk::Pipeline, vk::PipelineLayout)>,
         extra_sets: Vec<(u32, vk::DescriptorSet)>,
+        skinned_extra_sets: Vec<(u32, vk::DescriptorSet)>,
     ) -> Result<(), RenderGraphError> {
         let (skinned_pipeline, skinned_layout) = skinned
             .map(|(p, l)| (Some(p), Some(l)))
@@ -296,6 +306,7 @@ impl<'a> Frame<'a> {
                 bind_textures: false,
                 skeleton_set: 2,
                 extra_sets,
+                skinned_extra_sets,
             },
             billboard_pipeline: None,
             billboard_layout: None,
@@ -418,7 +429,15 @@ impl<'a> Frame<'a> {
             .asset_registry
             .get_pipeline_vk_handles(self.renderer.outline.stencil_indicator_skinned_pipeline);
 
-        self.draw_outline_meshes(cmd, &data, pipeline, layout, skinned, Vec::new())?;
+        self.draw_outline_meshes(
+            cmd,
+            &data,
+            pipeline,
+            layout,
+            skinned,
+            Vec::new(),
+            Vec::new(),
+        )?;
 
         cmd.end_rendering();
 
