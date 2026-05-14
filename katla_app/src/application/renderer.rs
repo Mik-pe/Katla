@@ -6,6 +6,7 @@
 use super::Application;
 use crate::rendering::FrameContext;
 use katla_gfx::renderer::{FrameUniforms, UIDrawList};
+use log::info;
 
 impl Application {
     /// Render a single frame using the frame graph.
@@ -24,6 +25,7 @@ impl Application {
         if self.needs_swapchain_recreate {
             self.needs_swapchain_recreate = false;
             self.recreate_swapchain_resources();
+            info!("=== Resize complete ===");
         }
 
         // Note: viewport bindless index is updated BEFORE generate_ui_draw_list()

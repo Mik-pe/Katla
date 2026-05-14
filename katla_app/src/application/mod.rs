@@ -330,6 +330,11 @@ impl ApplicationHandler for Application {
 
         // Get initial DPI scale factor
         self.scale_factor = self.window.scale_factor() as f32;
+
+        // Kickstart the render loop on macOS. Without this, RedrawRequested
+        // events are not delivered until the window is explicitly shown or
+        // receives focus (e.g., desktop switch), leaving the window blank.
+        self.window.request_redraw();
     }
 
     fn device_event(
@@ -400,8 +405,10 @@ impl ApplicationHandler for Application {
                         info!("Window restored from minimized");
                     }
 
-                    self.recreate_swapchain_resources();
-                    info!("=== Resize complete ===");
+                    // Defer swapchain recreation to the next RedrawRequested to
+                    // avoid recreating mid-event-batch on macOS, which can cause
+                    // descriptor set invalidation between record and submit.
+                    self.needs_swapchain_recreate = true;
                 } else if !self.minimized {
                     self.minimized = true;
                     info!("Window minimized (zero extent), skipping rendering");
@@ -441,7 +448,7 @@ impl ApplicationHandler for Application {
                 } else if !occluded && self.minimized {
                     self.minimized = false;
                     info!("Window unoccluded, resuming rendering");
-                    self.recreate_swapchain_resources();
+                    self.needs_swapchain_recreate = true;
                     self.window.request_redraw();
                 }
             }
