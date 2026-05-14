@@ -1115,49 +1115,19 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         let rot = Vec3::new(euler.0, euler.1, euler.2);
         let scale = transform.transform.scale;
 
-        // Collect all component names for this entity
-        let mut components: Vec<String> = Vec::new();
-
-        components.push("Transform".to_string());
-        if app
+        // Query each component type once and reuse results
+        let has_name = app
             .world
             .get_component::<NameComponent>(entity_id)
-            .is_some()
-        {
-            components.push("Name".to_string());
-        }
-        if app
+            .is_some();
+        let has_drawable = app
             .world
             .get_component::<DrawableComponent>(entity_id)
-            .is_some()
-        {
-            components.push("Drawable".to_string());
-        }
-        if app
+            .is_some();
+        let has_directional = app
             .world
             .get_component::<DirectionalLight>(entity_id)
-            .is_some()
-        {
-            components.push("DirectionalLight".to_string());
-        }
-        if app.world.get_component::<PointLight>(entity_id).is_some() {
-            components.push("PointLight".to_string());
-        }
-        if app
-            .world
-            .get_component::<ParticleEmitterComponent>(entity_id)
-            .is_some()
-        {
-            components.push("ParticleEmitter".to_string());
-        }
-        if app.world.get_component::<Parent>(entity_id).is_some() {
-            components.push("Parent".to_string());
-        }
-        if app.world.get_component::<Children>(entity_id).is_some() {
-            components.push("Children".to_string());
-        }
-
-        // Collect PointLight data
+            .is_some();
         let point_light =
             app.world
                 .get_component::<PointLight>(entity_id)
@@ -1166,8 +1136,6 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                     intensity: pl.intensity,
                     range: pl.range,
                 });
-
-        // Collect ParticleEmitter data
         let particle_emitter = app
             .world
             .get_component::<ParticleEmitterComponent>(entity_id)
@@ -1178,24 +1146,43 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 gravity: pe.config.gravity,
                 base_scale: pe.config.base_scale,
             });
+        let has_parent = app.world.get_component::<Parent>(entity_id).is_some();
+        let has_children = app.world.get_component::<Children>(entity_id).is_some();
 
-        // Determine entity type based on primary component
-        let entity_type = if app
-            .world
-            .get_component::<DirectionalLight>(entity_id)
-            .is_some()
-        {
-            "Directional Light".to_string()
-        } else if app.world.get_component::<PointLight>(entity_id).is_some() {
-            "Point Light".to_string()
-        } else if app
-            .world
-            .get_component::<DrawableComponent>(entity_id)
-            .is_some()
-        {
-            "Mesh".to_string()
+        // Build component list from cached query results
+        let mut components: Vec<&'static str> = Vec::with_capacity(8);
+        components.push("Transform");
+        if has_name {
+            components.push("Name");
+        }
+        if has_drawable {
+            components.push("Drawable");
+        }
+        if has_directional {
+            components.push("DirectionalLight");
+        }
+        if point_light.is_some() {
+            components.push("PointLight");
+        }
+        if particle_emitter.is_some() {
+            components.push("ParticleEmitter");
+        }
+        if has_parent {
+            components.push("Parent");
+        }
+        if has_children {
+            components.push("Children");
+        }
+
+        // Determine entity type from cached query results
+        let entity_type = if has_directional {
+            "Directional Light"
+        } else if point_light.is_some() {
+            "Point Light"
+        } else if has_drawable {
+            "Mesh"
         } else {
-            "Empty".to_string()
+            "Empty"
         };
 
         entity_data.insert(
@@ -1205,8 +1192,8 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 pos,
                 rot,
                 scale,
-                entity_type,
-                components,
+                entity_type.to_string(),
+                components.into_iter().map(String::from).collect(),
                 point_light,
                 particle_emitter,
             ),

@@ -83,10 +83,18 @@ impl EditorUI {
             }
         }
 
+        use std::collections::HashMap;
+        let parent_map: HashMap<EntityId, Option<EntityId>> =
+            entities.iter().map(|e| (e.id, e.parent_id)).collect();
+
         let visible_entities: Vec<EntityId> = entities
             .iter()
             .filter(|e| {
-                hierarchy::is_entity_visible(e, entities, &self.hierarchy_state.expanded_entities)
+                hierarchy::is_entity_visible_fast(
+                    e,
+                    &parent_map,
+                    &self.hierarchy_state.expanded_entities,
+                )
             })
             .map(|e| e.id)
             .collect();
@@ -205,6 +213,7 @@ impl EditorUI {
             (screen_size.x() - self.left_panel_width - min_viewport_width).max(min_panel_width);
         self.right_panel_width =
             ResizeHandle::horizontal(right_resize_bounds, self.right_panel_width)
+                .inverted()
                 .min_value(min_panel_width)
                 .max_value(max_right_width)
                 .show(ui);
