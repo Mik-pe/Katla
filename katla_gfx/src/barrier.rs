@@ -125,6 +125,8 @@ impl ImageBarrier {
     /// | UNDEFINED | TRANSFER_DST | TOP_OF_PIPE | TRANSFER | NONE | TRANSFER_WRITE |
     /// | TRANSFER_DST | SHADER_READ_ONLY | TRANSFER | FRAGMENT_SHADER | TRANSFER_WRITE | SHADER_READ |
     /// | SHADER_READ_ONLY | TRANSFER_DST | FRAGMENT_SHADER | TRANSFER | SHADER_READ | TRANSFER_WRITE |
+    /// | SHADER_READ_ONLY | TRANSFER_SRC | FRAGMENT_SHADER | TRANSFER | SHADER_READ | TRANSFER_READ |
+    /// | TRANSFER_SRC | SHADER_READ_ONLY | TRANSFER | FRAGMENT_SHADER | TRANSFER_READ | SHADER_READ |
     /// | UNDEFINED | COLOR_ATTACHMENT | COLOR_ATTACHMENT_OUTPUT | COLOR_ATTACHMENT_OUTPUT | COLOR_ATTACHMENT_WRITE | COLOR_ATTACHMENT_WRITE+READ |
     /// | COLOR_ATTACHMENT | PRESENT_SRC | COLOR_ATTACHMENT_OUTPUT | BOTTOM_OF_PIPE | COLOR_ATTACHMENT_WRITE | NONE |
     /// | PRESENT_SRC | COLOR_ATTACHMENT | BOTTOM_OF_PIPE | COLOR_ATTACHMENT_OUTPUT | NONE | COLOR_ATTACHMENT_WRITE+READ |
@@ -336,6 +338,28 @@ impl ImageBarrier {
                 PipelineStage2Flags::TRANSFER,
                 AccessFlags2::SHADER_READ,
                 AccessFlags2::TRANSFER_WRITE,
+            ));
+        }
+
+        if old_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+            && new_layout == vk::ImageLayout::TRANSFER_SRC_OPTIMAL
+        {
+            return Ok((
+                PipelineStage2Flags::FRAGMENT_SHADER,
+                PipelineStage2Flags::TRANSFER,
+                AccessFlags2::SHADER_READ,
+                AccessFlags2::TRANSFER_READ,
+            ));
+        }
+
+        if old_layout == vk::ImageLayout::TRANSFER_SRC_OPTIMAL
+            && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
+        {
+            return Ok((
+                PipelineStage2Flags::TRANSFER,
+                PipelineStage2Flags::FRAGMENT_SHADER,
+                AccessFlags2::TRANSFER_READ,
+                AccessFlags2::SHADER_READ,
             ));
         }
 
@@ -611,6 +635,34 @@ mod tests {
         assert_eq!(dst_stage, PipelineStage2Flags::TRANSFER);
         assert_eq!(src_access, AccessFlags2::SHADER_READ);
         assert_eq!(dst_access, AccessFlags2::TRANSFER_WRITE);
+    }
+
+    #[test]
+    fn test_deduce_shader_read_to_transfer_src() {
+        let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        )
+        .unwrap();
+
+        assert_eq!(src_stage, PipelineStage2Flags::FRAGMENT_SHADER);
+        assert_eq!(dst_stage, PipelineStage2Flags::TRANSFER);
+        assert_eq!(src_access, AccessFlags2::SHADER_READ);
+        assert_eq!(dst_access, AccessFlags2::TRANSFER_READ);
+    }
+
+    #[test]
+    fn test_deduce_transfer_src_to_shader_read() {
+        let (src_stage, dst_stage, src_access, dst_access) = ImageBarrier::deduce_transition_masks(
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        )
+        .unwrap();
+
+        assert_eq!(src_stage, PipelineStage2Flags::TRANSFER);
+        assert_eq!(dst_stage, PipelineStage2Flags::FRAGMENT_SHADER);
+        assert_eq!(src_access, AccessFlags2::TRANSFER_READ);
+        assert_eq!(dst_access, AccessFlags2::SHADER_READ);
     }
 
     #[test]
