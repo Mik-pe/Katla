@@ -251,7 +251,8 @@ impl<'a> Widget for Inspector<'a> {
                         .add(
                             Button::new("Delete Entity")
                                 .bounds(delete_bounds)
-                                .id("delete_entity"),
+                                .id("delete_entity")
+                                .border(theme.error),
                         )
                         .clicked
                     {
