@@ -98,7 +98,13 @@ fn vec3_row(
     axis_labels: [&str; 3],
     axis_colors: [Color; 3],
     width: f32,
+    theme: &ColorScheme,
 ) {
+    let font_size = ui.style().font_size;
+    let label_h = ui.measure_text(label, font_size).y();
+    ui.draw_text(label, ui.cursor(), theme.text_muted, font_size);
+    ui.set_cursor(Vec2::new(ui.cursor().x(), ui.cursor().y() + label_h + 2.0));
+
     let row_h = ui.style().slider_default_height;
     let bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(width, row_h * 3.0));
     ui.add(
@@ -180,6 +186,7 @@ impl<'a> Widget for Inspector<'a> {
                         ["X", "Y", "Z"],
                         AXIS_COLORS,
                         w,
+                        theme,
                     );
                     vec3_row(
                         ui,
@@ -189,6 +196,7 @@ impl<'a> Widget for Inspector<'a> {
                         ["X", "Y", "Z"],
                         AXIS_COLORS,
                         w,
+                        theme,
                     );
                     vec3_row(
                         ui,
@@ -198,6 +206,7 @@ impl<'a> Widget for Inspector<'a> {
                         ["X", "Y", "Z"],
                         AXIS_COLORS,
                         w,
+                        theme,
                     );
 
                     section_gap(ui);
@@ -212,6 +221,7 @@ impl<'a> Widget for Inspector<'a> {
                             ["R", "G", "B"],
                             RGB_COLORS,
                             w,
+                            theme,
                         );
                         scalar_row(ui, "Intensity", &mut edit.light_intensity, 0.0..=100.0, w);
                         scalar_row(ui, "Range", &mut edit.light_range, 0.1..=100.0, w);
