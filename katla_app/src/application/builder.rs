@@ -267,6 +267,7 @@ impl ApplicationBuilder {
                 katla_gfx::MaterialOptions {
                     vertex_type: katla_gfx::VertexType::Ui,
                     alpha_blended: true,
+                    double_sided: true,
                     ..Default::default()
                 },
             )
