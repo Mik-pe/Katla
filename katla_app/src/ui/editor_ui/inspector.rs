@@ -2,7 +2,7 @@ use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::{
     FontSize, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
-    widgets::{Button, LabeledSlider, Panel, Vec3Slider},
+    widgets::{Button, ColorPickerButton, ColorPickerState, LabeledSlider, Panel, Vec3Slider},
 };
 
 use super::{ColorScheme, EditorAction, EntityInfo};
@@ -19,6 +19,7 @@ pub struct InspectorEditState {
     pub lifetime: f32,
     pub gravity: f32,
     pub particle_scale: f32,
+    pub light_color_picker: ColorPickerState,
 }
 
 pub struct Inspector<'a> {
@@ -57,12 +58,6 @@ const AXIS_COLORS: [Color; 3] = [
     Color::rgb(0.9, 0.3, 0.3),
     Color::rgb(0.3, 0.9, 0.3),
     Color::rgb(0.3, 0.5, 0.9),
-];
-
-const RGB_COLORS: [Color; 3] = [
-    Color::rgb(1.0, 0.3, 0.3),
-    Color::rgb(0.3, 1.0, 0.3),
-    Color::rgb(0.3, 0.5, 1.0),
 ];
 
 fn section_header(ui: &mut UiContext, text: &str, theme: &ColorScheme) {
@@ -213,16 +208,20 @@ impl<'a> Widget for Inspector<'a> {
 
                     if entity.point_light.is_some() {
                         section_header(ui, "Point Light", theme);
-                        vec3_row(
-                            ui,
-                            "Color",
-                            &mut edit.light_color,
-                            0.0..=1.0,
-                            ["R", "G", "B"],
-                            RGB_COLORS,
-                            w,
-                            theme,
+
+                        let picker_bounds =
+                            Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 28.0));
+                        ui.add_overlay(
+                            ColorPickerButton::new(
+                                "Color",
+                                &mut edit.light_color,
+                                &mut edit.light_color_picker,
+                            )
+                            .bounds(picker_bounds)
+                            .id("light_color_picker"),
                         );
+                        ui.set_cursor(Vec2::new(x, ui.cursor().y() + 32.0));
+
                         scalar_row(ui, "Intensity", &mut edit.light_intensity, 0.0..=100.0, w);
                         scalar_row(ui, "Range", &mut edit.light_range, 0.1..=100.0, w);
                         section_gap(ui);

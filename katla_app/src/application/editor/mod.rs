@@ -552,6 +552,7 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         lifetime,
         gravity,
         particle_scale,
+        light_color_picker: _,
     } = &app.editor.editor_ui.inspector_edit;
 
     // Transform

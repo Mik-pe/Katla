@@ -61,6 +61,17 @@ impl UiContext {
         }
     }
 
+    /// Draw a filled circle.
+    pub fn draw_circle(&mut self, center: Vec2, radius: f32, color: Color) {
+        self.draw_list.set_clip(self.clip_rect());
+        self.draw_list.add_circle_auto(center, radius, color);
+
+        if self.z_index > z_index::DEFAULT {
+            let bounds = Rect2D::from_center_size(center, Vec2::new(radius * 2.0, radius * 2.0));
+            self.register_hover_layer(self.z_index, bounds);
+        }
+    }
+
     /// Draw a rectangle with a border.
     pub fn draw_rect_border(
         &mut self,

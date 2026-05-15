@@ -1740,6 +1740,9 @@ impl<'a> Panel<'a> {
     }
 }
 
+mod color_picker;
+pub use color_picker::{ColorPickerButton, ColorPickerState, hsv_to_rgb, rgb_to_hsv};
+
 mod draggable_panel;
 pub use draggable_panel::{
     DraggablePanel, DraggablePanelConfig, DraggablePanelFrame, DraggablePanelState, PanelState,
