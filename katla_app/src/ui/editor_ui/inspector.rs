@@ -108,7 +108,6 @@ fn vec3_row(
             .axis_colors(axis_colors)
             .precision(2),
     );
-    ui.set_cursor(Vec2::new(ui.cursor().x(), ui.cursor().y() + row_h * 3.0));
 }
 
 fn scalar_row(
@@ -127,7 +126,6 @@ fn scalar_row(
             .show_value(true)
             .precision(2),
     );
-    ui.set_cursor(Vec2::new(ui.cursor().x(), ui.cursor().y() + row_h));
 }
 
 impl<'a> Widget for Inspector<'a> {
