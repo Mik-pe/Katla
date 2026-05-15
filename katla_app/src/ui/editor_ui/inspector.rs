@@ -252,7 +252,8 @@ impl<'a> Widget for Inspector<'a> {
                             Button::new("Delete Entity")
                                 .bounds(delete_bounds)
                                 .id("delete_entity")
-                                .fill_color(theme.error),
+                                .fill_color(theme.error)
+                                .hover_color(Color::rgb(0.8, 0.2, 0.3)),
                         )
                         .clicked
                     {
