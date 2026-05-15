@@ -641,7 +641,7 @@ impl<'a> crate::Widget for LabeledSlider<'a> {
         );
 
         let slider_id = self.id.unwrap_or(self.label);
-        let response = ui.add(
+        let response = ui.add_overlay(
             Slider::new(slider_id, self.value, self.range.clone())
                 .bounds(slider_bounds)
                 .show_value(false),
@@ -793,7 +793,7 @@ impl<'a> crate::Widget for Vec3Slider<'a> {
             );
 
             let slider_id = format!("{}_{}", base_id, i);
-            let response = ui.add(
+            let response = ui.add_overlay(
                 Slider::new(&slider_id, &mut self.values[i], self.range.clone())
                     .bounds(slider_bounds)
                     .show_value(false),
