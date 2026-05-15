@@ -172,6 +172,7 @@ impl EditorUI {
                 lifetime: 2.0,
                 gravity: -9.81,
                 particle_scale: 0.1,
+                light_color_picker: katla_ui::widgets::ColorPickerState::new(),
             },
             inspector_edit_entity: None,
             gizmo_mode: 0,
