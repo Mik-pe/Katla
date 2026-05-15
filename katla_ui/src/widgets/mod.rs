@@ -693,7 +693,6 @@ pub struct Vec3Slider<'a> {
     values: &'a mut [f32; 3],
     range: std::ops::RangeInclusive<f32>,
     bounds: Rect2D,
-    label_width: f32,
     axis_labels: [&'a str; 3],
     axis_colors: [Color; 3],
     precision: usize,
@@ -720,7 +719,6 @@ impl<'a> Vec3Slider<'a> {
                 DEFAULTS.slider_default_width,
                 DEFAULTS.slider_default_height * 3.0,
             )),
-            label_width: 80.0,
             axis_labels: ["X", "Y", "Z"],
             axis_colors: DEFAULT_AXIS_COLORS,
             precision: 1,
@@ -730,11 +728,6 @@ impl<'a> Vec3Slider<'a> {
 
     pub fn bounds(mut self, bounds: Rect2D) -> Self {
         self.bounds = bounds;
-        self
-    }
-
-    pub fn label_width(mut self, w: f32) -> Self {
-        self.label_width = w;
         self
     }
 
@@ -767,27 +760,13 @@ impl<'a> crate::Widget for Vec3Slider<'a> {
         let value_text_width = 40.0;
         let base_id = self.id.unwrap_or(self.label);
 
-        let label_text_size = ui.measure_text(self.label, font_size);
-
-        // Draw main label above the rows
-        let label_x = self.bounds.min.x();
-        let label_y = self.bounds.min.y();
-        ui.draw_text(
-            self.label,
-            Vec2::new(label_x, label_y),
-            text_color,
-            font_size,
-        );
-
-        let label_height = label_text_size.y() + 2.0;
-        let total_slider_height = self.bounds.height() - label_height;
-        let row_height = total_slider_height / 3.0;
+        let row_height = self.bounds.height() / 3.0;
 
         let mut combined = Response::new(self.bounds);
         combined.changed = false;
 
         for i in 0..3 {
-            let row_y = self.bounds.min.y() + label_height + row_height * i as f32;
+            let row_y = self.bounds.min.y() + row_height * i as f32;
             let row_bounds = Rect2D::from_origin_size(
                 Vec2::new(self.bounds.min.x(), row_y),
                 Vec2::new(self.bounds.width(), row_height),

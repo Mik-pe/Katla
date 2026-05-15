@@ -2,7 +2,7 @@ use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::{
     FontSize, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
-    widgets::{Button, LabeledSlider, Panel, Slider},
+    widgets::{Button, LabeledSlider, Panel, Vec3Slider},
 };
 
 use super::{ColorScheme, EditorAction, EntityInfo};
@@ -90,8 +90,9 @@ fn section_gap(ui: &mut UiContext) {
     ui.set_cursor(Vec2::new(cursor.x(), cursor.y() + 6.0));
 }
 
-fn axis_slider_rows(
+fn vec3_row(
     ui: &mut UiContext,
+    label: &str,
     values: &mut [f32; 3],
     range: std::ops::RangeInclusive<f32>,
     axis_labels: [&str; 3],
@@ -99,46 +100,15 @@ fn axis_slider_rows(
     width: f32,
 ) {
     let row_h = ui.style().slider_default_height;
-    let axis_w = 16.0;
-    let val_w = 38.0;
-    let slider_w = width - axis_w - val_w;
-
-    for (i, val) in values.iter_mut().enumerate() {
-        let cursor = ui.cursor();
-
-        let label_size = ui.measure_text(axis_labels[i], ui.style().font_size);
-        ui.draw_text(
-            axis_labels[i],
-            Vec2::new(cursor.x(), cursor.y() + (row_h - label_size.y()) * 0.5),
-            axis_colors[i],
-            ui.style().font_size,
-        );
-
-        let slider_bounds = Rect2D::from_origin_size(
-            Vec2::new(cursor.x() + axis_w, cursor.y()),
-            Vec2::new(slider_w, row_h),
-        );
-        let id = format!("axis_{}", i);
-        ui.add(
-            Slider::new(&id, val, range.clone())
-                .bounds(slider_bounds)
-                .id(&id),
-        );
-
-        let val_text = format!("{:.2}", val);
-        let val_size = ui.measure_text(&val_text, ui.style().font_size);
-        ui.draw_text(
-            &val_text,
-            Vec2::new(
-                cursor.x() + width - val_size.x(),
-                cursor.y() + (row_h - val_size.y()) * 0.5,
-            ),
-            ui.style().text_color,
-            ui.style().font_size,
-        );
-
-        ui.set_cursor(Vec2::new(cursor.x(), cursor.y() + row_h));
-    }
+    let bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(width, row_h * 3.0));
+    ui.add(
+        Vec3Slider::new(label, values, range)
+            .bounds(bounds)
+            .axis_labels(axis_labels)
+            .axis_colors(axis_colors)
+            .precision(2),
+    );
+    ui.set_cursor(Vec2::new(ui.cursor().x(), ui.cursor().y() + row_h * 3.0));
 }
 
 fn scalar_row(
@@ -204,24 +174,27 @@ impl<'a> Widget for Inspector<'a> {
                     ui.set_cursor(Vec2::new(x, ui.cursor().y() + name_h + 6.0));
 
                     section_header(ui, "Transform", theme);
-                    axis_slider_rows(
+                    vec3_row(
                         ui,
+                        "Position",
                         &mut edit.pos,
                         -100.0..=100.0,
                         ["X", "Y", "Z"],
                         AXIS_COLORS,
                         w,
                     );
-                    axis_slider_rows(
+                    vec3_row(
                         ui,
+                        "Rotation",
                         &mut edit.rot,
                         -180.0..=180.0,
                         ["X", "Y", "Z"],
                         AXIS_COLORS,
                         w,
                     );
-                    axis_slider_rows(
+                    vec3_row(
                         ui,
+                        "Scale",
                         &mut edit.scale,
                         0.01..=100.0,
                         ["X", "Y", "Z"],
@@ -233,8 +206,9 @@ impl<'a> Widget for Inspector<'a> {
 
                     if entity.point_light.is_some() {
                         section_header(ui, "Point Light", theme);
-                        axis_slider_rows(
+                        vec3_row(
                             ui,
+                            "Color",
                             &mut edit.light_color,
                             0.0..=1.0,
                             ["R", "G", "B"],
