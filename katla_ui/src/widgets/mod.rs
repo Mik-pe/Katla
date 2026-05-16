@@ -1059,7 +1059,7 @@ impl crate::Widget for Separator {
                 katla_math::Vec2::new(ui.cursor.x(), y),
                 katla_math::Vec2::new(ui.cursor.x() + 10.0, y),
                 color,
-                1.0,
+                0.5,
             );
 
             // Draw label
@@ -1076,7 +1076,7 @@ impl crate::Widget for Separator {
                 katla_math::Vec2::new(line_start, y),
                 katla_math::Vec2::new(clip.max.x(), y),
                 color,
-                1.0,
+                0.5,
             );
         } else {
             // Just a line
@@ -1084,7 +1084,7 @@ impl crate::Widget for Separator {
                 katla_math::Vec2::new(ui.cursor.x(), y),
                 katla_math::Vec2::new(clip.max.x(), y),
                 color,
-                1.0,
+                0.5,
             );
         }
 
@@ -1142,7 +1142,7 @@ impl crate::Widget for Badge<'_> {
         let font_size = ui.scaled_font_size(crate::FontSize::XSmall);
 
         // Background
-        ui.draw_rect(self.bounds, self.color);
+        ui.draw_rounded_rect(self.bounds, self.color, 3.0);
 
         // Auto-select text color based on background luminance
         let lum = 0.299 * self.color.r + 0.587 * self.color.g + 0.114 * self.color.b;
@@ -1470,7 +1470,7 @@ where
         ui.draw_text(
             &arrow.to_string(),
             arrow_pos,
-            ui.style.text_disabled,
+            ui.style.text_hint,
             ui.scaled_font_size(crate::FontSize::Small),
         );
 
@@ -1492,6 +1492,10 @@ where
                 crate::context::interaction::ClickConfig::POPUP_AWARE,
             )
             .is_clicked();
+
+        if hovered {
+            ui.input.set_cursor(crate::input::MouseCursor::Hand);
+        }
 
         let mut response = Response::new(self.bounds);
         response.hovered = hovered;
@@ -1590,7 +1594,7 @@ impl<'a> crate::Widget for Selectable<'a> {
             Color::TRANSPARENT
         };
 
-        ui.draw_rect(self.bounds, bg_color);
+        ui.draw_rounded_rect(self.bounds, bg_color, 3.0);
 
         let text_size = ui.measure_text(self.label, ui.style.font_size);
         let text_pos = Vec2::new(
@@ -1716,7 +1720,39 @@ impl<'a> Panel<'a> {
 
         let header_bounds =
             Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), header_height));
-        ui.draw_rect(header_bounds, ui.style.window_title_bg);
+
+        // Draw header with rounded top corners and subtle gradient
+        let header_color = ui.style.window_title_bg;
+        let header_light = katla_math::Color::new(
+            (header_color.r + 0.04).min(1.0),
+            (header_color.g + 0.04).min(1.0),
+            (header_color.b + 0.04).min(1.0),
+            header_color.a,
+        );
+        let header_full = Rect2D::from_origin_size(
+            bounds.min,
+            Vec2::new(bounds.width(), header_height + ui.style.window_rounding),
+        );
+        ui.draw_rounded_rect(header_full, header_color, ui.style.window_rounding);
+        // Gradient overlay: lighter at top, fading to header color
+        ui.draw_gradient_rect(
+            header_full,
+            header_light,
+            header_light,
+            header_color,
+            header_color,
+        );
+        // Cover the bottom rounded corners of the header
+        ui.draw_rect(
+            Rect2D::from_origin_size(
+                Vec2::new(
+                    bounds.min.x(),
+                    bounds.min.y() + header_height - ui.style.window_rounding,
+                ),
+                Vec2::new(bounds.width(), ui.style.window_rounding + 1.0),
+            ),
+            header_color,
+        );
 
         let title_size = ui.measure_text(self.title, ui.style.font_size);
         let title_pos = Vec2::new(
@@ -2049,6 +2085,9 @@ impl<'a> crate::Widget for TabBar<'a> {
             return Response::new(self.bounds);
         }
 
+        // Tab bar background
+        ui.draw_rect(self.bounds, ui.style.window_title_bg);
+
         let active_bg = ui.style.window_bg;
         let inactive_bg = ui.style.window_title_bg;
         let hover_bg = ui.style.button_hovered;
@@ -2146,6 +2185,16 @@ impl<'a> crate::Widget for TabBar<'a> {
                 hovered_any = true;
                 ui.input.set_cursor(crate::input::MouseCursor::Hand);
             }
+        }
+
+        // Accent indicator under active tab
+        {
+            let active_x = self.bounds.min.x() + tab_width * (*self.active) as f32;
+            let indicator_bounds = Rect2D::from_origin_size(
+                Vec2::new(active_x, self.bounds.max.y() - 2.0),
+                Vec2::new(tab_width, 2.0),
+            );
+            ui.draw_rect(indicator_bounds, ui.style.slider_grab);
         }
 
         let mut response = Response::new(self.bounds);

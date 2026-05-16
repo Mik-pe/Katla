@@ -9,6 +9,8 @@ katla_math = { workspace = true }
 log = { workspace = true }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
+slotmap = "1.0"
+taffy = "0.7"
 
 # Font handling
 skrifa = { workspace = true }

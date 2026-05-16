@@ -1,5 +1,10 @@
+use std::collections::HashSet;
+
 use katla_ecs::EntityId;
 use katla_math::Vec3;
+use katla_ui::ForkAwesome;
+use katla_ui::ScrollAreaState;
+use katla_ui::widgets::{ColorPickerState, DraggablePanelState};
 
 /// Panel IDs for the dockable panel system.
 /// Each variant maps to a unique u64 ID used by the dock layout.
@@ -61,6 +66,40 @@ pub enum SpawnableModel {
     Cylinder,
     Plane,
     Torus,
+}
+
+impl SpawnableModel {
+    pub fn name(&self) -> &'static str {
+        match self {
+            SpawnableModel::Cube => "Cube",
+            SpawnableModel::Sphere => "Sphere",
+            SpawnableModel::Cylinder => "Cylinder",
+            SpawnableModel::Plane => "Plane",
+            SpawnableModel::Torus => "Torus",
+        }
+    }
+
+    pub fn all() -> &'static [SpawnableModel] {
+        &[
+            SpawnableModel::Cube,
+            SpawnableModel::Sphere,
+            SpawnableModel::Cylinder,
+            SpawnableModel::Plane,
+            SpawnableModel::Torus,
+        ]
+    }
+}
+
+/// Toolbar state: menu open flags, pending actions, undo/redo counts.
+#[derive(Debug, Clone, Default)]
+pub struct ToolbarState {
+    pub file_menu_open: bool,
+    pub edit_menu_open: bool,
+    pub view_menu_open: bool,
+    pub create_menu_open: bool,
+    pub pending_actions: Vec<EditorAction>,
+    pub undo_count: usize,
+    pub redo_count: usize,
 }
 
 /// Entity info for the hierarchy panel.
@@ -189,4 +228,146 @@ pub enum FocusedPanel {
     Inspector,
     /// Asset browser panel.
     AssetBrowser,
+}
+
+/// Mutable inspector editing state for all editable properties.
+pub struct InspectorEditState {
+    pub pos: [f32; 3],
+    pub rot: [f32; 3],
+    pub scale: [f32; 3],
+    pub light_color: [f32; 3],
+    pub light_intensity: f32,
+    pub light_range: f32,
+    pub emit_rate: f32,
+    pub velocity: f32,
+    pub lifetime: f32,
+    pub gravity: f32,
+    pub particle_scale: f32,
+    pub light_color_picker: ColorPickerState,
+}
+
+impl Default for InspectorEditState {
+    fn default() -> Self {
+        Self {
+            pos: [0.0; 3],
+            rot: [0.0; 3],
+            scale: [1.0, 1.0, 1.0],
+            light_color: [1.0; 3],
+            light_intensity: 1.0,
+            light_range: 10.0,
+            emit_rate: 10.0,
+            velocity: 2.0,
+            lifetime: 2.0,
+            gravity: -9.81,
+            particle_scale: 0.1,
+            light_color_picker: ColorPickerState::new(),
+        }
+    }
+}
+
+/// Hierarchy panel state (scroll, expanded entities, context menu).
+#[derive(Debug, Clone, Default)]
+pub struct HierarchyState {
+    pub scroll_state: ScrollAreaState,
+    pub expanded_entities: HashSet<EntityId>,
+    pub context_menu_open: bool,
+    pub context_entity: Option<EntityId>,
+}
+
+/// Preferences panel tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PreferencesTab {
+    #[default]
+    General,
+    Viewport,
+    Ai,
+}
+
+impl PreferencesTab {
+    pub fn all() -> &'static [PreferencesTab] {
+        &[
+            PreferencesTab::General,
+            PreferencesTab::Viewport,
+            PreferencesTab::Ai,
+        ]
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            PreferencesTab::General => "General",
+            PreferencesTab::Viewport => "Viewport",
+            PreferencesTab::Ai => "AI",
+        }
+    }
+
+    pub fn icon(&self) -> char {
+        match self {
+            PreferencesTab::General => ForkAwesome::PAINT_BRUSH,
+            PreferencesTab::Viewport => ForkAwesome::CUBE,
+            PreferencesTab::Ai => ForkAwesome::CUBE,
+        }
+    }
+}
+
+/// Session-only editor settings (not persisted between sessions).
+#[derive(Debug, Clone)]
+pub struct EditorSettings {
+    pub snap_to_grid: bool,
+    pub camera_speed: f32,
+    pub grid_size: f32,
+}
+
+impl Default for EditorSettings {
+    fn default() -> Self {
+        Self {
+            snap_to_grid: true,
+            camera_speed: 50.0,
+            grid_size: 1.0,
+        }
+    }
+}
+
+/// Internal state for the preferences panel widget.
+#[derive(Debug, Clone, Default)]
+pub struct PreferencesPanelState {
+    pub panel: DraggablePanelState,
+    pub current_tab: PreferencesTab,
+    pub scroll_state: ScrollAreaState,
+    /// Snapshot of LLM config, refreshed from EditorState each frame.
+    pub llm_config: katla_agent::LlmConfig,
+}
+
+/// Actions emitted by the preferences panel.
+#[derive(Debug, Clone)]
+pub enum PreferencesAction {
+    SetTheme(String),
+    ToggleGrid,
+    ToggleStats,
+    SetFontScale(f32),
+    SetSnapToGrid(bool),
+    SetCameraSpeed(f32),
+    SetGridSize(f32),
+    SetLlmProvider(String),
+    SetLlmApiKey(String),
+    SetLlmBaseUrl(String),
+    SetLlmModel(String),
+    SetLlmMaxTokens(u32),
+    SetLlmTemperature(f32),
+    SaveLlmConfig,
+}
+
+/// O(D) visibility check using a pre-built parent map.
+pub fn is_entity_visible_fast(
+    entity: &EntityInfo,
+    parent_map: &std::collections::HashMap<EntityId, Option<EntityId>>,
+    expanded: &HashSet<EntityId>,
+) -> bool {
+    let mut current = entity.parent_id;
+    while let Some(parent_id) = current {
+        if !expanded.contains(&parent_id) {
+            return false;
+        }
+        current = parent_map.get(&parent_id).copied().flatten();
+    }
+    true
 }

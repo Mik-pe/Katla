@@ -56,6 +56,7 @@ impl UiContext {
         self.panel_regions.clear();
         self.input.prev_active_id = self.active_id;
         self.focusable_widgets.clear();
+        self.declarative_input_consumed = false;
     }
 
     /// End the frame and get the draw list.

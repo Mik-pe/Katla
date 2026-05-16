@@ -42,6 +42,7 @@
 //! ```
 
 mod context;
+pub mod declarative;
 mod draw_list;
 mod icons;
 pub mod input;

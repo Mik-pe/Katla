@@ -1052,9 +1052,9 @@ pub fn build_asset_browser(
                 .add(
                     katla_ui::widgets::Button::new("Yes")
                         .bounds(yes_btn_bounds)
-                        .fill_color(theme.error)
-                        .hover_color(theme.error * 1.3)
-                        .border(theme.border),
+                        .fill_color(Color::new(0.4, 0.1, 0.1, 1.0))
+                        .hover_color(Color::new(0.5, 0.15, 0.15, 1.0))
+                        .border(Color::new(1.0, 0.3, 0.3, 0.2)),
                 )
                 .clicked
             {

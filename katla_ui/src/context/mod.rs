@@ -226,6 +226,11 @@ pub struct UiContext {
     pub(crate) panel_regions: Vec<(u64, Rect2D)>,
     /// Currently focused panel ID, determined by mouse click hit-testing.
     focused_panel_id: Option<u64>,
+    /// Whether the declarative view tree consumed input this frame.
+    declarative_input_consumed: bool,
+    /// Temporary typed data slots for declarative Custom draw functions.
+    /// Set before `ViewTree::frame()` and read during `Custom` draw dispatch.
+    scratch_data: std::collections::HashMap<std::any::TypeId, Box<dyn std::any::Any>>,
 }
 
 impl UiContext {
@@ -274,6 +279,8 @@ impl UiContext {
             pending_tooltips: Vec::new(),
             panel_regions: Vec::new(),
             focused_panel_id: None,
+            declarative_input_consumed: false,
+            scratch_data: std::collections::HashMap::new(),
         }
     }
 
@@ -345,6 +352,35 @@ impl UiContext {
     /// Get the currently focused panel ID, if any.
     pub fn focused_panel(&self) -> Option<u64> {
         self.focused_panel_id
+    }
+
+    /// Whether the declarative view tree consumed input this frame.
+    pub fn is_input_consumed_by_declarative(&self) -> bool {
+        self.declarative_input_consumed
+    }
+
+    /// Set whether the declarative view tree consumed input this frame.
+    pub fn set_declarative_input_consumed(&mut self, consumed: bool) {
+        self.declarative_input_consumed = consumed;
+    }
+
+    /// Store a typed value in the scratch data slot, available to declarative
+    /// `Custom` draw functions during this frame.
+    pub fn set_scratch<T: Clone + 'static>(&mut self, value: T) {
+        self.scratch_data
+            .insert(std::any::TypeId::of::<T>(), Box::new(value));
+    }
+
+    /// Retrieve a typed value from the scratch data slot.
+    pub fn get_scratch<T: Clone + 'static>(&self) -> Option<&T> {
+        self.scratch_data
+            .get(&std::any::TypeId::of::<T>())
+            .and_then(|v| v.downcast_ref::<T>())
+    }
+
+    /// Clear all scratch data slots (typically at the start of each frame).
+    pub fn clear_scratch(&mut self) {
+        self.scratch_data.clear();
     }
 
     // -------------------------------------------------------------------------
