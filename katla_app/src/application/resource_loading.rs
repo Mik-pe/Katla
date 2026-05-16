@@ -1,10 +1,13 @@
-use katla_gfx::TextureDescriptor;
+use std::collections::HashMap;
+use std::io::Read as _;
+
+use katla_gfx::{AttributeType, TextureDescriptor};
 use log::info;
 
 use crate::animation::AnimationClip;
 use crate::animation::gltf_loader::load_animation_clip;
 use crate::error::{AppError, AppResult};
-use crate::util::{GLTFModel, gltf_parser::AttributeParser};
+use crate::util::{GLTFModel, StlMesh, gltf_parser::AttributeParser};
 
 impl super::Application {
     /// Load a texture from an image file (PNG, JPEG, etc.) and upload to GPU.
@@ -191,5 +194,75 @@ impl super::Application {
             );
             Ok(clip)
         }
+    }
+
+    /// Load an STL mesh from disk and upload vertex/index data to the GPU.
+    ///
+    /// STL files contain only triangle geometry (positions + normals). Tangents are
+    /// generated with default handedness and tex coords are set to (0, 0).
+    ///
+    /// Returns a [`katla_gfx::MeshHandle`] and the bounding [`katla_math::Sphere`].
+    pub fn load_stl_mesh(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+    ) -> AppResult<(katla_gfx::MeshHandle, katla_math::Sphere)> {
+        let path_ref = path.as_ref();
+        let mut file = std::fs::File::open(path_ref).map_err(|e| AppError::ModelLoadFailed {
+            path: path_ref.to_string_lossy().to_string(),
+            reason: e.to_string(),
+        })?;
+
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)
+            .map_err(|e| AppError::ModelLoadFailed {
+                path: path_ref.to_string_lossy().to_string(),
+                reason: e.to_string(),
+            })?;
+
+        let mesh = StlMesh::from_bytes(&data).map_err(|e| AppError::ModelLoadFailed {
+            path: path_ref.to_string_lossy().to_string(),
+            reason: e.to_string(),
+        })?;
+
+        let (positions, normals, indices) = mesh.to_indexed_mesh();
+        let bounds = mesh.bounds;
+
+        let vertex_count = positions.len() as u32;
+
+        let mut attributes = HashMap::new();
+        attributes.insert(
+            AttributeType::Position,
+            bytemuck::cast_slice(&positions).to_vec(),
+        );
+        attributes.insert(
+            AttributeType::Normal,
+            bytemuck::cast_slice(&normals).to_vec(),
+        );
+
+        // STL has no tangents or UVs. Fill with defaults.
+        let tangents: Vec<[f32; 4]> = vec![[1.0, 0.0, 0.0, 1.0]; positions.len()];
+        let tex_coords: Vec<[f32; 2]> = vec![[0.0, 0.0]; positions.len()];
+        attributes.insert(
+            AttributeType::Tangent,
+            bytemuck::cast_slice(&tangents).to_vec(),
+        );
+        attributes.insert(
+            AttributeType::TexCoord0,
+            bytemuck::cast_slice(&tex_coords).to_vec(),
+        );
+
+        let mesh_handle = self
+            .renderer
+            .create_mesh_soa(&attributes, vertex_count, &indices);
+
+        info!(
+            "Loaded STL mesh '{}' ({} vertices, {} triangles) -> handle {}",
+            path_ref.display(),
+            vertex_count,
+            mesh.triangles.len(),
+            mesh_handle.index()
+        );
+
+        Ok((mesh_handle, bounds))
     }
 }

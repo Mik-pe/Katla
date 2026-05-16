@@ -33,6 +33,9 @@ pub enum EntitySource {
     GltfModel {
         path: String,
     },
+    StlModel {
+        path: String,
+    },
     ParticleEmitter,
     Light,
 }

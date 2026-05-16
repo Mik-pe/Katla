@@ -654,13 +654,20 @@ pub fn process_editor_actions(app: &mut Application) {
                     world_pos.y(),
                     world_pos.z()
                 );
-                match app.spawn_gltf_model(
-                    &path,
-                    [world_pos.x(), world_pos.y(), world_pos.z()],
-                    None,
-                ) {
+
+                let is_stl = path
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("stl"));
+
+                let result = if is_stl {
+                    app.spawn_stl_model(&path, [world_pos.x(), world_pos.y(), world_pos.z()])
+                } else {
+                    app.spawn_gltf_model(&path, [world_pos.x(), world_pos.y(), world_pos.z()], None)
+                };
+
+                match result {
                     Ok(spawned_entity) => {
-                        let mut undo_group = UndoGroup::new("Spawn GLTF model");
+                        let mut undo_group = UndoGroup::new("Spawn model");
                         undo_group
                             .commands
                             .push(Box::new(EditorSpawnCommand::new(spawned_entity)));
@@ -668,7 +675,7 @@ pub fn process_editor_actions(app: &mut Application) {
                         app.editor.push_undo(undo_group);
                     }
                     Err(e) => {
-                        log::error!("Failed to spawn GLTF model '{}': {}", path.display(), e);
+                        log::error!("Failed to spawn model '{}': {}", path.display(), e);
                     }
                 }
             }
