@@ -454,6 +454,52 @@ impl super::Application {
         Ok(entity)
     }
 
+    /// Spawn an STL model from file.
+    ///
+    /// STL files contain only triangle geometry. They are spawned with the default PBR
+    /// material and no textures. The entity gets an [`EntitySource::StlModel`] for round-tripping.
+    pub fn spawn_stl_model(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+        position: [f32; 3],
+    ) -> crate::error::AppResult<katla_ecs::EntityId> {
+        use crate::components::{DrawableComponent, TransformComponent};
+        use katla_math::{AABB, Vec3};
+
+        let (mesh_handle, bounds) = self.load_stl_mesh(path.as_ref())?;
+
+        let material_handle = self.default_material();
+
+        let local_bounds = AABB::from_min_max(
+            bounds.center - Vec3::new(bounds.radius, bounds.radius, bounds.radius),
+            bounds.center + Vec3::new(bounds.radius, bounds.radius, bounds.radius),
+        );
+
+        let entity = self.world.spawn((
+            TransformComponent::from_position(Vec3::new(position[0], position[1], position[2])),
+            DrawableComponent::with_handles(mesh_handle, material_handle).with_bounds(local_bounds),
+        ));
+
+        self.world.add_component(
+            entity,
+            EntitySource::StlModel {
+                path: path.as_ref().to_string_lossy().to_string(),
+            },
+        );
+
+        if let Some(drawable) = self.world.get_component::<DrawableComponent>(entity) {
+            self.gpu_resource_tracker.track_drawable(
+                drawable.mesh_handle,
+                drawable.material_handle,
+                drawable.skeleton_handle,
+            );
+        }
+
+        info!("Spawned STL model '{}'", path.as_ref().to_string_lossy());
+
+        Ok(entity)
+    }
+
     /// Upload textures from a GLTF model and return bindless texture indices.
     ///
     /// Returns [albedo, normal, metallic_roughness, ao, emission] indices.

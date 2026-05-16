@@ -456,6 +456,9 @@ impl SceneManager {
                 EntitySource::GltfModel { path } => app
                     .spawn_gltf_model(path, pos, None)
                     .map_err(|e| format!("{e}"))?,
+                EntitySource::StlModel { path } => {
+                    app.spawn_stl_model(path, pos).map_err(|e| format!("{e}"))?
+                }
                 EntitySource::ParticleEmitter => {
                     let config = katla_gfx::particles::EmitterConfig {
                         position: desc

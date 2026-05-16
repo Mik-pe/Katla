@@ -101,7 +101,7 @@ impl AssetType {
         }
 
         match path.extension().and_then(|e| e.to_str()) {
-            Some("glb") | Some("gltf") => Self::Model,
+            Some("glb") | Some("gltf") | Some("stl") => Self::Model,
             Some("toml") => Self::Material,
             Some("wgsl") => Self::Shader,
             Some("png") | Some("jpg") | Some("jpeg") => Self::Image,
