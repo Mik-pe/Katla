@@ -1,9 +1,13 @@
 use katla_math::{Rect2D, Vec2, Vec3};
+use katla_ui::declarative::ViewTree;
 use katla_ui::{UiContext, mouse_button};
 
 use super::*;
-use crate::ui::editor_ui::hierarchy::Hierarchy;
-use crate::ui::editor_ui::preferences::{PreferencesPanel, PreferencesTab};
+use crate::ui::editor_ui::declarative::{
+    EditorRootView, HierarchyDrawCtx, PreferencesDrawCtx, set_hierarchy_ctx, set_preferences_ctx,
+    take_hierarchy_ctx, take_preferences_ctx,
+};
+use crate::ui::editor_ui::types::{PreferencesPanelState, PreferencesTab};
 use katla_ui::widgets::{DraggablePanelState, PanelState};
 
 /// Test that clicking a tab in the preferences panel doesn't dismiss the window.
@@ -12,7 +16,7 @@ fn test_preferences_tab_click_does_not_close_panel() {
     let mut ui = UiContext::new();
     ui.begin(Vec2::new(800.0, 600.0), 1.0);
 
-    let mut state = PreferencesPanelState {
+    let state = PreferencesPanelState {
         panel: DraggablePanelState {
             visibility: PanelState::Visible,
             position: Some(Vec2::new(100.0, 100.0)),
@@ -27,8 +31,7 @@ fn test_preferences_tab_click_does_not_close_panel() {
     let preferences = crate::Preferences::default();
     let editor_settings = EditorSettings::default();
     let theme = ColorScheme::default();
-    let theme_key = "catppuccin";
-    let mut actions = Vec::new();
+    let theme_key = "default";
 
     let tab_x = 100.0 + 450.0 / 3.0;
     let tab_y = 100.0 + 32.0;
@@ -37,17 +40,21 @@ fn test_preferences_tab_click_does_not_close_panel() {
     ui.input_mut().mouse_pressed[mouse_button::LEFT] = true;
     ui.input_mut().mouse_down[mouse_button::LEFT] = true;
 
-    let panel = PreferencesPanel::new(
-        Vec2::new(800.0, 600.0),
-        &mut state,
-        &preferences,
-        &editor_settings,
-        &theme,
-        theme_key,
-        &mut actions,
-    );
+    set_preferences_ctx(PreferencesDrawCtx {
+        screen_size: Vec2::new(800.0, 600.0),
+        state,
+        preferences: preferences.clone(),
+        editor_settings: editor_settings.clone(),
+        theme: theme.clone(),
+        theme_key: theme_key.to_string(),
+        pending_actions: Vec::new(),
+    });
 
-    ui.add(panel);
+    let mut view_tree = ViewTree::default();
+    let _ = view_tree.frame(&mut ui, &EditorRootView, Vec2::new(800.0, 600.0));
+
+    let mut state = take_preferences_ctx().unwrap().state;
+
     ui.end();
 
     ui.input_mut().clear_frame_state();
@@ -56,25 +63,27 @@ fn test_preferences_tab_click_does_not_close_panel() {
     ui.input_mut().mouse_down[mouse_button::LEFT] = false;
     ui.input_mut().mouse_released[mouse_button::LEFT] = true;
 
-    let panel = PreferencesPanel::new(
-        Vec2::new(800.0, 600.0),
-        &mut state,
-        &preferences,
-        &editor_settings,
-        &theme,
-        theme_key,
-        &mut actions,
-    );
+    set_preferences_ctx(PreferencesDrawCtx {
+        screen_size: Vec2::new(800.0, 600.0),
+        state,
+        preferences,
+        editor_settings,
+        theme,
+        theme_key: theme_key.to_string(),
+        pending_actions: Vec::new(),
+    });
 
-    ui.add(panel);
+    let _ = view_tree.frame(&mut ui, &EditorRootView, Vec2::new(800.0, 600.0));
+
+    let prefs_ctx = take_preferences_ctx().unwrap();
 
     assert!(
-        state.panel.visibility.is_visible(),
+        prefs_ctx.state.panel.visibility.is_visible(),
         "preferences panel should stay open after clicking tab"
     );
 
     assert_eq!(
-        state.current_tab,
+        prefs_ctx.state.current_tab,
         PreferencesTab::Viewport,
         "tab should change to Viewport after clicking it"
     );
@@ -88,7 +97,6 @@ fn test_hierarchy_entity_selection_works() {
 
     let mut state = HierarchyState::default();
     let mut selected_entity = None;
-    let mut pending_actions = Vec::new();
 
     let mut world = katla_ecs::World::new();
     let entity1 = world.create_entity();
@@ -142,30 +150,39 @@ fn test_hierarchy_entity_selection_works() {
     ui.input_mut().mouse_pressed[mouse_button::LEFT] = true;
     ui.input_mut().mouse_down[mouse_button::LEFT] = true;
 
-    let mut search_filter = String::new();
-    let hierarchy = Hierarchy::new(
+    let hierarchy_ctx = HierarchyDrawCtx {
         bounds,
-        &mut state,
-        &mut selected_entity,
-        &entities,
-        &mut pending_actions,
-        &theme,
-        &mut search_filter,
-    );
+        entities: entities.clone(),
+        selected_entity: None,
+        hierarchy_state: std::mem::take(&mut state),
+        theme: theme.clone(),
+        pending_actions: Vec::new(),
+        search_filter: String::new(),
+    };
+    set_hierarchy_ctx(hierarchy_ctx);
 
-    ui.add(hierarchy);
+    let mut view_tree = ViewTree::default();
+    let _ = view_tree.frame(&mut ui, &EditorRootView, Vec2::new(800.0, 600.0));
 
-    assert_eq!(
-        selected_entity,
-        Some(entity2),
-        "clicking entity should select it"
-    );
-    assert!(
-        pending_actions
-            .iter()
-            .any(|a| matches!(a, EditorAction::SelectEntity(id) if *id == entity2)),
-        "selecting entity should emit SelectEntity action"
-    );
+    if let Some(hierarchy_ctx) = take_hierarchy_ctx() {
+        state = hierarchy_ctx.hierarchy_state;
+        selected_entity = hierarchy_ctx.selected_entity;
+
+        assert_eq!(
+            selected_entity,
+            Some(entity2),
+            "clicking entity should select it"
+        );
+        assert!(
+            hierarchy_ctx
+                .pending_actions
+                .iter()
+                .any(|a| matches!(a, EditorAction::SelectEntity(id) if *id == entity2)),
+            "selecting entity should emit SelectEntity action"
+        );
+    } else {
+        panic!("hierarchy context should be returned after frame");
+    }
 }
 
 /// Test that save confirmation timer starts at 2.0 and counts down.

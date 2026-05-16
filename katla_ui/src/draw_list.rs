@@ -353,8 +353,72 @@ impl DrawList {
     }
 
     pub fn add_circle_auto(&mut self, center: Vec2, radius: f32, color: Color) {
-        let segments = (radius * std::f32::consts::PI * 2.0 / 4.0).ceil().max(8.0) as u32;
-        self.add_circle(center, radius, color, segments);
+        let segments = (radius * std::f32::consts::PI * 2.0 / 2.0).ceil().max(8.0) as u32;
+        self.add_circle_aa(center, radius, color, segments);
+    }
+
+    /// Add a filled circle with anti-aliased edges.
+    ///
+    /// Same dual-ring technique as `add_rounded_rect_aa`: inner ring at full alpha,
+    /// outer ring offset 1px outward at alpha 0, connected by quad strips.
+    pub fn add_circle_aa(&mut self, center: Vec2, radius: f32, color: Color, segments: u32) {
+        if segments < 3 {
+            return;
+        }
+
+        self.set_texture(TextureId::NONE);
+
+        let vertex_offset = self.vertices.len() as u32;
+        let color_full = color.to_bytes();
+        let color_fade = [color_full[0], color_full[1], color_full[2], 0u8];
+
+        let seg = segments as usize;
+
+        // Inner ring: points on the circle
+        for i in 0..seg {
+            let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
+            self.vertices.push(Vertex::position_only(
+                Vec2::new(
+                    center.x() + radius * angle.cos(),
+                    center.y() + radius * angle.sin(),
+                ),
+                color_full,
+            ));
+        }
+
+        // Outer ring: offset 1px outward along radial direction
+        const AA_FRINGE: f32 = 1.0;
+        let outer_radius = radius + AA_FRINGE;
+        for i in 0..seg {
+            let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
+            self.vertices.push(Vertex::position_only(
+                Vec2::new(
+                    center.x() + outer_radius * angle.cos(),
+                    center.y() + outer_radius * angle.sin(),
+                ),
+                color_fade,
+            ));
+        }
+
+        // Fill interior with triangle fan from inner vertices
+        for i in 1..(seg as u32 - 1) {
+            self.indices.extend_from_slice(&[
+                vertex_offset,
+                vertex_offset + i,
+                vertex_offset + i + 1,
+            ]);
+        }
+
+        // Anti-alias fringe: quad strips between inner and outer rings
+        let outer_start = vertex_offset + seg as u32;
+        for i in 0..seg {
+            let j = (i + 1) % seg;
+            let ii = vertex_offset + i as u32;
+            let ij = vertex_offset + j as u32;
+            let oi = outer_start + i as u32;
+            let oj = outer_start + j as u32;
+            self.indices.extend_from_slice(&[ii, ij, oj, ii, oj, oi]);
+        }
     }
 
     pub fn add_rounded_rect(&mut self, bounds: Rect2D, color: Color, radius: f32) {
@@ -364,7 +428,7 @@ impl DrawList {
             return;
         }
 
-        let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 4.0).ceil() as u32).max(2);
+        let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 1.5).ceil() as u32).max(2);
         generate_rounded_rect_points_into(
             bounds.min,
             bounds.max,
@@ -375,6 +439,97 @@ impl DrawList {
         let points = std::mem::take(&mut self.scratch_points);
         self.add_convex_poly(&points, color);
         self.scratch_points = points;
+    }
+
+    /// Add a filled rounded rectangle with anti-aliased edges.
+    ///
+    /// Uses a dual-ring technique: an inner ring at full alpha and an outer ring
+    /// offset ~1px outward at alpha 0, connected by quad strips. The GPU
+    /// interpolates alpha across the 1px fringe, producing smooth edges without
+    /// requiring any shader or vertex format changes.
+    pub fn add_rounded_rect_aa(&mut self, bounds: Rect2D, color: Color, radius: f32) {
+        let r = radius.min(bounds.width() * 0.5).min(bounds.height() * 0.5);
+        if r < 0.5 {
+            self.add_rect(bounds, color);
+            return;
+        }
+
+        let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 1.5).ceil() as u32).max(2);
+
+        // Generate outline points
+        generate_rounded_rect_points_into(
+            bounds.min,
+            bounds.max,
+            r,
+            segments_per_corner,
+            &mut self.scratch_points,
+        );
+        let inner_points = std::mem::take(&mut self.scratch_points);
+        let n = inner_points.len();
+
+        self.set_texture(TextureId::NONE);
+
+        let vertex_offset = self.vertices.len() as u32;
+        let color_full = color.to_bytes();
+        let color_fade = [color_full[0], color_full[1], color_full[2], 0u8];
+
+        // Compute outward normals and generate outer ring
+        let mut outer_points = Vec::with_capacity(n);
+        for i in 0..n {
+            let prev = inner_points[(i + n - 1) % n];
+            let curr = inner_points[i];
+            let next = inner_points[(i + 1) % n];
+
+            // Edge directions
+            let dx_in = curr.x() - prev.x();
+            let dy_in = curr.y() - prev.y();
+            let dx_out = next.x() - curr.x();
+            let dy_out = next.y() - curr.y();
+
+            let len_in = (dx_in * dx_in + dy_in * dy_in).sqrt().max(0.0001);
+            let len_out = (dx_out * dx_out + dy_out * dy_out).sqrt().max(0.0001);
+
+            // Average of the two edge outward normals (CCW winding → outward normal is (-dy, dx) normalized)
+            let nx = (-dy_in / len_in + -dy_out / len_out) * 0.5;
+            let ny = (dx_in / len_in + dx_out / len_out) * 0.5;
+            let nlen = (nx * nx + ny * ny).sqrt().max(0.0001);
+
+            const AA_FRINGE: f32 = 1.0;
+            let offset_x = nx / nlen * AA_FRINGE;
+            let offset_y = ny / nlen * AA_FRINGE;
+
+            outer_points.push(Vec2::new(curr.x() + offset_x, curr.y() + offset_y));
+        }
+
+        // Emit vertices: inner ring (full alpha), then outer ring (alpha 0)
+        for &p in &inner_points {
+            self.vertices.push(Vertex::position_only(p, color_full));
+        }
+        for &p in &outer_points {
+            self.vertices.push(Vertex::position_only(p, color_fade));
+        }
+
+        // Fill interior with triangle fan from inner vertices
+        for i in 1..(n as u32 - 1) {
+            self.indices.extend_from_slice(&[
+                vertex_offset,
+                vertex_offset + i,
+                vertex_offset + i + 1,
+            ]);
+        }
+
+        // Anti-alias fringe: quad strips between inner and outer rings
+        let outer_start = vertex_offset + n as u32;
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let ii = vertex_offset + i as u32;
+            let ij = vertex_offset + j as u32;
+            let oi = outer_start + i as u32;
+            let oj = outer_start + j as u32;
+            self.indices.extend_from_slice(&[ii, ij, oj, ii, oj, oi]);
+        }
+
+        self.scratch_points = inner_points;
     }
 
     /// Add a rounded rectangle border stroke.
@@ -394,7 +549,7 @@ impl DrawList {
             return;
         }
 
-        let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 4.0).ceil() as u32).max(2);
+        let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 1.5).ceil() as u32).max(2);
         let half_t = thickness * 0.5;
 
         let outer_min = Vec2::new(bounds.min.x() - half_t, bounds.min.y() - half_t);
@@ -449,7 +604,137 @@ impl DrawList {
         self.scratch_points = inner_points;
     }
 
-    /// Add a sharp rectangle border stroke (4 rectangles).
+    /// Add a rounded rectangle border stroke with anti-aliased edges.
+    ///
+    /// Uses the same dual-ring technique: the stroke outer edge fades from full
+    /// color to transparent over 1px, and the inner edge does the same.
+    pub fn add_rounded_rect_stroke_aa(
+        &mut self,
+        bounds: Rect2D,
+        color: Color,
+        radius: f32,
+        thickness: f32,
+    ) {
+        let r = radius.min(bounds.width() * 0.5).min(bounds.height() * 0.5);
+        if r < 0.5 {
+            self.add_rect_stroke(bounds, color, thickness);
+            return;
+        }
+
+        let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 1.5).ceil() as u32).max(2);
+        let half_t = thickness * 0.5;
+
+        // For AA, we need 4 rings: outer_aa, outer, inner, inner_aa
+        let outer_aa_min = Vec2::new(bounds.min.x() - half_t - 1.0, bounds.min.y() - half_t - 1.0);
+        let outer_aa_max = Vec2::new(bounds.max.x() + half_t + 1.0, bounds.max.y() + half_t + 1.0);
+        let outer_aa_r = r + half_t + 1.0;
+
+        let outer_min = Vec2::new(bounds.min.x() - half_t, bounds.min.y() - half_t);
+        let outer_max = Vec2::new(bounds.max.x() + half_t, bounds.max.y() + half_t);
+        let outer_r = r + half_t;
+
+        let inner_min = Vec2::new(bounds.min.x() + half_t, bounds.min.y() + half_t);
+        let inner_max = Vec2::new(bounds.max.x() - half_t, bounds.max.y() - half_t);
+        let inner_r = (r - half_t).max(0.0);
+
+        let inner_aa_min = Vec2::new(bounds.min.x() + half_t + 1.0, bounds.min.y() + half_t + 1.0);
+        let inner_aa_max = Vec2::new(bounds.max.x() - half_t - 1.0, bounds.max.y() - half_t - 1.0);
+        let inner_aa_r = (r - half_t - 1.0).max(0.0);
+
+        generate_rounded_rect_points_into(
+            outer_aa_min,
+            outer_aa_max,
+            outer_aa_r,
+            segments_per_corner,
+            &mut self.scratch_points,
+        );
+        let outer_aa_points = std::mem::take(&mut self.scratch_points);
+
+        generate_rounded_rect_points_into(
+            outer_min,
+            outer_max,
+            outer_r,
+            segments_per_corner,
+            &mut self.scratch_points,
+        );
+        let outer_points = std::mem::take(&mut self.scratch_points);
+
+        generate_rounded_rect_points_into(
+            inner_min,
+            inner_max,
+            inner_r,
+            segments_per_corner,
+            &mut self.scratch_points,
+        );
+        let inner_points = std::mem::take(&mut self.scratch_points);
+
+        // Only generate inner AA ring if it has positive radius and valid bounds
+        let has_inner_aa = inner_aa_r > 0.0
+            && inner_aa_min.x() < inner_aa_max.x()
+            && inner_aa_min.y() < inner_aa_max.y();
+        let inner_aa_points = if has_inner_aa {
+            generate_rounded_rect_points_into(
+                inner_aa_min,
+                inner_aa_max,
+                inner_aa_r,
+                segments_per_corner,
+                &mut self.scratch_points,
+            );
+            std::mem::take(&mut self.scratch_points)
+        } else {
+            inner_points.clone()
+        };
+
+        let n = outer_points.len();
+        debug_assert_eq!(outer_aa_points.len(), n);
+        debug_assert_eq!(inner_points.len(), n);
+
+        self.set_texture(TextureId::NONE);
+
+        let color_full = color.to_bytes();
+        let color_fade = [color_full[0], color_full[1], color_full[2], 0u8];
+        let vertex_offset = self.vertices.len() as u32;
+
+        // Emit 4 rings: outer_aa (alpha 0), outer (full), inner (full), inner_aa (alpha 0)
+        for &p in &outer_aa_points {
+            self.vertices.push(Vertex::position_only(p, color_fade));
+        }
+        for &p in &outer_points {
+            self.vertices.push(Vertex::position_only(p, color_full));
+        }
+        for &p in &inner_points {
+            self.vertices.push(Vertex::position_only(p, color_full));
+        }
+        for &p in &inner_aa_points {
+            self.vertices.push(Vertex::position_only(p, color_fade));
+        }
+
+        let outer_aa_base = vertex_offset;
+        let outer_base = vertex_offset + n as u32;
+        let inner_base = vertex_offset + 2 * n as u32;
+        let inner_aa_base = vertex_offset + 3 * n as u32;
+
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let oai = outer_aa_base + i as u32;
+            let oaj = outer_aa_base + j as u32;
+            let oi = outer_base + i as u32;
+            let oj = outer_base + j as u32;
+            let ii = inner_base + i as u32;
+            let ij = inner_base + j as u32;
+            let iai = inner_aa_base + i as u32;
+            let iaj = inner_aa_base + j as u32;
+
+            // Outer AA fringe: outer_aa → outer
+            self.indices.extend_from_slice(&[oai, oaj, oj, oai, oj, oi]);
+            // Stroke body: outer → inner
+            self.indices.extend_from_slice(&[oi, oj, ij, oi, ij, ii]);
+            // Inner AA fringe: inner → inner_aa
+            self.indices.extend_from_slice(&[ii, ij, iaj, ii, iaj, iai]);
+        }
+
+        self.scratch_points = inner_points;
+    }
     fn add_rect_stroke(&mut self, bounds: Rect2D, color: Color, thickness: f32) {
         let min = bounds.min;
         let max = bounds.max;

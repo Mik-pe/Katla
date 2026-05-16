@@ -8,21 +8,17 @@
 //! - Status bar (bottom)
 
 mod asset_browser;
-pub(crate) mod co_creator;
-mod hierarchy;
-pub(crate) mod inspector;
+mod co_creator;
+mod declarative;
 mod layout;
-mod preferences;
-mod status_bar;
 #[cfg(test)]
 mod tests;
-mod toolbar;
 mod types;
-mod viewport_grid;
 
 use katla_ecs::EntityId;
 use katla_gfx::TextureHandle;
 use katla_math::{Rect2D, Vec2};
+use katla_ui::declarative::ViewTree;
 use katla_ui::{ColorScheme, DrawList, UiContext};
 
 use crate::util::BackgroundLoader;
@@ -32,9 +28,9 @@ use crate::{
     resources::viewport_state::ViewportGridState,
     ui::{
         ParticleInspectorAction, ParticleInspectorData, ParticleInspectorState,
-        editor_ui::hierarchy::HierarchyState,
-        editor_ui::preferences::{EditorSettings, PreferencesAction, PreferencesPanelState},
-        editor_ui::toolbar::ToolbarState,
+        editor_ui::types::{
+            EditorSettings, HierarchyState, PreferencesAction, PreferencesPanelState, ToolbarState,
+        },
     },
 };
 
@@ -115,7 +111,7 @@ pub struct EditorUI {
     /// Used to suppress Ctrl+S when a TextInput or modal is focused.
     pub prev_want_capture_keyboard: bool,
     /// Mutable inspector editing state for all editable properties.
-    pub inspector_edit: crate::ui::editor_ui::inspector::InspectorEditState,
+    pub inspector_edit: types::InspectorEditState,
     /// The entity ID whose inspector editing state is currently populated.
     pub(crate) inspector_edit_entity: Option<EntityId>,
     /// Current gizmo mode (synced from Application for toolbar display).
@@ -130,6 +126,8 @@ pub struct EditorUI {
     dock_layout: katla_ui::widgets::DockLayout,
     /// Enable the dockable panel layout (skeleton for visual verification).
     use_dock_layout: bool,
+    /// Declarative view tree for migrated panels.
+    view_tree: ViewTree,
 }
 
 impl EditorUI {
@@ -150,7 +148,7 @@ impl EditorUI {
             last_viewport_bounds: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(800.0, 600.0)),
             last_screen_size: Vec2::new(800.0, 600.0),
             toolbar_state: ToolbarState::default(),
-            theme: ColorScheme::catppuccin(),
+            theme: ColorScheme::default_theme(),
             asset_browser: AssetBrowserState::new(),
             focused_panel: FocusedPanel::Viewport,
             viewport_grid_state: ViewportGridState::new(),
@@ -160,7 +158,7 @@ impl EditorUI {
             particle_inspector_data: ParticleInspectorData::default(),
             save_confirmation_timer: 0.0,
             prev_want_capture_keyboard: false,
-            inspector_edit: inspector::InspectorEditState {
+            inspector_edit: types::InspectorEditState {
                 pos: [0.0; 3],
                 rot: [0.0; 3],
                 scale: [1.0, 1.0, 1.0],
@@ -181,6 +179,7 @@ impl EditorUI {
             hierarchy_search_filter: String::new(),
             dock_layout: Self::default_dock_layout(),
             use_dock_layout: false,
+            view_tree: ViewTree::default(),
         }
     }
 
@@ -261,7 +260,7 @@ impl EditorUI {
     /// Get the current theme key (for preferences).
     pub fn theme_key(&self) -> &'static str {
         match self.theme.name {
-            "Catppuccin Mocha" => "catppuccin",
+            "Default" => "default",
             "Nord" => "nord",
             "Tokyo Night" => "tokyo_night",
             "Dracula" => "dracula",
@@ -274,7 +273,7 @@ impl EditorUI {
             "Rosé Pine" => "rose_pine",
             "Kanagawa" => "kanagawa",
             "Solarized Dark" => "solarized_dark",
-            _ => "catppuccin",
+            _ => "default",
         }
     }
 

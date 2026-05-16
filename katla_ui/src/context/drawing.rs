@@ -37,7 +37,7 @@ impl UiContext {
 
     pub fn draw_rounded_rect(&mut self, bounds: Rect2D, color: Color, radius: f32) {
         self.draw_list.set_clip(self.clip_rect());
-        self.draw_list.add_rounded_rect(bounds, color, radius);
+        self.draw_list.add_rounded_rect_aa(bounds, color, radius);
 
         if self.z_index > z_index::DEFAULT {
             self.register_hover_layer(self.z_index, bounds);
@@ -143,7 +143,7 @@ impl UiContext {
     ) {
         self.draw_list.set_clip(self.clip_rect());
         self.draw_list
-            .add_rounded_rect_stroke(bounds, color, radius, width);
+            .add_rounded_rect_stroke_aa(bounds, color, radius, width);
     }
 
     /// Draw a textured image with explicit texture ID.

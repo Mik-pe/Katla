@@ -324,6 +324,28 @@ impl UiContext {
         // Draw button background
         self.draw_rounded_rect(bounds, bg_color, self.style.button_rounding);
 
+        // Subtle top highlight for raised feel (only when not pressed)
+        if !active {
+            let highlight = Color::new(
+                (bg_color.r + 0.04).min(1.0),
+                (bg_color.g + 0.04).min(1.0),
+                (bg_color.b + 0.04).min(1.0),
+                bg_color.a,
+            );
+            self.draw_line(
+                Vec2::new(
+                    bounds.min.x() + self.style.button_rounding,
+                    bounds.min.y() + 0.5,
+                ),
+                Vec2::new(
+                    bounds.max.x() - self.style.button_rounding,
+                    bounds.min.y() + 0.5,
+                ),
+                highlight,
+                1.0,
+            );
+        }
+
         // Draw border if specified
         if let Some(border_color) = border_color {
             self.draw_rounded_selection_border(
@@ -386,7 +408,7 @@ impl UiContext {
         };
 
         // Draw button background
-        self.draw_rect(bounds, bg_color);
+        self.draw_rounded_rect(bounds, bg_color, self.style.button_rounding);
 
         // Determine icon color based on state
         let icon_color = if !enabled {
@@ -452,12 +474,28 @@ impl UiContext {
             Vec2::new(check_size, check_size),
         );
 
+        let check_rounding = 3.0;
         let bg_color = if *checked {
             self.style.checkbox_check
+        } else if hovered {
+            Color::new(
+                (self.style.checkbox_bg.r + 0.06).min(1.0),
+                (self.style.checkbox_bg.g + 0.06).min(1.0),
+                (self.style.checkbox_bg.b + 0.06).min(1.0),
+                self.style.checkbox_bg.a,
+            )
         } else {
             self.style.checkbox_bg
         };
-        self.draw_rect_border(check_bounds, bg_color, self.style.checkbox_border, 1.0);
+        self.draw_rounded_rect(check_bounds, bg_color, check_rounding);
+        if !*checked {
+            self.draw_rounded_selection_border(
+                check_bounds,
+                self.style.checkbox_border,
+                1.0,
+                check_rounding,
+            );
+        }
 
         // Draw check icon if checked
         if *checked {
@@ -534,20 +572,18 @@ impl UiContext {
             Vec2::new(bounds.center().x(), bounds.center().y()),
             Vec2::new(bounds.width(), track_height),
         );
-        self.draw_rounded_rect(
-            track_bounds,
-            self.style.slider_track,
-            self.style.button_rounding,
-        );
+        self.draw_rounded_rect(track_bounds, self.style.slider_track, track_height * 0.5);
 
-        // Draw grab
+        // Draw filled portion of the track
         let t = (*value - min) / (max - min);
-        let grab_size = self.style.slider_grab_size;
-        let grab_pos = bounds.min.x() + t * (bounds.width() - grab_size);
-        let grab_bounds = Rect2D::from_origin_size(
-            Vec2::new(grab_pos, bounds.center().y() - grab_size * 0.5),
-            Vec2::new(grab_size, grab_size),
-        );
+        let fill_width = t * bounds.width();
+        if fill_width > 0.0 {
+            let fill_bounds =
+                Rect2D::from_origin_size(track_bounds.min, Vec2::new(fill_width, track_height));
+            self.draw_rounded_rect(fill_bounds, self.style.slider_grab, track_height * 0.5);
+        }
+
+        // Draw grab as a circle with shadow and hover scale
         let grab_color = if active {
             self.style.slider_grab_active
         } else if hovered {
@@ -555,7 +591,25 @@ impl UiContext {
         } else {
             self.style.slider_grab
         };
-        self.draw_rounded_rect(grab_bounds, grab_color, self.style.button_rounding);
+        let grab_center_x = bounds.min.x() + t * bounds.width();
+        let grab_center = Vec2::new(grab_center_x, bounds.center().y());
+        let base_radius = self.style.slider_grab_size * 0.5;
+        let grab_radius = if active {
+            base_radius * 1.25
+        } else if hovered {
+            base_radius * 1.15
+        } else {
+            base_radius
+        };
+
+        // Shadow
+        self.draw_circle(
+            Vec2::new(grab_center.x(), grab_center.y() + 1.0),
+            grab_radius,
+            Color::new(0.0, 0.0, 0.0, 0.3),
+        );
+        // Main grab
+        self.draw_circle(grab_center, grab_radius, grab_color);
 
         if show_value {
             let value_text = format!("{:.1$}", *value, value_precision);
@@ -754,6 +808,13 @@ impl UiContext {
 
         let border_color = if focused {
             self.style.input_border_focused
+        } else if hovered {
+            Color::new(
+                (self.style.input_border.r + 0.1).min(1.0),
+                (self.style.input_border.g + 0.1).min(1.0),
+                (self.style.input_border.b + 0.1).min(1.0),
+                self.style.input_border.a,
+            )
         } else {
             self.style.input_border
         };
@@ -932,7 +993,7 @@ impl UiContext {
         self.draw_list.set_clip(self.clip_rect());
         self.draw_list.add_circle_auto(center, radius, border_color);
         self.draw_list
-            .add_circle_auto(center, radius - 1.0, Color::TRANSPARENT);
+            .add_circle_auto(center, radius - 1.0, self.style.checkbox_bg);
 
         // Inner dot when selected
         if is_selected {
@@ -1035,19 +1096,22 @@ impl UiContext {
         self.draw_text(text, text_pos, self.style.combo_text, self.style.font_size);
 
         // Draw dropdown arrow on the right side
-        let arrow_size = self.style.font_size * 0.6;
+        let arrow_size = self.style.font_size;
+        let arrow_padding = padding + 2.0;
         let arrow_bounds = Rect2D::from_origin_size(
-            Vec2::new(bounds.max.x() - arrow_size - padding, bounds.min.y()),
-            Vec2::new(arrow_size + padding, bounds.height()),
+            Vec2::new(bounds.max.x() - arrow_size - arrow_padding, bounds.min.y()),
+            Vec2::new(arrow_size + arrow_padding, bounds.height()),
         );
-        let arrow_char = if *open { '▲' } else { '▼' };
-        let arrow_text_size = self.measure_text(&arrow_char.to_string(), arrow_size);
-        let arrow_pos = center_in_bounds(arrow_bounds, arrow_text_size);
-        self.draw_text(
-            &arrow_char.to_string(),
-            arrow_pos,
+        let arrow_icon = if *open {
+            ForkAwesome::CHEVRON_UP
+        } else {
+            ForkAwesome::CHEVRON_DOWN
+        };
+        self.draw_icon_centered(
+            arrow_icon,
+            arrow_bounds,
+            arrow_size * 0.7,
             self.style.combo_text,
-            arrow_size,
         );
 
         let mut response = Response::interactive(

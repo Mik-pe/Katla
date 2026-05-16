@@ -479,7 +479,7 @@ impl ColorScheme {
 
             button_normal: Color::from_rgb_hex(0x404040),
             button_hovered: Color::from_rgb_hex(0x505050),
-            button_active: Color::from_rgb_hex(0x606060),
+            button_active: Color::from_rgb_hex(0x353535),
             button_text: Color::from_rgb_hex(0xeeeeee),
 
             input_bg: Color::from_rgb_hex(0x282828),
@@ -870,14 +870,14 @@ macro_rules! color_scheme {
 }
 
 impl ColorScheme {
-    pub fn catppuccin() -> Self {
+    pub fn default_theme() -> Self {
         color_scheme!(
-            name: "Catppuccin Mocha",
+            name: "Default",
             bg: 0x1E1E2E, 0x313244, 0x181825,
             panel: 0x1E1E2E, 0x313244, 0x45475A,
             text: 0xC9CBFF, 0xBABCF2, 0x6C7086, 0xA6DA95,
-            button: 0x313244, 0x45475A, 0x89B4FA, 0xC9CBFF,
-            selection: 0x89B4FA, 0x74C7EC, 0xF5C2E7,
+            button: 0x313244, 0x45475A, 0x3B3B52, 0xC9CBFF,
+            selection: 0x89B4FA, 0xA8C8FF, 0xF5C2E7,
             misc: 0x45475A, 0x585B70,
             entity: 0xA6DA95, 0xFAB387, 0xF9E2AF, 0x6C7086,
             status: 0xA6DA95, 0xF9E2AF, 0xF38BA8, 0x89D9EB,
@@ -1077,6 +1077,37 @@ impl ColorScheme {
             popup: 0x073642, 0x094959,
         )
     }
+
+    pub fn rcp() -> Self {
+        let mut scheme = color_scheme!(
+            name: "Reality Composer Pro",
+            bg: 0x1E1E1E, 0x2A2A2E, 0x141414,
+            panel: 0x1E1E1E, 0x2A2A2E, 0x38383A,
+            text: 0xD9D9D9, 0x8C8C8C, 0x5A5A5A, 0x0A84FF,
+            button: 0x3A3A3C, 0x48484A, 0x3D3D52, 0xD9D9D9,
+            selection: 0x0A84FF, 0x4DA6FF, 0x0058D0,
+            misc: 0x2A2A2E, 0x38383A,
+            entity: 0x30D158, 0xFF9F0A, 0xFFD60A, 0x636366,
+            status: 0x30D158, 0xFF9F0A, 0xFF453A, 0x64D2FF,
+            viewport: 0x38383A,
+            popup: 0x2C2C2E, 0x38383A,
+        );
+
+        let subtle_border = Color::new(1.0, 1.0, 1.0, 0.08);
+        let panel_border = Color::new(1.0, 1.0, 1.0, 0.06);
+
+        scheme.window_border = panel_border;
+        scheme.input_border = subtle_border;
+        scheme.checkbox_border = subtle_border;
+        scheme.combo_border = subtle_border;
+        scheme.popup_border = subtle_border;
+        scheme.menu_border = subtle_border;
+        scheme.panel_border = panel_border;
+        scheme.separator = Color::new(1.0, 1.0, 1.0, 0.06);
+        scheme.border = subtle_border;
+
+        scheme
+    }
 }
 
 impl ColorScheme {
@@ -1141,32 +1172,32 @@ impl ColorScheme {
 
             focus_ring_color: style.focus_ring_color,
 
-            success: Color::from_rgb_hex(0xa6da95),
-            warning: Color::from_rgb_hex(0xf9e2af),
-            error: Color::from_rgb_hex(0xf38ba8),
-            info: Color::from_rgb_hex(0x89d9eb),
+            success: Color::from_rgb_hex(0x30D158),
+            warning: Color::from_rgb_hex(0xFF9F0A),
+            error: Color::from_rgb_hex(0xFF453A),
+            info: Color::from_rgb_hex(0x64D2FF),
 
-            entity_mesh: Color::from_rgb_hex(0xa6da95),
-            entity_light: Color::from_rgb_hex(0xf9e2af),
-            entity_particle: Color::from_rgb_hex(0xfab387),
-            entity_empty: Color::from_rgb_hex(0x6c7086),
+            entity_mesh: Color::from_rgb_hex(0x30D158),
+            entity_light: Color::from_rgb_hex(0xFFD60A),
+            entity_particle: Color::from_rgb_hex(0xFF9F0A),
+            entity_empty: Color::from_rgb_hex(0x636366),
 
-            accent: Color::from_rgb_hex(0xa6da95),
-            highlight: Color::from_rgb_hex(0xf5c2e7),
+            accent: Color::from_rgb_hex(0x0A84FF),
+            highlight: Color::from_rgb_hex(0x0058D0),
 
             selection: style.selectable_selected,
             selection_hover: style.selectable_hovered,
 
-            viewport_border: Color::from_rgb_hex(0x4a9eff),
+            viewport_border: Color::from_rgb_hex(0x38383A),
 
             background: style.window_bg,
-            background_dark: Color::from_rgb_hex(0x181825),
-            background_light: Color::from_rgb_hex(0x313244),
+            background_dark: Color::from_rgb_hex(0x141414),
+            background_light: Color::from_rgb_hex(0x2A2A2E),
 
             text_primary: style.text_color,
             text_secondary: style.text_disabled,
             text_muted: style.text_hint,
-            text_accent: Color::from_rgb_hex(0xa6da95),
+            text_accent: Color::from_rgb_hex(0x0A84FF),
 
             panel_bg: style.window_bg,
             panel_border: style.window_border,
@@ -1187,7 +1218,8 @@ impl ColorScheme {
             "dark",
             "light",
             "classic",
-            "catppuccin",
+            "rcp",
+            "default",
             "nord",
             "tokyo_night",
             "dracula",
@@ -1208,7 +1240,9 @@ impl ColorScheme {
             "dark" => Some(Self::dark()),
             "light" => Some(Self::light()),
             "classic" => Some(Self::classic()),
-            "catppuccin" => Some(Self::catppuccin()),
+            "rcp" => Some(Self::rcp()),
+            "default" => Some(Self::default_theme()),
+            "catppuccin" => Some(Self::default_theme()),
             "nord" => Some(Self::nord()),
             "tokyo_night" => Some(Self::tokyo_night()),
             "dracula" => Some(Self::dracula()),
@@ -1228,7 +1262,7 @@ impl ColorScheme {
 
 impl Default for ColorScheme {
     fn default() -> Self {
-        Self::catppuccin()
+        Self::rcp()
     }
 }
 
@@ -1237,14 +1271,14 @@ impl UiStyle {
         Self {
             window_rounding: 6.0,
             window_padding: 10.0,
-            button_rounding: 6.0,
-            input_rounding: 4.0,
+            button_rounding: 4.0,
+            input_rounding: 3.0,
             font_size: FontSize::Medium.to_pixels(),
 
             text_input_max_length: 256,
             text_area_max_length: 4096,
 
-            menu_rounding: 4.0,
+            menu_rounding: 5.0,
             menu_item_height: 24.0,
             menu_padding: 4.0,
             menu_min_width: 120.0,
@@ -1256,18 +1290,18 @@ impl UiStyle {
             indent_spacing: 20.0,
             scrollbar_width: 10.0,
 
-            slider_track_height: 4.0,
+            slider_track_height: 3.0,
             slider_grab_size: 12.0,
             checkbox_size: 20.0,
             text_input_cursor_width: 2.0,
             text_input_padding: 4.0,
-            panel_padding: 8.0,
+            panel_padding: 12.0,
             title_bar_height: 25.0,
             graph_label_height: 18.0,
             graph_padding: 3.0,
-            separator_height: 8.0,
+            separator_height: 4.0,
             tooltip_padding: 4.0,
-            property_label_width: 60.0,
+            property_label_width: 70.0,
 
             button_default_width: 100.0,
             button_default_height: 30.0,
@@ -1342,21 +1376,21 @@ impl UiStyle {
             scrollbar_handle_hovered: Color::BLACK,
             focus_ring_color: Color::BLACK,
 
-            widget_hovered_bg: Color::from_rgb_hex(0x404040),
+            widget_hovered_bg: Color::from_rgb_hex(0x48484A),
             widget_active_bg: Color::from_rgb_hex(0x505050),
-            widget_pressed_bg: Color::from_rgb_hex(0x353535),
+            widget_pressed_bg: Color::from_rgb_hex(0x2A2A2E),
             focus_ring_width: 2.0,
 
-            menu_item_hover_bg: Color::from_rgb_hex(0x404060),
-            check_mark_color: Color::from_rgb_hex(0xaabbcc),
+            menu_item_hover_bg: Color::from_rgb_hex(0x0A84FF),
+            check_mark_color: Color::from_rgb_hex(0x0A84FF),
 
             tab_bar_height: 28.0,
-            tab_inactive_bg: Color::from_rgb_hex(0x2a2a2a),
-            tab_active_bg: Color::from_rgb_hex(0x1e1e2e),
-            tab_hover_bg: Color::from_rgb_hex(0x333344),
-            tab_text: Color::from_rgb_hex(0x888888),
-            tab_active_text: Color::from_rgb_hex(0xcccccc),
-            tab_border: Color::from_rgb_hex(0x404040),
+            tab_inactive_bg: Color::from_rgb_hex(0x1E1E1E),
+            tab_active_bg: Color::from_rgb_hex(0x2A2A2E),
+            tab_hover_bg: Color::from_rgb_hex(0x38383A),
+            tab_text: Color::from_rgb_hex(0x8C8C8C),
+            tab_active_text: Color::from_rgb_hex(0xD9D9D9),
+            tab_border: Color::from_rgb_hex(0x38383A),
         }
     }
 

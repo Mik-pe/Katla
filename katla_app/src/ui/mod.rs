@@ -12,14 +12,13 @@ pub mod renderer;
 
 #[cfg(feature = "editor")]
 pub use editor_ui::{
-    EditorAction, EditorRenderParams, EditorUI, EntityInfo, FocusedPanel, ParticleEmitterInfo,
-    PointLightInfo, SpawnableModel, ThumbnailState, inspector::InspectorEditState,
+    EditorAction, EditorRenderParams, EditorUI, EntityInfo, FocusedPanel, InspectorEditState,
+    ParticleEmitterInfo, PointLightInfo, SpawnableModel, ThumbnailState,
 };
 pub use katla_ui::ColorScheme;
 #[cfg(feature = "editor")]
 pub use particle_inspector::{
-    EmitterConfigView, ParticleInspector, ParticleInspectorAction, ParticleInspectorData,
-    ParticleInspectorState,
+    EmitterConfigView, ParticleInspectorAction, ParticleInspectorData, ParticleInspectorState,
 };
 #[cfg(feature = "editor")]
 pub use particle_stats::ParticleStats;

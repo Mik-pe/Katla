@@ -1,330 +1,248 @@
-//! Preferences Panel Widget
-//!
-//! Contains the preferences/settings panel for configuring editor options.
+use std::cell::RefCell;
 
 use katla_math::{Rect2D, Vec2};
+use katla_ui::declarative::{Build, BuildContext, ViewDescriptor};
 use katla_ui::{
-    FontId, FontSize, ForkAwesome, Response, ScrollArea, ScrollAreaState, UiContext, Widget,
-    widgets::{Button, DraggablePanel, DraggablePanelConfig, DraggablePanelState, ToggleButton},
+    FontId, FontSize, ScrollArea, UiContext,
+    widgets::{Button, DraggablePanel, DraggablePanelConfig, ToggleButton},
 };
 
 use crate::Preferences;
 
-use super::ColorScheme;
+use super::super::ColorScheme;
+use super::super::types::{
+    EditorSettings, PreferencesAction, PreferencesPanelState, PreferencesTab,
+};
 
 // --- Spacing & sizing constants ---
 
-/// Horizontal padding on each side of the tab content area.
 const HORIZONTAL_PADDING: f32 = 16.0;
-/// Standard height for interactive rows (buttons, toggles, text inputs).
 const ROW_HEIGHT: f32 = 28.0;
-/// Gap between a section header and its first widget.
 const HEADER_TO_WIDGET: f32 = 12.0;
-/// Gap between related widgets within a section.
 const WIDGET_GAP: f32 = 8.0;
-/// Gap between sections (separator to next header).
 const SECTION_GAP: f32 = 20.0;
-/// Gap between a label and its associated widget.
 const LABEL_GAP: f32 = 8.0;
-/// Grid cell spacing for button grids.
 const GRID_SPACING: f32 = 8.0;
 
-/// Preferences panel tabs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PreferencesTab {
-    #[default]
-    General,
-    Viewport,
-    Ai,
+thread_local! {
+    static PREFS_CTX: RefCell<Option<PreferencesDrawCtx>> = const { RefCell::new(None) };
 }
 
-impl PreferencesTab {
-    pub fn all() -> &'static [PreferencesTab] {
-        &[
-            PreferencesTab::General,
-            PreferencesTab::Viewport,
-            PreferencesTab::Ai,
-        ]
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            PreferencesTab::General => "General",
-            PreferencesTab::Viewport => "Viewport",
-            PreferencesTab::Ai => "AI",
-        }
-    }
-
-    pub fn icon(&self) -> char {
-        match self {
-            PreferencesTab::General => ForkAwesome::PAINT_BRUSH,
-            PreferencesTab::Viewport => ForkAwesome::CUBE,
-            PreferencesTab::Ai => ForkAwesome::CUBE,
-        }
-    }
-}
-
-/// Session-only editor settings (not persisted between sessions).
-#[derive(Debug, Clone)]
-pub struct EditorSettings {
-    pub snap_to_grid: bool,
-    pub camera_speed: f32,
-    pub grid_size: f32,
-}
-
-impl Default for EditorSettings {
-    fn default() -> Self {
-        Self {
-            snap_to_grid: true,
-            camera_speed: 50.0,
-            grid_size: 1.0,
-        }
-    }
-}
-
-/// Internal state for the preferences panel widget.
-#[derive(Debug, Clone, Default)]
-pub struct PreferencesPanelState {
-    pub panel: DraggablePanelState,
-    pub current_tab: PreferencesTab,
-    pub scroll_state: ScrollAreaState,
-    /// Snapshot of LLM config, refreshed from EditorState each frame.
-    pub llm_config: katla_agent::LlmConfig,
-}
-
-/// Actions emitted by the preferences panel.
-#[derive(Debug, Clone)]
-pub enum PreferencesAction {
-    SetTheme(String),
-    ToggleGrid,
-    ToggleStats,
-    SetFontScale(f32),
-    SetSnapToGrid(bool),
-    SetCameraSpeed(f32),
-    SetGridSize(f32),
-    SetLlmProvider(String),
-    SetLlmApiKey(String),
-    SetLlmBaseUrl(String),
-    SetLlmModel(String),
-    SetLlmMaxTokens(u32),
-    SetLlmTemperature(f32),
-    SaveLlmConfig,
-}
-
-pub struct PreferencesPanel<'a> {
+pub(crate) struct PreferencesDrawCtx {
     pub screen_size: Vec2,
-    pub state: &'a mut PreferencesPanelState,
-    pub preferences: &'a Preferences,
-    pub editor_settings: &'a EditorSettings,
-    pub theme: &'a ColorScheme,
-    pub theme_key: &'a str,
-    pub pending_actions: &'a mut Vec<PreferencesAction>,
+    pub state: PreferencesPanelState,
+    pub preferences: Preferences,
+    pub editor_settings: EditorSettings,
+    pub theme: ColorScheme,
+    pub theme_key: String,
+    pub pending_actions: Vec<PreferencesAction>,
 }
 
-impl<'a> PreferencesPanel<'a> {
-    pub fn new(
-        screen_size: Vec2,
-        state: &'a mut PreferencesPanelState,
-        preferences: &'a Preferences,
-        editor_settings: &'a EditorSettings,
-        theme: &'a ColorScheme,
-        theme_key: &'a str,
-        pending_actions: &'a mut Vec<PreferencesAction>,
-    ) -> Self {
-        Self {
-            screen_size,
-            state,
-            preferences,
-            editor_settings,
-            theme,
-            theme_key,
-            pending_actions,
-        }
+pub(crate) fn set_preferences_ctx(ctx: PreferencesDrawCtx) {
+    PREFS_CTX.with(|c| *c.borrow_mut() = Some(ctx));
+}
+
+pub(crate) fn take_preferences_ctx() -> Option<PreferencesDrawCtx> {
+    PREFS_CTX.with(|c| c.borrow_mut().take())
+}
+
+pub(crate) struct PreferencesView;
+
+impl Build for PreferencesView {
+    fn build(&self, _ctx: &mut BuildContext) -> ViewDescriptor {
+        ViewDescriptor::Custom(draw_preferences)
     }
 }
 
-impl<'a> Widget for PreferencesPanel<'a> {
-    fn ui(self, ui: &mut UiContext) -> Response {
-        let panel_width = 450.0;
-        let panel_height = 500.0;
-        let title_bar_height = DraggablePanel::title_bar_height();
-        let tab_bar_height = 36.0;
+fn draw_preferences(ui: &mut UiContext, _bounds: Rect2D) {
+    let mut ctx = match take_preferences_ctx() {
+        Some(ctx) => ctx,
+        None => return,
+    };
 
-        let mut panel_bounds = Rect2D::from_size(Vec2::new(panel_width, panel_height));
+    if !ctx.state.panel.is_visible() {
+        set_preferences_ctx(ctx);
+        return;
+    }
 
-        DraggablePanel::show(
-            ui,
-            &mut self.state.panel,
-            DraggablePanelConfig::new("prefs", "Preferences")
-                .size(panel_width, panel_height)
-                .screen_size(self.screen_size)
-                .close_on_outside_click(false),
-            |ui, frame| {
-                panel_bounds = frame.panel_bounds;
+    let panel_width = 450.0;
+    let panel_height = 500.0;
+    let title_bar_height = DraggablePanel::title_bar_height();
+    let tab_bar_height = 36.0;
 
-                let tab_bar_bounds = Rect2D::from_origin_size(
+    let mut panel_bounds = Rect2D::from_size(Vec2::new(panel_width, panel_height));
+
+    DraggablePanel::show(
+        ui,
+        &mut ctx.state.panel,
+        DraggablePanelConfig::new("prefs", "Preferences")
+            .size(panel_width, panel_height)
+            .screen_size(ctx.screen_size)
+            .close_on_outside_click(false),
+        |ui, frame| {
+            panel_bounds = frame.panel_bounds;
+
+            let tab_bar_bounds = Rect2D::from_origin_size(
+                Vec2::new(
+                    panel_bounds.min.x(),
+                    panel_bounds.min.y() + title_bar_height,
+                ),
+                Vec2::new(panel_width, tab_bar_height),
+            );
+            ui.draw_rect(tab_bar_bounds, ctx.theme.background_dark);
+
+            let tab_width = panel_width / PreferencesTab::all().len() as f32;
+            for (i, tab) in PreferencesTab::all().iter().enumerate() {
+                let tab_bounds = Rect2D::from_origin_size(
                     Vec2::new(
-                        panel_bounds.min.x(),
-                        panel_bounds.min.y() + title_bar_height,
+                        panel_bounds.min.x() + i as f32 * tab_width,
+                        tab_bar_bounds.min.y(),
                     ),
-                    Vec2::new(panel_width, tab_bar_height),
+                    Vec2::new(tab_width, tab_bar_height),
                 );
-                ui.draw_rect(tab_bar_bounds, self.theme.background_dark);
+                let is_selected = *tab == ctx.state.current_tab;
 
-                let tab_width = panel_width / PreferencesTab::all().len() as f32;
-                for (i, tab) in PreferencesTab::all().iter().enumerate() {
-                    let tab_bounds = Rect2D::from_origin_size(
-                        Vec2::new(
-                            panel_bounds.min.x() + i as f32 * tab_width,
-                            tab_bar_bounds.min.y(),
-                        ),
-                        Vec2::new(tab_width, tab_bar_height),
-                    );
-                    let is_selected = *tab == self.state.current_tab;
+                let tab_color = if is_selected {
+                    ctx.theme.panel_bg
+                } else {
+                    ctx.theme.background_dark
+                };
+                ui.draw_rect(tab_bounds, tab_color);
 
-                    let tab_color = if is_selected {
-                        self.theme.panel_bg
-                    } else {
-                        self.theme.background_dark
-                    };
-                    ui.draw_rect(tab_bounds, tab_color);
-
-                    if is_selected {
-                        ui.draw_line(
-                            Vec2::new(tab_bounds.min.x(), tab_bounds.max.y()),
-                            Vec2::new(tab_bounds.max.x(), tab_bounds.max.y()),
-                            self.theme.selection,
-                            2.0,
-                        );
-                    }
-
-                    if ui
-                        .add(
-                            Button::new("")
-                                .bounds(tab_bounds)
-                                .id(&format!("tab_{:?}", tab)),
-                        )
-                        .clicked
-                        && !is_selected
-                    {
-                        self.state.current_tab = *tab;
-                    }
-
-                    let icon = tab.icon();
-                    let icon_size = ui.scaled_font_size(FontSize::Medium);
-                    let text = tab.name();
-                    let text_size = ui.measure_text(text, ui.scaled_font_size(FontSize::Small));
-                    let total_width = icon_size + 4.0 + text_size.x();
-                    let start_x = tab_bounds.center().x() - total_width * 0.5;
-                    let top_y = tab_bounds.center().y() - text_size.y() * 0.5;
-
-                    let icon_color = if is_selected {
-                        self.theme.text_primary
-                    } else {
-                        self.theme.text_muted
-                    };
-                    ui.draw_icon_aligned(
-                        icon,
-                        Vec2::new(start_x, top_y),
-                        icon_size,
-                        icon_color,
-                        FontId::DEFAULT,
-                    );
-
-                    let text_color = if is_selected {
-                        self.theme.text_primary
-                    } else {
-                        self.theme.text_muted
-                    };
-                    ui.draw_text(
-                        text,
-                        Vec2::new(start_x + icon_size + 4.0, top_y),
-                        text_color,
-                        ui.scaled_font_size(FontSize::Small),
+                if is_selected {
+                    ui.draw_line(
+                        Vec2::new(tab_bounds.min.x(), tab_bounds.max.y()),
+                        Vec2::new(tab_bounds.max.x(), tab_bounds.max.y()),
+                        ctx.theme.selection,
+                        2.0,
                     );
                 }
 
-                let content_start_y = panel_bounds.min.y()
-                    + title_bar_height
-                    + tab_bar_height
-                    + ui.style().panel_padding;
-                let content_height = panel_height
-                    - title_bar_height
-                    - tab_bar_height
-                    - 2.0 * ui.style().panel_padding;
-                let scroll_bounds = Rect2D::from_origin_size(
-                    Vec2::new(panel_bounds.min.x(), content_start_y),
-                    Vec2::new(panel_width, content_height),
+                if ui
+                    .add(
+                        Button::new("")
+                            .bounds(tab_bounds)
+                            .id(&format!("tab_{:?}", tab)),
+                    )
+                    .clicked
+                    && !is_selected
+                {
+                    ctx.state.current_tab = *tab;
+                }
+
+                let icon = tab.icon();
+                let icon_size = ui.scaled_font_size(FontSize::Medium);
+                let text = tab.name();
+                let text_size = ui.measure_text(text, ui.scaled_font_size(FontSize::Small));
+                let total_width = icon_size + 4.0 + text_size.x();
+                let start_x = tab_bounds.center().x() - total_width * 0.5;
+                let top_y = tab_bounds.center().y() - text_size.y() * 0.5;
+
+                let icon_color = if is_selected {
+                    ctx.theme.text_primary
+                } else {
+                    ctx.theme.text_muted
+                };
+                ui.draw_icon_aligned(
+                    icon,
+                    Vec2::new(start_x, top_y),
+                    icon_size,
+                    icon_color,
+                    FontId::DEFAULT,
                 );
 
-                let current_tab = self.state.current_tab;
-                let editor_settings = self.editor_settings.clone();
-                let llm_config = self.state.llm_config.clone();
-                let theme = self.theme;
-                let theme_key = self.theme_key;
-                let show_grid = self.preferences.show_grid;
-                let show_stats = self.preferences.show_stats;
-                let font_scale = self.preferences.font_scale;
-                let pending_actions = &mut *self.pending_actions;
-
-                self.state.scroll_state = ui.scroll_area(
-                    ScrollArea::new("prefs_scroll").max_height(content_height),
-                    self.state.scroll_state,
-                    scroll_bounds,
-                    move |ui| {
-                        let scroll_offset = ui.scroll_offset();
-                        let content_width = panel_width - HORIZONTAL_PADDING * 2.0;
-
-                        let cursor = Vec2::new(
-                            panel_bounds.min.x() + HORIZONTAL_PADDING,
-                            content_start_y - scroll_offset,
-                        );
-
-                        let final_y = match current_tab {
-                            PreferencesTab::General => build_general_tab(
-                                ui,
-                                theme,
-                                &GeneralTabParams {
-                                    cursor,
-                                    content_width,
-                                    current_theme_key: theme_key,
-                                    font_scale,
-                                },
-                                pending_actions,
-                            ),
-                            PreferencesTab::Viewport => build_viewport_tab(
-                                ui,
-                                theme,
-                                cursor,
-                                content_width,
-                                &editor_settings,
-                                show_grid,
-                                show_stats,
-                                pending_actions,
-                            ),
-                            PreferencesTab::Ai => build_ai_tab(
-                                ui,
-                                theme,
-                                cursor,
-                                content_width,
-                                &llm_config,
-                                pending_actions,
-                            ),
-                        };
-
-                        final_y - content_start_y + scroll_offset + SECTION_GAP
-                    },
+                let text_color = if is_selected {
+                    ctx.theme.text_primary
+                } else {
+                    ctx.theme.text_muted
+                };
+                ui.draw_text(
+                    text,
+                    Vec2::new(start_x + icon_size + 4.0, top_y),
+                    text_color,
+                    ui.scaled_font_size(FontSize::Small),
                 );
-            },
-        );
+            }
 
-        Response::default()
-    }
+            let content_start_y =
+                panel_bounds.min.y() + title_bar_height + tab_bar_height + ui.style().panel_padding;
+            let content_height =
+                panel_height - title_bar_height - tab_bar_height - 2.0 * ui.style().panel_padding;
+            let scroll_bounds = Rect2D::from_origin_size(
+                Vec2::new(panel_bounds.min.x(), content_start_y),
+                Vec2::new(panel_width, content_height),
+            );
+
+            let current_tab = ctx.state.current_tab;
+            let editor_settings = ctx.editor_settings.clone();
+            let llm_config = ctx.state.llm_config.clone();
+            let theme = ctx.theme.clone();
+            let theme_key = ctx.theme_key.clone();
+            let show_grid = ctx.preferences.show_grid;
+            let show_stats = ctx.preferences.show_stats;
+            let font_scale = ctx.preferences.font_scale;
+            let closure_actions: std::cell::RefCell<Vec<PreferencesAction>> =
+                std::cell::RefCell::new(Vec::new());
+
+            ctx.state.scroll_state = ui.scroll_area(
+                ScrollArea::new("prefs_scroll").max_height(content_height),
+                ctx.state.scroll_state,
+                scroll_bounds,
+                |ui| {
+                    let scroll_offset = ui.scroll_offset();
+                    let content_width = panel_width - HORIZONTAL_PADDING * 2.0;
+
+                    let cursor = Vec2::new(
+                        panel_bounds.min.x() + HORIZONTAL_PADDING,
+                        content_start_y - scroll_offset,
+                    );
+
+                    let mut actions = closure_actions.borrow_mut();
+                    let final_y = match current_tab {
+                        PreferencesTab::General => build_general_tab(
+                            ui,
+                            &theme,
+                            &GeneralTabParams {
+                                cursor,
+                                content_width,
+                                current_theme_key: &theme_key,
+                                font_scale,
+                            },
+                            &mut actions,
+                        ),
+                        PreferencesTab::Viewport => build_viewport_tab(
+                            ui,
+                            &theme,
+                            cursor,
+                            content_width,
+                            &editor_settings,
+                            show_grid,
+                            show_stats,
+                            &mut actions,
+                        ),
+                        PreferencesTab::Ai => build_ai_tab(
+                            ui,
+                            &theme,
+                            cursor,
+                            content_width,
+                            &llm_config,
+                            &mut actions,
+                        ),
+                    };
+
+                    final_y - content_start_y + scroll_offset + SECTION_GAP
+                },
+            );
+
+            ctx.pending_actions.extend(closure_actions.into_inner());
+        },
+    );
+
+    set_preferences_ctx(ctx);
 }
 
 // --- Shared helpers ---
 
-/// Draw a section header: tinted background bar with text label.
 fn draw_section_header(ui: &mut UiContext, theme: &ColorScheme, text: &str, content_width: f32) {
     let header_height = 24.0;
     let bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, header_height));
@@ -363,13 +281,12 @@ fn build_general_tab(
 
     ui.set_cursor(params.cursor);
 
-    // --- Color Theme section ---
     draw_section_header(ui, theme, "COLOR THEME", content_width);
 
     let col_width = (content_width - 2.0 * GRID_SPACING) / 3.0;
 
     let theme_names = [
-        ("catppuccin", "Catppuccin"),
+        ("default", "Default"),
         ("nord", "Nord"),
         ("tokyo_night", "Tokyo Night"),
         ("dracula", "Dracula"),
@@ -404,7 +321,6 @@ fn build_general_tab(
 
     ui.spacing(SECTION_GAP);
 
-    // --- Font Scale section ---
     draw_section_header(ui, theme, "FONT SCALE", content_width);
 
     let scale_text = format!("Scale: {:.0}%", font_scale * 100.0);
@@ -436,7 +352,6 @@ fn build_viewport_tab(
 ) -> f32 {
     ui.set_cursor(cursor);
 
-    // --- Display section ---
     draw_section_header(ui, theme, "DISPLAY", content_width);
 
     let grid_btn_bounds =
@@ -471,7 +386,6 @@ fn build_viewport_tab(
     }
     ui.spacing(ROW_HEIGHT + SECTION_GAP);
 
-    // --- Grid section ---
     draw_section_header(ui, theme, "GRID", content_width);
 
     let sizes = [0.5, 1.0, 2.0, 5.0, 10.0];
@@ -515,7 +429,6 @@ fn build_viewport_tab(
     }
     ui.spacing(ROW_HEIGHT + SECTION_GAP);
 
-    // --- Camera section ---
     draw_section_header(ui, theme, "CAMERA", content_width);
 
     let speed_text = format!("Speed: {:.0}", editor_settings.camera_speed);
@@ -590,7 +503,6 @@ fn themed_select_button(
     clicked
 }
 
-/// Draw an inline label+input row. Returns the full-width text input bounds.
 fn inline_field_row(
     ui: &mut UiContext,
     theme: &ColorScheme,
@@ -629,7 +541,6 @@ fn build_ai_tab(
 
     ui.set_cursor(cursor);
 
-    // --- Provider section ---
     draw_section_header(ui, theme, "PROVIDER", content_width);
 
     let col_width = (content_width - 2.0 * GRID_SPACING) / 3.0;
@@ -666,7 +577,6 @@ fn build_ai_tab(
 
     ui.spacing(ROW_HEIGHT + WIDGET_GAP);
 
-    // Status display
     if llm_config.provider == LlmProviderKind::Disabled {
         ui.label_auto_colored(
             "Configure an LLM provider to enable AI-powered scene building",
@@ -685,10 +595,8 @@ fn build_ai_tab(
     ui.label_auto_colored(&status, theme.success);
     ui.spacing(SECTION_GAP);
 
-    // --- Credentials section ---
     draw_section_header(ui, theme, "CREDENTIALS", content_width);
 
-    // API Key — full width since keys are long and sensitive
     let api_key_bounds =
         Rect2D::from_origin_size(ui.cursor(), Vec2::new(content_width, ROW_HEIGHT));
     let mut api_key = llm_config.api_key.clone();
@@ -704,12 +612,10 @@ fn build_ai_tab(
     }
     ui.spacing(ROW_HEIGHT + SECTION_GAP);
 
-    // --- Model Settings section ---
     draw_section_header(ui, theme, "MODEL SETTINGS", content_width);
 
     let label_width = content_width * 0.3;
 
-    // Model — inline label + input
     let model_bounds = inline_field_row(ui, theme, "Model", label_width, content_width);
     let mut model = llm_config.model.clone();
     let model_response = ui.add(
@@ -724,7 +630,6 @@ fn build_ai_tab(
     }
     ui.spacing(ROW_HEIGHT + WIDGET_GAP);
 
-    // Base URL (only for OpenAI Compatible) — inline label + input
     if llm_config.provider == LlmProviderKind::OpenAiCompatible {
         let url_bounds = inline_field_row(ui, theme, "Base URL", label_width, content_width);
         let mut base_url = llm_config.base_url.clone().unwrap_or_default();
@@ -741,7 +646,6 @@ fn build_ai_tab(
         ui.spacing(ROW_HEIGHT + WIDGET_GAP);
     }
 
-    // Temperature — inline label + slider
     let temp_label = format!("Temperature: {:.2}", llm_config.temperature);
     let temp_bounds = inline_field_row(ui, theme, &temp_label, label_width, content_width);
     let slider_bounds =
@@ -759,10 +663,8 @@ fn build_ai_tab(
 
     ui.spacing(20.0 + WIDGET_GAP);
 
-    // Max Tokens — inline label + button row
     let tokens_label = format!("Max Tokens: {}", llm_config.max_tokens);
     let _tokens_bounds = inline_field_row(ui, theme, &tokens_label, label_width, content_width);
-    // Drop back to cursor to draw the button grid under the label
     let btn_row_y = ui.cursor().y();
     ui.spacing(LABEL_GAP);
 
@@ -788,9 +690,6 @@ fn build_ai_tab(
     }
     ui.end_grid();
 
-    // Fix: the _tokens_bounds inline row pushed cursor past the label, but we already
-    // drew the grid below it. The grid items use their own cursor, so this is fine.
-    // Just undo the extra label spacing for the grid since we already drew it.
     let _ = btn_row_y;
 
     ui.spacing(ROW_HEIGHT + SECTION_GAP);

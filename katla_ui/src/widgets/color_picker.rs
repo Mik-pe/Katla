@@ -119,6 +119,10 @@ impl<'a> Widget for ColorPickerButton<'a> {
             )
             .is_clicked();
 
+        if hovered {
+            ui.input.set_cursor(crate::input::MouseCursor::Hand);
+        }
+
         if clicked {
             self.state.open = !self.state.open;
             if self.state.open && !self.state.hsv_initialized {

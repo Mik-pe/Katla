@@ -35,7 +35,18 @@ impl UiContext {
         } else {
             params.unchecked_color
         };
-        self.draw_rect(params.bounds, bg_color);
+
+        let bg_color = if hovered {
+            katla_math::Color::new(
+                (bg_color.r + 0.06).min(1.0),
+                (bg_color.g + 0.06).min(1.0),
+                (bg_color.b + 0.06).min(1.0),
+                bg_color.a,
+            )
+        } else {
+            bg_color
+        };
+        self.draw_rounded_rect(params.bounds, bg_color, self.style.button_rounding);
 
         // Draw check icon and label
         let font_size = self.style.font_size;
