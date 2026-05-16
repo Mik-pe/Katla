@@ -43,6 +43,8 @@ pub struct TreeState {
     pub selected: Option<u64>,
     /// Scroll offset for virtualized rendering.
     pub scroll_offset: f32,
+    /// Content height from previous frame (needed for scroll accumulation).
+    pub content_height: f32,
 }
 
 impl TreeState {
@@ -190,7 +192,7 @@ impl Widget for TreeView<'_> {
 
         let scroll_state = ScrollAreaState {
             scroll_offset: self.state.scroll_offset,
-            content_height: 0.0,
+            content_height: self.state.content_height,
             stick_to_bottom: false,
             at_bottom: false,
         };
@@ -326,6 +328,7 @@ impl Widget for TreeView<'_> {
         );
 
         self.state.scroll_offset = scroll_result.scroll_offset;
+        self.state.content_height = scroll_result.content_height;
 
         if let Some(id) = toggle_clicked {
             self.state.toggle_expanded(id);
