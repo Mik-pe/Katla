@@ -146,6 +146,7 @@ impl<'a> Widget for Hierarchy<'a> {
                 .collect(),
             selected: self.selected_entity.map(|id| id.id()),
             scroll_offset: self.state.scroll_state.scroll_offset,
+            content_height: self.state.scroll_state.content_height,
         };
 
         let response = if !items.is_empty() {
@@ -243,6 +244,7 @@ impl<'a> Widget for Hierarchy<'a> {
             .map(|&id| EntityId::from_raw(id))
             .collect();
         self.state.scroll_state.scroll_offset = tree_state.scroll_offset;
+        self.state.scroll_state.content_height = tree_state.content_height;
 
         if let Some(selected_u64) = tree_state.selected {
             let new_selected = EntityId::from_raw(selected_u64);
