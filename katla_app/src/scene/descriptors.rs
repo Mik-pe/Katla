@@ -115,6 +115,12 @@ pub struct VelocityDescriptor {
     pub acceleration: [f32; 3],
 }
 
+/// Script attachment data for serialization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScriptDescriptor {
+    pub script_path: String,
+}
+
 /// Descriptor for a single entity in a scene file.
 ///
 /// Uses `#[serde(deny_unknown_fields)] = false` (the default) so that
@@ -131,6 +137,8 @@ pub struct EntityDescriptor {
     pub particle_emitter: Option<ParticleEmitterDescriptor>,
     pub animation: Option<AnimationDescriptor>,
     pub velocity: Option<VelocityDescriptor>,
+    #[serde(default)]
+    pub script: Option<ScriptDescriptor>,
 }
 
 /// Top-level scene file structure.

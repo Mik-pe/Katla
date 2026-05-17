@@ -44,6 +44,7 @@ pub fn build_default_scene() -> Scene {
         particle_emitter: None,
         animation: None,
         velocity: None,
+        script: None,
     });
 
     // PBR material grid (5x5) -- metallic (Y) x roughness (X)
@@ -82,6 +83,7 @@ pub fn build_default_scene() -> Scene {
                 particle_emitter: None,
                 animation: None,
                 velocity: None,
+                script: None,
             });
         }
     }
@@ -108,6 +110,7 @@ pub fn build_default_scene() -> Scene {
         particle_emitter: None,
         animation: None,
         velocity: None,
+        script: None,
     });
 
     // Cyan sphere
@@ -134,6 +137,7 @@ pub fn build_default_scene() -> Scene {
         particle_emitter: None,
         animation: None,
         velocity: None,
+        script: None,
     });
 
     // Magenta cylinder
@@ -160,6 +164,7 @@ pub fn build_default_scene() -> Scene {
         particle_emitter: None,
         animation: None,
         velocity: None,
+        script: None,
     });
 
     // Lime torus
@@ -187,6 +192,7 @@ pub fn build_default_scene() -> Scene {
         particle_emitter: None,
         animation: None,
         velocity: None,
+        script: None,
     });
 
     // Backdrop plane
@@ -212,6 +218,7 @@ pub fn build_default_scene() -> Scene {
         particle_emitter: None,
         animation: None,
         velocity: None,
+        script: None,
     });
 
     // Fox with animation
@@ -246,6 +253,7 @@ pub fn build_default_scene() -> Scene {
             loop_count: 0,
         }),
         velocity: None,
+        script: None,
     });
 
     // DamagedHelmet
@@ -265,6 +273,7 @@ pub fn build_default_scene() -> Scene {
         particle_emitter: None,
         animation: None,
         velocity: None,
+        script: None,
     });
 
     // Fire particle emitter
@@ -300,6 +309,7 @@ pub fn build_default_scene() -> Scene {
         }),
         animation: None,
         velocity: None,
+        script: None,
     });
 
     // Ethereal particle emitter
@@ -335,6 +345,7 @@ pub fn build_default_scene() -> Scene {
         }),
         animation: None,
         velocity: None,
+        script: None,
     });
 
     // Sparkle particle emitter
@@ -370,6 +381,7 @@ pub fn build_default_scene() -> Scene {
         }),
         animation: None,
         velocity: None,
+        script: None,
     });
 
     // Point lights
@@ -417,6 +429,7 @@ pub fn build_default_scene() -> Scene {
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         });
     }
 

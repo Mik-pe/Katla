@@ -31,6 +31,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[1]*/ (
             name: "Sphere_0_0",
@@ -55,6 +56,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[2]*/ (
             name: "Sphere_1_0",
@@ -79,6 +81,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[3]*/ (
             name: "Sphere_2_0",
@@ -103,6 +106,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[4]*/ (
             name: "Sphere_3_0",
@@ -127,6 +131,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[5]*/ (
             name: "Sphere_4_0",
@@ -151,6 +156,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[6]*/ (
             name: "Sphere_0_1",
@@ -175,6 +181,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[7]*/ (
             name: "Sphere_1_1",
@@ -199,6 +206,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[8]*/ (
             name: "Sphere_2_1",
@@ -223,6 +231,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[9]*/ (
             name: "Sphere_3_1",
@@ -247,6 +256,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[10]*/ (
             name: "Sphere_4_1",
@@ -271,6 +281,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[11]*/ (
             name: "Sphere_0_2",
@@ -295,6 +306,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[12]*/ (
             name: "Sphere_1_2",
@@ -319,6 +331,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[13]*/ (
             name: "Sphere_2_2",
@@ -343,6 +356,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[14]*/ (
             name: "Sphere_3_2",
@@ -367,6 +381,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[15]*/ (
             name: "Sphere_4_2",
@@ -391,6 +406,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[16]*/ (
             name: "Sphere_0_3",
@@ -415,6 +431,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[17]*/ (
             name: "Sphere_1_3",
@@ -439,6 +456,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[18]*/ (
             name: "Sphere_2_3",
@@ -463,6 +481,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[19]*/ (
             name: "Sphere_3_3",
@@ -487,6 +506,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[20]*/ (
             name: "Sphere_4_3",
@@ -511,6 +531,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[21]*/ (
             name: "Sphere_0_4",
@@ -535,6 +556,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[22]*/ (
             name: "Sphere_1_4",
@@ -559,6 +581,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[23]*/ (
             name: "Sphere_2_4",
@@ -583,6 +606,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[24]*/ (
             name: "Sphere_3_4",
@@ -607,6 +631,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[25]*/ (
             name: "Sphere_4_4",
@@ -631,6 +656,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[26]*/ (
             name: "CenterCube",
@@ -653,6 +679,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[27]*/ (
             name: "CyanSphere",
@@ -677,6 +704,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[28]*/ (
             name: "MagentaCylinder",
@@ -701,6 +729,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[29]*/ (
             name: "LimeTorus",
@@ -726,6 +755,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[30]*/ (
             name: "Backdrop",
@@ -749,6 +779,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[31]*/ (
             name: "Fox",
@@ -781,6 +812,7 @@
                 loop_count: 0,
             ),
             velocity: None,
+            script: None,
         ),
         /*[32]*/ (
             name: "DamagedHelmet",
@@ -798,6 +830,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[33]*/ (
             name: "FireEmitter",
@@ -831,6 +864,7 @@
             ),
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[34]*/ (
             name: "EtherealEmitter",
@@ -864,6 +898,7 @@
             ),
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[35]*/ (
             name: "SparkleEmitter",
@@ -897,6 +932,7 @@
             ),
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[36]*/ (
             name: "WarmLight",
@@ -921,6 +957,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[37]*/ (
             name: "CoolLight",
@@ -945,6 +982,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[38]*/ (
             name: "MagentaLight",
@@ -969,6 +1007,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[39]*/ (
             name: "GreenLight",
@@ -993,6 +1032,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
         /*[40]*/ (
             name: "OverheadLight",
@@ -1017,6 +1057,7 @@
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         ),
     ],
 )
