@@ -42,19 +42,18 @@ pub fn show_if(visible: bool, child: ViewDescriptor) -> ViewDescriptor {
 ///
 /// When `visible` changes, the returned descriptor hints to the ViewTree
 /// that a transition animation should be applied on insert/remove.
-/// The ViewTree's transition handling detects the insertion/removal and
-/// applies the configured animation.
+/// The ViewTree's sync_tree detects the insertion/removal and applies
+/// the configured animation.
 pub fn show_if_with_transition(
-    _visible: bool,
+    visible: bool,
     child: ViewDescriptor,
-    _transition: Transition,
+    transition: Transition,
 ) -> ViewDescriptor {
-    // The transition is stored on the descriptor for the ViewTree to detect.
-    // Currently returns the child or Empty like show_if; full transition
-    // support requires the ViewTree to inspect and apply transitions
-    // during the diff phase, which will be wired in a future phase.
-    if _visible {
-        child
+    if visible {
+        ViewDescriptor::TransitionContainer {
+            child: Box::new(child),
+            transition,
+        }
     } else {
         ViewDescriptor::Empty
     }

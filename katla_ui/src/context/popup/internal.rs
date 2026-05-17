@@ -11,11 +11,7 @@ impl UiContext {
     /// For `AtCursor`, uses the captured position from when the popup was first opened.
     pub(super) fn calculate_popup_position<'a>(&self, config: &Popup<'a>) -> Vec2 {
         match config.position {
-            PopupPosition::AtCursor => {
-                // Use captured position if available, otherwise current mouse pos
-                self.popup_position.unwrap_or(self.input.mouse_pos)
-            }
-            PopupPosition::AtPosition(pos) => pos,
+            PopupPosition::AtCursor => self.popup_position.unwrap_or(self.input.mouse_pos),
             PopupPosition::BelowButton(trigger) => Vec2::new(trigger.min.x(), trigger.max.y()),
             PopupPosition::Fixed(bounds) => bounds.min,
             PopupPosition::Centered { width, height } => Vec2::new(

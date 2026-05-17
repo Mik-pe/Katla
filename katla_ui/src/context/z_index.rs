@@ -7,7 +7,7 @@ pub const POPUP: u32 = 200;
 /// Layer for tooltips (always on top).
 pub const TOOLTIP: u32 = 300;
 
-use super::{UiContext, ZGuard};
+use super::UiContext;
 
 impl UiContext {
     /// Set the current Z-index for rendering.
@@ -35,22 +35,6 @@ impl UiContext {
         if let Some(prev_z) = self.z_stack.pop() {
             self.set_z_index(prev_z);
         }
-    }
-
-    /// Create an RAII guard for Z-index management.
-    ///
-    /// The Z-index will be automatically popped when the guard is dropped.
-    ///
-    /// # Example
-    /// ```ignore
-    /// {
-    ///     let _z = ui.z_guard(z_index::POPUP);
-    ///     // draw popup content
-    /// } // auto-pops
-    /// ```
-    pub fn z_guard(&mut self, z: u32) -> ZGuard<'_> {
-        self.push_z_index(z);
-        ZGuard { ctx: self }
     }
 
     /// Execute a closure with a temporary Z-index, automatically restoring afterward.

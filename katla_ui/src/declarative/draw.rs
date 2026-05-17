@@ -377,6 +377,8 @@ pub(crate) fn draw_descriptor(
         ViewDescriptor::Custom(draw_fn) => {
             draw_fn(ui, bounds);
         }
+
+        ViewDescriptor::TransitionContainer { .. } => {}
     }
 }
 

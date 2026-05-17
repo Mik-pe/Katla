@@ -8,9 +8,9 @@ use katla_math::{Rect2D, Vec2};
 use crate::context::UiContext;
 
 use super::actions::ActionStream;
-use super::animation::{AnimatedProperty, Animation, AnimationState, KeyframeAnimation};
+use super::animation::{AnimatedProperty, Animation, AnimationState, KeyframeAnimation, Tween};
 use super::build::{Build as BuildTrait, BuildContext, CallbackTable, Environment};
-use super::descriptor::{Anchor, ViewDescriptor};
+use super::descriptor::{Anchor, Callback, ViewDescriptor};
 use super::diff::{DiffAction, Patch, diff_descriptor};
 use super::draw::draw_descriptor_with_id;
 use super::focus::{self, FocusManager};
@@ -18,6 +18,7 @@ use super::ime::ImeRequest;
 use super::input;
 use super::layout::TaffyNodeMap;
 use super::state::{StateArena, ViewId};
+use super::transition::Transition;
 
 pub struct ViewNode {
     pub descriptor: ViewDescriptor,
@@ -58,6 +59,7 @@ pub struct ViewTree {
     taffy: TaffyNodeMap,
     bounds_map: HashMap<ViewId, Rect2D>,
     interaction: InteractionState,
+    current_time: f64,
 }
 
 impl Default for ViewTree {
@@ -74,6 +76,7 @@ impl Default for ViewTree {
             taffy: TaffyNodeMap::new(),
             bounds_map: HashMap::new(),
             interaction: InteractionState::default(),
+            current_time: 0.0,
         }
     }
 }
@@ -171,6 +174,9 @@ impl ViewTree {
 
     /// Run one full frame: build → diff → layout → tick animations → input → draw.
     pub fn frame(&mut self, ui: &mut UiContext, root: &dyn BuildTrait, screen_size: Vec2) -> bool {
+        // Store time so sync_tree can use it for animation start times
+        self.current_time = ui.time;
+
         // 1. Build the descriptor tree from root
         self.build_from(root);
 
@@ -314,12 +320,27 @@ impl ViewTree {
             }
 
             // Fire on_complete callbacks
+            let mut callbacks = std::mem::take(&mut self.callbacks);
             for cb_id in completed_callbacks {
-                if self.nodes.get_mut(id).is_some() {
-                    let _ = cb_id;
-                    // TODO: invoke callback from CallbackTable
-                }
+                callbacks.invoke(&Callback(cb_id));
             }
+            self.callbacks = callbacks;
+        }
+
+        // Remove nodes that are pending_remove and have no active animations
+        let to_remove: Vec<ViewId> = self
+            .nodes
+            .iter()
+            .filter(|(_, node)| {
+                node.pending_remove
+                    && node.animations.is_empty()
+                    && node.keyframe_animations.is_empty()
+            })
+            .map(|(id, _)| id)
+            .collect();
+
+        for id in to_remove {
+            self.remove_node_recursive(id);
         }
     }
 
@@ -555,7 +576,70 @@ impl ViewTree {
             ViewDescriptor::ScrollView(s) => Some(&s.content),
             ViewDescriptor::Panel(s) => Some(&s.content),
             ViewDescriptor::Overlay(s) => Some(&s.content),
+            ViewDescriptor::TransitionContainer { child, .. } => Some(child),
             _ => None,
+        }
+    }
+
+    fn get_transition(descriptor: &ViewDescriptor) -> Option<&Transition> {
+        match descriptor {
+            ViewDescriptor::TransitionContainer { transition, .. } => Some(transition),
+            _ => None,
+        }
+    }
+
+    fn insert_animation_range(property: &AnimatedProperty) -> (f32, f32) {
+        match property {
+            AnimatedProperty::Opacity => (0.0, 1.0),
+            AnimatedProperty::OffsetY => (20.0, 0.0),
+            AnimatedProperty::OffsetX => (20.0, 0.0),
+            AnimatedProperty::Scale => (0.8, 1.0),
+            AnimatedProperty::CornerRadius => (0.0, 1.0),
+        }
+    }
+
+    fn remove_animation_range(property: &AnimatedProperty) -> (f32, f32) {
+        match property {
+            AnimatedProperty::Opacity => (1.0, 0.0),
+            AnimatedProperty::OffsetY => (0.0, -20.0),
+            AnimatedProperty::OffsetX => (0.0, -20.0),
+            AnimatedProperty::Scale => (1.0, 0.8),
+            AnimatedProperty::CornerRadius => (1.0, 0.0),
+        }
+    }
+
+    fn start_insert_animation(node: &mut ViewNode, transition: &Transition, start_time: f64) {
+        if let Some(ref config) = transition.insert {
+            let (from, to) = Self::insert_animation_range(&transition.property);
+            node.animations.push(Animation {
+                property: transition.property.clone(),
+                tween: Tween {
+                    from,
+                    to,
+                    duration: config.duration,
+                    easing: config.easing.clone(),
+                },
+                start_time,
+                on_complete: None,
+            });
+        }
+    }
+
+    fn start_remove_animation(node: &mut ViewNode, transition: &Transition, start_time: f64) {
+        if let Some(ref config) = transition.remove {
+            let (from, to) = Self::remove_animation_range(&transition.property);
+            node.animations.push(Animation {
+                property: transition.property.clone(),
+                tween: Tween {
+                    from,
+                    to,
+                    duration: config.duration,
+                    easing: config.easing.clone(),
+                },
+                start_time,
+                on_complete: None,
+            });
+            node.pending_remove = true;
         }
     }
 
@@ -578,6 +662,66 @@ impl ViewTree {
             DiffAction::RecurseChildren => {
                 if let Some(node) = self.nodes.get_mut(node_id) {
                     node.descriptor = descriptor.clone();
+                }
+
+                // Handle TransitionContainer single-child with animation support
+                if let Some(transition) = Self::get_transition(descriptor) {
+                    let transition_clone = transition.clone();
+                    let new_child = Self::get_single_child(descriptor).unwrap();
+                    let old_children: Vec<ViewId> = self
+                        .nodes
+                        .get(node_id)
+                        .map(|n| n.children.clone())
+                        .unwrap_or_default();
+
+                    let was_transition =
+                        matches!(old_descriptor, ViewDescriptor::TransitionContainer { .. });
+
+                    if let Some(&child_id) = old_children.first() {
+                        if was_transition {
+                            // Both old and new are TransitionContainer with a child — recurse
+                            self.sync_tree(child_id, new_child);
+                        } else {
+                            // Old was non-transition, now is transition: insert animation
+                            self.sync_tree(child_id, new_child);
+                            if let Some(node) = self.nodes.get_mut(child_id) {
+                                Self::start_insert_animation(
+                                    node,
+                                    &transition_clone,
+                                    self.current_time,
+                                );
+                            }
+                        }
+                    } else {
+                        // No old child — insert new child with insert animation
+                        let child_id = self.insert_node(Some(node_id), new_child.clone());
+                        self.sync_tree(child_id, new_child);
+                        if let Some(node) = self.nodes.get_mut(child_id) {
+                            Self::start_insert_animation(
+                                node,
+                                &transition_clone,
+                                self.current_time,
+                            );
+                        }
+                    }
+                    return;
+                }
+
+                // Detect removal when going from TransitionContainer → Empty
+                if matches!(descriptor, ViewDescriptor::Empty) {
+                    if let ViewDescriptor::TransitionContainer { transition, .. } = &old_descriptor
+                    {
+                        let old_children: Vec<ViewId> = self
+                            .nodes
+                            .get(node_id)
+                            .map(|n| n.children.clone())
+                            .unwrap_or_default();
+                        if let Some(&child_id) = old_children.first() {
+                            if let Some(node) = self.nodes.get_mut(child_id) {
+                                Self::start_remove_animation(node, transition, self.current_time);
+                            }
+                        }
+                    }
                 }
 
                 // Handle single-child containers
@@ -649,6 +793,55 @@ impl ViewTree {
                 }
             }
             DiffAction::Replace => {
+                // Detect TransitionContainer → Empty: start remove animation on child
+                if matches!(descriptor, ViewDescriptor::Empty) {
+                    if let ViewDescriptor::TransitionContainer { transition, .. } = &old_descriptor
+                    {
+                        let old_children: Vec<ViewId> = self
+                            .nodes
+                            .get(node_id)
+                            .map(|n| n.children.clone())
+                            .unwrap_or_default();
+                        if let Some(&child_id) = old_children.first() {
+                            if let Some(node) = self.nodes.get_mut(child_id) {
+                                Self::start_remove_animation(node, transition, self.current_time);
+                            }
+                        }
+                        // Update descriptor but keep child alive for animation
+                        if let Some(node) = self.nodes.get_mut(node_id) {
+                            node.descriptor = descriptor.clone();
+                            node.state_version += 1;
+                        }
+                        return;
+                    }
+                }
+
+                // Detect Empty → TransitionContainer: insert child with insert animation
+                if let ViewDescriptor::TransitionContainer { transition, .. } = descriptor {
+                    let old_children: Vec<ViewId> = self
+                        .nodes
+                        .get(node_id)
+                        .map(|n| n.children.clone())
+                        .unwrap_or_default();
+                    // Remove old children (if any from previous state)
+                    for child_id in &old_children {
+                        self.remove_node_recursive(*child_id);
+                    }
+                    if let Some(node) = self.nodes.get_mut(node_id) {
+                        node.descriptor = descriptor.clone();
+                        node.children.clear();
+                        node.state_version += 1;
+                    }
+                    if let Some(new_child) = Self::get_single_child(descriptor) {
+                        let child_id = self.insert_node(Some(node_id), new_child.clone());
+                        self.sync_tree(child_id, new_child);
+                        if let Some(node) = self.nodes.get_mut(child_id) {
+                            Self::start_insert_animation(node, transition, self.current_time);
+                        }
+                    }
+                    return;
+                }
+
                 let old_children: Vec<ViewId> = self
                     .nodes
                     .get(node_id)

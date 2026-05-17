@@ -23,6 +23,12 @@ pub fn diff_descriptor(old: &ViewDescriptor, new: &ViewDescriptor) -> DiffAction
         (ViewDescriptor::Image { .. }, ViewDescriptor::Image { .. }) => DiffAction::Update,
         (ViewDescriptor::Custom(_), ViewDescriptor::Custom(_)) => DiffAction::Update,
 
+        // TransitionContainer -> RecurseChildren (has single child)
+        (
+            ViewDescriptor::TransitionContainer { .. },
+            ViewDescriptor::TransitionContainer { .. },
+        ) => DiffAction::RecurseChildren,
+
         // Container variants -> RecurseChildren
         (ViewDescriptor::HStack(_), ViewDescriptor::HStack(_)) => DiffAction::RecurseChildren,
         (ViewDescriptor::VStack(_), ViewDescriptor::VStack(_)) => DiffAction::RecurseChildren,

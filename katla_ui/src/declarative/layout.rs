@@ -262,6 +262,8 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
         },
 
         ViewDescriptor::Custom(_) => Style::default(),
+
+        ViewDescriptor::TransitionContainer { .. } => Style::default(),
     }
 }
 

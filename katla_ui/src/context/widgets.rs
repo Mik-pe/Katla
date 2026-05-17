@@ -28,8 +28,6 @@
 //! ```
 
 mod basic;
-mod container;
-mod graph;
 mod scroll_area;
 mod toggle_button;
 mod utility;
@@ -143,21 +141,6 @@ impl UiContext {
     // -------------------------------------------------------------------------
     // Convenience Widget Methods (Auto-Layout)
     // -------------------------------------------------------------------------
-
-    /// Add a button with custom width at the current cursor position.
-    ///
-    /// # Example
-    /// ```ignore
-    /// ui.button_auto_wide("Cancel", 120.0);
-    /// ```
-    pub fn button_auto_wide(&mut self, text: &str, width: f32) -> crate::Response {
-        use crate::widgets::Button;
-        let bounds = Rect2D::from_origin_size(
-            self.cursor(),
-            katla_math::Vec2::new(width, self.style.button_default_height),
-        );
-        self.add(Button::new(text).bounds(bounds))
-    }
 
     /// Add a label with custom color at the current cursor position.
     ///

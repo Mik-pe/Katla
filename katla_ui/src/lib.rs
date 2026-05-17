@@ -55,8 +55,8 @@ mod widget;
 pub mod widgets;
 
 pub use context::{
-    CloseBehavior, GraphOptions, Popup, PopupPosition, PopupStyle, ScrollArea, ScrollAreaState,
-    TextInputState, UiContext, WindowState, z_index,
+    CloseBehavior, Popup, PopupPosition, PopupStyle, ScrollArea, ScrollAreaState, TextInputState,
+    UiContext, z_index,
 };
 pub use draw_list::DrawList;
 pub use icons::ForkAwesome;

@@ -63,12 +63,6 @@ impl UiContext {
         self.input.mouse_double_clicked(button)
     }
 
-    /// Get characters typed this frame.
-    #[inline]
-    pub fn typed_characters(&self) -> &[char] {
-        &self.input.characters
-    }
-
     /// Request that the UI capture keyboard input, preventing the application from processing it.
     #[inline]
     pub fn capture_keyboard(&mut self) {

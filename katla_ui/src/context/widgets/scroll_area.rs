@@ -271,21 +271,4 @@ impl UiContext {
             .map(|s| s.scroll_offset)
             .unwrap_or(0.0)
     }
-
-    /// Scroll to a specific Y position within content.
-    pub fn scroll_to_y(&mut self, y: f32) {
-        if let Some(state) = self.scroll_area_state.as_mut() {
-            let content_bounds = self
-                .scroll_area_content_bounds
-                .unwrap_or_else(|| Rect2D::from_size(Vec2::new(0.0, 0.0)));
-            let visible_height = content_bounds.height();
-
-            // Scroll so y is visible
-            if y < state.scroll_offset {
-                state.scroll_offset = y;
-            } else if y > state.scroll_offset + visible_height {
-                state.scroll_offset = y - visible_height;
-            }
-        }
-    }
 }

@@ -2,7 +2,6 @@
 //!
 //! Low-level drawing functions for rectangles, text, images, lines, and icons.
 
-use crate::style::FontSize;
 use crate::types::TextureId;
 use katla_math::{Color, Rect2D, Vec2};
 
@@ -82,19 +81,6 @@ impl UiContext {
     ) {
         self.draw_rect(bounds, fill);
         self.draw_selection_border(bounds, border, border_width);
-    }
-
-    /// Draw a rounded rectangle with a border stroke following the rounded path.
-    pub fn draw_rounded_rect_border(
-        &mut self,
-        bounds: Rect2D,
-        fill: Color,
-        border: Color,
-        border_width: f32,
-        radius: f32,
-    ) {
-        self.draw_rounded_rect(bounds, fill, radius);
-        self.draw_rounded_selection_border(bounds, border, border_width, radius);
     }
 
     /// Draw only a selection border (no fill).
@@ -267,18 +253,6 @@ impl UiContext {
             .measure_text(self.current_font, text, size, self.scale_factor)
     }
 
-    #[inline]
-    pub fn draw_text_styled(&mut self, text: &str, position: Vec2, color: Color, size: FontSize) {
-        let font_size = self.scaled_font_size(size);
-        self.draw_text(text, position, color, font_size);
-    }
-
-    #[inline]
-    pub fn measure_text_styled(&self, text: &str, size: FontSize) -> Vec2 {
-        let font_size = self.scaled_font_size(size);
-        self.measure_text(text, font_size)
-    }
-
     /// Get the font ascent (baseline to font top) in logical pixels.
     ///
     /// This is needed for proper text positioning.
@@ -433,31 +407,4 @@ impl UiContext {
     pub fn set_font(&mut self, font_id: FontId) {
         self.current_font = font_id;
     }
-
-    // -------------------------------------------------------------------------
-    // Utility Drawing Methods
-    // -------------------------------------------------------------------------
-
-    /// Draw an icon followed by text at the specified position.
-    ///
-    /// Returns the x position after the text (for chaining).
-    pub fn draw_icon_label(
-        &mut self,
-        icon: char,
-        text: &str,
-        position: Vec2,
-        icon_size: f32,
-        text_size: f32,
-        color: Color,
-    ) -> f32 {
-        let icon_y = position.y();
-        self.draw_icon(icon, position, icon_size, color);
-        let text_x = position.x() + icon_size + self.style.item_inner_spacing;
-        self.draw_text(text, Vec2::new(text_x, icon_y), color, text_size);
-        text_x + self.measure_text(text, text_size).x()
-    }
-
-    // -------------------------------------------------------------------------
-    // Widget Size Query Helpers
-    // -------------------------------------------------------------------------
 }
