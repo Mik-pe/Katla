@@ -15,6 +15,11 @@ type TransformProvider = Box<dyn FnMut(&World) -> Vec<(EntityId, Transform)>>;
 type CommandConsumer = Box<dyn FnMut(&mut World, &[ScriptCommand])>;
 type InputProvider = Box<dyn FnMut(&World) -> InputSnapshot>;
 
+/// Resource that controls whether scripts execute their `on_update` hooks.
+/// Insert into the ECS World to signal play mode. Defaults to `false` (suspended).
+#[derive(Debug, Clone, Copy)]
+pub struct ScriptsActive(pub bool);
+
 pub struct ScriptSystem {
     pub(crate) engine: ScriptEngine,
     transform_provider: Option<TransformProvider>,
@@ -209,6 +214,16 @@ impl ScriptSystem {
 impl System for ScriptSystem {
     fn update(&mut self, world: &mut World, delta_time: f32) {
         self.process_spawns(world);
+
+        let active = world
+            .get_resource::<ScriptsActive>()
+            .map(|s| s.0)
+            .unwrap_or(false);
+
+        if !active {
+            self.process_destroyed(world);
+            return;
+        }
 
         let proxy = self.build_proxy(world);
 

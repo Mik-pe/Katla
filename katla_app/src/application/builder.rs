@@ -598,6 +598,29 @@ impl ApplicationBuilder {
     pub fn build(self) -> AppResult<(Application, EventLoop<()>)> {
         let event_loop = Self::build_event_loop();
 
+        // Install console logger early so all subsequent log messages are captured.
+        // Wraps env_logger as secondary so stderr output is preserved.
+        #[cfg(feature = "editor")]
+        let log_buffer = {
+            use crate::ui::console::ConsoleLoggerHandle;
+            let console_handle = ConsoleLoggerHandle::init(
+                log::LevelFilter::Debug,
+                Box::new(
+                    env_logger::Builder::from_env(
+                        env_logger::Env::default().default_filter_or("info"),
+                    )
+                    .build(),
+                ),
+            );
+            let buffer = console_handle.buffer();
+            log::set_boxed_logger(console_handle.into_logger())
+                .expect("Failed to set console logger");
+            log::set_max_level(log::LevelFilter::Debug);
+            buffer
+        };
+        #[cfg(not(feature = "editor"))]
+        let _ = (); // no console logger without editor
+
         // Load user preferences and editor state before moving fields
         let preferences = Preferences::load();
         #[cfg(feature = "editor")]
@@ -805,6 +828,7 @@ impl ApplicationBuilder {
         }
 
         world.insert_resource(crate::input::InputState::new());
+        world.insert_resource(katla_script::ScriptsActive(false));
 
         let app = Application {
             window,
@@ -822,7 +846,12 @@ impl ApplicationBuilder {
             resources,
             ui_context,
             #[cfg(feature = "editor")]
-            editor: super::EditorState::new(ui_renderer, theme, &preferences, gui_state),
+            editor: {
+                let mut state =
+                    super::EditorState::new(ui_renderer, theme, &preferences, gui_state);
+                state.editor_ui.set_log_buffer(log_buffer);
+                state
+            },
             preferences,
             scale_factor: 1.0, // Will be updated when window is created
             start_time: Instant::now(),
