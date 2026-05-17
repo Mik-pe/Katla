@@ -143,3 +143,55 @@ fn test_path_validation_root_dir() {
     let result = assets::read_asset_with_root("/etc/passwd", &root);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_delete_asset_file() {
+    let (root, _temp) = create_temp_resources();
+    assert!(root.join("readme.txt").exists());
+
+    let result = assets::delete_asset_with_root("readme.txt", &root);
+    assert!(result.is_ok(), "delete_asset failed: {:?}", result);
+    assert!(!root.join("readme.txt").exists());
+}
+
+#[test]
+fn test_delete_asset_empty_directory() {
+    let (root, _temp) = create_temp_resources();
+    fs::create_dir_all(root.join("empty_dir")).unwrap();
+    assert!(root.join("empty_dir").exists());
+
+    let result = assets::delete_asset_with_root("empty_dir", &root);
+    assert!(result.is_ok(), "delete_asset failed: {:?}", result);
+    assert!(!root.join("empty_dir").exists());
+}
+
+#[test]
+fn test_delete_asset_nonempty_directory() {
+    let (root, _temp) = create_temp_resources();
+    assert!(root.join("scripts").exists());
+
+    let result = assets::delete_asset_with_root("scripts", &root);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("not empty"));
+    assert!(root.join("scripts").exists());
+}
+
+#[test]
+fn test_delete_asset_traversal() {
+    let (root, _temp) = create_temp_resources();
+    let result = assets::delete_asset_with_root("../Cargo.toml", &root);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("traversal"));
+}
+
+#[test]
+fn test_delete_asset_nonexistent() {
+    let (root, _temp) = create_temp_resources();
+    let result = assets::delete_asset_with_root("nonexistent_file_xyz.txt", &root);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.to_lowercase().contains("not found"),
+        "Expected 'not found' in error: {err}"
+    );
+}
