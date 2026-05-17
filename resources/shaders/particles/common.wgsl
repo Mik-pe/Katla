@@ -58,7 +58,7 @@ struct EmitterConfig {
     gravity: f32,
     turbulence_strength: f32,
     turbulence_frequency: f32,
-    _pad_forces: f32,
+    kill_all: u32,
 }
 
 const MAX_EMITTERS: u32 = 1024u;

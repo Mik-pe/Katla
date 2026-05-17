@@ -62,7 +62,7 @@ impl SceneSnapshot {
                 && let Some(handle) = emitter.emitter_handle.take()
                 && let Some(ps) = &mut app.renderer.particle_system
             {
-                ps.destroy_emitter(handle);
+                ps.destroy_emitter(handle, emitter.kill_on_destroy);
             }
         }
 

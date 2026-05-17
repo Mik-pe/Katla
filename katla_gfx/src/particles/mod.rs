@@ -18,7 +18,7 @@ pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters, ParticleData
 pub use debug_readback::{IndirectDrawCommandData, ParticleDebugData, ParticleDebugReadback};
 pub use presets::EmitterPreset;
 pub use stats::ParticleStats;
-pub use types::{Align16Vec4, EmitterConfig, EmitterHandle, EmitterShape};
+pub use types::{Align16Vec4, EmitterConfig, EmitterConfigBuilder, EmitterHandle, EmitterShape};
 pub use validation::{
     ValidationError, validate_all_emitters, validate_counters, validate_emitter_config,
 };
@@ -542,7 +542,7 @@ mod tests {
             gravity: -9.8,
             turbulence_strength: 0.0,
             turbulence_frequency: 3.0,
-            _pad_forces: 0.0,
+            kill_all: 0,
         };
 
         let json = serde_json::to_string(&config).unwrap();

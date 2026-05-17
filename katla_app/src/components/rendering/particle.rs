@@ -21,6 +21,9 @@ pub struct ParticleEmitterComponent {
 
     /// Timed emission duration (remaining seconds). None = infinite
     pub timed_emission: Option<f32>,
+
+    /// Immediately kill all living particles when this emitter is destroyed
+    pub kill_on_destroy: bool,
 }
 
 impl ParticleEmitterComponent {
@@ -32,6 +35,7 @@ impl ParticleEmitterComponent {
             active: true,
             burst_queue: Vec::new(),
             timed_emission: None,
+            kill_on_destroy: false,
         }
     }
 
@@ -43,6 +47,7 @@ impl ParticleEmitterComponent {
             active: true,
             burst_queue: Vec::new(),
             timed_emission: None,
+            kill_on_destroy: false,
         }
     }
 
@@ -59,6 +64,7 @@ impl ParticleEmitterComponent {
             active: true,
             burst_queue: Vec::new(),
             timed_emission: None,
+            kill_on_destroy: false,
         }
     }
 
