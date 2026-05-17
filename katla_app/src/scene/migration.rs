@@ -198,6 +198,10 @@ mod tests {
             animation: None,
             velocity: None,
             script: None,
+            mass: None,
+            drag: None,
+            perspective: None,
+            directional_light: None,
         });
 
         scene.entities.push(EntityDescriptor {
@@ -215,6 +219,10 @@ mod tests {
             animation: None,
             velocity: None,
             script: None,
+            mass: None,
+            drag: None,
+            perspective: None,
+            directional_light: None,
         });
 
         // Serialize the pre-migration state
