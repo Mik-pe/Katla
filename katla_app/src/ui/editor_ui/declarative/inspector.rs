@@ -44,6 +44,27 @@ impl Build for InspectorView {
     }
 }
 
+const COMPONENT_CATEGORIES: &[(&str, &[&str])] = &[
+    ("Lighting", &["PointLight", "DirectionalLight"]),
+    (
+        "Physics",
+        &["MassComponent", "DragComponent", "VelocityComponent"],
+    ),
+    ("Scripting", &["ScriptComponent"]),
+    ("Particles", &["ParticleEmitterComponent"]),
+    ("Camera", &["PerspectiveComponent"]),
+    ("General", &["NameComponent"]),
+];
+
+fn component_category(name: &str) -> &'static str {
+    for (category, components) in COMPONENT_CATEGORIES {
+        if components.contains(&name) {
+            return category;
+        }
+    }
+    "General"
+}
+
 const AXIS_COLORS: [Color; 3] = [
     Color::rgb(0.9, 0.3, 0.3),
     Color::rgb(0.3, 0.9, 0.3),
@@ -388,11 +409,12 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
         if ctx.add_component_open {
             let entity_existing: Vec<String> = entity.components.clone();
             let filter = ctx.add_component_filter.to_lowercase();
-            let filtered: Vec<&&str> = ctx
+            let filtered: Vec<&str> = ctx
                 .available_components
                 .iter()
+                .copied()
                 .filter(|name| {
-                    !entity_existing.iter().any(|e| e == **name)
+                    !entity_existing.iter().any(|e| e == *name)
                         && (filter.is_empty() || name.to_lowercase().contains(&filter))
                 })
                 .collect();
@@ -434,36 +456,72 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
 
                     ui.push_clip(list_bounds);
 
-                    for (i, name) in filtered.iter().enumerate() {
-                        let item_y = list_bounds.min.y() + i as f32 * item_h;
-                        let item_bounds = Rect2D::from_origin_size(
-                            Vec2::new(list_bounds.min.x(), item_y),
-                            Vec2::new(list_bounds.width(), item_h),
-                        );
+                    let header_h = 16.0;
+                    let mut y = list_bounds.min.y();
 
-                        let hovered = ui.is_hovered(item_bounds);
-                        if hovered {
-                            ui.draw_rect(item_bounds, theme.selection_hover);
+                    for &(category_name, _) in COMPONENT_CATEGORIES {
+                        let category_items: Vec<&&str> = filtered
+                            .iter()
+                            .filter(|name| component_category(*name) == category_name)
+                            .collect();
+                        if category_items.is_empty() {
+                            continue;
                         }
 
+                        let header_bounds = Rect2D::from_origin_size(
+                            Vec2::new(list_bounds.min.x(), y),
+                            Vec2::new(list_bounds.width(), header_h),
+                        );
                         ui.draw_text(
-                            name,
-                            Vec2::new(item_bounds.min.x() + 6.0, item_y + 2.0),
-                            if hovered {
-                                theme.text_primary
-                            } else {
-                                theme.text_secondary
-                            },
+                            category_name,
+                            Vec2::new(header_bounds.min.x() + 4.0, y + 1.0),
+                            theme.text_muted,
                             font_size,
                         );
+                        let header_text_w = ui.measure_text(category_name, font_size).x();
+                        let line_y = y + header_h * 0.5;
+                        ui.draw_line(
+                            Vec2::new(header_bounds.min.x() + header_text_w + 8.0, line_y),
+                            Vec2::new(header_bounds.max.x() - 4.0, line_y),
+                            theme.separator,
+                            1.0,
+                        );
+                        y += header_h;
 
-                        if hovered && ui.mouse_clicked(katla_ui::mouse_button::LEFT) {
-                            ctx.pending_actions.push(EditorAction::AddComponent {
-                                entity: entity_id,
-                                component_type: (**name).to_string(),
-                            });
-                            *open = false;
+                        for name in &category_items {
+                            let item_bounds = Rect2D::from_origin_size(
+                                Vec2::new(list_bounds.min.x(), y),
+                                Vec2::new(list_bounds.width(), item_h),
+                            );
+
+                            let hovered = ui.is_hovered(item_bounds);
+                            if hovered {
+                                ui.draw_rect(item_bounds, theme.selection_hover);
+                            }
+
+                            ui.draw_text(
+                                name,
+                                Vec2::new(item_bounds.min.x() + 6.0, y + 2.0),
+                                if hovered {
+                                    theme.text_primary
+                                } else {
+                                    theme.text_secondary
+                                },
+                                font_size,
+                            );
+
+                            if hovered && ui.mouse_clicked(katla_ui::mouse_button::LEFT) {
+                                ctx.pending_actions.push(EditorAction::AddComponent {
+                                    entity: entity_id,
+                                    component_type: (**name).to_string(),
+                                });
+                                *open = false;
+                            }
+
+                            y += item_h;
                         }
+
+                        y += 4.0;
                     }
 
                     if filtered.is_empty() {
