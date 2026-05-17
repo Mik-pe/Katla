@@ -26,6 +26,7 @@ pub(crate) struct InspectorDrawCtx {
     pub available_components: Vec<&'static str>,
     pub add_component_open: bool,
     pub add_component_filter: String,
+    pub focus_script_input: bool,
 }
 
 pub(crate) fn set_inspector_ctx(ctx: InspectorDrawCtx) {
@@ -432,6 +433,10 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                     }
 
                     let path_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 22.0));
+                    if ctx.focus_script_input {
+                        ui.request_focus("script_path");
+                        ctx.focus_script_input = false;
+                    }
                     let resp = ui.add(
                         katla_ui::widgets::TextInput::new("script_path", &mut edit.script_path)
                             .bounds(path_bounds)
@@ -605,6 +610,9 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                                     entity: entity_id,
                                     component_type: (**name).to_string(),
                                 });
+                                if **name == "ScriptComponent" {
+                                    ctx.focus_script_input = true;
+                                }
                                 *open = false;
                             }
 

@@ -238,6 +238,7 @@ impl EditorUI {
             available_components: self.available_components.clone(),
             add_component_open: self.add_component_open,
             add_component_filter: self.add_component_filter.clone(),
+            focus_script_input: self.focus_script_input,
         };
         set_inspector_ctx(inspector_ctx);
 
@@ -463,6 +464,7 @@ impl EditorUI {
             self.inspector_scroll_state = inspector_ctx.scroll_state;
             self.add_component_open = inspector_ctx.add_component_open;
             self.add_component_filter = inspector_ctx.add_component_filter;
+            self.focus_script_input = inspector_ctx.focus_script_input;
             self.pending_actions
                 .extend_from_slice(&inspector_ctx.pending_actions);
         }

@@ -16,6 +16,8 @@ const MAX_SCRIPT_ERRORS: u32 = 10;
 type TransformProvider = Box<dyn FnMut(&World) -> Vec<(EntityId, Transform)>>;
 type CommandConsumer = Box<dyn FnMut(&mut World, &[ScriptCommand])>;
 type InputProvider = Box<dyn FnMut(&World) -> InputSnapshot>;
+type ComponentEntitiesProvider =
+    Box<dyn FnMut(&World) -> std::collections::HashMap<String, Vec<EntityId>>>;
 
 /// Resource that controls whether scripts execute their `on_update` hooks.
 /// Insert into the ECS World to signal play mode. Defaults to `false` (suspended).
@@ -27,6 +29,7 @@ pub struct ScriptSystem {
     transform_provider: Option<TransformProvider>,
     command_consumer: Option<CommandConsumer>,
     input_provider: Option<InputProvider>,
+    component_entities_provider: Option<ComponentEntitiesProvider>,
 }
 
 impl Default for ScriptSystem {
@@ -42,6 +45,7 @@ impl ScriptSystem {
             transform_provider: None,
             command_consumer: None,
             input_provider: None,
+            component_entities_provider: None,
         }
     }
 
@@ -86,6 +90,14 @@ impl ScriptSystem {
         F: FnMut(&World) -> InputSnapshot + 'static,
     {
         self.input_provider = Some(Box::new(f));
+        self
+    }
+
+    pub fn with_component_entities_provider<F>(mut self, f: F) -> Self
+    where
+        F: FnMut(&World) -> std::collections::HashMap<String, Vec<EntityId>> + 'static,
+    {
+        self.component_entities_provider = Some(Box::new(f));
         self
     }
 
@@ -143,11 +155,17 @@ impl ScriptSystem {
             None => InputSnapshot::default(),
         };
 
+        let component_entities = match self.component_entities_provider.as_mut() {
+            Some(provider) => provider(world),
+            None => std::collections::HashMap::new(),
+        };
+
         let live_entities = world.entity_ids().collect();
 
         SharedWorldData {
             transforms: transforms.into_iter().collect(),
             live_entities,
+            component_entities,
             input_state: input,
         }
     }
