@@ -75,7 +75,7 @@
 - [ ] Add file watcher for `.luau` scripts — detect changes in `resources/scripts/`, trigger recompile
 - [ ] Implement hot reload — recompile chunk, create new per-script environment, preserve scalar state from old env, swap instances
 - [ ] Harden VM sandboxing — initialize with `StdLib::ALL_SAFE` (no io/os/debug), configure interrupt watchdog for runaway scripts
-- [ ] Add `print`/`warn` bridges — route to `log::info!`/`log::warn!` in debug builds only
+- [x] Add `print`/`warn` bridges — route to `log::info!`/`log::warn!` in debug builds only
 
 ### Phase 5: Polish + events
 - [ ] Add script-to-script events — `world:emit("player_damaged", {amount = 10})`, `world:on_event("player_damaged", callback)` via gameplay event bus
@@ -128,7 +128,7 @@
 
 - [ ] Add inspector UI for all registered components — `MassComponent` (mass slider), `DragComponent` (coefficient slider), `PerspectiveComponent` (fov/near/aspect_ratio sliders), `DirectionalLight` (direction Vec3, color picker, intensity slider). Each needs a `section_header_with_remove` section with editable widgets.
 - [x] Add remove button to ParticleEmitter inspector section — switch from `section_header` to `section_header_with_remove`, handle `EditorAction::RemoveComponent` for `"ParticleEmitterComponent"`
-- [ ] Categorize the Add Component popup menu — group flat list into Lighting (PointLight, DirectionalLight), Physics (MassComponent, DragComponent), Scripting (ScriptComponent), Camera (PerspectiveComponent) with category headers
+- [x] Categorize the Add Component popup menu — group flat list into Lighting (PointLight, DirectionalLight), Physics (MassComponent, DragComponent), Scripting (ScriptComponent), Camera (PerspectiveComponent) with category headers
 - [ ] Auto-focus script path input after adding ScriptComponent — focus the text input so the user can immediately type the path without clicking
 - [ ] Wire up undo/redo for Add/Remove Component — store proper `SceneCommand`s instead of discarding the `UndoGroup`, so Ctrl+Z works after adding or removing components
 
