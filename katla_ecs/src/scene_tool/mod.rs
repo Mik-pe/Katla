@@ -3,8 +3,8 @@ mod executor;
 pub mod registry;
 
 pub use command::{
-    DestroyEntityCommand, DuplicateEntityCommand, SceneCommand, SetFieldCommand,
-    SpawnEntityCommand, UndoGroup,
+    AddComponentCommand, DestroyEntityCommand, DuplicateEntityCommand, RemoveComponentCommand,
+    SceneCommand, SetFieldCommand, SpawnEntityCommand, UndoGroup,
 };
 pub use executor::SceneToolExecutor;
 pub use registry::{ComponentRegistry, ComponentRegistryEntry, FieldValue};
@@ -69,6 +69,8 @@ pub enum SceneOp {
     ListAvailableComponents,
     /// Add a component with default values to an existing entity.
     AddComponent { entity: EntityId, component: String },
+    /// Remove a component from an entity.
+    RemoveComponent { entity: EntityId, component: String },
     /// Get settable fields, types, and current values for a component on an entity.
     GetComponentAttributes { entity: EntityId, component: String },
     /// Set or clear the parent of an entity.

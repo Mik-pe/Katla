@@ -1,8 +1,8 @@
 use crate::World;
 
 use super::command::{
-    DestroyEntityCommand, DuplicateEntityCommand, SceneCommand, SetFieldCommand,
-    SpawnEntityCommand, UndoGroup,
+    AddComponentCommand, DestroyEntityCommand, DuplicateEntityCommand, RemoveComponentCommand,
+    SceneCommand, SetFieldCommand, SpawnEntityCommand, UndoGroup,
 };
 use super::registry::{ComponentRegistry, FieldValue};
 use super::{SceneOp, SceneToolError, ToolResult};
@@ -50,6 +50,9 @@ impl SceneToolExecutor {
             SceneOp::ListAvailableComponents => Self::exec_list_components(world, registry),
             SceneOp::AddComponent { entity, component } => {
                 Self::exec_add_component(world, registry, entity, component)
+            }
+            SceneOp::RemoveComponent { entity, component } => {
+                Self::exec_remove_component(world, registry, entity, component)
             }
             SceneOp::GetComponentAttributes { entity, component } => {
                 Self::exec_get_component_attributes(world, registry, entity, component)
@@ -410,7 +413,12 @@ impl SceneToolExecutor {
             )));
         }
 
-        (entry.create_default)(world, entity);
+        let mut cmd = AddComponentCommand::new(entity, component.clone(), entry);
+        cmd.execute(world)?;
+
+        let desc = cmd.description();
+        let mut group = UndoGroup::new(desc);
+        group.commands.push(Box::new(cmd));
 
         Ok((
             ToolResult {
@@ -419,7 +427,49 @@ impl SceneToolExecutor {
                 affected_entities: vec![entity],
                 data: None,
             },
-            UndoGroup::new(format!("Add {component} to entity {entity}")),
+            group,
+        ))
+    }
+
+    fn exec_remove_component(
+        world: &mut World,
+        registry: &ComponentRegistry,
+        entity: crate::EntityId,
+        component: String,
+    ) -> Result<(ToolResult, UndoGroup), SceneToolError> {
+        if !world.entity_exists(entity) {
+            return Err(SceneToolError::EntityNotFound(entity));
+        }
+
+        let entry = registry
+            .get(&component)
+            .ok_or_else(|| SceneToolError::ComponentNotFound {
+                entity,
+                component: component.clone(),
+            })?;
+
+        if !(entry.has_component)(world, entity) {
+            return Err(SceneToolError::ComponentNotFound {
+                entity,
+                component: component.clone(),
+            });
+        }
+
+        let mut cmd = RemoveComponentCommand::new(entity, component.clone(), entry, world);
+        cmd.execute(world)?;
+
+        let desc = cmd.description();
+        let mut group = UndoGroup::new(desc);
+        group.commands.push(Box::new(cmd));
+
+        Ok((
+            ToolResult {
+                success: true,
+                message: format!("Removed {component} from entity {entity}"),
+                affected_entities: vec![entity],
+                data: None,
+            },
+            group,
         ))
     }
 

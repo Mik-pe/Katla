@@ -9,7 +9,7 @@ pub use co_creator::CoCreatorAgent;
 #[cfg(feature = "llm-assistant")]
 pub use co_creator::{LocalAction, LocalResponse, StreamEvent};
 pub use context::{SceneContext, serialize_scene_context};
-pub use tools::{placement, templates, tuning};
+pub use tools::{assets, placement, templates, tuning};
 
 #[cfg(feature = "llm-assistant")]
 pub mod config;

@@ -110,6 +110,7 @@ pub struct ComponentRegistryEntry {
     pub type_name: &'static str,
     pub has_component: fn(&crate::World, crate::EntityId) -> bool,
     pub create_default: fn(&mut crate::World, crate::EntityId),
+    pub remove_component: fn(&mut crate::World, crate::EntityId),
     pub get_fields: fn(&crate::World, crate::EntityId) -> Vec<FieldInfo>,
     pub get_field_value: fn(&mut crate::World, crate::EntityId, &str) -> Option<FieldValue>,
     pub set_field_value: fn(

@@ -1209,7 +1209,10 @@ pub fn process_editor_actions(app: &mut Application) {
                     &mut app.world,
                     &app.editor.component_registry,
                 ) {
-                    Ok(_) => info!("Added component '{}' to entity {}", component_type, entity),
+                    Ok((_, undo_group)) => {
+                        app.editor.push_undo(undo_group);
+                        info!("Added component '{}' to entity {}", component_type, entity);
+                    }
                     Err(e) => log::error!("Failed to add component: {}", e),
                 }
             }
@@ -1217,18 +1220,23 @@ pub fn process_editor_actions(app: &mut Application) {
                 entity,
                 component_type,
             } => {
-                if let Err(e) = remove_component_by_name(
+                let op = SceneOp::RemoveComponent {
+                    entity,
+                    component: component_type.clone(),
+                };
+                match katla_ecs::scene_tool::SceneToolExecutor::execute(
+                    op,
                     &mut app.world,
                     &app.editor.component_registry,
-                    entity,
-                    &component_type,
                 ) {
-                    log::error!("Failed to remove component: {}", e);
-                } else {
-                    info!(
-                        "Removed component '{}' from entity {}",
-                        component_type, entity
-                    );
+                    Ok((_, undo_group)) => {
+                        app.editor.push_undo(undo_group);
+                        info!(
+                            "Removed component '{}' from entity {}",
+                            component_type, entity
+                        );
+                    }
+                    Err(e) => log::error!("Failed to remove component: {}", e),
                 }
             }
             EditorAction::ClearConsole => {}
@@ -2463,62 +2471,4 @@ mod tests {
         assert_eq!(emitter.config.emit_rate, 100.0);
         assert!(emitter.active);
     }
-}
-
-fn remove_component_by_name(
-    world: &mut katla_ecs::World,
-    registry: &katla_ecs::scene_tool::ComponentRegistry,
-    entity: EntityId,
-    type_name: &str,
-) -> Result<(), katla_ecs::scene_tool::SceneToolError> {
-    use crate::components::{
-        DirectionalLight, DragComponent, MassComponent, NameComponent, PerspectiveComponent,
-        PointLight,
-    };
-
-    let Some(entry) = registry.get(type_name) else {
-        return Err(katla_ecs::scene_tool::SceneToolError::ComponentNotFound {
-            entity,
-            component: type_name.to_string(),
-        });
-    };
-
-    if !(entry.has_component)(world, entity) {
-        return Err(katla_ecs::scene_tool::SceneToolError::ComponentNotFound {
-            entity,
-            component: type_name.to_string(),
-        });
-    }
-
-    match entry.type_name {
-        "NameComponent" => {
-            world.remove_component::<NameComponent>(entity);
-        }
-        "PointLight" => {
-            world.remove_component::<PointLight>(entity);
-        }
-        "MassComponent" => {
-            world.remove_component::<MassComponent>(entity);
-        }
-        "DragComponent" => {
-            world.remove_component::<DragComponent>(entity);
-        }
-        "PerspectiveComponent" => {
-            world.remove_component::<PerspectiveComponent>(entity);
-        }
-        "DirectionalLight" => {
-            world.remove_component::<DirectionalLight>(entity);
-        }
-        "ScriptComponent" => {
-            world.remove_component::<katla_script::ScriptComponent>(entity);
-        }
-        other => {
-            return Err(katla_ecs::scene_tool::SceneToolError::ComponentNotFound {
-                entity,
-                component: format!("Removal not supported for '{}'", other),
-            });
-        }
-    }
-
-    Ok(())
 }

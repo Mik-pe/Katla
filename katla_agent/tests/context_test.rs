@@ -18,6 +18,9 @@ fn test_registry() -> ComponentRegistry {
         create_default: |world, id| {
             world.add_component(id, TransformComponent::default());
         },
+        remove_component: |world, id| {
+            world.remove_component::<TransformComponent>(id);
+        },
         get_fields: |_world, _id| {
             vec![
                 katla_ecs::inspect::FieldInfo {

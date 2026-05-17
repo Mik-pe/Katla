@@ -265,6 +265,133 @@ impl SceneCommand for SetFieldCommand {
     }
 }
 
+/// Add a component (with default values) to an entity. Undo removes it.
+pub struct AddComponentCommand {
+    entity: EntityId,
+    component_type: String,
+    create_default: fn(&mut World, EntityId),
+    remove_component: fn(&mut World, EntityId),
+    executed: bool,
+}
+
+impl AddComponentCommand {
+    pub fn new(entity: EntityId, component_type: String, entry: &ComponentRegistryEntry) -> Self {
+        Self {
+            entity,
+            component_type,
+            create_default: entry.create_default,
+            remove_component: entry.remove_component,
+            executed: false,
+        }
+    }
+}
+
+impl SceneCommand for AddComponentCommand {
+    fn execute(&mut self, world: &mut World) -> Result<(), SceneToolError> {
+        if self.executed {
+            return Ok(());
+        }
+        (self.create_default)(world, self.entity);
+        self.executed = true;
+        Ok(())
+    }
+
+    fn undo(&mut self, world: &mut World) -> Result<(), SceneToolError> {
+        if !self.executed {
+            return Ok(());
+        }
+        if !world.entity_exists(self.entity) {
+            return Err(SceneToolError::EntityNotFound(self.entity));
+        }
+        (self.remove_component)(world, self.entity);
+        self.executed = false;
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Add {} to entity {}", self.component_type, self.entity)
+    }
+
+    fn affected_entities(&self) -> Vec<EntityId> {
+        vec![self.entity]
+    }
+}
+
+/// Remove a component from an entity. Undo restores it with snapshot field values.
+pub struct RemoveComponentCommand {
+    entity: EntityId,
+    component_type: String,
+    field_snapshots: Vec<(String, FieldValue)>,
+    create_default: fn(&mut World, EntityId),
+    set_fn: fn(&mut World, EntityId, &str, FieldValue) -> Result<(), SceneToolError>,
+    remove_component: fn(&mut World, EntityId),
+    executed: bool,
+}
+
+impl RemoveComponentCommand {
+    pub fn new(
+        entity: EntityId,
+        component_type: String,
+        entry: &ComponentRegistryEntry,
+        world: &mut World,
+    ) -> Self {
+        let mut field_snapshots = Vec::new();
+        for field_info in (entry.get_fields)(world, entity) {
+            if let Some(value) = (entry.get_field_value)(world, entity, field_info.name) {
+                if !matches!(value, FieldValue::Unknown) {
+                    field_snapshots.push((field_info.name.to_string(), value));
+                }
+            }
+        }
+        Self {
+            entity,
+            component_type,
+            field_snapshots,
+            create_default: entry.create_default,
+            set_fn: entry.set_field_value,
+            remove_component: entry.remove_component,
+            executed: false,
+        }
+    }
+}
+
+impl SceneCommand for RemoveComponentCommand {
+    fn execute(&mut self, world: &mut World) -> Result<(), SceneToolError> {
+        if self.executed {
+            return Ok(());
+        }
+        if !world.entity_exists(self.entity) {
+            return Err(SceneToolError::EntityNotFound(self.entity));
+        }
+        (self.remove_component)(world, self.entity);
+        self.executed = true;
+        Ok(())
+    }
+
+    fn undo(&mut self, world: &mut World) -> Result<(), SceneToolError> {
+        if !self.executed {
+            return Ok(());
+        }
+        if !world.entity_exists(self.entity) {
+            return Err(SceneToolError::EntityNotFound(self.entity));
+        }
+        (self.create_default)(world, self.entity);
+        for (field_name, value) in &self.field_snapshots {
+            let _ = (self.set_fn)(world, self.entity, field_name, value.clone());
+        }
+        self.executed = false;
+        Ok(())
+    }
+
+    fn description(&self) -> String {
+        format!("Remove {} from entity {}", self.component_type, self.entity)
+    }
+
+    fn affected_entities(&self) -> Vec<EntityId> {
+        vec![self.entity]
+    }
+}
+
 /// Duplicate an entity by spawning a new one. Undo destroys the duplicate.
 pub struct DuplicateEntityCommand {
     source: EntityId,
