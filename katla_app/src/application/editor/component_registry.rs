@@ -5,7 +5,8 @@ use katla_ecs::scene_tool::SceneToolError;
 use katla_ecs::scene_tool::registry::{ComponentRegistry, ComponentRegistryEntry, FieldValue};
 
 use crate::components::{
-    DirectionalLight, DragComponent, MassComponent, NameComponent, PerspectiveComponent, PointLight,
+    DirectionalLight, DragComponent, MassComponent, NameComponent, ParticleEmitterComponent,
+    PerspectiveComponent, PointLight, VelocityComponent,
 };
 
 fn field_type_mismatch(field_name: &str, expected: &str, value: FieldValue) -> SceneToolError {
@@ -342,6 +343,75 @@ fn register_script_component(registry: &mut ComponentRegistry) {
     });
 }
 
+fn register_velocity_component(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "VelocityComponent",
+        has_component: |world: &World, entity: EntityId| {
+            world.get_component::<VelocityComponent>(entity).is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, VelocityComponent::default());
+        },
+        get_fields: |_world: &World, _entity: EntityId| VelocityComponent::fields(),
+        get_field_value: |_world: &mut World, _entity: EntityId, _field_name: &str| {
+            // Vec3 fields produce FieldMut::Unknown, so no field-level access
+            None
+        },
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          _value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let _comp = world
+                .get_component_mut::<VelocityComponent>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "VelocityComponent".to_string(),
+                })?;
+            Err(SceneToolError::FieldNotFound {
+                component: "VelocityComponent".to_string(),
+                field: field_name.to_string(),
+            })
+        },
+    });
+}
+
+fn register_particle_emitter_component(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "ParticleEmitterComponent",
+        has_component: |world: &World, entity: EntityId| {
+            world
+                .get_component::<ParticleEmitterComponent>(entity)
+                .is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, ParticleEmitterComponent::default());
+        },
+        get_fields: |_world: &World, _entity: EntityId| ParticleEmitterComponent::fields(),
+        get_field_value: |_world: &mut World, _entity: EntityId, _field_name: &str| {
+            // Complex fields (EmitterConfig, Option<EmitterHandle>, Vec<u32>, Option<f32>)
+            // don't map to useful FieldMut variants, so no field-level access.
+            None
+        },
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          _value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let _comp = world
+                .get_component_mut::<ParticleEmitterComponent>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "ParticleEmitterComponent".to_string(),
+                })?;
+            Err(SceneToolError::FieldNotFound {
+                component: "ParticleEmitterComponent".to_string(),
+                field: field_name.to_string(),
+            })
+        },
+    });
+}
+
 pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     let mut registry = ComponentRegistry::new();
     register_name_component(&mut registry);
@@ -351,6 +421,8 @@ pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     register_perspective_component(&mut registry);
     register_directional_light(&mut registry);
     register_script_component(&mut registry);
+    register_velocity_component(&mut registry);
+    register_particle_emitter_component(&mut registry);
     registry
 }
 
@@ -368,6 +440,8 @@ mod tests {
         assert!(registry.is_registered("PerspectiveComponent"));
         assert!(registry.is_registered("DirectionalLight"));
         assert!(registry.is_registered("ScriptComponent"));
+        assert!(registry.is_registered("VelocityComponent"));
+        assert!(registry.is_registered("ParticleEmitterComponent"));
     }
 
     #[test]
@@ -375,7 +449,6 @@ mod tests {
         let registry = build_editor_component_registry();
         assert!(!registry.is_registered("TransformComponent"));
         assert!(!registry.is_registered("DrawableComponent"));
-        assert!(!registry.is_registered("ParticleEmitterComponent"));
     }
 
     #[test]

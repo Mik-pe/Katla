@@ -284,7 +284,19 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                 }
 
                 if entity.particle_emitter.is_some() {
-                    section_header(ui, "Particle Emitter", theme);
+                    if section_header_with_remove(
+                        ui,
+                        "Particle Emitter",
+                        entity_id,
+                        "ParticleEmitterComponent",
+                        theme,
+                        w,
+                    ) {
+                        ctx.pending_actions.push(EditorAction::RemoveComponent {
+                            entity: entity_id,
+                            component_type: "ParticleEmitterComponent".to_string(),
+                        });
+                    }
                     scalar_row(ui, "Emit Rate", &mut edit.emit_rate, 0.0..=1000.0, w);
                     scalar_row(ui, "Velocity", &mut edit.velocity, 0.0..=50.0, w);
                     scalar_row(ui, "Lifetime", &mut edit.lifetime, 0.1..=30.0, w);
