@@ -12,24 +12,9 @@ pub enum EmitterShape {
     Box = 4,
 }
 
-impl EmitterShape {
-    /// Convert to u32 for GPU
-    pub fn as_u32(self) -> u32 {
-        self as u32
-    }
-
-    /// Convert from u32 from GPU
-    pub fn from_u32(val: u32) -> Self {
-        match val {
-            0 => EmitterShape::Point,
-            1 => EmitterShape::Line,
-            2 => EmitterShape::Circle,
-            3 => EmitterShape::Sphere,
-            4 => EmitterShape::Box,
-            _ => EmitterShape::Point,
-        }
-    }
-}
+// Safety: EmitterShape is repr(u32), guaranteed 4 bytes with no padding.
+unsafe impl bytemuck::Pod for EmitterShape {}
+unsafe impl bytemuck::Zeroable for EmitterShape {}
 
 /// 16-byte aligned `[f32; 4]` to match WGSL `vec4f` alignment.
 #[repr(C, align(16))]
@@ -55,7 +40,7 @@ pub struct EmitterConfig {
     pub _pad_position: f32,
 
     #[serde(default)]
-    pub shape: u32,
+    pub shape: EmitterShape,
 
     #[serde(default = "default_emit_rate")]
     pub emit_rate: f32,
@@ -118,7 +103,7 @@ pub struct EmitterConfig {
     pub kill_all: u32,
 }
 
-// Safety: EmitterConfig is repr(C), all fields are Pod or padding from Align16Vec4 alignment.
+// Safety: EmitterConfig is repr(C), all fields are Pod (EmitterShape is repr(u32), f32, u32, Align16Vec4).
 // The 12 bytes of padding between color_variation and _pad_color are never read uninitialized
 // because the struct is always created via Default or explicit field init.
 unsafe impl bytemuck::Pod for EmitterConfig {}
@@ -127,16 +112,6 @@ unsafe impl bytemuck::Zeroable for EmitterConfig {}
 impl EmitterConfig {
     pub fn builder() -> EmitterConfigBuilder {
         EmitterConfigBuilder::new()
-    }
-
-    /// Get the emitter shape as an enum
-    pub fn get_shape(&self) -> EmitterShape {
-        EmitterShape::from_u32(self.shape)
-    }
-
-    /// Set the emitter shape from an enum
-    pub fn set_shape(&mut self, shape: EmitterShape) {
-        self.shape = shape.as_u32();
     }
 }
 
@@ -157,7 +132,7 @@ impl EmitterConfigBuilder {
     }
 
     pub fn shape(mut self, shape: EmitterShape) -> Self {
-        self.config.set_shape(shape);
+        self.config.shape = shape;
         self
     }
 
@@ -285,7 +260,7 @@ impl Default for EmitterConfig {
         Self {
             position: [0.0; 3],
             _pad_position: 0.0,
-            shape: EmitterShape::Point.as_u32(),
+            shape: EmitterShape::Point,
             emit_rate: 50.0,
             base_lifetime: 5.0,
             lifetime_variation: 0.2,

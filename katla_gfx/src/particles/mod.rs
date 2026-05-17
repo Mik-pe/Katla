@@ -471,50 +471,50 @@ mod tests {
     #[test]
     fn test_emitter_shape_default() {
         let config = EmitterConfig::default();
-        assert_eq!(config.get_shape(), EmitterShape::Point);
+        assert_eq!(config.shape, EmitterShape::Point);
         assert_eq!(config.shape_params, [0.0; 4]);
     }
 
     #[test]
     fn test_emitter_shape_point() {
         let mut config = EmitterConfig::default();
-        config.set_shape(EmitterShape::Point);
-        assert_eq!(config.get_shape(), EmitterShape::Point);
+        config.shape = EmitterShape::Point;
+        assert_eq!(config.shape, EmitterShape::Point);
     }
 
     #[test]
     fn test_emitter_shape_line() {
         let mut config = EmitterConfig::default();
-        config.set_shape(EmitterShape::Line);
+        config.shape = EmitterShape::Line;
         config.shape_params = [10.0, 0.0, 0.0, 0.0];
-        assert_eq!(config.get_shape(), EmitterShape::Line);
+        assert_eq!(config.shape, EmitterShape::Line);
         assert_eq!(config.shape_params[0], 10.0);
     }
 
     #[test]
     fn test_emitter_shape_circle() {
         let mut config = EmitterConfig::default();
-        config.set_shape(EmitterShape::Circle);
+        config.shape = EmitterShape::Circle;
         config.shape_params = [5.0, 0.0, 0.0, 0.0];
-        assert_eq!(config.get_shape(), EmitterShape::Circle);
+        assert_eq!(config.shape, EmitterShape::Circle);
         assert_eq!(config.shape_params[0], 5.0);
     }
 
     #[test]
     fn test_emitter_shape_sphere() {
         let mut config = EmitterConfig::default();
-        config.set_shape(EmitterShape::Sphere);
+        config.shape = EmitterShape::Sphere;
         config.shape_params = [3.0, 0.0, 0.0, 0.0];
-        assert_eq!(config.get_shape(), EmitterShape::Sphere);
+        assert_eq!(config.shape, EmitterShape::Sphere);
         assert_eq!(config.shape_params[0], 3.0);
     }
 
     #[test]
     fn test_emitter_shape_box() {
         let mut config = EmitterConfig::default();
-        config.set_shape(EmitterShape::Box);
+        config.shape = EmitterShape::Box;
         config.shape_params = [4.0, 3.0, 2.0, 0.0];
-        assert_eq!(config.get_shape(), EmitterShape::Box);
+        assert_eq!(config.shape, EmitterShape::Box);
         assert_eq!(config.shape_params[0], 4.0);
         assert_eq!(config.shape_params[1], 3.0);
         assert_eq!(config.shape_params[2], 2.0);
@@ -525,7 +525,7 @@ mod tests {
         let config = EmitterConfig {
             position: [1.0, 2.0, 3.0],
             _pad_position: 0.0,
-            shape: EmitterShape::Sphere.as_u32(),
+            shape: EmitterShape::Sphere,
             emit_rate: 100.0,
             base_lifetime: 2.0,
             lifetime_variation: 0.5,
@@ -548,7 +548,7 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: EmitterConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.get_shape(), EmitterShape::Sphere);
+        assert_eq!(deserialized.shape, EmitterShape::Sphere);
         assert_eq!(deserialized.shape_params[0], 2.5);
         assert_eq!(deserialized.position, [1.0, 2.0, 3.0]);
     }
@@ -583,8 +583,8 @@ mod tests {
 
         for shape in shapes {
             let mut config = EmitterConfig::default();
-            config.set_shape(shape);
-            assert_eq!(config.get_shape(), shape);
+            config.shape = shape;
+            assert_eq!(config.shape, shape);
         }
     }
 

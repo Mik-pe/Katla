@@ -15,6 +15,7 @@ pub struct ParticleInspectorState {
 #[derive(Debug, Clone, Default)]
 pub struct ParticleInspectorData {
     pub emitter_entities: Vec<EntityId>,
+    pub selected_emitter_entity: Option<EntityId>,
     pub selected_emitter_config: Option<EmitterConfigView>,
     pub stats: Option<ParticleStats>,
 }
@@ -39,6 +40,31 @@ pub struct EmitterConfigView {
     pub turbulence_frequency: f32,
 }
 
+/// Identifies which emitter config field changed and its new value.
+#[derive(Debug, Clone)]
+pub enum EmitterField {
+    EmitRate(f32),
+    BaseLifetime(f32),
+    LifetimeVariation(f32),
+    VelocityMagnitude(f32),
+    VelocityConeAngle(f32),
+    BaseScale(f32),
+    ScaleVariation(f32),
+    Gravity(f32),
+    TurbulenceStrength(f32),
+    TurbulenceFrequency(f32),
+    Color([f32; 4]),
+    ColorVariation(f32),
+    ShapePoint,
+    ShapeLine,
+    ShapeCircle,
+    ShapeSphere,
+    ShapeBox,
+    ShapeParam0(f32),
+    ShapeParam1(f32),
+    ShapeParam2(f32),
+}
+
 /// Actions emitted by the particle inspector.
 #[derive(Debug, Clone)]
 pub enum ParticleInspectorAction {
@@ -46,4 +72,5 @@ pub enum ParticleInspectorAction {
     ToggleEmitter,
     ResetSystem,
     Close,
+    SetEmitterField(EntityId, EmitterField),
 }

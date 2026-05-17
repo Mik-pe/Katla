@@ -20,7 +20,8 @@ pub use editor_ui::{
 pub use katla_ui::ColorScheme;
 #[cfg(feature = "editor")]
 pub use particle_inspector::{
-    EmitterConfigView, ParticleInspectorAction, ParticleInspectorData, ParticleInspectorState,
+    EmitterConfigView, EmitterField, ParticleInspectorAction, ParticleInspectorData,
+    ParticleInspectorState,
 };
 #[cfg(feature = "editor")]
 pub use particle_stats::ParticleStats;
