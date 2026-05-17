@@ -806,7 +806,7 @@ impl UiContext {
                     Vec2::new(text_pos.x() + before_sel, text_pos.y()),
                     Vec2::new(sel_width.max(1.0), text_size.y()),
                 );
-                self.draw_rect(sel_rect, self.style.input_selection);
+                self.draw_rect(sel_rect, self.style.input_selection.to_linear());
             }
 
             // Draw text
