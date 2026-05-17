@@ -66,20 +66,11 @@ impl SceneSnapshot {
             }
         }
 
-        // Release GPU resources
-        let to_destroy = app.gpu_resource_tracker.release_all();
-        for handle in &to_destroy.meshes {
-            app.renderer.destroy_mesh(*handle);
-        }
-        for handle in &to_destroy.materials {
-            app.renderer.destroy_material(*handle);
-        }
-        for handle in &to_destroy.textures {
-            app.renderer.destroy_texture(*handle);
-        }
-        for handle in &to_destroy.skeletons {
-            app.renderer.destroy_skeleton(*handle);
-        }
+        // Release GPU resource tracker references but do NOT destroy the underlying
+        // GPU objects — the render graph may still reference them from the current
+        // frame's draw list. Destroying them mid-frame causes "Invalid material handle"
+        // errors. The orphaned handles are harmless; new entities get fresh handles.
+        app.gpu_resource_tracker.release_all();
 
         // Destroy entities
         for id in to_remove {

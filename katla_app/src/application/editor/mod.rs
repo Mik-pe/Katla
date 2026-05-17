@@ -972,16 +972,31 @@ pub fn process_editor_actions(app: &mut Application) {
                 if app.play_mode == super::game_state::PlayMode::Editing {
                     app.scene_snapshot = Some(super::game_state::SceneSnapshot::capture(app));
                     app.play_mode = super::game_state::PlayMode::Playing;
+                    if let Some(active) =
+                        app.world.get_resource_mut::<katla_script::ScriptsActive>()
+                    {
+                        active.0 = true;
+                    }
                     info!("Entered play mode");
                 }
             }
             EditorAction::PlayPause => match app.play_mode {
                 super::game_state::PlayMode::Playing => {
                     app.play_mode = super::game_state::PlayMode::Paused;
+                    if let Some(active) =
+                        app.world.get_resource_mut::<katla_script::ScriptsActive>()
+                    {
+                        active.0 = false;
+                    }
                     info!("Play mode paused");
                 }
                 super::game_state::PlayMode::Paused => {
                     app.play_mode = super::game_state::PlayMode::Playing;
+                    if let Some(active) =
+                        app.world.get_resource_mut::<katla_script::ScriptsActive>()
+                    {
+                        active.0 = true;
+                    }
                     info!("Play mode resumed");
                 }
                 super::game_state::PlayMode::Editing => {}
@@ -992,8 +1007,58 @@ pub fn process_editor_actions(app: &mut Application) {
                         snapshot.restore(app);
                     }
                     app.play_mode = super::game_state::PlayMode::Editing;
+                    if let Some(active) =
+                        app.world.get_resource_mut::<katla_script::ScriptsActive>()
+                    {
+                        active.0 = false;
+                    }
                     info!("Stopped play mode, scene restored");
                 }
+            }
+            EditorAction::AddComponent {
+                entity,
+                component_type,
+            } => {
+                let op = SceneOp::AddComponent {
+                    entity,
+                    component: component_type.clone(),
+                };
+                match katla_ecs::scene_tool::SceneToolExecutor::execute(
+                    op,
+                    &mut app.world,
+                    &app.editor.component_registry,
+                ) {
+                    Ok(_) => info!("Added component '{}' to entity {}", component_type, entity),
+                    Err(e) => log::error!("Failed to add component: {}", e),
+                }
+            }
+            EditorAction::RemoveComponent {
+                entity,
+                component_type,
+            } => {
+                if let Err(e) = remove_component_by_name(
+                    &mut app.world,
+                    &app.editor.component_registry,
+                    entity,
+                    &component_type,
+                ) {
+                    log::error!("Failed to remove component: {}", e);
+                } else {
+                    info!(
+                        "Removed component '{}' from entity {}",
+                        component_type, entity
+                    );
+                }
+            }
+            EditorAction::ClearConsole => {}
+            EditorAction::ToggleConsoleFilterLevel { level_index } => {
+                if level_index < 5 {
+                    app.editor.editor_ui.console_state.filter_levels[level_index] =
+                        !app.editor.editor_ui.console_state.filter_levels[level_index];
+                }
+            }
+            EditorAction::SetConsoleSearch { text } => {
+                app.editor.editor_ui.console_state.search_filter = text;
             }
         }
     }
@@ -2088,4 +2153,55 @@ mod tests {
         assert_eq!(emitter.config.emit_rate, 100.0);
         assert!(emitter.active);
     }
+}
+
+fn remove_component_by_name(
+    world: &mut katla_ecs::World,
+    registry: &katla_ecs::scene_tool::ComponentRegistry,
+    entity: EntityId,
+    type_name: &str,
+) -> Result<(), katla_ecs::scene_tool::SceneToolError> {
+    use crate::components::{
+        DragComponent, MassComponent, NameComponent, PerspectiveComponent, PointLight,
+    };
+
+    let Some(entry) = registry.get(type_name) else {
+        return Err(katla_ecs::scene_tool::SceneToolError::ComponentNotFound {
+            entity,
+            component: type_name.to_string(),
+        });
+    };
+
+    if !(entry.has_component)(world, entity) {
+        return Err(katla_ecs::scene_tool::SceneToolError::ComponentNotFound {
+            entity,
+            component: type_name.to_string(),
+        });
+    }
+
+    match entry.type_name {
+        "NameComponent" => {
+            world.remove_component::<NameComponent>(entity);
+        }
+        "PointLight" => {
+            world.remove_component::<PointLight>(entity);
+        }
+        "MassComponent" => {
+            world.remove_component::<MassComponent>(entity);
+        }
+        "DragComponent" => {
+            world.remove_component::<DragComponent>(entity);
+        }
+        "PerspectiveComponent" => {
+            world.remove_component::<PerspectiveComponent>(entity);
+        }
+        other => {
+            return Err(katla_ecs::scene_tool::SceneToolError::ComponentNotFound {
+                entity,
+                component: format!("Removal not supported for '{}'", other),
+            });
+        }
+    }
+
+    Ok(())
 }
