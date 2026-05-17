@@ -198,6 +198,92 @@ impl ScriptEngine {
                 source: e,
             })?;
 
+        #[cfg(debug_assertions)]
+        {
+            let print_fn = vm
+                .create_function(|lua, args: mlua::MultiValue| {
+                    let msg: String = args
+                        .into_iter()
+                        .map(|v| {
+                            lua.coerce_string(v.clone())
+                                .ok()
+                                .flatten()
+                                .map(|s| s.to_string_lossy())
+                                .unwrap_or_else(|| format!("{v:?}"))
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\t");
+                    log::info!("{msg}");
+                    Ok(())
+                })
+                .map_err(|e| ScriptError::LoadFailed {
+                    path: "<vm>".into(),
+                    source: e,
+                })?;
+            globals
+                .set("print", print_fn)
+                .map_err(|e| ScriptError::LoadFailed {
+                    path: "<vm>".into(),
+                    source: e,
+                })?;
+
+            let warn_fn = vm
+                .create_function(|lua, args: mlua::MultiValue| {
+                    let msg: String = args
+                        .into_iter()
+                        .map(|v| {
+                            lua.coerce_string(v.clone())
+                                .ok()
+                                .flatten()
+                                .map(|s| s.to_string_lossy())
+                                .unwrap_or_else(|| format!("{v:?}"))
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\t");
+                    log::warn!("{msg}");
+                    Ok(())
+                })
+                .map_err(|e| ScriptError::LoadFailed {
+                    path: "<vm>".into(),
+                    source: e,
+                })?;
+            globals
+                .set("warn", warn_fn)
+                .map_err(|e| ScriptError::LoadFailed {
+                    path: "<vm>".into(),
+                    source: e,
+                })?;
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            let print_fn = vm
+                .create_function(|_, _: mlua::MultiValue| Ok(()))
+                .map_err(|e| ScriptError::LoadFailed {
+                    path: "<vm>".into(),
+                    source: e,
+                })?;
+            globals
+                .set("print", print_fn)
+                .map_err(|e| ScriptError::LoadFailed {
+                    path: "<vm>".into(),
+                    source: e,
+                })?;
+
+            let warn_fn = vm
+                .create_function(|_, _: mlua::MultiValue| Ok(()))
+                .map_err(|e| ScriptError::LoadFailed {
+                    path: "<vm>".into(),
+                    source: e,
+                })?;
+            globals
+                .set("warn", warn_fn)
+                .map_err(|e| ScriptError::LoadFailed {
+                    path: "<vm>".into(),
+                    source: e,
+                })?;
+        }
+
         Ok(Self {
             vm,
             loaded_scripts: HashMap::new(),
