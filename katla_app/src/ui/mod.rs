@@ -2,6 +2,7 @@
 //!
 //! This module provides the bridge between katla_ui and the application layer.
 
+pub mod console;
 #[cfg(feature = "editor")]
 mod editor_ui;
 #[cfg(feature = "editor")]

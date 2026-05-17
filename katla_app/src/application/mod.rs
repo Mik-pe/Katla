@@ -147,7 +147,10 @@ impl EditorState {
         gui_state: crate::gui_state::GuiState,
     ) -> Self {
         use crate::util::BackgroundLoader;
-        Self {
+        let component_registry =
+            crate::application::editor::component_registry::build_editor_component_registry();
+        let available = component_registry.type_names();
+        let mut state = Self {
             ui_renderer,
             editor_ui: {
                 let mut editor = crate::ui::EditorUI::with_theme(theme);
@@ -171,8 +174,7 @@ impl EditorState {
             gizmo_resources: crate::gizmo::GizmoResources::default(),
             billboard_resources: crate::billboard::BillboardResources::default(),
             prev_mouse_screen: None,
-            component_registry:
-                crate::application::editor::component_registry::build_editor_component_registry(),
+            component_registry,
             agent_harness: katla_ecs::agent::AgentHarness::new(),
             llm_config: katla_agent::LlmConfig::load(),
             async_bridge: katla_agent::AsyncBridge::new().ok(),
@@ -186,7 +188,9 @@ impl EditorState {
             inspector_slider_was_active: false,
             inspector_drag_snapshot: None,
             entity_gpu_handles: HashMap::new(),
-        }
+        };
+        state.editor_ui.set_available_components(available);
+        state
     }
 
     pub(crate) fn push_undo(&mut self, group: katla_ecs::scene_tool::UndoGroup) {

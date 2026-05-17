@@ -4,7 +4,7 @@ use katla_ecs::EntityId;
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::declarative::{Build, BuildContext, ViewDescriptor};
 use katla_ui::{
-    FontSize, ScrollArea, ScrollAreaState, UiContext,
+    FontSize, ForkAwesome, ScrollArea, ScrollAreaState, UiContext,
     widgets::{Button, ColorPickerButton, LabeledSlider, Panel, Vec3Slider},
 };
 
@@ -23,6 +23,9 @@ pub(crate) struct InspectorDrawCtx {
     pub scroll_state: ScrollAreaState,
     pub theme: ColorScheme,
     pub pending_actions: Vec<EditorAction>,
+    pub available_components: Vec<&'static str>,
+    pub add_component_open: bool,
+    pub add_component_filter: String,
 }
 
 pub(crate) fn set_inspector_ctx(ctx: InspectorDrawCtx) {
@@ -65,6 +68,58 @@ fn section_header(ui: &mut UiContext, text: &str, theme: &ColorScheme) {
         font_size,
     );
     ui.set_cursor(Vec2::new(cursor.x(), y + 4.0 + text_h + 4.0));
+}
+
+fn section_header_with_remove(
+    ui: &mut UiContext,
+    text: &str,
+    _entity_id: EntityId,
+    _component_type: &str,
+    theme: &ColorScheme,
+    w: f32,
+) -> bool {
+    let cursor = ui.cursor();
+    let y = cursor.y() + 2.0;
+    ui.draw_line(
+        Vec2::new(cursor.x(), y),
+        Vec2::new(cursor.x() + 2000.0, y),
+        theme.separator,
+        1.0,
+    );
+    let font_size = ui.scaled_font_size(FontSize::Small);
+    let text_h = ui.measure_text(text, font_size).y();
+    let text_y = y + 4.0;
+    ui.draw_text(
+        text,
+        Vec2::new(cursor.x(), text_y),
+        theme.text_accent,
+        font_size,
+    );
+
+    let remove_size = 16.0;
+    let remove_bounds = Rect2D::from_origin_size(
+        Vec2::new(cursor.x() + w - remove_size, text_y - 1.0),
+        Vec2::new(remove_size, remove_size),
+    );
+    let hovered = ui.is_hovered(remove_bounds);
+    let icon_color = if hovered {
+        theme.error
+    } else {
+        theme.text_muted
+    };
+    ui.draw_icon(
+        ForkAwesome::TIMES,
+        remove_bounds.min,
+        remove_size,
+        icon_color,
+    );
+    let mut remove_clicked = false;
+    if hovered && ui.mouse_clicked(katla_ui::mouse_button::LEFT) {
+        remove_clicked = true;
+    }
+
+    ui.set_cursor(Vec2::new(cursor.x(), text_y + text_h + 4.0));
+    remove_clicked
 }
 
 fn section_gap(ui: &mut UiContext) {
@@ -197,7 +252,19 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                 section_gap(ui);
 
                 if entity.point_light.is_some() {
-                    section_header(ui, "Point Light", theme);
+                    if section_header_with_remove(
+                        ui,
+                        "Point Light",
+                        entity_id,
+                        "PointLight",
+                        theme,
+                        w,
+                    ) {
+                        ctx.pending_actions.push(EditorAction::RemoveComponent {
+                            entity: entity_id,
+                            component_type: "PointLight".to_string(),
+                        });
+                    }
 
                     let picker_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 28.0));
                     ui.add_overlay(
@@ -234,6 +301,25 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
 
                 ui.set_cursor(Vec2::new(x, ui.cursor().y() + 8.0));
 
+                let add_btn_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 24.0));
+                let add_clicked = ui
+                    .add(
+                        Button::new("Add Component")
+                            .bounds(add_btn_bounds)
+                            .id("add_component_btn")
+                            .fill_color(theme.button_bg)
+                            .hover_color(theme.button_hover)
+                            .border(theme.border),
+                    )
+                    .clicked;
+
+                if add_clicked && !ui.has_open_popup() {
+                    ctx.add_component_open = true;
+                    ctx.add_component_filter.clear();
+                }
+
+                ui.set_cursor(Vec2::new(x, ui.cursor().y() + 8.0));
+
                 let delete_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 24.0));
                 let clicked = ui
                     .add(
@@ -255,6 +341,119 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                 ui.cursor().y() - content_bounds.min.y() + 40.0
             },
         );
+
+        if ctx.add_component_open {
+            let entity_existing: Vec<String> = entity.components.clone();
+            let filter = ctx.add_component_filter.to_lowercase();
+            let filtered: Vec<&&str> = ctx
+                .available_components
+                .iter()
+                .filter(|name| {
+                    !entity_existing.iter().any(|e| e == **name)
+                        && (filter.is_empty() || name.to_lowercase().contains(&filter))
+                })
+                .collect();
+
+            let popup_width = 250.0;
+            let popup_height = 200.0;
+            let popup_x = content_bounds.max.x() - popup_width - 4.0;
+            let popup_y = content_bounds.min.y() + 40.0;
+
+            ui.modal(
+                "add_component_popup",
+                popup_width,
+                popup_height,
+                &mut ctx.add_component_open,
+                |ui, open| {
+                    let dialog_bounds = ui.get_popup_bounds();
+                    let dialog_pos = dialog_bounds.min;
+
+                    let search_bounds =
+                        Rect2D::from_origin_size(dialog_pos, Vec2::new(popup_width - 8.0, 22.0));
+                    ui.add(
+                        katla_ui::widgets::TextInput::new(
+                            "component_search",
+                            &mut ctx.add_component_filter,
+                        )
+                        .bounds(search_bounds)
+                        .placeholder("Search components..."),
+                    );
+
+                    ui.set_cursor(Vec2::new(dialog_pos.x(), dialog_pos.y() + 28.0));
+
+                    let list_bounds = Rect2D::from_origin_size(
+                        Vec2::new(dialog_pos.x(), dialog_pos.y() + 28.0),
+                        Vec2::new(popup_width, popup_height - 60.0),
+                    );
+
+                    let font_size = ui.scaled_font_size(FontSize::Small);
+                    let item_h = 20.0;
+
+                    ui.push_clip(list_bounds);
+
+                    for (i, name) in filtered.iter().enumerate() {
+                        let item_y = list_bounds.min.y() + i as f32 * item_h;
+                        let item_bounds = Rect2D::from_origin_size(
+                            Vec2::new(list_bounds.min.x(), item_y),
+                            Vec2::new(list_bounds.width(), item_h),
+                        );
+
+                        let hovered = ui.is_hovered(item_bounds);
+                        if hovered {
+                            ui.draw_rect(item_bounds, theme.selection_hover);
+                        }
+
+                        ui.draw_text(
+                            name,
+                            Vec2::new(item_bounds.min.x() + 6.0, item_y + 2.0),
+                            if hovered {
+                                theme.text_primary
+                            } else {
+                                theme.text_secondary
+                            },
+                            font_size,
+                        );
+
+                        if hovered && ui.mouse_clicked(katla_ui::mouse_button::LEFT) {
+                            ctx.pending_actions.push(EditorAction::AddComponent {
+                                entity: entity_id,
+                                component_type: (**name).to_string(),
+                            });
+                            *open = false;
+                        }
+                    }
+
+                    if filtered.is_empty() {
+                        let msg = if filter.is_empty() {
+                            "All components added"
+                        } else {
+                            "No matching components"
+                        };
+                        ui.draw_text(
+                            msg,
+                            Vec2::new(list_bounds.min.x() + 6.0, list_bounds.min.y() + 4.0),
+                            theme.text_muted,
+                            font_size,
+                        );
+                    }
+
+                    ui.pop_clip();
+
+                    ui.set_cursor(Vec2::new(
+                        dialog_pos.x(),
+                        dialog_pos.y() + popup_height - 28.0,
+                    ));
+                    let cancel_bounds =
+                        Rect2D::from_origin_size(ui.cursor(), Vec2::new(popup_width - 8.0, 22.0));
+                    if ui
+                        .add(Button::new("Cancel").bounds(cancel_bounds).id("cancel_add"))
+                        .clicked
+                    {
+                        *open = false;
+                    }
+                },
+            );
+        }
     } else {
         ui.draw_empty_state(ctx.bounds, "No entity selected");
     }

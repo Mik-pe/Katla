@@ -1,5 +1,6 @@
 pub(super) mod asset_browser;
 pub(super) mod co_creator;
+pub(super) mod console;
 pub(super) mod editor_root;
 pub(super) mod gizmo;
 pub(super) mod hierarchy;
@@ -12,6 +13,7 @@ pub(super) mod viewport_grid;
 
 pub(super) use asset_browser::{build_asset_browser_from_ctx, set_asset_browser_ctx};
 pub(super) use co_creator::{set_co_creator_ctx, take_co_creator_ctx};
+pub(super) use console::{ConsoleDrawCtx, ConsoleState, set_console_ctx, take_console_ctx};
 pub(super) use editor_root::EditorRootView;
 pub(super) use gizmo::{set_gizmo_ctx, take_gizmo_actions};
 pub(super) use hierarchy::{HierarchyDrawCtx, set_hierarchy_ctx, take_hierarchy_ctx};

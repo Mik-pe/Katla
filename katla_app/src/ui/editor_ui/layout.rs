@@ -1,22 +1,143 @@
 use katla_ecs::EntityId;
-use katla_math::{Rect2D, Vec2};
+use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::{
-    FontSize, UiContext,
+    FontSize, ForkAwesome, UiContext, mouse_button,
     widgets::{DockArea, ResizeHandle},
 };
 
 use super::declarative::{
-    EditorRootView, HierarchyDrawCtx, InspectorDrawCtx, PreferencesDrawCtx, StatusBarData,
-    ToolbarDrawCtx, build_asset_browser_from_ctx, set_asset_browser_ctx, set_co_creator_ctx,
-    set_gizmo_ctx, set_hierarchy_ctx, set_inspector_ctx, set_particle_inspector_ctx,
-    set_preferences_ctx, set_toolbar_ctx, set_viewport_grid_ctx, take_co_creator_ctx,
-    take_gizmo_actions, take_hierarchy_ctx, take_inspector_ctx, take_particle_inspector_ctx,
-    take_preferences_ctx, take_toolbar_ctx, take_viewport_grid_hovered,
+    ConsoleDrawCtx, EditorRootView, HierarchyDrawCtx, InspectorDrawCtx, PreferencesDrawCtx,
+    StatusBarData, ToolbarDrawCtx, build_asset_browser_from_ctx, set_asset_browser_ctx,
+    set_co_creator_ctx, set_console_ctx, set_gizmo_ctx, set_hierarchy_ctx, set_inspector_ctx,
+    set_particle_inspector_ctx, set_preferences_ctx, set_toolbar_ctx, set_viewport_grid_ctx,
+    take_co_creator_ctx, take_console_ctx, take_gizmo_actions, take_hierarchy_ctx,
+    take_inspector_ctx, take_particle_inspector_ctx, take_preferences_ctx, take_toolbar_ctx,
+    take_viewport_grid_hovered,
 };
 use super::{
     EditorAction, EditorRenderParams, EditorUI, co_creator,
-    types::{self as editor_types},
+    types::{self as editor_types, BottomPanelTab},
 };
+
+const BOTTOM_TAB_HEIGHT: f32 = 28.0;
+
+/// Draw the bottom panel tab bar and return the content bounds below it.
+fn draw_bottom_tab_bar(
+    ui: &mut UiContext,
+    bottom_bounds: Rect2D,
+    active_tab: BottomPanelTab,
+    theme: &katla_ui::ColorScheme,
+    collapsed: bool,
+) -> (Rect2D, Option<BottomPanelTab>) {
+    let tab_bar_bounds = Rect2D::from_origin_size(
+        bottom_bounds.min,
+        Vec2::new(bottom_bounds.width(), BOTTOM_TAB_HEIGHT),
+    );
+    ui.draw_rect(tab_bar_bounds, theme.panel_header);
+
+    // Bottom border on tab bar
+    ui.draw_line(
+        Vec2::new(tab_bar_bounds.min.x(), tab_bar_bounds.max.y()),
+        Vec2::new(tab_bar_bounds.max.x(), tab_bar_bounds.max.y()),
+        theme.border,
+        1.0,
+    );
+
+    let mut new_tab = None;
+    let padding = ui.style().panel_padding;
+    let spacing = ui.style().item_inner_spacing;
+    let font_size = ui.scaled_font_size(FontSize::Medium);
+    let tab_height = 24.0;
+
+    // Collapse toggle (left side)
+    let toggle_size = 20.0;
+    let toggle_bounds = Rect2D::from_origin_size(
+        Vec2::new(
+            bottom_bounds.min.x() + spacing,
+            bottom_bounds.min.y() + (BOTTOM_TAB_HEIGHT - toggle_size) * 0.5,
+        ),
+        Vec2::new(toggle_size, toggle_size),
+    );
+    let toggle_icon = if collapsed {
+        ForkAwesome::CHEVRON_UP
+    } else {
+        ForkAwesome::CHEVRON_DOWN
+    };
+    if ui
+        .add(katla_ui::widgets::ImageButton::new(toggle_icon).bounds(toggle_bounds))
+        .clicked
+    {
+        // Collapse/expand handled by caller via AssetBrowserState
+    }
+
+    // Tab buttons after the toggle
+    let mut x = toggle_bounds.max.x() + spacing;
+    for tab in BottomPanelTab::all() {
+        let label = tab.label();
+        let label_size = ui.measure_text(label, font_size);
+        let tab_w = label_size.x() + padding * 3.0;
+        let tab_bounds = Rect2D::from_origin_size(
+            Vec2::new(
+                x,
+                bottom_bounds.min.y() + (BOTTOM_TAB_HEIGHT - tab_height) * 0.5,
+            ),
+            Vec2::new(tab_w, tab_height),
+        );
+
+        let is_active = *tab == active_tab;
+        if is_active {
+            ui.draw_rect(tab_bounds, theme.panel_bg);
+            // Active tab highlight bar at bottom
+            ui.draw_rect(
+                Rect2D::from_origin_size(
+                    Vec2::new(tab_bounds.min.x(), tab_bounds.max.y() - 2.0),
+                    Vec2::new(tab_bounds.width(), 2.0),
+                ),
+                theme.highlight,
+            );
+        }
+
+        let text_color = if is_active {
+            theme.text_primary
+        } else {
+            theme.text_secondary
+        };
+
+        ui.draw_text(
+            label,
+            Vec2::new(
+                tab_bounds.min.x() + padding,
+                tab_bounds.min.y() + (tab_height - label_size.y()) * 0.5,
+            ),
+            text_color,
+            font_size,
+        );
+
+        if ui.is_hovered(tab_bounds) && ui.mouse_clicked(mouse_button::LEFT) {
+            new_tab = Some(*tab);
+        }
+
+        x += tab_w + spacing;
+    }
+
+    // Content area below the tab bar
+    let content_bounds = if collapsed {
+        Rect2D::from_origin_size(bottom_bounds.min, Vec2::new(bottom_bounds.width(), 0.0))
+    } else {
+        Rect2D::from_origin_size(
+            Vec2::new(
+                bottom_bounds.min.x(),
+                bottom_bounds.min.y() + BOTTOM_TAB_HEIGHT,
+            ),
+            Vec2::new(
+                bottom_bounds.width(),
+                bottom_bounds.height() - BOTTOM_TAB_HEIGHT,
+            ),
+        )
+    };
+
+    (content_bounds, new_tab)
+}
 
 impl EditorUI {
     /// Build the editor UI.
@@ -77,12 +198,19 @@ impl EditorUI {
 
         let right_panel_x = screen_size.x() - self.right_panel_width;
 
+        // Compute bottom panel height early so side panels don't overlap it
+        let bottom_panel_height = if self.asset_browser.collapsed {
+            BOTTOM_TAB_HEIGHT
+        } else {
+            self.asset_browser.panel_height
+        };
+        let panel_top = toolbar_height;
+        let panel_bottom = screen_size.y() - status_bar_height - bottom_panel_height;
+        let panel_height = panel_bottom - panel_top;
+
         let left_panel_bounds_for_hierarchy = Rect2D::from_origin_size(
             Vec2::new(0.0, toolbar_height),
-            Vec2::new(
-                self.left_panel_width,
-                screen_size.y() - toolbar_height - status_bar_height,
-            ),
+            Vec2::new(self.left_panel_width, panel_height),
         );
         let hierarchy_ctx = HierarchyDrawCtx {
             bounds: left_panel_bounds_for_hierarchy,
@@ -97,10 +225,7 @@ impl EditorUI {
 
         let inspector_bounds = Rect2D::from_origin_size(
             Vec2::new(right_panel_x, toolbar_height),
-            Vec2::new(
-                self.right_panel_width,
-                screen_size.y() - toolbar_height - status_bar_height,
-            ),
+            Vec2::new(self.right_panel_width, panel_height),
         );
         let inspector_ctx = InspectorDrawCtx {
             bounds: inspector_bounds,
@@ -110,18 +235,11 @@ impl EditorUI {
             scroll_state: std::mem::take(&mut self.inspector_scroll_state),
             theme: self.theme.clone(),
             pending_actions: Vec::new(),
+            available_components: self.available_components.clone(),
+            add_component_open: self.add_component_open,
+            add_component_filter: self.add_component_filter.clone(),
         };
         set_inspector_ctx(inspector_ctx);
-
-        let asset_browser_height = if self.asset_browser.collapsed {
-            28.0
-        } else {
-            self.asset_browser.panel_height
-        };
-
-        let panel_top = toolbar_height;
-        let panel_bottom = screen_size.y() - status_bar_height - asset_browser_height;
-        let panel_height = panel_bottom - panel_top;
 
         let resize_handle_width = 5.0;
         let min_panel_width = 150.0;
@@ -166,7 +284,7 @@ impl EditorUI {
             self.asset_browser.panel_height =
                 ResizeHandle::vertical(asset_resize_bounds, self.asset_browser.panel_height)
                     .inverted()
-                    .min_value(min_asset_browser_height)
+                    .min_value(min_asset_browser_height + BOTTOM_TAB_HEIGHT)
                     .max_value(max_height)
                     .show(ui);
         }
@@ -226,19 +344,61 @@ impl EditorUI {
             }
         }
 
-        let asset_browser_bounds = Rect2D::from_origin_size(
+        let bottom_bounds = Rect2D::from_origin_size(
             Vec2::new(0.0, panel_bottom),
-            Vec2::new(screen_size.x(), asset_browser_height),
+            Vec2::new(screen_size.x(), bottom_panel_height),
         );
-        ui.register_panel(4, asset_browser_bounds);
+        ui.register_panel(4, bottom_bounds);
 
-        // Set asset browser context for the declarative Custom node
-        set_asset_browser_ctx(
-            asset_browser_bounds,
-            self.theme.clone(),
-            self.focused_panel == super::FocusedPanel::AssetBrowser,
-            viewport_bounds,
+        // Draw tab bar and get content bounds for the active tab
+        let (bottom_content_bounds, clicked_tab) = draw_bottom_tab_bar(
+            ui,
+            bottom_bounds,
+            self.bottom_panel_tab,
+            &self.theme,
+            self.asset_browser.collapsed,
         );
+
+        if let Some(tab) = clicked_tab {
+            self.bottom_panel_tab = tab;
+        }
+
+        // Handle collapse toggle from tab bar
+        let toggle_bounds_x = bottom_bounds.min.x() + ui.style().item_inner_spacing;
+        let toggle_bounds_y = bottom_bounds.min.y() + (BOTTOM_TAB_HEIGHT - 20.0) * 0.5;
+        let toggle_bounds = Rect2D::from_origin_size(
+            Vec2::new(toggle_bounds_x, toggle_bounds_y),
+            Vec2::new(20.0, 20.0),
+        );
+        if ui.is_hovered(toggle_bounds) && ui.mouse_clicked(katla_ui::mouse_button::LEFT) {
+            self.asset_browser.collapsed = !self.asset_browser.collapsed;
+        }
+
+        // Only set context for the active bottom tab
+        match self.bottom_panel_tab {
+            BottomPanelTab::AssetBrowser => {
+                set_asset_browser_ctx(
+                    bottom_content_bounds,
+                    self.theme.clone(),
+                    self.focused_panel == super::FocusedPanel::AssetBrowser,
+                    viewport_bounds,
+                );
+            }
+            BottomPanelTab::Console => {
+                set_console_ctx(ConsoleDrawCtx {
+                    bounds: bottom_content_bounds,
+                    theme: self.theme.clone(),
+                    scroll_state: std::mem::take(&mut self.console_state.scroll_state),
+                    filter_levels: self.console_state.filter_levels,
+                    search_filter: std::mem::take(&mut self.console_state.search_filter),
+                    log_buffer: self.log_buffer.clone(),
+                    pending_actions: Vec::new(),
+                    auto_scroll: self.console_state.auto_scroll,
+                    selection_anchor: self.console_state.selection_anchor,
+                    selection_cursor: self.console_state.selection_cursor,
+                });
+            }
+        }
 
         // Set contexts for panels that need them before the view tree frame
         set_preferences_ctx(PreferencesDrawCtx {
@@ -275,18 +435,20 @@ impl EditorUI {
             self.pending_actions.push(action);
         }
 
-        // Build the asset browser from the declarative context
+        // Build the asset browser from the declarative context (only if active tab)
         let entities = params.entities;
         let loader = &mut *params.loader;
         let thumbnail_texture_handles = params.thumbnail_texture_handles;
 
-        let asset_actions = build_asset_browser_from_ctx(
-            &mut self.asset_browser,
-            ui,
-            loader,
-            thumbnail_texture_handles,
-        );
-        self.pending_actions.extend(asset_actions);
+        if self.bottom_panel_tab == BottomPanelTab::AssetBrowser {
+            let asset_actions = build_asset_browser_from_ctx(
+                &mut self.asset_browser,
+                ui,
+                loader,
+                thumbnail_texture_handles,
+            );
+            self.pending_actions.extend(asset_actions);
+        }
 
         if let Some(toolbar_ctx) = take_toolbar_ctx() {
             self.toolbar_state = toolbar_ctx.state;
@@ -299,6 +461,8 @@ impl EditorUI {
         if let Some(inspector_ctx) = take_inspector_ctx() {
             self.inspector_edit = inspector_ctx.edit;
             self.inspector_scroll_state = inspector_ctx.scroll_state;
+            self.add_component_open = inspector_ctx.add_component_open;
+            self.add_component_filter = inspector_ctx.add_component_filter;
             self.pending_actions
                 .extend_from_slice(&inspector_ctx.pending_actions);
         }
@@ -337,6 +501,20 @@ impl EditorUI {
             self.preferences_panel_state = prefs_ctx.state;
             for action in prefs_ctx.pending_actions {
                 self.apply_preferences_action(action);
+            }
+        }
+
+        if self.bottom_panel_tab == BottomPanelTab::Console {
+            if let Some(console_ctx) = take_console_ctx() {
+                self.console_state.scroll_state = console_ctx.scroll_state;
+                self.console_state.filter_levels = console_ctx.filter_levels;
+                self.console_state.search_filter = console_ctx.search_filter;
+                self.console_state.auto_scroll = console_ctx.auto_scroll;
+                self.console_state.selection_anchor = console_ctx.selection_anchor;
+                self.console_state.selection_cursor = console_ctx.selection_cursor;
+                for action in console_ctx.pending_actions {
+                    self.pending_actions.push(action);
+                }
             }
         }
 
