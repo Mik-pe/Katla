@@ -41,6 +41,9 @@ fn build_test_registry() -> ComponentRegistry {
         create_default: |world, entity| {
             world.add_component(entity, TestTransform::default());
         },
+        remove_component: |world, entity| {
+            world.remove_component::<TestTransform>(entity);
+        },
         get_fields: |_world, _entity| TestTransform::fields(),
         get_field_value: |world, entity, field_name| {
             let comp = world.get_component_mut::<TestTransform>(entity)?;
@@ -84,6 +87,9 @@ fn build_test_registry() -> ComponentRegistry {
         create_default: |world, entity| {
             world.add_component(entity, TestName::default());
         },
+        remove_component: |world, entity| {
+            world.remove_component::<TestName>(entity);
+        },
         get_fields: |_world, _entity| TestName::fields(),
         get_field_value: |world, entity, field_name| {
             let comp = world.get_component_mut::<TestName>(entity)?;
@@ -126,6 +132,9 @@ fn build_test_registry() -> ComponentRegistry {
         has_component: |world, entity| world.get_component::<TestLight>(entity).is_some(),
         create_default: |world, entity| {
             world.add_component(entity, TestLight::default());
+        },
+        remove_component: |world, entity| {
+            world.remove_component::<TestLight>(entity);
         },
         get_fields: |_world, _entity| TestLight::fields(),
         get_field_value: |world, entity, field_name| {

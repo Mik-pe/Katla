@@ -26,6 +26,9 @@ fn register_name_component(registry: &mut ComponentRegistry) {
         create_default: |world: &mut World, entity: EntityId| {
             world.add_component(entity, NameComponent::new("Unnamed"));
         },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<NameComponent>(entity);
+        },
         get_fields: |_world: &World, _entity: EntityId| NameComponent::fields(),
         get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
             let comp = world.get_component_mut::<NameComponent>(entity)?;
@@ -71,6 +74,9 @@ fn register_point_light(registry: &mut ComponentRegistry) {
         },
         create_default: |world: &mut World, entity: EntityId| {
             world.add_component(entity, PointLight::default());
+        },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<PointLight>(entity);
         },
         get_fields: |_world: &World, _entity: EntityId| PointLight::fields(),
         get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
@@ -118,6 +124,9 @@ fn register_mass_component(registry: &mut ComponentRegistry) {
         create_default: |world: &mut World, entity: EntityId| {
             world.add_component(entity, MassComponent::default());
         },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<MassComponent>(entity);
+        },
         get_fields: |_world: &World, _entity: EntityId| MassComponent::fields(),
         get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
             let comp = world.get_component_mut::<MassComponent>(entity)?;
@@ -163,6 +172,9 @@ fn register_drag_component(registry: &mut ComponentRegistry) {
         },
         create_default: |world: &mut World, entity: EntityId| {
             world.add_component(entity, DragComponent::default());
+        },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<DragComponent>(entity);
         },
         get_fields: |_world: &World, _entity: EntityId| DragComponent::fields(),
         get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
@@ -212,6 +224,9 @@ fn register_perspective_component(registry: &mut ComponentRegistry) {
         create_default: |world: &mut World, entity: EntityId| {
             world.add_component(entity, PerspectiveComponent::default());
         },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<PerspectiveComponent>(entity);
+        },
         get_fields: |_world: &World, _entity: EntityId| PerspectiveComponent::fields(),
         get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
             let comp = world.get_component_mut::<PerspectiveComponent>(entity)?;
@@ -257,6 +272,9 @@ fn register_directional_light(registry: &mut ComponentRegistry) {
         },
         create_default: |world: &mut World, entity: EntityId| {
             world.add_component(entity, DirectionalLight::default());
+        },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<DirectionalLight>(entity);
         },
         get_fields: |_world: &World, _entity: EntityId| DirectionalLight::fields(),
         get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
@@ -306,6 +324,9 @@ fn register_script_component(registry: &mut ComponentRegistry) {
         create_default: |world: &mut World, entity: EntityId| {
             world.add_component(entity, katla_script::ScriptComponent::new(""));
         },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<katla_script::ScriptComponent>(entity);
+        },
         get_fields: |_world: &World, _entity: EntityId| katla_script::ScriptComponent::fields(),
         get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
             let comp = world.get_component_mut::<katla_script::ScriptComponent>(entity)?;
@@ -352,6 +373,9 @@ fn register_velocity_component(registry: &mut ComponentRegistry) {
         create_default: |world: &mut World, entity: EntityId| {
             world.add_component(entity, VelocityComponent::default());
         },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<VelocityComponent>(entity);
+        },
         get_fields: |_world: &World, _entity: EntityId| VelocityComponent::fields(),
         get_field_value: |_world: &mut World, _entity: EntityId, _field_name: &str| {
             // Vec3 fields produce FieldMut::Unknown, so no field-level access
@@ -386,6 +410,9 @@ fn register_particle_emitter_component(registry: &mut ComponentRegistry) {
         },
         create_default: |world: &mut World, entity: EntityId| {
             world.add_component(entity, ParticleEmitterComponent::default());
+        },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<ParticleEmitterComponent>(entity);
         },
         get_fields: |_world: &World, _entity: EntityId| ParticleEmitterComponent::fields(),
         get_field_value: |_world: &mut World, _entity: EntityId, _field_name: &str| {

@@ -536,6 +536,7 @@ fn check_protected_entity(op: &SceneOp, app: &super::super::Application) -> Resu
         | SceneOp::SetField { entity, .. }
         | SceneOp::DuplicateEntity { entity, .. }
         | SceneOp::AddComponent { entity, .. }
+        | SceneOp::RemoveComponent { entity, .. }
         | SceneOp::GetComponentAttributes { entity, .. }
         | SceneOp::SetParent { entity, .. } => Some(*entity),
         _ => None,

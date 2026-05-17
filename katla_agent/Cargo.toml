@@ -29,4 +29,5 @@ async-trait = { version = "0.1", optional = true }
 
 [dev-dependencies]
 katla_ecs = { workspace = true, features = ["editor"] }
+tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }

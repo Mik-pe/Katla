@@ -88,6 +88,9 @@ fn build_test_registry() -> ComponentRegistry {
         create_default: |world: &mut crate::World, entity: crate::EntityId| {
             world.add_component(entity, TestTransform::default());
         },
+        remove_component: |world: &mut crate::World, entity: crate::EntityId| {
+            world.remove_component::<TestTransform>(entity);
+        },
         get_fields: |_world: &crate::World, _entity: crate::EntityId| TestTransform::fields(),
         get_field_value: |world: &mut crate::World, entity: crate::EntityId, field_name: &str| {
             let comp = world.get_component_mut::<TestTransform>(entity)?;
@@ -137,6 +140,9 @@ fn build_test_registry() -> ComponentRegistry {
         create_default: |world: &mut crate::World, entity: crate::EntityId| {
             world.add_component(entity, TestName::default());
         },
+        remove_component: |world: &mut crate::World, entity: crate::EntityId| {
+            world.remove_component::<TestName>(entity);
+        },
         get_fields: |_world: &crate::World, _entity: crate::EntityId| TestName::fields(),
         get_field_value: |world: &mut crate::World, entity: crate::EntityId, field_name: &str| {
             let comp = world.get_component_mut::<TestName>(entity)?;
@@ -185,6 +191,9 @@ fn build_test_registry() -> ComponentRegistry {
         },
         create_default: |world: &mut crate::World, entity: crate::EntityId| {
             world.add_component(entity, TestLight::default());
+        },
+        remove_component: |world: &mut crate::World, entity: crate::EntityId| {
+            world.remove_component::<TestLight>(entity);
         },
         get_fields: |_world: &crate::World, _entity: crate::EntityId| TestLight::fields(),
         get_field_value: |world: &mut crate::World, entity: crate::EntityId, field_name: &str| {
