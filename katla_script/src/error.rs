@@ -18,6 +18,9 @@ pub enum ScriptError {
         hook: String,
     },
     InstanceNotFound(ScriptInstanceHandle),
+    ScriptNotLoaded {
+        path: String,
+    },
 }
 
 impl fmt::Display for ScriptError {
@@ -46,6 +49,9 @@ impl fmt::Display for ScriptError {
             ScriptError::InstanceNotFound(handle) => {
                 write!(f, "script instance not found: {:?}", handle)
             }
+            ScriptError::ScriptNotLoaded { path } => {
+                write!(f, "script not loaded: '{path}'")
+            }
         }
     }
 }
@@ -57,6 +63,7 @@ impl std::error::Error for ScriptError {
             ScriptError::ExecutionFailed { source, .. } => Some(source),
             ScriptError::InvalidHook { .. } => None,
             ScriptError::InstanceNotFound(_) => None,
+            ScriptError::ScriptNotLoaded { .. } => None,
         }
     }
 }

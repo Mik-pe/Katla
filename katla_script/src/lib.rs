@@ -11,3 +11,6 @@ pub use engine::ScriptEngine;
 pub use error::ScriptError;
 pub use system::ScriptSystem;
 pub use system::ScriptsActive;
+
+#[cfg(test)]
+mod tests;

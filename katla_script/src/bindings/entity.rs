@@ -1,5 +1,3 @@
-use std::fmt::Write;
-
 use katla_ecs::EntityId;
 use mlua::{FromLua, Lua, UserData, UserDataMethods, Value};
 
@@ -27,9 +25,7 @@ impl UserData for LuaEntityId {
         methods.add_method("id", |_, this, ()| Ok(this.0.id()));
 
         methods.add_meta_method(mlua::MetaMethod::ToString, |_, this, ()| {
-            let mut s = String::new();
-            write!(s, "{}", this.0).unwrap();
-            Ok(s)
+            Ok(format!("{}", this.0))
         });
 
         methods.add_meta_method(mlua::MetaMethod::Eq, |_, this, other: LuaEntityId| {

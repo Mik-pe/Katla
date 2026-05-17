@@ -1,15 +1,17 @@
 use std::any::TypeId;
+use std::rc::Rc;
 
 use katla_ecs::events::{ComponentEvent, EntityEvent};
 use katla_ecs::{EntityId, System, World};
 use katla_math::Transform;
 use log::{debug, error};
 
-use crate::bindings::script_world::InputSnapshot;
-use crate::bindings::script_world::ScriptWorldProxy;
+use crate::bindings::script_world::{InputSnapshot, ScriptWorldProxy, SharedWorldData};
 use crate::bindings::world::ScriptCommand;
 use crate::component::{ScriptComponent, ScriptInstanceHandle};
 use crate::engine::ScriptEngine;
+
+const MAX_SCRIPT_ERRORS: u32 = 10;
 
 type TransformProvider = Box<dyn FnMut(&World) -> Vec<(EntityId, Transform)>>;
 type CommandConsumer = Box<dyn FnMut(&mut World, &[ScriptCommand])>;
@@ -130,7 +132,7 @@ impl ScriptSystem {
         }
     }
 
-    fn build_proxy(&mut self, world: &World) -> ScriptWorldProxy {
+    fn build_shared_data(&mut self, world: &World) -> SharedWorldData {
         let transforms = match self.transform_provider.as_mut() {
             Some(provider) => provider(world),
             None => Vec::new(),
@@ -141,11 +143,13 @@ impl ScriptSystem {
             None => InputSnapshot::default(),
         };
 
-        let mut proxy = ScriptWorldProxy::with_transforms(transforms).with_input(input);
-        for id in world.entity_ids() {
-            proxy.live_entities.push(id);
+        let live_entities = world.entity_ids().collect();
+
+        SharedWorldData {
+            transforms: transforms.into_iter().collect(),
+            live_entities,
+            input_state: input,
         }
-        proxy
     }
 
     fn apply_commands(&mut self, commands: Vec<ScriptCommand>, world: &mut World) {
@@ -225,7 +229,7 @@ impl System for ScriptSystem {
             return;
         }
 
-        let proxy = self.build_proxy(world);
+        let shared = Rc::new(self.build_shared_data(world));
 
         let active: Vec<(ScriptInstanceHandle, EntityId)> = self
             .engine
@@ -233,19 +237,39 @@ impl System for ScriptSystem {
             .iter()
             .enumerate()
             .filter_map(|(i, opt)| {
-                opt.as_ref()
-                    .map(|inst| (ScriptInstanceHandle(i as u32), inst.entity))
+                opt.as_ref().map(|inst| {
+                    (
+                        ScriptInstanceHandle {
+                            index: i as u32,
+                            generation: inst.generation,
+                        },
+                        inst.entity,
+                    )
+                })
             })
             .collect();
 
         let mut all_commands = Vec::new();
         for (handle, entity) in active {
+            let proxy = ScriptWorldProxy::from_shared(Rc::clone(&shared));
             match self
                 .engine
-                .execute_on_update(handle, entity, proxy.clone(), delta_time)
+                .execute_on_update(handle, entity, proxy, delta_time)
             {
                 Ok(commands) => all_commands.extend(commands),
-                Err(e) => error!("Script on_update error for entity {entity}: {e}"),
+                Err(e) => {
+                    error!("Script on_update error for entity {entity}: {e}");
+                    if let Some(Some(inst)) = self.engine.instances.get(handle.index as usize)
+                        && inst.generation == handle.generation
+                        && inst.error_count >= MAX_SCRIPT_ERRORS
+                    {
+                        log::warn!(
+                            "Disabling script for entity {entity} after {MAX_SCRIPT_ERRORS} errors"
+                        );
+                        self.engine.remove_instance(handle);
+                        continue;
+                    }
+                }
             }
         }
 

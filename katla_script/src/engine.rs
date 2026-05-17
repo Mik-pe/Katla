@@ -16,6 +16,8 @@ pub struct ScriptEngine {
     pub(crate) vm: Lua,
     pub(crate) loaded_scripts: HashMap<String, RegistryKey>,
     pub(crate) instances: Vec<Option<ScriptInstance>>,
+    pub(crate) generations: Vec<u32>,
+    pub(crate) free_list: Vec<u32>,
     /// Base directory for script resolution (e.g. "resources/scripts").
     /// When set, bare script names are resolved relative to this directory.
     pub(crate) scripts_dir: Option<String>,
@@ -26,6 +28,8 @@ pub(crate) struct ScriptInstance {
     pub entity: EntityId,
     pub env_key: RegistryKey,
     pub hooks: ScriptHooks,
+    pub generation: u32,
+    pub(crate) error_count: u32,
 }
 
 pub(crate) struct ScriptHooks {
@@ -140,17 +144,6 @@ impl ScriptEngine {
                 source: e,
             })?;
 
-        let transform_table = vm.create_table().map_err(|e| ScriptError::LoadFailed {
-            path: "<vm>".into(),
-            source: e,
-        })?;
-        globals
-            .set("Transform", transform_table)
-            .map_err(|e| ScriptError::LoadFailed {
-                path: "<vm>".into(),
-                source: e,
-            })?;
-
         let color_table = vm.create_table().map_err(|e| ScriptError::LoadFailed {
             path: "<vm>".into(),
             source: e,
@@ -209,6 +202,8 @@ impl ScriptEngine {
             vm,
             loaded_scripts: HashMap::new(),
             instances: Vec::new(),
+            generations: Vec::new(),
+            free_list: Vec::new(),
             scripts_dir: None,
         })
     }
@@ -268,7 +263,12 @@ impl ScriptEngine {
     ) -> Result<ScriptInstanceHandle, ScriptError> {
         self.load_script(script_path)?;
 
-        let script_key = self.loaded_scripts.get(script_path).unwrap();
+        let script_key =
+            self.loaded_scripts
+                .get(script_path)
+                .ok_or(ScriptError::ScriptNotLoaded {
+                    path: script_path.into(),
+                })?;
         let script_func: mlua::Function =
             self.vm
                 .registry_value(script_key)
@@ -330,13 +330,41 @@ impl ScriptEngine {
                 source: e,
             })?;
 
-        let handle = ScriptInstanceHandle(self.instances.len() as u32);
-        self.instances.push(Some(ScriptInstance {
+        let (handle, slot) = if let Some(idx) = self.free_list.pop() {
+            let generation = self.generations[idx as usize];
+            (
+                ScriptInstanceHandle {
+                    index: idx,
+                    generation,
+                },
+                idx as usize,
+            )
+        } else {
+            let idx = self.instances.len() as u32;
+            self.generations.push(0);
+            (
+                ScriptInstanceHandle {
+                    index: idx,
+                    generation: 0,
+                },
+                idx as usize,
+            )
+        };
+
+        let instance = ScriptInstance {
             script_path: script_path.to_string(),
             entity,
             env_key,
             hooks,
-        }));
+            generation: handle.generation,
+            error_count: 0,
+        };
+
+        if slot < self.instances.len() {
+            self.instances[slot] = Some(instance);
+        } else {
+            self.instances.push(Some(instance));
+        }
 
         Ok(handle)
     }
@@ -380,8 +408,9 @@ impl ScriptEngine {
         let (script_path, hook_key) = {
             let instance = self
                 .instances
-                .get(handle.0 as usize)
+                .get(handle.index as usize)
                 .and_then(|opt| opt.as_ref())
+                .filter(|inst| inst.generation == handle.generation)
                 .ok_or(ScriptError::InstanceNotFound(handle))?;
             match &instance.hooks.on_update {
                 Some(key) => (instance.script_path.clone(), key),
@@ -409,6 +438,11 @@ impl ScriptEngine {
 
         func.call::<()>((LuaEntityId(entity), ud.clone(), dt))
             .map_err(|e| {
+                if let Some(Some(inst)) = self.instances.get_mut(handle.index as usize)
+                    && inst.generation == handle.generation
+                {
+                    inst.error_count += 1;
+                }
                 log::error!("Script on_update failed for '{script_path}': {e}");
                 ScriptError::ExecutionFailed {
                     path: script_path.clone(),
@@ -437,8 +471,9 @@ impl ScriptEngine {
         let (script_path, hook_key) = {
             let instance = self
                 .instances
-                .get(handle.0 as usize)
+                .get(handle.index as usize)
                 .and_then(|opt| opt.as_ref())
+                .filter(|inst| inst.generation == handle.generation)
                 .ok_or(ScriptError::InstanceNotFound(handle))?;
             match &instance.hooks.on_spawn {
                 Some(key) => (instance.script_path.clone(), key),
@@ -493,8 +528,9 @@ impl ScriptEngine {
         let (script_path, hook_key) = {
             let instance = self
                 .instances
-                .get(handle.0 as usize)
+                .get(handle.index as usize)
                 .and_then(|opt| opt.as_ref())
+                .filter(|inst| inst.generation == handle.generation)
                 .ok_or(ScriptError::InstanceNotFound(handle))?;
             match &instance.hooks.on_destroy {
                 Some(key) => (instance.script_path.clone(), key),
@@ -524,9 +560,13 @@ impl ScriptEngine {
     }
 
     pub fn remove_instance(&mut self, handle: ScriptInstanceHandle) {
-        let idx = handle.0 as usize;
-        if idx < self.instances.len() {
+        let idx = handle.index as usize;
+        if let Some(inst) = self.instances.get(idx).and_then(|opt| opt.as_ref())
+            && inst.generation == handle.generation
+        {
+            self.generations[idx] += 1;
             self.instances[idx] = None;
+            self.free_list.push(handle.index);
         }
     }
 }

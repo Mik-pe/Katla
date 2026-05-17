@@ -54,10 +54,6 @@ impl UserData for LuaVec3 {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_function("new", |_, (x, y, z): (f32, f32, f32)| {
-            Ok(LuaVec3(Vec3::new(x, y, z)))
-        });
-
         methods.add_method("length", |_, this, ()| Ok(this.0.length()));
         methods.add_method("length_squared", |_, this, ()| Ok(this.0.length_squared()));
         methods.add_method("normalize", |_, this, ()| Ok(LuaVec3(this.0.normalize())));
@@ -118,13 +114,6 @@ impl UserData for LuaQuat {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_function("identity", |_, ()| Ok(LuaQuat(Quat::identity())));
-        methods.add_function("new", |_, (x, y, z, w): (f32, f32, f32, f32)| {
-            Ok(LuaQuat(Quat::new(x, y, z, w)))
-        });
-        methods.add_function("from_axis_angle", |_, (axis, angle): (LuaVec3, f32)| {
-            Ok(LuaQuat(Quat::from_axis_angle(axis.0, angle)))
-        });
         methods.add_method("conjugate", |_, this, ()| Ok(LuaQuat(this.0.conjugate())));
         methods.add_method("normalize", |_, this, ()| {
             let mut q = this.0;
@@ -242,15 +231,6 @@ impl UserData for LuaColor {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_function("new", |_, (r, g, b, a): (f32, f32, f32, f32)| {
-            Ok(LuaColor(Color::new(r, g, b, a)))
-        });
-        methods.add_function("rgb", |_, (r, g, b): (f32, f32, f32)| {
-            Ok(LuaColor(Color::rgb(r, g, b)))
-        });
-        methods.add_function("from_rgb_hex", |_, hex: u32| {
-            Ok(LuaColor(Color::from_rgb_hex(hex)))
-        });
         methods.add_method("with_alpha", |_, this, alpha: f32| {
             Ok(LuaColor(this.0.with_alpha(alpha)))
         });
