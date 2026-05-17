@@ -146,7 +146,7 @@ impl ParticleEmitterComponent {
     ///
     /// All particles spawn from a single point at the emitter position.
     pub fn with_point_shape(&mut self) -> &mut Self {
-        self.config.set_shape(EmitterShape::Point);
+        self.config.shape = EmitterShape::Point;
         self.config.shape_params = [0.0; 4];
         self
     }
@@ -167,7 +167,7 @@ impl ParticleEmitterComponent {
     /// assert_eq!(rain_emitter.config.shape_params[0], 10.0);
     /// ```
     pub fn with_line_shape(&mut self, length: f32) -> &mut Self {
-        self.config.set_shape(EmitterShape::Line);
+        self.config.shape = EmitterShape::Line;
         self.config.shape_params = [length, 0.0, 0.0, 0.0];
         log::debug!("Set line shape with length {}", length);
         self
@@ -189,7 +189,7 @@ impl ParticleEmitterComponent {
     /// assert_eq!(aura_emitter.config.shape_params[0], 2.0);
     /// ```
     pub fn with_circle_shape(&mut self, radius: f32) -> &mut Self {
-        self.config.set_shape(EmitterShape::Circle);
+        self.config.shape = EmitterShape::Circle;
         self.config.shape_params = [radius, 0.0, 0.0, 0.0];
         log::debug!("Set circle shape with radius {}", radius);
         self
@@ -211,7 +211,7 @@ impl ParticleEmitterComponent {
     /// assert_eq!(explosion_emitter.config.shape_params[0], 5.0);
     /// ```
     pub fn with_sphere_shape(&mut self, radius: f32) -> &mut Self {
-        self.config.set_shape(EmitterShape::Sphere);
+        self.config.shape = EmitterShape::Sphere;
         self.config.shape_params = [radius, 0.0, 0.0, 0.0];
         log::debug!("Set sphere shape with radius {}", radius);
         self
@@ -237,7 +237,7 @@ impl ParticleEmitterComponent {
     /// assert_eq!(volume_emitter.config.shape_params[2], 2.0);
     /// ```
     pub fn with_box_shape(&mut self, width: f32, height: f32, depth: f32) -> &mut Self {
-        self.config.set_shape(EmitterShape::Box);
+        self.config.shape = EmitterShape::Box;
         self.config.shape_params = [width, height, depth, 0.0];
         log::debug!(
             "Set box shape with dimensions {}x{}x{}",

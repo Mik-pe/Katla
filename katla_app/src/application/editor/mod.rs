@@ -1249,6 +1249,53 @@ pub fn process_editor_actions(app: &mut Application) {
                     comp.script_path = path;
                 }
             }
+            EditorAction::SetEmitterField { entity, field } => {
+                if let Some(emitter) = app
+                    .world
+                    .get_component_mut::<ParticleEmitterComponent>(entity)
+                {
+                    use crate::ui::EmitterField;
+                    match field {
+                        EmitterField::EmitRate(v) => emitter.config.emit_rate = v,
+                        EmitterField::BaseLifetime(v) => emitter.config.base_lifetime = v,
+                        EmitterField::LifetimeVariation(v) => emitter.config.lifetime_variation = v,
+                        EmitterField::VelocityMagnitude(v) => emitter.config.velocity_magnitude = v,
+                        EmitterField::VelocityConeAngle(v) => {
+                            emitter.config.velocity_cone_angle = v
+                        }
+                        EmitterField::BaseScale(v) => emitter.config.base_scale = v,
+                        EmitterField::ScaleVariation(v) => emitter.config.scale_variation = v,
+                        EmitterField::Gravity(v) => emitter.config.gravity = v,
+                        EmitterField::TurbulenceStrength(v) => {
+                            emitter.config.turbulence_strength = v
+                        }
+                        EmitterField::TurbulenceFrequency(v) => {
+                            emitter.config.turbulence_frequency = v
+                        }
+                        EmitterField::Color(v) => emitter.config.color = v,
+                        EmitterField::ColorVariation(v) => emitter.config.color_variation = v,
+                        EmitterField::ShapePoint => {
+                            emitter.config.shape = katla_gfx::particles::EmitterShape::Point;
+                            emitter.config.shape_params = [0.0; 4];
+                        }
+                        EmitterField::ShapeLine => {
+                            emitter.config.shape = katla_gfx::particles::EmitterShape::Line;
+                        }
+                        EmitterField::ShapeCircle => {
+                            emitter.config.shape = katla_gfx::particles::EmitterShape::Circle;
+                        }
+                        EmitterField::ShapeSphere => {
+                            emitter.config.shape = katla_gfx::particles::EmitterShape::Sphere;
+                        }
+                        EmitterField::ShapeBox => {
+                            emitter.config.shape = katla_gfx::particles::EmitterShape::Box;
+                        }
+                        EmitterField::ShapeParam0(v) => emitter.config.shape_params[0] = v,
+                        EmitterField::ShapeParam1(v) => emitter.config.shape_params[1] = v,
+                        EmitterField::ShapeParam2(v) => emitter.config.shape_params[2] = v,
+                    }
+                }
+            }
         }
     }
 
@@ -1304,7 +1351,7 @@ fn collect_particle_inspector_data(app: &mut Application) {
 
         // Build config view for the selected emitter
         if app.editor.editor_ui.selected_particle_emitter == Some(entity_id) {
-            let shape_name = match EmitterShape::from_u32(emitter.config.shape) {
+            let shape_name = match emitter.config.shape {
                 EmitterShape::Point => "Point",
                 EmitterShape::Line => "Line",
                 EmitterShape::Circle => "Circle",
@@ -1368,6 +1415,7 @@ fn collect_particle_inspector_data(app: &mut Application) {
 
     app.editor.editor_ui.particle_inspector_data = ParticleInspectorData {
         emitter_entities,
+        selected_emitter_entity: app.editor.editor_ui.selected_particle_emitter,
         selected_emitter_config: selected_config,
         stats,
     };

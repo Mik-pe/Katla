@@ -164,7 +164,7 @@ impl SceneManager {
                     gravity: p.config.gravity,
                     turbulence_strength: p.config.turbulence_strength,
                     turbulence_frequency: p.config.turbulence_frequency,
-                    shape: p.config.get_shape(),
+                    shape: p.config.shape,
                     shape_params: p.config.shape_params,
                     active: p.active,
                 });
@@ -588,7 +588,7 @@ impl SceneManager {
             emitter.config.gravity = pe_desc.gravity;
             emitter.config.turbulence_strength = pe_desc.turbulence_strength;
             emitter.config.turbulence_frequency = pe_desc.turbulence_frequency;
-            emitter.config.set_shape(pe_desc.shape);
+            emitter.config.shape = pe_desc.shape;
             emitter.config.shape_params = pe_desc.shape_params;
             emitter.active = pe_desc.active;
         }

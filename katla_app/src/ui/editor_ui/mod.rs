@@ -416,6 +416,10 @@ impl EditorUI {
             ParticleInspectorAction::Close => {
                 self.particle_inspector_state.panel.close();
             }
+            ParticleInspectorAction::SetEmitterField(entity, field) => {
+                self.pending_actions
+                    .push(EditorAction::SetEmitterField { entity, field });
+            }
         }
     }
 

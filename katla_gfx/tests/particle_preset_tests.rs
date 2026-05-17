@@ -118,7 +118,7 @@ fn test_save_and_load_preset() {
         scale_variation: 0.3,
         color: [0.8, 0.2, 0.1, 1.0],
         color_variation: 0.1,
-        shape: 2, // Sphere
+        shape: katla_gfx::particles::EmitterShape::Circle,
         shape_params: [3.0, 0.0, 0.0, 0.0],
         ..Default::default()
     };

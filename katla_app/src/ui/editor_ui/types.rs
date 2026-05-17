@@ -278,6 +278,11 @@ pub enum EditorAction {
     SetConsoleSearch { text: String },
     /// Set the script path on an entity's ScriptComponent.
     SetScriptPath { entity: EntityId, path: String },
+    /// Update a particle emitter config field on an entity.
+    SetEmitterField {
+        entity: EntityId,
+        field: crate::ui::particle_inspector::EmitterField,
+    },
 }
 
 /// Active tab in the bottom panel strip.
