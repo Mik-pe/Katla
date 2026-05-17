@@ -1,7 +1,7 @@
 use std::fmt;
 
 use katla_math::{Color, Quat, Transform, Vec3};
-use mlua::{FromLua, Lua, MetaMethod, UserData, UserDataFields, UserDataMethods, Value};
+use mlua::{FromLua, IntoLua, Lua, MetaMethod, UserData, UserDataFields, UserDataMethods, Value};
 
 macro_rules! impl_from_lua_userdata {
     ($wrapper:ident, $inner:ty) => {
@@ -78,12 +78,20 @@ impl UserData for LuaVec3 {
         methods.add_meta_method(MetaMethod::Sub, |_, this, other: LuaVec3| {
             Ok(LuaVec3(this.0 - other.0))
         });
-        methods.add_meta_method(MetaMethod::Mul, |_, this, rhs: f32| {
-            Ok(LuaVec3(this.0 * rhs))
-        });
-        methods.add_meta_function(MetaMethod::Mul, |_, (lhs, rhs): (f32, LuaVec3)| {
-            Ok(LuaVec3(lhs * rhs.0))
-        });
+        methods.add_meta_function(
+            MetaMethod::Mul,
+            |_, (lhs, rhs): (LuaVec3, Value)| match rhs {
+                Value::Number(n) => Ok(LuaVec3(lhs.0 * n as f32)),
+                Value::UserData(ud) => {
+                    let other = ud.borrow::<LuaVec3>()?;
+                    Ok(LuaVec3(lhs.0 * other.0))
+                }
+                _ => Err(mlua::Error::runtime(format!(
+                    "Vec3.__mul: expected Vec3 or number, got {}",
+                    rhs.type_name()
+                ))),
+            },
+        );
         methods.add_meta_method(MetaMethod::Unm, |_, this, ()| Ok(LuaVec3(-this.0)));
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(this.to_string()));
     }
@@ -127,11 +135,30 @@ impl UserData for LuaQuat {
             Ok(LuaQuat(Quat::slerp(this.0, other.0, t)))
         });
 
-        methods.add_meta_method(MetaMethod::Mul, |_, this, other: LuaQuat| {
-            Ok(LuaQuat(this.0 * other.0))
-        });
-        methods.add_meta_function(MetaMethod::Mul, |_, (q, v): (LuaQuat, LuaVec3)| {
-            Ok(LuaVec3(q.0 * v.0))
+        methods.add_meta_function(MetaMethod::Mul, |lua, (lhs, rhs): (LuaQuat, Value)| {
+            let type_name = rhs.type_name();
+            match &rhs {
+                Value::UserData(ud) => {
+                    if let Ok(q) = ud.borrow::<LuaQuat>() {
+                        let result = LuaQuat(lhs.0 * q.0);
+                        drop(q);
+                        result.into_lua(lua)
+                    } else if let Ok(v) = ud.borrow::<LuaVec3>() {
+                        let result = LuaVec3(lhs.0 * v.0);
+                        drop(v);
+                        result.into_lua(lua)
+                    } else {
+                        Err(mlua::Error::runtime(format!(
+                            "Quat.__mul: expected Quat or Vec3, got {}",
+                            type_name
+                        )))
+                    }
+                }
+                _ => Err(mlua::Error::runtime(format!(
+                    "Quat.__mul: expected Quat or Vec3, got {}",
+                    type_name
+                ))),
+            }
         });
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(this.to_string()));
     }
@@ -238,9 +265,16 @@ impl UserData for LuaColor {
         methods.add_meta_method(MetaMethod::Sub, |_, this, other: LuaColor| {
             Ok(LuaColor(this.0 - other.0))
         });
-        methods.add_meta_method(MetaMethod::Mul, |_, this, rhs: f32| {
-            Ok(LuaColor(this.0 * rhs))
-        });
+        methods.add_meta_function(
+            MetaMethod::Mul,
+            |_, (lhs, rhs): (LuaColor, Value)| match rhs {
+                Value::Number(n) => Ok(LuaColor(lhs.0 * n as f32)),
+                _ => Err(mlua::Error::runtime(format!(
+                    "Color.__mul: expected number, got {}",
+                    rhs.type_name()
+                ))),
+            },
+        );
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(this.to_string()));
     }
 }

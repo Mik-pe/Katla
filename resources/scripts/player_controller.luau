@@ -31,8 +31,9 @@ function on_update(entity, world, dt)
 
     local len = dir:length()
     if len > 0 then
-        dir = dir:normalize()
-        local new_pos = pos + dir * speed * dt
+        local move_distance = speed * dt
+        local move_vector = dir * move_distance
+        local new_pos = pos + move_vector
         world:set_position(entity, new_pos)
     end
 end
