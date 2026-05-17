@@ -63,7 +63,7 @@
 - [x] Add `on_destroy` hook — called when entity with ScriptComponent is destroyed
 - [x] Register `EntityId` as Luau `UserData` — `id()`, `__tostring`, comparison operators
 - [x] Add entity spawn/destroy from scripts — `world:spawn_entity()` returns EntityId, `world:destroy_entity(id)` queues destruction
-- [ ] Add entity query from scripts — `world:entity_exists(id)`, `world:get_all_with("ScriptComponent")`
+- [ ] Add entity query from scripts — `world:get_all_with("ScriptComponent")` (entity_exists already implemented)
 
 ### Phase 3: Input + serialization + error handling
 - [x] Add input bindings — `world:is_action_pressed("move_forward")`, `world:get_mouse_delta()`, reads from InputState resource
@@ -136,7 +136,7 @@
 
 - [x] Register ParticleEmitterComponent in the component registry — has full inspector UI (5 sliders) but can't be added via "Add Component" or AI agent
 - [x] Register VelocityComponent in the component registry — serialized in scenes but not addable from UI or AI
-- [ ] Add serialization round-trip for components missing it — MassComponent, DragComponent, PerspectiveComponent, DirectionalLight are registered but lost on scene save/load
+- [x] Add serialization round-trip for components missing it — MassComponent, DragComponent, PerspectiveComponent, DirectionalLight are registered but lost on scene save/load
 
 ### Panels and tooling
 
