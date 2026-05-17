@@ -28,6 +28,7 @@ use crate::components::{ParticleEmitterComponent, WorldTransform};
 /// ```
 pub struct ParticleSystem {
     entity_emitters: HashMap<EntityId, EmitterHandle>,
+    entity_kill_on_destroy: HashMap<EntityId, bool>,
 }
 
 impl ParticleSystem {
@@ -35,6 +36,7 @@ impl ParticleSystem {
     pub fn new() -> Self {
         Self {
             entity_emitters: HashMap::new(),
+            entity_kill_on_destroy: HashMap::new(),
         }
     }
 
@@ -68,7 +70,11 @@ impl ParticleSystem {
             .collect();
         for entity_id in destroyed {
             if let Some(handle) = self.entity_emitters.remove(&entity_id) {
-                particle_system.destroy_emitter(handle);
+                let kill = self
+                    .entity_kill_on_destroy
+                    .remove(&entity_id)
+                    .unwrap_or(false);
+                particle_system.destroy_emitter(handle, kill);
                 info!(
                     "Destroyed particle emitter for destroyed entity {:?}",
                     entity_id
@@ -94,6 +100,8 @@ impl ParticleSystem {
                         Ok(handle) => {
                             emitter.emitter_handle = Some(handle);
                             self.entity_emitters.insert(entity_id, handle);
+                            self.entity_kill_on_destroy
+                                .insert(entity_id, emitter.kill_on_destroy);
                             info!(
                                 "Created particle emitter at position {:?}",
                                 emitter.config.position
@@ -139,7 +147,11 @@ impl ParticleSystem {
                 // Destroy emitter if component is inactive
                 if let Some(handle) = emitter.emitter_handle.take() {
                     self.entity_emitters.remove(&entity_id);
-                    particle_system.destroy_emitter(handle);
+                    let kill = self
+                        .entity_kill_on_destroy
+                        .remove(&entity_id)
+                        .unwrap_or(false);
+                    particle_system.destroy_emitter(handle, kill);
                     info!("Destroyed particle emitter for inactive component");
                 }
             }

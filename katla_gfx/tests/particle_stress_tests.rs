@@ -138,7 +138,7 @@ fn test_1024_emitters() {
 
     // Destroy some emitters to verify cleanup works
     for i in 0..10 {
-        particle_system.destroy_emitter(emitter_handles[i]);
+        particle_system.destroy_emitter(emitter_handles[i], false);
     }
 
     // Verify destroyed emitters have zeroed emit rate
@@ -191,7 +191,7 @@ fn test_memory_leak() {
 
         // Destroy all 10 emitters
         for handle in handles {
-            particle_system.destroy_emitter(handle);
+            particle_system.destroy_emitter(handle, false);
         }
 
         // Verify memory hasn't grown significantly

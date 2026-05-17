@@ -113,9 +113,9 @@ pub struct EmitterConfig {
     #[serde(default = "default_turbulence_frequency")]
     pub turbulence_frequency: f32,
 
-    /// Padding to match WGSL struct layout (must be present for correct GPU buffer alignment).
+    /// When non-zero, the simulate shader immediately kills all particles belonging to this emitter.
     #[serde(skip)]
-    pub _pad_forces: f32,
+    pub kill_all: u32,
 }
 
 // Safety: EmitterConfig is repr(C), all fields are Pod or padding from Align16Vec4 alignment.
@@ -125,6 +125,10 @@ unsafe impl bytemuck::Pod for EmitterConfig {}
 unsafe impl bytemuck::Zeroable for EmitterConfig {}
 
 impl EmitterConfig {
+    pub fn builder() -> EmitterConfigBuilder {
+        EmitterConfigBuilder::new()
+    }
+
     /// Get the emitter shape as an enum
     pub fn get_shape(&self) -> EmitterShape {
         EmitterShape::from_u32(self.shape)
@@ -133,6 +137,108 @@ impl EmitterConfig {
     /// Set the emitter shape from an enum
     pub fn set_shape(&mut self, shape: EmitterShape) {
         self.shape = shape.as_u32();
+    }
+}
+
+pub struct EmitterConfigBuilder {
+    config: EmitterConfig,
+}
+
+impl EmitterConfigBuilder {
+    pub fn new() -> Self {
+        Self {
+            config: EmitterConfig::default(),
+        }
+    }
+
+    pub fn position(mut self, x: f32, y: f32, z: f32) -> Self {
+        self.config.position = [x, y, z];
+        self
+    }
+
+    pub fn shape(mut self, shape: EmitterShape) -> Self {
+        self.config.set_shape(shape);
+        self
+    }
+
+    pub fn emit_rate(mut self, rate: f32) -> Self {
+        self.config.emit_rate = rate;
+        self
+    }
+
+    pub fn base_lifetime(mut self, lifetime: f32) -> Self {
+        self.config.base_lifetime = lifetime;
+        self
+    }
+
+    pub fn lifetime_variation(mut self, variation: f32) -> Self {
+        self.config.lifetime_variation = variation;
+        self
+    }
+
+    pub fn velocity_direction(mut self, x: f32, y: f32, z: f32) -> Self {
+        self.config.velocity_direction = [x, y, z];
+        self
+    }
+
+    pub fn velocity_magnitude(mut self, magnitude: f32) -> Self {
+        self.config.velocity_magnitude = magnitude;
+        self
+    }
+
+    pub fn velocity_cone_angle(mut self, angle: f32) -> Self {
+        self.config.velocity_cone_angle = angle;
+        self
+    }
+
+    pub fn base_scale(mut self, scale: f32) -> Self {
+        self.config.base_scale = scale;
+        self
+    }
+
+    pub fn scale_variation(mut self, variation: f32) -> Self {
+        self.config.scale_variation = variation;
+        self
+    }
+
+    pub fn color(mut self, r: f32, g: f32, b: f32, a: f32) -> Self {
+        self.config.color = [r, g, b, a];
+        self
+    }
+
+    pub fn color_variation(mut self, variation: f32) -> Self {
+        self.config.color_variation = variation;
+        self
+    }
+
+    pub fn shape_params(mut self, params: [f32; 4]) -> Self {
+        self.config.shape_params = params;
+        self
+    }
+
+    pub fn gravity(mut self, gravity: f32) -> Self {
+        self.config.gravity = gravity;
+        self
+    }
+
+    pub fn turbulence_strength(mut self, strength: f32) -> Self {
+        self.config.turbulence_strength = strength;
+        self
+    }
+
+    pub fn turbulence_frequency(mut self, frequency: f32) -> Self {
+        self.config.turbulence_frequency = frequency;
+        self
+    }
+
+    pub fn build(self) -> EmitterConfig {
+        self.config
+    }
+}
+
+impl Default for EmitterConfigBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -196,7 +302,7 @@ impl Default for EmitterConfig {
             gravity: -9.8,
             turbulence_strength: 0.0,
             turbulence_frequency: 3.0,
-            _pad_forces: 0.0,
+            kill_all: 0,
         }
     }
 }

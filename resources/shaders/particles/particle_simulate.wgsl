@@ -44,10 +44,16 @@ var<uniform> frame_data: FrameData;
 var<storage, read> emitters: array<EmitterConfig, MAX_EMITTERS>;
 
 fn simulate_particle(particle: ptr<function, ParticleData>, delta_time: f32) {
+    let emitter = emitters[(*particle).emitter_index];
+
+    if (emitter.kill_all != 0u) {
+        (*particle).lifetime = 0.0;
+        return;
+    }
+
     (*particle).lifetime -= delta_time;
 
     if ((*particle).lifetime > 0.0) {
-        let emitter = emitters[(*particle).emitter_index];
 
         (*particle).position += (*particle).velocity * delta_time;
         (*particle).velocity.y += emitter.gravity * delta_time;

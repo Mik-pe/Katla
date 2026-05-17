@@ -878,7 +878,7 @@ pub fn process_editor_actions(app: &mut Application) {
                         && let Some(handle) = emitter.emitter_handle.take()
                         && let Some(ps) = &mut app.renderer.particle_system
                     {
-                        ps.destroy_emitter(handle);
+                        ps.destroy_emitter(handle, emitter.kill_on_destroy);
                         info!("Destroyed particle emitter for deleted entity {:?}", id);
                     }
                 }
@@ -964,7 +964,7 @@ pub fn process_editor_actions(app: &mut Application) {
                         && let Some(handle) = emitter.emitter_handle.take()
                         && let Some(ps) = &mut app.renderer.particle_system
                     {
-                        ps.destroy_emitter(handle);
+                        ps.destroy_emitter(handle, emitter.kill_on_destroy);
                     }
                 }
 
@@ -1065,16 +1065,19 @@ pub fn process_editor_actions(app: &mut Application) {
                         EntityId,
                         EmitterHandle,
                         katla_gfx::particles::EmitterConfig,
+                        bool,
                     )> = app
                         .world
                         .query::<&mut ParticleEmitterComponent>()
                         .filter_map(|(id, emitter)| {
-                            emitter.emitter_handle.map(|h| (id, h, emitter.config))
+                            emitter
+                                .emitter_handle
+                                .map(|h| (id, h, emitter.config, emitter.kill_on_destroy))
                         })
                         .collect();
 
-                    for (id, handle, _config) in &entity_configs {
-                        ps.destroy_emitter(*handle);
+                    for (id, handle, _config, kill_on_destroy) in &entity_configs {
+                        ps.destroy_emitter(*handle, *kill_on_destroy);
                         if let Some(emitter) =
                             app.world.get_component_mut::<ParticleEmitterComponent>(*id)
                         {
@@ -1086,7 +1089,7 @@ pub fn process_editor_actions(app: &mut Application) {
                         log::error!("Failed to reset particle system: {}", e);
                     }
 
-                    for (id, _old_handle, config) in entity_configs {
+                    for (id, _old_handle, config, _kill_on_destroy) in entity_configs {
                         match ps.create_emitter(config) {
                             Ok(handle) => {
                                 if let Some(emitter) =
@@ -1717,6 +1720,7 @@ pub(crate) fn duplicate_entity(
             active: is_active,
             timed_emission: emitter.timed_emission,
             burst_queue: emitter.burst_queue.clone(),
+            kill_on_destroy: emitter.kill_on_destroy,
         };
         ctx.world.add_component(new_id, new_emitter);
 

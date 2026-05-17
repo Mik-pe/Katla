@@ -65,17 +65,22 @@ impl GlobalParticleSystem {
         }
     }
 
-    pub fn destroy_emitter(&mut self, handle: EmitterHandle) {
+    pub fn destroy_emitter(&mut self, handle: EmitterHandle, kill_all: bool) {
         if handle.index() < self.emitter_pool.emitters.len() as u32 {
             self.emitter_pool.emitters[handle.index() as usize] = EmitterConfig {
                 emit_rate: 0.0,
+                kill_all: if kill_all { 1 } else { 0 },
                 ..Default::default()
             };
             if handle.index() < self.emitter_pool.emitter_states.len() as u32 {
                 self.emitter_pool.emitter_states[handle.index() as usize] = EmitterState::default();
             }
             self.emitter_pool.free_slots.push(handle.index());
-            log::info!("Destroyed particle emitter {}", handle.index());
+            log::info!(
+                "Destroyed particle emitter {} (kill_all={})",
+                handle.index(),
+                kill_all
+            );
         }
     }
 
