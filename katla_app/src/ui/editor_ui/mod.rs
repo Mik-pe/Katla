@@ -72,6 +72,8 @@ pub struct EditorUI {
     pub right_panel_width: f32,
     /// Play mode active.
     pub is_playing: bool,
+    /// Whether play mode is paused (vs actively playing).
+    pub is_paused: bool,
     /// Grid visibility.
     pub show_grid: bool,
     /// Stats panel visible.
@@ -140,6 +142,7 @@ impl EditorUI {
             left_panel_width: 220.0,
             right_panel_width: 280.0,
             is_playing: false,
+            is_paused: false,
             show_grid: true,
             show_stats: true,
             font_scale: 1.0,

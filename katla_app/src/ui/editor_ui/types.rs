@@ -212,6 +212,12 @@ pub enum EditorAction {
     Redo,
     /// Undo the last AI agent operation.
     AgentUndo,
+    /// Enter play mode from editing.
+    PlayStart,
+    /// Toggle between Playing/Paused.
+    PlayPause,
+    /// Stop playing, return to editing and restore scene.
+    PlayStop,
 }
 
 /// Which panel is currently focused (receives input).

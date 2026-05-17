@@ -59,6 +59,11 @@ impl EditorUI {
             screen_size.x(),
             params.preferences,
             self.theme.text_muted,
+            self.is_playing,
+            self.is_paused,
+            self.theme.highlight,
+            self.theme.success,
+            self.theme.warning,
         );
         set_toolbar_ctx(toolbar_ctx);
         set_gizmo_ctx(self.gizmo_mode, self.last_viewport_bounds);

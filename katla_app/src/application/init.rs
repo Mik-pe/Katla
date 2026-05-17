@@ -384,18 +384,16 @@ impl Application {
                 .expect("Failed to set wallhack overlay texture indices");
         }
 
-        // Load default scene from disk
-        let scene_path = std::path::Path::new(crate::scene::DEFAULT_SCENE_PATH);
+        // Load scene from disk
+        let scene_path_str = self
+            .info
+            .scene_path
+            .clone()
+            .unwrap_or_else(|| crate::scene::DEFAULT_SCENE_PATH.to_string());
+        let scene_path = std::path::Path::new(&scene_path_str);
         match crate::scene::SceneManager::load_from_file(self, scene_path) {
-            Ok(()) => info!(
-                "Loaded default scene from {}",
-                crate::scene::DEFAULT_SCENE_PATH
-            ),
-            Err(e) => error!(
-                "Failed to load default scene from {}: {}",
-                crate::scene::DEFAULT_SCENE_PATH,
-                e
-            ),
+            Ok(()) => info!("Loaded scene from {}", scene_path_str),
+            Err(e) => error!("Failed to load scene from {}: {}", scene_path_str, e),
         }
 
         info!("Application::init() completed");

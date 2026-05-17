@@ -2,7 +2,8 @@ use std::cell::RefCell;
 
 use katla_math::{Color, Rect2D, Vec2, Vec3};
 use katla_ui::declarative::{Build, BuildContext, ViewDescriptor};
-use katla_ui::{FontSize, UiContext};
+use katla_ui::widgets::ImageButton;
+use katla_ui::{FontSize, ForkAwesome, UiContext};
 
 use crate::Preferences;
 use crate::ui::EditorAction;
@@ -19,6 +20,11 @@ pub(crate) struct ToolbarDrawCtx {
     pub show_grid: bool,
     pub show_stats: bool,
     pub text_muted: Color,
+    pub is_playing: bool,
+    pub is_paused: bool,
+    pub highlight: Color,
+    pub success: Color,
+    pub warning: Color,
 }
 
 impl ToolbarDrawCtx {
@@ -27,6 +33,11 @@ impl ToolbarDrawCtx {
         screen_width: f32,
         preferences: &Preferences,
         text_muted: Color,
+        is_playing: bool,
+        is_paused: bool,
+        highlight: Color,
+        success: Color,
+        warning: Color,
     ) -> Self {
         Self {
             state,
@@ -34,6 +45,11 @@ impl ToolbarDrawCtx {
             show_grid: preferences.show_grid,
             show_stats: preferences.show_stats,
             text_muted,
+            is_playing,
+            is_paused,
+            highlight,
+            success,
+            warning,
         }
     }
 }
@@ -199,7 +215,18 @@ fn draw_toolbar(ui: &mut UiContext, _bounds: Rect2D) {
 
     menu_bar.end(ui);
 
-    let title = "Katla Engine";
+    let title = if ctx.is_playing && !ctx.is_paused {
+        "Katla Engine [PLAYING]"
+    } else if ctx.is_paused {
+        "Katla Engine [PAUSED]"
+    } else {
+        "Katla Engine"
+    };
+    let title_color = if ctx.is_playing || ctx.is_paused {
+        ctx.highlight
+    } else {
+        ctx.text_muted
+    };
     let title_size = ui.measure_text(title, ui.scaled_font_size(FontSize::Medium));
     let title_pos = Vec2::new(
         screen_width * 0.5 - title_size.x() * 0.5,
@@ -208,10 +235,84 @@ fn draw_toolbar(ui: &mut UiContext, _bounds: Rect2D) {
     ui.draw_text(
         title,
         title_pos,
-        ctx.text_muted,
+        title_color,
         ui.scaled_font_size(FontSize::Medium),
     );
 
+    let original_text_color = ui.style().text_color;
+
+    let btn_size = 24.0;
+    let btn_padding = 4.0;
+    let btn_y = (height - btn_size) * 0.5;
+    let btn_x_start = title_pos.x() + title_size.x() + 12.0;
+
+    if !ctx.is_playing && !ctx.is_paused {
+        let play_bounds =
+            Rect2D::from_origin_size(Vec2::new(btn_x_start, btn_y), Vec2::new(btn_size, btn_size));
+        ui.style_mut().text_color = ctx.success;
+        let response = ui.add(
+            ImageButton::new(ForkAwesome::PLAY)
+                .bounds(play_bounds)
+                .id("play_btn"),
+        );
+        if response.clicked {
+            ctx.state.pending_actions.push(EditorAction::PlayStart);
+        }
+    } else if ctx.is_playing && !ctx.is_paused {
+        let pause_bounds =
+            Rect2D::from_origin_size(Vec2::new(btn_x_start, btn_y), Vec2::new(btn_size, btn_size));
+        ui.style_mut().text_color = ctx.warning;
+        let response = ui.add(
+            ImageButton::new(ForkAwesome::PAUSE)
+                .bounds(pause_bounds)
+                .id("pause_btn"),
+        );
+        if response.clicked {
+            ctx.state.pending_actions.push(EditorAction::PlayPause);
+        }
+
+        let stop_bounds = Rect2D::from_origin_size(
+            Vec2::new(btn_x_start + btn_size + btn_padding, btn_y),
+            Vec2::new(btn_size, btn_size),
+        );
+        ui.style_mut().text_color = Color::from_rgb_hex(0xe06c75);
+        let response = ui.add(
+            ImageButton::new(ForkAwesome::STOP)
+                .bounds(stop_bounds)
+                .id("stop_btn"),
+        );
+        if response.clicked {
+            ctx.state.pending_actions.push(EditorAction::PlayStop);
+        }
+    } else {
+        let play_bounds =
+            Rect2D::from_origin_size(Vec2::new(btn_x_start, btn_y), Vec2::new(btn_size, btn_size));
+        ui.style_mut().text_color = ctx.success;
+        let response = ui.add(
+            ImageButton::new(ForkAwesome::PLAY)
+                .bounds(play_bounds)
+                .id("resume_btn"),
+        );
+        if response.clicked {
+            ctx.state.pending_actions.push(EditorAction::PlayPause);
+        }
+
+        let stop_bounds = Rect2D::from_origin_size(
+            Vec2::new(btn_x_start + btn_size + btn_padding, btn_y),
+            Vec2::new(btn_size, btn_size),
+        );
+        ui.style_mut().text_color = Color::from_rgb_hex(0xe06c75);
+        let response = ui.add(
+            ImageButton::new(ForkAwesome::STOP)
+                .bounds(stop_bounds)
+                .id("stop_btn2"),
+        );
+        if response.clicked {
+            ctx.state.pending_actions.push(EditorAction::PlayStop);
+        }
+    }
+
+    ui.style_mut().text_color = original_text_color;
     ui.style_mut().button_normal = original_button_normal;
 
     TOOLBAR_CTX.with(|c| *c.borrow_mut() = Some(ctx));
