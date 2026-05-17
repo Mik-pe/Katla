@@ -1,9 +1,11 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::Path;
+use std::rc::Rc;
 
 use katla_ecs::EntityId;
 use katla_math::{Color, Quat, Vec3};
-use mlua::{Lua, LuaOptions, RegistryKey, StdLib};
+use mlua::{Lua, LuaOptions, RegistryKey, StdLib, VmState};
 
 use crate::bindings::entity::LuaEntityId;
 use crate::bindings::math::{LuaColor, LuaQuat, LuaVec3};
@@ -11,6 +13,8 @@ use crate::bindings::script_world::ScriptWorldProxy;
 use crate::bindings::world::ScriptCommand;
 use crate::component::ScriptInstanceHandle;
 use crate::error::ScriptError;
+
+const INSTRUCTION_LIMIT: u64 = 10_000_000;
 
 pub struct ScriptEngine {
     pub(crate) vm: Lua,
@@ -21,6 +25,7 @@ pub struct ScriptEngine {
     /// Base directory for script resolution (e.g. "resources/scripts").
     /// When set, bare script names are resolved relative to this directory.
     pub(crate) scripts_dir: Option<String>,
+    instruction_count: Rc<Cell<u64>>,
 }
 
 pub(crate) struct ScriptInstance {
@@ -284,6 +289,19 @@ impl ScriptEngine {
                 })?;
         }
 
+        let instruction_count = Rc::new(Cell::new(0u64));
+        let count_clone = instruction_count.clone();
+        vm.set_interrupt(move |_| {
+            let c = count_clone.get();
+            if c >= INSTRUCTION_LIMIT {
+                return Err(mlua::Error::external(format!(
+                    "Script exceeded instruction limit ({INSTRUCTION_LIMIT})"
+                )));
+            }
+            count_clone.set(c + 1);
+            Ok(VmState::Continue)
+        });
+
         Ok(Self {
             vm,
             loaded_scripts: HashMap::new(),
@@ -291,12 +309,17 @@ impl ScriptEngine {
             generations: Vec::new(),
             free_list: Vec::new(),
             scripts_dir: None,
+            instruction_count,
         })
     }
 
     /// Set the base directory for resolving bare script names.
     pub fn set_scripts_dir(&mut self, dir: impl Into<String>) {
         self.scripts_dir = Some(dir.into());
+    }
+
+    pub fn reset_instruction_counter(&self) {
+        self.instruction_count.set(0);
     }
 
     pub fn load_script(&mut self, path: &str) -> Result<(), ScriptError> {
@@ -393,6 +416,7 @@ impl ScriptEngine {
                 source: e,
             })?;
 
+        self.reset_instruction_counter();
         script_func.call::<()>(()).map_err(|e| {
             log::error!("Script top-level execution failed for '{script_path}': {e}");
             ScriptError::ExecutionFailed {
@@ -522,6 +546,7 @@ impl ScriptEngine {
                 source: e,
             })?;
 
+        self.reset_instruction_counter();
         func.call::<()>((LuaEntityId(entity), ud.clone(), dt))
             .map_err(|e| {
                 if let Some(Some(inst)) = self.instances.get_mut(handle.index as usize)
@@ -585,6 +610,7 @@ impl ScriptEngine {
                 source: e,
             })?;
 
+        self.reset_instruction_counter();
         func.call::<()>((LuaEntityId(entity), ud.clone()))
             .map_err(|e| {
                 log::error!("Script on_spawn failed for '{script_path}': {e}");
@@ -633,6 +659,7 @@ impl ScriptEngine {
                     source: e,
                 })?;
 
+        self.reset_instruction_counter();
         func.call::<()>(LuaEntityId(entity)).map_err(|e| {
             log::error!("Script on_destroy failed for '{script_path}': {e}");
             ScriptError::ExecutionFailed {
