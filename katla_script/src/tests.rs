@@ -39,6 +39,7 @@ fn make_proxy() -> ScriptWorldProxy {
     ScriptWorldProxy::from_shared(Rc::new(SharedWorldData {
         transforms: Default::default(),
         live_entities: Vec::new(),
+        component_entities: Default::default(),
         input_state: Default::default(),
     }))
 }
@@ -197,6 +198,79 @@ fn test_error_count_starts_at_zero() {
         .as_ref()
         .unwrap();
     assert_eq!(inst.error_count, 0);
+
+    cleanup_temp_script(&path);
+}
+
+fn make_proxy_with_components(
+    component_entities: std::collections::HashMap<String, Vec<EntityId>>,
+) -> ScriptWorldProxy {
+    ScriptWorldProxy::from_shared(Rc::new(SharedWorldData {
+        transforms: Default::default(),
+        live_entities: Vec::new(),
+        component_entities,
+        input_state: Default::default(),
+    }))
+}
+
+#[test]
+fn test_get_all_with_returns_matching_entities() {
+    let e1 = make_test_entity(1);
+    let e2 = make_test_entity(2);
+    let e3 = make_test_entity(3);
+    let mut component_entities = std::collections::HashMap::new();
+    component_entities.insert("TransformComponent".to_string(), vec![e1, e2, e3]);
+    component_entities.insert("NameComponent".to_string(), vec![e1]);
+
+    let proxy = make_proxy_with_components(component_entities);
+
+    let result = proxy.get_all_with("TransformComponent");
+    assert_eq!(result, vec![e1, e2, e3]);
+
+    let result = proxy.get_all_with("NameComponent");
+    assert_eq!(result, vec![e1]);
+}
+
+#[test]
+fn test_get_all_with_returns_empty_for_unknown() {
+    let proxy = make_proxy();
+    let result = proxy.get_all_with("NonexistentComponent");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn test_get_all_with_lua_binding() {
+    let e1 = make_test_entity(1);
+    let e2 = make_test_entity(2);
+    let mut component_entities = std::collections::HashMap::new();
+    component_entities.insert("TransformComponent".to_string(), vec![e1, e2]);
+
+    let path = write_temp_script(
+        "function on_update(entity, world, dt)\n  local entities = world:get_all_with(\"TransformComponent\")\n  world:set_position(entities[1], Vec3.new(1, 2, 3))\nend\n",
+    );
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let entity = make_test_entity(10);
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    let proxy = make_proxy_with_components(component_entities);
+    let result = engine.execute_on_update(handle, entity, proxy, 0.016);
+    assert!(
+        result.is_ok(),
+        "execute_on_update failed: {:?}",
+        result.err()
+    );
+    let commands = result.unwrap();
+    assert_eq!(commands.len(), 1);
+    match &commands[0] {
+        ScriptCommand::SetPosition(e, pos) => {
+            assert_eq!(*e, e1);
+            assert_eq!(*pos, Vec3::new(1.0, 2.0, 3.0));
+        }
+        _ => panic!("Expected SetPosition command"),
+    }
 
     cleanup_temp_script(&path);
 }

@@ -569,6 +569,12 @@ impl UiContext {
             self.focused_id = Some(widget_id);
         }
 
+        // Auto-focus if requested via request_focus()
+        if self.pending_focus_label.as_deref() == Some(id) {
+            self.focused_id = Some(widget_id);
+            self.pending_focus_label = None;
+        }
+
         let focused = self.focused_id == Some(widget_id);
         let mut changed = false;
 

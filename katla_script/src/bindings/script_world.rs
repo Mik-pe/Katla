@@ -20,6 +20,7 @@ pub struct InputSnapshot {
 pub(crate) struct SharedWorldData {
     pub transforms: HashMap<EntityId, katla_math::Transform>,
     pub live_entities: Vec<EntityId>,
+    pub component_entities: HashMap<String, Vec<EntityId>>,
     pub input_state: InputSnapshot,
 }
 
@@ -52,6 +53,7 @@ impl ScriptWorldProxy {
             shared: Rc::new(SharedWorldData {
                 transforms: transforms.into_iter().collect(),
                 live_entities: Vec::new(),
+                component_entities: HashMap::new(),
                 input_state: InputSnapshot::default(),
             }),
         }
@@ -74,6 +76,14 @@ impl ScriptWorldProxy {
 
     pub fn entity_exists(&self, entity: EntityId) -> bool {
         self.shared.live_entities.contains(&entity)
+    }
+
+    pub fn get_all_with(&self, component_name: &str) -> Vec<EntityId> {
+        self.shared
+            .component_entities
+            .get(component_name)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn is_action_pressed(&self, action: &str) -> bool {
@@ -136,6 +146,15 @@ impl UserData for ScriptWorldProxy {
 
         methods.add_method("entity_exists", |_, this, entity: LuaEntityId| {
             Ok(this.entity_exists(entity.0))
+        });
+
+        methods.add_method("get_all_with", |lua, this, name: String| {
+            let entities = this.get_all_with(&name);
+            let table = lua.create_table()?;
+            for (i, id) in entities.into_iter().enumerate() {
+                table.set(i + 1, LuaEntityId(id))?;
+            }
+            Ok(table)
         });
 
         methods.add_method("is_action_pressed", |_, this, action: String| {

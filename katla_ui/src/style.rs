@@ -481,7 +481,7 @@ impl ColorScheme {
             input_text: Color::from_rgb_hex(0xeeeeee),
             input_cursor: Color::from_rgb_hex(0xffffff),
             input_border_focused: Color::from_rgb_hex(0x4a9eff),
-            input_selection: Color::new(1.0, 1.0, 1.0, 0.1),
+            input_selection: Color::new(0.29, 0.62, 1.0, 0.35),
 
             text_color: Color::from_rgb_hex(0xeeeeee),
             text_disabled: Color::from_rgb_hex(0x808080),
@@ -576,7 +576,7 @@ impl ColorScheme {
             input_text: Color::from_rgb_hex(0x222222),
             input_cursor: Color::from_rgb_hex(0x222222),
             input_border_focused: Color::from_rgb_hex(0x4a9eff),
-            input_selection: Color::new(0.0, 0.0, 0.0, 0.12),
+            input_selection: Color::new(0.13, 0.44, 0.82, 0.3),
 
             text_color: Color::from_rgb_hex(0x222222),
             text_disabled: Color::from_rgb_hex(0x808080),
@@ -671,7 +671,7 @@ impl ColorScheme {
             input_text: Color::from_rgb_hex(0xeeeeee),
             input_cursor: Color::from_rgb_hex(0xffffff),
             input_border_focused: Color::from_rgb_hex(0x4a9eff),
-            input_selection: Color::new(1.0, 1.0, 1.0, 0.1),
+            input_selection: Color::new(0.29, 0.62, 1.0, 0.35),
 
             text_color: Color::from_rgb_hex(0xeeeeee),
             text_disabled: Color::from_rgb_hex(0x777777),
@@ -779,7 +779,7 @@ macro_rules! color_scheme {
             input_text: Color::from_rgb_hex($text_primary),
             input_cursor: Color::from_rgb_hex($text_primary),
             input_border_focused: Color::from_rgb_hex($highlight),
-            input_selection: Color::new(1.0, 1.0, 1.0, 0.1),
+            input_selection: Color::new(0.29, 0.62, 1.0, 0.35),
 
             text_color: Color::from_rgb_hex($text_primary),
             text_disabled: Color::from_rgb_hex($text_muted),

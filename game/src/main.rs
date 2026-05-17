@@ -6,7 +6,7 @@ use katla_app::input::{Action, InputState};
 use katla_app::systems::{
     OrbitCameraSystem, PhysicsSystem, TransformHierarchySystem, VelocitySystem,
 };
-use katla_ecs::SystemExecutionOrder;
+use katla_ecs::{Component, SystemExecutionOrder};
 use katla_script::{InputSnapshot, ScriptSystem};
 use log::info;
 
@@ -120,6 +120,44 @@ fn main() {
                             snapshot.mouse_wheel = input.mouse_wheel_delta;
                         }
                         snapshot
+                    })
+                    .with_component_entities_provider(|world| {
+                        let mut map = std::collections::HashMap::new();
+                        macro_rules! register {
+                            ($ty:ty) => {
+                                let ids: Vec<_> =
+                                    world.query_ref::<&$ty>().map(|(id, _)| id).collect();
+                                if !ids.is_empty() {
+                                    map.insert(
+                                        std::any::type_name::<$ty>()
+                                            .rsplit("::")
+                                            .next()
+                                            .unwrap()
+                                            .to_string(),
+                                        ids,
+                                    );
+                                }
+                            };
+                        }
+                        register!(katla_app::components::transform::TransformComponent);
+                        register!(katla_app::components::transform::WorldTransform);
+                        register!(katla_app::components::physics::MassComponent);
+                        register!(katla_app::components::physics::DragComponent);
+                        register!(katla_app::components::physics::ForceComponent);
+                        register!(katla_app::components::physics::VelocityComponent);
+                        register!(katla_app::components::scene::NameComponent);
+                        register!(katla_app::components::rendering::DrawableComponent);
+                        register!(katla_app::components::rendering::BillboardComponent);
+                        register!(katla_app::components::rendering::DirectionalLight);
+                        register!(katla_app::components::rendering::PointLight);
+                        register!(katla_app::components::camera::PerspectiveComponent);
+                        register!(katla_app::components::camera::FlyCameraControllerComponent);
+                        register!(katla_app::components::camera::FlyCameraLookComponent);
+                        register!(katla_app::components::camera::OrbitCameraControllerComponent);
+                        register!(katla_app::components::scene::Children);
+                        register!(katla_app::components::scene::Parent);
+                        register!(katla_script::ScriptComponent);
+                        map
                     }),
             ),
             SystemExecutionOrder::LATE,
