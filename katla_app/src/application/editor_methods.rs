@@ -32,6 +32,9 @@ impl Application {
     }
 
     pub(crate) fn should_send_game_input(&self) -> bool {
+        if self.play_mode == super::game_state::PlayMode::Playing {
+            return true;
+        }
         self.editor.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
             && !self.editor.gizmo_state.is_dragging()
             && !self.editor.gizmo_state.consumed_click
