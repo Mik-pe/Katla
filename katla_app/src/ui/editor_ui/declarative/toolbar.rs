@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use katla_math::{Color, Rect2D, Vec2, Vec3};
 use katla_ui::declarative::{Build, BuildContext, ViewDescriptor};
-use katla_ui::widgets::ImageButton;
+use katla_ui::input::mouse_button;
 use katla_ui::{FontSize, ForkAwesome, UiContext};
 
 use crate::Preferences;
@@ -246,28 +246,35 @@ fn draw_toolbar(ui: &mut UiContext, _bounds: Rect2D) {
     let btn_y = (height - btn_size) * 0.5;
     let btn_x_start = title_pos.x() + title_size.x() + 12.0;
 
+    fn draw_icon_button(ui: &mut UiContext, icon: char, bounds: Rect2D, color: Color) -> bool {
+        let hovered = ui.is_hovered(bounds);
+        let bg = if hovered {
+            ui.style().button_hovered
+        } else {
+            Color::TRANSPARENT
+        };
+        ui.draw_rounded_rect(bounds, bg, ui.style().button_rounding);
+        let icon_size = bounds.height() * 0.6;
+        let center = bounds.center();
+        ui.draw_icon(
+            icon,
+            Vec2::new(center.x() - icon_size * 0.5, center.y() - icon_size * 0.5),
+            icon_size,
+            color,
+        );
+        hovered && ui.mouse_clicked(mouse_button::LEFT)
+    }
+
     if !ctx.is_playing && !ctx.is_paused {
         let play_bounds =
             Rect2D::from_origin_size(Vec2::new(btn_x_start, btn_y), Vec2::new(btn_size, btn_size));
-        ui.style_mut().text_color = ctx.success;
-        let response = ui.add(
-            ImageButton::new(ForkAwesome::PLAY)
-                .bounds(play_bounds)
-                .id("play_btn"),
-        );
-        if response.clicked {
+        if draw_icon_button(ui, ForkAwesome::PLAY, play_bounds, ctx.success) {
             ctx.state.pending_actions.push(EditorAction::PlayStart);
         }
     } else if ctx.is_playing && !ctx.is_paused {
         let pause_bounds =
             Rect2D::from_origin_size(Vec2::new(btn_x_start, btn_y), Vec2::new(btn_size, btn_size));
-        ui.style_mut().text_color = ctx.warning;
-        let response = ui.add(
-            ImageButton::new(ForkAwesome::PAUSE)
-                .bounds(pause_bounds)
-                .id("pause_btn"),
-        );
-        if response.clicked {
+        if draw_icon_button(ui, ForkAwesome::PAUSE, pause_bounds, ctx.warning) {
             ctx.state.pending_actions.push(EditorAction::PlayPause);
         }
 
@@ -275,25 +282,18 @@ fn draw_toolbar(ui: &mut UiContext, _bounds: Rect2D) {
             Vec2::new(btn_x_start + btn_size + btn_padding, btn_y),
             Vec2::new(btn_size, btn_size),
         );
-        ui.style_mut().text_color = Color::from_rgb_hex(0xe06c75);
-        let response = ui.add(
-            ImageButton::new(ForkAwesome::STOP)
-                .bounds(stop_bounds)
-                .id("stop_btn"),
-        );
-        if response.clicked {
+        if draw_icon_button(
+            ui,
+            ForkAwesome::STOP,
+            stop_bounds,
+            Color::from_rgb_hex(0xe06c75),
+        ) {
             ctx.state.pending_actions.push(EditorAction::PlayStop);
         }
     } else {
         let play_bounds =
             Rect2D::from_origin_size(Vec2::new(btn_x_start, btn_y), Vec2::new(btn_size, btn_size));
-        ui.style_mut().text_color = ctx.success;
-        let response = ui.add(
-            ImageButton::new(ForkAwesome::PLAY)
-                .bounds(play_bounds)
-                .id("resume_btn"),
-        );
-        if response.clicked {
+        if draw_icon_button(ui, ForkAwesome::PLAY, play_bounds, ctx.success) {
             ctx.state.pending_actions.push(EditorAction::PlayPause);
         }
 
@@ -301,18 +301,16 @@ fn draw_toolbar(ui: &mut UiContext, _bounds: Rect2D) {
             Vec2::new(btn_x_start + btn_size + btn_padding, btn_y),
             Vec2::new(btn_size, btn_size),
         );
-        ui.style_mut().text_color = Color::from_rgb_hex(0xe06c75);
-        let response = ui.add(
-            ImageButton::new(ForkAwesome::STOP)
-                .bounds(stop_bounds)
-                .id("stop_btn2"),
-        );
-        if response.clicked {
+        if draw_icon_button(
+            ui,
+            ForkAwesome::STOP,
+            stop_bounds,
+            Color::from_rgb_hex(0xe06c75),
+        ) {
             ctx.state.pending_actions.push(EditorAction::PlayStop);
         }
     }
 
-    ui.style_mut().text_color = original_text_color;
     ui.style_mut().button_normal = original_button_normal;
 
     TOOLBAR_CTX.with(|c| *c.borrow_mut() = Some(ctx));
