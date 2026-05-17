@@ -63,7 +63,7 @@
 - [x] Add `on_destroy` hook — called when entity with ScriptComponent is destroyed
 - [x] Register `EntityId` as Luau `UserData` — `id()`, `__tostring`, comparison operators
 - [x] Add entity spawn/destroy from scripts — `world:spawn_entity()` returns EntityId, `world:destroy_entity(id)` queues destruction
-- [ ] Add entity query from scripts — `world:get_all_with("ScriptComponent")` (entity_exists already implemented)
+- [x] Add entity query from scripts — `world:get_all_with("ScriptComponent")` (entity_exists already implemented)
 
 ### Phase 3: Input + serialization + error handling
 - [x] Add input bindings — `world:is_action_pressed("move_forward")`, `world:get_mouse_delta()`, reads from InputState resource
@@ -129,7 +129,7 @@
 - [x] Add inspector UI for all registered components — `MassComponent` (mass slider), `DragComponent` (coefficient slider), `PerspectiveComponent` (fov/near/aspect_ratio sliders), `DirectionalLight` (direction Vec3, color picker, intensity slider). Each needs a `section_header_with_remove` section with editable widgets.
 - [x] Add remove button to ParticleEmitter inspector section — switch from `section_header` to `section_header_with_remove`, handle `EditorAction::RemoveComponent` for `"ParticleEmitterComponent"`
 - [x] Categorize the Add Component popup menu — group flat list into Lighting (PointLight, DirectionalLight), Physics (MassComponent, DragComponent), Scripting (ScriptComponent), Camera (PerspectiveComponent) with category headers
-- [ ] Auto-focus script path input after adding ScriptComponent — focus the text input so the user can immediately type the path without clicking
+- [x] Auto-focus script path input after adding ScriptComponent — focus the text input so the user can immediately type the path without clicking
 - [ ] Wire up undo/redo for Add/Remove Component — store proper `SceneCommand`s instead of discarding the `UndoGroup`, so Ctrl+Z works after adding or removing components
 
 ### Scene lifecycle
@@ -158,8 +158,8 @@
 - [ ] Add dockable layout system — complete the existing DockLayout skeleton, make all panels repositionable and resizable
 - [ ] Add in-editor profiler overlay — per-pass GPU timing, frame time graph, draw call count, memory usage
 - [ ] Add gamepad input support — extend InputMapper with gamepad axes/buttons for editor and runtime
-- [ ] Fix asset browser tooltip line spacing — hover tooltip on asset items has inconsistent line spacing compared to the rest of the UI
-- [ ] Fix text input selection/active highlight being too opaque — the "Filter" input in asset browser and "Script" path input have a selection color that's too bright/invasive, obscuring the text. Investigate if transparency isn't rendering correctly. Should be fixed in a reusable text input style so all text inputs benefit.
+- [x] Fix asset browser tooltip line spacing — hover tooltip on asset items has inconsistent line spacing compared to the rest of the UI
+- [x] Fix text input selection/active highlight being too opaque — the "Filter" input in asset browser and "Script" path input have a selection color that's too bright/invasive, obscuring the text. Investigate if transparency isn't rendering correctly. Should be fixed in a reusable text input style so all text inputs benefit.
 
 ## Developer Experience
 
