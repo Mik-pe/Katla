@@ -101,7 +101,7 @@
 - [x] Add `list_assets` tool to AI agent — list files in `resources/` recursively, with optional extension filter (`"luau"`, `"gltf"`) and subdir filter (`"scripts"`). Lets the AI discover available scripts and assets.
 - [x] Add `read_asset` tool to AI agent — read file contents from `resources/` by relative path. Lets the AI inspect existing scripts, materials, etc.
 - [x] Add `write_asset` tool to AI agent — create or overwrite files in `resources/` with given path and content. Enables full workflow: AI creates a script, adds ScriptComponent, sets the path, script is ready to run.
-- [ ] Add `delete_asset` tool to AI agent — delete files from `resources/` by relative path. Should refuse to delete non-empty directories.
+- [x] Add `delete_asset` tool to AI agent — delete files from `resources/` by relative path. Should refuse to delete non-empty directories.
 
 ### General asset pipeline
 
