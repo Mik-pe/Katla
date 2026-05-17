@@ -51,7 +51,6 @@ pub struct ColorScheme {
     pub menu_bg: Color,
     pub menu_hovered: Color,
     pub menu_active: Color,
-    pub menu_border: Color,
 
     pub popup_bg: Color,
     pub popup_border: Color,
@@ -63,7 +62,6 @@ pub struct ColorScheme {
     pub combo_bg: Color,
     pub combo_border: Color,
     pub combo_hovered: Color,
-    pub combo_text: Color,
 
     pub scrollbar_track: Color,
     pub scrollbar_handle: Color,
@@ -287,8 +285,6 @@ pub struct UiStyle {
     pub menu_hovered: Color,
     /// Menu item color when active/pressed.
     pub menu_active: Color,
-    /// Menu border color.
-    pub menu_border: Color,
     /// Rounding radius for menu corners.
     pub menu_rounding: f32,
     /// Height of each menu item.
@@ -321,8 +317,6 @@ pub struct UiStyle {
     pub combo_border: Color,
     /// Combo box button color when hovered.
     pub combo_hovered: Color,
-    /// Combo box preview text color.
-    pub combo_text: Color,
 
     // Text input limits
     /// Maximum characters for single-line text input.
@@ -508,7 +502,6 @@ impl ColorScheme {
             menu_bg: Color::from_rgb_hex(0x2d2d2d),
             menu_hovered: Color::from_rgb_hex(0x404040),
             menu_active: Color::from_rgb_hex(0x4a9eff),
-            menu_border: Color::from_rgb_hex(0x404040),
 
             popup_bg: Color::from_rgb_hex(0x2d2d2d),
             popup_border: Color::from_rgb_hex(0x404040),
@@ -520,7 +513,6 @@ impl ColorScheme {
             combo_bg: Color::from_rgb_hex(0x282828),
             combo_border: Color::from_rgb_hex(0x404040),
             combo_hovered: Color::from_rgb_hex(0x404040),
-            combo_text: Color::from_rgb_hex(0xeeeeee),
 
             scrollbar_track: Color::from_rgb_hex(0x1a1a1a),
             scrollbar_handle: Color::from_rgb_hex(0x505050),
@@ -605,7 +597,6 @@ impl ColorScheme {
             menu_bg: Color::from_rgb_hex(0xfafafa),
             menu_hovered: Color::from_rgb_hex(0xe0e0e0),
             menu_active: Color::from_rgb_hex(0x2070d0),
-            menu_border: Color::from_rgb_hex(0xc0c0c0),
 
             popup_bg: Color::from_rgb_hex(0xfafafa),
             popup_border: Color::from_rgb_hex(0xc0c0c0),
@@ -617,7 +608,6 @@ impl ColorScheme {
             combo_bg: Color::from_rgb_hex(0xffffff),
             combo_border: Color::from_rgb_hex(0xc0c0c0),
             combo_hovered: Color::from_rgb_hex(0xe0e0e0),
-            combo_text: Color::from_rgb_hex(0x222222),
 
             scrollbar_track: Color::from_rgb_hex(0xe0e0e0),
             scrollbar_handle: Color::from_rgb_hex(0xa0a0a0),
@@ -702,7 +692,6 @@ impl ColorScheme {
             menu_bg: Color::from_rgb_hex(0x1f1f1f),
             menu_hovered: Color::from_rgb_hex(0x4a4a4a),
             menu_active: Color::from_rgb_hex(0x3465a4),
-            menu_border: Color::from_rgb_hex(0x555555),
 
             popup_bg: Color::from_rgb_hex(0x1f1f1f),
             popup_border: Color::from_rgb_hex(0x555555),
@@ -714,7 +703,6 @@ impl ColorScheme {
             combo_bg: Color::from_rgb_hex(0x3a3a3a),
             combo_border: Color::from_rgb_hex(0x555555),
             combo_hovered: Color::from_rgb_hex(0x4a4a4a),
-            combo_text: Color::from_rgb_hex(0xeeeeee),
 
             scrollbar_track: Color::from_rgb_hex(0x1f1f1f),
             scrollbar_handle: Color::from_rgb_hex(0x555555),
@@ -812,7 +800,6 @@ macro_rules! color_scheme {
             menu_bg: Color::from_rgb_hex($popup_bg),
             menu_hovered: Color::from_rgb_hex($selection_hover),
             menu_active: Color::from_rgb_hex($selection),
-            menu_border: Color::from_rgb_hex($popup_border),
 
             popup_bg: Color::from_rgb_hex($popup_bg),
             popup_border: Color::from_rgb_hex($popup_border),
@@ -824,7 +811,6 @@ macro_rules! color_scheme {
             combo_bg: Color::from_rgb_hex($button_bg),
             combo_border: Color::from_rgb_hex($border),
             combo_hovered: Color::from_rgb_hex($button_hover),
-            combo_text: Color::from_rgb_hex($text_primary),
 
             scrollbar_track: Color::from_rgb_hex($bg_dark),
             scrollbar_handle: Color::from_rgb_hex($border),
@@ -1101,7 +1087,6 @@ impl ColorScheme {
         scheme.checkbox_border = subtle_border;
         scheme.combo_border = subtle_border;
         scheme.popup_border = subtle_border;
-        scheme.menu_border = subtle_border;
         scheme.panel_border = panel_border;
         scheme.separator = Color::new(1.0, 1.0, 1.0, 0.06);
         scheme.border = subtle_border;
@@ -1152,7 +1137,6 @@ impl ColorScheme {
             menu_bg: style.menu_bg,
             menu_hovered: style.menu_hovered,
             menu_active: style.menu_active,
-            menu_border: style.menu_border,
 
             popup_bg: style.popup_bg,
             popup_border: style.popup_border,
@@ -1164,7 +1148,6 @@ impl ColorScheme {
             combo_bg: style.combo_bg,
             combo_border: style.combo_border,
             combo_hovered: style.combo_hovered,
-            combo_text: style.combo_text,
 
             scrollbar_track: style.scrollbar_track,
             scrollbar_handle: style.scrollbar_handle,
@@ -1361,7 +1344,6 @@ impl UiStyle {
             menu_bg: Color::BLACK,
             menu_hovered: Color::BLACK,
             menu_active: Color::BLACK,
-            menu_border: Color::BLACK,
             popup_bg: Color::BLACK,
             popup_border: Color::BLACK,
             popup_shadow: Color::TRANSPARENT,
@@ -1370,7 +1352,6 @@ impl UiStyle {
             combo_bg: Color::BLACK,
             combo_border: Color::BLACK,
             combo_hovered: Color::BLACK,
-            combo_text: Color::BLACK,
             scrollbar_track: Color::BLACK,
             scrollbar_handle: Color::BLACK,
             scrollbar_handle_hovered: Color::BLACK,
@@ -1440,7 +1421,6 @@ impl UiStyle {
         self.menu_bg = c.menu_bg;
         self.menu_hovered = c.menu_hovered;
         self.menu_active = c.menu_active;
-        self.menu_border = c.menu_border;
 
         self.popup_bg = c.popup_bg;
         self.popup_border = c.popup_border;
@@ -1452,7 +1432,6 @@ impl UiStyle {
         self.combo_bg = c.combo_bg;
         self.combo_border = c.combo_border;
         self.combo_hovered = c.combo_hovered;
-        self.combo_text = c.combo_text;
 
         self.scrollbar_track = c.scrollbar_track;
         self.scrollbar_handle = c.scrollbar_handle;

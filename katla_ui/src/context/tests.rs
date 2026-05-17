@@ -1230,33 +1230,6 @@ fn test_add_stacks_widgets_vertically() {
     ctx.end();
 }
 
-/// Test that Label advances cursor after ui.add().
-#[test]
-fn test_label_advances_cursor_via_add() {
-    use crate::widgets::Label;
-
-    let mut ctx = UiContext::new();
-    ctx.begin(Vec2::new(800.0, 600.0), 1.0);
-    ctx.set_cursor(Vec2::new(10.0, 10.0));
-
-    let cursor_before = ctx.cursor();
-    let response = ctx.add(Label::new("Hello").bounds(Rect2D::from_origin_size(
-        Vec2::new(10.0, 10.0),
-        Vec2::new(50.0, 20.0),
-    )));
-    let cursor_after = ctx.cursor();
-
-    assert_eq!(response.bounds.height(), 20.0);
-    assert!(
-        cursor_after.y() > cursor_before.y(),
-        "Cursor should advance after Label: before.y()={}, after.y()={}",
-        cursor_before.y(),
-        cursor_after.y()
-    );
-
-    ctx.end();
-}
-
 /// Test that cursor advancement works correctly inside a column layout.
 #[test]
 fn test_add_advances_cursor_in_column_layout() {
@@ -1322,32 +1295,30 @@ fn test_add_advances_cursor_in_row_layout() {
 /// Test that at_cursor() + ui.add() positions and advances correctly.
 #[test]
 fn test_at_cursor_positions_and_advances() {
-    use crate::widgets::{Button, Label};
+    use crate::widgets::Button;
 
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
     ctx.set_cursor(Vec2::new(50.0, 50.0));
 
-    // Label at_cursor should position at cursor and advance
-    let r1 = ctx.add(Label::new("Test Label").at_cursor(&ctx));
+    let r1 = ctx.add(Button::new("First").at_cursor(&ctx));
     assert_eq!(r1.bounds.min.x(), 50.0);
     assert_eq!(r1.bounds.min.y(), 50.0);
 
-    let cursor_after_label = ctx.cursor();
+    let cursor_after_first = ctx.cursor();
     assert!(
-        cursor_after_label.y() > 50.0,
-        "Cursor should advance after Label at_cursor"
+        cursor_after_first.y() > 50.0,
+        "Cursor should advance after Button at_cursor"
     );
 
-    // Button at_cursor should position at the new cursor position
-    let r2 = ctx.add(Button::new("Click").at_cursor(&ctx));
-    assert_eq!(r2.bounds.min.x(), cursor_after_label.x());
-    assert_eq!(r2.bounds.min.y(), cursor_after_label.y());
+    let r2 = ctx.add(Button::new("Second").at_cursor(&ctx));
+    assert_eq!(r2.bounds.min.x(), cursor_after_first.x());
+    assert_eq!(r2.bounds.min.y(), cursor_after_first.y());
 
-    let cursor_after_button = ctx.cursor();
+    let cursor_after_second = ctx.cursor();
     assert!(
-        cursor_after_button.y() > cursor_after_label.y(),
-        "Cursor should advance after Button at_cursor"
+        cursor_after_second.y() > cursor_after_first.y(),
+        "Cursor should advance after second Button at_cursor"
     );
 
     ctx.end();

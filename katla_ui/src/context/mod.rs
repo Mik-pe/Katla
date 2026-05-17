@@ -86,50 +86,6 @@ impl TextInputState {
     }
 }
 
-/// RAII guard for Z-index management.
-///
-/// Automatically pops the Z-index when dropped.
-///
-/// # Example
-/// ```ignore
-/// {
-///     let _z = ui.z_guard(z_index::POPUP);
-///     // draw popup content
-/// } // auto-pops
-/// ```
-pub struct ZGuard<'a> {
-    ctx: &'a mut UiContext,
-}
-
-impl Drop for ZGuard<'_> {
-    fn drop(&mut self) {
-        self.ctx.pop_z_index();
-    }
-}
-
-/// RAII guard for window clip management.
-///
-/// Automatically pops the clip when dropped.
-///
-/// # Example
-/// ```ignore
-/// {
-///     let win = ui.begin_window_guard("my_window", Some("Title"), bounds);
-///     // draw window content using win.state
-/// } // auto-pops clip
-/// ```
-pub struct WindowGuard<'a> {
-    /// Window state for accessing cursor/bounds info.
-    pub state: WindowState,
-    ctx: &'a mut UiContext,
-}
-
-impl Drop for WindowGuard<'_> {
-    fn drop(&mut self) {
-        self.ctx.pop_clip();
-    }
-}
-
 /// Main context for immediate mode UI rendering.
 ///
 /// This is the primary API for building UI. Typical usage:
@@ -211,8 +167,6 @@ pub struct UiContext {
     scroll_area_state: Option<widgets::ScrollAreaState>,
     /// Whether to show scrollbar for current scroll area.
     scroll_area_show_scrollbar: bool,
-    /// Scratch buffer for graph widget point computation (avoids per-frame allocation).
-    scratch_points: Vec<Vec2>,
     /// Per-widget text input state (cursor, selection).
     pub(crate) text_input_states: std::collections::HashMap<WidgetId, TextInputState>,
     /// Clipboard provider for copy/cut/paste.
@@ -270,7 +224,6 @@ impl UiContext {
             scroll_area_content_bounds: None,
             scroll_area_state: None,
             scroll_area_show_scrollbar: false,
-            scratch_points: Vec::new(),
             time: 0.0,
             last_input_time: 0.0,
             text_input_states: std::collections::HashMap::new(),
@@ -281,22 +234,6 @@ impl UiContext {
             focused_panel_id: None,
             declarative_input_consumed: false,
             scratch_data: std::collections::HashMap::new(),
-        }
-    }
-
-    /// Create a new UI context with a specific style.
-    pub fn with_style(style: UiStyle) -> Self {
-        Self {
-            style,
-            ..Self::new()
-        }
-    }
-
-    /// Create a new UI context sharing an existing font system.
-    pub fn with_shared_fonts(fonts: Rc<RefCell<FontSystem>>) -> Self {
-        Self {
-            fonts,
-            ..Self::new()
         }
     }
 
@@ -332,11 +269,6 @@ impl UiContext {
     /// Access the font system mutably.
     pub fn fonts_mut(&self) -> std::cell::RefMut<'_, FontSystem> {
         self.fonts.borrow_mut()
-    }
-
-    /// Clone the shared font system handle.
-    pub fn fonts_rc(&self) -> Rc<RefCell<FontSystem>> {
-        Rc::clone(&self.fonts)
     }
 
     /// Set the clipboard provider for copy/cut/paste operations.
@@ -430,122 +362,6 @@ impl UiContext {
 impl Default for UiContext {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// State for a window being built.
-pub struct WindowState {
-    /// Window widget ID.
-    pub id: WidgetId,
-    /// Window bounds.
-    pub bounds: Rect2D,
-    /// Cursor for content layout.
-    pub content_cursor: Vec2,
-    /// Height of the title bar (0 if no title).
-    pub title_height: f32,
-}
-
-/// Options for configuring a graph widget.
-#[derive(Debug, Clone)]
-pub struct GraphOptions {
-    /// Minimum Y value (auto-calculated if None).
-    pub min_value: Option<f32>,
-    /// Maximum Y value (auto-calculated if None).
-    pub max_value: Option<f32>,
-    /// Color of the line.
-    pub line_color: Color,
-    /// Color of the fill under the line (None = no fill).
-    pub fill_color: Option<Color>,
-    /// Background color.
-    pub bg_color: Color,
-    /// Grid line color (None = no grid).
-    pub grid_color: Option<Color>,
-    /// Number of horizontal grid lines.
-    pub grid_lines: u32,
-    /// Thickness of the line.
-    pub line_thickness: f32,
-    /// Whether to show the current value text.
-    pub show_value: bool,
-}
-
-impl Default for GraphOptions {
-    fn default() -> Self {
-        Self {
-            min_value: None,
-            max_value: None,
-            line_color: Color::GREEN,
-            fill_color: Some(Color::new(0.0, 1.0, 0.0, 0.3)),
-            bg_color: Color::new(0.1, 0.1, 0.1, 0.9),
-            grid_color: Some(Color::new(0.3, 0.3, 0.3, 0.5)),
-            grid_lines: 4,
-            line_thickness: 2.0,
-            show_value: true,
-        }
-    }
-}
-
-impl GraphOptions {
-    /// Create theme-aware default graph options.
-    pub fn from_style(style: &crate::style::UiStyle) -> Self {
-        Self {
-            min_value: None,
-            max_value: None,
-            line_color: style.text_color,
-            fill_color: Some(style.text_color.with_alpha(0.3)),
-            bg_color: style.window_bg.with_alpha(0.9),
-            grid_color: Some(style.separator.with_alpha(0.5)),
-            grid_lines: 4,
-            line_thickness: 2.0,
-            show_value: true,
-        }
-    }
-
-    /// Create graph options for FPS display (0-120 range, green).
-    pub fn fps() -> Self {
-        Self {
-            min_value: Some(0.0),
-            max_value: Some(120.0),
-            line_color: Color::rgb(0.2, 0.9, 0.2),
-            fill_color: Some(Color::new(0.2, 0.9, 0.2, 0.25)),
-            ..Default::default()
-        }
-    }
-
-    /// Create theme-aware graph options for FPS display (0-120 range, green).
-    pub fn fps_from_style(style: &crate::style::UiStyle) -> Self {
-        Self {
-            min_value: Some(0.0),
-            max_value: Some(120.0),
-            line_color: Color::rgb(0.2, 0.9, 0.2),
-            fill_color: Some(Color::new(0.2, 0.9, 0.2, 0.25)),
-            bg_color: style.window_bg.with_alpha(0.9),
-            grid_color: Some(style.separator.with_alpha(0.5)),
-            ..Default::default()
-        }
-    }
-
-    /// Create graph options for frame time display (0-50ms range, orange).
-    pub fn frame_time() -> Self {
-        Self {
-            min_value: Some(0.0),
-            max_value: Some(50.0),
-            line_color: Color::rgb(1.0, 0.6, 0.2),
-            fill_color: Some(Color::new(1.0, 0.6, 0.2, 0.25)),
-            ..Default::default()
-        }
-    }
-
-    /// Create theme-aware graph options for frame time display (0-50ms range, orange).
-    pub fn frame_time_from_style(style: &crate::style::UiStyle) -> Self {
-        Self {
-            min_value: Some(0.0),
-            max_value: Some(50.0),
-            line_color: Color::rgb(1.0, 0.6, 0.2),
-            fill_color: Some(Color::new(1.0, 0.6, 0.2, 0.25)),
-            bg_color: style.window_bg.with_alpha(0.9),
-            grid_color: Some(style.separator.with_alpha(0.5)),
-            ..Default::default()
-        }
     }
 }
 

@@ -7,10 +7,18 @@ use crate::style::FontSize;
 use crate::types::TextureId;
 
 use super::state::StateId;
+use super::transition::Transition;
 
 #[derive(Clone)]
 pub enum ViewDescriptor {
     Empty,
+
+    /// Invisible wrapper that carries transition config for its child.
+    /// During sync_tree, insert/remove animations are applied to the child node.
+    TransitionContainer {
+        child: Box<ViewDescriptor>,
+        transition: Transition,
+    },
 
     Text {
         content: String,
@@ -287,6 +295,9 @@ impl std::fmt::Debug for ViewDescriptor {
             ViewDescriptor::ScrollView(s) => f.debug_tuple("ScrollView").field(s).finish(),
             ViewDescriptor::Panel(s) => f.debug_tuple("Panel").field(s).finish(),
             ViewDescriptor::Overlay(s) => f.debug_tuple("Overlay").field(s).finish(),
+            ViewDescriptor::TransitionContainer { child, .. } => {
+                f.debug_tuple("TransitionContainer").field(child).finish()
+            }
             ViewDescriptor::Custom(_) => f.debug_tuple("Custom").field(&"..").finish(),
         }
     }

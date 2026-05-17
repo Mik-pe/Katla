@@ -7,8 +7,6 @@ use katla_math::{Rect2D, Vec2};
 pub enum PopupPosition {
     /// Position at current cursor (context menu style).
     AtCursor,
-    /// Position at a specific screen position.
-    AtPosition(Vec2),
     /// Position below a trigger button (dropdown style).
     BelowButton(Rect2D),
     /// Fixed position and size (pre-sized popup).
@@ -45,8 +43,6 @@ pub struct Popup<'a> {
     pub(crate) position: PopupPosition,
     pub(crate) style: PopupStyle,
     pub(crate) close_behavior: CloseBehavior,
-    /// Whether to show a caret icon on the trigger button (for dropdowns).
-    pub(crate) show_caret: bool,
 }
 
 impl<'a> Popup<'a> {
@@ -62,19 +58,12 @@ impl<'a> Popup<'a> {
             position: PopupPosition::AtCursor,
             style: PopupStyle::Menu,
             close_behavior: CloseBehavior::ClickOutside,
-            show_caret: true,
         }
     }
 
     /// Position popup at the current cursor position.
     pub fn at_cursor(mut self) -> Self {
         self.position = PopupPosition::AtCursor;
-        self
-    }
-
-    /// Position popup at a specific screen position.
-    pub fn at_position(mut self, pos: Vec2) -> Self {
-        self.position = PopupPosition::AtPosition(pos);
         self
     }
 
@@ -96,28 +85,10 @@ impl<'a> Popup<'a> {
         self
     }
 
-    /// Use standard menu style (shadow, border).
-    pub fn menu(mut self) -> Self {
-        self.style = PopupStyle::Menu;
-        self
-    }
-
     /// Use modal style (dark overlay, centered, explicit close only).
     pub fn modal(mut self) -> Self {
         self.style = PopupStyle::Modal;
         self.close_behavior = CloseBehavior::ExplicitOnly;
-        self
-    }
-
-    /// Set close behavior.
-    pub fn close_behavior(mut self, behavior: CloseBehavior) -> Self {
-        self.close_behavior = behavior;
-        self
-    }
-
-    /// Show/hide caret icon on trigger button (for dropdowns).
-    pub fn show_caret(mut self, show: bool) -> Self {
-        self.show_caret = show;
         self
     }
 }

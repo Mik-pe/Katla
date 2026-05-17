@@ -73,6 +73,7 @@ fn is_interactive(descriptor: &ViewDescriptor) -> bool {
         | ViewDescriptor::ScrollView(_)
         | ViewDescriptor::Panel(_)
         | ViewDescriptor::Overlay(_)
+        | ViewDescriptor::TransitionContainer { .. }
         | ViewDescriptor::Custom(_) => false,
     }
 }
