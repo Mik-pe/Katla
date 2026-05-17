@@ -39,17 +39,6 @@ struct UiUniforms {
 @group(1) @binding(0) var bindless_textures: binding_array<texture_2d<f32>, 4096>;
 
 
-// Convert sRGB color to linear for correct alpha blending on sRGB render target.
-// Vertex colors from UByte4Norm are in sRGB space; the blend unit operates in linear.
-fn srgb_to_linear(color: vec4f) -> vec4f {
-    return vec4f(
-        pow(color.r, 2.2),
-        pow(color.g, 2.2),
-        pow(color.b, 2.2),
-        color.a,
-    );
-}
-
 @vertex
 fn vs_main(in: UiVertex) -> VertexOutput {
     var out: VertexOutput;
@@ -62,8 +51,7 @@ fn vs_main(in: UiVertex) -> VertexOutput {
 
     out.clip_position = vec4f(ndc_x, ndc_y, 0.0, 1.0);
     out.uv = in.uv;
-    // Linearize sRGB vertex color for correct blending on sRGB render target
-    out.color = srgb_to_linear(in.color);
+    out.color = in.color;
     out.texture_index = in.texture_index;
 
     return out;
