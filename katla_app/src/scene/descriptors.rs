@@ -115,6 +115,34 @@ pub struct VelocityDescriptor {
     pub acceleration: [f32; 3],
 }
 
+/// Mass data for serialization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MassDescriptor {
+    pub mass: f32,
+}
+
+/// Drag data for serialization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DragDescriptor {
+    pub coefficient: f32,
+}
+
+/// Perspective camera data for serialization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PerspectiveDescriptor {
+    pub fov: f32,
+    pub near: f32,
+    pub aspect_ratio: f32,
+}
+
+/// Directional light data for serialization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DirectionalLightDescriptor {
+    pub direction: [f32; 3],
+    pub color: [f32; 3],
+    pub intensity: f32,
+}
+
 /// Script attachment data for serialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScriptDescriptor {
@@ -139,6 +167,14 @@ pub struct EntityDescriptor {
     pub velocity: Option<VelocityDescriptor>,
     #[serde(default)]
     pub script: Option<ScriptDescriptor>,
+    #[serde(default)]
+    pub mass: Option<MassDescriptor>,
+    #[serde(default)]
+    pub drag: Option<DragDescriptor>,
+    #[serde(default)]
+    pub perspective: Option<PerspectiveDescriptor>,
+    #[serde(default)]
+    pub directional_light: Option<DirectionalLightDescriptor>,
 }
 
 /// Top-level scene file structure.

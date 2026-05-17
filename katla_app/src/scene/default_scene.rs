@@ -45,6 +45,10 @@ pub fn build_default_scene() -> Scene {
         animation: None,
         velocity: None,
         script: None,
+        mass: None,
+        drag: None,
+        perspective: None,
+        directional_light: None,
     });
 
     // PBR material grid (5x5) -- metallic (Y) x roughness (X)
@@ -84,6 +88,10 @@ pub fn build_default_scene() -> Scene {
                 animation: None,
                 velocity: None,
                 script: None,
+                mass: None,
+                drag: None,
+                perspective: None,
+                directional_light: None,
             });
         }
     }
@@ -111,6 +119,10 @@ pub fn build_default_scene() -> Scene {
         animation: None,
         velocity: None,
         script: None,
+        mass: None,
+        drag: None,
+        perspective: None,
+        directional_light: None,
     });
 
     // Cyan sphere
@@ -138,6 +150,10 @@ pub fn build_default_scene() -> Scene {
         animation: None,
         velocity: None,
         script: None,
+        mass: None,
+        drag: None,
+        perspective: None,
+        directional_light: None,
     });
 
     // Magenta cylinder
@@ -165,6 +181,10 @@ pub fn build_default_scene() -> Scene {
         animation: None,
         velocity: None,
         script: None,
+        mass: None,
+        drag: None,
+        perspective: None,
+        directional_light: None,
     });
 
     // Lime torus
@@ -193,6 +213,10 @@ pub fn build_default_scene() -> Scene {
         animation: None,
         velocity: None,
         script: None,
+        mass: None,
+        drag: None,
+        perspective: None,
+        directional_light: None,
     });
 
     // Backdrop plane
@@ -219,6 +243,10 @@ pub fn build_default_scene() -> Scene {
         animation: None,
         velocity: None,
         script: None,
+        mass: None,
+        drag: None,
+        perspective: None,
+        directional_light: None,
     });
 
     // Fox with animation
@@ -254,6 +282,10 @@ pub fn build_default_scene() -> Scene {
         }),
         velocity: None,
         script: None,
+        mass: None,
+        drag: None,
+        perspective: None,
+        directional_light: None,
     });
 
     // DamagedHelmet
@@ -274,6 +306,10 @@ pub fn build_default_scene() -> Scene {
         animation: None,
         velocity: None,
         script: None,
+        mass: None,
+        drag: None,
+        perspective: None,
+        directional_light: None,
     });
 
     // Fire particle emitter
@@ -310,6 +346,10 @@ pub fn build_default_scene() -> Scene {
         animation: None,
         velocity: None,
         script: None,
+        mass: None,
+        drag: None,
+        perspective: None,
+        directional_light: None,
     });
 
     // Ethereal particle emitter
@@ -346,6 +386,10 @@ pub fn build_default_scene() -> Scene {
         animation: None,
         velocity: None,
         script: None,
+        mass: None,
+        drag: None,
+        perspective: None,
+        directional_light: None,
     });
 
     // Sparkle particle emitter
@@ -382,6 +426,10 @@ pub fn build_default_scene() -> Scene {
         animation: None,
         velocity: None,
         script: None,
+        mass: None,
+        drag: None,
+        perspective: None,
+        directional_light: None,
     });
 
     // Point lights
@@ -430,6 +478,10 @@ pub fn build_default_scene() -> Scene {
             animation: None,
             velocity: None,
             script: None,
+            mass: None,
+            drag: None,
+            perspective: None,
+            directional_light: None,
         });
     }
 

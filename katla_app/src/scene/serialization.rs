@@ -1,5 +1,6 @@
 use super::descriptors::{
-    AnimationDescriptor, DrawableDescriptor, EntityDescriptor, ParticleEmitterDescriptor,
+    AnimationDescriptor, DirectionalLightDescriptor, DragDescriptor, DrawableDescriptor,
+    EntityDescriptor, MassDescriptor, ParticleEmitterDescriptor, PerspectiveDescriptor,
     PointLightDescriptor, Scene, ScriptDescriptor, TransformDescriptor, VelocityDescriptor,
 };
 use super::entity_source::EntitySource;
@@ -9,7 +10,8 @@ use std::path::Path;
 use crate::animation::AnimationPlayer;
 use crate::application::Application;
 use crate::components::{
-    DrawableComponent, NameComponent, ParticleEmitterComponent, PointLight, TransformComponent,
+    DirectionalLight, DragComponent, DrawableComponent, MassComponent, NameComponent,
+    ParticleEmitterComponent, PerspectiveComponent, PointLight, TransformComponent,
     VelocityComponent,
 };
 use katla_script::ScriptComponent;
@@ -202,6 +204,36 @@ impl SceneManager {
                     script_path: s.script_path.clone(),
                 });
 
+            let mass = app
+                .world
+                .get_component::<MassComponent>(entity_id)
+                .map(|m| MassDescriptor { mass: m.mass });
+
+            let drag = app
+                .world
+                .get_component::<DragComponent>(entity_id)
+                .map(|d| DragDescriptor {
+                    coefficient: d.coefficient,
+                });
+
+            let perspective = app
+                .world
+                .get_component::<PerspectiveComponent>(entity_id)
+                .map(|p| PerspectiveDescriptor {
+                    fov: p.fov,
+                    near: p.near,
+                    aspect_ratio: p.aspect_ratio,
+                });
+
+            let directional_light =
+                app.world
+                    .get_component::<DirectionalLight>(entity_id)
+                    .map(|l| DirectionalLightDescriptor {
+                        direction: [l.direction.x(), l.direction.y(), l.direction.z()],
+                        color: l.color,
+                        intensity: l.intensity,
+                    });
+
             scene.entities.push(EntityDescriptor {
                 name,
                 parent,
@@ -213,6 +245,10 @@ impl SceneManager {
                 animation,
                 velocity,
                 script,
+                mass,
+                drag,
+                perspective,
+                directional_light,
             });
         }
 
@@ -626,6 +662,50 @@ impl SceneManager {
         if let Some(ref script_desc) = desc.script {
             app.world
                 .add_component(entity_id, ScriptComponent::new(&script_desc.script_path));
+        }
+
+        // Apply mass
+        if let Some(ref mass_desc) = desc.mass {
+            app.world.add_component(
+                entity_id,
+                MassComponent {
+                    mass: mass_desc.mass,
+                },
+            );
+        }
+
+        // Apply drag
+        if let Some(ref drag_desc) = desc.drag {
+            app.world.add_component(
+                entity_id,
+                DragComponent {
+                    coefficient: drag_desc.coefficient,
+                },
+            );
+        }
+
+        // Apply perspective
+        if let Some(ref persp_desc) = desc.perspective {
+            app.world.add_component(
+                entity_id,
+                PerspectiveComponent::new(persp_desc.fov, persp_desc.near, persp_desc.aspect_ratio),
+            );
+        }
+
+        // Apply directional light
+        if let Some(ref dl_desc) = desc.directional_light {
+            app.world.add_component(
+                entity_id,
+                DirectionalLight::new(
+                    katla_math::Vec3::new(
+                        dl_desc.direction[0],
+                        dl_desc.direction[1],
+                        dl_desc.direction[2],
+                    ),
+                    dl_desc.color,
+                    dl_desc.intensity,
+                ),
+            );
         }
 
         // Attach EntitySource for future serialization
