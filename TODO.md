@@ -74,7 +74,7 @@
 ### Phase 4: Hot reload + sandboxing
 - [ ] Add file watcher for `.luau` scripts — detect changes in `resources/scripts/`, trigger recompile
 - [ ] Implement hot reload — recompile chunk, create new per-script environment, preserve scalar state from old env, swap instances
-- [ ] Harden VM sandboxing — initialize with `StdLib::ALL_SAFE` (no io/os/debug), configure interrupt watchdog for runaway scripts
+- [x] Harden VM sandboxing — initialize with `StdLib::ALL_SAFE` (no io/os/debug), configure interrupt watchdog for runaway scripts
 - [x] Add `print`/`warn` bridges — route to `log::info!`/`log::warn!` in debug builds only
 
 ### Phase 5: Polish + events
