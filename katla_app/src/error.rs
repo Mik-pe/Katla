@@ -18,7 +18,7 @@ pub enum AppError {
     RendererInitFailed { reason: String },
 
     /// Graphics/rendering error
-    Graphics { message: String },
+    Graphics { source: katla_gfx::RendererError },
 
     /// IO error
     Io { source: std::io::Error },
@@ -48,8 +48,8 @@ impl fmt::Display for AppError {
             Self::RendererInitFailed { reason } => {
                 write!(f, "Failed to initialize renderer: {}", reason)
             }
-            Self::Graphics { message } => {
-                write!(f, "Graphics error: {}", message)
+            Self::Graphics { source } => {
+                write!(f, "Graphics error: {}", source)
             }
             Self::Io { source } => {
                 write!(f, "IO error: {}", source)
@@ -71,6 +71,7 @@ impl std::error::Error for AppError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io { source } => Some(source),
+            Self::Graphics { source } => Some(source),
             _ => None,
         }
     }

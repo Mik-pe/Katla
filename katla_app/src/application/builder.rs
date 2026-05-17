@@ -236,17 +236,13 @@ impl ApplicationBuilder {
                 sky_shader_path,
                 TextureImageFormat::R16G16B16A16Sfloat,
             )
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to compile sky shader: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         // Compile tonemap shader for post-processing
         let tonemap_shader_path = resources.shader_path("tonemapping.wgsl");
         let tonemap_pipeline = renderer
             .compile_fullscreen_shader(tonemap_shader_path)
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to compile tonemap shader: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         // Compile wallhack overlay shader (reads LDR + stencil indicator, applies tint)
         let overlay_shader_path = resources.shader_path("wallhack_overlay.wgsl");
@@ -255,9 +251,7 @@ impl ApplicationBuilder {
                 overlay_shader_path,
                 katla_gfx::ImageFormat::B8G8R8A8Srgb,
             )
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to compile wallhack overlay shader: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         // We'll get the HDR texture index after registering with bindless
         // For now, use None - it will be set during app init
@@ -280,18 +274,14 @@ impl ApplicationBuilder {
                     ..Default::default()
                 },
             )
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to compile UI shader: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         // Initialize Forward+ light culling system BEFORE compiling PBR materials,
         // since PBR pipelines need Set 3 for light culling data.
         let light_cull_shader_path = resources.shader_path("lighting/light_cull.wgsl");
         renderer
             .init_light_culling(extent.width, extent.height, &light_cull_shader_path)
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to initialize light culling: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         // Initialize shadow resources BEFORE compiling PBR materials,
         // since PBR pipelines need Set 4 for shadow data.
@@ -299,16 +289,12 @@ impl ApplicationBuilder {
         use katla_gfx::CascadeParams;
         renderer
             .init_shadow_resources(None, CascadeParams::default())
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to initialize shadow resources: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         // Register depth textures with bindless for screen-space effects (contact shadows, AO)
-        let depth_texture_base = renderer.register_depth_textures_bindless().map_err(|e| {
-            crate::error::AppError::Graphics {
-                message: format!("Failed to register depth textures: {}", e),
-            }
-        })?;
+        let depth_texture_base = renderer
+            .register_depth_textures_bindless()
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
         log::info!(
             "Depth textures registered with bindless at base slot {}",
             depth_texture_base
@@ -318,40 +304,27 @@ impl ApplicationBuilder {
         let shadow_shader_path = resources.shader_path("shadow/shadow_depth.wgsl");
         renderer
             .init_shadow_pipeline(&shadow_shader_path)
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to initialize shadow pipeline: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         let shadow_skinned_shader_path = resources.shader_path("shadow/shadow_depth_skinned.wgsl");
         renderer
             .init_shadow_pipeline_skinned(&shadow_skinned_shader_path)
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to initialize skinned shadow pipeline: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         let depth_prepass_shader_path = resources.shader_path("depth_prepass.wgsl");
         renderer
             .init_depth_prepass_pipeline(&depth_prepass_shader_path)
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to initialize depth prepass pipeline: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         let depth_prepass_skinned_shader_path = resources.shader_path("depth_prepass_skinned.wgsl");
         renderer
             .init_depth_prepass_skinned_pipeline(&depth_prepass_skinned_shader_path)
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to initialize skinned depth prepass pipeline: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         let billboard_depth_shader_path = resources.shader_path("billboard_depth.wgsl");
         renderer
             .init_depth_prepass_billboard_pipeline(&billboard_depth_shader_path)
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!(
-                    "Failed to initialize billboard depth prepass pipeline: {}",
-                    e
-                ),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         // Initialize outline pipelines for stencil-based selection highlight
         let stencil_mark_shader_path = resources.shader_path("outline/stencil_mark.wgsl");
@@ -367,9 +340,7 @@ impl ApplicationBuilder {
                 &outline_draw_shader_path,
                 &outline_draw_skinned_shader_path,
             )
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to initialize outline pipelines: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         // Initialize stencil indicator pipeline for wallhack overlay
         let stencil_indicator_shader_path = resources.shader_path("outline/stencil_indicator.wgsl");
@@ -380,9 +351,7 @@ impl ApplicationBuilder {
                 &stencil_indicator_shader_path,
                 &stencil_indicator_skinned_shader_path,
             )
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to initialize stencil indicator pipelines: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         // Compile geometry shader for PBR model rendering
         log::info!("About to compile PBR geometry shader...");
@@ -396,9 +365,7 @@ impl ApplicationBuilder {
                     ..Default::default()
                 },
             )
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to compile geometry shader: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         log::info!("PBR geometry shader compiled successfully");
 
@@ -408,9 +375,7 @@ impl ApplicationBuilder {
         // Initialize particle render pipeline using the renderer's method
         renderer
             .init_particle_render_pipeline(&particle_shader_path)
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to initialize particle render pipeline: {}", e),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         // Note: Particle compute pipelines (emit and simulate) will be initialized
         // later in Application::init() after the builder returns.
@@ -588,9 +553,7 @@ impl ApplicationBuilder {
                     .material(ui_material),
             )
             .build()
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: e.to_string(),
-            })?;
+            .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
 
         Ok(graph)
     }
@@ -801,11 +764,7 @@ impl ApplicationBuilder {
         // Initialize transient textures so we can get shadow atlas ImageView
         frame_graph
             .initialize_transient_textures(&renderer)
-            .map_err(|e| crate::error::AppError::Graphics {
-                message: format!("Failed to initialize transient textures: {}", e),
-            })?;
-
-        // Update shadow atlas views for all frames now that transient textures are created
+            .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
         for frame_idx in 0..2 {
             if let Some(view) =
                 frame_graph.transient_texture_view_for_frame("shadow_atlas", frame_idx)
