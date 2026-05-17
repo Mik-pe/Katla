@@ -13,8 +13,9 @@ pub mod renderer;
 
 #[cfg(feature = "editor")]
 pub use editor_ui::{
-    EditorAction, EditorRenderParams, EditorUI, EntityInfo, FocusedPanel, InspectorEditState,
-    ParticleEmitterInfo, PointLightInfo, SpawnableModel, ThumbnailState,
+    DirectionalLightInfo, DragInfo, EditorAction, EditorRenderParams, EditorUI, EntityInfo,
+    FocusedPanel, InspectorEditState, MassInfo, ParticleEmitterInfo, PerspectiveInfo,
+    PointLightInfo, SpawnableModel, ThumbnailState,
 };
 pub use katla_ui::ColorScheme;
 #[cfg(feature = "editor")]

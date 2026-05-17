@@ -180,21 +180,7 @@ impl EditorUI {
             save_confirmation_timer: 0.0,
             prev_want_capture_keyboard: false,
             prev_want_capture_mouse: false,
-            inspector_edit: types::InspectorEditState {
-                pos: [0.0; 3],
-                rot: [0.0; 3],
-                scale: [1.0, 1.0, 1.0],
-                light_color: [1.0; 3],
-                light_intensity: 1.0,
-                light_range: 10.0,
-                emit_rate: 10.0,
-                velocity: 2.0,
-                lifetime: 2.0,
-                gravity: -9.81,
-                particle_scale: 0.1,
-                light_color_picker: katla_ui::widgets::ColorPickerState::new(),
-                script_path: String::new(),
-            },
+            inspector_edit: types::InspectorEditState::default(),
             inspector_edit_entity: None,
             gizmo_mode: 0,
             co_creator: CoCreatorState::new(),
@@ -267,6 +253,22 @@ impl EditorUI {
                     self.inspector_edit.script_path = path.clone();
                 } else {
                     self.inspector_edit.script_path.clear();
+                }
+                if let Some(ref m) = entity.mass {
+                    self.inspector_edit.mass = m.mass;
+                }
+                if let Some(ref d) = entity.drag {
+                    self.inspector_edit.drag_coefficient = d.coefficient;
+                }
+                if let Some(ref p) = entity.perspective {
+                    self.inspector_edit.fov = p.fov;
+                    self.inspector_edit.near = p.near;
+                    self.inspector_edit.aspect_ratio = p.aspect_ratio;
+                }
+                if let Some(ref dl) = entity.directional_light {
+                    self.inspector_edit.directional_direction = dl.direction;
+                    self.inspector_edit.directional_color = dl.color;
+                    self.inspector_edit.directional_intensity = dl.intensity;
                 }
             }
         }

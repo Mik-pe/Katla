@@ -304,6 +304,52 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                     section_gap(ui);
                 }
 
+                if entity.directional_light.is_some() {
+                    if section_header_with_remove(
+                        ui,
+                        "Directional Light",
+                        entity_id,
+                        "DirectionalLight",
+                        theme,
+                        w,
+                    ) {
+                        ctx.pending_actions.push(EditorAction::RemoveComponent {
+                            entity: entity_id,
+                            component_type: "DirectionalLight".to_string(),
+                        });
+                    }
+
+                    vec3_row(
+                        ui,
+                        "Direction",
+                        &mut edit.directional_direction,
+                        -1.0..=1.0,
+                        ["X", "Y", "Z"],
+                        AXIS_COLORS,
+                        w,
+                        theme,
+                    );
+                    let picker_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 28.0));
+                    ui.add_overlay(
+                        ColorPickerButton::new(
+                            "Color",
+                            &mut edit.directional_color,
+                            &mut edit.directional_color_picker,
+                        )
+                        .bounds(picker_bounds)
+                        .id("directional_color_picker"),
+                    );
+                    ui.set_cursor(Vec2::new(x, ui.cursor().y() + 32.0));
+                    scalar_row(
+                        ui,
+                        "Intensity",
+                        &mut edit.directional_intensity,
+                        0.0..=100.0,
+                        w,
+                    );
+                    section_gap(ui);
+                }
+
                 if entity.particle_emitter.is_some() {
                     if section_header_with_remove(
                         ui,
@@ -323,6 +369,50 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                     scalar_row(ui, "Lifetime", &mut edit.lifetime, 0.1..=30.0, w);
                     scalar_row(ui, "Gravity", &mut edit.gravity, -30.0..=30.0, w);
                     scalar_row(ui, "Scale", &mut edit.particle_scale, 0.01..=5.0, w);
+                    section_gap(ui);
+                }
+
+                if entity.mass.is_some() {
+                    if section_header_with_remove(ui, "Mass", entity_id, "MassComponent", theme, w)
+                    {
+                        ctx.pending_actions.push(EditorAction::RemoveComponent {
+                            entity: entity_id,
+                            component_type: "MassComponent".to_string(),
+                        });
+                    }
+                    scalar_row(ui, "Mass", &mut edit.mass, 0.01..=1000.0, w);
+                    section_gap(ui);
+                }
+
+                if entity.drag.is_some() {
+                    if section_header_with_remove(ui, "Drag", entity_id, "DragComponent", theme, w)
+                    {
+                        ctx.pending_actions.push(EditorAction::RemoveComponent {
+                            entity: entity_id,
+                            component_type: "DragComponent".to_string(),
+                        });
+                    }
+                    scalar_row(ui, "Coefficient", &mut edit.drag_coefficient, 0.0..=10.0, w);
+                    section_gap(ui);
+                }
+
+                if entity.perspective.is_some() {
+                    if section_header_with_remove(
+                        ui,
+                        "Perspective",
+                        entity_id,
+                        "PerspectiveComponent",
+                        theme,
+                        w,
+                    ) {
+                        ctx.pending_actions.push(EditorAction::RemoveComponent {
+                            entity: entity_id,
+                            component_type: "PerspectiveComponent".to_string(),
+                        });
+                    }
+                    scalar_row(ui, "FOV", &mut edit.fov, 1.0..=179.0, w);
+                    scalar_row(ui, "Near", &mut edit.near, 0.001..=10.0, w);
+                    scalar_row(ui, "Aspect", &mut edit.aspect_ratio, 0.1..=10.0, w);
                     section_gap(ui);
                 }
 
