@@ -297,6 +297,10 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
         crate::gizmo::GizmoMode::Scale => 2,
     };
 
+    app.editor.editor_ui.is_playing = app.play_mode == super::game_state::PlayMode::Playing
+        || app.play_mode == super::game_state::PlayMode::Paused;
+    app.editor.editor_ui.is_paused = app.play_mode == super::game_state::PlayMode::Paused;
+
     // Sync inspector editing state from current entity data
     app.editor.editor_ui.sync_inspector_edit_state(&entity_info);
 
@@ -962,6 +966,33 @@ pub fn process_editor_actions(app: &mut Application) {
                     log::error!("Failed to save LLM config: {}", e);
                 } else {
                     info!("LLM configuration saved");
+                }
+            }
+            EditorAction::PlayStart => {
+                if app.play_mode == super::game_state::PlayMode::Editing {
+                    app.scene_snapshot = Some(super::game_state::SceneSnapshot::capture(app));
+                    app.play_mode = super::game_state::PlayMode::Playing;
+                    info!("Entered play mode");
+                }
+            }
+            EditorAction::PlayPause => match app.play_mode {
+                super::game_state::PlayMode::Playing => {
+                    app.play_mode = super::game_state::PlayMode::Paused;
+                    info!("Play mode paused");
+                }
+                super::game_state::PlayMode::Paused => {
+                    app.play_mode = super::game_state::PlayMode::Playing;
+                    info!("Play mode resumed");
+                }
+                super::game_state::PlayMode::Editing => {}
+            },
+            EditorAction::PlayStop => {
+                if app.play_mode != super::game_state::PlayMode::Editing {
+                    if let Some(snapshot) = app.scene_snapshot.take() {
+                        snapshot.restore(app);
+                    }
+                    app.play_mode = super::game_state::PlayMode::Editing;
+                    info!("Stopped play mode, scene restored");
                 }
             }
         }

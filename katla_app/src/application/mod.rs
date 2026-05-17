@@ -23,6 +23,8 @@ mod editor_methods;
 mod events;
 mod frame_loop;
 #[cfg(feature = "editor")]
+mod game_state;
+#[cfg(feature = "editor")]
 mod gizmo;
 mod init;
 #[cfg(not(feature = "editor"))]
@@ -69,6 +71,7 @@ pub struct ApplicationInfo {
     validation_mode: katla_gfx::ValidationMode,
     max_frames: Option<usize>, // Some(n) = exit after n frames, None = run indefinitely
     check_black_frames: bool,  // Check center pixel of swapchain for black frames
+    scene_path: Option<String>, // Override scene to load on startup
 }
 
 /// Main application struct containing all engine state.
@@ -315,6 +318,12 @@ pub struct Application {
     /// Editor-only state (UI, picking, gizmos, billboards)
     #[cfg(feature = "editor")]
     pub(crate) editor: EditorState,
+    /// Current play mode state (editing, playing, paused).
+    #[cfg(feature = "editor")]
+    pub(crate) play_mode: game_state::PlayMode,
+    /// Snapshot taken before entering play mode, restored on stop.
+    #[cfg(feature = "editor")]
+    pub(crate) scene_snapshot: Option<game_state::SceneSnapshot>,
     /// Hook called once after build(), before the event loop.
     pub(crate) on_init: Option<builder::InitHook>,
     /// Hook called each frame between world.update(dt) and rendering.

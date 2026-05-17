@@ -60,6 +60,7 @@ pub struct ApplicationBuilder {
     max_frames: Option<usize>,
     check_black_frames: bool,
     world: World,
+    scene_path: Option<String>,
     on_init: Option<InitHook>,
     on_update: Option<UpdateHook>,
     on_shutdown: Option<ShutdownHook>,
@@ -106,6 +107,14 @@ impl ApplicationBuilder {
 
     pub fn check_black_frames(mut self, enabled: bool) -> Self {
         self.check_black_frames = enabled;
+        self
+    }
+
+    /// Set the scene file to load on startup (relative path or absolute).
+    ///
+    /// If not set, the default scene (`assets/scenes/default.katla`) is loaded.
+    pub fn with_scene_path(mut self, path: impl Into<String>) -> Self {
+        self.scene_path = Some(path.into());
         self
     }
 
@@ -599,6 +608,7 @@ impl ApplicationBuilder {
             validation_mode: self.validation_mode,
             max_frames: self.max_frames,
             check_black_frames: self.check_black_frames,
+            scene_path: self.scene_path,
         };
 
         let mut world = self.world;
@@ -830,6 +840,10 @@ impl ApplicationBuilder {
             on_init: self.on_init,
             on_update: self.on_update,
             on_shutdown: self.on_shutdown,
+            #[cfg(feature = "editor")]
+            play_mode: super::game_state::PlayMode::Editing,
+            #[cfg(feature = "editor")]
+            scene_snapshot: None,
         };
 
         Ok((app, event_loop))

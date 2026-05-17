@@ -26,6 +26,10 @@ struct Args {
     /// Check for black frames by reading back swapchain center pixel
     #[arg(long)]
     check_black_frames: bool,
+
+    /// Scene file to load on startup (e.g., assets/scenes/playground.katla)
+    #[arg(short, long)]
+    scene: Option<String>,
 }
 
 fn main() {
@@ -122,22 +126,22 @@ fn main() {
             SystemExecutionOrder::LATE,
         );
 
-    let result = if args.single_frame {
-        builder
-            .with_name("Katla")
-            .validation_layer(true)
-            .gpu_assisted_validation(args.gpu_validation)
-            .max_frames(100)
-            .check_black_frames(args.check_black_frames)
-            .build()
-    } else {
-        builder
-            .with_name("Katla")
-            .validation_layer(true)
-            .gpu_assisted_validation(args.gpu_validation)
-            .check_black_frames(args.check_black_frames)
-            .build()
-    };
+    let mut builder = builder
+        .with_name("Katla")
+        .validation_layer(true)
+        .gpu_assisted_validation(args.gpu_validation)
+        .check_black_frames(args.check_black_frames);
+
+    if let Some(scene) = &args.scene {
+        builder = builder.with_scene_path(scene);
+        info!("Loading scene: {}", scene);
+    }
+
+    if args.single_frame {
+        builder = builder.max_frames(100);
+    }
+
+    let result = builder.build();
 
     match result {
         Ok((mut application, event_loop)) => {
