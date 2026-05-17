@@ -18,4 +18,7 @@ impl ScriptComponent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ScriptInstanceHandle(pub(crate) u32);
+pub struct ScriptInstanceHandle {
+    pub(crate) index: u32,
+    pub(crate) generation: u32,
+}

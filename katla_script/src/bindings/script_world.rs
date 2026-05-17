@@ -1,5 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::rc::Rc;
 
 use katla_ecs::EntityId;
 use mlua::{Lua, UserData, UserDataMethods};
@@ -16,11 +17,15 @@ pub struct InputSnapshot {
 }
 
 #[derive(Clone)]
+pub(crate) struct SharedWorldData {
+    pub transforms: HashMap<EntityId, katla_math::Transform>,
+    pub live_entities: Vec<EntityId>,
+    pub input_state: InputSnapshot,
+}
+
 pub struct ScriptWorldProxy {
     pub(crate) commands: Vec<ScriptCommand>,
-    pub(crate) transforms: Vec<(EntityId, katla_math::Transform)>,
-    pub(crate) live_entities: Vec<EntityId>,
-    pub(crate) input_state: InputSnapshot,
+    pub(crate) shared: Rc<SharedWorldData>,
 }
 
 impl Default for ScriptWorldProxy {
@@ -31,49 +36,56 @@ impl Default for ScriptWorldProxy {
 
 impl ScriptWorldProxy {
     pub fn new() -> Self {
+        Self::with_transforms(Vec::new())
+    }
+
+    pub(crate) fn from_shared(shared: Rc<SharedWorldData>) -> Self {
         Self {
             commands: Vec::new(),
-            transforms: Vec::new(),
-            live_entities: Vec::new(),
-            input_state: InputSnapshot::default(),
+            shared,
         }
     }
 
     pub fn with_transforms(transforms: Vec<(EntityId, katla_math::Transform)>) -> Self {
         Self {
             commands: Vec::new(),
-            transforms,
-            live_entities: Vec::new(),
-            input_state: InputSnapshot::default(),
+            shared: Rc::new(SharedWorldData {
+                transforms: transforms.into_iter().collect(),
+                live_entities: Vec::new(),
+                input_state: InputSnapshot::default(),
+            }),
         }
     }
 
     pub fn with_input(mut self, input: InputSnapshot) -> Self {
-        self.input_state = input;
+        Rc::get_mut(&mut self.shared).unwrap().input_state = input;
         self
     }
 
+    pub fn push_live_entity(&mut self, id: EntityId) {
+        if let Some(shared) = Rc::get_mut(&mut self.shared) {
+            shared.live_entities.push(id);
+        }
+    }
+
     pub fn get_transform(&self, entity: EntityId) -> Option<katla_math::Transform> {
-        self.transforms
-            .iter()
-            .find(|(id, _)| *id == entity)
-            .map(|(_, t)| *t)
+        self.shared.transforms.get(&entity).copied()
     }
 
     pub fn entity_exists(&self, entity: EntityId) -> bool {
-        self.live_entities.contains(&entity)
+        self.shared.live_entities.contains(&entity)
     }
 
     pub fn is_action_pressed(&self, action: &str) -> bool {
-        self.input_state.pressed_actions.contains(action)
+        self.shared.input_state.pressed_actions.contains(action)
     }
 
     pub fn get_mouse_delta(&self) -> (f32, f32) {
-        self.input_state.mouse_delta
+        self.shared.input_state.mouse_delta
     }
 
     pub fn get_mouse_wheel(&self) -> f32 {
-        self.input_state.mouse_wheel
+        self.shared.input_state.mouse_wheel
     }
 }
 
