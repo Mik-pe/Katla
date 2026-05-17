@@ -10,7 +10,7 @@ use katla_ecs::{EntityId, World};
 use katla_gfx::particles::EmitterHandle;
 use log::{debug, info, warn};
 
-use crate::components::ParticleEmitterComponent;
+use crate::components::{ParticleEmitterComponent, WorldTransform};
 
 /// System that manages particle emitters in the ECS.
 ///
@@ -76,6 +76,15 @@ impl ParticleSystem {
             }
         }
 
+        // Collect world positions before mutable borrow
+        let world_positions: HashMap<EntityId, [f32; 3]> = world
+            .query::<&WorldTransform>()
+            .map(|(id, wt)| {
+                let p = wt.transform.position;
+                (id, [p.x(), p.y(), p.z()])
+            })
+            .collect();
+
         // Query all particle emitter components
         for (entity_id, emitter) in world.query::<&mut ParticleEmitterComponent>() {
             if emitter.active {
@@ -97,6 +106,9 @@ impl ParticleSystem {
                 } else {
                     // Update existing emitter configuration
                     if let Some(handle) = emitter.emitter_handle {
+                        if let Some(pos) = world_positions.get(&entity_id) {
+                            emitter.config.position = *pos;
+                        }
                         particle_system.update_emitter(handle, emitter.config);
                         debug!(
                             "Updated particle emitter at position {:?}",

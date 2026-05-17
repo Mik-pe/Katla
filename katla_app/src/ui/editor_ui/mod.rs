@@ -130,6 +130,8 @@ pub struct EditorUI {
     inspector_scroll_state: katla_ui::ScrollAreaState,
     /// Whether the "Add Component" dropdown is open.
     add_component_open: bool,
+    /// Scroll state for the "Add Component" popup list.
+    add_component_scroll_state: katla_ui::ScrollAreaState,
     /// Search filter for the "Add Component" dropdown.
     add_component_filter: String,
     /// Whether to auto-focus the script path text input (set when ScriptComponent is added).
@@ -188,6 +190,7 @@ impl EditorUI {
             co_creator: CoCreatorState::new(),
             inspector_scroll_state: katla_ui::ScrollAreaState::default(),
             add_component_open: false,
+            add_component_scroll_state: katla_ui::ScrollAreaState::default(),
             add_component_filter: String::new(),
             focus_script_input: false,
             available_components: Vec::new(),
