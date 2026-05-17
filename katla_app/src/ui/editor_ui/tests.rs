@@ -117,6 +117,10 @@ fn test_hierarchy_entity_selection_works() {
             point_light: None,
             particle_emitter: None,
             script_path: None,
+            mass: None,
+            drag: None,
+            perspective: None,
+            directional_light: None,
         },
         EntityInfo {
             id: entity2,
@@ -132,6 +136,10 @@ fn test_hierarchy_entity_selection_works() {
             point_light: None,
             particle_emitter: None,
             script_path: None,
+            mass: None,
+            drag: None,
+            perspective: None,
+            directional_light: None,
         },
     ];
 

@@ -20,7 +20,10 @@ use crate::components::{
     TransformComponent,
 };
 
-use crate::ui::{EditorAction, EntityInfo, ParticleEmitterInfo, PointLightInfo};
+use crate::ui::{
+    DirectionalLightInfo, DragInfo, EditorAction, EntityInfo, MassInfo, ParticleEmitterInfo,
+    PerspectiveInfo, PointLightInfo,
+};
 
 use super::Application;
 
@@ -38,6 +41,14 @@ pub(crate) struct InspectorDragSnapshot {
     lifetime: Option<f32>,
     gravity: Option<f32>,
     particle_scale: Option<f32>,
+    mass: Option<f32>,
+    drag_coefficient: Option<f32>,
+    fov: Option<f32>,
+    near: Option<f32>,
+    aspect_ratio: Option<f32>,
+    directional_direction: Option<[f32; 3]>,
+    directional_color: Option<[f32; 3]>,
+    directional_intensity: Option<f32>,
 }
 
 /// Command that restores inspector properties to pre-drag values.
@@ -127,6 +138,38 @@ fn apply_inspector_snapshot(
             emitter.config.base_scale = sc;
         }
     }
+    if let Some(mass_comp) = world.get_component_mut::<MassComponent>(entity) {
+        if let Some(m) = snapshot.mass {
+            mass_comp.mass = m;
+        }
+    }
+    if let Some(drag_comp) = world.get_component_mut::<DragComponent>(entity) {
+        if let Some(c) = snapshot.drag_coefficient {
+            drag_comp.coefficient = c;
+        }
+    }
+    if let Some(persp) = world.get_component_mut::<PerspectiveComponent>(entity) {
+        if let Some(fov) = snapshot.fov {
+            persp.fov = fov;
+        }
+        if let Some(near) = snapshot.near {
+            persp.near = near;
+        }
+        if let Some(ar) = snapshot.aspect_ratio {
+            persp.aspect_ratio = ar;
+        }
+    }
+    if let Some(dl) = world.get_component_mut::<DirectionalLight>(entity) {
+        if let Some(dir) = snapshot.directional_direction {
+            dl.direction = Vec3::new(dir[0], dir[1], dir[2]);
+        }
+        if let Some(color) = snapshot.directional_color {
+            dl.color = color;
+        }
+        if let Some(intensity) = snapshot.directional_intensity {
+            dl.intensity = intensity;
+        }
+    }
 }
 
 /// Snapshot current ECS component values for the inspector drag undo.
@@ -167,6 +210,31 @@ fn snapshot_inspector_state(app: &Application, entity: EntityId) -> InspectorDra
             (None, None, None, None, None)
         };
 
+    let mass = app
+        .world
+        .get_component::<MassComponent>(entity)
+        .map(|m| m.mass);
+    let drag_coefficient = app
+        .world
+        .get_component::<DragComponent>(entity)
+        .map(|d| d.coefficient);
+    let (fov, near, aspect_ratio) = app
+        .world
+        .get_component::<PerspectiveComponent>(entity)
+        .map(|p| (Some(p.fov), Some(p.near), Some(p.aspect_ratio)))
+        .unwrap_or((None, None, None));
+    let (directional_direction, directional_color, directional_intensity) = app
+        .world
+        .get_component::<DirectionalLight>(entity)
+        .map(|dl| {
+            (
+                Some([dl.direction.x(), dl.direction.y(), dl.direction.z()]),
+                Some(dl.color),
+                Some(dl.intensity),
+            )
+        })
+        .unwrap_or((None, None, None));
+
     InspectorDragSnapshot {
         entity,
         position,
@@ -180,6 +248,14 @@ fn snapshot_inspector_state(app: &Application, entity: EntityId) -> InspectorDra
         lifetime,
         gravity,
         particle_scale,
+        mass,
+        drag_coefficient,
+        fov,
+        near,
+        aspect_ratio,
+        directional_direction,
+        directional_color,
+        directional_intensity,
     }
 }
 
@@ -466,6 +542,48 @@ fn inspector_values_differ_from_ecs(
         }
     }
 
+    if let Some(mass_comp) = world.get_component::<MassComponent>(entity) {
+        if (edit.mass - mass_comp.mass).abs() > 1e-4 {
+            return true;
+        }
+    }
+
+    if let Some(drag_comp) = world.get_component::<DragComponent>(entity) {
+        if (edit.drag_coefficient - drag_comp.coefficient).abs() > 1e-4 {
+            return true;
+        }
+    }
+
+    if let Some(persp) = world.get_component::<PerspectiveComponent>(entity) {
+        if (edit.fov - persp.fov).abs() > 1e-4 {
+            return true;
+        }
+        if (edit.near - persp.near).abs() > 1e-4 {
+            return true;
+        }
+        if (edit.aspect_ratio - persp.aspect_ratio).abs() > 1e-4 {
+            return true;
+        }
+    }
+
+    if let Some(dl) = world.get_component::<DirectionalLight>(entity) {
+        if (edit.directional_direction[0] - dl.direction.x()).abs() > 1e-3
+            || (edit.directional_direction[1] - dl.direction.y()).abs() > 1e-3
+            || (edit.directional_direction[2] - dl.direction.z()).abs() > 1e-3
+        {
+            return true;
+        }
+        if (edit.directional_color[0] - dl.color[0]).abs() > 1e-3
+            || (edit.directional_color[1] - dl.color[1]).abs() > 1e-3
+            || (edit.directional_color[2] - dl.color[2]).abs() > 1e-3
+        {
+            return true;
+        }
+        if (edit.directional_intensity - dl.intensity).abs() > 1e-4 {
+            return true;
+        }
+    }
+
     false
 }
 
@@ -559,6 +677,15 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         particle_scale,
         light_color_picker: _,
         script_path: _,
+        mass,
+        drag_coefficient,
+        fov,
+        near,
+        aspect_ratio,
+        directional_direction,
+        directional_color,
+        directional_intensity,
+        directional_color_picker: _,
     } = &app.editor.editor_ui.inspector_edit;
 
     // Transform
@@ -618,6 +745,55 @@ fn apply_inspector_slider_changes(app: &mut Application) {
             emitter.config.base_lifetime = *lifetime;
             emitter.config.gravity = *gravity;
             emitter.config.base_scale = *particle_scale;
+        }
+    }
+
+    // MassComponent
+    if let Some(mass_comp) = app.world.get_component_mut::<MassComponent>(entity_id) {
+        if (*mass - mass_comp.mass).abs() > 1e-4 {
+            mass_comp.mass = *mass;
+        }
+    }
+
+    // DragComponent
+    if let Some(drag_comp) = app.world.get_component_mut::<DragComponent>(entity_id) {
+        if (*drag_coefficient - drag_comp.coefficient).abs() > 1e-4 {
+            drag_comp.coefficient = *drag_coefficient;
+        }
+    }
+
+    // PerspectiveComponent
+    if let Some(persp) = app
+        .world
+        .get_component_mut::<PerspectiveComponent>(entity_id)
+    {
+        let fov_changed = (*fov - persp.fov).abs() > 1e-4;
+        let near_changed = (*near - persp.near).abs() > 1e-4;
+        let aspect_changed = (*aspect_ratio - persp.aspect_ratio).abs() > 1e-4;
+        if fov_changed || near_changed || aspect_changed {
+            persp.fov = *fov;
+            persp.near = *near;
+            persp.aspect_ratio = *aspect_ratio;
+        }
+    }
+
+    // DirectionalLight
+    if let Some(dl) = app.world.get_component_mut::<DirectionalLight>(entity_id) {
+        let dir_changed = (directional_direction[0] - dl.direction.x()).abs() > 1e-3
+            || (directional_direction[1] - dl.direction.y()).abs() > 1e-3
+            || (directional_direction[2] - dl.direction.z()).abs() > 1e-3;
+        let color_changed = (directional_color[0] - dl.color[0]).abs() > 1e-3
+            || (directional_color[1] - dl.color[1]).abs() > 1e-3
+            || (directional_color[2] - dl.color[2]).abs() > 1e-3;
+        let intensity_changed = (*directional_intensity - dl.intensity).abs() > 1e-4;
+        if dir_changed || color_changed || intensity_changed {
+            dl.direction = Vec3::new(
+                directional_direction[0],
+                directional_direction[1],
+                directional_direction[2],
+            );
+            dl.color = *directional_color;
+            dl.intensity = *directional_intensity;
         }
     }
 }
@@ -1207,6 +1383,10 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         Option<PointLightInfo>,
         Option<ParticleEmitterInfo>,
         Option<String>,
+        Option<MassInfo>,
+        Option<DragInfo>,
+        Option<PerspectiveInfo>,
+        Option<DirectionalLightInfo>,
     );
     let mut entity_data: HashMap<EntityId, EntityData> = HashMap::new();
     let mut parent_map: HashMap<EntityId, EntityId> = HashMap::new();
@@ -1239,10 +1419,6 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
             .world
             .get_component::<DrawableComponent>(entity_id)
             .is_some();
-        let has_directional = app
-            .world
-            .get_component::<DirectionalLight>(entity_id)
-            .is_some();
         let point_light =
             app.world
                 .get_component::<PointLight>(entity_id)
@@ -1264,6 +1440,33 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         let has_parent = app.world.get_component::<Parent>(entity_id).is_some();
         let has_children = app.world.get_component::<Children>(entity_id).is_some();
 
+        let mass_info = app
+            .world
+            .get_component::<MassComponent>(entity_id)
+            .map(|m| MassInfo { mass: m.mass });
+        let drag_info = app
+            .world
+            .get_component::<DragComponent>(entity_id)
+            .map(|d| DragInfo {
+                coefficient: d.coefficient,
+            });
+        let perspective_info = app
+            .world
+            .get_component::<PerspectiveComponent>(entity_id)
+            .map(|p| PerspectiveInfo {
+                fov: p.fov,
+                near: p.near,
+                aspect_ratio: p.aspect_ratio,
+            });
+        let directional_info = app
+            .world
+            .get_component::<DirectionalLight>(entity_id)
+            .map(|dl| DirectionalLightInfo {
+                direction: [dl.direction.x(), dl.direction.y(), dl.direction.z()],
+                color: dl.color,
+                intensity: dl.intensity,
+            });
+
         // Build component list from cached query results
         let mut components: Vec<&'static str> = Vec::with_capacity(12);
         components.push("Transform");
@@ -1273,7 +1476,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         if has_drawable {
             components.push("Drawable");
         }
-        if has_directional {
+        if directional_info.is_some() {
             components.push("DirectionalLight");
         }
         if point_light.is_some() {
@@ -1282,25 +1485,13 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         if particle_emitter.is_some() {
             components.push("ParticleEmitter");
         }
-        if app
-            .world
-            .get_component::<MassComponent>(entity_id)
-            .is_some()
-        {
+        if mass_info.is_some() {
             components.push("MassComponent");
         }
-        if app
-            .world
-            .get_component::<DragComponent>(entity_id)
-            .is_some()
-        {
+        if drag_info.is_some() {
             components.push("DragComponent");
         }
-        if app
-            .world
-            .get_component::<PerspectiveComponent>(entity_id)
-            .is_some()
-        {
+        if perspective_info.is_some() {
             components.push("PerspectiveComponent");
         }
         if app
@@ -1318,7 +1509,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         }
 
         // Determine entity type from cached query results
-        let entity_type = if has_directional {
+        let entity_type = if directional_info.is_some() {
             "Directional Light"
         } else if point_light.is_some() {
             "Point Light"
@@ -1345,6 +1536,10 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 point_light,
                 particle_emitter,
                 script_path,
+                mass_info,
+                drag_info,
+                perspective_info,
+                directional_info,
             ),
         );
         root_entities.insert(entity_id);
@@ -1383,6 +1578,10 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 point_light,
                 particle_emitter,
                 script_path,
+                mass,
+                drag,
+                perspective,
+                directional_light,
             ) = data;
 
             let children = children_map
@@ -1403,6 +1602,10 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 point_light: point_light.clone(),
                 particle_emitter: particle_emitter.clone(),
                 script_path: script_path.clone(),
+                mass: mass.clone(),
+                drag: drag.clone(),
+                perspective: perspective.clone(),
+                directional_light: directional_light.clone(),
             });
 
             // Recursively add children
