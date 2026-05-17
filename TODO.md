@@ -2,7 +2,7 @@
 
 ## Particle System Usability
 
-- [ ] Fix position duplication between Transform and EmitterConfig — ParticleSystem::update should read the entity's TransformComponent and override config.position so emitters follow their entity when moved
+- [x] Fix position duplication between Transform and EmitterConfig — ParticleSystem::update should read the entity's TransformComponent and override config.position so emitters follow their entity when moved
 - [ ] Wrap EmitterConfig GPU padding behind a user-facing builder or separate user config struct — users should not need to set _pad_position, _pad_velocity, _pad_color, _pad_forces manually
 - [ ] Change EmitterConfig.shape from raw u32 to EmitterShape enum — provide direct field access without requiring set_shape()/get_shape() helpers
 - [x] Fix with_line_shape axis parameter being silently ignored — removed the unused axis parameter since the shader only supports Y-axis lines
@@ -145,8 +145,8 @@
 
 ### Inspector menu
 
-- [ ] Make inspector menu scrollable — when many components are attached to an entity, the inspector overflows and content below the viewport becomes inaccessible
-- [ ] Make "Add Component" menu scrollable — too many items to fit in the viewport, needs scrolling to access components that overflow
+~~Make inspector menu scrollable — when many components are attached to an entity, the inspector overflows and content below the viewport becomes inaccessible~~ — False positive. Inspector already has ScrollArea wrapping all content.
+- [x] Make "Add Component" menu scrollable — too many items to fit in the viewport, needs scrolling to access components that overflow
 
 ### Panels and tooling
 
