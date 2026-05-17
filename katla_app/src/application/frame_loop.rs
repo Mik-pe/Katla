@@ -101,8 +101,9 @@ impl Application {
         );
 
         // Update particle emitters from ECS components
-        self.particle_system
-            .update(&mut self.world, &mut self.renderer.particle_system, dt);
+        if let Some(ref mut ps) = self.renderer.particle_system {
+            self.particle_system.update(&mut self.world, ps, dt);
+        }
 
         // Update GPU animation: prepare data and upload per-frame params
         if let (Some(gpu_anim), Some(pipeline), Some(buffers)) = (
