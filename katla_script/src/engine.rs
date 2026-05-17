@@ -16,6 +16,9 @@ pub struct ScriptEngine {
     pub(crate) vm: Lua,
     pub(crate) loaded_scripts: HashMap<String, RegistryKey>,
     pub(crate) instances: Vec<Option<ScriptInstance>>,
+    /// Base directory for script resolution (e.g. "resources/scripts").
+    /// When set, bare script names are resolved relative to this directory.
+    pub(crate) scripts_dir: Option<String>,
 }
 
 pub(crate) struct ScriptInstance {
@@ -206,7 +209,13 @@ impl ScriptEngine {
             vm,
             loaded_scripts: HashMap::new(),
             instances: Vec::new(),
+            scripts_dir: None,
         })
+    }
+
+    /// Set the base directory for resolving bare script names.
+    pub fn set_scripts_dir(&mut self, dir: impl Into<String>) {
+        self.scripts_dir = Some(dir.into());
     }
 
     pub fn load_script(&mut self, path: &str) -> Result<(), ScriptError> {
@@ -220,7 +229,10 @@ impl ScriptEngine {
                 source: mlua::Error::external(e),
             })?
         } else {
-            let full_path = format!("resources/scripts/{path}.luau");
+            let full_path = match &self.scripts_dir {
+                Some(dir) => format!("{dir}/{path}.luau"),
+                None => format!("resources/scripts/{path}.luau"),
+            };
             std::fs::read_to_string(&full_path).map_err(|e| ScriptError::LoadFailed {
                 path: full_path.clone(),
                 source: mlua::Error::external(e),

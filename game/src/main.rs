@@ -33,8 +33,6 @@ struct Args {
 }
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
     let args = Args::parse();
 
     info!("Katla 3D Engine starting...");
@@ -65,6 +63,7 @@ fn main() {
         .with_system(
             Box::new(
                 ScriptSystem::new()
+                    .with_scripts_dir("resources/scripts")
                     .with_transform_provider(|world| {
                         world
                             .query_ref::<&TransformComponent>()

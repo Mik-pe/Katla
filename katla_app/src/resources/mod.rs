@@ -30,6 +30,8 @@ pub struct ResourceManager {
     pub shaders: PathBuf,
     /// Path to fonts directory
     pub fonts: PathBuf,
+    /// Path to scripts directory
+    pub scripts: PathBuf,
 }
 
 impl ResourceManager {
@@ -80,6 +82,7 @@ impl ResourceManager {
         let materials = root.join("materials");
         let shaders = root.join("shaders");
         let fonts = root.join("fonts");
+        let scripts = root.join("scripts");
 
         Self {
             root,
@@ -87,6 +90,7 @@ impl ResourceManager {
             materials,
             shaders,
             fonts,
+            scripts,
         }
     }
 
@@ -108,5 +112,10 @@ impl ResourceManager {
     /// Get path to a font file by name.
     pub fn font_path(&self, name: impl AsRef<Path>) -> PathBuf {
         self.fonts.join(name)
+    }
+
+    /// Get path to a script file by name (without extension).
+    pub fn script_path(&self, name: impl AsRef<Path>) -> PathBuf {
+        self.scripts.join(name).with_extension("luau")
     }
 }

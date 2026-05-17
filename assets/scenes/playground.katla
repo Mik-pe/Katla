@@ -57,7 +57,7 @@
             animation: None,
             velocity: None,
             script: (
-                script_path: "scripts/player_controller",
+                script_path: "player_controller",
             ),
         ),
         /*[2] Spinning Cube - orbits around origin */
@@ -83,7 +83,7 @@
             animation: None,
             velocity: None,
             script: (
-                script_path: "scripts/spinning_cube",
+                script_path: "spinning_cube",
             ),
         ),
         /*[3] Sun light */

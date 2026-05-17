@@ -38,6 +38,14 @@ impl ScriptSystem {
         }
     }
 
+    /// Set the base directory for resolving bare script names.
+    ///
+    /// Called by the app bridge to configure where scripts live on disk.
+    pub fn with_scripts_dir(mut self, dir: impl Into<String>) -> Self {
+        self.engine.set_scripts_dir(dir);
+        self
+    }
+
     /// Set the transform snapshot provider. Called by the app bridge.
     ///
     /// The closure is invoked each frame to gather `(EntityId, Transform)` pairs
