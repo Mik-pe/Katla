@@ -126,17 +126,27 @@
 
 ### Inspector component UX
 
-- [ ] Add inspector UI for all registered components — `MassComponent` (mass slider), `DragComponent` (coefficient slider), `PerspectiveComponent` (fov/near/aspect_ratio sliders), `DirectionalLight` (direction Vec3, color picker, intensity slider). Each needs a `section_header_with_remove` section with editable widgets.
+- [x] Add inspector UI for all registered components — `MassComponent` (mass slider), `DragComponent` (coefficient slider), `PerspectiveComponent` (fov/near/aspect_ratio sliders), `DirectionalLight` (direction Vec3, color picker, intensity slider). Each needs a `section_header_with_remove` section with editable widgets.
 - [x] Add remove button to ParticleEmitter inspector section — switch from `section_header` to `section_header_with_remove`, handle `EditorAction::RemoveComponent` for `"ParticleEmitterComponent"`
 - [x] Categorize the Add Component popup menu — group flat list into Lighting (PointLight, DirectionalLight), Physics (MassComponent, DragComponent), Scripting (ScriptComponent), Camera (PerspectiveComponent) with category headers
 - [ ] Auto-focus script path input after adding ScriptComponent — focus the text input so the user can immediately type the path without clicking
 - [ ] Wire up undo/redo for Add/Remove Component — store proper `SceneCommand`s instead of discarding the `UndoGroup`, so Ctrl+Z works after adding or removing components
+
+### Scene lifecycle
+
+- [ ] Preserve entity names when playing a scene — entity names change from e.g. "Entity 1" to "Entity 4294967336" (raw EntityId) when the default scene is played, should keep the original human-readable names
+- [ ] Fix entities (fox, helmet) disappearing from view on play/stop — some entities vanish from the viewport when entering or exiting play mode, possibly moved to NaN positions or destroyed (names also change, see above)
 
 ### Component registry completeness
 
 - [x] Register ParticleEmitterComponent in the component registry — has full inspector UI (5 sliders) but can't be added via "Add Component" or AI agent
 - [x] Register VelocityComponent in the component registry — serialized in scenes but not addable from UI or AI
 - [x] Add serialization round-trip for components missing it — MassComponent, DragComponent, PerspectiveComponent, DirectionalLight are registered but lost on scene save/load
+
+### Inspector menu
+
+- [ ] Make inspector menu scrollable — when many components are attached to an entity, the inspector overflows and content below the viewport becomes inaccessible
+- [ ] Make "Add Component" menu scrollable — too many items to fit in the viewport, needs scrolling to access components that overflow
 
 ### Panels and tooling
 
@@ -148,6 +158,8 @@
 - [ ] Add dockable layout system — complete the existing DockLayout skeleton, make all panels repositionable and resizable
 - [ ] Add in-editor profiler overlay — per-pass GPU timing, frame time graph, draw call count, memory usage
 - [ ] Add gamepad input support — extend InputMapper with gamepad axes/buttons for editor and runtime
+- [ ] Fix asset browser tooltip line spacing — hover tooltip on asset items has inconsistent line spacing compared to the rest of the UI
+- [ ] Fix text input selection/active highlight being too opaque — the "Filter" input in asset browser and "Script" path input have a selection color that's too bright/invasive, obscuring the text. Investigate if transparency isn't rendering correctly. Should be fixed in a reusable text input style so all text inputs benefit.
 
 ## Developer Experience
 
