@@ -197,6 +197,7 @@ mod tests {
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         });
 
         scene.entities.push(EntityDescriptor {
@@ -213,6 +214,7 @@ mod tests {
             particle_emitter: None,
             animation: None,
             velocity: None,
+            script: None,
         });
 
         // Serialize the pre-migration state

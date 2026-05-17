@@ -1,10 +1,13 @@
 use clap::Parser;
 use katla_app::animation::AnimationUpdateSystem;
 use katla_app::application::ApplicationBuilder;
+use katla_app::components::transform::TransformComponent;
+use katla_app::input::{Action, InputState};
 use katla_app::systems::{
     OrbitCameraSystem, PhysicsSystem, TransformHierarchySystem, VelocitySystem,
 };
 use katla_ecs::SystemExecutionOrder;
+use katla_script::{InputSnapshot, ScriptSystem};
 use log::info;
 
 /// Katla 3D Engine - Command line arguments
@@ -54,7 +57,70 @@ fn main() {
         )
         .with_system(Box::new(OrbitCameraSystem), SystemExecutionOrder::NORMAL)
         .with_system(Box::new(PhysicsSystem), SystemExecutionOrder::NORMAL)
-        .with_system(Box::new(VelocitySystem), SystemExecutionOrder::LATE);
+        .with_system(Box::new(VelocitySystem), SystemExecutionOrder::LATE)
+        .with_system(
+            Box::new(
+                ScriptSystem::new()
+                    .with_transform_provider(|world| {
+                        world
+                            .query_ref::<&TransformComponent>()
+                            .map(|(id, tc)| (id, tc.transform))
+                            .collect()
+                    })
+                    .with_command_consumer(|world, commands| {
+                        for cmd in commands {
+                            match cmd {
+                                katla_script::ScriptCommand::SetTransform(entity, transform) => {
+                                    if let Some(tc) =
+                                        world.get_component_mut::<TransformComponent>(*entity)
+                                    {
+                                        tc.transform = *transform;
+                                    }
+                                }
+                                katla_script::ScriptCommand::SetPosition(entity, position) => {
+                                    if let Some(tc) =
+                                        world.get_component_mut::<TransformComponent>(*entity)
+                                    {
+                                        tc.transform.position = *position;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    })
+                    .with_input_provider(|world| {
+                        let mut snapshot = InputSnapshot::default();
+                        if let Some(input) = world.get_resource::<InputState>() {
+                            let actions: [(Action, &str); 15] = [
+                                (Action::MoveForward, "move_forward"),
+                                (Action::MoveBackward, "move_backward"),
+                                (Action::MoveLeft, "move_left"),
+                                (Action::MoveRight, "move_right"),
+                                (Action::MoveUp, "move_up"),
+                                (Action::MoveDown, "move_down"),
+                                (Action::Jump, "jump"),
+                                (Action::Interact, "interact"),
+                                (Action::Inventory, "inventory"),
+                                (Action::Pause, "pause"),
+                                (Action::Exit, "exit"),
+                                (Action::LookEnable, "look_enable"),
+                                (Action::Sprint, "sprint"),
+                                (Action::PanEnable, "pan_enable"),
+                                (Action::Slow, "slow"),
+                            ];
+                            for (action, name) in &actions {
+                                if input.is_action_pressed(*action) {
+                                    snapshot.pressed_actions.insert(name.to_string());
+                                }
+                            }
+                            snapshot.mouse_delta = input.mouse_delta;
+                            snapshot.mouse_wheel = input.mouse_wheel_delta;
+                        }
+                        snapshot
+                    }),
+            ),
+            SystemExecutionOrder::LATE,
+        );
 
     let result = if args.single_frame {
         builder

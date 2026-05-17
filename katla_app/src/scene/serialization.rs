@@ -1,6 +1,6 @@
 use super::descriptors::{
     AnimationDescriptor, DrawableDescriptor, EntityDescriptor, ParticleEmitterDescriptor,
-    PointLightDescriptor, Scene, TransformDescriptor, VelocityDescriptor,
+    PointLightDescriptor, Scene, ScriptDescriptor, TransformDescriptor, VelocityDescriptor,
 };
 use super::entity_source::EntitySource;
 use log::{info, warn};
@@ -12,6 +12,7 @@ use crate::components::{
     DrawableComponent, NameComponent, ParticleEmitterComponent, PointLight, TransformComponent,
     VelocityComponent,
 };
+use katla_script::ScriptComponent;
 
 use ron::extensions::Extensions;
 
@@ -194,6 +195,13 @@ impl SceneManager {
                     acceleration: [v.acceleration.x(), v.acceleration.y(), v.acceleration.z()],
                 });
 
+            let script = app
+                .world
+                .get_component::<ScriptComponent>(entity_id)
+                .map(|s| ScriptDescriptor {
+                    script_path: s.script_path.clone(),
+                });
+
             scene.entities.push(EntityDescriptor {
                 name,
                 parent,
@@ -204,6 +212,7 @@ impl SceneManager {
                 particle_emitter,
                 animation,
                 velocity,
+                script,
             });
         }
 
@@ -611,6 +620,12 @@ impl SceneManager {
                     ),
                 ),
             );
+        }
+
+        // Attach script
+        if let Some(ref script_desc) = desc.script {
+            app.world
+                .add_component(entity_id, ScriptComponent::new(&script_desc.script_path));
         }
 
         // Attach EntitySource for future serialization

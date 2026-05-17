@@ -12,3 +12,124 @@
 - [ ] Add per-emitter alive count feedback — allow querying actual alive particle count per emitter, not just theoretical estimated_max_alive
 - [ ] Add kill-all-particles-on-destroy option — optionally immediately kill all living particles when an emitter is destroyed instead of letting them expire naturally
 - [ ] Add color over lifetime and size over lifetime curves — enable fire (bright to dark), smoke (opaque to transparent), sparks (big to small) effects without shader modifications
+
+## Audio System
+
+- [ ] Add audio crate (katla_audio) to workspace — choose backend (e.g. cpal + lewton for decoding, or kira for a higher-level solution)
+- [ ] Implement basic audio playback — load and play WAV/OGG files, stereo mixing, volume control
+- [ ] Add AudioSource component and AudioSystem — play one-shot sounds triggered by gameplay events
+- [ ] Add 3D positional audio — spatialize sounds based on emitter TransformComponent relative to listener (camera)
+- [ ] Add audio mixing — master volume, category channels (SFX, music, ambient), per-source volume
+- [ ] Add streaming audio — support long-running music tracks without loading entire file into memory
+- [ ] Integrate audio into asset browser — show audio files with waveform preview, drag-to-spawn AudioEmitter entities
+
+## Physics
+
+- [ ] Add collision detection — broadphase (sweep-and-prune or grid), narrowphase (SAT or GJK), contact generation
+- [ ] Add collision shapes — AABB, sphere, box, capsule, mesh collider components
+- [ ] Add rigid body dynamics — mass, inertia, angular velocity, torque, integration (Verlet or semi-implicit Euler)
+- [ ] Add constraints and joints — point-to-point, hinge, distance constraints
+- [ ] Add physics raycasting — raycast query returning hit entity, point, normal, distance
+- [ ] Add trigger volumes — overlap detection without collision response (sensors)
+- [ ] Add physics materials — friction, restitution, density per-shape
+- [ ] Add physics debug visualization — wireframe collider rendering in editor viewport
+- [ ] Decide: build custom or integrate existing physics crate (rapier, physx, jolt) — evaluate tradeoffs for the engine's scope
+
+## Rendering
+
+- [ ] Add anti-aliasing — start with FXAA (post-process, easy), then MSAA or TAA for higher quality
+- [ ] Add bloom post-processing pass — bright extraction + gaussian blur + compositing in render graph
+- [ ] Add SSAO (screen-space ambient occlusion) — depth+normal based, integrate into lighting pass
+- [ ] Add texture compression — BC1-7 on desktop, ASTC on mobile; add compressed texture upload path
+- [ ] Add offline shader compilation step — precompile .wgsl to SPIR-V at build time instead of runtime naga compilation
+- [ ] Add animation state machine — blend trees, crossfade transitions, state graph editor
+- [ ] Add motion blur and depth of field as optional render graph passes
+- [ ] Add screen-space reflections (SSR) or planar reflections for water/mirror surfaces
+
+## Scripting & Game Logic
+
+### Phase 1: Crate skeleton + on_update
+- [x] Create `katla_script` crate with `mlua` dependency (features: `luau`, `vendored`, `serialize`)
+- [x] Implement `ScriptComponent` — holds script path + `ScriptInstanceHandle`, derives `Component` via katla_derive
+- [x] Implement `ScriptEngine` — single Luau VM, script cache (path -> compiled chunk), instance registry
+- [x] Implement `ScriptSystem` (ECS System trait) — discovers entities with ScriptComponent, calls `on_update(entity, world, dt)`
+- [x] Register `Vec3` and `Transform` as Luau `UserData` — field getters/setters, operator overloads (+, -, * scalar), utility methods (length, normalize, dot, cross)
+- [x] Implement command queue — `ScriptWorld` proxy queues mutations (SetTransform, SetPosition, SpawnEntity, DestroyEntity), applied after all scripts run
+- [x] Define `ScriptWorldAccess` trait in `katla_script` — abstract interface for get_transform/set_transform/spawn/destroy using raw `katla_math` types; `katla_app` provides concrete impl that bridges to TransformComponent
+- [x] Wire `ScriptSystem` into `ApplicationBuilder` at `NORMAL` execution order
+
+### Phase 2: Lifecycle hooks + entity operations
+- [x] Add `on_spawn` hook — called when entity first gets a ScriptComponent
+- [x] Add `on_destroy` hook — called when entity with ScriptComponent is destroyed
+- [x] Register `EntityId` as Luau `UserData` — `id()`, `__tostring`, comparison operators
+- [x] Add entity spawn/destroy from scripts — `world:spawn_entity()` returns EntityId, `world:destroy_entity(id)` queues destruction
+- [ ] Add entity query from scripts — `world:entity_exists(id)`, `world:get_all_with("ScriptComponent")`
+
+### Phase 3: Input + serialization + error handling
+- [x] Add input bindings — `world:is_action_pressed("move_forward")`, `world:get_mouse_delta()`, reads from InputState resource
+- [x] Add `ScriptComponent` to scene serialization — `ScriptComponent(script_path: "scripts/player")` in RON scene files
+- [x] Add script error recovery — wrap all hook calls in error handlers, log errors with script path + line number, optionally disable broken instances
+- [x] Add `Color` and `Quat` UserData bindings — constructors, field access, utility methods (Quat.from_axis_angle, Color.from_rgb, etc.)
+
+### Phase 4: Hot reload + sandboxing
+- [ ] Add file watcher for `.luau` scripts — detect changes in `resources/scripts/`, trigger recompile
+- [ ] Implement hot reload — recompile chunk, create new per-script environment, preserve scalar state from old env, swap instances
+- [ ] Harden VM sandboxing — initialize with `StdLib::ALL_SAFE` (no io/os/debug), configure interrupt watchdog for runaway scripts
+- [ ] Add `print`/`warn` bridges — route to `log::info!`/`log::warn!` in debug builds only
+
+### Phase 5: Polish + events
+- [ ] Add script-to-script events — `world:emit("player_damaged", {amount = 10})`, `world:on_event("player_damaged", callback)` via gameplay event bus
+- [ ] Add physics bindings — `world:raycast(origin, direction, max_distance)` returning hit entity + point + normal
+- [ ] Add audio bindings — `world:play_sound("explosion")`, `world:play_sound_at("explosion", position)`
+- [ ] Performance profile — benchmark 1000 script entities with on_update, optimize hot paths
+
+### Phase 6: Editor integration
+- [ ] Add script inspector panel — show attached script path, expose script variables for live editing
+- [ ] Add script file browser — show `.luau` files in asset browser, drag-to-attach to entity
+- [ ] Generate Luau type definition files (.d.luau) — autocomplete support for engine API in external editors
+- [ ] Add script console — capture `print()` output in editor log panel
+
+### Gameplay framework (independent of scripting)
+- [ ] Design gameplay framework — game states (menu, loading, playing, paused), state machine, transition hooks
+- [ ] Add gameplay event system — typed event bus for gameplay-level events (OnDamage, OnCollect, OnCollision, etc.) decoupled from ECS events
+- [ ] Add cutscene/timeline system — sequencer with tracks for animation, audio, camera, events; scrubbing in editor
+
+## Asset Pipeline
+
+- [ ] Add file watcher for hot reload — watch shaders/, resources/ for changes using `notify` crate; auto-recompile materials and reload textures
+- [ ] Add asset bundling format — pack resources into a single archive (custom or zip/pak) for release builds; embed or ship alongside binary
+- [ ] Add component serialization registry — data-driven registry mapping Component types to serializers/deserializers so user components round-trip automatically
+- [ ] Add native file dialogs — integrate `rfd` for Open Scene, Save Scene As, Import Asset dialogs
+- [ ] Add binary serialization option — optional binary scene format (e.g. bincode) alongside RON for faster load times in release
+- [ ] Add asset import pipeline — convert source formats (FBX, PSD, TGA) to engine formats (glTF, PNG) as a preprocessing step
+
+## Release & Deployment
+
+- [ ] Add CI/CD pipeline — GitHub Actions for build, test, clippy, fmt on push; artifact upload for release builds
+- [ ] Add macOS .app bundle generation — Info.plist, icon, embed MoltenVK, package as .dmg for distribution
+- [ ] Add Windows build target — cross-compile or native CI runner, .exe packaging, Vulkan runtime bundling
+- [ ] Add Linux build target — AppImage or Flatpak packaging, Vulkan/ABI compatibility
+- [ ] Add app signing and notarization — macOS Developer ID signing, Windows code signing
+- [ ] Add save-game system — persist runtime game state (player progress, settings, unlocked content) separate from scene serialization
+- [ ] Add release mode resource embedding — embed critical assets (shaders, default textures, fonts) into binary for zero-dependency startup
+
+## Editor
+
+- [ ] Add timeline/animation editor — keyframe editing, curve editor, scrubbing, animation preview
+- [ ] Add material editor — visual material property editing (textures, metallic, roughness, emission) with live preview
+- [ ] Add terrain editor — heightmap painting, layer blending, foliage scattering
+- [ ] Add console/output log panel — capture log output in editor, filter by level, search
+- [ ] Add undo history panel — visual undo stack showing operation names, click to jump to any point
+- [ ] Add dockable layout system — complete the existing DockLayout skeleton, make all panels repositionable and resizable
+- [ ] Add in-editor profiler overlay — per-pass GPU timing, frame time graph, draw call count, memory usage
+- [ ] Add gamepad input support — extend InputMapper with gamepad axes/buttons for editor and runtime
+
+## Developer Experience
+
+- [ ] Write getting-started tutorial — step-by-step guide: create entity, add components, write a system, load a model, make something interactive
+- [ ] Write component and system catalog — reference docs for all built-in components, systems, and their fields
+- [ ] Write example game in game/ crate — demonstrate actual gameplay: player movement, collecting items, score, win/lose
+- [ ] Add profiler integration — Tracy or PIX instrumentation markers on render passes and systems
+- [ ] Add per-pass GPU timing — timestamp queries in render graph, display in status bar or overlay
+- [ ] Fix AppError::Graphics to carry typed RendererError instead of String — preserve error chain for debugging
+- [ ] Add integration tests for full app lifecycle — init, spawn entities, run N frames, check state, shutdown without panic
