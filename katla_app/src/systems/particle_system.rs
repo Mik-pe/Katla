@@ -50,14 +50,9 @@ impl ParticleSystem {
     pub fn update(
         &mut self,
         world: &mut World,
-        particle_system: &mut Option<katla_gfx::particles::GlobalParticleSystem>,
+        particle_system: &mut katla_gfx::particles::GlobalParticleSystem,
         delta_time: f32,
     ) {
-        let Some(ps) = particle_system else {
-            debug!("Particle system not available, skipping emitter update");
-            return;
-        };
-
         // Clean up GPU emitters for entities that no longer exist
         // or no longer have a ParticleEmitterComponent
         let destroyed: Vec<EntityId> = self
@@ -73,7 +68,7 @@ impl ParticleSystem {
             .collect();
         for entity_id in destroyed {
             if let Some(handle) = self.entity_emitters.remove(&entity_id) {
-                ps.destroy_emitter(handle);
+                particle_system.destroy_emitter(handle);
                 info!(
                     "Destroyed particle emitter for destroyed entity {:?}",
                     entity_id
@@ -86,7 +81,7 @@ impl ParticleSystem {
             if emitter.active {
                 // Initialize emitter if not already done
                 if emitter.emitter_handle.is_none() {
-                    match ps.create_emitter(emitter.config) {
+                    match particle_system.create_emitter(emitter.config) {
                         Ok(handle) => {
                             emitter.emitter_handle = Some(handle);
                             self.entity_emitters.insert(entity_id, handle);
@@ -102,7 +97,7 @@ impl ParticleSystem {
                 } else {
                     // Update existing emitter configuration
                     if let Some(handle) = emitter.emitter_handle {
-                        ps.update_emitter(handle, emitter.config);
+                        particle_system.update_emitter(handle, emitter.config);
                         debug!(
                             "Updated particle emitter at position {:?}",
                             emitter.config.position
@@ -110,7 +105,7 @@ impl ParticleSystem {
 
                         // Process burst queue
                         for burst_count in emitter.burst_queue.drain(..) {
-                            if let Err(e) = ps.burst(handle, burst_count) {
+                            if let Err(e) = particle_system.burst(handle, burst_count) {
                                 warn!("Failed to burst particles: {}", e);
                             }
                         }
@@ -132,7 +127,7 @@ impl ParticleSystem {
                 // Destroy emitter if component is inactive
                 if let Some(handle) = emitter.emitter_handle.take() {
                     self.entity_emitters.remove(&entity_id);
-                    ps.destroy_emitter(handle);
+                    particle_system.destroy_emitter(handle);
                     info!("Destroyed particle emitter for inactive component");
                 }
             }

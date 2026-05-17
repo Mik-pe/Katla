@@ -145,28 +145,25 @@ impl ParticleEmitterComponent {
         self
     }
 
-    /// Set line emitter shape.
+    /// Set line emitter shape (Y-axis).
     ///
-    /// Particles spawn along a line. Useful for rain, beams, etc.
+    /// Particles spawn along a vertical line. Useful for rain, beams, etc.
     ///
     /// # Arguments
     /// * `length` - Length of the line in world units
-    /// * `axis` - Axis direction (0=X, 1=Y, 2=Z)
     ///
     /// # Example
     /// ```
     /// use katla_app::components::rendering::particle::ParticleEmitterComponent;
     ///
     /// let mut rain_emitter = ParticleEmitterComponent::new();
-    /// rain_emitter.with_line_shape(10.0, 1); // 10-unit vertical line (Y-axis)
+    /// rain_emitter.with_line_shape(10.0); // 10-unit vertical line (Y-axis)
     /// assert_eq!(rain_emitter.config.shape_params[0], 10.0);
     /// ```
-    pub fn with_line_shape(&mut self, length: f32, axis: u32) -> &mut Self {
+    pub fn with_line_shape(&mut self, length: f32) -> &mut Self {
         self.config.set_shape(EmitterShape::Line);
         self.config.shape_params = [length, 0.0, 0.0, 0.0];
-        // Note: Shader currently only supports Y-axis lines
-        // For other axes, you'd need to modify the shader sampling logic
-        log::debug!("Set line shape with length {} on axis {}", length, axis);
+        log::debug!("Set line shape with length {}", length);
         self
     }
 
