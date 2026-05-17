@@ -136,3 +136,32 @@ pub(crate) fn write_asset_with_root(
 
     Ok(format!("Written {} bytes to {path}", content.len()))
 }
+
+/// Delete a file or empty directory from the resources directory by relative path.
+///
+/// Refuses to delete non-empty directories. Path traversal is rejected.
+pub fn delete_asset(path: &str) -> Result<String, String> {
+    delete_asset_with_root(path, &resources_root())
+}
+
+pub(crate) fn delete_asset_with_root(path: &str, root: &Path) -> Result<String, String> {
+    let full_path = validate_relative_path_with_root(path, root)?;
+
+    if !full_path.exists() {
+        return Err(format!("Not found: {path}"));
+    }
+
+    if full_path.is_dir() {
+        let mut entries =
+            fs::read_dir(&full_path).map_err(|e| format!("Failed to read {path}: {e}"))?;
+        if entries.next().is_some() {
+            return Err(format!("Directory not empty: {path}"));
+        }
+        fs::remove_dir(&full_path)
+            .map_err(|e| format!("Failed to delete directory {path}: {e}"))?;
+    } else {
+        fs::remove_file(&full_path).map_err(|e| format!("Failed to delete {path}: {e}"))?;
+    }
+
+    Ok(format!("Deleted {path}"))
+}
