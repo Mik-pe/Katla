@@ -47,69 +47,19 @@ pub fn build_asset_browser(
         ui.draw_rect_border(bounds, theme.panel_bg, theme.highlight, 2.0);
     }
 
-    // Header with breadcrumbs and controls
-    let header_height = 24.0;
-    let toolbar_height = 32.0;
-    let header_bounds =
-        Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), header_height));
-    ui.draw_rect(header_bounds, theme.panel_header);
-
-    // === HEADER: Title + Collapse Toggle ===
-    let padding = ui.style().panel_padding;
-
-    // Collapse toggle button (left side)
-    let toggle_size = 20.0;
-    let toggle_bounds = Rect2D::from_origin_size(
-        Vec2::new(
-            bounds.min.x() + ui.style().item_inner_spacing,
-            bounds.min.y() + 2.0,
-        ),
-        Vec2::new(toggle_size, toggle_size),
-    );
-    let toggle_icon = if state.collapsed {
-        ForkAwesome::CHEVRON_UP
-    } else {
-        ForkAwesome::CHEVRON_DOWN
-    };
-
-    if ui
-        .add(katla_ui::widgets::ImageButton::new(toggle_icon).bounds(toggle_bounds))
-        .clicked
-    {
-        state.collapsed = !state.collapsed;
+    if state.collapsed {
+        return;
     }
 
-    // Title
-    let title_pos = Vec2::new(
-        bounds.min.x() + toggle_size + padding,
-        header_bounds.center().y() - ui.scaled_font_size(katla_ui::FontSize::Medium) * 0.5,
-    );
-    ui.draw_text(
-        "Asset Browser",
-        title_pos,
-        theme.text_primary,
-        ui.scaled_font_size(katla_ui::FontSize::Medium),
-    );
+    let padding = ui.style().panel_padding;
+    let toolbar_height = 32.0;
+    let toolbar_top = bounds.min.y();
 
-    // Asset count
-    let count_text = format!("({})", state.assets.len());
-    let count_size = ui.measure_text(&count_text, ui.scaled_font_size(katla_ui::FontSize::Small));
-    let title_width = ui
-        .measure_text(
-            "Asset Browser",
-            ui.scaled_font_size(katla_ui::FontSize::Medium),
-        )
-        .x();
-    let count_pos = Vec2::new(
-        title_pos.x() + title_width + 6.0,
-        header_bounds.center().y() - count_size.y() * 0.5,
+    let toolbar_bounds = Rect2D::from_origin_size(
+        Vec2::new(bounds.min.x(), bounds.min.y()),
+        Vec2::new(bounds.width(), toolbar_height),
     );
-    ui.draw_text(
-        &count_text,
-        count_pos,
-        theme.text_muted,
-        ui.scaled_font_size(katla_ui::FontSize::Small),
-    );
+    ui.draw_rect(toolbar_bounds, theme.background_dark);
 
     // Top border
     ui.draw_line(
@@ -118,18 +68,6 @@ pub fn build_asset_browser(
         theme.panel_border,
         1.0,
     );
-
-    // If collapsed, don't render content
-    if state.collapsed {
-        return;
-    }
-
-    let toolbar_top = bounds.min.y() + header_height;
-    let toolbar_bounds = Rect2D::from_origin_size(
-        Vec2::new(bounds.min.x(), toolbar_top),
-        Vec2::new(bounds.width(), toolbar_height),
-    );
-    ui.draw_rect(toolbar_bounds, theme.background_dark);
 
     // Breadcrumb navigation
     let mut breadcrumb_x = bounds.min.x() + padding;
@@ -277,7 +215,7 @@ pub fn build_asset_browser(
         1.0,
     );
 
-    let content_top = toolbar_top + toolbar_height;
+    let content_top = bounds.min.y() + toolbar_height;
     let content_bounds = Rect2D::new(Vec2::new(bounds.min.x(), content_top), bounds.max);
 
     state.scroll_state = ui.scroll_area(
@@ -433,6 +371,7 @@ pub fn build_asset_browser(
                             AssetType::Model => "Model",
                             AssetType::Image => "Image",
                             AssetType::Shader => "Shader",
+                            AssetType::Script => "Script",
                             AssetType::Material => "Material",
                             AssetType::Font => "Font",
                             AssetType::Unknown => "File",

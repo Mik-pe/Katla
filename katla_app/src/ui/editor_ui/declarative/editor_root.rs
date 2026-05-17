@@ -2,6 +2,7 @@ use katla_ui::declarative::{Alignment, Build, BuildContext, Padding, ViewDescrip
 
 use super::asset_browser::AssetBrowserView;
 use super::co_creator::CoCreatorView;
+use super::console::ConsoleView;
 use super::gizmo::GizmoButtonsView;
 use super::hierarchy::HierarchyView;
 use super::inspector::InspectorView;
@@ -25,6 +26,7 @@ impl Build for EditorRootView {
         let particle_inspector = ParticleInspectorView.build(ctx);
         let preferences = PreferencesView.build(ctx);
         let asset_browser = AssetBrowserView.build(ctx);
+        let console = ConsoleView.build(ctx);
 
         ViewDescriptor::ZStack(Box::new(katla_ui::declarative::ZStackDescriptor {
             children: vec![
@@ -38,6 +40,7 @@ impl Build for EditorRootView {
                 (Alignment::TopLeading, particle_inspector),
                 (Alignment::TopLeading, preferences),
                 (Alignment::TopLeading, asset_browser),
+                (Alignment::TopLeading, console),
             ],
             padding: Padding::zero(),
         }))

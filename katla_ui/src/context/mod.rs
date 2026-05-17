@@ -276,6 +276,13 @@ impl UiContext {
         self.clipboard = Some(provider);
     }
 
+    /// Copy text to the clipboard, if a clipboard provider is set.
+    pub fn copy_to_clipboard(&mut self, text: &str) {
+        if let Some(cb) = &mut self.clipboard {
+            cb.set(text);
+        }
+    }
+
     /// Register a panel region for focus tracking.
     pub fn register_panel(&mut self, id: u64, bounds: Rect2D) {
         self.panel_regions.push((id, bounds));

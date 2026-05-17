@@ -15,12 +15,15 @@ mod layout;
 mod tests;
 mod types;
 
+use std::sync::{Arc, Mutex};
+
 use katla_ecs::EntityId;
 use katla_gfx::TextureHandle;
 use katla_math::{Rect2D, Vec2};
 use katla_ui::declarative::ViewTree;
 use katla_ui::{ColorScheme, DrawList, UiContext};
 
+use crate::ui::console::LogBuffer;
 use crate::util::BackgroundLoader;
 
 use crate::{
@@ -112,6 +115,9 @@ pub struct EditorUI {
     /// Whether the UI wanted keyboard capture on the previous frame.
     /// Used to suppress Ctrl+S when a TextInput or modal is focused.
     pub prev_want_capture_keyboard: bool,
+    /// Whether the UI wanted mouse capture on the previous frame.
+    /// Used to block viewport picking/selection when clicking on floating UI.
+    pub prev_want_capture_mouse: bool,
     /// Mutable inspector editing state for all editable properties.
     pub inspector_edit: types::InspectorEditState,
     /// The entity ID whose inspector editing state is currently populated.
@@ -122,6 +128,12 @@ pub struct EditorUI {
     pub co_creator: CoCreatorState,
     /// Inspector panel scroll state.
     inspector_scroll_state: katla_ui::ScrollAreaState,
+    /// Whether the "Add Component" dropdown is open.
+    add_component_open: bool,
+    /// Search filter for the "Add Component" dropdown.
+    add_component_filter: String,
+    /// Available component type names (populated from ComponentRegistry).
+    available_components: Vec<&'static str>,
     /// Search/filter text for the hierarchy panel.
     hierarchy_search_filter: String,
     /// Dockable panel layout.
@@ -130,6 +142,12 @@ pub struct EditorUI {
     use_dock_layout: bool,
     /// Declarative view tree for migrated panels.
     view_tree: ViewTree,
+    /// Console panel state.
+    pub(crate) console_state: declarative::ConsoleState,
+    /// Shared log buffer backing the console panel.
+    pub(crate) log_buffer: Arc<Mutex<LogBuffer>>,
+    /// Active tab in the bottom panel strip.
+    pub(crate) bottom_panel_tab: types::BottomPanelTab,
 }
 
 impl EditorUI {
@@ -161,6 +179,7 @@ impl EditorUI {
             particle_inspector_data: ParticleInspectorData::default(),
             save_confirmation_timer: 0.0,
             prev_want_capture_keyboard: false,
+            prev_want_capture_mouse: false,
             inspector_edit: types::InspectorEditState {
                 pos: [0.0; 3],
                 rot: [0.0; 3],
@@ -179,11 +198,22 @@ impl EditorUI {
             gizmo_mode: 0,
             co_creator: CoCreatorState::new(),
             inspector_scroll_state: katla_ui::ScrollAreaState::default(),
+            add_component_open: false,
+            add_component_filter: String::new(),
+            available_components: Vec::new(),
             hierarchy_search_filter: String::new(),
             dock_layout: Self::default_dock_layout(),
             use_dock_layout: false,
             view_tree: ViewTree::default(),
+            console_state: declarative::ConsoleState::default(),
+            log_buffer: Arc::new(Mutex::new(LogBuffer::new())),
+            bottom_panel_tab: types::BottomPanelTab::default(),
         }
+    }
+
+    /// Set the shared log buffer (called by ApplicationBuilder after ConsoleLogger init).
+    pub(crate) fn set_log_buffer(&mut self, buffer: Arc<Mutex<LogBuffer>>) {
+        self.log_buffer = buffer;
     }
 
     /// Create editor with a specific theme.
@@ -283,6 +313,11 @@ impl EditorUI {
     /// Get the current theme name.
     pub fn theme_name(&self) -> &'static str {
         self.theme.name
+    }
+
+    /// Set the list of available component type names from the ComponentRegistry.
+    pub fn set_available_components(&mut self, names: Vec<&'static str>) {
+        self.available_components = names;
     }
 
     pub fn open_panel(&mut self, panel: Panel) {

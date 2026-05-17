@@ -118,7 +118,7 @@
 - [ ] Add timeline/animation editor — keyframe editing, curve editor, scrubbing, animation preview
 - [ ] Add material editor — visual material property editing (textures, metallic, roughness, emission) with live preview
 - [ ] Add terrain editor — heightmap painting, layer blending, foliage scattering
-- [ ] Add console/output log panel — capture log output in editor, filter by level, search
+- [x] Add console/output log panel — capture log output in editor, filter by level, search
 - [ ] Add undo history panel — visual undo stack showing operation names, click to jump to any point
 - [ ] Add dockable layout system — complete the existing DockLayout skeleton, make all panels repositionable and resizable
 - [ ] Add in-editor profiler overlay — per-pass GPU timing, frame time graph, draw call count, memory usage

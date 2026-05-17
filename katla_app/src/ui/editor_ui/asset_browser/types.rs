@@ -23,6 +23,8 @@ pub enum AssetType {
     Material,
     /// Shader source (.wgsl)
     Shader,
+    /// Script files (.luau, .lua)
+    Script,
     /// Image files (.png, .jpg)
     Image,
     /// Font files (.ttf, .otf)
@@ -104,6 +106,7 @@ impl AssetType {
             Some("glb") | Some("gltf") | Some("stl") => Self::Model,
             Some("toml") => Self::Material,
             Some("wgsl") => Self::Shader,
+            Some("luau") | Some("lua") => Self::Script,
             Some("png") | Some("jpg") | Some("jpeg") => Self::Image,
             Some("ttf") | Some("otf") => Self::Font,
             _ => Self::Unknown,
@@ -118,6 +121,7 @@ impl AssetType {
             Self::Model => ForkAwesome::CUBE,
             Self::Material => ForkAwesome::PAINT_BRUSH,
             Self::Shader => ForkAwesome::FILE_CODE,
+            Self::Script => ForkAwesome::COG,
             Self::Image => ForkAwesome::IMAGE,
             Self::Font => ForkAwesome::FILE_TEXT,
             Self::Folder => ForkAwesome::FOLDER,
@@ -131,6 +135,7 @@ impl AssetType {
             Self::Model => theme.entity_mesh,
             Self::Material => theme.text_accent,
             Self::Shader => theme.info,
+            Self::Script => theme.success,
             Self::Image => theme.warning,
             Self::Font => theme.text_secondary,
             Self::Folder => theme.highlight,

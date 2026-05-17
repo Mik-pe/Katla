@@ -17,6 +17,7 @@ pub enum EditorPanel {
     CoCreator,
     Preferences,
     ParticleInspector,
+    Console,
 }
 
 impl EditorPanel {
@@ -29,6 +30,7 @@ impl EditorPanel {
             EditorPanel::CoCreator => 5,
             EditorPanel::Preferences => 6,
             EditorPanel::ParticleInspector => 7,
+            EditorPanel::Console => 8,
         }
     }
 
@@ -41,6 +43,7 @@ impl EditorPanel {
             EditorPanel::CoCreator => "AI Co-Creator",
             EditorPanel::Preferences => "Preferences",
             EditorPanel::ParticleInspector => "Particle Inspector",
+            EditorPanel::Console => "Console",
         }
     }
 
@@ -53,6 +56,7 @@ impl EditorPanel {
             5 => Some(EditorPanel::CoCreator),
             6 => Some(EditorPanel::Preferences),
             7 => Some(EditorPanel::ParticleInspector),
+            8 => Some(EditorPanel::Console),
             _ => None,
         }
     }
@@ -218,6 +222,50 @@ pub enum EditorAction {
     PlayPause,
     /// Stop playing, return to editing and restore scene.
     PlayStop,
+    /// Add a component to an entity by type name.
+    AddComponent {
+        entity: EntityId,
+        component_type: String,
+    },
+    /// Remove a component from an entity by type name.
+    RemoveComponent {
+        entity: EntityId,
+        component_type: String,
+    },
+    /// Clear all console log entries.
+    ClearConsole,
+    /// Toggle a console log level filter.
+    ToggleConsoleFilterLevel { level_index: usize },
+    /// Set the console search filter text.
+    SetConsoleSearch { text: String },
+}
+
+/// Active tab in the bottom panel strip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BottomPanelTab {
+    #[default]
+    AssetBrowser,
+    Console,
+}
+
+impl BottomPanelTab {
+    pub fn all() -> &'static [BottomPanelTab] {
+        &[BottomPanelTab::AssetBrowser, BottomPanelTab::Console]
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            BottomPanelTab::AssetBrowser => "Assets",
+            BottomPanelTab::Console => "Console",
+        }
+    }
+
+    pub fn icon(self) -> char {
+        match self {
+            BottomPanelTab::AssetBrowser => katla_ui::ForkAwesome::FOLDER_OPEN,
+            BottomPanelTab::Console => katla_ui::ForkAwesome::LIST,
+        }
+    }
 }
 
 /// Which panel is currently focused (receives input).
