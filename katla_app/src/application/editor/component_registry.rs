@@ -5,7 +5,7 @@ use katla_ecs::scene_tool::SceneToolError;
 use katla_ecs::scene_tool::registry::{ComponentRegistry, ComponentRegistryEntry, FieldValue};
 
 use crate::components::{
-    DragComponent, MassComponent, NameComponent, PerspectiveComponent, PointLight,
+    DirectionalLight, DragComponent, MassComponent, NameComponent, PerspectiveComponent, PointLight,
 };
 
 fn field_type_mismatch(field_name: &str, expected: &str, value: FieldValue) -> SceneToolError {
@@ -248,6 +248,100 @@ fn register_perspective_component(registry: &mut ComponentRegistry) {
     });
 }
 
+fn register_directional_light(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "DirectionalLight",
+        has_component: |world: &World, entity: EntityId| {
+            world.get_component::<DirectionalLight>(entity).is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, DirectionalLight::default());
+        },
+        get_fields: |_world: &World, _entity: EntityId| DirectionalLight::fields(),
+        get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
+            let comp = world.get_component_mut::<DirectionalLight>(entity)?;
+            let field_mut = comp.field_mut(field_name)?;
+            Some(match field_mut {
+                FieldMut::F32(v) => FieldValue::F32(*v),
+                _ => FieldValue::Unknown,
+            })
+        },
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let comp = world
+                .get_component_mut::<DirectionalLight>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "DirectionalLight".to_string(),
+                })?;
+            let field_mut =
+                comp.field_mut(field_name)
+                    .ok_or_else(|| SceneToolError::FieldNotFound {
+                        component: "DirectionalLight".to_string(),
+                        field: field_name.to_string(),
+                    })?;
+            match (field_mut, value) {
+                (FieldMut::F32(ref mut target), FieldValue::F32(v)) => {
+                    **target = v;
+                    Ok(())
+                }
+                (_, v) => Err(field_type_mismatch(field_name, "f32", v)),
+            }
+        },
+    });
+}
+
+fn register_script_component(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "ScriptComponent",
+        has_component: |world: &World, entity: EntityId| {
+            world
+                .get_component::<katla_script::ScriptComponent>(entity)
+                .is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, katla_script::ScriptComponent::new(""));
+        },
+        get_fields: |_world: &World, _entity: EntityId| katla_script::ScriptComponent::fields(),
+        get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
+            let comp = world.get_component_mut::<katla_script::ScriptComponent>(entity)?;
+            let field_mut = comp.field_mut(field_name)?;
+            Some(match field_mut {
+                FieldMut::String(v) => FieldValue::String(v.clone()),
+                _ => FieldValue::Unknown,
+            })
+        },
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let comp = world
+                .get_component_mut::<katla_script::ScriptComponent>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "ScriptComponent".to_string(),
+                })?;
+            let field_mut =
+                comp.field_mut(field_name)
+                    .ok_or_else(|| SceneToolError::FieldNotFound {
+                        component: "ScriptComponent".to_string(),
+                        field: field_name.to_string(),
+                    })?;
+            match (field_mut, value) {
+                (FieldMut::String(ref mut target), FieldValue::String(v)) => {
+                    **target = v;
+                    Ok(())
+                }
+                (_, v) => Err(field_type_mismatch(field_name, "String", v)),
+            }
+        },
+    });
+}
+
 pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     let mut registry = ComponentRegistry::new();
     register_name_component(&mut registry);
@@ -255,6 +349,8 @@ pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     register_mass_component(&mut registry);
     register_drag_component(&mut registry);
     register_perspective_component(&mut registry);
+    register_directional_light(&mut registry);
+    register_script_component(&mut registry);
     registry
 }
 
@@ -270,6 +366,8 @@ mod tests {
         assert!(registry.is_registered("MassComponent"));
         assert!(registry.is_registered("DragComponent"));
         assert!(registry.is_registered("PerspectiveComponent"));
+        assert!(registry.is_registered("DirectionalLight"));
+        assert!(registry.is_registered("ScriptComponent"));
     }
 
     #[test]

@@ -293,6 +293,37 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                     section_gap(ui);
                 }
 
+                if entity.script_path.is_some() {
+                    if section_header_with_remove(
+                        ui,
+                        "Script",
+                        entity_id,
+                        "ScriptComponent",
+                        theme,
+                        w,
+                    ) {
+                        ctx.pending_actions.push(EditorAction::RemoveComponent {
+                            entity: entity_id,
+                            component_type: "ScriptComponent".to_string(),
+                        });
+                    }
+
+                    let path_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 22.0));
+                    let resp = ui.add(
+                        katla_ui::widgets::TextInput::new("script_path", &mut edit.script_path)
+                            .bounds(path_bounds)
+                            .placeholder("scripts/example.lua"),
+                    );
+                    if resp.changed || resp.enter_pressed {
+                        ctx.pending_actions.push(EditorAction::SetScriptPath {
+                            entity: entity_id,
+                            path: edit.script_path.clone(),
+                        });
+                    }
+                    ui.set_cursor(Vec2::new(x, ui.cursor().y() + 26.0));
+                    section_gap(ui);
+                }
+
                 section_header(ui, "Info", theme);
                 ui.property_row("Type", &entity.entity_type);
                 for component_name in &entity.components {

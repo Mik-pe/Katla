@@ -15,8 +15,9 @@ use katla_gfx::renderer::UIDrawList;
 use katla_math::{Vec2, Vec3, Vec4};
 
 use crate::components::{
-    Children, DirectionalLight, DrawableComponent, EditorHidden, NameComponent, Parent,
-    ParticleEmitterComponent, PointLight, TransformComponent,
+    Children, DirectionalLight, DragComponent, DrawableComponent, EditorHidden, MassComponent,
+    NameComponent, Parent, ParticleEmitterComponent, PerspectiveComponent, PointLight,
+    TransformComponent,
 };
 
 use crate::ui::{EditorAction, EntityInfo, ParticleEmitterInfo, PointLightInfo};
@@ -557,6 +558,7 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         gravity,
         particle_scale,
         light_color_picker: _,
+        script_path: _,
     } = &app.editor.editor_ui.inspector_edit;
 
     // Transform
@@ -1060,6 +1062,14 @@ pub fn process_editor_actions(app: &mut Application) {
             EditorAction::SetConsoleSearch { text } => {
                 app.editor.editor_ui.console_state.search_filter = text;
             }
+            EditorAction::SetScriptPath { entity, path } => {
+                if let Some(comp) = app
+                    .world
+                    .get_component_mut::<katla_script::ScriptComponent>(entity)
+                {
+                    comp.script_path = path;
+                }
+            }
         }
     }
 
@@ -1196,6 +1206,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         Vec<String>,
         Option<PointLightInfo>,
         Option<ParticleEmitterInfo>,
+        Option<String>,
     );
     let mut entity_data: HashMap<EntityId, EntityData> = HashMap::new();
     let mut parent_map: HashMap<EntityId, EntityId> = HashMap::new();
@@ -1254,7 +1265,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         let has_children = app.world.get_component::<Children>(entity_id).is_some();
 
         // Build component list from cached query results
-        let mut components: Vec<&'static str> = Vec::with_capacity(8);
+        let mut components: Vec<&'static str> = Vec::with_capacity(12);
         components.push("Transform");
         if has_name {
             components.push("Name");
@@ -1270,6 +1281,34 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         }
         if particle_emitter.is_some() {
             components.push("ParticleEmitter");
+        }
+        if app
+            .world
+            .get_component::<MassComponent>(entity_id)
+            .is_some()
+        {
+            components.push("MassComponent");
+        }
+        if app
+            .world
+            .get_component::<DragComponent>(entity_id)
+            .is_some()
+        {
+            components.push("DragComponent");
+        }
+        if app
+            .world
+            .get_component::<PerspectiveComponent>(entity_id)
+            .is_some()
+        {
+            components.push("PerspectiveComponent");
+        }
+        if app
+            .world
+            .get_component::<katla_script::ScriptComponent>(entity_id)
+            .is_some()
+        {
+            components.push("ScriptComponent");
         }
         if has_parent {
             components.push("Parent");
@@ -1289,6 +1328,11 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
             "Empty"
         };
 
+        let script_path = app
+            .world
+            .get_component::<katla_script::ScriptComponent>(entity_id)
+            .map(|s| s.script_path.clone());
+
         entity_data.insert(
             entity_id,
             (
@@ -1300,6 +1344,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 components.into_iter().map(String::from).collect(),
                 point_light,
                 particle_emitter,
+                script_path,
             ),
         );
         root_entities.insert(entity_id);
@@ -1328,8 +1373,17 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         depth: u32,
     ) {
         if let Some(data) = entity_data.get(&entity_id) {
-            let (name, pos, rot, scale, entity_type, components, point_light, particle_emitter) =
-                data;
+            let (
+                name,
+                pos,
+                rot,
+                scale,
+                entity_type,
+                components,
+                point_light,
+                particle_emitter,
+                script_path,
+            ) = data;
 
             let children = children_map
                 .get(&entity_id)
@@ -1348,6 +1402,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 parent_id,
                 point_light: point_light.clone(),
                 particle_emitter: particle_emitter.clone(),
+                script_path: script_path.clone(),
             });
 
             // Recursively add children
@@ -2162,7 +2217,8 @@ fn remove_component_by_name(
     type_name: &str,
 ) -> Result<(), katla_ecs::scene_tool::SceneToolError> {
     use crate::components::{
-        DragComponent, MassComponent, NameComponent, PerspectiveComponent, PointLight,
+        DirectionalLight, DragComponent, MassComponent, NameComponent, PerspectiveComponent,
+        PointLight,
     };
 
     let Some(entry) = registry.get(type_name) else {
@@ -2194,6 +2250,12 @@ fn remove_component_by_name(
         }
         "PerspectiveComponent" => {
             world.remove_component::<PerspectiveComponent>(entity);
+        }
+        "DirectionalLight" => {
+            world.remove_component::<DirectionalLight>(entity);
+        }
+        "ScriptComponent" => {
+            world.remove_component::<katla_script::ScriptComponent>(entity);
         }
         other => {
             return Err(katla_ecs::scene_tool::SceneToolError::ComponentNotFound {

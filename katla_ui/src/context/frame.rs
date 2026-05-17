@@ -35,6 +35,7 @@ impl UiContext {
         self.id_stack.clear();
         self.z_stack.clear();
         self.z_index = z_index::DEFAULT;
+        self.prev_hover_z_index = self.hover_z_index;
         self.hover_z_index = z_index::DEFAULT;
         self.id_counter = 0;
         self.hovered_id = None;

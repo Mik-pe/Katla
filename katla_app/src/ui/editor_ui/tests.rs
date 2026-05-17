@@ -116,6 +116,7 @@ fn test_hierarchy_entity_selection_works() {
             parent_id: None,
             point_light: None,
             particle_emitter: None,
+            script_path: None,
         },
         EntityInfo {
             id: entity2,
@@ -130,6 +131,7 @@ fn test_hierarchy_entity_selection_works() {
             parent_id: None,
             point_light: None,
             particle_emitter: None,
+            script_path: None,
         },
     ];
 

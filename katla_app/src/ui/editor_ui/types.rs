@@ -127,6 +127,8 @@ pub struct EntityInfo {
     pub point_light: Option<PointLightInfo>,
     /// Particle emitter data (if entity has ParticleEmitterComponent)
     pub particle_emitter: Option<ParticleEmitterInfo>,
+    /// Script path (if entity has ScriptComponent)
+    pub script_path: Option<String>,
 }
 
 /// Point light inspector data.
@@ -238,6 +240,8 @@ pub enum EditorAction {
     ToggleConsoleFilterLevel { level_index: usize },
     /// Set the console search filter text.
     SetConsoleSearch { text: String },
+    /// Set the script path on an entity's ScriptComponent.
+    SetScriptPath { entity: EntityId, path: String },
 }
 
 /// Active tab in the bottom panel strip.
@@ -298,6 +302,7 @@ pub struct InspectorEditState {
     pub gravity: f32,
     pub particle_scale: f32,
     pub light_color_picker: ColorPickerState,
+    pub script_path: String,
 }
 
 impl Default for InspectorEditState {
@@ -315,6 +320,7 @@ impl Default for InspectorEditState {
             gravity: -9.81,
             particle_scale: 0.1,
             light_color_picker: ColorPickerState::new(),
+            script_path: String::new(),
         }
     }
 }
