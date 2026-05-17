@@ -233,6 +233,7 @@ impl EditorUI {
             entities: params.entities.to_vec(),
             edit: std::mem::take(&mut self.inspector_edit),
             scroll_state: std::mem::take(&mut self.inspector_scroll_state),
+            add_component_scroll_state: std::mem::take(&mut self.add_component_scroll_state),
             theme: self.theme.clone(),
             pending_actions: Vec::new(),
             available_components: self.available_components.clone(),
@@ -463,6 +464,7 @@ impl EditorUI {
             self.inspector_edit = inspector_ctx.edit;
             self.inspector_scroll_state = inspector_ctx.scroll_state;
             self.add_component_open = inspector_ctx.add_component_open;
+            self.add_component_scroll_state = inspector_ctx.add_component_scroll_state;
             self.add_component_filter = inspector_ctx.add_component_filter;
             self.focus_script_input = inspector_ctx.focus_script_input;
             self.pending_actions
