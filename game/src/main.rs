@@ -28,7 +28,7 @@ struct Args {
     check_black_frames: bool,
 
     /// Scene file to load on startup (e.g., assets/scenes/playground.katla)
-    #[arg(short, long)]
+    #[arg(long)]
     scene: Option<String>,
 }
 
