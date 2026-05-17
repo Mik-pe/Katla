@@ -127,15 +127,15 @@
 ### Inspector component UX
 
 - [ ] Add inspector UI for all registered components — `MassComponent` (mass slider), `DragComponent` (coefficient slider), `PerspectiveComponent` (fov/near/aspect_ratio sliders), `DirectionalLight` (direction Vec3, color picker, intensity slider). Each needs a `section_header_with_remove` section with editable widgets.
-- [ ] Add remove button to ParticleEmitter inspector section — switch from `section_header` to `section_header_with_remove`, handle `EditorAction::RemoveComponent` for `"ParticleEmitterComponent"`
+- [x] Add remove button to ParticleEmitter inspector section — switch from `section_header` to `section_header_with_remove`, handle `EditorAction::RemoveComponent` for `"ParticleEmitterComponent"`
 - [ ] Categorize the Add Component popup menu — group flat list into Lighting (PointLight, DirectionalLight), Physics (MassComponent, DragComponent), Scripting (ScriptComponent), Camera (PerspectiveComponent) with category headers
 - [ ] Auto-focus script path input after adding ScriptComponent — focus the text input so the user can immediately type the path without clicking
 - [ ] Wire up undo/redo for Add/Remove Component — store proper `SceneCommand`s instead of discarding the `UndoGroup`, so Ctrl+Z works after adding or removing components
 
 ### Component registry completeness
 
-- [ ] Register ParticleEmitterComponent in the component registry — has full inspector UI (5 sliders) but can't be added via "Add Component" or AI agent
-- [ ] Register VelocityComponent in the component registry — serialized in scenes but not addable from UI or AI
+- [x] Register ParticleEmitterComponent in the component registry — has full inspector UI (5 sliders) but can't be added via "Add Component" or AI agent
+- [x] Register VelocityComponent in the component registry — serialized in scenes but not addable from UI or AI
 - [ ] Add serialization round-trip for components missing it — MassComponent, DragComponent, PerspectiveComponent, DirectionalLight are registered but lost on scene save/load
 
 ### Panels and tooling
@@ -156,5 +156,5 @@
 - [ ] Write example game in game/ crate — demonstrate actual gameplay: player movement, collecting items, score, win/lose
 - [ ] Add profiler integration — Tracy or PIX instrumentation markers on render passes and systems
 - [ ] Add per-pass GPU timing — timestamp queries in render graph, display in status bar or overlay
-- [ ] Fix AppError::Graphics to carry typed RendererError instead of String — preserve error chain for debugging
+- [x] Fix AppError::Graphics to carry typed RendererError instead of String — preserve error chain for debugging
 - [ ] Add integration tests for full app lifecycle — init, spawn entities, run N frames, check state, shutdown without panic
