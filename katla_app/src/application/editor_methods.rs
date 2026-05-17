@@ -13,7 +13,8 @@ impl Application {
 
     pub(crate) fn filter_scroll_for_editor(&self, wheel_y: f32) -> f32 {
         let mouse_pos = self.ui_context.input().mouse_pos;
-        let ui_claimed = self.ui_context.hover_z_index() > katla_ui::z_index::DEFAULT;
+        let ui_claimed = self.ui_context.hover_z_index() > katla_ui::z_index::DEFAULT
+            || self.ui_context.prev_hover_z_index() > katla_ui::z_index::DEFAULT;
         if ui_claimed
             || !self
                 .editor
@@ -101,11 +102,12 @@ impl Application {
         let ui_draw_list = editor::generate_ui_draw_list(self, dt);
         log::debug!("UI draw list generated");
 
-        // Save keyboard capture state for next frame's Ctrl+S suppression.
-        // Must happen after generate_ui_draw_list (which sets the flag) and
+        // Save capture state for next frame's input routing.
+        // Must happen after generate_ui_draw_list (which sets the flags) and
         // before process_editor_actions (which calls clear_frame_state).
         self.editor.editor_ui.prev_want_capture_keyboard =
             self.ui_context.input().want_capture_keyboard;
+        self.editor.editor_ui.prev_want_capture_mouse = self.ui_context.input().want_capture_mouse;
 
         // Upload font atlas AFTER draw list generation (which rasterizes new glyphs)
         // and BEFORE render_frame (which samples from the GPU atlas).

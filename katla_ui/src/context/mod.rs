@@ -153,6 +153,11 @@ pub struct UiContext {
     /// Updated automatically by `draw_rect`. Widgets check against this to
     /// prevent interaction when covered by higher-z content.
     pub(crate) hover_z_index: u32,
+    /// Highest z-index from the previous frame. Used to block hover for
+    /// widgets that are drawn before higher-z content has re-registered.
+    /// This prevents e.g. a popup's hover-z from being lost on the first
+    /// frame after begin() clears hover_z_index.
+    prev_hover_z_index: u32,
     /// Tracked bounding box of all popup content (auto-expanded as items are drawn).
     pub(crate) popup_content_bounds: Option<Rect2D>,
     /// Current popup cursor position for automatic layout.
@@ -217,6 +222,7 @@ impl UiContext {
             z_index: z_index::DEFAULT,
             z_stack: Vec::new(),
             hover_z_index: z_index::DEFAULT,
+            prev_hover_z_index: z_index::DEFAULT,
             popup_content_bounds: None,
             popup_cursor: Vec2::new(0.0, 0.0),
             popup_width: 0.0,

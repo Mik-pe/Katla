@@ -409,7 +409,8 @@ impl Application {
                     .editor_ui
                     .last_viewport_bounds
                     .contains(mouse_pos)
-                && !self.ui_context.input().want_capture_mouse
+                && !self.editor.editor_ui.prev_want_capture_mouse
+                && self.ui_context.prev_hover_z_index() == katla_ui::z_index::DEFAULT
             {
                 self.editor.gizmo_state.consumed_click = false;
 

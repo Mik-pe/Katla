@@ -6,7 +6,7 @@ edition = "2024"
 
 [features]
 default = ["editor"]
-editor = ["katla_ecs/editor"]
+editor = ["katla_ecs/editor", "katla_script/editor"]
 mcp = ["katla_agent/mcp-server"]
 
 [dependencies]

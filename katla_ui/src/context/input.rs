@@ -78,4 +78,11 @@ impl UiContext {
     pub fn hover_z_index(&self) -> u32 {
         self.hover_z_index
     }
+
+    /// Returns the highest z-index that covered the mouse in the previous frame.
+    /// Useful for blocking scene picking when a panel/popup was visible last frame.
+    #[inline]
+    pub fn prev_hover_z_index(&self) -> u32 {
+        self.prev_hover_z_index
+    }
 }

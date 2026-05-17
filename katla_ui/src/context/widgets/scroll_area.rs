@@ -142,7 +142,8 @@ impl UiContext {
         };
 
         let is_active_scrollbar = self.active_id == Some(scrollbar_id);
-        let mouse_in_area = self.input.is_hovered(bounds) && self.z_index >= self.hover_z_index;
+        let mouse_in_area = self.input.is_hovered(bounds)
+            && self.z_index >= self.hover_z_index.max(self.prev_hover_z_index);
 
         // Handle mouse wheel scrolling (works even when dragging scrollbar)
         if mouse_in_area && !self.input.scroll_consumed && !is_active_scrollbar {

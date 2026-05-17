@@ -193,6 +193,7 @@ impl EditorUI {
                 gravity: -9.81,
                 particle_scale: 0.1,
                 light_color_picker: katla_ui::widgets::ColorPickerState::new(),
+                script_path: String::new(),
             },
             inspector_edit_entity: None,
             gizmo_mode: 0,
@@ -261,6 +262,11 @@ impl EditorUI {
                     self.inspector_edit.lifetime = pe.base_lifetime;
                     self.inspector_edit.gravity = pe.gravity;
                     self.inspector_edit.particle_scale = pe.base_scale;
+                }
+                if let Some(ref path) = entity.script_path {
+                    self.inspector_edit.script_path = path.clone();
+                } else {
+                    self.inspector_edit.script_path.clear();
                 }
             }
         }

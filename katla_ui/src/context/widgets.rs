@@ -58,8 +58,13 @@ impl UiContext {
     /// Widgets can only be hovered if no higher-z-index content covers the
     /// mouse position. This is tracked automatically by `draw_rect` when
     /// drawing at a z-index above DEFAULT.
+    ///
+    /// Uses the maximum of the current and previous frame's hover_z_index
+    /// to handle cases where higher-z content hasn't re-rendered yet this
+    /// frame (e.g., popups drawn after the widgets checking hover).
     pub fn is_hovered(&self, bounds: Rect2D) -> bool {
-        if self.z_index < self.hover_z_index {
+        let effective_z = self.hover_z_index.max(self.prev_hover_z_index);
+        if self.z_index < effective_z {
             return false;
         }
         self.input.is_hovered(bounds) && self.active_id.is_none()

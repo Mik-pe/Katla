@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-editor = []
+editor = ["katla_ecs/editor"]
 
 [dependencies]
 mlua = { version = "0.11", features = ["luau", "vendored", "serialize"] }

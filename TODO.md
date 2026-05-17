@@ -96,6 +96,15 @@
 
 ## Asset Pipeline
 
+### AI Agent — Asset & Script Tools
+
+- [ ] Add `list_assets` tool to AI agent — list files in `resources/` recursively, with optional extension filter (`"luau"`, `"gltf"`) and subdir filter (`"scripts"`). Lets the AI discover available scripts and assets.
+- [ ] Add `read_asset` tool to AI agent — read file contents from `resources/` by relative path. Lets the AI inspect existing scripts, materials, etc.
+- [ ] Add `write_asset` tool to AI agent — create or overwrite files in `resources/` with given path and content. Enables full workflow: AI creates a script, adds ScriptComponent, sets the path, script is ready to run.
+- [ ] Add `delete_asset` tool to AI agent — delete files from `resources/` by relative path. Should refuse to delete non-empty directories.
+
+### General asset pipeline
+
 - [ ] Add file watcher for hot reload — watch shaders/, resources/ for changes using `notify` crate; auto-recompile materials and reload textures
 - [ ] Add asset bundling format — pack resources into a single archive (custom or zip/pak) for release builds; embed or ship alongside binary
 - [ ] Add component serialization registry — data-driven registry mapping Component types to serializers/deserializers so user components round-trip automatically
@@ -114,6 +123,22 @@
 - [ ] Add release mode resource embedding — embed critical assets (shaders, default textures, fonts) into binary for zero-dependency startup
 
 ## Editor
+
+### Inspector component UX
+
+- [ ] Add inspector UI for all registered components — `MassComponent` (mass slider), `DragComponent` (coefficient slider), `PerspectiveComponent` (fov/near/aspect_ratio sliders), `DirectionalLight` (direction Vec3, color picker, intensity slider). Each needs a `section_header_with_remove` section with editable widgets.
+- [ ] Add remove button to ParticleEmitter inspector section — switch from `section_header` to `section_header_with_remove`, handle `EditorAction::RemoveComponent` for `"ParticleEmitterComponent"`
+- [ ] Categorize the Add Component popup menu — group flat list into Lighting (PointLight, DirectionalLight), Physics (MassComponent, DragComponent), Scripting (ScriptComponent), Camera (PerspectiveComponent) with category headers
+- [ ] Auto-focus script path input after adding ScriptComponent — focus the text input so the user can immediately type the path without clicking
+- [ ] Wire up undo/redo for Add/Remove Component — store proper `SceneCommand`s instead of discarding the `UndoGroup`, so Ctrl+Z works after adding or removing components
+
+### Component registry completeness
+
+- [ ] Register ParticleEmitterComponent in the component registry — has full inspector UI (5 sliders) but can't be added via "Add Component" or AI agent
+- [ ] Register VelocityComponent in the component registry — serialized in scenes but not addable from UI or AI
+- [ ] Add serialization round-trip for components missing it — MassComponent, DragComponent, PerspectiveComponent, DirectionalLight are registered but lost on scene save/load
+
+### Panels and tooling
 
 - [ ] Add timeline/animation editor — keyframe editing, curve editor, scrubbing, animation preview
 - [ ] Add material editor — visual material property editing (textures, metallic, roughness, emission) with live preview

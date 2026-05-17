@@ -188,22 +188,7 @@ impl DraggablePanel {
         );
         let panel_pos = state.position.unwrap_or(default_pos);
 
-        let title_bounds =
-            Rect2D::from_origin_size(panel_pos, Vec2::new(panel_width, title_bar_height));
-
-        let close_btn_area = Rect2D::from_origin_size(
-            Vec2::new(panel_pos.x() + panel_width - 30.0, panel_pos.y()),
-            Vec2::new(30.0, title_bar_height),
-        );
-        let can_drag = ui.is_hovered(title_bounds) && !ui.is_hovered(close_btn_area);
-
-        if ui.mouse_clicked(mouse_button::LEFT) && can_drag {
-            state.dragging = true;
-            let mouse_pos = ui.mouse_pos();
-            state.drag_offset =
-                Vec2::new(mouse_pos.x() - panel_pos.x(), mouse_pos.y() - panel_pos.y());
-        }
-
+        // Continue drag if already dragging (doesn't need z-index check)
         if state.dragging {
             if ui.mouse_down(mouse_button::LEFT) {
                 let mouse_pos = ui.mouse_pos();
@@ -246,6 +231,27 @@ impl DraggablePanel {
         let text_color = ui.style.text_color;
 
         ui.with_z_index(z_index::PANEL, |ui| {
+            // Title bar hover/drag checks happen at PANEL z-index so they
+            // aren't blocked by prev_hover_z_index from popups/dropdowns.
+            let title_bounds = Rect2D::from_origin_size(
+                panel_bounds.min,
+                Vec2::new(panel_width, title_bar_height),
+            );
+            let close_btn_area = Rect2D::from_origin_size(
+                Vec2::new(panel_bounds.max.x() - 30.0, panel_bounds.min.y()),
+                Vec2::new(30.0, title_bar_height),
+            );
+            let can_drag = ui.is_hovered(title_bounds) && !ui.is_hovered(close_btn_area);
+
+            if !state.dragging && ui.mouse_clicked(mouse_button::LEFT) && can_drag {
+                state.dragging = true;
+                let mouse_pos = ui.mouse_pos();
+                state.drag_offset = Vec2::new(
+                    mouse_pos.x() - panel_bounds.min.x(),
+                    mouse_pos.y() - panel_bounds.min.y(),
+                );
+            }
+
             // Shadow
             let shadow_offset = Vec2::new(6.0, 6.0);
             let shadow_bounds = Rect2D::new(
@@ -259,10 +265,6 @@ impl DraggablePanel {
             ui.draw_rect_border(panel_bounds, window_bg, window_border, 1.0);
 
             // Title bar
-            let title_bounds = Rect2D::from_origin_size(
-                panel_bounds.min,
-                Vec2::new(panel_width, title_bar_height),
-            );
             let title_color = if state.dragging || can_drag {
                 window_title_bg_active
             } else {
