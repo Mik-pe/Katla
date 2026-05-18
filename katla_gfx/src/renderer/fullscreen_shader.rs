@@ -110,7 +110,7 @@ impl VulkanRenderer {
             // Use specified color format
             .with_rendering_formats(
                 Some(color_format),
-                Some(crate::texture::ImageFormat::D32SfloatS8Uint),
+                None, // No depth attachment for fullscreen passes
             );
 
         let pipeline = builder.build_dynamic().map_err(|e| {

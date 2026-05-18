@@ -367,8 +367,35 @@ fn create_instance_inner(
 
     let mut instance_layers = vec![];
     if validation_mode.is_enabled() {
+        // Log all available instance layers for diagnostics
+        unsafe {
+            match entry.enumerate_instance_layer_properties() {
+                Ok(layers) => {
+                    log::info!("Available Vulkan instance layers ({} total):", layers.len());
+                    for layer in &layers {
+                        let name = std::ffi::CStr::from_ptr(layer.layer_name.as_ptr() as _);
+                        let desc = std::ffi::CStr::from_ptr(layer.description.as_ptr() as _);
+                        log::info!(
+                            "  {} (v{}.{}.{}) - {}",
+                            name.to_string_lossy(),
+                            vk::api_version_major(layer.spec_version),
+                            vk::api_version_minor(layer.spec_version),
+                            vk::api_version_patch(layer.spec_version),
+                            desc.to_string_lossy()
+                        );
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to enumerate instance layers: {:?}", e);
+                }
+            }
+        }
+
         if !validation::check_validation_support(entry) {
-            log::warn!("VK_LAYER_KHRONOS_validation not found, disabling validation layers");
+            log::error!("VK_LAYER_KHRONOS_validation NOT FOUND - validation layers are NOT active");
+            log::error!("On macOS, install the Vulkan SDK from https://vulkan.lunarg.com/sdk/home");
+            log::error!("And ensure VK_ICD_FILENAMES and VK_LAYER_PATH are set correctly");
+            log::warn!("Falling back to no validation layers");
             return create_instance_inner(
                 ValidationMode::Disabled,
                 app_name,
@@ -377,6 +404,7 @@ fn create_instance_inner(
                 entry,
             );
         }
+        log::info!("VK_LAYER_KHRONOS_validation found, enabling validation layers");
         extension_names_raw.push(ash::ext::debug_utils::NAME.as_ptr());
         instance_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
     }

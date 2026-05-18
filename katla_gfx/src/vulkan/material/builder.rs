@@ -293,6 +293,8 @@ impl PipelineBuilder {
         let stencil_front = self.stencil_front.unwrap_or_default();
         let stencil_back = self.stencil_back.unwrap_or_default();
 
+        let has_depth = self.depth_format.is_some();
+
         let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::default()
             .depth_test_enable(self.depth_test)
             .depth_write_enable(self.depth_write)
@@ -324,39 +326,40 @@ impl PipelineBuilder {
         // to the pNext chain when render_pass is null
         // Declare color_formats outside the if block so it lives long enough
         let mut color_formats = Vec::new();
-        let mut rendering_create_info = if vk_render_pass == vk::RenderPass::null()
-            && (self.color_format.is_some() || self.depth_format.is_some())
-        {
+        let mut rendering_create_info = if vk_render_pass == vk::RenderPass::null() {
             if let Some(fmt) = self.color_format {
                 color_formats.push(fmt);
             }
 
-            let depth_fmt = self.depth_format.unwrap_or(vk::Format::UNDEFINED);
-            let stencil_fmt = if depth_fmt == vk::Format::D32_SFLOAT_S8_UINT
-                || depth_fmt == vk::Format::D24_UNORM_S8_UINT
-            {
-                depth_fmt
-            } else {
-                vk::Format::UNDEFINED
-            };
+            let mut info =
+                vk::PipelineRenderingCreateInfo::default().color_attachment_formats(&color_formats);
 
-            Some(
-                vk::PipelineRenderingCreateInfo::default()
-                    .color_attachment_formats(&color_formats)
-                    .depth_attachment_format(depth_fmt)
-                    .stencil_attachment_format(stencil_fmt),
-            )
+            if let Some(depth_fmt) = self.depth_format {
+                info = info.depth_attachment_format(depth_fmt);
+                let stencil_fmt = if depth_fmt == vk::Format::D32_SFLOAT_S8_UINT
+                    || depth_fmt == vk::Format::D24_UNORM_S8_UINT
+                {
+                    depth_fmt
+                } else {
+                    vk::Format::UNDEFINED
+                };
+                info = info.stencil_attachment_format(stencil_fmt);
+            }
+
+            Some(info)
         } else {
             None
         };
 
+        // When there is no depth attachment, pass NULL for pDepthStencilState.
+        // MoltenVK/KosmicKrisp require this to produce MTLPixelFormatInvalid
+        // for depth/stencil in the Metal pipeline state.
         let create_info = if let Some(ref mut rendering_info) = rendering_create_info {
-            vk::GraphicsPipelineCreateInfo::default()
+            let mut ci = vk::GraphicsPipelineCreateInfo::default()
                 .stages(&shader_stages)
                 .vertex_input_state(&vertex_input)
                 .input_assembly_state(&input_assembly)
                 .viewport_state(&viewport_state)
-                .depth_stencil_state(&depth_stencil_state)
                 .rasterization_state(&rasterizer)
                 .multisample_state(&multisampling)
                 .color_blend_state(&color_blending)
@@ -364,7 +367,11 @@ impl PipelineBuilder {
                 .layout(pipeline_layout)
                 .render_pass(vk_render_pass)
                 .subpass(0)
-                .push_next(rendering_info)
+                .push_next(rendering_info);
+            if has_depth {
+                ci = ci.depth_stencil_state(&depth_stencil_state);
+            }
+            ci
         } else {
             vk::GraphicsPipelineCreateInfo::default()
                 .stages(&shader_stages)
