@@ -86,11 +86,9 @@ impl ApplicationBuilder {
     }
 
     pub fn gpu_assisted_validation(mut self, on: bool) -> Self {
-        self.validation_mode = if on {
-            katla_gfx::ValidationMode::GpuAssisted
-        } else {
-            katla_gfx::ValidationMode::Disabled
-        };
+        if on {
+            self.validation_mode = katla_gfx::ValidationMode::GpuAssisted;
+        }
         self
     }
 

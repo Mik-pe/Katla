@@ -610,7 +610,7 @@ impl MaterialCompiler {
         // Disable depth test for UI passes and compositing passes (no depth attachment)
         // or when the material explicitly opts out (e.g., gizmo overlays)
         if is_ui || options.is_compositing {
-            // No depth for UI/compositing (no depth attachment)
+            builder = builder.with_depth_test(false, false, crate::pipeline::CompareOp::Always);
         } else if options.depth_test {
             builder =
                 builder.with_depth_test(true, true, crate::pipeline::CompareOp::GreaterOrEqual);
