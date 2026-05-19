@@ -1,0 +1,156 @@
+//! Metal depth prepass subsystem.
+//!
+//! Renders depth-only from the camera's perspective to populate the depth buffer
+//! before the main geometry pass for early-Z rejection.
+
+use objc2::runtime::ProtocolObject;
+use objc2_metal::MTLFunction;
+
+use crate::backend::command::{
+    DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType, RenderPassInfo,
+    ShaderStages,
+};
+use crate::error::RendererError;
+use crate::handle::ResourceStorage;
+use crate::pipeline::CompareOp;
+use crate::render_pass::{ClearValue, LoadOp, StoreOp};
+use crate::texture::ImageFormat;
+
+use super::buffer::MetalBuffer;
+use super::context::MetalContext;
+use super::metal_renderer::{MetalMaterial, MetalMesh};
+use super::pipeline::MetalGraphicsPipeline;
+use super::texture::MetalTextureView;
+
+/// Metal depth prepass subsystem.
+///
+/// Creates a depth-only pipeline that renders all opaque geometry
+/// to the depth buffer with reverse-Z depth testing (Greater).
+pub(crate) struct MetalDepthPrepass {
+    pipeline: Option<MetalGraphicsPipeline>,
+    pipeline_skinned: Option<MetalGraphicsPipeline>,
+}
+
+impl MetalDepthPrepass {
+    pub(crate) fn new() -> Self {
+        Self {
+            pipeline: None,
+            pipeline_skinned: None,
+        }
+    }
+
+    pub(crate) fn pipeline(&self) -> Option<&MetalGraphicsPipeline> {
+        self.pipeline.as_ref()
+    }
+
+    /// Create the depth-only prepass pipeline.
+    pub(crate) fn create_pipeline(
+        &mut self,
+        context: &MetalContext,
+        vertex_function: &ProtocolObject<dyn MTLFunction>,
+    ) -> Result<(), RendererError> {
+        let pipeline = context.create_graphics_pipeline(
+            vertex_function,
+            None,
+            &[],
+            Some(objc2_metal::MTLPixelFormat::Depth32Float),
+            true,
+            CompareOp::LessOrEqual,
+            objc2_metal::MTLCullMode::Back,
+            objc2_metal::MTLWinding::CounterClockwise,
+        )?;
+
+        self.pipeline = Some(pipeline);
+        Ok(())
+    }
+
+    /// Create the skinned depth prepass pipeline.
+    pub(crate) fn create_pipeline_skinned(
+        &mut self,
+        context: &MetalContext,
+        vertex_function: &ProtocolObject<dyn MTLFunction>,
+    ) -> Result<(), RendererError> {
+        let pipeline = context.create_graphics_pipeline(
+            vertex_function,
+            None,
+            &[],
+            Some(objc2_metal::MTLPixelFormat::Depth32Float),
+            true,
+            CompareOp::LessOrEqual,
+            objc2_metal::MTLCullMode::Back,
+            objc2_metal::MTLWinding::CounterClockwise,
+        )?;
+
+        self.pipeline_skinned = Some(pipeline);
+        Ok(())
+    }
+}
+
+/// Render the depth prepass.
+///
+/// Creates a depth-only render pass and draws all opaque geometry to populate the depth buffer.
+pub(crate) fn render_depth_prepass(
+    cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
+    depth_pipeline: &MetalGraphicsPipeline,
+    depth_view: &MetalTextureView,
+    width: u32,
+    height: u32,
+    frame_uniform_buffer: &MetalBuffer,
+    object_storage_buffer: &MetalBuffer,
+    meshes: &ResourceStorage<MetalMesh>,
+    materials: &ResourceStorage<MetalMaterial>,
+    draw_list: &crate::renderer::types::DrawList,
+) {
+    let render_pass_info = RenderPassInfo {
+        color_attachments: vec![],
+        depth_attachment: Some(DepthAttachmentInfo {
+            view: depth_view.clone(),
+            load_op: LoadOp::Clear,
+            store_op: StoreOp::Store,
+            clear_value: ClearValue::DepthStencil {
+                depth: 0.0,
+                stencil: 0,
+            },
+            format: ImageFormat::D32Sfloat,
+        }),
+    };
+
+    let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
+
+    encoder.bind_graphics_pipeline(depth_pipeline);
+    encoder.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
+
+    let stages = ShaderStages::VERTEX_FRAGMENT;
+    encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
+    encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
+
+    for draw in &draw_list.draws {
+        let Some(mesh) = meshes.get(draw.mesh.index()) else {
+            continue;
+        };
+        let Some(material) = materials.get(draw.material.index()) else {
+            continue;
+        };
+        let Some(ref _pipeline) = material.pipeline else {
+            continue;
+        };
+
+        encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 0);
+        encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
+        encoder.draw_indexed(mesh.index_count, 1, 0, 0, draw.instance_index);
+    }
+
+    encoder.end_encoding();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_depth_prepass_creation() {
+        let prepass = MetalDepthPrepass::new();
+        assert!(prepass.pipeline.is_none());
+        assert!(prepass.pipeline_skinned.is_none());
+    }
+}
