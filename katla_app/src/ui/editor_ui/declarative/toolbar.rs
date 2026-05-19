@@ -239,7 +239,7 @@ fn draw_toolbar(ui: &mut UiContext, _bounds: Rect2D) {
         ui.scaled_font_size(FontSize::Medium),
     );
 
-    let original_text_color = ui.style().text_color;
+    let _original_text_color = ui.style().text_color;
 
     let btn_size = 24.0;
     let btn_padding = 4.0;

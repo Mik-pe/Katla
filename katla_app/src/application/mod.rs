@@ -43,9 +43,9 @@ use std::time::Instant;
 use log::{debug, info};
 use winit::keyboard::ModifiersState;
 
+use crate::Renderer;
 pub use builder::*;
 use katla_ecs::World;
-use katla_gfx::renderer::VulkanRenderer;
 use katla_math::Vec2;
 
 use winit::{
@@ -57,20 +57,23 @@ use winit::{
 };
 
 use self::camera::Camera;
+#[cfg(feature = "vulkan")]
+use crate::util::GltfCache;
 #[cfg(feature = "editor")]
 use crate::{gui_state::GuiState, util::BackgroundLoader};
 use crate::{
     input::{Action, InputBinding, InputMapper, KeyCombo, MouseCombo},
     preferences::Preferences,
     resources::ResourceManager,
-    util::{GltfCache, Timer},
+    util::Timer,
 };
 
 pub struct ApplicationInfo {
     name: String,
     validation_mode: katla_gfx::ValidationMode,
     max_frames: Option<usize>, // Some(n) = exit after n frames, None = run indefinitely
-    check_black_frames: bool,  // Check center pixel of swapchain for black frames
+    #[cfg(feature = "vulkan")]
+    check_black_frames: bool,
     scene_path: Option<String>, // Override scene to load on startup
 }
 
@@ -103,6 +106,7 @@ pub(crate) struct EditorState {
     pub(crate) pending_pick: Option<(usize, f32, f32)>,
     /// Bindless texture index for the stencil indicator R8 texture.
     /// Passed to the tonemap shader each frame via emission_idx field.
+    #[cfg(feature = "vulkan")]
     pub(crate) stencil_indicator_bindless_index: Option<u32>,
     /// Gizmo state (mode, drag, hover).
     pub(crate) gizmo_state: crate::gizmo::GizmoState,
@@ -115,7 +119,7 @@ pub(crate) struct EditorState {
     /// Component registry for AI agent scene tools.
     pub(crate) component_registry: katla_ecs::scene_tool::ComponentRegistry,
     /// Agent harness for AI co-creator execution.
-    pub(crate) agent_harness: katla_ecs::agent::AgentHarness,
+    pub(crate) _agent_harness: katla_ecs::agent::AgentHarness,
     /// LLM configuration (API key, model, endpoint).
     pub(crate) llm_config: katla_agent::LlmConfig,
     /// Async bridge for background LLM calls.
@@ -169,13 +173,14 @@ impl EditorState {
             entity_instance_map: std::collections::HashMap::new(),
             entity_to_instance_indices: std::collections::HashMap::new(),
             pending_pick: None,
+            #[cfg(feature = "vulkan")]
             stencil_indicator_bindless_index: None,
             gizmo_state: crate::gizmo::GizmoState::default(),
             gizmo_resources: crate::gizmo::GizmoResources::default(),
             billboard_resources: crate::billboard::BillboardResources::default(),
             prev_mouse_screen: None,
             component_registry,
-            agent_harness: katla_ecs::agent::AgentHarness::new(),
+            _agent_harness: katla_ecs::agent::AgentHarness::new(),
             llm_config: katla_agent::LlmConfig::load(),
             async_bridge: katla_agent::AsyncBridge::new().ok(),
             co_creator_agent: katla_agent::CoCreatorAgent::new(),
@@ -230,20 +235,10 @@ impl EditorState {
         }
         false
     }
-
-    pub(crate) fn perform_agent_redo(&mut self, world: &mut katla_ecs::World) -> bool {
-        if let Some(mut group) = self.agent_redo_stack.pop() {
-            if group.redo_all(world).is_ok() {
-                self.agent_undo_stack.push(group);
-                return true;
-            }
-            self.agent_redo_stack.push(group);
-        }
-        false
-    }
 }
 
 /// Cached pass IDs from the frame graph, resolved once at startup.
+#[cfg(feature = "vulkan")]
 pub(crate) struct PassIds {
     pub(crate) depth_prepass: katla_gfx::render_graph::PassId,
     pub(crate) geometry: katla_gfx::render_graph::PassId,
@@ -255,6 +250,7 @@ pub(crate) struct PassIds {
     pub(crate) wallhack_overlay: katla_gfx::render_graph::PassId,
 }
 
+#[cfg(feature = "vulkan")]
 impl PassIds {
     /// Re-resolve all PassIds from the frame graph by name.
     /// Must be called after any `insert_pass` calls that shift indices.
@@ -277,12 +273,15 @@ impl PassIds {
 /// Main application struct containing all engine state.
 pub struct Application {
     pub(crate) window: Window,
-    pub(crate) renderer: VulkanRenderer,
+    pub(crate) renderer: Renderer,
     /// Frame graph for rendering (built once at startup)
+    #[cfg(feature = "vulkan")]
     pub(crate) frame_graph: katla_gfx::FrameGraph,
     /// Handles to frame graph passes used during rendering
+    #[cfg(feature = "vulkan")]
     pub(crate) pass_ids: PassIds,
     pub(crate) camera: Camera,
+    #[cfg(feature = "vulkan")]
     pub(crate) gltf_cache: GltfCache,
     pub(crate) timer: Timer,
     pub(crate) info: ApplicationInfo,
@@ -306,8 +305,10 @@ pub struct Application {
     /// Flag to prevent double cleanup
     cleaned_up: bool,
     /// Particle system for managing particle emitters via ECS
+    #[cfg(feature = "vulkan")]
     pub(crate) particle_system: crate::systems::ParticleSystem,
     /// GPU animation system for pose evaluation (ECS queries only, GPU resources on renderer)
+    #[cfg(feature = "vulkan")]
     pub(crate) gpu_animation_system:
         Option<crate::systems::gpu_animation_system::GpuAnimationSystem>,
     /// Whether the window is currently minimized (zero extent).
@@ -318,6 +319,7 @@ pub struct Application {
     pub(crate) gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker,
     /// Reusable buffer for collecting point lights each frame. Cleared and refilled
     /// in collect_and_upload_lights to avoid per-frame Vec allocation.
+    #[cfg(feature = "vulkan")]
     pub(crate) point_lights_buffer: Vec<katla_gfx::PointLightGPU>,
     /// Editor-only state (UI, picking, gizmos, billboards)
     #[cfg(feature = "editor")]

@@ -66,6 +66,7 @@ impl UIRenderer {
     /// Set the font atlas bindless texture slot.
     ///
     /// This stores the bindless slot index allocated for the font atlas texture.
+    #[cfg(feature = "editor")]
     pub fn set_font_atlas_bindless_slot(&mut self, slot: u32) {
         log::debug!("UIRenderer: Setting font atlas bindless slot to {}", slot);
         self.font_atlas_bindless_slot = Some(slot);

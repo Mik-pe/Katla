@@ -35,7 +35,7 @@ pub(crate) fn set_co_creator_ctx(
             screen_size,
             agent_undo_count,
             response: CoCreatorResponse {
-                submitted: false,
+                _submitted: false,
                 submitted_text: None,
                 undo_clicked: false,
             },
@@ -235,7 +235,7 @@ fn draw_co_creator(ui: &mut UiContext, _bounds: Rect2D) {
     ctx.state.panel.mark_shown();
 
     ctx.response = CoCreatorResponse {
-        submitted: submitted_text.is_some(),
+        _submitted: submitted_text.is_some(),
         submitted_text,
         undo_clicked,
     };

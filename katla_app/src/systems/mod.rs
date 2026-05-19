@@ -8,6 +8,7 @@ pub use crate::systems::physics::*;
 pub use crate::systems::transform::*;
 
 // Particle systems
+#[cfg(feature = "vulkan")]
 pub use crate::systems::particle_system::*;
 
 // Submodules

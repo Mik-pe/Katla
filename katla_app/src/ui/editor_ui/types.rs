@@ -194,6 +194,7 @@ pub enum Panel {
 
 /// Action requested from the editor UI.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum EditorAction {
     /// Spawn a new model at the given position.
     SpawnModel(SpawnableModel, Vec3),
@@ -227,8 +228,10 @@ pub enum EditorAction {
     /// Open panel
     OpenPanel(Panel),
     /// Toggle the selected particle emitter active/inactive.
+    #[cfg(feature = "vulkan")]
     ToggleParticleEmitter,
     /// Reset the global particle system (clear all particles).
+    #[cfg(feature = "vulkan")]
     ResetParticleSystem,
     /// Set the gizmo transform mode.
     SetGizmoMode(u8), // 0=Translate, 1=Rotate, 2=Scale
@@ -305,6 +308,7 @@ impl BottomPanelTab {
         }
     }
 
+    #[allow(dead_code)]
     pub fn icon(self) -> char {
         match self {
             BottomPanelTab::AssetBrowser => katla_ui::ForkAwesome::FOLDER_OPEN,

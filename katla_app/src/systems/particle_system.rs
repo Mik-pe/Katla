@@ -4,12 +4,17 @@
 //! particle system, ensuring that emitters are created, updated, and destroyed
 //! based on ECS entity lifecycle.
 
-use std::collections::HashMap;
-
-use katla_ecs::{EntityId, World};
+#[cfg(feature = "vulkan")]
 use katla_gfx::particles::EmitterHandle;
+#[cfg(feature = "vulkan")]
 use log::{debug, info, warn};
 
+#[cfg(feature = "vulkan")]
+use katla_ecs::{EntityId, World};
+#[cfg(feature = "vulkan")]
+use std::collections::HashMap;
+
+#[cfg(feature = "vulkan")]
 use crate::components::{ParticleEmitterComponent, WorldTransform};
 
 /// System that manages particle emitters in the ECS.
@@ -26,11 +31,13 @@ use crate::components::{ParticleEmitterComponent, WorldTransform};
 /// // Run each frame to sync emitters
 /// particle_system.update(&mut world, &mut renderer.particle_system);
 /// ```
+#[cfg(feature = "vulkan")]
 pub struct ParticleSystem {
     entity_emitters: HashMap<EntityId, EmitterHandle>,
     entity_kill_on_destroy: HashMap<EntityId, bool>,
 }
 
+#[cfg(feature = "vulkan")]
 impl ParticleSystem {
     /// Create a new particle system.
     pub fn new() -> Self {
@@ -159,6 +166,7 @@ impl ParticleSystem {
     }
 }
 
+#[cfg(feature = "vulkan")]
 impl Default for ParticleSystem {
     fn default() -> Self {
         Self::new()

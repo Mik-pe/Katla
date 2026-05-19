@@ -1,5 +1,5 @@
 use katla_ecs::EntityId;
-use katla_math::{Color, Rect2D, Vec2};
+use katla_math::{Rect2D, Vec2};
 use katla_ui::{
     FontSize, ForkAwesome, UiContext, mouse_button,
     widgets::{DockArea, ResizeHandle},

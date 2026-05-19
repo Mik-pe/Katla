@@ -42,6 +42,7 @@ pub struct EmitterConfigView {
 
 /// Identifies which emitter config field changed and its new value.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum EmitterField {
     EmitRate(f32),
     BaseLifetime(f32),

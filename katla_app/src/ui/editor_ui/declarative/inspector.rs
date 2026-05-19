@@ -517,8 +517,8 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
 
             let popup_width = 250.0;
             let popup_height = 200.0;
-            let popup_x = content_bounds.max.x() - popup_width - 4.0;
-            let popup_y = content_bounds.min.y() + 40.0;
+            let _popup_x = content_bounds.max.x() - popup_width - 4.0;
+            let _popup_y = content_bounds.min.y() + 40.0;
 
             ui.modal(
                 "add_component_popup",

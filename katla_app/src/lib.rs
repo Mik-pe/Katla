@@ -13,6 +13,7 @@ pub mod gpu_resource_tracker;
 pub mod gui_state;
 pub mod input;
 pub mod preferences;
+mod renderer_type;
 pub mod rendering;
 pub mod resources;
 pub mod scene;
@@ -28,4 +29,5 @@ pub use error::{AppError, AppResult};
 pub use gui_state::GuiState;
 
 pub use preferences::Preferences;
+pub use renderer_type::Renderer;
 pub use rendering::FrameContext;

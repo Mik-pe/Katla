@@ -3,43 +3,10 @@ use std::sync::Arc;
 use katla_agent::serialize_scene_context;
 use katla_agent::{LocalAction, OpenAiProvider, StreamEvent, ToolCall};
 use katla_ecs::EntityId;
-use katla_ecs::agent::{Agent, AgentAction, AgentSession, Observation};
 use katla_ecs::scene_tool::{ComponentRegistry, ResourceOp, SceneOp, SceneToolExecutor};
+use katla_gfx::GpuRenderer;
 use katla_math::Vec3;
 use log::warn;
-
-pub(crate) fn run_scripted_agent(
-    ops: Vec<SceneOp>,
-    world: &mut katla_ecs::World,
-    registry: &ComponentRegistry,
-) -> Result<AgentSession, katla_ecs::scene_tool::SceneToolError> {
-    let mut harness = katla_ecs::agent::AgentHarness::new();
-    let mut agent = ScriptedAgent { ops, step: 0 };
-    harness.run_sync_agent(&mut agent, world, registry)?;
-    Ok(std::mem::take(harness.session_mut()))
-}
-
-struct ScriptedAgent {
-    ops: Vec<SceneOp>,
-    step: usize,
-}
-
-impl Agent for ScriptedAgent {
-    fn observe(&mut self, _observation: &Observation) {}
-    fn decide(&mut self) -> Option<SceneOp> {
-        if self.step < self.ops.len() {
-            let op = self.ops[self.step].clone();
-            self.step += 1;
-            Some(op)
-        } else {
-            None
-        }
-    }
-    fn on_result(&mut self, _action: &AgentAction) {}
-    fn name(&self) -> &str {
-        "ScriptedAgent"
-    }
-}
 
 pub(crate) fn get_scene_context_json(
     world: &mut katla_ecs::World,
@@ -350,7 +317,12 @@ const RESOURCE_TOOL_NAMES: &[&str] = &[
 /// Execute a single tool call against the ECS world.
 fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
     if tool_call.name == "spawn_model" {
-        return execute_spawn_model(app, tool_call);
+        #[cfg(feature = "vulkan")]
+        {
+            return execute_spawn_model(app, tool_call);
+        }
+        #[cfg(not(feature = "vulkan"))]
+        return "Error: spawn_model not yet supported on this backend".to_string();
     }
 
     if tool_call.name == "load_scene" {
@@ -706,6 +678,7 @@ fn tool_call_to_resource_op(tool_call: &ToolCall) -> Result<ResourceOp, String> 
     }
 }
 
+#[cfg(feature = "vulkan")]
 fn execute_spawn_model(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
     use katla_agent::co_creator::SpawnModelArgs;
 
@@ -1518,70 +1491,6 @@ mod tests {
             katla_ecs::World::new(),
             super::super::component_registry::build_editor_component_registry(),
         )
-    }
-
-    #[test]
-    fn test_scripted_agent_spawn() {
-        let (mut world, registry) = test_world_and_registry();
-        let ops = vec![
-            SceneOp::SpawnEntity {
-                position: [0.0, 0.0, 0.0],
-                rotation: [0.0, 0.0, 0.0],
-                scale: [1.0, 1.0, 1.0],
-                name: Some("Entity A".to_string()),
-                primitive: None,
-            },
-            SceneOp::SpawnEntity {
-                position: [1.0, 0.0, 0.0],
-                rotation: [0.0, 0.0, 0.0],
-                scale: [1.0, 1.0, 1.0],
-                name: Some("Entity B".to_string()),
-                primitive: None,
-            },
-        ];
-
-        let session = run_scripted_agent(ops, &mut world, &registry).unwrap();
-        assert_eq!(session.action_count(), 2);
-        assert!(world.entity_count() >= 2);
-    }
-
-    #[test]
-    fn test_scripted_agent_set_field() {
-        let (mut world, registry) = test_world_and_registry();
-        let entity = world.create_entity();
-        world.add_component(entity, NameComponent::new("Original"));
-
-        let ops = vec![SceneOp::SetField {
-            entity,
-            component: "NameComponent".to_string(),
-            field: "name".to_string(),
-            value: serde_json::json!("Updated"),
-        }];
-
-        let session = run_scripted_agent(ops, &mut world, &registry).unwrap();
-        assert_eq!(session.action_count(), 1);
-
-        let name = world.get_component::<NameComponent>(entity).unwrap();
-        assert_eq!(name.name, "Updated");
-    }
-
-    #[test]
-    fn test_scripted_agent_undo() {
-        let (mut world, registry) = test_world_and_registry();
-
-        let ops = vec![SceneOp::SpawnEntity {
-            position: [0.0, 0.0, 0.0],
-            rotation: [0.0, 0.0, 0.0],
-            scale: [1.0, 1.0, 1.0],
-            name: Some("TempEntity".to_string()),
-            primitive: None,
-        }];
-
-        let mut session = run_scripted_agent(ops, &mut world, &registry).unwrap();
-        assert!(world.entity_count() > 0);
-
-        session.undo_all(&mut world).unwrap();
-        assert_eq!(world.entity_count(), 0);
     }
 
     #[test]

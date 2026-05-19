@@ -1,10 +1,15 @@
+use katla_gfx::GpuRenderer;
+#[cfg(feature = "vulkan")]
 use katla_gfx::TextureHandle;
-use log::{debug, info};
+#[cfg(feature = "vulkan")]
+use log::debug;
+use log::info;
 
 use crate::scene::entity_source::EntitySource;
 
 /// Result of uploading GLTF textures: bindless indices for material assignment
 /// and texture handles for GPU resource tracking.
+#[cfg(feature = "vulkan")]
 struct GltfTextureUpload {
     indices: [u32; 5],
     handles: Vec<katla_gfx::TextureHandle>,
@@ -278,6 +283,7 @@ impl super::Application {
     /// # Errors
     /// Returns `AppError::ShaderCompileFailed` if the PBR shader fails to compile.
     /// Returns `AppError::SkeletonCreateFailed` if GPU skeleton creation fails for skinned models.
+    #[cfg(feature = "vulkan")]
     pub fn spawn_gltf_model(
         &mut self,
         path: impl AsRef<std::path::Path>,
@@ -458,6 +464,7 @@ impl super::Application {
     ///
     /// STL files contain only triangle geometry. They are spawned with the default PBR
     /// material and no textures. The entity gets an [`EntitySource::StlModel`] for round-tripping.
+    #[cfg(feature = "vulkan")]
     pub fn spawn_stl_model(
         &mut self,
         path: impl AsRef<std::path::Path>,
@@ -500,6 +507,7 @@ impl super::Application {
         Ok(entity)
     }
 
+    #[cfg(feature = "vulkan")]
     /// Upload textures from a GLTF model and return bindless texture indices.
     ///
     /// Returns [albedo, normal, metallic_roughness, ao, emission] indices.
@@ -583,6 +591,7 @@ impl super::Application {
     }
 
     /// Upload a single GLTF image to the GPU.
+    #[cfg(feature = "vulkan")]
     fn upload_gltf_image(&mut self, image: &gltf::image::Data, srgb: bool) -> TextureHandle {
         // Convert RGB to RGBA if needed (Vulkan requires 4-channel alignment)
         let pixels = if image.format == gltf::image::Format::R8G8B8 {
@@ -605,6 +614,7 @@ impl super::Application {
     }
 
     /// Get the bindless texture index for a texture handle.
+    #[cfg(feature = "vulkan")]
     fn get_bindless_index(&self, handle: katla_gfx::TextureHandle) -> u32 {
         // The texture manager assigns bindless indices during texture creation
         // We need to query the texture manager for the bindless slot
@@ -615,6 +625,7 @@ impl super::Application {
     ///
     /// For non-indexed geometry (empty index_data), generates sequential indices
     /// [0, 1, 2, ... vertex_count-1] for the given vertex count.
+    #[cfg(feature = "vulkan")]
     pub(crate) fn convert_indices_to_u32_with_vertex_count(
         index_data: &[u8],
         index_stride: u8,

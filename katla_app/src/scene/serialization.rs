@@ -7,12 +7,15 @@ use super::entity_source::EntitySource;
 use log::{info, warn};
 use std::path::Path;
 
+use katla_gfx::GpuRenderer;
+
 use crate::animation::AnimationPlayer;
 use crate::application::Application;
+#[cfg(feature = "vulkan")]
+use crate::components::ParticleEmitterComponent;
 use crate::components::{
     DirectionalLight, DragComponent, DrawableComponent, MassComponent, NameComponent,
-    ParticleEmitterComponent, PerspectiveComponent, PointLight, TransformComponent,
-    VelocityComponent,
+    PerspectiveComponent, PointLight, TransformComponent, VelocityComponent,
 };
 use katla_script::ScriptComponent;
 
@@ -146,6 +149,7 @@ impl SceneManager {
                         range: l.range,
                     });
 
+            #[cfg(feature = "vulkan")]
             let particle_emitter = app
                 .world
                 .get_component::<ParticleEmitterComponent>(entity_id)
@@ -168,6 +172,8 @@ impl SceneManager {
                     shape_params: p.config.shape_params,
                     active: p.active,
                 });
+            #[cfg(not(feature = "vulkan"))]
+            let particle_emitter: Option<ParticleEmitterDescriptor> = None;
 
             let animation = app
                 .world
@@ -498,12 +504,15 @@ impl SceneManager {
             ))
         } else {
             match &desc.source {
+                #[cfg(feature = "vulkan")]
                 EntitySource::GltfModel { path } => app
                     .spawn_gltf_model(path, pos, None)
                     .map_err(|e| format!("{e}"))?,
+                #[cfg(feature = "vulkan")]
                 EntitySource::StlModel { path } => {
                     app.spawn_stl_model(path, pos).map_err(|e| format!("{e}"))?
                 }
+                #[cfg(feature = "vulkan")]
                 EntitySource::ParticleEmitter => {
                     let config = katla_gfx::particles::EmitterConfig {
                         position: desc
@@ -569,6 +578,7 @@ impl SceneManager {
         }
 
         // Apply particle emitter config overrides
+        #[cfg(feature = "vulkan")]
         if let Some(ref pe_desc) = desc.particle_emitter
             && let Some(emitter) = app
                 .world

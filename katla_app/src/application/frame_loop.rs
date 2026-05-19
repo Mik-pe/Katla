@@ -1,5 +1,7 @@
 use log::{debug, info, warn};
 
+use katla_gfx::GpuRenderer;
+
 use crate::application::Application;
 
 impl Application {
@@ -18,6 +20,7 @@ impl Application {
 
         // Wait for any pending async readback to complete before destroying resources
         // This must happen BEFORE wait_for_device() to ensure readback finishes
+        #[cfg(feature = "vulkan")]
         match self.renderer.wait_for_pending_readback() {
             Ok(Some((frame, image_data))) => {
                 info!("Saving final frame {} before shutdown", frame);
@@ -51,6 +54,7 @@ impl Application {
 
         // Cleanup frame graph transient textures BEFORE destroying renderer
         // This ensures proper cleanup order and avoids heap corruption during shutdown
+        #[cfg(feature = "vulkan")]
         self.frame_graph.cleanup();
 
         // Destroy renderer (which owns the particle system)
@@ -101,11 +105,13 @@ impl Application {
         );
 
         // Update particle emitters from ECS components
+        #[cfg(feature = "vulkan")]
         if let Some(ref mut ps) = self.renderer.particle_system {
             self.particle_system.update(&mut self.world, ps, dt);
         }
 
         // Update GPU animation: prepare data and upload per-frame params
+        #[cfg(feature = "vulkan")]
         if let (Some(gpu_anim), Some(pipeline), Some(buffers)) = (
             &mut self.gpu_animation_system,
             &mut self.renderer.animation_pipeline,
@@ -152,6 +158,7 @@ impl Application {
         // - On frame N: Queue async readback (non-blocking)
         // - On frame N+1: Check if readback from frame N is complete and save to disk
         // This allows us to catch synchronization issues that synchronous readback would mask
+        #[cfg(feature = "vulkan")]
         if self.info.check_black_frames && self.frame_count > 0 {
             // Check if previous frame's async readback is complete
             match self.renderer.check_pending_readback() {
@@ -250,6 +257,7 @@ impl Application {
     }
 
     /// Save frame data as PNG file for visual inspection
+    #[cfg(feature = "vulkan")]
     pub(crate) fn save_frame_as_png(
         &self,
         frame: usize,

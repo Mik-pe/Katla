@@ -122,11 +122,11 @@ pub struct CoCreatorStyle {
     pub user_msg_color: Color,
     pub assistant_msg_color: Color,
     pub system_msg_color: Color,
-    pub panel_bg: Color,
-    pub panel_border: Color,
-    pub panel_header: Color,
-    pub background_light: Color,
-    pub text_primary: Color,
+    pub _panel_bg: Color,
+    pub _panel_border: Color,
+    pub _panel_header: Color,
+    pub _background_light: Color,
+    pub _text_primary: Color,
     pub text_muted: Color,
 }
 
@@ -136,11 +136,11 @@ impl CoCreatorStyle {
             user_msg_color: theme.info,
             assistant_msg_color: theme.text_primary,
             system_msg_color: theme.text_muted,
-            panel_bg: theme.panel_bg,
-            panel_border: theme.panel_border,
-            panel_header: theme.panel_header,
-            background_light: theme.background_light,
-            text_primary: theme.text_primary,
+            _panel_bg: theme.panel_bg,
+            _panel_border: theme.panel_border,
+            _panel_header: theme.panel_header,
+            _background_light: theme.background_light,
+            _text_primary: theme.text_primary,
             text_muted: theme.text_muted,
         }
     }
@@ -148,9 +148,7 @@ impl CoCreatorStyle {
 
 /// Whether the co-creator panel submitted a message this frame.
 pub struct CoCreatorResponse {
-    /// True if the user submitted a message this frame.
-    pub submitted: bool,
-    /// The submitted text, if any.
+    pub _submitted: bool,
     pub submitted_text: Option<String>,
     /// True if the user clicked the undo button this frame.
     pub undo_clicked: bool,

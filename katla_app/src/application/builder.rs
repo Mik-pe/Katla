@@ -27,22 +27,27 @@ use std::ffi::CString;
 use std::time::Instant;
 
 use katla_ecs::{System, SystemExecutionOrder, World};
-use katla_gfx::renderer::VulkanRenderer;
 use katla_ui::{FontId, ForkAwesome};
 use winit::dpi::LogicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::ModifiersState;
 use winit::window::Window;
 
+use katla_gfx::GpuRenderer;
+
+use crate::Renderer;
+
 use super::camera::Camera;
 
+#[cfg(feature = "vulkan")]
+use crate::util::{GLTFModel, GltfCache};
 use crate::{
     application::{Application, ApplicationInfo},
     error::AppResult,
     input::InputMapper,
     preferences::Preferences,
     resources::ResourceManager,
-    util::{GLTFModel, GltfCache, Timer},
+    util::Timer,
 };
 
 /// Hook types stored on Application.
@@ -58,6 +63,7 @@ pub struct ApplicationBuilder {
     app_name: String,
     validation_mode: katla_gfx::ValidationMode,
     max_frames: Option<usize>,
+    #[cfg(feature = "vulkan")]
     check_black_frames: bool,
     world: World,
     scene_path: Option<String>,
@@ -103,8 +109,14 @@ impl ApplicationBuilder {
         self
     }
 
+    #[cfg(feature = "vulkan")]
     pub fn check_black_frames(mut self, enabled: bool) -> Self {
         self.check_black_frames = enabled;
+        self
+    }
+
+    #[cfg(not(feature = "vulkan"))]
+    pub fn check_black_frames(self, _enabled: bool) -> Self {
         self
     }
 
@@ -186,9 +198,9 @@ impl ApplicationBuilder {
         window: &Window,
         info: &ApplicationInfo,
         _resources: &ResourceManager,
-    ) -> VulkanRenderer {
+    ) -> Renderer {
         let engine_name = CString::new("Katla Engine").unwrap();
-        let mut renderer = VulkanRenderer::init(
+        let mut renderer = Renderer::init(
             event_loop,
             window,
             info.validation_mode,
@@ -213,8 +225,9 @@ impl ApplicationBuilder {
     /// 3. Tonemap pass samples HDR and outputs to viewport texture
     /// 4. Compositing pass composites viewport textures to backbuffer
     /// 5. UI pass samples from backbuffer (now gets composited result)
+    #[cfg(feature = "vulkan")]
     fn build_frame_graph(
-        renderer: &mut VulkanRenderer,
+        renderer: &mut Renderer,
         resources: &ResourceManager,
     ) -> AppResult<katla_gfx::FrameGraph> {
         use katla_gfx::render_graph::UIPass;
@@ -591,6 +604,7 @@ impl ApplicationBuilder {
             name: self.app_name,
             validation_mode: self.validation_mode,
             max_frames: self.max_frames,
+            #[cfg(feature = "vulkan")]
             check_black_frames: self.check_black_frames,
             scene_path: self.scene_path,
         };
@@ -688,6 +702,7 @@ impl ApplicationBuilder {
         }
 
         // Create GLTF cache with loader that panics on error (same as old From<PathBuf> impl)
+        #[cfg(feature = "vulkan")]
         let gltf_loader = Box::new(|path: &std::path::PathBuf| {
             GLTFModel::new(path)
                 .unwrap_or_else(|e| panic!("Failed to load GLTF model from {:?}: {}", path, e))
@@ -730,8 +745,10 @@ impl ApplicationBuilder {
         );
 
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
+        #[cfg(feature = "vulkan")]
         let mut frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
 
+        #[cfg(feature = "vulkan")]
         let pass_ids = super::PassIds {
             depth_prepass: frame_graph
                 .pass_id("depth_prepass")
@@ -760,9 +777,11 @@ impl ApplicationBuilder {
         };
 
         // Initialize transient textures so we can get shadow atlas ImageView
+        #[cfg(feature = "vulkan")]
         frame_graph
             .initialize_transient_textures(&renderer)
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+        #[cfg(feature = "vulkan")]
         for frame_idx in 0..2 {
             if let Some(view) =
                 frame_graph.transient_texture_view_for_frame("shadow_atlas", frame_idx)
@@ -770,10 +789,15 @@ impl ApplicationBuilder {
                 renderer.set_shadow_atlas_view(frame_idx, view);
             }
         }
+        #[cfg(feature = "vulkan")]
         log::info!("Shadow atlas views set for all frames");
 
         // Initialize UI renderer with font atlas bindless slot
+        #[cfg(all(feature = "editor", feature = "vulkan"))]
         let mut ui_renderer = crate::ui::UIRenderer::new();
+        #[cfg(all(feature = "editor", not(feature = "vulkan")))]
+        let mut ui_renderer = crate::ui::UIRenderer::new();
+        #[cfg(all(feature = "editor", feature = "vulkan"))]
         match renderer.ui_renderer.font_atlas_bindless_slot() {
             Some(bindless_slot) => {
                 ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
@@ -783,6 +807,16 @@ impl ApplicationBuilder {
                 log::error!("Font atlas bindless slot is None! Text will render as solid colors.");
             }
         }
+        #[cfg(all(feature = "editor", feature = "metal", not(feature = "vulkan")))]
+        if let Some(font_handle) = renderer.ui_font_atlas_handle() {
+            if let Some(bindless_slot) = renderer.get_bindless_slot(font_handle) {
+                ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
+                log::info!(
+                    "Font atlas bindless slot initialized (Metal): {}",
+                    bindless_slot
+                );
+            }
+        }
 
         world.insert_resource(crate::input::InputState::new());
         world.insert_resource(katla_script::ScriptsActive(false));
@@ -790,9 +824,12 @@ impl ApplicationBuilder {
         let app = Application {
             window,
             renderer,
+            #[cfg(feature = "vulkan")]
             frame_graph,
+            #[cfg(feature = "vulkan")]
             pass_ids,
             camera,
+            #[cfg(feature = "vulkan")]
             gltf_cache: GltfCache::new(gltf_loader),
             timer: Timer::new(100),
             info,
@@ -815,13 +852,16 @@ impl ApplicationBuilder {
             default_material_handle: katla_gfx::MaterialHandle::NONE,
             cleaned_up: false,
             quit_requested: false,
+            #[cfg(feature = "vulkan")]
             particle_system: crate::systems::ParticleSystem::new(),
+            #[cfg(feature = "vulkan")]
             gpu_animation_system: None,
             minimized: false,
             needs_swapchain_recreate: false,
             gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(
                 katla_gfx::MaterialHandle::NONE,
             ),
+            #[cfg(feature = "vulkan")]
             point_lights_buffer: Vec::new(),
             on_init: self.on_init,
             on_update: self.on_update,
