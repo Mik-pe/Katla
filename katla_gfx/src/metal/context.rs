@@ -100,6 +100,57 @@ pub(crate) fn default_pbr_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
     vertex_descriptor
 }
 
+/// Build the UI vertex descriptor matching `VertexUI`.
+///
+/// Layout (24 bytes stride, interleaved in buffer 10):
+/// - location 0: position Float2 @ offset 0
+/// - location 1: uv Float2 @ offset 8
+/// - location 2: color UByte4Norm @ offset 16
+/// - location 3: texture_index UInt @ offset 20
+pub(crate) fn ui_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
+    let vertex_descriptor = MTLVertexDescriptor::new();
+
+    let layouts = vertex_descriptor.layouts();
+    let layout = unsafe { layouts.objectAtIndexedSubscript(10) };
+    unsafe {
+        layout.setStride(24);
+        layout.setStepFunction(MTLVertexStepFunction::PerVertex);
+        layout.setStepRate(1);
+    }
+
+    let attrs = vertex_descriptor.attributes();
+
+    let pos_attr = unsafe { attrs.objectAtIndexedSubscript(0) };
+    pos_attr.setFormat(MTLVertexFormat::Float2);
+    unsafe {
+        pos_attr.setOffset(0);
+        pos_attr.setBufferIndex(10);
+    }
+
+    let uv_attr = unsafe { attrs.objectAtIndexedSubscript(1) };
+    uv_attr.setFormat(MTLVertexFormat::Float2);
+    unsafe {
+        uv_attr.setOffset(8);
+        uv_attr.setBufferIndex(10);
+    }
+
+    let color_attr = unsafe { attrs.objectAtIndexedSubscript(2) };
+    color_attr.setFormat(MTLVertexFormat::UChar4Normalized);
+    unsafe {
+        color_attr.setOffset(16);
+        color_attr.setBufferIndex(10);
+    }
+
+    let tex_attr = unsafe { attrs.objectAtIndexedSubscript(3) };
+    tex_attr.setFormat(MTLVertexFormat::UInt);
+    unsafe {
+        tex_attr.setOffset(20);
+        tex_attr.setBufferIndex(10);
+    }
+
+    vertex_descriptor
+}
+
 pub(crate) struct MetalFeatures {
     pub(crate) max_bindless_textures: u32,
 }
@@ -280,6 +331,7 @@ impl MetalContext {
             cull_mode,
             front_face,
             None,
+            false,
         )
     }
 
@@ -294,6 +346,7 @@ impl MetalContext {
         cull_mode: objc2_metal::MTLCullMode,
         front_face: objc2_metal::MTLWinding,
         vertex_descriptor: Option<&MTLVertexDescriptor>,
+        alpha_blended: bool,
     ) -> Result<MetalGraphicsPipeline, RendererError> {
         let descriptor = MTLRenderPipelineDescriptor::new();
         descriptor.setVertexFunction(Some(vertex_function));
@@ -304,6 +357,16 @@ impl MetalContext {
         for (i, &format) in color_formats.iter().enumerate() {
             let attachment = unsafe { color_attachments.objectAtIndexedSubscript(i as usize) };
             attachment.setPixelFormat(format);
+
+            if alpha_blended {
+                attachment.setBlendingEnabled(true);
+                attachment.setSourceRGBBlendFactor(objc2_metal::MTLBlendFactor::SourceAlpha);
+                attachment.setDestinationRGBBlendFactor(objc2_metal::MTLBlendFactor::OneMinusSourceAlpha);
+                attachment.setRgbBlendOperation(objc2_metal::MTLBlendOperation::Add);
+                attachment.setSourceAlphaBlendFactor(objc2_metal::MTLBlendFactor::One);
+                attachment.setDestinationAlphaBlendFactor(objc2_metal::MTLBlendFactor::Zero);
+                attachment.setAlphaBlendOperation(objc2_metal::MTLBlendOperation::Add);
+            }
         }
 
         if let Some(depth_fmt) = depth_format {
