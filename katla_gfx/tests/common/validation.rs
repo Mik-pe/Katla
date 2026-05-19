@@ -1,3 +1,4 @@
+#![cfg(feature = "vulkan")]
 //! Validation error detection utilities for Vulkan tests.
 //!
 //! This module provides utilities to verify that Vulkan validation layers
