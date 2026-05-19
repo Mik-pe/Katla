@@ -289,6 +289,7 @@ impl EditorUI {
     ///
     /// This stores the bindless texture index that the UI will use to sample from the transient texture.
     /// We encode it as a special TextureId with a high bit set to distinguish from regular textures.
+    #[cfg(feature = "vulkan")]
     pub fn set_viewport_bindless_index(&mut self, bindless_index: u32) {
         // Encode bindless index in TextureId with high bit set (bit 63)
         // This distinguishes it from regular texture handles
@@ -407,10 +408,12 @@ impl EditorUI {
                 self.selected_particle_emitter = Some(entity_id);
             }
             ParticleInspectorAction::ToggleEmitter => {
+                #[cfg(feature = "vulkan")]
                 self.pending_actions
                     .push(EditorAction::ToggleParticleEmitter);
             }
             ParticleInspectorAction::ResetSystem => {
+                #[cfg(feature = "vulkan")]
                 self.pending_actions.push(EditorAction::ResetParticleSystem);
             }
             ParticleInspectorAction::Close => {

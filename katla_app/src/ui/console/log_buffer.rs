@@ -6,7 +6,7 @@ use log::{Level, LevelFilter, Log, Metadata, Record};
 const DEFAULT_CAPACITY: usize = 16384;
 
 pub(crate) struct LogEntry {
-    pub timestamp: std::time::Instant,
+    pub _timestamp: std::time::Instant,
     pub level: Level,
     pub message: String,
     pub target: String,
@@ -53,10 +53,6 @@ impl LogBuffer {
     pub fn clear(&mut self) {
         self.entries.clear();
     }
-
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
 }
 
 pub(crate) struct ConsoleLogger {
@@ -78,7 +74,7 @@ impl Log for ConsoleLogger {
         self.secondary.log(record);
 
         let entry = LogEntry {
-            timestamp: std::time::Instant::now(),
+            _timestamp: std::time::Instant::now(),
             level: record.level(),
             message: record.args().to_string(),
             target: record.target().to_string(),

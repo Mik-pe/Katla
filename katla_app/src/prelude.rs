@@ -14,6 +14,7 @@ pub use crate::components::camera::{
     OrbitCameraControllerComponent, PerspectiveComponent,
 };
 pub use crate::components::lighting::{DirectionalLight, PointLight};
+#[cfg(feature = "vulkan")]
 pub use crate::components::particle::ParticleEmitterComponent;
 pub use crate::components::physics::{
     DragComponent, ForceComponent, MassComponent, VelocityComponent,
@@ -24,6 +25,7 @@ pub use crate::components::transform::{TransformComponent, TransformDirty, World
 
 // Systems
 pub use crate::systems::camera::{FlyCameraLookSystem, OrbitCameraSystem};
+#[cfg(feature = "vulkan")]
 pub use crate::systems::particle_system::ParticleSystem;
 pub use crate::systems::physics::{PhysicsSystem, VelocitySystem};
 pub use crate::systems::transform::{TransformHierarchySystem, TransformOptimization};

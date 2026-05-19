@@ -1,18 +1,28 @@
+#[cfg(feature = "vulkan")]
 use std::collections::HashMap;
+#[cfg(feature = "vulkan")]
 use std::hash::{Hash, Hasher};
 
+#[cfg(feature = "vulkan")]
 use log::{debug, warn};
 
+#[cfg(feature = "vulkan")]
 use katla_ecs::EntityId;
+#[cfg(feature = "vulkan")]
 use katla_ecs::World;
+#[cfg(feature = "vulkan")]
 use katla_gfx::{PoseComputeBuffers, PoseComputePipeline, RendererError};
 
+#[cfg(feature = "vulkan")]
 use crate::animation::components::{AnimatedModel, AnimationPlayer};
+#[cfg(feature = "vulkan")]
 use crate::animation::gpu_clip_loader::{
     GpuAnimData, build_skeleton_params, prepare_gpu_anim_data,
 };
+#[cfg(feature = "vulkan")]
 use crate::animation::skin::{Skeleton, Skin};
 
+#[cfg(feature = "vulkan")]
 struct ClipLookup {
     clip_name_to_index: HashMap<String, u32>,
     joint_offset: u32,
@@ -20,6 +30,7 @@ struct ClipLookup {
 }
 
 /// Per-entity GPU animation info needed for buffer copies.
+#[cfg(feature = "vulkan")]
 pub(crate) struct GpuAnimEntityInfo {
     pub joint_offset: u32,
     pub joint_count: u32,
@@ -30,6 +41,7 @@ pub(crate) struct GpuAnimEntityInfo {
 /// Handles querying the ECS world for animated entities, preparing animation
 /// data, and updating per-frame parameters. Does NOT own GPU resources —
 /// the pipeline and buffers live on the VulkanRenderer.
+#[cfg(feature = "vulkan")]
 pub(crate) struct GpuAnimationSystem {
     entity_clip_map: HashMap<EntityId, ClipLookup>,
     /// Entities in the order they were registered by prepare().
@@ -46,6 +58,7 @@ pub(crate) struct GpuAnimationSystem {
     max_joints: usize,
 }
 
+#[cfg(feature = "vulkan")]
 impl GpuAnimationSystem {
     pub fn new() -> Self {
         Self {

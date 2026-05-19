@@ -4,6 +4,7 @@ use winit::keyboard::KeyCode;
 
 use crate::application::Application;
 use crate::gizmo::*;
+use katla_gfx::GpuRenderer;
 use katla_math::Vec2;
 
 #[cfg(feature = "editor")]
@@ -18,6 +19,7 @@ impl Application {
         let ring_mesh = self.renderer.create_torus_mesh(0.5, 0.02, 48, 24);
 
         let unlit_shader_path = self.resources.shader_path("unlit.wgsl");
+        #[cfg(feature = "vulkan")]
         let material = self
             .renderer
             .compile_material(
@@ -29,6 +31,11 @@ impl Application {
                     ..Default::default()
                 },
             )
+            .expect("Failed to create gizmo unlit material");
+        #[cfg(not(feature = "vulkan"))]
+        let material = self
+            .renderer
+            .compile_material(&unlit_shader_path.to_string_lossy(), "pbr")
             .expect("Failed to create gizmo unlit material");
 
         self.gpu_resource_tracker.set_protected_material(material);

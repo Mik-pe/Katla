@@ -1,7 +1,8 @@
 use log::{error, info, warn};
 
-use crate::application::Application;
+use katla_gfx::GpuRenderer;
 
+use crate::application::Application;
 impl Application {
     pub fn init(&mut self) {
         info!("Application::init() called");
@@ -10,6 +11,31 @@ impl Application {
         self.world
             .insert_resource(crate::resources::AmbientLight::default());
 
+        #[cfg(feature = "vulkan")]
+        self.init_vulkan();
+
+        #[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
+        self.init_metal();
+
+        // Load scene from disk
+        let scene_path_str = self
+            .info
+            .scene_path
+            .clone()
+            .unwrap_or_else(|| crate::scene::DEFAULT_SCENE_PATH.to_string());
+        let scene_path = std::path::Path::new(&scene_path_str);
+        match crate::scene::SceneManager::load_from_file(self, scene_path) {
+            Ok(()) => info!("Loaded scene from {}", scene_path_str),
+            Err(e) => error!("Failed to load scene from {}: {}", scene_path_str, e),
+        }
+
+        info!("Application::init() completed");
+    }
+}
+
+#[cfg(feature = "vulkan")]
+impl Application {
+    fn init_vulkan(&mut self) {
         // Initialize default PBR material
         let shader_path = self.resources.shader_path("model_pbr.wgsl");
         info!(
@@ -383,20 +409,69 @@ impl Application {
                 )
                 .expect("Failed to set wallhack overlay texture indices");
         }
+    }
+}
 
-        // Load scene from disk
-        let scene_path_str = self
-            .info
-            .scene_path
-            .clone()
-            .unwrap_or_else(|| crate::scene::DEFAULT_SCENE_PATH.to_string());
-        let scene_path = std::path::Path::new(&scene_path_str);
-        match crate::scene::SceneManager::load_from_file(self, scene_path) {
-            Ok(()) => info!("Loaded scene from {}", scene_path_str),
-            Err(e) => error!("Failed to load scene from {}: {}", scene_path_str, e),
+#[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
+impl Application {
+    fn init_metal(&mut self) {
+        // Initialize default PBR material via GpuRenderer trait
+        let shader_path = self.resources.shader_path("model_pbr.wgsl");
+        let shader_str = shader_path.to_string_lossy();
+        self.default_material_handle = self
+            .renderer
+            .compile_material(&shader_str, "pbr")
+            .expect("Failed to create default PBR material");
+
+        self.gpu_resource_tracker
+            .set_protected_material(self.default_material_handle);
+
+        info!("Default PBR material loaded (Metal)");
+
+        // Initialize editor GPU resources
+        #[cfg(feature = "editor")]
+        {
+            self.init_gizmo_resources();
+            self.init_billboard_resources();
         }
 
-        info!("Application::init() completed");
+        // Initialize Forward+ light culling
+        let extent = self.renderer.swapchain_extent();
+        let light_culling_shader_path = self.resources.shader_path("light_culling.wgsl");
+        if let Err(e) = self.renderer.init_light_culling(
+            extent.width,
+            extent.height,
+            &light_culling_shader_path,
+        ) {
+            warn!("Failed to initialize Metal light culling: {}", e);
+        } else {
+            info!("Light culling initialized (Metal)");
+        }
+
+        // Initialize shadow map resources
+        if let Err(e) = self.renderer.init_shadow_resources(None) {
+            warn!("Failed to initialize Metal shadow resources: {}", e);
+        } else {
+            info!("Shadow resources initialized (Metal)");
+        }
+
+        // Initialize shadow depth pipeline
+        let shadow_shader_path = self.resources.shader_path("shadow/shadow_depth.wgsl");
+        if let Err(e) = self.renderer.init_shadow_pipeline(&shadow_shader_path) {
+            warn!("Failed to initialize Metal shadow pipeline: {}", e);
+        } else {
+            info!("Shadow pipeline initialized (Metal)");
+        }
+
+        // Initialize GPU animation compute pipeline
+        let anim_shader_path = self
+            .resources
+            .shader_path("compute/animation/pose_eval.wgsl");
+        if let Err(e) = self.renderer.init_animation_pipeline(&anim_shader_path) {
+            warn!("Failed to initialize Metal animation pipeline: {}", e);
+        } else {
+            info!("Animation pipeline initialized (Metal)");
+        }
     }
 }
 
@@ -410,6 +485,7 @@ impl Application {
         let mesh = self.renderer.create_plane_xy_mesh(1.0, 1.0, 1);
 
         let shader_path = self.resources.shader_path("billboard.wgsl");
+        #[cfg(feature = "vulkan")]
         let material = self
             .renderer
             .compile_material(
@@ -423,6 +499,11 @@ impl Application {
                     ..Default::default()
                 },
             )
+            .expect("Failed to create billboard material");
+        #[cfg(not(feature = "vulkan"))]
+        let material = self
+            .renderer
+            .compile_material(&shader_path.to_string_lossy(), "pbr")
             .expect("Failed to create billboard material");
 
         self.gpu_resource_tracker.set_protected_material(material);

@@ -11,13 +11,15 @@ use log::info;
 
 use katla_ecs::EntityId;
 use katla_ecs::scene_tool::{SceneCommand, SceneOp, SceneToolError, UndoGroup};
+use katla_gfx::GpuRenderer;
 use katla_gfx::renderer::UIDrawList;
 use katla_math::{Vec2, Vec3, Vec4};
 
+#[cfg(feature = "vulkan")]
+use crate::components::ParticleEmitterComponent;
 use crate::components::{
     Children, DirectionalLight, DragComponent, DrawableComponent, EditorHidden, MassComponent,
-    NameComponent, Parent, ParticleEmitterComponent, PerspectiveComponent, PointLight,
-    TransformComponent,
+    NameComponent, Parent, PerspectiveComponent, PointLight, TransformComponent,
 };
 
 use crate::ui::{
@@ -36,10 +38,15 @@ pub(crate) struct InspectorDragSnapshot {
     light_color: Option<[f32; 3]>,
     light_intensity: Option<f32>,
     light_range: Option<f32>,
+    #[cfg(feature = "vulkan")]
     emit_rate: Option<f32>,
+    #[cfg(feature = "vulkan")]
     velocity: Option<f32>,
+    #[cfg(feature = "vulkan")]
     lifetime: Option<f32>,
+    #[cfg(feature = "vulkan")]
     gravity: Option<f32>,
+    #[cfg(feature = "vulkan")]
     particle_scale: Option<f32>,
     mass: Option<f32>,
     drag_coefficient: Option<f32>,
@@ -121,6 +128,7 @@ fn apply_inspector_snapshot(
             light.range = range;
         }
     }
+    #[cfg(feature = "vulkan")]
     if let Some(emitter) = world.get_component_mut::<ParticleEmitterComponent>(entity) {
         if let Some(rate) = snapshot.emit_rate {
             emitter.config.emit_rate = rate;
@@ -197,6 +205,7 @@ fn snapshot_inspector_state(app: &Application, entity: EntityId) -> InspectorDra
             (None, None, None)
         };
 
+    #[cfg(feature = "vulkan")]
     let (emit_rate, velocity, lifetime, gravity, particle_scale) =
         if let Some(emitter) = app.world.get_component::<ParticleEmitterComponent>(entity) {
             (
@@ -243,10 +252,15 @@ fn snapshot_inspector_state(app: &Application, entity: EntityId) -> InspectorDra
         light_color,
         light_intensity,
         light_range,
+        #[cfg(feature = "vulkan")]
         emit_rate,
+        #[cfg(feature = "vulkan")]
         velocity,
+        #[cfg(feature = "vulkan")]
         lifetime,
+        #[cfg(feature = "vulkan")]
         gravity,
+        #[cfg(feature = "vulkan")]
         particle_scale,
         mass,
         drag_coefficient,
@@ -327,9 +341,17 @@ pub fn upload_font_atlas(app: &mut Application) {
     let data = app.ui_context.fonts().atlas_data().to_vec();
 
     if was_resized {
-        app.renderer.create_ui_font_atlas(width, height, &data);
+        let atlas_handle = app.renderer.create_ui_font_atlas(width, height, &data);
 
+        #[cfg(feature = "vulkan")]
         if let Some(bindless_slot) = app.renderer.ui_renderer.font_atlas_bindless_slot() {
+            app.editor
+                .ui_renderer
+                .set_font_atlas_bindless_slot(bindless_slot);
+        }
+
+        #[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
+        if let Some(bindless_slot) = app.renderer.get_bindless_slot(atlas_handle) {
             app.editor
                 .ui_renderer
                 .set_font_atlas_bindless_slot(bindless_slot);
@@ -390,6 +412,7 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
 
     let draw_list = {
         // Collect particle inspector data before rendering
+        #[cfg(feature = "vulkan")]
         collect_particle_inspector_data(app);
 
         app.editor
@@ -524,6 +547,7 @@ fn inspector_values_differ_from_ecs(
         }
     }
 
+    #[cfg(feature = "vulkan")]
     if let Some(emitter) = world.get_component::<ParticleEmitterComponent>(entity) {
         if (edit.emit_rate - emitter.config.emit_rate).abs() > 1e-4 {
             return true;
@@ -621,6 +645,7 @@ fn inspector_snapshot_differs_from_ecs(
             }
         }
     }
+    #[cfg(feature = "vulkan")]
     if let Some(emitter) = world.get_component::<ParticleEmitterComponent>(entity) {
         if let Some(rate) = snapshot.emit_rate {
             if (rate - emitter.config.emit_rate).abs() > 1e-4 {
@@ -688,6 +713,9 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         directional_color_picker: _,
     } = &app.editor.editor_ui.inspector_edit;
 
+    #[cfg(not(feature = "vulkan"))]
+    let _ = (emit_rate, velocity, lifetime, gravity, particle_scale);
+
     // Transform
     if let Some(transform) = app.world.get_component_mut::<TransformComponent>(entity_id) {
         let pos_vec = Vec3::new(pos[0], pos[1], pos[2]);
@@ -729,6 +757,7 @@ fn apply_inspector_slider_changes(app: &mut Application) {
     }
 
     // ParticleEmitter
+    #[cfg(feature = "vulkan")]
     if let Some(emitter) = app
         .world
         .get_component_mut::<ParticleEmitterComponent>(entity_id)
@@ -837,15 +866,22 @@ pub fn process_editor_actions(app: &mut Application) {
                     world_pos.z()
                 );
 
+                #[cfg(feature = "vulkan")]
                 let is_stl = path
                     .extension()
                     .is_some_and(|ext| ext.eq_ignore_ascii_case("stl"));
 
+                #[cfg(feature = "vulkan")]
                 let result = if is_stl {
                     app.spawn_stl_model(&path, [world_pos.x(), world_pos.y(), world_pos.z()])
                 } else {
                     app.spawn_gltf_model(&path, [world_pos.x(), world_pos.y(), world_pos.z()], None)
                 };
+                #[cfg(not(feature = "vulkan"))]
+                let result: Result<katla_ecs::EntityId, crate::error::AppError> =
+                    Err(crate::error::AppError::Other {
+                        message: "Model spawning not yet supported on this backend".to_string(),
+                    });
 
                 match result {
                     Ok(spawned_entity) => {
@@ -872,6 +908,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
 
                 // Clean up particle emitters before destroying entities
+                #[cfg(feature = "vulkan")]
                 for &id in &to_delete {
                     if let Some(emitter) =
                         app.world.get_component_mut::<ParticleEmitterComponent>(id)
@@ -904,10 +941,16 @@ pub fn process_editor_actions(app: &mut Application) {
                     .world
                     .get_component::<crate::components::Parent>(entity_id)
                     .map(|p| p.parent);
+                #[cfg(feature = "vulkan")]
                 let mut ctx = DuplicateContext {
                     world: &mut app.world,
                     gpu_resource_tracker: &mut app.gpu_resource_tracker,
                     particle_system: &mut app.renderer.particle_system,
+                };
+                #[cfg(not(feature = "vulkan"))]
+                let mut ctx = DuplicateContext {
+                    world: &mut app.world,
+                    gpu_resource_tracker: &mut app.gpu_resource_tracker,
                 };
                 if let Some(new_entity_id) = duplicate_entity(&mut ctx, entity_id) {
                     if let Some(parent_id) = source_parent {
@@ -958,6 +1001,7 @@ pub fn process_editor_actions(app: &mut Application) {
                     .collect();
 
                 // Clean up particle emitters before destroying entities
+                #[cfg(feature = "vulkan")]
                 for id in &to_remove {
                     if let Some(emitter) =
                         app.world.get_component_mut::<ParticleEmitterComponent>(*id)
@@ -1039,6 +1083,7 @@ pub fn process_editor_actions(app: &mut Application) {
             EditorAction::OpenPanel(panel) => {
                 app.editor.editor_ui.open_panel(panel);
             }
+            #[cfg(feature = "vulkan")]
             EditorAction::ToggleParticleEmitter => {
                 if let Some(entity_id) = app.editor.editor_ui.selected_particle_emitter
                     && let Some(emitter) = app
@@ -1057,6 +1102,7 @@ pub fn process_editor_actions(app: &mut Application) {
                     );
                 }
             }
+            #[cfg(feature = "vulkan")]
             EditorAction::ResetParticleSystem => {
                 if let Some(ps) = &mut app.renderer.particle_system {
                     use katla_gfx::particles::EmitterHandle;
@@ -1258,6 +1304,9 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
             }
             EditorAction::SetEmitterField { entity, field } => {
+                #[cfg(not(feature = "vulkan"))]
+                let _ = (entity, field);
+                #[cfg(feature = "vulkan")]
                 if let Some(emitter) = app
                     .world
                     .get_component_mut::<ParticleEmitterComponent>(entity)
@@ -1345,6 +1394,7 @@ pub fn process_editor_actions(app: &mut Application) {
 ///
 /// This queries the ECS for all particle emitter entities, builds a read-only
 /// view of the selected emitter's config, and gathers system-wide stats.
+#[cfg(feature = "vulkan")]
 fn collect_particle_inspector_data(app: &mut Application) {
     use crate::components::ParticleEmitterComponent;
     use crate::ui::{EmitterConfigView, ParticleInspectorData, ParticleStats};
@@ -1486,6 +1536,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                     intensity: pl.intensity,
                     range: pl.range,
                 });
+        #[cfg(feature = "vulkan")]
         let particle_emitter = app
             .world
             .get_component::<ParticleEmitterComponent>(entity_id)
@@ -1496,6 +1547,8 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 gravity: pe.config.gravity,
                 base_scale: pe.config.base_scale,
             });
+        #[cfg(not(feature = "vulkan"))]
+        let particle_emitter: Option<ParticleEmitterInfo> = None;
         let has_parent = app.world.get_component::<Parent>(entity_id).is_some();
         let has_children = app.world.get_component::<Children>(entity_id).is_some();
 
@@ -1701,6 +1754,7 @@ fn duplicate_offset() -> Vec3 {
 pub(crate) struct DuplicateContext<'a> {
     pub(crate) world: &'a mut katla_ecs::World,
     pub(crate) gpu_resource_tracker: &'a mut crate::gpu_resource_tracker::GpuResourceTracker,
+    #[cfg(feature = "vulkan")]
     pub(crate) particle_system: &'a mut Option<katla_gfx::particles::GlobalParticleSystem>,
 }
 
@@ -1764,6 +1818,7 @@ pub(crate) fn duplicate_entity(
     }
 
     // ParticleEmitterComponent: copy config, create new GPU emitter
+    #[cfg(feature = "vulkan")]
     if let Some(emitter) = ctx
         .world
         .get_component::<ParticleEmitterComponent>(entity_id)
@@ -2269,10 +2324,16 @@ mod tests {
             },
         );
 
+        #[cfg(feature = "vulkan")]
         let mut ctx = DuplicateContext {
             world: &mut world,
             gpu_resource_tracker: &mut tracker,
             particle_system: &mut None,
+        };
+        #[cfg(not(feature = "vulkan"))]
+        let mut ctx = DuplicateContext {
+            world: &mut world,
+            gpu_resource_tracker: &mut tracker,
         };
         let new_id = duplicate_entity(&mut ctx, source).unwrap();
 
@@ -2351,10 +2412,16 @@ mod tests {
 
         let source = world.spawn((TransformComponent::from_position(Vec3::new(5.0, 3.0, -2.0)),));
 
+        #[cfg(feature = "vulkan")]
         let mut ctx = DuplicateContext {
             world: &mut world,
             gpu_resource_tracker: &mut tracker,
             particle_system: &mut None,
+        };
+        #[cfg(not(feature = "vulkan"))]
+        let mut ctx = DuplicateContext {
+            world: &mut world,
+            gpu_resource_tracker: &mut tracker,
         };
         let new_id = duplicate_entity(&mut ctx, source).unwrap();
 
@@ -2385,10 +2452,16 @@ mod tests {
 
         let source = world.create_entity();
 
+        #[cfg(feature = "vulkan")]
         let mut ctx = DuplicateContext {
             world: &mut world,
             gpu_resource_tracker: &mut tracker,
             particle_system: &mut None,
+        };
+        #[cfg(not(feature = "vulkan"))]
+        let mut ctx = DuplicateContext {
+            world: &mut world,
+            gpu_resource_tracker: &mut tracker,
         };
 
         let new_id = duplicate_entity(&mut ctx, source);
@@ -2418,10 +2491,16 @@ mod tests {
 
         let source = world.spawn((TransformComponent::from_position(Vec3::new(0.0, 0.0, 0.0)),));
 
+        #[cfg(feature = "vulkan")]
         let mut ctx = DuplicateContext {
             world: &mut world,
             gpu_resource_tracker: &mut tracker,
             particle_system: &mut None,
+        };
+        #[cfg(not(feature = "vulkan"))]
+        let mut ctx = DuplicateContext {
+            world: &mut world,
+            gpu_resource_tracker: &mut tracker,
         };
         let new_id = duplicate_entity(&mut ctx, source).unwrap();
 
@@ -2436,6 +2515,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "vulkan")]
     #[test]
     fn test_reset_particle_system_editor_action() {
         use katla_gfx::particles::EmitterConfig;

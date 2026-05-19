@@ -4,9 +4,11 @@
 //! Non-editor stubs live in `no_editor_methods.rs`.
 
 use super::Application;
+use katla_gfx::GpuRenderer;
 use katla_math::Vec2;
 
 impl Application {
+    #[cfg(feature = "vulkan")]
     pub(crate) fn on_viewport_texture_recreated(&mut self, slot: u32) {
         self.editor.editor_ui.set_viewport_bindless_index(slot);
     }
@@ -90,42 +92,69 @@ impl Application {
     pub(crate) fn render_editor_frame(&mut self, dt: f32) {
         use super::editor;
 
-        let frame_idx = self.renderer.current_frame();
-        if let Some(base_ldr_index) = self.frame_graph.get_ldr_texture_base_index() {
-            let actual_ldr_index = base_ldr_index + frame_idx as u32;
-            self.editor
-                .editor_ui
-                .set_viewport_bindless_index(actual_ldr_index);
+        #[cfg(feature = "vulkan")]
+        {
+            let frame_idx = self.renderer.current_frame();
+            if let Some(base_ldr_index) = self.frame_graph.get_ldr_texture_base_index() {
+                let actual_ldr_index = base_ldr_index + frame_idx as u32;
+                self.editor
+                    .editor_ui
+                    .set_viewport_bindless_index(actual_ldr_index);
+            }
+
+            log::debug!("Generating UI draw list...");
+            let ui_draw_list = editor::generate_ui_draw_list(self, dt);
+            log::debug!("UI draw list generated");
+
+            // Save capture state for next frame's input routing.
+            // Must happen after generate_ui_draw_list (which sets the flags) and
+            // before process_editor_actions (which calls clear_frame_state).
+            self.editor.editor_ui.prev_want_capture_keyboard =
+                self.ui_context.input().want_capture_keyboard;
+            self.editor.editor_ui.prev_want_capture_mouse =
+                self.ui_context.input().want_capture_mouse;
+
+            // Upload font atlas AFTER draw list generation (which rasterizes new glyphs)
+            // and BEFORE render_frame (which samples from the GPU atlas).
+            // Doing it after render_frame would cause a one-frame lag where text
+            // samples from stale GPU data.
+            editor::upload_font_atlas(self);
+
+            // Render frame to GPU (includes UI if present)
+            log::debug!("Rendering frame...");
+            self.render_frame(ui_draw_list, dt, self.frame_count);
+            log::debug!("Frame rendered");
+
+            // GPU picking: queue readback if a pick was triggered this frame,
+            // or check the result from a previous frame's readback.
+            self.process_picking();
+
+            // Process editor actions after UI rendering
+            editor::process_editor_actions(self);
         }
 
-        log::debug!("Generating UI draw list...");
-        let ui_draw_list = editor::generate_ui_draw_list(self, dt);
-        log::debug!("UI draw list generated");
+        #[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
+        {
+            log::debug!("Generating UI draw list (Metal)...");
+            let ui_draw_list = editor::generate_ui_draw_list(self, dt);
+            log::debug!("UI draw list generated (Metal)");
 
-        // Save capture state for next frame's input routing.
-        // Must happen after generate_ui_draw_list (which sets the flags) and
-        // before process_editor_actions (which calls clear_frame_state).
-        self.editor.editor_ui.prev_want_capture_keyboard =
-            self.ui_context.input().want_capture_keyboard;
-        self.editor.editor_ui.prev_want_capture_mouse = self.ui_context.input().want_capture_mouse;
+            self.editor.editor_ui.prev_want_capture_keyboard =
+                self.ui_context.input().want_capture_keyboard;
+            self.editor.editor_ui.prev_want_capture_mouse =
+                self.ui_context.input().want_capture_mouse;
 
-        // Upload font atlas AFTER draw list generation (which rasterizes new glyphs)
-        // and BEFORE render_frame (which samples from the GPU atlas).
-        // Doing it after render_frame would cause a one-frame lag where text
-        // samples from stale GPU data.
-        editor::upload_font_atlas(self);
+            editor::upload_font_atlas(self);
 
-        // Render frame to GPU (includes UI if present)
-        log::debug!("Rendering frame...");
-        self.render_frame(ui_draw_list, dt, self.frame_count);
-        log::debug!("Frame rendered");
+            log::debug!("Rendering frame (Metal)...");
+            self.render_frame(ui_draw_list, dt, self.frame_count);
+            log::debug!("Frame rendered (Metal)");
 
-        // GPU picking: queue readback if a pick was triggered this frame,
-        // or check the result from a previous frame's readback.
-        self.process_picking();
+            // GPU picking not yet implemented for Metal
+            // self.process_picking();
 
-        // Process editor actions after UI rendering
-        editor::process_editor_actions(self);
+            editor::process_editor_actions(self);
+        }
     }
 
     pub(crate) fn poll_background_loader(&mut self) {
@@ -151,6 +180,7 @@ impl Application {
                     let texture_handle = self.renderer.create_texture(&desc, &pixels);
 
                     // Get the bindless slot for this texture
+                    #[cfg(feature = "vulkan")]
                     let bindless_slot = self
                         .renderer
                         .texture_manager
@@ -163,6 +193,9 @@ impl Application {
                             );
                             0 // Fallback to slot 0
                         });
+
+                    #[cfg(not(feature = "vulkan"))]
+                    let bindless_slot: u32 = 0;
 
                     // Register the bindless slot with the UI renderer
                     self.editor

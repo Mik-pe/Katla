@@ -7,6 +7,8 @@
 use std::any::TypeId;
 use std::collections::HashSet;
 
+use katla_gfx::GpuRenderer;
+
 use crate::components::DrawableComponent;
 use crate::gpu_resource_tracker::GpuResourceTracker;
 
@@ -22,7 +24,7 @@ use crate::gpu_resource_tracker::GpuResourceTracker;
 pub fn process_gpu_cleanup_events(
     world: &katla_ecs::World,
     tracker: &mut GpuResourceTracker,
-    renderer: &mut katla_gfx::renderer::VulkanRenderer,
+    renderer: &mut crate::Renderer,
 ) {
     let destroyed_entities: HashSet<_> = world
         .entity_events()
@@ -71,7 +73,7 @@ pub fn process_gpu_cleanup_events(
 pub fn release_entity_gpu_resources(
     world: &katla_ecs::World,
     tracker: &mut GpuResourceTracker,
-    renderer: &mut katla_gfx::renderer::VulkanRenderer,
+    renderer: &mut crate::Renderer,
     entity_id: katla_ecs::EntityId,
 ) {
     if let Some(drawable) = world.get_component::<DrawableComponent>(entity_id) {

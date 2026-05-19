@@ -36,6 +36,7 @@ pub struct LoadId(pub u64);
 
 /// Types of assets the loader can handle.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum LoadRequest {
     /// Load image as thumbnail (resized, for asset browser).
     ImageThumbnail {
@@ -57,6 +58,7 @@ pub enum LoadRequest {
 
 /// Results from background loading.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum LoadResult {
     /// Image thumbnail ready for GPU upload.
     ImageThumbnailLoaded {
@@ -113,6 +115,7 @@ pub struct BackgroundLoader {
     next_load_id: u64,
 }
 
+#[allow(dead_code)]
 impl BackgroundLoader {
     /// Create a new background loader with a rayon thread pool.
     pub fn new() -> Self {
