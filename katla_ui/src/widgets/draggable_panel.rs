@@ -186,8 +186,6 @@ impl DraggablePanel {
             screen_size.x() * 0.5 - panel_width * 0.5,
             screen_size.y() * 0.5 - panel_height * 0.5,
         );
-        let panel_pos = state.position.unwrap_or(default_pos);
-
         // Continue drag if already dragging (doesn't need z-index check)
         if state.dragging {
             if ui.mouse_down(mouse_button::LEFT) {

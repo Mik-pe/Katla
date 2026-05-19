@@ -19,7 +19,9 @@ pub mod z_index;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use katla_math::{Color, Rect2D, Vec2};
+#[cfg(test)]
+use katla_math::Color;
+use katla_math::{Rect2D, Vec2};
 
 use crate::draw_list::DrawList;
 use crate::input::UiInputState;

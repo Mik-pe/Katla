@@ -39,6 +39,7 @@ impl UnsafeWorldCell {
     /// Caller must ensure no mutable reference to the same storage exists
     /// at the same time.
     #[inline]
+    #[allow(dead_code)]
     pub unsafe fn storage(&self) -> &ComponentStorageManager {
         // SAFETY: Caller guarantees no concurrent mutable reference to storage.
         unsafe { &*(*self.0).storage.get() }
@@ -51,6 +52,7 @@ impl UnsafeWorldCell {
     /// component type's storage exists.
     #[allow(clippy::mut_from_ref)]
     #[inline]
+    #[allow(dead_code)]
     pub unsafe fn storage_mut<T: crate::components::Component + 'static>(
         &self,
     ) -> Option<&mut crate::storage::ComponentStorage<T>> {
@@ -62,6 +64,7 @@ impl UnsafeWorldCell {
     ///
     /// Entity data is never mutated during system execution, so this is safe.
     #[inline]
+    #[allow(dead_code)]
     pub fn entities(&self) -> &EntityAllocator {
         // SAFETY: entities is never mutated during system execution.
         // It is only modified through &mut World methods like create_entity/destroy_entity.
@@ -73,6 +76,7 @@ impl UnsafeWorldCell {
     /// # Safety
     /// Caller must ensure no mutable access to the world is happening concurrently.
     #[inline]
+    #[allow(dead_code)]
     pub unsafe fn world(&self) -> &World {
         // SAFETY: Caller guarantees no concurrent mutable access.
         unsafe { &*self.0 }
@@ -87,6 +91,7 @@ impl UnsafeWorldCell {
     /// Caller must ensure no aliasing violations when accessing through the
     /// returned cell.
     #[inline]
+    #[allow(dead_code)]
     pub unsafe fn storage_cell(&self) -> &UnsafeCell<ComponentStorageManager> {
         // SAFETY: Caller guarantees proper access discipline.
         unsafe { &(*self.0).storage }
