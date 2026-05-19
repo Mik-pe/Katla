@@ -176,6 +176,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
 }
 "#,
             &["cs_main"],
+            false,
         )
         .unwrap();
 

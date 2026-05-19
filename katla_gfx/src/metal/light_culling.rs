@@ -13,6 +13,7 @@ use objc2_metal::MTLCommandBuffer;
 use crate::backend::command::{GpuCommandBuffer, GpuComputeEncoder};
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
+use crate::metal::buffer::MetalBuffer;
 
 use super::context::MetalContext;
 use super::pipeline::MetalComputePipeline;
@@ -123,7 +124,8 @@ impl MetalLightCulling {
         let shader_rel = "lighting/light_cull.wgsl";
         let wgsl_source = find_and_read_shader(shader_rel)?;
 
-        let compiled = shader::compile_wgsl_to_metal(&context.device, &wgsl_source, &["cs_main"])?;
+        let compiled =
+            shader::compile_wgsl_to_metal(&context.device, &wgsl_source, &["cs_main"], false)?;
 
         let cs_function = compiled.module.entry_points.get("cs_main").ok_or_else(|| {
             RendererError::InvalidOperation(
@@ -133,13 +135,27 @@ impl MetalLightCulling {
 
         let pipeline = context.create_compute_pipeline(cs_function, [TILE_SIZE, TILE_SIZE, 1])?;
 
-        // Zero the light buffer initially
+        // Zero all buffers initially
         {
             let ptr = light_buffer.map();
             unsafe {
                 std::ptr::write_bytes(ptr, 0, light_buffer_size as usize);
             }
             light_buffer.unmap();
+        }
+        {
+            let ptr = tile_index_buffer.map();
+            unsafe {
+                std::ptr::write_bytes(ptr, 0, tile_index_size as usize);
+            }
+            tile_index_buffer.unmap();
+        }
+        {
+            let ptr = tile_count_buffer.map();
+            unsafe {
+                std::ptr::write_bytes(ptr, 0, tile_count_size as usize);
+            }
+            tile_count_buffer.unmap();
         }
 
         Ok(Self {
@@ -155,6 +171,18 @@ impl MetalLightCulling {
             light_count: 0,
             prev_light_count: 0,
         })
+    }
+
+    pub fn light_buffer(&self) -> &MetalBuffer {
+        &self.light_buffer
+    }
+
+    pub fn tile_index_buffer(&self) -> &MetalBuffer {
+        &self.tile_index_buffer
+    }
+
+    pub fn tile_count_buffer(&self) -> &MetalBuffer {
+        &self.tile_count_buffer
     }
 
     /// Upload point light data to the GPU.
@@ -288,6 +316,21 @@ impl MetalLightCulling {
 
         self.tile_index_buffer = context.create_buffer(tile_index_size, true)?;
         self.tile_count_buffer = context.create_buffer(tile_count_size, true)?;
+
+        {
+            let ptr = self.tile_index_buffer.map();
+            unsafe {
+                std::ptr::write_bytes(ptr, 0, tile_index_size as usize);
+            }
+            self.tile_index_buffer.unmap();
+        }
+        {
+            let ptr = self.tile_count_buffer.map();
+            unsafe {
+                std::ptr::write_bytes(ptr, 0, tile_count_size as usize);
+            }
+            self.tile_count_buffer.unmap();
+        }
 
         self.tiles_x = tiles_x;
         self.tiles_y = tiles_y;

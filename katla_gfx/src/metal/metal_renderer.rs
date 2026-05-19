@@ -180,6 +180,8 @@ pub struct MetalRenderer {
     hdr_color_view: Option<MetalTextureView>,
     depth_stencil_view: Option<MetalTextureView>,
     shared_sampler: Option<super::sampler::MetalSamplerState>,
+    shadow_cascade_buffer: Option<MetalBuffer>,
+    shadow_sampler: Option<super::sampler::MetalSamplerState>,
     buffer_sizes_buffer: Option<MetalBuffer>,
 }
 
@@ -254,6 +256,8 @@ impl MetalRenderer {
             hdr_color_view: None,
             depth_stencil_view: None,
             shared_sampler: None,
+            shadow_cascade_buffer: None,
+            shadow_sampler: None,
             buffer_sizes_buffer: None,
         };
 
@@ -278,6 +282,30 @@ impl MetalRenderer {
 
         // Create shared sampler for texture sampling
         renderer.shared_sampler = Some(renderer.context.create_sampler()?);
+
+        // Shadow cascade data buffer (ShadowFrameData for Set 4, binding 0)
+        let shadow_cascade_buf = renderer.context.create_buffer(512, true)?;
+        {
+            let ptr = shadow_cascade_buf.map();
+            unsafe {
+                std::ptr::write_bytes(ptr, 0, 512);
+            }
+            shadow_cascade_buf.unmap();
+        }
+        renderer.shadow_cascade_buffer = Some(shadow_cascade_buf);
+
+        // Shadow comparison sampler (Set 4, binding 2)
+        {
+            let desc = objc2_metal::MTLSamplerDescriptor::new();
+            desc.setMinFilter(objc2_metal::MTLSamplerMinMagFilter::Linear);
+            desc.setMagFilter(objc2_metal::MTLSamplerMinMagFilter::Linear);
+            desc.setMipFilter(objc2_metal::MTLSamplerMipFilter::NotMipmapped);
+            desc.setSAddressMode(objc2_metal::MTLSamplerAddressMode::ClampToEdge);
+            desc.setTAddressMode(objc2_metal::MTLSamplerAddressMode::ClampToEdge);
+            desc.setCompareFunction(objc2_metal::MTLCompareFunction::LessEqual);
+            let sampler = renderer.context.create_sampler_with_descriptor(&desc)?;
+            renderer.shadow_sampler = Some(sampler);
+        }
 
         // Create buffer for naga's _mslBufferSizes struct at [[buffer(8)]].
         // Contains packed u32 sizes for each storage buffer with runtime arrays.
@@ -465,7 +493,7 @@ impl MetalRenderer {
         let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
 
         let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"])?;
+            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
 
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation("Shadow vertex entry point not found".into())
@@ -482,7 +510,7 @@ impl MetalRenderer {
         let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
 
         let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"])?;
+            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
 
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation("Skinned shadow vertex entry point not found".into())
@@ -505,7 +533,7 @@ impl MetalRenderer {
         })?;
 
         let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"])?;
+            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
 
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation("Depth prepass vertex entry point not found".into())
@@ -528,7 +556,7 @@ impl MetalRenderer {
         })?;
 
         let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"])?;
+            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
 
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation(
@@ -554,7 +582,7 @@ impl MetalRenderer {
         })?;
 
         let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"])?;
+            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
 
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation(
@@ -583,7 +611,7 @@ impl MetalRenderer {
                 ))
             })?;
             let compiled =
-                shader::compile_wgsl_to_metal(&self.context.device, &wgsl, &["vs_main"])?;
+                shader::compile_wgsl_to_metal(&self.context.device, &wgsl, &["vs_main"], false)?;
             let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
                 RendererError::InvalidOperation("Stencil mark vertex entry point not found".into())
             })?;
@@ -601,7 +629,7 @@ impl MetalRenderer {
                 ))
             })?;
             let compiled =
-                shader::compile_wgsl_to_metal(&self.context.device, &wgsl, &["vs_main"])?;
+                shader::compile_wgsl_to_metal(&self.context.device, &wgsl, &["vs_main"], false)?;
             let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
                 RendererError::InvalidOperation(
                     "Skinned stencil mark vertex entry point not found".into(),
@@ -624,6 +652,7 @@ impl MetalRenderer {
                 &self.context.device,
                 &wgsl,
                 &["vs_main", "fs_main"],
+                false,
             )?;
             let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
                 RendererError::InvalidOperation("Outline draw vertex entry point not found".into())
@@ -650,6 +679,7 @@ impl MetalRenderer {
                 &self.context.device,
                 &wgsl,
                 &["vs_main", "fs_main"],
+                false,
             )?;
             let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
                 RendererError::InvalidOperation(
@@ -877,8 +907,14 @@ impl GpuRenderer for MetalRenderer {
     fn set_frame_uniforms(&mut self, mut uniforms: FrameUniforms) {
         // Metal uses Y-up NDC while the projection matrix is built for Vulkan's Y-down NDC.
         // Negate column 1 (Y column) of the projection matrix to correct the flip.
-        for i in [1, 5, 9, 13] {
+        // Column-major flat array: column 1 is at indices [4, 5, 6, 7].
+        for i in [4, 5, 6, 7] {
             uniforms.proj_matrix[i] = -uniforms.proj_matrix[i];
+        }
+        // inv_view_proj: new_P = diag(1,-1,1,1)*old_P, so new_inv = old_inv * diag(1,-1,1,1)
+        // which negates column 1 of the inverse.
+        for i in [4, 5, 6, 7] {
+            uniforms.inv_view_proj_matrix[i] = -uniforms.inv_view_proj_matrix[i];
         }
         self.frame_uniforms = uniforms;
     }
@@ -1038,6 +1074,38 @@ impl GpuRenderer for MetalRenderer {
             encoder.bind_storage_buffer(buf_sizes, 0, 8, stages);
         }
 
+        // Bind light culling buffers (Set 3: point_lights, tile_indices, tile_counts)
+        if let Some(ref lc) = self.light_culling {
+            let stages = ShaderStages::FRAGMENT;
+            encoder.bind_storage_buffer(lc.light_buffer(), 0, 3, stages);
+            encoder.bind_storage_buffer(lc.tile_index_buffer(), 0, 4, stages);
+            encoder.bind_storage_buffer(lc.tile_count_buffer(), 0, 5, stages);
+        }
+
+        // Bind shadow cascade data at buffer 7 (Set 4, binding 0)
+        if let Some(ref shadow_buf) = self.shadow_cascade_buffer {
+            let stages = ShaderStages::FRAGMENT;
+            encoder.bind_storage_buffer(shadow_buf, 0, 7, stages);
+        }
+
+        // Bind shadow atlas texture at texture 1 (Set 4, binding 1)
+        if let Some(ref shadow_view) = self.shadow.shadow_map_view() {
+            unsafe {
+                encoder
+                    .inner
+                    .setFragmentTexture_atIndex(Some(&shadow_view.inner), 1);
+            }
+        }
+
+        // Bind shadow comparison sampler at sampler 1 (Set 4, binding 2)
+        if let Some(ref sampler) = self.shadow_sampler {
+            unsafe {
+                encoder
+                    .inner
+                    .setFragmentSamplerState_atIndex(Some(&sampler.inner), 1);
+            }
+        }
+
         if let Some(draw_list) = self.pending_draw_list.take() {
             for (i, draw) in draw_list.draws.iter().enumerate() {
                 let Some(mesh) = self.meshes.get(draw.mesh.index()) else {
@@ -1077,22 +1145,57 @@ impl GpuRenderer for MetalRenderer {
                         if let Some(ui_material) = self.materials.get(ui_mat_handle.index()) {
                             if let Some(ref ui_pipeline) = ui_material.pipeline {
                                 encoder.bind_graphics_pipeline(ui_pipeline);
-                                encoder.set_viewport(
-                                    0.0,
-                                    0.0,
-                                    ui_draw_list.screen_size[0],
-                                    ui_draw_list.screen_size[1],
-                                    0.0,
-                                    1.0,
+
+                                let drawable_w = self.size.width as f32;
+                                let drawable_h = self.size.height as f32;
+                                encoder.set_viewport(0.0, 0.0, drawable_w, drawable_h, 0.0, 1.0);
+
+                                // Bind UiUniforms at buffer 3: [screen_w, screen_h, ndc_y_flip(-1.0), 0]
+                                let uniform_data: [f32; 4] = [drawable_w, drawable_h, -1.0, 0.0];
+                                encoder.set_push_constants(
+                                    bytemuck::cast_slice(&uniform_data),
+                                    3,
+                                    ShaderStages::VERTEX_FRAGMENT,
                                 );
+
+                                // Bind bindless texture argument buffer at index 9
+                                if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
+                                    unsafe {
+                                        encoder.inner.setVertexBuffer_offset_atIndex(
+                                            Some(arg_buffer),
+                                            0,
+                                            9,
+                                        );
+                                        encoder.inner.setFragmentBuffer_offset_atIndex(
+                                            Some(arg_buffer),
+                                            0,
+                                            9,
+                                        );
+                                    }
+                                }
+
+                                // Bind shared sampler at index 0 for font sampling
+                                if let Some(ref sampler) = self.shared_sampler {
+                                    unsafe {
+                                        encoder.inner.setFragmentSamplerState_atIndex(
+                                            Some(&sampler.inner),
+                                            0,
+                                        );
+                                    }
+                                }
+
                                 if let Some(ref vb) = self.ui_renderer.vertex_buffer() {
-                                    encoder.bind_vertex_buffer(vb, 0, 0);
+                                    encoder.bind_vertex_buffer(vb, 0, 10);
                                 }
                                 if let Some(ref ib) = self.ui_renderer.index_buffer() {
                                     encoder.bind_index_buffer(ib, 0, IndexType::Uint32);
                                 }
-                                self.ui_renderer
-                                    .render_ui_commands(&mut encoder, &ui_draw_list);
+                                self.ui_renderer.render_ui_commands(
+                                    &mut encoder,
+                                    &ui_draw_list,
+                                    self.size.width,
+                                    self.size.height,
+                                );
                             }
                         }
                     }
@@ -1365,10 +1468,14 @@ impl GpuRenderer for MetalRenderer {
             _ => vec!["vs_main", "fs_main"],
         };
 
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &entry_points)?;
-
         let is_ui = vertex_type == "ui";
+
+        let compiled = shader::compile_wgsl_to_metal(
+            &self.context.device,
+            &wgsl_source,
+            &entry_points,
+            is_ui,
+        )?;
 
         let vertex_fn = compiled
             .module
@@ -1383,23 +1490,42 @@ impl GpuRenderer for MetalRenderer {
 
         let color_formats = &[MTLPixelFormat::BGRA8Unorm_sRGB];
         let depth_format = if is_ui {
-            None
+            Some(MTLPixelFormat::Depth32Float)
         } else {
             Some(MTLPixelFormat::Depth32Float)
         };
 
-        let pipeline = self.context.create_graphics_pipeline(
-            vertex_fn,
-            fragment_fn
-                .as_ref()
-                .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-            color_formats,
-            depth_format,
-            !is_ui,
-            crate::pipeline::CompareOp::LessOrEqual,
-            objc2_metal::MTLCullMode::Back,
-            objc2_metal::MTLWinding::CounterClockwise,
-        )?;
+        let pipeline = if is_ui {
+            let vd = super::context::ui_vertex_descriptor();
+            self.context
+                .create_graphics_pipeline_with_vertex_descriptor(
+                    vertex_fn,
+                    fragment_fn
+                        .as_ref()
+                        .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
+                    color_formats,
+                    depth_format,
+                    false,
+                    crate::pipeline::CompareOp::Always,
+                    objc2_metal::MTLCullMode::None,
+                    objc2_metal::MTLWinding::CounterClockwise,
+                    Some(&vd),
+                    true,
+                )?
+        } else {
+            self.context.create_graphics_pipeline(
+                vertex_fn,
+                fragment_fn
+                    .as_ref()
+                    .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
+                color_formats,
+                depth_format,
+                true,
+                crate::pipeline::CompareOp::LessOrEqual,
+                objc2_metal::MTLCullMode::Back,
+                objc2_metal::MTLWinding::CounterClockwise,
+            )?
+        };
 
         let material = MetalMaterial {
             pipeline: Some(pipeline),
@@ -1534,7 +1660,40 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn upload_shadow_cascades(&mut self) {
-        // Metal shadow cascade upload is handled internally during shadow pass
+        let Some(ref shadow_buf) = self.shadow_cascade_buffer else {
+            return;
+        };
+        // ShadowFrameData layout (must match WGSL):
+        //   cascades[4]: each { view_proj: mat4x4f(64B), split_distance: f32, texel_size: f32, pad: vec2f } = 80B
+        //   light_direction: vec4f(16B)
+        //   shadow_bias: vec4f(16B)
+        let cascade_stride: usize = 80;
+        let ptr = shadow_buf.map();
+        unsafe {
+            std::ptr::write_bytes(ptr, 0, cascade_stride * 4 + 16 + 16);
+            for i in 0..self.shadow.cascade_count() as usize {
+                let vp = self.shadow.cascade_view_proj(i);
+                let sd = self.shadow.cascade_split_depth(i);
+                let base = ptr.add(i * cascade_stride);
+                std::ptr::copy_nonoverlapping(vp.as_ptr(), base as *mut f32, 16);
+                std::ptr::write(base.add(64) as *mut f32, sd);
+            }
+            let light_dir = self.frame_uniforms.light_direction;
+            std::ptr::copy_nonoverlapping(
+                light_dir.as_ptr(),
+                ptr.add(cascade_stride * 4) as *mut f32,
+                4,
+            );
+            // Set num_cascades in light_direction.w so sample_shadow returns early
+            *(ptr.add(cascade_stride * 4) as *mut f32).add(3) = self.shadow.cascade_count() as f32;
+            let bias: [f32; 4] = [0.005, 0.0, 0.0, 0.0];
+            std::ptr::copy_nonoverlapping(
+                bias.as_ptr(),
+                ptr.add(cascade_stride * 4 + 16) as *mut f32,
+                4,
+            );
+        }
+        shadow_buf.unmap();
     }
 
     fn depth_texture_base_index(&self) -> Option<u32> {

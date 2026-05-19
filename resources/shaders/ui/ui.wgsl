@@ -25,7 +25,10 @@ struct VertexOutput {
 // Screen size uniform buffer (set 0, binding 3)
 struct UiUniforms {
     screen_size: vec2f,
-    _padding: vec2f,  // WGSL requires 16-byte alignment for uniform buffers
+    // NDC Y direction: 1.0 for Vulkan (Y-down), -1.0 for Metal (Y-up).
+    // Negating clip_y flips the output for Metal's Y-up NDC.
+    ndc_y_flip: f32,
+    _padding: f32,
 }
 
 // Set 0: Static UI resources (bound once)
@@ -55,9 +58,11 @@ fn vs_main(in: UiVertex) -> VertexOutput {
 
     // Transform from screen coordinates to NDC
     // Screen: (0,0) = top-left, Y increases downward
-    // NDC: (-1,+1) = top-left, (+1,-1) = bottom-right
+    // Vulkan NDC: (-1,+1) = top-left, (+1,-1) = bottom-right (Y-down)
+    // Metal NDC: (-1,-1) = bottom-left, (+1,+1) = top-left (Y-up)
+    // ndc_y_flip negates Y for Metal's inverted NDC convention.
     let ndc_x = (in.position.x / uniforms.screen_size.x) * 2.0 - 1.0;
-    let ndc_y = (in.position.y / uniforms.screen_size.y) * 2.0 - 1.0;
+    let ndc_y = ((in.position.y / uniforms.screen_size.y) * 2.0 - 1.0) * uniforms.ndc_y_flip;
 
     out.clip_position = vec4f(ndc_x, ndc_y, 0.0, 1.0);
     out.uv = in.uv;

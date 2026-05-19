@@ -277,7 +277,7 @@ impl<'a> Frame<'a> {
     ) -> Result<(), RenderGraphError> {
         let sampler = self.renderer.bindless_manager.ui_sampler();
 
-        let uniform_data = [screen_size[0], screen_size[1], 0.0, 0.0];
+        let uniform_data = [screen_size[0], screen_size[1], 1.0, 0.0];
         let uniform_bytes = bytemuck::cast_slice(&uniform_data);
 
         let uniform_buffer = {
