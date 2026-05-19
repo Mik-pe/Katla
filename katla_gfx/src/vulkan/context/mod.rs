@@ -30,8 +30,9 @@ use crate::sync::{VkImage, VkImageView};
 
 pub(super) const LAYER_KHRONOS_VALIDATION: &str = concat!("VK_LAYER_KHRONOS_validation", "\0");
 
+pub use crate::error::ValidationMode;
 pub(super) use swapchain::RenderTexture;
-pub use validation::{ValidationLevel, ValidationMode};
+pub use validation::ValidationLevel;
 
 pub(super) struct QueueFamilyIndices {
     pub graphics_idx: Option<u32>,

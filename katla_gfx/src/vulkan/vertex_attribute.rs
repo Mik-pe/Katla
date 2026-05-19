@@ -3,60 +3,25 @@
 //! This module provides the foundation for separate attribute buffers,
 //! enabling depth-only passes, shadow mapping, and flexible rendering pipelines.
 
+pub use crate::vertex::AttributeType;
 use crate::vulkan::vertexbinding::VertexFormat;
 use ash::vk;
 
-/// Semantic attribute types for vertex data.
-///
-/// Each attribute has a default Vulkan location that follows
-/// the standard PBR layout convention.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum AttributeType {
-    /// Position attribute (vec3<f32>) - Location 0
-    Position,
-    /// Normal attribute (vec3<f32>) - Location 1
-    Normal,
-    /// Tangent attribute (vec4<f32>) - Location 2
-    Tangent,
-    /// Texture coordinate 0 (vec2<f32>) - Location 3
-    TexCoord0,
-    /// Texture coordinate 1 (vec2<f32>) - Location 4
-    TexCoord1,
-    /// Color attribute 0 (vec4<f32>) - Location 5
-    Color0,
-    /// Joint indices for skeletal animation (uvec4) - Location 6
-    /// Uses RGBA16u format (u16 x 4)
-    JointIndices,
-    /// Joint weights for skeletal animation (vec4<f32>) - Location 7
-    JointWeights,
-}
-
+/// Default Vulkan location for each attribute type.
 impl AttributeType {
-    /// Get the default Vulkan location for this attribute type.
-    ///
-    /// Follows the standard PBR vertex layout convention:
-    /// - Position: 0
-    /// - Normal: 1
-    /// - Tangent: 2
-    /// - TexCoord0: 3
-    /// - TexCoord1: 4
-    /// - Color0: 5
-    /// - JointIndices: 6
-    /// - JointWeights: 7
     pub fn default_location(&self) -> u32 {
         match self {
             AttributeType::Position => 0,
             AttributeType::Normal => 1,
             AttributeType::Tangent => 2,
             AttributeType::TexCoord0 => 3,
-            AttributeType::JointIndices => 4, // Match skinned shader location
-            AttributeType::JointWeights => 5, // Match skinned shader location
+            AttributeType::JointIndices => 4,
+            AttributeType::JointWeights => 5,
             AttributeType::TexCoord1 => 6,
             AttributeType::Color0 => 7,
         }
     }
 
-    /// Get the recommended VertexFormat for this attribute type.
     pub fn default_format(&self) -> VertexFormat {
         match self {
             AttributeType::Position => VertexFormat::RGB32f,

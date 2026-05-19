@@ -30,18 +30,7 @@ pub const MAX_LIGHTS_PER_TILE: u32 = 128;
 /// GPU representation of a point light (32 bytes).
 ///
 /// Must match WGSL `PointLightGPU` exactly.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Pod, Zeroable)]
-pub struct PointLightGPU {
-    /// World-space position (x, y, z)
-    pub position: [f32; 3],
-    /// Packed: range (used as radius for culling)
-    pub range: f32,
-    /// RGB color (0-1)
-    pub color: [f32; 3],
-    /// Intensity multiplier
-    pub intensity: f32,
-}
+pub type PointLightGPU = crate::renderer::types::PointLightGPU;
 
 /// Frame data for the light culling compute shader.
 ///

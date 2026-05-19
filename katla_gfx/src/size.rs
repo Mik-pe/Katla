@@ -41,6 +41,7 @@ impl Default for Size2D {
     }
 }
 
+#[cfg(feature = "vulkan")]
 impl From<Size2D> for ash::vk::Extent2D {
     fn from(size: Size2D) -> Self {
         ash::vk::Extent2D {
@@ -50,6 +51,7 @@ impl From<Size2D> for ash::vk::Extent2D {
     }
 }
 
+#[cfg(feature = "vulkan")]
 impl From<ash::vk::Extent2D> for Size2D {
     fn from(extent: ash::vk::Extent2D) -> Self {
         Self {
@@ -59,7 +61,7 @@ impl From<ash::vk::Extent2D> for Size2D {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "vulkan"))]
 mod tests {
     use super::*;
 

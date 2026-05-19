@@ -12,4 +12,4 @@
 
 mod types;
 
-pub use types::{AttachmentInfo, BarrierKind, ClearValue, LoadOp, StoreOp};
+pub use types::{AttachmentInfo, BarrierKind, ClearValue, LoadOp, ResourceState, StoreOp};

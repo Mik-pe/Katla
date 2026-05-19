@@ -2,6 +2,7 @@
 
 use std::marker::PhantomData;
 
+pub use crate::render_pass::ResourceState;
 use crate::texture::ImageFormat;
 use ash::vk;
 
@@ -42,28 +43,6 @@ pub struct GraphResourceDesc {
     /// Fixed-size resources (e.g., shadow atlas at 4096x4096) should set this to false.
     /// Default is true for backwards compatibility.
     pub tracks_swapchain_size: bool,
-}
-
-/// Resource state for barrier tracking.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum ResourceState {
-    /// Undefined (don't care about contents).
-    #[default]
-    Undefined,
-    /// Color attachment output (render target).
-    ColorAttachment,
-    /// Depth-stencil read/write.
-    DepthStencilAttachment,
-    /// Shader read (sampled image or uniform buffer).
-    ShaderRead,
-    /// Shader write (storage image or storage buffer).
-    ShaderWrite,
-    /// Transfer source (copy from).
-    TransferSrc,
-    /// Transfer destination (copy to).
-    TransferDst,
-    /// Present source (swapchain image).
-    PresentSrc,
 }
 
 impl ResourceState {
