@@ -25,6 +25,7 @@ pub enum StoreOp {
     DontCare,
 }
 
+#[cfg(feature = "vulkan")]
 impl From<LoadOp> for ash::vk::AttachmentLoadOp {
     #[inline]
     fn from(op: LoadOp) -> Self {
@@ -36,6 +37,7 @@ impl From<LoadOp> for ash::vk::AttachmentLoadOp {
     }
 }
 
+#[cfg(feature = "vulkan")]
 impl From<StoreOp> for ash::vk::AttachmentStoreOp {
     #[inline]
     fn from(op: StoreOp) -> Self {
@@ -87,6 +89,7 @@ impl ClearValue {
     }
 }
 
+#[cfg(feature = "vulkan")]
 impl From<ClearValue> for ash::vk::ClearValue {
     #[inline]
     fn from(value: ClearValue) -> Self {
@@ -191,7 +194,7 @@ pub enum BarrierKind {
     AllGraphics,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "vulkan"))]
 mod tests {
     use super::*;
 
@@ -293,4 +296,29 @@ mod tests {
         let depth_load = AttachmentInfo::depth_load(ImageFormat::D32Sfloat);
         assert_eq!(depth_load.load_op, LoadOp::Load);
     }
+}
+
+/// Tracks the current usage state of a GPU resource.
+///
+/// Used by both the Vulkan render graph and Metal frame graph for
+/// resource state tracking and barrier generation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ResourceState {
+    /// Undefined (don't care about contents).
+    #[default]
+    Undefined,
+    /// Color attachment output (render target).
+    ColorAttachment,
+    /// Depth-stencil read/write.
+    DepthStencilAttachment,
+    /// Shader read (sampled image or uniform buffer).
+    ShaderRead,
+    /// Shader write (storage image or storage buffer).
+    ShaderWrite,
+    /// Transfer source (copy from).
+    TransferSrc,
+    /// Transfer destination (copy to).
+    TransferDst,
+    /// Present source (swapchain image).
+    PresentSrc,
 }

@@ -6,15 +6,17 @@ edition = "2024"
 autoexamples = false
 
 [features]
-default = []
+default = ["metal"]
 validation = []
+vulkan = ["dep:ash", "dep:ash-window", "dep:gpu-allocator"]
+metal = ["dep:objc2", "dep:objc2-metal", "dep:objc2-quartz-core", "dep:objc2-foundation", "dep:block2"]
 
 [dependencies]
 raw-window-handle = { workspace = true }
-ash = { workspace = true }
-ash-window = { workspace = true }
-gpu-allocator = { workspace = true }
-naga = { workspace = true }
+ash = { workspace = true, optional = true }
+ash-window = { workspace = true, optional = true }
+gpu-allocator = { workspace = true, optional = true }
+naga = { workspace = true, features = ["msl-out"] }
 bytemuck = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -22,6 +24,24 @@ log = { workspace = true }
 bitflags = { workspace = true }
 smallvec = "1"
 itertools = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-metal = { version = "0.3", features = [
+    "MTLDevice", "MTLCommandQueue", "MTLCommandBuffer",
+    "MTLCommandEncoder", "MTLRenderCommandEncoder", "MTLComputeCommandEncoder", "MTLBlitCommandEncoder",
+    "MTLTexture", "MTLBuffer", "MTLSampler", "MTLPipeline",
+    "MTLArgumentEncoder", "MTLFence", "MTLEvent", "MTLHeap",
+    "MTLBinaryArchive", "MTLDrawable",
+    "MTLRenderPipeline", "MTLComputePipeline", "MTLDepthStencil",
+    "MTLVertexDescriptor", "MTLRenderPass", "MTLComputePass", "MTLBlitPass",
+    "MTLLibrary", "MTLFunctionDescriptor", "MTLFunctionConstantValues",
+    "MTLAllocation", "MTLResource", "MTLPixelFormat", "MTLArgument",
+    "MTLDataType",
+], optional = true }
+objc2-quartz-core = { version = "0.3", features = ["CAMetalLayer"], optional = true }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSDictionary", "NSRange", "NSGeometry"], optional = true }
+block2 = { version = "0.6", optional = true }
 
 [dev-dependencies]
 env_logger = { workspace = true }

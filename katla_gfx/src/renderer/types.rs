@@ -740,3 +740,19 @@ mod tests {
         assert_ne!(list.draws[0].sort_key, list.draws[1].sort_key);
     }
 }
+
+/// GPU representation of a point light (32 bytes).
+///
+/// Must match WGSL `PointLightGPU` exactly.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PointLightGPU {
+    /// World-space position (x, y, z).
+    pub position: [f32; 3],
+    /// Range (used as radius for culling).
+    pub range: f32,
+    /// RGB color (0-1).
+    pub color: [f32; 3],
+    /// Intensity multiplier.
+    pub intensity: f32,
+}

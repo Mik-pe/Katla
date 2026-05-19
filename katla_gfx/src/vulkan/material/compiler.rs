@@ -80,6 +80,21 @@ impl Default for MaterialOptions {
     }
 }
 
+impl MaterialOptions {
+    pub fn from_vertex_type_str(s: &str) -> Self {
+        let vertex_type = match s {
+            "ui" => VertexType::Ui,
+            "simple" => VertexType::Simple,
+            "skinned" => VertexType::Skinned,
+            _ => VertexType::Pbr,
+        };
+        Self {
+            vertex_type,
+            ..Default::default()
+        }
+    }
+}
+
 /// Compiles material definitions into Vulkan pipelines.
 pub(crate) struct MaterialCompiler {
     pub(crate) shader_cache: Rc<RefCell<ShaderCache>>,

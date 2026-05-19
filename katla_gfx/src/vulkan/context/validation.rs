@@ -4,35 +4,7 @@ use ash::{Entry, ext::debug_utils::Instance as DebugInstance, vk};
 use log::debug;
 
 use super::LAYER_KHRONOS_VALIDATION;
-
-/// Validation mode controls the level of Vulkan validation enabled.
-///
-/// Each mode includes all features from previous modes plus additional checks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ValidationMode {
-    /// No validation layers enabled.
-    #[default]
-    Disabled,
-    /// Standard validation with synchronization checks.
-    /// Catches common API usage errors and sync hazards.
-    Enabled,
-    /// GPU-assisted validation in addition to standard validation.
-    /// Uses the GPU to detect additional issues like out-of-bounds descriptor access,
-    /// uninitialized descriptors, and more. Requires additional descriptor bindings.
-    GpuAssisted,
-}
-
-impl ValidationMode {
-    /// Returns true if any validation is enabled.
-    pub fn is_enabled(&self) -> bool {
-        matches!(self, Self::Enabled | Self::GpuAssisted)
-    }
-
-    /// Returns true if GPU-assisted validation is enabled.
-    pub fn is_gpu_assisted(&self) -> bool {
-        matches!(self, Self::GpuAssisted)
-    }
-}
+use crate::error::ValidationMode;
 
 /// Validation message severity level (internal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

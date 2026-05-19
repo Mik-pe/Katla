@@ -4,10 +4,27 @@
 //! - [`VertexAttributeFormat`] - Describes the format of a single vertex attribute
 //! - [`VertexLayout`] - Describes the layout of vertex attributes in a buffer
 //! - [`Vertex`] - Trait for vertex types that can be used in mesh creation
+//! - [`AttributeType`] - Semantic attribute types for SOA vertex data
 //! - Standard vertex structs (VertexPBR, VertexPBRSkinned, etc.)
 //!
 //! All vertex types use raw arrays (`[f32; N]`) instead of math types to avoid dependencies
 //! on `katla_math` and maintain compatibility with GPU memory layouts.
+
+/// Semantic attribute types for vertex data.
+///
+/// Each attribute has a default location that follows the standard PBR layout convention.
+/// Used for SOA (Structure of Arrays) vertex buffer layouts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AttributeType {
+    Position,
+    Normal,
+    Tangent,
+    TexCoord0,
+    TexCoord1,
+    Color0,
+    JointIndices,
+    JointWeights,
+}
 
 // Vertex Attribute Format
 
@@ -167,6 +184,7 @@ impl VertexLayout {
 
 // Vertex Layout Conversion Implementations
 
+#[cfg(feature = "vulkan")]
 impl From<VertexAttributeFormat> for crate::vulkan::vertexbinding::VertexFormat {
     fn from(format: VertexAttributeFormat) -> Self {
         use crate::vulkan::vertexbinding::VertexFormat;
@@ -185,6 +203,7 @@ impl From<VertexAttributeFormat> for crate::vulkan::vertexbinding::VertexFormat 
     }
 }
 
+#[cfg(feature = "vulkan")]
 impl From<&VertexLayout> for crate::vulkan::vertexbinding::VertexBinding {
     fn from(layout: &VertexLayout) -> Self {
         use crate::vulkan::vertexbinding::VertexFormat;
@@ -836,6 +855,7 @@ mod tests {
     // Vertex Layout Conversion Tests
     //=========================================================================
 
+    #[cfg(feature = "vulkan")]
     mod vertex_layout_conversion {
         use super::*;
         use crate::vulkan::vertexbinding::VertexFormat;
