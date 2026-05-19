@@ -6,7 +6,7 @@ use katla_app::input::{Action, InputState};
 use katla_app::systems::{
     OrbitCameraSystem, PhysicsSystem, TransformHierarchySystem, VelocitySystem,
 };
-use katla_ecs::{Component, SystemExecutionOrder};
+use katla_ecs::SystemExecutionOrder;
 use katla_script::{InputSnapshot, ScriptSystem};
 use log::info;
 

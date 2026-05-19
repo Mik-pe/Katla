@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 default-run = "katla"
 
+[features]
+vulkan = ["katla_app/vulkan"]
+metal = ["katla_app/metal"]
+
 [[bin]]
 name = "katla"
 path = "src/main.rs"
