@@ -1,3 +1,4 @@
+#![cfg(feature = "vulkan")]
 //! Integration tests for viewport pass rendering.
 //!
 //! Tests multi-viewport rendering with frame graph integration.

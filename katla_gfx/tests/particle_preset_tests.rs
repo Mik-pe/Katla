@@ -1,3 +1,4 @@
+#![cfg(feature = "vulkan")]
 //! Error case tests for particle preset system.
 //!
 //! These tests validate that the preset system handles errors correctly:

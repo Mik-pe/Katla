@@ -1,3 +1,4 @@
+#![cfg(feature = "vulkan")]
 //! Render graph integration tests.
 //!
 //! This test module verifies render graph error types and pass builder configuration.
