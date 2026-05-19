@@ -31,7 +31,7 @@ pub struct ScriptEngine {
 pub(crate) struct ScriptInstance {
     pub script_path: String,
     pub entity: EntityId,
-    pub env_key: RegistryKey,
+    pub _env_key: RegistryKey,
     pub hooks: ScriptHooks,
     pub generation: u32,
     pub(crate) error_count: u32,
@@ -464,7 +464,7 @@ impl ScriptEngine {
         let instance = ScriptInstance {
             script_path: script_path.to_string(),
             entity,
-            env_key,
+            _env_key: env_key,
             hooks,
             generation: handle.generation,
             error_count: 0,

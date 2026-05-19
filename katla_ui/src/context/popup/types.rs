@@ -1,6 +1,6 @@
 //! Popup configuration types.
 
-use katla_math::{Rect2D, Vec2};
+use katla_math::Rect2D;
 
 /// Popup positioning mode.
 #[derive(Debug, Clone, Copy)]
