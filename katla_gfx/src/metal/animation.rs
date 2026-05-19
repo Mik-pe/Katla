@@ -266,7 +266,8 @@ impl MetalAnimationSystem {
             ))
         })?;
 
-        let compiled = shader::compile_wgsl_to_metal(&context.device, &wgsl_source, &["cs_main"])?;
+        let compiled =
+            shader::compile_wgsl_to_metal(&context.device, &wgsl_source, &["cs_main"], false)?;
 
         let cs_fn = compiled.module.entry_points.get("cs_main").ok_or_else(|| {
             RendererError::InvalidOperation(

@@ -472,6 +472,21 @@ impl Application {
         } else {
             info!("Animation pipeline initialized (Metal)");
         }
+
+        // Compile UI shader and store the material handle for Metal UI rendering
+        let ui_shader_path = self.resources.shader_path("ui/ui.wgsl");
+        match self
+            .renderer
+            .compile_material(&ui_shader_path.to_string_lossy(), "ui")
+        {
+            Ok(ui_material) => {
+                self.renderer.set_ui_material(ui_material);
+                info!("UI material compiled and set (Metal)");
+            }
+            Err(e) => {
+                warn!("Failed to compile Metal UI material: {}", e);
+            }
+        }
     }
 }
 

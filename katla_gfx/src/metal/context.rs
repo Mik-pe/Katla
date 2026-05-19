@@ -302,6 +302,19 @@ impl MetalContext {
         Ok(MetalSamplerState { inner: sampler })
     }
 
+    pub(crate) fn create_sampler_with_descriptor(
+        &self,
+        desc: &objc2_metal::MTLSamplerDescriptor,
+    ) -> Result<MetalSamplerState, RendererError> {
+        let sampler = self
+            .device
+            .newSamplerStateWithDescriptor(desc)
+            .ok_or_else(|| {
+                RendererError::InvalidOperation("Failed to create Metal sampler".into())
+            })?;
+        Ok(MetalSamplerState { inner: sampler })
+    }
+
     pub(crate) fn create_command_buffer(&self) -> MetalCommandBuffer {
         let cmd_buffer = self
             .command_queue
@@ -361,7 +374,8 @@ impl MetalContext {
             if alpha_blended {
                 attachment.setBlendingEnabled(true);
                 attachment.setSourceRGBBlendFactor(objc2_metal::MTLBlendFactor::SourceAlpha);
-                attachment.setDestinationRGBBlendFactor(objc2_metal::MTLBlendFactor::OneMinusSourceAlpha);
+                attachment
+                    .setDestinationRGBBlendFactor(objc2_metal::MTLBlendFactor::OneMinusSourceAlpha);
                 attachment.setRgbBlendOperation(objc2_metal::MTLBlendOperation::Add);
                 attachment.setSourceAlphaBlendFactor(objc2_metal::MTLBlendFactor::One);
                 attachment.setDestinationAlphaBlendFactor(objc2_metal::MTLBlendFactor::Zero);
@@ -701,6 +715,7 @@ mod tests {
 }
 "#,
             &["vs_main", "fs_main"],
+            false,
         )
         .unwrap();
 
@@ -734,6 +749,7 @@ mod tests {
 fn cs_main(@builtin(global_invocation_id) gid: vec3u) {}
 "#,
             &["cs_main"],
+            false,
         )
         .unwrap();
 
@@ -824,6 +840,7 @@ struct VertexOutput {
 }
 "#,
             &["vs_main", "fs_main"],
+            false,
         )
         .unwrap();
 

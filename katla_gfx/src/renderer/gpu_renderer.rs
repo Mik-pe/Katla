@@ -281,6 +281,9 @@ pub trait GpuRenderer: Sized + 'static {
     // UI Rendering
     // ========================================================================
 
+    /// Set the UI material handle for backends that render UI directly (Metal).
+    fn set_ui_material(&mut self, _material: MaterialHandle) {}
+
     /// Queue a UI draw list for rendering in the next frame.
     fn render_ui_pass(&mut self, _draw_list: UIDrawList) {}
 

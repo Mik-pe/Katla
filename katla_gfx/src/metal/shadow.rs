@@ -75,6 +75,13 @@ impl MetalShadowSubsystem {
             .unwrap_or([0.0; 16])
     }
 
+    pub(crate) fn cascade_split_depth(&self, index: usize) -> f32 {
+        self.cascades
+            .get(index)
+            .map(|c| c.split_depth)
+            .unwrap_or(0.0)
+    }
+
     pub(crate) fn shadow_resolution(&self) -> u32 {
         self.shadow_resolution
     }

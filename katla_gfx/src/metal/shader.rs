@@ -35,6 +35,29 @@ pub(crate) fn katla_msl_options() -> msl::Options {
     options
 }
 
+/// MSL options for UI shaders.
+///
+/// UI shader binding layout:
+/// - Set 0, Binding 1: font_sampler → [[sampler(0)]]
+/// - Set 0, Binding 3: UiUniforms (screen_size) → [[buffer(3)]]
+/// - Set 1, Binding 0: Bindless texture array → [[buffer(9)]]
+/// - Set 1, Binding 1: Shared sampler → [[sampler(1)]]
+pub(crate) fn katla_msl_options_ui() -> msl::Options {
+    let mut options = msl::Options::default();
+    options.lang_version = (2, 0);
+    options.fake_missing_bindings = true;
+
+    let ui_bindings = create_ui_binding_map();
+    options
+        .per_entry_point_map
+        .insert("vs_main".to_string(), ui_bindings.clone());
+    options
+        .per_entry_point_map
+        .insert("fs_main".to_string(), ui_bindings);
+
+    options
+}
+
 fn create_graphics_binding_map() -> msl::EntryPointResources {
     let mut resources = msl::EntryPointResources::default();
 
@@ -176,6 +199,63 @@ fn create_graphics_binding_map() -> msl::EntryPointResources {
     resources
 }
 
+fn create_ui_binding_map() -> msl::EntryPointResources {
+    let mut resources = msl::EntryPointResources::default();
+
+    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
+        // Set 0, Binding 1: font sampler
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 1,
+            },
+            msl::BindTarget {
+                sampler: Some(msl::BindSamplerTarget::Resource(0)),
+                ..Default::default()
+            },
+        ),
+        // Set 0, Binding 3: UiUniforms (screen_size)
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 3,
+            },
+            msl::BindTarget {
+                buffer: Some(3),
+                ..Default::default()
+            },
+        ),
+        // Set 1, Binding 0: Bindless texture array (argument buffer)
+        (
+            naga::ResourceBinding {
+                group: 1,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(9),
+                ..Default::default()
+            },
+        ),
+        // Set 1, Binding 1: Shared sampler
+        (
+            naga::ResourceBinding {
+                group: 1,
+                binding: 1,
+            },
+            msl::BindTarget {
+                sampler: Some(msl::BindSamplerTarget::Resource(1)),
+                ..Default::default()
+            },
+        ),
+    ];
+
+    for (binding, target) in bindings {
+        resources.resources.insert(*binding, target.clone());
+    }
+
+    resources
+}
+
 pub(crate) struct MetalShaderModule {
     pub(crate) entry_points: HashMap<String, Retained<ProtocolObject<dyn MTLFunction>>>,
 }
@@ -188,6 +268,7 @@ pub(crate) fn compile_wgsl_to_metal(
     device: &ProtocolObject<dyn MTLDevice>,
     wgsl_source: &str,
     entry_points: &[&str],
+    is_ui: bool,
 ) -> Result<CompiledMetalShader, RendererError> {
     let module = wgsl::parse_str(wgsl_source)
         .map_err(|e| RendererError::InvalidOperation(format!("WGSL parse error: {:?}", e)))?;
@@ -197,21 +278,32 @@ pub(crate) fn compile_wgsl_to_metal(
         .validate(&module)
         .map_err(|e| RendererError::InvalidOperation(format!("Shader validation: {:?}", e)))?;
 
-    let msl_options = katla_msl_options();
+    let msl_options = if is_ui {
+        katla_msl_options_ui()
+    } else {
+        katla_msl_options()
+    };
     let pipeline_options = msl::PipelineOptions::default();
     let (msl_source, _translation_info) =
         msl::write_string(&module, &info, &msl_options, &pipeline_options)
             .map_err(|e| RendererError::InvalidOperation(format!("MSL generation: {:?}", e)))?;
 
-    log::debug!("Generated MSL ({} bytes)", msl_source.len());
+    log::debug!(
+        "Generated MSL for {} ({} bytes, is_ui={})",
+        entry_points.join(","),
+        msl_source.len(),
+        is_ui
+    );
 
-    if msl_source.len() > 10000 {
-        std::fs::write(
-            format!("/tmp/katla_msl_{}.txt", msl_source.len()),
-            &msl_source,
-        )
-        .ok();
-    }
+    std::fs::write(
+        format!(
+            "/tmp/katla_msl_{:?}_{}.metal",
+            entry_points.first().unwrap_or(&""),
+            msl_source.len()
+        ),
+        &msl_source,
+    )
+    .ok();
 
     let source = NSString::from_str(&msl_source);
     let compile_options = MTLCompileOptions::new();
@@ -263,7 +355,7 @@ mod tests {
     return vec4f(1.0, 0.0, 0.0, 1.0);
 }
 "#;
-        let result = compile_wgsl_to_metal(&device, wgsl, &["vs_main", "fs_main"]);
+        let result = compile_wgsl_to_metal(&device, wgsl, &["vs_main", "fs_main"], false);
         assert!(
             result.is_ok(),
             "Shader compilation failed: {:?}",
@@ -285,7 +377,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
     output[gid.x] = f32(gid.x);
 }
 "#;
-        let result = compile_wgsl_to_metal(&device, wgsl, &["cs_main"]);
+        let result = compile_wgsl_to_metal(&device, wgsl, &["cs_main"], false);
         assert!(
             result.is_ok(),
             "Compute shader compilation failed: {:?}",
@@ -299,7 +391,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
     fn test_shader_compilation_invalid_wgsl() {
         let device = headless_device();
         let wgsl = "this is not valid WGSL";
-        let result = compile_wgsl_to_metal(&device, wgsl, &["main"]);
+        let result = compile_wgsl_to_metal(&device, wgsl, &["main"], false);
         assert!(result.is_err());
     }
 
@@ -311,7 +403,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
 }
 "#;
-        let result = compile_wgsl_to_metal(&device, wgsl, &["nonexistent_entry"]);
+        let result = compile_wgsl_to_metal(&device, wgsl, &["nonexistent_entry"], false);
         assert!(result.is_err());
     }
 }
