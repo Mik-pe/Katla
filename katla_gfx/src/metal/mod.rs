@@ -1,0 +1,24 @@
+pub(crate) mod animation;
+pub(crate) mod argument_buffer;
+pub(crate) mod blit_encoder;
+pub(crate) mod buffer;
+pub(crate) mod command_buffer;
+pub(crate) mod compute_encoder;
+pub(crate) mod context;
+pub(crate) mod depth_prepass;
+pub(crate) mod format;
+pub(crate) mod light_culling;
+pub(crate) mod metal_renderer;
+pub(crate) mod outline;
+pub(crate) mod particle;
+pub(crate) mod pipeline;
+pub(crate) mod render_encoder;
+pub(crate) mod sampler;
+pub(crate) mod shader;
+pub(crate) mod shadow;
+pub(crate) mod surface;
+pub(crate) mod sync;
+pub(crate) mod texture;
+pub(crate) mod ui_renderer;
+
+pub(crate) use context::MetalBackend;
