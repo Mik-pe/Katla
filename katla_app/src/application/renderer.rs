@@ -5,9 +5,168 @@
 
 use super::Application;
 use crate::rendering::FrameContext;
-use katla_gfx::renderer::{FrameUniforms, UIDrawList};
+use katla_gfx::GpuRenderer;
+use katla_gfx::renderer::FrameUniforms;
+#[cfg(feature = "vulkan")]
+use katla_gfx::renderer::UIDrawList;
+#[cfg(feature = "vulkan")]
 use log::info;
 
+// Shared backend-agnostic helper methods used by both Vulkan and Metal paths.
+impl Application {
+    /// Collect drawable components from the ECS world and submit to FrameContext.
+    ///
+    /// This automatically allocates instance indices and builds the draw list.
+    /// Also populates entity_instance_map for GPU picking resolution.
+    pub(crate) fn collect_draws_with_context(
+        &mut self,
+        frame: &mut FrameContext,
+        frustum: &katla_math::Frustum,
+    ) {
+        use crate::components::{DrawableComponent, TransformComponent};
+
+        let entity_count = self.world.entity_count();
+        let mut drawable_count = 0;
+        let mut culled_count = 0;
+        #[cfg(feature = "editor")]
+        self.editor.draw_entity_map_entries.clear();
+
+        for (entity_id, drawable, transform) in self
+            .world
+            .query::<(&DrawableComponent, &TransformComponent)>()
+        {
+            let mesh_handle = drawable.mesh_handle;
+            if mesh_handle.is_none() {
+                continue;
+            }
+
+            let material_handle = drawable.material_handle;
+            if material_handle.is_none() {
+                continue;
+            }
+
+            if let Some(local_bounds) = drawable.bounds {
+                let world_mat = transform.transform.make_mat4();
+                let world_bounds = local_bounds.transform(&world_mat);
+                if !frustum.intersects_aabb(&world_bounds) {
+                    culled_count += 1;
+                    continue;
+                }
+            }
+
+            if drawable.skeleton_handle.is_some() {
+                // Skeleton matrices are computed on the GPU via the animation
+                // pose evaluation compute pass and copied to the per-entity
+                // SkeletonBuffer. No CPU upload needed.
+            }
+
+            let mut draw = frame
+                .draw(mesh_handle, material_handle)
+                .with_transform(transform.transform.make_mat4().to_array());
+
+            // Skeleton for skinned meshes
+            if drawable.skeleton_handle.is_some() {
+                draw = draw.with_skeleton(drawable.skeleton_handle);
+            }
+
+            if let Some(color) = drawable.color {
+                draw = draw.with_color(color.to_array());
+            }
+
+            draw = draw.with_pbr(drawable.metallic, drawable.roughness, drawable.ao);
+
+            if drawable.emission > 0.0 {
+                draw = draw.with_emission(drawable.emission);
+            }
+
+            draw.submit();
+
+            #[cfg(feature = "editor")]
+            self.editor
+                .draw_entity_map_entries
+                .push((frame.instance_count() - 1, entity_id));
+
+            drawable_count += 1;
+        }
+
+        if culled_count > 0 {
+            log::debug!(
+                "Submitted {} draw calls, culled {} off-screen ({} total entities)",
+                drawable_count,
+                culled_count,
+                entity_count
+            );
+        } else {
+            log::debug!(
+                "Submitted {} draw calls from {} entities",
+                drawable_count,
+                entity_count
+            );
+        }
+
+        #[cfg(feature = "editor")]
+        {
+            let entries = std::mem::take(&mut self.editor.draw_entity_map_entries);
+            self.build_entity_instance_map(entries);
+        }
+    }
+
+    /// Get the viewport size in pixels.
+    #[cfg(feature = "editor")]
+    pub(crate) fn viewport_size(&self) -> (u32, u32) {
+        self.editor.editor_ui.viewport_size()
+    }
+
+    #[cfg(not(feature = "editor"))]
+    pub(crate) fn viewport_size(&self) -> (u32, u32) {
+        let extent = self.renderer.swapchain_extent();
+        (extent.width, extent.height)
+    }
+
+    /// Build entity_instance_map and entity_to_instance_indices from collected draw entries.
+    #[cfg(feature = "editor")]
+    pub(crate) fn build_entity_instance_map(&mut self, entries: Vec<(u32, katla_ecs::EntityId)>) {
+        self.editor.entity_instance_map.clear();
+        self.editor.entity_to_instance_indices.clear();
+        for (idx, entity_id) in entries {
+            self.editor.entity_instance_map.insert(idx, entity_id);
+            self.editor
+                .entity_to_instance_indices
+                .entry(entity_id)
+                .or_default()
+                .push(idx);
+        }
+    }
+
+    #[cfg(not(feature = "editor"))]
+    pub(crate) fn build_entity_instance_map(&mut self, _entries: Vec<(u32, katla_ecs::EntityId)>) {}
+
+    /// Prepare draw lists: shadow filtering, outline selection, billboard generation.
+    #[cfg(all(feature = "editor", feature = "vulkan"))]
+    pub(crate) fn prepare_draw_lists(
+        &mut self,
+        draw_list: &mut katla_gfx::renderer::DrawList,
+    ) -> (
+        katla_gfx::renderer::DrawList,
+        Option<katla_gfx::renderer::DrawList>,
+    ) {
+        self.collect_billboard_draw_calls(draw_list);
+        self.prepare_editor_draw_lists(draw_list)
+    }
+
+    #[cfg(not(feature = "editor"))]
+    pub(crate) fn prepare_draw_lists(
+        &mut self,
+        draw_list: &mut katla_gfx::renderer::DrawList,
+    ) -> (
+        katla_gfx::renderer::DrawList,
+        Option<katla_gfx::renderer::DrawList>,
+    ) {
+        (draw_list.clone(), None)
+    }
+}
+
+#[cfg(feature = "vulkan")]
 impl Application {
     /// Render a single frame using the frame graph.
     ///
@@ -277,154 +436,48 @@ impl Application {
         self.renderer.upload_lights(&self.point_lights_buffer);
     }
 
-    /// Collect drawable components from the ECS world and submit to FrameContext.
+    /// Recreate the swapchain and update all dependent resources.
     ///
-    /// This automatically allocates instance indices and builds the draw list.
-    /// Also populates entity_instance_map for GPU picking resolution.
-    fn collect_draws_with_context(
-        &mut self,
-        frame: &mut FrameContext,
-        frustum: &katla_math::Frustum,
-    ) {
-        use crate::components::{DrawableComponent, TransformComponent};
-
-        let entity_count = self.world.entity_count();
-        let mut drawable_count = 0;
-        let mut culled_count = 0;
-        self.editor.draw_entity_map_entries.clear();
-
-        for (entity_id, drawable, transform) in self
-            .world
-            .query::<(&DrawableComponent, &TransformComponent)>()
-        {
-            let mesh_handle = drawable.mesh_handle;
-            if mesh_handle.is_none() {
-                continue;
+    /// This is called when:
+    /// - The window is resized (`WindowEvent::Resized`)
+    /// - The window is unoccluded (`WindowEvent::Occluded(false)`)
+    /// - `acquire_next_image` or `queue_present` returns `VK_SUBOPTIMAL_KHR` / `VK_ERROR_OUT_OF_DATE_KHR`
+    pub(crate) fn recreate_swapchain_resources(&mut self) {
+        let recreated_textures = match self.renderer.recreate_swapchain(&mut self.frame_graph) {
+            Ok(textures) => textures,
+            Err(e) => {
+                log::error!("Failed to recreate swapchain: {}", e);
+                return;
             }
+        };
 
-            let material_handle = drawable.material_handle;
-            if material_handle.is_none() {
-                continue;
-            }
-
-            if let Some(local_bounds) = drawable.bounds {
-                let world_mat = transform.transform.make_mat4();
-                let world_bounds = local_bounds.transform(&world_mat);
-                if !frustum.intersects_aabb(&world_bounds) {
-                    culled_count += 1;
-                    continue;
-                }
-            }
-
-            if drawable.skeleton_handle.is_some() {
-                // Skeleton matrices are computed on the GPU via the animation
-                // pose evaluation compute pass and copied to the per-entity
-                // SkeletonBuffer. No CPU upload needed.
-            }
-
-            let mut draw = frame
-                .draw(mesh_handle, material_handle)
-                .with_transform(transform.transform.make_mat4().to_array());
-
-            // Skeleton for skinned meshes
-            if drawable.skeleton_handle.is_some() {
-                draw = draw.with_skeleton(drawable.skeleton_handle);
-            }
-
-            if let Some(color) = drawable.color {
-                draw = draw.with_color(color.to_array());
-            }
-
-            draw = draw.with_pbr(drawable.metallic, drawable.roughness, drawable.ao);
-
-            if drawable.emission > 0.0 {
-                draw = draw.with_emission(drawable.emission);
-            }
-
-            draw.submit();
-
-            self.editor
-                .draw_entity_map_entries
-                .push((frame.instance_count() - 1, entity_id));
-
-            drawable_count += 1;
-        }
-
-        if culled_count > 0 {
-            log::debug!(
-                "Submitted {} draw calls, culled {} off-screen ({} total entities)",
-                drawable_count,
-                culled_count,
-                entity_count
-            );
-        } else {
-            log::debug!(
-                "Submitted {} draw calls from {} entities",
-                drawable_count,
-                entity_count
-            );
-        }
-
-        let entries = std::mem::take(&mut self.editor.draw_entity_map_entries);
-        self.build_entity_instance_map(entries);
-    }
-
-    /// Get the viewport size in pixels.
-    #[cfg(feature = "editor")]
-    fn viewport_size(&self) -> (u32, u32) {
-        self.editor.editor_ui.viewport_size()
-    }
-
-    #[cfg(not(feature = "editor"))]
-    fn viewport_size(&self) -> (u32, u32) {
         let extent = self.renderer.swapchain_extent();
-        (extent.width, extent.height)
-    }
 
-    /// Build entity_instance_map and entity_to_instance_indices from collected draw entries.
-    #[cfg(feature = "editor")]
-    fn build_entity_instance_map(&mut self, entries: Vec<(u32, katla_ecs::EntityId)>) {
-        self.editor.entity_instance_map.clear();
-        self.editor.entity_to_instance_indices.clear();
-        for (idx, entity_id) in entries {
-            self.editor.entity_instance_map.insert(idx, entity_id);
-            self.editor
-                .entity_to_instance_indices
-                .entry(entity_id)
-                .or_default()
-                .push(idx);
+        for (name, slot) in recreated_textures {
+            if name == "hdr_color" {
+                self.frame_graph
+                    .set_tonemap_texture_index(self.pass_ids.tonemap, slot)
+                    .expect("Failed to update tonemap texture index");
+            } else if name == "viewport_0" {
+                self.on_viewport_texture_recreated(slot);
+            }
         }
-    }
 
-    #[cfg(not(feature = "editor"))]
-    fn build_entity_instance_map(&mut self, _entries: Vec<(u32, katla_ecs::EntityId)>) {}
+        for frame_idx in 0..2 {
+            if let Some(view) = self
+                .frame_graph
+                .transient_texture_view_for_frame("shadow_atlas", frame_idx)
+            {
+                self.renderer.set_shadow_atlas_view(frame_idx, view);
+            }
+        }
 
-    /// Prepare draw lists: shadow filtering, outline selection, billboard generation.
-    #[cfg(feature = "editor")]
-    fn prepare_draw_lists(
-        &mut self,
-        draw_list: &mut katla_gfx::renderer::DrawList,
-    ) -> (
-        katla_gfx::renderer::DrawList,
-        Option<katla_gfx::renderer::DrawList>,
-    ) {
-        self.collect_billboard_draw_calls(draw_list);
-        self.prepare_editor_draw_lists(draw_list)
-    }
-
-    #[cfg(not(feature = "editor"))]
-    fn prepare_draw_lists(
-        &mut self,
-        draw_list: &mut katla_gfx::renderer::DrawList,
-    ) -> (
-        katla_gfx::renderer::DrawList,
-        Option<katla_gfx::renderer::DrawList>,
-    ) {
-        (draw_list.clone(), None)
+        let aspect = extent.width as f32 / extent.height as f32;
+        self.camera.aspect_ratio_changed(&mut self.world, aspect);
     }
 }
 
-#[cfg(feature = "editor")]
+#[cfg(all(feature = "editor", feature = "vulkan"))]
 impl Application {
     /// Prepare editor draw lists: gizmo draws, shadow filtering, outline selection.
     fn prepare_editor_draw_lists(
@@ -648,7 +701,6 @@ impl Application {
             };
             let bindless_idx = self
                 .renderer
-                .texture_manager
                 .get_bindless_slot(*texture_handle)
                 .unwrap_or(0);
 
@@ -689,44 +741,174 @@ impl Application {
                 .push(idx);
         }
     }
+}
 
-    /// Recreate the swapchain and update all dependent resources.
+#[cfg(all(feature = "metal", not(feature = "vulkan")))]
+impl Application {
+    /// Render a single frame using the Metal backend.
     ///
-    /// This is called when:
-    /// - The window is resized (`WindowEvent::Resized`)
-    /// - The window is unoccluded (`WindowEvent::Occluded(false)`)
-    /// - `acquire_next_image` or `queue_present` returns `VK_SUBOPTIMAL_KHR` / `VK_ERROR_OUT_OF_DATE_KHR`
-    pub(crate) fn recreate_swapchain_resources(&mut self) {
-        let recreated_textures = match self.renderer.recreate_swapchain(&mut self.frame_graph) {
-            Ok(textures) => textures,
-            Err(e) => {
-                log::error!("Failed to recreate swapchain: {}", e);
-                return;
+    /// The Metal rendering pipeline is managed internally by MetalRenderer::render_frame().
+    /// This method provides: uniforms, draw lists, light data, and lifecycle calls.
+    pub fn render_frame(
+        &mut self,
+        ui_draw_list: Option<katla_gfx::renderer::UIDrawList>,
+        delta_time: f32,
+        frame_count: usize,
+    ) {
+        let _ = (delta_time, frame_count);
+
+        if self.needs_swapchain_recreate {
+            self.needs_swapchain_recreate = false;
+            let (w, h) = self.viewport_size();
+            if w > 0 && h > 0 {
+                if let Err(e) = self.renderer.resize(w, h) {
+                    log::error!("Failed to resize Metal renderer: {}", e);
+                }
             }
+        }
+
+        let (viewport_width, viewport_height) = self.viewport_size();
+        let viewport_aspect = if viewport_height > 0 {
+            viewport_width as f32 / viewport_height as f32
+        } else {
+            16.0 / 9.0
+        };
+        self.camera
+            .aspect_ratio_changed(&mut self.world, viewport_aspect);
+
+        let mut frame = FrameContext::new();
+
+        let view_mat = self.camera.get_view_mat(&self.world);
+        let proj_mat = self.camera.get_proj_mat(&self.world);
+        let frustum = katla_math::Frustum::from_proj_and_view(&proj_mat, &view_mat);
+        let camera_entity = self.camera.entity;
+
+        use crate::components::TransformComponent;
+        let cam_pos = if let Some(transform) = self
+            .world
+            .get_component::<TransformComponent>(camera_entity)
+        {
+            [
+                transform.transform.position.x(),
+                transform.transform.position.y(),
+                transform.transform.position.z(),
+                1.0,
+            ]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
         };
 
+        let inv_view_proj = {
+            use katla_math::Mat4;
+            (proj_mat * view_mat)
+                .inverse()
+                .unwrap_or_else(Mat4::identity)
+        };
+
+        if let Err(e) = self.renderer.wait_for_frame() {
+            log::error!("Failed to wait for frame: {}", e);
+            return;
+        }
+
         let extent = self.renderer.swapchain_extent();
+        let tiles_x = extent.width.div_ceil(16);
+        let tiles_y = extent.height.div_ceil(16);
 
-        for (name, slot) in recreated_textures {
-            if name == "hdr_color" {
-                self.frame_graph
-                    .set_tonemap_texture_index(self.pass_ids.tonemap, slot)
-                    .expect("Failed to update tonemap texture index");
-            } else if name == "viewport_0" {
-                self.on_viewport_texture_recreated(slot);
-            }
+        let frame_uniforms = FrameUniforms {
+            view_matrix: view_mat.to_array(),
+            proj_matrix: proj_mat.to_array(),
+            inv_view_proj_matrix: inv_view_proj.to_array(),
+            camera_position: cam_pos,
+            light_direction: [0.3, 1.0, 0.2, 0.0],
+            light_color: [1.0, 0.98, 0.95, 0.0],
+            light_intensity: [
+                1.0,
+                self.renderer
+                    .depth_texture_base_index()
+                    .map(|base| base + self.renderer.current_frame() as u32)
+                    .unwrap_or(0) as f32,
+                0.0,
+                0.0,
+            ],
+            tiles: [tiles_x, tiles_y, 0, 0],
+            tonemap: [1.0, 2.2, 0.0, 0.0],
+            overlay: [0.0, 0.0, 0.0, 0.0],
+            compositing: [0.0, 0.0, 0.0, 0.0],
+        };
+        frame.set_frame_uniforms(frame_uniforms.clone());
+
+        self.collect_draws_with_context(&mut frame, &frustum);
+
+        self.collect_and_upload_lights();
+
+        self.renderer
+            .set_frame_uniforms(frame.frame_uniforms().clone());
+
+        self.renderer.update_shadows([
+            frame_uniforms.light_direction[0],
+            frame_uniforms.light_direction[1],
+            frame_uniforms.light_direction[2],
+        ]);
+
+        self.renderer.upload_shadow_cascades();
+
+        let mut draw_list = frame.take_draw_list();
+        draw_list.sort_by_material();
+
+        if let Err(e) = self.renderer.execute_draw_calls(&draw_list) {
+            log::error!("Failed to execute draw calls: {}", e);
+            return;
         }
 
-        for frame_idx in 0..2 {
-            if let Some(view) = self
-                .frame_graph
-                .transient_texture_view_for_frame("shadow_atlas", frame_idx)
-            {
-                self.renderer.set_shadow_atlas_view(frame_idx, view);
-            }
+        log::debug!(
+            "About to submit {} draw calls to Metal renderer",
+            draw_list.len()
+        );
+
+        // Queue UI draw list before rendering
+        if let Some(ui_list) = ui_draw_list {
+            self.renderer.render_ui_pass(ui_list);
         }
 
-        let aspect = extent.width as f32 / extent.height as f32;
-        self.camera.aspect_ratio_changed(&mut self.world, aspect);
+        if let Err(e) = self.renderer.begin_frame() {
+            log::error!("Failed to begin Metal frame: {}", e);
+            return;
+        }
+
+        if let Err(e) = self.renderer.render_frame() {
+            log::error!("Failed to render Metal frame: {}", e);
+            return;
+        }
+
+        if let Err(e) = self.renderer.end_frame() {
+            log::error!("Failed to end Metal frame: {}", e);
+        }
+    }
+
+    /// Collect point lights from the ECS world and upload to the GPU.
+    fn collect_and_upload_lights(&mut self) {
+        use crate::components::{PointLight, TransformComponent};
+        use katla_gfx::PointLightGPU;
+
+        let mut lights = Vec::new();
+        for (_entity, point_light, transform) in
+            self.world.query::<(&PointLight, &TransformComponent)>()
+        {
+            let pos = transform.transform.position;
+            lights.push(PointLightGPU {
+                position: [pos.x(), pos.y(), pos.z()],
+                range: point_light.range,
+                color: point_light.color,
+                intensity: point_light.intensity,
+            });
+        }
+
+        if !lights.is_empty() {
+            log::debug!(
+                "Uploading {} point lights for Metal Forward+ culling",
+                lights.len()
+            );
+        }
+        self.renderer.upload_lights(&lights);
     }
 }
