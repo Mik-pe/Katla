@@ -135,9 +135,10 @@ impl Application {
 
         #[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
         {
-            if let Some(slot) = self.renderer.viewport_bindless_index() {
-                self.editor.editor_ui.set_viewport_bindless_index(slot);
-            }
+            // Don't set viewport texture on Metal to avoid feedback loop.
+            // The scene is rendered directly to the drawable and shows through
+            // the viewport area naturally (not covered by opaque panels).
+            self.editor.editor_ui.viewport_texture_ids = [None, None, None, None];
 
             log::debug!("Generating UI draw list (Metal)...");
             let ui_draw_list = editor::generate_ui_draw_list(self, dt);
