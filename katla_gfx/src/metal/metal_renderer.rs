@@ -11,8 +11,8 @@ use objc2::runtime::ProtocolObject;
 use objc2_metal::{MTLCommandBuffer, MTLPixelFormat, MTLRenderCommandEncoder, MTLTexture};
 
 use crate::backend::command::{
-    ColorAttachmentInfo, DepthAttachmentInfo, GpuBlitEncoder, GpuCommandBuffer, GpuRenderEncoder,
-    IndexType, RenderPassInfo, ShaderStages,
+    ColorAttachmentInfo, DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType,
+    RenderPassInfo, ShaderStages,
 };
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
