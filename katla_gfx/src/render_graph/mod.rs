@@ -3,6 +3,15 @@
 //! This module provides a frame graph implementation for managing render passes,
 //! resources, and dependencies with automatic barrier generation.
 //!
+//! The render graph has three layers:
+//!
+//! - **Layer 1 (Graph Structure)**: `FrameGraphBuilder`, `PassBuilder`, `PassDesc`,
+//!   `GraphCompiler`, `ExecutionPlan` — pure data and dependency analysis, no GPU types.
+//! - **Layer 2 (Backend Interface)**: `RenderGraphBackend` trait — defines how the
+//!   render graph interacts with a specific GPU backend.
+//! - **Layer 3 (Backend Implementation)**: `VulkanRenderGraph` / `MetalRenderGraph` —
+//!   concrete implementations for each backend.
+//!
 //! # Overview
 //!
 //! - [`FrameGraph`] - Executable render graph (build once, execute every frame)
@@ -30,23 +39,41 @@
 //! });
 //! ```
 
+// Layer 1: Backend-agnostic graph structure (no GPU types)
 mod builder;
 mod compiler;
+#[cfg(feature = "vulkan")]
 pub mod descriptor_sets;
 mod error;
-mod frame;
-mod frame_graph;
 mod handles;
 mod pass;
 mod passes;
 mod resource;
-mod transient_texture;
 
-// Public API - minimal surface
+// Layer 2: Backend interface trait
+mod backend;
+
+// Layer 3: Backend-specific execution
+#[cfg(feature = "vulkan")]
+mod frame;
+#[cfg(feature = "vulkan")]
+mod frame_graph;
+#[cfg(all(target_os = "macos", feature = "metal"))]
+mod metal_backend;
+#[cfg(feature = "vulkan")]
+mod transient_texture;
+#[cfg(feature = "vulkan")]
+mod vulkan_backend;
+
+// Public API
+pub use backend::RenderGraphBackend;
+#[cfg(feature = "vulkan")]
 pub use descriptor_sets::CompositingDescriptorSet;
 pub use error::RenderGraphError;
+#[cfg(feature = "vulkan")]
 pub use frame::Frame;
-pub use frame_graph::{BACKBUFFER_NAME, FrameGraph, FrameGraphBuilder};
+#[cfg(feature = "vulkan")]
+pub use frame_graph::{FrameGraph, FrameGraphBuilder};
 pub use handles::{PassId, ResourceId};
 pub use pass::{PassDesc, PassKind, PassType};
 pub use passes::{
@@ -54,7 +81,11 @@ pub use passes::{
     OverlayPass, ParticlePass, ShadowPass, StencilIndicatorPass, TonemapOperator, TonemapParams,
     UIPass, ViewportPass, ViewportRect,
 };
-pub use resource::{GraphResourceDesc, GraphResourceHandle, GraphResourceType, ResourceState};
+pub use resource::{
+    GraphResourceDesc, GraphResourceHandle, GraphResourceType, ResourceState, TransientTextureOps,
+};
+#[cfg(feature = "vulkan")]
 pub use transient_texture::TransientTexture;
 
-// Internal - for pass template implementation
+/// Special resource name for the swapchain backbuffer.
+pub const BACKBUFFER_NAME: &str = "backbuffer";

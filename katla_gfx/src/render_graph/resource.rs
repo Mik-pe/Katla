@@ -4,7 +4,6 @@ use std::marker::PhantomData;
 
 pub use crate::render_pass::ResourceState;
 use crate::texture::ImageFormat;
-use ash::vk;
 
 /// Transient resource types for render graph.
 #[derive(Clone, Debug, PartialEq)]
@@ -19,7 +18,6 @@ pub enum GraphResourceType {
         /// Clear value (0.0 = far, 1.0 = near for reverse Z).
         clear_value: f32,
         /// Whether this depth texture will also be sampled by shaders.
-        /// When true, VK_IMAGE_USAGE_SAMPLED_BIT is added to the image usage.
         sampled: bool,
     },
     /// Sampled image for shader reading (textures).
@@ -43,44 +41,6 @@ pub struct GraphResourceDesc {
     /// Fixed-size resources (e.g., shadow atlas at 4096x4096) should set this to false.
     /// Default is true for backwards compatibility.
     pub tracks_swapchain_size: bool,
-}
-
-impl ResourceState {
-    /// Convert to Vulkan pipeline stage flags.
-    pub fn to_vk_stage_flags(self) -> vk::PipelineStageFlags {
-        match self {
-            Self::Undefined => vk::PipelineStageFlags::TOP_OF_PIPE,
-            Self::ColorAttachment => vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            Self::DepthStencilAttachment => {
-                vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS
-                    | vk::PipelineStageFlags::LATE_FRAGMENT_TESTS
-            }
-            Self::ShaderRead | Self::ShaderWrite => {
-                vk::PipelineStageFlags::VERTEX_SHADER
-                    | vk::PipelineStageFlags::FRAGMENT_SHADER
-                    | vk::PipelineStageFlags::COMPUTE_SHADER
-            }
-            Self::TransferSrc | Self::TransferDst => vk::PipelineStageFlags::TRANSFER,
-            Self::PresentSrc => vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-        }
-    }
-
-    /// Convert to Vulkan access flags.
-    pub fn to_vk_access_flags(self) -> vk::AccessFlags {
-        match self {
-            Self::Undefined => vk::AccessFlags::empty(),
-            Self::ColorAttachment => vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            Self::DepthStencilAttachment => {
-                vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ
-                    | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE
-            }
-            Self::ShaderRead => vk::AccessFlags::SHADER_READ,
-            Self::ShaderWrite => vk::AccessFlags::SHADER_WRITE,
-            Self::TransferSrc => vk::AccessFlags::TRANSFER_READ,
-            Self::TransferDst => vk::AccessFlags::TRANSFER_WRITE,
-            Self::PresentSrc => vk::AccessFlags::NONE,
-        }
-    }
 }
 
 /// Opaque handle for graph resources (internal use only).
@@ -128,6 +88,18 @@ impl Default for GraphResourceHandle {
     fn default() -> Self {
         Self::NONE
     }
+}
+
+/// Trait for transient texture state tracking.
+///
+/// Implemented by backend-specific transient texture types.
+/// Provides a uniform interface for the render graph to track
+/// and update resource states without knowing backend details.
+pub trait TransientTextureOps {
+    /// Get the current tracked resource state.
+    fn state(&self) -> ResourceState;
+    /// Update the tracked resource state after a transition.
+    fn set_state(&self, state: ResourceState);
 }
 
 #[cfg(test)]
@@ -185,81 +157,5 @@ mod tests {
     #[test]
     fn test_resource_state_default() {
         assert_eq!(ResourceState::default(), ResourceState::Undefined);
-    }
-
-    #[test]
-    fn test_resource_state_undefined() {
-        let state = ResourceState::Undefined;
-        assert_eq!(
-            state.to_vk_stage_flags(),
-            vk::PipelineStageFlags::TOP_OF_PIPE
-        );
-        assert_eq!(state.to_vk_access_flags(), vk::AccessFlags::empty());
-    }
-
-    #[test]
-    fn test_resource_state_color_attachment() {
-        let state = ResourceState::ColorAttachment;
-        assert_eq!(
-            state.to_vk_stage_flags(),
-            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
-        );
-        assert_eq!(
-            state.to_vk_access_flags(),
-            vk::AccessFlags::COLOR_ATTACHMENT_WRITE
-        );
-    }
-
-    #[test]
-    fn test_resource_state_depth_stencil() {
-        let state = ResourceState::DepthStencilAttachment;
-        let stages = state.to_vk_stage_flags();
-        assert!(stages.contains(vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS));
-        assert!(stages.contains(vk::PipelineStageFlags::LATE_FRAGMENT_TESTS));
-
-        let access = state.to_vk_access_flags();
-        assert!(access.contains(vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ));
-        assert!(access.contains(vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE));
-    }
-
-    #[test]
-    fn test_resource_state_shader_read() {
-        let state = ResourceState::ShaderRead;
-        let stages = state.to_vk_stage_flags();
-        assert!(stages.contains(vk::PipelineStageFlags::VERTEX_SHADER));
-        assert!(stages.contains(vk::PipelineStageFlags::FRAGMENT_SHADER));
-        assert!(stages.contains(vk::PipelineStageFlags::COMPUTE_SHADER));
-        assert_eq!(state.to_vk_access_flags(), vk::AccessFlags::SHADER_READ);
-    }
-
-    #[test]
-    fn test_resource_state_shader_write() {
-        let state = ResourceState::ShaderWrite;
-        let stages = state.to_vk_stage_flags();
-        assert!(stages.contains(vk::PipelineStageFlags::VERTEX_SHADER));
-        assert!(stages.contains(vk::PipelineStageFlags::FRAGMENT_SHADER));
-        assert!(stages.contains(vk::PipelineStageFlags::COMPUTE_SHADER));
-        assert_eq!(state.to_vk_access_flags(), vk::AccessFlags::SHADER_WRITE);
-    }
-
-    #[test]
-    fn test_resource_state_transfer() {
-        let state = ResourceState::TransferSrc;
-        assert_eq!(state.to_vk_stage_flags(), vk::PipelineStageFlags::TRANSFER);
-        assert_eq!(state.to_vk_access_flags(), vk::AccessFlags::TRANSFER_READ);
-
-        let state = ResourceState::TransferDst;
-        assert_eq!(state.to_vk_stage_flags(), vk::PipelineStageFlags::TRANSFER);
-        assert_eq!(state.to_vk_access_flags(), vk::AccessFlags::TRANSFER_WRITE);
-    }
-
-    #[test]
-    fn test_resource_state_present() {
-        let state = ResourceState::PresentSrc;
-        assert_eq!(
-            state.to_vk_stage_flags(),
-            vk::PipelineStageFlags::BOTTOM_OF_PIPE
-        );
-        assert_eq!(state.to_vk_access_flags(), vk::AccessFlags::empty());
     }
 }

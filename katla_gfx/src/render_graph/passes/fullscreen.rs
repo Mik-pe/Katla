@@ -8,9 +8,9 @@ use crate::handle::PipelineHandle;
 use crate::texture::ImageFormat;
 
 use super::super::builder::{InternalPassBuilder, PassBuilder};
-use super::super::frame_graph::BACKBUFFER_NAME;
 use super::super::pass::{PassKind, PassType};
 use super::super::resource::GraphResourceHandle;
+use crate::render_graph::BACKBUFFER_NAME;
 
 /// Tonemapping operators for fullscreen post-processing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]

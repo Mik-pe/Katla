@@ -170,7 +170,7 @@ pub(crate) mod primitives;
 // Render graph system
 #[cfg(feature = "vulkan")]
 pub mod compute;
-#[cfg(feature = "vulkan")]
+#[cfg(any(feature = "vulkan", feature = "metal"))]
 pub mod render_graph;
 
 // Internal modules — pub(crate) by default, pub when 'validation' feature is enabled

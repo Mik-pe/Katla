@@ -6,10 +6,11 @@ use crate::render_graph::resource::GraphResourceHandle;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
 
-/// Callback for custom compute dispatch logic.
+/// Callback for custom compute dispatch logic (Vulkan-specific).
 ///
 /// Receives mutable access to the frame (and thus the renderer),
 /// the command buffer, and the pipeline handle assigned to the pass.
+#[cfg(feature = "vulkan")]
 pub type ComputeFn = Box<
     dyn Fn(
         &mut super::frame::Frame,
@@ -82,8 +83,8 @@ pub struct PassDesc {
     /// Compositing pass data: viewport textures with rectangles.
     /// Set for CompositePass, None for other pass types.
     pub compositing_viewports: Option<Vec<(GraphResourceHandle, ViewportRect)>>,
-    /// Optional compute dispatch callback for compute passes.
-    /// When set, this closure is called instead of a generic dispatch.
+    /// Optional compute dispatch callback for compute passes (Vulkan-specific).
+    #[cfg(feature = "vulkan")]
     pub compute_fn: Option<ComputeFn>,
 
     /// Semantic kind of this pass, used for dispatch routing.
@@ -113,6 +114,7 @@ impl PassDesc {
             uses_depth: true,
             depth_attachment: None,
             compositing_viewports: None,
+            #[cfg(feature = "vulkan")]
             compute_fn: None,
             kind: None,
         }
@@ -124,7 +126,8 @@ impl PassDesc {
         self
     }
 
-    /// Attach a compute dispatch callback to this pass.
+    /// Attach a compute dispatch callback to this pass (Vulkan-specific).
+    #[cfg(feature = "vulkan")]
     pub fn with_compute_fn(
         mut self,
         f: impl Fn(
@@ -176,6 +179,7 @@ mod tests {
         assert!(desc.color_attachments.is_empty());
         assert!(desc.depth_attachment.is_none());
         assert!(desc.compositing_viewports.is_none());
+        #[cfg(feature = "vulkan")]
         assert!(desc.compute_fn.is_none());
         assert!(desc.kind.is_none());
         assert!(desc.uses_depth);
