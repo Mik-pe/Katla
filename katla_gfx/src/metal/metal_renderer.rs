@@ -186,6 +186,9 @@ pub struct MetalRenderer {
     buffer_sizes_buffer: Option<MetalBuffer>,
     scene_color_view: Option<MetalTextureView>,
     viewport_bindless_slot: Option<u32>,
+    geometry_hdr_view: Option<MetalTextureView>,
+    geometry_hdr_bindless_slot: Option<u32>,
+    tonemap_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
     sky_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
     dummy_vertex_buffer: Option<MetalBuffer>,
 }
@@ -268,6 +271,9 @@ impl MetalRenderer {
             buffer_sizes_buffer: None,
             scene_color_view: None,
             viewport_bindless_slot: None,
+            geometry_hdr_view: None,
+            geometry_hdr_bindless_slot: None,
+            tonemap_pipeline: None,
             sky_pipeline: None,
             dummy_vertex_buffer: None,
         };
@@ -426,6 +432,21 @@ impl MetalRenderer {
                 .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
             if let Ok((_tex, view)) = self.context.create_texture(&desc) {
                 self.hdr_color_view = Some(view);
+            }
+        }
+
+        // Geometry HDR render target for tonemapping pipeline
+        {
+            if let Some(old_slot) = self.geometry_hdr_bindless_slot.take() {
+                self.bindless_manager.release_slot(old_slot);
+            }
+            let desc = TextureDescriptor::new(width, height, ImageFormat::R16G16B16A16Sfloat)
+                .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
+            if let Ok((_tex, view)) = self.context.create_texture(&desc) {
+                if let Ok(slot) = self.bindless_manager.register_texture(&view.inner) {
+                    self.geometry_hdr_bindless_slot = Some(slot);
+                }
+                self.geometry_hdr_view = Some(view);
             }
         }
 
@@ -749,6 +770,132 @@ impl MetalRenderer {
         Ok(())
     }
 
+    /// Bind frame/uniform buffers, bindless argument buffer, samplers, light culling,
+    /// shadow cascade data, and shadow map — resources shared across geometry passes.
+    fn bind_common_resources(&self, encoder: &mut super::render_encoder::MetalRenderEncoder) {
+        if let (Some(frame_buf), Some(object_buf)) =
+            (&self.frame_uniform_buffer, &self.object_storage_buffer)
+        {
+            let stages = ShaderStages::VERTEX_FRAGMENT;
+            encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
+            encoder.bind_storage_buffer(object_buf, 0, 1, stages);
+        }
+
+        if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
+            let stages = ShaderStages::VERTEX_FRAGMENT;
+            unsafe {
+                if stages.vertex {
+                    encoder
+                        .inner
+                        .setVertexBuffer_offset_atIndex(Some(arg_buffer), 0, 9);
+                }
+                if stages.fragment {
+                    encoder
+                        .inner
+                        .setFragmentBuffer_offset_atIndex(Some(arg_buffer), 0, 9);
+                }
+            }
+        }
+
+        if let Some(ref sampler) = self.shared_sampler {
+            unsafe {
+                encoder
+                    .inner
+                    .setVertexSamplerState_atIndex(Some(&sampler.inner), 0);
+                encoder
+                    .inner
+                    .setFragmentSamplerState_atIndex(Some(&sampler.inner), 0);
+            }
+        }
+
+        if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
+            let stages = ShaderStages::VERTEX_FRAGMENT;
+            encoder.bind_storage_buffer(buf_sizes, 0, 8, stages);
+        }
+
+        if let Some(ref lc) = self.light_culling {
+            let stages = ShaderStages::FRAGMENT;
+            encoder.bind_storage_buffer(lc.light_buffer(), 0, 3, stages);
+            encoder.bind_storage_buffer(lc.tile_index_buffer(), 0, 4, stages);
+            encoder.bind_storage_buffer(lc.tile_count_buffer(), 0, 5, stages);
+        }
+
+        if let Some(ref shadow_buf) = self.shadow_cascade_buffer {
+            let stages = ShaderStages::FRAGMENT;
+            encoder.bind_storage_buffer(shadow_buf, 0, 7, stages);
+        }
+
+        if let Some(ref shadow_view) = self.shadow.shadow_map_view() {
+            unsafe {
+                encoder
+                    .inner
+                    .setFragmentTexture_atIndex(Some(&shadow_view.inner), 1);
+            }
+        }
+
+        if let Some(ref sampler) = self.shadow_sampler {
+            unsafe {
+                encoder
+                    .inner
+                    .setFragmentSamplerState_atIndex(Some(&sampler.inner), 1);
+            }
+        }
+
+        if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
+            unsafe {
+                let resource: &ProtocolObject<dyn objc2_metal::MTLResource> =
+                    std::mem::transmute(arg_buffer);
+                encoder.inner.useResource_usage_stages(
+                    resource,
+                    objc2_metal::MTLResourceUsage::Read,
+                    objc2_metal::MTLRenderStages::Fragment,
+                );
+            }
+        }
+        for texture in self.bindless_manager.registered_textures() {
+            unsafe {
+                let resource: &ProtocolObject<dyn objc2_metal::MTLResource> =
+                    std::mem::transmute(texture);
+                encoder.inner.useResource_usage_stages(
+                    resource,
+                    objc2_metal::MTLResourceUsage::Read,
+                    objc2_metal::MTLRenderStages::Fragment,
+                );
+            }
+        }
+    }
+
+    /// Draw all objects from the draw list.
+    fn draw_objects(
+        &self,
+        encoder: &mut super::render_encoder::MetalRenderEncoder,
+        draw_list: &DrawList,
+    ) {
+        for (i, draw) in draw_list.draws.iter().enumerate() {
+            let Some(mesh) = self.meshes.get(draw.mesh.index()) else {
+                log::warn!("Draw {}: mesh index {} not found", i, draw.mesh.index());
+                continue;
+            };
+            let Some(material) = self.materials.get(draw.material.index()) else {
+                log::warn!(
+                    "Draw {}: material index {} not found",
+                    i,
+                    draw.material.index()
+                );
+                continue;
+            };
+            let Some(ref pipeline) = material.pipeline else {
+                log::warn!("Draw {}: no pipeline", i);
+                continue;
+            };
+
+            encoder.bind_graphics_pipeline(pipeline);
+            encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
+            encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
+            encoder.draw_indexed(mesh.index_count, 1, 0, 0, draw.instance_index);
+        }
+    }
+
     /// Initialize the sky pipeline for procedural atmosphere rendering.
     ///
     /// Compiles the sky WGSL shader into a Metal fullscreen pipeline that uses
@@ -778,8 +925,8 @@ impl MetalRenderer {
             .create_graphics_pipeline_with_vertex_descriptor(
                 vertex_fn,
                 Some(fragment_fn),
-                &[MTLPixelFormat::BGRA8Unorm_sRGB],
-                None,
+                &[MTLPixelFormat::RGBA16Float],
+                Some(MTLPixelFormat::Depth32Float),
                 false,
                 crate::pipeline::CompareOp::Always,
                 objc2_metal::MTLCullMode::None,
@@ -789,6 +936,49 @@ impl MetalRenderer {
             )?;
 
         self.sky_pipeline = Some(pipeline);
+        Ok(())
+    }
+
+    /// Initialize the tonemapping pipeline for HDR-to-LDR conversion.
+    ///
+    /// Compiles the tonemapping WGSL shader into a Metal fullscreen pipeline
+    /// that reads from a bindless HDR texture and outputs tonemapped LDR.
+    pub fn init_tonemap_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
+
+        let compiled = shader::compile_wgsl_to_metal(
+            &self.context.device,
+            &wgsl_source,
+            &["vs_main", "fs_main"],
+            false,
+        )?;
+
+        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
+            RendererError::InvalidOperation("Tonemap vertex entry point not found".into())
+        })?;
+        let fragment_fn = compiled.module.entry_points.get("fs_main").ok_or_else(|| {
+            RendererError::InvalidOperation("Tonemap fragment entry point not found".into())
+        })?;
+
+        let pipeline = self
+            .context
+            .create_graphics_pipeline_with_vertex_descriptor(
+                vertex_fn,
+                Some(fragment_fn),
+                &[MTLPixelFormat::BGRA8Unorm_sRGB],
+                Some(MTLPixelFormat::Depth32Float),
+                false,
+                crate::pipeline::CompareOp::Always,
+                objc2_metal::MTLCullMode::None,
+                objc2_metal::MTLWinding::CounterClockwise,
+                Some(&super::context::fullscreen_vertex_descriptor()),
+                false,
+            )?;
+
+        self.tonemap_pipeline = Some(pipeline);
         Ok(())
     }
 
@@ -961,6 +1151,26 @@ impl MetalRenderer {
 
         Ok(())
     }
+
+    /// Register a Metal texture with the bindless system (render graph backend).
+    pub(crate) fn register_metal_bindless_texture(
+        &mut self,
+        texture: &objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_metal::MTLTexture>>,
+    ) -> Result<u32, RendererError> {
+        self.bindless_manager
+            .register_texture(texture)
+            .map_err(|e| {
+                RendererError::InvalidOperation(format!(
+                    "Failed to register bindless texture: {}",
+                    e
+                ))
+            })
+    }
+
+    /// Get the current frame index for double-buffered resources.
+    pub(crate) fn frame_index(&self) -> usize {
+        (self.frame_index % 3) as usize
+    }
 }
 
 impl GpuRenderer for MetalRenderer {
@@ -1104,142 +1314,195 @@ impl GpuRenderer for MetalRenderer {
             cmd_buffer.inner.setLabel(Some(&label));
         }
 
-        let depth_attachment = self
-            .depth_texture_view
-            .as_ref()
-            .map(|view| DepthAttachmentInfo {
-                view: view.clone(),
-                load_op: LoadOp::Clear,
-                store_op: StoreOp::DontCare,
-                clear_value: ClearValue::depth_stencil(0.0, 0),
-                format: ImageFormat::D32Sfloat,
-            });
-
-        let render_pass_info = RenderPassInfo {
-            color_attachments: vec![ColorAttachmentInfo {
-                view: drawable_view,
-                load_op: LoadOp::Clear,
-                store_op: StoreOp::Store,
-                clear_value: ClearValue::OPAQUE_BLACK,
-            }],
-            depth_attachment,
-        };
-
-        let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
-
         let width = self.drawable_size.width as f32;
         let height = self.drawable_size.height as f32;
-        if width > 0.0 && height > 0.0 {
-            encoder.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
+
+        // =========================================================================
+        // Pass 1: Geometry (sky + PBR) → HDR intermediate texture
+        // =========================================================================
+        let has_tonemap = self.tonemap_pipeline.is_some() && self.geometry_hdr_view.is_some();
+        let draw_list = self.pending_draw_list.take();
+
+        log::debug!(
+            "render_frame: has_tonemap={}, hdr_view={}, hdr_slot={:?}",
+            has_tonemap,
+            self.geometry_hdr_view.is_some(),
+            self.geometry_hdr_bindless_slot,
+        );
+
+        if has_tonemap {
+            let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
+
+            let depth_attachment =
+                self.depth_texture_view
+                    .as_ref()
+                    .map(|view| DepthAttachmentInfo {
+                        view: view.clone(),
+                        load_op: LoadOp::Clear,
+                        store_op: StoreOp::DontCare,
+                        clear_value: ClearValue::depth_stencil(0.0, 0),
+                        format: ImageFormat::D32Sfloat,
+                    });
+
+            let geometry_pass_info = RenderPassInfo {
+                color_attachments: vec![ColorAttachmentInfo {
+                    view: geometry_hdr_view.clone(),
+                    load_op: LoadOp::Clear,
+                    store_op: StoreOp::Store,
+                    clear_value: ClearValue::OPAQUE_BLACK,
+                }],
+                depth_attachment,
+            };
+
+            let mut encoder = cmd_buffer.begin_render_pass(geometry_pass_info);
+
+            if width > 0.0 && height > 0.0 {
+                encoder.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
+            }
+
+            Self::bind_common_resources(&self, &mut encoder);
+
+            // Sky pass
+            if let Some(ref sky_pipeline) = self.sky_pipeline {
+                if let (Some(frame_buf), Some(object_buf)) =
+                    (&self.frame_uniform_buffer, &self.object_storage_buffer)
+                {
+                    let stages = ShaderStages::VERTEX_FRAGMENT;
+                    encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
+                    encoder.bind_storage_buffer(object_buf, 0, 1, stages);
+                }
+                if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
+                    encoder.bind_storage_buffer(buf_sizes, 0, 8, ShaderStages::VERTEX_FRAGMENT);
+                }
+                if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
+                    encoder.bind_vertex_buffer(dummy_vb, 0, 10);
+                }
+                encoder.bind_graphics_pipeline(sky_pipeline);
+                encoder.draw(3, 1, 0, 0);
+            }
+
+            // PBR geometry
+            if let Some(draw_list) = &draw_list {
+                Self::draw_objects(&self, &mut encoder, draw_list);
+            }
+
+            encoder.end_encoding();
+        } else {
+            // No tonemap pipeline — render geometry directly to drawable (legacy path)
+            let depth_attachment =
+                self.depth_texture_view
+                    .as_ref()
+                    .map(|view| DepthAttachmentInfo {
+                        view: view.clone(),
+                        load_op: LoadOp::Clear,
+                        store_op: StoreOp::DontCare,
+                        clear_value: ClearValue::depth_stencil(0.0, 0),
+                        format: ImageFormat::D32Sfloat,
+                    });
+
+            let render_pass_info = RenderPassInfo {
+                color_attachments: vec![ColorAttachmentInfo {
+                    view: drawable_view.clone(),
+                    load_op: LoadOp::Clear,
+                    store_op: StoreOp::Store,
+                    clear_value: ClearValue::OPAQUE_BLACK,
+                }],
+                depth_attachment,
+            };
+
+            let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
+
+            if width > 0.0 && height > 0.0 {
+                encoder.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
+            }
+
+            Self::bind_common_resources(&self, &mut encoder);
+
+            if let Some(ref sky_pipeline) = self.sky_pipeline {
+                if let (Some(frame_buf), Some(object_buf)) =
+                    (&self.frame_uniform_buffer, &self.object_storage_buffer)
+                {
+                    let stages = ShaderStages::VERTEX_FRAGMENT;
+                    encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
+                    encoder.bind_storage_buffer(object_buf, 0, 1, stages);
+                }
+                if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
+                    encoder.bind_storage_buffer(buf_sizes, 0, 8, ShaderStages::VERTEX_FRAGMENT);
+                }
+                if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
+                    encoder.bind_vertex_buffer(dummy_vb, 0, 10);
+                }
+                encoder.bind_graphics_pipeline(sky_pipeline);
+                encoder.draw(3, 1, 0, 0);
+            }
+
+            if let Some(draw_list) = &draw_list {
+                Self::draw_objects(&self, &mut encoder, draw_list);
+            }
+
+            encoder.end_encoding();
         }
 
-        if let (Some(frame_buf), Some(object_buf)) =
-            (&self.frame_uniform_buffer, &self.object_storage_buffer)
-        {
-            let stages = ShaderStages::VERTEX_FRAGMENT;
-            encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
-            encoder.bind_storage_buffer(object_buf, 0, 1, stages);
-        }
+        // =========================================================================
+        // Pass 2: Tonemap (HDR intermediate → drawable)
+        // =========================================================================
+        if has_tonemap {
+            let tonemap_pipeline = self.tonemap_pipeline.as_ref().unwrap();
 
-        // Bind the bindless texture argument buffer at index 9.
-        if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
-            let stages = ShaderStages::VERTEX_FRAGMENT;
-            unsafe {
-                if stages.vertex {
+            // Patch frame uniforms with HDR texture bindless index for the tonemap shader
+            if let Some(hdr_slot) = self.geometry_hdr_bindless_slot {
+                self.frame_uniforms.tonemap[3] = hdr_slot as f32;
+                if let Some(ref frame_buf) = self.frame_uniform_buffer {
+                    let ptr = frame_buf.map();
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            &self.frame_uniforms as *const FrameUniforms as *const u8,
+                            ptr,
+                            mem::size_of::<FrameUniforms>(),
+                        );
+                    }
+                    frame_buf.unmap();
+                }
+            }
+
+            let tonemap_pass_info = RenderPassInfo {
+                color_attachments: vec![ColorAttachmentInfo {
+                    view: drawable_view.clone(),
+                    load_op: LoadOp::Clear,
+                    store_op: StoreOp::Store,
+                    clear_value: ClearValue::OPAQUE_BLACK,
+                }],
+                depth_attachment: None,
+            };
+
+            let mut encoder = cmd_buffer.begin_render_pass(tonemap_pass_info);
+
+            if width > 0.0 && height > 0.0 {
+                encoder.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
+            }
+
+            if let Some(ref frame_buf) = self.frame_uniform_buffer {
+                encoder.bind_storage_buffer(frame_buf, 0, 0, ShaderStages::VERTEX_FRAGMENT);
+            }
+            if let Some(ref object_buf) = self.object_storage_buffer {
+                encoder.bind_storage_buffer(object_buf, 0, 1, ShaderStages::VERTEX_FRAGMENT);
+            }
+            if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
+                unsafe {
                     encoder
                         .inner
                         .setVertexBuffer_offset_atIndex(Some(arg_buffer), 0, 9);
-                }
-                if stages.fragment {
                     encoder
                         .inner
                         .setFragmentBuffer_offset_atIndex(Some(arg_buffer), 0, 9);
                 }
             }
-        }
-
-        // Bind the shared sampler at index 0
-        if let Some(ref sampler) = self.shared_sampler {
-            unsafe {
-                encoder
-                    .inner
-                    .setVertexSamplerState_atIndex(Some(&sampler.inner), 0);
-                encoder
-                    .inner
-                    .setFragmentSamplerState_atIndex(Some(&sampler.inner), 0);
-            }
-        }
-
-        // Bind the buffer sizes buffer at index 8 (naga's _mslBufferSizes)
-        if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
-            let stages = ShaderStages::VERTEX_FRAGMENT;
-            encoder.bind_storage_buffer(buf_sizes, 0, 8, stages);
-        }
-
-        // Bind light culling buffers (Set 3: point_lights, tile_indices, tile_counts)
-        if let Some(ref lc) = self.light_culling {
-            let stages = ShaderStages::FRAGMENT;
-            encoder.bind_storage_buffer(lc.light_buffer(), 0, 3, stages);
-            encoder.bind_storage_buffer(lc.tile_index_buffer(), 0, 4, stages);
-            encoder.bind_storage_buffer(lc.tile_count_buffer(), 0, 5, stages);
-        }
-
-        // Bind shadow cascade data at buffer 7 (Set 4, binding 0)
-        if let Some(ref shadow_buf) = self.shadow_cascade_buffer {
-            let stages = ShaderStages::FRAGMENT;
-            encoder.bind_storage_buffer(shadow_buf, 0, 7, stages);
-        }
-
-        // Bind shadow atlas texture at texture 1 (Set 4, binding 1)
-        if let Some(ref shadow_view) = self.shadow.shadow_map_view() {
-            unsafe {
-                encoder
-                    .inner
-                    .setFragmentTexture_atIndex(Some(&shadow_view.inner), 1);
-            }
-        }
-
-        // Bind shadow comparison sampler at sampler 1 (Set 4, binding 2)
-        if let Some(ref sampler) = self.shadow_sampler {
-            unsafe {
-                encoder
-                    .inner
-                    .setFragmentSamplerState_atIndex(Some(&sampler.inner), 1);
-            }
-        }
-
-        // Make all bindless textures and the argument buffer resident for the GPU.
-        if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
-            unsafe {
-                let resource: &ProtocolObject<dyn objc2_metal::MTLResource> =
-                    std::mem::transmute(arg_buffer);
-                encoder.inner.useResource_usage_stages(
-                    resource,
-                    objc2_metal::MTLResourceUsage::Read,
-                    objc2_metal::MTLRenderStages::Fragment,
-                );
-            }
-        }
-        for texture in self.bindless_manager.registered_textures() {
-            unsafe {
-                let resource: &ProtocolObject<dyn objc2_metal::MTLResource> =
-                    std::mem::transmute(texture);
-                encoder.inner.useResource_usage_stages(
-                    resource,
-                    objc2_metal::MTLResourceUsage::Read,
-                    objc2_metal::MTLRenderStages::Fragment,
-                );
-            }
-        }
-
-        // Draw sky fullscreen triangle before geometry (writes to background)
-        if let Some(ref sky_pipeline) = self.sky_pipeline {
-            if let (Some(frame_buf), Some(object_buf)) =
-                (&self.frame_uniform_buffer, &self.object_storage_buffer)
-            {
-                let stages = ShaderStages::VERTEX_FRAGMENT;
-                encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
-                encoder.bind_storage_buffer(object_buf, 0, 1, stages);
+            if let Some(ref sampler) = self.shared_sampler {
+                unsafe {
+                    encoder
+                        .inner
+                        .setFragmentSamplerState_atIndex(Some(&sampler.inner), 0);
+                }
             }
             if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
                 encoder.bind_storage_buffer(buf_sizes, 0, 8, ShaderStages::VERTEX_FRAGMENT);
@@ -1247,37 +1510,40 @@ impl GpuRenderer for MetalRenderer {
             if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
                 encoder.bind_vertex_buffer(dummy_vb, 0, 10);
             }
-            encoder.bind_graphics_pipeline(sky_pipeline);
-            encoder.draw(3, 1, 0, 0);
-        }
 
-        if let Some(draw_list) = self.pending_draw_list.take() {
-            for (i, draw) in draw_list.draws.iter().enumerate() {
-                let Some(mesh) = self.meshes.get(draw.mesh.index()) else {
-                    log::warn!("Draw {}: mesh index {} not found", i, draw.mesh.index());
-                    continue;
-                };
-                let Some(material) = self.materials.get(draw.material.index()) else {
-                    log::warn!(
-                        "Draw {}: material index {} not found",
-                        i,
-                        draw.material.index()
+            // Make argument buffer and HDR texture readable by fragment shader
+            if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
+                unsafe {
+                    let resource: &ProtocolObject<dyn objc2_metal::MTLResource> =
+                        std::mem::transmute(arg_buffer);
+                    encoder.inner.useResource_usage_stages(
+                        resource,
+                        objc2_metal::MTLResourceUsage::Read,
+                        objc2_metal::MTLRenderStages::Fragment,
                     );
-                    continue;
-                };
-                let Some(ref pipeline) = material.pipeline else {
-                    log::warn!("Draw {}: no pipeline", i);
-                    continue;
-                };
-
-                encoder.bind_graphics_pipeline(pipeline);
-                encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
-                encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
-                encoder.draw_indexed(mesh.index_count, 1, 0, 0, draw.instance_index);
+                }
             }
+            if let Some(ref hdr_view) = self.geometry_hdr_view {
+                unsafe {
+                    let resource: &ProtocolObject<dyn objc2_metal::MTLResource> =
+                        std::mem::transmute(&*hdr_view.inner);
+                    encoder.inner.useResource_usage_stages(
+                        resource,
+                        objc2_metal::MTLResourceUsage::Read,
+                        objc2_metal::MTLRenderStages::Fragment,
+                    );
+                }
+            }
+
+            encoder.bind_graphics_pipeline(tonemap_pipeline);
+            encoder.draw(3, 1, 0, 0);
+
+            encoder.end_encoding();
         }
 
-        // UI rendering pass (after geometry, before present)
+        // =========================================================================
+        // Pass 3: UI overlay → drawable (loads previous pass output)
+        // =========================================================================
         if let Some(ui_draw_list) = self.pending_ui_draw_list.take() {
             if !ui_draw_list.is_empty() {
                 if self
@@ -1289,13 +1555,24 @@ impl GpuRenderer for MetalRenderer {
                     if let Some(ui_mat_handle) = ui_material_handle {
                         if let Some(ui_material) = self.materials.get(ui_mat_handle.index()) {
                             if let Some(ref ui_pipeline) = ui_material.pipeline {
-                                encoder.bind_graphics_pipeline(ui_pipeline);
+                                let ui_pass_info = RenderPassInfo {
+                                    color_attachments: vec![ColorAttachmentInfo {
+                                        view: drawable_view.clone(),
+                                        load_op: LoadOp::Load,
+                                        store_op: StoreOp::Store,
+                                        clear_value: ClearValue::OPAQUE_BLACK,
+                                    }],
+                                    depth_attachment: None,
+                                };
+
+                                let mut encoder = cmd_buffer.begin_render_pass(ui_pass_info);
 
                                 let dw = self.drawable_size.width as f32;
                                 let dh = self.drawable_size.height as f32;
                                 encoder.set_viewport(0.0, 0.0, dw, dh, 0.0, 1.0);
 
-                                // UI vertices are in logical pixels; screen_size must match.
+                                encoder.bind_graphics_pipeline(ui_pipeline);
+
                                 let [screen_w, screen_h] = ui_draw_list.screen_size;
                                 let uniform_data: [f32; 4] = [screen_w, screen_h, -1.0, 0.0];
                                 encoder.set_push_constants(
@@ -1304,7 +1581,6 @@ impl GpuRenderer for MetalRenderer {
                                     ShaderStages::VERTEX_FRAGMENT,
                                 );
 
-                                // Bind bindless texture argument buffer at index 9
                                 if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
                                     unsafe {
                                         encoder.inner.setVertexBuffer_offset_atIndex(
@@ -1320,7 +1596,6 @@ impl GpuRenderer for MetalRenderer {
                                     }
                                 }
 
-                                // Bind shared sampler at index 0 for font sampling
                                 if let Some(ref sampler) = self.shared_sampler {
                                     unsafe {
                                         encoder.inner.setFragmentSamplerState_atIndex(
@@ -1342,14 +1617,14 @@ impl GpuRenderer for MetalRenderer {
                                     self.size.width,
                                     self.size.height,
                                 );
+
+                                encoder.end_encoding();
                             }
                         }
                     }
                 }
             }
         }
-
-        encoder.end_encoding();
 
         cmd_buffer.end();
         self.context.surface.present(&cmd_buffer.inner);
@@ -1634,7 +1909,11 @@ impl GpuRenderer for MetalRenderer {
 
         let fragment_fn = compiled.module.entry_points.get("fs_main");
 
-        let color_formats = &[MTLPixelFormat::BGRA8Unorm_sRGB];
+        let color_formats = if is_ui {
+            &[MTLPixelFormat::BGRA8Unorm_sRGB]
+        } else {
+            &[MTLPixelFormat::RGBA16Float]
+        };
         let depth_format = if is_ui {
             Some(MTLPixelFormat::Depth32Float)
         } else {
@@ -1855,6 +2134,10 @@ impl GpuRenderer for MetalRenderer {
 
     fn viewport_bindless_index(&self) -> Option<u32> {
         self.viewport_bindless_slot
+    }
+
+    fn geometry_hdr_bindless_index(&self) -> Option<u32> {
+        self.geometry_hdr_bindless_slot
     }
 
     fn register_depth_textures_bindless(&mut self) -> Result<u32, RendererError> {

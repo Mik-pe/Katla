@@ -9,6 +9,7 @@ pub(crate) mod depth_prepass;
 pub(crate) mod format;
 pub(crate) mod light_culling;
 pub(crate) mod metal_renderer;
+pub(crate) mod metal_transient_texture;
 pub(crate) mod outline;
 pub(crate) mod particle;
 pub(crate) mod pipeline;

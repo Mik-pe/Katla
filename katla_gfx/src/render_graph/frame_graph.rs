@@ -14,7 +14,7 @@ use crate::sync::VkImageView;
 use ash::vk;
 
 /// Special resource name for the swapchain backbuffer.
-pub const BACKBUFFER_NAME: &str = "backbuffer";
+pub use super::BACKBUFFER_NAME;
 
 /// Per-frame parameters for render graph execution.
 ///

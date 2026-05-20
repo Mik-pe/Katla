@@ -7,9 +7,9 @@
 use std::collections::HashMap;
 
 use crate::handle::MaterialHandle;
+use crate::render_graph::BACKBUFFER_NAME;
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::error::RenderGraphError;
-use crate::render_graph::frame_graph::BACKBUFFER_NAME;
 use crate::render_graph::pass::{PassKind, PassType};
 use crate::render_graph::resource::GraphResourceHandle;
 
