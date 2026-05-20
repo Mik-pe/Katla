@@ -24,8 +24,8 @@ fn test_render_graph_error_display() {
     let err = katla_gfx::RenderGraphError::InvalidConfiguration("bad config".to_string());
     assert!(err.to_string().contains("bad config"));
 
-    let err = katla_gfx::RenderGraphError::VulkanError("device lost".to_string());
-    assert!(err.to_string().contains("Vulkan error"));
+    let err = katla_gfx::RenderGraphError::BackendError("device lost".to_string());
+    assert!(err.to_string().contains("Backend error"));
 }
 
 #[test]

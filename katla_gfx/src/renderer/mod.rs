@@ -837,7 +837,7 @@ impl VulkanRenderer {
 
     pub fn recreate_swapchain(
         &mut self,
-        frame_graph: &mut crate::render_graph::FrameGraph,
+        frame_graph: &mut crate::render_graph::FrameGraph<Self>,
     ) -> Result<Vec<(String, u32)>, crate::error::RendererError> {
         self.wait_for_device();
         self.first_frame_rendered = false;
@@ -1195,11 +1195,11 @@ impl VulkanRenderer {
     /// ```
     pub fn render<F>(
         &mut self,
-        frame_graph: &mut crate::render_graph::FrameGraph,
+        frame_graph: &mut crate::render_graph::FrameGraph<Self>,
         f: F,
     ) -> Result<(), crate::error::RendererError>
     where
-        F: FnOnce(&mut crate::render_graph::Frame),
+        F: FnOnce(&mut crate::render_graph::Frame<'_, Self>),
     {
         // NOTE: wait_for_fence() is NOT called here — it must be called before
         // set_frame_uniforms() and execute_draw_calls() to prevent CPU-GPU data races

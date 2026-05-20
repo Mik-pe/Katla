@@ -411,6 +411,12 @@ impl MetalRenderer {
         Ok(())
     }
 
+    /// Set the geometry HDR view and bindless slot from an external source (frame graph).
+    pub fn set_geometry_hdr_view(&mut self, view: MetalTextureView, bindless_slot: u32) {
+        self.geometry_hdr_view = Some(view);
+        self.geometry_hdr_bindless_slot = Some(bindless_slot);
+    }
+
     /// Recreate render targets (depth, HDR color, scene color, depth-stencil) for the given size.
     fn recreate_render_targets(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
@@ -1163,6 +1169,21 @@ impl MetalRenderer {
                 RendererError::InvalidOperation(format!(
                     "Failed to register bindless texture: {}",
                     e
+                ))
+            })
+    }
+
+    pub(crate) fn update_metal_bindless_texture(
+        &mut self,
+        slot: u32,
+        texture: &objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_metal::MTLTexture>>,
+    ) -> Result<(), RendererError> {
+        self.bindless_manager
+            .update_texture(slot, texture)
+            .map_err(|e| {
+                RendererError::InvalidOperation(format!(
+                    "Failed to update bindless texture slot {}: {}",
+                    slot, e
                 ))
             })
     }

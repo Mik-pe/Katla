@@ -764,6 +764,23 @@ impl Application {
                 if let Err(e) = self.renderer.resize(w, h) {
                     log::error!("Failed to resize Metal renderer: {}", e);
                 }
+
+                if let Ok(textures) =
+                    self.frame_graph
+                        .recreate_transient_textures(&mut self.renderer, w, h)
+                {
+                    for (name, slot) in textures {
+                        if name == "hdr_color" {
+                            let frame_idx = GpuRenderer::current_frame(&self.renderer);
+                            if let Some(view) = self
+                                .frame_graph
+                                .transient_image_view("hdr_color", frame_idx)
+                            {
+                                self.renderer.set_geometry_hdr_view(view, slot);
+                            }
+                        }
+                    }
+                }
             }
         }
 

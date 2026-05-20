@@ -8,13 +8,14 @@ use crate::render_graph::frame::parallel_shadow::{
 };
 use crate::render_graph::pass::PassDesc;
 use crate::render_graph::resource::ResourceState;
+use crate::renderer::VulkanRenderer;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
 /// Minimum number of draw calls to justify parallel shadow recording overhead.
 const PARALLEL_SHADOW_DRAW_THRESHOLD: usize = 16;
 
-impl<'a> Frame<'a> {
+impl Frame<'_, VulkanRenderer> {
     /// Execute a shadow pass.
     ///
     /// Uses parallel secondary command buffer recording when there are enough draw

@@ -238,7 +238,6 @@ impl EditorState {
 }
 
 /// Cached pass IDs from the frame graph, resolved once at startup.
-#[cfg(feature = "vulkan")]
 pub(crate) struct PassIds {
     pub(crate) depth_prepass: katla_gfx::render_graph::PassId,
     pub(crate) geometry: katla_gfx::render_graph::PassId,
@@ -250,11 +249,25 @@ pub(crate) struct PassIds {
     pub(crate) wallhack_overlay: katla_gfx::render_graph::PassId,
 }
 
-#[cfg(feature = "vulkan")]
+impl Default for PassIds {
+    fn default() -> Self {
+        Self {
+            depth_prepass: katla_gfx::render_graph::PassId(0),
+            geometry: katla_gfx::render_graph::PassId(0),
+            shadow: katla_gfx::render_graph::PassId(0),
+            outline: katla_gfx::render_graph::PassId(0),
+            stencil_indicator: katla_gfx::render_graph::PassId(0),
+            ui: katla_gfx::render_graph::PassId(0),
+            tonemap: katla_gfx::render_graph::PassId(0),
+            wallhack_overlay: katla_gfx::render_graph::PassId(0),
+        }
+    }
+}
+
 impl PassIds {
     /// Re-resolve all PassIds from the frame graph by name.
     /// Must be called after any `insert_pass` calls that shift indices.
-    pub(crate) fn refresh(&mut self, graph: &katla_gfx::FrameGraph) {
+    pub(crate) fn refresh(&mut self, graph: &katla_gfx::render_graph::FrameGraph<Renderer>) {
         self.depth_prepass = graph.pass_id("depth_prepass").unwrap_or(self.depth_prepass);
         self.geometry = graph.pass_id("geometry").unwrap_or(self.geometry);
         self.shadow = graph.pass_id("shadow").unwrap_or(self.shadow);
@@ -274,11 +287,7 @@ impl PassIds {
 pub struct Application {
     pub(crate) window: Window,
     pub(crate) renderer: Renderer,
-    /// Frame graph for rendering (built once at startup)
-    #[cfg(feature = "vulkan")]
-    pub(crate) frame_graph: katla_gfx::FrameGraph,
-    /// Handles to frame graph passes used during rendering
-    #[cfg(feature = "vulkan")]
+    pub(crate) frame_graph: katla_gfx::render_graph::FrameGraph<Renderer>,
     pub(crate) pass_ids: PassIds,
     pub(crate) camera: Camera,
     #[cfg(feature = "vulkan")]

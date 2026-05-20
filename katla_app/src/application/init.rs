@@ -133,7 +133,7 @@ impl Application {
                             particle_system
                                 .update_compute_descriptor_binding(current_frame)
                                 .map_err(|e| {
-                                    RenderGraphError::VulkanError(format!(
+                                    RenderGraphError::BackendError(format!(
                                         "Failed to update particle compute descriptor binding: {}",
                                         e
                                     ))
@@ -153,7 +153,7 @@ impl Application {
                                     current_frame,
                                 )
                                 .map_err(|e| {
-                                    RenderGraphError::VulkanError(format!(
+                                    RenderGraphError::BackendError(format!(
                                         "Particle simulate dispatch failed: {}",
                                         e
                                     ))
@@ -195,7 +195,7 @@ impl Application {
                             particle_system
                                 .update_compute_descriptor_binding(current_frame)
                                 .map_err(|e| {
-                                    RenderGraphError::VulkanError(format!(
+                                    RenderGraphError::BackendError(format!(
                                         "Failed to update particle compute descriptor binding: {}",
                                         e
                                     ))
@@ -209,7 +209,7 @@ impl Application {
                                     current_frame,
                                 )
                                 .map_err(|e| {
-                                    RenderGraphError::VulkanError(format!(
+                                    RenderGraphError::BackendError(format!(
                                         "Particle emit dispatch failed: {}",
                                         e
                                     ))
@@ -494,6 +494,14 @@ impl Application {
             warn!("Failed to initialize Metal sky pipeline: {}", e);
         } else {
             info!("Sky pipeline initialized (Metal)");
+        }
+
+        // Initialize tonemapping pipeline for HDR-to-LDR conversion
+        let tonemap_shader_path = self.resources.shader_path("tonemapping.wgsl");
+        if let Err(e) = self.renderer.init_tonemap_pipeline(&tonemap_shader_path) {
+            warn!("Failed to initialize Metal tonemap pipeline: {}", e);
+        } else {
+            info!("Tonemap pipeline initialized (Metal)");
         }
     }
 }

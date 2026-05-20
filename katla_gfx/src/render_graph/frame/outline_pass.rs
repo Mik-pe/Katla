@@ -4,11 +4,12 @@ use crate::render_graph::frame::draw_helpers::{
 };
 use crate::render_graph::frame::{Frame, PassExecutionData};
 use crate::render_graph::pass::PassDesc;
+use crate::renderer::VulkanRenderer;
 use crate::renderer::outline::{OutlinePushConstants, compute_outline_width};
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
-impl<'a> Frame<'a> {
+impl Frame<'_, VulkanRenderer> {
     /// Execute the outline pass — stencil-based selection highlight.
     ///
     /// Three sub-passes within a single render pass:

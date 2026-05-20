@@ -270,6 +270,12 @@ pub trait GpuRenderer: Sized + 'static {
         ))
     }
 
+    /// Get the bindless slot index of the HDR geometry render target.
+    /// Used by the tonemapping shader to sample the HDR scene.
+    fn geometry_hdr_bindless_index(&self) -> Option<u32> {
+        None
+    }
+
     // ========================================================================
     // Animation
     // ========================================================================
@@ -552,7 +558,10 @@ impl GpuRenderer for VulkanRenderer {
     }
 
     fn resize(&mut self, width: u32, height: u32) -> Result<(), RendererError> {
-        VulkanRenderer::recreate_swapchain(self, &mut crate::render_graph::FrameGraph::new())?;
+        VulkanRenderer::recreate_swapchain(
+            self,
+            &mut crate::render_graph::FrameGraph::<VulkanRenderer>::new(),
+        )?;
         let _ = (width, height);
         Ok(())
     }

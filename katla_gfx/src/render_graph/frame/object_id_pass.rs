@@ -1,11 +1,12 @@
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::{Frame, PassExecutionData};
 use crate::render_graph::pass::PassDesc;
+use crate::renderer::VulkanRenderer;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use crate::vulkan::vertex_attribute::AttributeType;
 use ash::vk;
 
-impl<'a> Frame<'a> {
+impl Frame<'_, VulkanRenderer> {
     /// Execute the object-ID picking pass.
     ///
     /// Renders each mesh with a flat color encoding its instance index + 1
