@@ -186,6 +186,8 @@ pub struct MetalRenderer {
     buffer_sizes_buffer: Option<MetalBuffer>,
     scene_color_view: Option<MetalTextureView>,
     viewport_bindless_slot: Option<u32>,
+    sky_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
+    dummy_vertex_buffer: Option<MetalBuffer>,
 }
 
 impl MetalRenderer {
@@ -266,6 +268,8 @@ impl MetalRenderer {
             buffer_sizes_buffer: None,
             scene_color_view: None,
             viewport_bindless_slot: None,
+            sky_pipeline: None,
+            dummy_vertex_buffer: None,
         };
 
         let default_tex = renderer.create_texture_solid([255, 255, 255, 255]);
@@ -327,6 +331,18 @@ impl MetalRenderer {
             buffer_sizes.unmap();
         }
         renderer.buffer_sizes_buffer = Some(buffer_sizes);
+
+        // Small dummy vertex buffer for fullscreen passes that have a vertex descriptor
+        // referencing buffer index 10 but don't actually read vertex data.
+        let dummy_vb = renderer.context.create_buffer(4, true)?;
+        {
+            let ptr = dummy_vb.map();
+            unsafe {
+                std::ptr::write_bytes(ptr, 0, 4);
+            }
+            dummy_vb.unmap();
+        }
+        renderer.dummy_vertex_buffer = Some(dummy_vb);
 
         Ok(renderer)
     }
@@ -733,6 +749,49 @@ impl MetalRenderer {
         Ok(())
     }
 
+    /// Initialize the sky pipeline for procedural atmosphere rendering.
+    ///
+    /// Compiles the sky WGSL shader into a Metal fullscreen pipeline that uses
+    /// `@builtin(vertex_index)` to generate a fullscreen triangle.
+    pub fn init_sky_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
+
+        let compiled = shader::compile_wgsl_to_metal(
+            &self.context.device,
+            &wgsl_source,
+            &["vs_main", "fs_main"],
+            false,
+        )?;
+
+        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
+            RendererError::InvalidOperation("Sky vertex entry point not found".into())
+        })?;
+        let fragment_fn = compiled.module.entry_points.get("fs_main").ok_or_else(|| {
+            RendererError::InvalidOperation("Sky fragment entry point not found".into())
+        })?;
+
+        let pipeline = self
+            .context
+            .create_graphics_pipeline_with_vertex_descriptor(
+                vertex_fn,
+                Some(fragment_fn),
+                &[MTLPixelFormat::BGRA8Unorm_sRGB],
+                None,
+                false,
+                crate::pipeline::CompareOp::Always,
+                objc2_metal::MTLCullMode::None,
+                objc2_metal::MTLWinding::CounterClockwise,
+                Some(&super::context::fullscreen_vertex_descriptor()),
+                false,
+            )?;
+
+        self.sky_pipeline = Some(pipeline);
+        Ok(())
+    }
+
     /// Update shadow cascade view-projection matrices.
     pub fn update_shadows(&mut self, light_direction: [f32; 3]) {
         self.shadow.update_cascades(
@@ -1052,7 +1111,7 @@ impl GpuRenderer for MetalRenderer {
                 view: view.clone(),
                 load_op: LoadOp::Clear,
                 store_op: StoreOp::DontCare,
-                clear_value: ClearValue::depth_stencil(1.0, 0),
+                clear_value: ClearValue::depth_stencil(0.0, 0),
                 format: ImageFormat::D32Sfloat,
             });
 
@@ -1171,6 +1230,25 @@ impl GpuRenderer for MetalRenderer {
                     objc2_metal::MTLRenderStages::Fragment,
                 );
             }
+        }
+
+        // Draw sky fullscreen triangle before geometry (writes to background)
+        if let Some(ref sky_pipeline) = self.sky_pipeline {
+            if let (Some(frame_buf), Some(object_buf)) =
+                (&self.frame_uniform_buffer, &self.object_storage_buffer)
+            {
+                let stages = ShaderStages::VERTEX_FRAGMENT;
+                encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
+                encoder.bind_storage_buffer(object_buf, 0, 1, stages);
+            }
+            if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
+                encoder.bind_storage_buffer(buf_sizes, 0, 8, ShaderStages::VERTEX_FRAGMENT);
+            }
+            if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
+                encoder.bind_vertex_buffer(dummy_vb, 0, 10);
+            }
+            encoder.bind_graphics_pipeline(sky_pipeline);
+            encoder.draw(3, 1, 0, 0);
         }
 
         if let Some(draw_list) = self.pending_draw_list.take() {
@@ -1589,7 +1667,7 @@ impl GpuRenderer for MetalRenderer {
                 color_formats,
                 depth_format,
                 true,
-                crate::pipeline::CompareOp::LessOrEqual,
+                crate::pipeline::CompareOp::GreaterOrEqual,
                 objc2_metal::MTLCullMode::Back,
                 objc2_metal::MTLWinding::CounterClockwise,
             )?

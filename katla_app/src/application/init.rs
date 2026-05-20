@@ -487,6 +487,14 @@ impl Application {
                 warn!("Failed to compile Metal UI material: {}", e);
             }
         }
+
+        // Initialize sky pipeline for procedural atmosphere
+        let sky_shader_path = self.resources.shader_path("sky.wgsl");
+        if let Err(e) = self.renderer.init_sky_pipeline(&sky_shader_path) {
+            warn!("Failed to initialize Metal sky pipeline: {}", e);
+        } else {
+            info!("Sky pipeline initialized (Metal)");
+        }
     }
 }
 

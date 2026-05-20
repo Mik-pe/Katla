@@ -151,6 +151,22 @@ pub(crate) fn ui_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
     vertex_descriptor
 }
 
+/// Build an empty vertex descriptor for fullscreen passes.
+///
+/// Fullscreen shaders generate a triangle from `@builtin(vertex_index)`
+/// and do not read from any vertex buffer or attributes.
+pub(crate) fn fullscreen_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
+    let vertex_descriptor = MTLVertexDescriptor::new();
+    let layouts = vertex_descriptor.layouts();
+    let layout = unsafe { layouts.objectAtIndexedSubscript(10) };
+    unsafe {
+        layout.setStride(1);
+        layout.setStepFunction(MTLVertexStepFunction::PerVertex);
+        layout.setStepRate(1);
+    }
+    vertex_descriptor
+}
+
 pub(crate) struct MetalFeatures {
     pub(crate) max_bindless_textures: u32,
 }
