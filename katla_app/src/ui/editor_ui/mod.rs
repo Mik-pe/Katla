@@ -289,14 +289,9 @@ impl EditorUI {
     ///
     /// This stores the bindless texture index that the UI will use to sample from the transient texture.
     /// We encode it as a special TextureId with a high bit set to distinguish from regular textures.
-    #[cfg(feature = "vulkan")]
     pub fn set_viewport_bindless_index(&mut self, bindless_index: u32) {
-        // Encode bindless index in TextureId with high bit set (bit 63)
-        // This distinguishes it from regular texture handles
         const BINDLESS_FLAG: u64 = 1 << 63;
         let texture_id = katla_ui::TextureId::new(BINDLESS_FLAG | (bindless_index as u64));
-
-        // Store in viewport_texture_ids for the viewport grid widget
         self.viewport_texture_ids = [Some(texture_id), None, None, None];
     }
 
