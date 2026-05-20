@@ -135,6 +135,10 @@ impl Application {
 
         #[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
         {
+            if let Some(slot) = self.renderer.viewport_bindless_index() {
+                self.editor.editor_ui.set_viewport_bindless_index(slot);
+            }
+
             log::debug!("Generating UI draw list (Metal)...");
             let ui_draw_list = editor::generate_ui_draw_list(self, dt);
             log::debug!("UI draw list generated (Metal)");
