@@ -1033,8 +1033,6 @@ impl GpuRenderer for MetalRenderer {
             .take()
             .ok_or_else(|| RendererError::InvalidOperation("No drawable texture".into()))?;
 
-        let drawable_texture_clone = drawable_texture.clone();
-
         let drawable_view = MetalTextureView::new(
             drawable_texture.clone(),
             MetalTexture::new(drawable_texture, ImageFormat::B8G8R8A8Srgb),
@@ -1279,27 +1277,6 @@ impl GpuRenderer for MetalRenderer {
         self.context.surface.present(&cmd_buffer.inner);
         self.last_command_buffer = Some(cmd_buffer.inner.clone());
         cmd_buffer.submit(&self.context);
-
-        // Blit drawable to scene color texture for UI viewport sampling
-        if let Some(ref scene_view) = self.scene_color_view {
-            let mut blit_cmd = self.context.create_command_buffer();
-            blit_cmd.begin();
-            {
-                let blit = blit_cmd.begin_blit_pass();
-                unsafe {
-                    let src: &ProtocolObject<dyn MTLTexture> = drawable_texture_clone.as_ref();
-                    let dst: &ProtocolObject<dyn MTLTexture> = scene_view.inner.as_ref();
-                    let _: () = objc2::msg_send![
-                        &blit.inner,
-                        copyFromTexture: src,
-                        toTexture: dst,
-                    ];
-                }
-                blit.end_encoding();
-            }
-            blit_cmd.end();
-            blit_cmd.submit(&self.context);
-        }
 
         Ok(())
     }

@@ -93,8 +93,9 @@ fn draw_viewport_grid(ui: &mut UiContext, _bounds: Rect2D) {
             let slot_index = ctx.state.layout.slot_index(row, col).unwrap();
             let viewport_bounds = get_viewport_bounds(ctx.bounds, &ctx.state, row, col);
 
-            let texture = ctx.texture_ids[slot_index].unwrap_or(TextureId::NONE);
-            ui.image(texture, viewport_bounds, None, Some(Color::WHITE));
+            if let Some(texture) = ctx.texture_ids[slot_index] {
+                ui.image(texture, viewport_bounds, None, Some(Color::WHITE));
+            }
 
             let is_active = ctx.state.active_viewport == Some(slot_index);
             let is_hovered = hovered_slot == Some(slot_index);
