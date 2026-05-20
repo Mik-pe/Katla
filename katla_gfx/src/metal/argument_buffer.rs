@@ -76,16 +76,13 @@ impl MetalBindlessTextureManager {
                 .newArgumentEncoderWithArguments(&*descriptors)
                 .expect("Failed to create argument encoder for bindless textures");
 
+            let encoded_length = encoder.encodedLength();
             let buffer = device
-                .newBufferWithLength_options(
-                    encoder.encodedLength(),
-                    MTLResourceOptions::StorageModeShared,
-                )
+                .newBufferWithLength_options(encoded_length, MTLResourceOptions::StorageModeShared)
                 .expect("Failed to create argument buffer for bindless textures");
 
             encoder.setArgumentBuffer_offset(Some(&buffer), 0);
 
-            // Fill all slots: registered textures or default.
             for (i, slot) in self.textures.iter().enumerate() {
                 let tex = slot.as_ref().map(|t| t.as_ref()).unwrap_or(default_texture);
                 encoder.setTexture_atIndex(Some(tex), i);
@@ -132,11 +129,15 @@ impl MetalBindlessTextureManager {
         let Some(ref encoder) = self.encoder else {
             return;
         };
+        let Some(ref buffer) = self.argument_buffer else {
+            return;
+        };
         let texture = self.textures[slot as usize]
             .as_ref()
             .map(|t| t.as_ref())
             .or(self.default_texture.as_deref());
         unsafe {
+            encoder.setArgumentBuffer_offset(Some(buffer), 0);
             if let Some(tex) = texture {
                 encoder.setTexture_atIndex(Some(tex), slot as usize);
             } else if let Some(ref default) = self.default_texture {
@@ -148,5 +149,15 @@ impl MetalBindlessTextureManager {
     /// Get the argument buffer for binding at buffer index 9.
     pub(crate) fn argument_buffer(&self) -> Option<&ProtocolObject<dyn MTLBuffer>> {
         self.argument_buffer.as_deref()
+    }
+
+    /// Iterate over all registered textures for `useResource` calls.
+    pub(crate) fn registered_textures(
+        &self,
+    ) -> impl Iterator<Item = &ProtocolObject<dyn MTLTexture>> {
+        self.textures
+            .iter()
+            .filter_map(|opt| opt.as_deref())
+            .chain(self.default_texture.as_deref().into_iter())
     }
 }

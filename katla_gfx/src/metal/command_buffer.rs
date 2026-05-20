@@ -1,6 +1,11 @@
+use std::ptr::NonNull;
+
+use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal::{MTLCommandBuffer, MTLCommandEncoder, MTLRenderPassDescriptor};
+use objc2_metal::{
+    MTLCommandBuffer, MTLCommandBufferStatus, MTLCommandEncoder, MTLRenderPassDescriptor,
+};
 
 use crate::backend::command::*;
 use crate::backend::traits::GpuBackend;
@@ -18,12 +23,73 @@ pub(crate) struct MetalCommandBuffer {
     pub(crate) inner: Retained<ProtocolObject<dyn MTLCommandBuffer>>,
 }
 
+impl MetalCommandBuffer {
+    fn log_gpu_error(cmd_buffer: &ProtocolObject<dyn MTLCommandBuffer>) {
+        let status = cmd_buffer.status();
+        if status != MTLCommandBufferStatus::Error {
+            return;
+        }
+
+        let label = cmd_buffer
+            .label()
+            .map(|l| l.to_string())
+            .unwrap_or_default();
+
+        let error = match cmd_buffer.error() {
+            Some(e) => e,
+            None => {
+                log::error!(
+                    "Metal command buffer '{}' failed with Error status but no NSError",
+                    label
+                );
+                return;
+            }
+        };
+
+        let code = error.code() as u64;
+        let domain = error.domain().to_string();
+        let description = error.localizedDescription().to_string();
+
+        let error_kind = match code {
+            1 => "Internal",
+            2 => "Timeout",
+            3 => "PageFault",
+            4 => "AccessRevoked",
+            7 => "NotPermitted",
+            8 => "OutOfMemory",
+            9 => "InvalidResource",
+            10 => "Memoryless",
+            11 => "DeviceRemoved",
+            12 => "StackOverflow",
+            _ => "Unknown",
+        };
+
+        log::error!(
+            "Metal GPU error [{}]: {} (code={} domain={}):\n  {}",
+            label,
+            error_kind,
+            code,
+            domain,
+            description,
+        );
+    }
+}
+
 impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
     fn begin(&mut self) {}
 
     fn end(&mut self) {}
 
     fn submit(&self, _context: &<MetalBackend as GpuBackend>::Context) {
+        let block: RcBlock<dyn Fn(NonNull<ProtocolObject<dyn MTLCommandBuffer>>)> = RcBlock::new(
+            |cmd_buffer: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
+                let cmd_buffer = unsafe { cmd_buffer.as_ref() };
+                Self::log_gpu_error(cmd_buffer);
+            },
+        );
+        unsafe {
+            self.inner.addCompletedHandler(RcBlock::as_ptr(&block));
+        }
         self.inner.commit();
     }
 

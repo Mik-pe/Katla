@@ -57,7 +57,7 @@ impl MetalDepthPrepass {
             true,
             CompareOp::LessOrEqual,
             objc2_metal::MTLCullMode::Back,
-            objc2_metal::MTLWinding::CounterClockwise,
+            objc2_metal::MTLWinding::Clockwise,
         )?;
 
         self.pipeline = Some(pipeline);
@@ -78,7 +78,7 @@ impl MetalDepthPrepass {
             true,
             CompareOp::LessOrEqual,
             objc2_metal::MTLCullMode::Back,
-            objc2_metal::MTLWinding::CounterClockwise,
+            objc2_metal::MTLWinding::Clockwise,
         )?;
 
         self.pipeline_skinned = Some(pipeline);
@@ -135,7 +135,7 @@ pub(crate) fn render_depth_prepass(
             continue;
         };
 
-        encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 0);
+        encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
         encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
         encoder.draw_indexed(mesh.index_count, 1, 0, 0, draw.instance_index);
     }

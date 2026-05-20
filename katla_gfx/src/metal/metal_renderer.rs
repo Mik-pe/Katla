@@ -165,6 +165,7 @@ pub struct MetalRenderer {
     default_texture: Option<TextureHandle>,
     default_material: Option<MaterialHandle>,
     size: Size2D,
+    drawable_size: Size2D,
     ui_font_atlas: Option<TextureHandle>,
     last_command_buffer: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
     pending_draw_list: Option<DrawList>,
@@ -209,13 +210,11 @@ impl MetalRenderer {
         let context = MetalContext::init(window, display)?;
         let mut renderer = Self::new(context)?;
 
-        // Set initial size from the Metal layer's drawable size
-        let drawable_size = renderer.context.surface.layer.drawableSize();
-        let width = drawable_size.width as u32;
-        let height = drawable_size.height as u32;
-        if width > 0 && height > 0 {
-            renderer.size = Size2D::new(width, height);
-            renderer.recreate_render_targets(width, height);
+        let ds = renderer.context.surface.layer.drawableSize();
+        let dw = ds.width as u32;
+        let dh = ds.height as u32;
+        if dw > 0 && dh > 0 {
+            renderer.drawable_size = Size2D::new(dw, dh);
         }
 
         Ok(renderer)
@@ -241,6 +240,7 @@ impl MetalRenderer {
             default_texture: None,
             default_material: None,
             size: Size2D::default(),
+            drawable_size: Size2D::default(),
             ui_font_atlas: None,
             last_command_buffer: None,
             pending_draw_list: None,
@@ -736,6 +736,10 @@ impl MetalRenderer {
 
         let mut cmd_buffer = self.context.create_command_buffer();
         cmd_buffer.begin();
+        unsafe {
+            let label = objc2_foundation::NSString::from_str("shadow_pass");
+            cmd_buffer.inner.setLabel(Some(&label));
+        }
 
         for cascade_idx in 0..self.shadow.cascade_count() as usize {
             let cascade_view_proj = self.shadow.cascade_view_proj(cascade_idx);
@@ -783,6 +787,10 @@ impl MetalRenderer {
 
         let mut cmd_buffer = self.context.create_command_buffer();
         cmd_buffer.begin();
+        unsafe {
+            let label = objc2_foundation::NSString::from_str("depth_prepass");
+            cmd_buffer.inner.setLabel(Some(&label));
+        }
 
         super::depth_prepass::render_depth_prepass(
             &mut cmd_buffer,
@@ -989,6 +997,11 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn render_frame(&mut self) -> Result<(), RendererError> {
+        if self.depth_texture_view.is_none() {
+            self.current_drawable_texture = None;
+            return Ok(());
+        }
+
         let drawable_texture = self
             .current_drawable_texture
             .take()
@@ -1001,6 +1014,10 @@ impl GpuRenderer for MetalRenderer {
 
         let mut cmd_buffer = self.context.create_command_buffer();
         cmd_buffer.begin();
+        unsafe {
+            let label = objc2_foundation::NSString::from_str("main_render");
+            cmd_buffer.inner.setLabel(Some(&label));
+        }
 
         let depth_attachment = self
             .depth_texture_view
@@ -1025,8 +1042,8 @@ impl GpuRenderer for MetalRenderer {
 
         let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
 
-        let width = self.size.width as f32;
-        let height = self.size.height as f32;
+        let width = self.drawable_size.width as f32;
+        let height = self.drawable_size.height as f32;
         if width > 0.0 && height > 0.0 {
             encoder.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
         }
@@ -1106,6 +1123,30 @@ impl GpuRenderer for MetalRenderer {
             }
         }
 
+        // Make all bindless textures and the argument buffer resident for the GPU.
+        if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
+            unsafe {
+                let resource: &ProtocolObject<dyn objc2_metal::MTLResource> =
+                    std::mem::transmute(arg_buffer);
+                encoder.inner.useResource_usage_stages(
+                    resource,
+                    objc2_metal::MTLResourceUsage::Read,
+                    objc2_metal::MTLRenderStages::Fragment,
+                );
+            }
+        }
+        for texture in self.bindless_manager.registered_textures() {
+            unsafe {
+                let resource: &ProtocolObject<dyn objc2_metal::MTLResource> =
+                    std::mem::transmute(texture);
+                encoder.inner.useResource_usage_stages(
+                    resource,
+                    objc2_metal::MTLResourceUsage::Read,
+                    objc2_metal::MTLRenderStages::Fragment,
+                );
+            }
+        }
+
         if let Some(draw_list) = self.pending_draw_list.take() {
             for (i, draw) in draw_list.draws.iter().enumerate() {
                 let Some(mesh) = self.meshes.get(draw.mesh.index()) else {
@@ -1146,12 +1187,13 @@ impl GpuRenderer for MetalRenderer {
                             if let Some(ref ui_pipeline) = ui_material.pipeline {
                                 encoder.bind_graphics_pipeline(ui_pipeline);
 
-                                let drawable_w = self.size.width as f32;
-                                let drawable_h = self.size.height as f32;
-                                encoder.set_viewport(0.0, 0.0, drawable_w, drawable_h, 0.0, 1.0);
+                                let dw = self.drawable_size.width as f32;
+                                let dh = self.drawable_size.height as f32;
+                                encoder.set_viewport(0.0, 0.0, dw, dh, 0.0, 1.0);
 
-                                // Bind UiUniforms at buffer 3: [screen_w, screen_h, ndc_y_flip(-1.0), 0]
-                                let uniform_data: [f32; 4] = [drawable_w, drawable_h, -1.0, 0.0];
+                                // UI vertices are in logical pixels; screen_size must match.
+                                let [screen_w, screen_h] = ui_draw_list.screen_size;
+                                let uniform_data: [f32; 4] = [screen_w, screen_h, -1.0, 0.0];
                                 encoder.set_push_constants(
                                     bytemuck::cast_slice(&uniform_data),
                                     3,
@@ -1588,10 +1630,11 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn resize(&mut self, width: u32, height: u32) -> Result<(), RendererError> {
-        self.context.surface.resize(width, height);
         self.size = Size2D::new(width, height);
-        self.resize_light_culling(width, height);
-        self.recreate_render_targets(width, height);
+        let dw = self.drawable_size.width;
+        let dh = self.drawable_size.height;
+        self.resize_light_culling(dw, dh);
+        self.recreate_render_targets(dw, dh);
         Ok(())
     }
 
@@ -1717,6 +1760,10 @@ impl GpuRenderer for MetalRenderer {
     }
 
     // -- UI Rendering --
+
+    fn set_ui_material(&mut self, material: MaterialHandle) {
+        self.ui_renderer.set_ui_material(material);
+    }
 
     fn render_ui_pass(&mut self, draw_list: crate::renderer::types::UIDrawList) {
         MetalRenderer::render_ui_pass(self, draw_list);

@@ -93,14 +93,16 @@ fn attach_layer_to_nsview(
                 let _: () = objc2::msg_send![ns_view, setLayer: layer];
             }
 
-            // Set the drawable size from the view's current bounds
+            // Set the drawable size from the view's bounds scaled by backingScaleFactor
             unsafe {
                 let bounds: objc2_foundation::NSRect = objc2::msg_send![ns_view, bounds];
+                let scale_factor: f64 = objc2::msg_send![ns_view, backingScaleFactor];
                 if bounds.size.width > 0.0 && bounds.size.height > 0.0 {
                     layer.setDrawableSize(objc2_foundation::NSSize {
-                        width: bounds.size.width,
-                        height: bounds.size.height,
+                        width: bounds.size.width * scale_factor,
+                        height: bounds.size.height * scale_factor,
                     });
+                    layer.setContentsScale(scale_factor);
                 }
             }
 

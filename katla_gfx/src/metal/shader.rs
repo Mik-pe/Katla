@@ -253,6 +253,8 @@ fn create_ui_binding_map() -> msl::EntryPointResources {
         resources.resources.insert(*binding, target.clone());
     }
 
+    resources.sizes_buffer = Some(8);
+
     resources
 }
 
