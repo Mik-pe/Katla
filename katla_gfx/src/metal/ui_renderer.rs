@@ -147,23 +147,10 @@ impl MetalUIRenderer {
         encoder: &mut super::render_encoder::MetalRenderEncoder,
         draw_list: &UIDrawList,
         render_pass_w: u32,
-        render_pass_h: u32,
+        _render_pass_h: u32,
     ) {
         for cmd in &draw_list.commands {
-            if let Some(clip) = cmd.clip_rect {
-                let scale = draw_list.scale_factor;
-                let sx = ((clip[0] * scale) as u32).min(render_pass_w);
-                let sy = ((clip[1] * scale) as u32).min(render_pass_h);
-                let sw = ((clip[2] * scale) as u32).min(render_pass_w.saturating_sub(sx));
-                let sh = ((clip[3] * scale) as u32).min(render_pass_h.saturating_sub(sy));
-                encoder.set_scissor(sx, sy, sw, sh);
-            }
-
             encoder.draw_indexed(cmd.index_count, 1, cmd.index_offset, 0, 0);
-
-            if cmd.clip_rect.is_some() {
-                encoder.set_scissor(0, 0, render_pass_w, render_pass_h);
-            }
         }
     }
 }

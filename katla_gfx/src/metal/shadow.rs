@@ -117,7 +117,7 @@ impl MetalShadowSubsystem {
             true,
             CompareOp::Less,
             objc2_metal::MTLCullMode::Front,
-            objc2_metal::MTLWinding::CounterClockwise,
+            objc2_metal::MTLWinding::Clockwise,
         )?;
 
         self.shadow_pipeline = Some(pipeline);
@@ -221,7 +221,7 @@ pub(crate) fn render_cascade(
             continue;
         };
 
-        encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 0);
+        encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
         encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
         encoder.draw_indexed(mesh.index_count, 1, 0, 0, draw.instance_index);
     }

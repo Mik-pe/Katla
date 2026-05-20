@@ -40,7 +40,7 @@ objc2-metal = { version = "0.3", features = [
     "MTLDataType",
 ], optional = true }
 objc2-quartz-core = { version = "0.3", features = ["CAMetalLayer"], optional = true }
-objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSDictionary", "NSRange", "NSGeometry"], optional = true }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSDictionary", "NSRange", "NSGeometry", "NSError"], optional = true }
 block2 = { version = "0.6", optional = true }
 
 [dev-dependencies]

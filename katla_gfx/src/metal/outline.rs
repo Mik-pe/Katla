@@ -106,7 +106,7 @@ impl MetalOutlineSubsystem {
             false,
             CompareOp::GreaterOrEqual,
             objc2_metal::MTLCullMode::None,
-            objc2_metal::MTLWinding::CounterClockwise,
+            objc2_metal::MTLWinding::Clockwise,
             stencil_face,
         )?;
 
@@ -142,7 +142,7 @@ impl MetalOutlineSubsystem {
             false,
             CompareOp::GreaterOrEqual,
             objc2_metal::MTLCullMode::Front,
-            objc2_metal::MTLWinding::CounterClockwise,
+            objc2_metal::MTLWinding::Clockwise,
             stencil_face,
         )?;
 
@@ -173,7 +173,7 @@ impl MetalOutlineSubsystem {
             false,
             CompareOp::GreaterOrEqual,
             objc2_metal::MTLCullMode::None,
-            objc2_metal::MTLWinding::CounterClockwise,
+            objc2_metal::MTLWinding::Clockwise,
             stencil_face,
         )?;
 
@@ -205,7 +205,7 @@ impl MetalOutlineSubsystem {
             false,
             CompareOp::GreaterOrEqual,
             objc2_metal::MTLCullMode::Front,
-            objc2_metal::MTLWinding::CounterClockwise,
+            objc2_metal::MTLWinding::Clockwise,
             stencil_face,
         )?;
 
@@ -267,7 +267,7 @@ pub(crate) fn render_stencil_mark(
             continue;
         };
 
-        encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 0);
+        encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
         encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
         encoder.draw_indexed(mesh.index_count, 1, 0, 0, draw.instance_index);
     }
@@ -341,7 +341,7 @@ pub(crate) fn render_outline(
             continue;
         };
 
-        encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 0);
+        encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
         encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
         encoder.draw_indexed(mesh.index_count, 1, 0, 0, draw.instance_index);
     }
