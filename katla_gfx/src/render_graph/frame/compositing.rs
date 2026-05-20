@@ -1,14 +1,15 @@
+use crate::render_graph::BACKBUFFER_NAME;
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
-use crate::render_graph::frame_graph::BACKBUFFER_NAME;
 use crate::render_graph::handles::ResourceId;
 use crate::render_graph::pass::PassDesc;
 use crate::render_graph::passes::ViewportRect;
 use crate::render_graph::resource::GraphResourceHandle;
+use crate::renderer::VulkanRenderer;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
-impl<'a> Frame<'a> {
+impl Frame<'_, VulkanRenderer> {
     /// Execute a compositing pass (multi-viewport fullscreen pass).
     ///
     /// Compositing passes sample from multiple viewport textures and composite them
@@ -258,7 +259,7 @@ impl<'a> Frame<'a> {
 
         let vk_set = if let Some(ref mut existing) = sets[frame_idx] {
             existing.update_textures(&texture_views).map_err(|e| {
-                RenderGraphError::VulkanError(format!(
+                RenderGraphError::BackendError(format!(
                     "Failed to update compositing descriptor set: {}",
                     e
                 ))
@@ -267,7 +268,7 @@ impl<'a> Frame<'a> {
         } else {
             let desc_set =
                 CompositingDescriptorSet::new(&context, &texture_views).map_err(|e| {
-                    RenderGraphError::VulkanError(format!(
+                    RenderGraphError::BackendError(format!(
                         "Failed to create compositing descriptor set: {}",
                         e
                     ))

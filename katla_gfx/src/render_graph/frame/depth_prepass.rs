@@ -4,10 +4,11 @@ use crate::render_graph::frame::draw_helpers::{
 };
 use crate::render_graph::frame::{Frame, PassExecutionData};
 use crate::render_graph::pass::PassDesc;
+use crate::renderer::VulkanRenderer;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
-impl<'a> Frame<'a> {
+impl Frame<'_, VulkanRenderer> {
     /// Execute a depth prepass — renders depth and object IDs from the camera's perspective.
     ///
     /// Outputs:

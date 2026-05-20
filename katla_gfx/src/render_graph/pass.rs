@@ -12,8 +12,8 @@ use crate::texture::ImageFormat;
 /// the command buffer, and the pipeline handle assigned to the pass.
 #[cfg(feature = "vulkan")]
 pub type ComputeFn = Box<
-    dyn Fn(
-        &mut super::frame::Frame,
+    dyn for<'a> Fn(
+        &mut super::frame::Frame<'a, crate::renderer::VulkanRenderer>,
         &crate::vulkan::commandbuffer::CommandBuffer,
         crate::handle::PipelineHandle,
     ) -> Result<(), super::error::RenderGraphError>,
@@ -131,7 +131,7 @@ impl PassDesc {
     pub fn with_compute_fn(
         mut self,
         f: impl Fn(
-            &mut super::frame::Frame,
+            &mut super::frame::Frame<'_, crate::renderer::VulkanRenderer>,
             &crate::vulkan::commandbuffer::CommandBuffer,
             crate::handle::PipelineHandle,
         ) -> Result<(), super::error::RenderGraphError>

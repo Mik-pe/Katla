@@ -307,10 +307,14 @@ pub use particles::{EmitterConfig, GlobalParticleSystem};
 // Render graph system - minimal public API
 #[cfg(feature = "vulkan")]
 pub use render_graph::{
-    CompositingDescriptorSet, Frame, FrameGraph, FrameGraphBuilder, FullscreenPass, GeometryPass,
-    GraphResourceDesc, GraphResourceType, OutlinePass, OverlayParams, OverlayPass, ParticlePass,
-    RenderGraphError, ShadowPass, StencilIndicatorPass, TonemapOperator, TonemapParams,
+    CompositingDescriptorSet, Frame, FullscreenPass, GeometryPass, GraphResourceDesc,
+    GraphResourceType, OutlinePass, OverlayParams, OverlayPass, ParticlePass, RenderGraphError,
+    ShadowPass, StencilIndicatorPass, TonemapOperator, TonemapParams,
 };
+#[cfg(feature = "vulkan")]
+/// Vulkan-specific frame graph type.
+pub type FrameGraph = render_graph::FrameGraph<renderer::VulkanRenderer>;
+pub use render_graph::{FrameGraphBuilder, RenderGraphBackend};
 
 /// Low-level Vulkan context - an escape hatch for advanced use cases.
 ///

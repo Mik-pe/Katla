@@ -2,13 +2,14 @@ use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::parallel_geometry::{RenderPassParams, execute_parallel_recording};
 use crate::render_graph::frame::{Frame, PassExecutionData};
 use crate::render_graph::pass::{PassDesc, PassKind};
+use crate::renderer::VulkanRenderer;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
 /// Minimum number of draw calls to justify parallel recording overhead.
 const PARALLEL_DRAW_THRESHOLD: usize = 32;
 
-impl<'a> Frame<'a> {
+impl Frame<'_, VulkanRenderer> {
     /// Execute a graphics pass with dynamic rendering.
     ///
     /// Uses parallel secondary command buffer recording for geometry passes with

@@ -108,6 +108,23 @@ impl MetalBindlessTextureManager {
         Ok(slot)
     }
 
+    /// Update an existing slot with a new texture (keeps the same slot index).
+    pub(crate) fn update_texture(
+        &mut self,
+        slot: u32,
+        texture: &ProtocolObject<dyn MTLTexture>,
+    ) -> Result<(), RendererError> {
+        if slot as usize >= self.textures.len() {
+            return Err(RendererError::InvalidOperation(format!(
+                "Bindless slot {} out of bounds",
+                slot
+            )));
+        }
+        self.textures[slot as usize] = Some(texture.retain());
+        self.update_slot(slot);
+        Ok(())
+    }
+
     /// Release a slot, making it available for reuse.
     ///
     /// Returns `true` if the slot was occupied and released.

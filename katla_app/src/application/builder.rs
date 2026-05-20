@@ -217,6 +217,47 @@ impl ApplicationBuilder {
         renderer
     }
 
+    /// Build a minimal frame graph for the Metal backend.
+    ///
+    /// Creates transient resources (hdr_color, viewport_0) without passes.
+    /// Metal uses hardcoded pass execution but benefits from frame graph
+    /// transient texture management and bindless registration.
+    #[cfg(all(feature = "metal", not(feature = "vulkan")))]
+    fn build_metal_frame_graph(
+        renderer: &mut Renderer,
+    ) -> AppResult<katla_gfx::render_graph::FrameGraph<Renderer>> {
+        use katla_gfx::render_graph::{FrameGraphBuilder, GraphResourceDesc, GraphResourceType};
+        use katla_gfx::texture::ImageFormat;
+
+        let extent = renderer.swapchain_extent();
+
+        let graph = FrameGraphBuilder::new()
+            .create_resource(GraphResourceDesc {
+                name: "hdr_color".to_string(),
+                resource_type: GraphResourceType::ColorAttachment {
+                    clear_value: Some([0.1, 0.1, 0.1, 1.0]),
+                },
+                format: ImageFormat::R16G16B16A16Sfloat,
+                width: extent.width,
+                height: extent.height,
+                tracks_swapchain_size: true,
+            })
+            .create_resource(GraphResourceDesc {
+                name: "viewport_0".to_string(),
+                resource_type: GraphResourceType::ColorAttachment {
+                    clear_value: Some([0.0, 0.0, 0.0, 1.0]),
+                },
+                format: ImageFormat::B8G8R8A8Srgb,
+                width: extent.width,
+                height: extent.height,
+                tracks_swapchain_size: true,
+            })
+            .build::<Renderer>()
+            .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+
+        Ok(graph)
+    }
+
     /// Build the frame graph for the application.
     ///
     /// Uses HDR intermediate rendering with tonemapping and multi-viewport compositing:
@@ -747,6 +788,8 @@ impl ApplicationBuilder {
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
         #[cfg(feature = "vulkan")]
         let mut frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
+        #[cfg(all(feature = "metal", not(feature = "vulkan")))]
+        let mut frame_graph = Self::build_metal_frame_graph(&mut renderer)?;
 
         #[cfg(feature = "vulkan")]
         let pass_ids = super::PassIds {
@@ -775,6 +818,8 @@ impl ApplicationBuilder {
                 .pass_id("wallhack_overlay")
                 .expect("Frame graph must contain a 'wallhack_overlay' pass"),
         };
+        #[cfg(all(feature = "metal", not(feature = "vulkan")))]
+        let pass_ids = super::PassIds::default();
 
         // Initialize transient textures so we can get shadow atlas ImageView
         #[cfg(feature = "vulkan")]
@@ -791,6 +836,37 @@ impl ApplicationBuilder {
         }
         #[cfg(feature = "vulkan")]
         log::info!("Shadow atlas views set for all frames");
+
+        // Initialize Metal transient textures and wire HDR view to MetalRenderer
+        #[cfg(all(feature = "metal", not(feature = "vulkan")))]
+        {
+            use katla_gfx::RenderGraphBackend;
+
+            frame_graph
+                .initialize_transient_textures(&renderer)
+                .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+
+            let hdr_slot = frame_graph
+                .register_transient_texture_bindless(&mut renderer, "hdr_color")
+                .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+            log::info!(
+                "HDR texture registered with bindless at index {} (Metal)",
+                hdr_slot
+            );
+
+            let vp_slot = frame_graph
+                .register_transient_texture_bindless(&mut renderer, "viewport_0")
+                .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+            log::info!(
+                "Viewport texture registered with bindless at index {} (Metal)",
+                vp_slot
+            );
+
+            let frame_idx = GpuRenderer::current_frame(&renderer);
+            if let Some(view) = frame_graph.transient_image_view("hdr_color", frame_idx) {
+                renderer.set_geometry_hdr_view(view, hdr_slot);
+            }
+        }
 
         // Initialize UI renderer with font atlas bindless slot
         #[cfg(all(feature = "editor", feature = "vulkan"))]
@@ -824,9 +900,7 @@ impl ApplicationBuilder {
         let app = Application {
             window,
             renderer,
-            #[cfg(feature = "vulkan")]
             frame_graph,
-            #[cfg(feature = "vulkan")]
             pass_ids,
             camera,
             #[cfg(feature = "vulkan")]

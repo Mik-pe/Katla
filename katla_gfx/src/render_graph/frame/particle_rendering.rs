@@ -1,10 +1,11 @@
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
 use crate::render_graph::pass::PassDesc;
+use crate::renderer::VulkanRenderer;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
-impl<'a> Frame<'a> {
+impl Frame<'_, VulkanRenderer> {
     /// Execute the particle render pass.
     ///
     /// Renders GPU-simulated particles with alpha blending. Layout transitions
@@ -100,7 +101,7 @@ impl<'a> Frame<'a> {
                     frame_idx,
                 )
                 .map_err(|e| {
-                    RenderGraphError::VulkanError(format!("Particle render failed: {}", e))
+                    RenderGraphError::BackendError(format!("Particle render failed: {}", e))
                 })?;
 
                 log::debug!("[PARTICLES] Drew {} particles", alive_count);

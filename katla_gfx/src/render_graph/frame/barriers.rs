@@ -1,11 +1,12 @@
+use crate::render_graph::BACKBUFFER_NAME;
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
-use crate::render_graph::frame_graph::BACKBUFFER_NAME;
 use crate::render_graph::resource::ResourceState;
+use crate::renderer::VulkanRenderer;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
-impl<'a> Frame<'a> {
+impl Frame<'_, VulkanRenderer> {
     /// Insert barriers for a pass.
     ///
     /// Computes required resource states based on pass reads/writes and

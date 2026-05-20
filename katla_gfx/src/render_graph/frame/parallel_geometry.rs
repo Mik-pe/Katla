@@ -4,6 +4,7 @@ use ash::vk;
 
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
+use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use crate::vulkan::vertex_attribute::AttributeType;
@@ -184,7 +185,7 @@ pub(super) fn execute_parallel_recording(
     Ok(())
 }
 
-impl<'a> Frame<'a> {
+impl Frame<'_, VulkanRenderer> {
     /// Pre-resolve all draw commands from draw lists into thread-safe records.
     ///
     /// This performs all `&mut self` renderer lookups on the main thread,

@@ -45,6 +45,7 @@ mod compiler;
 #[cfg(feature = "vulkan")]
 pub mod descriptor_sets;
 mod error;
+mod frame_graph;
 mod handles;
 mod pass;
 mod passes;
@@ -54,10 +55,7 @@ mod resource;
 mod backend;
 
 // Layer 3: Backend-specific execution
-#[cfg(feature = "vulkan")]
 mod frame;
-#[cfg(feature = "vulkan")]
-mod frame_graph;
 #[cfg(all(target_os = "macos", feature = "metal"))]
 mod metal_backend;
 #[cfg(feature = "vulkan")]
@@ -70,9 +68,7 @@ pub use backend::RenderGraphBackend;
 #[cfg(feature = "vulkan")]
 pub use descriptor_sets::CompositingDescriptorSet;
 pub use error::RenderGraphError;
-#[cfg(feature = "vulkan")]
 pub use frame::Frame;
-#[cfg(feature = "vulkan")]
 pub use frame_graph::{FrameGraph, FrameGraphBuilder};
 pub use handles::{PassId, ResourceId};
 pub use pass::{PassDesc, PassKind, PassType};

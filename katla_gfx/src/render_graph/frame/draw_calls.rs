@@ -1,11 +1,12 @@
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
+use crate::renderer::VulkanRenderer;
 use crate::renderer::types::DrawList;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use crate::vulkan::vertex_attribute::AttributeType;
 use ash::vk;
 
-impl<'a> Frame<'a> {
+impl Frame<'_, VulkanRenderer> {
     /// Execute a draw list with pipeline state caching.
     ///
     /// Tracks the currently bound pipeline and skeleton descriptor to skip

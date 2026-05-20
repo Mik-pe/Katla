@@ -2,11 +2,12 @@ use crate::handle::PipelineHandle;
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
 use crate::render_graph::pass::PassDesc;
+use crate::renderer::VulkanRenderer;
 use crate::renderer::types::UIDrawList;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
-impl<'a> Frame<'a> {
+impl Frame<'_, VulkanRenderer> {
     /// Execute a UI draw list.
     pub(super) fn execute_ui_draw_list(
         &mut self,

@@ -7,7 +7,6 @@
 use std::fmt;
 use std::io;
 
-#[cfg(feature = "vulkan")]
 use crate::render_graph::RenderGraphError;
 
 /// Validation mode controls the level of GPU validation enabled.
@@ -67,7 +66,6 @@ pub enum RendererError {
     ResourceCreationFailed(String),
 
     /// Render graph error.
-    #[cfg(feature = "vulkan")]
     RenderGraphError(RenderGraphError),
 
     #[cfg(feature = "vulkan")]
@@ -95,7 +93,6 @@ impl fmt::Display for RendererError {
             RendererError::ResourceCreationFailed(msg) => {
                 write!(f, "Resource creation failed: {}", msg)
             }
-            #[cfg(feature = "vulkan")]
             RendererError::RenderGraphError(err) => write!(f, "Render graph error: {}", err),
             #[cfg(feature = "vulkan")]
             RendererError::MaterialError(err) => write!(f, "Material error: {}", err),
@@ -116,7 +113,6 @@ impl std::error::Error for RendererError {
             #[cfg(feature = "vulkan")]
             RendererError::VulkanError(_, err) => Some(err),
             RendererError::IoError(err) => Some(err),
-            #[cfg(feature = "vulkan")]
             RendererError::RenderGraphError(err) => Some(err),
             #[cfg(feature = "vulkan")]
             RendererError::MaterialError(err) => Some(err),
@@ -138,7 +134,6 @@ impl From<io::Error> for RendererError {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl From<RenderGraphError> for RendererError {
     fn from(error: RenderGraphError) -> Self {
         RendererError::RenderGraphError(error)

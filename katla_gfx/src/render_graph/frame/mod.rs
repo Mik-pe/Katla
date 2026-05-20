@@ -1,40 +1,49 @@
+#[cfg(feature = "vulkan")]
 mod barriers;
+#[cfg(feature = "vulkan")]
 mod compositing;
+#[cfg(feature = "vulkan")]
 mod depth_prepass;
+#[cfg(feature = "vulkan")]
 mod draw_calls;
+#[cfg(feature = "vulkan")]
 mod draw_helpers;
+#[cfg(feature = "vulkan")]
 mod graphics_pass;
+#[cfg(feature = "vulkan")]
 mod outline_pass;
+#[cfg(feature = "vulkan")]
 mod parallel_geometry;
+#[cfg(feature = "vulkan")]
 mod parallel_shadow;
+#[cfg(feature = "vulkan")]
 mod particle_rendering;
+#[cfg(feature = "vulkan")]
 mod shadow_pass;
+#[cfg(feature = "vulkan")]
 mod ui_rendering;
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use super::backend::RenderGraphBackend;
 use super::error::RenderGraphError;
-use super::frame_graph::{BACKBUFFER_NAME, FrameGraph};
+use super::frame_graph::FrameGraph;
 use super::handles::PassId;
 use super::pass::PassDesc;
-use crate::renderer::VulkanRenderer;
 use crate::renderer::types::{DrawList, UIDrawList};
-use ash::vk;
-use gpu_allocator::vulkan::Allocation;
 
 /// Frame context for submitting work to passes.
 ///
-/// Passed to the closure in [`VulkanRenderer::render()`]. Provides a simple
+/// Passed to the closure in `FrameGraph::execute()`. Provides a simple
 /// API for submitting draw lists to named passes.
-pub struct Frame<'a> {
-    pub(super) graph: &'a FrameGraph,
-    pub(super) renderer: &'a mut VulkanRenderer,
+pub struct Frame<'a, B: RenderGraphBackend> {
+    pub(super) graph: &'a FrameGraph<B>,
+    pub(super) renderer: &'a mut B,
     pub(super) image_index: u32,
     pub(super) pending: HashMap<usize, PassExecutionData>,
     /// Whether the backbuffer has been written to this frame.
     pub(super) backbuffer_written: bool,
-    pub(super) temporary_buffers: Vec<(vk::Buffer, Allocation)>,
     pub(super) depth_buffer_written: bool,
     /// Whether the particle emit compute pass ran this frame.
     pub particle_emit_ran: bool,
@@ -56,11 +65,11 @@ pub(super) struct PassExecutionData {
     uniform_data: Vec<u8>,
 }
 
-impl<'a> Frame<'a> {
+impl<'a, B: RenderGraphBackend> Frame<'a, B> {
     /// Create a new frame context.
     pub(crate) fn new(
-        graph: &'a FrameGraph,
-        renderer: &'a mut VulkanRenderer,
+        graph: &'a FrameGraph<B>,
+        renderer: &'a mut B,
         image_index: u32,
         _frame_idx: usize,
     ) -> Self {
@@ -70,20 +79,18 @@ impl<'a> Frame<'a> {
             image_index,
             pending: HashMap::new(),
             backbuffer_written: false,
-            temporary_buffers: Vec::new(),
             depth_buffer_written: false,
             particle_emit_ran: false,
         }
     }
 
     /// Get the current frame index from the renderer.
-    /// This is the authoritative source for which frame's resources to use.
     fn current_frame(&self) -> usize {
         self.renderer.current_frame()
     }
 
     /// Get mutable access to the renderer.
-    pub fn renderer_mut(&mut self) -> &mut VulkanRenderer {
+    pub fn renderer_mut(&mut self) -> &mut B {
         self.renderer
     }
 
@@ -160,7 +167,16 @@ impl<'a> Frame<'a> {
             .extend_from_slice(data);
         self
     }
+}
 
+#[cfg(feature = "vulkan")]
+use crate::renderer::VulkanRenderer;
+
+#[cfg(feature = "vulkan")]
+use crate::render_graph::BACKBUFFER_NAME;
+
+#[cfg(feature = "vulkan")]
+impl<'a> Frame<'a, VulkanRenderer> {
     /// Resolve a color attachment for a pass.
     ///
     /// Handles both backbuffer and transient texture targets, including
@@ -170,7 +186,7 @@ impl<'a> Frame<'a> {
     pub(super) fn resolve_color_attachment(
         &self,
         pass: &PassDesc,
-    ) -> Result<Option<vk::RenderingAttachmentInfo<'_>>, RenderGraphError> {
+    ) -> Result<Option<ash::vk::RenderingAttachmentInfo<'_>>, RenderGraphError> {
         use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 
         let backbuffer_id = self.graph.resource_id(BACKBUFFER_NAME);
@@ -180,19 +196,19 @@ impl<'a> Frame<'a> {
                 self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
 
             let load_op = if self.backbuffer_written {
-                vk::AttachmentLoadOp::LOAD
+                ash::vk::AttachmentLoadOp::LOAD
             } else {
-                vk::AttachmentLoadOp::CLEAR
+                ash::vk::AttachmentLoadOp::CLEAR
             };
 
             return Ok(Some(
-                vk::RenderingAttachmentInfo::default()
+                ash::vk::RenderingAttachmentInfo::default()
                     .image_view(swapchain_view)
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .image_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                     .load_op(load_op)
-                    .store_op(vk::AttachmentStoreOp::STORE)
-                    .clear_value(vk::ClearValue {
-                        color: vk::ClearColorValue {
+                    .store_op(ash::vk::AttachmentStoreOp::STORE)
+                    .clear_value(ash::vk::ClearValue {
+                        color: ash::vk::ClearColorValue {
                             float32: [0.1, 0.1, 0.1, 1.0],
                         },
                     }),
@@ -226,17 +242,17 @@ impl<'a> Frame<'a> {
             .map(|(_, _, load_op, store_op, clear_value)| {
                 (
                     match load_op {
-                        LoadOp::Load => vk::AttachmentLoadOp::LOAD,
-                        LoadOp::Clear => vk::AttachmentLoadOp::CLEAR,
-                        LoadOp::DontCare => vk::AttachmentLoadOp::NONE_EXT,
+                        LoadOp::Load => ash::vk::AttachmentLoadOp::LOAD,
+                        LoadOp::Clear => ash::vk::AttachmentLoadOp::CLEAR,
+                        LoadOp::DontCare => ash::vk::AttachmentLoadOp::NONE_EXT,
                     },
                     match store_op {
-                        StoreOp::Store => vk::AttachmentStoreOp::STORE,
-                        StoreOp::DontCare => vk::AttachmentStoreOp::NONE_EXT,
+                        StoreOp::Store => ash::vk::AttachmentStoreOp::STORE,
+                        StoreOp::DontCare => ash::vk::AttachmentStoreOp::NONE_EXT,
                     },
                     match clear_value {
-                        ClearValue::Color(c) => vk::ClearColorValue { float32: *c },
-                        _ => vk::ClearColorValue {
+                        ClearValue::Color(c) => ash::vk::ClearColorValue { float32: *c },
+                        _ => ash::vk::ClearColorValue {
                             float32: [0.0, 0.0, 0.0, 1.0],
                         },
                     },
@@ -244,26 +260,26 @@ impl<'a> Frame<'a> {
             })
             .unwrap_or_else(|| {
                 let load = if resource_already_written {
-                    vk::AttachmentLoadOp::LOAD
+                    ash::vk::AttachmentLoadOp::LOAD
                 } else {
-                    vk::AttachmentLoadOp::CLEAR
+                    ash::vk::AttachmentLoadOp::CLEAR
                 };
                 (
                     load,
-                    vk::AttachmentStoreOp::STORE,
-                    vk::ClearColorValue {
+                    ash::vk::AttachmentStoreOp::STORE,
+                    ash::vk::ClearColorValue {
                         float32: [0.1, 0.1, 0.1, 1.0],
                     },
                 )
             });
 
         Ok(Some(
-            vk::RenderingAttachmentInfo::default()
+            ash::vk::RenderingAttachmentInfo::default()
                 .image_view(transient.image_view.vk())
-                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .image_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                 .load_op(load_op)
                 .store_op(store_op)
-                .clear_value(vk::ClearValue { color: clear_value }),
+                .clear_value(ash::vk::ClearValue { color: clear_value }),
         ))
     }
 
@@ -373,20 +389,3 @@ impl<'a> Frame<'a> {
         Ok(())
     }
 }
-
-impl<'a> Drop for Frame<'a> {
-    fn drop(&mut self) {
-        for (buffer, allocation) in self.temporary_buffers.drain(..) {
-            unsafe {
-                self.renderer.context.device.destroy_buffer(buffer, None);
-            }
-            self.renderer
-                .context
-                .allocator
-                .free(allocation, "render graph pass execution");
-        }
-    }
-}
-
-// PassExecutionData is a data container with no non-trivial logic to test.
-// Full testing requires GPU context for dispatch/draw_list behavior.

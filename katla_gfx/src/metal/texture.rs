@@ -8,8 +8,8 @@ use crate::texture::ImageFormat;
 
 use super::MetalBackend;
 
-pub(crate) struct MetalTexture {
-    pub(crate) inner: Retained<ProtocolObject<dyn MTLTexture>>,
+pub struct MetalTexture {
+    pub inner: Retained<ProtocolObject<dyn MTLTexture>>,
     format: ImageFormat,
 }
 
@@ -23,10 +23,7 @@ impl Clone for MetalTexture {
 }
 
 impl MetalTexture {
-    pub(crate) fn new(
-        inner: Retained<ProtocolObject<dyn MTLTexture>>,
-        format: ImageFormat,
-    ) -> Self {
+    pub fn new(inner: Retained<ProtocolObject<dyn MTLTexture>>, format: ImageFormat) -> Self {
         Self { inner, format }
     }
 }
@@ -52,8 +49,8 @@ impl GpuImage for MetalTexture {
 unsafe impl Send for MetalTexture {}
 unsafe impl Sync for MetalTexture {}
 
-pub(crate) struct MetalTextureView {
-    pub(crate) inner: Retained<ProtocolObject<dyn MTLTexture>>,
+pub struct MetalTextureView {
+    pub inner: Retained<ProtocolObject<dyn MTLTexture>>,
     parent: MetalTexture,
 }
 
@@ -67,10 +64,7 @@ impl Clone for MetalTextureView {
 }
 
 impl MetalTextureView {
-    pub(crate) fn new(
-        inner: Retained<ProtocolObject<dyn MTLTexture>>,
-        parent: MetalTexture,
-    ) -> Self {
+    pub fn new(inner: Retained<ProtocolObject<dyn MTLTexture>>, parent: MetalTexture) -> Self {
         Self { inner, parent }
     }
 }

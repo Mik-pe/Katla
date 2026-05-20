@@ -6,6 +6,7 @@
 
 use super::error::RenderGraphError;
 use super::resource::{GraphResourceDesc, TransientTextureOps};
+use crate::texture::ImageFormat;
 
 /// Backend interface for render graph execution.
 ///
@@ -19,8 +20,12 @@ pub trait RenderGraphBackend: Sized + 'static {
     /// Backend-specific transient texture type.
     type TransientTexture: TransientTextureOps;
 
+    /// Backend-specific image view type for render pass attachments.
+    type ImageView: Clone + Send + Sync;
+
     /// Create a transient texture for a resource descriptor.
     fn create_transient_texture(
+        &self,
         desc: &GraphResourceDesc,
     ) -> Result<Self::TransientTexture, RenderGraphError>;
 
@@ -42,4 +47,40 @@ pub trait RenderGraphBackend: Sized + 'static {
         slot: u32,
         texture: &Self::TransientTexture,
     ) -> Result<(), RenderGraphError>;
+
+    /// Get the image format of a transient texture.
+    fn transient_texture_format(texture: &Self::TransientTexture) -> ImageFormat;
+
+    /// Get the width and height of a transient texture.
+    fn transient_texture_extent(texture: &Self::TransientTexture) -> (u32, u32);
+
+    /// Whether the transient texture is a depth format.
+    fn transient_texture_is_depth(texture: &Self::TransientTexture) -> bool;
+
+    /// Get or set the bindless slot stored on a transient texture.
+    fn transient_texture_bindless_slot(texture: &Self::TransientTexture) -> Option<u32>;
+    fn set_transient_texture_bindless_slot(texture: &mut Self::TransientTexture, slot: u32);
+
+    /// Extract the image view from a transient texture for render pass attachment.
+    fn transient_texture_view(texture: &Self::TransientTexture) -> Self::ImageView;
+
+    /// Get the swapchain image view for the current frame's image index.
+    fn swapchain_image_view(&self, image_index: u32) -> Self::ImageView;
+
+    /// Get the depth buffer image view for a specific frame index.
+    fn depth_image_view(&self, frame_index: usize) -> Option<Self::ImageView>;
+
+    /// Transition a transient texture's resource state before a pass.
+    fn transition_texture(
+        _texture: &mut Self::TransientTexture,
+        _from: super::resource::ResourceState,
+        _to: super::resource::ResourceState,
+    ) {
+    }
+
+    /// Transition the backbuffer image before a pass.
+    fn transition_backbuffer(&self, _image_index: u32, _to: super::resource::ResourceState) {}
+
+    /// Insert a depth render pass sync barrier between consecutive depth-using passes.
+    fn depth_render_pass_sync(&self, _frame_index: usize) {}
 }

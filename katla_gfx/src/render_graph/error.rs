@@ -25,8 +25,8 @@ pub enum RenderGraphError {
     AllocationFailed(usize),
     /// Pipeline not set.
     PipelineNotSet(String),
-    /// Vulkan error.
-    VulkanError(String),
+    /// GPU backend error.
+    BackendError(String),
     /// Graph not compiled.
     NotCompiled,
     /// Invalid mesh handle.
@@ -63,7 +63,7 @@ impl fmt::Display for RenderGraphError {
                 )
             }
             Self::PipelineNotSet(name) => write!(f, "Pipeline not set for pass '{}'", name),
-            Self::VulkanError(msg) => write!(f, "Vulkan error: {}", msg),
+            Self::BackendError(msg) => write!(f, "Backend error: {}", msg),
             Self::NotCompiled => write!(f, "Render graph has not been compiled"),
             Self::InvalidMeshHandle(handle) => write!(f, "Invalid mesh handle: {}", handle.index()),
             Self::InvalidMaterialHandle(handle) => {
@@ -84,13 +84,13 @@ impl std::error::Error for RenderGraphError {}
 #[cfg(feature = "vulkan")]
 impl From<ash::vk::Result> for RenderGraphError {
     fn from(result: ash::vk::Result) -> Self {
-        Self::VulkanError(format!("{:?}", result))
+        Self::BackendError(format!("{:?}", result))
     }
 }
 
 impl From<crate::error::RendererError> for RenderGraphError {
     fn from(err: crate::error::RendererError) -> Self {
-        Self::VulkanError(err.to_string())
+        Self::BackendError(err.to_string())
     }
 }
 
@@ -141,15 +141,15 @@ mod tests {
     }
 
     #[test]
-    fn test_error_display_vulkan_error() {
-        let err = RenderGraphError::VulkanError("ERROR_DEVICE_LOST".to_string());
-        assert!(err.to_string().contains("Vulkan error"));
+    fn test_error_display_backend_error() {
+        let err = RenderGraphError::BackendError("ERROR_DEVICE_LOST".to_string());
+        assert!(err.to_string().contains("Backend error"));
     }
 
     #[cfg(feature = "vulkan")]
     #[test]
     fn test_from_vk_result() {
         let err = RenderGraphError::from(ash::vk::Result::ERROR_DEVICE_LOST);
-        assert!(matches!(err, RenderGraphError::VulkanError(_)));
+        assert!(matches!(err, RenderGraphError::BackendError(_)));
     }
 }
