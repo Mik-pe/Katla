@@ -11,8 +11,8 @@ use objc2::runtime::ProtocolObject;
 use objc2_metal::{MTLCommandBuffer, MTLPixelFormat, MTLRenderCommandEncoder, MTLTexture};
 
 use crate::backend::command::{
-    ColorAttachmentInfo, DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType,
-    RenderPassInfo, ShaderStages,
+    ColorAttachmentInfo, DepthAttachmentInfo, GpuBlitEncoder, GpuCommandBuffer, GpuRenderEncoder,
+    IndexType, RenderPassInfo, ShaderStages,
 };
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
@@ -184,6 +184,8 @@ pub struct MetalRenderer {
     shadow_cascade_buffer: Option<MetalBuffer>,
     shadow_sampler: Option<super::sampler::MetalSamplerState>,
     buffer_sizes_buffer: Option<MetalBuffer>,
+    scene_color_view: Option<MetalTextureView>,
+    viewport_bindless_slot: Option<u32>,
 }
 
 impl MetalRenderer {
@@ -215,6 +217,9 @@ impl MetalRenderer {
         let dh = ds.height as u32;
         if dw > 0 && dh > 0 {
             renderer.drawable_size = Size2D::new(dw, dh);
+            renderer.size = Size2D::new(dw, dh);
+            renderer.recreate_render_targets(dw, dh);
+            renderer.resize_light_culling(dw, dh);
         }
 
         Ok(renderer)
@@ -259,6 +264,8 @@ impl MetalRenderer {
             shadow_cascade_buffer: None,
             shadow_sampler: None,
             buffer_sizes_buffer: None,
+            scene_color_view: None,
+            viewport_bindless_slot: None,
         };
 
         let default_tex = renderer.create_texture_solid([255, 255, 255, 255]);
@@ -382,8 +389,12 @@ impl MetalRenderer {
         Ok(())
     }
 
-    /// Recreate render targets (depth, HDR color, depth-stencil for outline) for the given size.
+    /// Recreate render targets (depth, HDR color, scene color, depth-stencil) for the given size.
     fn recreate_render_targets(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+
         // Depth texture for depth prepass and main pass
         {
             let desc = TextureDescriptor::new(width, height, ImageFormat::D32Sfloat)
@@ -399,6 +410,21 @@ impl MetalRenderer {
                 .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
             if let Ok((_tex, view)) = self.context.create_texture(&desc) {
                 self.hdr_color_view = Some(view);
+            }
+        }
+
+        // Scene color texture: blitted from drawable after rendering for UI viewport sampling
+        {
+            if let Some(old_slot) = self.viewport_bindless_slot.take() {
+                self.bindless_manager.release_slot(old_slot);
+            }
+            let desc = TextureDescriptor::new(width, height, ImageFormat::B8G8R8A8Srgb)
+                .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
+            if let Ok((_tex, view)) = self.context.create_texture(&desc) {
+                if let Ok(slot) = self.bindless_manager.register_texture(&view.inner) {
+                    self.viewport_bindless_slot = Some(slot);
+                }
+                self.scene_color_view = Some(view);
             }
         }
 
@@ -1007,6 +1033,8 @@ impl GpuRenderer for MetalRenderer {
             .take()
             .ok_or_else(|| RendererError::InvalidOperation("No drawable texture".into()))?;
 
+        let drawable_texture_clone = drawable_texture.clone();
+
         let drawable_view = MetalTextureView::new(
             drawable_texture.clone(),
             MetalTexture::new(drawable_texture, ImageFormat::B8G8R8A8Srgb),
@@ -1251,6 +1279,27 @@ impl GpuRenderer for MetalRenderer {
         self.context.surface.present(&cmd_buffer.inner);
         self.last_command_buffer = Some(cmd_buffer.inner.clone());
         cmd_buffer.submit(&self.context);
+
+        // Blit drawable to scene color texture for UI viewport sampling
+        if let Some(ref scene_view) = self.scene_color_view {
+            let mut blit_cmd = self.context.create_command_buffer();
+            blit_cmd.begin();
+            {
+                let blit = blit_cmd.begin_blit_pass();
+                unsafe {
+                    let src: &ProtocolObject<dyn MTLTexture> = drawable_texture_clone.as_ref();
+                    let dst: &ProtocolObject<dyn MTLTexture> = scene_view.inner.as_ref();
+                    let _: () = objc2::msg_send![
+                        &blit.inner,
+                        copyFromTexture: src,
+                        toTexture: dst,
+                    ];
+                }
+                blit.end_encoding();
+            }
+            blit_cmd.end();
+            blit_cmd.submit(&self.context);
+        }
 
         Ok(())
     }
@@ -1631,8 +1680,13 @@ impl GpuRenderer for MetalRenderer {
 
     fn resize(&mut self, width: u32, height: u32) -> Result<(), RendererError> {
         self.size = Size2D::new(width, height);
-        let dw = self.drawable_size.width;
-        let dh = self.drawable_size.height;
+        self.context.surface.resize(width, height);
+        let ds = self.context.surface.layer.drawableSize();
+        let dw = ds.width as u32;
+        let dh = ds.height as u32;
+        if dw > 0 && dh > 0 {
+            self.drawable_size = Size2D::new(dw, dh);
+        }
         self.resize_light_culling(dw, dh);
         self.recreate_render_targets(dw, dh);
         Ok(())
@@ -1742,6 +1796,10 @@ impl GpuRenderer for MetalRenderer {
     fn depth_texture_base_index(&self) -> Option<u32> {
         // Metal does not use bindless depth textures in the same way
         None
+    }
+
+    fn viewport_bindless_index(&self) -> Option<u32> {
+        self.viewport_bindless_slot
     }
 
     fn register_depth_textures_bindless(&mut self) -> Result<u32, RendererError> {

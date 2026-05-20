@@ -256,6 +256,12 @@ pub trait GpuRenderer: Sized + 'static {
         None
     }
 
+    /// Get the bindless slot index of the offscreen viewport texture.
+    /// The editor UI uses this to display the 3D scene in the viewport panel.
+    fn viewport_bindless_index(&self) -> Option<u32> {
+        None
+    }
+
     /// Register per-frame depth textures with the bindless system.
     /// Returns the base bindless slot index.
     fn register_depth_textures_bindless(&mut self) -> Result<u32, RendererError> {

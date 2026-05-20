@@ -25,7 +25,7 @@ impl MetalSurface {
         layer.setPixelFormat(MTLPixelFormat::BGRA8Unorm_sRGB);
         layer.setMaximumDrawableCount(3);
         layer.setDisplaySyncEnabled(true);
-        layer.setFramebufferOnly(true);
+        layer.setFramebufferOnly(false);
 
         attach_layer_to_nsview(&layer, window)?;
 
@@ -66,9 +66,10 @@ impl MetalSurface {
 
     pub(crate) fn resize(&mut self, width: u32, height: u32) {
         self.size = Size2D::new(width, height);
+        let scale = self.layer.contentsScale();
         self.layer.setDrawableSize(NSSize {
-            width: width as f64,
-            height: height as f64,
+            width: width as f64 * scale,
+            height: height as f64 * scale,
         });
     }
 }
