@@ -1836,7 +1836,7 @@ Should produce 25 frames without Metal validation errors.
 - [x] Make render graph execution generic over `GpuBackend` (MetalFrameGraph exists)
 - [x] Port existing Vulkan code to implement the traits (VulkanRenderer impl of GpuRenderer)
 - [x] Verify Vulkan path still works identically (350 tests pass)
-- [ ] Add `cargo test --workspace` to CI
+- [x] Add `cargo test --workspace` to CI
 
 ### Phase 2: Metal Backend Core (3-4 weeks) — DONE
 
@@ -1858,7 +1858,7 @@ Should produce 25 frames without Metal validation errors.
 - [ ] Test with full 4096 texture array
 - [ ] Verify shader indexing works correctly
 
-### Phase 4: Render Graph Integration (2-3 weeks) — IN PROGRESS
+### Phase 4: Render Graph Integration (2-3 weeks) — DONE
 
 - [x] Implement MetalRenderer with GpuRenderer trait (38 methods, all stubs filled)
 - [x] Wire compile_material through WGSL→MSL→Metal pipeline
@@ -1868,17 +1868,17 @@ Should produce 25 frames without Metal validation errors.
 - [x] Wire create_skeleton/update_skeleton
 - [x] Cfg-gate katla_app for multi-backend (Renderer type alias)
 - [x] Game binary builds with metal backend
-- [ ] Port full frame loop (camera, frustum cull, draw call collection)
-- [ ] Port shadow pass, depth prepass, outline pass
-- [ ] Port UI rendering pass
-- [ ] Port particle system compute passes
+- [x] Port full frame loop (camera, frustum cull, draw call collection)
+- [x] Port shadow pass, depth prepass, outline pass
+- [x] Port UI rendering pass
+- [x] Port particle system compute passes
 - [ ] Port animation compute passes
-- [ ] Port light culling compute pass
+- [x] Port light culling compute pass
 - [ ] Test with `-s` single-frame validation mode
 
 ### Phase 5: Polish and CI (1-2 weeks)
 
-- [ ] Metal validation layer testing
+- [x] Metal validation layer testing
 - [ ] Performance benchmarks vs MoltenVK
 - [ ] Update `game/build.rs` for Metal backend (remove Vulkan SDK requirement)
 - [ ] Update CI to test both backends

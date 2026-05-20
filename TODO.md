@@ -37,6 +37,7 @@
 
 ## Rendering
 
+- [ ] Remove all `cfg(metal/vulkan)` from katla_app — backend-specific conditionals should only exist in katla_gfx; ideally eliminate feature flags entirely and support both backends interchangeably at runtime
 - [ ] Add anti-aliasing — start with FXAA (post-process, easy), then MSAA or TAA for higher quality
 - [ ] Add bloom post-processing pass — bright extraction + gaussian blur + compositing in render graph
 - [ ] Add SSAO (screen-space ambient occlusion) — depth+normal based, integrate into lighting pass
