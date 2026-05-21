@@ -1111,7 +1111,7 @@ impl MetalRenderer {
                 vertex_fn,
                 Some(fragment_fn),
                 &[MTLPixelFormat::BGRA8Unorm_sRGB],
-                Some(MTLPixelFormat::Depth32Float),
+                None,
                 false,
                 crate::pipeline::CompareOp::Always,
                 objc2_metal::MTLCullMode::None,
@@ -2172,7 +2172,7 @@ impl GpuRenderer for MetalRenderer {
             &[MTLPixelFormat::RGBA16Float]
         };
         let depth_format = if is_ui {
-            Some(MTLPixelFormat::Depth32Float)
+            None
         } else {
             Some(MTLPixelFormat::Depth32Float)
         };
