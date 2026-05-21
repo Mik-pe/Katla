@@ -1893,13 +1893,13 @@ impl GpuRenderer for MetalRenderer {
             MetalTexture::new(texture.clone(), ImageFormat::B8G8R8A8Srgb),
         ));
         self.current_drawable_texture = Some(texture);
-        self.frame_index += 1;
         Ok(self.frame_index)
     }
 
     fn end_frame(&mut self) -> Result<(), RendererError> {
         self.current_drawable_texture = None;
         self.drawable_texture_view = None;
+        self.frame_index += 1;
         Ok(())
     }
 
