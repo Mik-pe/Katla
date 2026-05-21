@@ -241,9 +241,7 @@ impl ApplicationBuilder {
     /// Metal uses hardcoded pass execution but benefits from frame graph
     /// transient texture management and bindless registration.
     #[cfg(all(feature = "metal", not(feature = "vulkan")))]
-    fn build_metal_frame_graph(
-        renderer: &mut katla_gfx::MetalRenderer,
-    ) -> AppResult<FrameGraph> {
+    fn build_metal_frame_graph(renderer: &mut katla_gfx::MetalRenderer) -> AppResult<FrameGraph> {
         use katla_gfx::render_graph::{
             FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassKind, PassType, SimplePass,
         };
@@ -883,10 +881,13 @@ impl ApplicationBuilder {
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
         #[cfg(feature = "vulkan")]
         for frame_idx in 0..2 {
-            if let Some(view) =
-                frame_graph.as_vulkan().transient_texture_view_for_frame("shadow_atlas", frame_idx)
+            if let Some(view) = frame_graph
+                .as_vulkan()
+                .transient_texture_view_for_frame("shadow_atlas", frame_idx)
             {
-                renderer.unwrap_vulkan().set_shadow_atlas_view(frame_idx, view);
+                renderer
+                    .unwrap_vulkan()
+                    .set_shadow_atlas_view(frame_idx, view);
             }
         }
         #[cfg(feature = "vulkan")]
@@ -939,7 +940,11 @@ impl ApplicationBuilder {
         #[cfg(all(feature = "editor", not(feature = "vulkan")))]
         let mut ui_renderer = crate::ui::UIRenderer::new();
         #[cfg(all(feature = "editor", feature = "vulkan"))]
-        match renderer.unwrap_vulkan().ui_renderer.font_atlas_bindless_slot() {
+        match renderer
+            .unwrap_vulkan()
+            .ui_renderer
+            .font_atlas_bindless_slot()
+        {
             Some(bindless_slot) => {
                 ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
                 log::info!("Font atlas bindless slot initialized: {}", bindless_slot);

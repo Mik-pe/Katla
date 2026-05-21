@@ -375,7 +375,8 @@ impl SceneManager {
             std::collections::HashMap::new();
 
         // First pass: spawn all entities, track by index and name
-        let mut spawned_ids: Vec<Option<katla_ecs::EntityId>> = Vec::with_capacity(scene.entities.len());
+        let mut spawned_ids: Vec<Option<katla_ecs::EntityId>> =
+            Vec::with_capacity(scene.entities.len());
         for desc in &scene.entities {
             match Self::spawn_entity(app, desc) {
                 Ok(entity_id) => {

@@ -3,10 +3,10 @@
 use super::handles::PassId;
 use crate::renderer::types::{DrawList, UIDrawList};
 
-#[cfg(feature = "vulkan")]
-use crate::renderer::VulkanRenderer;
 #[cfg(all(target_os = "macos", feature = "metal"))]
 use crate::metal::metal_renderer::MetalRenderer;
+#[cfg(feature = "vulkan")]
+use crate::renderer::VulkanRenderer;
 
 /// Frame context that wraps both Vulkan and Metal behind a single type.
 ///
@@ -24,9 +24,13 @@ impl<'a, 'b> AnyFrame<'a, 'b> {
     pub fn submit(&mut self, pass_id: PassId, draw_list: &DrawList) -> &mut Self {
         match self {
             #[cfg(feature = "vulkan")]
-            AnyFrame::Vulkan(f) => { f.submit(pass_id, draw_list); }
+            AnyFrame::Vulkan(f) => {
+                f.submit(pass_id, draw_list);
+            }
             #[cfg(all(target_os = "macos", feature = "metal"))]
-            AnyFrame::Metal(f) => { f.submit(pass_id, draw_list); }
+            AnyFrame::Metal(f) => {
+                f.submit(pass_id, draw_list);
+            }
         }
         self
     }
@@ -35,9 +39,13 @@ impl<'a, 'b> AnyFrame<'a, 'b> {
     pub fn submit_ui(&mut self, pass_id: PassId, ui_draw_list: &UIDrawList) -> &mut Self {
         match self {
             #[cfg(feature = "vulkan")]
-            AnyFrame::Vulkan(f) => { f.submit_ui(pass_id, ui_draw_list); }
+            AnyFrame::Vulkan(f) => {
+                f.submit_ui(pass_id, ui_draw_list);
+            }
             #[cfg(all(target_os = "macos", feature = "metal"))]
-            AnyFrame::Metal(f) => { f.submit_ui(pass_id, ui_draw_list); }
+            AnyFrame::Metal(f) => {
+                f.submit_ui(pass_id, ui_draw_list);
+            }
         }
         self
     }
@@ -46,9 +54,13 @@ impl<'a, 'b> AnyFrame<'a, 'b> {
     pub fn dispatch(&mut self, pass_id: PassId, x: u32, y: u32, z: u32) -> &mut Self {
         match self {
             #[cfg(feature = "vulkan")]
-            AnyFrame::Vulkan(f) => { f.dispatch(pass_id, x, y, z); }
+            AnyFrame::Vulkan(f) => {
+                f.dispatch(pass_id, x, y, z);
+            }
             #[cfg(all(target_os = "macos", feature = "metal"))]
-            AnyFrame::Metal(f) => { f.dispatch(pass_id, x, y, z); }
+            AnyFrame::Metal(f) => {
+                f.dispatch(pass_id, x, y, z);
+            }
         }
         self
     }

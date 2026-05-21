@@ -144,7 +144,9 @@ impl Application {
                         ));
                     }
                 }
-                self.frame_graph.as_vulkan_mut().set_skeleton_copy_commands(copy_cmds);
+                self.frame_graph
+                    .as_vulkan_mut()
+                    .set_skeleton_copy_commands(copy_cmds);
             }
         }
 
@@ -236,7 +238,11 @@ impl Application {
             }
 
             // Queue async readback for current frame (will be checked on next frame)
-            if let Err(e) = self.renderer.unwrap_vulkan().queue_async_readback(self.frame_count) {
+            if let Err(e) = self
+                .renderer
+                .unwrap_vulkan()
+                .queue_async_readback(self.frame_count)
+            {
                 log::error!(
                     "Frame {} - Failed to queue async readback: {}",
                     self.frame_count,

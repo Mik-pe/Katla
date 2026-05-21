@@ -471,7 +471,9 @@ impl Application {
                 .as_vulkan()
                 .transient_texture_view_for_frame("shadow_atlas", frame_idx)
             {
-                self.renderer.unwrap_vulkan().set_shadow_atlas_view(frame_idx, view);
+                self.renderer
+                    .unwrap_vulkan()
+                    .set_shadow_atlas_view(frame_idx, view);
             }
         }
 
@@ -768,10 +770,11 @@ impl Application {
                 }
 
                 let phys = self.renderer.swapchain_extent();
-                if let Ok(textures) =
-                    self.frame_graph
-                        .recreate_transient_textures(&mut self.renderer, phys.width, phys.height)
-                {
+                if let Ok(textures) = self.frame_graph.recreate_transient_textures(
+                    &mut self.renderer,
+                    phys.width,
+                    phys.height,
+                ) {
                     for (name, slot) in &textures {
                         if name == "hdr_color" {
                             self.frame_graph
@@ -783,9 +786,7 @@ impl Application {
                         }
                     }
 
-                    if let Some(view) = self
-                        .frame_graph
-                        .transient_image_view_metal("hdr_color", 0)
+                    if let Some(view) = self.frame_graph.transient_image_view_metal("hdr_color", 0)
                     {
                         let hdr_transient_slot = self
                             .frame_graph
@@ -796,9 +797,7 @@ impl Application {
                             .set_geometry_hdr_view(view, hdr_transient_slot);
                     }
 
-                    if let Some(view) = self
-                        .frame_graph
-                        .transient_image_view_metal("viewport_0", 0)
+                    if let Some(view) = self.frame_graph.transient_image_view_metal("viewport_0", 0)
                     {
                         self.renderer.set_tonemap_output_view(view);
                     }

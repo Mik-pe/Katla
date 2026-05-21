@@ -6,10 +6,10 @@ use super::frame_graph::FrameGraph;
 use super::handles::PassId;
 use super::pass::PassDesc;
 
-#[cfg(feature = "vulkan")]
-use crate::renderer::VulkanRenderer;
 #[cfg(all(target_os = "macos", feature = "metal"))]
 use crate::metal::metal_renderer::MetalRenderer;
+#[cfg(feature = "vulkan")]
+use crate::renderer::VulkanRenderer;
 
 /// Frame graph that wraps both Vulkan and Metal backends behind a single type.
 pub enum AnyFrameGraph {
@@ -186,20 +186,16 @@ impl AnyFrameGraph {
 
     /// Get the transient texture bindless slot for a named texture.
     /// Returns None if the texture doesn't exist or has no bindless slot.
-    pub fn transient_texture_bindless_slot(
-        &self,
-        name: &str,
-        frame_idx: usize,
-    ) -> Option<u32> {
+    pub fn transient_texture_bindless_slot(&self, name: &str, frame_idx: usize) -> Option<u32> {
         match self {
             #[cfg(feature = "vulkan")]
-            AnyFrameGraph::Vulkan(fg) => fg
-                .transient_texture(name, frame_idx)
-                .and_then(|t| <VulkanRenderer as RenderGraphBackend>::transient_texture_bindless_slot(t)),
+            AnyFrameGraph::Vulkan(fg) => fg.transient_texture(name, frame_idx).and_then(|t| {
+                <VulkanRenderer as RenderGraphBackend>::transient_texture_bindless_slot(t)
+            }),
             #[cfg(all(target_os = "macos", feature = "metal"))]
-            AnyFrameGraph::Metal(fg) => fg
-                .transient_texture(name, frame_idx)
-                .and_then(|t| <MetalRenderer as RenderGraphBackend>::transient_texture_bindless_slot(t)),
+            AnyFrameGraph::Metal(fg) => fg.transient_texture(name, frame_idx).and_then(|t| {
+                <MetalRenderer as RenderGraphBackend>::transient_texture_bindless_slot(t)
+            }),
         }
     }
 
