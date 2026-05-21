@@ -301,7 +301,7 @@ impl Application {
         );
 
         let frame_index = self.renderer.current_frame() as u32;
-        if let Some(ref mut particle_system) = self.renderer.particle_system {
+        if let Some(ref mut particle_system) = self.renderer.unwrap_vulkan().particle_system {
             match particle_system.update(delta_time, frame_index) {
                 Ok((_max_alive, emit_count)) => {
                     let emit_workgroups = if emit_count > 0 {
@@ -343,8 +343,10 @@ impl Application {
 
                     // Update frame graph with workgroup counts for this frame
                     self.frame_graph
+                        .as_vulkan_mut()
                         .set_particle_emit_workgroup_count(emit_workgroups);
                     self.frame_graph
+                        .as_vulkan_mut()
                         .set_particle_simulate_workgroup_count(simulate_workgroups);
                 }
                 Err(e) => {
@@ -466,9 +468,10 @@ impl Application {
         for frame_idx in 0..2 {
             if let Some(view) = self
                 .frame_graph
+                .as_vulkan()
                 .transient_texture_view_for_frame("shadow_atlas", frame_idx)
             {
-                self.renderer.set_shadow_atlas_view(frame_idx, view);
+                self.renderer.unwrap_vulkan().set_shadow_atlas_view(frame_idx, view);
             }
         }
 
@@ -761,9 +764,10 @@ impl Application {
                     log::error!("Failed to resize Metal renderer: {}", e);
                 }
 
+                let phys = self.renderer.swapchain_extent();
                 if let Ok(textures) =
                     self.frame_graph
-                        .recreate_transient_textures(&mut self.renderer, w, h)
+                        .recreate_transient_textures(&mut self.renderer, phys.width, phys.height)
                 {
                     for (name, slot) in &textures {
                         if name == "hdr_color" {
@@ -779,11 +783,11 @@ impl Application {
                     let frame_idx = GpuRenderer::current_frame(&self.renderer);
                     if let Some(view) = self
                         .frame_graph
-                        .transient_image_view("hdr_color", frame_idx)
+                        .transient_image_view_metal("hdr_color", frame_idx)
                     {
                         let hdr_transient_slot = self
                             .frame_graph
-                            .transient_texture("hdr_color", frame_idx)
+                            .transient_texture_metal("hdr_color", frame_idx)
                             .and_then(|t| t.bindless_slot)
                             .unwrap_or(0);
                         self.renderer
@@ -892,8 +896,10 @@ impl Application {
             if !draw_list.is_empty() {
                 frame.submit(ids.geometry, &draw_list);
                 frame.submit(ids.shadow, &draw_list);
+                frame.submit(ids.depth_prepass, &draw_list);
+                frame.submit(ids.outline, &draw_list);
                 log::debug!(
-                    "Submitted {} draw calls to geometry + shadow",
+                    "Submitted {} draw calls to geometry + shadow + depth_prepass + outline",
                     draw_list.len()
                 );
             }

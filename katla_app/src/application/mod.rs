@@ -43,7 +43,7 @@ use std::time::Instant;
 use log::{debug, info};
 use winit::keyboard::ModifiersState;
 
-use crate::Renderer;
+use crate::{FrameGraph, Renderer};
 pub use builder::*;
 use katla_ecs::World;
 use katla_math::Vec2;
@@ -267,7 +267,7 @@ impl Default for PassIds {
 impl PassIds {
     /// Re-resolve all PassIds from the frame graph by name.
     /// Must be called after any `insert_pass` calls that shift indices.
-    pub(crate) fn refresh(&mut self, graph: &katla_gfx::render_graph::FrameGraph<Renderer>) {
+    pub(crate) fn refresh(&mut self, graph: &FrameGraph) {
         self.depth_prepass = graph.pass_id("depth_prepass").unwrap_or(self.depth_prepass);
         self.geometry = graph.pass_id("geometry").unwrap_or(self.geometry);
         self.shadow = graph.pass_id("shadow").unwrap_or(self.shadow);
@@ -287,7 +287,7 @@ impl PassIds {
 pub struct Application {
     pub(crate) window: Window,
     pub(crate) renderer: Renderer,
-    pub(crate) frame_graph: katla_gfx::render_graph::FrameGraph<Renderer>,
+    pub(crate) frame_graph: FrameGraph,
     pub(crate) pass_ids: PassIds,
     pub(crate) camera: Camera,
     #[cfg(feature = "vulkan")]

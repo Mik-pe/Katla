@@ -112,13 +112,13 @@ impl super::Application {
         );
 
         let mesh_handle = if model.has_skinning {
-            self.renderer.create_mesh_soa(
+            self.renderer.unwrap_vulkan().create_mesh_soa(
                 &model.skinned_vertex_attributes,
                 model.skinned_vertex_data.len() as u32,
                 &indices,
             )
         } else {
-            self.renderer.create_mesh_soa(
+            self.renderer.unwrap_vulkan().create_mesh_soa(
                 &model.vertex_attributes,
                 model.vertex_data.len() as u32,
                 &indices,
@@ -262,6 +262,7 @@ impl super::Application {
 
         let mesh_handle = self
             .renderer
+            .unwrap_vulkan()
             .create_mesh_soa(&attributes, vertex_count, &indices);
 
         info!(

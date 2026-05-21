@@ -9,6 +9,7 @@
 // Backend-agnostic modules (always available)
 pub(crate) mod types;
 
+pub mod any_renderer;
 pub mod gpu_renderer;
 
 // Vulkan-only submodules

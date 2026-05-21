@@ -46,6 +46,7 @@ impl Application {
         // Create HDR PBR material for rendering to HDR intermediate
         self.default_material_handle = self
             .renderer
+            .unwrap_vulkan()
             .compile_material(
                 &shader_path,
                 katla_gfx::MaterialOptions {
@@ -72,6 +73,7 @@ impl Application {
         // Initialize particle emit pipeline
         let particle_emit_shader_path = self.resources.shader_path("particles/particle_emit.wgsl");
         self.renderer
+            .unwrap_vulkan()
             .init_particle_emit_pipeline(&particle_emit_shader_path)
             .expect("Failed to initialize particle emit pipeline");
 
@@ -80,6 +82,7 @@ impl Application {
             .resources
             .shader_path("particles/particle_simulate.wgsl");
         self.renderer
+            .unwrap_vulkan()
             .init_particle_simulate_pipeline(&particle_simulate_shader_path)
             .expect("Failed to initialize particle simulate pipeline");
 
@@ -88,12 +91,13 @@ impl Application {
             .resources
             .shader_path("particles/particle_draw_command.wgsl");
         self.renderer
+            .unwrap_vulkan()
             .init_particle_draw_command_pipeline(&particle_draw_command_shader_path)
             .expect("Failed to initialize particle draw command pipeline");
 
         // Add particle compute passes to frame graph
         // These must be added after particle pipelines are initialized
-        if let Some(ref particle_system) = self.renderer.particle_system {
+        if let Some(ref particle_system) = self.renderer.unwrap_vulkan().particle_system {
             let emit_pipeline = particle_system
                 .emit_pipeline_handle()
                 .expect("Particle emit pipeline not initialized");
@@ -242,7 +246,7 @@ impl Application {
         // Inserted at position 0 so it runs before light_culling, particle passes,
         // and all graphics passes. This ensures skeleton matrices are ready
         // for the subsequent copy commands and vertex shader skinning.
-        if let Some(pipeline_handle) = self.renderer.animation_pipeline_handle() {
+        if let Some(pipeline_handle) = self.renderer.unwrap_vulkan().animation_pipeline_handle() {
             use katla_gfx::render_graph::{PassDesc, PassType, RenderGraphError};
             self.frame_graph.insert_pass(
                 0,
@@ -348,7 +352,7 @@ impl Application {
 
         // Initialize transient textures and register with bindless system
         self.frame_graph
-            .initialize_transient_textures(&self.renderer)
+            .initialize_transient_textures(&mut self.renderer)
             .expect("Failed to initialize transient textures");
 
         // Register HDR texture with bindless system for tonemapping
@@ -380,6 +384,7 @@ impl Application {
 
         // Set LDR texture base index for compositing shader to use
         self.frame_graph
+            .as_vulkan_mut()
             .set_ldr_texture_base_index(viewport_bindless_index);
 
         // Set viewport bindless index in editor UI
@@ -402,6 +407,7 @@ impl Application {
             self.editor.stencil_indicator_bindless_index = Some(stencil_indicator_index);
 
             self.frame_graph
+                .as_vulkan_mut()
                 .set_overlay_texture_indices(
                     self.pass_ids.wallhack_overlay,
                     viewport_bindless_index,
@@ -449,7 +455,7 @@ impl Application {
         }
 
         // Initialize shadow map resources
-        if let Err(e) = self.renderer.init_shadow_resources(None) {
+        if let Err(e) = self.renderer.init_shadow_resources() {
             warn!("Failed to initialize Metal shadow resources: {}", e);
         } else {
             info!("Shadow resources initialized (Metal)");
@@ -535,6 +541,7 @@ impl Application {
         #[cfg(feature = "vulkan")]
         let material = self
             .renderer
+            .unwrap_vulkan()
             .compile_material(
                 &shader_path,
                 katla_gfx::MaterialOptions {

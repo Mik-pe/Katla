@@ -21,7 +21,7 @@ impl Application {
         // Wait for any pending async readback to complete before destroying resources
         // This must happen BEFORE wait_for_device() to ensure readback finishes
         #[cfg(feature = "vulkan")]
-        match self.renderer.wait_for_pending_readback() {
+        match self.renderer.unwrap_vulkan().wait_for_pending_readback() {
             Ok(Some((frame, image_data))) => {
                 info!("Saving final frame {} before shutdown", frame);
                 let extent = self.renderer.swapchain_extent();
@@ -106,42 +106,46 @@ impl Application {
 
         // Update particle emitters from ECS components
         #[cfg(feature = "vulkan")]
-        if let Some(ref mut ps) = self.renderer.particle_system {
+        if let Some(ref mut ps) = self.renderer.unwrap_vulkan().particle_system {
             self.particle_system.update(&mut self.world, ps, dt);
         }
 
         // Update GPU animation: prepare data and upload per-frame params
         #[cfg(feature = "vulkan")]
-        if let (Some(gpu_anim), Some(pipeline), Some(buffers)) = (
-            &mut self.gpu_animation_system,
-            &mut self.renderer.animation_pipeline,
-            &mut self.renderer.animation_buffers,
-        ) {
-            gpu_anim
-                .prepare(&mut self.world, pipeline, buffers)
-                .unwrap_or_else(|e| {
-                    log::error!("GPU animation prepare failed: {:?}", e);
-                });
-            gpu_anim.update_params(&mut self.world, buffers);
-            self.frame_graph
-                .set_animation_skeleton_count(gpu_anim.skeleton_count() as u32);
+        {
+            let renderer = self.renderer.unwrap_vulkan();
+            if let (Some(gpu_anim), Some(pipeline), Some(buffers)) = (
+                &mut self.gpu_animation_system,
+                &mut renderer.animation_pipeline,
+                &mut renderer.animation_buffers,
+            ) {
+                gpu_anim
+                    .prepare(&mut self.world, pipeline, buffers)
+                    .unwrap_or_else(|e| {
+                        log::error!("GPU animation prepare failed: {:?}", e);
+                    });
+                gpu_anim.update_params(&mut self.world, buffers);
+                self.frame_graph
+                    .as_vulkan_mut()
+                    .set_animation_skeleton_count(gpu_anim.skeleton_count() as u32);
 
-            // Build per-entity skeleton copy commands:
-            // (skeleton_handle_index, joint_offset, joint_count)
-            use crate::components::DrawableComponent;
-            let mut copy_cmds = Vec::new();
-            for entity in gpu_anim.entities() {
-                if let Some(drawable) = self.world.get_component::<DrawableComponent>(entity)
-                    && let Some(info) = gpu_anim.entity_info(entity)
-                {
-                    copy_cmds.push((
-                        drawable.skeleton_handle.index(),
-                        info.joint_offset,
-                        info.joint_count,
-                    ));
+                // Build per-entity skeleton copy commands:
+                // (skeleton_handle_index, joint_offset, joint_count)
+                use crate::components::DrawableComponent;
+                let mut copy_cmds = Vec::new();
+                for entity in gpu_anim.entities() {
+                    if let Some(drawable) = self.world.get_component::<DrawableComponent>(entity)
+                        && let Some(info) = gpu_anim.entity_info(entity)
+                    {
+                        copy_cmds.push((
+                            drawable.skeleton_handle.index(),
+                            info.joint_offset,
+                            info.joint_count,
+                        ));
+                    }
                 }
+                self.frame_graph.as_vulkan_mut().set_skeleton_copy_commands(copy_cmds);
             }
-            self.frame_graph.set_skeleton_copy_commands(copy_cmds);
         }
 
         // Poll background loader for completed asset loads
@@ -161,7 +165,7 @@ impl Application {
         #[cfg(feature = "vulkan")]
         if self.info.check_black_frames && self.frame_count > 0 {
             // Check if previous frame's async readback is complete
-            match self.renderer.check_pending_readback() {
+            match self.renderer.unwrap_vulkan().check_pending_readback() {
                 Ok(Some((prev_frame, image_data))) => {
                     let extent = self.renderer.swapchain_extent();
                     let width = extent.width as usize;
@@ -232,7 +236,7 @@ impl Application {
             }
 
             // Queue async readback for current frame (will be checked on next frame)
-            if let Err(e) = self.renderer.queue_async_readback(self.frame_count) {
+            if let Err(e) = self.renderer.unwrap_vulkan().queue_async_readback(self.frame_count) {
                 log::error!(
                     "Frame {} - Failed to queue async readback: {}",
                     self.frame_count,

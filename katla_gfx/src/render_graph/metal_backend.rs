@@ -106,10 +106,12 @@ impl RenderGraphBackend for MetalRenderer {
     }
 
     fn swapchain_image_view(&self, _image_index: u32) -> Self::ImageView {
-        todo!("Metal swapchain image view not yet implemented")
+        self.drawable_texture_view
+            .clone()
+            .expect("No drawable texture view — call begin_frame first")
     }
 
     fn depth_image_view(&self, _frame_index: usize) -> Option<Self::ImageView> {
-        todo!("Metal depth image view not yet implemented")
+        self.depth_texture_view.clone()
     }
 }

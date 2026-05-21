@@ -1,10 +1,7 @@
-//! cfg-based Renderer type alias.
+//! Renderer type alias for dynamic backend selection.
 //!
-//! Switches between `VulkanRenderer` and `MetalRenderer` depending on
-//! enabled Cargo features. When both are enabled, Vulkan takes priority.
+//! Uses `AnyRenderer` which wraps both Vulkan and Metal backends
+//! and allows runtime selection.
 
-#[cfg(feature = "vulkan")]
-pub type Renderer = katla_gfx::VulkanRenderer;
-
-#[cfg(all(feature = "metal", not(feature = "vulkan")))]
-pub type Renderer = katla_gfx::MetalRenderer;
+pub type Renderer = katla_gfx::AnyRenderer;
+pub type FrameGraph = katla_gfx::AnyFrameGraph;
