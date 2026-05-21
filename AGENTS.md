@@ -147,7 +147,3 @@ Use the `log` crate with appropriate levels to balance visibility vs noise:
 | `warn!` | Recoverable issues, missing optional data | No normals found, template not found using fallback |
 | `info!` | Major lifecycle events, user-visible actions | Window resized, model loaded, hot reload enabled |
 | `debug!` | Detailed diagnostic info | Parsed X vertices, shader reloaded, entity spawned |
-
-## Tool Quirks
-
-- **Glob tool is unreliable in this repo** — it uses `rg --files --no-ignore --hidden` which scans the 20GB `target/` directory, hits a timeout, and silently returns "No files found". Use `LS`, `Grep` (file_paths mode), or `rg --files` via Execute instead.
