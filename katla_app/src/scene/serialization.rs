@@ -375,18 +375,25 @@ impl SceneManager {
             std::collections::HashMap::new();
 
         // First pass: spawn all entities, track by index and name
-        let mut spawned_ids: Vec<katla_ecs::EntityId> = Vec::with_capacity(scene.entities.len());
+        let mut spawned_ids: Vec<Option<katla_ecs::EntityId>> = Vec::with_capacity(scene.entities.len());
         for desc in &scene.entities {
-            let entity_id = Self::spawn_entity(app, desc)?;
-            spawned_ids.push(entity_id);
-            if let Some(ref name) = desc.name {
-                if name_to_entity.contains_key(name) {
-                    warn!(
-                        "Duplicate entity name '{}' on load -- keeping first occurrence for parent resolution",
-                        name
-                    );
-                } else {
-                    name_to_entity.insert(name.clone(), entity_id);
+            match Self::spawn_entity(app, desc) {
+                Ok(entity_id) => {
+                    if let Some(ref name) = desc.name {
+                        if name_to_entity.contains_key(name) {
+                            warn!(
+                                "Duplicate entity name '{}' on load -- keeping first occurrence for parent resolution",
+                                name
+                            );
+                        } else {
+                            name_to_entity.insert(name.clone(), entity_id);
+                        }
+                    }
+                    spawned_ids.push(Some(entity_id));
+                }
+                Err(e) => {
+                    warn!("Skipping entity: {}", e);
+                    spawned_ids.push(None);
                 }
             }
         }
@@ -396,7 +403,9 @@ impl SceneManager {
         // in the scene file does not matter for parent resolution.
         // Uses index-based lookup for children so unnamed entities can have parents.
         for (idx, desc) in scene.entities.iter().enumerate() {
-            let child_id = spawned_ids[idx];
+            let Some(child_id) = spawned_ids[idx] else {
+                continue;
+            };
             if let Some(ref parent_name) = desc.parent {
                 if let Some(&parent_id) = name_to_entity.get(parent_name) {
                     app.world
