@@ -344,7 +344,7 @@ pub fn upload_font_atlas(app: &mut Application) {
         let atlas_handle = app.renderer.create_ui_font_atlas(width, height, &data);
 
         #[cfg(feature = "vulkan")]
-        if let Some(bindless_slot) = app.renderer.ui_renderer.font_atlas_bindless_slot() {
+        if let Some(bindless_slot) = app.renderer.unwrap_vulkan().ui_renderer.font_atlas_bindless_slot() {
             app.editor
                 .ui_renderer
                 .set_font_atlas_bindless_slot(bindless_slot);
@@ -913,7 +913,7 @@ pub fn process_editor_actions(app: &mut Application) {
                     if let Some(emitter) =
                         app.world.get_component_mut::<ParticleEmitterComponent>(id)
                         && let Some(handle) = emitter.emitter_handle.take()
-                        && let Some(ps) = &mut app.renderer.particle_system
+                        && let Some(ps) = &mut app.renderer.unwrap_vulkan().particle_system
                     {
                         ps.destroy_emitter(handle, emitter.kill_on_destroy);
                         info!("Destroyed particle emitter for deleted entity {:?}", id);
@@ -945,7 +945,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 let mut ctx = DuplicateContext {
                     world: &mut app.world,
                     gpu_resource_tracker: &mut app.gpu_resource_tracker,
-                    particle_system: &mut app.renderer.particle_system,
+                    particle_system: &mut app.renderer.unwrap_vulkan().particle_system,
                 };
                 #[cfg(not(feature = "vulkan"))]
                 let mut ctx = DuplicateContext {
@@ -1006,7 +1006,7 @@ pub fn process_editor_actions(app: &mut Application) {
                     if let Some(emitter) =
                         app.world.get_component_mut::<ParticleEmitterComponent>(*id)
                         && let Some(handle) = emitter.emitter_handle.take()
-                        && let Some(ps) = &mut app.renderer.particle_system
+                        && let Some(ps) = &mut app.renderer.unwrap_vulkan().particle_system
                     {
                         ps.destroy_emitter(handle, emitter.kill_on_destroy);
                     }
@@ -1104,7 +1104,7 @@ pub fn process_editor_actions(app: &mut Application) {
             }
             #[cfg(feature = "vulkan")]
             EditorAction::ResetParticleSystem => {
-                if let Some(ps) = &mut app.renderer.particle_system {
+                if let Some(ps) = &mut app.renderer.unwrap_vulkan().particle_system {
                     use katla_gfx::particles::EmitterHandle;
 
                     let entity_configs: Vec<(
@@ -1441,7 +1441,7 @@ fn collect_particle_inspector_data(app: &mut Application) {
     }
 
     // Get system-wide stats
-    let stats = app.renderer.particle_system.as_ref().map(|ps| {
+    let stats = app.renderer.unwrap_vulkan().particle_system.as_ref().map(|ps| {
         let alive = ps.alive_count();
         let max = ps.max_particles();
         ParticleStats {

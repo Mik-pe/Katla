@@ -155,6 +155,7 @@ pub struct MetalRenderer {
     frame_uniform_buffer: Option<MetalBuffer>,
     object_storage_buffer: Option<MetalBuffer>,
     current_drawable_texture: Option<Retained<ProtocolObject<dyn MTLTexture>>>,
+    pub(crate) drawable_texture_view: Option<MetalTextureView>,
     frame_index: u32,
     meshes: ResourceStorage<MetalMesh>,
     materials: ResourceStorage<MetalMaterial>,
@@ -174,10 +175,12 @@ pub struct MetalRenderer {
     animation_system: Option<MetalAnimationSystem>,
     particle_system: Option<MetalParticleSubsystem>,
     pending_ui_draw_list: Option<crate::renderer::types::UIDrawList>,
+    pending_shadow_draw_list: Option<DrawList>,
+    pending_outline_draw_list: Option<DrawList>,
     shadow: MetalShadowSubsystem,
     depth_prepass: MetalDepthPrepass,
     outline: MetalOutlineSubsystem,
-    depth_texture_view: Option<MetalTextureView>,
+    pub(crate) depth_texture_view: Option<MetalTextureView>,
     hdr_color_view: Option<MetalTextureView>,
     depth_stencil_view: Option<MetalTextureView>,
     shared_sampler: Option<super::sampler::MetalSamplerState>,
@@ -240,6 +243,7 @@ impl MetalRenderer {
             frame_uniform_buffer: None,
             object_storage_buffer: None,
             current_drawable_texture: None,
+            drawable_texture_view: None,
             frame_index: 0,
             meshes: ResourceStorage::new(),
             materials: ResourceStorage::new(),
@@ -259,6 +263,8 @@ impl MetalRenderer {
             animation_system: None,
             particle_system: None,
             pending_ui_draw_list: None,
+            pending_shadow_draw_list: None,
+            pending_outline_draw_list: None,
             shadow: MetalShadowSubsystem::new(),
             depth_prepass: MetalDepthPrepass::new(),
             outline: MetalOutlineSubsystem::new(),
@@ -473,33 +479,51 @@ impl MetalRenderer {
         frame_graph: &crate::render_graph::FrameGraph<Self>,
         _frame_idx: usize,
     ) -> Result<(), RendererError> {
+        // Extract shadow draw list
         let shadow_data = frame_graph
             .pass_id("shadow")
             .and_then(|id| pending.remove(&(id.0 as usize)));
-        let _ = shadow_data;
-        // if shadow_data.as_ref().is_some_and(|d| !d.draw_lists.is_empty()) {
-        //     self.render_shadow_pass()?;
-        // }
+        if let Some(data) = &shadow_data {
+            let combined = Self::merge_draw_lists(&data.draw_lists);
+            if !combined.draws.is_empty() {
+                self.pending_shadow_draw_list = Some(combined);
+            }
+        }
 
+        // Extract depth prepass draw list
+        let depth_data = frame_graph
+            .pass_id("depth_prepass")
+            .and_then(|id| pending.remove(&(id.0 as usize)));
+        if let Some(data) = &depth_data {
+            let combined = Self::merge_draw_lists(&data.draw_lists);
+            if !combined.draws.is_empty() {
+                self.pending_draw_list = Some(combined);
+            }
+        }
+
+        // Extract geometry draw list
         let geometry_data = frame_graph
             .pass_id("geometry")
             .and_then(|id| pending.remove(&(id.0 as usize)));
         if let Some(data) = &geometry_data {
-            let combined: Vec<_> = data.draw_lists.iter().map(|rc| (**rc).clone()).collect();
-            if !combined.is_empty() {
-                let merged = combined.into_iter().fold(
-                    crate::renderer::types::DrawList::new(),
-                    |mut acc, dl| {
-                        for d in dl.draws {
-                            acc.push(d);
-                        }
-                        acc
-                    },
-                );
-                self.pending_draw_list = Some(merged);
+            let combined = Self::merge_draw_lists(&data.draw_lists);
+            if !combined.draws.is_empty() {
+                self.pending_draw_list = Some(combined);
             }
         }
 
+        // Extract outline draw list
+        let outline_data = frame_graph
+            .pass_id("outline")
+            .and_then(|id| pending.remove(&(id.0 as usize)));
+        if let Some(data) = &outline_data {
+            let combined = Self::merge_draw_lists(&data.draw_lists);
+            if !combined.draws.is_empty() {
+                self.pending_outline_draw_list = Some(combined);
+            }
+        }
+
+        // Extract UI draw list
         let ui_data = frame_graph
             .pass_id("ui")
             .and_then(|id| pending.remove(&(id.0 as usize)));
@@ -512,6 +536,18 @@ impl MetalRenderer {
         self.render_frame()?;
 
         Ok(())
+    }
+
+    fn merge_draw_lists(
+        draw_lists: &[std::rc::Rc<DrawList>],
+    ) -> DrawList {
+        let combined: Vec<_> = draw_lists.iter().map(|rc| (**rc).clone()).collect();
+        combined.into_iter().fold(DrawList::new(), |mut acc, dl| {
+            for d in dl.draws {
+                acc.push(d);
+            }
+            acc
+        })
     }
 
     /// Recreate render targets (depth, HDR color, scene color, depth-stencil) for the given size.
@@ -1266,7 +1302,7 @@ impl MetalRenderer {
 
 impl GpuRenderer for MetalRenderer {
     fn swapchain_extent(&self) -> Size2D {
-        self.size
+        self.drawable_size
     }
 
     fn current_frame(&self) -> usize {
@@ -1413,6 +1449,36 @@ impl GpuRenderer for MetalRenderer {
         let height = self.drawable_size.height as f32;
 
         // =========================================================================
+        // Pass 0: Shadow cascade rendering → shadow map texture
+        // =========================================================================
+        if let Some(shadow_draw_list) = self.pending_shadow_draw_list.take() {
+            if !shadow_draw_list.draws.is_empty() {
+                if let (Some(shadow_pipeline), Some(shadow_map_view)) =
+                    (self.shadow.pipeline(), self.shadow.shadow_map_view())
+                {
+                    let shadow_res = self.shadow.shadow_resolution();
+                    let frame_buf = self.frame_uniform_buffer.as_ref().unwrap();
+                    let object_buf = self.object_storage_buffer.as_ref().unwrap();
+                    for cascade_idx in 0..self.shadow.cascade_count() as usize {
+                        let cascade_vp = self.shadow.cascade_view_proj(cascade_idx);
+                        super::shadow::render_cascade(
+                            &mut cmd_buffer,
+                            shadow_pipeline,
+                            shadow_map_view,
+                            shadow_res,
+                            frame_buf,
+                            object_buf,
+                            &cascade_vp,
+                            &self.meshes,
+                            &self.materials,
+                            &shadow_draw_list,
+                        );
+                    }
+                }
+            }
+        }
+
+        // =========================================================================
         // Pass 1: Geometry (sky + PBR) → HDR intermediate texture
         // =========================================================================
         let has_tonemap = self.tonemap_pipeline.is_some() && self.geometry_hdr_view.is_some();
@@ -1524,6 +1590,52 @@ impl GpuRenderer for MetalRenderer {
             }
 
             encoder.end_encoding();
+        }
+
+        // =========================================================================
+        // Pass 1.5: Outline (stencil mark + outline draw on HDR texture)
+        // =========================================================================
+        if let Some(outline_draw_list) = self.pending_outline_draw_list.take() {
+            if !outline_draw_list.draws.is_empty() && has_tonemap {
+                let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
+                let depth_view = self.depth_texture_view.as_ref().unwrap();
+                let frame_buf = self.frame_uniform_buffer.as_ref().unwrap();
+                let object_buf = self.object_storage_buffer.as_ref().unwrap();
+                let w = self.drawable_size.width as u32;
+                let h = self.drawable_size.height as u32;
+
+                if let Some(stencil_pipeline) = self.outline.stencil_mark_pipeline() {
+                    super::outline::render_stencil_mark(
+                        &mut cmd_buffer,
+                        stencil_pipeline,
+                        geometry_hdr_view,
+                        depth_view,
+                        w,
+                        h,
+                        frame_buf,
+                        object_buf,
+                        &self.meshes,
+                        &self.materials,
+                        &outline_draw_list,
+                    );
+                }
+
+                if let Some(outline_pipeline) = self.outline.outline_draw_pipeline() {
+                    super::outline::render_outline(
+                        &mut cmd_buffer,
+                        outline_pipeline,
+                        geometry_hdr_view,
+                        depth_view,
+                        w,
+                        h,
+                        frame_buf,
+                        object_buf,
+                        &self.meshes,
+                        &self.materials,
+                        &outline_draw_list,
+                    );
+                }
+            }
         }
 
         // =========================================================================
@@ -1741,6 +1853,10 @@ impl GpuRenderer for MetalRenderer {
 
     fn begin_frame(&mut self) -> Result<u32, RendererError> {
         let texture = self.context.surface.acquire_next_drawable()?;
+        self.drawable_texture_view = Some(MetalTextureView::new(
+            texture.clone(),
+            MetalTexture::new(texture.clone(), ImageFormat::B8G8R8A8Srgb),
+        ));
         self.current_drawable_texture = Some(texture);
         self.frame_index += 1;
         Ok(self.frame_index)
@@ -1748,6 +1864,7 @@ impl GpuRenderer for MetalRenderer {
 
     fn end_frame(&mut self) -> Result<(), RendererError> {
         self.current_drawable_texture = None;
+        self.drawable_texture_view = None;
         Ok(())
     }
 
@@ -2168,6 +2285,31 @@ impl GpuRenderer for MetalRenderer {
 
     fn update_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) {
         if let Some(atlas_handle) = self.ui_font_atlas {
+            if let Some(entry) = self.textures.get(atlas_handle.index()) {
+                let tex = &entry._view;
+                let tex_w = tex.inner.width() as u32;
+                let tex_h = tex.inner.height() as u32;
+                if tex_w == width && tex_h == height {
+                    let region = objc2_metal::MTLRegion {
+                        origin: objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                        size: objc2_metal::MTLSize {
+                            width: width as usize,
+                            height: height as usize,
+                            depth: 1,
+                        },
+                    };
+                    let bytes_per_row = width as usize * 4;
+                    unsafe {
+                        tex.inner.replaceRegion_mipmapLevel_withBytes_bytesPerRow(
+                            region,
+                            0,
+                            std::ptr::NonNull::new(data.as_ptr() as *mut std::ffi::c_void).unwrap(),
+                            bytes_per_row,
+                        );
+                    }
+                    return;
+                }
+            }
             self.destroy_texture(atlas_handle);
         }
         let desc = TextureDescriptor::new(width, height, ImageFormat::R8G8B8A8Srgb);

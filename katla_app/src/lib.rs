@@ -29,5 +29,5 @@ pub use error::{AppError, AppResult};
 pub use gui_state::GuiState;
 
 pub use preferences::Preferences;
-pub use renderer_type::Renderer;
+pub use renderer_type::{FrameGraph, Renderer};
 pub use rendering::FrameContext;

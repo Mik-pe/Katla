@@ -22,6 +22,7 @@ impl Application {
         #[cfg(feature = "vulkan")]
         let material = self
             .renderer
+            .unwrap_vulkan()
             .compile_material(
                 &unlit_shader_path,
                 katla_gfx::MaterialOptions {

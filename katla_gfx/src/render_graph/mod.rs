@@ -55,6 +55,8 @@ mod resource;
 mod backend;
 
 // Layer 3: Backend-specific execution
+pub mod any_frame;
+pub mod any_frame_graph;
 mod frame;
 #[cfg(all(target_os = "macos", feature = "metal"))]
 mod metal_backend;

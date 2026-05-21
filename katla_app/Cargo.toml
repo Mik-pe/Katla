@@ -7,6 +7,7 @@ edition = "2024"
 [features]
 # macOS defaults to Metal, all other platforms default to Vulkan.
 # Override with --features vulkan or --features metal as needed.
+# Both can be enabled simultaneously for runtime backend selection.
 default = ["editor", "metal"]
 editor = ["katla_ecs/editor", "katla_script/editor"]
 mcp = ["katla_agent/mcp-server"]

@@ -35,7 +35,7 @@ use winit::window::Window;
 
 use katla_gfx::GpuRenderer;
 
-use crate::Renderer;
+use crate::{FrameGraph, Renderer};
 
 use super::camera::Camera;
 
@@ -192,7 +192,7 @@ impl ApplicationBuilder {
         event_loop
     }
 
-    /// Initialize the Vulkan renderer and load materials.
+    /// Initialize the renderer using the default backend.
     fn init_renderer(
         event_loop: &EventLoop<()>,
         window: &Window,
@@ -200,14 +200,32 @@ impl ApplicationBuilder {
         _resources: &ResourceManager,
     ) -> Renderer {
         let engine_name = CString::new("Katla Engine").unwrap();
-        let mut renderer = Renderer::init(
-            event_loop,
-            window,
-            info.validation_mode,
-            CString::new(info.name.as_str()).unwrap(),
-            engine_name,
-        )
-        .expect("Failed to initialize Vulkan renderer");
+        let app_name = CString::new(info.name.as_str()).unwrap();
+
+        let mut renderer = {
+            #[cfg(feature = "vulkan")]
+            {
+                Renderer::new_vulkan(
+                    event_loop,
+                    window,
+                    info.validation_mode,
+                    app_name,
+                    engine_name,
+                )
+                .expect("Failed to initialize Vulkan renderer")
+            }
+            #[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
+            {
+                Renderer::new_metal(
+                    event_loop,
+                    window,
+                    info.validation_mode,
+                    app_name,
+                    engine_name,
+                )
+                .expect("Failed to initialize Metal renderer")
+            }
+        };
 
         // Initialize particle system
         renderer
@@ -224,8 +242,8 @@ impl ApplicationBuilder {
     /// transient texture management and bindless registration.
     #[cfg(all(feature = "metal", not(feature = "vulkan")))]
     fn build_metal_frame_graph(
-        renderer: &mut Renderer,
-    ) -> AppResult<katla_gfx::render_graph::FrameGraph<Renderer>> {
+        renderer: &mut katla_gfx::MetalRenderer,
+    ) -> AppResult<FrameGraph> {
         use katla_gfx::render_graph::{
             FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassKind, PassType, SimplePass,
         };
@@ -256,16 +274,18 @@ impl ApplicationBuilder {
             })
             .add_pass(SimplePass::new("geometry", PassType::Graphics).write("hdr_color"))
             .add_pass(SimplePass::new("shadow", PassType::Graphics))
+            .add_pass(SimplePass::new("depth_prepass", PassType::Graphics))
+            .add_pass(SimplePass::new("outline", PassType::Graphics))
             .add_pass(
                 SimplePass::new("tonemap", PassType::Graphics)
                     .read("hdr_color")
                     .write("viewport_0"),
             )
             .add_pass(SimplePass::new("ui", PassType::Graphics))
-            .build::<Renderer>()
+            .build::<katla_gfx::MetalRenderer>()
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
 
-        Ok(graph)
+        Ok(FrameGraph::from_metal(graph))
     }
 
     /// Build the frame graph for the application.
@@ -278,9 +298,9 @@ impl ApplicationBuilder {
     /// 5. UI pass samples from backbuffer (now gets composited result)
     #[cfg(feature = "vulkan")]
     fn build_frame_graph(
-        renderer: &mut Renderer,
+        renderer: &mut katla_gfx::VulkanRenderer,
         resources: &ResourceManager,
-    ) -> AppResult<katla_gfx::FrameGraph> {
+    ) -> AppResult<FrameGraph> {
         use katla_gfx::render_graph::UIPass;
         use katla_gfx::render_graph::{
             DepthPrepass, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
@@ -617,7 +637,7 @@ impl ApplicationBuilder {
             .build()
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
 
-        Ok(graph)
+        Ok(FrameGraph::from_vulkan(graph))
     }
 
     pub fn build(self) -> AppResult<(Application, EventLoop<()>)> {
@@ -797,9 +817,9 @@ impl ApplicationBuilder {
 
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
         #[cfg(feature = "vulkan")]
-        let mut frame_graph = Self::build_frame_graph(&mut renderer, &resources)?;
+        let mut frame_graph = Self::build_frame_graph(renderer.unwrap_vulkan(), &resources)?;
         #[cfg(all(feature = "metal", not(feature = "vulkan")))]
-        let mut frame_graph = Self::build_metal_frame_graph(&mut renderer)?;
+        let mut frame_graph = Self::build_metal_frame_graph(renderer.unwrap_metal())?;
 
         #[cfg(feature = "vulkan")]
         let pass_ids = super::PassIds {
@@ -859,14 +879,14 @@ impl ApplicationBuilder {
         // Initialize transient textures so we can get shadow atlas ImageView
         #[cfg(feature = "vulkan")]
         frame_graph
-            .initialize_transient_textures(&renderer)
+            .initialize_transient_textures(&mut renderer)
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
         #[cfg(feature = "vulkan")]
         for frame_idx in 0..2 {
             if let Some(view) =
-                frame_graph.transient_texture_view_for_frame("shadow_atlas", frame_idx)
+                frame_graph.as_vulkan().transient_texture_view_for_frame("shadow_atlas", frame_idx)
             {
-                renderer.set_shadow_atlas_view(frame_idx, view);
+                renderer.unwrap_vulkan().set_shadow_atlas_view(frame_idx, view);
             }
         }
         #[cfg(feature = "vulkan")]
@@ -878,7 +898,7 @@ impl ApplicationBuilder {
             use katla_gfx::RenderGraphBackend;
 
             frame_graph
-                .initialize_transient_textures(&renderer)
+                .initialize_transient_textures(&mut renderer)
                 .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
 
             let hdr_slot = frame_graph
@@ -898,9 +918,9 @@ impl ApplicationBuilder {
             );
 
             let frame_idx = GpuRenderer::current_frame(&renderer);
-            if let Some(view) = frame_graph.transient_image_view("hdr_color", frame_idx) {
+            if let Some(view) = frame_graph.transient_image_view_metal("hdr_color", frame_idx) {
                 let hdr_transient_slot = frame_graph
-                    .transient_texture("hdr_color", frame_idx)
+                    .transient_texture_metal("hdr_color", frame_idx)
                     .and_then(|t| t.bindless_slot)
                     .unwrap_or(hdr_slot);
                 renderer.set_geometry_hdr_view(view, hdr_transient_slot);
@@ -915,7 +935,7 @@ impl ApplicationBuilder {
         #[cfg(all(feature = "editor", not(feature = "vulkan")))]
         let mut ui_renderer = crate::ui::UIRenderer::new();
         #[cfg(all(feature = "editor", feature = "vulkan"))]
-        match renderer.ui_renderer.font_atlas_bindless_slot() {
+        match renderer.unwrap_vulkan().ui_renderer.font_atlas_bindless_slot() {
             Some(bindless_slot) => {
                 ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
                 log::info!("Font atlas bindless slot initialized: {}", bindless_slot);

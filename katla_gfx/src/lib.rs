@@ -173,26 +173,19 @@ pub mod compute;
 #[cfg(any(feature = "vulkan", feature = "metal"))]
 pub mod render_graph;
 
-// Internal modules — pub(crate) by default, pub when 'validation' feature is enabled
-#[cfg(all(feature = "validation", feature = "vulkan"))]
+// Animation module — always available. Internal Vulkan implementations are self-gated.
 pub mod animation;
-#[cfg(all(not(feature = "validation"), feature = "vulkan"))]
-pub(crate) mod animation;
 
-// Animation types are needed by both Vulkan and Metal backends
-#[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
-pub(crate) mod animation;
-
+// Lighting — Vulkan-specific internals
 #[cfg(all(feature = "validation", feature = "vulkan"))]
 pub mod lighting;
 #[cfg(all(not(feature = "validation"), feature = "vulkan"))]
 pub(crate) mod lighting;
 
-#[cfg(all(feature = "validation", feature = "vulkan"))]
+// Shadow module — always available. Internal Vulkan implementations are self-gated.
 pub mod shadow;
-#[cfg(all(not(feature = "validation"), feature = "vulkan"))]
-pub(crate) mod shadow;
 
+// Sync — Vulkan-specific
 #[cfg(all(feature = "validation", feature = "vulkan"))]
 pub mod sync;
 #[cfg(all(not(feature = "validation"), feature = "vulkan"))]
@@ -204,17 +197,14 @@ pub(crate) mod vulkan;
 #[cfg(all(target_os = "macos", feature = "metal"))]
 pub(crate) mod metal;
 
-// Re-export animation types for katla_app GPU animation pipeline
+// Re-export animation types — shared data types always available
+pub use animation::{AnimChannelInfo, AnimClipHeader, JointInfo, SkeletonAnimParams};
 #[cfg(feature = "vulkan")]
-pub use animation::{
-    AnimChannelInfo, AnimClipHeader, JointInfo, PoseComputeBuffers, PoseComputePipeline,
-    SkeletonAnimParams,
-};
+pub use animation::{PoseComputeBuffers, PoseComputePipeline};
 
 // Re-export types used by katla_app
 pub use renderer::PointLightGPU;
-#[cfg(feature = "vulkan")]
-pub use shadow::CascadeParams;
+pub use shadow::cascade::CascadeParams;
 
 // Internal modules (implementation details)
 #[cfg(feature = "vulkan")]
@@ -300,17 +290,28 @@ pub use metal::metal_renderer::MetalRenderer;
 // Backend-agnostic renderer trait
 pub use renderer::gpu_renderer::GpuRenderer;
 
-// Modern particle system
-#[cfg(feature = "vulkan")]
-pub use particles::{EmitterConfig, GlobalParticleSystem};
+// Enum-based renderer dispatch (both backends)
+pub use renderer::any_renderer::AnyRenderer;
 
-// Render graph system - minimal public API
+// Enum-based frame graph dispatch
+pub use render_graph::any_frame_graph::AnyFrameGraph;
+pub use render_graph::any_frame::AnyFrame as AnyFrame;
+
+// Modern particle system — shared config types always available
+pub use particles::EmitterConfig;
 #[cfg(feature = "vulkan")]
+pub use particles::GlobalParticleSystem;
+
+// Render graph system — pass types and descriptors are backend-agnostic
 pub use render_graph::{
-    CompositingDescriptorSet, Frame, FullscreenPass, GeometryPass, GraphResourceDesc,
-    GraphResourceType, OutlinePass, OverlayParams, OverlayPass, ParticlePass, RenderGraphError,
-    ShadowPass, StencilIndicatorPass, TonemapOperator, TonemapParams,
+    FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType, OutlinePass,
+    OverlayParams, OverlayPass, ParticlePass, RenderGraphError, ShadowPass,
+    StencilIndicatorPass, TonemapOperator, TonemapParams,
 };
+#[cfg(feature = "vulkan")]
+pub use render_graph::descriptor_sets::CompositingDescriptorSet;
+#[cfg(feature = "vulkan")]
+pub use render_graph::Frame;
 #[cfg(feature = "vulkan")]
 /// Vulkan-specific frame graph type.
 pub type FrameGraph = render_graph::FrameGraph<renderer::VulkanRenderer>;

@@ -1,0 +1,833 @@
+//! Enum-based renderer dispatch for dynamic backend selection.
+//!
+//! `AnyRenderer` wraps `VulkanRenderer` and `MetalRenderer` behind a single
+//! enum that implements `GpuRenderer`. This allows both backends to compile
+//! side-by-side and be selected at runtime.
+
+use crate::error::RendererError;
+use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
+use crate::renderer::gpu_renderer::GpuRenderer;
+use crate::renderer::types::{DrawCall, DrawList, FrameUniforms, PointLightGPU, UIDrawList};
+use crate::texture::TextureDescriptor;
+use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
+
+#[cfg(feature = "vulkan")]
+use crate::renderer::VulkanRenderer;
+#[cfg(all(target_os = "macos", feature = "metal"))]
+use crate::metal::metal_renderer::MetalRenderer;
+
+/// Renderer backend that wraps both Vulkan and Metal behind a single type.
+///
+/// Implements `GpuRenderer` by delegating to the active variant.
+/// Backend-specific methods are available via `as_vulkan()` / `as_metal()`.
+pub enum AnyRenderer {
+    #[cfg(feature = "vulkan")]
+    Vulkan(VulkanRenderer),
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    Metal(MetalRenderer),
+}
+
+impl AnyRenderer {
+    /// Which backend is active.
+    pub fn backend_name(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(_) => "vulkan",
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(_) => "metal",
+        }
+    }
+
+    /// Access the Vulkan renderer, if active.
+    #[cfg(feature = "vulkan")]
+    pub fn as_vulkan(&mut self) -> Option<&mut VulkanRenderer> {
+        match self {
+            AnyRenderer::Vulkan(r) => Some(r),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(_) => None,
+        }
+    }
+
+    /// Access the Vulkan renderer (panics if not Vulkan).
+    #[cfg(feature = "vulkan")]
+    pub fn unwrap_vulkan(&mut self) -> &mut VulkanRenderer {
+        self.as_vulkan().expect("Expected Vulkan backend")
+    }
+
+    /// Access the Metal renderer, if active.
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    pub fn as_metal(&mut self) -> Option<&mut MetalRenderer> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(_) => None,
+            AnyRenderer::Metal(r) => Some(r),
+        }
+    }
+
+    /// Access the Metal renderer (panics if not Metal).
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    pub fn unwrap_metal(&mut self) -> &mut MetalRenderer {
+        self.as_metal().expect("Expected Metal backend")
+    }
+
+    /// Create a new Vulkan renderer.
+    #[cfg(feature = "vulkan")]
+    pub fn new_vulkan(
+        display: &dyn raw_window_handle::HasDisplayHandle,
+        window: &dyn raw_window_handle::HasWindowHandle,
+        validation_mode: crate::error::ValidationMode,
+        app_name: std::ffi::CString,
+        engine_name: std::ffi::CString,
+    ) -> Result<Self, RendererError> {
+        Ok(AnyRenderer::Vulkan(VulkanRenderer::init(
+            display, window, validation_mode, app_name, engine_name,
+        )?))
+    }
+
+    /// Create a new Metal renderer.
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    pub fn new_metal(
+        display: &dyn raw_window_handle::HasDisplayHandle,
+        window: &dyn raw_window_handle::HasWindowHandle,
+        validation_mode: crate::error::ValidationMode,
+        app_name: std::ffi::CString,
+        engine_name: std::ffi::CString,
+    ) -> Result<Self, RendererError> {
+        Ok(AnyRenderer::Metal(MetalRenderer::init(
+            display, window, validation_mode, app_name, engine_name,
+        )?))
+    }
+}
+
+impl GpuRenderer for AnyRenderer {
+    fn swapchain_extent(&self) -> crate::Size2D {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.swapchain_extent(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.swapchain_extent(),
+        }
+    }
+
+    fn current_frame(&self) -> usize {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.current_frame(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.current_frame(),
+        }
+    }
+
+    fn num_images(&self) -> usize {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.num_images(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.num_images(),
+        }
+    }
+
+    fn wait_for_device(&self) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.wait_for_device(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.wait_for_device(),
+        }
+    }
+
+    fn destroy(&mut self) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.destroy(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.destroy(),
+        }
+    }
+
+    fn wait_for_frame(&mut self) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.wait_for_frame(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.wait_for_frame(),
+        }
+    }
+
+    fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.set_frame_uniforms(uniforms),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.set_frame_uniforms(uniforms),
+        }
+    }
+
+    fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.execute_draw_calls(draw_list),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.execute_draw_calls(draw_list),
+        }
+    }
+
+    fn draw(
+        &mut self,
+        uniforms: &FrameUniforms,
+        draw_calls: &[DrawCall],
+    ) -> Result<DrawList, RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.draw(uniforms, draw_calls),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.draw(uniforms, draw_calls),
+        }
+    }
+
+    fn frame_uniforms(&self) -> &FrameUniforms {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.frame_uniforms(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.frame_uniforms(),
+        }
+    }
+
+    fn render_frame(&mut self) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.render_frame(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.render_frame(),
+        }
+    }
+
+    fn begin_frame(&mut self) -> Result<u32, RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.begin_frame(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.begin_frame(),
+        }
+    }
+
+    fn end_frame(&mut self) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.end_frame(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.end_frame(),
+        }
+    }
+
+    fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
+    where
+        T: bytemuck::Pod,
+        U: bytemuck::Pod,
+    {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_mesh(vertices, indices),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_mesh(vertices, indices),
+        }
+    }
+
+    fn create_mesh_soa(
+        &mut self,
+        attributes: &std::collections::HashMap<u32, Vec<u8>>,
+        vertex_count: u32,
+        indices: &[u32],
+    ) -> MeshHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => GpuRenderer::create_mesh_soa(r, attributes, vertex_count, indices),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => GpuRenderer::create_mesh_soa(r, attributes, vertex_count, indices),
+        }
+    }
+
+    fn register_mesh_raw(
+        &mut self,
+        vertex_data: &[u8],
+        vertex_count: u32,
+        index_data: &[u32],
+    ) -> MeshHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.register_mesh_raw(vertex_data, vertex_count, index_data),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.register_mesh_raw(vertex_data, vertex_count, index_data),
+        }
+    }
+
+    fn create_cube_mesh(&mut self, size: [f32; 3]) -> MeshHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_cube_mesh(size),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_cube_mesh(size),
+        }
+    }
+
+    fn create_sphere_mesh(&mut self, radius: f32, segments: u32, rings: u32) -> MeshHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_sphere_mesh(radius, segments, rings),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_sphere_mesh(radius, segments, rings),
+        }
+    }
+
+    fn create_plane_mesh(&mut self, width: f32, height: f32) -> MeshHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_plane_mesh(width, height),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_plane_mesh(width, height),
+        }
+    }
+
+    fn create_cone_mesh(&mut self, height: f32, base_radius: f32, segments: u32) -> MeshHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_cone_mesh(height, base_radius, segments),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_cone_mesh(height, base_radius, segments),
+        }
+    }
+
+    fn create_cylinder_mesh(&mut self, height: f32, radius: f32, segments: u32) -> MeshHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_cylinder_mesh(height, radius, segments),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_cylinder_mesh(height, radius, segments),
+        }
+    }
+
+    fn create_torus_mesh(
+        &mut self,
+        major_radius: f32,
+        minor_radius: f32,
+        segments: u32,
+        rings: u32,
+    ) -> MeshHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_torus_mesh(major_radius, minor_radius, segments, rings),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_torus_mesh(major_radius, minor_radius, segments, rings),
+        }
+    }
+
+    fn create_plane_xy_mesh(&mut self, width: f32, height: f32, segments: u32) -> MeshHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_plane_xy_mesh(width, height, segments),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_plane_xy_mesh(width, height, segments),
+        }
+    }
+
+    fn create_mesh_dynamic(
+        &mut self,
+        vertex_data: &[u8],
+        vertex_count: u32,
+        indices: &[u32],
+    ) -> MeshHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_mesh_dynamic(vertex_data, vertex_count, indices),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_mesh_dynamic(vertex_data, vertex_count, indices),
+        }
+    }
+
+    fn update_mesh_dynamic(
+        &mut self,
+        mesh: MeshHandle,
+        vertex_data: &[u8],
+        vertex_count: u32,
+        indices: &[u32],
+    ) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.update_mesh_dynamic(mesh, vertex_data, vertex_count, indices),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.update_mesh_dynamic(mesh, vertex_data, vertex_count, indices),
+        }
+    }
+
+    fn create_texture(&mut self, desc: &TextureDescriptor, data: &[u8]) -> TextureHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_texture(desc, data),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_texture(desc, data),
+        }
+    }
+
+    fn create_texture_solid(&mut self, color: [u8; 4]) -> TextureHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_texture_solid(color),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_texture_solid(color),
+        }
+    }
+
+    fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.get_bindless_slot(handle),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.get_bindless_slot(handle),
+        }
+    }
+
+    fn get_texture_at_slot(&self, slot: u32) -> Option<TextureHandle> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.get_texture_at_slot(slot),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.get_texture_at_slot(slot),
+        }
+    }
+
+    fn get_texture_bindless_index(&self, handle: TextureHandle) -> u32 {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.get_texture_bindless_index(handle),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.get_texture_bindless_index(handle),
+        }
+    }
+
+    fn default_texture(&self) -> TextureHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.default_texture(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.default_texture(),
+        }
+    }
+
+    fn compile_material(
+        &mut self,
+        shader_path: &str,
+        vertex_type: &str,
+    ) -> Result<MaterialHandle, RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => GpuRenderer::compile_material(r, shader_path, vertex_type),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => GpuRenderer::compile_material(r, shader_path, vertex_type),
+        }
+    }
+
+    fn set_material_texture_indices(&mut self, material: MaterialHandle, indices: [u32; 4]) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.set_material_texture_indices(material, indices),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.set_material_texture_indices(material, indices),
+        }
+    }
+
+    fn default_material(&self) -> MaterialHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.default_material(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.default_material(),
+        }
+    }
+
+    fn destroy_mesh(&mut self, handle: MeshHandle) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.destroy_mesh(handle),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.destroy_mesh(handle),
+        }
+    }
+
+    fn destroy_material(&mut self, handle: MaterialHandle) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.destroy_material(handle),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.destroy_material(handle),
+        }
+    }
+
+    fn destroy_texture(&mut self, handle: TextureHandle) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.destroy_texture(handle),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.destroy_texture(handle),
+        }
+    }
+
+    fn destroy_skeleton(&mut self, handle: SkeletonHandle) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.destroy_skeleton(handle),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.destroy_skeleton(handle),
+        }
+    }
+
+    fn create_viewport(&mut self) -> ViewportBuilder {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_viewport(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_viewport(),
+        }
+    }
+
+    fn viewport_count(&self) -> usize {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.viewport_count(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.viewport_count(),
+        }
+    }
+
+    fn get_viewport(&self, handle: ViewportHandle) -> Option<&Viewport> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.get_viewport(handle),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.get_viewport(handle),
+        }
+    }
+
+    fn viewport_extent(&self, handle: ViewportHandle) -> Option<crate::Size2D> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.viewport_extent(handle),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.viewport_extent(handle),
+        }
+    }
+
+    fn destroy_viewport(&mut self, handle: ViewportHandle) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.destroy_viewport(handle),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.destroy_viewport(handle),
+        }
+    }
+
+    fn resize(&mut self, width: u32, height: u32) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.resize(width, height),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.resize(width, height),
+        }
+    }
+
+    fn upload_lights(&mut self, lights: &[PointLightGPU]) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.upload_lights(lights),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.upload_lights(lights),
+        }
+    }
+
+    fn has_light_culling(&self) -> bool {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.has_light_culling(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.has_light_culling(),
+        }
+    }
+
+    fn update_shadows(&mut self, light_direction: [f32; 3]) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.update_shadows(light_direction),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.update_shadows(light_direction),
+        }
+    }
+
+    fn upload_shadow_cascades(&mut self) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.upload_shadow_cascades(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.upload_shadow_cascades(),
+        }
+    }
+
+    fn depth_texture_base_index(&self) -> Option<u32> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.depth_texture_base_index(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.depth_texture_base_index(),
+        }
+    }
+
+    fn viewport_bindless_index(&self) -> Option<u32> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.viewport_bindless_index(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.viewport_bindless_index(),
+        }
+    }
+
+    fn register_depth_textures_bindless(&mut self) -> Result<u32, RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.register_depth_textures_bindless(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.register_depth_textures_bindless(),
+        }
+    }
+
+    fn geometry_hdr_bindless_index(&self) -> Option<u32> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.geometry_hdr_bindless_index(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.geometry_hdr_bindless_index(),
+        }
+    }
+
+    fn init_animation_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.init_animation_pipeline(shader_path),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.init_animation_pipeline(shader_path),
+        }
+    }
+
+    fn set_ui_material(&mut self, material: MaterialHandle) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.set_ui_material(material),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.set_ui_material(material),
+        }
+    }
+
+    fn render_ui_pass(&mut self, draw_list: UIDrawList) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.render_ui_pass(draw_list),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.render_ui_pass(draw_list),
+        }
+    }
+
+    fn create_skeleton(&mut self, joint_count: usize) -> Result<SkeletonHandle, RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_skeleton(joint_count),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_skeleton(joint_count),
+        }
+    }
+
+    fn update_skeleton(&mut self, handle: SkeletonHandle, matrices: &[[f32; 16]]) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.update_skeleton(handle, matrices),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.update_skeleton(handle, matrices),
+        }
+    }
+
+    fn init_particle_system(&mut self) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.init_particle_system(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.init_particle_system(),
+        }
+    }
+
+    fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.create_ui_font_atlas(width, height, data),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.create_ui_font_atlas(width, height, data),
+        }
+    }
+
+    fn update_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.update_ui_font_atlas(width, height, data),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.update_ui_font_atlas(width, height, data),
+        }
+    }
+
+    fn ui_font_atlas_handle(&self) -> Option<TextureHandle> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => r.ui_font_atlas_handle(),
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => r.ui_font_atlas_handle(),
+        }
+    }
+}
+
+// --- Non-trait methods that both backends implement ---
+
+impl AnyRenderer {
+    /// Execute the frame graph and present the frame.
+    /// The closure receives an `AnyFrame` for submitting draw lists to passes.
+    pub fn render<F>(
+        &mut self,
+        frame_graph: &mut crate::render_graph::any_frame_graph::AnyFrameGraph,
+        f: F,
+    ) -> Result<(), RendererError>
+    where
+        F: FnOnce(&mut crate::render_graph::any_frame::AnyFrame<'_, '_>),
+    {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => {
+                let fg = frame_graph.as_vulkan_mut();
+                r.render(fg, |frame| {
+                    let mut any_frame = crate::render_graph::any_frame::AnyFrame::Vulkan(frame);
+                    f(&mut any_frame);
+                })
+            }
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(r) => {
+                let fg = frame_graph.as_metal_mut();
+                r.render(fg, |frame| {
+                    let mut any_frame = crate::render_graph::any_frame::AnyFrame::Metal(frame);
+                    f(&mut any_frame);
+                })
+            }
+        }
+    }
+
+    /// Recreate the swapchain (Vulkan) or resize (Metal).
+    /// Returns updated transient texture names and bindless slots.
+    pub fn recreate_swapchain(
+        &mut self,
+        frame_graph: &mut crate::render_graph::any_frame_graph::AnyFrameGraph,
+    ) -> Result<Vec<(String, u32)>, RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(r) => {
+                let fg = frame_graph.as_vulkan_mut();
+                r.recreate_swapchain(fg)
+            }
+            #[cfg(all(target_os = "macos", feature = "metal"))]
+            AnyRenderer::Metal(_r) => {
+                // MetalRenderer doesn't have recreate_swapchain with frame graph.
+                // Metal swapchain recreation happens via resize() + recreate_transient_textures.
+                Err(RendererError::InvalidOperation(
+                    "Metal backend uses resize(), not recreate_swapchain()".into(),
+                ))
+            }
+        }
+    }
+
+    // --- Metal-specific methods ---
+
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    pub fn init_light_culling(
+        &mut self,
+        width: u32,
+        height: u32,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(_) => Err(RendererError::InvalidOperation("Not Metal backend".into())),
+            AnyRenderer::Metal(r) => r.init_light_culling(width, height, shader_path),
+        }
+    }
+
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    pub fn init_shadow_resources(&mut self) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(_) => Err(RendererError::InvalidOperation("Not Metal backend".into())),
+            AnyRenderer::Metal(r) => r.init_shadow_resources(None),
+        }
+    }
+
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    pub fn init_shadow_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(_) => Err(RendererError::InvalidOperation("Not Metal backend".into())),
+            AnyRenderer::Metal(r) => r.init_shadow_pipeline(shader_path),
+        }
+    }
+
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    pub fn init_sky_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(_) => Err(RendererError::InvalidOperation("Not Metal backend".into())),
+            AnyRenderer::Metal(r) => r.init_sky_pipeline(shader_path),
+        }
+    }
+
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    pub fn init_tonemap_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(_) => Err(RendererError::InvalidOperation("Not Metal backend".into())),
+            AnyRenderer::Metal(r) => r.init_tonemap_pipeline(shader_path),
+        }
+    }
+
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    pub fn set_viewport_bindless_slot(&mut self, slot: u32) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(_) => {}
+            AnyRenderer::Metal(r) => r.set_viewport_bindless_slot(slot),
+        }
+    }
+
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    pub fn set_geometry_hdr_view(
+        &mut self,
+        view: crate::metal::texture::MetalTextureView,
+        bindless_slot: u32,
+    ) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(_) => {}
+            AnyRenderer::Metal(r) => r.set_geometry_hdr_view(view, bindless_slot),
+        }
+    }
+}

@@ -14,6 +14,14 @@ use super::context::MetalContext;
 const INITIAL_VERTEX_BUFFER_SIZE: u64 = 1 << 20; // 1 MB
 const INITIAL_INDEX_BUFFER_SIZE: u64 = 1 << 20; // 1 MB
 
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct UiUniforms {
+    screen_size: [f32; 2],
+    ndc_y_flip: f32,
+    texture_index: u32,
+}
+
 /// Metal-native UI rendering subsystem.
 ///
 /// Owns dynamic vertex/index buffers.
@@ -150,14 +158,13 @@ impl MetalUIRenderer {
         _render_pass_h: u32,
     ) {
         for cmd in &draw_list.commands {
-            let uniform_data: [f32; 4] = [
-                draw_list.screen_size[0],
-                draw_list.screen_size[1],
-                -1.0,
-                cmd.texture.index() as f32,
-            ];
+            let uniform_data = UiUniforms {
+                screen_size: [draw_list.screen_size[0], draw_list.screen_size[1]],
+                ndc_y_flip: -1.0,
+                texture_index: cmd.texture.index(),
+            };
             encoder.set_push_constants(
-                bytemuck::cast_slice(&uniform_data),
+                bytemuck::cast_slice(&[uniform_data]),
                 3,
                 crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
             );
