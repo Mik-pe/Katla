@@ -140,10 +140,15 @@ impl Application {
 
         #[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
         {
-            // Don't set viewport texture on Metal to avoid feedback loop.
-            // The scene is rendered directly to the drawable and shows through
-            // the viewport area naturally (not covered by opaque panels).
-            self.editor.editor_ui.viewport_texture_ids = [None, None, None, None];
+            // Set viewport texture for proper compositing via the viewport_0 transient texture.
+            // The tonemap pass writes to viewport_0, which the UI samples via bindless.
+            let frame_idx = self.renderer.current_frame();
+            if let Some(vp_slot) = self.renderer.viewport_bindless_index() {
+                let actual_index = vp_slot + frame_idx as u32;
+                self.editor
+                    .editor_ui
+                    .set_viewport_bindless_index(actual_index);
+            }
 
             log::debug!("Generating UI draw list (Metal)...");
             let ui_draw_list = editor::generate_ui_draw_list(self, dt);
