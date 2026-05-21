@@ -191,6 +191,7 @@ pub struct MetalRenderer {
     buffer_sizes_buffer: Option<MetalBuffer>,
     scene_color_view: Option<MetalTextureView>,
     viewport_bindless_slot: Option<u32>,
+    viewport_ldr_view: Option<MetalTextureView>,
     geometry_hdr_view: Option<MetalTextureView>,
     geometry_hdr_bindless_slot: Option<u32>,
     tonemap_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
@@ -281,6 +282,7 @@ impl MetalRenderer {
             buffer_sizes_buffer: None,
             scene_color_view: None,
             viewport_bindless_slot: None,
+            viewport_ldr_view: None,
             geometry_hdr_view: None,
             geometry_hdr_bindless_slot: None,
             tonemap_pipeline: None,
@@ -471,6 +473,19 @@ impl MetalRenderer {
                     self.bindless_manager.update_texture(slot, &view.inner).ok();
                 }
             }
+        }
+
+        // Get current frame's viewport_0 LDR texture for tonemap output target.
+        // This aligns with the frame graph declaration where tonemap writes viewport_0.
+        if let Some(transient) = frame_graph.transient_texture("viewport_0", frame_idx) {
+            self.viewport_ldr_view = Some(transient.view.clone());
+            if let Some(slot) = transient.bindless_slot {
+                self.bindless_manager
+                    .update_texture(slot, &transient.view.inner)
+                    .ok();
+            }
+        } else {
+            self.viewport_ldr_view = None;
         }
 
         let view_matrix = self.frame_uniforms.view_matrix;
@@ -1643,7 +1658,7 @@ impl GpuRenderer for MetalRenderer {
         }
 
         // =========================================================================
-        // Pass 2: Tonemap (HDR intermediate → drawable)
+        // Pass 2: Tonemap (HDR intermediate → viewport_0 LDR texture)
         // =========================================================================
         if has_tonemap {
             let tonemap_pipeline = self.tonemap_pipeline.as_ref().unwrap();
@@ -1664,9 +1679,17 @@ impl GpuRenderer for MetalRenderer {
                 }
             }
 
+            // Write tonemapped output to viewport_0 LDR texture (for UI compositing),
+            // or fall back to the drawable if no viewport texture is available.
+            let tonemap_target = self
+                .viewport_ldr_view
+                .as_ref()
+                .unwrap_or(&drawable_view)
+                .clone();
+
             let tonemap_pass_info = RenderPassInfo {
                 color_attachments: vec![ColorAttachmentInfo {
-                    view: drawable_view.clone(),
+                    view: tonemap_target,
                     load_op: LoadOp::Clear,
                     store_op: StoreOp::Store,
                     clear_value: ClearValue::OPAQUE_BLACK,
@@ -1754,10 +1777,18 @@ impl GpuRenderer for MetalRenderer {
                     if let Some(ui_mat_handle) = ui_material_handle {
                         if let Some(ui_material) = self.materials.get(ui_mat_handle.index()) {
                             if let Some(ref ui_pipeline) = ui_material.pipeline {
+                                // When tonemap writes to viewport_0 (offscreen), the drawable
+                                // has no prior content — clear it and let UI draw everything.
+                                // Otherwise the tonemap wrote to the drawable directly, so load it.
+                                let ui_load_op = if self.viewport_ldr_view.is_some() {
+                                    LoadOp::Clear
+                                } else {
+                                    LoadOp::Load
+                                };
                                 let ui_pass_info = RenderPassInfo {
                                     color_attachments: vec![ColorAttachmentInfo {
                                         view: drawable_view.clone(),
-                                        load_op: LoadOp::Load,
+                                        load_op: ui_load_op,
                                         store_op: StoreOp::Store,
                                         clear_value: ClearValue::OPAQUE_BLACK,
                                     }],
