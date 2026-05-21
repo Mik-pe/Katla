@@ -1349,18 +1349,7 @@ impl GpuRenderer for MetalRenderer {
         Ok(())
     }
 
-    fn set_frame_uniforms(&mut self, mut uniforms: FrameUniforms) {
-        // Metal uses Y-up NDC while the projection matrix is built for Vulkan's Y-down NDC.
-        // Negate column 1 (Y column) of the projection matrix to correct the flip.
-        // Column-major flat array: column 1 is at indices [4, 5, 6, 7].
-        for i in [4, 5, 6, 7] {
-            uniforms.proj_matrix[i] = -uniforms.proj_matrix[i];
-        }
-        // inv_view_proj: new_P = diag(1,-1,1,1)*old_P, so new_inv = old_inv * diag(1,-1,1,1)
-        // which negates column 1 of the inverse.
-        for i in [4, 5, 6, 7] {
-            uniforms.inv_view_proj_matrix[i] = -uniforms.inv_view_proj_matrix[i];
-        }
+    fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
         self.frame_uniforms = uniforms;
     }
 
