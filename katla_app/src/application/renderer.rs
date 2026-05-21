@@ -780,18 +780,24 @@ impl Application {
                         }
                     }
 
-                    let frame_idx = GpuRenderer::current_frame(&self.renderer);
                     if let Some(view) = self
                         .frame_graph
-                        .transient_image_view_metal("hdr_color", frame_idx)
+                        .transient_image_view_metal("hdr_color", 0)
                     {
                         let hdr_transient_slot = self
                             .frame_graph
-                            .transient_texture_metal("hdr_color", frame_idx)
+                            .transient_texture_metal("hdr_color", 0)
                             .and_then(|t| t.bindless_slot)
                             .unwrap_or(0);
                         self.renderer
                             .set_geometry_hdr_view(view, hdr_transient_slot);
+                    }
+
+                    if let Some(view) = self
+                        .frame_graph
+                        .transient_image_view_metal("viewport_0", 0)
+                    {
+                        self.renderer.set_tonemap_output_view(view);
                     }
                 }
             }

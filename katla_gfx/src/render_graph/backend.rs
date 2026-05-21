@@ -35,6 +35,9 @@ pub trait RenderGraphBackend: Sized + 'static {
     /// Current frame index (for double-buffered resources).
     fn current_frame(&self) -> usize;
 
+    /// Number of transient texture sets to create (one per frame in flight).
+    fn transient_texture_frames() -> usize;
+
     /// Register a texture with the bindless system, return slot.
     fn register_bindless_texture(
         &mut self,

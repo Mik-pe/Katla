@@ -140,14 +140,8 @@ impl Application {
 
         #[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
         {
-            // Set viewport texture for proper compositing via the viewport_0 transient texture.
-            // The tonemap pass writes to viewport_0, which the UI samples via bindless.
-            let frame_idx = self.renderer.current_frame();
             if let Some(vp_slot) = self.renderer.viewport_bindless_index() {
-                let actual_index = vp_slot + frame_idx as u32;
-                self.editor
-                    .editor_ui
-                    .set_viewport_bindless_index(actual_index);
+                self.editor.editor_ui.set_viewport_bindless_index(vp_slot);
             }
 
             log::debug!("Generating UI draw list (Metal)...");

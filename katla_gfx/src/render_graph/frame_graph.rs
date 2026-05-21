@@ -65,8 +65,8 @@ pub struct FrameGraph<B: RenderGraphBackend> {
     pub(super) transient_resources: Vec<GraphResourceDesc>,
 
     /// Created transient textures (frame_idx -> ResourceId -> texture).
-    /// Double-buffered to match FRAMES_IN_FLIGHT - prevents race conditions
-    /// where frame N+1 modifies layout tracking while frame N is still executing.
+    /// Per-frame transient textures. One set per frame-in-flight to prevent
+    /// race conditions where frame N+1 modifies layout tracking while frame N is still executing.
     pub(super) transient_textures: Vec<HashMap<ResourceId, B::TransientTexture>>,
 
     /// Base bindless index for LDR texture (actual index = base + frame_idx).
@@ -287,21 +287,21 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
 
     /// Initialize transient textures using the backend.
     ///
-    /// Creates FRAMES_IN_FLIGHT sets of textures - one per frame index.
+    /// Creates per-frame sets of textures — one per frame-in-flight.
     pub fn initialize_transient_textures(&mut self, backend: &B) -> Result<(), RenderGraphError> {
         if !self.transient_textures.is_empty() {
             return Ok(());
         }
 
-        const FRAMES_IN_FLIGHT: usize = 2;
+        let frames = B::transient_texture_frames();
 
         log::info!(
             "Initializing {} transient textures ({} frames in flight)",
             self.transient_resources.len(),
-            FRAMES_IN_FLIGHT
+            frames
         );
 
-        for _frame_idx in 0..FRAMES_IN_FLIGHT {
+        for _frame_idx in 0..frames {
             let mut frame_textures = HashMap::new();
 
             for desc in &self.transient_resources {
@@ -323,7 +323,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
 
     /// Register a transient texture with the bindless texture system.
     ///
-    /// Registers ALL per-frame instances of the texture (one per FRAMES_IN_FLIGHT).
+    /// Registers ALL per-frame instances of the texture.
     /// Returns the base slot index; frame N's texture is at `base_slot + N`.
     pub fn register_transient_texture_bindless(
         &mut self,
@@ -881,6 +881,10 @@ mod tests {
 
         fn current_frame(&self) -> usize {
             0
+        }
+
+        fn transient_texture_frames() -> usize {
+            2
         }
 
         fn register_bindless_texture(

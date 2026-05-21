@@ -830,4 +830,16 @@ impl AnyRenderer {
             AnyRenderer::Metal(r) => r.set_geometry_hdr_view(view, bindless_slot),
         }
     }
+
+    #[cfg(all(target_os = "macos", feature = "metal"))]
+    pub fn set_tonemap_output_view(
+        &mut self,
+        view: crate::metal::texture::MetalTextureView,
+    ) {
+        match self {
+            #[cfg(feature = "vulkan")]
+            AnyRenderer::Vulkan(_) => {}
+            AnyRenderer::Metal(r) => r.set_tonemap_output_view(view),
+        }
+    }
 }

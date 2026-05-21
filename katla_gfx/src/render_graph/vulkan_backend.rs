@@ -106,6 +106,10 @@ impl RenderGraphBackend for VulkanRenderer {
         VulkanRenderer::current_frame(self)
     }
 
+    fn transient_texture_frames() -> usize {
+        2
+    }
+
     fn register_bindless_texture(
         &mut self,
         texture: &Self::TransientTexture,
