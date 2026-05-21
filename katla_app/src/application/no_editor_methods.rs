@@ -11,6 +11,9 @@ impl Application {
     #[cfg(feature = "vulkan")]
     pub(crate) fn on_viewport_texture_recreated(&mut self, _slot: u32) {}
 
+    #[cfg(all(feature = "metal", not(feature = "vulkan")))]
+    pub(crate) fn on_viewport_texture_recreated(&mut self, _slot: u32) {}
+
     pub(crate) fn filter_scroll_for_editor(&self, wheel_y: f32) -> f32 {
         wheel_y
     }

@@ -107,6 +107,61 @@ pub struct InternalPassBuilder {
     pub kind: Option<PassKind>,
 }
 
+pub struct SimplePass {
+    name: String,
+    pass_type: PassType,
+    reads: Vec<String>,
+    writes: Vec<String>,
+    kind: Option<PassKind>,
+}
+
+impl SimplePass {
+    pub fn new(name: impl Into<String>, pass_type: PassType) -> Self {
+        Self {
+            name: name.into(),
+            pass_type,
+            reads: Vec::new(),
+            writes: Vec::new(),
+            kind: None,
+        }
+    }
+
+    pub fn read(mut self, name: impl Into<String>) -> Self {
+        self.reads.push(name.into());
+        self
+    }
+
+    pub fn write(mut self, name: impl Into<String>) -> Self {
+        self.writes.push(name.into());
+        self
+    }
+
+    pub fn with_kind(mut self, kind: PassKind) -> Self {
+        self.kind = Some(kind);
+        self
+    }
+}
+
+impl PassBuilder for SimplePass {
+    fn as_builder(self) -> InternalPassBuilder {
+        InternalPassBuilder {
+            name: self.name,
+            pass_type: self.pass_type,
+            reads: self.reads,
+            writes: self.writes,
+            pipeline: None,
+            tonemap_params: None,
+            overlay_params: None,
+            material: None,
+            output_format: None,
+            build_fn: Box::new(|_| Ok(Box::new(()))),
+            uses_depth: true,
+            depth_attachment: None,
+            kind: self.kind,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

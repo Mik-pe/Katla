@@ -745,10 +745,6 @@ impl Application {
 
 #[cfg(all(feature = "metal", not(feature = "vulkan")))]
 impl Application {
-    /// Render a single frame using the Metal backend.
-    ///
-    /// The Metal rendering pipeline is managed internally by MetalRenderer::render_frame().
-    /// This method provides: uniforms, draw lists, light data, and lifecycle calls.
     pub fn render_frame(
         &mut self,
         ui_draw_list: Option<katla_gfx::renderer::UIDrawList>,
@@ -769,16 +765,29 @@ impl Application {
                     self.frame_graph
                         .recreate_transient_textures(&mut self.renderer, w, h)
                 {
-                    for (name, slot) in textures {
+                    for (name, slot) in &textures {
                         if name == "hdr_color" {
-                            let frame_idx = GpuRenderer::current_frame(&self.renderer);
-                            if let Some(view) = self
-                                .frame_graph
-                                .transient_image_view("hdr_color", frame_idx)
-                            {
-                                self.renderer.set_geometry_hdr_view(view, slot);
-                            }
+                            self.frame_graph
+                                .set_tonemap_texture_index(self.pass_ids.tonemap, *slot)
+                                .ok();
+                        } else if name == "viewport_0" {
+                            self.on_viewport_texture_recreated(*slot);
+                            self.renderer.set_viewport_bindless_slot(*slot);
                         }
+                    }
+
+                    let frame_idx = GpuRenderer::current_frame(&self.renderer);
+                    if let Some(view) = self
+                        .frame_graph
+                        .transient_image_view("hdr_color", frame_idx)
+                    {
+                        let hdr_transient_slot = self
+                            .frame_graph
+                            .transient_texture("hdr_color", frame_idx)
+                            .and_then(|t| t.bindless_slot)
+                            .unwrap_or(0);
+                        self.renderer
+                            .set_geometry_hdr_view(view, hdr_transient_slot);
                     }
                 }
             }
@@ -821,11 +830,6 @@ impl Application {
                 .inverse()
                 .unwrap_or_else(Mat4::identity)
         };
-
-        if let Err(e) = self.renderer.wait_for_frame() {
-            log::error!("Failed to wait for frame: {}", e);
-            return;
-        }
 
         let extent = self.renderer.swapchain_extent();
         let tiles_x = extent.width.div_ceil(16);
@@ -882,27 +886,27 @@ impl Application {
             draw_list.len()
         );
 
-        // Queue UI draw list before rendering
-        if let Some(ui_list) = ui_draw_list {
-            self.renderer.render_ui_pass(ui_list);
-        }
+        if let Err(e) = self.renderer.render(&mut self.frame_graph, |frame| {
+            let ids = &self.pass_ids;
 
-        if let Err(e) = self.renderer.begin_frame() {
-            log::error!("Failed to begin Metal frame: {}", e);
-            return;
-        }
+            if !draw_list.is_empty() {
+                frame.submit(ids.geometry, &draw_list);
+                frame.submit(ids.shadow, &draw_list);
+                log::debug!(
+                    "Submitted {} draw calls to geometry + shadow",
+                    draw_list.len()
+                );
+            }
 
-        if let Err(e) = self.renderer.render_frame() {
-            log::error!("Failed to render Metal frame: {}", e);
-            return;
-        }
-
-        if let Err(e) = self.renderer.end_frame() {
-            log::error!("Failed to end Metal frame: {}", e);
+            if let Some(ref ui_list) = ui_draw_list {
+                log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
+                frame.submit_ui(ids.ui, ui_list);
+            }
+        }) {
+            log::error!("Metal frame render failed: {}", e);
         }
     }
 
-    /// Collect point lights from the ECS world and upload to the GPU.
     fn collect_and_upload_lights(&mut self) {
         use crate::components::{PointLight, TransformComponent};
         use katla_gfx::PointLightGPU;

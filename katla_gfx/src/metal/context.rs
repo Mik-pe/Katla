@@ -106,7 +106,7 @@ pub(crate) fn default_pbr_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
 /// - location 0: position Float2 @ offset 0
 /// - location 1: uv Float2 @ offset 8
 /// - location 2: color UByte4Norm @ offset 16
-/// - location 3: texture_index UInt @ offset 20
+/// (texture_index at offset 20 is not bound — passed via uniform instead)
 pub(crate) fn ui_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
     let vertex_descriptor = MTLVertexDescriptor::new();
 
@@ -139,13 +139,6 @@ pub(crate) fn ui_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
     unsafe {
         color_attr.setOffset(16);
         color_attr.setBufferIndex(10);
-    }
-
-    let tex_attr = unsafe { attrs.objectAtIndexedSubscript(3) };
-    tex_attr.setFormat(MTLVertexFormat::UInt);
-    unsafe {
-        tex_attr.setOffset(20);
-        tex_attr.setBufferIndex(10);
     }
 
     vertex_descriptor

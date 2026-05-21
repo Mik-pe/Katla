@@ -503,6 +503,22 @@ impl Application {
         } else {
             info!("Tonemap pipeline initialized (Metal)");
         }
+
+        // Set tonemap texture index on the tonemap pass
+        if let Some(hdr_idx) = self.renderer.geometry_hdr_bindless_index() {
+            self.frame_graph
+                .set_tonemap_texture_index(self.pass_ids.tonemap, hdr_idx)
+                .ok();
+            info!("Tonemap pass HDR texture index set to {} (Metal)", hdr_idx);
+        }
+
+        // Set viewport bindless index in editor UI
+        #[cfg(feature = "editor")]
+        {
+            if let Some(vp_idx) = self.renderer.viewport_bindless_index() {
+                self.editor.editor_ui.set_viewport_bindless_index(vp_idx);
+            }
+        }
     }
 }
 
