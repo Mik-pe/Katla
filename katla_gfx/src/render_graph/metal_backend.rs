@@ -57,7 +57,11 @@ impl RenderGraphBackend for MetalRenderer {
     }
 
     fn current_frame(&self) -> usize {
-        self.frame_index()
+        0
+    }
+
+    fn transient_texture_frames() -> usize {
+        1
     }
 
     fn register_bindless_texture(

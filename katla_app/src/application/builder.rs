@@ -926,6 +926,10 @@ impl ApplicationBuilder {
                 renderer.set_geometry_hdr_view(view, hdr_transient_slot);
             }
 
+            if let Some(view) = frame_graph.transient_image_view_metal("viewport_0", 0) {
+                renderer.set_tonemap_output_view(view);
+            }
+
             renderer.set_viewport_bindless_slot(vp_slot);
         }
 

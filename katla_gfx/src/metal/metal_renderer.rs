@@ -191,7 +191,7 @@ pub struct MetalRenderer {
     buffer_sizes_buffer: Option<MetalBuffer>,
     scene_color_view: Option<MetalTextureView>,
     viewport_bindless_slot: Option<u32>,
-    viewport_ldr_view: Option<MetalTextureView>,
+    tonemap_output_view: Option<MetalTextureView>,
     geometry_hdr_view: Option<MetalTextureView>,
     geometry_hdr_bindless_slot: Option<u32>,
     tonemap_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
@@ -282,7 +282,7 @@ impl MetalRenderer {
             buffer_sizes_buffer: None,
             scene_color_view: None,
             viewport_bindless_slot: None,
-            viewport_ldr_view: None,
+            tonemap_output_view: None,
             geometry_hdr_view: None,
             geometry_hdr_bindless_slot: None,
             tonemap_pipeline: None,
@@ -445,6 +445,11 @@ impl MetalRenderer {
         self.viewport_bindless_slot = Some(slot);
     }
 
+    /// Set the tonemap output target (viewport_0 LDR texture view).
+    pub fn set_tonemap_output_view(&mut self, view: MetalTextureView) {
+        self.tonemap_output_view = Some(view);
+    }
+
     /// Execute the frame graph and present the frame.
     ///
     /// Acquires the drawable, dispatches light culling, collects draw lists
@@ -473,19 +478,6 @@ impl MetalRenderer {
                     self.bindless_manager.update_texture(slot, &view.inner).ok();
                 }
             }
-        }
-
-        // Get current frame's viewport_0 LDR texture for tonemap output target.
-        // This aligns with the frame graph declaration where tonemap writes viewport_0.
-        if let Some(transient) = frame_graph.transient_texture("viewport_0", frame_idx) {
-            self.viewport_ldr_view = Some(transient.view.clone());
-            if let Some(slot) = transient.bindless_slot {
-                self.bindless_manager
-                    .update_texture(slot, &transient.view.inner)
-                    .ok();
-            }
-        } else {
-            self.viewport_ldr_view = None;
         }
 
         let view_matrix = self.frame_uniforms.view_matrix;
@@ -1324,9 +1316,10 @@ impl MetalRenderer {
             })
     }
 
-    /// Get the current frame index for double-buffered resources.
+    /// Get the current frame index for per-frame resources.
+    /// Always 0 for Metal — transient textures are single-buffered.
     pub(crate) fn frame_index(&self) -> usize {
-        (self.frame_index % 2) as usize
+        0
     }
 }
 
@@ -1336,11 +1329,11 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn current_frame(&self) -> usize {
-        (self.frame_index % 2) as usize
+        0
     }
 
     fn num_images(&self) -> usize {
-        2
+        1
     }
 
     fn wait_for_device(&self) {
@@ -1682,7 +1675,7 @@ impl GpuRenderer for MetalRenderer {
             // Write tonemapped output to viewport_0 LDR texture (for UI compositing),
             // or fall back to the drawable if no viewport texture is available.
             let tonemap_target = self
-                .viewport_ldr_view
+                .tonemap_output_view
                 .as_ref()
                 .unwrap_or(&drawable_view)
                 .clone();
@@ -1780,7 +1773,7 @@ impl GpuRenderer for MetalRenderer {
                                 // When tonemap writes to viewport_0 (offscreen), the drawable
                                 // has no prior content — clear it and let UI draw everything.
                                 // Otherwise the tonemap wrote to the drawable directly, so load it.
-                                let ui_load_op = if self.viewport_ldr_view.is_some() {
+                                let ui_load_op = if self.tonemap_output_view.is_some() {
                                     LoadOp::Clear
                                 } else {
                                     LoadOp::Load
