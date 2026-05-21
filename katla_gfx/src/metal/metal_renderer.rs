@@ -480,6 +480,14 @@ impl MetalRenderer {
             }
         }
 
+        // Re-encode viewport_0 into the argument buffer every frame to prevent
+        // stale references from falling back to the default white texture.
+        if let Some(vp_slot) = self.viewport_bindless_slot {
+            if let Some(ref view) = self.tonemap_output_view {
+                self.bindless_manager.update_texture(vp_slot, &view.inner).ok();
+            }
+        }
+
         let view_matrix = self.frame_uniforms.view_matrix;
         let proj_matrix = self.frame_uniforms.proj_matrix;
         if let Some(ref lc) = self.light_culling {
