@@ -760,6 +760,9 @@ impl Application {
             self.needs_swapchain_recreate = false;
             let (w, h) = self.viewport_size();
             if w > 0 && h > 0 {
+                if let Err(e) = self.renderer.wait_for_frame() {
+                    log::error!("Failed to wait for GPU before resize: {}", e);
+                }
                 if let Err(e) = self.renderer.resize(w, h) {
                     log::error!("Failed to resize Metal renderer: {}", e);
                 }
