@@ -164,6 +164,8 @@ pub struct MetalRenderer {
     viewports: Vec<Viewport>,
     bindless_manager: MetalBindlessTextureManager,
     default_texture: Option<TextureHandle>,
+    default_normal_texture: Option<TextureHandle>,
+    default_mr_texture: Option<TextureHandle>,
     default_material: Option<MaterialHandle>,
     size: Size2D,
     drawable_size: Size2D,
@@ -252,6 +254,8 @@ impl MetalRenderer {
             viewports: Vec::new(),
             bindless_manager,
             default_texture: None,
+            default_normal_texture: None,
+            default_mr_texture: None,
             default_material: None,
             size: Size2D::default(),
             drawable_size: Size2D::default(),
@@ -287,7 +291,18 @@ impl MetalRenderer {
         let default_tex = renderer.create_texture_solid([255, 255, 255, 255]);
         renderer.default_texture = Some(default_tex);
 
-        // Initialize the argument buffer now that the default texture exists.
+        // Flat normal: [128,128,255,255] in UNORM = neutral tangent-space normal (0.5,0.5,1.0)
+        let normal_desc = TextureDescriptor::new(1, 1, ImageFormat::R8G8B8A8Unorm);
+        let default_normal = renderer.create_texture(&normal_desc, &[128, 128, 255, 255]);
+        renderer.default_normal_texture = Some(default_normal);
+
+        // Metallic-Roughness default: [255,128,0,255] in UNORM = roughness=0.5, metallic=0.0
+        let mr_desc = TextureDescriptor::new(1, 1, ImageFormat::R8G8B8A8Unorm);
+        let default_mr = renderer.create_texture(&mr_desc, &[255, 128, 0, 255]);
+        renderer.default_mr_texture = Some(default_mr);
+
+        // Initialize the argument buffer after all default textures are registered.
+        // Slot 0 = white (albedo/AO), slot 1 = flat normal, slot 2 = MR default
         if let Some(entry) = renderer.textures.get(default_tex.index()) {
             renderer
                 .bindless_manager
@@ -296,7 +311,7 @@ impl MetalRenderer {
 
         let default_mat = MetalMaterial {
             pipeline: None,
-            texture_indices: [0; 4],
+            texture_indices: [0, 1, 2, 0], // albedo=white, normal=flat, mr=default, ao=white
         };
         let id = renderer.materials.insert(default_mat);
         renderer.default_material = Some(MaterialHandle::new(id));
@@ -1388,7 +1403,7 @@ impl GpuRenderer for MetalRenderer {
                     if let Some(mat) = self.materials.get(draw.material.index()) {
                         mat.texture_indices
                     } else {
-                        [0; 4]
+                        [0, 1, 2, 0]
                     };
                 std::ptr::copy_nonoverlapping(tex_indices.as_ptr(), dst.add(96) as *mut u32, 4);
             }
@@ -2176,7 +2191,7 @@ impl GpuRenderer for MetalRenderer {
 
         let material = MetalMaterial {
             pipeline: Some(pipeline),
-            texture_indices: [0; 4],
+            texture_indices: [0, 1, 2, 0],
         };
         let id = self.materials.insert(material);
         Ok(MaterialHandle::new(id))
