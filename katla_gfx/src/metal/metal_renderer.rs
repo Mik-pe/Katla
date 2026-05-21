@@ -417,6 +417,103 @@ impl MetalRenderer {
         self.geometry_hdr_bindless_slot = Some(bindless_slot);
     }
 
+    /// Set the viewport bindless slot from the frame graph.
+    pub fn set_viewport_bindless_slot(&mut self, slot: u32) {
+        self.viewport_bindless_slot = Some(slot);
+    }
+
+    /// Execute the frame graph and present the frame.
+    ///
+    /// Acquires the drawable, dispatches light culling, collects draw lists
+    /// via the frame graph closure, then renders using Metal's internal pipeline.
+    pub fn render<F>(
+        &mut self,
+        frame_graph: &mut crate::render_graph::FrameGraph<Self>,
+        f: F,
+    ) -> Result<(), RendererError>
+    where
+        F: FnOnce(&mut crate::render_graph::Frame<'_, Self>),
+    {
+        self.wait_for_frame()?;
+
+        self.begin_frame()?;
+
+        let pending = frame_graph
+            .collect_draw_lists(self, f)
+            .map_err(|e| RendererError::InvalidOperation(e.to_string()))?;
+
+        let frame_idx = self.frame_index();
+
+        if let Some(ref view) = self.geometry_hdr_view {
+            if let Some(transient) = frame_graph.transient_texture("hdr_color", frame_idx) {
+                if let Some(slot) = transient.bindless_slot {
+                    self.bindless_manager.update_texture(slot, &view.inner).ok();
+                }
+            }
+        }
+
+        let view_matrix = self.frame_uniforms.view_matrix;
+        let proj_matrix = self.frame_uniforms.proj_matrix;
+        if let Some(ref lc) = self.light_culling {
+            if lc.light_count() > 0 {
+                self.dispatch_light_culling(&(), &view_matrix, &proj_matrix);
+            }
+        }
+
+        self.execute_metal_passes(pending, frame_graph, frame_idx)?;
+
+        self.end_frame()?;
+
+        Ok(())
+    }
+
+    fn execute_metal_passes(
+        &mut self,
+        mut pending: std::collections::HashMap<usize, crate::render_graph::PassExecutionData>,
+        frame_graph: &crate::render_graph::FrameGraph<Self>,
+        _frame_idx: usize,
+    ) -> Result<(), RendererError> {
+        let shadow_data = frame_graph
+            .pass_id("shadow")
+            .and_then(|id| pending.remove(&(id.0 as usize)));
+        let _ = shadow_data;
+        // if shadow_data.as_ref().is_some_and(|d| !d.draw_lists.is_empty()) {
+        //     self.render_shadow_pass()?;
+        // }
+
+        let geometry_data = frame_graph
+            .pass_id("geometry")
+            .and_then(|id| pending.remove(&(id.0 as usize)));
+        if let Some(data) = &geometry_data {
+            let combined: Vec<_> = data.draw_lists.iter().map(|rc| (**rc).clone()).collect();
+            if !combined.is_empty() {
+                let merged = combined.into_iter().fold(
+                    crate::renderer::types::DrawList::new(),
+                    |mut acc, dl| {
+                        for d in dl.draws {
+                            acc.push(d);
+                        }
+                        acc
+                    },
+                );
+                self.pending_draw_list = Some(merged);
+            }
+        }
+
+        let ui_data = frame_graph
+            .pass_id("ui")
+            .and_then(|id| pending.remove(&(id.0 as usize)));
+        if let Some(data) = &ui_data {
+            if let Some(ui_list) = data.ui_draw_lists.first() {
+                self.pending_ui_draw_list = Some(ui_list.clone());
+            }
+        }
+
+        self.render_frame()?;
+
+        Ok(())
+    }
+
     /// Recreate render targets (depth, HDR color, scene color, depth-stencil) for the given size.
     fn recreate_render_targets(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
@@ -441,35 +538,8 @@ impl MetalRenderer {
             }
         }
 
-        // Geometry HDR render target for tonemapping pipeline
-        {
-            if let Some(old_slot) = self.geometry_hdr_bindless_slot.take() {
-                self.bindless_manager.release_slot(old_slot);
-            }
-            let desc = TextureDescriptor::new(width, height, ImageFormat::R16G16B16A16Sfloat)
-                .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
-            if let Ok((_tex, view)) = self.context.create_texture(&desc) {
-                if let Ok(slot) = self.bindless_manager.register_texture(&view.inner) {
-                    self.geometry_hdr_bindless_slot = Some(slot);
-                }
-                self.geometry_hdr_view = Some(view);
-            }
-        }
-
-        // Scene color texture: blitted from drawable after rendering for UI viewport sampling
-        {
-            if let Some(old_slot) = self.viewport_bindless_slot.take() {
-                self.bindless_manager.release_slot(old_slot);
-            }
-            let desc = TextureDescriptor::new(width, height, ImageFormat::B8G8R8A8Srgb)
-                .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
-            if let Ok((_tex, view)) = self.context.create_texture(&desc) {
-                if let Ok(slot) = self.bindless_manager.register_texture(&view.inner) {
-                    self.viewport_bindless_slot = Some(slot);
-                }
-                self.scene_color_view = Some(view);
-            }
-        }
+        // Geometry HDR is managed by the frame graph transient texture system.
+        // Only create depth, outline HDR, scene color, and depth-stencil here.
 
         // Depth-stencil texture for outline pass (needs stencil)
         {
@@ -1190,7 +1260,7 @@ impl MetalRenderer {
 
     /// Get the current frame index for double-buffered resources.
     pub(crate) fn frame_index(&self) -> usize {
-        (self.frame_index % 3) as usize
+        (self.frame_index % 2) as usize
     }
 }
 
@@ -1200,11 +1270,11 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn current_frame(&self) -> usize {
-        (self.frame_index % 3) as usize
+        (self.frame_index % 2) as usize
     }
 
     fn num_images(&self) -> usize {
-        3
+        2
     }
 
     fn wait_for_device(&self) {
@@ -1313,6 +1383,10 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn render_frame(&mut self) -> Result<(), RendererError> {
+        log::debug!(
+            "render_frame: depth_view={}",
+            self.depth_texture_view.is_some()
+        );
         if self.depth_texture_view.is_none() {
             self.current_drawable_texture = None;
             return Ok(());
@@ -1383,18 +1457,7 @@ impl GpuRenderer for MetalRenderer {
 
             Self::bind_common_resources(&self, &mut encoder);
 
-            // Sky pass
             if let Some(ref sky_pipeline) = self.sky_pipeline {
-                if let (Some(frame_buf), Some(object_buf)) =
-                    (&self.frame_uniform_buffer, &self.object_storage_buffer)
-                {
-                    let stages = ShaderStages::VERTEX_FRAGMENT;
-                    encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
-                    encoder.bind_storage_buffer(object_buf, 0, 1, stages);
-                }
-                if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
-                    encoder.bind_storage_buffer(buf_sizes, 0, 8, ShaderStages::VERTEX_FRAGMENT);
-                }
                 if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
                     encoder.bind_vertex_buffer(dummy_vb, 0, 10);
                 }
@@ -1402,7 +1465,6 @@ impl GpuRenderer for MetalRenderer {
                 encoder.draw(3, 1, 0, 0);
             }
 
-            // PBR geometry
             if let Some(draw_list) = &draw_list {
                 Self::draw_objects(&self, &mut encoder, draw_list);
             }
@@ -1594,14 +1656,6 @@ impl GpuRenderer for MetalRenderer {
 
                                 encoder.bind_graphics_pipeline(ui_pipeline);
 
-                                let [screen_w, screen_h] = ui_draw_list.screen_size;
-                                let uniform_data: [f32; 4] = [screen_w, screen_h, -1.0, 0.0];
-                                encoder.set_push_constants(
-                                    bytemuck::cast_slice(&uniform_data),
-                                    3,
-                                    ShaderStages::VERTEX_FRAGMENT,
-                                );
-
                                 if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
                                     unsafe {
                                         encoder.inner.setVertexBuffer_offset_atIndex(
@@ -1614,6 +1668,28 @@ impl GpuRenderer for MetalRenderer {
                                             0,
                                             9,
                                         );
+                                        let resource: &ProtocolObject<
+                                            dyn objc2_metal::MTLResource,
+                                        > = std::mem::transmute(arg_buffer);
+                                        encoder.inner.useResource_usage_stages(
+                                            resource,
+                                            objc2_metal::MTLResourceUsage::Read,
+                                            objc2_metal::MTLRenderStages::Vertex
+                                                | objc2_metal::MTLRenderStages::Fragment,
+                                        );
+                                    }
+                                    for texture in self.bindless_manager.registered_textures() {
+                                        unsafe {
+                                            let resource: &ProtocolObject<
+                                                dyn objc2_metal::MTLResource,
+                                            > = std::mem::transmute(texture);
+                                            encoder.inner.useResource_usage_stages(
+                                                resource,
+                                                objc2_metal::MTLResourceUsage::Read,
+                                                objc2_metal::MTLRenderStages::Vertex
+                                                    | objc2_metal::MTLRenderStages::Fragment,
+                                            );
+                                        }
                                     }
                                 }
 
@@ -1631,6 +1707,14 @@ impl GpuRenderer for MetalRenderer {
                                 }
                                 if let Some(ref ib) = self.ui_renderer.index_buffer() {
                                     encoder.bind_index_buffer(ib, 0, IndexType::Uint32);
+                                }
+                                if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
+                                    encoder.bind_storage_buffer(
+                                        buf_sizes,
+                                        0,
+                                        8,
+                                        ShaderStages::VERTEX_FRAGMENT,
+                                    );
                                 }
                                 self.ui_renderer.render_ui_commands(
                                     &mut encoder,

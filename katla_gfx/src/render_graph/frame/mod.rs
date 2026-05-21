@@ -51,18 +51,14 @@ pub struct Frame<'a, B: RenderGraphBackend> {
 
 /// Data for a single pass execution.
 #[derive(Default, Clone)]
-pub(super) struct PassExecutionData {
-    /// Draw lists to render in this pass (shared via Rc to avoid cloning).
-    draw_lists: Vec<Rc<DrawList>>,
+pub(crate) struct PassExecutionData {
+    pub(crate) draw_lists: Vec<Rc<DrawList>>,
 
-    /// UI draw lists to render in this pass.
-    ui_draw_lists: Vec<UIDrawList>,
+    pub(crate) ui_draw_lists: Vec<UIDrawList>,
 
-    /// Whether dispatch was requested.
-    dispatch: Option<(u32, u32, u32)>,
+    pub(crate) dispatch: Option<(u32, u32, u32)>,
 
-    /// Custom uniform data.
-    uniform_data: Vec<u8>,
+    pub(crate) uniform_data: Vec<u8>,
 }
 
 impl<'a, B: RenderGraphBackend> Frame<'a, B> {

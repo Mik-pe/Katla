@@ -13,6 +13,11 @@ impl Application {
         self.editor.editor_ui.set_viewport_bindless_index(slot);
     }
 
+    #[cfg(all(feature = "metal", not(feature = "vulkan")))]
+    pub(crate) fn on_viewport_texture_recreated(&mut self, slot: u32) {
+        self.editor.editor_ui.set_viewport_bindless_index(slot);
+    }
+
     pub(crate) fn filter_scroll_for_editor(&self, wheel_y: f32) -> f32 {
         let mouse_pos = self.ui_context.input().mouse_pos;
         let ui_claimed = self.ui_context.hover_z_index() > katla_ui::z_index::DEFAULT

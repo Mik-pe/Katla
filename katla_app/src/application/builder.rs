@@ -226,7 +226,9 @@ impl ApplicationBuilder {
     fn build_metal_frame_graph(
         renderer: &mut Renderer,
     ) -> AppResult<katla_gfx::render_graph::FrameGraph<Renderer>> {
-        use katla_gfx::render_graph::{FrameGraphBuilder, GraphResourceDesc, GraphResourceType};
+        use katla_gfx::render_graph::{
+            FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassKind, PassType, SimplePass,
+        };
         use katla_gfx::texture::ImageFormat;
 
         let extent = renderer.swapchain_extent();
@@ -252,6 +254,14 @@ impl ApplicationBuilder {
                 height: extent.height,
                 tracks_swapchain_size: true,
             })
+            .add_pass(SimplePass::new("geometry", PassType::Graphics).write("hdr_color"))
+            .add_pass(SimplePass::new("shadow", PassType::Graphics))
+            .add_pass(
+                SimplePass::new("tonemap", PassType::Graphics)
+                    .read("hdr_color")
+                    .write("viewport_0"),
+            )
+            .add_pass(SimplePass::new("ui", PassType::Graphics))
             .build::<Renderer>()
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
 
@@ -819,7 +829,32 @@ impl ApplicationBuilder {
                 .expect("Frame graph must contain a 'wallhack_overlay' pass"),
         };
         #[cfg(all(feature = "metal", not(feature = "vulkan")))]
-        let pass_ids = super::PassIds::default();
+        let pass_ids = super::PassIds {
+            depth_prepass: frame_graph
+                .pass_id("depth_prepass")
+                .unwrap_or(katla_gfx::render_graph::PassId(0)),
+            geometry: frame_graph
+                .pass_id("geometry")
+                .expect("Frame graph must contain a 'geometry' pass"),
+            shadow: frame_graph
+                .pass_id("shadow")
+                .expect("Frame graph must contain a 'shadow' pass"),
+            outline: frame_graph
+                .pass_id("outline")
+                .unwrap_or(katla_gfx::render_graph::PassId(0)),
+            stencil_indicator: frame_graph
+                .pass_id("stencil_indicator")
+                .unwrap_or(katla_gfx::render_graph::PassId(0)),
+            ui: frame_graph
+                .pass_id("ui")
+                .expect("Frame graph must contain a 'ui' pass"),
+            tonemap: frame_graph
+                .pass_id("tonemap")
+                .expect("Frame graph must contain a 'tonemap' pass"),
+            wallhack_overlay: frame_graph
+                .pass_id("wallhack_overlay")
+                .unwrap_or(katla_gfx::render_graph::PassId(0)),
+        };
 
         // Initialize transient textures so we can get shadow atlas ImageView
         #[cfg(feature = "vulkan")]
@@ -864,8 +899,14 @@ impl ApplicationBuilder {
 
             let frame_idx = GpuRenderer::current_frame(&renderer);
             if let Some(view) = frame_graph.transient_image_view("hdr_color", frame_idx) {
-                renderer.set_geometry_hdr_view(view, hdr_slot);
+                let hdr_transient_slot = frame_graph
+                    .transient_texture("hdr_color", frame_idx)
+                    .and_then(|t| t.bindless_slot)
+                    .unwrap_or(hdr_slot);
+                renderer.set_geometry_hdr_view(view, hdr_transient_slot);
             }
+
+            renderer.set_viewport_bindless_slot(vp_slot);
         }
 
         // Initialize UI renderer with font atlas bindless slot

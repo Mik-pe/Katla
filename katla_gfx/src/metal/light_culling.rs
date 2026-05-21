@@ -185,6 +185,10 @@ impl MetalLightCulling {
         &self.tile_count_buffer
     }
 
+    pub fn light_count(&self) -> u32 {
+        self.light_count
+    }
+
     /// Upload point light data to the GPU.
     ///
     /// Call once per frame before dispatching light culling.

@@ -88,7 +88,7 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
             },
         );
         unsafe {
-            self.inner.addCompletedHandler(RcBlock::as_ptr(&block));
+            self.inner.addCompletedHandler(RcBlock::into_raw(block));
         }
         self.inner.commit();
     }

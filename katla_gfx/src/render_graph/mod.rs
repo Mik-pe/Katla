@@ -65,10 +65,10 @@ mod vulkan_backend;
 
 // Public API
 pub use backend::RenderGraphBackend;
-#[cfg(feature = "vulkan")]
-pub use descriptor_sets::CompositingDescriptorSet;
+pub use builder::SimplePass;
 pub use error::RenderGraphError;
 pub use frame::Frame;
+pub(crate) use frame::PassExecutionData;
 pub use frame_graph::{FrameGraph, FrameGraphBuilder};
 pub use handles::{PassId, ResourceId};
 pub use pass::{PassDesc, PassKind, PassType};

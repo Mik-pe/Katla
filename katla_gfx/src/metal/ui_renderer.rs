@@ -150,6 +150,17 @@ impl MetalUIRenderer {
         _render_pass_h: u32,
     ) {
         for cmd in &draw_list.commands {
+            let uniform_data: [f32; 4] = [
+                draw_list.screen_size[0],
+                draw_list.screen_size[1],
+                -1.0,
+                cmd.texture.index() as f32,
+            ];
+            encoder.set_push_constants(
+                bytemuck::cast_slice(&uniform_data),
+                3,
+                crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
+            );
             encoder.draw_indexed(cmd.index_count, 1, cmd.index_offset, 0, 0);
         }
     }

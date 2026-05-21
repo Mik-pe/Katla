@@ -506,6 +506,35 @@ impl<B: RenderGraphBackend> Default for FrameGraph<B> {
     }
 }
 
+// --- Metal-specific methods ---
+#[cfg(all(feature = "metal", not(feature = "vulkan")))]
+impl FrameGraph<crate::MetalRenderer> {
+    /// Collect draw lists from the user closure without executing passes.
+    ///
+    /// Creates a Frame context, calls the closure to submit draw lists,
+    /// and returns the pending draw data for MetalRenderer to execute.
+    pub(crate) fn collect_draw_lists<F>(
+        &mut self,
+        renderer: &mut crate::MetalRenderer,
+        f: F,
+    ) -> Result<std::collections::HashMap<usize, super::frame::PassExecutionData>, RenderGraphError>
+    where
+        F: FnOnce(&mut super::frame::Frame<'_, crate::MetalRenderer>),
+    {
+        if !self.compiled {
+            self.compile()?;
+        }
+
+        self.initialize_transient_textures(renderer)?;
+
+        let frame_idx = renderer.frame_index();
+        let mut frame = super::frame::Frame::new(self, renderer, 0, frame_idx);
+        f(&mut frame);
+
+        Ok(std::mem::take(&mut frame.pending))
+    }
+}
+
 // --- Vulkan-specific methods ---
 #[cfg(feature = "vulkan")]
 impl FrameGraph<crate::renderer::VulkanRenderer> {
