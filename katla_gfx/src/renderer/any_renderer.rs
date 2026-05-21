@@ -11,10 +11,10 @@ use crate::renderer::types::{DrawCall, DrawList, FrameUniforms, PointLightGPU, U
 use crate::texture::TextureDescriptor;
 use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 
-#[cfg(feature = "vulkan")]
-use crate::renderer::VulkanRenderer;
 #[cfg(all(target_os = "macos", feature = "metal"))]
 use crate::metal::metal_renderer::MetalRenderer;
+#[cfg(feature = "vulkan")]
+use crate::renderer::VulkanRenderer;
 
 /// Renderer backend that wraps both Vulkan and Metal behind a single type.
 ///
@@ -80,7 +80,11 @@ impl AnyRenderer {
         engine_name: std::ffi::CString,
     ) -> Result<Self, RendererError> {
         Ok(AnyRenderer::Vulkan(VulkanRenderer::init(
-            display, window, validation_mode, app_name, engine_name,
+            display,
+            window,
+            validation_mode,
+            app_name,
+            engine_name,
         )?))
     }
 
@@ -94,7 +98,11 @@ impl AnyRenderer {
         engine_name: std::ffi::CString,
     ) -> Result<Self, RendererError> {
         Ok(AnyRenderer::Metal(MetalRenderer::init(
-            display, window, validation_mode, app_name, engine_name,
+            display,
+            window,
+            validation_mode,
+            app_name,
+            engine_name,
         )?))
     }
 }
@@ -242,9 +250,13 @@ impl GpuRenderer for AnyRenderer {
     ) -> MeshHandle {
         match self {
             #[cfg(feature = "vulkan")]
-            AnyRenderer::Vulkan(r) => GpuRenderer::create_mesh_soa(r, attributes, vertex_count, indices),
+            AnyRenderer::Vulkan(r) => {
+                GpuRenderer::create_mesh_soa(r, attributes, vertex_count, indices)
+            }
             #[cfg(all(target_os = "macos", feature = "metal"))]
-            AnyRenderer::Metal(r) => GpuRenderer::create_mesh_soa(r, attributes, vertex_count, indices),
+            AnyRenderer::Metal(r) => {
+                GpuRenderer::create_mesh_soa(r, attributes, vertex_count, indices)
+            }
         }
     }
 
@@ -316,9 +328,13 @@ impl GpuRenderer for AnyRenderer {
     ) -> MeshHandle {
         match self {
             #[cfg(feature = "vulkan")]
-            AnyRenderer::Vulkan(r) => r.create_torus_mesh(major_radius, minor_radius, segments, rings),
+            AnyRenderer::Vulkan(r) => {
+                r.create_torus_mesh(major_radius, minor_radius, segments, rings)
+            }
             #[cfg(all(target_os = "macos", feature = "metal"))]
-            AnyRenderer::Metal(r) => r.create_torus_mesh(major_radius, minor_radius, segments, rings),
+            AnyRenderer::Metal(r) => {
+                r.create_torus_mesh(major_radius, minor_radius, segments, rings)
+            }
         }
     }
 
@@ -354,9 +370,13 @@ impl GpuRenderer for AnyRenderer {
     ) -> Result<(), RendererError> {
         match self {
             #[cfg(feature = "vulkan")]
-            AnyRenderer::Vulkan(r) => r.update_mesh_dynamic(mesh, vertex_data, vertex_count, indices),
+            AnyRenderer::Vulkan(r) => {
+                r.update_mesh_dynamic(mesh, vertex_data, vertex_count, indices)
+            }
             #[cfg(all(target_os = "macos", feature = "metal"))]
-            AnyRenderer::Metal(r) => r.update_mesh_dynamic(mesh, vertex_data, vertex_count, indices),
+            AnyRenderer::Metal(r) => {
+                r.update_mesh_dynamic(mesh, vertex_data, vertex_count, indices)
+            }
         }
     }
 
@@ -759,7 +779,9 @@ impl AnyRenderer {
     ) -> Result<(), RendererError> {
         match self {
             #[cfg(feature = "vulkan")]
-            AnyRenderer::Vulkan(_) => Err(RendererError::InvalidOperation("Not Metal backend".into())),
+            AnyRenderer::Vulkan(_) => {
+                Err(RendererError::InvalidOperation("Not Metal backend".into()))
+            }
             AnyRenderer::Metal(r) => r.init_light_culling(width, height, shader_path),
         }
     }
@@ -768,7 +790,9 @@ impl AnyRenderer {
     pub fn init_shadow_resources(&mut self) -> Result<(), RendererError> {
         match self {
             #[cfg(feature = "vulkan")]
-            AnyRenderer::Vulkan(_) => Err(RendererError::InvalidOperation("Not Metal backend".into())),
+            AnyRenderer::Vulkan(_) => {
+                Err(RendererError::InvalidOperation("Not Metal backend".into()))
+            }
             AnyRenderer::Metal(r) => r.init_shadow_resources(None),
         }
     }
@@ -780,7 +804,9 @@ impl AnyRenderer {
     ) -> Result<(), RendererError> {
         match self {
             #[cfg(feature = "vulkan")]
-            AnyRenderer::Vulkan(_) => Err(RendererError::InvalidOperation("Not Metal backend".into())),
+            AnyRenderer::Vulkan(_) => {
+                Err(RendererError::InvalidOperation("Not Metal backend".into()))
+            }
             AnyRenderer::Metal(r) => r.init_shadow_pipeline(shader_path),
         }
     }
@@ -792,7 +818,9 @@ impl AnyRenderer {
     ) -> Result<(), RendererError> {
         match self {
             #[cfg(feature = "vulkan")]
-            AnyRenderer::Vulkan(_) => Err(RendererError::InvalidOperation("Not Metal backend".into())),
+            AnyRenderer::Vulkan(_) => {
+                Err(RendererError::InvalidOperation("Not Metal backend".into()))
+            }
             AnyRenderer::Metal(r) => r.init_sky_pipeline(shader_path),
         }
     }
@@ -804,7 +832,9 @@ impl AnyRenderer {
     ) -> Result<(), RendererError> {
         match self {
             #[cfg(feature = "vulkan")]
-            AnyRenderer::Vulkan(_) => Err(RendererError::InvalidOperation("Not Metal backend".into())),
+            AnyRenderer::Vulkan(_) => {
+                Err(RendererError::InvalidOperation("Not Metal backend".into()))
+            }
             AnyRenderer::Metal(r) => r.init_tonemap_pipeline(shader_path),
         }
     }
@@ -832,10 +862,7 @@ impl AnyRenderer {
     }
 
     #[cfg(all(target_os = "macos", feature = "metal"))]
-    pub fn set_tonemap_output_view(
-        &mut self,
-        view: crate::metal::texture::MetalTextureView,
-    ) {
+    pub fn set_tonemap_output_view(&mut self, view: crate::metal::texture::MetalTextureView) {
         match self {
             #[cfg(feature = "vulkan")]
             AnyRenderer::Vulkan(_) => {}

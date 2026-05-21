@@ -260,10 +260,10 @@ impl super::Application {
             bytemuck::cast_slice(&tex_coords).to_vec(),
         );
 
-        let mesh_handle = self
-            .renderer
-            .unwrap_vulkan()
-            .create_mesh_soa(&attributes, vertex_count, &indices);
+        let mesh_handle =
+            self.renderer
+                .unwrap_vulkan()
+                .create_mesh_soa(&attributes, vertex_count, &indices);
 
         info!(
             "Loaded STL mesh '{}' ({} vertices, {} triangles) -> handle {}",

@@ -163,6 +163,32 @@ impl MetalBindlessTextureManager {
         }
     }
 
+    /// Re-encode all occupied slots into the argument buffer in a single pass.
+    ///
+    /// Call once per frame after the CPU-GPU sync point to ensure the GPU
+    /// sees a fully consistent argument buffer. Re-encoding individual slots
+    /// via `update_slot` can leave the encoder in an inconsistent state on
+    /// some Metal drivers because `setArgumentBuffer_offset` resets the
+    /// encoder's internal pointer each time.
+    pub(crate) fn flush_argument_buffer(&self) {
+        let Some(ref encoder) = self.encoder else {
+            return;
+        };
+        let Some(ref buffer) = self.argument_buffer else {
+            return;
+        };
+        let Some(default) = self.default_texture.as_deref() else {
+            return;
+        };
+        unsafe {
+            encoder.setArgumentBuffer_offset(Some(buffer), 0);
+            for (i, slot) in self.textures.iter().enumerate() {
+                let tex = slot.as_ref().map(|t| t.as_ref()).unwrap_or(default);
+                encoder.setTexture_atIndex(Some(tex), i);
+            }
+        }
+    }
+
     /// Get the argument buffer for binding at buffer index 9.
     pub(crate) fn argument_buffer(&self) -> Option<&ProtocolObject<dyn MTLBuffer>> {
         self.argument_buffer.as_deref()

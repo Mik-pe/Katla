@@ -294,8 +294,8 @@ pub use renderer::gpu_renderer::GpuRenderer;
 pub use renderer::any_renderer::AnyRenderer;
 
 // Enum-based frame graph dispatch
+pub use render_graph::any_frame::AnyFrame;
 pub use render_graph::any_frame_graph::AnyFrameGraph;
-pub use render_graph::any_frame::AnyFrame as AnyFrame;
 
 // Modern particle system — shared config types always available
 pub use particles::EmitterConfig;
@@ -303,15 +303,15 @@ pub use particles::EmitterConfig;
 pub use particles::GlobalParticleSystem;
 
 // Render graph system — pass types and descriptors are backend-agnostic
-pub use render_graph::{
-    FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType, OutlinePass,
-    OverlayParams, OverlayPass, ParticlePass, RenderGraphError, ShadowPass,
-    StencilIndicatorPass, TonemapOperator, TonemapParams,
-};
-#[cfg(feature = "vulkan")]
-pub use render_graph::descriptor_sets::CompositingDescriptorSet;
 #[cfg(feature = "vulkan")]
 pub use render_graph::Frame;
+#[cfg(feature = "vulkan")]
+pub use render_graph::descriptor_sets::CompositingDescriptorSet;
+pub use render_graph::{
+    FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType, OutlinePass, OverlayParams,
+    OverlayPass, ParticlePass, RenderGraphError, ShadowPass, StencilIndicatorPass, TonemapOperator,
+    TonemapParams,
+};
 #[cfg(feature = "vulkan")]
 /// Vulkan-specific frame graph type.
 pub type FrameGraph = render_graph::FrameGraph<renderer::VulkanRenderer>;

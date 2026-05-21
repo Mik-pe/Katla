@@ -18,7 +18,9 @@ impl Application {
     /// 3. On subsequent frames: Check if the readback completed, resolve instance_index -> EntityId
     pub(crate) fn process_picking(&mut self) {
         // Check for completed readback from a previous frame
-        if let Ok(Some((_frame, instance_index))) = self.renderer.unwrap_vulkan().check_picking_readback() {
+        if let Ok(Some((_frame, instance_index))) =
+            self.renderer.unwrap_vulkan().check_picking_readback()
+        {
             if instance_index == 0 {
                 // Background/empty space was clicked — clear selection
                 if self.editor.editor_ui.selected_entity.is_some() {
@@ -81,7 +83,11 @@ impl Application {
 
             // Get the object-ID texture image for the current frame
             let frame_idx = self.renderer.current_frame();
-            if let Some(transient) = self.frame_graph.as_vulkan().transient_texture("object_id", frame_idx) {
+            if let Some(transient) = self
+                .frame_graph
+                .as_vulkan()
+                .transient_texture("object_id", frame_idx)
+            {
                 let image = transient.image;
                 let current_layout = transient.current_layout();
                 match self.renderer.unwrap_vulkan().queue_picking_readback(

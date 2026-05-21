@@ -472,21 +472,12 @@ impl MetalRenderer {
 
         let frame_idx = self.frame_index();
 
-        if let Some(ref view) = self.geometry_hdr_view {
-            if let Some(transient) = frame_graph.transient_texture("hdr_color", frame_idx) {
-                if let Some(slot) = transient.bindless_slot {
-                    self.bindless_manager.update_texture(slot, &view.inner).ok();
-                }
-            }
-        }
-
-        // Re-encode viewport_0 into the argument buffer every frame to prevent
-        // stale references from falling back to the default white texture.
-        if let Some(vp_slot) = self.viewport_bindless_slot {
-            if let Some(ref view) = self.tonemap_output_view {
-                self.bindless_manager.update_texture(vp_slot, &view.inner).ok();
-            }
-        }
+        // Re-encode the entire argument buffer every frame in a single pass.
+        // Individual slot updates via update_slot() call setArgumentBuffer_offset
+        // each time, which can leave the encoder in an inconsistent state on some
+        // Metal drivers. Flushing all slots at once after the CPU-GPU sync point
+        // ensures the GPU sees a fully consistent argument buffer.
+        self.bindless_manager.flush_argument_buffer();
 
         let view_matrix = self.frame_uniforms.view_matrix;
         let proj_matrix = self.frame_uniforms.proj_matrix;
@@ -568,9 +559,7 @@ impl MetalRenderer {
         Ok(())
     }
 
-    fn merge_draw_lists(
-        draw_lists: &[std::rc::Rc<DrawList>],
-    ) -> DrawList {
+    fn merge_draw_lists(draw_lists: &[std::rc::Rc<DrawList>]) -> DrawList {
         let combined: Vec<_> = draw_lists.iter().map(|rc| (**rc).clone()).collect();
         combined.into_iter().fold(DrawList::new(), |mut acc, dl| {
             for d in dl.draws {
@@ -1448,6 +1437,8 @@ impl GpuRenderer for MetalRenderer {
             return Ok(());
         }
 
+        let mut drawable_written = false;
+
         let drawable_texture = self
             .current_drawable_texture
             .take()
@@ -1558,6 +1549,7 @@ impl GpuRenderer for MetalRenderer {
             encoder.end_encoding();
         } else {
             // No tonemap pipeline — render geometry directly to drawable (legacy path)
+            drawable_written = true;
             let depth_attachment =
                 self.depth_texture_view
                     .as_ref()
@@ -1682,6 +1674,10 @@ impl GpuRenderer for MetalRenderer {
 
             // Write tonemapped output to viewport_0 LDR texture (for UI compositing),
             // or fall back to the drawable if no viewport texture is available.
+            let tonemap_writes_to_drawable = self.tonemap_output_view.is_none();
+            if tonemap_writes_to_drawable {
+                drawable_written = true;
+            }
             let tonemap_target = self
                 .tonemap_output_view
                 .as_ref()
@@ -1778,6 +1774,7 @@ impl GpuRenderer for MetalRenderer {
                     if let Some(ui_mat_handle) = ui_material_handle {
                         if let Some(ui_material) = self.materials.get(ui_mat_handle.index()) {
                             if let Some(ref ui_pipeline) = ui_material.pipeline {
+                                drawable_written = true;
                                 // When tonemap writes to viewport_0 (offscreen), the drawable
                                 // has no prior content — clear it and let UI draw everything.
                                 // Otherwise the tonemap wrote to the drawable directly, so load it.
@@ -1877,6 +1874,23 @@ impl GpuRenderer for MetalRenderer {
                     }
                 }
             }
+        }
+
+        // Safety: if no render pass wrote to the drawable (e.g. tonemap went to
+        // viewport_0 and the UI pass was skipped), clear it to black before
+        // presenting to avoid stale/undefined content from the drawable pool.
+        if !drawable_written {
+            let clear_pass_info = RenderPassInfo {
+                color_attachments: vec![ColorAttachmentInfo {
+                    view: drawable_view,
+                    load_op: LoadOp::Clear,
+                    store_op: StoreOp::Store,
+                    clear_value: ClearValue::OPAQUE_BLACK,
+                }],
+                depth_attachment: None,
+            };
+            let encoder = cmd_buffer.begin_render_pass(clear_pass_info);
+            encoder.end_encoding();
         }
 
         cmd_buffer.end();

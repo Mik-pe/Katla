@@ -344,7 +344,12 @@ pub fn upload_font_atlas(app: &mut Application) {
         let atlas_handle = app.renderer.create_ui_font_atlas(width, height, &data);
 
         #[cfg(feature = "vulkan")]
-        if let Some(bindless_slot) = app.renderer.unwrap_vulkan().ui_renderer.font_atlas_bindless_slot() {
+        if let Some(bindless_slot) = app
+            .renderer
+            .unwrap_vulkan()
+            .ui_renderer
+            .font_atlas_bindless_slot()
+        {
             app.editor
                 .ui_renderer
                 .set_font_atlas_bindless_slot(bindless_slot);
@@ -1441,35 +1446,40 @@ fn collect_particle_inspector_data(app: &mut Application) {
     }
 
     // Get system-wide stats
-    let stats = app.renderer.unwrap_vulkan().particle_system.as_ref().map(|ps| {
-        let alive = ps.alive_count();
-        let max = ps.max_particles();
-        ParticleStats {
-            max_alive_count: max,
-            current_alive_count: alive,
-            dead_count: max - alive,
-            total_emitted: 0,
-            total_died: 0,
-            compute_time_ms: 0.0,
-            avg_compute_time_ms: 0.0,
-            peak_compute_time_ms: 0.0,
-            emitter_counts: ps
-                .get_emitters()
-                .iter()
-                .filter(|e| e.emit_rate > 0.0)
-                .map(|_| 0)
-                .collect(),
-            memory_used_mb: (max as f32) * 48.0 / (1024.0 * 1024.0)
-                + (max as f32) * 12.0 / (1024.0 * 1024.0),
-            buffer_utilization: if max > 0 {
-                alive as f32 / max as f32
-            } else {
-                0.0
-            },
-            frame_count: 0,
-            total_dispatches: 0,
-        }
-    });
+    let stats = app
+        .renderer
+        .unwrap_vulkan()
+        .particle_system
+        .as_ref()
+        .map(|ps| {
+            let alive = ps.alive_count();
+            let max = ps.max_particles();
+            ParticleStats {
+                max_alive_count: max,
+                current_alive_count: alive,
+                dead_count: max - alive,
+                total_emitted: 0,
+                total_died: 0,
+                compute_time_ms: 0.0,
+                avg_compute_time_ms: 0.0,
+                peak_compute_time_ms: 0.0,
+                emitter_counts: ps
+                    .get_emitters()
+                    .iter()
+                    .filter(|e| e.emit_rate > 0.0)
+                    .map(|_| 0)
+                    .collect(),
+                memory_used_mb: (max as f32) * 48.0 / (1024.0 * 1024.0)
+                    + (max as f32) * 12.0 / (1024.0 * 1024.0),
+                buffer_utilization: if max > 0 {
+                    alive as f32 / max as f32
+                } else {
+                    0.0
+                },
+                frame_count: 0,
+                total_dispatches: 0,
+            }
+        });
 
     app.editor.editor_ui.particle_inspector_data = ParticleInspectorData {
         emitter_entities,
