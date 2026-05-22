@@ -739,7 +739,7 @@ mod tests {
             true,
             CompareOp::LessOrEqual,
             objc2_metal::MTLCullMode::Back,
-            objc2_metal::MTLWinding::CounterClockwise,
+            objc2_metal::MTLWinding::Clockwise,
         );
         assert!(
             pipeline.is_ok(),
@@ -865,7 +865,7 @@ struct VertexOutput {
                 false,
                 CompareOp::Always,
                 objc2_metal::MTLCullMode::None,
-                objc2_metal::MTLWinding::CounterClockwise,
+                objc2_metal::MTLWinding::Clockwise,
             )
             .unwrap();
 
