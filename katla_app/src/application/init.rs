@@ -11,10 +11,11 @@ impl Application {
         self.world
             .insert_resource(crate::resources::AmbientLight::default());
 
-        self.init_vulkan();
-
-        #[cfg(target_os = "macos")]
-        self.init_metal();
+        match &mut self.renderer {
+            katla_gfx::AnyRenderer::Vulkan(_) => self.init_vulkan(),
+            #[cfg(target_os = "macos")]
+            katla_gfx::AnyRenderer::Metal(_) => self.init_metal(),
+        }
 
         // Load scene from disk
         let scene_path_str = self
@@ -536,25 +537,26 @@ impl Application {
         let mesh = self.renderer.create_plane_xy_mesh(1.0, 1.0, 1);
 
         let shader_path = self.resources.shader_path("billboard.wgsl");
-        let material = self
-            .renderer
-            .unwrap_vulkan()
-            .compile_material(
-                &shader_path,
-                katla_gfx::MaterialOptions {
-                    vertex_type: katla_gfx::VertexType::Pbr,
-                    color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
-                    alpha_blended: true,
-                    depth_test: true,
-                    double_sided: true,
-                    ..Default::default()
-                },
-            )
-            .expect("Failed to create billboard material");
-        let material = self
-            .renderer
-            .compile_material(&shader_path.to_string_lossy(), "pbr")
-            .expect("Failed to create billboard material");
+        let material = match &mut self.renderer {
+            katla_gfx::AnyRenderer::Vulkan(r) => r
+                .compile_material(
+                    &shader_path,
+                    katla_gfx::MaterialOptions {
+                        vertex_type: katla_gfx::VertexType::Pbr,
+                        color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
+                        alpha_blended: true,
+                        depth_test: true,
+                        double_sided: true,
+                        ..Default::default()
+                    },
+                )
+                .expect("Failed to create billboard material"),
+            #[cfg(target_os = "macos")]
+            katla_gfx::AnyRenderer::Metal(_) => self
+                .renderer
+                .compile_material(&shader_path.to_string_lossy(), "pbr")
+                .expect("Failed to create billboard material"),
+        };
 
         self.gpu_resource_tracker.set_protected_material(material);
 

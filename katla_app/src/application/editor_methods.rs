@@ -185,8 +185,6 @@ impl Application {
                     // Get the bindless slot for this texture
                     let bindless_slot = self
                         .renderer
-                        .unwrap_vulkan()
-                        .texture_manager
                         .get_bindless_slot(texture_handle)
                         .unwrap_or_else(|| {
                             log::warn!(

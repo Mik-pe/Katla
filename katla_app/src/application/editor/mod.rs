@@ -330,19 +330,11 @@ pub fn upload_font_atlas(app: &mut Application) {
     if was_resized {
         let atlas_handle = app.renderer.create_ui_font_atlas(width, height, &data);
 
-        if let Some(bindless_slot) = app
-            .renderer
-            .unwrap_vulkan()
-            .ui_renderer
-            .font_atlas_bindless_slot()
-        {
-            app.editor
-                .ui_renderer
-                .set_font_atlas_bindless_slot(bindless_slot);
-        }
-
-        #[cfg(target_os = "macos")]
-        if let Some(bindless_slot) = app.renderer.get_bindless_slot(atlas_handle) {
+        if let Some(bindless_slot) = match &mut app.renderer {
+            katla_gfx::AnyRenderer::Vulkan(r) => r.ui_renderer.font_atlas_bindless_slot(),
+            #[cfg(target_os = "macos")]
+            katla_gfx::AnyRenderer::Metal(_) => app.renderer.get_bindless_slot(atlas_handle),
+        } {
             app.editor
                 .ui_renderer
                 .set_font_atlas_bindless_slot(bindless_slot);
@@ -891,14 +883,16 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
 
                 // Clean up particle emitters before destroying entities
-                for &id in &to_delete {
-                    if let Some(emitter) =
-                        app.world.get_component_mut::<ParticleEmitterComponent>(id)
-                        && let Some(handle) = emitter.emitter_handle.take()
-                        && let Some(ps) = &mut app.renderer.unwrap_vulkan().particle_system
-                    {
-                        ps.destroy_emitter(handle, emitter.kill_on_destroy);
-                        info!("Destroyed particle emitter for deleted entity {:?}", id);
+                if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut app.renderer {
+                    for &id in &to_delete {
+                        if let Some(emitter) =
+                            app.world.get_component_mut::<ParticleEmitterComponent>(id)
+                            && let Some(handle) = emitter.emitter_handle.take()
+                            && let Some(ps) = &mut vulkan_renderer.particle_system
+                        {
+                            ps.destroy_emitter(handle, emitter.kill_on_destroy);
+                            info!("Destroyed particle emitter for deleted entity {:?}", id);
+                        }
                     }
                 }
 
@@ -923,10 +917,15 @@ pub fn process_editor_actions(app: &mut Application) {
                     .world
                     .get_component::<crate::components::Parent>(entity_id)
                     .map(|p| p.parent);
+                let particle_system = match &mut app.renderer {
+                    katla_gfx::AnyRenderer::Vulkan(r) => &mut r.particle_system,
+                    #[cfg(target_os = "macos")]
+                    katla_gfx::AnyRenderer::Metal(_) => &mut None,
+                };
                 let mut ctx = DuplicateContext {
                     world: &mut app.world,
                     gpu_resource_tracker: &mut app.gpu_resource_tracker,
-                    particle_system: &mut app.renderer.unwrap_vulkan().particle_system,
+                    particle_system,
                 };
                 if let Some(new_entity_id) = duplicate_entity(&mut ctx, entity_id) {
                     if let Some(parent_id) = source_parent {
@@ -977,13 +976,15 @@ pub fn process_editor_actions(app: &mut Application) {
                     .collect();
 
                 // Clean up particle emitters before destroying entities
-                for id in &to_remove {
-                    if let Some(emitter) =
-                        app.world.get_component_mut::<ParticleEmitterComponent>(*id)
-                        && let Some(handle) = emitter.emitter_handle.take()
-                        && let Some(ps) = &mut app.renderer.unwrap_vulkan().particle_system
-                    {
-                        ps.destroy_emitter(handle, emitter.kill_on_destroy);
+                if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut app.renderer {
+                    for id in &to_remove {
+                        if let Some(emitter) =
+                            app.world.get_component_mut::<ParticleEmitterComponent>(*id)
+                            && let Some(handle) = emitter.emitter_handle.take()
+                            && let Some(ps) = &mut vulkan_renderer.particle_system
+                        {
+                            ps.destroy_emitter(handle, emitter.kill_on_destroy);
+                        }
                     }
                 }
 
@@ -1077,7 +1078,8 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
             }
             EditorAction::ResetParticleSystem => {
-                if let Some(ps) = &mut app.renderer.unwrap_vulkan().particle_system {
+                if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut app.renderer {
+                if let Some(ps) = &mut vulkan_renderer.particle_system {
                     use katla_gfx::particles::EmitterHandle;
 
                     let entity_configs: Vec<(
@@ -1124,6 +1126,7 @@ pub fn process_editor_actions(app: &mut Application) {
                     }
 
                     info!("Particle system reset complete");
+                }
                 }
             }
             EditorAction::SetGizmoMode(mode_id) => {
@@ -1411,40 +1414,41 @@ fn collect_particle_inspector_data(app: &mut Application) {
     }
 
     // Get system-wide stats
-    let stats = app
-        .renderer
-        .unwrap_vulkan()
-        .particle_system
-        .as_ref()
-        .map(|ps| {
-            let alive = ps.alive_count();
-            let max = ps.max_particles();
-            ParticleStats {
-                max_alive_count: max,
-                current_alive_count: alive,
-                dead_count: max - alive,
-                total_emitted: 0,
-                total_died: 0,
-                compute_time_ms: 0.0,
-                avg_compute_time_ms: 0.0,
-                peak_compute_time_ms: 0.0,
-                emitter_counts: ps
-                    .get_emitters()
-                    .iter()
-                    .filter(|e| e.emit_rate > 0.0)
-                    .map(|_| 0)
-                    .collect(),
-                memory_used_mb: (max as f32) * 48.0 / (1024.0 * 1024.0)
-                    + (max as f32) * 12.0 / (1024.0 * 1024.0),
-                buffer_utilization: if max > 0 {
-                    alive as f32 / max as f32
-                } else {
-                    0.0
-                },
-                frame_count: 0,
-                total_dispatches: 0,
-            }
-        });
+    let stats = match &app.renderer {
+        katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) => {
+            vulkan_renderer.particle_system.as_ref().map(|ps| {
+                let alive = ps.alive_count();
+                let max = ps.max_particles();
+                ParticleStats {
+                    max_alive_count: max,
+                    current_alive_count: alive,
+                    dead_count: max - alive,
+                    total_emitted: 0,
+                    total_died: 0,
+                    compute_time_ms: 0.0,
+                    avg_compute_time_ms: 0.0,
+                    peak_compute_time_ms: 0.0,
+                    emitter_counts: ps
+                        .get_emitters()
+                        .iter()
+                        .filter(|e| e.emit_rate > 0.0)
+                        .map(|_| 0)
+                        .collect(),
+                    memory_used_mb: (max as f32) * 48.0 / (1024.0 * 1024.0)
+                        + (max as f32) * 12.0 / (1024.0 * 1024.0),
+                    buffer_utilization: if max > 0 {
+                        alive as f32 / max as f32
+                    } else {
+                        0.0
+                    },
+                    frame_count: 0,
+                    total_dispatches: 0,
+                }
+            })
+        }
+        #[cfg(target_os = "macos")]
+        katla_gfx::AnyRenderer::Metal(_) => None,
+    };
 
     app.editor.editor_ui.particle_inspector_data = ParticleInspectorData {
         emitter_entities,

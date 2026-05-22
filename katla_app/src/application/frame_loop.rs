@@ -20,21 +20,23 @@ impl Application {
 
         // Wait for any pending async readback to complete before destroying resources
         // This must happen BEFORE wait_for_device() to ensure readback finishes
-        match self.renderer.unwrap_vulkan().wait_for_pending_readback() {
-            Ok(Some((frame, image_data))) => {
-                info!("Saving final frame {} before shutdown", frame);
-                let extent = self.renderer.swapchain_extent();
-                let width = extent.width as usize;
-                let height = extent.height as usize;
-                if let Err(e) = self.save_frame_as_png(frame, &image_data, width, height) {
-                    log::error!("Failed to save final frame {}: {}", frame, e);
+        if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer {
+            match vulkan_renderer.wait_for_pending_readback() {
+                Ok(Some((frame, image_data))) => {
+                    info!("Saving final frame {} before shutdown", frame);
+                    let extent = self.renderer.swapchain_extent();
+                    let width = extent.width as usize;
+                    let height = extent.height as usize;
+                    if let Err(e) = self.save_frame_as_png(frame, &image_data, width, height) {
+                        log::error!("Failed to save final frame {}: {}", frame, e);
+                    }
                 }
-            }
-            Ok(None) => {
-                log::debug!("No pending readback to complete during shutdown");
-            }
-            Err(e) => {
-                log::error!("Failed to wait for pending readback during shutdown: {}", e);
+                Ok(None) => {
+                    log::debug!("No pending readback to complete during shutdown");
+                }
+                Err(e) => {
+                    log::error!("Failed to wait for pending readback during shutdown: {}", e);
+                }
             }
         }
 
@@ -107,17 +109,18 @@ impl Application {
         );
 
         // Update particle emitters from ECS components
-        if let Some(ref mut ps) = self.renderer.unwrap_vulkan().particle_system {
-            self.particle_system.update(&mut self.world, ps, dt);
+        if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer {
+            if let Some(ref mut ps) = vulkan_renderer.particle_system {
+                self.particle_system.update(&mut self.world, ps, dt);
+            }
         }
 
         // Update GPU animation: prepare data and upload per-frame params
-        {
-            let renderer = self.renderer.unwrap_vulkan();
+        if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer {
             if let (Some(gpu_anim), Some(pipeline), Some(buffers)) = (
                 &mut self.gpu_animation_system,
-                &mut renderer.animation_pipeline,
-                &mut renderer.animation_buffers,
+                &mut vulkan_renderer.animation_pipeline,
+                &mut vulkan_renderer.animation_buffers,
             ) {
                 gpu_anim
                     .prepare(&mut self.world, pipeline, buffers)
@@ -165,88 +168,87 @@ impl Application {
         // - On frame N+1: Check if readback from frame N is complete and save to disk
         // This allows us to catch synchronization issues that synchronous readback would mask
         if self.info.check_black_frames && self.frame_count > 0 {
-            // Check if previous frame's async readback is complete
-            match self.renderer.unwrap_vulkan().check_pending_readback() {
-                Ok(Some((prev_frame, image_data))) => {
-                    let extent = self.renderer.swapchain_extent();
-                    let width = extent.width as usize;
-                    let height = extent.height as usize;
+            let extent = self.renderer.swapchain_extent();
+            let width = extent.width as usize;
+            let height = extent.height as usize;
 
-                    // Save frame as PNG for visual inspection
-                    if let Err(e) = self.save_frame_as_png(prev_frame, &image_data, width, height) {
-                        log::error!("Failed to save frame {}: {}", prev_frame, e);
+            // Collect readback result and queue next readback in a single mutable borrow scope
+            let readback_result = match &mut self.renderer {
+                katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) => {
+                    let result = vulkan_renderer.check_pending_readback();
+                    if let Err(e) = vulkan_renderer.queue_async_readback(self.frame_count) {
+                        log::error!(
+                            "Frame {} - Failed to queue async readback: {}",
+                            self.frame_count,
+                            e
+                        );
                     }
+                    Some(result)
+                }
+                #[cfg(target_os = "macos")]
+                katla_gfx::AnyRenderer::Metal(_) => None,
+            };
 
-                    // Check 9 pixels in a 3x3 grid to detect if ANY pixel has color
-                    let mut all_pixels_black = true;
-                    let mut first_non_black_pixel = None;
+            if let Some(Ok(Some((prev_frame, image_data)))) = readback_result {
+                // Save frame as PNG for visual inspection
+                if let Err(e) = self.save_frame_as_png(prev_frame, &image_data, width, height) {
+                    log::error!("Failed to save frame {}: {}", prev_frame, e);
+                }
 
-                    // Sample positions: center, corners, and mid-edges
-                    let sample_positions = [
-                        (width / 2, height / 2),         // Center
-                        (width / 4, height / 4),         // Top-left
-                        (3 * width / 4, height / 4),     // Top-right
-                        (width / 4, 3 * height / 4),     // Bottom-left
-                        (3 * width / 4, 3 * height / 4), // Bottom-right
-                        (width / 2, height / 4),         // Top-middle
-                        (width / 2, 3 * height / 4),     // Bottom-middle
-                        (width / 4, height / 2),         // Middle-left
-                        (3 * width / 4, height / 2),     // Middle-right
-                    ];
+                // Check 9 pixels in a 3x3 grid to detect if ANY pixel has color
+                let mut all_pixels_black = true;
+                let mut first_non_black_pixel = None;
 
-                    for (i, (x, y)) in sample_positions.iter().enumerate() {
-                        let pixel_offset = (y * width + x) * 4;
+                // Sample positions: center, corners, and mid-edges
+                let sample_positions = [
+                    (width / 2, height / 2),         // Center
+                    (width / 4, height / 4),         // Top-left
+                    (3 * width / 4, height / 4),     // Top-right
+                    (width / 4, 3 * height / 4),     // Bottom-left
+                    (3 * width / 4, 3 * height / 4), // Bottom-right
+                    (width / 2, height / 4),         // Top-middle
+                    (width / 2, 3 * height / 4),     // Bottom-middle
+                    (width / 4, height / 2),         // Middle-left
+                    (3 * width / 4, height / 2),     // Middle-right
+                ];
 
-                        if pixel_offset + 3 < image_data.len() {
-                            let r = image_data[pixel_offset];
-                            let g = image_data[pixel_offset + 1];
-                            let b = image_data[pixel_offset + 2];
+                for (i, (x, y)) in sample_positions.iter().enumerate() {
+                    let pixel_offset = (y * width + x) * 4;
 
-                            // Check if pixel has any color (any channel >= 10)
-                            if r >= 10 || g >= 10 || b >= 10 {
-                                all_pixels_black = false;
-                                if first_non_black_pixel.is_none() {
-                                    first_non_black_pixel = Some((i, r, g, b, *x, *y));
-                                }
+                    if pixel_offset + 3 < image_data.len() {
+                        let r = image_data[pixel_offset];
+                        let g = image_data[pixel_offset + 1];
+                        let b = image_data[pixel_offset + 2];
+
+                        // Check if pixel has any color (any channel >= 10)
+                        if r >= 10 || g >= 10 || b >= 10 {
+                            all_pixels_black = false;
+                            if first_non_black_pixel.is_none() {
+                                first_non_black_pixel = Some((i, r, g, b, *x, *y));
                             }
                         }
                     }
-
-                    if all_pixels_black {
-                        log::error!(
-                            "BLACK FRAME DETECTED at frame {}! All 9 sampled pixels are black",
-                            prev_frame
-                        );
-                    } else if let Some((i, r, g, b, x, y)) = first_non_black_pixel {
-                        log::info!(
-                            "Frame {} has color! Sample #{} at ({},{}): RGB({},{},{})",
-                            prev_frame,
-                            i,
-                            x,
-                            y,
-                            r,
-                            g,
-                            b
-                        );
-                    }
                 }
-                Ok(None) => {}
-                Err(e) => {
-                    log::error!("Failed to check pending readback: {}", e);
-                }
-            }
 
-            // Queue async readback for current frame (will be checked on next frame)
-            if let Err(e) = self
-                .renderer
-                .unwrap_vulkan()
-                .queue_async_readback(self.frame_count)
-            {
-                log::error!(
-                    "Frame {} - Failed to queue async readback: {}",
-                    self.frame_count,
-                    e
-                );
+                if all_pixels_black {
+                    log::error!(
+                        "BLACK FRAME DETECTED at frame {}! All 9 sampled pixels are black",
+                        prev_frame
+                    );
+                } else if let Some((i, r, g, b, x, y)) = first_non_black_pixel {
+                    log::info!(
+                        "Frame {} has color! Sample #{} at ({},{}): RGB({},{},{})",
+                        prev_frame,
+                        i,
+                        x,
+                        y,
+                        r,
+                        g,
+                        b
+                    );
+                }
+            } else if let Some(Err(e)) = readback_result {
+                log::error!("Failed to check pending readback: {}", e);
             }
         }
 

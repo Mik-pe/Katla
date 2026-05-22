@@ -805,35 +805,10 @@ impl ApplicationBuilder {
         );
 
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
-        let mut frame_graph = Self::build_frame_graph(renderer.unwrap_vulkan(), &resources)?;
-
-        let mut frame_graph = Self::build_metal_frame_graph(renderer.unwrap_metal())?;
-
-        let pass_ids = super::PassIds {
-            depth_prepass: frame_graph
-                .pass_id("depth_prepass")
-                .expect("Frame graph must contain a 'depth_prepass' pass"),
-            geometry: frame_graph
-                .pass_id("geometry")
-                .expect("Frame graph must contain a 'geometry' pass"),
-            shadow: frame_graph
-                .pass_id("shadow")
-                .expect("Frame graph must contain a 'shadow' pass"),
-            outline: frame_graph
-                .pass_id("outline")
-                .expect("Frame graph must contain an 'outline' pass"),
-            stencil_indicator: frame_graph
-                .pass_id("stencil_indicator")
-                .expect("Frame graph must contain a 'stencil_indicator' pass"),
-            ui: frame_graph
-                .pass_id("ui")
-                .expect("Frame graph must contain a 'ui' pass"),
-            tonemap: frame_graph
-                .pass_id("tonemap")
-                .expect("Frame graph must contain a 'tonemap' pass"),
-            wallhack_overlay: frame_graph
-                .pass_id("wallhack_overlay")
-                .expect("Frame graph must contain a 'wallhack_overlay' pass"),
+        let mut frame_graph = match &mut renderer {
+            katla_gfx::AnyRenderer::Vulkan(r) => Self::build_frame_graph(r, &resources)?,
+            #[cfg(target_os = "macos")]
+            katla_gfx::AnyRenderer::Metal(r) => Self::build_metal_frame_graph(r)?,
         };
 
         let pass_ids = super::PassIds {
@@ -863,90 +838,83 @@ impl ApplicationBuilder {
                 .unwrap_or(katla_gfx::render_graph::PassId(0)),
         };
 
-        // Initialize transient textures so we can get shadow atlas ImageView
+        // Initialize transient textures and wire backend-specific resources
         frame_graph
             .initialize_transient_textures(&mut renderer)
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-        for frame_idx in 0..2 {
-            if let Some(view) = frame_graph
-                .as_vulkan()
-                .transient_texture_view_for_frame("shadow_atlas", frame_idx)
-            {
-                renderer
-                    .unwrap_vulkan()
-                    .set_shadow_atlas_view(frame_idx, view);
+
+        match &mut renderer {
+            katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) => {
+                for frame_idx in 0..2 {
+                    if let Some(view) = frame_graph
+                        .as_vulkan()
+                        .transient_texture_view_for_frame("shadow_atlas", frame_idx)
+                    {
+                        vulkan_renderer.set_shadow_atlas_view(frame_idx, view);
+                    }
+                }
+                log::info!("Shadow atlas views set for all frames");
             }
-        }
-        log::info!("Shadow atlas views set for all frames");
+            #[cfg(target_os = "macos")]
+            katla_gfx::AnyRenderer::Metal(_) => {
+                use katla_gfx::RenderGraphBackend;
 
-        // Initialize Metal transient textures and wire HDR view to MetalRenderer
+                let hdr_slot = frame_graph
+                    .register_transient_texture_bindless(&mut renderer, "hdr_color")
+                    .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+                log::info!("HDR texture registered with bindless at index {}", hdr_slot);
 
-        {
-            use katla_gfx::RenderGraphBackend;
+                let vp_slot = frame_graph
+                    .register_transient_texture_bindless(&mut renderer, "viewport_0")
+                    .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+                log::info!(
+                    "Viewport texture registered with bindless at index {}",
+                    vp_slot
+                );
 
-            frame_graph
-                .initialize_transient_textures(&mut renderer)
-                .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+                let frame_idx = GpuRenderer::current_frame(&renderer);
+                if let Some(view) = frame_graph.transient_image_view_metal("hdr_color", frame_idx) {
+                    let hdr_transient_slot = frame_graph
+                        .transient_texture_metal("hdr_color", frame_idx)
+                        .and_then(|t| t.bindless_slot)
+                        .unwrap_or(hdr_slot);
+                    renderer.set_geometry_hdr_view(view, hdr_transient_slot);
+                }
 
-            let hdr_slot = frame_graph
-                .register_transient_texture_bindless(&mut renderer, "hdr_color")
-                .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-            log::info!(
-                "HDR texture registered with bindless at index {} (Metal)",
-                hdr_slot
-            );
+                if let Some(view) = frame_graph.transient_image_view_metal("viewport_0", 0) {
+                    renderer.set_tonemap_output_view(view);
+                }
 
-            let vp_slot = frame_graph
-                .register_transient_texture_bindless(&mut renderer, "viewport_0")
-                .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-            log::info!(
-                "Viewport texture registered with bindless at index {} (Metal)",
-                vp_slot
-            );
-
-            let frame_idx = GpuRenderer::current_frame(&renderer);
-            if let Some(view) = frame_graph.transient_image_view_metal("hdr_color", frame_idx) {
-                let hdr_transient_slot = frame_graph
-                    .transient_texture_metal("hdr_color", frame_idx)
-                    .and_then(|t| t.bindless_slot)
-                    .unwrap_or(hdr_slot);
-                renderer.set_geometry_hdr_view(view, hdr_transient_slot);
+                renderer.set_viewport_bindless_slot(vp_slot);
             }
-
-            if let Some(view) = frame_graph.transient_image_view_metal("viewport_0", 0) {
-                renderer.set_tonemap_output_view(view);
-            }
-
-            renderer.set_viewport_bindless_slot(vp_slot);
         }
 
         // Initialize UI renderer with font atlas bindless slot
         #[cfg(feature = "editor")]
         let mut ui_renderer = crate::ui::UIRenderer::new();
         #[cfg(feature = "editor")]
-        let mut ui_renderer = crate::ui::UIRenderer::new();
-        #[cfg(feature = "editor")]
-        match renderer
-            .unwrap_vulkan()
-            .ui_renderer
-            .font_atlas_bindless_slot()
-        {
-            Some(bindless_slot) => {
-                ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
-                log::info!("Font atlas bindless slot initialized: {}", bindless_slot);
+        match &mut renderer {
+            katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) => {
+                match vulkan_renderer.ui_renderer.font_atlas_bindless_slot() {
+                    Some(bindless_slot) => {
+                        ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
+                        log::info!("Font atlas bindless slot initialized: {}", bindless_slot);
+                    }
+                    None => {
+                        log::error!(
+                            "Font atlas bindless slot is None! Text will render as solid colors."
+                        );
+                    }
+                }
             }
-            None => {
-                log::error!("Font atlas bindless slot is None! Text will render as solid colors.");
-            }
-        }
-        #[cfg(feature = "editor")]
-        if let Some(font_handle) = renderer.ui_font_atlas_handle() {
-            if let Some(bindless_slot) = renderer.get_bindless_slot(font_handle) {
-                ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
-                log::info!(
-                    "Font atlas bindless slot initialized (Metal): {}",
-                    bindless_slot
-                );
+            #[cfg(target_os = "macos")]
+            katla_gfx::AnyRenderer::Metal(_) => {
+                if let Some(font_handle) = renderer.ui_font_atlas_handle() {
+                    if let Some(bindless_slot) = renderer.get_bindless_slot(font_handle) {
+                        ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
+                        log::info!("Font atlas bindless slot initialized: {}", bindless_slot);
+                    }
+                }
             }
         }
 
