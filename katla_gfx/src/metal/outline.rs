@@ -76,8 +76,16 @@ impl MetalOutlineSubsystem {
         self.stencil_mark_pipeline.as_ref()
     }
 
+    pub(crate) fn stencil_mark_skinned_pipeline(&self) -> Option<&MetalGraphicsPipeline> {
+        self.stencil_mark_skinned_pipeline.as_ref()
+    }
+
     pub(crate) fn outline_draw_pipeline(&self) -> Option<&MetalGraphicsPipeline> {
         self.outline_draw_pipeline.as_ref()
+    }
+
+    pub(crate) fn outline_draw_skinned_pipeline(&self) -> Option<&MetalGraphicsPipeline> {
+        self.outline_draw_skinned_pipeline.as_ref()
     }
 
     /// Create the stencil mark pipeline.
@@ -221,9 +229,11 @@ impl MetalOutlineSubsystem {
 /// Render the stencil mark pass for selected objects.
 ///
 /// Draws selected objects writing stencil ref 1 to mark their silhouette.
+/// Switches between non-skinned and skinned pipelines based on draw call skeleton state.
 pub(crate) fn render_stencil_mark(
     cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
     stencil_pipeline: &MetalGraphicsPipeline,
+    stencil_pipeline_skinned: Option<&MetalGraphicsPipeline>,
     color_view: &MetalTextureView,
     depth_view: &MetalTextureView,
     width: u32,
@@ -233,6 +243,7 @@ pub(crate) fn render_stencil_mark(
     meshes: &ResourceStorage<MetalMesh>,
     materials: &ResourceStorage<MetalMaterial>,
     draw_list: &crate::renderer::types::DrawList,
+    skeleton_buffers: &ResourceStorage<MetalBuffer>,
 ) {
     let render_pass_info = RenderPassInfo {
         color_attachments: vec![ColorAttachmentInfo {
@@ -260,6 +271,8 @@ pub(crate) fn render_stencil_mark(
     encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
     encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
 
+    let mut current_is_skinned = false;
+
     for draw in &draw_list.draws {
         let Some(mesh) = meshes.get(draw.mesh.index()) else {
             continue;
@@ -270,6 +283,27 @@ pub(crate) fn render_stencil_mark(
         let Some(ref _pipeline) = material.pipeline else {
             continue;
         };
+
+        let is_skinned = !draw.skeleton.is_none() && stencil_pipeline_skinned.is_some();
+
+        if is_skinned != current_is_skinned {
+            if is_skinned {
+                encoder.bind_graphics_pipeline(stencil_pipeline_skinned.unwrap());
+                encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
+                encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
+            } else {
+                encoder.bind_graphics_pipeline(stencil_pipeline);
+                encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
+                encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
+            }
+            current_is_skinned = is_skinned;
+        }
+
+        if is_skinned {
+            if let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton.index()) {
+                encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
+            }
+        }
 
         encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
         encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
@@ -283,9 +317,11 @@ pub(crate) fn render_stencil_mark(
 ///
 /// Draws selected objects slightly scaled up, only where stencil != 1,
 /// creating the outline effect around selected objects.
+/// Switches between non-skinned and skinned pipelines based on draw call skeleton state.
 pub(crate) fn render_outline(
     cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
     outline_pipeline: &MetalGraphicsPipeline,
+    outline_pipeline_skinned: Option<&MetalGraphicsPipeline>,
     color_view: &MetalTextureView,
     depth_view: &MetalTextureView,
     width: u32,
@@ -295,6 +331,7 @@ pub(crate) fn render_outline(
     meshes: &ResourceStorage<MetalMesh>,
     materials: &ResourceStorage<MetalMaterial>,
     draw_list: &crate::renderer::types::DrawList,
+    skeleton_buffers: &ResourceStorage<MetalBuffer>,
 ) {
     let outline_width = compute_outline_width(height as f32);
     let push_constants = OutlinePushConstants {
@@ -328,11 +365,14 @@ pub(crate) fn render_outline(
     encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
     encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
 
+    // Non-skinned: outline_params at group(1) binding(0) → buffer 2
     encoder.set_push_constants(
         bytemuck::cast_slice(&[push_constants]),
         2,
         ShaderStages::VERTEX_FRAGMENT,
     );
+
+    let mut current_is_skinned = false;
 
     for draw in &draw_list.draws {
         let Some(mesh) = meshes.get(draw.mesh.index()) else {
@@ -344,6 +384,39 @@ pub(crate) fn render_outline(
         let Some(ref _pipeline) = material.pipeline else {
             continue;
         };
+
+        let is_skinned = !draw.skeleton.is_none() && outline_pipeline_skinned.is_some();
+
+        if is_skinned != current_is_skinned {
+            if is_skinned {
+                encoder.bind_graphics_pipeline(outline_pipeline_skinned.unwrap());
+                encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
+                encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
+                // Skinned: outline_params at group(3) binding(0) → buffer 3
+                encoder.set_push_constants(
+                    bytemuck::cast_slice(&[push_constants]),
+                    3,
+                    ShaderStages::VERTEX_FRAGMENT,
+                );
+            } else {
+                encoder.bind_graphics_pipeline(outline_pipeline);
+                encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
+                encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
+                // Non-skinned: outline_params at group(1) binding(0) → buffer 2
+                encoder.set_push_constants(
+                    bytemuck::cast_slice(&[push_constants]),
+                    2,
+                    ShaderStages::VERTEX_FRAGMENT,
+                );
+            }
+            current_is_skinned = is_skinned;
+        }
+
+        if is_skinned {
+            if let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton.index()) {
+                encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
+            }
+        }
 
         encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
         encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);

@@ -43,6 +43,10 @@ impl MetalDepthPrepass {
         self.pipeline.as_ref()
     }
 
+    pub(crate) fn pipeline_skinned(&self) -> Option<&MetalGraphicsPipeline> {
+        self.pipeline_skinned.as_ref()
+    }
+
     /// Create the depth-only prepass pipeline.
     pub(crate) fn create_pipeline(
         &mut self,
@@ -92,9 +96,11 @@ impl MetalDepthPrepass {
 /// Render the depth prepass.
 ///
 /// Creates a depth-only render pass and draws all opaque geometry to populate the depth buffer.
+/// Switches between non-skinned and skinned pipelines based on draw call skeleton state.
 pub(crate) fn render_depth_prepass(
     cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
     depth_pipeline: &MetalGraphicsPipeline,
+    depth_pipeline_skinned: Option<&MetalGraphicsPipeline>,
     depth_view: &MetalTextureView,
     width: u32,
     height: u32,
@@ -103,6 +109,7 @@ pub(crate) fn render_depth_prepass(
     meshes: &ResourceStorage<MetalMesh>,
     materials: &ResourceStorage<MetalMaterial>,
     draw_list: &crate::renderer::types::DrawList,
+    skeleton_buffers: &ResourceStorage<MetalBuffer>,
 ) {
     let render_pass_info = RenderPassInfo {
         color_attachments: vec![],
@@ -127,6 +134,8 @@ pub(crate) fn render_depth_prepass(
     encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
     encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
 
+    let mut current_is_skinned = false;
+
     for draw in &draw_list.draws {
         let Some(mesh) = meshes.get(draw.mesh.index()) else {
             continue;
@@ -137,6 +146,27 @@ pub(crate) fn render_depth_prepass(
         let Some(ref _pipeline) = material.pipeline else {
             continue;
         };
+
+        let is_skinned = !draw.skeleton.is_none() && depth_pipeline_skinned.is_some();
+
+        if is_skinned != current_is_skinned {
+            if is_skinned {
+                encoder.bind_graphics_pipeline(depth_pipeline_skinned.unwrap());
+                encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
+                encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
+            } else {
+                encoder.bind_graphics_pipeline(depth_pipeline);
+                encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
+                encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
+            }
+            current_is_skinned = is_skinned;
+        }
+
+        if is_skinned {
+            if let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton.index()) {
+                encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
+            }
+        }
 
         encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
         encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);

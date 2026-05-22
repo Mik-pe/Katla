@@ -336,7 +336,7 @@ pub(crate) fn render_object_id_pass(
 
         if is_skinned {
             if let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton.index()) {
-                encoder.bind_storage_buffer(skeleton_buf, 2, 0, stages);
+                encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
             }
         }
 

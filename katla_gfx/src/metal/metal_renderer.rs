@@ -743,13 +743,7 @@ impl MetalRenderer {
         &mut self,
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
-        let wgsl_source = std::fs::read_to_string(shader_path).map_err(|e| {
-            RendererError::InvalidOperation(format!(
-                "Failed to read depth prepass shader '{}': {}",
-                shader_path.display(),
-                e
-            ))
-        })?;
+        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
 
         let compiled =
             shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
@@ -766,13 +760,7 @@ impl MetalRenderer {
         &mut self,
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
-        let wgsl_source = std::fs::read_to_string(shader_path).map_err(|e| {
-            RendererError::InvalidOperation(format!(
-                "Failed to read skinned depth prepass shader '{}': {}",
-                shader_path.display(),
-                e
-            ))
-        })?;
+        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
 
         let compiled =
             shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
@@ -792,13 +780,7 @@ impl MetalRenderer {
         &mut self,
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
-        let wgsl_source = std::fs::read_to_string(shader_path).map_err(|e| {
-            RendererError::InvalidOperation(format!(
-                "Failed to read billboard depth prepass shader '{}': {}",
-                shader_path.display(),
-                e
-            ))
-        })?;
+        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
 
         let compiled =
             shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
@@ -822,13 +804,7 @@ impl MetalRenderer {
     ) -> Result<(), RendererError> {
         // Stencil mark (non-skinned)
         {
-            let wgsl = std::fs::read_to_string(stencil_mark_path).map_err(|e| {
-                RendererError::InvalidOperation(format!(
-                    "Failed to read stencil mark shader '{}': {}",
-                    stencil_mark_path.display(),
-                    e
-                ))
-            })?;
+            let wgsl = read_shader(&stencil_mark_path.to_string_lossy())?;
             let compiled =
                 shader::compile_wgsl_to_metal(&self.context.device, &wgsl, &["vs_main"], false)?;
             let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
@@ -840,13 +816,7 @@ impl MetalRenderer {
 
         // Stencil mark (skinned)
         {
-            let wgsl = std::fs::read_to_string(stencil_mark_skinned_path).map_err(|e| {
-                RendererError::InvalidOperation(format!(
-                    "Failed to read skinned stencil mark shader '{}': {}",
-                    stencil_mark_skinned_path.display(),
-                    e
-                ))
-            })?;
+            let wgsl = read_shader(&stencil_mark_skinned_path.to_string_lossy())?;
             let compiled =
                 shader::compile_wgsl_to_metal(&self.context.device, &wgsl, &["vs_main"], false)?;
             let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
@@ -860,13 +830,7 @@ impl MetalRenderer {
 
         // Outline draw (non-skinned)
         {
-            let wgsl = std::fs::read_to_string(outline_draw_path).map_err(|e| {
-                RendererError::InvalidOperation(format!(
-                    "Failed to read outline draw shader '{}': {}",
-                    outline_draw_path.display(),
-                    e
-                ))
-            })?;
+            let wgsl = read_shader(&outline_draw_path.to_string_lossy())?;
             let compiled = shader::compile_wgsl_to_metal(
                 &self.context.device,
                 &wgsl,
@@ -887,13 +851,7 @@ impl MetalRenderer {
 
         // Outline draw (skinned)
         {
-            let wgsl = std::fs::read_to_string(outline_draw_skinned_path).map_err(|e| {
-                RendererError::InvalidOperation(format!(
-                    "Failed to read skinned outline draw shader '{}': {}",
-                    outline_draw_skinned_path.display(),
-                    e
-                ))
-            })?;
+            let wgsl = read_shader(&outline_draw_skinned_path.to_string_lossy())?;
             let compiled = shader::compile_wgsl_to_metal(
                 &self.context.device,
                 &wgsl,
@@ -922,13 +880,7 @@ impl MetalRenderer {
         &mut self,
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
-        let wgsl_source = std::fs::read_to_string(shader_path).map_err(|e| {
-            RendererError::InvalidOperation(format!(
-                "Failed to read picking shader '{}': {}",
-                shader_path.display(),
-                e
-            ))
-        })?;
+        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
 
         let compiled =
             shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
@@ -944,13 +896,7 @@ impl MetalRenderer {
         &mut self,
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
-        let wgsl_source = std::fs::read_to_string(shader_path).map_err(|e| {
-            RendererError::InvalidOperation(format!(
-                "Failed to read skinned picking shader '{}': {}",
-                shader_path.display(),
-                e
-            ))
-        })?;
+        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
 
         let compiled =
             shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
@@ -1084,6 +1030,7 @@ impl MetalRenderer {
         encoder: &mut super::render_encoder::MetalRenderEncoder,
         draw_list: &DrawList,
     ) {
+        let stages = ShaderStages::VERTEX_FRAGMENT;
         for (i, draw) in draw_list.draws.iter().enumerate() {
             let Some(mesh) = self.meshes.get(draw.mesh.index()) else {
                 log::warn!("Draw {}: mesh index {} not found", i, draw.mesh.index());
@@ -1103,6 +1050,13 @@ impl MetalRenderer {
             };
 
             encoder.bind_graphics_pipeline(pipeline);
+
+            if !draw.skeleton.is_none() {
+                if let Some(skeleton_buf) = self.skeletons.get(draw.skeleton.index()) {
+                    encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
+                }
+            }
+
             encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
             encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
             encoder.draw_indexed(mesh.index_count, 1, 0, 0, draw.instance_index);
@@ -1285,6 +1239,7 @@ impl MetalRenderer {
         super::depth_prepass::render_depth_prepass(
             &mut cmd_buffer,
             pipeline,
+            self.depth_prepass.pipeline_skinned(),
             depth_view,
             width,
             height,
@@ -1293,6 +1248,7 @@ impl MetalRenderer {
             &self.meshes,
             &self.materials,
             draw_list,
+            &self.skeletons,
         );
 
         cmd_buffer.end();
@@ -1334,6 +1290,7 @@ impl MetalRenderer {
         super::outline::render_stencil_mark(
             &mut cmd_buffer,
             stencil_pipeline,
+            self.outline.stencil_mark_skinned_pipeline(),
             color_view,
             depth_view,
             width,
@@ -1343,11 +1300,13 @@ impl MetalRenderer {
             &self.meshes,
             &self.materials,
             draw_list,
+            &self.skeletons,
         );
 
         super::outline::render_outline(
             &mut cmd_buffer,
             outline_pipeline,
+            self.outline.outline_draw_skinned_pipeline(),
             color_view,
             depth_view,
             width,
@@ -1357,6 +1316,7 @@ impl MetalRenderer {
             &self.meshes,
             &self.materials,
             draw_list,
+            &self.skeletons,
         );
 
         cmd_buffer.end();
@@ -1709,6 +1669,7 @@ impl GpuRenderer for MetalRenderer {
                     super::outline::render_stencil_mark(
                         &mut cmd_buffer,
                         stencil_pipeline,
+                        self.outline.stencil_mark_skinned_pipeline(),
                         geometry_hdr_view,
                         depth_view,
                         w,
@@ -1718,6 +1679,7 @@ impl GpuRenderer for MetalRenderer {
                         &self.meshes,
                         &self.materials,
                         &outline_draw_list,
+                        &self.skeletons,
                     );
                 }
 
@@ -1725,6 +1687,7 @@ impl GpuRenderer for MetalRenderer {
                     super::outline::render_outline(
                         &mut cmd_buffer,
                         outline_pipeline,
+                        self.outline.outline_draw_skinned_pipeline(),
                         geometry_hdr_view,
                         depth_view,
                         w,
@@ -1734,6 +1697,7 @@ impl GpuRenderer for MetalRenderer {
                         &self.meshes,
                         &self.materials,
                         &outline_draw_list,
+                        &self.skeletons,
                     );
                 }
             }
