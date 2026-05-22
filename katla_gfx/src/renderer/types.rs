@@ -15,6 +15,7 @@ pub use crate::handle::TextureHandle;
 /// These are set once per frame via `renderer.set_frame_uniforms()`.
 /// View/projection matrices come from the camera, lighting from the scene.
 #[derive(Clone, Debug)]
+#[repr(C)]
 pub struct FrameUniforms {
     /// View matrix (world to camera transform) - column-major 4x4.
     pub view_matrix: [f32; 16],
