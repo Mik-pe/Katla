@@ -13,11 +13,19 @@ use super::texture::MetalTextureView;
 
 pub(crate) struct MetalComputeEncoder {
     pub(crate) inner: Retained<ProtocolObject<dyn MTLComputeCommandEncoder>>,
+    workgroup_size: MTLSize,
 }
 
 impl MetalComputeEncoder {
     pub(crate) fn new(inner: Retained<ProtocolObject<dyn MTLComputeCommandEncoder>>) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            workgroup_size: MTLSize {
+                width: 1,
+                height: 1,
+                depth: 1,
+            },
+        }
     }
 }
 
@@ -31,6 +39,11 @@ impl GpuComputeEncoder<MetalBackend> for MetalComputeEncoder {
         pipeline: &<MetalBackend as crate::backend::traits::GpuBackend>::ComputePipeline,
     ) {
         self.inner.setComputePipelineState(&pipeline.pipeline_state);
+        self.workgroup_size = MTLSize {
+            width: pipeline.workgroup[0] as usize,
+            height: pipeline.workgroup[1] as usize,
+            depth: pipeline.workgroup[2] as usize,
+        };
     }
 
     fn bind_storage_buffer(&mut self, buffer: &MetalBuffer, offset: u64, index: u32) {
@@ -72,11 +85,7 @@ impl GpuComputeEncoder<MetalBackend> for MetalComputeEncoder {
                 height: group_count_y as usize,
                 depth: group_count_z as usize,
             },
-            MTLSize {
-                width: 1,
-                height: 1,
-                depth: 1,
-            },
+            self.workgroup_size,
         );
     }
 }

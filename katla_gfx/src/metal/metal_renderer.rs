@@ -39,6 +39,7 @@ use super::depth_prepass::MetalDepthPrepass;
 use super::light_culling::MetalLightCulling;
 use super::outline::MetalOutlineSubsystem;
 use super::particle::MetalParticleSubsystem;
+use super::picking::MetalPickingSubsystem;
 use super::shader;
 use super::shadow::MetalShadowSubsystem;
 use super::texture::{MetalTexture, MetalTextureView};
@@ -186,9 +187,10 @@ pub struct MetalRenderer {
     shadow: MetalShadowSubsystem,
     depth_prepass: MetalDepthPrepass,
     outline: MetalOutlineSubsystem,
+    picking: MetalPickingSubsystem,
     pub(crate) depth_texture_view: Option<MetalTextureView>,
     hdr_color_view: Option<MetalTextureView>,
-    depth_stencil_view: Option<MetalTextureView>,
+    pub(crate) depth_stencil_view: Option<MetalTextureView>,
     shared_sampler: Option<super::sampler::MetalSamplerState>,
     shadow_cascade_buffer: Option<MetalBuffer>,
     shadow_sampler: Option<super::sampler::MetalSamplerState>,
@@ -277,6 +279,7 @@ impl MetalRenderer {
             shadow: MetalShadowSubsystem::new(),
             depth_prepass: MetalDepthPrepass::new(),
             outline: MetalOutlineSubsystem::new(),
+            picking: MetalPickingSubsystem::new(),
             depth_texture_view: None,
             hdr_color_view: None,
             depth_stencil_view: None,
@@ -620,6 +623,11 @@ impl MetalRenderer {
                 self.depth_stencil_view = Some(view);
             }
         }
+
+        // Object-ID texture for GPU picking (R32Uint)
+        if let Err(e) = self.picking.resize(&self.context, width, height) {
+            log::warn!("Failed to resize picking object-ID texture: {}", e);
+        }
     }
 
     /// Initialize the Forward+ light culling system.
@@ -909,6 +917,70 @@ impl MetalRenderer {
         Ok(())
     }
 
+    /// Create picking (object-ID) pipelines.
+    pub fn init_picking_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        let wgsl_source = std::fs::read_to_string(shader_path).map_err(|e| {
+            RendererError::InvalidOperation(format!(
+                "Failed to read picking shader '{}': {}",
+                shader_path.display(),
+                e
+            ))
+        })?;
+
+        let compiled =
+            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
+
+        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
+            RendererError::InvalidOperation("Picking vertex entry point not found".into())
+        })?;
+
+        self.picking.create_pipeline(&self.context, vertex_fn)
+    }
+
+    pub fn init_picking_skinned_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        let wgsl_source = std::fs::read_to_string(shader_path).map_err(|e| {
+            RendererError::InvalidOperation(format!(
+                "Failed to read skinned picking shader '{}': {}",
+                shader_path.display(),
+                e
+            ))
+        })?;
+
+        let compiled =
+            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
+
+        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
+            RendererError::InvalidOperation("Skinned picking vertex entry point not found".into())
+        })?;
+
+        self.picking
+            .create_pipeline_skinned(&self.context, vertex_fn)
+    }
+
+    pub fn queue_picking_readback(
+        &mut self,
+        frame: usize,
+        x: u32,
+        y: u32,
+    ) -> Result<(), RendererError> {
+        self.picking
+            .queue_picking_readback(&self.context, frame, x, y)
+    }
+
+    pub fn check_picking_readback(&mut self) -> Option<(usize, u32)> {
+        self.picking.check_picking_readback()
+    }
+
+    pub fn has_pending_picking_readback(&self) -> bool {
+        self.picking.has_pending_readback()
+    }
+
     /// Create stencil indicator pipelines (no-op for Metal, not yet needed).
     pub fn init_stencil_indicator_pipelines(
         &mut self,
@@ -1067,7 +1139,7 @@ impl MetalRenderer {
                 vertex_fn,
                 Some(fragment_fn),
                 &[MTLPixelFormat::RGBA16Float],
-                Some(MTLPixelFormat::Depth32Float),
+                Some(MTLPixelFormat::Depth32Float_Stencil8),
                 false,
                 crate::pipeline::CompareOp::Always,
                 objc2_metal::MTLCullMode::None,
@@ -1196,7 +1268,7 @@ impl MetalRenderer {
         let Some(object_buf) = self.current_object_storage_buffer() else {
             return Ok(());
         };
-        let Some(ref depth_view) = self.depth_texture_view else {
+        let Some(ref depth_view) = self.depth_stencil_view else {
             return Ok(());
         };
 
@@ -1440,9 +1512,9 @@ impl GpuRenderer for MetalRenderer {
     fn render_frame(&mut self) -> Result<(), RendererError> {
         log::debug!(
             "render_frame: depth_view={}",
-            self.depth_texture_view.is_some()
+            self.depth_stencil_view.is_some()
         );
-        if self.depth_texture_view.is_none() {
+        if self.depth_stencil_view.is_none() {
             self.current_drawable_texture = None;
             return Ok(());
         }
@@ -1505,6 +1577,7 @@ impl GpuRenderer for MetalRenderer {
         // =========================================================================
         let has_tonemap = self.tonemap_pipeline.is_some() && self.geometry_hdr_view.is_some();
         let draw_list = self.pending_draw_list.take();
+        let picking_draw_list = draw_list.clone();
 
         log::debug!(
             "render_frame: has_tonemap={}, hdr_view={}, hdr_slot={:?}",
@@ -1517,14 +1590,14 @@ impl GpuRenderer for MetalRenderer {
             let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
 
             let depth_attachment =
-                self.depth_texture_view
+                self.depth_stencil_view
                     .as_ref()
                     .map(|view| DepthAttachmentInfo {
                         view: view.clone(),
                         load_op: LoadOp::Clear,
                         store_op: StoreOp::DontCare,
                         clear_value: ClearValue::depth_stencil(0.0, 0),
-                        format: ImageFormat::D32Sfloat,
+                        format: ImageFormat::D32SfloatS8Uint,
                     });
 
             let geometry_pass_info = RenderPassInfo {
@@ -1562,14 +1635,14 @@ impl GpuRenderer for MetalRenderer {
             // No tonemap pipeline — render geometry directly to drawable (legacy path)
             drawable_written = true;
             let depth_attachment =
-                self.depth_texture_view
+                self.depth_stencil_view
                     .as_ref()
                     .map(|view| DepthAttachmentInfo {
                         view: view.clone(),
                         load_op: LoadOp::Clear,
                         store_op: StoreOp::DontCare,
                         clear_value: ClearValue::depth_stencil(0.0, 0),
-                        format: ImageFormat::D32Sfloat,
+                        format: ImageFormat::D32SfloatS8Uint,
                     });
 
             let render_pass_info = RenderPassInfo {
@@ -1622,7 +1695,11 @@ impl GpuRenderer for MetalRenderer {
         if let Some(outline_draw_list) = self.pending_outline_draw_list.take() {
             if !outline_draw_list.draws.is_empty() && has_tonemap {
                 let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
-                let depth_view = self.depth_texture_view.as_ref().unwrap();
+                let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
+                    RendererError::InvalidOperation(
+                        "Outline pass requires D32SfloatS8Uint depth-stencil texture".into(),
+                    )
+                })?;
                 let frame_buf = self.current_frame_uniform_buffer().unwrap();
                 let object_buf = self.current_object_storage_buffer().unwrap();
                 let w = self.drawable_size.width as u32;
@@ -1657,6 +1734,40 @@ impl GpuRenderer for MetalRenderer {
                         &self.meshes,
                         &self.materials,
                         &outline_draw_list,
+                    );
+                }
+            }
+        }
+
+        // =========================================================================
+        // Pass 1.6: Object-ID picking → R32Uint texture
+        // =========================================================================
+        if let Some(ref picking_dl) = picking_draw_list {
+            if !picking_dl.draws.is_empty() {
+                if let (Some(picking_pipeline), Some(id_view), Some(depth_view)) = (
+                    self.picking.pipeline(),
+                    self.picking.object_id_texture(),
+                    self.depth_stencil_view.as_ref(),
+                ) {
+                    let frame_buf = self.current_frame_uniform_buffer().unwrap();
+                    let object_buf = self.current_object_storage_buffer().unwrap();
+                    let w = self.drawable_size.width as u32;
+                    let h = self.drawable_size.height as u32;
+
+                    super::picking::render_object_id_pass(
+                        &mut cmd_buffer,
+                        picking_pipeline,
+                        self.picking.pipeline_skinned(),
+                        id_view,
+                        depth_view,
+                        w,
+                        h,
+                        frame_buf,
+                        object_buf,
+                        &self.meshes,
+                        &self.materials,
+                        picking_dl,
+                        &self.skeletons,
                     );
                 }
             }
@@ -2215,7 +2326,7 @@ impl GpuRenderer for MetalRenderer {
         let depth_format = if is_ui {
             None
         } else {
-            Some(MTLPixelFormat::Depth32Float)
+            Some(MTLPixelFormat::Depth32Float_Stencil8)
         };
 
         let is_skinned = vertex_type == "skinned";

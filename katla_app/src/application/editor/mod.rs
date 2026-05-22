@@ -1079,54 +1079,54 @@ pub fn process_editor_actions(app: &mut Application) {
             }
             EditorAction::ResetParticleSystem => {
                 if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut app.renderer {
-                if let Some(ps) = &mut vulkan_renderer.particle_system {
-                    use katla_gfx::particles::EmitterHandle;
+                    if let Some(ps) = &mut vulkan_renderer.particle_system {
+                        use katla_gfx::particles::EmitterHandle;
 
-                    let entity_configs: Vec<(
-                        EntityId,
-                        EmitterHandle,
-                        katla_gfx::particles::EmitterConfig,
-                        bool,
-                    )> = app
-                        .world
-                        .query::<&mut ParticleEmitterComponent>()
-                        .filter_map(|(id, emitter)| {
-                            emitter
-                                .emitter_handle
-                                .map(|h| (id, h, emitter.config, emitter.kill_on_destroy))
-                        })
-                        .collect();
+                        let entity_configs: Vec<(
+                            EntityId,
+                            EmitterHandle,
+                            katla_gfx::particles::EmitterConfig,
+                            bool,
+                        )> = app
+                            .world
+                            .query::<&mut ParticleEmitterComponent>()
+                            .filter_map(|(id, emitter)| {
+                                emitter
+                                    .emitter_handle
+                                    .map(|h| (id, h, emitter.config, emitter.kill_on_destroy))
+                            })
+                            .collect();
 
-                    for (id, handle, _config, kill_on_destroy) in &entity_configs {
-                        ps.destroy_emitter(*handle, *kill_on_destroy);
-                        if let Some(emitter) =
-                            app.world.get_component_mut::<ParticleEmitterComponent>(*id)
-                        {
-                            emitter.emitter_handle = None;
+                        for (id, handle, _config, kill_on_destroy) in &entity_configs {
+                            ps.destroy_emitter(*handle, *kill_on_destroy);
+                            if let Some(emitter) =
+                                app.world.get_component_mut::<ParticleEmitterComponent>(*id)
+                            {
+                                emitter.emitter_handle = None;
+                            }
                         }
-                    }
 
-                    if let Err(e) = ps.reset_all() {
-                        log::error!("Failed to reset particle system: {}", e);
-                    }
+                        if let Err(e) = ps.reset_all() {
+                            log::error!("Failed to reset particle system: {}", e);
+                        }
 
-                    for (id, _old_handle, config, _kill_on_destroy) in entity_configs {
-                        match ps.create_emitter(config) {
-                            Ok(handle) => {
-                                if let Some(emitter) =
-                                    app.world.get_component_mut::<ParticleEmitterComponent>(id)
-                                {
-                                    emitter.emitter_handle = Some(handle);
+                        for (id, _old_handle, config, _kill_on_destroy) in entity_configs {
+                            match ps.create_emitter(config) {
+                                Ok(handle) => {
+                                    if let Some(emitter) =
+                                        app.world.get_component_mut::<ParticleEmitterComponent>(id)
+                                    {
+                                        emitter.emitter_handle = Some(handle);
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to recreate particle emitter: {}", e);
                                 }
                             }
-                            Err(e) => {
-                                log::error!("Failed to recreate particle emitter: {}", e);
-                            }
                         }
-                    }
 
-                    info!("Particle system reset complete");
-                }
+                        info!("Particle system reset complete");
+                    }
                 }
             }
             EditorAction::SetGizmoMode(mode_id) => {

@@ -509,6 +509,56 @@ impl Application {
             info!("Tonemap pipeline initialized (Metal)");
         }
 
+        // Initialize depth prepass pipeline
+        let depth_prepass_shader_path = self.resources.shader_path("depth_prepass.wgsl");
+        if let Err(e) = self
+            .renderer
+            .init_depth_prepass_pipeline(&depth_prepass_shader_path)
+        {
+            warn!("Failed to initialize Metal depth prepass pipeline: {}", e);
+        } else {
+            info!("Depth prepass pipeline initialized (Metal)");
+        }
+
+        // Initialize outline pipelines for stencil-based selection highlight
+        let stencil_mark_shader_path = self.resources.shader_path("outline/stencil_mark.wgsl");
+        let stencil_mark_skinned_shader_path = self
+            .resources
+            .shader_path("outline/stencil_mark_skinned.wgsl");
+        let outline_draw_shader_path = self.resources.shader_path("outline/outline_draw.wgsl");
+        let outline_draw_skinned_shader_path = self
+            .resources
+            .shader_path("outline/outline_draw_skinned.wgsl");
+        if let Err(e) = self.renderer.init_outline_pipelines(
+            &stencil_mark_shader_path,
+            &stencil_mark_skinned_shader_path,
+            &outline_draw_shader_path,
+            &outline_draw_skinned_shader_path,
+        ) {
+            warn!("Failed to initialize Metal outline pipelines: {}", e);
+        } else {
+            info!("Outline pipelines initialized (Metal)");
+        }
+
+        // Initialize GPU picking pipeline
+        let picking_shader_path = self.resources.shader_path("picking/object_id.wgsl");
+        if let Err(e) = self.renderer.init_picking_pipeline(&picking_shader_path) {
+            warn!("Failed to initialize Metal picking pipeline: {}", e);
+        } else {
+            info!("Picking pipeline initialized (Metal)");
+        }
+
+        let picking_skinned_shader_path =
+            self.resources.shader_path("picking/object_id_skinned.wgsl");
+        if let Err(e) = self
+            .renderer
+            .init_picking_skinned_pipeline(&picking_skinned_shader_path)
+        {
+            warn!("Failed to initialize Metal skinned picking pipeline: {}", e);
+        } else {
+            info!("Skinned picking pipeline initialized (Metal)");
+        }
+
         // Set tonemap texture index on the tonemap pass
         if let Some(hdr_idx) = self.renderer.geometry_hdr_bindless_index() {
             self.frame_graph

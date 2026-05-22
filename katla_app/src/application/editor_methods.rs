@@ -153,8 +153,7 @@ impl Application {
             self.render_frame(ui_draw_list, dt, self.frame_count);
             log::debug!("Frame rendered (Metal)");
 
-            // GPU picking not yet implemented for Metal
-            // self.process_picking();
+            self.process_picking();
 
             editor::process_editor_actions(self);
         }

@@ -53,7 +53,7 @@ impl MetalDepthPrepass {
             vertex_function,
             None,
             &[],
-            Some(objc2_metal::MTLPixelFormat::Depth32Float),
+            Some(objc2_metal::MTLPixelFormat::Depth32Float_Stencil8),
             true,
             CompareOp::GreaterOrEqual,
             objc2_metal::MTLCullMode::Back,
@@ -75,7 +75,7 @@ impl MetalDepthPrepass {
             vertex_function,
             None,
             &[],
-            Some(objc2_metal::MTLPixelFormat::Depth32Float),
+            Some(objc2_metal::MTLPixelFormat::Depth32Float_Stencil8),
             true,
             CompareOp::GreaterOrEqual,
             objc2_metal::MTLCullMode::Back,
@@ -114,7 +114,7 @@ pub(crate) fn render_depth_prepass(
                 depth: 0.0,
                 stencil: 0,
             },
-            format: ImageFormat::D32Sfloat,
+            format: ImageFormat::D32SfloatS8Uint,
         }),
     };
 

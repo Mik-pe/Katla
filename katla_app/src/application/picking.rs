@@ -17,18 +17,19 @@ impl Application {
     ///    converting viewport-relative logical coords to full-render-target physical pixel coords
     /// 3. On subsequent frames: Check if the readback completed, resolve instance_index -> EntityId
     pub(crate) fn process_picking(&mut self) {
-        // Check for completed readback from a previous frame
-        if let Ok(Some((_frame, instance_index))) =
-            self.renderer.unwrap_vulkan().check_picking_readback()
-        {
+        let picked_result = match &mut self.renderer {
+            katla_gfx::AnyRenderer::Vulkan(r) => r.check_picking_readback().ok().flatten(),
+            #[cfg(target_os = "macos")]
+            katla_gfx::AnyRenderer::Metal(r) => r.check_picking_readback(),
+        };
+
+        if let Some((_frame, instance_index)) = picked_result {
             if instance_index == 0 {
-                // Background/empty space was clicked — clear selection
                 if self.editor.editor_ui.selected_entity.is_some() {
                     info!("Clicked empty space, clearing selection");
                     self.editor.editor_ui.selected_entity = None;
                 }
             } else {
-                // The shader encodes instance_index + 1, so subtract 1 to get the storage buffer index
                 let storage_index = instance_index - 1;
 
                 if let Some(&entity_id) = self.editor.entity_instance_map.get(&storage_index) {
@@ -51,18 +52,10 @@ impl Application {
         // Queue a new readback if a pick was triggered this frame
         if let Some((pick_frame, rel_x, rel_y)) = self.editor.pending_pick.take() {
             if pick_frame != self.frame_count {
-                // Stale pick from a previous frame — discard
                 log::debug!("Discarding stale pending pick from frame {}", pick_frame);
                 return;
             }
 
-            // Convert viewport-panel-relative logical coordinates to physical pixel coordinates
-            // in the full render target (swapchain resolution).
-            //
-            // The object_id texture covers the full swapchain, but the UI maps it into the
-            // viewport panel (a sub-region of the window). So we need to map panel-local
-            // coords to full-texture coords:
-            //   physical_x = (rel_x / panel_logical_width) * swapchain_physical_width
             let vp = &self.editor.editor_ui.last_viewport_bounds;
             let panel_width = vp.width().max(1.0);
             let panel_height = vp.height().max(1.0);
@@ -81,36 +74,55 @@ impl Application {
                 return;
             }
 
-            // Get the object-ID texture image for the current frame
-            let frame_idx = self.renderer.current_frame();
-            if let Some(transient) = self
-                .frame_graph
-                .as_vulkan()
-                .transient_texture("object_id", frame_idx)
-            {
-                let image = transient.image;
-                let current_layout = transient.current_layout();
-                match self.renderer.unwrap_vulkan().queue_picking_readback(
-                    self.frame_count,
-                    image,
-                    current_layout,
-                    physical_x,
-                    physical_y,
-                ) {
-                    Ok(()) => {
-                        log::debug!(
-                            "Queued picking readback at physical ({}, {}) for frame {}",
+            match &mut self.renderer {
+                katla_gfx::AnyRenderer::Vulkan(r) => {
+                    let frame_idx = r.current_frame();
+                    if let Some(transient) = self
+                        .frame_graph
+                        .as_vulkan()
+                        .transient_texture("object_id", frame_idx)
+                    {
+                        let image = transient.image;
+                        let current_layout = transient.current_layout();
+                        match r.queue_picking_readback(
+                            self.frame_count,
+                            image,
+                            current_layout,
                             physical_x,
                             physical_y,
-                            self.frame_count
-                        );
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to queue picking readback: {}", e);
+                        ) {
+                            Ok(()) => {
+                                log::debug!(
+                                    "Queued Vulkan picking readback at ({}, {}) for frame {}",
+                                    physical_x,
+                                    physical_y,
+                                    self.frame_count
+                                );
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to queue picking readback: {}", e);
+                            }
+                        }
+                    } else {
+                        log::warn!("Object-ID transient texture not found for picking readback");
                     }
                 }
-            } else {
-                log::warn!("Object-ID transient texture not found for picking readback");
+                #[cfg(target_os = "macos")]
+                katla_gfx::AnyRenderer::Metal(r) => {
+                    match r.queue_picking_readback(self.frame_count, physical_x, physical_y) {
+                        Ok(()) => {
+                            log::debug!(
+                                "Queued Metal picking readback at ({}, {}) for frame {}",
+                                physical_x,
+                                physical_y,
+                                self.frame_count
+                            );
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to queue Metal picking readback: {}", e);
+                        }
+                    }
+                }
             }
         }
     }
