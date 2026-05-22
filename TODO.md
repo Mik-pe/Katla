@@ -1,5 +1,63 @@
 # TODO
 
+## Backend Abstraction Cleanup
+
+### A. Remove MetalFrameGraph (dead code)
+
+- [ ] Delete `katla_gfx/src/metal/metal_frame_graph.rs` entirely — it is unused in production, has no dependency analysis, and duplicates what `FrameGraph<MetalRenderer>` already provides via `RenderGraphBackend`
+- [ ] Remove `mod metal_frame_graph` and `pub use` from `katla_gfx/src/metal/mod.rs`
+- [ ] Verify no remaining imports or references to `MetalFrameGraph` across the codebase
+
+### B. Modularize MetalRenderer (2998-line monolith → ~15 files)
+
+- [ ] Extract mesh management (`MetalMesh`, `create_mesh*`, `register_mesh_raw`, `update_mesh_dynamic`) into `metal/mesh_manager.rs`
+- [ ] Extract texture management (`MetalTextureEntry`, `create_texture`, `create_texture_solid`, bindless slot queries) into `metal/texture_manager.rs`
+- [ ] Extract material/pipeline management (`MetalMaterial`, `compile_material`, `set_material_texture_indices`, pipeline creation) into `metal/material_manager.rs`
+- [ ] Extract skeleton management (`create_skeleton`, `update_skeleton`) into a `metal/skeleton.rs` extension (or new `metal/skeleton_api.rs`)
+- [ ] Extract viewport management (`create_viewport`, `viewport_count`, `get_viewport`, `destroy_viewport`) into `metal/viewport.rs`
+- [ ] Extract frame lifecycle (`begin_frame`, `end_frame`, `render_frame`, `wait_for_frame`, `swapchain_extent`) into `metal/frame_lifecycle.rs`
+- [ ] Extract font atlas (`create_ui_font_atlas`, `update_ui_font_atlas`) into `metal/font_atlas.rs`
+- [ ] Extract readback/picking into `metal/readback.rs` (if present)
+- [ ] Leave `metal_renderer.rs` as the main struct definition + `GpuRenderer` impl that delegates to extracted modules
+- [ ] Run `cargo test -p katla_gfx` and `cargo clippy -p katla_gfx` after each extraction to catch regressions
+
+### C. Unify pipeline initialization — eliminate Metal-specific methods on AnyRenderer
+
+- [ ] Add `init_light_culling(width, height, shader_path)` to `GpuRenderer` trait with default no-op impl
+- [ ] Add `init_shadow_resources()` to `GpuRenderer` trait with default no-op impl
+- [ ] Add `init_shadow_pipeline(shader_path)` to `GpuRenderer` trait with default no-op impl
+- [ ] Add `init_sky_pipeline(shader_path)` to `GpuRenderer` trait with default no-op impl
+- [ ] Add `init_tonemap_pipeline(shader_path)` to `GpuRenderer` trait with default no-op impl
+- [ ] Add `init_depth_prepass_pipeline(shader_path)` to `GpuRenderer` trait with default no-op impl
+- [ ] Add `init_outline_pipelines(stencil_mark, stencil_mark_skinned, outline_draw, outline_draw_skinned)` to `GpuRenderer` trait with default no-op impl
+- [ ] Add `init_picking_pipeline(shader_path)` and `init_picking_skinned_pipeline(shader_path)` to `GpuRenderer` trait with default no-op impl
+- [ ] Add `set_viewport_bindless_slot(slot)` to `GpuRenderer` trait with default no-op impl
+- [ ] Add `set_geometry_hdr_view` and `set_tonemap_output_view` to `GpuRenderer` trait — may need a backend-agnostic texture view type in `backend/resource.rs`
+- [ ] Remove all `#[cfg(target_os = "macos")]` `pub fn init_*` and `pub fn set_*` methods from `AnyRenderer` — callers use `GpuRenderer` instead
+- [ ] Move the `match self { Vulkan => Ok(()), Metal => r.init_*(...) }` default impls into the Vulkan `GpuRenderer` impl (no-op stubs that already exist)
+- [ ] Update `katla_app` init code to call these through `GpuRenderer` instead of `AnyRenderer` downcasts
+
+### D. Clean up `cfg(target_os = "macos")` gating in AnyFrameGraph / AnyFrame
+
+- [ ] Remove `transient_image_view_metal()` and `transient_texture_metal()` Metal-only methods from `AnyFrameGraph` — callers should use the generic `transient_texture_bindless_slot()` or a new backend-agnostic accessor
+- [ ] Audit `AnyFrameGraph` for all `#[cfg(target_os = "macos")]` branches that could be collapsed by using `GpuRenderer` / `RenderGraphBackend` trait methods instead
+- [ ] Verify `AnyFrame` has no Metal-only methods (it appears clean — just `submit`, `submit_ui`, `dispatch`)
+
+### E. Align Metal backend with shared FrameGraph<B> execution path
+
+- [ ] Verify `RenderGraphBackend` impl for `MetalRenderer` is complete (create/destroy transient textures, bindless registration, swapchain/depth image views)
+- [ ] Verify `Frame<'_, MetalRenderer>` execution dispatches all pass types (geometry, shadow, fullscreen, compositing, particles, outline, UI, depth prepass) through `RenderGraphBackend` trait methods
+- [ ] Ensure Metal backend's `render_frame()` goes through `FrameGraph<MetalRenderer>::execute()` identically to the Vulkan path, not through a separate hardcoded pass sequence
+- [ ] Remove any remaining dual-code-path divergence between how Vulkan and Metal execute the same frame graph
+- [ ] Delete the `render_frame()` method from `GpuRenderer` if it's now unused (Vulkan already no-ops it, Metal should use `render()` with frame graph)
+
+### F. Reduce cfg(target_os = "macos") count across katla_gfx
+
+- [ ] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/lib.rs` — minimize to module declarations only
+- [ ] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/renderer/any_renderer.rs` — after task C, the only remaining ones should be the enum variant definitions and match arms
+- [ ] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/render_graph/any_frame_graph.rs` — after task D, only enum variant + match arms remain
+- [ ] Ensure `katla_app` has zero `cfg(target_os)` or `cfg(metal/vulkan)` gates (already tracked as existing TODO item)
+
 ## Particle System Usability
 
 - [x] Fix position duplication between Transform and EmitterConfig — ParticleSystem::update should read the entity's TransformComponent and override config.position so emitters follow their entity when moved

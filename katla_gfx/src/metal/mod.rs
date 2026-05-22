@@ -12,6 +12,7 @@ pub(crate) mod metal_renderer;
 pub(crate) mod metal_transient_texture;
 pub(crate) mod outline;
 pub(crate) mod particle;
+pub(crate) mod picking;
 pub(crate) mod pipeline;
 pub(crate) mod render_encoder;
 pub(crate) mod sampler;

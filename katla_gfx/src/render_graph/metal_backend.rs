@@ -116,6 +116,6 @@ impl RenderGraphBackend for MetalRenderer {
     }
 
     fn depth_image_view(&self, _frame_index: usize) -> Option<Self::ImageView> {
-        self.depth_texture_view.clone()
+        self.depth_stencil_view.clone()
     }
 }

@@ -939,7 +939,7 @@ struct VertexOutput {
         let fs = shader.module.entry_points.get("fs_main").unwrap();
 
         let pipeline = ctx
-            .create_graphics_pipeline(
+            .create_graphics_pipeline_with_vertex_descriptor(
                 vs,
                 Some(fs),
                 &[MTLPixelFormat::BGRA8Unorm_sRGB],
@@ -948,12 +948,16 @@ struct VertexOutput {
                 CompareOp::Always,
                 objc2_metal::MTLCullMode::None,
                 objc2_metal::MTLWinding::Clockwise,
+                Some(&fullscreen_vertex_descriptor()),
+                false,
             )
             .unwrap();
 
         let desc = TextureDescriptor::new(256, 256, crate::texture::ImageFormat::B8G8R8A8Srgb)
             .with_usage(TextureUsage::COLOR_ATTACHMENT);
         let (_texture, view) = ctx.create_texture(&desc).unwrap();
+
+        let dummy_vb = ctx.create_buffer(4, true).unwrap();
 
         let mut cmd_buffer = ctx.create_command_buffer();
         cmd_buffer.begin();
@@ -970,6 +974,7 @@ struct VertexOutput {
 
         let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
         encoder.bind_graphics_pipeline(&pipeline);
+        encoder.bind_vertex_buffer(&dummy_vb, 0, 10);
         encoder.draw(3, 1, 0, 0);
         encoder.end_encoding();
 

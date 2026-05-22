@@ -896,17 +896,28 @@ impl Application {
             draw_list.len()
         );
 
+        let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
+
         if let Err(e) = self.renderer.render(&mut self.frame_graph, |frame| {
             let ids = &self.pass_ids;
 
             if !draw_list.is_empty() {
                 frame.submit(ids.geometry, &draw_list);
-                frame.submit(ids.shadow, &draw_list);
+                frame.submit(ids.shadow, &shadow_draw_list);
                 frame.submit(ids.depth_prepass, &draw_list);
-                frame.submit(ids.outline, &draw_list);
                 log::debug!(
-                    "Submitted {} draw calls to geometry + shadow + depth_prepass + outline",
+                    "Submitted {} draw calls to geometry + shadow + depth_prepass",
                     draw_list.len()
+                );
+            }
+
+            if let Some(ref outline_dl) = outline_draw_list
+                && !outline_dl.is_empty()
+            {
+                frame.submit(ids.outline, outline_dl);
+                log::debug!(
+                    "Submitted {} selected draw calls to outline pass",
+                    outline_dl.len()
                 );
             }
 
