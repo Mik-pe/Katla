@@ -57,7 +57,7 @@ impl MetalDepthPrepass {
             true,
             CompareOp::GreaterOrEqual,
             objc2_metal::MTLCullMode::Back,
-            objc2_metal::MTLWinding::CounterClockwise,
+            objc2_metal::MTLWinding::Clockwise,
         )?;
 
         self.pipeline = Some(pipeline);
@@ -78,7 +78,7 @@ impl MetalDepthPrepass {
             true,
             CompareOp::GreaterOrEqual,
             objc2_metal::MTLCullMode::Back,
-            objc2_metal::MTLWinding::CounterClockwise,
+            objc2_metal::MTLWinding::Clockwise,
         )?;
 
         self.pipeline_skinned = Some(pipeline);

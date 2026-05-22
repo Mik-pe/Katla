@@ -1061,7 +1061,7 @@ impl MetalRenderer {
                 false,
                 crate::pipeline::CompareOp::Always,
                 objc2_metal::MTLCullMode::None,
-                objc2_metal::MTLWinding::CounterClockwise,
+                objc2_metal::MTLWinding::Clockwise,
                 Some(&super::context::fullscreen_vertex_descriptor()),
                 false,
             )?;
@@ -1148,7 +1148,6 @@ impl MetalRenderer {
         }
 
         for cascade_idx in 0..self.shadow.cascade_count() as usize {
-            let cascade_view_proj = self.shadow.cascade_view_proj(cascade_idx);
             super::shadow::render_cascade(
                 &mut cmd_buffer,
                 pipeline,
@@ -1479,7 +1478,8 @@ impl GpuRenderer for MetalRenderer {
                             shadow_res,
                             frame_buf,
                             object_buf,
-                            &cascade_vp,
+                            shadow_buf,
+                            cascade_idx as u32,
                             &self.meshes,
                             &self.materials,
                             &shadow_draw_list,
@@ -2220,7 +2220,7 @@ impl GpuRenderer for MetalRenderer {
                 true,
                 crate::pipeline::CompareOp::GreaterOrEqual,
                 objc2_metal::MTLCullMode::Back,
-                objc2_metal::MTLWinding::CounterClockwise,
+                objc2_metal::MTLWinding::Clockwise,
             )?
         };
 
