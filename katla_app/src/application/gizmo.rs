@@ -19,23 +19,24 @@ impl Application {
         let ring_mesh = self.renderer.create_torus_mesh(0.5, 0.02, 48, 24);
 
         let unlit_shader_path = self.resources.shader_path("unlit.wgsl");
-        let material = self
-            .renderer
-            .unwrap_vulkan()
-            .compile_material(
-                &unlit_shader_path,
-                katla_gfx::MaterialOptions {
-                    vertex_type: katla_gfx::VertexType::Pbr,
-                    color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
-                    depth_test: false,
-                    ..Default::default()
-                },
-            )
-            .expect("Failed to create gizmo unlit material");
-        let material = self
-            .renderer
-            .compile_material(&unlit_shader_path.to_string_lossy(), "pbr")
-            .expect("Failed to create gizmo unlit material");
+        let material = match &mut self.renderer {
+            katla_gfx::AnyRenderer::Vulkan(r) => r
+                .compile_material(
+                    &unlit_shader_path,
+                    katla_gfx::MaterialOptions {
+                        vertex_type: katla_gfx::VertexType::Pbr,
+                        color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
+                        depth_test: false,
+                        ..Default::default()
+                    },
+                )
+                .expect("Failed to create gizmo unlit material"),
+            #[cfg(target_os = "macos")]
+            katla_gfx::AnyRenderer::Metal(_) => self
+                .renderer
+                .compile_material(&unlit_shader_path.to_string_lossy(), "pbr")
+                .expect("Failed to create gizmo unlit material"),
+        };
 
         self.gpu_resource_tracker.set_protected_material(material);
 
