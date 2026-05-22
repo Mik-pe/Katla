@@ -441,7 +441,6 @@ impl super::Application {
     ///
     /// STL files contain only triangle geometry. They are spawned with the default PBR
     /// material and no textures. The entity gets an [`EntitySource::StlModel`] for round-tripping.
-    #[cfg(feature = "vulkan")]
     pub fn spawn_stl_model(
         &mut self,
         path: impl AsRef<std::path::Path>,

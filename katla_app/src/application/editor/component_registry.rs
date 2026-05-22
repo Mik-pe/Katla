@@ -4,7 +4,6 @@ use katla_ecs::inspect::{FieldMut, Inspect};
 use katla_ecs::scene_tool::SceneToolError;
 use katla_ecs::scene_tool::registry::{ComponentRegistry, ComponentRegistryEntry, FieldValue};
 
-#[cfg(feature = "vulkan")]
 use crate::components::ParticleEmitterComponent;
 use crate::components::{
     DirectionalLight, DragComponent, MassComponent, NameComponent, PerspectiveComponent,
@@ -402,7 +401,6 @@ fn register_velocity_component(registry: &mut ComponentRegistry) {
     });
 }
 
-#[cfg(feature = "vulkan")]
 fn register_particle_emitter_component(registry: &mut ComponentRegistry) {
     registry.register(ComponentRegistryEntry {
         type_name: "ParticleEmitterComponent",
@@ -452,7 +450,6 @@ pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     register_directional_light(&mut registry);
     register_script_component(&mut registry);
     register_velocity_component(&mut registry);
-    #[cfg(feature = "vulkan")]
     register_particle_emitter_component(&mut registry);
     registry
 }
@@ -472,7 +469,6 @@ mod tests {
         assert!(registry.is_registered("DirectionalLight"));
         assert!(registry.is_registered("ScriptComponent"));
         assert!(registry.is_registered("VelocityComponent"));
-        #[cfg(feature = "vulkan")]
         assert!(registry.is_registered("ParticleEmitterComponent"));
     }
 

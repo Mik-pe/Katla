@@ -25,7 +25,6 @@ pub enum StoreOp {
     DontCare,
 }
 
-#[cfg(feature = "vulkan")]
 impl From<LoadOp> for ash::vk::AttachmentLoadOp {
     #[inline]
     fn from(op: LoadOp) -> Self {
@@ -37,7 +36,6 @@ impl From<LoadOp> for ash::vk::AttachmentLoadOp {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl From<StoreOp> for ash::vk::AttachmentStoreOp {
     #[inline]
     fn from(op: StoreOp) -> Self {
@@ -89,7 +87,6 @@ impl ClearValue {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl From<ClearValue> for ash::vk::ClearValue {
     #[inline]
     fn from(value: ClearValue) -> Self {
@@ -194,7 +191,7 @@ pub enum BarrierKind {
     AllGraphics,
 }
 
-#[cfg(all(test, feature = "vulkan"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

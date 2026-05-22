@@ -8,10 +8,8 @@ use katla_gfx::GpuRenderer;
 use katla_math::Vec2;
 
 impl Application {
-    #[cfg(feature = "vulkan")]
     pub(crate) fn on_viewport_texture_recreated(&mut self, _slot: u32) {}
 
-    #[cfg(all(feature = "metal", not(feature = "vulkan")))]
     pub(crate) fn on_viewport_texture_recreated(&mut self, _slot: u32) {}
 
     pub(crate) fn filter_scroll_for_editor(&self, wheel_y: f32) -> f32 {
@@ -57,14 +55,13 @@ impl Application {
     pub(crate) fn render_editor_frame(&mut self, dt: f32) {
         let _ = dt;
 
-        #[cfg(feature = "vulkan")]
         {
             log::debug!("Rendering frame...");
             self.render_frame(None, dt, self.frame_count);
             log::debug!("Frame rendered");
         }
 
-        #[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
+        #[cfg(target_os = "macos")]
         {
             self.render_frame(None, dt, self.frame_count);
         }

@@ -1,30 +1,20 @@
 //! GPU-driven particle system using a single global buffer with atomic counters,
 //! index list management, and indirect drawing.
 
-#[cfg(feature = "vulkan")]
 pub(crate) mod barriers;
-#[cfg(feature = "vulkan")]
 pub(crate) mod buffer;
-#[cfg(feature = "vulkan")]
 pub(crate) mod debug_readback;
-#[cfg(feature = "vulkan")]
 pub(crate) mod descriptors;
-#[cfg(feature = "vulkan")]
 pub(crate) mod dispatch;
-#[cfg(feature = "vulkan")]
 pub(crate) mod emitter;
-#[cfg(feature = "vulkan")]
 pub(crate) mod pipeline;
 pub(crate) mod presets;
-#[cfg(feature = "vulkan")]
 pub(crate) mod render;
 pub(crate) mod stats;
 pub(crate) mod types;
 pub(crate) mod validation;
 
-#[cfg(feature = "vulkan")]
 pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters, ParticleData};
-#[cfg(feature = "vulkan")]
 pub use debug_readback::{IndirectDrawCommandData, ParticleDebugData, ParticleDebugReadback};
 pub use presets::EmitterPreset;
 pub use stats::ParticleStats;
@@ -33,27 +23,19 @@ pub use validation::{
     ValidationError, validate_all_emitters, validate_counters, validate_emitter_config,
 };
 
-#[cfg(feature = "vulkan")]
 use std::rc::Rc;
 
-#[cfg(feature = "vulkan")]
 use ash::vk;
-#[cfg(feature = "vulkan")]
 use log::{info, warn};
 
-#[cfg(feature = "vulkan")]
 use crate::handle::PipelineHandle;
-#[cfg(feature = "vulkan")]
 use crate::vulkan::context::VulkanContext;
 
-#[cfg(feature = "vulkan")]
 use types::EmitterState;
 
-#[cfg(feature = "vulkan")]
 /// Default maximum particles across all emitters
 pub const DEFAULT_MAX_PARTICLES: u32 = 1_048_576; // 1M particles (48MB)
 
-#[cfg(feature = "vulkan")]
 pub(super) struct ParticlePipelines {
     pub(super) emit: Option<PipelineHandle>,
     pub(super) simulate: Option<PipelineHandle>,
@@ -61,7 +43,6 @@ pub(super) struct ParticlePipelines {
     pub(super) render: Option<PipelineHandle>,
 }
 
-#[cfg(feature = "vulkan")]
 pub(super) struct ParticleDescriptors {
     pub(super) compute_layout: Option<vk::DescriptorSetLayout>,
     pub(super) render_layout: Option<vk::DescriptorSetLayout>,
@@ -77,13 +58,11 @@ pub(super) struct ParticleDescriptors {
     pub(super) _render_pools: [vk::DescriptorPool; 2],
 }
 
-#[cfg(feature = "vulkan")]
 pub(super) struct ParticleBuffers {
     pub(super) frame_data: [Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>; 2],
     pub(super) emitter_configs: [Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>; 2],
 }
 
-#[cfg(feature = "vulkan")]
 pub(super) struct ParticleEmitterPool {
     pub(super) emitters: Vec<EmitterConfig>,
     pub(super) emitter_states: Vec<EmitterState>,
@@ -104,7 +83,6 @@ pub const PARTICLE_SIMULATE_WORKGROUP_SIZE: u32 = 64;
 ///
 /// Manages all particle effects using a single global buffer pool.
 /// Each emitter is just configuration data - no per-emitter GPU resources.
-#[cfg(feature = "vulkan")]
 pub struct GlobalParticleSystem {
     pub(super) buffer: GlobalParticleBuffer,
     pub(super) pipelines: ParticlePipelines,
@@ -123,7 +101,6 @@ pub struct GlobalParticleSystem {
     pub(super) debug_readback: Option<ParticleDebugReadback>,
 }
 
-#[cfg(feature = "vulkan")]
 impl GlobalParticleSystem {
     pub fn new(context: &Rc<VulkanContext>, max_particles: u32) -> Result<Self, String> {
         info!(
@@ -467,7 +444,6 @@ impl GlobalParticleSystem {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl Drop for GlobalParticleSystem {
     fn drop(&mut self) {
         if !self.destroyed {
@@ -614,7 +590,6 @@ mod tests {
 }
 
 #[cfg(test)]
-#[cfg(feature = "vulkan")]
 mod vulkan_tests {
     use super::*;
 

@@ -12,48 +12,26 @@ pub(crate) mod types;
 pub mod any_renderer;
 pub mod gpu_renderer;
 
-// Vulkan-only submodules
-#[cfg(feature = "vulkan")]
 pub(crate) mod animation_init;
-#[cfg(feature = "vulkan")]
 pub(crate) mod bindless_queries;
-#[cfg(feature = "vulkan")]
 pub(crate) mod compositing;
-#[cfg(feature = "vulkan")]
 pub(crate) mod depth_prepass;
-#[cfg(feature = "vulkan")]
 pub(crate) mod destroy_api;
-#[cfg(feature = "vulkan")]
 pub(crate) mod font_atlas;
-#[cfg(feature = "vulkan")]
 pub(crate) mod frame_lifecycle;
-#[cfg(feature = "vulkan")]
 pub(crate) mod fullscreen_shader;
-#[cfg(feature = "vulkan")]
 pub(crate) mod light_culling;
-#[cfg(feature = "vulkan")]
 pub(crate) mod material_api;
-#[cfg(feature = "vulkan")]
 pub(crate) mod mesh_manager;
-#[cfg(feature = "vulkan")]
 pub(crate) mod outline;
-#[cfg(feature = "vulkan")]
 pub(crate) mod particle_init;
-#[cfg(feature = "vulkan")]
 pub(crate) mod picking;
-#[cfg(feature = "vulkan")]
 pub(crate) mod readback;
-#[cfg(feature = "vulkan")]
 pub(crate) mod registry;
-#[cfg(feature = "vulkan")]
 pub(crate) mod shadow;
-#[cfg(feature = "vulkan")]
 pub(crate) mod skeleton_api;
-#[cfg(feature = "vulkan")]
 pub(crate) mod texture_api;
-#[cfg(feature = "vulkan")]
 pub(crate) mod ui_renderer;
-#[cfg(feature = "vulkan")]
 pub(crate) mod viewport_manager;
 
 // Public re-exports (always available — backend-agnostic types)
@@ -64,59 +42,34 @@ pub use types::{
     DrawCall, DrawList, FrameUniforms, InstanceData, PointLightGPU, UIDrawList, UiDrawCommand,
 };
 
-// Vulkan-only re-exports
-#[cfg(feature = "vulkan")]
+// Vulkan re-exports
 pub use crate::error::ValidationMode;
-#[cfg(feature = "vulkan")]
 pub use registry::AssetRegistry;
 
-// Vulkan-only imports
-#[cfg(feature = "vulkan")]
 use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 
-#[cfg(feature = "vulkan")]
 use crate::barrier::ImageBarrier;
-#[cfg(feature = "vulkan")]
 use crate::error::RendererError;
-#[cfg(feature = "vulkan")]
 use crate::handle::ResourceStorage;
-#[cfg(feature = "vulkan")]
 use crate::sync::COLOR_SUBRESOURCE_RANGE;
-#[cfg(feature = "vulkan")]
 use crate::texture::{TextureDescriptor, TextureManager};
-#[cfg(feature = "vulkan")]
 use crate::vulkan::IndexType;
-#[cfg(feature = "vulkan")]
 use crate::vulkan::bindless_texture::{BindlessTextureManager, MAX_BINDLESS_TEXTURES};
-#[cfg(feature = "vulkan")]
 use crate::vulkan::context::VulkanContext;
-#[cfg(feature = "vulkan")]
 use crate::vulkan::context::VulkanFrameCtx;
-#[cfg(feature = "vulkan")]
 use crate::vulkan::material::SkeletonDescriptorSet;
-#[cfg(feature = "vulkan")]
 use crate::vulkan::material::compiler::MaterialCompiler;
-#[cfg(feature = "vulkan")]
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
-#[cfg(feature = "vulkan")]
 use crate::vulkan::skeleton_buffer::SkeletonBuffer;
-#[cfg(feature = "vulkan")]
 use crate::vulkan::swapdata::SwapData;
-#[cfg(feature = "vulkan")]
 use crate::vulkan::vertex_attribute::AttributeType;
-#[cfg(feature = "vulkan")]
 use crate::vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
-#[cfg(feature = "vulkan")]
 use ash::vk;
-#[cfg(feature = "vulkan")]
 use log::{error, info};
-#[cfg(feature = "vulkan")]
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-#[cfg(feature = "vulkan")]
 use std::{ffi::CString, rc::Rc};
 
 /// Per-frame UI rendering resources.
-#[cfg(feature = "vulkan")]
 pub(crate) struct UiFrameResources {
     /// Per-frame UI vertex buffers.
     pub vertex_buffers: Vec<VertexBuffer>,
@@ -128,7 +81,6 @@ pub(crate) struct UiFrameResources {
     pub uniform_buffer: Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
 }
 
-#[cfg(feature = "vulkan")]
 impl UiFrameResources {
     /// Create new UI frame resources with pre-allocated buffers.
     fn new(context: &Rc<VulkanContext>) -> Self {
@@ -176,7 +128,6 @@ impl UiFrameResources {
 /// Transpose a 4x4 matrix from row-major to column-major format.
 ///
 /// Pending readback operation for async frame checking
-#[cfg(feature = "vulkan")]
 pub struct PendingReadback {
     frame: usize,
     fence: vk::Fence,
@@ -186,7 +137,6 @@ pub struct PendingReadback {
     buffer_size: vk::DeviceSize,
 }
 
-#[cfg(feature = "vulkan")]
 pub struct VulkanRenderer {
     pub(crate) context: Rc<VulkanContext>,
     pub(crate) frame_context: VulkanFrameCtx,
@@ -270,7 +220,6 @@ pub struct VulkanRenderer {
 
 /// Number of frames that can be processed concurrently.
 /// This is an implementation detail for double-buffering.
-#[cfg(feature = "vulkan")]
 pub(crate) const FRAMES_IN_FLIGHT: usize = 2;
 
 /// Maximum number of objects that can be drawn per frame.
@@ -281,7 +230,6 @@ pub(crate) const FRAMES_IN_FLIGHT: usize = 2;
 pub const MAX_OBJECTS_PER_FRAME: u32 = 256;
 
 /// Private initialization helpers for VulkanRenderer.
-#[cfg(feature = "vulkan")]
 impl VulkanRenderer {
     /// Wrap a fallible initialization step, converting errors to RendererError::InitializationFailed.
     fn init_step<T, E: std::fmt::Debug>(
@@ -387,7 +335,6 @@ impl VulkanRenderer {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl VulkanRenderer {
     pub fn init(
         display: &dyn HasDisplayHandle,
@@ -1382,7 +1329,6 @@ impl VulkanRenderer {
 /// Output render target for final UI composition.
 /// The UI renders to this texture, then present_pass blits it to the swapchain.
 /// This decouples rendering from presentation for a cleaner architecture.
-#[cfg(feature = "vulkan")]
 pub(crate) struct OutputRenderTarget {
     /// Color attachment image.
     pub(crate) color_image: vk::Image,
@@ -1394,7 +1340,6 @@ pub(crate) struct OutputRenderTarget {
     context: Rc<VulkanContext>,
 }
 
-#[cfg(feature = "vulkan")]
 impl OutputRenderTarget {
     /// Create a new output render target with the given dimensions.
     pub fn new(
@@ -1467,7 +1412,6 @@ impl OutputRenderTarget {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl Drop for OutputRenderTarget {
     fn drop(&mut self) {
         unsafe {

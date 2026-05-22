@@ -8,12 +8,6 @@ use katla_gfx::GpuRenderer;
 use katla_math::Vec2;
 
 impl Application {
-    #[cfg(feature = "vulkan")]
-    pub(crate) fn on_viewport_texture_recreated(&mut self, slot: u32) {
-        self.editor.editor_ui.set_viewport_bindless_index(slot);
-    }
-
-    #[cfg(all(feature = "metal", not(feature = "vulkan")))]
     pub(crate) fn on_viewport_texture_recreated(&mut self, slot: u32) {
         self.editor.editor_ui.set_viewport_bindless_index(slot);
     }
@@ -97,7 +91,7 @@ impl Application {
     pub(crate) fn render_editor_frame(&mut self, dt: f32) {
         use super::editor;
 
-        #[cfg(feature = "vulkan")]
+        #[cfg(not(target_os = "macos"))]
         {
             let frame_idx = self.renderer.current_frame();
             if let Some(base_ldr_index) = self.frame_graph.get_ldr_texture_base_index() {
@@ -138,7 +132,7 @@ impl Application {
             editor::process_editor_actions(self);
         }
 
-        #[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
+        #[cfg(target_os = "macos")]
         {
             if let Some(vp_slot) = self.renderer.viewport_bindless_index() {
                 self.editor.editor_ui.set_viewport_bindless_index(vp_slot);
@@ -189,7 +183,6 @@ impl Application {
                     let texture_handle = self.renderer.create_texture(&desc, &pixels);
 
                     // Get the bindless slot for this texture
-                    #[cfg(feature = "vulkan")]
                     let bindless_slot = self
                         .renderer
                         .unwrap_vulkan()
@@ -204,7 +197,6 @@ impl Application {
                             0 // Fallback to slot 0
                         });
 
-                    #[cfg(not(feature = "vulkan"))]
                     let bindless_slot: u32 = 0;
 
                     // Register the bindless slot with the UI renderer

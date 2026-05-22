@@ -26,7 +26,6 @@
 use log::info;
 
 use crate::texture::ImageFormat;
-#[cfg(feature = "vulkan")]
 use ash::vk;
 
 // ============================================================================
@@ -242,7 +241,6 @@ impl Viewport {
 // DepthFormat conversions
 // ============================================================================
 
-#[cfg(feature = "vulkan")]
 impl From<DepthFormat> for vk::Format {
     fn from(format: DepthFormat) -> Self {
         match format {
@@ -299,7 +297,6 @@ mod tests {
         assert_eq!(builder.get_label(), "test");
     }
 
-    #[cfg(feature = "vulkan")]
     #[test]
     fn test_depth_format_conversion() {
         assert_eq!(vk::Format::from(DepthFormat::None), vk::Format::UNDEFINED);

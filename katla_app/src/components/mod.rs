@@ -8,7 +8,6 @@ pub use crate::components::physics::*;
 pub use crate::components::scene::*;
 
 // Rendering components
-#[cfg(feature = "vulkan")]
 pub use crate::components::rendering::particle::ParticleEmitterComponent;
 pub use crate::components::rendering::*;
 

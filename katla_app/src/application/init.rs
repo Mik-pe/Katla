@@ -11,10 +11,9 @@ impl Application {
         self.world
             .insert_resource(crate::resources::AmbientLight::default());
 
-        #[cfg(feature = "vulkan")]
         self.init_vulkan();
 
-        #[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
+        #[cfg(target_os = "macos")]
         self.init_metal();
 
         // Load scene from disk
@@ -33,7 +32,6 @@ impl Application {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl Application {
     fn init_vulkan(&mut self) {
         // Initialize default PBR material
@@ -418,7 +416,7 @@ impl Application {
     }
 }
 
-#[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
+#[cfg(target_os = "macos")]
 impl Application {
     fn init_metal(&mut self) {
         // Initialize default PBR material via GpuRenderer trait
@@ -538,7 +536,6 @@ impl Application {
         let mesh = self.renderer.create_plane_xy_mesh(1.0, 1.0, 1);
 
         let shader_path = self.resources.shader_path("billboard.wgsl");
-        #[cfg(feature = "vulkan")]
         let material = self
             .renderer
             .unwrap_vulkan()
@@ -554,7 +551,6 @@ impl Application {
                 },
             )
             .expect("Failed to create billboard material");
-        #[cfg(not(feature = "vulkan"))]
         let material = self
             .renderer
             .compile_material(&shader_path.to_string_lossy(), "pbr")

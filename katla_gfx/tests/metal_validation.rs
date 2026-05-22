@@ -1,4 +1,4 @@
-#![cfg(all(target_os = "macos", feature = "metal"))]
+#![cfg(target_os = "macos")]
 
 /// Tests that should be run with Metal validation enabled.
 ///

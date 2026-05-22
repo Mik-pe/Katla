@@ -7,9 +7,7 @@ use super::Application;
 use crate::rendering::FrameContext;
 use katla_gfx::GpuRenderer;
 use katla_gfx::renderer::FrameUniforms;
-#[cfg(feature = "vulkan")]
 use katla_gfx::renderer::UIDrawList;
-#[cfg(feature = "vulkan")]
 use log::info;
 
 // Shared backend-agnostic helper methods used by both Vulkan and Metal paths.
@@ -142,7 +140,7 @@ impl Application {
     pub(crate) fn build_entity_instance_map(&mut self, _entries: Vec<(u32, katla_ecs::EntityId)>) {}
 
     /// Prepare draw lists: shadow filtering, outline selection, billboard generation.
-    #[cfg(all(feature = "editor", feature = "vulkan"))]
+    #[cfg(feature = "editor")]
     pub(crate) fn prepare_draw_lists(
         &mut self,
         draw_list: &mut katla_gfx::renderer::DrawList,
@@ -166,7 +164,7 @@ impl Application {
     }
 }
 
-#[cfg(feature = "vulkan")]
+#[cfg(not(target_os = "macos"))]
 impl Application {
     /// Render a single frame using the frame graph.
     ///
@@ -482,7 +480,7 @@ impl Application {
     }
 }
 
-#[cfg(all(feature = "editor", feature = "vulkan"))]
+#[cfg(feature = "editor")]
 impl Application {
     /// Prepare editor draw lists: gizmo draws, shadow filtering, outline selection.
     fn prepare_editor_draw_lists(
@@ -748,7 +746,7 @@ impl Application {
     }
 }
 
-#[cfg(all(feature = "metal", not(feature = "vulkan")))]
+#[cfg(target_os = "macos")]
 impl Application {
     pub fn render_frame(
         &mut self,

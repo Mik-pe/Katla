@@ -726,7 +726,8 @@ impl MetalRenderer {
             RendererError::InvalidOperation("Skinned shadow vertex entry point not found".into())
         })?;
 
-        self.shadow.create_pipeline(&self.context, vertex_fn)
+        self.shadow
+            .create_pipeline_skinned(&self.context, vertex_fn)
     }
 
     /// Create the depth prepass pipeline.
@@ -2217,6 +2218,8 @@ impl GpuRenderer for MetalRenderer {
             Some(MTLPixelFormat::Depth32Float)
         };
 
+        let is_skinned = vertex_type == "skinned";
+
         let pipeline = if is_ui {
             let vd = super::context::ui_vertex_descriptor();
             self.context
@@ -2233,6 +2236,23 @@ impl GpuRenderer for MetalRenderer {
                     objc2_metal::MTLWinding::Clockwise,
                     Some(&vd),
                     true,
+                )?
+        } else if is_skinned {
+            let vd = super::context::pbr_skinned_vertex_descriptor();
+            self.context
+                .create_graphics_pipeline_with_vertex_descriptor(
+                    vertex_fn,
+                    fragment_fn
+                        .as_ref()
+                        .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
+                    color_formats,
+                    depth_format,
+                    true,
+                    crate::pipeline::CompareOp::GreaterOrEqual,
+                    objc2_metal::MTLCullMode::Back,
+                    objc2_metal::MTLWinding::Clockwise,
+                    Some(&vd),
+                    false,
                 )?
         } else {
             self.context.create_graphics_pipeline(

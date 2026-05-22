@@ -1,9 +1,6 @@
-#[cfg(feature = "vulkan")]
 use katla_ecs::Component;
-#[cfg(feature = "vulkan")]
 use katla_gfx::particles::{EmitterConfig, EmitterHandle, EmitterShape};
 
-#[cfg(feature = "vulkan")]
 /// Particle emitter component for ECS entities.
 ///
 /// This component attaches a particle emitter to an entity, allowing
@@ -29,7 +26,6 @@ pub struct ParticleEmitterComponent {
     pub kill_on_destroy: bool,
 }
 
-#[cfg(feature = "vulkan")]
 impl ParticleEmitterComponent {
     /// Create a new particle emitter component with default configuration.
     pub fn new() -> Self {
@@ -253,7 +249,6 @@ impl ParticleEmitterComponent {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl Default for ParticleEmitterComponent {
     fn default() -> Self {
         Self::new()

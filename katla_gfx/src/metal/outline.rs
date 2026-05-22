@@ -165,7 +165,8 @@ impl MetalOutlineSubsystem {
             write_mask: 0x01,
         };
 
-        let pipeline = context.create_graphics_pipeline_with_stencil(
+        let vd = super::context::pbr_skinned_vertex_descriptor();
+        let pipeline = context.create_graphics_pipeline_with_stencil_and_vertex_descriptor(
             vertex_function,
             None,
             &[MTLPixelFormat::RGBA16Float],
@@ -175,6 +176,7 @@ impl MetalOutlineSubsystem {
             objc2_metal::MTLCullMode::None,
             objc2_metal::MTLWinding::Clockwise,
             stencil_face,
+            Some(&vd),
         )?;
 
         self.stencil_mark_skinned_pipeline = Some(pipeline);
@@ -197,7 +199,8 @@ impl MetalOutlineSubsystem {
             write_mask: 0x00,
         };
 
-        let pipeline = context.create_graphics_pipeline_with_stencil(
+        let vd = super::context::pbr_skinned_vertex_descriptor();
+        let pipeline = context.create_graphics_pipeline_with_stencil_and_vertex_descriptor(
             vertex_function,
             Some(fragment_function),
             &[MTLPixelFormat::RGBA16Float],
@@ -207,6 +210,7 @@ impl MetalOutlineSubsystem {
             objc2_metal::MTLCullMode::Front,
             objc2_metal::MTLWinding::Clockwise,
             stencil_face,
+            Some(&vd),
         )?;
 
         self.outline_draw_skinned_pipeline = Some(pipeline);

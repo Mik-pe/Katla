@@ -304,7 +304,6 @@ impl EmitterHandle {
 }
 
 /// Per-emitter runtime state (not uploaded to GPU).
-#[cfg(feature = "vulkan")]
 #[derive(Clone, Default)]
 pub(crate) struct EmitterState {
     /// Burst particles to emit this frame

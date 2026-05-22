@@ -18,14 +18,10 @@ pub use editor_ui::{
     PointLightInfo, SpawnableModel, ThumbnailState,
 };
 pub use katla_ui::ColorScheme;
-#[cfg(all(feature = "editor", feature = "vulkan"))]
+#[cfg(feature = "editor")]
 pub use particle_inspector::{
     EmitterConfigView, EmitterField, ParticleInspectorAction, ParticleInspectorData,
     ParticleInspectorState,
-};
-#[cfg(all(feature = "editor", not(feature = "vulkan")))]
-pub use particle_inspector::{
-    ParticleInspectorAction, ParticleInspectorData, ParticleInspectorState,
 };
 #[cfg(feature = "editor")]
 pub use particle_stats::ParticleStats;

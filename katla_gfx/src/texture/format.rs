@@ -17,7 +17,6 @@ pub enum ImageFormat {
     D24UnormS8Uint,
 }
 
-#[cfg(feature = "vulkan")]
 impl From<ImageFormat> for ash::vk::Format {
     fn from(format: ImageFormat) -> Self {
         match format {
@@ -57,7 +56,6 @@ impl ImageFormat {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl TryFrom<ash::vk::Format> for ImageFormat {
     type Error = ();
 

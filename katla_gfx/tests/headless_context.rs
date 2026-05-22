@@ -1,4 +1,3 @@
-#![cfg(feature = "vulkan")]
 //! Tests for headless Vulkan context initialization.
 //!
 //! These tests validate that headless Vulkan support works correctly,

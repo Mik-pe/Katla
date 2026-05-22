@@ -1,13 +1,13 @@
-#[cfg(all(feature = "editor", feature = "vulkan"))]
+#[cfg(feature = "editor")]
 use log::info;
 
-#[cfg(all(feature = "editor", feature = "vulkan"))]
+#[cfg(feature = "editor")]
 use katla_gfx::GpuRenderer;
 
-#[cfg(all(feature = "editor", feature = "vulkan"))]
+#[cfg(feature = "editor")]
 use crate::application::Application;
 
-#[cfg(all(feature = "editor", feature = "vulkan"))]
+#[cfg(feature = "editor")]
 impl Application {
     /// Process GPU picking: queue a readback for a pending pick, or resolve a completed readback.
     ///

@@ -10,7 +10,6 @@ use crate::texture::ImageFormat;
 ///
 /// Receives mutable access to the frame (and thus the renderer),
 /// the command buffer, and the pipeline handle assigned to the pass.
-#[cfg(feature = "vulkan")]
 pub type ComputeFn = Box<
     dyn for<'a> Fn(
         &mut super::frame::Frame<'a, crate::renderer::VulkanRenderer>,
@@ -84,7 +83,6 @@ pub struct PassDesc {
     /// Set for CompositePass, None for other pass types.
     pub compositing_viewports: Option<Vec<(GraphResourceHandle, ViewportRect)>>,
     /// Optional compute dispatch callback for compute passes (Vulkan-specific).
-    #[cfg(feature = "vulkan")]
     pub compute_fn: Option<ComputeFn>,
 
     /// Semantic kind of this pass, used for dispatch routing.
@@ -114,7 +112,6 @@ impl PassDesc {
             uses_depth: true,
             depth_attachment: None,
             compositing_viewports: None,
-            #[cfg(feature = "vulkan")]
             compute_fn: None,
             kind: None,
         }
@@ -127,7 +124,6 @@ impl PassDesc {
     }
 
     /// Attach a compute dispatch callback to this pass (Vulkan-specific).
-    #[cfg(feature = "vulkan")]
     pub fn with_compute_fn(
         mut self,
         f: impl Fn(
@@ -179,7 +175,6 @@ mod tests {
         assert!(desc.color_attachments.is_empty());
         assert!(desc.depth_attachment.is_none());
         assert!(desc.compositing_viewports.is_none());
-        #[cfg(feature = "vulkan")]
         assert!(desc.compute_fn.is_none());
         assert!(desc.kind.is_none());
         assert!(desc.uses_depth);

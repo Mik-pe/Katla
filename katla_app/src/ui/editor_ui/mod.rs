@@ -403,12 +403,10 @@ impl EditorUI {
                 self.selected_particle_emitter = Some(entity_id);
             }
             ParticleInspectorAction::ToggleEmitter => {
-                #[cfg(feature = "vulkan")]
                 self.pending_actions
                     .push(EditorAction::ToggleParticleEmitter);
             }
             ParticleInspectorAction::ResetSystem => {
-                #[cfg(feature = "vulkan")]
                 self.pending_actions.push(EditorAction::ResetParticleSystem);
             }
             ParticleInspectorAction::Close => {

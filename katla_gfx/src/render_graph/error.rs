@@ -81,7 +81,6 @@ impl fmt::Display for RenderGraphError {
 
 impl std::error::Error for RenderGraphError {}
 
-#[cfg(feature = "vulkan")]
 impl From<ash::vk::Result> for RenderGraphError {
     fn from(result: ash::vk::Result) -> Self {
         Self::BackendError(format!("{:?}", result))
@@ -146,7 +145,6 @@ mod tests {
         assert!(err.to_string().contains("Backend error"));
     }
 
-    #[cfg(feature = "vulkan")]
     #[test]
     fn test_from_vk_result() {
         let err = RenderGraphError::from(ash::vk::Result::ERROR_DEVICE_LOST);

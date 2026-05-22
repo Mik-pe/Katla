@@ -228,10 +228,8 @@ pub enum EditorAction {
     /// Open panel
     OpenPanel(Panel),
     /// Toggle the selected particle emitter active/inactive.
-    #[cfg(feature = "vulkan")]
     ToggleParticleEmitter,
     /// Reset the global particle system (clear all particles).
-    #[cfg(feature = "vulkan")]
     ResetParticleSystem,
     /// Set the gizmo transform mode.
     SetGizmoMode(u8), // 0=Translate, 1=Rotate, 2=Scale

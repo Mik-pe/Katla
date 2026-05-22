@@ -51,7 +51,6 @@ pub enum CompareOp {
 }
 
 /// Face culling mode.
-#[cfg(feature = "vulkan")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CullMode {
     /// No culling.
@@ -65,7 +64,6 @@ pub enum CullMode {
 }
 
 /// Front face winding order.
-#[cfg(feature = "vulkan")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FrontFace {
     /// Counter-clockwise winding is front-facing.
@@ -75,7 +73,6 @@ pub enum FrontFace {
 }
 
 /// Polygon rasterization mode.
-#[cfg(feature = "vulkan")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PolygonMode {
     /// Fill polygons.
@@ -87,7 +84,6 @@ pub enum PolygonMode {
 }
 
 /// Blend factors for color blending.
-#[cfg(feature = "vulkan")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlendFactor {
     /// Zero.
@@ -123,7 +119,6 @@ pub enum BlendFactor {
 }
 
 /// Blend operations.
-#[cfg(feature = "vulkan")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlendOp {
     /// Add.
@@ -139,7 +134,6 @@ pub enum BlendOp {
 }
 
 /// Shader stage visibility flags.
-#[cfg(feature = "vulkan")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ShaderStageFlags {
     /// Vertex shader stage.
@@ -150,7 +144,6 @@ pub struct ShaderStageFlags {
     pub compute: bool,
 }
 
-#[cfg(feature = "vulkan")]
 impl ShaderStageFlags {
     /// No shader stages.
     pub const NONE: Self = Self {
@@ -219,7 +212,6 @@ impl ShaderStageFlags {
 
 // Vulkan Conversion Implementations
 
-#[cfg(feature = "vulkan")]
 impl From<CompareOp> for ash::vk::CompareOp {
     #[inline]
     fn from(op: CompareOp) -> Self {
@@ -236,7 +228,6 @@ impl From<CompareOp> for ash::vk::CompareOp {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl From<CullMode> for ash::vk::CullModeFlags {
     #[inline]
     fn from(mode: CullMode) -> Self {
@@ -249,7 +240,6 @@ impl From<CullMode> for ash::vk::CullModeFlags {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl From<FrontFace> for ash::vk::FrontFace {
     #[inline]
     fn from(face: FrontFace) -> Self {
@@ -260,7 +250,6 @@ impl From<FrontFace> for ash::vk::FrontFace {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl From<PolygonMode> for ash::vk::PolygonMode {
     #[inline]
     fn from(mode: PolygonMode) -> Self {
@@ -272,7 +261,6 @@ impl From<PolygonMode> for ash::vk::PolygonMode {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl From<BlendFactor> for ash::vk::BlendFactor {
     #[inline]
     fn from(factor: BlendFactor) -> Self {
@@ -296,7 +284,6 @@ impl From<BlendFactor> for ash::vk::BlendFactor {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl From<BlendOp> for ash::vk::BlendOp {
     #[inline]
     fn from(op: BlendOp) -> Self {
@@ -310,7 +297,6 @@ impl From<BlendOp> for ash::vk::BlendOp {
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl From<ShaderStageFlags> for ash::vk::ShaderStageFlags {
     #[inline]
     fn from(stages: ShaderStageFlags) -> Self {
@@ -330,7 +316,7 @@ impl From<ShaderStageFlags> for ash::vk::ShaderStageFlags {
 
 // Tests
 
-#[cfg(all(test, feature = "vulkan"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

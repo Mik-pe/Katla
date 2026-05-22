@@ -22,7 +22,7 @@ image = "0.25"
 itertools = "0.14"
 libc = "0.2"
 log = "0.4"
-naga = { version = "29.0.1", features = ["wgsl-in", "spv-out"] }
+naga = { version = "29.0.1", features = ["wgsl-in", "spv-out", "msl-out"] }
 rayon = "1.10"
 paste = "1.0"
 png = "0.18"

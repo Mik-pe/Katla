@@ -38,13 +38,25 @@ cargo fmt                      # Format
 
 # Run
 cargo run                     # Run the application
-cargo run -- -s               # Run in limited-frame mode (25 frames) for validation
+cargo run -- -s               # Run in limited-frame mode (100 frames) for validation
+METAL_DEVICE_WRAPPER_TYPE=1 cargo run -- -s  # Run with Metal validation enabled (must be set before process launch)
 cargo run -p katla_gfx --example particle_validation  # Headless GPU particle system validation with exit codes (0=success, 1=failure)
 ```
 
 ## Command Line Arguments
 
-- `-s, --single-frame` - Run in limited-frame mode (25 frames) for validation testing. Useful for checking Vulkan validation errors without running indefinitely.
+- `-s, --single-frame` - Run in limited-frame mode (100 frames) for validation testing. Useful for checking validation errors without running indefinitely.
+- `-v, --gpu-validation` - Enable GPU-assisted validation (Vulkan only).
+
+## Metal Validation
+
+Metal validation requires the `METAL_DEVICE_WRAPPER_TYPE` environment variable to be set **before the process launches** (it is read during framework initialization, not at device creation time):
+
+```bash
+METAL_DEVICE_WRAPPER_TYPE=1 cargo run -- -s
+```
+
+Setting it programmatically via `std::env::set_var()` is too late — the Metal framework is loaded by the dynamic linker before `main()` runs.
 
 ## Working Conventions
 
