@@ -57,7 +57,6 @@ use winit::{
 };
 
 use self::camera::Camera;
-#[cfg(feature = "vulkan")]
 use crate::util::GltfCache;
 #[cfg(feature = "editor")]
 use crate::{gui_state::GuiState, util::BackgroundLoader};
@@ -290,7 +289,6 @@ pub struct Application {
     pub(crate) frame_graph: FrameGraph,
     pub(crate) pass_ids: PassIds,
     pub(crate) camera: Camera,
-    #[cfg(feature = "vulkan")]
     pub(crate) gltf_cache: GltfCache,
     pub(crate) timer: Timer,
     pub(crate) info: ApplicationInfo,

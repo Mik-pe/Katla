@@ -39,7 +39,6 @@ use crate::{FrameGraph, Renderer};
 
 use super::camera::Camera;
 
-#[cfg(feature = "vulkan")]
 use crate::util::{GLTFModel, GltfCache};
 use crate::{
     application::{Application, ApplicationInfo},
@@ -771,7 +770,6 @@ impl ApplicationBuilder {
         }
 
         // Create GLTF cache with loader that panics on error (same as old From<PathBuf> impl)
-        #[cfg(feature = "vulkan")]
         let gltf_loader = Box::new(|path: &std::path::PathBuf| {
             GLTFModel::new(path)
                 .unwrap_or_else(|e| panic!("Failed to load GLTF model from {:?}: {}", path, e))
@@ -973,7 +971,6 @@ impl ApplicationBuilder {
             frame_graph,
             pass_ids,
             camera,
-            #[cfg(feature = "vulkan")]
             gltf_cache: GltfCache::new(gltf_loader),
             timer: Timer::new(100),
             info,

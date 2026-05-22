@@ -1,13 +1,10 @@
-#[cfg(feature = "vulkan")]
 use std::path::PathBuf;
 
 /// A cache for loaded files that avoids reloading the same file multiple times.
 ///
 /// Uses a loader function instead of `From<PathBuf>` to support fallible loading.
-#[cfg(feature = "vulkan")]
 use std::{collections::HashMap, rc::Rc};
 
-#[cfg(feature = "vulkan")]
 pub struct FileCache<T, F>
 where
     F: Fn(&PathBuf) -> T,
@@ -16,7 +13,6 @@ where
     loader: F,
 }
 
-#[cfg(feature = "vulkan")]
 impl<T, F> FileCache<T, F>
 where
     F: Fn(&PathBuf) -> T,
