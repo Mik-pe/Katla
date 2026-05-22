@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use objc2::Message;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -32,6 +34,8 @@ pub(crate) struct MetalBindlessTextureManager {
     argument_buffer: Option<Retained<ProtocolObject<dyn MTLBuffer>>>,
     /// Default (white 1x1) texture used for unused slots.
     default_texture: Option<Retained<ProtocolObject<dyn MTLTexture>>>,
+    /// Slots that have been modified since the last flush and need re-encoding.
+    dirty_slots: HashSet<u32>,
 }
 
 impl MetalBindlessTextureManager {
@@ -43,6 +47,7 @@ impl MetalBindlessTextureManager {
             encoder: None,
             argument_buffer: None,
             default_texture: None,
+            dirty_slots: HashSet::new(),
         })
     }
 
@@ -104,7 +109,7 @@ impl MetalBindlessTextureManager {
             RendererError::InvalidOperation("No free bindless texture slots available".into())
         })?;
         self.textures[slot as usize] = Some(texture.retain());
-        self.update_slot(slot);
+        self.mark_dirty(slot);
         Ok(slot)
     }
 
@@ -121,7 +126,7 @@ impl MetalBindlessTextureManager {
             )));
         }
         self.textures[slot as usize] = Some(texture.retain());
-        self.update_slot(slot);
+        self.mark_dirty(slot);
         Ok(())
     }
 
@@ -136,41 +141,25 @@ impl MetalBindlessTextureManager {
             return false;
         }
         self.textures[slot as usize] = None;
-        self.update_slot(slot);
+        self.mark_dirty(slot);
         self.free_slots.push(slot);
         true
     }
 
-    /// Update a single slot in the argument buffer.
-    fn update_slot(&self, slot: u32) {
-        let Some(ref encoder) = self.encoder else {
-            return;
-        };
-        let Some(ref buffer) = self.argument_buffer else {
-            return;
-        };
-        let texture = self.textures[slot as usize]
-            .as_ref()
-            .map(|t| t.as_ref())
-            .or(self.default_texture.as_deref());
-        unsafe {
-            encoder.setArgumentBuffer_offset(Some(buffer), 0);
-            if let Some(tex) = texture {
-                encoder.setTexture_atIndex(Some(tex), slot as usize);
-            } else if let Some(ref default) = self.default_texture {
-                encoder.setTexture_atIndex(Some(default), slot as usize);
-            }
-        }
+    /// Mark a slot as needing re-encoding in the next flush.
+    fn mark_dirty(&mut self, slot: u32) {
+        self.dirty_slots.insert(slot);
     }
 
-    /// Re-encode all occupied slots into the argument buffer in a single pass.
+    /// Re-encode only the dirty slots into the argument buffer.
     ///
-    /// Call once per frame after the CPU-GPU sync point to ensure the GPU
-    /// sees a fully consistent argument buffer. Re-encoding individual slots
-    /// via `update_slot` can leave the encoder in an inconsistent state on
-    /// some Metal drivers because `setArgumentBuffer_offset` resets the
-    /// encoder's internal pointer each time.
-    pub(crate) fn flush_argument_buffer(&self) {
+    /// Call once per frame after the CPU-GPU sync point. Only slots that
+    /// changed since the last flush are re-encoded, avoiding O(N) work
+    /// when the texture set is stable.
+    pub(crate) fn flush_argument_buffer(&mut self) {
+        if self.dirty_slots.is_empty() {
+            return;
+        }
         let Some(ref encoder) = self.encoder else {
             return;
         };
@@ -182,11 +171,15 @@ impl MetalBindlessTextureManager {
         };
         unsafe {
             encoder.setArgumentBuffer_offset(Some(buffer), 0);
-            for (i, slot) in self.textures.iter().enumerate() {
-                let tex = slot.as_ref().map(|t| t.as_ref()).unwrap_or(default);
-                encoder.setTexture_atIndex(Some(tex), i);
+            for &slot in &self.dirty_slots {
+                let tex = self.textures[slot as usize]
+                    .as_ref()
+                    .map(|t| t.as_ref())
+                    .unwrap_or(default);
+                encoder.setTexture_atIndex(Some(tex), slot as usize);
             }
         }
+        self.dirty_slots.clear();
     }
 
     /// Get the argument buffer for binding at buffer index 9.

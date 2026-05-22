@@ -8,7 +8,10 @@ use std::mem;
 
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal::{MTLCommandBuffer, MTLPixelFormat, MTLRenderCommandEncoder, MTLTexture};
+use objc2_metal::{
+    MTLBlitCommandEncoder, MTLCommandBuffer, MTLCommandEncoder, MTLDevice, MTLFence,
+    MTLPixelFormat, MTLRenderCommandEncoder, MTLTexture,
+};
 
 use crate::backend::command::{
     ColorAttachmentInfo, DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType,
@@ -42,6 +45,7 @@ use super::texture::{MetalTexture, MetalTextureView};
 use super::ui_renderer::MetalUIRenderer;
 
 const OBJECT_UNIFORM_SIZE: u64 = 16 * 4 + 4 * 4 + 4 * 4 + 4 * 4;
+const FRAMES_IN_FLIGHT: usize = 2;
 
 /// A mesh stored in Metal GPU buffers.
 pub(crate) struct MetalMesh {
@@ -152,8 +156,8 @@ fn resolve_wgsl_includes(
 pub struct MetalRenderer {
     pub(crate) context: MetalContext,
     frame_uniforms: FrameUniforms,
-    frame_uniform_buffer: Option<MetalBuffer>,
-    object_storage_buffer: Option<MetalBuffer>,
+    frame_uniform_buffers: [Option<MetalBuffer>; FRAMES_IN_FLIGHT],
+    object_storage_buffers: [Option<MetalBuffer>; FRAMES_IN_FLIGHT],
     current_drawable_texture: Option<Retained<ProtocolObject<dyn MTLTexture>>>,
     pub(crate) drawable_texture_view: Option<MetalTextureView>,
     frame_index: u32,
@@ -197,6 +201,7 @@ pub struct MetalRenderer {
     tonemap_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
     sky_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
     dummy_vertex_buffer: Option<MetalBuffer>,
+    tonemap_fence: Option<Retained<ProtocolObject<dyn objc2_metal::MTLFence>>>,
 }
 
 impl MetalRenderer {
@@ -242,8 +247,8 @@ impl MetalRenderer {
         let mut renderer = Self {
             context,
             frame_uniforms: FrameUniforms::default(),
-            frame_uniform_buffer: None,
-            object_storage_buffer: None,
+            frame_uniform_buffers: [const { None }; FRAMES_IN_FLIGHT],
+            object_storage_buffers: [const { None }; FRAMES_IN_FLIGHT],
             current_drawable_texture: None,
             drawable_texture_view: None,
             frame_index: 0,
@@ -287,6 +292,7 @@ impl MetalRenderer {
             tonemap_pipeline: None,
             sky_pipeline: None,
             dummy_vertex_buffer: None,
+            tonemap_fence: None,
         };
 
         let default_tex = renderer.create_texture_solid([255, 255, 255, 255]);
@@ -310,9 +316,11 @@ impl MetalRenderer {
                 .init_argument_buffer(&renderer.context.device, &entry._view.inner);
         }
 
+        renderer.tonemap_fence = renderer.context.device.newFence();
+
         let default_mat = MetalMaterial {
             pipeline: None,
-            texture_indices: [0, 1, 2, 0], // albedo=white, normal=flat, mr=default, ao=white
+            texture_indices: [0, 1, 2, 0],
         };
         let id = renderer.materials.insert(default_mat);
         renderer.default_material = Some(MaterialHandle::new(id));
@@ -422,15 +430,28 @@ impl MetalRenderer {
     }
 
     fn ensure_uniform_buffers(&mut self) -> Result<(), RendererError> {
-        if self.frame_uniform_buffer.is_none() {
+        let frame_idx = (self.frame_index as usize) % FRAMES_IN_FLIGHT;
+        if self.frame_uniform_buffers[frame_idx].is_none() {
             let frame_size = mem::size_of::<FrameUniforms>() as u64;
-            self.frame_uniform_buffer = Some(self.context.create_buffer(frame_size, true)?);
+            self.frame_uniform_buffers[frame_idx] =
+                Some(self.context.create_buffer(frame_size, true)?);
         }
-        if self.object_storage_buffer.is_none() {
+        if self.object_storage_buffers[frame_idx].is_none() {
             let object_size = MAX_OBJECTS_PER_FRAME as u64 * OBJECT_UNIFORM_SIZE;
-            self.object_storage_buffer = Some(self.context.create_buffer(object_size, true)?);
+            self.object_storage_buffers[frame_idx] =
+                Some(self.context.create_buffer(object_size, true)?);
         }
         Ok(())
+    }
+
+    fn current_frame_uniform_buffer(&self) -> Option<&MetalBuffer> {
+        let idx = (self.frame_index as usize) % FRAMES_IN_FLIGHT;
+        self.frame_uniform_buffers[idx].as_ref()
+    }
+
+    fn current_object_storage_buffer(&self) -> Option<&MetalBuffer> {
+        let idx = (self.frame_index as usize) % FRAMES_IN_FLIGHT;
+        self.object_storage_buffers[idx].as_ref()
     }
 
     /// Set the geometry HDR view and bindless slot from an external source (frame graph).
@@ -471,11 +492,7 @@ impl MetalRenderer {
 
         let frame_idx = self.frame_index();
 
-        // Re-encode the entire argument buffer every frame in a single pass.
-        // Individual slot updates via update_slot() call setArgumentBuffer_offset
-        // each time, which can leave the encoder in an inconsistent state on some
-        // Metal drivers. Flushing all slots at once after the CPU-GPU sync point
-        // ensures the GPU sees a fully consistent argument buffer.
+        // Flush only the argument buffer slots that changed since last frame.
         self.bindless_manager.flush_argument_buffer();
 
         let view_matrix = self.frame_uniforms.view_matrix;
@@ -903,9 +920,10 @@ impl MetalRenderer {
     /// Bind frame/uniform buffers, bindless argument buffer, samplers, light culling,
     /// shadow cascade data, and shadow map — resources shared across geometry passes.
     fn bind_common_resources(&self, encoder: &mut super::render_encoder::MetalRenderEncoder) {
-        if let (Some(frame_buf), Some(object_buf)) =
-            (&self.frame_uniform_buffer, &self.object_storage_buffer)
-        {
+        if let (Some(frame_buf), Some(object_buf)) = (
+            self.current_frame_uniform_buffer(),
+            self.current_object_storage_buffer(),
+        ) {
             let stages = ShaderStages::VERTEX_FRAGMENT;
             encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
             encoder.bind_storage_buffer(object_buf, 0, 1, stages);
@@ -972,26 +990,18 @@ impl MetalRenderer {
         }
 
         if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
-            unsafe {
-                let resource: &ProtocolObject<dyn objc2_metal::MTLResource> =
-                    std::mem::transmute(arg_buffer);
-                encoder.inner.useResource_usage_stages(
-                    resource,
-                    objc2_metal::MTLResourceUsage::Read,
-                    objc2_metal::MTLRenderStages::Fragment,
-                );
-            }
+            encoder.use_buffer(
+                arg_buffer,
+                objc2_metal::MTLResourceUsage::Read,
+                objc2_metal::MTLRenderStages::Fragment,
+            );
         }
         for texture in self.bindless_manager.registered_textures() {
-            unsafe {
-                let resource: &ProtocolObject<dyn objc2_metal::MTLResource> =
-                    std::mem::transmute(texture);
-                encoder.inner.useResource_usage_stages(
-                    resource,
-                    objc2_metal::MTLResourceUsage::Read,
-                    objc2_metal::MTLRenderStages::Fragment,
-                );
-            }
+            encoder.use_texture(
+                texture,
+                objc2_metal::MTLResourceUsage::Read,
+                objc2_metal::MTLRenderStages::Fragment,
+            );
         }
     }
 
@@ -1132,10 +1142,10 @@ impl MetalRenderer {
         let Some(ref draw_list) = self.pending_draw_list else {
             return Ok(());
         };
-        let Some(ref frame_buf) = self.frame_uniform_buffer else {
+        let Some(frame_buf) = self.current_frame_uniform_buffer() else {
             return Ok(());
         };
-        let Some(ref object_buf) = self.object_storage_buffer else {
+        let Some(object_buf) = self.current_object_storage_buffer() else {
             return Ok(());
         };
         let Some(ref shadow_buf) = self.shadow_cascade_buffer else {
@@ -1167,7 +1177,6 @@ impl MetalRenderer {
 
         cmd_buffer.end();
         cmd_buffer.submit(&self.context);
-        cmd_buffer.inner.waitUntilCompleted();
 
         Ok(())
     }
@@ -1180,10 +1189,10 @@ impl MetalRenderer {
         let Some(ref draw_list) = self.pending_draw_list else {
             return Ok(());
         };
-        let Some(ref frame_buf) = self.frame_uniform_buffer else {
+        let Some(frame_buf) = self.current_frame_uniform_buffer() else {
             return Ok(());
         };
-        let Some(ref object_buf) = self.object_storage_buffer else {
+        let Some(object_buf) = self.current_object_storage_buffer() else {
             return Ok(());
         };
         let Some(ref depth_view) = self.depth_texture_view else {
@@ -1215,7 +1224,6 @@ impl MetalRenderer {
 
         cmd_buffer.end();
         cmd_buffer.submit(&self.context);
-        cmd_buffer.inner.waitUntilCompleted();
 
         Ok(())
     }
@@ -1231,10 +1239,10 @@ impl MetalRenderer {
         let Some(ref draw_list) = self.pending_draw_list else {
             return Ok(());
         };
-        let Some(ref frame_buf) = self.frame_uniform_buffer else {
+        let Some(frame_buf) = self.current_frame_uniform_buffer() else {
             return Ok(());
         };
-        let Some(ref object_buf) = self.object_storage_buffer else {
+        let Some(object_buf) = self.current_object_storage_buffer() else {
             return Ok(());
         };
         let Some(ref color_view) = self.hdr_color_view else {
@@ -1280,7 +1288,6 @@ impl MetalRenderer {
 
         cmd_buffer.end();
         cmd_buffer.submit(&self.context);
-        cmd_buffer.inner.waitUntilCompleted();
 
         Ok(())
     }
@@ -1364,7 +1371,7 @@ impl GpuRenderer for MetalRenderer {
         self.ensure_uniform_buffers()?;
 
         {
-            let frame_buf = self.frame_uniform_buffer.as_ref().unwrap();
+            let frame_buf = self.current_frame_uniform_buffer().unwrap();
             let ptr = frame_buf.map();
             unsafe {
                 std::ptr::copy_nonoverlapping(
@@ -1376,7 +1383,7 @@ impl GpuRenderer for MetalRenderer {
             frame_buf.unmap();
         }
 
-        let object_buf = self.object_storage_buffer.as_ref().unwrap();
+        let object_buf = self.current_object_storage_buffer().unwrap();
         let ptr = object_buf.map();
 
         for draw in &draw_list.draws {
@@ -1470,8 +1477,8 @@ impl GpuRenderer for MetalRenderer {
                     (self.shadow.pipeline(), self.shadow.shadow_map_view())
                 {
                     let shadow_res = self.shadow.shadow_resolution();
-                    let frame_buf = self.frame_uniform_buffer.as_ref().unwrap();
-                    let object_buf = self.object_storage_buffer.as_ref().unwrap();
+                    let frame_buf = self.current_frame_uniform_buffer().unwrap();
+                    let object_buf = self.current_object_storage_buffer().unwrap();
                     let shadow_buf = self.shadow_cascade_buffer.as_ref().unwrap();
                     for cascade_idx in 0..self.shadow.cascade_count() as usize {
                         super::shadow::render_cascade(
@@ -1583,9 +1590,10 @@ impl GpuRenderer for MetalRenderer {
             Self::bind_common_resources(&self, &mut encoder);
 
             if let Some(ref sky_pipeline) = self.sky_pipeline {
-                if let (Some(frame_buf), Some(object_buf)) =
-                    (&self.frame_uniform_buffer, &self.object_storage_buffer)
-                {
+                if let (Some(frame_buf), Some(object_buf)) = (
+                    self.current_frame_uniform_buffer(),
+                    self.current_object_storage_buffer(),
+                ) {
                     let stages = ShaderStages::VERTEX_FRAGMENT;
                     encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
                     encoder.bind_storage_buffer(object_buf, 0, 1, stages);
@@ -1614,8 +1622,8 @@ impl GpuRenderer for MetalRenderer {
             if !outline_draw_list.draws.is_empty() && has_tonemap {
                 let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
                 let depth_view = self.depth_texture_view.as_ref().unwrap();
-                let frame_buf = self.frame_uniform_buffer.as_ref().unwrap();
-                let object_buf = self.object_storage_buffer.as_ref().unwrap();
+                let frame_buf = self.current_frame_uniform_buffer().unwrap();
+                let object_buf = self.current_object_storage_buffer().unwrap();
                 let w = self.drawable_size.width as u32;
                 let h = self.drawable_size.height as u32;
 
@@ -1662,7 +1670,7 @@ impl GpuRenderer for MetalRenderer {
             // Patch frame uniforms with HDR texture bindless index for the tonemap shader
             if let Some(hdr_slot) = self.geometry_hdr_bindless_slot {
                 self.frame_uniforms.tonemap[3] = hdr_slot as f32;
-                if let Some(ref frame_buf) = self.frame_uniform_buffer {
+                if let Some(frame_buf) = self.current_frame_uniform_buffer() {
                     let ptr = frame_buf.map();
                     unsafe {
                         std::ptr::copy_nonoverlapping(
@@ -1703,10 +1711,10 @@ impl GpuRenderer for MetalRenderer {
                 encoder.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
             }
 
-            if let Some(ref frame_buf) = self.frame_uniform_buffer {
+            if let Some(frame_buf) = self.current_frame_uniform_buffer() {
                 encoder.bind_storage_buffer(frame_buf, 0, 0, ShaderStages::VERTEX_FRAGMENT);
             }
-            if let Some(ref object_buf) = self.object_storage_buffer {
+            if let Some(object_buf) = self.current_object_storage_buffer() {
                 encoder.bind_storage_buffer(object_buf, 0, 1, ShaderStages::VERTEX_FRAGMENT);
             }
             if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
@@ -1735,32 +1743,45 @@ impl GpuRenderer for MetalRenderer {
 
             // Make argument buffer and HDR texture readable by fragment shader
             if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
-                unsafe {
-                    let resource: &ProtocolObject<dyn objc2_metal::MTLResource> =
-                        std::mem::transmute(arg_buffer);
-                    encoder.inner.useResource_usage_stages(
-                        resource,
-                        objc2_metal::MTLResourceUsage::Read,
-                        objc2_metal::MTLRenderStages::Fragment,
-                    );
-                }
+                encoder.use_buffer(
+                    arg_buffer,
+                    objc2_metal::MTLResourceUsage::Read,
+                    objc2_metal::MTLRenderStages::Fragment,
+                );
             }
             if let Some(ref hdr_view) = self.geometry_hdr_view {
-                unsafe {
-                    let resource: &ProtocolObject<dyn objc2_metal::MTLResource> =
-                        std::mem::transmute(&*hdr_view.inner);
-                    encoder.inner.useResource_usage_stages(
-                        resource,
-                        objc2_metal::MTLResourceUsage::Read,
-                        objc2_metal::MTLRenderStages::Fragment,
-                    );
-                }
+                encoder.use_texture(
+                    &hdr_view.inner,
+                    objc2_metal::MTLResourceUsage::Read,
+                    objc2_metal::MTLRenderStages::Fragment,
+                );
             }
 
             encoder.bind_graphics_pipeline(tonemap_pipeline);
             encoder.draw(3, 1, 0, 0);
 
+            if let Some(ref fence) = self.tonemap_fence {
+                encoder
+                    .inner
+                    .updateFence_afterStages(fence, objc2_metal::MTLRenderStages::Fragment);
+            }
+
             encoder.end_encoding();
+        }
+
+        // Ensure tonemap output is visible to the UI pass. Metal's implicit
+        // barriers cover attachments but not textures accessed through
+        // argument buffers. The fence alone handles execution ordering, but
+        // some Apple GPU generations need an explicit encoder boundary to
+        // flush the render target cache.
+        if self.tonemap_output_view.is_some() {
+            let blit = cmd_buffer.inner.blitCommandEncoder();
+            if let Some(b) = blit {
+                if let Some(ref fence) = self.tonemap_fence {
+                    b.updateFence(fence);
+                }
+                b.endEncoding();
+            }
         }
 
         // =========================================================================
@@ -1798,6 +1819,13 @@ impl GpuRenderer for MetalRenderer {
 
                                 let mut encoder = cmd_buffer.begin_render_pass(ui_pass_info);
 
+                                if let Some(ref fence) = self.tonemap_fence {
+                                    encoder.inner.waitForFence_beforeStages(
+                                        fence,
+                                        objc2_metal::MTLRenderStages::Fragment,
+                                    );
+                                }
+
                                 let dw = self.drawable_size.width as f32;
                                 let dh = self.drawable_size.height as f32;
                                 encoder.set_viewport(0.0, 0.0, dw, dh, 0.0, 1.0);
@@ -1816,28 +1844,20 @@ impl GpuRenderer for MetalRenderer {
                                             0,
                                             9,
                                         );
-                                        let resource: &ProtocolObject<
-                                            dyn objc2_metal::MTLResource,
-                                        > = std::mem::transmute(arg_buffer);
-                                        encoder.inner.useResource_usage_stages(
-                                            resource,
+                                    }
+                                    encoder.use_buffer(
+                                        arg_buffer,
+                                        objc2_metal::MTLResourceUsage::Read,
+                                        objc2_metal::MTLRenderStages::Vertex
+                                            | objc2_metal::MTLRenderStages::Fragment,
+                                    );
+                                    for texture in self.bindless_manager.registered_textures() {
+                                        encoder.use_texture(
+                                            texture,
                                             objc2_metal::MTLResourceUsage::Read,
                                             objc2_metal::MTLRenderStages::Vertex
                                                 | objc2_metal::MTLRenderStages::Fragment,
                                         );
-                                    }
-                                    for texture in self.bindless_manager.registered_textures() {
-                                        unsafe {
-                                            let resource: &ProtocolObject<
-                                                dyn objc2_metal::MTLResource,
-                                            > = std::mem::transmute(texture);
-                                            encoder.inner.useResource_usage_stages(
-                                                resource,
-                                                objc2_metal::MTLResourceUsage::Read,
-                                                objc2_metal::MTLRenderStages::Vertex
-                                                    | objc2_metal::MTLRenderStages::Fragment,
-                                            );
-                                        }
                                     }
                                 }
 
@@ -1959,7 +1979,9 @@ impl GpuRenderer for MetalRenderer {
         _vertex_count: u32,
         _indices: &[u32],
     ) -> MeshHandle {
-        MeshHandle::default()
+        unimplemented!(
+            "create_mesh_soa is not supported on Metal; use create_mesh or register_mesh_raw instead"
+        )
     }
 
     fn register_mesh_raw(
@@ -2634,8 +2656,21 @@ mod tests {
         let right = normalize3(cross3(fwd, up));
         let real_up = cross3(right, fwd);
         [
-            right[0], real_up[0], -fwd[0], 0.0, right[1], real_up[1], -fwd[1], 0.0, right[2],
-            real_up[2], -fwd[2], 0.0, -dot3(right, eye), -dot3(real_up, eye), dot3(fwd, eye),
+            right[0],
+            real_up[0],
+            -fwd[0],
+            0.0,
+            right[1],
+            real_up[1],
+            -fwd[1],
+            0.0,
+            right[2],
+            real_up[2],
+            -fwd[2],
+            0.0,
+            -dot3(right, eye),
+            -dot3(real_up, eye),
+            dot3(fwd, eye),
             1.0,
         ]
     }
@@ -2643,8 +2678,22 @@ mod tests {
     fn perspective(fov_deg: f32, aspect: f32, near: f32, far: f32) -> [f32; 16] {
         let f = 1.0 / (fov_deg * std::f32::consts::PI / 360.0).tan();
         [
-            f / aspect, 0.0, 0.0, 0.0, 0.0, -f, 0.0, 0.0, 0.0, 0.0, far / (near - far), -1.0,
-            0.0, 0.0, near * far / (near - far), 0.0,
+            f / aspect,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            -f,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            far / (near - far),
+            -1.0,
+            0.0,
+            0.0,
+            near * far / (near - far),
+            0.0,
         ]
     }
 
@@ -2663,10 +2712,22 @@ mod tests {
     }
 
     fn mat4_inverse(m: &[f32; 16]) -> [f32; 16] {
-        let m00 = m[0]; let m10 = m[1]; let m20 = m[2]; let m30 = m[3];
-        let m01 = m[4]; let m11 = m[5]; let m21 = m[6]; let m31 = m[7];
-        let m02 = m[8]; let m12 = m[9]; let m22 = m[10]; let m32 = m[11];
-        let m03 = m[12]; let m13 = m[13]; let m23 = m[14]; let m33 = m[15];
+        let m00 = m[0];
+        let m10 = m[1];
+        let m20 = m[2];
+        let m30 = m[3];
+        let m01 = m[4];
+        let m11 = m[5];
+        let m21 = m[6];
+        let m31 = m[7];
+        let m02 = m[8];
+        let m12 = m[9];
+        let m22 = m[10];
+        let m32 = m[11];
+        let m03 = m[12];
+        let m13 = m[13];
+        let m23 = m[14];
+        let m33 = m[15];
 
         let coef00 = m22 * m33 - m32 * m23;
         let coef02 = m12 * m33 - m32 * m13;
@@ -2729,14 +2790,22 @@ mod tests {
         ];
 
         [
-            row0[0] * sign_a[0] * inv_det, row0[1] * sign_b[0] * inv_det,
-            row0[2] * sign_a[1] * inv_det, row0[3] * sign_b[1] * inv_det,
-            row1[0] * sign_b[0] * inv_det, row1[1] * sign_a[1] * inv_det,
-            row1[2] * sign_b[1] * inv_det, row1[3] * sign_a[2] * inv_det,
-            row2[0] * sign_a[1] * inv_det, row2[1] * sign_b[1] * inv_det,
-            row2[2] * sign_a[2] * inv_det, row2[3] * sign_b[2] * inv_det,
-            row3[0] * sign_b[1] * inv_det, row3[1] * sign_a[2] * inv_det,
-            row3[2] * sign_b[2] * inv_det, row3[3] * sign_a[3] * inv_det,
+            row0[0] * sign_a[0] * inv_det,
+            row0[1] * sign_b[0] * inv_det,
+            row0[2] * sign_a[1] * inv_det,
+            row0[3] * sign_b[1] * inv_det,
+            row1[0] * sign_b[0] * inv_det,
+            row1[1] * sign_a[1] * inv_det,
+            row1[2] * sign_b[1] * inv_det,
+            row1[3] * sign_a[2] * inv_det,
+            row2[0] * sign_a[1] * inv_det,
+            row2[1] * sign_b[1] * inv_det,
+            row2[2] * sign_a[2] * inv_det,
+            row2[3] * sign_b[2] * inv_det,
+            row3[0] * sign_b[1] * inv_det,
+            row3[1] * sign_a[2] * inv_det,
+            row3[2] * sign_b[2] * inv_det,
+            row3[3] * sign_a[3] * inv_det,
         ]
     }
 

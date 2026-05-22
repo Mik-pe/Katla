@@ -1,34 +1,26 @@
-#[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[cfg(test)]
 use objc2::rc::Retained;
-#[cfg(test)]
 use objc2::runtime::ProtocolObject;
-#[cfg(test)]
 use objc2_metal::MTLSharedEvent;
 
 use crate::backend::resource::{GpuEvent, GpuFence};
 
 pub(crate) struct MetalFence {
-    #[cfg(test)]
     signaled: AtomicBool,
 }
 
 impl MetalFence {
-    #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self {
             signaled: AtomicBool::new(false),
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn signal(&self) {
         self.signaled.store(true, Ordering::Release);
     }
 
-    #[cfg(test)]
     pub(crate) fn reset(&self) {
         self.signaled.store(false, Ordering::Release);
     }
@@ -36,21 +28,12 @@ impl MetalFence {
 
 impl GpuFence for MetalFence {
     fn is_signaled(&self) -> bool {
-        #[cfg(test)]
-        {
-            self.signaled.load(Ordering::Acquire)
-        }
-        #[cfg(not(test))]
-        {
-            true
-        }
+        self.signaled.load(Ordering::Acquire)
     }
 }
 
 pub(crate) struct MetalEvent {
-    #[cfg(test)]
     pub(crate) inner: Retained<ProtocolObject<dyn MTLSharedEvent>>,
-    #[cfg(test)]
     pub(crate) value: u64,
 }
 

@@ -104,7 +104,7 @@ fn create_graphics_binding_map() -> msl::EntryPointResources {
                 ..Default::default()
             },
         ),
-        // Set 2: Skeletal animation
+        // Set 2: Skeletal animation / Shadow cascade params
         (
             naga::ResourceBinding {
                 group: 2,
@@ -112,6 +112,16 @@ fn create_graphics_binding_map() -> msl::EntryPointResources {
             },
             msl::BindTarget {
                 buffer: Some(2),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 2,
+                binding: 1,
+            },
+            msl::BindTarget {
+                buffer: Some(3),
                 ..Default::default()
             },
         ),
@@ -297,15 +307,14 @@ pub(crate) fn compile_wgsl_to_metal(
         is_ui
     );
 
-    std::fs::write(
-        format!(
-            "/tmp/katla_msl_{:?}_{}.metal",
-            entry_points.first().unwrap_or(&""),
-            msl_source.len()
-        ),
-        &msl_source,
-    )
-    .ok();
+    #[cfg(debug_assertions)]
+    {
+        let debug_name = entry_points.first().unwrap_or(&"");
+        let _ = std::fs::write(
+            format!("/tmp/katla_msl_{debug_name}_{}.metal", msl_source.len()),
+            &msl_source,
+        );
+    }
 
     let source = NSString::from_str(&msl_source);
     let compile_options = MTLCompileOptions::new();
