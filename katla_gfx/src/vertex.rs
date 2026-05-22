@@ -184,7 +184,6 @@ impl VertexLayout {
 
 // Vertex Layout Conversion Implementations
 
-#[cfg(feature = "vulkan")]
 impl From<VertexAttributeFormat> for crate::vulkan::vertexbinding::VertexFormat {
     fn from(format: VertexAttributeFormat) -> Self {
         use crate::vulkan::vertexbinding::VertexFormat;
@@ -203,7 +202,6 @@ impl From<VertexAttributeFormat> for crate::vulkan::vertexbinding::VertexFormat 
     }
 }
 
-#[cfg(feature = "vulkan")]
 impl From<&VertexLayout> for crate::vulkan::vertexbinding::VertexBinding {
     fn from(layout: &VertexLayout) -> Self {
         use crate::vulkan::vertexbinding::VertexFormat;
@@ -855,7 +853,6 @@ mod tests {
     // Vertex Layout Conversion Tests
     //=========================================================================
 
-    #[cfg(feature = "vulkan")]
     mod vertex_layout_conversion {
         use super::*;
         use crate::vulkan::vertexbinding::VertexFormat;

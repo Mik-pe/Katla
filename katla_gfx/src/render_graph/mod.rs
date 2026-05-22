@@ -42,7 +42,6 @@
 // Layer 1: Backend-agnostic graph structure (no GPU types)
 mod builder;
 mod compiler;
-#[cfg(feature = "vulkan")]
 pub mod descriptor_sets;
 mod error;
 mod frame_graph;
@@ -58,11 +57,8 @@ mod backend;
 pub mod any_frame;
 pub mod any_frame_graph;
 mod frame;
-#[cfg(all(target_os = "macos", feature = "metal"))]
 mod metal_backend;
-#[cfg(feature = "vulkan")]
 mod transient_texture;
-#[cfg(feature = "vulkan")]
 mod vulkan_backend;
 
 // Public API
@@ -82,7 +78,6 @@ pub use passes::{
 pub use resource::{
     GraphResourceDesc, GraphResourceHandle, GraphResourceType, ResourceState, TransientTextureOps,
 };
-#[cfg(feature = "vulkan")]
 pub use transient_texture::TransientTexture;
 
 /// Special resource name for the swapchain backbuffer.

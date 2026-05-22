@@ -27,10 +27,8 @@
 
 mod descriptor;
 mod format;
-#[cfg(feature = "vulkan")]
 mod manager;
 
 pub use descriptor::{TextureDescriptor, TextureUsage};
 pub use format::*;
-#[cfg(feature = "vulkan")]
 pub use manager::TextureManager;

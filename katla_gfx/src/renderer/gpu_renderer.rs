@@ -335,12 +335,9 @@ pub trait GpuRenderer: Sized + 'static {
 // Feature-gated behind vulkan since VulkanRenderer is vulkan-only.
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "vulkan")]
 use crate::renderer::VulkanRenderer;
-#[cfg(feature = "vulkan")]
 use crate::vulkan::material::compiler::MaterialOptions;
 
-#[cfg(feature = "vulkan")]
 impl GpuRenderer for VulkanRenderer {
     fn swapchain_extent(&self) -> Size2D {
         VulkanRenderer::swapchain_extent(self)

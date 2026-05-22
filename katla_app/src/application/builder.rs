@@ -62,7 +62,6 @@ pub struct ApplicationBuilder {
     app_name: String,
     validation_mode: katla_gfx::ValidationMode,
     max_frames: Option<usize>,
-    #[cfg(feature = "vulkan")]
     check_black_frames: bool,
     world: World,
     scene_path: Option<String>,
@@ -108,14 +107,8 @@ impl ApplicationBuilder {
         self
     }
 
-    #[cfg(feature = "vulkan")]
     pub fn check_black_frames(mut self, enabled: bool) -> Self {
         self.check_black_frames = enabled;
-        self
-    }
-
-    #[cfg(not(feature = "vulkan"))]
-    pub fn check_black_frames(self, _enabled: bool) -> Self {
         self
     }
 
@@ -191,7 +184,9 @@ impl ApplicationBuilder {
         event_loop
     }
 
-    /// Initialize the renderer using the default backend.
+    /// Initialize the renderer using the default backend for the current platform.
+    ///
+    /// macOS uses Metal, all other platforms use Vulkan.
     fn init_renderer(
         event_loop: &EventLoop<()>,
         window: &Window,
@@ -202,18 +197,7 @@ impl ApplicationBuilder {
         let app_name = CString::new(info.name.as_str()).unwrap();
 
         let mut renderer = {
-            #[cfg(feature = "vulkan")]
-            {
-                Renderer::new_vulkan(
-                    event_loop,
-                    window,
-                    info.validation_mode,
-                    app_name,
-                    engine_name,
-                )
-                .expect("Failed to initialize Vulkan renderer")
-            }
-            #[cfg(all(target_os = "macos", feature = "metal", not(feature = "vulkan")))]
+            #[cfg(target_os = "macos")]
             {
                 Renderer::new_metal(
                     event_loop,
@@ -223,6 +207,17 @@ impl ApplicationBuilder {
                     engine_name,
                 )
                 .expect("Failed to initialize Metal renderer")
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                Renderer::new_vulkan(
+                    event_loop,
+                    window,
+                    info.validation_mode,
+                    app_name,
+                    engine_name,
+                )
+                .expect("Failed to initialize Vulkan renderer")
             }
         };
 
@@ -239,7 +234,7 @@ impl ApplicationBuilder {
     /// Creates transient resources (hdr_color, viewport_0) without passes.
     /// Metal uses hardcoded pass execution but benefits from frame graph
     /// transient texture management and bindless registration.
-    #[cfg(all(feature = "metal", not(feature = "vulkan")))]
+
     fn build_metal_frame_graph(renderer: &mut katla_gfx::MetalRenderer) -> AppResult<FrameGraph> {
         use katla_gfx::render_graph::{
             FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassKind, PassType, SimplePass,
@@ -293,7 +288,6 @@ impl ApplicationBuilder {
     /// 3. Tonemap pass samples HDR and outputs to viewport texture
     /// 4. Compositing pass composites viewport textures to backbuffer
     /// 5. UI pass samples from backbuffer (now gets composited result)
-    #[cfg(feature = "vulkan")]
     fn build_frame_graph(
         renderer: &mut katla_gfx::VulkanRenderer,
         resources: &ResourceManager,
@@ -672,7 +666,6 @@ impl ApplicationBuilder {
             name: self.app_name,
             validation_mode: self.validation_mode,
             max_frames: self.max_frames,
-            #[cfg(feature = "vulkan")]
             check_black_frames: self.check_black_frames,
             scene_path: self.scene_path,
         };
@@ -812,12 +805,10 @@ impl ApplicationBuilder {
         );
 
         // Build the frame graph once at startup (needs mutable renderer to compile shader)
-        #[cfg(feature = "vulkan")]
         let mut frame_graph = Self::build_frame_graph(renderer.unwrap_vulkan(), &resources)?;
-        #[cfg(all(feature = "metal", not(feature = "vulkan")))]
+
         let mut frame_graph = Self::build_metal_frame_graph(renderer.unwrap_metal())?;
 
-        #[cfg(feature = "vulkan")]
         let pass_ids = super::PassIds {
             depth_prepass: frame_graph
                 .pass_id("depth_prepass")
@@ -844,7 +835,7 @@ impl ApplicationBuilder {
                 .pass_id("wallhack_overlay")
                 .expect("Frame graph must contain a 'wallhack_overlay' pass"),
         };
-        #[cfg(all(feature = "metal", not(feature = "vulkan")))]
+
         let pass_ids = super::PassIds {
             depth_prepass: frame_graph
                 .pass_id("depth_prepass")
@@ -873,11 +864,9 @@ impl ApplicationBuilder {
         };
 
         // Initialize transient textures so we can get shadow atlas ImageView
-        #[cfg(feature = "vulkan")]
         frame_graph
             .initialize_transient_textures(&mut renderer)
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-        #[cfg(feature = "vulkan")]
         for frame_idx in 0..2 {
             if let Some(view) = frame_graph
                 .as_vulkan()
@@ -888,11 +877,10 @@ impl ApplicationBuilder {
                     .set_shadow_atlas_view(frame_idx, view);
             }
         }
-        #[cfg(feature = "vulkan")]
         log::info!("Shadow atlas views set for all frames");
 
         // Initialize Metal transient textures and wire HDR view to MetalRenderer
-        #[cfg(all(feature = "metal", not(feature = "vulkan")))]
+
         {
             use katla_gfx::RenderGraphBackend;
 
@@ -933,11 +921,11 @@ impl ApplicationBuilder {
         }
 
         // Initialize UI renderer with font atlas bindless slot
-        #[cfg(all(feature = "editor", feature = "vulkan"))]
+        #[cfg(feature = "editor")]
         let mut ui_renderer = crate::ui::UIRenderer::new();
-        #[cfg(all(feature = "editor", not(feature = "vulkan")))]
+        #[cfg(feature = "editor")]
         let mut ui_renderer = crate::ui::UIRenderer::new();
-        #[cfg(all(feature = "editor", feature = "vulkan"))]
+        #[cfg(feature = "editor")]
         match renderer
             .unwrap_vulkan()
             .ui_renderer
@@ -951,7 +939,7 @@ impl ApplicationBuilder {
                 log::error!("Font atlas bindless slot is None! Text will render as solid colors.");
             }
         }
-        #[cfg(all(feature = "editor", feature = "metal", not(feature = "vulkan")))]
+        #[cfg(feature = "editor")]
         if let Some(font_handle) = renderer.ui_font_atlas_handle() {
             if let Some(bindless_slot) = renderer.get_bindless_slot(font_handle) {
                 ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
@@ -993,16 +981,13 @@ impl ApplicationBuilder {
             default_material_handle: katla_gfx::MaterialHandle::NONE,
             cleaned_up: false,
             quit_requested: false,
-            #[cfg(feature = "vulkan")]
             particle_system: crate::systems::ParticleSystem::new(),
-            #[cfg(feature = "vulkan")]
             gpu_animation_system: None,
             minimized: false,
             needs_swapchain_recreate: false,
             gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(
                 katla_gfx::MaterialHandle::NONE,
             ),
-            #[cfg(feature = "vulkan")]
             point_lights_buffer: Vec::new(),
             on_init: self.on_init,
             on_update: self.on_update,

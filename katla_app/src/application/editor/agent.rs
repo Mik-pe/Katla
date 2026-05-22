@@ -317,11 +317,9 @@ const RESOURCE_TOOL_NAMES: &[&str] = &[
 /// Execute a single tool call against the ECS world.
 fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
     if tool_call.name == "spawn_model" {
-        #[cfg(feature = "vulkan")]
         {
             return execute_spawn_model(app, tool_call);
         }
-        #[cfg(not(feature = "vulkan"))]
         return "Error: spawn_model not yet supported on this backend".to_string();
     }
 
@@ -678,7 +676,6 @@ fn tool_call_to_resource_op(tool_call: &ToolCall) -> Result<ResourceOp, String> 
     }
 }
 
-#[cfg(feature = "vulkan")]
 fn execute_spawn_model(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
     use katla_agent::co_creator::SpawnModelArgs;
 

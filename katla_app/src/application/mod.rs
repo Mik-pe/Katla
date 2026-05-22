@@ -71,7 +71,6 @@ pub struct ApplicationInfo {
     name: String,
     validation_mode: katla_gfx::ValidationMode,
     max_frames: Option<usize>, // Some(n) = exit after n frames, None = run indefinitely
-    #[cfg(feature = "vulkan")]
     check_black_frames: bool,
     scene_path: Option<String>, // Override scene to load on startup
 }
@@ -105,7 +104,6 @@ pub(crate) struct EditorState {
     pub(crate) pending_pick: Option<(usize, f32, f32)>,
     /// Bindless texture index for the stencil indicator R8 texture.
     /// Passed to the tonemap shader each frame via emission_idx field.
-    #[cfg(feature = "vulkan")]
     pub(crate) stencil_indicator_bindless_index: Option<u32>,
     /// Gizmo state (mode, drag, hover).
     pub(crate) gizmo_state: crate::gizmo::GizmoState,
@@ -172,7 +170,6 @@ impl EditorState {
             entity_instance_map: std::collections::HashMap::new(),
             entity_to_instance_indices: std::collections::HashMap::new(),
             pending_pick: None,
-            #[cfg(feature = "vulkan")]
             stencil_indicator_bindless_index: None,
             gizmo_state: crate::gizmo::GizmoState::default(),
             gizmo_resources: crate::gizmo::GizmoResources::default(),
@@ -312,10 +309,8 @@ pub struct Application {
     /// Flag to prevent double cleanup
     cleaned_up: bool,
     /// Particle system for managing particle emitters via ECS
-    #[cfg(feature = "vulkan")]
     pub(crate) particle_system: crate::systems::ParticleSystem,
     /// GPU animation system for pose evaluation (ECS queries only, GPU resources on renderer)
-    #[cfg(feature = "vulkan")]
     pub(crate) gpu_animation_system:
         Option<crate::systems::gpu_animation_system::GpuAnimationSystem>,
     /// Whether the window is currently minimized (zero extent).
@@ -326,7 +321,6 @@ pub struct Application {
     pub(crate) gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker,
     /// Reusable buffer for collecting point lights each frame. Cleared and refilled
     /// in collect_and_upload_lights to avoid per-frame Vec allocation.
-    #[cfg(feature = "vulkan")]
     pub(crate) point_lights_buffer: Vec<katla_gfx::PointLightGPU>,
     /// Editor-only state (UI, picking, gizmos, billboards)
     #[cfg(feature = "editor")]

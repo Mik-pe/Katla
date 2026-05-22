@@ -204,7 +204,6 @@ impl<T> ResourceStorage<T> {
         }
     }
 
-    #[cfg(feature = "vulkan")]
     pub fn contains(&self, handle: u32) -> bool {
         self.resources
             .get(handle as usize)
@@ -212,12 +211,10 @@ impl<T> ResourceStorage<T> {
             .unwrap_or(false)
     }
 
-    #[cfg(feature = "vulkan")]
     pub fn len(&self) -> usize {
         self.resources.iter().filter(|slot| slot.is_some()).count()
     }
 
-    #[cfg(feature = "vulkan")]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -226,7 +223,6 @@ impl<T> ResourceStorage<T> {
         self.resources.iter().filter_map(|slot| slot.as_ref())
     }
 
-    #[cfg(feature = "vulkan")]
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.resources.iter_mut().filter_map(|slot| slot.as_mut())
     }
@@ -277,7 +273,6 @@ mod tests {
         assert!(set.contains(&handle));
     }
 
-    #[cfg(feature = "vulkan")]
     #[test]
     fn test_resource_storage() {
         let mut storage = ResourceStorage::new();

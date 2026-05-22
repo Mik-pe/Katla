@@ -70,7 +70,8 @@ impl MetalDepthPrepass {
         context: &MetalContext,
         vertex_function: &ProtocolObject<dyn MTLFunction>,
     ) -> Result<(), RendererError> {
-        let pipeline = context.create_graphics_pipeline(
+        let vd = super::context::pbr_skinned_vertex_descriptor();
+        let pipeline = context.create_graphics_pipeline_with_vertex_descriptor(
             vertex_function,
             None,
             &[],
@@ -79,6 +80,8 @@ impl MetalDepthPrepass {
             CompareOp::GreaterOrEqual,
             objc2_metal::MTLCullMode::Back,
             objc2_metal::MTLWinding::Clockwise,
+            Some(&vd),
+            false,
         )?;
 
         self.pipeline_skinned = Some(pipeline);

@@ -36,7 +36,6 @@
 pub mod clips;
 pub mod components;
 pub mod gltf_loader;
-#[cfg(feature = "vulkan")]
 pub(crate) mod gpu_clip_loader;
 pub mod samplers;
 pub mod skin;

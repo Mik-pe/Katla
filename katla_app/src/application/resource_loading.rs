@@ -1,9 +1,6 @@
-#[cfg(feature = "vulkan")]
 use std::collections::HashMap;
-#[cfg(feature = "vulkan")]
 use std::io::Read as _;
 
-#[cfg(feature = "vulkan")]
 use katla_gfx::AttributeType;
 use katla_gfx::GpuRenderer;
 use katla_gfx::TextureDescriptor;
@@ -12,7 +9,6 @@ use log::info;
 use crate::animation::AnimationClip;
 use crate::animation::gltf_loader::load_animation_clip;
 use crate::error::{AppError, AppResult};
-#[cfg(feature = "vulkan")]
 use crate::util::StlMesh;
 use crate::util::{GLTFModel, gltf_parser::AttributeParser};
 
@@ -87,7 +83,6 @@ impl super::Application {
     /// This does **not** spawn an entity or set up materials/textures/skinning.
     /// For full GLTF import with textures and animation, use
     /// [`Application::spawn_gltf_model`].
-    #[cfg(feature = "vulkan")]
     pub fn load_mesh(
         &mut self,
         path: impl AsRef<std::path::Path>,
@@ -210,7 +205,6 @@ impl super::Application {
     /// generated with default handedness and tex coords are set to (0, 0).
     ///
     /// Returns a [`katla_gfx::MeshHandle`] and the bounding [`katla_math::Sphere`].
-    #[cfg(feature = "vulkan")]
     pub fn load_stl_mesh(
         &mut self,
         path: impl AsRef<std::path::Path>,

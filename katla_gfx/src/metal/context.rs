@@ -144,6 +144,73 @@ pub(crate) fn ui_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
     vertex_descriptor
 }
 
+/// Build the skinned PBR vertex descriptor matching `VertexPBRSkinned`.
+///
+/// Layout (72 bytes stride, interleaved in buffer 0):
+/// - location 0: position Float3 @ offset 0
+/// - location 1: normal Float3 @ offset 12
+/// - location 2: tangent Float4 @ offset 24
+/// - location 3: uv Float2 @ offset 40
+/// - location 4: joint_indices UShort4 @ offset 48
+/// - location 5: joint_weights Float4 @ offset 56
+pub(crate) fn pbr_skinned_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
+    let vertex_descriptor = MTLVertexDescriptor::new();
+
+    let layouts = vertex_descriptor.layouts();
+    let layout = unsafe { layouts.objectAtIndexedSubscript(10) };
+    unsafe {
+        layout.setStride(72);
+        layout.setStepFunction(MTLVertexStepFunction::PerVertex);
+        layout.setStepRate(1);
+    }
+
+    let attrs = vertex_descriptor.attributes();
+
+    let pos_attr = unsafe { attrs.objectAtIndexedSubscript(0) };
+    pos_attr.setFormat(MTLVertexFormat::Float3);
+    unsafe {
+        pos_attr.setOffset(0);
+        pos_attr.setBufferIndex(10);
+    }
+
+    let norm_attr = unsafe { attrs.objectAtIndexedSubscript(1) };
+    norm_attr.setFormat(MTLVertexFormat::Float3);
+    unsafe {
+        norm_attr.setOffset(12);
+        norm_attr.setBufferIndex(10);
+    }
+
+    let tan_attr = unsafe { attrs.objectAtIndexedSubscript(2) };
+    tan_attr.setFormat(MTLVertexFormat::Float4);
+    unsafe {
+        tan_attr.setOffset(24);
+        tan_attr.setBufferIndex(10);
+    }
+
+    let uv_attr = unsafe { attrs.objectAtIndexedSubscript(3) };
+    uv_attr.setFormat(MTLVertexFormat::Float2);
+    unsafe {
+        uv_attr.setOffset(40);
+        uv_attr.setBufferIndex(10);
+    }
+
+    let joints_attr = unsafe { attrs.objectAtIndexedSubscript(4) };
+    joints_attr.setFormat(MTLVertexFormat::UShort4);
+    unsafe {
+        joints_attr.setOffset(48);
+        joints_attr.setBufferIndex(10);
+    }
+
+    let weights_attr = unsafe { attrs.objectAtIndexedSubscript(5) };
+    weights_attr.setFormat(MTLVertexFormat::Float4);
+    unsafe {
+        weights_attr.setOffset(56);
+        weights_attr.setBufferIndex(10);
+    }
+
+    vertex_descriptor
+}
+
 /// Build an empty vertex descriptor for fullscreen passes.
 ///
 /// Fullscreen shaders generate a triangle from `@builtin(vertex_index)`
@@ -227,10 +294,7 @@ impl MetalContext {
     }
 
     #[cfg(test)]
-    pub(crate) fn init_headless_with_size(
-        width: u32,
-        height: u32,
-    ) -> Result<Self, RendererError> {
+    pub(crate) fn init_headless_with_size(width: u32, height: u32) -> Result<Self, RendererError> {
         let device = MTLCreateSystemDefaultDevice()
             .ok_or_else(|| RendererError::InitializationFailed("No Metal device found".into()))?;
         let command_queue = device.newCommandQueue().ok_or_else(|| {

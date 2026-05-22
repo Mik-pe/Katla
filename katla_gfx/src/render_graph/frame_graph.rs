@@ -79,7 +79,6 @@ pub struct FrameGraph<B: RenderGraphBackend> {
 
     /// Per-frame compositing descriptor sets (one per frame in flight).
     /// Pre-allocated and reused each frame via update_textures().
-    #[cfg(feature = "vulkan")]
     pub(super) compositing_descriptor_sets:
         RefCell<[Option<crate::render_graph::descriptor_sets::CompositingDescriptorSet>; 2]>,
 }
@@ -99,7 +98,6 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             transient_textures: Vec::new(),
             ldr_texture_base_index: None,
             params: FrameParams::default(),
-            #[cfg(feature = "vulkan")]
             compositing_descriptor_sets: RefCell::new([None, None]),
         }
     }
@@ -229,7 +227,6 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         let total_textures: usize = self.transient_textures.iter().map(|m| m.len()).sum();
         log::info!("  Total textures to clean up: {}", total_textures);
         self.transient_textures.clear();
-        #[cfg(feature = "vulkan")]
         self.compositing_descriptor_sets
             .borrow_mut()
             .iter_mut()
@@ -507,7 +504,6 @@ impl<B: RenderGraphBackend> Default for FrameGraph<B> {
 }
 
 // --- Metal-specific methods ---
-#[cfg(all(target_os = "macos", feature = "metal"))]
 impl FrameGraph<crate::MetalRenderer> {
     /// Collect draw lists from the user closure without executing passes.
     ///
@@ -536,7 +532,6 @@ impl FrameGraph<crate::MetalRenderer> {
 }
 
 // --- Vulkan-specific methods ---
-#[cfg(feature = "vulkan")]
 impl FrameGraph<crate::renderer::VulkanRenderer> {
     /// Resolve deferred materials - compile materials for their pass formats.
     fn resolve_materials(

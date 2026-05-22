@@ -1,4 +1,3 @@
-#![cfg(feature = "vulkan")]
 //! Integration tests for the particle system.
 //!
 //! These tests validate particle system behavior under stress conditions:

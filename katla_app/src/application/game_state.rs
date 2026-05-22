@@ -41,7 +41,6 @@ impl SceneSnapshot {
     /// then re-spawns from the snapshot.
     pub fn restore(self, app: &mut crate::application::Application) {
         use crate::components::EditorHidden;
-        #[cfg(feature = "vulkan")]
         use crate::components::ParticleEmitterComponent;
         use katla_ecs::EntityId;
 
@@ -60,7 +59,6 @@ impl SceneSnapshot {
             .collect();
 
         // Clean up particle emitters
-        #[cfg(feature = "vulkan")]
         for id in &to_remove {
             if let Some(emitter) = app.world.get_component_mut::<ParticleEmitterComponent>(*id)
                 && let Some(handle) = emitter.emitter_handle.take()
@@ -131,7 +129,6 @@ impl SceneSnapshot {
         app: &mut crate::application::Application,
         desc: &crate::scene::EntityDescriptor,
     ) -> katla_ecs::EntityId {
-        #[cfg(feature = "vulkan")]
         use crate::components::ParticleEmitterComponent;
         use crate::components::{DrawableComponent, NameComponent, PointLight, TransformComponent};
         use crate::scene::entity_source::EntitySource;
@@ -213,37 +210,27 @@ impl SceneSnapshot {
                     entity_id
                 }
                 EntitySource::ParticleEmitter => {
-                    #[cfg(feature = "vulkan")]
-                    {
-                        let config = katla_gfx::particles::EmitterConfig {
-                            position: desc
-                                .particle_emitter
-                                .as_ref()
-                                .map(|p| p.position)
-                                .unwrap_or(pos),
-                            ..Default::default()
-                        };
-                        let mut emitter = ParticleEmitterComponent::with_config(config);
-                        if let Some(ref pe) = desc.particle_emitter {
-                            emitter.active = pe.active;
-                        }
-                        let transform = TransformComponent::from_position(katla_math::Vec3::new(
-                            pos[0], pos[1], pos[2],
-                        ));
-                        let entity_id = app.world.spawn((transform, emitter));
-                        app.attach_billboard_icon(
-                            entity_id,
-                            crate::components::billboard::BillboardIcon::Fire,
-                        );
-                        entity_id
+                    let config = katla_gfx::particles::EmitterConfig {
+                        position: desc
+                            .particle_emitter
+                            .as_ref()
+                            .map(|p| p.position)
+                            .unwrap_or(pos),
+                        ..Default::default()
+                    };
+                    let mut emitter = ParticleEmitterComponent::with_config(config);
+                    if let Some(ref pe) = desc.particle_emitter {
+                        emitter.active = pe.active;
                     }
-                    #[cfg(not(feature = "vulkan"))]
-                    {
-                        let transform = TransformComponent::from_position(katla_math::Vec3::new(
-                            pos[0], pos[1], pos[2],
-                        ));
-                        app.world.spawn((transform,))
-                    }
+                    let transform = TransformComponent::from_position(katla_math::Vec3::new(
+                        pos[0], pos[1], pos[2],
+                    ));
+                    let entity_id = app.world.spawn((transform, emitter));
+                    app.attach_billboard_icon(
+                        entity_id,
+                        crate::components::billboard::BillboardIcon::Fire,
+                    );
+                    entity_id
                 }
                 _ => {
                     // Fallback for GLTF models and other sources during restore

@@ -147,7 +147,6 @@
 pub mod error;
 pub mod handle;
 pub mod material;
-#[cfg(any(feature = "vulkan", feature = "metal"))]
 pub mod particles;
 pub mod render_pass;
 pub mod renderer;
@@ -157,49 +156,44 @@ pub mod vertex;
 // Internal modules (pipeline state is implementation detail)
 #[allow(dead_code)]
 pub(crate) mod backend;
-#[cfg(any(feature = "vulkan", feature = "metal"))]
 pub(crate) mod pipeline;
 
 // Re-export pipeline state types for validation examples
-#[cfg(all(feature = "validation", feature = "vulkan"))]
+#[cfg(feature = "validation")]
 pub use pipeline::{CompareOp, CullMode, FrontFace};
 
 // Internal implementation (primitive mesh generators - use VulkanRenderer::create_*_mesh instead)
 pub(crate) mod primitives;
 
 // Render graph system
-#[cfg(feature = "vulkan")]
 pub mod compute;
-#[cfg(any(feature = "vulkan", feature = "metal"))]
 pub mod render_graph;
 
 // Animation module — always available. Internal Vulkan implementations are self-gated.
 pub mod animation;
 
 // Lighting — Vulkan-specific internals
-#[cfg(all(feature = "validation", feature = "vulkan"))]
+#[cfg(feature = "validation")]
 pub mod lighting;
-#[cfg(all(not(feature = "validation"), feature = "vulkan"))]
+#[cfg(not(feature = "validation"))]
 pub(crate) mod lighting;
 
 // Shadow module — always available. Internal Vulkan implementations are self-gated.
 pub mod shadow;
 
 // Sync — Vulkan-specific
-#[cfg(all(feature = "validation", feature = "vulkan"))]
+#[cfg(feature = "validation")]
 pub mod sync;
-#[cfg(all(not(feature = "validation"), feature = "vulkan"))]
+#[cfg(not(feature = "validation"))]
 pub(crate) mod sync;
 
-#[cfg(feature = "vulkan")]
 pub(crate) mod vulkan;
 
-#[cfg(all(target_os = "macos", feature = "metal"))]
+#[cfg(target_os = "macos")]
 pub(crate) mod metal;
 
 // Re-export animation types — shared data types always available
 pub use animation::{AnimChannelInfo, AnimClipHeader, JointInfo, SkeletonAnimParams};
-#[cfg(feature = "vulkan")]
 pub use animation::{PoseComputeBuffers, PoseComputePipeline};
 
 // Re-export types used by katla_app
@@ -207,9 +201,7 @@ pub use renderer::PointLightGPU;
 pub use shadow::cascade::CascadeParams;
 
 // Internal modules (implementation details)
-#[cfg(feature = "vulkan")]
 pub(crate) mod barrier;
-#[cfg(feature = "vulkan")]
 pub(crate) mod gpu_buffer;
 pub(crate) mod viewport;
 
@@ -217,27 +209,26 @@ pub(crate) mod viewport;
 pub use viewport::{DepthFormat, OutputMode, Viewport, ViewportBuilder, ViewportHandle};
 
 // Re-export ShaderCache for examples and tests
-#[cfg(all(feature = "validation", feature = "vulkan"))]
+#[cfg(feature = "validation")]
 pub use vulkan::material::shadermodule::ShaderCache;
 
 // Re-export compute pipeline types for external compute dispatch
-#[cfg(feature = "vulkan")]
 pub use vulkan::material::compute_pipeline::{
     ComputePipeline, ComputePipelineBuilder, ComputePipelineError,
 };
 
 // Re-export pipeline builder and types for validation examples
-#[cfg(all(feature = "validation", feature = "vulkan"))]
+#[cfg(feature = "validation")]
 pub use vulkan::material::builder::Pipeline;
-#[cfg(all(feature = "validation", feature = "vulkan"))]
+#[cfg(feature = "validation")]
 pub use vulkan::material::builder::PipelineBuilder;
-#[cfg(all(feature = "validation", feature = "vulkan"))]
+#[cfg(feature = "validation")]
 pub use vulkan::vertexbinding::VertexFormat;
 
 // Re-export for validation examples and advanced compute usage
-#[cfg(all(feature = "validation", feature = "vulkan"))]
+#[cfg(feature = "validation")]
 pub use vulkan::commandbuffer::CommandBuffer;
-#[cfg(all(feature = "validation", feature = "vulkan"))]
+#[cfg(feature = "validation")]
 pub use vulkan::pipeline_state::ShaderStages;
 
 // Size type (Katla-native)
@@ -258,7 +249,6 @@ pub use handle::{
 pub use material::MaterialDomain;
 
 // Material creation API (used by application layer)
-#[cfg(feature = "vulkan")]
 pub use vulkan::material::compiler::{MaterialOptions, VertexType};
 
 // Texture management
@@ -280,11 +270,10 @@ pub use renderer::{UIDrawList, UiDrawCommand};
 pub use renderer::{DrawCall, DrawList, FrameUniforms, InstanceData};
 
 // Renderer (Vulkan-specific)
-#[cfg(feature = "vulkan")]
 pub use renderer::VulkanRenderer;
 
 // Renderer (Metal-specific)
-#[cfg(all(target_os = "macos", feature = "metal"))]
+#[cfg(target_os = "macos")]
 pub use metal::metal_renderer::MetalRenderer;
 
 // Backend-agnostic renderer trait
@@ -299,20 +288,16 @@ pub use render_graph::any_frame_graph::AnyFrameGraph;
 
 // Modern particle system — shared config types always available
 pub use particles::EmitterConfig;
-#[cfg(feature = "vulkan")]
 pub use particles::GlobalParticleSystem;
 
 // Render graph system — pass types and descriptors are backend-agnostic
-#[cfg(feature = "vulkan")]
 pub use render_graph::Frame;
-#[cfg(feature = "vulkan")]
 pub use render_graph::descriptor_sets::CompositingDescriptorSet;
 pub use render_graph::{
     FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType, OutlinePass, OverlayParams,
     OverlayPass, ParticlePass, RenderGraphError, ShadowPass, StencilIndicatorPass, TonemapOperator,
     TonemapParams,
 };
-#[cfg(feature = "vulkan")]
 /// Vulkan-specific frame graph type.
 pub type FrameGraph = render_graph::FrameGraph<renderer::VulkanRenderer>;
 pub use render_graph::{FrameGraphBuilder, RenderGraphBackend};
@@ -365,5 +350,4 @@ pub use render_graph::{FrameGraphBuilder, RenderGraphBackend};
 /// [`VulkanRenderer::create_mesh()`]: renderer::VulkanRenderer::create_mesh
 /// [`VulkanRenderer::create_texture()`]: renderer::VulkanRenderer::create_texture
 /// [`VulkanRenderer::create_skeleton()`]: renderer::VulkanRenderer::create_skeleton
-#[cfg(feature = "vulkan")]
 pub use vulkan::context::{ValidationLevel, VulkanContext};

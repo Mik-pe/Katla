@@ -1,4 +1,3 @@
-#![cfg(feature = "vulkan")]
 //! Common test utilities for headless Vulkan testing.
 
 pub mod validation;

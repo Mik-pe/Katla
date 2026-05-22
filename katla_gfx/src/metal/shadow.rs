@@ -16,7 +16,7 @@ use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
 use super::buffer::MetalBuffer;
 use super::context::MetalContext;
 use super::pipeline::MetalGraphicsPipeline;
-use super::texture::MetalTextureView;
+use super::texture::{MetalTexture, MetalTextureView};
 
 const DEFAULT_SHADOW_RESOLUTION: u32 = 2048;
 const DEFAULT_CASCADE_COUNT: u32 = 4;
@@ -124,6 +124,30 @@ impl MetalShadowSubsystem {
         Ok(())
     }
 
+    /// Create the skinned shadow depth-only pipeline.
+    pub(crate) fn create_pipeline_skinned(
+        &mut self,
+        context: &MetalContext,
+        vertex_function: &ProtocolObject<dyn MTLFunction>,
+    ) -> Result<(), RendererError> {
+        let vd = super::context::pbr_skinned_vertex_descriptor();
+        let pipeline = context.create_graphics_pipeline_with_vertex_descriptor(
+            vertex_function,
+            None,
+            &[],
+            Some(MTLPixelFormat::Depth32Float),
+            true,
+            CompareOp::Less,
+            objc2_metal::MTLCullMode::Front,
+            objc2_metal::MTLWinding::Clockwise,
+            Some(&vd),
+            false,
+        )?;
+
+        self.shadow_pipeline = Some(pipeline);
+        Ok(())
+    }
+
     /// Update shadow cascade view-projection matrices from camera and light.
     pub(crate) fn update_cascades(
         &mut self,
@@ -158,10 +182,6 @@ impl MetalShadowSubsystem {
     }
 }
 
-/// Render a single shadow cascade.
-///
-/// Creates a depth-only render pass targeting the cascade's slice of the shadow map,
-/// then draws all opaque geometry from the light's perspective.
 pub(crate) fn render_cascade(
     cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
     shadow_pipeline: &MetalGraphicsPipeline,
@@ -169,7 +189,8 @@ pub(crate) fn render_cascade(
     shadow_resolution: u32,
     frame_uniform_buffer: &MetalBuffer,
     object_storage_buffer: &MetalBuffer,
-    cascade_view_proj: &[f32; 16],
+    shadow_cascade_buffer: &MetalBuffer,
+    cascade_index: u32,
     meshes: &ResourceStorage<super::metal_renderer::MetalMesh>,
     materials: &ResourceStorage<super::metal_renderer::MetalMaterial>,
     draw_list: &crate::renderer::types::DrawList,
@@ -203,10 +224,12 @@ pub(crate) fn render_cascade(
     let stages = ShaderStages::VERTEX;
     encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
     encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
+    encoder.bind_storage_buffer(shadow_cascade_buffer, 0, 2, stages);
 
+    let shadow_params: [u32; 4] = [cascade_index, 0, 0, 0];
     encoder.set_push_constants(
-        bytemuck::cast_slice(cascade_view_proj),
-        2,
+        bytemuck::cast_slice(&shadow_params),
+        3,
         ShaderStages::VERTEX,
     );
 

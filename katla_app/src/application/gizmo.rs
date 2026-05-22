@@ -19,7 +19,6 @@ impl Application {
         let ring_mesh = self.renderer.create_torus_mesh(0.5, 0.02, 48, 24);
 
         let unlit_shader_path = self.resources.shader_path("unlit.wgsl");
-        #[cfg(feature = "vulkan")]
         let material = self
             .renderer
             .unwrap_vulkan()
@@ -33,7 +32,6 @@ impl Application {
                 },
             )
             .expect("Failed to create gizmo unlit material");
-        #[cfg(not(feature = "vulkan"))]
         let material = self
             .renderer
             .compile_material(&unlit_shader_path.to_string_lossy(), "pbr")

@@ -5,8 +5,7 @@ edition = "2024"
 default-run = "katla"
 
 [features]
-vulkan = ["katla_app/vulkan"]
-metal = ["katla_app/metal"]
+default = []
 
 [[bin]]
 name = "katla"

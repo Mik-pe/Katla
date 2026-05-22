@@ -5,14 +5,9 @@ authors = ["Mik-pe <mikael.pettersson201@gmail.com>"]
 edition = "2024"
 
 [features]
-# macOS defaults to Metal, all other platforms default to Vulkan.
-# Override with --features vulkan or --features metal as needed.
-# Both can be enabled simultaneously for runtime backend selection.
-default = ["editor", "metal"]
+default = ["editor"]
 editor = ["katla_ecs/editor", "katla_script/editor"]
 mcp = ["katla_agent/mcp-server"]
-vulkan = ["katla_gfx/vulkan"]
-metal = ["katla_gfx/metal"]
 
 [dependencies]
 katla_math = { workspace = true }

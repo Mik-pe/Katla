@@ -1,26 +1,14 @@
-#[cfg(feature = "vulkan")]
 mod barriers;
-#[cfg(feature = "vulkan")]
 mod compositing;
-#[cfg(feature = "vulkan")]
 mod depth_prepass;
-#[cfg(feature = "vulkan")]
 mod draw_calls;
-#[cfg(feature = "vulkan")]
 mod draw_helpers;
-#[cfg(feature = "vulkan")]
 mod graphics_pass;
-#[cfg(feature = "vulkan")]
 mod outline_pass;
-#[cfg(feature = "vulkan")]
 mod parallel_geometry;
-#[cfg(feature = "vulkan")]
 mod parallel_shadow;
-#[cfg(feature = "vulkan")]
 mod particle_rendering;
-#[cfg(feature = "vulkan")]
 mod shadow_pass;
-#[cfg(feature = "vulkan")]
 mod ui_rendering;
 
 use std::collections::HashMap;
@@ -165,13 +153,10 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
     }
 }
 
-#[cfg(feature = "vulkan")]
 use crate::renderer::VulkanRenderer;
 
-#[cfg(feature = "vulkan")]
 use crate::render_graph::BACKBUFFER_NAME;
 
-#[cfg(feature = "vulkan")]
 impl<'a> Frame<'a, VulkanRenderer> {
     /// Resolve a color attachment for a pass.
     ///
