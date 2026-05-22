@@ -46,6 +46,28 @@ impl MetalSurface {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn headless_with_device(
+        device: &ProtocolObject<dyn MTLDevice>,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        let layer = CAMetalLayer::new();
+        layer.setDevice(Some(device));
+        layer.setPixelFormat(MTLPixelFormat::BGRA8Unorm_sRGB);
+        layer.setMaximumDrawableCount(3);
+        layer.setFramebufferOnly(false);
+        layer.setDrawableSize(NSSize {
+            width: width as f64,
+            height: height as f64,
+        });
+        Self {
+            layer,
+            current_drawable: None,
+            size: Size2D::new(width, height),
+        }
+    }
+
     pub(crate) fn acquire_next_drawable(
         &mut self,
     ) -> Result<Retained<ProtocolObject<dyn MTLTexture>>, RendererError> {
