@@ -1,15 +1,8 @@
 use katla_gfx::GpuRenderer;
-#[cfg(feature = "vulkan")]
-use katla_gfx::TextureHandle;
-#[cfg(feature = "vulkan")]
-use log::debug;
-use log::info;
+use log::{debug, info};
 
 use crate::scene::entity_source::EntitySource;
 
-/// Result of uploading GLTF textures: bindless indices for material assignment
-/// and texture handles for GPU resource tracking.
-#[cfg(feature = "vulkan")]
 struct GltfTextureUpload {
     indices: [u32; 5],
     handles: Vec<katla_gfx::TextureHandle>,
@@ -283,7 +276,6 @@ impl super::Application {
     /// # Errors
     /// Returns `AppError::ShaderCompileFailed` if the PBR shader fails to compile.
     /// Returns `AppError::SkeletonCreateFailed` if GPU skeleton creation fails for skinned models.
-    #[cfg(feature = "vulkan")]
     pub fn spawn_gltf_model(
         &mut self,
         path: impl AsRef<std::path::Path>,
@@ -320,20 +312,15 @@ impl super::Application {
             vertex_count
         );
 
-        // 3. Create mesh (skinned or regular) using SOA attribute buffers
-        let mesh_handle = if model.has_skinning {
-            self.renderer.unwrap_vulkan().create_mesh_soa(
-                &model.skinned_vertex_attributes,
-                model.skinned_vertex_data.len() as u32,
-                &indices,
-            )
+        // 3. Create mesh using interleaved vertex data via register_mesh_raw
+        let vertex_bytes: &[u8] = if model.has_skinning {
+            bytemuck::cast_slice(&model.skinned_vertex_data)
         } else {
-            self.renderer.unwrap_vulkan().create_mesh_soa(
-                &model.vertex_attributes,
-                model.vertex_data.len() as u32,
-                &indices,
-            )
+            bytemuck::cast_slice(&model.vertex_data)
         };
+        let mesh_handle =
+            self.renderer
+                .register_mesh_raw(vertex_bytes, vertex_count as u32, &indices);
 
         // 4. Create material (skinned or regular)
         let shader_path = if model.has_skinning {
@@ -341,22 +328,11 @@ impl super::Application {
         } else {
             self.resources.shader_path("model_pbr.wgsl")
         };
-
+        let vertex_type_str = if model.has_skinning { "skinned" } else { "pbr" };
+        let shader_str = shader_path.to_string_lossy();
         let material_handle = self
             .renderer
-            .unwrap_vulkan()
-            .compile_material(
-                &shader_path,
-                katla_gfx::MaterialOptions {
-                    vertex_type: if model.has_skinning {
-                        katla_gfx::VertexType::Skinned
-                    } else {
-                        katla_gfx::VertexType::Pbr
-                    },
-                    color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
-                    ..Default::default()
-                },
-            )
+            .compile_material(&shader_str, vertex_type_str)
             .map_err(|e| AppError::ShaderCompileFailed {
                 path: path_display.clone(),
                 reason: format!("{e}"),
@@ -508,7 +484,6 @@ impl super::Application {
         Ok(entity)
     }
 
-    #[cfg(feature = "vulkan")]
     /// Upload textures from a GLTF model and return bindless texture indices.
     ///
     /// Returns [albedo, normal, metallic_roughness, ao, emission] indices.
@@ -592,9 +567,11 @@ impl super::Application {
     }
 
     /// Upload a single GLTF image to the GPU.
-    #[cfg(feature = "vulkan")]
-    fn upload_gltf_image(&mut self, image: &gltf::image::Data, srgb: bool) -> TextureHandle {
-        // Convert RGB to RGBA if needed (Vulkan requires 4-channel alignment)
+    fn upload_gltf_image(
+        &mut self,
+        image: &gltf::image::Data,
+        srgb: bool,
+    ) -> katla_gfx::TextureHandle {
         let pixels = if image.format == gltf::image::Format::R8G8B8 {
             let mut rgba = Vec::with_capacity(image.pixels.len() / 3 * 4);
             for chunk in image.pixels.chunks(3) {
@@ -615,7 +592,6 @@ impl super::Application {
     }
 
     /// Get the bindless texture index for a texture handle.
-    #[cfg(feature = "vulkan")]
     fn get_bindless_index(&self, handle: katla_gfx::TextureHandle) -> u32 {
         // The texture manager assigns bindless indices during texture creation
         // We need to query the texture manager for the bindless slot
@@ -626,7 +602,6 @@ impl super::Application {
     ///
     /// For non-indexed geometry (empty index_data), generates sequential indices
     /// [0, 1, 2, ... vertex_count-1] for the given vertex count.
-    #[cfg(feature = "vulkan")]
     pub(crate) fn convert_indices_to_u32_with_vertex_count(
         index_data: &[u8],
         index_stride: u8,

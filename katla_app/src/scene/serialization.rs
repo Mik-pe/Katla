@@ -514,7 +514,6 @@ impl SceneManager {
             ))
         } else {
             match &desc.source {
-                #[cfg(feature = "vulkan")]
                 EntitySource::GltfModel { path } => app
                     .spawn_gltf_model(path, pos, None)
                     .map_err(|e| format!("{e}"))?,
