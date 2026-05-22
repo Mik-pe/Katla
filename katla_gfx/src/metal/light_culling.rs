@@ -297,9 +297,6 @@ impl MetalLightCulling {
 
         cmd_buffer.end();
         cmd_buffer.submit(context);
-
-        // Wait for compute to finish before the geometry pass reads the results
-        cmd_buffer.inner.waitUntilCompleted();
     }
 
     /// Recreate tile buffers for new screen dimensions.

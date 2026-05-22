@@ -1,17 +1,24 @@
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal::MTLBuffer;
+use objc2_foundation::NSRange;
+use objc2_metal::{MTLBuffer, MTLResource, MTLStorageMode};
 
 use crate::backend::resource::GpuBuffer;
 
 pub(crate) struct MetalBuffer {
     pub(crate) inner: Retained<ProtocolObject<dyn MTLBuffer>>,
     size: u64,
+    storage_mode: MTLStorageMode,
 }
 
 impl MetalBuffer {
     pub(crate) fn new(inner: Retained<ProtocolObject<dyn MTLBuffer>>, size: u64) -> Self {
-        Self { inner, size }
+        let storage_mode = inner.storageMode();
+        Self {
+            inner,
+            size,
+            storage_mode,
+        }
     }
 }
 
@@ -24,10 +31,15 @@ impl GpuBuffer for MetalBuffer {
         self.inner.contents().as_ptr() as *mut u8
     }
 
-    fn unmap(&self) {}
+    fn unmap(&self) {
+        self.flush(0, self.size);
+    }
 
     fn flush(&self, offset: u64, size: u64) {
-        let _ = (offset, size);
+        if self.storage_mode == MTLStorageMode::Managed {
+            self.inner
+                .didModifyRange(NSRange::new(offset as usize, size as usize));
+        }
     }
 
     fn gpu_address(&self) -> u64 {

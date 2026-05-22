@@ -4,7 +4,7 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
     MTLBuffer, MTLCommandEncoder, MTLIndexType, MTLPrimitiveType, MTLRenderCommandEncoder,
-    MTLScissorRect, MTLViewport,
+    MTLRenderStages, MTLResource, MTLResourceUsage, MTLScissorRect, MTLTexture, MTLViewport,
 };
 
 use crate::backend::command::*;
@@ -30,6 +30,26 @@ impl MetalRenderEncoder {
             index_type: None,
             index_offset: 0,
         }
+    }
+
+    pub(crate) fn use_buffer(
+        &self,
+        buffer: &ProtocolObject<dyn MTLBuffer>,
+        usage: MTLResourceUsage,
+        stages: MTLRenderStages,
+    ) {
+        let resource: &ProtocolObject<dyn MTLResource> = buffer.as_ref();
+        self.inner.useResource_usage_stages(resource, usage, stages);
+    }
+
+    pub(crate) fn use_texture(
+        &self,
+        texture: &ProtocolObject<dyn MTLTexture>,
+        usage: MTLResourceUsage,
+        stages: MTLRenderStages,
+    ) {
+        let resource: &ProtocolObject<dyn MTLResource> = texture.as_ref();
+        self.inner.useResource_usage_stages(resource, usage, stages);
     }
 }
 
