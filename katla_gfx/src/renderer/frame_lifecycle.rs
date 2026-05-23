@@ -164,7 +164,7 @@ impl VulkanRenderer {
     /// # Example
     /// ```ignore
     /// // Setup
-    /// let mesh = renderer.create_cube_mesh([1.0, 1.0, 1.0]);
+    /// let mesh = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0]);
     /// let material = renderer.default_material();
     ///
     /// // Render loop

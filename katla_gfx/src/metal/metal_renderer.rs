@@ -201,6 +201,7 @@ pub struct MetalRenderer {
     pub(crate) sky_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
     pub(crate) dummy_vertex_buffer: Option<MetalBuffer>,
     pub(crate) tonemap_fence: Option<Retained<ProtocolObject<dyn objc2_metal::MTLFence>>>,
+    pub(crate) capabilities: crate::renderer::types::GpuCapabilities,
 }
 
 impl MetalRenderer {
@@ -293,6 +294,16 @@ impl MetalRenderer {
             sky_pipeline: None,
             dummy_vertex_buffer: None,
             tonemap_fence: None,
+            capabilities: {
+                use crate::renderer::types::{GpuCapabilities, GpuVendor};
+                GpuCapabilities {
+                    max_texture_size: 16384,
+                    max_bindless_textures: features.max_bindless_textures as u32,
+                    supports_compute: true,
+                    max_frames_in_flight: FRAMES_IN_FLIGHT,
+                    vendor: GpuVendor::Apple,
+                }
+            },
         };
 
         let default_tex = renderer.create_texture_solid([255, 255, 255, 255]);
@@ -859,6 +870,10 @@ impl GpuRenderer for MetalRenderer {
     fn wait_for_device(&self) {
         // Metal doesn't have a global device wait.
         // Per-frame sync is handled via wait_for_frame.
+    }
+
+    fn capabilities(&self) -> &crate::renderer::types::GpuCapabilities {
+        &self.capabilities
     }
 
     fn destroy(&mut self) {
@@ -1494,67 +1509,13 @@ impl GpuRenderer for MetalRenderer {
         self.create_mesh_from_vertices(vertices, indices)
     }
 
-    fn create_mesh_soa(
-        &mut self,
-        _attributes: &std::collections::HashMap<u32, Vec<u8>>,
-        _vertex_count: u32,
-        _indices: &[u32],
-    ) -> MeshHandle {
-        unimplemented!(
-            "create_mesh_soa is not supported on Metal; use create_mesh or register_mesh_raw instead"
-        )
-    }
-
-    fn register_mesh_raw(
-        &mut self,
-        vertex_data: &[u8],
-        _vertex_count: u32,
-        index_data: &[u32],
-    ) -> MeshHandle {
-        self.register_mesh_raw_impl(vertex_data, index_data)
-    }
-
-    fn create_cube_mesh(&mut self, size: [f32; 3]) -> MeshHandle {
-        self.create_cube_mesh_impl(size)
-    }
-
-    fn create_sphere_mesh(&mut self, radius: f32, segments: u32, rings: u32) -> MeshHandle {
-        self.create_sphere_mesh_impl(radius, segments, rings)
-    }
-
-    fn create_plane_mesh(&mut self, width: f32, height: f32) -> MeshHandle {
-        self.create_plane_mesh_impl(width, height)
-    }
-
-    fn create_cone_mesh(&mut self, height: f32, base_radius: f32, segments: u32) -> MeshHandle {
-        self.create_cone_mesh_impl(height, base_radius, segments)
-    }
-
-    fn create_cylinder_mesh(&mut self, height: f32, radius: f32, segments: u32) -> MeshHandle {
-        self.create_cylinder_mesh_impl(height, radius, segments)
-    }
-
-    fn create_torus_mesh(
-        &mut self,
-        major_radius: f32,
-        minor_radius: f32,
-        segments: u32,
-        rings: u32,
-    ) -> MeshHandle {
-        self.create_torus_mesh_impl(major_radius, minor_radius, segments, rings)
-    }
-
-    fn create_plane_xy_mesh(&mut self, width: f32, height: f32, segments: u32) -> MeshHandle {
-        self.create_plane_xy_mesh_impl(width, height, segments)
-    }
-
     fn create_mesh_dynamic(
         &mut self,
         vertex_data: &[u8],
         _vertex_count: u32,
         indices: &[u32],
     ) -> MeshHandle {
-        self.register_mesh_raw(vertex_data, _vertex_count, indices)
+        self.register_mesh_raw_impl(vertex_data, indices)
     }
 
     fn update_mesh_dynamic(
@@ -1936,13 +1897,13 @@ mod tests {
     fn test_metal_primitive_meshes() {
         let mut renderer = create_renderer();
 
-        let cube = renderer.create_cube_mesh([1.0, 1.0, 1.0]);
+        let cube = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0]);
         assert!(cube.is_some(), "cube handle should be valid");
 
-        let sphere = renderer.create_sphere_mesh(1.0, 16, 16);
+        let sphere = crate::primitives::create_sphere(&mut renderer, 1.0, 16, 16);
         assert!(sphere.is_some(), "sphere handle should be valid");
 
-        let plane = renderer.create_plane_mesh(2.0, 2.0);
+        let plane = crate::primitives::create_plane(&mut renderer, 2.0, 2.0);
         assert!(plane.is_some(), "plane handle should be valid");
 
         assert_ne!(
@@ -1979,7 +1940,7 @@ mod tests {
     fn test_metal_execute_draw_calls() {
         let mut renderer = create_renderer();
 
-        let default_mesh = renderer.create_cube_mesh([1.0, 1.0, 1.0]);
+        let default_mesh = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0]);
         let default_mat = renderer.default_material();
 
         let draw = DrawCall::new(default_mesh, default_mat);
@@ -2264,8 +2225,8 @@ mod tests {
         renderer.upload_lights(&[]);
 
         // Create meshes
-        let cube = renderer.create_cube_mesh([1.0, 1.0, 1.0]);
-        let plane = renderer.create_plane_mesh(10.0, 10.0);
+        let cube = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0]);
+        let plane = crate::primitives::create_plane(&mut renderer, 10.0, 10.0);
 
         // Create Shared BGRA8 texture as tonemap output (CPU-readable via getBytes)
         let readback_desc = TextureDescriptor::new(W, H, ImageFormat::B8G8R8A8Srgb)

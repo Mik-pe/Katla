@@ -5,6 +5,7 @@ use winit::keyboard::KeyCode;
 use crate::application::Application;
 use crate::gizmo::*;
 use katla_gfx::GpuRenderer;
+use katla_gfx::primitives;
 use katla_math::Vec2;
 
 #[cfg(feature = "editor")]
@@ -13,10 +14,10 @@ impl Application {
     pub(crate) fn init_gizmo_resources(&mut self) {
         use crate::gizmo::GizmoResources;
 
-        let shaft_mesh = self.renderer.create_cylinder_mesh(1.0, 0.05, 16);
-        let cone_mesh = self.renderer.create_cone_mesh(1.0, 0.5, 16);
-        let cube_mesh = self.renderer.create_cube_mesh([1.0, 1.0, 1.0]);
-        let ring_mesh = self.renderer.create_torus_mesh(0.5, 0.02, 48, 24);
+        let shaft_mesh = primitives::create_cylinder(&mut self.renderer, 1.0, 0.05, 16);
+        let cone_mesh = primitives::create_cone(&mut self.renderer, 1.0, 0.5, 16);
+        let cube_mesh = primitives::create_cube(&mut self.renderer, [1.0, 1.0, 1.0]);
+        let ring_mesh = primitives::create_torus(&mut self.renderer, 0.5, 0.02, 48, 24);
 
         let unlit_shader_path = self.resources.shader_path("unlit.wgsl");
         let material = match &mut self.renderer {

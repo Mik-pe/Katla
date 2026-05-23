@@ -39,6 +39,9 @@ pub trait GpuRenderer: Sized + 'static {
     /// Destroy all GPU resources. Must be called before dropping.
     fn destroy(&mut self);
 
+    /// Query GPU hardware capabilities and limits.
+    fn capabilities(&self) -> &crate::renderer::types::GpuCapabilities;
+
     // ========================================================================
     // Frame Lifecycle
     // ========================================================================
@@ -83,51 +86,6 @@ pub trait GpuRenderer: Sized + 'static {
         T: bytemuck::Pod,
         U: bytemuck::Pod;
 
-    /// Create a mesh with separate per-attribute vertex buffers (SOA layout).
-    /// `attributes` maps attribute types to raw vertex data bytes.
-    fn create_mesh_soa(
-        &mut self,
-        attributes: &std::collections::HashMap<u32, Vec<u8>>,
-        vertex_count: u32,
-        indices: &[u32],
-    ) -> MeshHandle;
-
-    /// Register pre-existing GPU buffers as a mesh.
-    /// Backend-specific; callers should use backend types directly.
-    fn register_mesh_raw(
-        &mut self,
-        vertex_data: &[u8],
-        vertex_count: u32,
-        index_data: &[u32],
-    ) -> MeshHandle;
-
-    /// Create a unit cube mesh.
-    fn create_cube_mesh(&mut self, size: [f32; 3]) -> MeshHandle;
-
-    /// Create a UV sphere mesh.
-    fn create_sphere_mesh(&mut self, radius: f32, segments: u32, rings: u32) -> MeshHandle;
-
-    /// Create a plane mesh on the XZ plane.
-    fn create_plane_mesh(&mut self, width: f32, height: f32) -> MeshHandle;
-
-    /// Create a cone mesh.
-    fn create_cone_mesh(&mut self, height: f32, base_radius: f32, segments: u32) -> MeshHandle;
-
-    /// Create a cylinder mesh.
-    fn create_cylinder_mesh(&mut self, height: f32, radius: f32, segments: u32) -> MeshHandle;
-
-    /// Create a torus mesh.
-    fn create_torus_mesh(
-        &mut self,
-        major_radius: f32,
-        minor_radius: f32,
-        segments: u32,
-        rings: u32,
-    ) -> MeshHandle;
-
-    /// Create a subdivided plane on the XY plane.
-    fn create_plane_xy_mesh(&mut self, width: f32, height: f32, segments: u32) -> MeshHandle;
-
     /// Create a dynamic (CPU-writable) mesh.
     fn create_mesh_dynamic(
         &mut self,
@@ -154,6 +112,13 @@ pub trait GpuRenderer: Sized + 'static {
 
     /// Create a 1×1 solid-color texture.
     fn create_texture_solid(&mut self, color: [u8; 4]) -> TextureHandle;
+
+    /// Update an existing texture with new pixel data.
+    /// The data must match the texture's format and dimensions.
+    fn update_texture(&mut self, handle: TextureHandle, data: &[u8]) -> Result<(), RendererError> {
+        let _ = (handle, data);
+        Ok(())
+    }
 
     /// Get the bindless slot for a texture handle.
     fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32>;
@@ -456,6 +421,10 @@ impl GpuRenderer for VulkanRenderer {
         VulkanRenderer::destroy(self);
     }
 
+    fn capabilities(&self) -> &crate::renderer::types::GpuCapabilities {
+        &self.capabilities
+    }
+
     fn wait_for_frame(&mut self) -> Result<(), RendererError> {
         VulkanRenderer::wait_for_frame(self)
     }
@@ -501,58 +470,6 @@ impl GpuRenderer for VulkanRenderer {
         U: bytemuck::Pod,
     {
         VulkanRenderer::create_mesh(self, vertices, indices)
-    }
-
-    fn create_mesh_soa(
-        &mut self,
-        _attributes: &std::collections::HashMap<u32, Vec<u8>>,
-        _vertex_count: u32,
-        _indices: &[u32],
-    ) -> MeshHandle {
-        todo!("create_mesh_soa requires Vulkan-specific AttributeType mapping")
-    }
-
-    fn register_mesh_raw(
-        &mut self,
-        vertex_data: &[u8],
-        vertex_count: u32,
-        index_data: &[u32],
-    ) -> MeshHandle {
-        VulkanRenderer::create_mesh_dynamic(self, vertex_data, vertex_count, index_data)
-    }
-
-    fn create_cube_mesh(&mut self, size: [f32; 3]) -> MeshHandle {
-        VulkanRenderer::create_cube_mesh(self, size)
-    }
-
-    fn create_sphere_mesh(&mut self, radius: f32, segments: u32, rings: u32) -> MeshHandle {
-        VulkanRenderer::create_sphere_mesh(self, radius, segments, rings)
-    }
-
-    fn create_plane_mesh(&mut self, width: f32, height: f32) -> MeshHandle {
-        VulkanRenderer::create_plane_mesh(self, width, height)
-    }
-
-    fn create_cone_mesh(&mut self, height: f32, base_radius: f32, segments: u32) -> MeshHandle {
-        VulkanRenderer::create_cone_mesh(self, height, base_radius, segments)
-    }
-
-    fn create_cylinder_mesh(&mut self, height: f32, radius: f32, segments: u32) -> MeshHandle {
-        VulkanRenderer::create_cylinder_mesh(self, height, radius, segments)
-    }
-
-    fn create_torus_mesh(
-        &mut self,
-        major_radius: f32,
-        minor_radius: f32,
-        segments: u32,
-        rings: u32,
-    ) -> MeshHandle {
-        VulkanRenderer::create_torus_mesh(self, major_radius, minor_radius, segments, rings)
-    }
-
-    fn create_plane_xy_mesh(&mut self, width: f32, height: f32, segments: u32) -> MeshHandle {
-        VulkanRenderer::create_plane_xy_mesh(self, width, height, segments)
     }
 
     fn create_mesh_dynamic(

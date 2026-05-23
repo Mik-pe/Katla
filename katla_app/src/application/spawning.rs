@@ -1,4 +1,5 @@
 use katla_gfx::GpuRenderer;
+use katla_gfx::primitives;
 use log::{debug, info};
 
 use crate::scene::entity_source::EntitySource;
@@ -58,7 +59,7 @@ impl super::Application {
         size: [f32; 3],
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        let mesh_handle = self.renderer.create_cube_mesh(size);
+        let mesh_handle = primitives::create_cube(&mut self.renderer, size);
         info!("Spawned test cube at {:?} with size {:?}", position, size);
         self.spawn_primitive_with_color(position, color, mesh_handle, EntitySource::Cube { size })
     }
@@ -84,7 +85,7 @@ impl super::Application {
         rings: u32,
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        let mesh_handle = self.renderer.create_sphere_mesh(radius, segments, rings);
+        let mesh_handle = primitives::create_sphere(&mut self.renderer, radius, segments, rings);
         info!("Spawned sphere at {:?} with radius {}", position, radius);
         self.spawn_primitive_with_color(
             position,
@@ -111,7 +112,7 @@ impl super::Application {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_math::Vec3;
 
-        let mesh_handle = self.renderer.create_sphere_mesh(radius, segments, rings);
+        let mesh_handle = primitives::create_sphere(&mut self.renderer, radius, segments, rings);
         let material_handle = self.default_material();
         let linear_color = material.color.map(|c| c.to_linear()).unwrap_or_default();
 
@@ -173,7 +174,7 @@ impl super::Application {
         segments: u32,
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        let mesh_handle = self.renderer.create_cylinder_mesh(height, radius, segments);
+        let mesh_handle = primitives::create_cylinder(&mut self.renderer, height, radius, segments);
         info!("Spawned cylinder at {:?}", position);
         self.spawn_primitive_with_color(
             position,
@@ -206,7 +207,7 @@ impl super::Application {
         height: f32,
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        let mesh_handle = self.renderer.create_plane_mesh(width, height);
+        let mesh_handle = primitives::create_plane(&mut self.renderer, width, height);
         info!("Spawned plane at {:?}", position);
         self.spawn_primitive_with_color(
             position,
@@ -246,9 +247,13 @@ impl super::Application {
         tube_segments: u32,
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        let mesh_handle =
-            self.renderer
-                .create_torus_mesh(radius, tube_radius, segments, tube_segments);
+        let mesh_handle = primitives::create_torus(
+            &mut self.renderer,
+            radius,
+            tube_radius,
+            segments,
+            tube_segments,
+        );
         info!("Spawned torus at {:?}", position);
         self.spawn_primitive_with_color(
             position,
@@ -312,7 +317,7 @@ impl super::Application {
             vertex_count
         );
 
-        // 3. Create mesh using interleaved vertex data via register_mesh_raw
+        // 3. Create mesh using interleaved vertex data via create_mesh_dynamic
         let vertex_bytes: &[u8] = if model.has_skinning {
             bytemuck::cast_slice(&model.skinned_vertex_data)
         } else {
@@ -320,7 +325,7 @@ impl super::Application {
         };
         let mesh_handle =
             self.renderer
-                .register_mesh_raw(vertex_bytes, vertex_count as u32, &indices);
+                .create_mesh_dynamic(vertex_bytes, vertex_count as u32, &indices);
 
         // 4. Create material (skinned or regular)
         let shader_path = if model.has_skinning {

@@ -5,6 +5,7 @@ use katla_agent::{LocalAction, OpenAiProvider, StreamEvent, ToolCall};
 use katla_ecs::EntityId;
 use katla_ecs::scene_tool::{ComponentRegistry, ResourceOp, SceneOp, SceneToolExecutor};
 use katla_gfx::GpuRenderer;
+use katla_gfx::primitives;
 use katla_math::Vec3;
 use log::warn;
 
@@ -443,7 +444,7 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
 
         let (mesh_handle, entity_source) = match shape {
             "sphere" => (
-                app.renderer.create_sphere_mesh(0.5, 32, 16),
+                primitives::create_sphere(&mut app.renderer, 0.5, 32, 16),
                 EntitySource::Sphere {
                     radius: 0.5,
                     segments: 32,
@@ -451,14 +452,14 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
                 },
             ),
             "plane" => (
-                app.renderer.create_plane_mesh(5.0, 5.0),
+                primitives::create_plane(&mut app.renderer, 5.0, 5.0),
                 EntitySource::Plane {
                     width: 5.0,
                     height: 5.0,
                 },
             ),
             "cylinder" => (
-                app.renderer.create_cylinder_mesh(1.0, 0.5, 32),
+                primitives::create_cylinder(&mut app.renderer, 1.0, 0.5, 32),
                 EntitySource::Cylinder {
                     height: 1.0,
                     radius: 0.5,
@@ -466,7 +467,7 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
                 },
             ),
             "torus" => (
-                app.renderer.create_torus_mesh(0.7, 0.2, 32, 16),
+                primitives::create_torus(&mut app.renderer, 0.7, 0.2, 32, 16),
                 EntitySource::Torus {
                     radius: 0.7,
                     tube_radius: 0.2,
@@ -475,7 +476,7 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
                 },
             ),
             _ => (
-                app.renderer.create_cube_mesh(scale),
+                primitives::create_cube(&mut app.renderer, scale),
                 EntitySource::Cube { size: scale },
             ),
         };

@@ -582,6 +582,34 @@ impl UIDrawList {
     }
 }
 
+/// GPU hardware capabilities and limits.
+///
+/// Queried from the renderer at init time. Backends populate this from
+/// physical device properties (Vulkan) or Metal device features.
+#[derive(Clone, Debug)]
+pub struct GpuCapabilities {
+    /// Maximum texture dimension (width and height) in pixels.
+    pub max_texture_size: u32,
+    /// Maximum number of bindless texture slots.
+    pub max_bindless_textures: u32,
+    /// Whether compute shaders are supported.
+    pub supports_compute: bool,
+    /// Maximum number of frames that can be in flight simultaneously.
+    pub max_frames_in_flight: usize,
+    /// GPU vendor.
+    pub vendor: GpuVendor,
+}
+
+/// GPU vendor identification.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GpuVendor {
+    Nvidia,
+    Amd,
+    Intel,
+    Apple,
+    Unknown,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
