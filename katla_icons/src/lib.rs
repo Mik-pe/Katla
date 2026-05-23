@@ -193,6 +193,19 @@ impl ForkAwesome {
     pub const FIRE: char = '\u{F06D}';
 
     // =========================================================================
+    // Audio
+    // =========================================================================
+
+    /// Music note icon
+    pub const MUSIC: char = '\u{F001}';
+    /// Volume Up icon
+    pub const VOLUME_UP: char = '\u{F028}';
+    /// Volume Off icon (mute)
+    pub const VOLUME_OFF: char = '\u{F026}';
+    /// Volume Down icon
+    pub const VOLUME_DOWN: char = '\u{F027}';
+
+    // =========================================================================
     // Status & Feedback
     // =========================================================================
 

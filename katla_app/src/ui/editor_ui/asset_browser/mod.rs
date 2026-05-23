@@ -237,6 +237,7 @@ pub fn build_asset_browser(
             let mut drag_start_index: Option<usize> = None;
             let mut should_navigate: Option<PathBuf> = None;
             let mut should_preview_model: Option<PathBuf> = None;
+            let mut should_preview_audio: Option<PathBuf> = None;
 
             for (i, asset) in state.assets.iter().enumerate() {
                 let col = i % col_count;
@@ -352,6 +353,8 @@ pub fn build_asset_browser(
                         should_navigate = Some(asset.path.clone());
                     } else if asset.asset_type == AssetType::Model {
                         should_preview_model = Some(asset.path.clone());
+                    } else if asset.asset_type == AssetType::Audio {
+                        should_preview_audio = Some(asset.path.clone());
                     }
                     drag_start_index = Some(i);
                 }
@@ -374,6 +377,7 @@ pub fn build_asset_browser(
                             AssetType::Script => "Script",
                             AssetType::Material => "Material",
                             AssetType::Font => "Font",
+                            AssetType::Audio => "Audio",
                             AssetType::Unknown => "File",
                         },
                         asset.path.display()
@@ -589,7 +593,10 @@ pub fn build_asset_browser(
                         }
                     } else if !mouse_in_browser {
                         for (_, asset_path, asset_type) in &assets_to_drag {
-                            if matches!(asset_type, AssetType::Model | AssetType::Image) {
+                            if matches!(
+                                asset_type,
+                                AssetType::Model | AssetType::Image | AssetType::Audio
+                            ) {
                                 state.pending_actions.push(AssetAction::DragToViewport {
                                     path: asset_path.clone(),
                                     asset_type: *asset_type,
@@ -713,6 +720,10 @@ pub fn build_asset_browser(
                         state
                             .pending_actions
                             .push(AssetAction::ModelPreviewRequested(path));
+                    } else if let Some(path) = should_preview_audio {
+                        state
+                            .pending_actions
+                            .push(AssetAction::AudioPreviewToggle { path });
                     }
                 }
             }

@@ -22,8 +22,8 @@ use crate::components::{
 };
 
 use crate::ui::{
-    DirectionalLightInfo, DragInfo, EditorAction, EntityInfo, MassInfo, ParticleEmitterInfo,
-    PerspectiveInfo, PointLightInfo,
+    AudioEmitterBoolField, AudioEmitterField, AudioEmitterInfo, DirectionalLightInfo, DragInfo,
+    EditorAction, EntityInfo, MassInfo, ParticleEmitterInfo, PerspectiveInfo, PointLightInfo,
 };
 
 use super::Application;
@@ -589,6 +589,21 @@ fn inspector_values_differ_from_ecs(
         }
     }
 
+    if let Some(ae) = world.get_component::<crate::components::AudioEmitter>(entity) {
+        if (edit.audio_volume - ae.volume).abs() > 1e-4 {
+            return true;
+        }
+        if (edit.audio_min_distance - ae.min_distance).abs() > 1e-4 {
+            return true;
+        }
+        if (edit.audio_max_distance - ae.max_distance).abs() > 1e-4 {
+            return true;
+        }
+        if (edit.audio_rolloff_factor - ae.rolloff_factor).abs() > 1e-4 {
+            return true;
+        }
+    }
+
     false
 }
 
@@ -691,6 +706,13 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         directional_color,
         directional_intensity,
         directional_color_picker: _,
+        audio_source_path: _,
+        audio_volume,
+        audio_looping: _,
+        audio_spatial: _,
+        audio_min_distance,
+        audio_max_distance,
+        audio_rolloff_factor,
     } = &app.editor.editor_ui.inspector_edit;
 
     let _ = (emit_rate, velocity, lifetime, gravity, particle_scale);
@@ -801,6 +823,24 @@ fn apply_inspector_slider_changes(app: &mut Application) {
             );
             dl.color = *directional_color;
             dl.intensity = *directional_intensity;
+        }
+    }
+
+    // AudioEmitter
+    if let Some(ae) = app
+        .world
+        .get_component_mut::<crate::components::AudioEmitter>(entity_id)
+    {
+        let vol_changed = (*audio_volume - ae.volume).abs() > 1e-4;
+        let min_changed = (*audio_min_distance - ae.min_distance).abs() > 1e-4;
+        let max_changed = (*audio_max_distance - ae.max_distance).abs() > 1e-4;
+        let roll_changed = (*audio_rolloff_factor - ae.rolloff_factor).abs() > 1e-4;
+
+        if vol_changed || min_changed || max_changed || roll_changed {
+            ae.volume = *audio_volume;
+            ae.min_distance = *audio_min_distance;
+            ae.max_distance = *audio_max_distance;
+            ae.rolloff_factor = *audio_rolloff_factor;
         }
     }
 }
@@ -1327,6 +1367,83 @@ pub fn process_editor_actions(app: &mut Application) {
                     }
                 }
             }
+            EditorAction::SpawnAudioEmitter { path, screen_pos } => {
+                let world_pos = unproject_to_ground_plane(app, screen_pos);
+                let entity = app.world.create_entity();
+                app.world
+                    .add_component(entity, TransformComponent::from_position(world_pos));
+                app.world.add_component(
+                    entity,
+                    NameComponent::new(
+                        path.file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("Audio Emitter"),
+                    ),
+                );
+                app.world.add_component(
+                    entity,
+                    crate::components::AudioEmitter::new(path.to_string_lossy().to_string()),
+                );
+                app.editor.editor_ui.selected_entity = Some(entity);
+                info!(
+                    "Spawned audio emitter '{}' at ({:.1}, {:.1}, {:.1})",
+                    path.display(),
+                    world_pos.x(),
+                    world_pos.y(),
+                    world_pos.z()
+                );
+            }
+            EditorAction::SetAudioSourcePath { entity, path } => {
+                if let Some(ae) = app
+                    .world
+                    .get_component_mut::<crate::components::AudioEmitter>(entity)
+                {
+                    ae.source_path = path;
+                }
+            }
+            EditorAction::SetAudioEmitterField {
+                entity,
+                field,
+                value,
+            } => {
+                if let Some(ae) = app
+                    .world
+                    .get_component_mut::<crate::components::AudioEmitter>(entity)
+                {
+                    match field {
+                        AudioEmitterField::Volume => ae.volume = value,
+                        AudioEmitterField::MinDistance => ae.min_distance = value,
+                        AudioEmitterField::MaxDistance => ae.max_distance = value,
+                        AudioEmitterField::RolloffFactor => ae.rolloff_factor = value,
+                    }
+                }
+            }
+            EditorAction::ToggleAudioEmitterBool { entity, field } => {
+                if let Some(ae) = app
+                    .world
+                    .get_component_mut::<crate::components::AudioEmitter>(entity)
+                {
+                    match field {
+                        AudioEmitterBoolField::Looping => ae.looping = !ae.looping,
+                        AudioEmitterBoolField::Spatial => ae.spatial = !ae.spatial,
+                        AudioEmitterBoolField::Playing => ae.playing = !ae.playing,
+                    }
+                }
+            }
+            EditorAction::AudioPreviewToggle { path } => {
+                if let Some(ref mut audio_sys) = app.audio_system {
+                    let key = path.to_string_lossy().to_string();
+                    if let Some(handle) = app.editor.preview_voice.take() {
+                        handle.stop();
+                    } else {
+                        let buffer = audio_sys.get_or_load_buffer(&key);
+                        if let Some(buf) = buffer {
+                            let handle = audio_sys.engine().play(&buf);
+                            app.editor.preview_voice = Some(handle);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1475,6 +1592,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         Option<DragInfo>,
         Option<PerspectiveInfo>,
         Option<DirectionalLightInfo>,
+        Option<crate::ui::AudioEmitterInfo>,
     );
     let mut entity_data: HashMap<EntityId, EntityData> = HashMap::new();
     let mut parent_map: HashMap<EntityId, EntityId> = HashMap::new();
@@ -1556,6 +1674,20 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 intensity: dl.intensity,
             });
 
+        let audio_emitter_info = app
+            .world
+            .get_component::<crate::components::AudioEmitter>(entity_id)
+            .map(|ae| crate::ui::AudioEmitterInfo {
+                source_path: ae.source_path.clone(),
+                volume: ae.volume,
+                looping: ae.looping,
+                playing: ae.playing,
+                spatial: ae.spatial,
+                min_distance: ae.min_distance,
+                max_distance: ae.max_distance,
+                rolloff_factor: ae.rolloff_factor,
+            });
+
         // Build component list from cached query results
         let mut components: Vec<&'static str> = Vec::with_capacity(12);
         components.push("Transform");
@@ -1589,6 +1721,9 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
             .is_some()
         {
             components.push("ScriptComponent");
+        }
+        if audio_emitter_info.is_some() {
+            components.push("AudioEmitter");
         }
         if has_parent {
             components.push("Parent");
@@ -1629,6 +1764,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 drag_info,
                 perspective_info,
                 directional_info,
+                audio_emitter_info,
             ),
         );
         root_entities.insert(entity_id);
@@ -1671,6 +1807,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 drag,
                 perspective,
                 directional_light,
+                audio_emitter,
             ) = data;
 
             let children = children_map
@@ -1695,6 +1832,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 drag: drag.clone(),
                 perspective: perspective.clone(),
                 directional_light: directional_light.clone(),
+                audio_emitter: audio_emitter.clone(),
             });
 
             // Recursively add children

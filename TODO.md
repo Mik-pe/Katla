@@ -195,11 +195,11 @@
 - [x] Add looping support — seamless loop points for music, configurable loop region for one-shot variations
 
 ### Phase 5: Editor and asset integration
-- [ ] Add audio file loading to asset pipeline — recognize .wav/.ogg extensions, decode and cache AudioBuffers
-- [ ] Add audio entries to asset browser — show audio files with icon, duration, sample rate metadata
-- [ ] Add audio preview in asset browser — play/pause button on audio asset hover or selection
-- [ ] Add audio inspector UI — volume slider, looping toggle, category selector for AudioSource/AudioEmitter components
-- [ ] Add drag-to-spawn AudioEmitter — drag audio file from asset browser into viewport to create entity with AudioEmitter
+- [x] Add audio file loading to asset pipeline — recognize .wav/.ogg extensions, decode and cache AudioBuffers
+- [x] Add audio entries to asset browser — show audio files with icon, duration, sample rate metadata
+- [x] Add audio preview in asset browser — play/pause button on audio asset hover or selection
+- [x] Add audio inspector UI — volume slider, looping toggle, category selector for AudioSource/AudioEmitter components
+- [x] Add drag-to-spawn AudioEmitter — drag audio file from asset browser into viewport to create entity with AudioEmitter
 
 ## Physics
 

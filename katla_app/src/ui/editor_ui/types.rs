@@ -137,6 +137,8 @@ pub struct EntityInfo {
     pub perspective: Option<PerspectiveInfo>,
     /// Directional light data (if entity has DirectionalLight)
     pub directional_light: Option<DirectionalLightInfo>,
+    /// Audio emitter data (if entity has AudioEmitter)
+    pub audio_emitter: Option<AudioEmitterInfo>,
 }
 
 /// Point light inspector data.
@@ -183,6 +185,36 @@ pub struct DirectionalLightInfo {
     pub direction: [f32; 3],
     pub color: [f32; 3],
     pub intensity: f32,
+}
+
+/// Audio emitter inspector data.
+#[derive(Debug, Clone)]
+pub struct AudioEmitterInfo {
+    pub source_path: String,
+    pub volume: f32,
+    pub looping: bool,
+    pub playing: bool,
+    pub spatial: bool,
+    pub min_distance: f32,
+    pub max_distance: f32,
+    pub rolloff_factor: f32,
+}
+
+/// Audio emitter f32 field names for inspector edits.
+#[derive(Debug, Clone)]
+pub enum AudioEmitterField {
+    Volume,
+    MinDistance,
+    MaxDistance,
+    RolloffFactor,
+}
+
+/// Audio emitter bool field names for inspector toggles.
+#[derive(Debug, Clone)]
+pub enum AudioEmitterBoolField {
+    Looping,
+    Spatial,
+    Playing,
 }
 
 #[derive(Debug, Clone)]
@@ -284,6 +316,26 @@ pub enum EditorAction {
         entity: EntityId,
         field: crate::ui::particle_inspector::EmitterField,
     },
+    /// Spawn an AudioEmitter entity at a viewport position.
+    SpawnAudioEmitter {
+        path: std::path::PathBuf,
+        screen_pos: katla_math::Vec2,
+    },
+    /// Set the audio source path on an entity's AudioEmitter component.
+    SetAudioSourcePath { entity: EntityId, path: String },
+    /// Set an AudioEmitter field on an entity.
+    SetAudioEmitterField {
+        entity: EntityId,
+        field: AudioEmitterField,
+        value: f32,
+    },
+    /// Toggle an AudioEmitter bool field on an entity.
+    ToggleAudioEmitterBool {
+        entity: EntityId,
+        field: AudioEmitterBoolField,
+    },
+    /// Play/stop audio preview in asset browser.
+    AudioPreviewToggle { path: std::path::PathBuf },
 }
 
 /// Active tab in the bottom panel strip.
@@ -355,6 +407,13 @@ pub struct InspectorEditState {
     pub directional_color: [f32; 3],
     pub directional_intensity: f32,
     pub directional_color_picker: ColorPickerState,
+    pub audio_source_path: String,
+    pub audio_volume: f32,
+    pub audio_looping: bool,
+    pub audio_spatial: bool,
+    pub audio_min_distance: f32,
+    pub audio_max_distance: f32,
+    pub audio_rolloff_factor: f32,
 }
 
 impl Default for InspectorEditState {
@@ -382,6 +441,13 @@ impl Default for InspectorEditState {
             directional_color: [1.0; 3],
             directional_intensity: 1.0,
             directional_color_picker: ColorPickerState::new(),
+            audio_source_path: String::new(),
+            audio_volume: 1.0,
+            audio_looping: false,
+            audio_spatial: false,
+            audio_min_distance: 1.0,
+            audio_max_distance: 100.0,
+            audio_rolloff_factor: 1.0,
         }
     }
 }

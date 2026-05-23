@@ -136,6 +136,8 @@ pub(crate) struct EditorState {
     pub(crate) inspector_drag_snapshot: Option<editor::InspectorDragSnapshot>,
     /// Maps entity ID to GPU handles for cleanup when entity is destroyed via undo/redo.
     pub(crate) entity_gpu_handles: HashMap<katla_ecs::EntityId, editor::GpuCleanupData>,
+    /// Currently playing audio preview voice handle in asset browser.
+    pub(crate) preview_voice: Option<katla_audio::VoiceHandle>,
 }
 
 #[cfg(feature = "editor")]
@@ -189,6 +191,7 @@ impl EditorState {
             inspector_slider_was_active: false,
             inspector_drag_snapshot: None,
             entity_gpu_handles: HashMap::new(),
+            preview_voice: None,
         };
         state.editor_ui.set_available_components(available);
         state
