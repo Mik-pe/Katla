@@ -2102,6 +2102,106 @@ impl GpuRenderer for MetalRenderer {
         MetalRenderer::init_animation_pipeline(self, shader_path)
     }
 
+    // -- Pipeline Initialization --
+
+    fn init_light_culling(
+        &mut self,
+        width: u32,
+        height: u32,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        MetalRenderer::init_light_culling(self, width, height, shader_path)
+    }
+
+    fn init_shadow_resources(&mut self) -> Result<(), RendererError> {
+        self.shadow.create_shadow_map(&self.context)
+    }
+
+    fn init_shadow_pipeline(&mut self, shader_path: &std::path::Path) -> Result<(), RendererError> {
+        MetalRenderer::init_shadow_pipeline(self, shader_path)
+    }
+
+    fn init_shadow_pipeline_skinned(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        MetalRenderer::init_shadow_pipeline_skinned(self, shader_path)
+    }
+
+    fn init_depth_prepass_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        MetalRenderer::init_depth_prepass_pipeline(self, shader_path)
+    }
+
+    fn init_depth_prepass_skinned_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        MetalRenderer::init_depth_prepass_skinned_pipeline(self, shader_path)
+    }
+
+    fn init_depth_prepass_billboard_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        MetalRenderer::init_depth_prepass_billboard_pipeline(self, shader_path)
+    }
+
+    fn init_outline_pipelines(
+        &mut self,
+        stencil_mark_path: &std::path::Path,
+        stencil_mark_skinned_path: &std::path::Path,
+        outline_draw_path: &std::path::Path,
+        outline_draw_skinned_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        MetalRenderer::init_outline_pipelines(
+            self,
+            stencil_mark_path,
+            stencil_mark_skinned_path,
+            outline_draw_path,
+            outline_draw_skinned_path,
+        )
+    }
+
+    fn init_stencil_indicator_pipelines(
+        &mut self,
+        shader_path: &std::path::Path,
+        skinned_shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        MetalRenderer::init_stencil_indicator_pipelines(self, shader_path, skinned_shader_path)
+    }
+
+    fn init_picking_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        MetalRenderer::init_picking_pipeline(self, shader_path)
+    }
+
+    fn init_picking_skinned_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        MetalRenderer::init_picking_skinned_pipeline(self, shader_path)
+    }
+
+    fn init_sky_pipeline(&mut self, shader_path: &std::path::Path) -> Result<(), RendererError> {
+        MetalRenderer::init_sky_pipeline(self, shader_path)
+    }
+
+    fn init_tonemap_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        MetalRenderer::init_tonemap_pipeline(self, shader_path)
+    }
+
+    fn set_viewport_bindless_slot(&mut self, slot: u32) {
+        self.viewport_bindless_slot = Some(slot);
+    }
+
     // -- UI Rendering --
 
     fn set_ui_material(&mut self, material: MaterialHandle) {
