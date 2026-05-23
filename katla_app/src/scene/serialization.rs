@@ -247,6 +247,11 @@ impl SceneManager {
                     volume: a.volume,
                     looping: a.looping,
                     playing: a.playing,
+                    spatial: a.spatial,
+                    min_distance: a.min_distance,
+                    max_distance: a.max_distance,
+                    rolloff_factor: a.rolloff_factor,
+                    distance_model: a.distance_model,
                 });
 
             scene.entities.push(EntityDescriptor {
@@ -744,6 +749,11 @@ impl SceneManager {
                     volume: audio_desc.volume,
                     looping: audio_desc.looping,
                     playing: audio_desc.playing,
+                    spatial: audio_desc.spatial,
+                    min_distance: audio_desc.min_distance,
+                    max_distance: audio_desc.max_distance,
+                    rolloff_factor: audio_desc.rolloff_factor,
+                    distance_model: audio_desc.distance_model,
                 },
             );
         }

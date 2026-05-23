@@ -17,6 +17,7 @@ pub struct Voice {
     buffer: Arc<AudioBuffer>,
     position: AtomicUsize,
     volume: AtomicU32,
+    pan: AtomicU32,
     looping: bool,
     finished: AtomicBool,
 }
@@ -28,6 +29,7 @@ impl Voice {
             buffer,
             position: AtomicUsize::new(0),
             volume: AtomicU32::new(1.0f32.to_bits()),
+            pan: AtomicU32::new(0.0f32.to_bits()),
             looping,
             finished: AtomicBool::new(false),
         }
@@ -44,6 +46,15 @@ impl Voice {
 
     pub fn volume(&self) -> f32 {
         f32::from_bits(self.volume.load(Ordering::Relaxed))
+    }
+
+    pub fn set_pan(&self, pan: f32) {
+        self.pan
+            .store(pan.clamp(-1.0, 1.0).to_bits(), Ordering::Relaxed);
+    }
+
+    pub fn pan(&self) -> f32 {
+        f32::from_bits(self.pan.load(Ordering::Relaxed))
     }
 
     pub fn is_looping(&self) -> bool {
@@ -64,6 +75,9 @@ impl Voice {
             return;
         }
 
+        let pan = self.pan();
+        let (left_gain, right_gain) = compute_pan_gains(pan);
+
         let pos = self.position.load(Ordering::Relaxed);
         let mut samples_written = 0;
 
@@ -73,8 +87,13 @@ impl Voice {
                 if src_idx + src_channels > total_src_samples {
                     break;
                 }
-                for ch in 0..src_channels {
-                    chunk[ch] += src_samples[src_idx + ch] * volume;
+                if src_channels == 2 && (left_gain != 1.0 || right_gain != 1.0) {
+                    chunk[0] += src_samples[src_idx] * volume * left_gain;
+                    chunk[1] += src_samples[src_idx + 1] * volume * right_gain;
+                } else {
+                    for ch in 0..src_channels {
+                        chunk[ch] += src_samples[src_idx + ch] * volume;
+                    }
                 }
                 src_idx += src_channels;
                 samples_written += 1;
@@ -86,8 +105,8 @@ impl Voice {
                     break;
                 }
                 let mono = src_samples[src_frame] * volume;
-                chunk[0] += mono;
-                chunk[1] += mono;
+                chunk[0] += mono * left_gain;
+                chunk[1] += mono * right_gain;
                 src_frame += 1;
                 samples_written += 1;
             }
@@ -97,7 +116,11 @@ impl Voice {
                 if src_idx + 1 >= total_src_samples {
                     break;
                 }
-                *out += (src_samples[src_idx] + src_samples[src_idx + 1]) * 0.5 * volume;
+                let mixed = (src_samples[src_idx] * left_gain
+                    + src_samples[src_idx + 1] * right_gain)
+                    * 0.5
+                    * volume;
+                *out += mixed;
                 src_idx += 2;
                 samples_written += 1;
             }
@@ -118,6 +141,14 @@ impl Voice {
     }
 }
 
+pub fn compute_pan_gains(pan: f32) -> (f32, f32) {
+    if pan == 0.0 {
+        return (1.0, 1.0);
+    }
+    let angle = (pan + 1.0) * 0.25 * std::f32::consts::PI;
+    (angle.cos(), angle.sin())
+}
+
 pub struct VoiceHandle {
     pub id: VoiceId,
     pub(crate) mixer: Arc<crate::mixer::AudioMixer>,
@@ -134,6 +165,10 @@ impl VoiceHandle {
 
     pub fn volume(&self) -> f32 {
         self.mixer.voice_volume(self.id)
+    }
+
+    pub fn set_pan(&self, pan: f32) {
+        self.mixer.set_voice_pan(self.id, pan);
     }
 
     pub fn state(&self) -> VoiceState {

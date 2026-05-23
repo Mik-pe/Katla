@@ -159,6 +159,16 @@ pub struct AudioEmitterDescriptor {
     pub looping: bool,
     #[serde(default = "default_playing")]
     pub playing: bool,
+    #[serde(default)]
+    pub spatial: bool,
+    #[serde(default = "default_min_distance")]
+    pub min_distance: f32,
+    #[serde(default = "default_max_distance")]
+    pub max_distance: f32,
+    #[serde(default = "default_rolloff")]
+    pub rolloff_factor: f32,
+    #[serde(default)]
+    pub distance_model: crate::components::audio::DistanceModel,
 }
 
 fn default_volume() -> f32 {
@@ -167,6 +177,18 @@ fn default_volume() -> f32 {
 
 fn default_playing() -> bool {
     true
+}
+
+fn default_min_distance() -> f32 {
+    1.0
+}
+
+fn default_max_distance() -> f32 {
+    100.0
+}
+
+fn default_rolloff() -> f32 {
+    1.0
 }
 
 /// Descriptor for a single entity in a scene file.
