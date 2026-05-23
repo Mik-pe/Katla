@@ -10,7 +10,7 @@ Run the full debate-to-delivery pipeline with supervisor orchestration using Age
 
 ## What This Does
 
-1. **Debate Phase** - Vulkan vs App perspectives reach consensus
+1. **Debate Phase** - GFX (cross-backend) vs App perspectives reach consensus
 2. **Planning Phase** - Prometheus creates implementation plan
 3. **Build Phase** - Hephaestus implements in chunks
 

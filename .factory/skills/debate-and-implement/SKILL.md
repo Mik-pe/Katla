@@ -13,7 +13,7 @@ Run a debate to reach consensus, then implement the result.
 
 ## Workflow
 
-1. **Debate Phase** - Use the debate-moderator skill to orchestrate a debate between Vulkan and App perspectives
+1. **Debate Phase** - Use the debate-moderator skill to orchestrate a debate between GFX (cross-backend) and App perspectives
 2. **Planning Phase** - Spawn prometheus agent to create an implementation plan based on consensus
 3. **Implementation Phase** - Spawn hephaestus agent to implement the plan in small chunks
 
