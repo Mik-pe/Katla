@@ -716,8 +716,9 @@ impl ScriptEngine {
     /// Hot-reload all instances of a given script.
     /// Re-creates their environments, preserves scalar state (numbers, bools, strings)
     /// from the old environment, and re-extracts hooks.
+    /// Returns the NEW handles for all successfully reloaded instances.
     pub fn hot_reload_instances(&mut self, script_path: &str) -> Vec<ScriptInstanceHandle> {
-        let handles: Vec<ScriptInstanceHandle> = self
+        let old_handles: Vec<ScriptInstanceHandle> = self
             .instances
             .iter()
             .enumerate()
@@ -731,13 +732,15 @@ impl ScriptEngine {
             })
             .collect();
 
-        for handle in &handles {
-            if let Err(e) = self.hot_reload_single_instance(*handle, script_path) {
-                log::error!("Hot reload failed for '{script_path}': {e}");
+        let mut new_handles = Vec::new();
+        for handle in &old_handles {
+            match self.hot_reload_single_instance(*handle, script_path) {
+                Ok(new_handle) => new_handles.push(new_handle),
+                Err(e) => log::error!("Hot reload failed for '{script_path}': {e}"),
             }
         }
 
-        handles
+        new_handles
     }
 
     fn read_script_source(&self, script_path: &str) -> Result<String, ScriptError> {
@@ -762,7 +765,7 @@ impl ScriptEngine {
         &mut self,
         handle: ScriptInstanceHandle,
         script_path: &str,
-    ) -> Result<(), ScriptError> {
+    ) -> Result<ScriptInstanceHandle, ScriptError> {
         let entity = {
             let instance = self
                 .instances
@@ -790,10 +793,10 @@ impl ScriptEngine {
             "Hot reloaded script '{script_path}' for entity {entity} ({preserved_count} vars preserved)"
         );
 
-        Ok(())
+        Ok(new_handle)
     }
 
-    fn gather_scalar_state(
+    pub(crate) fn gather_scalar_state(
         &self,
         handle: ScriptInstanceHandle,
     ) -> Result<Vec<(String, mlua::Value)>, ScriptError> {
@@ -813,24 +816,57 @@ impl ScriptEngine {
         })?;
 
         let mut preserved = Vec::new();
-        for pair in env.sequence_values::<mlua::Value>() {
-            let _ = pair; // skip integer keys
-        }
-        for pair in env.pairs::<String, mlua::Value>() {
-            let (key, value) = pair.map_err(|e| ScriptError::ExecutionFailed {
-                path: instance.script_path.clone(),
-                line: None,
-                source: e,
-            })?;
+
+        // Use Lua's next() to iterate raw table entries, bypassing metatable __pairs.
+        let next_fn: mlua::Function =
+            self.vm
+                .globals()
+                .raw_get("next")
+                .map_err(|e| ScriptError::ExecutionFailed {
+                    path: instance.script_path.clone(),
+                    line: None,
+                    source: e,
+                })?;
+
+        let mut key = mlua::Value::Nil;
+        loop {
+            let result: (mlua::Value, mlua::Value) =
+                next_fn
+                    .call((env.clone(), key))
+                    .map_err(|e| ScriptError::ExecutionFailed {
+                        path: instance.script_path.clone(),
+                        line: None,
+                        source: e,
+                    })?;
+
+            let (next_key, value) = result;
+            if matches!(next_key, mlua::Value::Nil) {
+                break;
+            }
+
+            let key_str = match &next_key {
+                mlua::Value::String(s) => s.to_str().ok().map(|s| s.to_string()),
+                mlua::Value::Number(n) => Some(format!("{n}")),
+                _ => {
+                    key = next_key;
+                    continue;
+                }
+            };
+            let Some(key_str) = key_str else {
+                key = next_key;
+                continue;
+            };
             match &value {
                 mlua::Value::Number(_)
                 | mlua::Value::String(_)
+                | mlua::Value::Integer(_)
                 | mlua::Value::Boolean(_)
                 | mlua::Value::Nil => {
-                    preserved.push((key, value));
+                    preserved.push((key_str, value));
                 }
-                _ => {} // skip tables, functions, userdata
+                _ => {}
             }
+            key = next_key;
         }
 
         Ok(preserved)
@@ -857,7 +893,7 @@ impl ScriptEngine {
         })?;
 
         for (key, value) in state {
-            env.set(key, value)
+            env.raw_set(key, value)
                 .map_err(|e| ScriptError::ExecutionFailed {
                     path: instance.script_path.clone(),
                     line: None,

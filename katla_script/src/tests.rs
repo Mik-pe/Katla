@@ -274,3 +274,529 @@ fn test_get_all_with_lua_binding() {
 
     cleanup_temp_script(&path);
 }
+
+// --- Integration tests ---
+
+#[test]
+fn test_on_spawn_hook_executes_and_can_queue_commands() {
+    let path = write_temp_script(
+        "function on_spawn(entity, world)\n  world:set_position(entity, Vec3.new(10, 20, 30))\nend\n",
+    );
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let entity = make_test_entity(42);
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    let proxy = make_proxy();
+    let result = engine.execute_on_spawn(handle, entity, proxy);
+    assert!(result.is_ok(), "on_spawn failed: {:?}", result.err());
+    let commands = result.unwrap();
+    assert_eq!(commands.len(), 1);
+    match &commands[0] {
+        ScriptCommand::SetPosition(e, pos) => {
+            assert_eq!(*e, entity);
+            assert_eq!(*pos, Vec3::new(10.0, 20.0, 30.0));
+        }
+        _ => panic!("Expected SetPosition command"),
+    }
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_on_destroy_hook_executes() {
+    let path = write_temp_script("function on_destroy(entity)\nend\n");
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let entity = make_test_entity(1);
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    let result = engine.call_on_destroy(handle, entity);
+    assert!(result.is_ok(), "on_destroy failed: {:?}", result.err());
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_on_destroy_with_no_hook_succeeds() {
+    let path = write_temp_script("local x = 1\n");
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let entity = make_test_entity(1);
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    let result = engine.call_on_destroy(handle, entity);
+    assert!(result.is_ok(), "on_destroy should succeed with no hook");
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_multiple_instances_same_script() {
+    let path = write_temp_script(
+        "function on_update(entity, world, dt)\n  world:set_position(entity, Vec3.new(1, 2, 3))\nend\n",
+    );
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+
+    let e1 = make_test_entity(1);
+    let e2 = make_test_entity(2);
+    let e3 = make_test_entity(3);
+
+    let h1 = engine.create_instance(e1, path.to_str().unwrap()).unwrap();
+    let h2 = engine.create_instance(e2, path.to_str().unwrap()).unwrap();
+    let h3 = engine.create_instance(e3, path.to_str().unwrap()).unwrap();
+
+    // All three should have distinct handles
+    assert_ne!(h1.index, h2.index);
+    assert_ne!(h2.index, h3.index);
+
+    // All three should produce commands
+    for (handle, entity) in [(h1, e1), (h2, e2), (h3, e3)] {
+        let proxy = make_proxy();
+        let commands = engine
+            .execute_on_update(handle, entity, proxy, 0.016)
+            .unwrap();
+        assert_eq!(commands.len(), 1);
+        match &commands[0] {
+            ScriptCommand::SetPosition(e, _) => assert_eq!(*e, entity),
+            _ => panic!("Expected SetPosition"),
+        }
+    }
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_spawn_entity_from_script() {
+    let path =
+        write_temp_script("function on_update(entity, world, dt)\n  world:spawn_entity()\nend\n");
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let entity = make_test_entity(1);
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    let proxy = make_proxy();
+    let commands = engine
+        .execute_on_update(handle, entity, proxy, 0.016)
+        .unwrap();
+    assert_eq!(commands.len(), 1);
+    match &commands[0] {
+        ScriptCommand::SpawnEntity { return_index: _ } => {}
+        _ => panic!("Expected SpawnEntity command"),
+    }
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_destroy_entity_from_script() {
+    let target = make_test_entity(99);
+    let path = write_temp_script(&format!(
+        "function on_update(entity, world, dt)\n  world:destroy_entity(Entity.from_raw({}))\nend\n",
+        target.id()
+    ));
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let entity = make_test_entity(1);
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    let proxy = make_proxy();
+    let commands = engine
+        .execute_on_update(handle, entity, proxy, 0.016)
+        .unwrap();
+    assert_eq!(commands.len(), 1);
+    match &commands[0] {
+        ScriptCommand::DestroyEntity(e) => assert_eq!(*e, target),
+        _ => panic!("Expected DestroyEntity command"),
+    }
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_script_reads_transform() {
+    let entity = make_test_entity(5);
+    let path = write_temp_script(
+        "function on_update(entity, world, dt)\n  local t = world:get_transform(entity)\n  if t then\n    world:set_position(entity, Vec3.new(t.position.x + 1, 0, 0))\n  end\nend\n",
+    );
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    let mut transform = katla_math::Transform::default();
+    transform.position = Vec3::new(5.0, 0.0, 0.0);
+    let proxy = ScriptWorldProxy::from_shared(Rc::new(SharedWorldData {
+        transforms: vec![(entity, transform)].into_iter().collect(),
+        live_entities: vec![entity],
+        component_entities: Default::default(),
+        input_state: Default::default(),
+    }));
+
+    let commands = engine
+        .execute_on_update(handle, entity, proxy, 0.016)
+        .unwrap();
+    assert_eq!(commands.len(), 1);
+    match &commands[0] {
+        ScriptCommand::SetPosition(_, pos) => {
+            assert_eq!(*pos, Vec3::new(6.0, 0.0, 0.0));
+        }
+        _ => panic!("Expected SetPosition"),
+    }
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_script_no_on_update_returns_empty_commands() {
+    let path = write_temp_script("local x = 1\n");
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let entity = make_test_entity(1);
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    let proxy = make_proxy();
+    let commands = engine
+        .execute_on_update(handle, entity, proxy, 0.016)
+        .unwrap();
+    assert!(commands.is_empty());
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_input_bindings_pressed() {
+    let entity = make_test_entity(1);
+    let path = write_temp_script(
+        "function on_update(entity, world, dt)\n  if world:is_action_pressed(\"jump\") then\n    world:set_position(entity, Vec3.new(0, 10, 0))\n  end\nend\n",
+    );
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    let mut input = crate::bindings::script_world::InputSnapshot::default();
+    input.pressed_actions.insert("jump".to_string());
+    let proxy = ScriptWorldProxy::from_shared(Rc::new(SharedWorldData {
+        transforms: Default::default(),
+        live_entities: vec![entity],
+        component_entities: Default::default(),
+        input_state: input,
+    }));
+
+    let commands = engine
+        .execute_on_update(handle, entity, proxy, 0.016)
+        .unwrap();
+    assert_eq!(commands.len(), 1);
+    match &commands[0] {
+        ScriptCommand::SetPosition(_, pos) => assert_eq!(*pos, Vec3::new(0.0, 10.0, 0.0)),
+        _ => panic!("Expected SetPosition"),
+    }
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_input_bindings_not_pressed() {
+    let entity = make_test_entity(1);
+    let path = write_temp_script(
+        "function on_update(entity, world, dt)\n  if world:is_action_pressed(\"jump\") then\n    world:set_position(entity, Vec3.new(0, 10, 0))\n  end\nend\n",
+    );
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    let proxy = make_proxy();
+    let commands = engine
+        .execute_on_update(handle, entity, proxy, 0.016)
+        .unwrap();
+    assert!(commands.is_empty());
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_entity_exists_binding() {
+    let e1 = make_test_entity(1);
+    let e2 = make_test_entity(2);
+    let path = write_temp_script(&format!(
+        "function on_update(entity, world, dt)\n  if world:entity_exists(Entity.from_raw({})) then\n    world:set_position(entity, Vec3.new(1, 0, 0))\n  end\nend\n",
+        e2.id()
+    ));
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let handle = engine.create_instance(e1, path.to_str().unwrap()).unwrap();
+
+    let proxy = ScriptWorldProxy::from_shared(Rc::new(SharedWorldData {
+        transforms: Default::default(),
+        live_entities: vec![e2],
+        component_entities: Default::default(),
+        input_state: Default::default(),
+    }));
+    let commands = engine.execute_on_update(handle, e1, proxy, 0.016).unwrap();
+    assert_eq!(commands.len(), 1);
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_hot_reload_preserves_scalar_state() {
+    // Use global assignment (not local) so state lives in the environment table
+    // and can be preserved across hot reloads.
+    let path = write_temp_script(
+        "counter = 5\nfunction on_update(entity, world, dt)\n  world:set_position(entity, Vec3.new(counter, 0, 0))\nend\n",
+    );
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.set_scripts_dir(path.parent().unwrap().to_str().unwrap());
+    let script_name = path.file_stem().unwrap().to_str().unwrap();
+    engine.load_script(script_name).unwrap();
+    let entity = make_test_entity(1);
+    let handle = engine.create_instance(entity, script_name).unwrap();
+
+    // First update: counter should be 5
+    let proxy = make_proxy();
+    let commands = engine
+        .execute_on_update(handle, entity, proxy, 0.016)
+        .unwrap();
+    assert_eq!(commands.len(), 1);
+    match &commands[0] {
+        ScriptCommand::SetPosition(_, pos) => assert_eq!(pos.x(), 5.0),
+        _ => panic!("Expected SetPosition"),
+    }
+
+    // Rewrite script — new default counter is 0
+    let new_content = "counter = 0\nfunction on_update(entity, world, dt)\n  world:set_position(entity, Vec3.new(counter, 0, 0))\nend\n";
+    std::fs::write(&path, new_content).unwrap();
+
+    engine.reload_script(script_name).unwrap();
+
+    engine.reload_script(script_name).unwrap();
+    let new_handles = engine.hot_reload_instances(script_name);
+    assert_eq!(new_handles.len(), 1);
+    let new_handle = new_handles[0];
+
+    let proxy = make_proxy();
+    let commands = engine
+        .execute_on_update(new_handle, entity, proxy, 0.016)
+        .unwrap();
+    assert_eq!(commands.len(), 1);
+    match &commands[0] {
+        ScriptCommand::SetPosition(_, pos) => {
+            assert_eq!(pos.x(), 5.0, "counter should be preserved from old env")
+        }
+        _ => panic!("Expected SetPosition"),
+    }
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_hot_reload_replaces_script_logic() {
+    let path = write_temp_script(
+        "function on_update(entity, world, dt)\n  world:set_position(entity, Vec3.new(1, 0, 0))\nend\n",
+    );
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.set_scripts_dir(path.parent().unwrap().to_str().unwrap());
+    let script_name = path.file_stem().unwrap().to_str().unwrap();
+    engine.load_script(script_name).unwrap();
+    let entity = make_test_entity(1);
+    let handle = engine.create_instance(entity, script_name).unwrap();
+
+    // Verify original logic
+    let proxy = make_proxy();
+    let commands = engine
+        .execute_on_update(handle, entity, proxy, 0.016)
+        .unwrap();
+    match &commands[0] {
+        ScriptCommand::SetPosition(_, pos) => assert_eq!(*pos, Vec3::new(1.0, 0.0, 0.0)),
+        _ => panic!("Expected SetPosition"),
+    }
+
+    // Rewrite with different logic
+    let new_content = "function on_update(entity, world, dt)\n  world:set_position(entity, Vec3.new(2, 0, 0))\nend\n";
+    std::fs::write(&path, new_content).unwrap();
+
+    engine.reload_script(script_name).unwrap();
+    let new_handles = engine.hot_reload_instances(script_name);
+    let new_handle = new_handles[0];
+
+    // New logic should produce Vec3(2, 0, 0)
+    let proxy = make_proxy();
+    let commands = engine
+        .execute_on_update(new_handle, entity, proxy, 0.016)
+        .unwrap();
+    match &commands[0] {
+        ScriptCommand::SetPosition(_, pos) => assert_eq!(*pos, Vec3::new(2.0, 0.0, 0.0)),
+        _ => panic!("Expected SetPosition"),
+    }
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_reload_script_replaces_chunk() {
+    let path = write_temp_script(
+        "function on_update(entity, world, dt)\n  world:set_position(entity, Vec3.new(1, 0, 0))\nend\n",
+    );
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.set_scripts_dir(path.parent().unwrap().to_str().unwrap());
+    let script_name = path.file_stem().unwrap().to_str().unwrap();
+    engine.load_script(script_name).unwrap();
+
+    // Rewrite
+    let new_content = "function on_update(entity, world, dt)\n  world:set_position(entity, Vec3.new(9, 0, 0))\nend\n";
+    std::fs::write(&path, new_content).unwrap();
+
+    engine.reload_script(script_name).unwrap();
+
+    // New instance should use new code
+    let entity = make_test_entity(1);
+    let handle = engine.create_instance(entity, script_name).unwrap();
+    let proxy = make_proxy();
+    let commands = engine
+        .execute_on_update(handle, entity, proxy, 0.016)
+        .unwrap();
+    match &commands[0] {
+        ScriptCommand::SetPosition(_, pos) => assert_eq!(*pos, Vec3::new(9.0, 0.0, 0.0)),
+        _ => panic!("Expected SetPosition"),
+    }
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_instance_reuse_after_removal() {
+    let path = write_temp_script("function on_update(entity, world, dt)\nend\n");
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+
+    let e1 = make_test_entity(1);
+    let h1 = engine.create_instance(e1, path.to_str().unwrap()).unwrap();
+    engine.remove_instance(h1);
+
+    // Slot should be reused
+    let e2 = make_test_entity(2);
+    let h2 = engine.create_instance(e2, path.to_str().unwrap()).unwrap();
+    assert_eq!(h2.index, h1.index); // same slot reused
+    assert_ne!(h2.generation, h1.generation); // different generation
+
+    // h1 should no longer work
+    let proxy = make_proxy();
+    assert!(engine.execute_on_update(h1, e1, proxy, 0.016).is_err());
+
+    // h2 should work
+    let proxy = make_proxy();
+    assert!(engine.execute_on_update(h2, e2, proxy, 0.016).is_ok());
+
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_script_error_recovery_continues() {
+    let path = write_temp_script(
+        "local call_count = 0\nfunction on_update(entity, world, dt)\n  call_count = call_count + 1\n  if call_count == 1 then error(\"first call fails\") end\n  world:set_position(entity, Vec3.new(call_count, 0, 0))\nend\n",
+    );
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let entity = make_test_entity(1);
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    // First call fails
+    let proxy = make_proxy();
+    assert!(
+        engine
+            .execute_on_update(handle, entity, proxy, 0.016)
+            .is_err()
+    );
+
+    // Second call succeeds (error recovery works)
+    let proxy = make_proxy();
+    let commands = engine
+        .execute_on_update(handle, entity, proxy, 0.016)
+        .unwrap();
+    assert_eq!(commands.len(), 1);
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_script_dt_passed_correctly() {
+    let path = write_temp_script(
+        "function on_update(entity, world, dt)\n  world:set_position(entity, Vec3.new(dt, 0, 0))\nend\n",
+    );
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let entity = make_test_entity(1);
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    let proxy = make_proxy();
+    let commands = engine
+        .execute_on_update(handle, entity, proxy, 0.033)
+        .unwrap();
+    match &commands[0] {
+        ScriptCommand::SetPosition(_, pos) => {
+            assert!((pos.x() - 0.033).abs() < 0.0001);
+        }
+        _ => panic!("Expected SetPosition"),
+    }
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_script_with_no_hooks_only_top_level() {
+    let path = write_temp_script("local x = 42\n");
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let entity = make_test_entity(1);
+
+    // Should succeed even with no hooks
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    // on_update should return empty vec
+    let proxy = make_proxy();
+    let commands = engine
+        .execute_on_update(handle, entity, proxy, 0.016)
+        .unwrap();
+    assert!(commands.is_empty());
+
+    // on_spawn should return empty vec
+    let proxy = make_proxy();
+    let commands = engine.execute_on_spawn(handle, entity, proxy).unwrap();
+    assert!(commands.is_empty());
+
+    // on_destroy should succeed silently
+    engine.call_on_destroy(handle, entity).unwrap();
+
+    cleanup_temp_script(&path);
+}
+
+#[test]
+fn test_env_table_pairs_visibility() {
+    let path = write_temp_script("my_var = 42\n");
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.load_script(path.to_str().unwrap()).unwrap();
+    let entity = make_test_entity(1);
+    let handle = engine
+        .create_instance(entity, path.to_str().unwrap())
+        .unwrap();
+
+    let state = engine.gather_scalar_state(handle).unwrap();
+    let has_my_var = state
+        .iter()
+        .any(|(k, v)| k == "my_var" && matches!(v, mlua::Value::Integer(42)));
+    assert!(
+        has_my_var,
+        "Expected 'my_var = 42' in gathered state, got: {:?}",
+        state
+    );
+
+    cleanup_temp_script(&path);
+}

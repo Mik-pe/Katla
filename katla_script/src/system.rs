@@ -35,6 +35,8 @@ pub struct ScriptSystem {
     command_consumer: Option<CommandConsumer>,
     input_provider: Option<InputProvider>,
     component_entities_provider: Option<ComponentEntitiesProvider>,
+    /// Reusable event bus shared with script proxies across frames.
+    shared_event_bus: Rc<RefCell<crate::bindings::script_world::SharedEventBus>>,
 }
 
 impl Default for ScriptSystem {
@@ -53,6 +55,9 @@ impl ScriptSystem {
             command_consumer: None,
             input_provider: None,
             component_entities_provider: None,
+            shared_event_bus: Rc::new(RefCell::new(
+                crate::bindings::script_world::SharedEventBus::default(),
+            )),
         }
     }
 
@@ -346,10 +351,15 @@ impl System for ScriptSystem {
         }
 
         let shared = Rc::new(self.build_shared_data(world));
-        let shared_event_bus = Rc::new(RefCell::new(
-            crate::bindings::script_world::SharedEventBus::default(),
-        ));
 
+        // Clear the reusable shared event bus from previous frame
+        {
+            let mut bus = self.shared_event_bus.borrow_mut();
+            bus.pending_emits.clear();
+            bus.pending_subscriptions.clear();
+        }
+
+        // Collect active handles in a single pass
         let active: Vec<(ScriptInstanceHandle, EntityId)> = self
             .engine
             .instances
@@ -368,20 +378,19 @@ impl System for ScriptSystem {
             })
             .collect();
 
-        let mut all_commands = Vec::new();
+        let mut all_commands = Vec::with_capacity(active.len());
+
         for (handle, entity) in active {
             let mut proxy = ScriptWorldProxy::from_shared(Rc::clone(&shared));
-            proxy.with_event_bus(Rc::clone(&shared_event_bus), &self.engine.vm);
+            proxy.with_event_bus(Rc::clone(&self.shared_event_bus), &self.engine.vm);
             match self
                 .engine
                 .execute_on_update(handle, entity, proxy, delta_time)
             {
                 Ok(commands) => {
-                    self.flush_script_events(&shared_event_bus);
                     all_commands.extend(commands);
                 }
                 Err(e) => {
-                    self.flush_script_events(&shared_event_bus);
                     error!("Script on_update error for entity {entity}: {e}");
                     if let Some(Some(inst)) = self.engine.instances.get(handle.index as usize)
                         && inst.generation == handle.generation
@@ -391,11 +400,14 @@ impl System for ScriptSystem {
                             "Disabling script for entity {entity} after {MAX_SCRIPT_ERRORS} errors"
                         );
                         self.engine.remove_instance(handle);
-                        continue;
                     }
                 }
             }
         }
+
+        // Flush all pending events from scripts in a single batch
+        let event_bus = Rc::clone(&self.shared_event_bus);
+        self.flush_script_events(&event_bus);
 
         self.apply_commands(all_commands, world);
 
