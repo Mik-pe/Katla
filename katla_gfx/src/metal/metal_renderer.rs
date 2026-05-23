@@ -45,8 +45,8 @@ use super::shadow::MetalShadowSubsystem;
 use super::texture::{MetalTexture, MetalTextureView};
 use super::ui_renderer::MetalUIRenderer;
 
-const OBJECT_UNIFORM_SIZE: u64 = 16 * 4 + 4 * 4 + 4 * 4 + 4 * 4;
-const FRAMES_IN_FLIGHT: usize = 2;
+pub(crate) const OBJECT_UNIFORM_SIZE: u64 = 16 * 4 + 4 * 4 + 4 * 4 + 4 * 4;
+pub(crate) const FRAMES_IN_FLIGHT: usize = 2;
 
 /// A mesh stored in Metal GPU buffers.
 pub(crate) struct MetalMesh {
@@ -67,7 +67,7 @@ struct MetalTextureEntry {
     bindless_slot: Option<u32>,
 }
 
-fn read_shader(path: &str) -> Result<String, RendererError> {
+pub(crate) fn read_shader(path: &str) -> Result<String, RendererError> {
     let resolved_path = if std::path::Path::new(path).exists() {
         std::path::PathBuf::from(path)
     } else {
@@ -96,7 +96,7 @@ fn read_shader(path: &str) -> Result<String, RendererError> {
     resolve_wgsl_includes(&raw, &resolved_path)
 }
 
-fn resolve_wgsl_includes(
+pub(crate) fn resolve_wgsl_includes(
     source: &str,
     file_path: &std::path::Path,
 ) -> Result<String, RendererError> {
@@ -156,54 +156,54 @@ fn resolve_wgsl_includes(
 
 pub struct MetalRenderer {
     pub(crate) context: MetalContext,
-    frame_uniforms: FrameUniforms,
-    frame_uniform_buffers: [Option<MetalBuffer>; FRAMES_IN_FLIGHT],
-    object_storage_buffers: [Option<MetalBuffer>; FRAMES_IN_FLIGHT],
-    current_drawable_texture: Option<Retained<ProtocolObject<dyn MTLTexture>>>,
+    pub(crate) frame_uniforms: FrameUniforms,
+    pub(crate) frame_uniform_buffers: [Option<MetalBuffer>; FRAMES_IN_FLIGHT],
+    pub(crate) object_storage_buffers: [Option<MetalBuffer>; FRAMES_IN_FLIGHT],
+    pub(crate) current_drawable_texture: Option<Retained<ProtocolObject<dyn MTLTexture>>>,
     pub(crate) drawable_texture_view: Option<MetalTextureView>,
-    frame_index: u32,
-    meshes: ResourceStorage<MetalMesh>,
-    materials: ResourceStorage<MetalMaterial>,
-    textures: ResourceStorage<MetalTextureEntry>,
-    skeletons: ResourceStorage<MetalBuffer>,
-    viewports: Vec<Viewport>,
-    bindless_manager: MetalBindlessTextureManager,
-    default_texture: Option<TextureHandle>,
-    default_normal_texture: Option<TextureHandle>,
-    default_mr_texture: Option<TextureHandle>,
-    default_material: Option<MaterialHandle>,
-    size: Size2D,
-    drawable_size: Size2D,
-    ui_font_atlas: Option<TextureHandle>,
-    last_command_buffer: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
-    pending_draw_list: Option<DrawList>,
-    light_culling: Option<MetalLightCulling>,
-    ui_renderer: MetalUIRenderer,
-    animation_system: Option<MetalAnimationSystem>,
-    particle_system: Option<MetalParticleSubsystem>,
-    pending_ui_draw_list: Option<crate::renderer::types::UIDrawList>,
-    pending_shadow_draw_list: Option<DrawList>,
-    pending_outline_draw_list: Option<DrawList>,
-    shadow: MetalShadowSubsystem,
-    depth_prepass: MetalDepthPrepass,
-    outline: MetalOutlineSubsystem,
-    picking: MetalPickingSubsystem,
+    pub(crate) frame_index: u32,
+    pub(crate) meshes: ResourceStorage<MetalMesh>,
+    pub(crate) materials: ResourceStorage<MetalMaterial>,
+    pub(crate) textures: ResourceStorage<MetalTextureEntry>,
+    pub(crate) skeletons: ResourceStorage<MetalBuffer>,
+    pub(crate) viewports: Vec<Viewport>,
+    pub(crate) bindless_manager: MetalBindlessTextureManager,
+    pub(crate) default_texture: Option<TextureHandle>,
+    pub(crate) default_normal_texture: Option<TextureHandle>,
+    pub(crate) default_mr_texture: Option<TextureHandle>,
+    pub(crate) default_material: Option<MaterialHandle>,
+    pub(crate) size: Size2D,
+    pub(crate) drawable_size: Size2D,
+    pub(crate) ui_font_atlas: Option<TextureHandle>,
+    pub(crate) last_command_buffer: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
+    pub(crate) pending_draw_list: Option<DrawList>,
+    pub(crate) light_culling: Option<MetalLightCulling>,
+    pub(crate) ui_renderer: MetalUIRenderer,
+    pub(crate) animation_system: Option<MetalAnimationSystem>,
+    pub(crate) particle_system: Option<MetalParticleSubsystem>,
+    pub(crate) pending_ui_draw_list: Option<crate::renderer::types::UIDrawList>,
+    pub(crate) pending_shadow_draw_list: Option<DrawList>,
+    pub(crate) pending_outline_draw_list: Option<DrawList>,
+    pub(crate) shadow: MetalShadowSubsystem,
+    pub(crate) depth_prepass: MetalDepthPrepass,
+    pub(crate) outline: MetalOutlineSubsystem,
+    pub(crate) picking: MetalPickingSubsystem,
     pub(crate) depth_texture_view: Option<MetalTextureView>,
-    hdr_color_view: Option<MetalTextureView>,
+    pub(crate) hdr_color_view: Option<MetalTextureView>,
     pub(crate) depth_stencil_view: Option<MetalTextureView>,
-    shared_sampler: Option<super::sampler::MetalSamplerState>,
-    shadow_cascade_buffer: Option<MetalBuffer>,
-    shadow_sampler: Option<super::sampler::MetalSamplerState>,
-    buffer_sizes_buffer: Option<MetalBuffer>,
-    scene_color_view: Option<MetalTextureView>,
-    viewport_bindless_slot: Option<u32>,
-    tonemap_output_view: Option<MetalTextureView>,
-    geometry_hdr_view: Option<MetalTextureView>,
-    geometry_hdr_bindless_slot: Option<u32>,
-    tonemap_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
-    sky_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
-    dummy_vertex_buffer: Option<MetalBuffer>,
-    tonemap_fence: Option<Retained<ProtocolObject<dyn objc2_metal::MTLFence>>>,
+    pub(crate) shared_sampler: Option<super::sampler::MetalSamplerState>,
+    pub(crate) shadow_cascade_buffer: Option<MetalBuffer>,
+    pub(crate) shadow_sampler: Option<super::sampler::MetalSamplerState>,
+    pub(crate) buffer_sizes_buffer: Option<MetalBuffer>,
+    pub(crate) scene_color_view: Option<MetalTextureView>,
+    pub(crate) viewport_bindless_slot: Option<u32>,
+    pub(crate) tonemap_output_view: Option<MetalTextureView>,
+    pub(crate) geometry_hdr_view: Option<MetalTextureView>,
+    pub(crate) geometry_hdr_bindless_slot: Option<u32>,
+    pub(crate) tonemap_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
+    pub(crate) sky_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
+    pub(crate) dummy_vertex_buffer: Option<MetalBuffer>,
+    pub(crate) tonemap_fence: Option<Retained<ProtocolObject<dyn objc2_metal::MTLFence>>>,
 }
 
 impl MetalRenderer {
@@ -447,12 +447,12 @@ impl MetalRenderer {
         Ok(())
     }
 
-    fn current_frame_uniform_buffer(&self) -> Option<&MetalBuffer> {
+    pub(crate) fn current_frame_uniform_buffer(&self) -> Option<&MetalBuffer> {
         let idx = (self.frame_index as usize) % FRAMES_IN_FLIGHT;
         self.frame_uniform_buffers[idx].as_ref()
     }
 
-    fn current_object_storage_buffer(&self) -> Option<&MetalBuffer> {
+    pub(crate) fn current_object_storage_buffer(&self) -> Option<&MetalBuffer> {
         let idx = (self.frame_index as usize) % FRAMES_IN_FLIGHT;
         self.object_storage_buffers[idx].as_ref()
     }
@@ -588,48 +588,6 @@ impl MetalRenderer {
         })
     }
 
-    /// Recreate render targets (depth, HDR color, scene color, depth-stencil) for the given size.
-    fn recreate_render_targets(&mut self, width: u32, height: u32) {
-        if width == 0 || height == 0 {
-            return;
-        }
-
-        // Depth texture for depth prepass and main pass
-        {
-            let desc = TextureDescriptor::new(width, height, ImageFormat::D32Sfloat)
-                .with_usage(TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::SAMPLED);
-            if let Ok((_tex, view)) = self.context.create_texture(&desc) {
-                self.depth_texture_view = Some(view);
-            }
-        }
-
-        // HDR color texture for outline pass
-        {
-            let desc = TextureDescriptor::new(width, height, ImageFormat::R16G16B16A16Sfloat)
-                .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
-            if let Ok((_tex, view)) = self.context.create_texture(&desc) {
-                self.hdr_color_view = Some(view);
-            }
-        }
-
-        // Geometry HDR is managed by the frame graph transient texture system.
-        // Only create depth, outline HDR, scene color, and depth-stencil here.
-
-        // Depth-stencil texture for outline pass (needs stencil)
-        {
-            let desc = TextureDescriptor::new(width, height, ImageFormat::D32SfloatS8Uint)
-                .with_usage(TextureUsage::DEPTH_STENCIL_ATTACHMENT);
-            if let Ok((_tex, view)) = self.context.create_texture(&desc) {
-                self.depth_stencil_view = Some(view);
-            }
-        }
-
-        // Object-ID texture for GPU picking (R32Uint)
-        if let Err(e) = self.picking.resize(&self.context, width, height) {
-            log::warn!("Failed to resize picking object-ID texture: {}", e);
-        }
-    }
-
     /// Initialize the Forward+ light culling system.
     pub fn init_light_culling(
         &mut self,
@@ -703,212 +661,6 @@ impl MetalRenderer {
         self.shadow.create_shadow_map(&self.context)
     }
 
-    /// Create the shadow depth-only pipeline.
-    pub fn init_shadow_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
-
-        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-            RendererError::InvalidOperation("Shadow vertex entry point not found".into())
-        })?;
-
-        self.shadow.create_pipeline(&self.context, vertex_fn)
-    }
-
-    /// Create the skinned shadow pipeline.
-    pub fn init_shadow_pipeline_skinned(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
-
-        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-            RendererError::InvalidOperation("Skinned shadow vertex entry point not found".into())
-        })?;
-
-        self.shadow
-            .create_pipeline_skinned(&self.context, vertex_fn)
-    }
-
-    /// Create the depth prepass pipeline.
-    pub fn init_depth_prepass_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
-
-        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-            RendererError::InvalidOperation("Depth prepass vertex entry point not found".into())
-        })?;
-
-        self.depth_prepass.create_pipeline(&self.context, vertex_fn)
-    }
-
-    /// Create the skinned depth prepass pipeline.
-    pub fn init_depth_prepass_skinned_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
-
-        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Skinned depth prepass vertex entry point not found".into(),
-            )
-        })?;
-
-        self.depth_prepass
-            .create_pipeline_skinned(&self.context, vertex_fn)
-    }
-
-    /// Create the billboard depth prepass pipeline.
-    pub fn init_depth_prepass_billboard_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
-
-        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Billboard depth prepass vertex entry point not found".into(),
-            )
-        })?;
-
-        self.depth_prepass.create_pipeline(&self.context, vertex_fn)
-    }
-
-    /// Create outline (stencil mark + draw) pipelines.
-    pub fn init_outline_pipelines(
-        &mut self,
-        stencil_mark_path: &std::path::Path,
-        stencil_mark_skinned_path: &std::path::Path,
-        outline_draw_path: &std::path::Path,
-        outline_draw_skinned_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        // Stencil mark (non-skinned)
-        {
-            let wgsl = read_shader(&stencil_mark_path.to_string_lossy())?;
-            let compiled =
-                shader::compile_wgsl_to_metal(&self.context.device, &wgsl, &["vs_main"], false)?;
-            let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-                RendererError::InvalidOperation("Stencil mark vertex entry point not found".into())
-            })?;
-            self.outline
-                .create_stencil_mark_pipeline(&self.context, vs)?;
-        }
-
-        // Stencil mark (skinned)
-        {
-            let wgsl = read_shader(&stencil_mark_skinned_path.to_string_lossy())?;
-            let compiled =
-                shader::compile_wgsl_to_metal(&self.context.device, &wgsl, &["vs_main"], false)?;
-            let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-                RendererError::InvalidOperation(
-                    "Skinned stencil mark vertex entry point not found".into(),
-                )
-            })?;
-            self.outline
-                .create_stencil_mark_skinned_pipeline(&self.context, vs)?;
-        }
-
-        // Outline draw (non-skinned)
-        {
-            let wgsl = read_shader(&outline_draw_path.to_string_lossy())?;
-            let compiled = shader::compile_wgsl_to_metal(
-                &self.context.device,
-                &wgsl,
-                &["vs_main", "fs_main"],
-                false,
-            )?;
-            let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-                RendererError::InvalidOperation("Outline draw vertex entry point not found".into())
-            })?;
-            let fs = compiled.module.entry_points.get("fs_main").ok_or_else(|| {
-                RendererError::InvalidOperation(
-                    "Outline draw fragment entry point not found".into(),
-                )
-            })?;
-            self.outline
-                .create_outline_draw_pipeline(&self.context, vs, fs)?;
-        }
-
-        // Outline draw (skinned)
-        {
-            let wgsl = read_shader(&outline_draw_skinned_path.to_string_lossy())?;
-            let compiled = shader::compile_wgsl_to_metal(
-                &self.context.device,
-                &wgsl,
-                &["vs_main", "fs_main"],
-                false,
-            )?;
-            let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-                RendererError::InvalidOperation(
-                    "Skinned outline draw vertex entry point not found".into(),
-                )
-            })?;
-            let fs = compiled.module.entry_points.get("fs_main").ok_or_else(|| {
-                RendererError::InvalidOperation(
-                    "Skinned outline draw fragment entry point not found".into(),
-                )
-            })?;
-            self.outline
-                .create_outline_draw_skinned_pipeline(&self.context, vs, fs)?;
-        }
-
-        Ok(())
-    }
-
-    /// Create picking (object-ID) pipelines.
-    pub fn init_picking_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
-
-        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-            RendererError::InvalidOperation("Picking vertex entry point not found".into())
-        })?;
-
-        self.picking.create_pipeline(&self.context, vertex_fn)
-    }
-
-    pub fn init_picking_skinned_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
-
-        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-            RendererError::InvalidOperation("Skinned picking vertex entry point not found".into())
-        })?;
-
-        self.picking
-            .create_pipeline_skinned(&self.context, vertex_fn)
-    }
-
     pub fn queue_picking_readback(
         &mut self,
         frame: usize,
@@ -925,228 +677,6 @@ impl MetalRenderer {
 
     pub fn has_pending_picking_readback(&self) -> bool {
         self.picking.has_pending_readback()
-    }
-
-    /// Create stencil indicator pipelines (no-op for Metal, not yet needed).
-    pub fn init_stencil_indicator_pipelines(
-        &mut self,
-        _shader_path: &std::path::Path,
-        _skinned_shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    /// Bind frame/uniform buffers, bindless argument buffer, samplers, light culling,
-    /// shadow cascade data, and shadow map — resources shared across geometry passes.
-    fn bind_common_resources(&self, encoder: &mut super::render_encoder::MetalRenderEncoder) {
-        if let (Some(frame_buf), Some(object_buf)) = (
-            self.current_frame_uniform_buffer(),
-            self.current_object_storage_buffer(),
-        ) {
-            let stages = ShaderStages::VERTEX_FRAGMENT;
-            encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
-            encoder.bind_storage_buffer(object_buf, 0, 1, stages);
-        }
-
-        if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
-            let stages = ShaderStages::VERTEX_FRAGMENT;
-            unsafe {
-                if stages.vertex {
-                    encoder
-                        .inner
-                        .setVertexBuffer_offset_atIndex(Some(arg_buffer), 0, 9);
-                }
-                if stages.fragment {
-                    encoder
-                        .inner
-                        .setFragmentBuffer_offset_atIndex(Some(arg_buffer), 0, 9);
-                }
-            }
-        }
-
-        if let Some(ref sampler) = self.shared_sampler {
-            unsafe {
-                encoder
-                    .inner
-                    .setVertexSamplerState_atIndex(Some(&sampler.inner), 0);
-                encoder
-                    .inner
-                    .setFragmentSamplerState_atIndex(Some(&sampler.inner), 0);
-            }
-        }
-
-        if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
-            let stages = ShaderStages::VERTEX_FRAGMENT;
-            encoder.bind_storage_buffer(buf_sizes, 0, 8, stages);
-        }
-
-        if let Some(ref lc) = self.light_culling {
-            let stages = ShaderStages::FRAGMENT;
-            encoder.bind_storage_buffer(lc.light_buffer(), 0, 3, stages);
-            encoder.bind_storage_buffer(lc.tile_index_buffer(), 0, 4, stages);
-            encoder.bind_storage_buffer(lc.tile_count_buffer(), 0, 5, stages);
-        }
-
-        if let Some(ref shadow_buf) = self.shadow_cascade_buffer {
-            let stages = ShaderStages::FRAGMENT;
-            encoder.bind_storage_buffer(shadow_buf, 0, 7, stages);
-        }
-
-        if let Some(ref shadow_view) = self.shadow.shadow_map_view() {
-            unsafe {
-                encoder
-                    .inner
-                    .setFragmentTexture_atIndex(Some(&shadow_view.inner), 1);
-            }
-        }
-
-        if let Some(ref sampler) = self.shadow_sampler {
-            unsafe {
-                encoder
-                    .inner
-                    .setFragmentSamplerState_atIndex(Some(&sampler.inner), 1);
-            }
-        }
-
-        if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
-            encoder.use_buffer(
-                arg_buffer,
-                objc2_metal::MTLResourceUsage::Read,
-                objc2_metal::MTLRenderStages::Fragment,
-            );
-        }
-        for texture in self.bindless_manager.registered_textures() {
-            encoder.use_texture(
-                texture,
-                objc2_metal::MTLResourceUsage::Read,
-                objc2_metal::MTLRenderStages::Fragment,
-            );
-        }
-    }
-
-    /// Draw all objects from the draw list.
-    fn draw_objects(
-        &self,
-        encoder: &mut super::render_encoder::MetalRenderEncoder,
-        draw_list: &DrawList,
-    ) {
-        let stages = ShaderStages::VERTEX_FRAGMENT;
-        for (i, draw) in draw_list.draws.iter().enumerate() {
-            let Some(mesh) = self.meshes.get(draw.mesh.index()) else {
-                log::warn!("Draw {}: mesh index {} not found", i, draw.mesh.index());
-                continue;
-            };
-            let Some(material) = self.materials.get(draw.material.index()) else {
-                log::warn!(
-                    "Draw {}: material index {} not found",
-                    i,
-                    draw.material.index()
-                );
-                continue;
-            };
-            let Some(ref pipeline) = material.pipeline else {
-                log::warn!("Draw {}: no pipeline", i);
-                continue;
-            };
-
-            encoder.bind_graphics_pipeline(pipeline);
-
-            if !draw.skeleton.is_none() {
-                if let Some(skeleton_buf) = self.skeletons.get(draw.skeleton.index()) {
-                    encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
-                }
-            }
-
-            encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
-            encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
-            encoder.draw_indexed(mesh.index_count, 1, 0, 0, draw.instance_index);
-        }
-    }
-
-    /// Initialize the sky pipeline for procedural atmosphere rendering.
-    ///
-    /// Compiles the sky WGSL shader into a Metal fullscreen pipeline that uses
-    /// `@builtin(vertex_index)` to generate a fullscreen triangle.
-    pub fn init_sky_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-
-        let compiled = shader::compile_wgsl_to_metal(
-            &self.context.device,
-            &wgsl_source,
-            &["vs_main", "fs_main"],
-            false,
-        )?;
-
-        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-            RendererError::InvalidOperation("Sky vertex entry point not found".into())
-        })?;
-        let fragment_fn = compiled.module.entry_points.get("fs_main").ok_or_else(|| {
-            RendererError::InvalidOperation("Sky fragment entry point not found".into())
-        })?;
-
-        let pipeline = self
-            .context
-            .create_graphics_pipeline_with_vertex_descriptor(
-                vertex_fn,
-                Some(fragment_fn),
-                &[MTLPixelFormat::RGBA16Float],
-                Some(MTLPixelFormat::Depth32Float_Stencil8),
-                false,
-                crate::pipeline::CompareOp::Always,
-                objc2_metal::MTLCullMode::None,
-                objc2_metal::MTLWinding::Clockwise,
-                Some(&super::context::fullscreen_vertex_descriptor()),
-                false,
-            )?;
-
-        self.sky_pipeline = Some(pipeline);
-        Ok(())
-    }
-
-    /// Initialize the tonemapping pipeline for HDR-to-LDR conversion.
-    ///
-    /// Compiles the tonemapping WGSL shader into a Metal fullscreen pipeline
-    /// that reads from a bindless HDR texture and outputs tonemapped LDR.
-    pub fn init_tonemap_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-
-        let compiled = shader::compile_wgsl_to_metal(
-            &self.context.device,
-            &wgsl_source,
-            &["vs_main", "fs_main"],
-            false,
-        )?;
-
-        let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
-            RendererError::InvalidOperation("Tonemap vertex entry point not found".into())
-        })?;
-        let fragment_fn = compiled.module.entry_points.get("fs_main").ok_or_else(|| {
-            RendererError::InvalidOperation("Tonemap fragment entry point not found".into())
-        })?;
-
-        let pipeline = self
-            .context
-            .create_graphics_pipeline_with_vertex_descriptor(
-                vertex_fn,
-                Some(fragment_fn),
-                &[MTLPixelFormat::BGRA8Unorm_sRGB],
-                None,
-                false,
-                crate::pipeline::CompareOp::Always,
-                objc2_metal::MTLCullMode::None,
-                objc2_metal::MTLWinding::Clockwise,
-                Some(&super::context::fullscreen_vertex_descriptor()),
-                false,
-            )?;
-
-        self.tonemap_pipeline = Some(pipeline);
-        Ok(())
     }
 
     /// Update shadow cascade view-projection matrices.
