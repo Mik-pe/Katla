@@ -109,6 +109,16 @@ impl AudioMixer {
         }
     }
 
+    pub fn set_voice_pitch(&self, id: VoiceId, pitch: f32) {
+        let voices = self.voices.read().unwrap();
+        for voice in voices.iter().flatten() {
+            if voice.id() == id {
+                voice.set_pitch(pitch);
+                break;
+            }
+        }
+    }
+
     pub fn voice_state(&self, id: VoiceId) -> VoiceState {
         let voices = self.voices.read().unwrap();
         for voice in voices.iter().flatten() {
