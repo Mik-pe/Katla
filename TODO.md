@@ -59,6 +59,94 @@
 - [x] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/render_graph/any_frame_graph.rs` — after task D, only enum variant + match arms remain
 - [ ] Ensure `katla_app` has zero `cfg(target_os)` or `cfg(metal/vulkan)` gates (already tracked as existing TODO item)
 
+### G. Decompose GpuRenderer monolith — extract primitive mesh generators off the trait
+
+- [ ] Create `katla_gfx/src/primitives/mod.rs` as a public submodule — move all `generate_cube_vertices`, `generate_sphere_vertices`, etc. functions out of `MeshManager` and `renderer/mesh_manager.rs` into free functions in this new module
+- [ ] Add public `create_primitive_mesh()` free function in `katla_gfx/src/primitives/mod.rs` — takes `&mut impl GpuRenderer`, calls the appropriate generator, then calls `renderer.create_mesh()` on the result; this replaces calling `renderer.create_cube_mesh()` etc.
+- [ ] Add `create_cube()`, `create_sphere()`, `create_plane()`, `create_cone()`, `create_cylinder()`, `create_torus()`, `create_plane_xy()` convenience free functions that delegate to `create_primitive_mesh()`
+- [ ] Remove `create_cube_mesh`, `create_sphere_mesh`, `create_plane_mesh`, `create_cone_mesh`, `create_cylinder_mesh`, `create_torus_mesh`, `create_plane_xy_mesh` from `GpuRenderer` trait
+- [ ] Remove the 7 methods from `VulkanRenderer` impl of `GpuRenderer` — these now delegate to MeshManager internally, and the free functions call `create_mesh` instead
+- [ ] Remove the 7 methods from `MetalRenderer` impl of `GpuRenderer`
+- [ ] Remove the 7 match arms from `AnyRenderer` impl of `GpuRenderer`
+- [ ] Update all call sites in `katla_app` — replace `renderer.create_cube_mesh(size)` with `primitives::create_cube(&mut renderer, size)` etc.
+- [ ] Run `cargo check --workspace` to verify no compile errors
+- [ ] Run `cargo test --workspace` to verify all tests pass
+
+### H. Decompose GpuRenderer monolith — remove register_mesh_raw from trait
+
+- [ ] Remove `register_mesh_raw` from `GpuRenderer` trait — it is documented as "Backend-specific; callers should use backend types directly", which means it does not belong on a backend-agnostic trait
+- [ ] Remove `register_mesh_raw` from `VulkanRenderer` impl of `GpuRenderer` — callers that need raw mesh registration should use `VulkanRenderer::create_mesh_dynamic()` directly
+- [ ] Remove `register_mesh_raw` from `MetalRenderer` impl of `GpuRenderer`
+- [ ] Remove `register_mesh_raw` match arm from `AnyRenderer` impl of `GpuRenderer`
+- [ ] Update any call sites in `katla_app` to use `create_mesh_dynamic` instead, or go through `as_vulkan()`/`as_metal()` escape hatch
+- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+
+### I. Decompose GpuRenderer monolith — remove create_mesh_soa from trait
+
+- [ ] Remove `create_mesh_soa` from `GpuRenderer` trait — it is unimplemented on Vulkan (`todo!()`) and takes `HashMap<u32, Vec<u8>>` which loses type safety
+- [ ] Remove `create_mesh_soa` from `VulkanRenderer` impl — already `todo!()`, so no functional change
+- [ ] Remove `create_mesh_soa` from `MetalRenderer` impl
+- [ ] Remove `create_mesh_soa` match arm from `AnyRenderer` impl
+- [ ] If SOA mesh creation is needed later, design a proper typed API (e.g. `AttributeType` enum key) as a separate trait or method, not on the core GpuRenderer
+- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+
+### J. Decompose GpuRenderer monolith — consolidate pipeline init methods into a single register_pass_pipeline
+
+- [ ] Add `PassKind`-based `init_pass_pipeline` method to `GpuRenderer` trait — `fn init_pass_pipeline(&mut self, kind: PassKind, shader_paths: &[&Path]) -> Result<(), RendererError>` with a default no-op impl
+- [ ] Add `init_pass_pipeline` dispatch to `AnyRenderer` — match on backend, delegate to backend impl
+- [ ] Implement `init_pass_pipeline` for `VulkanRenderer` — match on `PassKind` to call the existing `init_shadow_pipeline`, `init_depth_prepass_pipeline`, `init_outline_pipelines`, etc. internally
+- [ ] Implement `init_pass_pipeline` for `MetalRenderer` — match on `PassKind` to call the existing Metal pipeline init methods internally
+- [ ] Update all `init_*_pipeline` call sites in `katla_app` to use the new single `init_pass_pipeline(kind, paths)` API
+- [ ] Mark old individual `init_*_pipeline` methods as deprecated or remove them from the trait (keep them as private backend methods)
+- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+
+### K. Unify frame lifecycle — fix begin_frame / end_frame / render_frame asymmetry
+
+- [ ] Audit how Vulkan and Metal backends use `begin_frame`, `end_frame`, `render_frame`, `wait_for_frame` — document the actual control flow for each backend
+- [ ] Remove `render_frame` from `GpuRenderer` trait — Vulkan already no-ops it; Metal should use the `render()` + frame graph path instead (aligned with section E goal)
+- [ ] Ensure Metal `begin_frame` + `end_frame` pair covers acquire + present, matching Vulkan's `wait_for_frame` + `render()` pattern
+- [ ] Document the canonical frame lifecycle in GpuRenderer trait docs: `begin_frame()` -> `set_frame_uniforms()` -> `execute_draw_calls()` -> render graph `render()` -> (implicit present)
+- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+
+### L. Fix resize() semantic — stop silently discarding frame graph state
+
+- [ ] Change `GpuRenderer::resize` signature to accept a frame graph reference: `fn resize(&mut self, width: u32, height: u32, frame_graph: &mut dyn FrameGraphResize) -> Result<(), RendererError>` or equivalent
+- [ ] Update Vulkan impl to pass the actual app's frame graph to `recreate_swapchain` instead of creating a throwaway `FrameGraph::new()`
+- [ ] Update Metal impl to handle resize properly (recreate render targets, transient textures)
+- [ ] Update `AnyRenderer` dispatch and all call sites in `katla_app`
+- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+
+### M. Generalize texture update API — remove font atlas special-case
+
+- [ ] Add `update_texture(&mut self, handle: TextureHandle, data: &[u8])` to `GpuRenderer` trait — general-purpose texture subresource update
+- [ ] Add `update_texture` dispatch to `AnyRenderer`
+- [ ] Implement `update_texture` for `VulkanRenderer` — copy data to existing texture, handle buffer-image copy
+- [ ] Implement `update_texture` for `MetalRenderer` — replace texture data via blit
+- [ ] Refactor `update_ui_font_atlas` to use `update_texture` internally
+- [ ] Refactor `create_ui_font_atlas` to use `create_texture` internally (if not already)
+- [ ] Consider removing `create_ui_font_atlas` and `update_ui_font_atlas` from the trait once the general API works — font atlas management can live in katla_ui or katla_app
+- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+
+### N. Add GPU capability queries to GpuRenderer
+
+- [ ] Define `GpuCapabilities` struct in `katla_gfx/src/renderer/` — fields: `max_texture_size: u32`, `max_bindless_textures: u32`, `supports_compute: bool`, `supports_ray_tracing: bool`, `max_frame_in_flight: usize`, `vendor: GpuVendor` (enum: Nvidia, Amd, Intel, Apple, Unknown)
+- [ ] Add `fn capabilities(&self) -> &GpuCapabilities` to `GpuRenderer` trait
+- [ ] Populate `GpuCapabilities` in `VulkanRenderer` from Vulkan physical device properties
+- [ ] Populate `GpuCapabilities` in `MetalRenderer` from Metal device properties
+- [ ] Add dispatch to `AnyRenderer`
+- [ ] Replace `has_light_culling()` bool on the trait with a field on `GpuCapabilities`
+- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+
+### O. Add timestamp query API for GPU profiling
+
+- [ ] Define `GpuTimestamp` struct — `pass_name: String`, `duration_ms: f64`
+- [ ] Add `fn begin_timestamp(&mut self, label: &str)` and `fn end_timestamp(&mut self, label: &str)` to `GpuRenderer` trait with default no-op impls
+- [ ] Add `fn read_timestamps(&self) -> Vec<GpuTimestamp>` to `GpuRenderer` trait with default empty impl
+- [ ] Implement timestamp queries for `VulkanRenderer` using Vulkan timestamp queries
+- [ ] Implement timestamp queries for `MetalRenderer` using `MTLCounterSampleBuffer`
+- [ ] Add dispatch to `AnyRenderer`
+- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+
 ## Particle System Usability
 
 - [x] Fix position duplication between Transform and EmitterConfig — ParticleSystem::update should read the entity's TransformComponent and override config.position so emitters follow their entity when moved
@@ -236,15 +324,15 @@
 - [x] Add `Color` and `Quat` UserData bindings — constructors, field access, utility methods (Quat.from_axis_angle, Color.from_rgb, etc.)
 
 ### Phase 4: Hot reload + sandboxing
-- [ ] Add file watcher for `.luau` scripts — detect changes in `resources/scripts/`, trigger recompile
-- [ ] Implement hot reload — recompile chunk, create new per-script environment, preserve scalar state from old env, swap instances
+- [x] Add file watcher for `.luau` scripts — detect changes in `resources/scripts/`, trigger recompile
+- [x] Implement hot reload — recompile chunk, create new per-script environment, preserve scalar state from old env, swap instances
 - [x] Harden VM sandboxing — initialize with `StdLib::ALL_SAFE` (no io/os/debug), configure interrupt watchdog for runaway scripts
 - [x] Add `print`/`warn` bridges — route to `log::info!`/`log::warn!` in debug builds only
 
 ### Phase 5: Polish + events
-- [ ] Design gameplay event bus — `EventBus<T>` with `emit(event)` and `subscribe(handler)`; support typed events in katla_script via string-keyed bus
-- [ ] Implement script event bindings — `world:emit("event_name", table)` and `world:on_event("event_name", callback)` registering Luau functions as handlers
-- [ ] Add event delivery system — each frame, drain pending events from bus, dispatch to registered script callbacks; ensure delivery order is deterministic
+- [x] Design gameplay event bus — `EventBus<T>` with `emit(event)` and `subscribe(handler)`; support typed events in katla_script via string-keyed bus
+- [x] Implement script event bindings — `world:emit("event_name", table)` and `world:on_event("event_name", callback)` registering Luau functions as handlers
+- [x] Add event delivery system — each frame, drain pending events from bus, dispatch to registered script callbacks; ensure delivery order is deterministic
 - [ ] Add physics bindings — `world:raycast(origin, direction, max_distance)` returning hit entity + point + normal (depends on Physics Phase 4)
 - [ ] Add audio bindings — `world:play_sound("explosion")`, `world:play_sound_at("explosion", position)` (depends on Audio Phase 2)
 - [ ] Performance profile — benchmark 1000 script entities with on_update, optimize hot paths
