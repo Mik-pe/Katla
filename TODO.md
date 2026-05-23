@@ -61,34 +61,34 @@
 
 ### G. Decompose GpuRenderer monolith — extract primitive mesh generators off the trait
 
-- [ ] Create `katla_gfx/src/primitives/mod.rs` as a public submodule — move all `generate_cube_vertices`, `generate_sphere_vertices`, etc. functions out of `MeshManager` and `renderer/mesh_manager.rs` into free functions in this new module
-- [ ] Add public `create_primitive_mesh()` free function in `katla_gfx/src/primitives/mod.rs` — takes `&mut impl GpuRenderer`, calls the appropriate generator, then calls `renderer.create_mesh()` on the result; this replaces calling `renderer.create_cube_mesh()` etc.
-- [ ] Add `create_cube()`, `create_sphere()`, `create_plane()`, `create_cone()`, `create_cylinder()`, `create_torus()`, `create_plane_xy()` convenience free functions that delegate to `create_primitive_mesh()`
-- [ ] Remove `create_cube_mesh`, `create_sphere_mesh`, `create_plane_mesh`, `create_cone_mesh`, `create_cylinder_mesh`, `create_torus_mesh`, `create_plane_xy_mesh` from `GpuRenderer` trait
-- [ ] Remove the 7 methods from `VulkanRenderer` impl of `GpuRenderer` — these now delegate to MeshManager internally, and the free functions call `create_mesh` instead
-- [ ] Remove the 7 methods from `MetalRenderer` impl of `GpuRenderer`
-- [ ] Remove the 7 match arms from `AnyRenderer` impl of `GpuRenderer`
-- [ ] Update all call sites in `katla_app` — replace `renderer.create_cube_mesh(size)` with `primitives::create_cube(&mut renderer, size)` etc.
-- [ ] Run `cargo check --workspace` to verify no compile errors
-- [ ] Run `cargo test --workspace` to verify all tests pass
+- [x] Create `katla_gfx/src/primitives/mod.rs` as a public submodule — move all `generate_cube_vertices`, `generate_sphere_vertices`, etc. functions out of `MeshManager` and `renderer/mesh_manager.rs` into free functions in this new module
+- [x] Add public `create_primitive_mesh()` free function in `katla_gfx/src/primitives/mod.rs` — takes `&mut impl GpuRenderer`, calls the appropriate generator, then calls `renderer.create_mesh()` on the result; this replaces calling `renderer.create_cube_mesh()` etc.
+- [x] Add `create_cube()`, `create_sphere()`, `create_plane()`, `create_cone()`, `create_cylinder()`, `create_torus()`, `create_plane_xy()` convenience free functions that delegate to `create_primitive_mesh()`
+- [x] Remove `create_cube_mesh`, `create_sphere_mesh`, `create_plane_mesh`, `create_cone_mesh`, `create_cylinder_mesh`, `create_torus_mesh`, `create_plane_xy_mesh` from `GpuRenderer` trait
+- [x] Remove the 7 methods from `VulkanRenderer` impl of `GpuRenderer` — these now delegate to MeshManager internally, and the free functions call `create_mesh` instead
+- [x] Remove the 7 methods from `MetalRenderer` impl of `GpuRenderer`
+- [x] Remove the 7 match arms from `AnyRenderer` impl of `GpuRenderer`
+- [x] Update all call sites in `katla_app` — replace `renderer.create_cube_mesh(size)` with `primitives::create_cube(&mut renderer, size)` etc.
+- [x] Run `cargo check --workspace` to verify no compile errors
+- [x] Run `cargo test --workspace` to verify all tests pass
 
 ### H. Decompose GpuRenderer monolith — remove register_mesh_raw from trait
 
-- [ ] Remove `register_mesh_raw` from `GpuRenderer` trait — it is documented as "Backend-specific; callers should use backend types directly", which means it does not belong on a backend-agnostic trait
-- [ ] Remove `register_mesh_raw` from `VulkanRenderer` impl of `GpuRenderer` — callers that need raw mesh registration should use `VulkanRenderer::create_mesh_dynamic()` directly
-- [ ] Remove `register_mesh_raw` from `MetalRenderer` impl of `GpuRenderer`
-- [ ] Remove `register_mesh_raw` match arm from `AnyRenderer` impl of `GpuRenderer`
-- [ ] Update any call sites in `katla_app` to use `create_mesh_dynamic` instead, or go through `as_vulkan()`/`as_metal()` escape hatch
-- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+- [x] Remove `register_mesh_raw` from `GpuRenderer` trait — it is documented as "Backend-specific; callers should use backend types directly", which means it does not belong on a backend-agnostic trait
+- [x] Remove `register_mesh_raw` from `VulkanRenderer` impl of `GpuRenderer` — callers that need raw mesh registration should use `VulkanRenderer::create_mesh_dynamic()` directly
+- [x] Remove `register_mesh_raw` from `MetalRenderer` impl of `GpuRenderer`
+- [x] Remove `register_mesh_raw` match arm from `AnyRenderer` impl of `GpuRenderer`
+- [x] Update any call sites in `katla_app` to use `create_mesh_dynamic` instead, or go through `as_vulkan()`/`as_metal()` escape hatch
+- [x] Run `cargo check --workspace` and `cargo test --workspace`
 
 ### I. Decompose GpuRenderer monolith — remove create_mesh_soa from trait
 
-- [ ] Remove `create_mesh_soa` from `GpuRenderer` trait — it is unimplemented on Vulkan (`todo!()`) and takes `HashMap<u32, Vec<u8>>` which loses type safety
-- [ ] Remove `create_mesh_soa` from `VulkanRenderer` impl — already `todo!()`, so no functional change
-- [ ] Remove `create_mesh_soa` from `MetalRenderer` impl
-- [ ] Remove `create_mesh_soa` match arm from `AnyRenderer` impl
-- [ ] If SOA mesh creation is needed later, design a proper typed API (e.g. `AttributeType` enum key) as a separate trait or method, not on the core GpuRenderer
-- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+- [x] Remove `create_mesh_soa` from `GpuRenderer` trait — it is unimplemented on Vulkan (`todo!()`) and takes `HashMap<u32, Vec<u8>>` which loses type safety
+- [x] Remove `create_mesh_soa` from `VulkanRenderer` impl — already `todo!()`, so no functional change
+- [x] Remove `create_mesh_soa` from `MetalRenderer` impl
+- [x] Remove `create_mesh_soa` match arm from `AnyRenderer` impl
+- [x] If SOA mesh creation is needed later, design a proper typed API (e.g. `AttributeType` enum key) as a separate trait or method, not on the core GpuRenderer
+- [x] Run `cargo check --workspace` and `cargo test --workspace`
 
 ### J. Decompose GpuRenderer monolith — consolidate pipeline init methods into a single register_pass_pipeline
 
@@ -336,7 +336,7 @@
 - [ ] Add physics bindings — `world:raycast(origin, direction, max_distance)` returning hit entity + point + normal (depends on Physics Phase 4)
 - [ ] Add audio bindings — `world:play_sound("explosion")`, `world:play_sound_at("explosion", position)` (depends on Audio Phase 2)
 - [ ] Performance profile — benchmark 1000 script entities with on_update, optimize hot paths
-- [ ] Optimize script dispatch — batch entity queries, reduce per-hook overhead, consider JIT hints
+- [x] Optimize script dispatch — batch entity queries, reduce per-hook overhead, consider JIT hints
 
 ### Phase 6: Editor integration
 - [ ] Add script inspector panel — show attached script path, expose script variables for live editing
@@ -529,7 +529,7 @@
 - [ ] Design integration test framework — headless app init, entity spawning, frame execution, state assertions
 - [ ] Add render test infrastructure — render N frames, read back pixels, compare against golden images
 - [ ] Add ECS round-trip tests — spawn entity, add components, serialize, deserialize, verify equivalence
-- [ ] Add scripting integration tests — load script, call on_update, verify world mutations via command queue
+- [x] Add scripting integration tests — load script, call on_update, verify world mutations via command queue
 - [ ] Add headless CI test suite — run integration tests without GPU in CI (mock renderer or software rasterizer)
 
 - [x] Fix AppError::Graphics to carry typed RendererError instead of String — preserve error chain for debugging
