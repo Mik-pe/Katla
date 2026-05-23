@@ -39,7 +39,8 @@ pub use crate::handle::{
     Handle, MaterialHandle, MeshHandle, PipelineHandle, SkeletonHandle, TextureHandle,
 };
 pub use types::{
-    DrawCall, DrawList, FrameUniforms, InstanceData, PointLightGPU, UIDrawList, UiDrawCommand,
+    DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuVendor, InstanceData, PointLightGPU,
+    UIDrawList, UiDrawCommand,
 };
 
 // Vulkan re-exports
@@ -216,6 +217,8 @@ pub struct VulkanRenderer {
     /// Tracks whether the first frame has been rendered.
     /// Used to skip the inter-frame semaphore wait on the very first frame.
     first_frame_rendered: bool,
+    /// GPU hardware capabilities and limits.
+    pub(crate) capabilities: types::GpuCapabilities,
 }
 
 /// Number of frames that can be processed concurrently.
@@ -355,6 +358,29 @@ impl VulkanRenderer {
             context.setup_validation_logging();
         }
 
+        let gpu_capabilities = {
+            use crate::renderer::types::{GpuCapabilities, GpuVendor};
+            let props = unsafe {
+                context
+                    .instance
+                    .get_physical_device_properties(context.physical_device)
+            };
+            let vendor = match props.vendor_id {
+                0x10DE => GpuVendor::Nvidia,
+                0x1002 => GpuVendor::Amd,
+                0x8086 => GpuVendor::Intel,
+                0x106B => GpuVendor::Apple,
+                _ => GpuVendor::Unknown,
+            };
+            GpuCapabilities {
+                max_texture_size: props.limits.max_image_dimension2_d,
+                max_bindless_textures: MAX_BINDLESS_TEXTURES as u32,
+                supports_compute: true,
+                max_frames_in_flight: FRAMES_IN_FLIGHT,
+                vendor,
+            }
+        };
+
         let frame_context = VulkanFrameCtx::init(&context)?;
         let swap_data = SwapData::new(
             &context.device,
@@ -439,6 +465,7 @@ impl VulkanRenderer {
             picking: picking::PickingSubsystem::default(),
             depth_texture_base_index: None,
             first_frame_rendered: false,
+            capabilities: gpu_capabilities,
         })
     }
 

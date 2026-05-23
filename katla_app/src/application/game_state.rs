@@ -1,6 +1,7 @@
 //! Editor play mode state machine and scene snapshot for play/stop cycle.
 
 use katla_gfx::GpuRenderer;
+use katla_gfx::primitives;
 use log::info;
 
 use crate::scene::SceneManager;
@@ -136,34 +137,35 @@ impl SceneSnapshot {
         let pos = desc.transform.position;
         let entity_id = if desc.source.is_mesh_primitive() {
             let mesh_handle = match &desc.source {
-                EntitySource::Cube { size } => app.renderer.create_cube_mesh(*size),
+                EntitySource::Cube { size } => primitives::create_cube(&mut app.renderer, *size),
                 EntitySource::Sphere {
                     radius,
                     segments,
                     rings,
                     ..
-                } => app.renderer.create_sphere_mesh(*radius, *segments, *rings),
+                } => primitives::create_sphere(&mut app.renderer, *radius, *segments, *rings),
                 EntitySource::Plane { width, height } => {
-                    app.renderer.create_plane_mesh(*width, *height)
+                    primitives::create_plane(&mut app.renderer, *width, *height)
                 }
                 EntitySource::Cylinder {
                     height,
                     radius,
                     segments,
                     ..
-                } => app
-                    .renderer
-                    .create_cylinder_mesh(*height, *radius, *segments),
+                } => primitives::create_cylinder(&mut app.renderer, *height, *radius, *segments),
                 EntitySource::Torus {
                     radius,
                     tube_radius,
                     segments,
                     tube_segments,
                     ..
-                } => {
-                    app.renderer
-                        .create_torus_mesh(*radius, *tube_radius, *segments, *tube_segments)
-                }
+                } => primitives::create_torus(
+                    &mut app.renderer,
+                    *radius,
+                    *tube_radius,
+                    *segments,
+                    *tube_segments,
+                ),
                 _ => unreachable!(),
             };
 

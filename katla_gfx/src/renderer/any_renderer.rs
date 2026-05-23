@@ -140,6 +140,14 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
+    fn capabilities(&self) -> &crate::renderer::types::GpuCapabilities {
+        match self {
+            AnyRenderer::Vulkan(r) => r.capabilities(),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.capabilities(),
+        }
+    }
+
     fn wait_for_frame(&mut self) -> Result<(), RendererError> {
         match self {
             AnyRenderer::Vulkan(r) => r.wait_for_frame(),
@@ -217,102 +225,6 @@ impl GpuRenderer for AnyRenderer {
             AnyRenderer::Vulkan(r) => r.create_mesh(vertices, indices),
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.create_mesh(vertices, indices),
-        }
-    }
-
-    fn create_mesh_soa(
-        &mut self,
-        attributes: &std::collections::HashMap<u32, Vec<u8>>,
-        vertex_count: u32,
-        indices: &[u32],
-    ) -> MeshHandle {
-        match self {
-            AnyRenderer::Vulkan(r) => {
-                GpuRenderer::create_mesh_soa(r, attributes, vertex_count, indices)
-            }
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => {
-                GpuRenderer::create_mesh_soa(r, attributes, vertex_count, indices)
-            }
-        }
-    }
-
-    fn register_mesh_raw(
-        &mut self,
-        vertex_data: &[u8],
-        vertex_count: u32,
-        index_data: &[u32],
-    ) -> MeshHandle {
-        match self {
-            AnyRenderer::Vulkan(r) => r.register_mesh_raw(vertex_data, vertex_count, index_data),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.register_mesh_raw(vertex_data, vertex_count, index_data),
-        }
-    }
-
-    fn create_cube_mesh(&mut self, size: [f32; 3]) -> MeshHandle {
-        match self {
-            AnyRenderer::Vulkan(r) => r.create_cube_mesh(size),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.create_cube_mesh(size),
-        }
-    }
-
-    fn create_sphere_mesh(&mut self, radius: f32, segments: u32, rings: u32) -> MeshHandle {
-        match self {
-            AnyRenderer::Vulkan(r) => r.create_sphere_mesh(radius, segments, rings),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.create_sphere_mesh(radius, segments, rings),
-        }
-    }
-
-    fn create_plane_mesh(&mut self, width: f32, height: f32) -> MeshHandle {
-        match self {
-            AnyRenderer::Vulkan(r) => r.create_plane_mesh(width, height),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.create_plane_mesh(width, height),
-        }
-    }
-
-    fn create_cone_mesh(&mut self, height: f32, base_radius: f32, segments: u32) -> MeshHandle {
-        match self {
-            AnyRenderer::Vulkan(r) => r.create_cone_mesh(height, base_radius, segments),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.create_cone_mesh(height, base_radius, segments),
-        }
-    }
-
-    fn create_cylinder_mesh(&mut self, height: f32, radius: f32, segments: u32) -> MeshHandle {
-        match self {
-            AnyRenderer::Vulkan(r) => r.create_cylinder_mesh(height, radius, segments),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.create_cylinder_mesh(height, radius, segments),
-        }
-    }
-
-    fn create_torus_mesh(
-        &mut self,
-        major_radius: f32,
-        minor_radius: f32,
-        segments: u32,
-        rings: u32,
-    ) -> MeshHandle {
-        match self {
-            AnyRenderer::Vulkan(r) => {
-                r.create_torus_mesh(major_radius, minor_radius, segments, rings)
-            }
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => {
-                r.create_torus_mesh(major_radius, minor_radius, segments, rings)
-            }
-        }
-    }
-
-    fn create_plane_xy_mesh(&mut self, width: f32, height: f32, segments: u32) -> MeshHandle {
-        match self {
-            AnyRenderer::Vulkan(r) => r.create_plane_xy_mesh(width, height, segments),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.create_plane_xy_mesh(width, height, segments),
         }
     }
 

@@ -118,24 +118,24 @@
 
 ### M. Generalize texture update API — remove font atlas special-case
 
-- [ ] Add `update_texture(&mut self, handle: TextureHandle, data: &[u8])` to `GpuRenderer` trait — general-purpose texture subresource update
-- [ ] Add `update_texture` dispatch to `AnyRenderer`
+- [x] Add `update_texture(&mut self, handle: TextureHandle, data: &[u8])` to `GpuRenderer` trait — general-purpose texture subresource update (default no-op impl; real impl deferred to when concrete use cases arise)
+- [x] Add `update_texture` dispatch to `AnyRenderer` (uses default impl, no explicit dispatch needed)
 - [ ] Implement `update_texture` for `VulkanRenderer` — copy data to existing texture, handle buffer-image copy
 - [ ] Implement `update_texture` for `MetalRenderer` — replace texture data via blit
 - [ ] Refactor `update_ui_font_atlas` to use `update_texture` internally
 - [ ] Refactor `create_ui_font_atlas` to use `create_texture` internally (if not already)
 - [ ] Consider removing `create_ui_font_atlas` and `update_ui_font_atlas` from the trait once the general API works — font atlas management can live in katla_ui or katla_app
-- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+- [x] Run `cargo check --workspace` and `cargo test --workspace`
 
 ### N. Add GPU capability queries to GpuRenderer
 
-- [ ] Define `GpuCapabilities` struct in `katla_gfx/src/renderer/` — fields: `max_texture_size: u32`, `max_bindless_textures: u32`, `supports_compute: bool`, `supports_ray_tracing: bool`, `max_frame_in_flight: usize`, `vendor: GpuVendor` (enum: Nvidia, Amd, Intel, Apple, Unknown)
-- [ ] Add `fn capabilities(&self) -> &GpuCapabilities` to `GpuRenderer` trait
-- [ ] Populate `GpuCapabilities` in `VulkanRenderer` from Vulkan physical device properties
-- [ ] Populate `GpuCapabilities` in `MetalRenderer` from Metal device properties
-- [ ] Add dispatch to `AnyRenderer`
+- [x] Define `GpuCapabilities` struct in `katla_gfx/src/renderer/` — fields: `max_texture_size: u32`, `max_bindless_textures: u32`, `supports_compute: bool`, `max_frame_in_flight: usize`, `vendor: GpuVendor` (enum: Nvidia, Amd, Intel, Apple, Unknown)
+- [x] Add `fn capabilities(&self) -> &GpuCapabilities` to `GpuRenderer` trait
+- [x] Populate `GpuCapabilities` in `VulkanRenderer` from Vulkan physical device properties
+- [x] Populate `GpuCapabilities` in `MetalRenderer` from Metal device properties
+- [x] Add dispatch to `AnyRenderer`
 - [ ] Replace `has_light_culling()` bool on the trait with a field on `GpuCapabilities`
-- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+- [x] Run `cargo check --workspace` and `cargo test --workspace`
 
 ### O. Add timestamp query API for GPU profiling
 

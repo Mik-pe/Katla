@@ -1,6 +1,7 @@
 use log::{error, info, warn};
 
 use katla_gfx::GpuRenderer;
+use katla_gfx::primitives;
 
 use crate::application::Application;
 impl Application {
@@ -584,7 +585,7 @@ impl Application {
         use crate::billboard::BillboardResources;
         use crate::components::BillboardIcon;
 
-        let mesh = self.renderer.create_plane_xy_mesh(1.0, 1.0, 1);
+        let mesh = primitives::create_plane_xy(&mut self.renderer, 1.0, 1.0, 1);
 
         let shader_path = self.resources.shader_path("billboard.wgsl");
         let material = match &mut self.renderer {

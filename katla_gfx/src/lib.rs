@@ -180,8 +180,8 @@ pub(crate) mod pipeline;
 #[cfg(feature = "validation")]
 pub use pipeline::{CompareOp, CullMode, FrontFace};
 
-// Internal implementation (primitive mesh generators - use VulkanRenderer::create_*_mesh instead)
-pub(crate) mod primitives;
+// Primitive mesh generators — use primitives::create_cube() etc. for backend-agnostic mesh creation
+pub mod primitives;
 
 // Render graph system
 pub mod compute;
@@ -285,7 +285,7 @@ pub use render_pass::{AttachmentInfo, BarrierKind, ClearValue, LoadOp, StoreOp};
 pub use renderer::{UIDrawList, UiDrawCommand};
 
 // Renderer types (backend-agnostic)
-pub use renderer::{DrawCall, DrawList, FrameUniforms, InstanceData};
+pub use renderer::{DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuVendor, InstanceData};
 
 // Renderer (Vulkan-specific)
 pub use renderer::VulkanRenderer;
