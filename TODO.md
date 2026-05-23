@@ -17,11 +17,11 @@
 - [x] Make constants and `read_shader`/`resolve_wgsl_includes` `pub(crate)`
 - [x] Extract mesh management (`MetalMesh`, `create_mesh*`, `register_mesh_raw`, `update_mesh_dynamic`) into `metal/mesh_api.rs`
 - [x] Extract texture management (`MetalTextureEntry`, `create_texture`, `create_texture_solid`, bindless slot queries) into `metal/texture_api.rs`
-- [ ] Extract material/pipeline management (`MetalMaterial`, `compile_material`) into `metal/material_api.rs`
-- [ ] Extract skeleton management (`create_skeleton`, `update_skeleton`) into `metal/skeleton_api.rs`
+- [x] Extract material/pipeline management (`MetalMaterial`, `compile_material`) into `metal/material_api.rs`
+- [x] Extract skeleton management (`create_skeleton`, `update_skeleton`) into `metal/skeleton_api.rs`
 - [x] Extract viewport management (`create_viewport`, `viewport_count`, `get_viewport`, `destroy_viewport`) into `metal/viewport_api.rs`
-- [ ] Extract frame lifecycle (`begin_frame`, `end_frame`, `render_frame`, `wait_for_frame`) into `metal/frame_lifecycle.rs`
-- [ ] Extract font atlas (`create_ui_font_atlas`, `update_ui_font_atlas`) into `metal/font_atlas.rs`
+- [x] Extract frame lifecycle (`begin_frame`, `end_frame`, `render_frame`, `wait_for_frame`) into `metal/frame_lifecycle.rs`
+- [x] Extract font atlas (`create_ui_font_atlas`, `update_ui_font_atlas`) into `metal/font_atlas.rs`
 
 ### C. Unify pipeline initialization — eliminate Metal-specific methods on AnyRenderer
 

@@ -10,7 +10,7 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
     MTLBlitCommandEncoder, MTLCommandBuffer, MTLCommandEncoder, MTLDevice, MTLFence,
-    MTLPixelFormat, MTLRenderCommandEncoder, MTLTexture,
+    MTLRenderCommandEncoder, MTLTexture,
 };
 
 use crate::backend::command::{
@@ -38,7 +38,6 @@ use super::light_culling::MetalLightCulling;
 use super::outline::MetalOutlineSubsystem;
 use super::particle::MetalParticleSubsystem;
 use super::picking::MetalPickingSubsystem;
-use super::shader;
 use super::shadow::MetalShadowSubsystem;
 use super::texture::{MetalTexture, MetalTextureView};
 use super::ui_renderer::MetalUIRenderer;
@@ -872,10 +871,7 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn wait_for_frame(&mut self) -> Result<(), RendererError> {
-        if let Some(cmd_buffer) = self.last_command_buffer.take() {
-            cmd_buffer.waitUntilCompleted();
-        }
-        Ok(())
+        self.wait_for_frame_impl()
     }
 
     fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
@@ -1483,20 +1479,11 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn begin_frame(&mut self) -> Result<u32, RendererError> {
-        let texture = self.context.surface.acquire_next_drawable()?;
-        self.drawable_texture_view = Some(MetalTextureView::new(
-            texture.clone(),
-            MetalTexture::new(texture.clone(), ImageFormat::B8G8R8A8Srgb),
-        ));
-        self.current_drawable_texture = Some(texture);
-        Ok(self.frame_index)
+        self.begin_frame_impl()
     }
 
     fn end_frame(&mut self) -> Result<(), RendererError> {
-        self.current_drawable_texture = None;
-        self.drawable_texture_view = None;
-        self.frame_index += 1;
-        Ok(())
+        self.end_frame_impl()
     }
 
     fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
@@ -1643,128 +1630,23 @@ impl GpuRenderer for MetalRenderer {
         shader_path: &str,
         vertex_type: &str,
     ) -> Result<MaterialHandle, RendererError> {
-        let wgsl_source = read_shader(shader_path)?;
-
-        log::debug!(
-            "compile_material: shader_path={}, wgsl_size={} bytes",
-            shader_path,
-            wgsl_source.len()
-        );
-        if wgsl_source.contains("pbr_lighting") {
-            log::debug!("compile_material: WGSL contains PBR lighting code");
-        }
-
-        let entry_points = match vertex_type {
-            "compute" => vec!["cs_main"],
-            _ => vec!["vs_main", "fs_main"],
-        };
-
-        let is_ui = vertex_type == "ui";
-
-        let compiled = shader::compile_wgsl_to_metal(
-            &self.context.device,
-            &wgsl_source,
-            &entry_points,
-            is_ui,
-        )?;
-
-        let vertex_fn = compiled
-            .module
-            .entry_points
-            .get("vs_main")
-            .or_else(|| compiled.module.entry_points.get("cs_main"))
-            .ok_or_else(|| {
-                RendererError::InvalidOperation("Vertex entry point not found".into())
-            })?;
-
-        let fragment_fn = compiled.module.entry_points.get("fs_main");
-
-        let color_formats = if is_ui {
-            &[MTLPixelFormat::BGRA8Unorm_sRGB]
-        } else {
-            &[MTLPixelFormat::RGBA16Float]
-        };
-        let depth_format = if is_ui {
-            None
-        } else {
-            Some(MTLPixelFormat::Depth32Float_Stencil8)
-        };
-
-        let is_skinned = vertex_type == "skinned";
-
-        let pipeline = if is_ui {
-            let vd = super::context::ui_vertex_descriptor();
-            self.context
-                .create_graphics_pipeline_with_vertex_descriptor(
-                    vertex_fn,
-                    fragment_fn
-                        .as_ref()
-                        .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                    color_formats,
-                    depth_format,
-                    false,
-                    crate::pipeline::CompareOp::Always,
-                    objc2_metal::MTLCullMode::None,
-                    objc2_metal::MTLWinding::Clockwise,
-                    Some(&vd),
-                    true,
-                )?
-        } else if is_skinned {
-            let vd = super::context::pbr_skinned_vertex_descriptor();
-            self.context
-                .create_graphics_pipeline_with_vertex_descriptor(
-                    vertex_fn,
-                    fragment_fn
-                        .as_ref()
-                        .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                    color_formats,
-                    depth_format,
-                    true,
-                    crate::pipeline::CompareOp::GreaterOrEqual,
-                    objc2_metal::MTLCullMode::Back,
-                    objc2_metal::MTLWinding::Clockwise,
-                    Some(&vd),
-                    false,
-                )?
-        } else {
-            self.context.create_graphics_pipeline(
-                vertex_fn,
-                fragment_fn
-                    .as_ref()
-                    .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                color_formats,
-                depth_format,
-                true,
-                crate::pipeline::CompareOp::GreaterOrEqual,
-                objc2_metal::MTLCullMode::Back,
-                objc2_metal::MTLWinding::Clockwise,
-            )?
-        };
-
-        let material = MetalMaterial {
-            pipeline: Some(pipeline),
-            texture_indices: [0, 1, 2, 0],
-        };
-        let id = self.materials.insert(material);
-        Ok(MaterialHandle::new(id))
+        self.compile_material_impl(shader_path, vertex_type)
     }
 
     fn set_material_texture_indices(&mut self, material: MaterialHandle, indices: [u32; 4]) {
-        if let Some(mat) = self.materials.get_mut(material.index()) {
-            mat.texture_indices = indices;
-        }
+        self.set_material_texture_indices_impl(material, indices)
     }
 
     fn default_material(&self) -> MaterialHandle {
-        self.default_material.unwrap_or(MaterialHandle::default())
+        self.default_material_impl()
     }
 
     fn destroy_material(&mut self, handle: MaterialHandle) {
-        self.materials.remove(handle.index());
+        self.destroy_material_impl(handle)
     }
 
     fn destroy_skeleton(&mut self, handle: SkeletonHandle) {
-        self.skeletons.remove(handle.index());
+        self.destroy_skeleton_impl(handle)
     }
 
     fn resize(&mut self, width: u32, height: u32) -> Result<(), RendererError> {
@@ -1782,24 +1664,11 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn create_skeleton(&mut self, joint_count: usize) -> Result<SkeletonHandle, RendererError> {
-        let buffer_size = (joint_count * 64) as u64;
-        let buffer = self.context.create_buffer(buffer_size, true)?;
-        let id = self.skeletons.insert(buffer);
-        Ok(SkeletonHandle::new(id))
+        self.create_skeleton_impl(joint_count)
     }
 
     fn update_skeleton(&mut self, handle: SkeletonHandle, matrices: &[[f32; 16]]) {
-        let Some(buffer) = self.skeletons.get_mut(handle.index()) else {
-            return;
-        };
-        let ptr = buffer.map();
-        let matrices_bytes = unsafe {
-            std::slice::from_raw_parts(matrices.as_ptr() as *const u8, matrices.len() * 64)
-        };
-        unsafe {
-            std::ptr::copy_nonoverlapping(matrices_bytes.as_ptr(), ptr, matrices_bytes.len());
-        }
-        buffer.unmap();
+        self.update_skeleton_impl(handle, matrices)
     }
 
     fn init_particle_system(&mut self) -> Result<(), RendererError> {
@@ -1810,48 +1679,15 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
-        let desc = TextureDescriptor::new(width, height, ImageFormat::R8G8B8A8Srgb);
-        let handle = self.create_texture(&desc, data);
-        self.ui_font_atlas = Some(handle);
-        handle
+        self.create_ui_font_atlas_impl(width, height, data)
     }
 
     fn update_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) {
-        if let Some(atlas_handle) = self.ui_font_atlas {
-            if let Some(entry) = self.textures.get(atlas_handle.index()) {
-                let tex = &entry._view;
-                let tex_w = tex.inner.width() as u32;
-                let tex_h = tex.inner.height() as u32;
-                if tex_w == width && tex_h == height {
-                    let region = objc2_metal::MTLRegion {
-                        origin: objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
-                        size: objc2_metal::MTLSize {
-                            width: width as usize,
-                            height: height as usize,
-                            depth: 1,
-                        },
-                    };
-                    let bytes_per_row = width as usize * 4;
-                    unsafe {
-                        tex.inner.replaceRegion_mipmapLevel_withBytes_bytesPerRow(
-                            region,
-                            0,
-                            std::ptr::NonNull::new(data.as_ptr() as *mut std::ffi::c_void).unwrap(),
-                            bytes_per_row,
-                        );
-                    }
-                    return;
-                }
-            }
-            self.destroy_texture(atlas_handle);
-        }
-        let desc = TextureDescriptor::new(width, height, ImageFormat::R8G8B8A8Srgb);
-        let handle = self.create_texture(&desc, data);
-        self.ui_font_atlas = Some(handle);
+        self.update_ui_font_atlas_impl(width, height, data)
     }
 
     fn ui_font_atlas_handle(&self) -> Option<TextureHandle> {
-        self.ui_font_atlas
+        self.ui_font_atlas_handle_impl()
     }
 
     // -- Lighting --
