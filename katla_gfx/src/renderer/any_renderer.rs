@@ -699,7 +699,8 @@ impl AnyRenderer {
 
     // --- Metal-specific methods ---
 
-    #[cfg(target_os = "macos")]
+    // --- Pipeline init methods (delegated to GpuRenderer trait) ---
+
     pub fn init_light_culling(
         &mut self,
         width: u32,
@@ -707,69 +708,137 @@ impl AnyRenderer {
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         match self {
-            AnyRenderer::Vulkan(_) => {
-                Err(RendererError::InvalidOperation("Not Metal backend".into()))
-            }
+            AnyRenderer::Vulkan(r) => r.init_light_culling(width, height, shader_path),
+            #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.init_light_culling(width, height, shader_path),
         }
     }
 
-    #[cfg(target_os = "macos")]
     pub fn init_shadow_resources(&mut self) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(_) => {
-                Err(RendererError::InvalidOperation("Not Metal backend".into()))
-            }
-            AnyRenderer::Metal(r) => r.init_shadow_resources(None),
-        }
+        GpuRenderer::init_shadow_resources(self)
     }
 
-    #[cfg(target_os = "macos")]
     pub fn init_shadow_pipeline(
         &mut self,
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         match self {
-            AnyRenderer::Vulkan(_) => {
-                Err(RendererError::InvalidOperation("Not Metal backend".into()))
-            }
+            AnyRenderer::Vulkan(r) => r.init_shadow_pipeline(shader_path),
+            #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.init_shadow_pipeline(shader_path),
         }
     }
 
-    #[cfg(target_os = "macos")]
+    pub fn init_shadow_pipeline_skinned(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.init_shadow_pipeline_skinned(shader_path),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.init_shadow_pipeline_skinned(shader_path),
+        }
+    }
+
     pub fn init_sky_pipeline(
         &mut self,
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         match self {
-            AnyRenderer::Vulkan(_) => {
-                Err(RendererError::InvalidOperation("Not Metal backend".into()))
-            }
+            AnyRenderer::Vulkan(r) => r.init_sky_pipeline(shader_path),
+            #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.init_sky_pipeline(shader_path),
         }
     }
 
-    #[cfg(target_os = "macos")]
     pub fn init_tonemap_pipeline(
         &mut self,
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         match self {
-            AnyRenderer::Vulkan(_) => {
-                Err(RendererError::InvalidOperation("Not Metal backend".into()))
-            }
+            AnyRenderer::Vulkan(r) => r.init_tonemap_pipeline(shader_path),
+            #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.init_tonemap_pipeline(shader_path),
         }
     }
 
-    #[cfg(target_os = "macos")]
     pub fn set_viewport_bindless_slot(&mut self, slot: u32) {
         match self {
-            AnyRenderer::Vulkan(_) => {}
+            AnyRenderer::Vulkan(r) => r.set_viewport_bindless_slot(slot),
+            #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.set_viewport_bindless_slot(slot),
         }
     }
+
+    pub fn init_depth_prepass_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.init_depth_prepass_pipeline(shader_path),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.init_depth_prepass_pipeline(shader_path),
+        }
+    }
+
+    pub fn init_depth_prepass_skinned_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.init_depth_prepass_skinned_pipeline(shader_path),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.init_depth_prepass_skinned_pipeline(shader_path),
+        }
+    }
+
+    pub fn init_outline_pipelines(
+        &mut self,
+        stencil_mark_path: &std::path::Path,
+        stencil_mark_skinned_path: &std::path::Path,
+        outline_draw_path: &std::path::Path,
+        outline_draw_skinned_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.init_outline_pipelines(
+                stencil_mark_path,
+                stencil_mark_skinned_path,
+                outline_draw_path,
+                outline_draw_skinned_path,
+            ),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.init_outline_pipelines(
+                stencil_mark_path,
+                stencil_mark_skinned_path,
+                outline_draw_path,
+                outline_draw_skinned_path,
+            ),
+        }
+    }
+
+    pub fn init_picking_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.init_picking_pipeline(shader_path),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.init_picking_pipeline(shader_path),
+        }
+    }
+
+    pub fn init_picking_skinned_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.init_picking_skinned_pipeline(shader_path),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.init_picking_skinned_pipeline(shader_path),
+        }
+    }
+
+    // --- Metal-specific methods (take Metal types, not in trait) ---
 
     #[cfg(target_os = "macos")]
     pub fn set_geometry_hdr_view(
@@ -788,66 +857,6 @@ impl AnyRenderer {
         match self {
             AnyRenderer::Vulkan(_) => {}
             AnyRenderer::Metal(r) => r.set_tonemap_output_view(view),
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn init_depth_prepass_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(_) => {
-                Err(RendererError::InvalidOperation("Not Metal backend".into()))
-            }
-            AnyRenderer::Metal(r) => r.init_depth_prepass_pipeline(shader_path),
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn init_outline_pipelines(
-        &mut self,
-        stencil_mark_path: &std::path::Path,
-        stencil_mark_skinned_path: &std::path::Path,
-        outline_draw_path: &std::path::Path,
-        outline_draw_skinned_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(_) => {
-                Err(RendererError::InvalidOperation("Not Metal backend".into()))
-            }
-            AnyRenderer::Metal(r) => r.init_outline_pipelines(
-                stencil_mark_path,
-                stencil_mark_skinned_path,
-                outline_draw_path,
-                outline_draw_skinned_path,
-            ),
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn init_picking_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(_) => {
-                Err(RendererError::InvalidOperation("Not Metal backend".into()))
-            }
-            AnyRenderer::Metal(r) => r.init_picking_pipeline(shader_path),
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn init_picking_skinned_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(_) => {
-                Err(RendererError::InvalidOperation("Not Metal backend".into()))
-            }
-            AnyRenderer::Metal(r) => r.init_picking_skinned_pipeline(shader_path),
         }
     }
 
