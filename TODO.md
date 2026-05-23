@@ -188,9 +188,9 @@
 - [x] Add minimum/maximum distance and rolloff factor to AudioEmitter — control attenuation curve parameters
 
 ### Phase 4: Mixing and streaming
-- [ ] Add master volume control — global volume slider applied to final mix output
-- [ ] Add audio category channels — SFX, Music, Ambient sub-mixes with independent volume controls
-- [ ] Add per-source volume and pitch — VoiceHandle::set_volume(), VoiceHandle::set_pitch() (resampling)
+- [x] Add master volume control — global volume slider applied to final mix output
+- [x] Add audio category channels — SFX, Music, Ambient sub-mixes with independent volume controls
+- [x] Add per-source volume and pitch — VoiceHandle::set_volume(), VoiceHandle::set_pitch() (resampling)
 - [ ] Implement audio streaming — stream long audio files (music) in chunks instead of loading entire file; ring buffer for decoded chunks
 - [ ] Add looping support — seamless loop points for music, configurable loop region for one-shot variations
 
