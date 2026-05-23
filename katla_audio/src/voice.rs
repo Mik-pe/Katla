@@ -20,6 +20,8 @@ pub struct Voice {
     id: VoiceId,
     buffer: Arc<AudioBuffer>,
     fixed_position: AtomicU64,
+    loop_start: u64,
+    loop_end: u64,
     volume: AtomicU32,
     pan: AtomicU32,
     pitch: AtomicU32,
@@ -29,16 +31,25 @@ pub struct Voice {
 
 impl Voice {
     pub fn new(id: VoiceId, buffer: Arc<AudioBuffer>, looping: bool) -> Self {
+        let total_fixed = buffer.samples.len() as u64 * FIXED_ONE;
         Voice {
             id,
             buffer,
             fixed_position: AtomicU64::new(0),
+            loop_start: 0,
+            loop_end: total_fixed,
             volume: AtomicU32::new(1.0f32.to_bits()),
             pan: AtomicU32::new(0.0f32.to_bits()),
             pitch: AtomicU32::new(1.0f32.to_bits()),
             looping,
             finished: AtomicBool::new(false),
         }
+    }
+
+    pub fn with_loop_region(mut self, start_sample: usize, end_sample: usize) -> Self {
+        self.loop_start = start_sample as u64 * FIXED_ONE;
+        self.loop_end = end_sample as u64 * FIXED_ONE;
+        self
     }
 
     pub fn id(&self) -> VoiceId {
@@ -96,6 +107,11 @@ impl Voice {
         let pitch = self.pitch();
         let step_fixed = (pitch * FIXED_ONE as f32) as u64;
         let total_fixed = total_src_samples as u64 * FIXED_ONE;
+        let loop_end = if self.looping {
+            self.loop_end.min(total_fixed)
+        } else {
+            total_fixed
+        };
 
         let mut fixed_pos = self.fixed_position.load(Ordering::Relaxed);
 
@@ -189,10 +205,11 @@ impl Voice {
             }
         }
 
-        if fixed_pos >= total_fixed {
+        if fixed_pos >= loop_end {
             if self.looping {
+                let overshoot = fixed_pos - loop_end;
                 self.fixed_position
-                    .store(fixed_pos % total_fixed, Ordering::Relaxed);
+                    .store(self.loop_start + overshoot, Ordering::Relaxed);
             } else {
                 self.fixed_position.store(total_fixed, Ordering::Relaxed);
                 self.finished.store(true, Ordering::Relaxed);

@@ -37,6 +37,8 @@ pub struct ScriptSystem {
     component_entities_provider: Option<ComponentEntitiesProvider>,
     /// Reusable event bus shared with script proxies across frames.
     shared_event_bus: Rc<RefCell<crate::bindings::script_world::SharedEventBus>>,
+    /// Audio commands queued by scripts during the last update.
+    pending_audio_commands: Vec<ScriptCommand>,
 }
 
 impl Default for ScriptSystem {
@@ -58,6 +60,7 @@ impl ScriptSystem {
             shared_event_bus: Rc::new(RefCell::new(
                 crate::bindings::script_world::SharedEventBus::default(),
             )),
+            pending_audio_commands: Vec::new(),
         }
     }
 
@@ -191,9 +194,24 @@ impl ScriptSystem {
     }
 
     fn apply_commands(&mut self, commands: Vec<ScriptCommand>, world: &mut World) {
+        let mut audio_cmds = Vec::new();
+        let mut core_cmds = Vec::new();
+        for cmd in commands {
+            match &cmd {
+                ScriptCommand::PlaySound { .. } | ScriptCommand::PlaySoundAt { .. } => {
+                    audio_cmds.push(cmd);
+                }
+                _ => core_cmds.push(cmd),
+            }
+        }
+
+        if !audio_cmds.is_empty() {
+            self.pending_audio_commands.extend(audio_cmds);
+        }
+
         if let Some(consumer) = self.command_consumer.as_mut() {
-            consumer(world, &commands);
-            for cmd in &commands {
+            consumer(world, &core_cmds);
+            for cmd in &core_cmds {
                 match cmd {
                     ScriptCommand::SpawnEntity { return_index: _ } => {
                         let id = world.create_entity();
@@ -207,7 +225,7 @@ impl ScriptSystem {
                 }
             }
         } else {
-            for cmd in commands {
+            for cmd in core_cmds {
                 match cmd {
                     ScriptCommand::SetTransform(entity, _transform) => {
                         debug!("Script set_transform for entity {entity} (no consumer)");
@@ -223,9 +241,15 @@ impl ScriptSystem {
                         debug!("Script destroying entity {entity}");
                         world.destroy_entity(entity);
                     }
+                    ScriptCommand::PlaySound { .. } | ScriptCommand::PlaySoundAt { .. } => {}
                 }
             }
         }
+    }
+
+    /// Drain audio commands queued by scripts during the last update.
+    pub fn drain_audio_commands(&mut self) -> Vec<ScriptCommand> {
+        std::mem::take(&mut self.pending_audio_commands)
     }
 
     fn process_destroyed(&mut self, world: &World) {
