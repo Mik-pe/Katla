@@ -308,6 +308,8 @@ pub struct Application {
     pub(crate) quit_requested: bool,
     /// Flag to prevent double cleanup
     cleaned_up: bool,
+    /// Audio system for managing playback of sound effects
+    pub(crate) audio_system: Option<crate::systems::AudioSystem>,
     /// Particle system for managing particle emitters via ECS
     pub(crate) particle_system: crate::systems::ParticleSystem,
     /// GPU animation system for pose evaluation (ECS queries only, GPU resources on renderer)

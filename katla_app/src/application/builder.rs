@@ -951,6 +951,7 @@ impl ApplicationBuilder {
             quit_requested: false,
             particle_system: crate::systems::ParticleSystem::new(),
             gpu_animation_system: None,
+            audio_system: None,
             minimized: false,
             needs_swapchain_recreate: false,
             gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(

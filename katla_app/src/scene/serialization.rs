@@ -1,7 +1,8 @@
 use super::descriptors::{
-    AnimationDescriptor, DirectionalLightDescriptor, DragDescriptor, DrawableDescriptor,
-    EntityDescriptor, MassDescriptor, ParticleEmitterDescriptor, PerspectiveDescriptor,
-    PointLightDescriptor, Scene, ScriptDescriptor, TransformDescriptor, VelocityDescriptor,
+    AnimationDescriptor, AudioEmitterDescriptor, DirectionalLightDescriptor, DragDescriptor,
+    DrawableDescriptor, EntityDescriptor, MassDescriptor, ParticleEmitterDescriptor,
+    PerspectiveDescriptor, PointLightDescriptor, Scene, ScriptDescriptor, TransformDescriptor,
+    VelocityDescriptor,
 };
 use super::entity_source::EntitySource;
 use log::{info, warn};
@@ -238,6 +239,16 @@ impl SceneManager {
                         intensity: l.intensity,
                     });
 
+            let audio_emitter = app
+                .world
+                .get_component::<crate::components::AudioEmitter>(entity_id)
+                .map(|a| AudioEmitterDescriptor {
+                    source_path: a.source_path.clone(),
+                    volume: a.volume,
+                    looping: a.looping,
+                    playing: a.playing,
+                });
+
             scene.entities.push(EntityDescriptor {
                 name,
                 parent,
@@ -253,6 +264,7 @@ impl SceneManager {
                 drag,
                 perspective,
                 directional_light,
+                audio_emitter,
             });
         }
 
@@ -720,6 +732,19 @@ impl SceneManager {
                     dl_desc.color,
                     dl_desc.intensity,
                 ),
+            );
+        }
+
+        // Attach audio emitter
+        if let Some(ref audio_desc) = desc.audio_emitter {
+            app.world.add_component(
+                entity_id,
+                crate::components::AudioEmitter {
+                    source_path: audio_desc.source_path.clone(),
+                    volume: audio_desc.volume,
+                    looping: audio_desc.looping,
+                    playing: audio_desc.playing,
+                },
             );
         }
 

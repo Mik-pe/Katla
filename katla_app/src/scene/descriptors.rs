@@ -149,6 +149,26 @@ pub struct ScriptDescriptor {
     pub script_path: String,
 }
 
+/// Audio emitter data for serialization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AudioEmitterDescriptor {
+    pub source_path: String,
+    #[serde(default = "default_volume")]
+    pub volume: f32,
+    #[serde(default)]
+    pub looping: bool,
+    #[serde(default = "default_playing")]
+    pub playing: bool,
+}
+
+fn default_volume() -> f32 {
+    1.0
+}
+
+fn default_playing() -> bool {
+    true
+}
+
 /// Descriptor for a single entity in a scene file.
 ///
 /// Uses `#[serde(deny_unknown_fields)] = false` (the default) so that
@@ -175,6 +195,8 @@ pub struct EntityDescriptor {
     pub perspective: Option<PerspectiveDescriptor>,
     #[serde(default)]
     pub directional_light: Option<DirectionalLightDescriptor>,
+    #[serde(default)]
+    pub audio_emitter: Option<AudioEmitterDescriptor>,
 }
 
 /// Top-level scene file structure.

@@ -36,6 +36,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[1]*/ (
             name: "Sphere_0_0",
@@ -65,6 +66,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[2]*/ (
             name: "Sphere_1_0",
@@ -94,6 +96,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[3]*/ (
             name: "Sphere_2_0",
@@ -123,6 +126,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[4]*/ (
             name: "Sphere_3_0",
@@ -152,6 +156,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[5]*/ (
             name: "Sphere_4_0",
@@ -181,6 +186,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[6]*/ (
             name: "Sphere_0_1",
@@ -210,6 +216,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[7]*/ (
             name: "Sphere_1_1",
@@ -239,6 +246,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[8]*/ (
             name: "Sphere_2_1",
@@ -268,6 +276,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[9]*/ (
             name: "Sphere_3_1",
@@ -297,6 +306,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[10]*/ (
             name: "Sphere_4_1",
@@ -326,6 +336,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[11]*/ (
             name: "Sphere_0_2",
@@ -355,6 +366,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[12]*/ (
             name: "Sphere_1_2",
@@ -384,6 +396,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[13]*/ (
             name: "Sphere_2_2",
@@ -413,6 +426,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[14]*/ (
             name: "Sphere_3_2",
@@ -442,6 +456,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[15]*/ (
             name: "Sphere_4_2",
@@ -471,6 +486,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[16]*/ (
             name: "Sphere_0_3",
@@ -500,6 +516,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[17]*/ (
             name: "Sphere_1_3",
@@ -529,6 +546,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[18]*/ (
             name: "Sphere_2_3",
@@ -558,6 +576,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[19]*/ (
             name: "Sphere_3_3",
@@ -587,6 +606,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[20]*/ (
             name: "Sphere_4_3",
@@ -616,6 +636,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[21]*/ (
             name: "Sphere_0_4",
@@ -645,6 +666,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[22]*/ (
             name: "Sphere_1_4",
@@ -674,6 +696,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[23]*/ (
             name: "Sphere_2_4",
@@ -703,6 +726,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[24]*/ (
             name: "Sphere_3_4",
@@ -732,6 +756,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[25]*/ (
             name: "Sphere_4_4",
@@ -761,6 +786,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[26]*/ (
             name: "CenterCube",
@@ -788,6 +814,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[27]*/ (
             name: "CyanSphere",
@@ -817,6 +844,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[28]*/ (
             name: "MagentaCylinder",
@@ -846,6 +874,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[29]*/ (
             name: "LimeTorus",
@@ -876,6 +905,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[30]*/ (
             name: "Backdrop",
@@ -904,6 +934,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[31]*/ (
             name: "Fox",
@@ -941,6 +972,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[32]*/ (
             name: "DamagedHelmet",
@@ -963,6 +995,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[33]*/ (
             name: "FireEmitter",
@@ -1001,6 +1034,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[34]*/ (
             name: "EtherealEmitter",
@@ -1039,6 +1073,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[35]*/ (
             name: "SparkleEmitter",
@@ -1077,6 +1112,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[36]*/ (
             name: "WarmLight",
@@ -1106,6 +1142,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[37]*/ (
             name: "CoolLight",
@@ -1135,6 +1172,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[38]*/ (
             name: "MagentaLight",
@@ -1164,6 +1202,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[39]*/ (
             name: "GreenLight",
@@ -1193,6 +1232,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
         /*[40]*/ (
             name: "OverheadLight",
@@ -1222,6 +1262,7 @@
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         ),
     ],
 )
