@@ -10,6 +10,7 @@ pub(crate) mod draw_helpers;
 pub(crate) mod format;
 pub(crate) mod init_pipelines;
 pub(crate) mod light_culling;
+pub(crate) mod mesh_api;
 pub(crate) mod metal_renderer;
 pub(crate) mod metal_transient_texture;
 pub(crate) mod outline;
@@ -24,6 +25,8 @@ pub(crate) mod shadow;
 pub(crate) mod surface;
 pub(crate) mod sync;
 pub(crate) mod texture;
+pub(crate) mod texture_api;
 pub(crate) mod ui_renderer;
+pub(crate) mod viewport_api;
 
 pub(crate) use context::MetalBackend;

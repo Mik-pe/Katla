@@ -21,15 +21,13 @@ use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::handle::{MaterialHandle, MeshHandle, ResourceStorage, SkeletonHandle, TextureHandle};
 
-use crate::primitives;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::renderer::MAX_OBJECTS_PER_FRAME;
 use crate::renderer::gpu_renderer::GpuRenderer;
 use crate::renderer::types::{DrawList, FrameUniforms};
 use crate::size::Size2D;
 use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
-use crate::vertex::VertexPBR;
-use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
+use crate::viewport::Viewport;
 
 use super::animation::MetalAnimationSystem;
 use super::argument_buffer::MetalBindlessTextureManager;
@@ -62,9 +60,9 @@ pub(crate) struct MetalMaterial {
 }
 
 /// A texture stored with its bindless slot.
-struct MetalTextureEntry {
-    _view: MetalTextureView,
-    bindless_slot: Option<u32>,
+pub(crate) struct MetalTextureEntry {
+    pub(crate) _view: MetalTextureView,
+    pub(crate) bindless_slot: Option<u32>,
 }
 
 pub(crate) fn read_shader(path: &str) -> Result<String, RendererError> {
@@ -384,52 +382,6 @@ impl MetalRenderer {
         renderer.dummy_vertex_buffer = Some(dummy_vb);
 
         Ok(renderer)
-    }
-
-    fn upload_vertex_index_data(
-        &mut self,
-        vertex_data: &[u8],
-        index_data: &[u32],
-    ) -> Result<(MetalBuffer, MetalBuffer, u32), RendererError> {
-        let vertex_buffer = self.context.create_buffer(vertex_data.len() as u64, true)?;
-        let index_buffer = self
-            .context
-            .create_buffer((index_data.len() * 4) as u64, true)?;
-
-        {
-            let ptr = vertex_buffer.map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(vertex_data.as_ptr(), ptr, vertex_data.len());
-            }
-            vertex_buffer.unmap();
-        }
-        {
-            let ptr = index_buffer.map();
-            let index_bytes = unsafe {
-                std::slice::from_raw_parts(index_data.as_ptr() as *const u8, index_data.len() * 4)
-            };
-            unsafe {
-                std::ptr::copy_nonoverlapping(index_bytes.as_ptr(), ptr, index_bytes.len());
-            }
-            index_buffer.unmap();
-        }
-
-        Ok((vertex_buffer, index_buffer, index_data.len() as u32))
-    }
-
-    fn create_primitive_mesh(&mut self, vertices: Vec<VertexPBR>, indices: Vec<u32>) -> MeshHandle {
-        let vertex_bytes = bytemuck::cast_slice(&vertices);
-        let (vertex_buffer, index_buffer, index_count) = self
-            .upload_vertex_index_data(vertex_bytes, &indices)
-            .expect("Failed to create primitive mesh buffers");
-
-        let mesh = MetalMesh {
-            vertex_buffer,
-            index_buffer,
-            index_count,
-        };
-        let id = self.meshes.insert(mesh);
-        MeshHandle::new(id)
     }
 
     fn ensure_uniform_buffers(&mut self) -> Result<(), RendererError> {
@@ -1552,36 +1504,12 @@ impl GpuRenderer for MetalRenderer {
         T: bytemuck::Pod,
         U: bytemuck::Pod,
     {
-        let vertex_bytes = bytemuck::cast_slice(vertices);
-        let index_u32: Vec<u32> = indices
-            .iter()
-            .map(|v| {
-                let bytes = bytemuck::bytes_of(v);
-                match bytes.len() {
-                    1 => bytes[0] as u32,
-                    2 => u16::from_ne_bytes([bytes[0], bytes[1]]) as u32,
-                    4 => u32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-                    _ => 0,
-                }
-            })
-            .collect();
-
-        let (vertex_buffer, index_buffer, index_count) = self
-            .upload_vertex_index_data(vertex_bytes, &index_u32)
-            .expect("Failed to create mesh buffers");
-
-        let mesh = MetalMesh {
-            vertex_buffer,
-            index_buffer,
-            index_count,
-        };
-        let id = self.meshes.insert(mesh);
-        MeshHandle::new(id)
+        self.create_mesh_from_vertices(vertices, indices)
     }
 
     fn create_mesh_soa(
         &mut self,
-        _attributes: &HashMap<u32, Vec<u8>>,
+        _attributes: &std::collections::HashMap<u32, Vec<u8>>,
         _vertex_count: u32,
         _indices: &[u32],
     ) -> MeshHandle {
@@ -1596,42 +1524,27 @@ impl GpuRenderer for MetalRenderer {
         _vertex_count: u32,
         index_data: &[u32],
     ) -> MeshHandle {
-        let (vertex_buffer, index_buffer, index_count) = self
-            .upload_vertex_index_data(vertex_data, index_data)
-            .expect("Failed to create mesh buffers");
-
-        let mesh = MetalMesh {
-            vertex_buffer,
-            index_buffer,
-            index_count,
-        };
-        let id = self.meshes.insert(mesh);
-        MeshHandle::new(id)
+        self.register_mesh_raw_impl(vertex_data, index_data)
     }
 
     fn create_cube_mesh(&mut self, size: [f32; 3]) -> MeshHandle {
-        let (vertices, indices) = primitives::generate_cube(size);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_cube_mesh_impl(size)
     }
 
     fn create_sphere_mesh(&mut self, radius: f32, segments: u32, rings: u32) -> MeshHandle {
-        let (vertices, indices) = primitives::generate_sphere(radius, segments, rings);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_sphere_mesh_impl(radius, segments, rings)
     }
 
     fn create_plane_mesh(&mut self, width: f32, height: f32) -> MeshHandle {
-        let (vertices, indices) = primitives::generate_plane(width, height);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_plane_mesh_impl(width, height)
     }
 
     fn create_cone_mesh(&mut self, height: f32, base_radius: f32, segments: u32) -> MeshHandle {
-        let (vertices, indices) = primitives::generate_cone(height, base_radius, segments);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_cone_mesh_impl(height, base_radius, segments)
     }
 
     fn create_cylinder_mesh(&mut self, height: f32, radius: f32, segments: u32) -> MeshHandle {
-        let (vertices, indices) = primitives::generate_cylinder(height, radius, segments);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_cylinder_mesh_impl(height, radius, segments)
     }
 
     fn create_torus_mesh(
@@ -1641,14 +1554,11 @@ impl GpuRenderer for MetalRenderer {
         segments: u32,
         rings: u32,
     ) -> MeshHandle {
-        let (vertices, indices) =
-            primitives::generate_torus(major_radius, minor_radius, segments, rings);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_torus_mesh_impl(major_radius, minor_radius, segments, rings)
     }
 
     fn create_plane_xy_mesh(&mut self, width: f32, height: f32, segments: u32) -> MeshHandle {
-        let (vertices, indices) = primitives::generate_plane_xy(width, height, segments);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_plane_xy_mesh_impl(width, height, segments)
     }
 
     fn create_mesh_dynamic(
@@ -1667,100 +1577,23 @@ impl GpuRenderer for MetalRenderer {
         _vertex_count: u32,
         indices: &[u32],
     ) -> Result<(), RendererError> {
-        let Some(m) = self.meshes.get_mut(mesh.index()) else {
-            return Err(RendererError::NotFound("Mesh not found".into()));
-        };
-        {
-            let ptr = m.vertex_buffer.map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    vertex_data.as_ptr(),
-                    ptr,
-                    vertex_data.len().min(m.vertex_buffer.size() as usize),
-                );
-            }
-            m.vertex_buffer.unmap();
-        }
-        {
-            let index_bytes = unsafe {
-                std::slice::from_raw_parts(indices.as_ptr() as *const u8, indices.len() * 4)
-            };
-            let ptr = m.index_buffer.map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    index_bytes.as_ptr(),
-                    ptr,
-                    index_bytes.len().min(m.index_buffer.size() as usize),
-                );
-            }
-            m.index_buffer.unmap();
-        }
-        m.index_count = indices.len() as u32;
-        Ok(())
+        self.update_mesh_dynamic_impl(mesh, vertex_data, indices)
     }
 
     fn create_texture(&mut self, desc: &TextureDescriptor, data: &[u8]) -> TextureHandle {
-        let result = if data.is_empty() {
-            self.context.create_texture(desc)
-        } else {
-            self.context.create_texture_with_data(desc)
-        };
-        match result {
-            Ok((texture, view)) => {
-                if !data.is_empty() {
-                    let region = objc2_metal::MTLRegion {
-                        origin: objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
-                        size: objc2_metal::MTLSize {
-                            width: desc.width as usize,
-                            height: desc.height as usize,
-                            depth: 1,
-                        },
-                    };
-                    let bytes_per_row = desc.width as usize * 4;
-                    unsafe {
-                        texture
-                            .inner
-                            .replaceRegion_mipmapLevel_withBytes_bytesPerRow(
-                                region,
-                                0,
-                                std::ptr::NonNull::new(data.as_ptr() as *mut std::ffi::c_void)
-                                    .unwrap(),
-                                bytes_per_row,
-                            );
-                    }
-                }
-
-                let bindless_slot = self.bindless_manager.register_texture(&texture.inner).ok();
-
-                let entry = MetalTextureEntry {
-                    _view: view,
-                    bindless_slot,
-                };
-                let id = self.textures.insert(entry);
-                TextureHandle::new(id)
-            }
-            Err(_) => self.default_texture(),
-        }
+        self.create_texture_impl(desc, data)
     }
 
     fn create_texture_solid(&mut self, color: [u8; 4]) -> TextureHandle {
-        let desc = TextureDescriptor::new(1, 1, ImageFormat::R8G8B8A8Srgb);
-        self.create_texture(&desc, &color)
+        self.create_texture_solid_impl(color)
     }
 
     fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32> {
-        self.textures
-            .get(handle.index())
-            .and_then(|entry| entry.bindless_slot)
+        self.get_bindless_slot_impl(handle)
     }
 
     fn get_texture_at_slot(&self, slot: u32) -> Option<TextureHandle> {
-        for (idx, entry) in self.textures.iter().enumerate() {
-            if entry.bindless_slot == Some(slot) {
-                return Some(TextureHandle::new(idx as u32));
-            }
-        }
-        None
+        self.get_texture_at_slot_impl(slot)
     }
 
     fn get_texture_bindless_index(&self, handle: TextureHandle) -> u32 {
@@ -1768,7 +1601,41 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn default_texture(&self) -> TextureHandle {
-        self.default_texture.unwrap_or(TextureHandle::default())
+        self.default_texture_impl()
+    }
+
+    fn destroy_mesh(&mut self, handle: MeshHandle) {
+        self.meshes.remove(handle.index());
+    }
+
+    fn destroy_texture(&mut self, handle: TextureHandle) {
+        self.destroy_texture_impl(handle)
+    }
+
+    fn create_viewport(&mut self) -> crate::viewport::ViewportBuilder {
+        self.create_viewport_impl()
+    }
+
+    fn viewport_count(&self) -> usize {
+        self.viewport_count_impl()
+    }
+
+    fn get_viewport(
+        &self,
+        handle: crate::viewport::ViewportHandle,
+    ) -> Option<&crate::viewport::Viewport> {
+        self.get_viewport_impl(handle)
+    }
+
+    fn viewport_extent(
+        &self,
+        handle: crate::viewport::ViewportHandle,
+    ) -> Option<crate::size::Size2D> {
+        self.viewport_extent_impl(handle)
+    }
+
+    fn destroy_viewport(&mut self, handle: crate::viewport::ViewportHandle) {
+        self.destroy_viewport_impl(handle)
     }
 
     fn compile_material(
@@ -1892,46 +1759,12 @@ impl GpuRenderer for MetalRenderer {
         self.default_material.unwrap_or(MaterialHandle::default())
     }
 
-    fn destroy_mesh(&mut self, handle: MeshHandle) {
-        self.meshes.remove(handle.index());
-    }
-
     fn destroy_material(&mut self, handle: MaterialHandle) {
         self.materials.remove(handle.index());
     }
 
-    fn destroy_texture(&mut self, handle: TextureHandle) {
-        if let Some(entry) = self.textures.remove(handle.index()) {
-            if let Some(slot) = entry.bindless_slot {
-                self.bindless_manager.release_slot(slot);
-            }
-        }
-    }
-
     fn destroy_skeleton(&mut self, handle: SkeletonHandle) {
         self.skeletons.remove(handle.index());
-    }
-
-    fn create_viewport(&mut self) -> ViewportBuilder {
-        ViewportBuilder::new()
-    }
-
-    fn viewport_count(&self) -> usize {
-        self.viewports.len()
-    }
-
-    fn get_viewport(&self, handle: ViewportHandle) -> Option<&Viewport> {
-        self.viewports.get(handle.0)
-    }
-
-    fn viewport_extent(&self, handle: ViewportHandle) -> Option<Size2D> {
-        self.viewports.get(handle.0).map(|v| v.extent)
-    }
-
-    fn destroy_viewport(&mut self, handle: ViewportHandle) {
-        if handle.0 < self.viewports.len() {
-            // Viewports don't have GPU resources to free, just leave the slot
-        }
     }
 
     fn resize(&mut self, width: u32, height: u32) -> Result<(), RendererError> {
