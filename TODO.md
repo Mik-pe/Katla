@@ -74,37 +74,141 @@
 
 ## Audio System
 
-- [ ] Add audio crate (katla_audio) to workspace — choose backend (e.g. cpal + lewton for decoding, or kira for a higher-level solution)
-- [ ] Implement basic audio playback — load and play WAV/OGG files, stereo mixing, volume control
-- [ ] Add AudioSource component and AudioSystem — play one-shot sounds triggered by gameplay events
-- [ ] Add 3D positional audio — spatialize sounds based on emitter TransformComponent relative to listener (camera)
-- [ ] Add audio mixing — master volume, category channels (SFX, music, ambient), per-source volume
-- [ ] Add streaming audio — support long-running music tracks without loading entire file into memory
-- [ ] Integrate audio into asset browser — show audio files with waveform preview, drag-to-spawn AudioEmitter entities
+### Phase 1: Crate skeleton + backend setup
+- [ ] Create `katla_audio` crate in workspace — add to `Cargo.toml` workspace members, create crate skeleton with `lib.rs`
+- [ ] Choose and integrate audio backend — evaluate `cpal` (low-level) vs `kira` (high-level) for output; add dependency to `katla_audio/Cargo.toml`
+- [ ] Add audio decoder dependency — `lewton` for OGG Vorbis, `hound` for WAV; wrap behind a common `DecodedAudio` struct (sample rate, channel count, PCM samples)
+- [ ] Implement `AudioDevice` — open default output device, create output stream, manage sample rate and buffer size
+- [ ] Implement `AudioMixer` — mix N active voices into a single output buffer, handle clipping prevention (soft clamp)
+- [ ] Implement `AudioVoice` — represents a single playing sound: source buffer, playback position, volume, looping flag, finished flag
+- [ ] Add basic playback API — `AudioEngine::play(sound: &AudioBuffer) -> VoiceHandle`, `VoiceHandle::stop()`, `VoiceHandle::set_volume()`
+- [ ] Write unit tests — decode WAV/OGG files to PCM, mix two buffers, verify output sample ranges
+
+### Phase 2: ECS integration
+- [ ] Add `AudioSource` component — holds asset path to sound file, derives `Component` via katla_derive
+- [ ] Add `AudioListener` component — marks the camera entity that receives positional audio (only one active at a time)
+- [ ] Add `AudioEmitter` component — holds volume, looping, playback state; references AudioSource path
+- [ ] Implement `AudioSystem` (ECS System trait) — discover entities with AudioEmitter, trigger playback on spawn, stop on destroy
+- [ ] Register audio types in `ApplicationBuilder` — add AudioEngine as a resource, register AudioSystem at appropriate execution order
+- [ ] Add component serialization for AudioSource and AudioEmitter — RON round-trip support
+
+### Phase 3: 3D positional audio
+- [ ] Add `AudioListener` position tracking — read listener entity's TransformComponent each frame, feed position + orientation to spatializer
+- [ ] Implement distance-based attenuation — inverse distance model (clamped) for volume falloff based on emitter-to-listener distance
+- [ ] Implement panning / spatialization — stereo pan based on emitter direction relative to listener forward vector
+- [ ] Add distance model options — linear, inverse clamped, exponential; configurable per-emitter or globally
+- [ ] Add minimum/maximum distance and rolloff factor to AudioEmitter — control attenuation curve parameters
+
+### Phase 4: Mixing and streaming
+- [ ] Add master volume control — global volume slider applied to final mix output
+- [ ] Add audio category channels — SFX, Music, Ambient sub-mixes with independent volume controls
+- [ ] Add per-source volume and pitch — VoiceHandle::set_volume(), VoiceHandle::set_pitch() (resampling)
+- [ ] Implement audio streaming — stream long audio files (music) in chunks instead of loading entire file; ring buffer for decoded chunks
+- [ ] Add looping support — seamless loop points for music, configurable loop region for one-shot variations
+
+### Phase 5: Editor and asset integration
+- [ ] Add audio file loading to asset pipeline — recognize .wav/.ogg extensions, decode and cache AudioBuffers
+- [ ] Add audio entries to asset browser — show audio files with icon, duration, sample rate metadata
+- [ ] Add audio preview in asset browser — play/pause button on audio asset hover or selection
+- [ ] Add audio inspector UI — volume slider, looping toggle, category selector for AudioSource/AudioEmitter components
+- [ ] Add drag-to-spawn AudioEmitter — drag audio file from asset browser into viewport to create entity with AudioEmitter
 
 ## Physics
 
-- [ ] Add collision detection — broadphase (sweep-and-prune or grid), narrowphase (SAT or GJK), contact generation
-- [ ] Add collision shapes — AABB, sphere, box, capsule, mesh collider components
-- [ ] Add rigid body dynamics — mass, inertia, angular velocity, torque, integration (Verlet or semi-implicit Euler)
-- [ ] Add constraints and joints — point-to-point, hinge, distance constraints
-- [ ] Add physics raycasting — raycast query returning hit entity, point, normal, distance
-- [ ] Add trigger volumes — overlap detection without collision response (sensors)
-- [ ] Add physics materials — friction, restitution, density per-shape
-- [ ] Add physics debug visualization — wireframe collider rendering in editor viewport
-- [ ] Decide: build custom or integrate existing physics crate (rapier, physx, jolt) — evaluate tradeoffs for the engine's scope
+### Phase 0: Architecture decision
+- [ ] Evaluate physics crates (rapier, physx, jolt) vs custom — compare API ergonomics, ECS compatibility, feature set, license, and maintenance status for the engine's scope
+- [ ] Write ADR (Architecture Decision Record) documenting the choice — include rationale, tradeoffs, and integration strategy
+
+### Phase 1: Crate skeleton + collision shapes
+- [ ] Create `katla_physics` crate in workspace — add to `Cargo.toml` workspace members, create crate skeleton with `lib.rs`
+- [ ] Define collision shape types — `SphereShape(f32)`, `BoxShape { half_extents: Vec3 }`, `CapsuleShape { half_height, radius }`, `AABB { min, max }`
+- [ ] Add `ColliderShape` component — holds a collision shape, derives `Component` via katla_derive
+- [ ] Add `ColliderState` component — stores computed world-space AABB, collision layer/mask flags
+- [ ] Implement AABB computation for each shape — transform local shape by entity TransformComponent to get world-space AABB
+- [ ] Add serialization for collider components — RON round-trip for ColliderShape and physics materials
+- [ ] Register collider components in `ApplicationBuilder` and component registry
+
+### Phase 2: Broadphase + narrowphase
+- [ ] Implement broadphase — sweep-and-prune on sorted AABB intervals, output overlapping pair list
+- [ ] Implement broadphase layer/mask filtering — only test pairs whose collision layers overlap
+- [ ] Implement narrowphase: sphere-sphere test — distance < r1 + r2, return contact point and normal
+- [ ] Implement narrowphase: sphere-box test — closest point on box to sphere center
+- [ ] Implement narrowphase: box-box (SAT) — test separating axes, return contact manifold
+- [ ] Implement narrowphase: sphere-capsule and box-capsule tests
+- [ ] Define `ContactManifold` struct — contact points, penetration depth, contact normal for each pair
+- [ ] Implement `CollisionSystem` (ECS System trait) — run broadphase then narrowphase each frame, generate contact events
+
+### Phase 3: Rigid body dynamics
+- [ ] Add `RigidBody` component — body type (static, dynamic, kinematic), mass, inertia tensor, linear/angular velocity, forces accumulator
+- [ ] Implement semi-implicit Euler integration — apply gravity, accumulated forces, update velocity and position each frame
+- [ ] Implement collision response — impulse-based resolution using contact manifolds, friction, restitution
+- [ ] Add `RigidBodySystem` (ECS System trait) — integrate dynamics, apply forces, sync position back to TransformComponent
+- [ ] Implement sleeping — mark near-stationary dynamic bodies as sleeping, skip integration, wake on contact
+- [ ] Add physics materials — `PhysicsMaterial { friction, restitution, density }` attached to ColliderShape
+- [ ] Implement force application API — apply_force(), apply_impulse(), apply_torque() on RigidBody
+
+### Phase 4: Constraints and raycasting
+- [ ] Implement point-to-point constraint — pin two bodies at a shared world point
+- [ ] Implement hinge constraint — point-to-point with rotation axis limit
+- [ ] Implement distance constraint — maintain fixed distance between two anchor points
+- [ ] Add raycast query API — `PhysicsWorld::raycast(origin, direction, max_distance, layer_mask) -> Option<RayHit>`
+- [ ] Add shape cast query — sweep a shape along a ray, return first hit
+- [ ] Add trigger volumes — collider with sensor flag (no collision response, emits overlap events)
+- [ ] Expose raycasting to scripting — `world:raycast(origin, direction, max_distance)` binding
+
+### Phase 5: Debug visualization
+- [ ] Add wireframe collider rendering — draw sphere, box, capsule outlines in editor viewport using line primitives
+- [ ] Color-code collider types — static=blue, dynamic=green, kinematic=yellow, trigger=purple, sleeping=dimmed
+- [ ] Add contact point visualization — render contact normals and penetration depth for selected entity
+- [ ] Add physics debug toggle — menu option or hotkey to enable/disable physics wireframe overlay
+- [ ] Add raycast visualization — render ray and hit point when performing interactive raycasts in editor
+
+### Phase 6: Editor integration
+- [ ] Add collider inspector UI — shape type dropdown, shape-specific parameters (radius, half-extents), physics material fields
+- [ ] Add rigid body inspector UI — body type dropdown, mass/inertia fields, velocity display (read-only in play mode)
+- [ ] Add Add Component entries — ColliderShape, RigidBody in categorized Add Component menu
+- [ ] Add drag-to-add collider — automatically fit collider shape to mesh bounds when attached to mesh entity
 
 ## Rendering
 
 - [x] Remove all `cfg(metal/vulkan)` from katla_app — backend-specific conditionals should only exist in katla_gfx
-- [ ] Add anti-aliasing — start with FXAA (post-process, easy), then MSAA or TAA for higher quality
-- [ ] Add bloom post-processing pass — bright extraction + gaussian blur + compositing in render graph
-- [ ] Add SSAO (screen-space ambient occlusion) — depth+normal based, integrate into lighting pass
-- [ ] Add texture compression — BC1-7 on desktop, ASTC on mobile; add compressed texture upload path
-- [ ] Add offline shader compilation step — precompile .wgsl to SPIR-V at build time instead of runtime naga compilation
-- [ ] Add animation state machine — blend trees, crossfade transitions, state graph editor
-- [ ] Add motion blur and depth of field as optional render graph passes
-- [ ] Add screen-space reflections (SSR) or planar reflections for water/mirror surfaces
+
+### Post-processing pipeline
+- [ ] Add post-process pass infrastructure — reusable fullscreen-quad pass builder in the render graph that takes an input color texture and outputs a processed color texture
+- [ ] Add FXAA pass — luminance edge detection, sub-pixel blending; add `fxaa.wgsl` shader; wire into render graph after tonemapping
+- [ ] Add bloom pass — bright extraction threshold pass, two-pass gaussian blur (horizontal + vertical) at half resolution, additive compositing onto scene; add bloom shader(s)
+- [ ] Add motion blur pass — per-pixel velocity buffer from depth + camera motion, tile-max velocity, blur in motion direction; add `motion_blur.wgsl`
+- [ ] Add depth of field pass — circle-of-confusion calculation from depth, separate near/far bokeh blur, compositing; add `dof.wgsl`
+
+### Screen-space effects
+- [ ] Add SSAO pass — generate depth+normal buffer, hemisphere sampling kernel, bilateral blur, integrate into lighting shader as ambient occlusion term; add `ssao.wgsl`
+- [ ] Add SSR pass — ray-march depth buffer from reflected fragments, fade by distance/edge, temporal accumulation for stability; add `ssr.wgsl`
+- [ ] Add ambient lighting integration — expose SSAO texture in lighting pass, sample in PBR shader to modulate ambient term
+
+### Texture compression
+- [ ] Add BC1-5 decompression for desktop — support DXT-compressed KTX2 files in texture loader
+- [ ] Add BC6/BC7 decompression for HDR textures — support high-quality compressed formats
+- [ ] Add ASTC support path for mobile — conditional compilation for mobile targets
+- [ ] Add compressed texture upload to GPU — pass pre-compressed data through to `create_texture` without re-encoding
+- [ ] Add build-time texture compression tool — offline compressor that converts PNG/TGA to KTX2 with appropriate format per platform
+
+### Shader compilation
+- [ ] Add `build.rs` or cargo xtask for offline shader compilation — walk `resources/shaders/`, compile each `.wgsl` to SPIR-V via naga
+- [ ] Add compiled shader cache — embed or ship SPIR-V blobs alongside shaders, load directly at runtime instead of naga compile
+- [ ] Add shader compilation validation in CI — ensure all shaders compile without errors on push
+
+### Animation system
+- [ ] Design `AnimationClip` asset — bone index, keyframe times, position/rotation/scale tracks, duration, loop flag
+- [ ] Add `AnimationPlayer` component — holds active clip, playback time, speed, blending weight, derives `Component`
+- [ ] Implement skeletal animation sampling — interpolate between keyframes (LERP for position/scale, SLERP for rotation)
+- [ ] Add animation blending — blend two AnimationPlayer outputs (crossfade) on shared skeleton
+- [ ] Design `AnimatorStateMachine` — states (clips), transitions (conditions, duration, exit time), parameters (bool, float triggers)
+- [ ] Add `AnimatorComponent` — holds state machine instance, parameters, current state; updates AnimationPlayer each frame
+- [ ] Add `AnimationSystem` (ECS System trait) — advance animation time, evaluate state machine transitions, sample clips, write skeleton pose
+
+### Reflections
+- [ ] Add planar reflection pass — render scene from reflected camera for flat reflective surfaces (water, mirrors)
+- [ ] Integrate planar reflections into material system — bind reflection texture on materials with reflective property
 
 ## Scripting & Game Logic
 
@@ -138,10 +242,13 @@
 - [x] Add `print`/`warn` bridges — route to `log::info!`/`log::warn!` in debug builds only
 
 ### Phase 5: Polish + events
-- [ ] Add script-to-script events — `world:emit("player_damaged", {amount = 10})`, `world:on_event("player_damaged", callback)` via gameplay event bus
-- [ ] Add physics bindings — `world:raycast(origin, direction, max_distance)` returning hit entity + point + normal
-- [ ] Add audio bindings — `world:play_sound("explosion")`, `world:play_sound_at("explosion", position)`
+- [ ] Design gameplay event bus — `EventBus<T>` with `emit(event)` and `subscribe(handler)`; support typed events in katla_script via string-keyed bus
+- [ ] Implement script event bindings — `world:emit("event_name", table)` and `world:on_event("event_name", callback)` registering Luau functions as handlers
+- [ ] Add event delivery system — each frame, drain pending events from bus, dispatch to registered script callbacks; ensure delivery order is deterministic
+- [ ] Add physics bindings — `world:raycast(origin, direction, max_distance)` returning hit entity + point + normal (depends on Physics Phase 4)
+- [ ] Add audio bindings — `world:play_sound("explosion")`, `world:play_sound_at("explosion", position)` (depends on Audio Phase 2)
 - [ ] Performance profile — benchmark 1000 script entities with on_update, optimize hot paths
+- [ ] Optimize script dispatch — batch entity queries, reduce per-hook overhead, consider JIT hints
 
 ### Phase 6: Editor integration
 - [ ] Add script inspector panel — show attached script path, expose script variables for live editing
@@ -150,9 +257,15 @@
 - [ ] Add script console — capture `print()` output in editor log panel
 
 ### Gameplay framework (independent of scripting)
-- [ ] Design gameplay framework — game states (menu, loading, playing, paused), state machine, transition hooks
-- [ ] Add gameplay event system — typed event bus for gameplay-level events (OnDamage, OnCollect, OnCollision, etc.) decoupled from ECS events
-- [ ] Add cutscene/timeline system — sequencer with tracks for animation, audio, camera, events; scrubbing in editor
+- [ ] Design game state machine — states (Menu, Loading, Playing, Paused, Cutscene), transitions, enter/exit hooks
+- [ ] Implement `GameState` enum and `GameStateMachine` — state stack (push/pop), transition hooks (`on_enter`, `on_exit`), per-state update dispatch
+- [ ] Add `GameStateManager` as ECS resource — accessible by systems and scripts; systems query current state to conditionally run
+- [ ] Design gameplay event system — `EventBus<E>` generic typed event bus for gameplay-level events (OnDamage, OnCollect, OnCollision, etc.) decoupled from ECS events
+- [ ] Implement `EventBus` — `emit(event)`, `subscribe(handler)`, `drain()` per frame; type-erased storage for multiple event types
+- [ ] Wire gameplay events into ECS — collision events from physics, trigger events from trigger volumes, script events from Luau
+- [ ] Design cutscene/timeline data model — `Timeline` asset with tracks (animation, audio, camera, event), keyframes per track, duration
+- [ ] Implement timeline playback — `TimelinePlayer` component with play/pause/scrub, evaluate all tracks at current time, dispatch results
+- [ ] Add timeline editor UI — track lanes, keyframe diamonds, scrubber bar, playback controls (depends on Editor dockable layout)
 
 ## Asset Pipeline
 
@@ -165,22 +278,64 @@
 
 ### General asset pipeline
 
-- [ ] Add file watcher for hot reload — watch shaders/, resources/ for changes using `notify` crate; auto-recompile materials and reload textures
-- [ ] Add asset bundling format — pack resources into a single archive (custom or zip/pak) for release builds; embed or ship alongside binary
-- [ ] Add component serialization registry — data-driven registry mapping Component types to serializers/deserializers so user components round-trip automatically
+#### Hot reload
+- [ ] Integrate `notify` crate for file watching — watch `shaders/` and `resources/` directories recursively for file changes
+- [ ] Add file change event routing — map changed file paths to asset types (shader -> recompile material, texture -> reload, script -> hot reload)
+- [ ] Implement shader hot reload — detect `.wgsl` changes, recompile material pipeline, swap in on next frame
+- [ ] Implement texture hot reload — detect image changes, re-upload texture data to GPU, keep same bindless slot
+
+#### Asset bundling
+- [ ] Design asset bundle format — header (magic, version, file table), compressed entries, support random access for large assets
+- [ ] Implement bundle packer tool — walk `resources/`, compress entries, write bundle file; as cargo xtask or build script
+- [ ] Implement bundle reader — `BundleFs` implementing virtual filesystem interface, mount bundle at runtime
+- [ ] Add release build integration — automatically bundle resources in release mode, fall back to filesystem in debug
+
+#### Serialization improvements
+- [ ] Add component serialization registry — `SerializationRegistry` mapping type IDs to serialize/deserialize closures; auto-register on component registration
+- [ ] Implement generic scene serializer — walk entity hierarchy, look up each component type in registry, emit RON dynamically
+- [ ] Implement generic scene deserializer — parse RON, look up component types by name in registry, construct components dynamically
+- [ ] Add binary serialization option — `bincode` format alongside RON; selector based on file extension (`.scene` vs `.bscene`)
+- [ ] Benchmark binary vs RON load times — verify bincode is meaningfully faster before committing to dual format
+
+#### Editor integration
 - [ ] Add native file dialogs — integrate `rfd` for Open Scene, Save Scene As, Import Asset dialogs
-- [ ] Add binary serialization option — optional binary scene format (e.g. bincode) alongside RON for faster load times in release
 - [ ] Add asset import pipeline — convert source formats (FBX, PSD, TGA) to engine formats (glTF, PNG) as a preprocessing step
+- [ ] Add import manifest — track source-to-engine format mappings, re-import when source changes
 
 ## Release & Deployment
 
 - [x] Add CI/CD pipeline — GitHub Actions for build, test, clippy, fmt on push; artifact upload for release builds
-- [ ] Add macOS .app bundle generation — Info.plist, icon, embed MoltenVK, package as .dmg for distribution
-- [ ] Add Windows build target — cross-compile or native CI runner, .exe packaging, Vulkan runtime bundling
-- [ ] Add Linux build target — AppImage or Flatpak packaging, Vulkan/ABI compatibility
-- [ ] Add app signing and notarization — macOS Developer ID signing, Windows code signing
-- [ ] Add save-game system — persist runtime game state (player progress, settings, unlocked content) separate from scene serialization
-- [ ] Add release mode resource embedding — embed critical assets (shaders, default textures, fonts) into binary for zero-dependency startup
+
+### macOS packaging
+- [ ] Generate macOS `.app` bundle structure — `Contents/MacOS/` binary, `Contents/Resources/` assets, `Info.plist` with app metadata
+- [ ] Create app icon — `.icns` file from logo, reference in Info.plist
+- [ ] Embed MoltenVK runtime — bundle MoltenVK dylib so users don't need Vulkan SDK installed
+- [ ] Package as `.dmg` — create DMG with background image, Applications symlink, drag-to-install UX
+- [ ] Add `cargo xtask bundle` command — automate the entire .app + .dmg generation pipeline
+
+### Windows packaging
+- [ ] Add Windows CI runner — GitHub Actions windows-latest runner, build release binary
+- [ ] Bundle Vulkan runtime — detect/install Vulkan runtime as part of installer or bundle loader library
+- [ ] Create Windows installer — WiX or NSIS installer with start menu shortcut, uninstaller
+- [ ] Add `.exe` icon embedding — embed application icon in the binary resource section
+
+### Linux packaging
+- [ ] Add Linux CI runner — GitHub Actions ubuntu-latest runner, build release binary
+- [ ] Create AppImage package — bundle binary + resources + Vulkan loader into portable AppImage
+- [ ] Test Vulkan/ABI compatibility — verify binary runs on Ubuntu 22.04+ and common distros
+
+### Signing and security
+- [ ] Add macOS Developer ID signing — sign `.app` with Developer ID certificate, codesign all bundled frameworks
+- [ ] Add macOS notarization — submit signed app to Apple notary service, staple ticket to DMG
+- [ ] Add Windows code signing — sign `.exe` and installer with EV code signing certificate
+- [ ] Set up signing secrets in CI — store certificates and passwords as GitHub Actions secrets
+
+### Runtime systems
+- [ ] Design save-game data model — what to persist (player progress, settings, unlocks), versioning, backward compatibility
+- [ ] Implement `SaveGame` struct and serialization — JSON or bincode, user-writable save directory, load/save API
+- [ ] Add save-game slots — support multiple save slots, slot selection UI in menu
+- [ ] Add release mode resource embedding — `include_dir!` or `include_bytes!` for critical assets (shaders, default textures, fonts) into binary for zero-dependency startup
+- [ ] Add embed-vs-filesystem fallback — release builds load from embedded, debug builds load from filesystem for hot reload
 
 ## Editor
 
@@ -210,23 +365,83 @@
 
 ### Panels and tooling
 
-- [ ] Add timeline/animation editor — keyframe editing, curve editor, scrubbing, animation preview
-- [ ] Add material editor — visual material property editing (textures, metallic, roughness, emission) with live preview
-- [ ] Add terrain editor — heightmap painting, layer blending, foliage scattering
+#### Timeline/animation editor
+- [ ] Design timeline data model — `Timeline` asset with multiple tracks (bone animation, float curves, events), keyframes per track
+- [ ] Implement timeline UI layout — horizontal time ruler, track lanes, keyframe diamonds, scrubber/playhead
+- [ ] Add keyframe editing — click to add keyframe, drag to move, double-click to edit value, delete key
+- [ ] Add curve editor — tangent handles for interpolation mode (linear, bezier, step), mini graph per track
+- [ ] Add playback controls — play/pause, loop toggle, speed control, scrub-to-time
+- [ ] Wire timeline to AnimationPlayer — preview animations in viewport while scrubbing
+
+#### Material editor
+- [ ] Design material editor layout — texture slots (albedo, normal, metallic, roughness, emission), numeric sliders, live preview
+- [ ] Add texture slot widgets — drag-and-drop from asset browser, thumbnail preview, clear button
+- [ ] Add PBR property sliders — metallic (0-1), roughness (0-1), emission color/intensity
+- [ ] Add live material preview — apply changes in real-time to selected entity in viewport
+- [ ] Add material serialization — save edited material back to .mat file
+
+#### Terrain editor
+- [ ] Design terrain component — `TerrainComponent` with heightmap, layer count, grid resolution
+- [ ] Implement heightmap painting — raise/lower/flatten/smooth brushes with adjustable radius and strength
+- [ ] Add terrain layer blending — paint blend weights for multiple material layers (grass, rock, dirt)
+- [ ] Add foliage scattering — scatter mesh instances on terrain surface with density/rule parameters
+- [ ] Add terrain mesh generation — generate LOD mesh from heightmap with configurable tessellation
+
+#### Undo history panel
+- [ ] Implement undo stack UI — list of operation names with timestamps, current position highlighted
+- [ ] Add click-to-jump — click any entry in the stack to undo/redo to that point
+- [ ] Add undo stack visualization — show branch points when redo stack is discarded by new operation
+
+#### Dockable layout system
+- [ ] Complete `DockLayout` skeleton — implement dock node tree (split, tab, leaf) with serialization
+- [ ] Implement tab dragging — drag tab from one dock area to another, show drop preview overlay
+- [ ] Implement split/dock gestures — drag to edge of panel to split, drag to tab bar to tab
+- [ ] Add layout persistence — save/restore dock layout to disk on app shutdown/startup
+- [ ] Convert existing panels to dockable — migrate scene hierarchy, inspector, asset browser, console to dock system
+
+#### Profiler overlay
+- [ ] Add GPU timestamp queries — insert timestamp queries at render pass boundaries in frame graph
+- [ ] Collect per-pass timing data — store pass name + duration in a frame timing buffer
+- [ ] Add profiler overlay UI — floating panel with frame time graph (sparkline), per-pass timing bars, FPS counter
+- [ ] Add memory tracking — track GPU allocation counts and total bytes per resource type
+- [ ] Add draw call counter — increment per draw call, display in profiler overlay
+
+#### Gamepad input
+- [ ] Add gamepad crate dependency — `gilrs` for cross-platform gamepad support
+- [ ] Implement `GamepadInput` resource — poll connected gamepads each frame, read axis/button state
+- [ ] Extend `InputMapper` with gamepad bindings — map gamepad axes/buttons to logical actions alongside keyboard/mouse
+- [ ] Add gamepad to scripting bindings — expose `world:is_gamepad_pressed()`, `world:get_gamepad_axis()` to Luau
+
 - [x] Add console/output log panel — capture log output in editor, filter by level, search
-- [ ] Add undo history panel — visual undo stack showing operation names, click to jump to any point
-- [ ] Add dockable layout system — complete the existing DockLayout skeleton, make all panels repositionable and resizable
-- [ ] Add in-editor profiler overlay — per-pass GPU timing, frame time graph, draw call count, memory usage
-- [ ] Add gamepad input support — extend InputMapper with gamepad axes/buttons for editor and runtime
 - [x] Fix asset browser tooltip line spacing — hover tooltip on asset items has inconsistent line spacing compared to the rest of the UI
 - [x] Fix text input selection/active highlight being too opaque — the "Filter" input in asset browser and "Script" path input have a selection color that's too bright/invasive, obscuring the text. Investigate if transparency isn't rendering correctly. Should be fixed in a reusable text input style so all text inputs benefit.
 
 ## Developer Experience
 
+### Documentation
 - [ ] Write getting-started tutorial — step-by-step guide: create entity, add components, write a system, load a model, make something interactive
 - [ ] Write component and system catalog — reference docs for all built-in components, systems, and their fields
-- [ ] Write example game in game/ crate — demonstrate actual gameplay: player movement, collecting items, score, win/lose
-- [ ] Add profiler integration — Tracy or PIX instrumentation markers on render passes and systems
-- [ ] Add per-pass GPU timing — timestamp queries in render graph, display in status bar or overlay
+- [ ] Write rendering pipeline overview — explain render graph passes, how to add custom passes, material system
+- [ ] Write scripting guide — Luau API reference, hook lifecycle, world access patterns, example scripts
+
+### Example game
+- [ ] Design example game scope — simple 3D game: player movement, collectibles, score, win/lose state
+- [ ] Implement player controller — WASD movement via script or system, camera follow, basic collision with world
+- [ ] Add collectible items — spawn entities with trigger volumes, detect overlap, increment score
+- [ ] Add game state — start screen, playing, win/lose; display score and UI overlay
+- [ ] Package as runnable example — `cargo run --example game` or `game/` crate with its own main
+
+### Profiling and instrumentation
+- [ ] Add Tracy integration — conditional Tracy profiler markers on render passes and ECS systems (behind `tracy` feature flag)
+- [ ] Add GPU timestamp queries — insert timestamp queries at render pass boundaries, collect per-pass durations
+- [ ] Add frame timing display — render frame time graph and FPS counter in status bar or overlay
+- [ ] Add system timing — measure ECS system execution time, display in debug overlay
+
+### Testing
+- [ ] Design integration test framework — headless app init, entity spawning, frame execution, state assertions
+- [ ] Add render test infrastructure — render N frames, read back pixels, compare against golden images
+- [ ] Add ECS round-trip tests — spawn entity, add components, serialize, deserialize, verify equivalence
+- [ ] Add scripting integration tests — load script, call on_update, verify world mutations via command queue
+- [ ] Add headless CI test suite — run integration tests without GPU in CI (mock renderer or software rasterizer)
+
 - [x] Fix AppError::Graphics to carry typed RendererError instead of String — preserve error chain for debugging
-- [ ] Add integration tests for full app lifecycle — init, spawn entities, run N frames, check state, shutdown without panic
