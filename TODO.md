@@ -54,9 +54,9 @@
 
 ### F. Reduce cfg(target_os = "macos") count across katla_gfx
 
-- [ ] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/lib.rs` — minimize to module declarations only
-- [ ] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/renderer/any_renderer.rs` — after task C, the only remaining ones should be the enum variant definitions and match arms
-- [ ] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/render_graph/any_frame_graph.rs` — after task D, only enum variant + match arms remain
+- [x] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/lib.rs` — minimize to module declarations only
+- [x] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/renderer/any_renderer.rs` — after task C, the only remaining ones should be the enum variant definitions and match arms
+- [x] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/render_graph/any_frame_graph.rs` — after task D, only enum variant + match arms remain
 - [ ] Ensure `katla_app` has zero `cfg(target_os)` or `cfg(metal/vulkan)` gates (already tracked as existing TODO item)
 
 ## Particle System Usability
