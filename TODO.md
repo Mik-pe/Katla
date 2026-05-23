@@ -173,12 +173,12 @@
 - [x] Write unit tests — decode WAV/OGG files to PCM, mix two buffers, verify output sample ranges
 
 ### Phase 2: ECS integration
-- [ ] Add `AudioSource` component — holds asset path to sound file, derives `Component` via katla_derive
-- [ ] Add `AudioListener` component — marks the camera entity that receives positional audio (only one active at a time)
-- [ ] Add `AudioEmitter` component — holds volume, looping, playback state; references AudioSource path
-- [ ] Implement `AudioSystem` (ECS System trait) — discover entities with AudioEmitter, trigger playback on spawn, stop on destroy
-- [ ] Register audio types in `ApplicationBuilder` — add AudioEngine as a resource, register AudioSystem at appropriate execution order
-- [ ] Add component serialization for AudioSource and AudioEmitter — RON round-trip support
+- [x] Add `AudioSource` component — holds asset path to sound file, derives `Component` via katla_derive
+- [x] Add `AudioListener` component — marks the camera entity that receives positional audio (only one active at a time)
+- [x] Add `AudioEmitter` component — holds volume, looping, playback state; references AudioSource path
+- [x] Implement `AudioSystem` (ECS System trait) — discover entities with AudioEmitter, trigger playback on spawn, stop on destroy
+- [x] Register audio types in `ApplicationBuilder` — add AudioEngine as a resource, register AudioSystem at appropriate execution order
+- [x] Add component serialization for AudioSource and AudioEmitter — RON round-trip support
 
 ### Phase 3: 3D positional audio
 - [ ] Add `AudioListener` position tracking — read listener entity's TransformComponent each frame, feed position + orientation to spatializer
