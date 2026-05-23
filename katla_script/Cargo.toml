@@ -8,6 +8,7 @@ editor = ["katla_ecs/editor"]
 
 [dependencies]
 mlua = { version = "0.11", features = ["luau", "vendored", "serialize"] }
+notify = "8"
 katla_ecs = { path = "../katla_ecs" }
 katla_math = { path = "../katla_math" }
 katla_derive = { path = "../katla_derive" }

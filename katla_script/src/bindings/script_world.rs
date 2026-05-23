@@ -1,9 +1,10 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
 
 use katla_ecs::EntityId;
-use mlua::{Lua, UserData, UserDataMethods};
+use mlua::{Lua, RegistryKey, UserData, UserDataMethods};
 
 use crate::bindings::entity::LuaEntityId;
 use crate::bindings::math::{LuaTransform, LuaVec3};
@@ -24,10 +25,26 @@ pub(crate) struct SharedWorldData {
     pub input_state: InputSnapshot,
 }
 
+/// Shared event bus wrapper that allows scripts to emit events and register handlers.
+#[derive(Default)]
+pub struct SharedEventBus {
+    /// Events emitted by scripts during the current frame.
+    pub pending_emits: Vec<(String, mlua::Value)>,
+    /// Handlers registered by scripts via on_event.
+    pub pending_subscriptions: Vec<(String, RegistryKey)>,
+}
+
 pub struct ScriptWorldProxy {
     pub(crate) commands: Vec<ScriptCommand>,
     pub(crate) shared: Rc<SharedWorldData>,
+    pub(crate) event_bus: Rc<RefCell<SharedEventBus>>,
+    pub(crate) vm: Option<*const Lua>,
 }
+
+// SAFETY: The vm pointer is only read to create registry values during method calls,
+// which happen within a single Lua thread. It is never sent across threads.
+unsafe impl Send for ScriptWorldProxy {}
+unsafe impl Sync for ScriptWorldProxy {}
 
 impl Default for ScriptWorldProxy {
     fn default() -> Self {
@@ -44,7 +61,14 @@ impl ScriptWorldProxy {
         Self {
             commands: Vec::new(),
             shared,
+            event_bus: Rc::new(RefCell::new(SharedEventBus::default())),
+            vm: None,
         }
+    }
+
+    pub(crate) fn with_event_bus(&mut self, event_bus: Rc<RefCell<SharedEventBus>>, vm: &Lua) {
+        self.event_bus = event_bus;
+        self.vm = Some(vm as *const Lua);
     }
 
     pub fn with_transforms(transforms: Vec<(EntityId, katla_math::Transform)>) -> Self {
@@ -56,6 +80,8 @@ impl ScriptWorldProxy {
                 component_entities: HashMap::new(),
                 input_state: InputSnapshot::default(),
             }),
+            event_bus: Rc::new(RefCell::new(SharedEventBus::default())),
+            vm: None,
         }
     }
 
@@ -96,6 +122,11 @@ impl ScriptWorldProxy {
 
     pub fn get_mouse_wheel(&self) -> f32 {
         self.shared.input_state.mouse_wheel
+    }
+
+    /// Emit a named event with arbitrary Lua data.
+    pub fn emit_event(&self, name: String, data: mlua::Value) {
+        self.event_bus.borrow_mut().pending_emits.push((name, data));
     }
 }
 
@@ -167,6 +198,23 @@ impl UserData for ScriptWorldProxy {
         });
 
         methods.add_method("get_mouse_wheel", |_, this, ()| Ok(this.get_mouse_wheel()));
+
+        methods.add_method_mut("emit", |_, this, (name, data): (String, mlua::Value)| {
+            this.emit_event(name, data);
+            Ok(())
+        });
+
+        methods.add_method_mut(
+            "on_event",
+            |lua, this, (name, callback): (String, mlua::Function)| {
+                let key = lua.create_registry_value(callback)?;
+                this.event_bus
+                    .borrow_mut()
+                    .pending_subscriptions
+                    .push((name, key));
+                Ok(())
+            },
+        );
     }
 }
 

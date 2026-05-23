@@ -682,6 +682,191 @@ impl ScriptEngine {
             self.free_list.push(handle.index);
         }
     }
+
+    /// Recompile a script from disk and replace the cached chunk.
+    /// Returns true if the script was successfully reloaded.
+    pub fn reload_script(&mut self, script_path: &str) -> Result<(), ScriptError> {
+        let source = self.read_script_source(script_path)?;
+
+        let func = self
+            .vm
+            .load(&source)
+            .set_name(script_path)
+            .into_function()
+            .map_err(|e| ScriptError::LoadFailed {
+                path: script_path.into(),
+                source: e,
+            })?;
+
+        let new_key = self
+            .vm
+            .create_registry_value(func)
+            .map_err(|e| ScriptError::LoadFailed {
+                path: script_path.into(),
+                source: e,
+            })?;
+
+        if let Some(old_key) = self.loaded_scripts.insert(script_path.to_string(), new_key) {
+            let _ = self.vm.remove_registry_value(old_key);
+        }
+
+        Ok(())
+    }
+
+    /// Hot-reload all instances of a given script.
+    /// Re-creates their environments, preserves scalar state (numbers, bools, strings)
+    /// from the old environment, and re-extracts hooks.
+    pub fn hot_reload_instances(&mut self, script_path: &str) -> Vec<ScriptInstanceHandle> {
+        let handles: Vec<ScriptInstanceHandle> = self
+            .instances
+            .iter()
+            .enumerate()
+            .filter_map(|(i, opt)| {
+                opt.as_ref()
+                    .filter(|inst| inst.script_path == script_path)
+                    .map(|inst| ScriptInstanceHandle {
+                        index: i as u32,
+                        generation: inst.generation,
+                    })
+            })
+            .collect();
+
+        for handle in &handles {
+            if let Err(e) = self.hot_reload_single_instance(*handle, script_path) {
+                log::error!("Hot reload failed for '{script_path}': {e}");
+            }
+        }
+
+        handles
+    }
+
+    fn read_script_source(&self, script_path: &str) -> Result<String, ScriptError> {
+        if Path::new(script_path).exists() {
+            std::fs::read_to_string(script_path).map_err(|e| ScriptError::LoadFailed {
+                path: script_path.into(),
+                source: mlua::Error::external(e),
+            })
+        } else {
+            let full_path = match &self.scripts_dir {
+                Some(dir) => format!("{dir}/{script_path}.luau"),
+                None => format!("resources/scripts/{script_path}.luau"),
+            };
+            std::fs::read_to_string(&full_path).map_err(|e| ScriptError::LoadFailed {
+                path: full_path.clone(),
+                source: mlua::Error::external(e),
+            })
+        }
+    }
+
+    fn hot_reload_single_instance(
+        &mut self,
+        handle: ScriptInstanceHandle,
+        script_path: &str,
+    ) -> Result<(), ScriptError> {
+        let entity = {
+            let instance = self
+                .instances
+                .get(handle.index as usize)
+                .and_then(|opt| opt.as_ref())
+                .filter(|inst| inst.generation == handle.generation)
+                .ok_or(ScriptError::InstanceNotFound(handle))?;
+            instance.entity
+        };
+
+        // Gather scalar state from old environment
+        let preserved_state = self.gather_scalar_state(handle)?;
+        let preserved_count = preserved_state.len();
+
+        // Remove old instance (frees the slot but bumps generation)
+        self.remove_instance(handle);
+
+        // Create a fresh instance
+        let new_handle = self.create_instance(entity, script_path)?;
+
+        // Restore preserved scalar state into new environment
+        self.restore_scalar_state(new_handle, preserved_state)?;
+
+        log::info!(
+            "Hot reloaded script '{script_path}' for entity {entity} ({preserved_count} vars preserved)"
+        );
+
+        Ok(())
+    }
+
+    fn gather_scalar_state(
+        &self,
+        handle: ScriptInstanceHandle,
+    ) -> Result<Vec<(String, mlua::Value)>, ScriptError> {
+        let instance = self
+            .instances
+            .get(handle.index as usize)
+            .and_then(|opt| opt.as_ref())
+            .filter(|inst| inst.generation == handle.generation)
+            .ok_or(ScriptError::InstanceNotFound(handle))?;
+
+        let env: mlua::Table = self.vm.registry_value(&instance._env_key).map_err(|e| {
+            ScriptError::ExecutionFailed {
+                path: instance.script_path.clone(),
+                line: None,
+                source: e,
+            }
+        })?;
+
+        let mut preserved = Vec::new();
+        for pair in env.sequence_values::<mlua::Value>() {
+            let _ = pair; // skip integer keys
+        }
+        for pair in env.pairs::<String, mlua::Value>() {
+            let (key, value) = pair.map_err(|e| ScriptError::ExecutionFailed {
+                path: instance.script_path.clone(),
+                line: None,
+                source: e,
+            })?;
+            match &value {
+                mlua::Value::Number(_)
+                | mlua::Value::String(_)
+                | mlua::Value::Boolean(_)
+                | mlua::Value::Nil => {
+                    preserved.push((key, value));
+                }
+                _ => {} // skip tables, functions, userdata
+            }
+        }
+
+        Ok(preserved)
+    }
+
+    fn restore_scalar_state(
+        &self,
+        handle: ScriptInstanceHandle,
+        state: Vec<(String, mlua::Value)>,
+    ) -> Result<(), ScriptError> {
+        let instance = self
+            .instances
+            .get(handle.index as usize)
+            .and_then(|opt| opt.as_ref())
+            .filter(|inst| inst.generation == handle.generation)
+            .ok_or(ScriptError::InstanceNotFound(handle))?;
+
+        let env: mlua::Table = self.vm.registry_value(&instance._env_key).map_err(|e| {
+            ScriptError::ExecutionFailed {
+                path: instance.script_path.clone(),
+                line: None,
+                source: e,
+            }
+        })?;
+
+        for (key, value) in state {
+            env.set(key, value)
+                .map_err(|e| ScriptError::ExecutionFailed {
+                    path: instance.script_path.clone(),
+                    line: None,
+                    source: e,
+                })?;
+        }
+
+        Ok(())
+    }
 }
 
 fn extract_line_number(error: &mlua::Error) -> Option<usize> {

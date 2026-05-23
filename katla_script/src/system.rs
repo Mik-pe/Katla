@@ -1,15 +1,18 @@
 use std::any::TypeId;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use katla_ecs::events::{ComponentEvent, EntityEvent};
 use katla_ecs::{EntityId, System, World};
 use katla_math::Transform;
-use log::{debug, error};
+use log::{debug, error, info};
 
 use crate::bindings::script_world::{InputSnapshot, ScriptWorldProxy, SharedWorldData};
 use crate::bindings::world::ScriptCommand;
 use crate::component::{ScriptComponent, ScriptInstanceHandle};
 use crate::engine::ScriptEngine;
+use crate::event_bus::EventBus;
+use crate::watcher::ScriptWatcher;
 
 const MAX_SCRIPT_ERRORS: u32 = 10;
 
@@ -26,6 +29,8 @@ pub struct ScriptsActive(pub bool);
 
 pub struct ScriptSystem {
     pub(crate) engine: ScriptEngine,
+    pub(crate) event_bus: EventBus,
+    watcher: Option<ScriptWatcher>,
     transform_provider: Option<TransformProvider>,
     command_consumer: Option<CommandConsumer>,
     input_provider: Option<InputProvider>,
@@ -42,6 +47,8 @@ impl ScriptSystem {
     pub fn new() -> Self {
         Self {
             engine: ScriptEngine::new().expect("failed to create script engine"),
+            event_bus: EventBus::new(),
+            watcher: None,
             transform_provider: None,
             command_consumer: None,
             input_provider: None,
@@ -53,7 +60,15 @@ impl ScriptSystem {
     ///
     /// Called by the app bridge to configure where scripts live on disk.
     pub fn with_scripts_dir(mut self, dir: impl Into<String>) -> Self {
-        self.engine.set_scripts_dir(dir);
+        let dir_str = dir.into();
+        self.engine.set_scripts_dir(&dir_str);
+
+        // Also start the file watcher for hot reload
+        match ScriptWatcher::new(&dir_str) {
+            Ok(watcher) => self.watcher = Some(watcher),
+            Err(e) => error!("Failed to start script watcher: {e}"),
+        }
+
         self
     }
 
@@ -173,7 +188,6 @@ impl ScriptSystem {
     fn apply_commands(&mut self, commands: Vec<ScriptCommand>, world: &mut World) {
         if let Some(consumer) = self.command_consumer.as_mut() {
             consumer(world, &commands);
-            // Also handle spawn/destroy that the consumer doesn't process
             for cmd in &commands {
                 match cmd {
                     ScriptCommand::SpawnEntity { return_index: _ } => {
@@ -231,10 +245,94 @@ impl ScriptSystem {
             }
         }
     }
+
+    /// Poll the file watcher and hot-reload any changed scripts.
+    fn process_hot_reload(&mut self, world: &mut World) {
+        let changed_scripts = match self.watcher.as_mut() {
+            Some(watcher) => watcher.poll_changes(),
+            None => return,
+        };
+
+        for script_path in changed_scripts {
+            info!("Hot reloading script: {script_path}");
+
+            if let Err(e) = self.engine.reload_script(&script_path) {
+                error!("Failed to reload script '{script_path}': {e}");
+                continue;
+            }
+
+            let reloaded_handles = self.engine.hot_reload_instances(&script_path);
+
+            // Update ScriptComponent handles in the ECS world since
+            // hot_reload_instances removes old instances and creates new ones
+            for handle in &reloaded_handles {
+                let entity = self
+                    .engine
+                    .instances
+                    .get(handle.index as usize)
+                    .and_then(|opt| opt.as_ref())
+                    .map(|inst| inst.entity);
+                if let Some(entity) = entity
+                    && let Some(comp) = world.get_component_mut::<ScriptComponent>(entity)
+                {
+                    comp.instance_handle = Some(*handle);
+                }
+            }
+        }
+    }
+
+    /// Drain pending events from the event bus and dispatch to registered script handlers.
+    fn process_events(&mut self) {
+        let events = self.event_bus.drain_pending();
+        if events.is_empty() {
+            return;
+        }
+
+        for event in events {
+            let handler_count = self.event_bus.handlers(&event.name).len();
+            let handler_indices: Vec<usize> = (0..handler_count).collect();
+            for idx in handler_indices {
+                let handlers = self.event_bus.handlers(&event.name);
+                let handler_key = match handlers.get(idx) {
+                    Some(k) => k,
+                    None => continue,
+                };
+                let func: Result<mlua::Function, _> = self.engine.vm.registry_value(handler_key);
+                let func = match func {
+                    Ok(f) => f,
+                    Err(_) => continue,
+                };
+
+                self.engine.reset_instruction_counter();
+                if let Err(e) = func.call::<()>((event.name.clone(), event.data.clone())) {
+                    error!("Event handler for '{}' failed: {e}", event.name);
+                }
+            }
+        }
+    }
+
+    /// Flush pending emits and subscriptions from a SharedEventBus into the real EventBus.
+    fn flush_script_events(
+        &mut self,
+        shared_bus: &Rc<RefCell<crate::bindings::script_world::SharedEventBus>>,
+    ) {
+        let mut bus = shared_bus.borrow_mut();
+
+        // Flush subscriptions first so handlers are registered before events arrive
+        for (name, key) in bus.pending_subscriptions.drain(..) {
+            self.event_bus.subscribe(name, key);
+        }
+
+        // Flush emitted events into the real event bus
+        for (name, data) in bus.pending_emits.drain(..) {
+            self.event_bus.emit(name, data);
+        }
+    }
 }
 
 impl System for ScriptSystem {
     fn update(&mut self, world: &mut World, delta_time: f32) {
+        self.process_hot_reload(world);
         self.process_spawns(world);
 
         let active = world
@@ -248,6 +346,9 @@ impl System for ScriptSystem {
         }
 
         let shared = Rc::new(self.build_shared_data(world));
+        let shared_event_bus = Rc::new(RefCell::new(
+            crate::bindings::script_world::SharedEventBus::default(),
+        ));
 
         let active: Vec<(ScriptInstanceHandle, EntityId)> = self
             .engine
@@ -269,13 +370,18 @@ impl System for ScriptSystem {
 
         let mut all_commands = Vec::new();
         for (handle, entity) in active {
-            let proxy = ScriptWorldProxy::from_shared(Rc::clone(&shared));
+            let mut proxy = ScriptWorldProxy::from_shared(Rc::clone(&shared));
+            proxy.with_event_bus(Rc::clone(&shared_event_bus), &self.engine.vm);
             match self
                 .engine
                 .execute_on_update(handle, entity, proxy, delta_time)
             {
-                Ok(commands) => all_commands.extend(commands),
+                Ok(commands) => {
+                    self.flush_script_events(&shared_event_bus);
+                    all_commands.extend(commands);
+                }
                 Err(e) => {
+                    self.flush_script_events(&shared_event_bus);
                     error!("Script on_update error for entity {entity}: {e}");
                     if let Some(Some(inst)) = self.engine.instances.get(handle.index as usize)
                         && inst.generation == handle.generation
@@ -293,6 +399,7 @@ impl System for ScriptSystem {
 
         self.apply_commands(all_commands, world);
 
+        self.process_events();
         self.process_destroyed(world);
     }
 }
