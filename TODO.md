@@ -181,11 +181,11 @@
 - [x] Add component serialization for AudioSource and AudioEmitter — RON round-trip support
 
 ### Phase 3: 3D positional audio
-- [ ] Add `AudioListener` position tracking — read listener entity's TransformComponent each frame, feed position + orientation to spatializer
-- [ ] Implement distance-based attenuation — inverse distance model (clamped) for volume falloff based on emitter-to-listener distance
-- [ ] Implement panning / spatialization — stereo pan based on emitter direction relative to listener forward vector
-- [ ] Add distance model options — linear, inverse clamped, exponential; configurable per-emitter or globally
-- [ ] Add minimum/maximum distance and rolloff factor to AudioEmitter — control attenuation curve parameters
+- [x] Add `AudioListener` position tracking — read listener entity's TransformComponent each frame, feed position + orientation to spatializer
+- [x] Implement distance-based attenuation — inverse distance model (clamped) for volume falloff based on emitter-to-listener distance
+- [x] Implement panning / spatialization — stereo pan based on emitter direction relative to listener forward vector
+- [x] Add distance model options — linear, inverse clamped, exponential; configurable per-emitter or globally
+- [x] Add minimum/maximum distance and rolloff factor to AudioEmitter — control attenuation curve parameters
 
 ### Phase 4: Mixing and streaming
 - [ ] Add master volume control — global volume slider applied to final mix output
