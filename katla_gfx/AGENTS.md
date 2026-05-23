@@ -1,8 +1,61 @@
 # katla_gfx
 
-## Descriptor Set Layout
+## Cross-Backend Architecture
 
-The rendering pipeline uses a **3-set descriptor layout** for efficient resource binding:
+katla_gfx supports two rendering backends:
+- **Vulkan** — via `ash`, all platforms (macOS uses MoltenVK)
+- **Metal** — via `objc2-metal`, native macOS backend (cfg-gated behind `target_os = "macos"`)
+
+### Backend Selection
+
+Runtime selection via `AnyRenderer` enum:
+```rust
+// Vulkan backend (all platforms)
+let renderer = AnyRenderer::new_vulkan(display, window, ValidationMode::Full, app_name, engine_name)?;
+
+// Metal backend (macOS only)
+let renderer = AnyRenderer::new_metal(display, window, ValidationMode::Full, app_name, engine_name)?;
+```
+
+The `GpuRenderer` trait defines the backend-agnostic API. Both `VulkanRenderer` and `MetalRenderer` implement it. `AnyRenderer` dispatches dynamically.
+
+### Shared Types (Backend-Agnostic)
+
+These types are identical across both backends:
+- `Handle<T>` — opaque resource handles (MeshHandle, MaterialHandle, TextureHandle, SkeletonHandle)
+- `ImageFormat` — pixel format enum
+- `DrawList`, `DrawCall`, `FrameUniforms`, `InstanceData` — per-frame data
+- `VertexPBR`, `VertexPBRSkinned`, `VertexUI` — vertex layouts
+- `TextureDescriptor`, `TextureUsage` — texture creation parameters
+- `LoadOp`, `StoreOp`, `ClearValue`, `BarrierKind` — render pass operations
+- `Viewport`, `ViewportBuilder`, `ViewportHandle` — viewport management
+- Pass templates: `GeometryPass`, `FullscreenPass`, `ShadowPass`, `UIPass`, etc.
+
+### Backend-Specific Code
+
+Each backend lives in its own module:
+- `vulkan/` — VulkanContext, VulkanRenderer internals, ash types
+- `metal/` — MetalContext, MetalRenderer internals, objc2-metal types
+
+Backend-specific code should stay in these modules. The public API uses `GpuRenderer` trait methods.
+
+### Render Graph
+
+The render graph is generic over the backend:
+- `FrameGraph<R: GpuRenderer>` — compiled render graph
+- `RenderGraphBackend` trait — backend operations (transient texture creation, bindless)
+- `AnyFrameGraph` / `AnyFrame` — runtime dispatch between Vulkan and Metal frame graphs
+
+### When Adding New Features
+
+1. Add the method to `GpuRenderer` trait first (with default no-op impl)
+2. Implement for both `VulkanRenderer` and `MetalRenderer`
+3. Add dispatch to `AnyRenderer` enum
+4. If it involves render graph resources, extend `RenderGraphBackend` trait
+
+## Descriptor Set Layout (Vulkan)
+
+The Vulkan rendering pipeline uses a **3-set descriptor layout** for efficient resource binding:
 
 ```wgsl
 // ===== Set 0: Per-Frame and Per-Object Data (Storage Buffers) =====
@@ -73,7 +126,9 @@ struct ObjectUniforms {
 - Only declare Set 2 if writing a skinned mesh shader
 - Never use push constants (not supported in WGSL/WebGPU)
 
-## Image Barriers
+## Image Barriers (Vulkan-only)
+
+These apply only to the Vulkan backend. Metal has no image layout concept — synchronization is handled via `MTLFence`/`MTLEvent` or is implicit on Apple Silicon.
 
 Use `ImageBarrier` helpers - never manually construct `vk::ImageMemoryBarrier`.
 

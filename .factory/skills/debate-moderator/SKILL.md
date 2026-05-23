@@ -22,7 +22,7 @@ Agent(
   subagent_type: "general-purpose",
   team_name: "debate-team",
   name: "gfx-maintainer",
-  description: "Vulkan graphics advocate",
+  description: "Cross-backend graphics advocate (Vulkan + Metal)",
   model: "opus",
   prompt: "Read .claude/skills/gfx-maintainer/SKILL.md and adopt that persona. [task details]"
 )

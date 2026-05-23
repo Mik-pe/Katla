@@ -1,17 +1,35 @@
 //! Katla Graphics Library
 //!
-//! This is the graphics API layer for the Katla engine. It provides a Vulkan-based
-//! rendering system with a focus on ergonomics and performance.
+//! This is the graphics API layer for the Katla engine. It provides a
+//! cross-backend rendering system supporting Vulkan and Metal, with a focus
+//! on ergonomics and performance.
+//!
+//! # Backend Selection
+//!
+//! The crate supports two rendering backends:
+//! - **Vulkan** — via `ash`, available on all platforms
+//! - **Metal** — via `objc2-metal`, native on macOS (`cfg(target_os = "macos")`)
+//!
+//! Use [`AnyRenderer`] for runtime backend selection, or use `VulkanRenderer` /
+//! `MetalRenderer` directly for compile-time backend commitment.
 //!
 //! # Getting Started
 //!
 //! ## Creating the Renderer
 //!
 //! ```ignore
-//! let renderer = VulkanRenderer::init(
-//!     &event_loop,
-//!     &window,
-//!     true,  // validation layers
+//! // Vulkan backend
+//! let renderer = AnyRenderer::new_vulkan(
+//!     &display, &window,
+//!     ValidationMode::Full,
+//!     CString::new("My App").unwrap(),
+//!     CString::new("Katla Engine").unwrap(),
+//! )?;
+//!
+//! // Metal backend (macOS only)
+//! let renderer = AnyRenderer::new_metal(
+//!     &display, &window,
+//!     ValidationMode::Full,
 //!     CString::new("My App").unwrap(),
 //!     CString::new("Katla Engine").unwrap(),
 //! )?;
@@ -22,14 +40,13 @@
 //! See [`material::API`](material/API.html) for complete material creation guide.
 //!
 //! ```ignore
-//! use katla_gfx::{MaterialOptions, VertexType};
+//! // Via GpuRenderer trait (backend-agnostic)
+//! let material = renderer.compile_material("shaders/pbr.wgsl", "pbr")?;
 //!
-//! let material = renderer.compile_material(
+//! // Vulkan-specific options (bypasses trait)
+//! let material = vulkan_renderer.compile_material(
 //!     "shaders/pbr.wgsl",
-//!     MaterialOptions {
-//!         vertex_type: VertexType::Pbr,
-//!         ..Default::default()
-//!     },
+//!     MaterialOptions { vertex_type: VertexType::Pbr, ..Default::default() },
 //! )?;
 //! ```
 //!
@@ -90,27 +107,27 @@
 //!
 //! ## Advanced: Direct Bindless Access
 //!
-//! For low-level rendering code, you can access the bindless system directly:
+//! For low-level rendering code, bindless texture queries are available through
+//! the `GpuRenderer` trait (backend-agnostic) or directly on backend renderers:
 //!
-//! - [`VulkanRenderer::get_texture_bindless_index()`] - Get slot index for a texture
-//! - [`VulkanRenderer::get_bindless_slot()`] - Get slot index (returns Option)
-//! - [`VulkanRenderer::get_texture_at_slot()`] - Reverse lookup: slot → texture
-//! - [`VulkanRenderer::iter_bindless_textures()`] - Iterate all registered textures
-//! - [`VulkanRenderer::get_bindless_stats()`] - Get slot utilization stats
-//! - [`VulkanRenderer::get_font_atlas_bindless_slot()`] - Get font atlas slot
+//! - [`GpuRenderer::get_bindless_slot()`] - Get slot index for a texture
+//! - [`GpuRenderer::get_texture_at_slot()`] - Reverse lookup: slot → texture
+//! - [`GpuRenderer::get_texture_bindless_index()`] - Get slot index (returns 0 when unregistered)
 //!
 //! # API Organization
 //!
 //! ## Core Types
 //!
-//! - [`VulkanRenderer`] - Main renderer, create once at startup
+//! - [`AnyRenderer`] - Runtime backend dispatch (Vulkan | Metal)
+//! - [`GpuRenderer`] - Backend-agnostic renderer trait
+//! - [`VulkanRenderer`] / [`MetalRenderer`] - Backend-specific renderers
 //! - [`MaterialHandle`] / [`MeshHandle`] / [`TextureHandle`] - Opaque resource handles
 //! - [`RendererError`] - Error type for renderer operations
 //!
 //! ## Material System
 //!
-//! - [`compile_material()`](VulkanRenderer::method.compile_material) - Create materials from shaders
-//! - [`MaterialOptions`] - Configure material properties
+//! - [`GpuRenderer::compile_material()`] - Create materials from shaders (backend-agnostic)
+//! - [`MaterialOptions`] - Configure material properties (Vulkan-specific)
 //! - [`VertexType`] - Select vertex format (PBR, UI, Skinned, Simple)
 //!
 //! ## Frame Graph
@@ -132,7 +149,8 @@
 //! The library is organized into:
 //!
 //! - **Public API** - [`renderer`], [`render_graph`], [`material`], [`texture`]
-//! - **Internal** - `vulkan`, `pipeline`, `sync`, `animation`, `shadow`, `lighting` (implementation details; `sync`, `animation`, `shadow`, `lighting` are accessible with the `validation` feature)
+//! - **Backends** - `vulkan` (Vulkan via ash), `metal` (Metal via objc2-metal, macOS only)
+//! - **Internal** - `pipeline`, `sync`, `animation`, `shadow`, `lighting` (implementation details)
 //!
 //! # Resource Handles
 //!
@@ -302,18 +320,22 @@ pub use render_graph::{
 pub type FrameGraph = render_graph::FrameGraph<renderer::VulkanRenderer>;
 pub use render_graph::{FrameGraphBuilder, RenderGraphBackend};
 
-/// Low-level Vulkan context - an escape hatch for advanced use cases.
+/// Low-level Vulkan context - an escape hatch for advanced Vulkan-specific use cases.
 ///
+/// For cross-backend code, prefer using [`GpuRenderer`] trait methods instead.
 /// `VulkanContext` provides direct access to Vulkan device, allocator, and other
-/// low-level resources. Use this only when the high-level API is insufficient.
+/// low-level resources. Use this only when the high-level API is insufficient
+/// and you specifically need Vulkan internals.
 ///
 /// # When to use the high-level API instead
 ///
-/// Most operations should use [`VulkanRenderer`] methods:
-/// - [`VulkanRenderer::create_mesh()`] for mesh creation
-/// - [`VulkanRenderer::register_material()`] for material registration
-/// - [`VulkanRenderer::create_texture()`] for texture operations
-/// - [`VulkanRenderer::create_viewport()`] for render targets
+/// Most operations should use [`GpuRenderer`] trait methods:
+/// - [`GpuRenderer::create_mesh()`] for mesh creation
+/// - [`GpuRenderer::compile_material()`] for material compilation
+/// - [`GpuRenderer::create_texture()`] for texture operations
+/// - [`GpuRenderer::create_viewport()`] for render targets
+///
+/// These work identically on both Vulkan and Metal backends.
 ///
 /// # When to use VulkanContext (escape hatch)
 ///
