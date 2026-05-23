@@ -191,8 +191,8 @@
 - [x] Add master volume control — global volume slider applied to final mix output
 - [x] Add audio category channels — SFX, Music, Ambient sub-mixes with independent volume controls
 - [x] Add per-source volume and pitch — VoiceHandle::set_volume(), VoiceHandle::set_pitch() (resampling)
-- [ ] Implement audio streaming — stream long audio files (music) in chunks instead of loading entire file; ring buffer for decoded chunks
-- [ ] Add looping support — seamless loop points for music, configurable loop region for one-shot variations
+- [x] Implement audio streaming — stream long audio files (music) in chunks instead of loading entire file; ring buffer for decoded chunks
+- [x] Add looping support — seamless loop points for music, configurable loop region for one-shot variations
 
 ### Phase 5: Editor and asset integration
 - [ ] Add audio file loading to asset pipeline — recognize .wav/.ogg extensions, decode and cache AudioBuffers
@@ -334,7 +334,7 @@
 - [x] Implement script event bindings — `world:emit("event_name", table)` and `world:on_event("event_name", callback)` registering Luau functions as handlers
 - [x] Add event delivery system — each frame, drain pending events from bus, dispatch to registered script callbacks; ensure delivery order is deterministic
 - [ ] Add physics bindings — `world:raycast(origin, direction, max_distance)` returning hit entity + point + normal (depends on Physics Phase 4)
-- [ ] Add audio bindings — `world:play_sound("explosion")`, `world:play_sound_at("explosion", position)` (depends on Audio Phase 2)
+- [x] Add audio bindings — `world:play_sound("explosion")`, `world:play_sound_at("explosion", position)` (depends on Audio Phase 2)
 - [ ] Performance profile — benchmark 1000 script entities with on_update, optimize hot paths
 - [x] Optimize script dispatch — batch entity queries, reduce per-hook overhead, consider JIT hints
 
