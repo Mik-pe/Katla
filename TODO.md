@@ -163,14 +163,14 @@
 ## Audio System
 
 ### Phase 1: Crate skeleton + backend setup
-- [ ] Create `katla_audio` crate in workspace — add to `Cargo.toml` workspace members, create crate skeleton with `lib.rs`
-- [ ] Choose and integrate audio backend — evaluate `cpal` (low-level) vs `kira` (high-level) for output; add dependency to `katla_audio/Cargo.toml`
-- [ ] Add audio decoder dependency — `lewton` for OGG Vorbis, `hound` for WAV; wrap behind a common `DecodedAudio` struct (sample rate, channel count, PCM samples)
-- [ ] Implement `AudioDevice` — open default output device, create output stream, manage sample rate and buffer size
-- [ ] Implement `AudioMixer` — mix N active voices into a single output buffer, handle clipping prevention (soft clamp)
-- [ ] Implement `AudioVoice` — represents a single playing sound: source buffer, playback position, volume, looping flag, finished flag
-- [ ] Add basic playback API — `AudioEngine::play(sound: &AudioBuffer) -> VoiceHandle`, `VoiceHandle::stop()`, `VoiceHandle::set_volume()`
-- [ ] Write unit tests — decode WAV/OGG files to PCM, mix two buffers, verify output sample ranges
+- [x] Create `katla_audio` crate in workspace — add to `Cargo.toml` workspace members, create crate skeleton with `lib.rs`
+- [x] Choose and integrate audio backend — evaluate `cpal` (low-level) vs `kira` (high-level) for output; add dependency to `katla_audio/Cargo.toml`
+- [x] Add audio decoder dependency — `lewton` for OGG Vorbis, `hound` for WAV; wrap behind a common `DecodedAudio` struct (sample rate, channel count, PCM samples)
+- [x] Implement `AudioDevice` — open default output device, create output stream, manage sample rate and buffer size
+- [x] Implement `AudioMixer` — mix N active voices into a single output buffer, handle clipping prevention (soft clamp)
+- [x] Implement `AudioVoice` — represents a single playing sound: source buffer, playback position, volume, looping flag, finished flag
+- [x] Add basic playback API — `AudioEngine::play(sound: &AudioBuffer) -> VoiceHandle`, `VoiceHandle::stop()`, `VoiceHandle::set_volume()`
+- [x] Write unit tests — decode WAV/OGG files to PCM, mix two buffers, verify output sample ranges
 
 ### Phase 2: ECS integration
 - [ ] Add `AudioSource` component — holds asset path to sound file, derives `Component` via katla_derive
