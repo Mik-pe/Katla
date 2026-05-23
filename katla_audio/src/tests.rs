@@ -232,3 +232,67 @@ fn test_engine_playback_lifecycle() {
     engine.stop_all();
     assert_eq!(engine.active_voice_count(), 0);
 }
+
+#[test]
+fn test_voice_pan_stereo() {
+    let mixer = crate::mixer::AudioMixer::new(44100, 2);
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 256]));
+    let id = mixer.play(buf);
+    mixer.set_voice_pan(id, 1.0); // pan fully right
+
+    let mut output = vec![0.0f32; 64];
+    mixer.render(&mut output);
+
+    for frame in 0..32 {
+        let left = output[frame * 2];
+        let right = output[frame * 2 + 1];
+        assert!(
+            right > left,
+            "Expected right > left with full-right pan, got left={left}, right={right}"
+        );
+    }
+}
+
+#[test]
+fn test_voice_pan_mono_source() {
+    let mixer = crate::mixer::AudioMixer::new(44100, 2);
+
+    let buf = Arc::new(make_test_buffer(44100, 1, vec![1.0; 128]));
+    let id = mixer.play(buf);
+    mixer.set_voice_pan(id, -1.0); // pan fully left
+
+    let mut output = vec![0.0f32; 64];
+    mixer.render(&mut output);
+
+    for frame in 0..32 {
+        let left = output[frame * 2];
+        let right = output[frame * 2 + 1];
+        assert!(
+            left > right,
+            "Expected left > right with full-left pan, got left={left}, right={right}"
+        );
+        assert!(left > 0.0, "Expected left > 0, got {left}");
+    }
+}
+
+#[test]
+fn test_pan_gains_center() {
+    let (l, r) = crate::voice::compute_pan_gains(0.0);
+    assert!(
+        (l - 1.0).abs() < 0.001,
+        "Center pan left gain should be 1.0"
+    );
+    assert!(
+        (r - 1.0).abs() < 0.001,
+        "Center pan right gain should be 1.0"
+    );
+}
+
+#[test]
+fn test_pan_gains_symmetry() {
+    let (l_r, r_r) = crate::voice::compute_pan_gains(1.0);
+    let (l_l, r_l) = crate::voice::compute_pan_gains(-1.0);
+    assert!((l_r - r_l).abs() < 0.001, "Pan gains should be symmetric");
+    assert!((r_r - l_l).abs() < 0.001, "Pan gains should be symmetric");
+}

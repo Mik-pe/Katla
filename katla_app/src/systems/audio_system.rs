@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use katla_audio::{AudioBuffer, AudioEngine, VoiceHandle, VoiceState};
 use katla_ecs::World;
+use katla_math::Vec3;
 
-use crate::components::AudioEmitter;
+use crate::components::{AudioEmitter, AudioListener, DistanceModel, TransformComponent};
 
 pub struct AudioSystem {
     engine: AudioEngine,
@@ -56,6 +57,16 @@ impl AudioSystem {
         }
     }
 
+    fn find_listener(world: &World) -> (Vec3, Vec3) {
+        let default = (Vec3::ZERO, -Vec3::Z_AXIS);
+        for (entity, _listener) in world.query_ref::<&AudioListener>() {
+            if let Some(transform) = world.get_component::<TransformComponent>(entity) {
+                return (transform.transform.position, transform.transform.forward());
+            }
+        }
+        default
+    }
+
     pub fn update(&mut self, world: &mut World) {
         if !self.started {
             if let Err(e) = self.engine.resume() {
@@ -64,6 +75,9 @@ impl AudioSystem {
             self.started = true;
         }
 
+        let (listener_pos, listener_forward) = Self::find_listener(world);
+
+        // Start new voices for emitters that aren't yet playing
         for (entity, emitter) in world.query::<&AudioEmitter>() {
             if !emitter.playing {
                 continue;
@@ -92,26 +106,56 @@ impl AudioSystem {
             self.active_voices.insert(entity, handle);
         }
 
+        // Update spatial volume/pan and detect stopped voices
         let mut stopped_entities = Vec::new();
-        for (entity, emitter) in world.query::<&mut AudioEmitter>() {
-            if let Some(handle) = self.active_voices.get(&entity)
-                && handle.state() == VoiceState::Stopped
-            {
-                emitter.playing = false;
+        let mut spatial_updates: Vec<(katla_ecs::EntityId, f32, f32)> = Vec::new();
+        for (entity, emitter) in world.query_ref::<&AudioEmitter>() {
+            let Some(handle) = self.active_voices.get(&entity) else {
+                continue;
+            };
+
+            if handle.state() == VoiceState::Stopped {
                 stopped_entities.push(entity);
+                continue;
+            }
+
+            if emitter.spatial {
+                if let Some(transform) = world.get_component::<TransformComponent>(entity) {
+                    let emitter_pos = transform.transform.position;
+                    let (spatial_volume, pan) = compute_spatialization(
+                        emitter_pos,
+                        listener_pos,
+                        listener_forward,
+                        emitter.min_distance,
+                        emitter.max_distance,
+                        emitter.rolloff_factor,
+                        emitter.distance_model,
+                    );
+                    spatial_updates.push((entity, emitter.volume * spatial_volume, pan));
+                }
+            } else {
+                handle.set_volume(emitter.volume);
+            }
+        }
+
+        // Apply spatial updates outside the query borrow
+        for (entity, volume, pan) in &spatial_updates {
+            if let Some(handle) = self.active_voices.get(entity) {
+                handle.set_volume(*volume);
+                handle.set_pan(*pan);
             }
         }
 
         for entity in &stopped_entities {
-            self.active_voices.remove(entity);
+            if let Some(handle) = self.active_voices.remove(entity) {
+                handle.stop();
+            }
         }
 
+        // Mark emitter as no longer playing for stopped entities
         for entity in stopped_entities {
-            if world
-                .get_component::<AudioEmitter>(entity)
-                .is_none_or(|e| !e.playing)
-            {
-                self.active_voices.remove(&entity);
+            if let Some(emitter) = world.get_component_mut::<AudioEmitter>(entity) {
+                emitter.playing = false;
             }
         }
     }
@@ -126,4 +170,54 @@ impl AudioSystem {
         self.engine.stop_all();
         self.active_voices.clear();
     }
+}
+
+fn compute_spatialization(
+    emitter_pos: Vec3,
+    listener_pos: Vec3,
+    listener_forward: Vec3,
+    min_distance: f32,
+    max_distance: f32,
+    rolloff_factor: f32,
+    distance_model: DistanceModel,
+) -> (f32, f32) {
+    let to_emitter = emitter_pos - listener_pos;
+    let distance = to_emitter.length();
+
+    let attenuation = match distance_model {
+        DistanceModel::InverseClamped => {
+            let d = distance.max(min_distance).min(max_distance);
+            min_distance / (min_distance + rolloff_factor * (d - min_distance))
+        }
+        DistanceModel::Linear => {
+            if distance <= min_distance {
+                1.0
+            } else if distance >= max_distance {
+                0.0
+            } else {
+                1.0 - rolloff_factor * (distance - min_distance) / (max_distance - min_distance)
+            }
+        }
+        DistanceModel::Exponential => {
+            let d = distance.max(min_distance);
+            (d / min_distance).powf(-rolloff_factor)
+        }
+    };
+
+    let spatial_volume = attenuation.clamp(0.0, 1.0);
+
+    let pan = if distance > 0.001 {
+        let direction = to_emitter.normalize();
+        let right = listener_forward.cross(Vec3::Y_AXIS);
+        let right_len = right.length();
+        if right_len > 0.001 {
+            right.normalize().dot(direction).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
+
+    (spatial_volume, pan)
 }

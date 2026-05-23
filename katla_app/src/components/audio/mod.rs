@@ -20,6 +20,19 @@ pub struct AudioEmitter {
     pub volume: f32,
     pub looping: bool,
     pub playing: bool,
+    pub spatial: bool,
+    pub min_distance: f32,
+    pub max_distance: f32,
+    pub rolloff_factor: f32,
+    pub distance_model: DistanceModel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum DistanceModel {
+    #[default]
+    InverseClamped,
+    Linear,
+    Exponential,
 }
 
 impl AudioEmitter {
@@ -29,6 +42,28 @@ impl AudioEmitter {
             volume: 1.0,
             looping: false,
             playing: true,
+            spatial: false,
+            min_distance: 1.0,
+            max_distance: 100.0,
+            rolloff_factor: 1.0,
+            distance_model: DistanceModel::default(),
         }
+    }
+
+    pub fn with_spatial(mut self) -> Self {
+        self.spatial = true;
+        self
+    }
+
+    pub fn with_distance_params(
+        mut self,
+        min_distance: f32,
+        max_distance: f32,
+        rolloff_factor: f32,
+    ) -> Self {
+        self.min_distance = min_distance;
+        self.max_distance = max_distance;
+        self.rolloff_factor = rolloff_factor;
+        self
     }
 }
