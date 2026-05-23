@@ -39,7 +39,7 @@ impl AudioSystem {
         Ok(())
     }
 
-    fn get_or_load_buffer(&mut self, path: &str) -> Option<Arc<AudioBuffer>> {
+    pub fn get_or_load_buffer(&mut self, path: &str) -> Option<Arc<AudioBuffer>> {
         if let Some(buf) = self.buffers.get(path) {
             return Some(buf.clone());
         }

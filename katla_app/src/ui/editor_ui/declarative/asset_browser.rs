@@ -94,6 +94,10 @@ pub(crate) fn build_asset_browser_from_ctx(
                             pending_actions
                                 .push(EditorAction::SpawnModelAtPath { path, screen_pos });
                         }
+                        AssetType::Audio => {
+                            pending_actions
+                                .push(EditorAction::SpawnAudioEmitter { path, screen_pos });
+                        }
                         _ => {
                             pending_actions.push(EditorAction::SpawnModel(
                                 SpawnableModel::Cube,
@@ -105,6 +109,9 @@ pub(crate) fn build_asset_browser_from_ctx(
             }
             AssetAction::ModelPreviewRequested(_path) => {
                 log::debug!("Model preview requested but feature is disabled");
+            }
+            AssetAction::AudioPreviewToggle { path } => {
+                pending_actions.push(EditorAction::AudioPreviewToggle { path });
             }
             AssetAction::CreateFolder(parent_path) => {
                 let mut new_folder = parent_path.join("New Folder");

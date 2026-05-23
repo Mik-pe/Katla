@@ -53,6 +53,7 @@ const COMPONENT_CATEGORIES: &[(&str, &[&str])] = &[
         &["MassComponent", "DragComponent", "VelocityComponent"],
     ),
     ("Scripting", &["ScriptComponent"]),
+    ("Audio", &["AudioEmitter"]),
     ("Particles", &["ParticleEmitterComponent"]),
     ("Camera", &["PerspectiveComponent"]),
     ("General", &["NameComponent"]),
@@ -349,6 +350,93 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                         0.0..=100.0,
                         w,
                     );
+                    section_gap(ui);
+                }
+
+                if entity.audio_emitter.is_some() {
+                    if section_header_with_remove(
+                        ui,
+                        "Audio Emitter",
+                        entity_id,
+                        "AudioEmitter",
+                        theme,
+                        w,
+                    ) {
+                        ctx.pending_actions.push(EditorAction::RemoveComponent {
+                            entity: entity_id,
+                            component_type: "AudioEmitter".to_string(),
+                        });
+                    }
+
+                    let path_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 22.0));
+                    let resp = ui.add(
+                        katla_ui::widgets::TextInput::new(
+                            "audio_source_path",
+                            &mut edit.audio_source_path,
+                        )
+                        .bounds(path_bounds)
+                        .placeholder("audio/explosion.wav"),
+                    );
+                    if resp.changed || resp.enter_pressed {
+                        ctx.pending_actions.push(EditorAction::SetAudioSourcePath {
+                            entity: entity_id,
+                            path: edit.audio_source_path.clone(),
+                        });
+                    }
+                    ui.set_cursor(Vec2::new(x, ui.cursor().y() + 26.0));
+
+                    scalar_row(ui, "Volume", &mut edit.audio_volume, 0.0..=1.0, w);
+
+                    let loop_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 20.0));
+                    if ui
+                        .add(
+                            katla_ui::widgets::ToggleButton::new(edit.audio_looping, "Looping")
+                                .bounds(loop_bounds),
+                        )
+                        .clicked
+                    {
+                        ctx.pending_actions
+                            .push(EditorAction::ToggleAudioEmitterBool {
+                                entity: entity_id,
+                                field: crate::ui::AudioEmitterBoolField::Looping,
+                            });
+                    }
+                    ui.set_cursor(Vec2::new(x, ui.cursor().y() + 24.0));
+
+                    let spatial_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 20.0));
+                    if ui
+                        .add(
+                            katla_ui::widgets::ToggleButton::new(edit.audio_spatial, "Spatial")
+                                .bounds(spatial_bounds),
+                        )
+                        .clicked
+                    {
+                        ctx.pending_actions
+                            .push(EditorAction::ToggleAudioEmitterBool {
+                                entity: entity_id,
+                                field: crate::ui::AudioEmitterBoolField::Spatial,
+                            });
+                    }
+                    ui.set_cursor(Vec2::new(x, ui.cursor().y() + 24.0));
+
+                    if edit.audio_spatial {
+                        scalar_row(
+                            ui,
+                            "Min Distance",
+                            &mut edit.audio_min_distance,
+                            0.1..=100.0,
+                            w,
+                        );
+                        scalar_row(
+                            ui,
+                            "Max Distance",
+                            &mut edit.audio_max_distance,
+                            1.0..=1000.0,
+                            w,
+                        );
+                        scalar_row(ui, "Rolloff", &mut edit.audio_rolloff_factor, 0.0..=10.0, w);
+                    }
+
                     section_gap(ui);
                 }
 

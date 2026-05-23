@@ -29,6 +29,8 @@ pub enum AssetType {
     Image,
     /// Font files (.ttf, .otf)
     Font,
+    /// Audio files (.wav, .ogg)
+    Audio,
     /// Directory
     Folder,
     /// Unknown/other file type
@@ -93,6 +95,8 @@ pub enum AssetAction {
         asset_path: PathBuf,
         folder_path: PathBuf,
     },
+    /// Toggle audio preview play/stop
+    AudioPreviewToggle { path: PathBuf },
 }
 
 impl AssetType {
@@ -109,6 +113,7 @@ impl AssetType {
             Some("luau") | Some("lua") => Self::Script,
             Some("png") | Some("jpg") | Some("jpeg") => Self::Image,
             Some("ttf") | Some("otf") => Self::Font,
+            Some("wav") | Some("ogg") => Self::Audio,
             _ => Self::Unknown,
         }
     }
@@ -124,6 +129,7 @@ impl AssetType {
             Self::Script => ForkAwesome::COG,
             Self::Image => ForkAwesome::IMAGE,
             Self::Font => ForkAwesome::FILE_TEXT,
+            Self::Audio => ForkAwesome::MUSIC,
             Self::Folder => ForkAwesome::FOLDER,
             Self::Unknown => ForkAwesome::FILE,
         }
@@ -138,6 +144,7 @@ impl AssetType {
             Self::Script => theme.success,
             Self::Image => theme.warning,
             Self::Font => theme.text_secondary,
+            Self::Audio => Color::rgb(0.4, 0.6, 0.9),
             Self::Folder => theme.highlight,
             Self::Unknown => theme.text_muted,
         }

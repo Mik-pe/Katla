@@ -276,6 +276,23 @@ impl EditorUI {
                     self.inspector_edit.directional_color = dl.color;
                     self.inspector_edit.directional_intensity = dl.intensity;
                 }
+                if let Some(ref ae) = entity.audio_emitter {
+                    self.inspector_edit.audio_source_path = ae.source_path.clone();
+                    self.inspector_edit.audio_volume = ae.volume;
+                    self.inspector_edit.audio_looping = ae.looping;
+                    self.inspector_edit.audio_spatial = ae.spatial;
+                    self.inspector_edit.audio_min_distance = ae.min_distance;
+                    self.inspector_edit.audio_max_distance = ae.max_distance;
+                    self.inspector_edit.audio_rolloff_factor = ae.rolloff_factor;
+                } else {
+                    self.inspector_edit.audio_source_path.clear();
+                    self.inspector_edit.audio_volume = 1.0;
+                    self.inspector_edit.audio_looping = false;
+                    self.inspector_edit.audio_spatial = false;
+                    self.inspector_edit.audio_min_distance = 1.0;
+                    self.inspector_edit.audio_max_distance = 100.0;
+                    self.inspector_edit.audio_rolloff_factor = 1.0;
+                }
             }
         }
     }

@@ -121,6 +121,7 @@ fn test_hierarchy_entity_selection_works() {
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         },
         EntityInfo {
             id: entity2,
@@ -140,6 +141,7 @@ fn test_hierarchy_entity_selection_works() {
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         },
     ];
 
