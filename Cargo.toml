@@ -1,5 +1,5 @@
 [workspace]
-members = ["katla_math", "katla_gfx", "katla_app", "katla_ecs", "katla_derive", "katla_ui", "katla_script", "katla_icons", "katla_agent", "game"]
+members = ["katla_math", "katla_gfx", "katla_app", "katla_ecs", "katla_derive", "katla_ui", "katla_script", "katla_audio", "katla_icons", "katla_agent", "game"]
 default-members = ["game"]
 resolver = "2"
 
@@ -43,6 +43,7 @@ katla_math = { path = "katla_math" }
 katla_gfx = { path = "katla_gfx" }
 katla_ui = { path = "katla_ui" }
 katla_script = { path = "katla_script" }
+katla_audio = { path = "katla_audio" }
 katla_app = { path = "katla_app" }
 katla_icons = { path = "katla_icons" }
 katla_agent = { path = "katla_agent" }

@@ -1,0 +1,11 @@
+[package]
+name = "katla_audio"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cpal = "0.17"
+hound = "3.5"
+lewton = "0.10"
+ogg = "0.9"
+log = { workspace = true }
