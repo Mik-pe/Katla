@@ -215,6 +215,42 @@ impl UserData for ScriptWorldProxy {
                 Ok(())
             },
         );
+
+        methods.add_method_mut(
+            "play_sound",
+            |_, this, (path, volume_or_nil, looping_or_nil): (String, Option<f32>, Option<bool>)| {
+                let volume = volume_or_nil.unwrap_or(1.0);
+                let looping = looping_or_nil.unwrap_or(false);
+                this.commands.push(ScriptCommand::PlaySound {
+                    path,
+                    volume,
+                    looping,
+                });
+                Ok(())
+            },
+        );
+
+        methods.add_method_mut(
+            "play_sound_at",
+            |_,
+             this,
+             (path, position, volume_or_nil, looping_or_nil): (
+                String,
+                LuaVec3,
+                Option<f32>,
+                Option<bool>,
+            )| {
+                let volume = volume_or_nil.unwrap_or(1.0);
+                let looping = looping_or_nil.unwrap_or(false);
+                this.commands.push(ScriptCommand::PlaySoundAt {
+                    path,
+                    position: position.0,
+                    volume,
+                    looping,
+                });
+                Ok(())
+            },
+        );
     }
 }
 
