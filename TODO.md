@@ -42,7 +42,7 @@
 
 - [x] Verify `AnyFrame` has no Metal-only methods (confirmed clean — just `submit`, `submit_ui`, `dispatch`)
 - [ ] Remove `transient_image_view_metal()` and `transient_texture_metal()` Metal-only methods from `AnyFrameGraph` — requires backend-agnostic texture view type
-- [ ] Audit `AnyFrameGraph` for all `#[cfg(target_os = "macos")]` branches that could be collapsed
+- [ ] Audit `AnyFrameGraph` for all `#[cfg(target_os = "macos")]` branches that could be collapsed — verified: only enum variants, match arms, and two Metal-specific accessors (`transient_image_view_metal`, `transient_texture_metal`) remain; the accessors require a backend-agnostic texture view type to remove (same blocker as D item above)
 
 ### E. Align Metal backend with shared FrameGraph<B> execution path
 
