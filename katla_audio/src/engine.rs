@@ -6,10 +6,19 @@ use crate::buffer::AudioBuffer;
 use crate::mixer::AudioMixer;
 use crate::voice::{VoiceHandle, VoiceId, VoiceState};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AudioCategory {
+    Master,
+    Sfx,
+    Music,
+    Ambient,
+}
+
 pub struct AudioEngine {
     mixer: Arc<AudioMixer>,
     #[allow(dead_code)]
     stream: cpal::Stream,
+    category_volumes: [f32; 3],
 }
 
 impl AudioEngine {
@@ -56,7 +65,11 @@ impl AudioEngine {
             .pause()
             .map_err(|e| format!("Failed to pause stream: {e}"))?;
 
-        Ok(AudioEngine { mixer, stream })
+        Ok(AudioEngine {
+            mixer,
+            stream,
+            category_volumes: [1.0; 3],
+        })
     }
 
     pub fn play(&self, buffer: &Arc<AudioBuffer>) -> VoiceHandle {
@@ -102,6 +115,25 @@ impl AudioEngine {
 
     pub fn master_volume(&self) -> f32 {
         self.mixer.master_volume()
+    }
+
+    pub fn set_category_volume(&mut self, category: AudioCategory, volume: f32) {
+        let v = volume.clamp(0.0, 1.0);
+        match category {
+            AudioCategory::Master => self.mixer.set_master_volume(v),
+            AudioCategory::Sfx => self.category_volumes[0] = v,
+            AudioCategory::Music => self.category_volumes[1] = v,
+            AudioCategory::Ambient => self.category_volumes[2] = v,
+        }
+    }
+
+    pub fn category_volume(&self, category: AudioCategory) -> f32 {
+        match category {
+            AudioCategory::Master => self.mixer.master_volume(),
+            AudioCategory::Sfx => self.category_volumes[0],
+            AudioCategory::Music => self.category_volumes[1],
+            AudioCategory::Ambient => self.category_volumes[2],
+        }
     }
 
     pub fn voice_state(&self, id: VoiceId) -> VoiceState {
