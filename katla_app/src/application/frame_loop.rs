@@ -115,6 +115,11 @@ impl Application {
             }
         }
 
+        // Update audio system — process AudioEmitter components
+        if let Some(ref mut audio) = self.audio_system {
+            audio.update(&mut self.world);
+        }
+
         // Update GPU animation: prepare data and upload per-frame params
         if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer {
             if let (Some(gpu_anim), Some(pipeline), Some(buffers)) = (

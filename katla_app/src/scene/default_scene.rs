@@ -49,6 +49,7 @@ pub fn build_default_scene() -> Scene {
         drag: None,
         perspective: None,
         directional_light: None,
+        audio_emitter: None,
     });
 
     // PBR material grid (5x5) -- metallic (Y) x roughness (X)
@@ -92,6 +93,7 @@ pub fn build_default_scene() -> Scene {
                 drag: None,
                 perspective: None,
                 directional_light: None,
+                audio_emitter: None,
             });
         }
     }
@@ -123,6 +125,7 @@ pub fn build_default_scene() -> Scene {
         drag: None,
         perspective: None,
         directional_light: None,
+        audio_emitter: None,
     });
 
     // Cyan sphere
@@ -154,6 +157,7 @@ pub fn build_default_scene() -> Scene {
         drag: None,
         perspective: None,
         directional_light: None,
+        audio_emitter: None,
     });
 
     // Magenta cylinder
@@ -185,6 +189,7 @@ pub fn build_default_scene() -> Scene {
         drag: None,
         perspective: None,
         directional_light: None,
+        audio_emitter: None,
     });
 
     // Lime torus
@@ -217,6 +222,7 @@ pub fn build_default_scene() -> Scene {
         drag: None,
         perspective: None,
         directional_light: None,
+        audio_emitter: None,
     });
 
     // Backdrop plane
@@ -247,6 +253,7 @@ pub fn build_default_scene() -> Scene {
         drag: None,
         perspective: None,
         directional_light: None,
+        audio_emitter: None,
     });
 
     // Fox with animation
@@ -286,6 +293,7 @@ pub fn build_default_scene() -> Scene {
         drag: None,
         perspective: None,
         directional_light: None,
+        audio_emitter: None,
     });
 
     // DamagedHelmet
@@ -310,6 +318,7 @@ pub fn build_default_scene() -> Scene {
         drag: None,
         perspective: None,
         directional_light: None,
+        audio_emitter: None,
     });
 
     // Fire particle emitter
@@ -350,6 +359,7 @@ pub fn build_default_scene() -> Scene {
         drag: None,
         perspective: None,
         directional_light: None,
+        audio_emitter: None,
     });
 
     // Ethereal particle emitter
@@ -390,6 +400,7 @@ pub fn build_default_scene() -> Scene {
         drag: None,
         perspective: None,
         directional_light: None,
+        audio_emitter: None,
     });
 
     // Sparkle particle emitter
@@ -430,6 +441,7 @@ pub fn build_default_scene() -> Scene {
         drag: None,
         perspective: None,
         directional_light: None,
+        audio_emitter: None,
     });
 
     // Point lights
@@ -482,6 +494,7 @@ pub fn build_default_scene() -> Scene {
             drag: None,
             perspective: None,
             directional_light: None,
+            audio_emitter: None,
         });
     }
 

@@ -1,3 +1,6 @@
+// Audio components
+pub use crate::components::audio::*;
+
 // Camera-related components
 pub use crate::components::camera::*;
 
@@ -15,6 +18,7 @@ pub use crate::components::rendering::*;
 pub use crate::components::transform::*;
 
 // Submodules
+pub mod audio;
 pub mod camera;
 pub mod physics;
 pub mod rendering;
