@@ -18,7 +18,7 @@ pub struct AudioSystem {
 }
 
 impl AudioSystem {
-    pub fn new() -> Result<Self, String> {
+    pub fn new() -> Result<Self, katla_audio::AudioError> {
         let engine = AudioEngine::new()?;
         Ok(AudioSystem {
             engine,

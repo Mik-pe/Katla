@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use crate::error::AudioError;
+
 pub enum SampleFormat {
     F32(Vec<f32>),
     I16(Vec<i16>),
@@ -42,8 +44,9 @@ impl AudioBuffer {
     }
 }
 
-pub fn load_wav(path: &Path) -> Result<AudioBuffer, String> {
-    let reader = hound::WavReader::open(path).map_err(|e| format!("Failed to open WAV: {e}"))?;
+pub fn load_wav(path: &Path) -> Result<AudioBuffer, AudioError> {
+    let reader = hound::WavReader::open(path)
+        .map_err(|e| AudioError::DecodeFailed(format!("Failed to open WAV: {e}")))?;
     let spec = reader.spec();
     let sample_rate = spec.sample_rate;
     let channels = spec.channels;
@@ -66,13 +69,13 @@ pub fn load_wav(path: &Path) -> Result<AudioBuffer, String> {
     })
 }
 
-pub fn load_ogg(path: &Path) -> Result<AudioBuffer, String> {
+pub fn load_ogg(path: &Path) -> Result<AudioBuffer, AudioError> {
     use std::fs::File;
     use std::io::BufReader;
 
-    let file = File::open(path).map_err(|e| format!("Failed to open OGG: {e}"))?;
+    let file = File::open(path).map_err(|e| AudioError::Io(e))?;
     let mut reader = lewton::inside_ogg::OggStreamReader::new(BufReader::new(file))
-        .map_err(|e| format!("Failed to parse OGG: {e}"))?;
+        .map_err(|e| AudioError::DecodeFailed(format!("Failed to parse OGG: {e}")))?;
 
     let mut all_samples: Vec<f32> = Vec::new();
     let sample_rate = reader.ident_hdr.audio_sample_rate;
@@ -81,7 +84,7 @@ pub fn load_ogg(path: &Path) -> Result<AudioBuffer, String> {
     loop {
         let packet = reader
             .read_dec_packet()
-            .map_err(|e| format!("OGG decode error: {e}"))?;
+            .map_err(|e| AudioError::DecodeFailed(format!("OGG decode error: {e}")))?;
         match packet {
             Some(samples) => {
                 for frame in samples {
@@ -101,10 +104,13 @@ pub fn load_ogg(path: &Path) -> Result<AudioBuffer, String> {
     })
 }
 
-pub fn load_audio(path: &Path) -> Result<AudioBuffer, String> {
+pub fn load_audio(path: &Path) -> Result<AudioBuffer, AudioError> {
     match path.extension().and_then(|e| e.to_str()) {
         Some("wav") | Some("WAV") => load_wav(path),
         Some("ogg") | Some("OGG") => load_ogg(path),
-        _ => Err(format!("Unsupported audio format: {}", path.display())),
+        _ => Err(AudioError::FormatUnsupported(format!(
+            "Unsupported audio format: {}",
+            path.display()
+        ))),
     }
 }
