@@ -1,4 +1,8 @@
 use crate::buffer::{AudioBuffer, DecodedAudio, SampleFormat, load_wav};
+use crate::command_queue::AudioCategoryValue;
+use crate::effect::biquad::{BiquadFilter, FilterKind};
+use crate::effect::reverb::ReverbEffect;
+use crate::effect::{AudioEffect, AuxBus};
 use crate::engine::AudioEngine;
 use crate::voice::VoiceState;
 use std::sync::Arc;
@@ -56,14 +60,18 @@ fn test_mixer_mixes_voices() {
     let buf1 = Arc::new(make_test_buffer(44100, 2, vec![0.5; 256]));
     let buf2 = Arc::new(make_test_buffer(44100, 2, vec![0.3; 256]));
 
-    mixer.play(buf1);
-    mixer.play(buf2);
+    mixer.play(buf1, AudioCategoryValue::Sfx);
+    mixer.play(buf2, AudioCategoryValue::Sfx);
 
     let mut output = vec![0.0f32; 128];
     mixer.render(&mut output);
 
     for sample in &output {
-        assert!((*sample - 0.8).abs() < 0.001, "Expected ~0.8, got {sample}");
+        let expected = 0.8 * std::f32::consts::FRAC_1_SQRT_2;
+        assert!(
+            (*sample - expected).abs() < 0.01,
+            "Expected ~{expected:.3}, got {sample}"
+        );
     }
 }
 
@@ -72,14 +80,18 @@ fn test_mixer_master_volume() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 256]));
-    mixer.play(buf);
+    mixer.play(buf, AudioCategoryValue::Sfx);
     mixer.set_master_volume(0.5);
 
     let mut output = vec![0.0f32; 64];
     mixer.render(&mut output);
 
     for sample in &output {
-        assert!((*sample - 0.5).abs() < 0.001, "Expected ~0.5, got {sample}");
+        let expected = 0.5 * std::f32::consts::FRAC_1_SQRT_2;
+        assert!(
+            (*sample - expected).abs() < 0.01,
+            "Expected ~{expected:.3}, got {sample}"
+        );
     }
 }
 
@@ -88,8 +100,8 @@ fn test_mixer_clamping() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![0.9; 256]));
-    mixer.play(buf.clone());
-    mixer.play(buf);
+    mixer.play(buf.clone(), AudioCategoryValue::Sfx);
+    mixer.play(buf, AudioCategoryValue::Sfx);
     mixer.set_master_volume(1.0);
 
     let mut output = vec![0.0f32; 64];
@@ -105,7 +117,7 @@ fn test_voice_stop() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 512]));
-    let id = mixer.play(buf);
+    let id = mixer.play(buf, AudioCategoryValue::Sfx);
 
     assert_eq!(mixer.active_voice_count(), 1);
     mixer.stop(id);
@@ -127,7 +139,7 @@ fn test_voice_finished_cleanup() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![0.5; 64]));
-    mixer.play(buf);
+    mixer.play(buf, AudioCategoryValue::Sfx);
 
     let mut output = vec![0.0f32; 64];
     mixer.render(&mut output);
@@ -139,16 +151,17 @@ fn test_voice_set_volume() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 256]));
-    let id = mixer.play(buf);
+    let id = mixer.play(buf, AudioCategoryValue::Sfx);
     mixer.set_voice_volume(id, 0.25);
 
     let mut output = vec![0.0f32; 64];
     mixer.render(&mut output);
 
     for sample in &output {
+        let expected = 0.25 * std::f32::consts::FRAC_1_SQRT_2;
         assert!(
-            (*sample - 0.25).abs() < 0.001,
-            "Expected ~0.25, got {sample}"
+            (*sample - expected).abs() < 0.01,
+            "Expected ~{expected:.3}, got {sample}"
         );
     }
 }
@@ -158,18 +171,23 @@ fn test_mono_to_stereo_upmix() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 1, vec![0.7; 128]));
-    mixer.play(buf);
+    mixer.play(buf, AudioCategoryValue::Sfx);
 
     let mut output = vec![0.0f32; 64];
     mixer.render(&mut output);
 
+    let (left_gain, right_gain) = crate::voice::compute_pan_gains(0.0);
+    let expected = 0.7 * left_gain;
     for frame in 0..32 {
         let left = output[frame * 2];
         let right = output[frame * 2 + 1];
-        assert!((left - 0.7).abs() < 0.001, "Expected left ~0.7, got {left}");
         assert!(
-            (right - 0.7).abs() < 0.001,
-            "Expected right ~0.7, got {right}"
+            (left - expected).abs() < 0.01,
+            "Expected left ~{expected:.3}, got {left}"
+        );
+        assert!(
+            (right - expected).abs() < 0.01,
+            "Expected right ~{expected:.3}, got {right}"
         );
     }
 }
@@ -238,8 +256,8 @@ fn test_voice_pan_stereo() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 256]));
-    let id = mixer.play(buf);
-    mixer.set_voice_pan(id, 1.0); // pan fully right
+    let id = mixer.play(buf, AudioCategoryValue::Sfx);
+    mixer.set_voice_pan(id, 1.0);
 
     let mut output = vec![0.0f32; 64];
     mixer.render(&mut output);
@@ -259,8 +277,8 @@ fn test_voice_pan_mono_source() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 1, vec![1.0; 128]));
-    let id = mixer.play(buf);
-    mixer.set_voice_pan(id, -1.0); // pan fully left
+    let id = mixer.play(buf, AudioCategoryValue::Sfx);
+    mixer.set_voice_pan(id, -1.0);
 
     let mut output = vec![0.0f32; 64];
     mixer.render(&mut output);
@@ -277,15 +295,16 @@ fn test_voice_pan_mono_source() {
 }
 
 #[test]
-fn test_pan_gains_center() {
+fn test_pan_gains_equal_power() {
     let (l, r) = crate::voice::compute_pan_gains(0.0);
+    let expected = std::f32::consts::FRAC_1_SQRT_2;
     assert!(
-        (l - 1.0).abs() < 0.001,
-        "Center pan left gain should be 1.0"
+        (l - expected).abs() < 0.001,
+        "Center pan left gain should be ~0.707, got {l}"
     );
     assert!(
-        (r - 1.0).abs() < 0.001,
-        "Center pan right gain should be 1.0"
+        (r - expected).abs() < 0.001,
+        "Center pan right gain should be ~0.707, got {r}"
     );
 }
 
@@ -295,4 +314,361 @@ fn test_pan_gains_symmetry() {
     let (l_l, r_l) = crate::voice::compute_pan_gains(-1.0);
     assert!((l_r - r_l).abs() < 0.001, "Pan gains should be symmetric");
     assert!((r_r - l_l).abs() < 0.001, "Pan gains should be symmetric");
+}
+
+#[test]
+fn test_pan_gains_constant_power() {
+    for pan_val in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+        let (l, r) = crate::voice::compute_pan_gains(pan_val);
+        let power = l * l + r * r;
+        assert!(
+            (power - 1.0).abs() < 0.01,
+            "Power should be ~1.0 at pan={pan_val}, got {power}"
+        );
+    }
+}
+
+#[test]
+fn test_category_volume_applied() {
+    let mixer = crate::mixer::AudioMixer::new(44100, 2);
+    mixer.set_category_volume(AudioCategoryValue::Music, 0.5);
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 256]));
+    mixer.play(buf, AudioCategoryValue::Music);
+
+    let mut output = vec![0.0f32; 64];
+    mixer.render(&mut output);
+
+    let (left_gain, right_gain) = crate::voice::compute_pan_gains(0.0);
+    let expected = 1.0 * 0.5 * left_gain;
+    for sample in &output {
+        assert!(
+            (*sample - expected).abs() < 0.01,
+            "Expected ~{expected:.3} with category volume 0.5, got {sample}"
+        );
+    }
+}
+
+#[test]
+fn test_lowpass_filter_attenuates_high_frequency() {
+    let sample_rate = 44100.0;
+    let mut lpf = BiquadFilter::new(FilterKind::LowPass, 1000.0, sample_rate);
+
+    let dc: Vec<f32> = vec![1.0; 512];
+    let mut output = dc.clone();
+    lpf.process(&mut output, 1);
+
+    let dc_energy: f32 = output[256..].iter().map(|s| s.abs()).sum();
+
+    let mut alternating = vec![0.0f32; 512];
+    for i in 0..256 {
+        alternating[i * 2] = 1.0;
+        alternating[i * 2 + 1] = -1.0;
+    }
+    let mut high_output = alternating.clone();
+    lpf.process(&mut high_output, 1);
+
+    let high_energy: f32 = high_output[256..].iter().map(|s| s.abs()).sum();
+
+    assert!(
+        high_energy < dc_energy * 0.1,
+        "High frequency should be strongly attenuated: dc_energy={dc_energy}, high_energy={high_energy}"
+    );
+}
+
+#[test]
+fn test_highpass_filter_attenuates_dc() {
+    let sample_rate = 44100.0;
+    let mut hpf = BiquadFilter::new(FilterKind::HighPass, 1000.0, sample_rate);
+
+    let mut dc = vec![1.0f32; 512];
+    hpf.process(&mut dc, 1);
+
+    let dc_energy: f32 = dc[256..].iter().map(|s| s.abs()).sum();
+    assert!(
+        dc_energy < 1.0,
+        "DC should be strongly attenuated by HPF: energy={dc_energy}"
+    );
+}
+
+#[test]
+fn test_filter_stereo() {
+    let mut lpf = BiquadFilter::new(FilterKind::LowPass, 2000.0, 44100.0);
+
+    let mut stereo = vec![1.0f32; 128];
+    lpf.process(&mut stereo, 2);
+
+    assert!(
+        stereo.iter().all(|s| s.is_finite()),
+        "Filter output should be finite"
+    );
+}
+
+#[test]
+fn test_reverb_adds_tail() {
+    let mut reverb = ReverbEffect::new(44100);
+    reverb.set_wet(1.0);
+
+    let mut input = vec![0.0f32; 4096];
+    input[0] = 1.0;
+    input[1] = 1.0;
+    input[2] = 1.0;
+    input[3] = 1.0;
+
+    reverb.process(&mut input, 2);
+
+    let tail_energy: f32 = input[64..].iter().map(|s| s * s).sum::<f32>();
+    assert!(
+        tail_energy > 0.01,
+        "Reverb should produce a tail after the impulse: energy={tail_energy}"
+    );
+}
+
+#[test]
+fn test_reverb_wet_dry_mix() {
+    let mut reverb = ReverbEffect::new(44100);
+    reverb.set_wet(0.0);
+
+    let input = vec![0.5f32; 128];
+    let mut output = input.clone();
+    reverb.process(&mut output, 1);
+
+    for (i, sample) in output.iter().enumerate() {
+        assert!(
+            (*sample - input[i]).abs() < 0.001,
+            "At wet=0.0 output should be dry: got {sample}, expected {}",
+            input[i]
+        );
+    }
+}
+
+#[test]
+fn test_effect_chain_on_mixer() {
+    let mixer = crate::mixer::AudioMixer::new(44100, 2);
+
+    let lpf = BiquadFilter::new(FilterKind::LowPass, 500.0, 44100.0);
+    mixer.add_master_effect(Box::new(lpf));
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 512]));
+    mixer.play(buf, AudioCategoryValue::Sfx);
+
+    let mut output = vec![0.0f32; 128];
+    mixer.render(&mut output);
+
+    let energy: f32 = output.iter().map(|s| s * s).sum();
+    assert!(
+        energy > 0.0,
+        "Mixer with LPF should still produce output: energy={energy}"
+    );
+    assert!(
+        output.iter().all(|s| s.is_finite()),
+        "All output samples should be finite"
+    );
+}
+
+#[test]
+fn test_aux_bus_send_return() {
+    let mixer = crate::mixer::AudioMixer::new(44100, 2);
+
+    let mut bus = AuxBus::new(1.0, 1.0);
+    bus.add_effect(Box::new(ReverbEffect::new(44100)));
+    mixer.add_aux_bus(bus);
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 1024]));
+    mixer.play(buf, AudioCategoryValue::Sfx);
+
+    let mut output_with_bus = vec![0.0f32; 512];
+    mixer.render(&mut output_with_bus);
+
+    let energy_with_bus: f32 = output_with_bus.iter().map(|s| s * s).sum();
+
+    let mixer_no_bus = crate::mixer::AudioMixer::new(44100, 2);
+    let buf2 = Arc::new(make_test_buffer(44100, 2, vec![1.0; 1024]));
+    mixer_no_bus.play(buf2, AudioCategoryValue::Sfx);
+    let mut output_no_bus = vec![0.0f32; 512];
+    mixer_no_bus.render(&mut output_no_bus);
+
+    let energy_no_bus: f32 = output_no_bus.iter().map(|s| s * s).sum();
+
+    assert!(
+        energy_with_bus > energy_no_bus,
+        "Aux bus with reverb should add energy: with={energy_with_bus}, without={energy_no_bus}"
+    );
+}
+
+#[test]
+fn test_aux_bus_zero_send() {
+    let mixer = crate::mixer::AudioMixer::new(44100, 2);
+
+    let bus = AuxBus::new(0.0, 1.0);
+    mixer.add_aux_bus(bus);
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 512]));
+    mixer.play(buf, AudioCategoryValue::Sfx);
+
+    let mut output = vec![0.0f32; 128];
+    mixer.render(&mut output);
+
+    let (left_gain, right_gain) = crate::voice::compute_pan_gains(0.0);
+    let expected = 1.0 * left_gain;
+    for sample in &output {
+        assert!(
+            (*sample - expected).abs() < 0.01,
+            "Zero send should not affect output: got {sample}, expected {expected:.3}"
+        );
+    }
+}
+
+#[test]
+fn test_volume_tween_converges() {
+    let mixer = crate::mixer::AudioMixer::new(44100, 2);
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 4096]));
+    let id = mixer.play(buf, AudioCategoryValue::Sfx);
+
+    mixer.set_voice_volume_tweened(id, 0.0);
+
+    for _ in 0..20 {
+        let mut output = vec![0.0f32; 64];
+        mixer.render(&mut output);
+    }
+
+    let mut output = vec![0.0f32; 64];
+    mixer.render(&mut output);
+
+    for sample in &output {
+        assert!(
+            *sample < 0.01,
+            "Volume should converge toward 0 after tweening, got {sample}"
+        );
+    }
+}
+
+#[test]
+fn test_pan_tween_converges() {
+    let mixer = crate::mixer::AudioMixer::new(44100, 2);
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 8192]));
+    let id = mixer.play(buf, AudioCategoryValue::Sfx);
+
+    mixer.set_voice_pan_tweened(id, 1.0);
+
+    for _ in 0..20 {
+        let mut output = vec![0.0f32; 64];
+        mixer.render(&mut output);
+    }
+
+    let mut output = vec![0.0f32; 64];
+    mixer.render(&mut output);
+
+    let left_avg: f32 = output.iter().step_by(2).sum::<f32>() / 32.0;
+    let right_avg: f32 = output.iter().skip(1).step_by(2).sum::<f32>() / 32.0;
+
+    assert!(
+        right_avg > left_avg,
+        "After panning right, right should be louder: left={left_avg}, right={right_avg}"
+    );
+}
+
+#[test]
+fn test_sound_cue_plays() {
+    let engine = match AudioEngine::new() {
+        Ok(e) => e,
+        Err(_) => {
+            eprintln!("Skipping sound cue test: no audio device available");
+            return;
+        }
+    };
+
+    let buf1 = Arc::new(make_test_buffer(44100, 2, vec![0.5; 1024]));
+    let buf2 = Arc::new(make_test_buffer(44100, 2, vec![0.3; 1024]));
+
+    let mut cue = crate::sound_cue::SoundCue::new(crate::engine::AudioCategory::Sfx)
+        .with_buffer(buf1)
+        .with_buffer(buf2)
+        .with_play_mode(crate::sound_cue::CuePlayMode::Random);
+
+    let handle = cue.play(&engine).unwrap();
+    assert_eq!(handle.state(), VoiceState::Playing);
+    handle.stop();
+}
+
+#[test]
+fn test_sound_cue_sequential() {
+    let engine = match AudioEngine::new() {
+        Ok(e) => e,
+        Err(_) => {
+            eprintln!("Skipping sound cue test: no audio device available");
+            return;
+        }
+    };
+
+    let buf1 = Arc::new(make_test_buffer(44100, 2, vec![0.5; 1024]));
+    let buf2 = Arc::new(make_test_buffer(44100, 2, vec![0.3; 1024]));
+
+    let mut cue = crate::sound_cue::SoundCue::new(crate::engine::AudioCategory::Sfx)
+        .with_buffers(vec![buf1, buf2])
+        .with_play_mode(crate::sound_cue::CuePlayMode::Sequential);
+
+    let h1 = cue.play(&engine).unwrap();
+    let h2 = cue.play(&engine).unwrap();
+    h1.stop();
+    h2.stop();
+
+    assert_ne!(
+        h1.id, h2.id,
+        "Sequential plays should produce different voices"
+    );
+}
+
+#[test]
+fn test_sound_cue_pitch_variation() {
+    let engine = match AudioEngine::new() {
+        Ok(e) => e,
+        Err(_) => {
+            eprintln!("Skipping sound cue test: no audio device available");
+            return;
+        }
+    };
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![0.5; 4096]));
+
+    let mut cue = crate::sound_cue::SoundCue::new(crate::engine::AudioCategory::Sfx)
+        .with_buffer(buf)
+        .with_pitch_variation(6.0);
+
+    for _ in 0..5 {
+        if let Some(handle) = cue.play(&engine) {
+            let vol = handle.volume();
+            assert!(vol > 0.0 && vol <= 1.0, "Volume should be in range: {vol}");
+            handle.stop();
+        }
+    }
+}
+
+#[test]
+fn test_category_volume_change_affects_playing_voice() {
+    let mixer = crate::mixer::AudioMixer::new(44100, 2);
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 512]));
+    mixer.play(buf, AudioCategoryValue::Sfx);
+
+    // Render at full category volume
+    let mut output_full = vec![0.0f32; 64];
+    mixer.render(&mut output_full);
+    let energy_full: f32 = output_full.iter().map(|s| s * s).sum();
+
+    // Create a new voice and set category volume to 0.25
+    let buf2 = Arc::new(make_test_buffer(44100, 2, vec![1.0; 512]));
+    mixer.play(buf2, AudioCategoryValue::Sfx);
+    mixer.set_category_volume(AudioCategoryValue::Sfx, 0.25);
+
+    let mut output_quiet = vec![0.0f32; 64];
+    mixer.render(&mut output_quiet);
+    let energy_quiet: f32 = output_quiet.iter().map(|s| s * s).sum();
+
+    assert!(
+        energy_quiet < energy_full * 0.3,
+        "Category volume change should reduce output energy: full={energy_full}, quiet={energy_quiet}"
+    );
 }

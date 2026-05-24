@@ -72,5 +72,12 @@ impl CommandQueue {
     }
 }
 
+// SAFETY: CommandQueue is a single-producer single-consumer (SPSC) ring buffer.
+// The main thread calls `push()` and the audio callback thread calls `pop()`.
+// These never run concurrently — push is called from the main thread outside
+// the audio callback, and pop is called from inside the audio callback under
+// the MixerState mutex. The UnsafeCell slots are only written by the producer
+// (before tail store) and read by the consumer (after head load), with
+// appropriate Acquire/Release ordering preventing data races.
 unsafe impl Send for CommandQueue {}
 unsafe impl Sync for CommandQueue {}
