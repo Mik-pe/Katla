@@ -104,10 +104,45 @@ pub fn load_ogg(path: &Path) -> Result<AudioBuffer, AudioError> {
     })
 }
 
+pub fn load_mp3(path: &Path) -> Result<AudioBuffer, AudioError> {
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let file = File::open(path).map_err(|e| AudioError::Io(e))?;
+    let mut reader = minimp3::Decoder::new(BufReader::new(file));
+
+    let mut all_samples: Vec<f32> = Vec::new();
+    let mut sample_rate = 0u32;
+    let mut channels = 0u16;
+
+    loop {
+        match reader.next_frame() {
+            Ok(frame) => {
+                sample_rate = frame.sample_rate as u32;
+                channels = frame.channels as u16;
+                for sample in frame.data {
+                    all_samples.push(sample as f32 / i16::MAX as f32);
+                }
+            }
+            Err(minimp3::Error::Eof) => break,
+            Err(e) => {
+                return Err(AudioError::DecodeFailed(format!("MP3 decode error: {e}")));
+            }
+        }
+    }
+
+    Ok(AudioBuffer {
+        sample_rate,
+        channels,
+        samples: all_samples,
+    })
+}
+
 pub fn load_audio(path: &Path) -> Result<AudioBuffer, AudioError> {
     match path.extension().and_then(|e| e.to_str()) {
         Some("wav") | Some("WAV") => load_wav(path),
         Some("ogg") | Some("OGG") => load_ogg(path),
+        Some("mp3") | Some("MP3") => load_mp3(path),
         _ => Err(AudioError::FormatUnsupported(format!(
             "Unsupported audio format: {}",
             path.display()

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -16,6 +17,7 @@ fn bits_to_f32(v: u32) -> f32 {
 
 struct MixerState {
     voices: Vec<Option<Voice>>,
+    voice_index: HashMap<VoiceId, usize>,
     master_effects: EffectChain,
     aux_buses: Vec<AuxBus>,
     sample_rate: u32,
@@ -28,85 +30,85 @@ impl MixerState {
     }
 
     fn add_voice(&mut self, voice: Voice) {
+        let id = voice.id();
         if let Some(slot) = Self::find_free_slot(&self.voices) {
             self.voices[slot] = Some(voice);
+            self.voice_index.insert(id, slot);
         } else {
             self.voices.push(Some(voice));
+            self.voice_index.insert(id, self.voices.len() - 1);
         }
     }
 
     fn stop(&mut self, id: VoiceId) {
-        for voice in self.voices.iter_mut() {
-            if let Some(v) = voice
-                && v.id() == id
-            {
-                *voice = None;
-                break;
+        if let Some(&slot) = self.voice_index.get(&id) {
+            if slot < self.voices.len() {
+                self.voices[slot] = None;
+                self.voice_index.remove(&id);
             }
         }
     }
 
     fn stop_all(&mut self) {
         self.voices.clear();
+        self.voice_index.clear();
+    }
+
+    fn voice_slot(&self, id: VoiceId) -> Option<usize> {
+        self.voice_index.get(&id).copied()
     }
 
     fn set_voice_volume(&self, id: VoiceId, volume: f32) {
-        for voice in self.voices.iter().flatten() {
-            if voice.id() == id {
+        if let Some(slot) = self.voice_slot(id) {
+            if let Some(voice) = &self.voices[slot] {
                 voice.set_volume(volume);
-                break;
             }
         }
     }
 
     fn set_voice_volume_tweened(&self, id: VoiceId, volume: f32) {
-        for voice in self.voices.iter().flatten() {
-            if voice.id() == id {
+        if let Some(slot) = self.voice_slot(id) {
+            if let Some(voice) = &self.voices[slot] {
                 voice.set_volume_tweened(volume);
-                break;
             }
         }
     }
 
     fn set_voice_pan(&self, id: VoiceId, pan: f32) {
-        for voice in self.voices.iter().flatten() {
-            if voice.id() == id {
+        if let Some(slot) = self.voice_slot(id) {
+            if let Some(voice) = &self.voices[slot] {
                 voice.set_pan(pan);
-                break;
             }
         }
     }
 
     fn set_voice_pan_tweened(&self, id: VoiceId, pan: f32) {
-        for voice in self.voices.iter().flatten() {
-            if voice.id() == id {
+        if let Some(slot) = self.voice_slot(id) {
+            if let Some(voice) = &self.voices[slot] {
                 voice.set_pan_tweened(pan);
-                break;
             }
         }
     }
 
     fn set_voice_pitch(&self, id: VoiceId, pitch: f32) {
-        for voice in self.voices.iter().flatten() {
-            if voice.id() == id {
+        if let Some(slot) = self.voice_slot(id) {
+            if let Some(voice) = &self.voices[slot] {
                 voice.set_pitch(pitch);
-                break;
             }
         }
     }
 
     fn set_voice_pitch_tweened(&self, id: VoiceId, pitch: f32) {
-        for voice in self.voices.iter().flatten() {
-            if voice.id() == id {
+        if let Some(slot) = self.voice_slot(id) {
+            if let Some(voice) = &self.voices[slot] {
                 voice.set_pitch_tweened(pitch);
-                break;
             }
         }
     }
 
     fn voice_volume(&self, id: VoiceId) -> f32 {
-        for voice in self.voices.iter().flatten() {
-            if voice.id() == id {
+        if let Some(slot) = self.voice_slot(id) {
+            if let Some(voice) = &self.voices[slot] {
                 return voice.volume();
             }
         }
@@ -114,8 +116,8 @@ impl MixerState {
     }
 
     fn voice_state(&self, id: VoiceId) -> VoiceState {
-        for voice in self.voices.iter().flatten() {
-            if voice.id() == id {
+        if let Some(slot) = self.voice_slot(id) {
+            if let Some(voice) = &self.voices[slot] {
                 return if voice.is_finished() {
                     VoiceState::Stopped
                 } else {
@@ -155,6 +157,7 @@ impl AudioMixer {
         AudioMixer {
             state: Mutex::new(MixerState {
                 voices: Vec::new(),
+                voice_index: HashMap::new(),
                 master_effects: EffectChain::new(),
                 aux_buses: Vec::new(),
                 sample_rate,
@@ -334,13 +337,18 @@ impl AudioMixer {
 
             state.master_effects.process(output, channels);
 
+            let mut finished_ids: Vec<VoiceId> = Vec::new();
             for i in 0..state.voices.len() {
                 if let Some(v) = &state.voices[i]
                     && v.is_finished()
                     && !v.is_looping()
                 {
+                    finished_ids.push(v.id());
                     state.voices[i] = None;
                 }
+            }
+            for id in finished_ids {
+                state.voice_index.remove(&id);
             }
         }
 
