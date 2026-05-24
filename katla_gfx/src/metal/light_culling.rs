@@ -124,8 +124,12 @@ impl MetalLightCulling {
         let shader_rel = "lighting/light_cull.wgsl";
         let wgsl_source = find_and_read_shader(shader_rel)?;
 
-        let compiled =
-            shader::compile_wgsl_to_metal(&context.device, &wgsl_source, &["cs_main"], false)?;
+        let compiled = shader::compile_wgsl_to_metal(
+            &context.device,
+            &wgsl_source,
+            &["cs_main"],
+            shader::ShaderProfile::Graphics,
+        )?;
 
         let cs_function = compiled.module.entry_points.get("cs_main").ok_or_else(|| {
             RendererError::InvalidOperation(

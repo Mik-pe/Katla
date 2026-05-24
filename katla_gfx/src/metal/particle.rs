@@ -258,15 +258,23 @@ impl MetalParticleSubsystem {
         let simulate_source = find_and_read_shader("particles/particle_simulate.wgsl")?;
         let draw_command_source = find_and_read_shader("particles/particle_draw_command.wgsl")?;
 
-        let emit_compiled =
-            shader::compile_wgsl_to_metal(&context.device, &emit_source, &["cs_main"], false)?;
-        let simulate_compiled =
-            shader::compile_wgsl_to_metal(&context.device, &simulate_source, &["cs_main"], false)?;
+        let emit_compiled = shader::compile_wgsl_to_metal(
+            &context.device,
+            &emit_source,
+            &["cs_main"],
+            shader::ShaderProfile::Graphics,
+        )?;
+        let simulate_compiled = shader::compile_wgsl_to_metal(
+            &context.device,
+            &simulate_source,
+            &["cs_main"],
+            shader::ShaderProfile::Graphics,
+        )?;
         let draw_command_compiled = shader::compile_wgsl_to_metal(
             &context.device,
             &draw_command_source,
             &["cs_main"],
-            false,
+            shader::ShaderProfile::Graphics,
         )?;
 
         let emit_fn = emit_compiled

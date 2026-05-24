@@ -4,7 +4,7 @@ use crate::error::RendererError;
 use crate::pipeline::CompareOp;
 
 use super::metal_renderer::{MetalRenderer, read_shader};
-use super::shader;
+use super::shader::{self, ShaderProfile};
 
 impl MetalRenderer {
     pub fn init_shadow_pipeline(
@@ -12,8 +12,12 @@ impl MetalRenderer {
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
+        let compiled = shader::compile_wgsl_to_metal(
+            &self.context.device,
+            &wgsl_source,
+            &["vs_main"],
+            ShaderProfile::Graphics,
+        )?;
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation("Shadow vertex entry point not found".into())
         })?;
@@ -25,8 +29,12 @@ impl MetalRenderer {
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
+        let compiled = shader::compile_wgsl_to_metal(
+            &self.context.device,
+            &wgsl_source,
+            &["vs_main"],
+            ShaderProfile::Graphics,
+        )?;
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation("Skinned shadow vertex entry point not found".into())
         })?;
@@ -39,8 +47,12 @@ impl MetalRenderer {
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
+        let compiled = shader::compile_wgsl_to_metal(
+            &self.context.device,
+            &wgsl_source,
+            &["vs_main"],
+            ShaderProfile::Graphics,
+        )?;
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation("Depth prepass vertex entry point not found".into())
         })?;
@@ -52,8 +64,12 @@ impl MetalRenderer {
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
+        let compiled = shader::compile_wgsl_to_metal(
+            &self.context.device,
+            &wgsl_source,
+            &["vs_main"],
+            ShaderProfile::Graphics,
+        )?;
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation(
                 "Skinned depth prepass vertex entry point not found".into(),
@@ -68,8 +84,12 @@ impl MetalRenderer {
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
+        let compiled = shader::compile_wgsl_to_metal(
+            &self.context.device,
+            &wgsl_source,
+            &["vs_main"],
+            ShaderProfile::Graphics,
+        )?;
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation(
                 "Billboard depth prepass vertex entry point not found".into(),
@@ -87,8 +107,12 @@ impl MetalRenderer {
     ) -> Result<(), RendererError> {
         {
             let wgsl = read_shader(&stencil_mark_path.to_string_lossy())?;
-            let compiled =
-                shader::compile_wgsl_to_metal(&self.context.device, &wgsl, &["vs_main"], false)?;
+            let compiled = shader::compile_wgsl_to_metal(
+                &self.context.device,
+                &wgsl,
+                &["vs_main"],
+                ShaderProfile::Graphics,
+            )?;
             let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
                 RendererError::InvalidOperation("Stencil mark vertex entry point not found".into())
             })?;
@@ -97,8 +121,12 @@ impl MetalRenderer {
         }
         {
             let wgsl = read_shader(&stencil_mark_skinned_path.to_string_lossy())?;
-            let compiled =
-                shader::compile_wgsl_to_metal(&self.context.device, &wgsl, &["vs_main"], false)?;
+            let compiled = shader::compile_wgsl_to_metal(
+                &self.context.device,
+                &wgsl,
+                &["vs_main"],
+                ShaderProfile::Graphics,
+            )?;
             let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
                 RendererError::InvalidOperation(
                     "Skinned stencil mark vertex entry point not found".into(),
@@ -113,7 +141,7 @@ impl MetalRenderer {
                 &self.context.device,
                 &wgsl,
                 &["vs_main", "fs_main"],
-                false,
+                ShaderProfile::Outline,
             )?;
             let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
                 RendererError::InvalidOperation("Outline draw vertex entry point not found".into())
@@ -132,7 +160,7 @@ impl MetalRenderer {
                 &self.context.device,
                 &wgsl,
                 &["vs_main", "fs_main"],
-                false,
+                ShaderProfile::OutlineSkinned,
             )?;
             let vs = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
                 RendererError::InvalidOperation(
@@ -155,12 +183,20 @@ impl MetalRenderer {
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
+        let compiled = shader::compile_wgsl_to_metal(
+            &self.context.device,
+            &wgsl_source,
+            &["vs_main", "fs_main"],
+            ShaderProfile::Graphics,
+        )?;
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation("Picking vertex entry point not found".into())
         })?;
-        self.picking.create_pipeline(&self.context, vertex_fn)
+        let fragment_fn = compiled.module.entry_points.get("fs_main").ok_or_else(|| {
+            RendererError::InvalidOperation("Picking fragment entry point not found".into())
+        })?;
+        self.picking
+            .create_pipeline(&self.context, vertex_fn, fragment_fn)
     }
 
     pub fn init_picking_skinned_pipeline(
@@ -168,13 +204,20 @@ impl MetalRenderer {
         shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
         let wgsl_source = read_shader(&shader_path.to_string_lossy())?;
-        let compiled =
-            shader::compile_wgsl_to_metal(&self.context.device, &wgsl_source, &["vs_main"], false)?;
+        let compiled = shader::compile_wgsl_to_metal(
+            &self.context.device,
+            &wgsl_source,
+            &["vs_main", "fs_main"],
+            ShaderProfile::Graphics,
+        )?;
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation("Skinned picking vertex entry point not found".into())
         })?;
+        let fragment_fn = compiled.module.entry_points.get("fs_main").ok_or_else(|| {
+            RendererError::InvalidOperation("Skinned picking fragment entry point not found".into())
+        })?;
         self.picking
-            .create_pipeline_skinned(&self.context, vertex_fn)
+            .create_pipeline_skinned(&self.context, vertex_fn, fragment_fn)
     }
 
     pub fn init_stencil_indicator_pipelines(
@@ -194,7 +237,7 @@ impl MetalRenderer {
             &self.context.device,
             &wgsl_source,
             &["vs_main", "fs_main"],
-            false,
+            ShaderProfile::Graphics,
         )?;
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation("Sky vertex entry point not found".into())
@@ -229,7 +272,7 @@ impl MetalRenderer {
             &self.context.device,
             &wgsl_source,
             &["vs_main", "fs_main"],
-            false,
+            ShaderProfile::Graphics,
         )?;
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation("Tonemap vertex entry point not found".into())
