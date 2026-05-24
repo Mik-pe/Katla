@@ -8,6 +8,7 @@ pub enum AudioError {
     DecodeFailed(String),
     StreamError(String),
     InvalidHandle(String),
+    InvalidOperation(String),
     Io(io::Error),
 }
 
@@ -19,6 +20,7 @@ impl fmt::Display for AudioError {
             AudioError::DecodeFailed(msg) => write!(f, "Audio decode failed: {msg}"),
             AudioError::StreamError(msg) => write!(f, "Audio stream error: {msg}"),
             AudioError::InvalidHandle(msg) => write!(f, "Invalid audio handle: {msg}"),
+            AudioError::InvalidOperation(msg) => write!(f, "Invalid operation: {msg}"),
             AudioError::Io(e) => write!(f, "IO error: {e}"),
         }
     }
