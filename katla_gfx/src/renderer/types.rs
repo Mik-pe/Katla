@@ -612,6 +612,15 @@ pub enum GpuVendor {
     Unknown,
 }
 
+/// A single GPU timestamp query result.
+#[derive(Clone, Debug)]
+pub struct GpuTimestamp {
+    /// Label identifying the pass or section.
+    pub label: String,
+    /// Duration in milliseconds.
+    pub duration_ms: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

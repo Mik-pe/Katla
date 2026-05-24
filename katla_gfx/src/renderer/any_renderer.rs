@@ -553,6 +553,30 @@ impl GpuRenderer for AnyRenderer {
             AnyRenderer::Metal(r) => r.ui_font_atlas_handle(),
         }
     }
+
+    fn begin_timestamp(&mut self, label: &str) {
+        match self {
+            AnyRenderer::Vulkan(r) => r.begin_timestamp(label),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.begin_timestamp(label),
+        }
+    }
+
+    fn end_timestamp(&mut self, label: &str) {
+        match self {
+            AnyRenderer::Vulkan(r) => r.end_timestamp(label),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.end_timestamp(label),
+        }
+    }
+
+    fn read_timestamps(&self) -> Vec<crate::renderer::types::GpuTimestamp> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.read_timestamps(),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.read_timestamps(),
+        }
+    }
 }
 
 // --- Non-trait methods that both backends implement ---

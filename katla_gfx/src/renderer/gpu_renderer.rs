@@ -385,6 +385,21 @@ pub trait GpuRenderer: Sized + 'static {
 
     /// Get the font atlas texture handle, if one has been created.
     fn ui_font_atlas_handle(&self) -> Option<TextureHandle>;
+
+    // ========================================================================
+    // GPU Timestamp Queries (Profiling)
+    // ========================================================================
+
+    /// Begin a timestamp query with the given label.
+    fn begin_timestamp(&mut self, _label: &str) {}
+
+    /// End the timestamp query started with the matching label.
+    fn end_timestamp(&mut self, _label: &str) {}
+
+    /// Read all collected timestamp results from the last frame.
+    fn read_timestamps(&self) -> Vec<crate::renderer::types::GpuTimestamp> {
+        Vec::new()
+    }
 }
 
 // ---------------------------------------------------------------------------
