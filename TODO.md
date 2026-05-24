@@ -123,7 +123,7 @@
 - [x] Implement `update_texture` for `VulkanRenderer` — copy data to existing texture, handle buffer-image copy
 - [x] Implement `update_texture` for `MetalRenderer` — replace texture data via blit
 - [ ] Refactor `update_ui_font_atlas` to use `update_texture` internally
-- [ ] Refactor `create_ui_font_atlas` to use `create_texture` internally (if not already)
+- [x] Refactor `create_ui_font_atlas` to use `create_texture` internally — already uses `create_texture` in both Vulkan and Metal backends
 - [ ] Consider removing `create_ui_font_atlas` and `update_ui_font_atlas` from the trait once the general API works — font atlas management can live in katla_ui or katla_app
 - [x] Run `cargo check --workspace` and `cargo test --workspace`
 
@@ -235,7 +235,7 @@
 ### Phase 11: Format and streaming support (independent, can start after Phase 6)
 - [x] Add OGG Vorbis streaming — `StreamingDecoder` now supports OGG via `open_ogg()` and auto-detection via `open()`; reads OGG packets in chunks using `lewton::inside_ogg::OggStreamReader`
 - [x] Add MP3 decode support — added `minimp3` dependency, `load_mp3()` function, and `.mp3` extension support in `load_audio` dispatcher and asset browser
-- [ ] Add FLAC decode support — add `symphonia` or `claxon` dependency, support `.flac` files for lossless audio assets
+- [x] Add FLAC decode support — added `claxon` dependency, `load_flac()` function, and `.flac` extension support in `load_audio` dispatcher and asset browser
 - [ ] Add streaming integration with AudioMixer — wire `StreamingDecoder` into a streaming voice type that decodes chunks on demand during playback instead of requiring the full buffer upfront; use a background decode thread to stay ahead of playback position
 
 ### Phase 12: Bug fixes and correctness (from commit review)
