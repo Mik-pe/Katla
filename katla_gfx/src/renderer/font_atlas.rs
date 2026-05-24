@@ -47,7 +47,7 @@ impl VulkanRenderer {
         if let Some(handle) = current_handle {
             if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
                 if texture.width == width && texture.height == height {
-                    texture.update_data(data);
+                    let _ = super::gpu_renderer::GpuRenderer::update_texture(self, handle, data);
                 } else {
                     // Destroy old atlas before creating the new one
                     let old_handle = handle;

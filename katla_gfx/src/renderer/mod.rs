@@ -39,8 +39,8 @@ pub use crate::handle::{
     Handle, MaterialHandle, MeshHandle, PipelineHandle, SkeletonHandle, TextureHandle,
 };
 pub use types::{
-    DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuVendor, InstanceData, PointLightGPU,
-    UIDrawList, UiDrawCommand,
+    DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuTimestamp, GpuVendor, InstanceData,
+    PointLightGPU, UIDrawList, UiDrawCommand,
 };
 
 // Vulkan re-exports
