@@ -57,6 +57,27 @@ impl ParticleDebugData {
         }
     }
 
+    /// Compute per-emitter alive particle counts by scanning alive list entries.
+    ///
+    /// Returns a vector where index i is the number of alive particles belonging to emitter i.
+    /// Particles with emitter_index >= max_emitters are counted in a trailing "unknown" slot.
+    pub fn emitter_alive_counts(&self, max_emitters: usize) -> Vec<u32> {
+        let mut counts = vec![0u32; max_emitters + 1];
+        let alive_count = self.counters.alive_count as usize;
+        for &idx in self.alive_list.iter().take(alive_count) {
+            let idx = idx as usize;
+            if idx < self.particles.len() {
+                let emitter_idx = self.particles[idx].emitter_index as usize;
+                if emitter_idx < max_emitters {
+                    counts[emitter_idx] += 1;
+                } else {
+                    counts[max_emitters] += 1;
+                }
+            }
+        }
+        counts
+    }
+
     /// Get summary statistics
     pub fn summary(&self) -> String {
         format!(

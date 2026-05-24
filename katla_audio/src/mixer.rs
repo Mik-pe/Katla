@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use crate::buffer::AudioBuffer;
 use crate::command_queue::{AudioCategoryValue, AudioCommand, CommandQueue};
 use crate::effect::{AuxBus, EffectChain};
+use crate::streaming_voice::StreamingVoice;
 use crate::voice::{CategoryVolumes, Voice, VoiceId, VoiceState};
 
 fn f32_to_bits(v: f32) -> u32 {
@@ -17,15 +18,22 @@ fn bits_to_f32(v: u32) -> f32 {
 
 struct MixerState {
     voices: Vec<Option<Voice>>,
-    voice_index: HashMap<VoiceId, usize>,
+    streaming_voices: Vec<Option<StreamingVoice>>,
+    voice_index: HashMap<VoiceId, VoiceKind>,
     master_effects: EffectChain,
     aux_buses: Vec<AuxBus>,
     sample_rate: u32,
     channels: u16,
 }
 
+#[derive(Clone, Copy)]
+enum VoiceKind {
+    Regular(usize),
+    Streaming(usize),
+}
+
 impl MixerState {
-    fn find_free_slot(voices: &[Option<Voice>]) -> Option<usize> {
+    fn find_free_slot<T>(voices: &[Option<T>]) -> Option<usize> {
         voices.iter().position(|v| v.is_none())
     }
 
@@ -33,103 +41,201 @@ impl MixerState {
         let id = voice.id();
         if let Some(slot) = Self::find_free_slot(&self.voices) {
             self.voices[slot] = Some(voice);
-            self.voice_index.insert(id, slot);
+            self.voice_index.insert(id, VoiceKind::Regular(slot));
         } else {
             self.voices.push(Some(voice));
-            self.voice_index.insert(id, self.voices.len() - 1);
+            self.voice_index
+                .insert(id, VoiceKind::Regular(self.voices.len() - 1));
+        }
+    }
+
+    fn add_streaming_voice(&mut self, voice: StreamingVoice) {
+        let id = voice.id();
+        if let Some(slot) = Self::find_free_slot(&self.streaming_voices) {
+            self.streaming_voices[slot] = Some(voice);
+            self.voice_index.insert(id, VoiceKind::Streaming(slot));
+        } else {
+            self.streaming_voices.push(Some(voice));
+            self.voice_index
+                .insert(id, VoiceKind::Streaming(self.streaming_voices.len() - 1));
         }
     }
 
     fn stop(&mut self, id: VoiceId) {
-        if let Some(&slot) = self.voice_index.get(&id) {
-            if slot < self.voices.len() {
-                self.voices[slot] = None;
-                self.voice_index.remove(&id);
+        if let Some(kind) = self.voice_index.remove(&id) {
+            match kind {
+                VoiceKind::Regular(slot) => {
+                    if slot < self.voices.len() {
+                        self.voices[slot] = None;
+                    }
+                }
+                VoiceKind::Streaming(slot) => {
+                    if slot < self.streaming_voices.len() {
+                        self.streaming_voices[slot] = None;
+                    }
+                }
             }
         }
     }
 
     fn stop_all(&mut self) {
         self.voices.clear();
+        self.streaming_voices.clear();
         self.voice_index.clear();
     }
 
-    fn voice_slot(&self, id: VoiceId) -> Option<usize> {
+    fn voice_slot(&self, id: VoiceId) -> Option<VoiceKind> {
         self.voice_index.get(&id).copied()
     }
 
     fn set_voice_volume(&self, id: VoiceId, volume: f32) {
-        if let Some(slot) = self.voice_slot(id) {
-            if let Some(voice) = &self.voices[slot] {
-                voice.set_volume(volume);
+        if let Some(kind) = self.voice_slot(id) {
+            match kind {
+                VoiceKind::Regular(slot) => {
+                    if let Some(voice) = &self.voices[slot] {
+                        voice.set_volume(volume);
+                    }
+                }
+                VoiceKind::Streaming(slot) => {
+                    if let Some(voice) = &self.streaming_voices[slot] {
+                        voice.set_volume(volume);
+                    }
+                }
             }
         }
     }
 
     fn set_voice_volume_tweened(&self, id: VoiceId, volume: f32) {
-        if let Some(slot) = self.voice_slot(id) {
-            if let Some(voice) = &self.voices[slot] {
-                voice.set_volume_tweened(volume);
+        if let Some(kind) = self.voice_slot(id) {
+            match kind {
+                VoiceKind::Regular(slot) => {
+                    if let Some(voice) = &self.voices[slot] {
+                        voice.set_volume_tweened(volume);
+                    }
+                }
+                VoiceKind::Streaming(slot) => {
+                    if let Some(voice) = &self.streaming_voices[slot] {
+                        voice.set_volume_tweened(volume);
+                    }
+                }
             }
         }
     }
 
     fn set_voice_pan(&self, id: VoiceId, pan: f32) {
-        if let Some(slot) = self.voice_slot(id) {
-            if let Some(voice) = &self.voices[slot] {
-                voice.set_pan(pan);
+        if let Some(kind) = self.voice_slot(id) {
+            match kind {
+                VoiceKind::Regular(slot) => {
+                    if let Some(voice) = &self.voices[slot] {
+                        voice.set_pan(pan);
+                    }
+                }
+                VoiceKind::Streaming(slot) => {
+                    if let Some(voice) = &self.streaming_voices[slot] {
+                        voice.set_pan(pan);
+                    }
+                }
             }
         }
     }
 
     fn set_voice_pan_tweened(&self, id: VoiceId, pan: f32) {
-        if let Some(slot) = self.voice_slot(id) {
-            if let Some(voice) = &self.voices[slot] {
-                voice.set_pan_tweened(pan);
+        if let Some(kind) = self.voice_slot(id) {
+            match kind {
+                VoiceKind::Regular(slot) => {
+                    if let Some(voice) = &self.voices[slot] {
+                        voice.set_pan_tweened(pan);
+                    }
+                }
+                VoiceKind::Streaming(slot) => {
+                    if let Some(voice) = &self.streaming_voices[slot] {
+                        voice.set_pan_tweened(pan);
+                    }
+                }
             }
         }
     }
 
     fn set_voice_pitch(&self, id: VoiceId, pitch: f32) {
-        if let Some(slot) = self.voice_slot(id) {
-            if let Some(voice) = &self.voices[slot] {
-                voice.set_pitch(pitch);
+        if let Some(kind) = self.voice_slot(id) {
+            match kind {
+                VoiceKind::Regular(slot) => {
+                    if let Some(voice) = &self.voices[slot] {
+                        voice.set_pitch(pitch);
+                    }
+                }
+                VoiceKind::Streaming(slot) => {
+                    if let Some(voice) = &self.streaming_voices[slot] {
+                        voice.set_pitch(pitch);
+                    }
+                }
             }
         }
     }
 
     fn set_voice_pitch_tweened(&self, id: VoiceId, pitch: f32) {
-        if let Some(slot) = self.voice_slot(id) {
-            if let Some(voice) = &self.voices[slot] {
-                voice.set_pitch_tweened(pitch);
+        if let Some(kind) = self.voice_slot(id) {
+            match kind {
+                VoiceKind::Regular(slot) => {
+                    if let Some(voice) = &self.voices[slot] {
+                        voice.set_pitch_tweened(pitch);
+                    }
+                }
+                VoiceKind::Streaming(slot) => {
+                    if let Some(voice) = &self.streaming_voices[slot] {
+                        voice.set_pitch_tweened(pitch);
+                    }
+                }
             }
         }
     }
 
     fn voice_volume(&self, id: VoiceId) -> f32 {
-        if let Some(slot) = self.voice_slot(id) {
-            if let Some(voice) = &self.voices[slot] {
-                return voice.volume();
+        if let Some(kind) = self.voice_slot(id) {
+            match kind {
+                VoiceKind::Regular(slot) => {
+                    if let Some(voice) = &self.voices[slot] {
+                        return voice.volume();
+                    }
+                }
+                VoiceKind::Streaming(slot) => {
+                    if let Some(voice) = &self.streaming_voices[slot] {
+                        return voice.volume();
+                    }
+                }
             }
         }
         0.0
     }
 
     fn voice_state(&self, id: VoiceId) -> VoiceState {
-        if let Some(slot) = self.voice_slot(id) {
-            if let Some(voice) = &self.voices[slot] {
-                return if voice.is_finished() {
-                    VoiceState::Stopped
-                } else {
-                    VoiceState::Playing
-                };
-            }
+        if let Some(kind) = self.voice_slot(id) {
+            let finished = match kind {
+                VoiceKind::Regular(slot) => self
+                    .voices
+                    .get(slot)
+                    .and_then(|v| v.as_ref())
+                    .map(|v| v.is_finished())
+                    .unwrap_or(true),
+                VoiceKind::Streaming(slot) => self
+                    .streaming_voices
+                    .get(slot)
+                    .and_then(|v| v.as_ref())
+                    .map(|v| v.is_finished())
+                    .unwrap_or(true),
+            };
+            return if finished {
+                VoiceState::Stopped
+            } else {
+                VoiceState::Playing
+            };
         }
         VoiceState::Stopped
     }
 
     fn active_voice_count(&self) -> usize {
         self.voices.iter().filter(|v| v.is_some()).count()
+            + self.streaming_voices.iter().filter(|v| v.is_some()).count()
     }
 }
 
@@ -157,6 +263,7 @@ impl AudioMixer {
         AudioMixer {
             state: Mutex::new(MixerState {
                 voices: Vec::new(),
+                streaming_voices: Vec::new(),
                 voice_index: HashMap::new(),
                 master_effects: EffectChain::new(),
                 aux_buses: Vec::new(),
@@ -289,6 +396,67 @@ impl AudioMixer {
         state.aux_buses.push(bus);
     }
 
+    pub fn play_streaming(
+        &self,
+        decoder: crate::streaming::StreamingDecoder,
+        looping: bool,
+        category: AudioCategoryValue,
+    ) -> Result<VoiceId, crate::error::AudioError> {
+        let id = self.allocate_id();
+        let voice = StreamingVoice::new(
+            id,
+            decoder,
+            looping,
+            category,
+            self.category_volumes.clone(),
+        )?;
+
+        let mut state = self.state.lock().unwrap();
+        state.add_streaming_voice(voice);
+
+        Ok(id)
+    }
+
+    pub fn set_streaming_voice_volume(&self, id: VoiceId, volume: f32) {
+        let state = self.state.lock().unwrap();
+        state.set_voice_volume(id, volume);
+    }
+
+    pub fn set_streaming_voice_volume_tweened(&self, id: VoiceId, volume: f32) {
+        let state = self.state.lock().unwrap();
+        state.set_voice_volume_tweened(id, volume);
+    }
+
+    pub fn streaming_voice_volume(&self, id: VoiceId) -> f32 {
+        let state = self.state.lock().unwrap();
+        state.voice_volume(id)
+    }
+
+    pub fn set_streaming_voice_pan(&self, id: VoiceId, pan: f32) {
+        let state = self.state.lock().unwrap();
+        state.set_voice_pan(id, pan);
+    }
+
+    pub fn set_streaming_voice_pan_tweened(&self, id: VoiceId, pan: f32) {
+        let state = self.state.lock().unwrap();
+        state.set_voice_pan_tweened(id, pan);
+    }
+
+    pub fn set_streaming_voice_pitch(&self, id: VoiceId, pitch: f32) {
+        let state = self.state.lock().unwrap();
+        state.set_voice_pitch(id, pitch);
+    }
+
+    pub fn set_streaming_voice_pitch_tweened(&self, id: VoiceId, pitch: f32) {
+        let state = self.state.lock().unwrap();
+        state.set_voice_pitch_tweened(id, pitch);
+    }
+
+    pub fn streaming_voice_state(&self, id: VoiceId) -> VoiceState {
+        let state = self.state.lock().unwrap();
+        state.voice_state(id)
+    }
+
     fn process_commands(state: &mut MixerState, queue: &CommandQueue) {
         while let Some(cmd) = queue.pop() {
             match cmd {
@@ -320,7 +488,19 @@ impl AudioMixer {
                 }
             }
 
+            for voice in state.streaming_voices.iter().flatten() {
+                if !voice.is_finished() {
+                    voice.tick_tweens();
+                }
+            }
+
             for voice in state.voices.iter().flatten() {
+                if !voice.is_finished() {
+                    voice.mix_into(output, channels, sample_rate);
+                }
+            }
+
+            for voice in state.streaming_voices.iter().flatten() {
                 if !voice.is_finished() {
                     voice.mix_into(output, channels, sample_rate);
                 }
@@ -345,6 +525,15 @@ impl AudioMixer {
                 {
                     finished_ids.push(v.id());
                     state.voices[i] = None;
+                }
+            }
+            for i in 0..state.streaming_voices.len() {
+                if let Some(v) = &state.streaming_voices[i]
+                    && v.is_finished()
+                    && !v.is_looping()
+                {
+                    finished_ids.push(v.id());
+                    state.streaming_voices[i] = None;
                 }
             }
             for id in finished_ids {

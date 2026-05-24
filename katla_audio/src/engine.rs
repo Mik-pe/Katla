@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -7,6 +8,8 @@ use crate::command_queue::AudioCategoryValue;
 use crate::effect::{AudioEffect, AuxBus};
 use crate::error::AudioError;
 use crate::mixer::AudioMixer;
+use crate::streaming::StreamingDecoder;
+use crate::streaming_voice::StreamingVoiceHandle;
 use crate::voice::{VoiceHandle, VoiceId, VoiceState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -184,5 +187,41 @@ impl AudioEngine {
 
     pub fn add_aux_bus(&self, bus: AuxBus) {
         self.mixer.add_aux_bus(bus);
+    }
+
+    pub fn play_streaming(&self, path: &Path) -> Result<StreamingVoiceHandle, AudioError> {
+        self.play_streaming_with_category(path, AudioCategory::Music)
+    }
+
+    pub fn play_streaming_with_category(
+        &self,
+        path: &Path,
+        category: AudioCategory,
+    ) -> Result<StreamingVoiceHandle, AudioError> {
+        let decoder = StreamingDecoder::open(path)?;
+        let cat_val = category.to_value().unwrap_or(AudioCategoryValue::Music);
+        let voice_id = self.mixer.play_streaming(decoder, false, cat_val)?;
+        Ok(StreamingVoiceHandle {
+            id: voice_id,
+            mixer: self.mixer.clone(),
+        })
+    }
+
+    pub fn play_streaming_looping(&self, path: &Path) -> Result<StreamingVoiceHandle, AudioError> {
+        self.play_streaming_looping_with_category(path, AudioCategory::Music)
+    }
+
+    pub fn play_streaming_looping_with_category(
+        &self,
+        path: &Path,
+        category: AudioCategory,
+    ) -> Result<StreamingVoiceHandle, AudioError> {
+        let decoder = StreamingDecoder::open(path)?;
+        let cat_val = category.to_value().unwrap_or(AudioCategoryValue::Music);
+        let voice_id = self.mixer.play_streaming(decoder, true, cat_val)?;
+        Ok(StreamingVoiceHandle {
+            id: voice_id,
+            mixer: self.mixer.clone(),
+        })
     }
 }

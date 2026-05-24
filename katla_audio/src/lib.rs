@@ -6,6 +6,7 @@ mod error;
 mod mixer;
 mod sound_cue;
 mod streaming;
+mod streaming_voice;
 mod voice;
 
 pub use buffer::{
@@ -19,6 +20,7 @@ pub use engine::{AudioCategory, AudioEngine};
 pub use error::AudioError;
 pub use sound_cue::{CuePlayMode, SoundCue};
 pub use streaming::StreamingDecoder;
+pub use streaming_voice::StreamingVoiceHandle;
 pub use voice::{VoiceHandle, VoiceId, VoiceState, compute_pan_gains};
 
 #[cfg(test)]

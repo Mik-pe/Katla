@@ -1534,32 +1534,21 @@ fn collect_particle_inspector_data(app: &mut Application) {
     let stats = match &app.renderer {
         katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) => {
             vulkan_renderer.particle_system.as_ref().map(|ps| {
-                let alive = ps.alive_count();
-                let max = ps.max_particles();
+                let s = ps.get_stats();
                 ParticleStats {
-                    max_alive_count: max,
-                    current_alive_count: alive,
-                    dead_count: max - alive,
-                    total_emitted: 0,
-                    total_died: 0,
-                    compute_time_ms: 0.0,
-                    avg_compute_time_ms: 0.0,
-                    peak_compute_time_ms: 0.0,
-                    emitter_counts: ps
-                        .get_emitters()
-                        .iter()
-                        .filter(|e| e.emit_rate > 0.0)
-                        .map(|_| 0)
-                        .collect(),
-                    memory_used_mb: (max as f32) * 48.0 / (1024.0 * 1024.0)
-                        + (max as f32) * 12.0 / (1024.0 * 1024.0),
-                    buffer_utilization: if max > 0 {
-                        alive as f32 / max as f32
-                    } else {
-                        0.0
-                    },
-                    frame_count: 0,
-                    total_dispatches: 0,
+                    max_alive_count: s.max_alive_count,
+                    current_alive_count: s.current_alive_count,
+                    dead_count: s.dead_count,
+                    total_emitted: s.total_emitted,
+                    total_died: s.total_died,
+                    compute_time_ms: s.compute_time_ms,
+                    avg_compute_time_ms: s.avg_compute_time_ms,
+                    peak_compute_time_ms: s.peak_compute_time_ms,
+                    emitter_counts: s.emitter_counts,
+                    memory_used_mb: s.memory_used_mb,
+                    buffer_utilization: s.buffer_utilization,
+                    frame_count: s.frame_count,
+                    total_dispatches: s.total_dispatches,
                 }
             })
         }
