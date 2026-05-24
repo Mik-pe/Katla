@@ -138,11 +138,41 @@ pub fn load_mp3(path: &Path) -> Result<AudioBuffer, AudioError> {
     })
 }
 
+pub fn load_flac(path: &Path) -> Result<AudioBuffer, AudioError> {
+    let mut reader = claxon::FlacReader::open(path)
+        .map_err(|e| AudioError::DecodeFailed(format!("Failed to parse FLAC: {e}")))?;
+
+    let info = reader.streaminfo();
+    let sample_rate = info.sample_rate;
+    let channels = info.channels as u16;
+    let bits_per_sample = info.bits_per_sample;
+
+    let all_samples: Vec<f32> = reader
+        .samples()
+        .map(|s| {
+            s.map(|s| match bits_per_sample {
+                16 => (s as i16) as f32 / i16::MAX as f32,
+                24 => (s >> 8) as i16 as f32 / i16::MAX as f32,
+                32 => s as f32 / i32::MAX as f32,
+                _ => s as f32 / (1i64 << (bits_per_sample - 1)) as f32,
+            })
+            .unwrap_or(0.0)
+        })
+        .collect();
+
+    Ok(AudioBuffer {
+        sample_rate,
+        channels,
+        samples: all_samples,
+    })
+}
+
 pub fn load_audio(path: &Path) -> Result<AudioBuffer, AudioError> {
     match path.extension().and_then(|e| e.to_str()) {
         Some("wav") | Some("WAV") => load_wav(path),
         Some("ogg") | Some("OGG") => load_ogg(path),
         Some("mp3") | Some("MP3") => load_mp3(path),
+        Some("flac") | Some("FLAC") => load_flac(path),
         _ => Err(AudioError::FormatUnsupported(format!(
             "Unsupported audio format: {}",
             path.display()

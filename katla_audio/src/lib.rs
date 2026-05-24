@@ -9,7 +9,7 @@ mod streaming;
 mod voice;
 
 pub use buffer::{
-    AudioBuffer, DecodedAudio, SampleFormat, load_audio, load_mp3, load_ogg, load_wav,
+    AudioBuffer, DecodedAudio, SampleFormat, load_audio, load_flac, load_mp3, load_ogg, load_wav,
 };
 pub use command_queue::AudioCategoryValue;
 pub use effect::biquad::{BiquadFilter, FilterKind};
