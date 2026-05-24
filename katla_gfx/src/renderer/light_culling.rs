@@ -324,7 +324,9 @@ impl super::VulkanRenderer {
             material_compiler: &mut self.material_compiler,
         };
         self.light_culling
-            .init(&mut ctx, screen_width, screen_height, shader_path)
+            .init(&mut ctx, screen_width, screen_height, shader_path)?;
+        self.capabilities.supports_light_culling = true;
+        Ok(())
     }
 
     /// Upload point light data for the current frame.

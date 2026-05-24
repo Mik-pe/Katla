@@ -1,5 +1,6 @@
 use objc2_metal::MTLTexture;
 
+use crate::error::RendererError;
 use crate::handle::TextureHandle;
 use crate::texture::{ImageFormat, TextureDescriptor};
 
@@ -84,5 +85,44 @@ impl MetalRenderer {
                 self.bindless_manager.release_slot(slot);
             }
         }
+    }
+
+    pub(crate) fn update_texture_impl(
+        &mut self,
+        handle: TextureHandle,
+        data: &[u8],
+    ) -> Result<(), RendererError> {
+        let entry = self.textures.get(handle.index()).ok_or_else(|| {
+            RendererError::InvalidOperation(format!("Invalid texture handle {:?}", handle))
+        })?;
+        let tex = &entry._view;
+        let width = tex.inner.width() as u32;
+        let height = tex.inner.height() as u32;
+        let bytes_per_row = width as usize * 4;
+        let expected_size = (width * height * 4) as usize;
+        if data.len() != expected_size {
+            return Err(RendererError::InvalidOperation(format!(
+                "Texture data size mismatch: expected {} bytes, got {}",
+                expected_size,
+                data.len()
+            )));
+        }
+        let region = objc2_metal::MTLRegion {
+            origin: objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
+            size: objc2_metal::MTLSize {
+                width: width as usize,
+                height: height as usize,
+                depth: 1,
+            },
+        };
+        unsafe {
+            tex.inner.replaceRegion_mipmapLevel_withBytes_bytesPerRow(
+                region,
+                0,
+                std::ptr::NonNull::new(data.as_ptr() as *mut std::ffi::c_void).unwrap(),
+                bytes_per_row,
+            );
+        }
+        Ok(())
     }
 }

@@ -330,7 +330,7 @@ impl Application {
         // This must run after animation_pose_eval (which computes skeleton matrices)
         // and before particle passes and geometry rendering.
         // Inserted at position 1 so it follows animation_pose_eval at position 0.
-        if self.renderer.has_light_culling() {
+        if self.renderer.capabilities().supports_light_culling {
             use katla_gfx::render_graph::{PassDesc, PassType, RenderGraphError};
             self.frame_graph.insert_pass(
                 1,

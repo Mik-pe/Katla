@@ -378,6 +378,7 @@ impl VulkanRenderer {
                 supports_compute: true,
                 max_frames_in_flight: FRAMES_IN_FLIGHT,
                 vendor,
+                supports_light_culling: false,
             }
         };
 

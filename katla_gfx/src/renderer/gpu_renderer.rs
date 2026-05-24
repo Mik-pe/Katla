@@ -200,11 +200,6 @@ pub trait GpuRenderer: Sized + 'static {
     /// Upload point light data for Forward+ tile-based culling.
     fn upload_lights(&mut self, _lights: &[PointLightGPU]) {}
 
-    /// Whether the Forward+ light culling system is active.
-    fn has_light_culling(&self) -> bool {
-        false
-    }
-
     // ========================================================================
     // Shadows
     // ========================================================================
@@ -499,6 +494,14 @@ impl GpuRenderer for VulkanRenderer {
         VulkanRenderer::create_texture_solid(self, color)
     }
 
+    fn update_texture(&mut self, handle: TextureHandle, data: &[u8]) -> Result<(), RendererError> {
+        let texture = self.texture_manager.get_texture(handle).ok_or_else(|| {
+            RendererError::InvalidOperation(format!("Invalid texture handle {:?}", handle))
+        })?;
+        texture.update_data(data);
+        Ok(())
+    }
+
     fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32> {
         VulkanRenderer::get_bindless_slot(self, handle)
     }
@@ -605,10 +608,6 @@ impl GpuRenderer for VulkanRenderer {
 
     fn upload_lights(&mut self, lights: &[PointLightGPU]) {
         VulkanRenderer::upload_lights(self, lights);
-    }
-
-    fn has_light_culling(&self) -> bool {
-        VulkanRenderer::has_light_culling(self)
     }
 
     // -- Shadows --
