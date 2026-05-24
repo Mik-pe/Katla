@@ -302,6 +302,7 @@ impl MetalRenderer {
                     supports_compute: true,
                     max_frames_in_flight: FRAMES_IN_FLIGHT,
                     vendor: GpuVendor::Apple,
+                    supports_light_culling: false,
                 }
             },
         };
@@ -559,6 +560,7 @@ impl MetalRenderer {
     ) -> Result<(), RendererError> {
         let lc = MetalLightCulling::new(&self.context, screen_width, screen_height)?;
         self.light_culling = Some(lc);
+        self.capabilities.supports_light_culling = true;
         Ok(())
     }
 
@@ -1536,6 +1538,10 @@ impl GpuRenderer for MetalRenderer {
         self.create_texture_solid_impl(color)
     }
 
+    fn update_texture(&mut self, handle: TextureHandle, data: &[u8]) -> Result<(), RendererError> {
+        self.update_texture_impl(handle, data)
+    }
+
     fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32> {
         self.get_bindless_slot_impl(handle)
     }
@@ -1655,10 +1661,6 @@ impl GpuRenderer for MetalRenderer {
 
     fn upload_lights(&mut self, lights: &[crate::renderer::types::PointLightGPU]) {
         MetalRenderer::upload_lights(self, lights);
-    }
-
-    fn has_light_culling(&self) -> bool {
-        MetalRenderer::has_light_culling(self)
     }
 
     // -- Shadows --

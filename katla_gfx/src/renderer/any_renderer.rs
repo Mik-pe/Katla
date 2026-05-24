@@ -275,6 +275,14 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
+    fn update_texture(&mut self, handle: TextureHandle, data: &[u8]) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.update_texture(handle, data),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.update_texture(handle, data),
+        }
+    }
+
     fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32> {
         match self {
             AnyRenderer::Vulkan(r) => r.get_bindless_slot(handle),
@@ -420,14 +428,6 @@ impl GpuRenderer for AnyRenderer {
             AnyRenderer::Vulkan(r) => r.upload_lights(lights),
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.upload_lights(lights),
-        }
-    }
-
-    fn has_light_culling(&self) -> bool {
-        match self {
-            AnyRenderer::Vulkan(r) => r.has_light_culling(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.has_light_culling(),
         }
     }
 

@@ -598,6 +598,8 @@ pub struct GpuCapabilities {
     pub max_frames_in_flight: usize,
     /// GPU vendor.
     pub vendor: GpuVendor,
+    /// Whether the Forward+ light culling system is active.
+    pub supports_light_culling: bool,
 }
 
 /// GPU vendor identification.
