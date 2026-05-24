@@ -120,8 +120,8 @@
 
 - [x] Add `update_texture(&mut self, handle: TextureHandle, data: &[u8])` to `GpuRenderer` trait — general-purpose texture subresource update (default no-op impl; real impl deferred to when concrete use cases arise)
 - [x] Add `update_texture` dispatch to `AnyRenderer` (uses default impl, no explicit dispatch needed)
-- [ ] Implement `update_texture` for `VulkanRenderer` — copy data to existing texture, handle buffer-image copy
-- [ ] Implement `update_texture` for `MetalRenderer` — replace texture data via blit
+- [x] Implement `update_texture` for `VulkanRenderer` — copy data to existing texture, handle buffer-image copy
+- [x] Implement `update_texture` for `MetalRenderer` — replace texture data via blit
 - [ ] Refactor `update_ui_font_atlas` to use `update_texture` internally
 - [ ] Refactor `create_ui_font_atlas` to use `create_texture` internally (if not already)
 - [ ] Consider removing `create_ui_font_atlas` and `update_ui_font_atlas` from the trait once the general API works — font atlas management can live in katla_ui or katla_app
@@ -134,7 +134,7 @@
 - [x] Populate `GpuCapabilities` in `VulkanRenderer` from Vulkan physical device properties
 - [x] Populate `GpuCapabilities` in `MetalRenderer` from Metal device properties
 - [x] Add dispatch to `AnyRenderer`
-- [ ] Replace `has_light_culling()` bool on the trait with a field on `GpuCapabilities`
+- [x] Replace `has_light_culling()` bool on the trait with a field on `GpuCapabilities`
 - [x] Run `cargo check --workspace` and `cargo test --workspace`
 
 ### O. Add timestamp query API for GPU profiling
@@ -200,6 +200,43 @@
 - [x] Add audio preview in asset browser — play/pause button on audio asset hover or selection
 - [x] Add audio inspector UI — volume slider, looping toggle, category selector for AudioSource/AudioEmitter components
 - [x] Add drag-to-spawn AudioEmitter — drag audio file from asset browser into viewport to create entity with AudioEmitter
+
+### Phase 6: Bug fixes (foundational — must complete before Phase 7+)
+- [x] Replace RwLock with lock-free voice queue — `AudioMixer` now uses a `Mutex<MixerState>` for the voice list with a lock-free SPSC `CommandQueue` for `stop`/`stop_all` commands from the main thread; per-voice property changes (volume, pan, pitch) go through the mutex but use atomics on Voice for lock-free reads in the audio thread
+- [x] Add voice category tagging and apply category volumes — voices are tagged with `AudioCategoryValue` (Sfx/Music/Ambient) at creation; category volumes are stored as `AtomicU32` on the mixer and multiplied into the voice's effective volume during mixing; `AudioEngine::set_category_volume` now actually works
+- [x] Add sample rate conversion — `Voice::mix_into` now computes `rate_ratio = src_sample_rate / output_sample_rate` and incorporates it into the fixed-point step size so audio plays at the correct speed regardless of device vs source sample rate
+- [x] Fix pan law to use equal-power panning — `compute_pan_gains` now uses `cos/sin((pan+1)*pi/4)` for constant-power panning; center is `(0.707, 0.707)` instead of `(1.0, 1.0)`, eliminating +6dB boost at center
+- [x] Fix `load_buffer` to use its `_data` parameter — removed dead `load_buffer` method entirely (no callers); all buffer loading goes through `get_or_load_buffer`
+- [x] Fix fixed-point pitch truncation — `Voice::mix_into` now computes `step_fixed` using `f64` arithmetic with `.round()` instead of truncating `f32 as u64`
+
+### Phase 7: DSP effects (depends on Phase 6 lock-free queue and category volumes)
+- [x] Add effect chain infrastructure — `AudioEffect` trait with `process(&mut [f32], channels)`, `EffectChain` container for chaining effects, wired into `AudioMixer` master bus
+- [x] Add low-pass filter effect — `BiquadFilter` with `FilterKind::LowPass`, configurable cutoff frequency and Q factor; implemented as cookbook biquad with state per-channel. **Blocks Phase 10 occlusion which applies LPF when line-of-sight is blocked**
+- [x] Add reverb effect — `ReverbEffect` using 4 parallel comb filters (with dampening) and 2 series allpass filters; configurable wet/dry mix, decay, and dampening. **Blocks Phase 10 reverb zones which need per-zone reverb instances**
+- [x] Add effect send/return buses — `AuxBus` with configurable send/return levels and its own `EffectChain`; accumulates a copy of the main mix scaled by send level, processes through effects, and mixes back at return level. `AudioEngine::add_aux_bus()`
+- [x] Add high-pass filter effect — `BiquadFilter` with `FilterKind::HighPass`, same configurable cutoff and Q; removes low-frequency rumble
+
+### Phase 8: Smooth transitions and tweens (depends on Phase 6 lock-free queue)
+- [x] Add voice property tweening — `VoiceHandle::set_volume_tweened()` / `set_pan_tweened()` set a target value; `Voice::tick_tweens()` lerps current toward target each render frame using exponential smoothing (factor 0.3). Immediate setters (`set_volume`/`set_pan`/`set_pitch`) also set target for consistency.
+- [x] Add default tween duration for spatial audio — `AudioSystem::update` now uses `set_volume_tweened`/`set_pan_tweened` for spatial emitter updates, preventing zipper noise from frame-to-frame position changes.
+
+### Phase 9: Sound containers and variation (independent of Phase 7-8)
+- [x] Add `SoundCue` asset — `SoundCue` holds multiple `Arc<AudioBuffer>` references with builder-pattern API (`with_buffer`, `with_buffers`, `with_play_mode`); includes `AudioCategory` for routing
+- [x] Add random pitch/volume variation per play — `SoundCue::with_pitch_variation(semitones)` and `with_volume_variation(db)` apply random ±range each play using xoshiro PRNG, preventing repetitive "machine gun" effect
+- [x] Add sequential and shuffle container modes — `CuePlayMode::Sequential` cycles in order, `CuePlayMode::Shuffle` uses Fisher-Yates partial shuffle for non-repeating random selection
+- [x] Add `SoundCue` scripting bindings — `ScriptCommand::PlaySoundCue` variant added to `katla_script`, `world:play_sound_cue("name")` binding in ScriptWorldProxy, `AudioSystem::register_cue`/`play_cue` for cue registry and playback
+
+### Phase 10: Spatial audio improvements (depends on Phase 6 bug fixes + Phase 7 DSP effects)
+- [ ] Add occlusion/obstruction — when line-of-sight from emitter to listener is blocked by geometry, apply low-pass filter and volume attenuation to simulate sound passing through/around obstacles. **Requires Phase 7 low-pass filter effect; requires physics raycast (Physics Phase 4)**
+- [ ] Add reverb zones — define volumes in the scene (box/sphere shapes) with reverb parameters (decay, wet mix, pre-delay); when the listener is inside a zone, blend the zone's reverb into the effect send; blend between overlapping zones. **Requires Phase 7 reverb effect and send/return buses**
+- [x] Add Doppler effect — `compute_doppler()` uses the standard Doppler formula with speed of sound (343 m/s); velocity tracked per-frame from previous positions stored on `AudioSystem`; pitch shift clamped to 0.5-2.0x and applied via `set_pitch_tweened`
+- [x] Add listener orientation for spatialization — `compute_spatialization` now takes `listener_up` in addition to `listener_forward`; right vector computed as `forward × up` instead of `forward × Y_AXIS`, giving correct panning for any listener orientation (including tilted/rolled cameras)
+
+### Phase 11: Format and streaming support (independent, can start after Phase 6)
+- [x] Add OGG Vorbis streaming — `StreamingDecoder` now supports OGG via `open_ogg()` and auto-detection via `open()`; reads OGG packets in chunks using `lewton::inside_ogg::OggStreamReader`
+- [ ] Add MP3 decode support — add `minimp3` or `symphonia` dependency, support `.mp3` files in `load_audio` dispatcher
+- [ ] Add FLAC decode support — add `symphonia` or `claxon` dependency, support `.flac` files for lossless audio assets
+- [ ] Add streaming integration with AudioMixer — wire `StreamingDecoder` into a streaming voice type that decodes chunks on demand during playback instead of requiring the full buffer upfront; use a background decode thread to stay ahead of playback position
 
 ## Physics
 
