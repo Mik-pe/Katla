@@ -61,7 +61,15 @@ impl Application {
             let panel_height = vp.height().max(1.0);
             let extent = self.renderer.swapchain_extent();
             let physical_x = ((rel_x / panel_width) * extent.width as f32) as u32;
-            let physical_y = ((rel_y / panel_height) * extent.height as f32) as u32;
+            let mut physical_y = ((rel_y / panel_height) * extent.height as f32) as u32;
+
+            // Metal's viewport maps clip Y = +1 → pixel Y = 0 (top), which inverts Y
+            // compared to the tonemapped display. Flip the readback Y so that
+            // screen-top (rel_y=0) reads the pixel corresponding to what the user sees.
+            #[cfg(target_os = "macos")]
+            if matches!(self.renderer, katla_gfx::AnyRenderer::Metal(_)) {
+                physical_y = extent.height.saturating_sub(1 + physical_y);
+            }
 
             if physical_x >= extent.width || physical_y >= extent.height {
                 log::debug!(
