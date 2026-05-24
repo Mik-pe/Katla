@@ -124,7 +124,7 @@
 - [x] Implement `update_texture` for `MetalRenderer` — replace texture data via blit
 - [x] Refactor `update_ui_font_atlas` to use `update_texture` internally — Vulkan hot path now uses `GpuRenderer::update_texture` instead of `texture.update_data` directly
 - [x] Refactor `create_ui_font_atlas` to use `create_texture` internally — already uses `create_texture` in both Vulkan and Metal backends
-- [ ] Consider removing `create_ui_font_atlas` and `update_ui_font_atlas` from the trait once the general API works — font atlas management can live in katla_ui or katla_app
+~~Consider removing `create_ui_font_atlas` and `update_ui_font_atlas` from the trait once the general API works~~ — Not feasible. These methods encapsulate backend-specific logic (bindless slot registration, UI renderer state tracking, Metal region replacement, resize handling) that cannot be trivially replaced by `create_texture`/`update_texture` at call sites.
 - [x] Run `cargo check --workspace` and `cargo test --workspace`
 
 ### N. Add GPU capability queries to GpuRenderer
@@ -142,7 +142,7 @@
 - [x] Define `GpuTimestamp` struct — `pass_name: String`, `duration_ms: f64`
 - [x] Add `fn begin_timestamp(&mut self, label: &str)` and `fn end_timestamp(&mut self, label: &str)` to `GpuRenderer` trait with default no-op impls
 - [x] Add `fn read_timestamps(&self) -> Vec<GpuTimestamp>` to `GpuRenderer` trait with default empty impl
-- [ ] Implement timestamp queries for `VulkanRenderer` using Vulkan timestamp queries
+- [x] Implement timestamp queries for `VulkanRenderer` using Vulkan timestamp queries
 - [ ] Implement timestamp queries for `MetalRenderer` using `MTLCounterSampleBuffer`
 - [x] Add dispatch to `AnyRenderer`
 - [ ] Run `cargo check --workspace` and `cargo test --workspace`
@@ -156,7 +156,7 @@
 - [x] Add editing controls to the ParticleInspector — sliders/drag fields for emit rate, lifetime, scale, color, forces etc. instead of read-only text rows
 - [x] Add built-in preset factory functions — EmitterPreset::fire(), EmitterPreset::smoke(), EmitterPreset::sparks() etc. with sensible defaults
 - [x] Change ParticleSystem::update to take &mut GlobalParticleSystem instead of &mut Option<GlobalParticleSystem> — avoids silent skip and awkward call sites
-- [ ] Add per-emitter alive count feedback — allow querying actual alive particle count per emitter, not just theoretical estimated_max_alive
+- [x] Add per-emitter alive count feedback — allow querying actual alive particle count per emitter, not just theoretical estimated_max_alive
 - [x] Add kill-all-particles-on-destroy option — optionally immediately kill all living particles when an emitter is destroyed instead of letting them expire naturally
 - [ ] Add color over lifetime and size over lifetime curves — enable fire (bright to dark), smoke (opaque to transparent), sparks (big to small) effects without shader modifications
 
@@ -236,7 +236,7 @@
 - [x] Add OGG Vorbis streaming — `StreamingDecoder` now supports OGG via `open_ogg()` and auto-detection via `open()`; reads OGG packets in chunks using `lewton::inside_ogg::OggStreamReader`
 - [x] Add MP3 decode support — added `minimp3` dependency, `load_mp3()` function, and `.mp3` extension support in `load_audio` dispatcher and asset browser
 - [x] Add FLAC decode support — added `claxon` dependency, `load_flac()` function, and `.flac` extension support in `load_audio` dispatcher and asset browser
-- [ ] Add streaming integration with AudioMixer — wire `StreamingDecoder` into a streaming voice type that decodes chunks on demand during playback instead of requiring the full buffer upfront; use a background decode thread to stay ahead of playback position
+- [x] Add streaming integration with AudioMixer — wire `StreamingDecoder` into a streaming voice type that decodes chunks on demand during playback instead of requiring the full buffer upfront; use a background decode thread to stay ahead of playback position
 
 ### Phase 12: Bug fixes and correctness (from commit review)
 - [x] Fix category volume not applying to already-playing voices — `Voice::category_volume` is a snapshot taken at creation time and never updated; when `AudioEngine::set_category_volume` is called, existing voices keep their stale value. Fix: propagate current category volume to all voices in the render loop, or look up the atomic category volume at mix time instead of storing a snapshot
