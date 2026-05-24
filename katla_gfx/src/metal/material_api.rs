@@ -30,12 +30,17 @@ impl MetalRenderer {
         };
 
         let is_ui = vertex_type == "ui";
+        let profile = if is_ui {
+            shader::ShaderProfile::Ui
+        } else {
+            shader::ShaderProfile::Graphics
+        };
 
         let compiled = shader::compile_wgsl_to_metal(
             &self.context.device,
             &wgsl_source,
             &entry_points,
-            is_ui,
+            profile,
         )?;
 
         let vertex_fn = compiled

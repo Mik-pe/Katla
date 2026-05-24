@@ -476,6 +476,11 @@ impl MetalContext {
 
         if let Some(depth_fmt) = depth_format {
             descriptor.setDepthAttachmentPixelFormat(depth_fmt);
+            if depth_fmt == MTLPixelFormat::Depth32Float_Stencil8
+                || depth_fmt == MTLPixelFormat::Depth24Unorm_Stencil8
+            {
+                descriptor.setStencilAttachmentPixelFormat(depth_fmt);
+            }
         }
 
         let vd = match vertex_descriptor {
@@ -604,6 +609,11 @@ impl MetalContext {
 
         if let Some(depth_fmt) = depth_format {
             descriptor.setDepthAttachmentPixelFormat(depth_fmt);
+            if depth_fmt == MTLPixelFormat::Depth32Float_Stencil8
+                || depth_fmt == MTLPixelFormat::Depth24Unorm_Stencil8
+            {
+                descriptor.setStencilAttachmentPixelFormat(depth_fmt);
+            }
         }
 
         let vd = match vertex_descriptor {
@@ -806,7 +816,7 @@ mod tests {
 }
 "#,
             &["vs_main", "fs_main"],
-            false,
+            shader::ShaderProfile::Graphics,
         )
         .unwrap();
 
@@ -840,7 +850,7 @@ mod tests {
 fn cs_main(@builtin(global_invocation_id) gid: vec3u) {}
 "#,
             &["cs_main"],
-            false,
+            shader::ShaderProfile::Graphics,
         )
         .unwrap();
 
@@ -931,7 +941,7 @@ struct VertexOutput {
 }
 "#,
             &["vs_main", "fs_main"],
-            false,
+            shader::ShaderProfile::Graphics,
         )
         .unwrap();
 

@@ -11,6 +11,19 @@ use naga::valid::{Capabilities, ValidationFlags, Validator};
 
 use crate::error::RendererError;
 
+/// Shader compilation profile selecting the appropriate binding map.
+#[derive(Debug)]
+pub(crate) enum ShaderProfile {
+    /// Standard graphics pipeline (bindless textures at buffer 9).
+    Graphics,
+    /// UI shaders (different binding layout).
+    Ui,
+    /// Outline draw shaders (outline_params instead of bindless textures).
+    Outline,
+    /// Skinned outline draw shaders (joints + outline_params, no bindless).
+    OutlineSkinned,
+}
+
 /// Create naga MSL options configured for Katla's binding layout.
 ///
 /// Katla's descriptor layout:
@@ -268,6 +281,115 @@ fn create_ui_binding_map() -> msl::EntryPointResources {
     resources
 }
 
+/// Outline draw binding map (non-skinned).
+///
+/// group(0), binding(0) → buffer 0  (frame uniforms)
+/// group(0), binding(1) → buffer 1  (object storage)
+/// group(1), binding(0) → buffer 2  (outline_params)
+fn create_outline_binding_map() -> msl::EntryPointResources {
+    let mut resources = msl::EntryPointResources::default();
+
+    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(0),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 1,
+            },
+            msl::BindTarget {
+                buffer: Some(1),
+                ..Default::default()
+            },
+        ),
+        // outline_params at group(1), binding(0) → buffer 2
+        (
+            naga::ResourceBinding {
+                group: 1,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(2),
+                ..Default::default()
+            },
+        ),
+    ];
+
+    for (binding, target) in bindings {
+        resources.resources.insert(*binding, target.clone());
+    }
+
+    resources
+}
+
+/// Outline draw binding map (skinned).
+///
+/// group(0), binding(0) → buffer 0  (frame uniforms)
+/// group(0), binding(1) → buffer 1  (object storage)
+/// group(2), binding(0) → buffer 2  (joint matrices)
+/// group(3), binding(0) → buffer 3  (outline_params)
+fn create_outline_skinned_binding_map() -> msl::EntryPointResources {
+    let mut resources = msl::EntryPointResources::default();
+
+    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(0),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 1,
+            },
+            msl::BindTarget {
+                buffer: Some(1),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 2,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(2),
+                ..Default::default()
+            },
+        ),
+        // outline_params at group(3), binding(0) → buffer 3
+        (
+            naga::ResourceBinding {
+                group: 3,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(3),
+                ..Default::default()
+            },
+        ),
+    ];
+
+    for (binding, target) in bindings {
+        resources.resources.insert(*binding, target.clone());
+    }
+
+    resources
+}
+
 pub(crate) struct MetalShaderModule {
     pub(crate) entry_points: HashMap<String, Retained<ProtocolObject<dyn MTLFunction>>>,
 }
@@ -280,7 +402,7 @@ pub(crate) fn compile_wgsl_to_metal(
     device: &ProtocolObject<dyn MTLDevice>,
     wgsl_source: &str,
     entry_points: &[&str],
-    is_ui: bool,
+    profile: ShaderProfile,
 ) -> Result<CompiledMetalShader, RendererError> {
     let module = wgsl::parse_str(wgsl_source)
         .map_err(|e| RendererError::InvalidOperation(format!("WGSL parse error: {:?}", e)))?;
@@ -290,10 +412,35 @@ pub(crate) fn compile_wgsl_to_metal(
         .validate(&module)
         .map_err(|e| RendererError::InvalidOperation(format!("Shader validation: {:?}", e)))?;
 
-    let msl_options = if is_ui {
-        katla_msl_options_ui()
-    } else {
-        katla_msl_options()
+    let msl_options = match profile {
+        ShaderProfile::Graphics => katla_msl_options(),
+        ShaderProfile::Ui => katla_msl_options_ui(),
+        ShaderProfile::Outline => {
+            let mut options = msl::Options::default();
+            options.lang_version = (2, 0);
+            options.fake_missing_bindings = true;
+            let bindings = create_outline_binding_map();
+            options
+                .per_entry_point_map
+                .insert("vs_main".to_string(), bindings.clone());
+            options
+                .per_entry_point_map
+                .insert("fs_main".to_string(), bindings);
+            options
+        }
+        ShaderProfile::OutlineSkinned => {
+            let mut options = msl::Options::default();
+            options.lang_version = (2, 0);
+            options.fake_missing_bindings = true;
+            let bindings = create_outline_skinned_binding_map();
+            options
+                .per_entry_point_map
+                .insert("vs_main".to_string(), bindings.clone());
+            options
+                .per_entry_point_map
+                .insert("fs_main".to_string(), bindings);
+            options
+        }
     };
     let pipeline_options = msl::PipelineOptions::default();
     let (msl_source, _translation_info) =
@@ -301,10 +448,10 @@ pub(crate) fn compile_wgsl_to_metal(
             .map_err(|e| RendererError::InvalidOperation(format!("MSL generation: {:?}", e)))?;
 
     log::debug!(
-        "Generated MSL for {} ({} bytes, is_ui={})",
+        "Generated MSL for {} ({} bytes, profile={:?})",
         entry_points.join(","),
         msl_source.len(),
-        is_ui
+        profile
     );
 
     #[cfg(debug_assertions)]
@@ -366,7 +513,12 @@ mod tests {
     return vec4f(1.0, 0.0, 0.0, 1.0);
 }
 "#;
-        let result = compile_wgsl_to_metal(&device, wgsl, &["vs_main", "fs_main"], false);
+        let result = compile_wgsl_to_metal(
+            &device,
+            wgsl,
+            &["vs_main", "fs_main"],
+            ShaderProfile::Graphics,
+        );
         assert!(
             result.is_ok(),
             "Shader compilation failed: {:?}",
@@ -388,7 +540,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
     output[gid.x] = f32(gid.x);
 }
 "#;
-        let result = compile_wgsl_to_metal(&device, wgsl, &["cs_main"], false);
+        let result = compile_wgsl_to_metal(&device, wgsl, &["cs_main"], ShaderProfile::Graphics);
         assert!(
             result.is_ok(),
             "Compute shader compilation failed: {:?}",
@@ -402,7 +554,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
     fn test_shader_compilation_invalid_wgsl() {
         let device = headless_device();
         let wgsl = "this is not valid WGSL";
-        let result = compile_wgsl_to_metal(&device, wgsl, &["main"], false);
+        let result = compile_wgsl_to_metal(&device, wgsl, &["main"], ShaderProfile::Graphics);
         assert!(result.is_err());
     }
 
@@ -414,7 +566,12 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
 }
 "#;
-        let result = compile_wgsl_to_metal(&device, wgsl, &["nonexistent_entry"], false);
+        let result = compile_wgsl_to_metal(
+            &device,
+            wgsl,
+            &["nonexistent_entry"],
+            ShaderProfile::Graphics,
+        );
         assert!(result.is_err());
     }
 }

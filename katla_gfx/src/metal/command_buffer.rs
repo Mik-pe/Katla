@@ -127,6 +127,22 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
                     depth_desc.setClearDepth(d as f64);
                 }
             }
+
+            if matches!(
+                depth.format,
+                crate::texture::ImageFormat::D32SfloatS8Uint
+                    | crate::texture::ImageFormat::D24UnormS8Uint
+            ) {
+                let stencil_desc = pass_desc.stencilAttachment();
+                stencil_desc.setTexture(Some(&depth.view.inner));
+                stencil_desc.setLoadAction(to_mtl_load_action(depth.load_op));
+                stencil_desc.setStoreAction(to_mtl_store_action(depth.store_op));
+                if depth.load_op == LoadOp::Clear {
+                    if let ClearValue::DepthStencil { stencil: s, .. } = depth.clear_value {
+                        stencil_desc.setClearStencil(s);
+                    }
+                }
+            }
         }
 
         let encoder = self
@@ -242,7 +258,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
 }
 "#,
             &["cs_main"],
-            false,
+            super::super::shader::ShaderProfile::Graphics,
         )
         .unwrap();
 
