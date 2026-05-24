@@ -102,10 +102,10 @@
 
 ### K. Unify frame lifecycle — fix begin_frame / end_frame / render_frame asymmetry
 
-- [ ] Audit how Vulkan and Metal backends use `begin_frame`, `end_frame`, `render_frame`, `wait_for_frame` — document the actual control flow for each backend
+- [x] Audit how Vulkan and Metal backends use `begin_frame`, `end_frame`, `render_frame`, `wait_for_frame` — document the actual control flow for each backend
 - [ ] Remove `render_frame` from `GpuRenderer` trait — Vulkan already no-ops it; Metal should use the `render()` + frame graph path instead (aligned with section E goal)
 - [ ] Ensure Metal `begin_frame` + `end_frame` pair covers acquire + present, matching Vulkan's `wait_for_frame` + `render()` pattern
-- [ ] Document the canonical frame lifecycle in GpuRenderer trait docs: `begin_frame()` -> `set_frame_uniforms()` -> `execute_draw_calls()` -> render graph `render()` -> (implicit present)
+- [x] Document the canonical frame lifecycle in GpuRenderer trait docs: `begin_frame()` -> `set_frame_uniforms()` -> `execute_draw_calls()` -> render graph `render()` -> (implicit present)
 - [ ] Run `cargo check --workspace` and `cargo test --workspace`
 
 ### L. Fix resize() semantic — stop silently discarding frame graph state

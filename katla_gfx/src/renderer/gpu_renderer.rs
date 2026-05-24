@@ -19,6 +19,23 @@ use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 /// Covers resource creation (meshes, textures, materials, skeletons, viewports),
 /// frame lifecycle, and teardown. All method signatures use Katla-native types
 /// only — no `vk::`, `ash::`, or Metal types appear in the trait.
+///
+/// # Canonical Frame Lifecycle
+///
+/// The recommended frame order (as used by `katla_app`):
+///
+/// 1. `wait_for_frame()` — ensure GPU is done with this frame slot
+/// 2. `set_frame_uniforms()` — write camera/lighting data to storage buffer
+/// 3. `execute_draw_calls()` — write per-object data to storage buffer
+/// 4. Render graph `render()` — submit GPU work via `FrameGraph<B>`
+/// 5. (implicit present) — swapchain present is handled by the render graph
+///
+/// **Vulkan** follows this order directly. `render_frame()` is a no-op because
+/// all rendering goes through `VulkanRenderer::render()` with `FrameGraph`.
+///
+/// **Metal** currently uses `render_frame()` for its hardcoded pass sequence.
+/// Once migrated to the shared frame graph, `render_frame()` will become a
+/// no-op on Metal as well and can be removed from the trait.
 pub trait GpuRenderer: Sized + 'static {
     // ========================================================================
     // Initialization & Queries
@@ -66,14 +83,30 @@ pub trait GpuRenderer: Sized + 'static {
     fn frame_uniforms(&self) -> &FrameUniforms;
 
     /// Execute the render graph and present the frame.
-    /// The Vulkan implementation uses FrameGraph/Frame directly.
-    /// The Metal implementation uses its own internal frame graph.
+    ///
+    /// **Vulkan**: No-op. Rendering happens via `VulkanRenderer::render()` with
+    /// `FrameGraph<VulkanRenderer>`, which is called directly by `katla_app`.
+    ///
+    /// **Metal**: Executes the hardcoded render pass sequence (draw objects,
+    /// tonemap, UI). This will be replaced by frame graph execution once the
+    /// Metal backend is fully migrated to `FrameGraph<MetalRenderer>`.
     fn render_frame(&mut self) -> Result<(), RendererError>;
 
     /// Begin the frame (acquire next image, etc.).
+    ///
+    /// **Vulkan**: Delegates to `wait_for_frame()`, returns the current frame index.
+    /// The actual swapchain image acquisition happens inside `render()`.
+    ///
+    /// **Metal**: Acquires the next drawable from the Metal layer. Returns the
+    /// frame index.
     fn begin_frame(&mut self) -> Result<u32, RendererError>;
 
     /// End the frame (submit, present).
+    ///
+    /// **Vulkan**: No-op. Presentation happens inside `render()`.
+    ///
+    /// **Metal**: Releases the current drawable reference and increments the
+    /// frame index. The drawable is presented by the Metal command buffer.
     fn end_frame(&mut self) -> Result<(), RendererError>;
 
     // ========================================================================
