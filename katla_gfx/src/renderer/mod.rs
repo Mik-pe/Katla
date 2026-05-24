@@ -31,6 +31,7 @@ pub(crate) mod registry;
 pub(crate) mod shadow;
 pub(crate) mod skeleton_api;
 pub(crate) mod texture_api;
+pub(crate) mod timestamp_queries;
 pub(crate) mod ui_renderer;
 pub(crate) mod viewport_manager;
 
@@ -186,6 +187,8 @@ pub struct VulkanRenderer {
     pub(crate) material_compiler: MaterialCompiler,
     /// UI rendering subsystem - owns UI resources and font atlas.
     pub ui_renderer: ui_renderer::UIRenderer,
+    /// GPU timestamp query pool for profiling render passes.
+    pub(crate) timestamp_queries: Option<timestamp_queries::TimestampQueries>,
     /// Global particle system for GPU-driven particle effects.
     pub particle_system: Option<crate::particles::GlobalParticleSystem>,
     /// GPU animation pose evaluation pipeline.
@@ -432,6 +435,17 @@ impl VulkanRenderer {
             Self::create_empty_descriptor_sets(&context, shared_empty_descriptor_layout)?;
         let ui_renderer = ui_renderer::UIRenderer::new(&context);
 
+        let timestamp_period = unsafe {
+            context
+                .instance
+                .get_physical_device_properties(context.physical_device)
+        }
+        .limits
+        .timestamp_period;
+
+        let timestamp_queries =
+            timestamp_queries::TimestampQueries::new(&context.device, timestamp_period).ok();
+
         Ok(Self {
             context,
             frame_context,
@@ -453,6 +467,7 @@ impl VulkanRenderer {
             viewport_manager,
             material_compiler,
             ui_renderer,
+            timestamp_queries,
             particle_system: None,
             animation_pipeline: None,
             animation_buffers: None,
@@ -725,6 +740,11 @@ impl VulkanRenderer {
         if let Some(mut particle_system) = self.particle_system.take() {
             info!("Destroying particle system");
             particle_system.destroy();
+        }
+
+        // Destroy timestamp query pool
+        if let Some(tq) = self.timestamp_queries.take() {
+            tq.destroy(&self.context.device);
         }
 
         // Destroy animation pipeline and buffers

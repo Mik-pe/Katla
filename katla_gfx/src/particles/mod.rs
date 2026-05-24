@@ -410,11 +410,38 @@ impl GlobalParticleSystem {
         self.max_particles
     }
 
+    /// Get per-emitter alive particle counts.
+    ///
+    /// Returns a vector where index i is the number of alive particles
+    /// belonging to emitter i. Requires debug readback to be initialized;
+    /// returns zeros if unavailable.
+    pub fn emitter_alive_counts(&self) -> Vec<u32> {
+        let n = self.emitter_pool.emitters.len();
+        if let Some(ref readback) = self.debug_readback {
+            if let Ok(debug_data) = readback.read(&self.buffer) {
+                let counts = debug_data.emitter_alive_counts(n);
+                return counts[..n].to_vec();
+            }
+        }
+        vec![0; n]
+    }
+
     pub fn get_stats(&self) -> ParticleStats {
         let particle_data_mb = (self.max_particles as f32) * 48.0 / (1024.0 * 1024.0);
         let index_lists_mb = (self.max_particles as f32) * 12.0 / (1024.0 * 1024.0);
         let counters_mb = 32.0 / (1024.0 * 1024.0);
         let configs_mb = (self.emitter_pool.emitters.len() as f32) * 80.0 / (1024.0 * 1024.0);
+
+        let emitter_counts = if let Some(ref readback) = self.debug_readback {
+            if let Ok(debug_data) = readback.read(&self.buffer) {
+                let counts = debug_data.emitter_alive_counts(self.emitter_pool.emitters.len());
+                counts[..self.emitter_pool.emitters.len()].to_vec()
+            } else {
+                self.emitter_pool.emitters.iter().map(|_| 0).collect()
+            }
+        } else {
+            self.emitter_pool.emitters.iter().map(|_| 0).collect()
+        };
 
         ParticleStats {
             max_alive_count: self.max_particles,
@@ -425,13 +452,7 @@ impl GlobalParticleSystem {
             compute_time_ms: 0.0,
             avg_compute_time_ms: 0.0,
             peak_compute_time_ms: 0.0,
-            emitter_counts: self
-                .emitter_pool
-                .emitters
-                .iter()
-                .filter(|e| e.emit_rate > 0.0)
-                .map(|_| 0)
-                .collect(),
+            emitter_counts,
             memory_used_mb: particle_data_mb + index_lists_mb + counters_mb + configs_mb,
             buffer_utilization: if self.max_particles > 0 {
                 self.alive_count() as f32 / self.max_particles as f32

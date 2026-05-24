@@ -733,4 +733,26 @@ impl GpuRenderer for VulkanRenderer {
             outline_draw_skinned_path,
         )
     }
+
+    fn begin_timestamp(&mut self, label: &str) {
+        if let Some(ref mut tq) = self.timestamp_queries {
+            tq.begin(label);
+        }
+    }
+
+    fn end_timestamp(&mut self, label: &str) {
+        if let Some(ref mut tq) = self.timestamp_queries {
+            tq.end(label);
+        }
+    }
+
+    fn read_timestamps(&self) -> Vec<crate::renderer::types::GpuTimestamp> {
+        // Need &mut to read results; use get_mut pattern through interior mutability
+        // Since this is called on &self, we return cached results
+        if let Some(ref tq) = self.timestamp_queries {
+            tq.cached_results()
+        } else {
+            Vec::new()
+        }
+    }
 }
