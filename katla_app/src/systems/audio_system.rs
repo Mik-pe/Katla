@@ -202,6 +202,51 @@ impl AudioSystem {
         self.engine.stop_all();
         self.active_voices.clear();
     }
+
+    pub fn process_script_audio_commands(
+        &mut self,
+        commands: &mut Vec<katla_script::ScriptCommand>,
+    ) {
+        for cmd in commands.drain(..) {
+            match cmd {
+                katla_script::ScriptCommand::PlaySound {
+                    path,
+                    volume,
+                    looping,
+                } => {
+                    if let Some(buffer) = self.get_or_load_buffer(&path) {
+                        let handle = if looping {
+                            self.engine.play_looping(&buffer)
+                        } else {
+                            self.engine.play(&buffer)
+                        };
+                        handle.set_volume(volume);
+                    }
+                }
+                katla_script::ScriptCommand::PlaySoundAt {
+                    path,
+                    position: _,
+                    volume,
+                    looping,
+                } => {
+                    if let Some(buffer) = self.get_or_load_buffer(&path) {
+                        let handle = if looping {
+                            self.engine.play_looping(&buffer)
+                        } else {
+                            self.engine.play(&buffer)
+                        };
+                        handle.set_volume(volume);
+                        // TODO: spatial positioning will be applied once
+                        // play_sound_at creates a tracked AudioEmitter
+                    }
+                }
+                katla_script::ScriptCommand::PlaySoundCue { cue_name } => {
+                    self.play_cue(&cue_name);
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 fn compute_spatialization(

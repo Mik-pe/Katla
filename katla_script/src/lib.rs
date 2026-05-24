@@ -12,6 +12,7 @@ pub use component::{ScriptComponent, ScriptInstanceHandle};
 pub use engine::ScriptEngine;
 pub use error::ScriptError;
 pub use event_bus::EventBus;
+pub use system::PendingAudioCommands;
 pub use system::ScriptSystem;
 pub use system::ScriptsActive;
 pub use watcher::ScriptWatcher;
