@@ -3,6 +3,9 @@ use std::sync::Arc;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use crate::buffer::AudioBuffer;
+use crate::command_queue::AudioCategoryValue;
+use crate::effect::{AudioEffect, AuxBus};
+use crate::error::AudioError;
 use crate::mixer::AudioMixer;
 use crate::voice::{VoiceHandle, VoiceId, VoiceState};
 
@@ -14,23 +17,37 @@ pub enum AudioCategory {
     Ambient,
 }
 
+impl AudioCategory {
+    pub fn to_value(self) -> Option<AudioCategoryValue> {
+        match self {
+            AudioCategory::Master => None,
+            AudioCategory::Sfx => Some(AudioCategoryValue::Sfx),
+            AudioCategory::Music => Some(AudioCategoryValue::Music),
+            AudioCategory::Ambient => Some(AudioCategoryValue::Ambient),
+        }
+    }
+}
+
 pub struct AudioEngine {
     mixer: Arc<AudioMixer>,
     #[allow(dead_code)]
     stream: cpal::Stream,
-    category_volumes: [f32; 3],
 }
 
 impl AudioEngine {
-    pub fn new() -> Result<Self, String> {
+    pub fn new() -> Result<Self, AudioError> {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
-            .ok_or("No audio output device found")?;
+            .ok_or(AudioError::DeviceNotFound(
+                "No audio output device found".into(),
+            ))?;
 
         let supported_config = device
             .supported_output_configs()
-            .map_err(|e| format!("Failed to query output configs: {e}"))?
+            .map_err(|e| {
+                AudioError::DeviceNotFound(format!("Failed to query output configs: {e}"))
+            })?
             .find(|c| c.channels() <= 2 && c.sample_format() == cpal::SampleFormat::F32)
             .or_else(|| {
                 device
@@ -38,7 +55,9 @@ impl AudioEngine {
                     .ok()?
                     .find(|c| c.channels() <= 2)
             })
-            .ok_or("No suitable audio output config found")?;
+            .ok_or(AudioError::DeviceNotFound(
+                "No suitable audio output config found".into(),
+            ))?;
 
         let config = supported_config.with_max_sample_rate().config();
 
@@ -59,26 +78,40 @@ impl AudioEngine {
                 },
                 None,
             )
-            .map_err(|e| format!("Failed to build audio stream: {e}"))?;
+            .map_err(|e| AudioError::StreamError(format!("Failed to build audio stream: {e}")))?;
 
         stream
             .pause()
-            .map_err(|e| format!("Failed to pause stream: {e}"))?;
+            .map_err(|e| AudioError::StreamError(format!("Failed to pause stream: {e}")))?;
 
-        Ok(AudioEngine {
-            mixer,
-            stream,
-            category_volumes: [1.0; 3],
-        })
+        Ok(AudioEngine { mixer, stream })
     }
 
     pub fn play(&self, buffer: &Arc<AudioBuffer>) -> VoiceHandle {
-        let voice_id = self.mixer.play(buffer.clone());
+        self.play_with_category(buffer, AudioCategory::Sfx)
+    }
+
+    pub fn play_with_category(
+        &self,
+        buffer: &Arc<AudioBuffer>,
+        category: AudioCategory,
+    ) -> VoiceHandle {
+        let cat_val = category.to_value().unwrap_or(AudioCategoryValue::Sfx);
+        let voice_id = self.mixer.play(buffer.clone(), cat_val);
         self.handle(voice_id)
     }
 
     pub fn play_looping(&self, buffer: &Arc<AudioBuffer>) -> VoiceHandle {
-        let voice_id = self.mixer.play_looping(buffer.clone());
+        self.play_looping_with_category(buffer, AudioCategory::Sfx)
+    }
+
+    pub fn play_looping_with_category(
+        &self,
+        buffer: &Arc<AudioBuffer>,
+        category: AudioCategory,
+    ) -> VoiceHandle {
+        let cat_val = category.to_value().unwrap_or(AudioCategoryValue::Sfx);
+        let voice_id = self.mixer.play_looping(buffer.clone(), cat_val);
         self.handle(voice_id)
     }
 
@@ -89,16 +122,16 @@ impl AudioEngine {
         }
     }
 
-    pub fn resume(&self) -> Result<(), String> {
+    pub fn resume(&self) -> Result<(), AudioError> {
         self.stream
             .play()
-            .map_err(|e| format!("Failed to resume audio stream: {e}"))
+            .map_err(|e| AudioError::StreamError(format!("Failed to resume audio stream: {e}")))
     }
 
-    pub fn pause(&self) -> Result<(), String> {
+    pub fn pause(&self) -> Result<(), AudioError> {
         self.stream
             .pause()
-            .map_err(|e| format!("Failed to pause audio stream: {e}"))
+            .map_err(|e| AudioError::StreamError(format!("Failed to pause audio stream: {e}")))
     }
 
     pub fn stop_all(&self) {
@@ -117,22 +150,19 @@ impl AudioEngine {
         self.mixer.master_volume()
     }
 
-    pub fn set_category_volume(&mut self, category: AudioCategory, volume: f32) {
-        let v = volume.clamp(0.0, 1.0);
-        match category {
-            AudioCategory::Master => self.mixer.set_master_volume(v),
-            AudioCategory::Sfx => self.category_volumes[0] = v,
-            AudioCategory::Music => self.category_volumes[1] = v,
-            AudioCategory::Ambient => self.category_volumes[2] = v,
+    pub fn set_category_volume(&self, category: AudioCategory, volume: f32) {
+        if let Some(cat_val) = category.to_value() {
+            self.mixer.set_category_volume(cat_val, volume);
+        } else {
+            self.mixer.set_master_volume(volume);
         }
     }
 
     pub fn category_volume(&self, category: AudioCategory) -> f32 {
-        match category {
-            AudioCategory::Master => self.mixer.master_volume(),
-            AudioCategory::Sfx => self.category_volumes[0],
-            AudioCategory::Music => self.category_volumes[1],
-            AudioCategory::Ambient => self.category_volumes[2],
+        if let Some(cat_val) = category.to_value() {
+            self.mixer.category_volume(cat_val)
+        } else {
+            self.mixer.master_volume()
         }
     }
 
@@ -146,5 +176,13 @@ impl AudioEngine {
 
     pub fn channels(&self) -> u16 {
         self.mixer.channels()
+    }
+
+    pub fn add_master_effect(&self, effect: Box<dyn AudioEffect + Send>) {
+        self.mixer.add_master_effect(effect);
+    }
+
+    pub fn add_aux_bus(&self, bus: AuxBus) {
+        self.mixer.add_aux_bus(bus);
     }
 }
