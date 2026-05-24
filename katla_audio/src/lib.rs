@@ -8,7 +8,9 @@ mod sound_cue;
 mod streaming;
 mod voice;
 
-pub use buffer::{AudioBuffer, DecodedAudio, SampleFormat, load_audio, load_ogg, load_wav};
+pub use buffer::{
+    AudioBuffer, DecodedAudio, SampleFormat, load_audio, load_mp3, load_ogg, load_wav,
+};
 pub use command_queue::AudioCategoryValue;
 pub use effect::biquad::{BiquadFilter, FilterKind};
 pub use effect::reverb::ReverbEffect;
