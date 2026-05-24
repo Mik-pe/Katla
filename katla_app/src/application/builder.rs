@@ -920,6 +920,7 @@ impl ApplicationBuilder {
 
         world.insert_resource(crate::input::InputState::new());
         world.insert_resource(katla_script::ScriptsActive(false));
+        world.insert_resource(katla_script::PendingAudioCommands::default());
 
         let app = Application {
             window,

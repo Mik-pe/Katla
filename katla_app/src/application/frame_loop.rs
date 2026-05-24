@@ -96,6 +96,20 @@ impl Application {
             input.mouse_wheel_delta = 0.0;
         }
 
+        // Forward script audio commands to AudioSystem
+        {
+            let mut audio_cmds = self
+                .world
+                .get_resource_mut::<katla_script::PendingAudioCommands>()
+                .map(|mut r| std::mem::take(&mut r.0))
+                .unwrap_or_default();
+            if !audio_cmds.is_empty() {
+                if let Some(ref mut audio) = self.audio_system {
+                    audio.process_script_audio_commands(&mut audio_cmds);
+                }
+            }
+        }
+
         // Run per-frame update hook (after ECS systems, before rendering)
         if let Some(ref mut hook) = self.on_update {
             hook(&mut self.world, dt);
@@ -117,7 +131,7 @@ impl Application {
 
         // Update audio system — process AudioEmitter components
         if let Some(ref mut audio) = self.audio_system {
-            audio.update(&mut self.world);
+            audio.update(&mut self.world, dt);
         }
 
         // Update GPU animation: prepare data and upload per-frame params
