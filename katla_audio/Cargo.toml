@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+claxon = "0.4"
 cpal = "0.17"
 hound = "3.5"
 lewton = "0.10"

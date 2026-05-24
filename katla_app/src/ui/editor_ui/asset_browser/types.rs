@@ -29,7 +29,7 @@ pub enum AssetType {
     Image,
     /// Font files (.ttf, .otf)
     Font,
-    /// Audio files (.wav, .ogg, .mp3)
+    /// Audio files (.wav, .ogg, .mp3, .flac)
     Audio,
     /// Directory
     Folder,
@@ -113,7 +113,7 @@ impl AssetType {
             Some("luau") | Some("lua") => Self::Script,
             Some("png") | Some("jpg") | Some("jpeg") => Self::Image,
             Some("ttf") | Some("otf") => Self::Font,
-            Some("wav") | Some("ogg") | Some("mp3") => Self::Audio,
+            Some("wav") | Some("ogg") | Some("mp3") | Some("flac") => Self::Audio,
             _ => Self::Unknown,
         }
     }
