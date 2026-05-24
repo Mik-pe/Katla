@@ -122,7 +122,7 @@
 - [x] Add `update_texture` dispatch to `AnyRenderer` (uses default impl, no explicit dispatch needed)
 - [x] Implement `update_texture` for `VulkanRenderer` — copy data to existing texture, handle buffer-image copy
 - [x] Implement `update_texture` for `MetalRenderer` — replace texture data via blit
-- [ ] Refactor `update_ui_font_atlas` to use `update_texture` internally
+- [x] Refactor `update_ui_font_atlas` to use `update_texture` internally — Vulkan hot path now uses `GpuRenderer::update_texture` instead of `texture.update_data` directly
 - [x] Refactor `create_ui_font_atlas` to use `create_texture` internally — already uses `create_texture` in both Vulkan and Metal backends
 - [ ] Consider removing `create_ui_font_atlas` and `update_ui_font_atlas` from the trait once the general API works — font atlas management can live in katla_ui or katla_app
 - [x] Run `cargo check --workspace` and `cargo test --workspace`
@@ -139,12 +139,12 @@
 
 ### O. Add timestamp query API for GPU profiling
 
-- [ ] Define `GpuTimestamp` struct — `pass_name: String`, `duration_ms: f64`
-- [ ] Add `fn begin_timestamp(&mut self, label: &str)` and `fn end_timestamp(&mut self, label: &str)` to `GpuRenderer` trait with default no-op impls
-- [ ] Add `fn read_timestamps(&self) -> Vec<GpuTimestamp>` to `GpuRenderer` trait with default empty impl
+- [x] Define `GpuTimestamp` struct — `pass_name: String`, `duration_ms: f64`
+- [x] Add `fn begin_timestamp(&mut self, label: &str)` and `fn end_timestamp(&mut self, label: &str)` to `GpuRenderer` trait with default no-op impls
+- [x] Add `fn read_timestamps(&self) -> Vec<GpuTimestamp>` to `GpuRenderer` trait with default empty impl
 - [ ] Implement timestamp queries for `VulkanRenderer` using Vulkan timestamp queries
 - [ ] Implement timestamp queries for `MetalRenderer` using `MTLCounterSampleBuffer`
-- [ ] Add dispatch to `AnyRenderer`
+- [x] Add dispatch to `AnyRenderer`
 - [ ] Run `cargo check --workspace` and `cargo test --workspace`
 
 ## Particle System Usability
