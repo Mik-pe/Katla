@@ -57,7 +57,7 @@
 - [x] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/lib.rs` — minimize to module declarations only
 - [x] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/renderer/any_renderer.rs` — after task C, the only remaining ones should be the enum variant definitions and match arms
 - [x] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/render_graph/any_frame_graph.rs` — after task D, only enum variant + match arms remain
-- [ ] Ensure `katla_app` has zero `cfg(target_os)` or `cfg(metal/vulkan)` gates (already tracked as existing TODO item)
+~~Ensure `katla_app` has zero `cfg(target_os)` or `cfg(metal/vulkan)` gates~~ — Not feasible. All 15 remaining cfg gates in katla_app are match arms on `AnyRenderer::Metal(_)` or Metal-specific init/dispatch blocks. These are necessary because the Metal variant only compiles on macOS. Removing them would require removing the Metal backend.
 
 ### G. Decompose GpuRenderer monolith — extract primitive mesh generators off the trait
 
@@ -234,7 +234,7 @@
 
 ### Phase 11: Format and streaming support (independent, can start after Phase 6)
 - [x] Add OGG Vorbis streaming — `StreamingDecoder` now supports OGG via `open_ogg()` and auto-detection via `open()`; reads OGG packets in chunks using `lewton::inside_ogg::OggStreamReader`
-- [ ] Add MP3 decode support — add `minimp3` or `symphonia` dependency, support `.mp3` files in `load_audio` dispatcher
+- [x] Add MP3 decode support — added `minimp3` dependency, `load_mp3()` function, and `.mp3` extension support in `load_audio` dispatcher and asset browser
 - [ ] Add FLAC decode support — add `symphonia` or `claxon` dependency, support `.flac` files for lossless audio assets
 - [ ] Add streaming integration with AudioMixer — wire `StreamingDecoder` into a streaming voice type that decodes chunks on demand during playback instead of requiring the full buffer upfront; use a background decode thread to stay ahead of playback position
 
@@ -248,7 +248,7 @@
 
 ### Phase 13: Audio patterns and robustness
 - [x] Replace `Result<T, String>` with typed error enum in `katla_audio` — all public APIs return `Result<_, String>`. Define `AudioError` enum (DeviceNotFound, FormatUnsupported, DecodeFailed, StreamError, InvalidHandle) matching the `RendererError` pattern in `katla_gfx`
-- [ ] Add O(log n) or O(1) voice lookup by ID — `MixerState` iterates the entire voice vector to find a voice by `VoiceId` for every property mutation (set_volume, set_pan, stop, etc.). For N emitters this is O(N) per frame per property. Add a `HashMap<VoiceId, usize>` or use a slot-map index as `VoiceId` for direct indexing
+- [x] Add O(log n) or O(1) voice lookup by ID — added `HashMap<VoiceId, usize>` to `MixerState` for O(1) voice slot lookup; all `set_voice_*` and `voice_state` methods now use direct index instead of linear scan
 - [x] Use temp-file guards in script tests — `write_temp_script` creates files that are only cleaned up on success; panics leave orphan temp files. Replace with a `TempScript` struct that cleans up on `Drop`
 - [x] Add integration test for category volume changes affecting playing voices — verify that changing `AudioEngine::set_category_volume(AudioCategory::Sfx, 0.5)` actually reduces volume of an already-playing voice (will fail until Phase 12 category-volume fix lands)
 
