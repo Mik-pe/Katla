@@ -110,6 +110,49 @@ impl Application {
             }
         }
 
+        // Process script raycast commands against PhysicsWorld
+        {
+            let raycast_cmds: Vec<_> = self
+                .world
+                .get_resource_mut::<katla_script::PendingRaycastCommands>()
+                .map(|r| std::mem::take(&mut r.0))
+                .unwrap_or_default();
+            if !raycast_cmds.is_empty() {
+                let mut results = std::collections::HashMap::new();
+                if let Some(physics) = self.world.get_resource::<katla_physics::PhysicsWorld>() {
+                    for cmd in raycast_cmds {
+                        if let katla_script::bindings::world::ScriptCommand::Raycast {
+                            origin,
+                            direction,
+                            max_distance,
+                            return_index,
+                        } = cmd
+                        {
+                            if let Some(hit) = physics.raycast(origin, direction, max_distance) {
+                                results.insert(
+                                    return_index,
+                                    katla_script::bindings::script_world::RaycastResult {
+                                        entity: hit.entity,
+                                        point: hit.point,
+                                        normal: hit.normal,
+                                        distance: hit.distance,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+                if !results.is_empty() {
+                    if let Some(pending) = self
+                        .world
+                        .get_resource_mut::<katla_script::PendingRaycastResults>()
+                    {
+                        pending.0.extend(results);
+                    }
+                }
+            }
+        }
+
         // Run per-frame update hook (after ECS systems, before rendering)
         if let Some(ref mut hook) = self.on_update {
             hook(&mut self.world, dt);
