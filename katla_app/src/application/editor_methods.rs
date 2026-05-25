@@ -122,6 +122,7 @@ impl Application {
             // Render frame to GPU (includes UI if present)
             log::debug!("Rendering frame...");
             self.render_frame(ui_draw_list, dt, self.frame_count);
+            self.editor.editor_ui.last_draw_call_count = self.last_draw_call_count;
             log::debug!("Frame rendered");
 
             // GPU picking: queue readback if a pick was triggered this frame,
@@ -151,6 +152,7 @@ impl Application {
 
             log::debug!("Rendering frame (Metal)...");
             self.render_frame(ui_draw_list, dt, self.frame_count);
+            self.editor.editor_ui.last_draw_call_count = self.last_draw_call_count;
             log::debug!("Frame rendered (Metal)");
 
             self.process_picking();

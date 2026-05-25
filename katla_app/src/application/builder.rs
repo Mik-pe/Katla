@@ -935,6 +935,7 @@ impl ApplicationBuilder {
             input_mapper: InputMapper::new(),
             current_modifiers: ModifiersState::empty(),
             frame_count: 0,
+            last_draw_call_count: 0,
             resources,
             ui_context,
             #[cfg(feature = "editor")]

@@ -284,6 +284,7 @@ impl Application {
         self.renderer.upload_shadow_cascades();
 
         let mut draw_list = frame.take_draw_list();
+        self.last_draw_call_count = draw_list.len();
         draw_list.sort_by_material();
 
         let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
@@ -884,6 +885,7 @@ impl Application {
         self.renderer.upload_shadow_cascades();
 
         let mut draw_list = frame.take_draw_list();
+        self.last_draw_call_count = draw_list.len();
         draw_list.sort_by_material();
 
         if let Err(e) = self.renderer.execute_draw_calls(&draw_list) {

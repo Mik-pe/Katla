@@ -296,6 +296,7 @@ pub struct Application {
     pub(crate) input_mapper: InputMapper,
     pub(crate) current_modifiers: ModifiersState,
     pub(crate) frame_count: usize,
+    pub(crate) last_draw_call_count: usize,
     pub(crate) resources: ResourceManager,
     /// Immediate mode UI context
     pub(crate) ui_context: katla_ui::UiContext,

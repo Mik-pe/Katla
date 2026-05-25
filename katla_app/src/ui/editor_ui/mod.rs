@@ -81,6 +81,8 @@ pub struct EditorUI {
     pub show_grid: bool,
     /// Stats panel visible.
     pub show_stats: bool,
+    /// Draw calls submitted last frame.
+    pub last_draw_call_count: usize,
     /// Font scale multiplier (1.0 = 100%).
     pub font_scale: f32,
     /// Deferred actions to be processed by the application.
@@ -167,6 +169,7 @@ impl EditorUI {
             is_paused: false,
             show_grid: true,
             show_stats: true,
+            last_draw_call_count: 0,
             font_scale: 1.0,
             pending_actions: Vec::new(),
             last_viewport_size: (800, 600),
