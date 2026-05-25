@@ -2148,6 +2148,7 @@ dependencies = [
  "katla_gfx",
  "katla_icons",
  "katla_math",
+ "katla_physics",
  "katla_script",
  "katla_ui",
  "log",
@@ -2231,6 +2232,15 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "libc",
+]
+
+[[package]]
+name = "katla_physics"
+version = "0.1.0"
+dependencies = [
+ "katla_ecs",
+ "katla_math",
+ "serde",
 ]
 
 [[package]]

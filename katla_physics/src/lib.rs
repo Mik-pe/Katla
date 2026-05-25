@@ -7,5 +7,5 @@
 mod collider;
 mod shape;
 
-pub use collider::{ColliderShape, ColliderState};
+pub use collider::{ColliderShape, ColliderState, CollisionFilter};
 pub use shape::{BoxShape, CapsuleShape, SphereShape};

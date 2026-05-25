@@ -255,17 +255,17 @@
 ## Physics
 
 ### Phase 0: Architecture decision
-- [ ] Evaluate physics crates (rapier, physx, jolt) vs custom — compare API ergonomics, ECS compatibility, feature set, license, and maintenance status for the engine's scope
-- [ ] Write ADR (Architecture Decision Record) documenting the choice — include rationale, tradeoffs, and integration strategy
+- [x] Evaluate physics crates (rapier, physx, jolt) vs custom — compare API ergonomics, ECS compatibility, feature set, license, and maintenance status for the engine's scope
+- [x] Write ADR (Architecture Decision Record) documenting the choice — include rationale, tradeoffs, and integration strategy
 
 ### Phase 1: Crate skeleton + collision shapes
 - [x] Create `katla_physics` crate in workspace — added to `Cargo.toml` workspace members, created crate skeleton with `lib.rs`, `shape.rs`, `collider.rs`
 - [x] Define collision shape types — `SphereShape(f32)`, `BoxShape { half_extents: [f32; 3] }`, `CapsuleShape { half_height, radius }`, with constructors and `local_aabb()` on `ColliderShape` enum
 - [x] Add `ColliderShape` component — enum wrapping SphereShape/BoxShape/CapsuleShape, derives `Component` via katla_derive, with `local_aabb()` method
 - [x] Add `ColliderState` component — stores computed world-space AABB, `is_colliding` flag
-- [ ] Implement AABB computation for each shape — transform local shape by entity TransformComponent to get world-space AABB
+- [x] Implement AABB computation for each shape — transform local shape by entity TransformComponent to get world-space AABB
 - [x] Add serialization for collider components — RON round-trip for ColliderShape and CollisionFilter via serde
-- [ ] Register collider components in `ApplicationBuilder` and component registry
+- [x] Register collider components in `ApplicationBuilder` and component registry
 
 ### Phase 2: Broadphase + narrowphase
 - [ ] Implement broadphase — sweep-and-prune on sorted AABB intervals, output overlapping pair list

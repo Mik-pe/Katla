@@ -1,7 +1,7 @@
 //! ECS components for collision detection.
 
 use katla_ecs::Component;
-use katla_math::AABB;
+use katla_math::{AABB, Transform};
 use serde::{Deserialize, Serialize};
 
 use crate::shape::SphereShape;
@@ -19,6 +19,11 @@ pub enum ColliderShape {
 }
 
 impl ColliderShape {
+    /// Compute the world-space AABB for this shape transformed by the given transform.
+    pub fn world_aabb(&self, transform: &Transform) -> AABB {
+        self.local_aabb().transform(&transform.make_mat4())
+    }
+
     /// Compute the local-space AABB for this shape.
     ///
     /// The AABB is centered at the origin with extents matching the shape bounds.
@@ -107,5 +112,33 @@ mod tests {
         let aabb = shape.local_aabb();
         assert_eq!(aabb.min(), katla_math::Vec3::new(-0.5, -1.5, -0.5));
         assert_eq!(aabb.max(), katla_math::Vec3::new(0.5, 1.5, 0.5));
+    }
+
+    #[test]
+    fn test_sphere_world_aabb_identity() {
+        let shape = ColliderShape::Sphere(SphereShape::new(2.0));
+        let transform = katla_math::Transform::default();
+        let aabb = shape.world_aabb(&transform);
+        assert_eq!(aabb.min(), katla_math::Vec3::new(-2.0, -2.0, -2.0));
+        assert_eq!(aabb.max(), katla_math::Vec3::new(2.0, 2.0, 2.0));
+    }
+
+    #[test]
+    fn test_sphere_world_aabb_translated() {
+        let shape = ColliderShape::Sphere(SphereShape::new(1.0));
+        let transform =
+            katla_math::Transform::new_from_position(katla_math::Vec3::new(5.0, 10.0, 15.0));
+        let aabb = shape.world_aabb(&transform);
+        assert_eq!(aabb.min(), katla_math::Vec3::new(4.0, 9.0, 14.0));
+        assert_eq!(aabb.max(), katla_math::Vec3::new(6.0, 11.0, 16.0));
+    }
+
+    #[test]
+    fn test_box_world_aabb_scaled() {
+        let shape = ColliderShape::Box(BoxShape::from_extents(2.0, 2.0, 2.0));
+        let transform = katla_math::Transform::new_from_scale(katla_math::Vec3::new(2.0, 3.0, 4.0));
+        let aabb = shape.world_aabb(&transform);
+        assert_eq!(aabb.min(), katla_math::Vec3::new(-2.0, -3.0, -4.0));
+        assert_eq!(aabb.max(), katla_math::Vec3::new(2.0, 3.0, 4.0));
     }
 }
