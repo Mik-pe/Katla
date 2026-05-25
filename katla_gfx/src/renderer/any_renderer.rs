@@ -192,14 +192,6 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn render_frame(&mut self) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.render_frame(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.render_frame(),
-        }
-    }
-
     fn begin_frame(&mut self) -> Result<u32, RendererError> {
         match self {
             AnyRenderer::Vulkan(r) => r.begin_frame(),
