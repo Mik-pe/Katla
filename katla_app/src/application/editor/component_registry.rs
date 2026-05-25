@@ -9,7 +9,7 @@ use crate::components::{
     AudioEmitter, DirectionalLight, DragComponent, MassComponent, NameComponent,
     PerspectiveComponent, PointLight, VelocityComponent,
 };
-use katla_physics::{ColliderShape, CollisionFilter};
+use katla_physics::{ColliderShape, CollisionFilter, PhysicsMaterial, RigidBody};
 
 fn field_type_mismatch(field_name: &str, expected: &str, value: FieldValue) -> SceneToolError {
     SceneToolError::InvalidFieldValue {
@@ -569,6 +569,72 @@ fn register_collision_filter(registry: &mut ComponentRegistry) {
     });
 }
 
+fn register_rigid_body(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "RigidBody",
+        has_component: |world: &World, entity: EntityId| {
+            world.get_component::<RigidBody>(entity).is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, RigidBody::dynamic());
+        },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<RigidBody>(entity);
+        },
+        get_fields: |_world: &World, _entity: EntityId| Vec::new(),
+        get_field_value: |_world: &mut World, _entity: EntityId, _field_name: &str| None,
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          _value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let _comp = world
+                .get_component_mut::<RigidBody>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "RigidBody".to_string(),
+                })?;
+            Err(SceneToolError::FieldNotFound {
+                component: "RigidBody".to_string(),
+                field: field_name.to_string(),
+            })
+        },
+    });
+}
+
+fn register_physics_material(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "PhysicsMaterial",
+        has_component: |world: &World, entity: EntityId| {
+            world.get_component::<PhysicsMaterial>(entity).is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, PhysicsMaterial::default());
+        },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<PhysicsMaterial>(entity);
+        },
+        get_fields: |_world: &World, _entity: EntityId| Vec::new(),
+        get_field_value: |_world: &mut World, _entity: EntityId, _field_name: &str| None,
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          _value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let _comp = world
+                .get_component_mut::<PhysicsMaterial>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "PhysicsMaterial".to_string(),
+                })?;
+            Err(SceneToolError::FieldNotFound {
+                component: "PhysicsMaterial".to_string(),
+                field: field_name.to_string(),
+            })
+        },
+    });
+}
+
 pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     let mut registry = ComponentRegistry::new();
     register_name_component(&mut registry);
@@ -583,6 +649,8 @@ pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     register_audio_emitter(&mut registry);
     register_collider_shape(&mut registry);
     register_collision_filter(&mut registry);
+    register_rigid_body(&mut registry);
+    register_physics_material(&mut registry);
     registry
 }
 
