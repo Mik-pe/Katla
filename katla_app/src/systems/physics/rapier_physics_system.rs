@@ -1,8 +1,11 @@
 //! Rapier-based physics system that syncs ECS components with the Rapier simulation.
 
-use katla_ecs::{ComponentAccess, System, World};
+use katla_ecs::{ComponentAccess, EntityId, System, World};
 use katla_math::Vec3;
-use katla_physics::{BodyType, ColliderShape, PhysicsMaterial, PhysicsWorld, RigidBody};
+use katla_physics::{
+    BodyType, ColliderShape, Joint, PhysicsMaterial, PhysicsWorld, RigidBody, TriggerEvent,
+    TriggerVolume,
+};
 
 use crate::components::TransformComponent;
 
@@ -11,15 +14,19 @@ use crate::components::TransformComponent;
 /// Each frame:
 /// 1. Discovers entities with `RigidBody` + `ColliderShape` that haven't been spawned yet
 /// 2. Creates corresponding Rapier bodies/colliders in the `PhysicsWorld` resource
-/// 3. Steps the Rapier simulation
-/// 4. Reads back transforms and velocities from Rapier to ECS components
+/// 3. Discovers `Joint` components and creates Rapier joints
+/// 4. Steps the Rapier simulation
+/// 5. Reads back transforms and velocities from Rapier to ECS components
+/// 6. Processes trigger volume overlap events
 pub struct RapierPhysicsSystem;
 
 impl System for RapierPhysicsSystem {
     fn update(&mut self, world: &mut World, delta_time: f32) {
         spawn_new_bodies(world);
+        spawn_new_joints(world);
         step_simulation(world, delta_time);
         sync_transforms_back(world);
+        process_trigger_events(world);
     }
 
     fn name(&self) -> &str {
@@ -35,6 +42,8 @@ impl System for RapierPhysicsSystem {
             ComponentAccess::read::<ColliderShape>(),
             ComponentAccess::read::<PhysicsMaterial>(),
             ComponentAccess::write::<TransformComponent>(),
+            ComponentAccess::write::<Joint>(),
+            ComponentAccess::read::<TriggerVolume>(),
         ]
     }
 
@@ -44,6 +53,8 @@ impl System for RapierPhysicsSystem {
             ComponentAccess::read::<ColliderShape>(),
             ComponentAccess::read::<PhysicsMaterial>(),
             ComponentAccess::write::<TransformComponent>(),
+            ComponentAccess::write::<Joint>(),
+            ComponentAccess::read::<TriggerVolume>(),
         ]
     }
 }
@@ -70,18 +81,67 @@ fn spawn_new_bodies(world: &mut World) {
             .unwrap_or_default();
 
         let mat = world.get_component::<PhysicsMaterial>(entity).copied();
+        let is_sensor = world.get_component::<TriggerVolume>(entity).is_some();
 
         let entity_id = entity.id();
         let (body_handle, collider_handle) = world
             .get_resource_mut::<PhysicsWorld>()
             .unwrap()
-            .create_body(&shape, &transform, body_type, mat.as_ref(), entity_id);
+            .create_body_ex(
+                &shape,
+                &transform,
+                body_type,
+                mat.as_ref(),
+                entity_id,
+                is_sensor,
+            );
 
         if let Some(mut rb) = world.get_component_mut::<RigidBody>(entity) {
             rb.body_handle = Some(body_handle);
             rb.collider_handle = Some(collider_handle);
         }
     }
+}
+
+fn spawn_new_joints(world: &mut World) {
+    if world.get_resource::<PhysicsWorld>().is_none() {
+        return;
+    }
+
+    let to_spawn: Vec<_> = world
+        .query::<&mut Joint>()
+        .filter(|(_, joint)| !joint.is_spawned())
+        .map(|(entity, joint)| (entity, joint.clone()))
+        .collect();
+
+    if to_spawn.is_empty() {
+        return;
+    }
+
+    for (_entity, joint) in to_spawn {
+        let body_a = find_rigid_body_handle(world, joint.entity_a);
+        let body_b = find_rigid_body_handle(world, joint.entity_b);
+
+        if let (Some(ha), Some(hb)) = (body_a, body_b) {
+            let joint_handle = world
+                .get_resource_mut::<PhysicsWorld>()
+                .unwrap()
+                .create_joint(&joint, ha, hb);
+
+            // Find the Joint component for entity_b (joints are typically owned by entity_b)
+            let target_entity = EntityId::from_raw(joint.entity_b);
+            if let Some(mut j) = world.get_component_mut::<Joint>(target_entity) {
+                j.joint_handle = joint_handle;
+            }
+        }
+    }
+}
+
+fn find_rigid_body_handle(world: &World, entity_id: u64) -> Option<katla_physics::RigidBodyHandle> {
+    let entity = EntityId::from_raw(entity_id);
+    world
+        .get_component::<RigidBody>(entity)
+        .and_then(|rb| rb.body_handle)
 }
 
 fn step_simulation(world: &mut World, delta_time: f32) {
@@ -122,6 +182,42 @@ fn sync_transforms_back(world: &mut World) {
         }
         if let Some(mut rb) = world.get_component_mut::<RigidBody>(entity) {
             rb.linear_velocity = velocity;
+        }
+    }
+}
+
+fn process_trigger_events(world: &mut World) {
+    let events: Vec<TriggerEvent> = match world.get_resource_mut::<PhysicsWorld>() {
+        Some(mut physics) => physics.drain_collision_events(),
+        None => return,
+    };
+
+    if events.is_empty() {
+        return;
+    }
+
+    let mut trigger_overlaps: std::collections::HashMap<u64, Vec<u64>> =
+        std::collections::HashMap::new();
+
+    for event in events {
+        match event {
+            TriggerEvent::Enter {
+                trigger_entity,
+                other_entity,
+            } => {
+                trigger_overlaps
+                    .entry(trigger_entity)
+                    .or_default()
+                    .push(other_entity);
+            }
+            TriggerEvent::Exit { .. } => {}
+        }
+    }
+
+    for (trigger_id, overlapping) in trigger_overlaps {
+        let entity = EntityId::from_raw(trigger_id);
+        if let Some(mut tv) = world.get_component_mut::<TriggerVolume>(entity) {
+            tv.overlapping_entities = overlapping;
         }
     }
 }

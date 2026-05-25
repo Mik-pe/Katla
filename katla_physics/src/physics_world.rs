@@ -18,6 +18,7 @@ use rapier3d::prelude::*;
 use crate::collider::ColliderShape;
 use crate::material::PhysicsMaterial;
 use crate::rigid_body::BodyType;
+use crate::trigger::TriggerEvent;
 
 /// Result of a raycast query.
 #[derive(Debug, Clone)]
@@ -49,6 +50,7 @@ pub struct PhysicsWorld {
     impulse_joints: ImpulseJointSet,
     multibody_joints: MultibodyJointSet,
     ccd_solver: CCDSolver,
+    collision_events: Vec<TriggerEvent>,
 }
 
 impl PhysicsWorld {
@@ -77,12 +79,19 @@ impl PhysicsWorld {
             impulse_joints,
             multibody_joints,
             ccd_solver,
+            collision_events: Vec::new(),
         }
     }
 
     /// Step the physics simulation forward by the given delta time.
     pub fn step(&mut self, dt: f32) {
         self.integration_parameters.dt = dt;
+        self.collision_events.clear();
+
+        let (collision_send, collision_recv) = std::sync::mpsc::channel();
+        let (force_send, _force_recv) = std::sync::mpsc::channel();
+        let event_handler =
+            rapier3d::pipeline::ChannelEventCollector::new(collision_send, force_send);
 
         self.pipeline.step(
             self.gravity,
@@ -96,8 +105,45 @@ impl PhysicsWorld {
             &mut self.multibody_joints,
             &mut self.ccd_solver,
             &(),
-            &(),
+            &event_handler,
         );
+
+        while let Ok(event) = collision_recv.try_recv() {
+            match event {
+                rapier3d::geometry::CollisionEvent::Started(h1, h2, _flags) => {
+                    let entity1 = self.collider_entity(h1);
+                    let entity2 = self.collider_entity(h2);
+                    if let (Some(e1), Some(e2)) = (entity1, entity2) {
+                        self.collision_events.push(TriggerEvent::Enter {
+                            trigger_entity: e1,
+                            other_entity: e2,
+                        });
+                    }
+                }
+                rapier3d::geometry::CollisionEvent::Stopped(h1, h2, _flags) => {
+                    let entity1 = self.collider_entity(h1);
+                    let entity2 = self.collider_entity(h2);
+                    if let (Some(e1), Some(e2)) = (entity1, entity2) {
+                        self.collision_events.push(TriggerEvent::Exit {
+                            trigger_entity: e1,
+                            other_entity: e2,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Read the entity ID stored as user data on a collider.
+    pub fn collider_entity(&self, handle: ColliderHandle) -> Option<u64> {
+        let collider = self.colliders.get(handle)?;
+        let id = collider.user_data as u64;
+        if id != 0 { Some(id) } else { None }
+    }
+
+    /// Drain collision events from the last step.
+    pub fn drain_collision_events(&mut self) -> Vec<TriggerEvent> {
+        std::mem::take(&mut self.collision_events)
     }
 
     /// Create a dynamic rigid body with a collider at the given transform.
@@ -142,6 +188,9 @@ impl PhysicsWorld {
     ///
     /// Returns (body_handle, collider_handle). For static bodies, the body handle
     /// is `RigidBodyHandle::invalid()` and the collider is standalone.
+    ///
+    /// If `is_sensor` is true, the collider is created as a sensor (no collision response,
+    /// reports overlap events via `drain_collision_events`).
     pub fn create_body(
         &mut self,
         shape: &ColliderShape,
@@ -149,6 +198,19 @@ impl PhysicsWorld {
         body_type: BodyType,
         material: Option<&PhysicsMaterial>,
         entity_id: u64,
+    ) -> (RigidBodyHandle, ColliderHandle) {
+        self.create_body_ex(shape, transform, body_type, material, entity_id, false)
+    }
+
+    /// Extended version of `create_body` with sensor support.
+    pub fn create_body_ex(
+        &mut self,
+        shape: &ColliderShape,
+        transform: &Transform,
+        body_type: BodyType,
+        material: Option<&PhysicsMaterial>,
+        entity_id: u64,
+        is_sensor: bool,
     ) -> (RigidBodyHandle, ColliderHandle) {
         let pose = katla_to_rapier_pose(transform);
         let rapier_shape = collider_shape_to_rapier(shape);
@@ -162,6 +224,12 @@ impl PhysicsWorld {
                 .friction(mat.friction)
                 .restitution(mat.restitution)
                 .density(mat.density);
+        }
+
+        if is_sensor {
+            collider_builder = collider_builder
+                .sensor(true)
+                .active_events(rapier3d::pipeline::ActiveEvents::COLLISION_EVENTS);
         }
 
         let rapier_body_type = match body_type {
@@ -235,6 +303,107 @@ impl PhysicsWorld {
         if let Some(b) = self.bodies.get_mut(body) {
             b.apply_impulse(vec3_to_rapier(&impulse), true);
         }
+    }
+
+    /// Create a joint between two rigid bodies.
+    pub fn create_joint(
+        &mut self,
+        joint: &crate::joint::Joint,
+        body_a: RigidBodyHandle,
+        body_b: RigidBodyHandle,
+    ) -> Option<ImpulseJointHandle> {
+        use rapier3d::dynamics::{
+            FixedJointBuilder, RevoluteJointBuilder, SphericalJointBuilder, SpringJointBuilder,
+        };
+
+        let anchor_a = Vector::new(joint.anchor_a[0], joint.anchor_a[1], joint.anchor_a[2]);
+        let anchor_b = Vector::new(joint.anchor_b[0], joint.anchor_b[1], joint.anchor_b[2]);
+
+        let generic: rapier3d::dynamics::GenericJoint = match joint.joint_type {
+            crate::joint::JointType::PointToPoint => {
+                let j = SphericalJointBuilder::new()
+                    .local_anchor1(anchor_a)
+                    .local_anchor2(anchor_b)
+                    .build();
+                j.into()
+            }
+            crate::joint::JointType::Hinge => {
+                let mut builder = RevoluteJointBuilder::new(Vector::new(0.0, 1.0, 0.0))
+                    .local_anchor1(anchor_a)
+                    .local_anchor2(anchor_b);
+                if let Some(limits) = &joint.limits {
+                    builder = builder.limits([limits.min, limits.max]);
+                }
+                let j = builder.build();
+                j.into()
+            }
+            crate::joint::JointType::Distance => {
+                let limits = joint
+                    .limits
+                    .unwrap_or(crate::joint::JointLimits { min: 0.0, max: 1.0 });
+                let j = SpringJointBuilder::new((limits.min + limits.max) * 0.5, 1.0, 0.5)
+                    .local_anchor1(anchor_a)
+                    .local_anchor2(anchor_b)
+                    .build();
+                j.into()
+            }
+            crate::joint::JointType::Fixed => {
+                let j = FixedJointBuilder::new()
+                    .local_anchor1(anchor_a)
+                    .local_anchor2(anchor_b)
+                    .build();
+                j.into()
+            }
+        };
+
+        let handle = self.impulse_joints.insert(body_a, body_b, generic, true);
+        Some(handle)
+    }
+
+    /// Remove a joint by its handle.
+    pub fn remove_joint(&mut self, handle: ImpulseJointHandle) {
+        self.impulse_joints.remove(handle, true);
+    }
+
+    /// Cast a shape along a direction and return the first hit.
+    pub fn shape_cast(
+        &self,
+        shape: &ColliderShape,
+        origin: Vec3,
+        direction: Vec3,
+        max_distance: f32,
+    ) -> Option<RayHit> {
+        let rapier_shape = collider_shape_to_rapier(shape);
+        let query_pipeline = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
+            &self.bodies,
+            &self.colliders,
+            QueryFilter::default(),
+        );
+
+        let pose = rapier3d::math::Pose::translation(origin.x(), origin.y(), origin.z());
+        let vel = vec3_to_rapier(&direction);
+        let options =
+            rapier3d::parry::query::ShapeCastOptions::with_max_time_of_impact(max_distance);
+
+        let (collider_handle, hit) =
+            query_pipeline.cast_shape(&pose, vel, rapier_shape.as_ref(), options)?;
+
+        let collider = self.colliders.get(collider_handle)?;
+        let hit_point = origin + direction * hit.time_of_impact;
+
+        let entity = if collider.user_data != 0 {
+            Some(collider.user_data as u64)
+        } else {
+            None
+        };
+
+        Some(RayHit {
+            entity,
+            point: hit_point,
+            normal: Vec3::new(hit.normal1.x, hit.normal1.y, hit.normal1.z),
+            distance: hit.time_of_impact,
+        })
     }
 
     /// Cast a ray and return the first hit.

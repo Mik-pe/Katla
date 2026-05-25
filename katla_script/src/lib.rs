@@ -13,6 +13,8 @@ pub use engine::ScriptEngine;
 pub use error::ScriptError;
 pub use event_bus::EventBus;
 pub use system::PendingAudioCommands;
+pub use system::PendingRaycastCommands;
+pub use system::PendingRaycastResults;
 pub use system::ScriptSystem;
 pub use system::ScriptsActive;
 pub use watcher::ScriptWatcher;

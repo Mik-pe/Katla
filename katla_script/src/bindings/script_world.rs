@@ -10,6 +10,14 @@ use crate::bindings::entity::LuaEntityId;
 use crate::bindings::math::{LuaTransform, LuaVec3};
 use crate::bindings::world::ScriptCommand;
 
+#[derive(Clone, Debug)]
+pub struct RaycastResult {
+    pub entity: Option<u64>,
+    pub point: katla_math::Vec3,
+    pub normal: katla_math::Vec3,
+    pub distance: f32,
+}
+
 #[derive(Clone, Default)]
 pub struct InputSnapshot {
     pub pressed_actions: HashSet<String>,
@@ -23,6 +31,7 @@ pub(crate) struct SharedWorldData {
     pub live_entities: Vec<EntityId>,
     pub component_entities: HashMap<String, Vec<EntityId>>,
     pub input_state: InputSnapshot,
+    pub raycast_results: HashMap<usize, RaycastResult>,
 }
 
 /// Shared event bus wrapper that allows scripts to emit events and register handlers.
@@ -79,6 +88,7 @@ impl ScriptWorldProxy {
                 live_entities: Vec::new(),
                 component_entities: HashMap::new(),
                 input_state: InputSnapshot::default(),
+                raycast_results: HashMap::new(),
             }),
             event_bus: Rc::new(RefCell::new(SharedEventBus::default())),
             vm: None,
@@ -127,6 +137,11 @@ impl ScriptWorldProxy {
     /// Emit a named event with arbitrary Lua data.
     pub fn emit_event(&self, name: String, data: mlua::Value) {
         self.event_bus.borrow_mut().pending_emits.push((name, data));
+    }
+
+    /// Get the result of a previously issued raycast command by its return index.
+    pub fn get_raycast_result(&self, index: usize) -> Option<RaycastResult> {
+        self.shared.raycast_results.get(&index).cloned()
     }
 }
 
@@ -251,6 +266,41 @@ impl UserData for ScriptWorldProxy {
                 Ok(())
             },
         );
+
+        methods.add_method_mut("play_sound_cue", |_, this, cue_name: String| {
+            this.commands.push(ScriptCommand::PlaySoundCue { cue_name });
+            Ok(())
+        });
+
+        methods.add_method_mut(
+            "raycast",
+            |_, this, (origin, direction, max_distance): (LuaVec3, LuaVec3, f32)| {
+                let return_index = this.commands.len();
+                this.commands.push(ScriptCommand::Raycast {
+                    origin: origin.0,
+                    direction: direction.0,
+                    max_distance,
+                    return_index,
+                });
+                Ok(return_index)
+            },
+        );
+
+        methods.add_method("get_raycast_result", |lua, this, index: usize| {
+            match this.get_raycast_result(index) {
+                Some(result) => {
+                    let table = lua.create_table()?;
+                    if let Some(entity_id) = result.entity {
+                        table.set("entity", LuaEntityId(EntityId::from_raw(entity_id)))?;
+                    }
+                    table.set("point", LuaVec3(result.point))?;
+                    table.set("normal", LuaVec3(result.normal))?;
+                    table.set("distance", result.distance)?;
+                    Ok(Some(table))
+                }
+                None => Ok(None),
+            }
+        });
     }
 }
 

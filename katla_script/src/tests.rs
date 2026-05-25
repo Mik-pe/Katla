@@ -67,6 +67,7 @@ fn make_proxy() -> ScriptWorldProxy {
         live_entities: Vec::new(),
         component_entities: Default::default(),
         input_state: Default::default(),
+        raycast_results: Default::default(),
     }))
 }
 
@@ -218,6 +219,7 @@ fn make_proxy_with_components(
         live_entities: Vec::new(),
         component_entities,
         input_state: Default::default(),
+        raycast_results: Default::default(),
     }))
 }
 
@@ -423,6 +425,7 @@ fn test_script_reads_transform() {
         live_entities: vec![entity],
         component_entities: Default::default(),
         input_state: Default::default(),
+        raycast_results: Default::default(),
     }));
 
     let commands = engine
@@ -469,6 +472,7 @@ fn test_input_bindings_pressed() {
         live_entities: vec![entity],
         component_entities: Default::default(),
         input_state: input,
+        raycast_results: Default::default(),
     }));
 
     let commands = engine
@@ -515,6 +519,7 @@ fn test_entity_exists_binding() {
         live_entities: vec![e2],
         component_entities: Default::default(),
         input_state: Default::default(),
+        raycast_results: Default::default(),
     }));
     let commands = engine.execute_on_update(handle, e1, proxy, 0.016).unwrap();
     assert_eq!(commands.len(), 1);

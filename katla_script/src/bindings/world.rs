@@ -20,4 +20,13 @@ pub enum ScriptCommand {
         volume: f32,
         looping: bool,
     },
+    PlaySoundCue {
+        cue_name: String,
+    },
+    Raycast {
+        origin: Vec3,
+        direction: Vec3,
+        max_distance: f32,
+        return_index: usize,
+    },
 }

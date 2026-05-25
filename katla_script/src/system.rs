@@ -32,6 +32,20 @@ pub struct ScriptsActive(pub bool);
 #[derive(Default)]
 pub struct PendingAudioCommands(pub Vec<ScriptCommand>);
 
+/// Resource holding raycast results from the previous frame.
+/// Scripts call `world:raycast()` to queue a command, then `world:get_raycast_result()`
+/// on the next frame to retrieve the result.
+#[derive(Default)]
+pub struct PendingRaycastResults(
+    pub std::collections::HashMap<usize, crate::bindings::script_world::RaycastResult>,
+);
+
+/// Resource holding raycast commands queued by scripts during the last ECS update.
+/// `katla_app` drains this after `world.update()`, executes raycasts against
+/// `PhysicsWorld`, and stores results in `PendingRaycastResults`.
+#[derive(Default)]
+pub struct PendingRaycastCommands(pub Vec<crate::bindings::world::ScriptCommand>);
+
 pub struct ScriptSystem {
     pub(crate) engine: ScriptEngine,
     pub(crate) event_bus: EventBus,
@@ -187,16 +201,23 @@ impl ScriptSystem {
 
         let live_entities = world.entity_ids().collect();
 
+        let raycast_results = world
+            .get_resource::<PendingRaycastResults>()
+            .map(|r| r.0.clone())
+            .unwrap_or_default();
+
         SharedWorldData {
             transforms: transforms.into_iter().collect(),
             live_entities,
             component_entities,
             input_state: input,
+            raycast_results,
         }
     }
 
     fn apply_commands(&mut self, commands: Vec<ScriptCommand>, world: &mut World) {
         let mut audio_cmds = Vec::new();
+        let mut raycast_cmds = Vec::new();
         let mut core_cmds = Vec::new();
         for cmd in commands {
             match &cmd {
@@ -205,6 +226,9 @@ impl ScriptSystem {
                 | ScriptCommand::PlaySoundCue { .. } => {
                     audio_cmds.push(cmd);
                 }
+                ScriptCommand::Raycast { .. } => {
+                    raycast_cmds.push(cmd);
+                }
                 _ => core_cmds.push(cmd),
             }
         }
@@ -212,6 +236,13 @@ impl ScriptSystem {
         if !audio_cmds.is_empty() {
             if let Some(pending) = world.get_resource_mut::<PendingAudioCommands>() {
                 pending.0.extend(audio_cmds);
+            }
+        }
+
+        // Forward raycast commands for app bridge to process
+        if !raycast_cmds.is_empty() {
+            if let Some(pending) = world.get_resource_mut::<PendingRaycastCommands>() {
+                pending.0.extend(raycast_cmds);
             }
         }
 
@@ -249,7 +280,8 @@ impl ScriptSystem {
                     }
                     ScriptCommand::PlaySound { .. }
                     | ScriptCommand::PlaySoundAt { .. }
-                    | ScriptCommand::PlaySoundCue { .. } => {}
+                    | ScriptCommand::PlaySoundCue { .. }
+                    | ScriptCommand::Raycast { .. } => {}
                 }
             }
         }
