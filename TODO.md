@@ -50,7 +50,7 @@
 - [ ] Verify `Frame<'_, MetalRenderer>` execution dispatches all pass types (geometry, shadow, fullscreen, compositing, particles, outline, UI, depth prepass) through `RenderGraphBackend` trait methods
 - [ ] Ensure Metal backend's `render_frame()` goes through `FrameGraph<MetalRenderer>::execute()` identically to the Vulkan path, not through a separate hardcoded pass sequence
 - [ ] Remove any remaining dual-code-path divergence between how Vulkan and Metal execute the same frame graph
-- [ ] Delete the `render_frame()` method from `GpuRenderer` if it's now unused (Vulkan already no-ops it, Metal should use `render()` with frame graph)
+- [x] Delete the `render_frame()` method from `GpuRenderer` — removed from trait, Vulkan no-op removed, Metal impl moved to `metal/frame_render.rs` (see section K)
 
 ### F. Reduce cfg(target_os = "macos") count across katla_gfx
 
@@ -393,7 +393,7 @@
 - [ ] Add script inspector panel — show attached script path, expose script variables for live editing
 - [ ] Add script file browser — show `.luau` files in asset browser, drag-to-attach to entity
 - [ ] Generate Luau type definition files (.d.luau) — autocomplete support for engine API in external editors
-- [ ] Add script console — capture `print()` output in editor log panel
+- [x] Add script console — `print()`/`warn()` already route to `log::info!`/`log::warn!` in debug builds, captured by console panel
 
 ### Gameplay framework (independent of scripting)
 - [ ] Design game state machine — states (Menu, Loading, Playing, Paused, Cutscene), transitions, enter/exit hooks
@@ -573,7 +573,7 @@
 ### Profiling and instrumentation
 - [ ] Add Tracy integration — conditional Tracy profiler markers on render passes and ECS systems (behind `tracy` feature flag)
 - [ ] Add GPU timestamp queries — insert timestamp queries at render pass boundaries, collect per-pass durations
-- [ ] Add frame timing display — render frame time graph and FPS counter in status bar or overlay
+- [x] Add frame timing display — frame time (ms) shown in status bar alongside FPS, color-coded by performance tier
 - [ ] Add system timing — measure ECS system execution time, display in debug overlay
 
 ### Testing

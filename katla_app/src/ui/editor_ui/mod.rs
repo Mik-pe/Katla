@@ -50,6 +50,7 @@ pub struct EditorRenderParams<'a> {
     pub scale_factor: f32,
     pub entities: &'a [EntityInfo],
     pub fps: f32,
+    pub frame_time_ms: f32,
     pub frame_count: usize,
     pub loader: &'a mut BackgroundLoader,
     pub thumbnail_texture_handles: &'a std::collections::HashMap<std::path::PathBuf, TextureHandle>,

@@ -160,6 +160,7 @@ impl EditorUI {
             screen_size,
             height: status_bar_height,
             fps: params.fps,
+            frame_time_ms: params.frame_time_ms,
             frame_count: params.frame_count,
             entity_count: params.entities.len(),
             draw_call_count: self.last_draw_call_count,
