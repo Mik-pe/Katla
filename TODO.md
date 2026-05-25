@@ -143,9 +143,9 @@
 - [x] Add `fn begin_timestamp(&mut self, label: &str)` and `fn end_timestamp(&mut self, label: &str)` to `GpuRenderer` trait with default no-op impls
 - [x] Add `fn read_timestamps(&self) -> Vec<GpuTimestamp>` to `GpuRenderer` trait with default empty impl
 - [x] Implement timestamp queries for `VulkanRenderer` using Vulkan timestamp queries
-- [ ] Implement timestamp queries for `MetalRenderer` using `MTLCounterSampleBuffer`
+- [x] Implement timestamp queries for `MetalRenderer` using `MTLCounterSampleBuffer`
 - [x] Add dispatch to `AnyRenderer`
-- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+- [x] Run `cargo check --workspace` and `cargo test --workspace`
 
 ## Particle System Usability
 
@@ -488,7 +488,7 @@
 
 ### Scene lifecycle
 
-- [ ] Preserve entity names when playing a scene — entity names change from e.g. "Entity 1" to "Entity 4294967336" (raw EntityId) when the default scene is played, should keep the original human-readable names
+- [x] Preserve entity names when playing a scene — all spawned entities now get a `NameComponent` derived from their `EntitySource::display_name()`, ensuring stable names across play/stop cycles
 - [ ] Fix entities (fox, helmet) disappearing from view on play/stop — some entities vanish from the viewport when entering or exiting play mode, possibly moved to NaN positions or destroyed (names also change, see above)
 
 ### Component registry completeness
