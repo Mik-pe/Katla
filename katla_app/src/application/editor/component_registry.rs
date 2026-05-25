@@ -9,6 +9,7 @@ use crate::components::{
     AudioEmitter, DirectionalLight, DragComponent, MassComponent, NameComponent,
     PerspectiveComponent, PointLight, VelocityComponent,
 };
+use katla_physics::{ColliderShape, CollisionFilter};
 
 fn field_type_mismatch(field_name: &str, expected: &str, value: FieldValue) -> SceneToolError {
     SceneToolError::InvalidFieldValue {
@@ -499,6 +500,75 @@ fn register_audio_emitter(registry: &mut ComponentRegistry) {
     });
 }
 
+fn register_collider_shape(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "ColliderShape",
+        has_component: |world: &World, entity: EntityId| {
+            world.get_component::<ColliderShape>(entity).is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(
+                entity,
+                ColliderShape::Sphere(katla_physics::SphereShape::new(0.5)),
+            );
+        },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<ColliderShape>(entity);
+        },
+        get_fields: |_world: &World, _entity: EntityId| Vec::new(),
+        get_field_value: |_world: &mut World, _entity: EntityId, _field_name: &str| None,
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          _value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let _comp = world
+                .get_component_mut::<ColliderShape>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "ColliderShape".to_string(),
+                })?;
+            Err(SceneToolError::FieldNotFound {
+                component: "ColliderShape".to_string(),
+                field: field_name.to_string(),
+            })
+        },
+    });
+}
+
+fn register_collision_filter(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "CollisionFilter",
+        has_component: |world: &World, entity: EntityId| {
+            world.get_component::<CollisionFilter>(entity).is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, CollisionFilter::default());
+        },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<CollisionFilter>(entity);
+        },
+        get_fields: |_world: &World, _entity: EntityId| Vec::new(),
+        get_field_value: |_world: &mut World, _entity: EntityId, _field_name: &str| None,
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          _value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let _comp = world
+                .get_component_mut::<CollisionFilter>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "CollisionFilter".to_string(),
+                })?;
+            Err(SceneToolError::FieldNotFound {
+                component: "CollisionFilter".to_string(),
+                field: field_name.to_string(),
+            })
+        },
+    });
+}
+
 pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     let mut registry = ComponentRegistry::new();
     register_name_component(&mut registry);
@@ -511,6 +581,8 @@ pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     register_velocity_component(&mut registry);
     register_particle_emitter_component(&mut registry);
     register_audio_emitter(&mut registry);
+    register_collider_shape(&mut registry);
+    register_collision_filter(&mut registry);
     registry
 }
 
