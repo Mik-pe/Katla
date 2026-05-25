@@ -53,4 +53,26 @@ impl EntitySource {
                 | Self::Torus { .. }
         )
     }
+
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::Cube { .. } => "Cube".to_string(),
+            Self::Sphere { .. } => "Sphere".to_string(),
+            Self::Plane { .. } => "Plane".to_string(),
+            Self::Cylinder { .. } => "Cylinder".to_string(),
+            Self::Torus { .. } => "Torus".to_string(),
+            Self::GltfModel { path } => std::path::Path::new(path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Model")
+                .to_string(),
+            Self::StlModel { path } => std::path::Path::new(path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("STL Model")
+                .to_string(),
+            Self::ParticleEmitter => "Particle Emitter".to_string(),
+            Self::Light => "Light".to_string(),
+        }
+    }
 }

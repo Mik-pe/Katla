@@ -35,7 +35,7 @@ objc2-metal = { version = "0.3", features = [
     "MTLVertexDescriptor", "MTLRenderPass", "MTLComputePass", "MTLBlitPass",
     "MTLLibrary", "MTLFunctionDescriptor", "MTLFunctionConstantValues",
     "MTLAllocation", "MTLResource", "MTLPixelFormat", "MTLArgument",
-    "MTLDataType",
+    "MTLDataType", "MTLCounters",
 ] }
 objc2-quartz-core = { version = "0.3", features = ["CAMetalLayer"] }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSDictionary", "NSRange", "NSGeometry", "NSError"] }

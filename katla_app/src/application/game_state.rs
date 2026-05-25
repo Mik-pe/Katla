@@ -272,10 +272,11 @@ impl SceneSnapshot {
         app.world.add_component(entity_id, desc.source.clone());
 
         // Attach name
-        if let Some(ref name) = desc.name {
-            app.world
-                .add_component(entity_id, NameComponent::new(name.clone()));
-        }
+        let name = desc
+            .name
+            .clone()
+            .unwrap_or_else(|| desc.source.display_name());
+        app.world.add_component(entity_id, NameComponent::new(name));
 
         entity_id
     }
