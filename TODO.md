@@ -267,42 +267,28 @@
 - [x] Add serialization for collider components — RON round-trip for ColliderShape and CollisionFilter via serde
 - [x] Register collider components in `ApplicationBuilder` and component registry
 
-### Phase 2: Broadphase + narrowphase
-- [ ] Implement broadphase — sweep-and-prune on sorted AABB intervals, output overlapping pair list
-- [ ] Implement broadphase layer/mask filtering — only test pairs whose collision layers overlap
-- [ ] Implement narrowphase: sphere-sphere test — distance < r1 + r2, return contact point and normal
-- [ ] Implement narrowphase: sphere-box test — closest point on box to sphere center
-- [ ] Implement narrowphase: box-box (SAT) — test separating axes, return contact manifold
-- [ ] Implement narrowphase: sphere-capsule and box-capsule tests
-- [ ] Define `ContactManifold` struct — contact points, penetration depth, contact normal for each pair
-- [ ] Implement `CollisionSystem` (ECS System trait) — run broadphase then narrowphase each frame, generate contact events
-
-### Phase 3: Rigid body dynamics
-- [ ] Add `RigidBody` component — body type (static, dynamic, kinematic), mass, inertia tensor, linear/angular velocity, forces accumulator
-- [ ] Implement semi-implicit Euler integration — apply gravity, accumulated forces, update velocity and position each frame
-- [ ] Implement collision response — impulse-based resolution using contact manifolds, friction, restitution
-- [ ] Add `RigidBodySystem` (ECS System trait) — integrate dynamics, apply forces, sync position back to TransformComponent
-- [ ] Implement sleeping — mark near-stationary dynamic bodies as sleeping, skip integration, wake on contact
-- [ ] Add physics materials — `PhysicsMaterial { friction, restitution, density }` attached to ColliderShape
-- [ ] Implement force application API — apply_force(), apply_impulse(), apply_torque() on RigidBody
-
-### Phase 4: Constraints and raycasting
-- [ ] Implement point-to-point constraint — pin two bodies at a shared world point
-- [ ] Implement hinge constraint — point-to-point with rotation axis limit
-- [ ] Implement distance constraint — maintain fixed distance between two anchor points
-- [ ] Add raycast query API — `PhysicsWorld::raycast(origin, direction, max_distance, layer_mask) -> Option<RayHit>`
-- [ ] Add shape cast query — sweep a shape along a ray, return first hit
+### Phase 2: Rapier integration
+- [x] Add `rapier3d` dependency to `katla_physics` — v0.32 with glamx backend
+- [x] Create `PhysicsWorld` wrapper — owns Rapier pipeline, body/collider sets, joints; provides `step()`, `create_dynamic_body()`, `create_static_collider()`, `raycast()`
+- [x] Implement raycast query API — `PhysicsWorld::raycast(origin, direction, max_distance) -> Option<RayHit>` with entity lookup via collider user data
+- [ ] Create `RigidBody` component — body type (static, dynamic, kinematic), stores Rapier handles, derives `Component`
+- [ ] Implement `PhysicsSystem` (ECS System trait) — discover entities with ColliderShape/RigidBody, create Rapier bodies on spawn, remove on destroy, step simulation, sync transforms back
+- [ ] Add force/impulse API — expose `PhysicsWorld::apply_force/apply_impulse` through the system or a resource
+- [ ] Wire `PhysicsWorld` into `ApplicationBuilder` as an ECS resource
+- [ ] Add physics materials — `PhysicsMaterial { friction, restitution, density }` component mapped to Rapier material properties
+- [ ] Implement constraints — point-to-point, hinge, distance joints via Rapier joint API
+- [ ] Add shape cast query — `PhysicsWorld::shape_cast()` via Rapier scene query pipeline
 - [ ] Add trigger volumes — collider with sensor flag (no collision response, emits overlap events)
 - [ ] Expose raycasting to scripting — `world:raycast(origin, direction, max_distance)` binding
 
-### Phase 5: Debug visualization
+### Phase 3: Debug visualization
 - [ ] Add wireframe collider rendering — draw sphere, box, capsule outlines in editor viewport using line primitives
 - [ ] Color-code collider types — static=blue, dynamic=green, kinematic=yellow, trigger=purple, sleeping=dimmed
 - [ ] Add contact point visualization — render contact normals and penetration depth for selected entity
 - [ ] Add physics debug toggle — menu option or hotkey to enable/disable physics wireframe overlay
 - [ ] Add raycast visualization — render ray and hit point when performing interactive raycasts in editor
 
-### Phase 6: Editor integration
+### Phase 4: Editor integration
 - [ ] Add collider inspector UI — shape type dropdown, shape-specific parameters (radius, half-extents), physics material fields
 - [ ] Add rigid body inspector UI — body type dropdown, mass/inertia fields, velocity display (read-only in play mode)
 - [ ] Add Add Component entries — ColliderShape, RigidBody in categorized Add Component menu
