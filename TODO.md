@@ -271,11 +271,11 @@
 - [x] Add `rapier3d` dependency to `katla_physics` — v0.32 with glamx backend
 - [x] Create `PhysicsWorld` wrapper — owns Rapier pipeline, body/collider sets, joints; provides `step()`, `create_dynamic_body()`, `create_static_collider()`, `raycast()`
 - [x] Implement raycast query API — `PhysicsWorld::raycast(origin, direction, max_distance) -> Option<RayHit>` with entity lookup via collider user data
-- [ ] Create `RigidBody` component — body type (static, dynamic, kinematic), stores Rapier handles, derives `Component`
-- [ ] Implement `PhysicsSystem` (ECS System trait) — discover entities with ColliderShape/RigidBody, create Rapier bodies on spawn, remove on destroy, step simulation, sync transforms back
-- [ ] Add force/impulse API — expose `PhysicsWorld::apply_force/apply_impulse` through the system or a resource
-- [ ] Wire `PhysicsWorld` into `ApplicationBuilder` as an ECS resource
-- [ ] Add physics materials — `PhysicsMaterial { friction, restitution, density }` component mapped to Rapier material properties
+- [x] Create `RigidBody` component — body type (static, dynamic, kinematic), stores Rapier handles, derives `Component`
+- [x] Implement `PhysicsSystem` (ECS System trait) — discover entities with ColliderShape/RigidBody, create Rapier bodies on spawn, remove on destroy, step simulation, sync transforms back
+- [x] Add force/impulse API — expose `PhysicsWorld::apply_force/apply_impulse` through the system or a resource
+- [x] Wire `PhysicsWorld` into `ApplicationBuilder` as an ECS resource
+- [x] Add physics materials — `PhysicsMaterial { friction, restitution, density }` component mapped to Rapier material properties
 - [ ] Implement constraints — point-to-point, hinge, distance joints via Rapier joint API
 - [ ] Add shape cast query — `PhysicsWorld::shape_cast()` via Rapier scene query pipeline
 - [ ] Add trigger volumes — collider with sensor flag (no collision response, emits overlap events)

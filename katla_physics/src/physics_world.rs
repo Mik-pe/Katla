@@ -7,7 +7,7 @@
 use katla_math::{Transform, Vec3};
 use rapier3d::dynamics::{
     CCDSolver, ImpulseJointSet, IntegrationParameters, IslandManager, MultibodyJointSet,
-    RigidBodyBuilder, RigidBodyHandle, RigidBodySet,
+    RigidBodyBuilder, RigidBodyHandle, RigidBodySet, RigidBodyType,
 };
 use rapier3d::geometry::{ColliderBuilder, ColliderHandle, ColliderSet, NarrowPhase};
 use rapier3d::math::Vector;
@@ -16,6 +16,8 @@ use rapier3d::pipeline::PhysicsPipeline;
 use rapier3d::prelude::*;
 
 use crate::collider::ColliderShape;
+use crate::material::PhysicsMaterial;
+use crate::rigid_body::BodyType;
 
 /// Result of a raycast query.
 #[derive(Debug, Clone)]
@@ -132,14 +134,59 @@ impl PhysicsWorld {
         transform: &Transform,
         entity_id: u64,
     ) -> ColliderHandle {
+        self.create_body(shape, transform, BodyType::Static, None, entity_id)
+            .1
+    }
+
+    /// Create a rigid body with a collider.
+    ///
+    /// Returns (body_handle, collider_handle). For static bodies, the body handle
+    /// is `RigidBodyHandle::invalid()` and the collider is standalone.
+    pub fn create_body(
+        &mut self,
+        shape: &ColliderShape,
+        transform: &Transform,
+        body_type: BodyType,
+        material: Option<&PhysicsMaterial>,
+        entity_id: u64,
+    ) -> (RigidBodyHandle, ColliderHandle) {
         let pose = katla_to_rapier_pose(transform);
         let rapier_shape = collider_shape_to_rapier(shape);
 
-        let collider = ColliderBuilder::new(rapier_shape)
+        let mut collider_builder = ColliderBuilder::new(rapier_shape)
             .position(pose.into())
-            .user_data(entity_id as u128)
+            .user_data(entity_id as u128);
+
+        if let Some(mat) = material {
+            collider_builder = collider_builder
+                .friction(mat.friction)
+                .restitution(mat.restitution)
+                .density(mat.density);
+        }
+
+        let rapier_body_type = match body_type {
+            BodyType::Static => RigidBodyType::Fixed,
+            BodyType::Dynamic => RigidBodyType::Dynamic,
+            BodyType::Kinematic => RigidBodyType::KinematicPositionBased,
+        };
+
+        if rapier_body_type == RigidBodyType::Fixed {
+            let collider = collider_builder.build();
+            let collider_handle = self.colliders.insert(collider);
+            return (RigidBodyHandle::invalid(), collider_handle);
+        }
+
+        let body = RigidBodyBuilder::new(rapier_body_type)
+            .pose(pose.into())
             .build();
-        self.colliders.insert(collider)
+        let body_handle = self.bodies.insert(body);
+
+        let collider = collider_builder.build();
+        let collider_handle =
+            self.colliders
+                .insert_with_parent(collider, body_handle, &mut self.bodies);
+
+        (body_handle, collider_handle)
     }
 
     /// Remove a dynamic body and its attached collider.
@@ -167,6 +214,13 @@ impl PhysicsWorld {
         let body = self.bodies.get(body)?;
         let pos = body.position();
         Some(rapier_pose_to_katla(pos))
+    }
+
+    /// Read the linear velocity of a rigid body.
+    pub fn body_velocity(&self, body: RigidBodyHandle) -> Option<Vec3> {
+        let body = self.bodies.get(body)?;
+        let vel = body.linvel();
+        Some(Vec3::new(vel.x, vel.y, vel.z))
     }
 
     /// Apply a force to a dynamic body at its center of mass.
