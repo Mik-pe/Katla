@@ -162,6 +162,7 @@ impl EditorUI {
             fps: params.fps,
             frame_count: params.frame_count,
             entity_count: params.entities.len(),
+            draw_call_count: self.last_draw_call_count,
             selected_count,
             total_assets,
             is_playing: self.is_playing,

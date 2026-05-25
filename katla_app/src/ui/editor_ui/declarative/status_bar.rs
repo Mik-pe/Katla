@@ -10,6 +10,7 @@ pub(crate) struct StatusBarData {
     pub fps: f32,
     pub frame_count: usize,
     pub entity_count: usize,
+    pub draw_call_count: usize,
     pub selected_count: usize,
     pub total_assets: usize,
     pub is_playing: bool,
@@ -64,6 +65,11 @@ fn draw_status_bar(ui: &mut UiContext, _bounds: Rect2D) {
 
     let entity_text = format!("Entities: {}", data.entity_count);
     ui.status_label(&entity_text, data.theme.text_secondary);
+
+    ui.status_separator();
+
+    let draw_text = format!("Draws: {}", data.draw_call_count);
+    ui.status_label(&draw_text, data.theme.text_secondary);
 
     ui.status_separator();
 

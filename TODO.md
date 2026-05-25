@@ -104,9 +104,9 @@
 
 - [x] Audit how Vulkan and Metal backends use `begin_frame`, `end_frame`, `render_frame`, `wait_for_frame` — document the actual control flow for each backend
 - [x] Remove `render_frame` from `GpuRenderer` trait — extracted to `MetalRenderer::render_frame()` in `metal/frame_render.rs`, Vulkan no-op removed, AnyRenderer dispatch removed
-- [ ] Ensure Metal `begin_frame` + `end_frame` pair covers acquire + present, matching Vulkan's `wait_for_frame` + `render()` pattern
+- [x] Ensure Metal `begin_frame` + `end_frame` pair covers acquire + present, matching Vulkan's `wait_for_frame` + `render()` pattern — verified: `begin_frame` acquires drawable, `render()` presents, `end_frame` cleans up
 - [x] Document the canonical frame lifecycle in GpuRenderer trait docs: `begin_frame()` -> `set_frame_uniforms()` -> `execute_draw_calls()` -> render graph `render()` -> (implicit present)
-- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+- [x] Run `cargo check --workspace` and `cargo test --workspace`
 
 ### L. Fix resize() semantic — stop silently discarding frame graph state
 
@@ -543,7 +543,7 @@
 - [ ] Collect per-pass timing data — store pass name + duration in a frame timing buffer
 - [ ] Add profiler overlay UI — floating panel with frame time graph (sparkline), per-pass timing bars, FPS counter
 - [ ] Add memory tracking — track GPU allocation counts and total bytes per resource type
-- [ ] Add draw call counter — increment per draw call, display in profiler overlay
+- [x] Add draw call counter — displayed in status bar as "Draws: N"
 
 #### Gamepad input
 - [ ] Add gamepad crate dependency — `gilrs` for cross-platform gamepad support
