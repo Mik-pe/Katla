@@ -82,16 +82,6 @@ pub trait GpuRenderer: Sized + 'static {
     /// Get the current frame uniforms.
     fn frame_uniforms(&self) -> &FrameUniforms;
 
-    /// Execute the render graph and present the frame.
-    ///
-    /// **Vulkan**: No-op. Rendering happens via `VulkanRenderer::render()` with
-    /// `FrameGraph<VulkanRenderer>`, which is called directly by `katla_app`.
-    ///
-    /// **Metal**: Executes the hardcoded render pass sequence (draw objects,
-    /// tonemap, UI). This will be replaced by frame graph execution once the
-    /// Metal backend is fully migrated to `FrameGraph<MetalRenderer>`.
-    fn render_frame(&mut self) -> Result<(), RendererError>;
-
     /// Begin the frame (acquire next image, etc.).
     ///
     /// **Vulkan**: Delegates to `wait_for_frame()`, returns the current frame index.
@@ -490,12 +480,6 @@ impl GpuRenderer for VulkanRenderer {
 
     fn frame_uniforms(&self) -> &FrameUniforms {
         VulkanRenderer::frame_uniforms(self)
-    }
-
-    fn render_frame(&mut self) -> Result<(), RendererError> {
-        // Vulkan rendering happens via VulkanRenderer::render() with FrameGraph.
-        // This method is a no-op for the Vulkan backend.
-        Ok(())
     }
 
     fn begin_frame(&mut self) -> Result<u32, RendererError> {

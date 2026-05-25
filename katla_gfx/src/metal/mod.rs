@@ -10,6 +10,7 @@ pub(crate) mod draw_helpers;
 pub(crate) mod font_atlas;
 pub(crate) mod format;
 pub(crate) mod frame_lifecycle;
+pub(crate) mod frame_render;
 pub(crate) mod init_pipelines;
 pub(crate) mod light_culling;
 pub(crate) mod material_api;
