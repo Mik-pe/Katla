@@ -5,7 +5,9 @@
 //! narrowphase collision detection.
 
 mod collider;
+mod physics_world;
 mod shape;
 
 pub use collider::{ColliderShape, ColliderState, CollisionFilter};
+pub use physics_world::{PhysicsWorld, RayHit};
 pub use shape::{BoxShape, CapsuleShape, SphereShape};
