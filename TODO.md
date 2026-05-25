@@ -276,10 +276,10 @@
 - [x] Add force/impulse API — expose `PhysicsWorld::apply_force/apply_impulse` through the system or a resource
 - [x] Wire `PhysicsWorld` into `ApplicationBuilder` as an ECS resource
 - [x] Add physics materials — `PhysicsMaterial { friction, restitution, density }` component mapped to Rapier material properties
-- [ ] Implement constraints — point-to-point, hinge, distance joints via Rapier joint API
-- [ ] Add shape cast query — `PhysicsWorld::shape_cast()` via Rapier scene query pipeline
-- [ ] Add trigger volumes — collider with sensor flag (no collision response, emits overlap events)
-- [ ] Expose raycasting to scripting — `world:raycast(origin, direction, max_distance)` binding
+- [x] Implement constraints — point-to-point, hinge, distance joints via Rapier joint API
+- [x] Add shape cast query — `PhysicsWorld::shape_cast()` via Rapier scene query pipeline
+- [x] Add trigger volumes — collider with sensor flag (no collision response, emits overlap events)
+- [x] Expose raycasting to scripting — `world:raycast(origin, direction, max_distance)` binding
 
 ### Phase 3: Debug visualization
 - [ ] Add wireframe collider rendering — draw sphere, box, capsule outlines in editor viewport using line primitives
@@ -293,6 +293,7 @@
 - [ ] Add rigid body inspector UI — body type dropdown, mass/inertia fields, velocity display (read-only in play mode)
 - [ ] Add Add Component entries — ColliderShape, RigidBody in categorized Add Component menu
 - [ ] Add drag-to-add collider — automatically fit collider shape to mesh bounds when attached to mesh entity
+- [ ] Add physics objects to default scene — floor (static box collider) and a few dynamic spheres/cubes above it so pressing Play immediately demonstrates gravity, collision, and bouncing
 
 ## Rendering
 
