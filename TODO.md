@@ -489,7 +489,7 @@
 ### Scene lifecycle
 
 - [x] Preserve entity names when playing a scene — all spawned entities now get a `NameComponent` derived from their `EntitySource::display_name()`, ensuring stable names across play/stop cycles
-- [ ] Fix entities (fox, helmet) disappearing from view on play/stop — some entities vanish from the viewport when entering or exiting play mode, possibly moved to NaN positions or destroyed (names also change, see above)
+- [x] Fix entities (fox, helmet) disappearing from view on play/stop — `spawn_from_descriptor` in `game_state.rs` now properly handles `GltfModel` and `StlModel` sources instead of falling through to a transform-only fallback
 
 ### Component registry completeness
 

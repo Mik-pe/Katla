@@ -235,11 +235,32 @@ impl SceneSnapshot {
                     entity_id
                 }
                 _ => {
-                    // Fallback for GLTF models and other sources during restore
-                    let transform = TransformComponent::from_position(katla_math::Vec3::new(
-                        pos[0], pos[1], pos[2],
-                    ));
-                    app.world.spawn((transform,))
+                    // Restore GLTF/STL models through the proper spawn path
+                    match &desc.source {
+                        EntitySource::GltfModel { path } => {
+                            match app.spawn_gltf_model(path, pos, None) {
+                                Ok(id) => id,
+                                Err(e) => {
+                                    log::error!("Failed to restore GLTF model '{}': {}", path, e);
+                                    app.world.spawn((TransformComponent::from_position(
+                                        katla_math::Vec3::new(pos[0], pos[1], pos[2]),
+                                    ),))
+                                }
+                            }
+                        }
+                        EntitySource::StlModel { path } => match app.spawn_stl_model(path, pos) {
+                            Ok(id) => id,
+                            Err(e) => {
+                                log::error!("Failed to restore STL model '{}': {}", path, e);
+                                app.world.spawn((TransformComponent::from_position(
+                                    katla_math::Vec3::new(pos[0], pos[1], pos[2]),
+                                ),))
+                            }
+                        },
+                        _ => app.world.spawn((TransformComponent::from_position(
+                            katla_math::Vec3::new(pos[0], pos[1], pos[2]),
+                        ),)),
+                    }
                 }
             }
         };
