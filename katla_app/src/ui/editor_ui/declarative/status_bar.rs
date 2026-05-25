@@ -8,6 +8,7 @@ pub(crate) struct StatusBarData {
     pub screen_size: Vec2,
     pub height: f32,
     pub fps: f32,
+    pub frame_time_ms: f32,
     pub frame_count: usize,
     pub entity_count: usize,
     pub draw_call_count: usize,
@@ -55,6 +56,18 @@ fn draw_status_bar(ui: &mut UiContext, _bounds: Rect2D) {
         data.theme.error
     };
     ui.status_label(&fps_text, fps_color);
+
+    ui.status_separator();
+
+    let frame_time_text = format!("{:.2} ms", data.frame_time_ms);
+    let frame_time_color = if data.frame_time_ms <= 18.0 {
+        data.theme.success
+    } else if data.frame_time_ms <= 33.0 {
+        data.theme.warning
+    } else {
+        data.theme.error
+    };
+    ui.status_label(&frame_time_text, frame_time_color);
 
     ui.status_separator();
 
