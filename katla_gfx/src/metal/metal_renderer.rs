@@ -202,6 +202,7 @@ pub struct MetalRenderer {
     pub(crate) dummy_vertex_buffer: Option<MetalBuffer>,
     pub(crate) tonemap_fence: Option<Retained<ProtocolObject<dyn objc2_metal::MTLFence>>>,
     pub(crate) capabilities: crate::renderer::types::GpuCapabilities,
+    pub(crate) timestamp_queries: Option<super::timestamp_queries::MetalTimestampQueries>,
 }
 
 impl MetalRenderer {
@@ -305,6 +306,7 @@ impl MetalRenderer {
                     supports_light_culling: false,
                 }
             },
+            timestamp_queries: None,
         };
 
         let default_tex = renderer.create_texture_solid([255, 255, 255, 255]);
@@ -391,6 +393,12 @@ impl MetalRenderer {
             dummy_vb.unmap();
         }
         renderer.dummy_vertex_buffer = Some(dummy_vb);
+
+        renderer.timestamp_queries =
+            super::timestamp_queries::MetalTimestampQueries::new(&renderer.context.device);
+        if renderer.timestamp_queries.is_some() {
+            log::info!("Metal timestamp queries initialized");
+        }
 
         Ok(renderer)
     }
@@ -1458,8 +1466,8 @@ impl GpuRenderer for MetalRenderer {
                                 self.ui_renderer.render_ui_commands(
                                     &mut encoder,
                                     &ui_draw_list,
-                                    self.size.width,
-                                    self.size.height,
+                                    self.drawable_size.width,
+                                    self.drawable_size.height,
                                 );
 
                                 encoder.end_encoding();
@@ -1842,6 +1850,26 @@ impl GpuRenderer for MetalRenderer {
 
     fn render_ui_pass(&mut self, draw_list: crate::renderer::types::UIDrawList) {
         MetalRenderer::render_ui_pass(self, draw_list);
+    }
+
+    fn begin_timestamp(&mut self, label: &str) {
+        if let Some(ref mut tq) = self.timestamp_queries {
+            tq.begin(label);
+        }
+    }
+
+    fn end_timestamp(&mut self, label: &str) {
+        if let Some(ref mut tq) = self.timestamp_queries {
+            tq.end(label);
+        }
+    }
+
+    fn read_timestamps(&self) -> Vec<crate::renderer::types::GpuTimestamp> {
+        if let Some(ref tq) = self.timestamp_queries {
+            tq.cached_results()
+        } else {
+            Vec::new()
+        }
     }
 }
 

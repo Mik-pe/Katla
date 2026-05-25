@@ -42,7 +42,11 @@ impl super::Application {
             drawable,
         ));
 
-        self.world.add_component(entity, source);
+        self.world.add_component(entity, source.clone());
+        self.world.add_component(
+            entity,
+            crate::components::NameComponent::new(source.display_name()),
+        );
         entity
     }
 
@@ -374,6 +378,15 @@ impl super::Application {
                 path: path.as_ref().to_string_lossy().to_string(),
             },
         );
+        self.world.add_component(
+            entity,
+            crate::components::NameComponent::new(
+                std::path::Path::new(path.as_ref())
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Model"),
+            ),
+        );
 
         // Set emission texture index on drawable component
         if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(entity) {
@@ -473,6 +486,15 @@ impl super::Application {
             EntitySource::StlModel {
                 path: path.as_ref().to_string_lossy().to_string(),
             },
+        );
+        self.world.add_component(
+            entity,
+            crate::components::NameComponent::new(
+                std::path::Path::new(path.as_ref())
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("STL Model"),
+            ),
         );
 
         if let Some(drawable) = self.world.get_component::<DrawableComponent>(entity) {
