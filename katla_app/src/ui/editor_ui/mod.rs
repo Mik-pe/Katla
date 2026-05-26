@@ -297,6 +297,23 @@ impl EditorUI {
                     self.inspector_edit.audio_max_distance = 100.0;
                     self.inspector_edit.audio_rolloff_factor = 1.0;
                 }
+                if let Some(ref cs) = entity.collider_shape {
+                    self.inspector_edit.collider_shape_type = cs.shape_type;
+                    self.inspector_edit.collider_sphere_radius = cs.sphere_radius;
+                    self.inspector_edit.collider_box_half_extents = cs.box_half_extents;
+                    self.inspector_edit.collider_capsule_half_height = cs.capsule_half_height;
+                    self.inspector_edit.collider_capsule_radius = cs.capsule_radius;
+                }
+                if let Some(ref rb) = entity.rigid_body {
+                    self.inspector_edit.rigid_body_type = rb.body_type;
+                    self.inspector_edit.rigid_body_gravity_scale = rb.gravity_scale;
+                    self.inspector_edit.rigid_body_velocity = rb.linear_velocity;
+                }
+                if let Some(ref pm) = entity.physics_material {
+                    self.inspector_edit.physics_friction = pm.friction;
+                    self.inspector_edit.physics_restitution = pm.restitution;
+                    self.inspector_edit.physics_density = pm.density;
+                }
             }
         }
     }
