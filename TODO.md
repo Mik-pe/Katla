@@ -289,9 +289,9 @@
 - [ ] Add raycast visualization — render ray and hit point when performing interactive raycasts in editor
 
 ### Phase 4: Editor integration
-- [ ] Add collider inspector UI — shape type dropdown, shape-specific parameters (radius, half-extents), physics material fields
-- [ ] Add rigid body inspector UI — body type dropdown, mass/inertia fields, velocity display (read-only in play mode)
-- [ ] Add Add Component entries — ColliderShape, RigidBody in categorized Add Component menu
+- [x] Add collider inspector UI — shape type dropdown, shape-specific parameters (radius, half-extents), physics material fields
+- [x] Add rigid body inspector UI — body type dropdown, mass/inertia fields, velocity display (read-only in play mode)
+- [x] Add Add Component entries — ColliderShape, RigidBody in categorized Add Component menu
 - [ ] Add drag-to-add collider — automatically fit collider shape to mesh bounds when attached to mesh entity
 - [ ] Add physics objects to default scene — floor (static box collider) and a few dynamic spheres/cubes above it so pressing Play immediately demonstrates gravity, collision, and bouncing
 
