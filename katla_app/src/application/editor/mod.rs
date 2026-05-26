@@ -1170,6 +1170,10 @@ pub fn process_editor_actions(app: &mut Application) {
                 app.editor.editor_ui.show_stats = !app.editor.editor_ui.show_stats;
                 app.preferences.show_stats = app.editor.editor_ui.show_stats;
             }
+            EditorAction::TogglePhysicsDebug => {
+                app.editor.editor_ui.show_physics_debug = !app.editor.editor_ui.show_physics_debug;
+                app.preferences.show_physics_debug = app.editor.editor_ui.show_physics_debug;
+            }
             EditorAction::SetFontScale(scale) => {
                 app.editor.editor_ui.set_font_scale(scale);
                 app.preferences.font_scale = scale;
@@ -1353,6 +1357,28 @@ pub fn process_editor_actions(app: &mut Application) {
                     Ok((_, undo_group)) => {
                         app.editor.push_undo(undo_group);
                         info!("Added component '{}' to entity {}", component_type, entity);
+
+                        if component_type == "ColliderShape"
+                            && let Some(drawable) =
+                                app.world.get_component::<DrawableComponent>(entity)
+                            && let Some(bounds) = drawable.bounds
+                        {
+                            let he = bounds.extent;
+                            let fitted =
+                                katla_physics::ColliderShape::Box(katla_physics::BoxShape::new(he));
+                            if let Some(mut collider) = app
+                                .world
+                                .get_component_mut::<katla_physics::ColliderShape>(entity)
+                            {
+                                *collider = fitted;
+                                info!(
+                                    "Auto-fitted collider to mesh bounds: half_extents=({:.2}, {:.2}, {:.2})",
+                                    he.x(),
+                                    he.y(),
+                                    he.z()
+                                );
+                            }
+                        }
                     }
                     Err(e) => log::error!("Failed to add component: {}", e),
                 }

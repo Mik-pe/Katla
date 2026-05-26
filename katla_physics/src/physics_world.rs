@@ -146,6 +146,64 @@ impl PhysicsWorld {
         std::mem::take(&mut self.collision_events)
     }
 
+    /// Get all active contact pairs with their world-space contact points and normals.
+    ///
+    /// Returns (entity1, entity2, point, normal, depth) for each contact.
+    /// The contact point is the midpoint of the two local contact points
+    /// transformed to world space.
+    pub fn active_contacts(&self) -> Vec<(u64, u64, Vec3, Vec3, f32)> {
+        let mut contacts = Vec::new();
+
+        for pair in self.narrow_phase.contact_pairs() {
+            let entity1 = self.collider_entity(pair.collider1);
+            let entity2 = self.collider_entity(pair.collider2);
+            let (Some(e1), Some(e2)) = (entity1, entity2) else {
+                continue;
+            };
+
+            let pos1 = self
+                .colliders
+                .get(pair.collider1)
+                .map(|c| c.position())
+                .map(|p| Vec3::new(p.translation.x, p.translation.y, p.translation.z));
+            let pos2 = self
+                .colliders
+                .get(pair.collider2)
+                .map(|c| c.position())
+                .map(|p| Vec3::new(p.translation.x, p.translation.y, p.translation.z));
+
+            for manifold in &pair.manifolds {
+                let normal = Vec3::new(
+                    manifold.data.normal.x,
+                    manifold.data.normal.y,
+                    manifold.data.normal.z,
+                );
+                for contact in manifold.contacts() {
+                    let world_point = match (pos1, pos2) {
+                        (Some(p1), Some(p2)) => {
+                            let wp1 = p1
+                                + Vec3::new(
+                                    contact.local_p1.x,
+                                    contact.local_p1.y,
+                                    contact.local_p1.z,
+                                );
+                            let wp2 = p2
+                                + Vec3::new(
+                                    contact.local_p2.x,
+                                    contact.local_p2.y,
+                                    contact.local_p2.z,
+                                );
+                            (wp1 + wp2) * 0.5
+                        }
+                        _ => Vec3::new(contact.local_p1.x, contact.local_p1.y, contact.local_p1.z),
+                    };
+                    contacts.push((e1, e2, world_point, normal, contact.dist));
+                }
+            }
+        }
+        contacts
+    }
+
     /// Create a dynamic rigid body with a collider at the given transform.
     ///
     /// Returns the (body_handle, collider_handle) pair. The `entity_id` is stored

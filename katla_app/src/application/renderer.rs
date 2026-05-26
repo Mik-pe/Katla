@@ -483,7 +483,7 @@ impl Application {
 
 #[cfg(feature = "editor")]
 impl Application {
-    /// Prepare editor draw lists: gizmo draws, shadow filtering, outline selection.
+    /// Prepare editor draw lists: gizmo draws, physics debug, shadow filtering, outline selection.
     fn prepare_editor_draw_lists(
         &mut self,
         draw_list: &mut katla_gfx::renderer::DrawList,
@@ -492,6 +492,7 @@ impl Application {
         Option<katla_gfx::renderer::DrawList>,
     ) {
         self.collect_gizmo_draw_calls(draw_list);
+        self.collect_physics_debug_draw_calls(draw_list);
 
         let shadow_draw_list = {
             let draws = draw_list
@@ -638,6 +639,45 @@ impl Application {
 
         for draw in gizmo_draws {
             draw_list.push(draw);
+        }
+    }
+
+    /// Generate physics debug wireframe draw calls if the overlay is enabled.
+    fn collect_physics_debug_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
+        if !self.editor.editor_ui.show_physics_debug
+            || !self.editor.physics_debug_resources.initialized
+        {
+            return;
+        }
+
+        use crate::rendering::physics_debug;
+
+        let mut next_instance = draw_list
+            .iter()
+            .map(|d| d.instance_index)
+            .max()
+            .unwrap_or(0)
+            + 1;
+
+        let debug_draws = physics_debug::generate_collider_wireframe(
+            &mut self.world,
+            &self.editor.physics_debug_resources,
+            &mut next_instance,
+        );
+
+        for draw in debug_draws {
+            draw_list.push(draw);
+        }
+
+        if let Some(physics) = self.world.get_resource::<katla_physics::PhysicsWorld>() {
+            let contact_draws = physics_debug::generate_contact_vis(
+                &self.editor.physics_debug_resources,
+                physics,
+                &mut next_instance,
+            );
+            for draw in contact_draws {
+                draw_list.push(draw);
+            }
         }
     }
 
