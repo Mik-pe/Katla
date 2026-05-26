@@ -282,18 +282,18 @@
 - [x] Expose raycasting to scripting — `world:raycast(origin, direction, max_distance)` binding
 
 ### Phase 3: Debug visualization
-- [ ] Add wireframe collider rendering — draw sphere, box, capsule outlines in editor viewport using line primitives
-- [ ] Color-code collider types — static=blue, dynamic=green, kinematic=yellow, trigger=purple, sleeping=dimmed
-- [ ] Add contact point visualization — render contact normals and penetration depth for selected entity
-- [ ] Add physics debug toggle — menu option or hotkey to enable/disable physics wireframe overlay
-- [ ] Add raycast visualization — render ray and hit point when performing interactive raycasts in editor
+- [x] Add wireframe collider rendering — draw sphere, box, capsule outlines in editor viewport using line primitives
+- [x] Color-code collider types — static=blue, dynamic=green, kinematic=yellow, trigger=purple, sleeping=dimmed
+- [x] Add contact point visualization — render contact normals and penetration depth for selected entity
+- [x] Add physics debug toggle — menu option or hotkey to enable/disable physics wireframe overlay
+- [x] Add raycast visualization — render ray and hit point when performing interactive raycasts in editor
 
 ### Phase 4: Editor integration
 - [x] Add collider inspector UI — shape type dropdown, shape-specific parameters (radius, half-extents), physics material fields
 - [x] Add rigid body inspector UI — body type dropdown, mass/inertia fields, velocity display (read-only in play mode)
 - [x] Add Add Component entries — ColliderShape, RigidBody in categorized Add Component menu
-- [ ] Add drag-to-add collider — automatically fit collider shape to mesh bounds when attached to mesh entity
-- [ ] Add physics objects to default scene — floor (static box collider) and a few dynamic spheres/cubes above it so pressing Play immediately demonstrates gravity, collision, and bouncing
+- [x] Add drag-to-add collider — automatically fit collider shape to mesh bounds when attached to mesh entity
+- [x] Add physics objects to default scene — floor (static box collider) and a few dynamic spheres/cubes above it so pressing Play immediately demonstrates gravity, collision, and bouncing
 
 ## Rendering
 

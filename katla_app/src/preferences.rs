@@ -16,6 +16,8 @@ pub struct Preferences {
     pub show_grid: bool,
     /// Show the stats panel.
     pub show_stats: bool,
+    /// Show physics debug wireframe overlay.
+    pub show_physics_debug: bool,
     /// Font scale multiplier (1.0 = 100%, 1.25 = 125%, etc.)
     pub font_scale: f32,
 }
@@ -26,6 +28,7 @@ impl Default for Preferences {
             theme: "default".to_string(),
             show_grid: true,
             show_stats: true,
+            show_physics_debug: false,
             font_scale: 1.0,
         }
     }
@@ -98,6 +101,7 @@ font_scale = 1.25
             theme: "dracula".to_string(),
             show_grid: false,
             show_stats: true,
+            show_physics_debug: false,
             font_scale: 1.5,
         };
         let toml = toml::to_string_pretty(&prefs).unwrap();

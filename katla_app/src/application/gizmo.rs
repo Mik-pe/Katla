@@ -50,6 +50,12 @@ impl Application {
             initialized: true,
         };
 
+        crate::rendering::physics_debug::init_physics_debug_resources(
+            &mut self.renderer,
+            &mut self.editor.physics_debug_resources,
+            material,
+        );
+
         info!("Gizmo GPU resources initialized");
     }
 

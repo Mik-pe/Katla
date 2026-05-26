@@ -109,6 +109,8 @@ pub(crate) struct EditorState {
     pub(crate) gizmo_state: crate::gizmo::GizmoState,
     /// Gizmo GPU resources (meshes, material).
     pub(crate) gizmo_resources: crate::gizmo::GizmoResources,
+    /// Physics debug GPU resources (wireframe meshes, material).
+    pub(crate) physics_debug_resources: crate::rendering::physics_debug::PhysicsDebugResources,
     /// Billboard GPU resources (mesh, material, icon textures).
     pub(crate) billboard_resources: crate::billboard::BillboardResources,
     /// Previous frame's mouse screen position (for gizmo rotation drag delta).
@@ -159,6 +161,7 @@ impl EditorState {
                 let mut editor = crate::ui::EditorUI::with_theme(theme);
                 editor.show_grid = preferences.show_grid;
                 editor.show_stats = preferences.show_stats;
+                editor.show_physics_debug = preferences.show_physics_debug;
                 editor.set_font_scale(preferences.font_scale);
                 editor.left_panel_width = gui_state.left_panel_width;
                 editor.right_panel_width = gui_state.right_panel_width;
@@ -175,6 +178,8 @@ impl EditorState {
             stencil_indicator_bindless_index: None,
             gizmo_state: crate::gizmo::GizmoState::default(),
             gizmo_resources: crate::gizmo::GizmoResources::default(),
+            physics_debug_resources:
+                crate::rendering::physics_debug::PhysicsDebugResources::default(),
             billboard_resources: crate::billboard::BillboardResources::default(),
             prev_mouse_screen: None,
             component_registry,

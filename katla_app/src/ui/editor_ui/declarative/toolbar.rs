@@ -19,6 +19,7 @@ pub(crate) struct ToolbarDrawCtx {
     pub screen_width: f32,
     pub show_grid: bool,
     pub show_stats: bool,
+    pub show_physics_debug: bool,
     pub text_muted: Color,
     pub is_playing: bool,
     pub is_paused: bool,
@@ -44,6 +45,7 @@ impl ToolbarDrawCtx {
             screen_width,
             show_grid: preferences.show_grid,
             show_stats: preferences.show_stats,
+            show_physics_debug: preferences.show_physics_debug,
             text_muted,
             is_playing,
             is_paused,
@@ -175,6 +177,12 @@ fn draw_toolbar(ui: &mut UiContext, _bounds: Rect2D) {
             }
             if ui.toggle_menu_item_clicked("Stats", show_stats) {
                 ctx.state.pending_actions.push(EditorAction::ToggleStats);
+                *open = false;
+            }
+            if ui.toggle_menu_item_clicked("Physics Debug", ctx.show_physics_debug) {
+                ctx.state
+                    .pending_actions
+                    .push(EditorAction::TogglePhysicsDebug);
                 *open = false;
             }
             ui.menu_separator();

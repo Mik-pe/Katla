@@ -4,6 +4,9 @@
 
 pub mod frame_context;
 
+#[cfg(feature = "editor")]
+pub mod physics_debug;
+
 pub use frame_context::FrameContext;
 
 #[cfg(feature = "editor")]
