@@ -22,8 +22,10 @@ use crate::components::{
 };
 
 use crate::ui::{
-    AudioEmitterBoolField, AudioEmitterField, AudioEmitterInfo, DirectionalLightInfo, DragInfo,
-    EditorAction, EntityInfo, MassInfo, ParticleEmitterInfo, PerspectiveInfo, PointLightInfo,
+    AudioEmitterBoolField, AudioEmitterField, AudioEmitterInfo, ColliderField, ColliderShapeInfo,
+    ColliderShapeType, DirectionalLightInfo, DragInfo, EditorAction, EntityInfo, MassInfo,
+    ParticleEmitterInfo, PerspectiveInfo, PhysicsMaterialField, PhysicsMaterialInfo,
+    PointLightInfo, RigidBodyField, RigidBodyInfo, RigidBodyType,
 };
 
 use super::Application;
@@ -714,6 +716,17 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         audio_min_distance,
         audio_max_distance,
         audio_rolloff_factor,
+        collider_shape_type: _,
+        collider_sphere_radius,
+        collider_box_half_extents,
+        collider_capsule_half_height,
+        collider_capsule_radius,
+        rigid_body_type: _,
+        rigid_body_gravity_scale,
+        rigid_body_velocity: _,
+        physics_friction,
+        physics_restitution,
+        physics_density,
     } = &app.editor.editor_ui.inspector_edit;
 
     let _ = (emit_rate, velocity, lifetime, gravity, particle_scale);
@@ -842,6 +855,71 @@ fn apply_inspector_slider_changes(app: &mut Application) {
             ae.min_distance = *audio_min_distance;
             ae.max_distance = *audio_max_distance;
             ae.rolloff_factor = *audio_rolloff_factor;
+        }
+    }
+
+    // ColliderShape
+    if let Some(cs) = app
+        .world
+        .get_component_mut::<katla_physics::ColliderShape>(entity_id)
+    {
+        let changed = match cs {
+            katla_physics::ColliderShape::Sphere(s) => {
+                (*collider_sphere_radius - s.radius).abs() > 1e-4
+            }
+            katla_physics::ColliderShape::Box(b) => {
+                (collider_box_half_extents[0] - b.half_extents[0]).abs() > 1e-4
+                    || (collider_box_half_extents[1] - b.half_extents[1]).abs() > 1e-4
+                    || (collider_box_half_extents[2] - b.half_extents[2]).abs() > 1e-4
+            }
+            katla_physics::ColliderShape::Capsule(c) => {
+                (*collider_capsule_half_height - c.half_height).abs() > 1e-4
+                    || (*collider_capsule_radius - c.radius).abs() > 1e-4
+            }
+        };
+        if changed {
+            match cs {
+                katla_physics::ColliderShape::Sphere(s) => s.radius = *collider_sphere_radius,
+                katla_physics::ColliderShape::Box(b) => {
+                    b.half_extents = *collider_box_half_extents;
+                }
+                katla_physics::ColliderShape::Capsule(c) => {
+                    c.half_height = *collider_capsule_half_height;
+                    c.radius = *collider_capsule_radius;
+                }
+            }
+            if let Some(mut rb) = app
+                .world
+                .get_component_mut::<katla_physics::RigidBody>(entity_id)
+            {
+                rb.body_handle = None;
+                rb.collider_handle = None;
+            }
+        }
+    }
+
+    // RigidBody gravity scale
+    if let Some(rb) = app
+        .world
+        .get_component_mut::<katla_physics::RigidBody>(entity_id)
+    {
+        if (*rigid_body_gravity_scale - rb.gravity_scale).abs() > 1e-4 {
+            rb.gravity_scale = *rigid_body_gravity_scale;
+        }
+    }
+
+    // PhysicsMaterial
+    if let Some(pm) = app
+        .world
+        .get_component_mut::<katla_physics::PhysicsMaterial>(entity_id)
+    {
+        let friction_changed = (*physics_friction - pm.friction).abs() > 1e-4;
+        let restitution_changed = (*physics_restitution - pm.restitution).abs() > 1e-4;
+        let density_changed = (*physics_density - pm.density).abs() > 1e-4;
+        if friction_changed || restitution_changed || density_changed {
+            pm.friction = *physics_friction;
+            pm.restitution = *physics_restitution;
+            pm.density = *physics_density;
         }
     }
 }
@@ -1445,6 +1523,121 @@ pub fn process_editor_actions(app: &mut Application) {
                     }
                 }
             }
+            EditorAction::SetColliderShapeType { entity, shape_type } => {
+                let new_shape = match shape_type {
+                    ColliderShapeType::Sphere => {
+                        katla_physics::ColliderShape::Sphere(katla_physics::SphereShape::new(0.5))
+                    }
+                    ColliderShapeType::Box => katla_physics::ColliderShape::Box(
+                        katla_physics::BoxShape::from_extents(1.0, 1.0, 1.0),
+                    ),
+                    ColliderShapeType::Capsule => katla_physics::ColliderShape::Capsule(
+                        katla_physics::CapsuleShape::new(0.5, 0.25),
+                    ),
+                };
+                if let Some(mut rb) = app
+                    .world
+                    .get_component_mut::<katla_physics::RigidBody>(entity)
+                {
+                    rb.body_handle = None;
+                    rb.collider_handle = None;
+                }
+                app.world.add_component(entity, new_shape);
+            }
+            EditorAction::SetColliderField {
+                entity,
+                field,
+                value,
+            } => {
+                if let Some(mut cs) = app
+                    .world
+                    .get_component_mut::<katla_physics::ColliderShape>(entity)
+                {
+                    match field {
+                        ColliderField::SphereRadius => {
+                            if let katla_physics::ColliderShape::Sphere(s) = &mut cs {
+                                s.radius = value;
+                            }
+                        }
+                        ColliderField::BoxHalfExtentX => {
+                            if let katla_physics::ColliderShape::Box(b) = &mut cs {
+                                b.half_extents[0] = value;
+                            }
+                        }
+                        ColliderField::BoxHalfExtentY => {
+                            if let katla_physics::ColliderShape::Box(b) = &mut cs {
+                                b.half_extents[1] = value;
+                            }
+                        }
+                        ColliderField::BoxHalfExtentZ => {
+                            if let katla_physics::ColliderShape::Box(b) = &mut cs {
+                                b.half_extents[2] = value;
+                            }
+                        }
+                        ColliderField::CapsuleHalfHeight => {
+                            if let katla_physics::ColliderShape::Capsule(c) = &mut cs {
+                                c.half_height = value;
+                            }
+                        }
+                        ColliderField::CapsuleRadius => {
+                            if let katla_physics::ColliderShape::Capsule(c) = &mut cs {
+                                c.radius = value;
+                            }
+                        }
+                    }
+                }
+                if let Some(mut rb) = app
+                    .world
+                    .get_component_mut::<katla_physics::RigidBody>(entity)
+                {
+                    rb.body_handle = None;
+                    rb.collider_handle = None;
+                }
+            }
+            EditorAction::SetRigidBodyType { entity, body_type } => {
+                if let Some(mut rb) = app
+                    .world
+                    .get_component_mut::<katla_physics::RigidBody>(entity)
+                {
+                    rb.body_type = match body_type {
+                        RigidBodyType::Static => katla_physics::BodyType::Static,
+                        RigidBodyType::Dynamic => katla_physics::BodyType::Dynamic,
+                        RigidBodyType::Kinematic => katla_physics::BodyType::Kinematic,
+                    };
+                    rb.body_handle = None;
+                    rb.collider_handle = None;
+                }
+            }
+            EditorAction::SetRigidBodyField {
+                entity,
+                field,
+                value,
+            } => {
+                if let Some(mut rb) = app
+                    .world
+                    .get_component_mut::<katla_physics::RigidBody>(entity)
+                {
+                    match field {
+                        RigidBodyField::GravityScale => rb.gravity_scale = value,
+                    }
+                }
+            }
+            EditorAction::SetPhysicsMaterialField {
+                entity,
+                field,
+                value,
+            } => {
+                if let Some(mut pm) = app
+                    .world
+                    .get_component_mut::<katla_physics::PhysicsMaterial>(entity)
+                {
+                    match field {
+                        PhysicsMaterialField::Friction => pm.friction = value,
+                        PhysicsMaterialField::Restitution => pm.restitution = value,
+                        PhysicsMaterialField::Density => pm.density = value,
+                    }
+                }
+            }
         }
     }
 
@@ -1583,6 +1776,9 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         Option<PerspectiveInfo>,
         Option<DirectionalLightInfo>,
         Option<crate::ui::AudioEmitterInfo>,
+        Option<ColliderShapeInfo>,
+        Option<RigidBodyInfo>,
+        Option<PhysicsMaterialInfo>,
     );
     let mut entity_data: HashMap<EntityId, EntityData> = HashMap::new();
     let mut parent_map: HashMap<EntityId, EntityId> = HashMap::new();
@@ -1715,6 +1911,70 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         if audio_emitter_info.is_some() {
             components.push("AudioEmitter");
         }
+
+        let collider_shape_info = app
+            .world
+            .get_component::<katla_physics::ColliderShape>(entity_id)
+            .map(|cs| {
+                let (shape_type, sphere_radius, box_he, capsule_hh, capsule_r) = match cs {
+                    katla_physics::ColliderShape::Sphere(s) => (
+                        ColliderShapeType::Sphere,
+                        s.radius,
+                        [0.5, 0.5, 0.5],
+                        0.5,
+                        0.25,
+                    ),
+                    katla_physics::ColliderShape::Box(b) => {
+                        (ColliderShapeType::Box, 0.5, b.half_extents, 0.5, 0.25)
+                    }
+                    katla_physics::ColliderShape::Capsule(c) => (
+                        ColliderShapeType::Capsule,
+                        0.5,
+                        [0.5, 0.5, 0.5],
+                        c.half_height,
+                        c.radius,
+                    ),
+                };
+                ColliderShapeInfo {
+                    shape_type,
+                    sphere_radius,
+                    box_half_extents: box_he,
+                    capsule_half_height: capsule_hh,
+                    capsule_radius: capsule_r,
+                }
+            });
+
+        let rigid_body_info = app
+            .world
+            .get_component::<katla_physics::RigidBody>(entity_id)
+            .map(|rb| RigidBodyInfo {
+                body_type: rb.body_type.into(),
+                gravity_scale: rb.gravity_scale,
+                linear_velocity: [
+                    rb.linear_velocity.x(),
+                    rb.linear_velocity.y(),
+                    rb.linear_velocity.z(),
+                ],
+            });
+
+        let physics_material_info = app
+            .world
+            .get_component::<katla_physics::PhysicsMaterial>(entity_id)
+            .map(|pm| PhysicsMaterialInfo {
+                friction: pm.friction,
+                restitution: pm.restitution,
+                density: pm.density,
+            });
+
+        if collider_shape_info.is_some() {
+            components.push("ColliderShape");
+        }
+        if rigid_body_info.is_some() {
+            components.push("RigidBody");
+        }
+        if physics_material_info.is_some() {
+            components.push("PhysicsMaterial");
+        }
         if has_parent {
             components.push("Parent");
         }
@@ -1755,6 +2015,9 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 perspective_info,
                 directional_info,
                 audio_emitter_info,
+                collider_shape_info,
+                rigid_body_info,
+                physics_material_info,
             ),
         );
         root_entities.insert(entity_id);
@@ -1798,6 +2061,9 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 perspective,
                 directional_light,
                 audio_emitter,
+                collider_shape,
+                rigid_body,
+                physics_material,
             ) = data;
 
             let children = children_map
@@ -1823,6 +2089,9 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 perspective: perspective.clone(),
                 directional_light: directional_light.clone(),
                 audio_emitter: audio_emitter.clone(),
+                collider_shape: collider_shape.clone(),
+                rigid_body: rigid_body.clone(),
+                physics_material: physics_material.clone(),
             });
 
             // Recursively add children

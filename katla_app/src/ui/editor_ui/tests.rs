@@ -122,6 +122,9 @@ fn test_hierarchy_entity_selection_works() {
             perspective: None,
             directional_light: None,
             audio_emitter: None,
+            collider_shape: None,
+            rigid_body: None,
+            physics_material: None,
         },
         EntityInfo {
             id: entity2,
@@ -142,6 +145,9 @@ fn test_hierarchy_entity_selection_works() {
             perspective: None,
             directional_light: None,
             audio_emitter: None,
+            collider_shape: None,
+            rigid_body: None,
+            physics_material: None,
         },
     ];
 

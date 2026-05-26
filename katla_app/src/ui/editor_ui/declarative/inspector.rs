@@ -9,7 +9,10 @@ use katla_ui::{
 };
 
 use crate::ui::editor_ui::ColorScheme;
-use crate::ui::editor_ui::types::{EditorAction, EntityInfo, InspectorEditState};
+use crate::ui::editor_ui::types::{
+    ColliderField, ColliderShapeType, EditorAction, EntityInfo, InspectorEditState,
+    PhysicsMaterialField, RigidBodyField, RigidBodyType,
+};
 
 thread_local! {
     static INSPECTOR_CTX: RefCell<Option<InspectorDrawCtx>> = const { RefCell::new(None) };
@@ -50,7 +53,14 @@ const COMPONENT_CATEGORIES: &[(&str, &[&str])] = &[
     ("Lighting", &["PointLight", "DirectionalLight"]),
     (
         "Physics",
-        &["MassComponent", "DragComponent", "VelocityComponent"],
+        &[
+            "ColliderShape",
+            "RigidBody",
+            "PhysicsMaterial",
+            "MassComponent",
+            "DragComponent",
+            "VelocityComponent",
+        ],
     ),
     ("Scripting", &["ScriptComponent"]),
     ("Audio", &["AudioEmitter"]),
@@ -538,6 +548,186 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                         });
                     }
                     ui.set_cursor(Vec2::new(x, ui.cursor().y() + 26.0));
+                    section_gap(ui);
+                }
+
+                if entity.collider_shape.is_some() {
+                    if section_header_with_remove(
+                        ui,
+                        "Collider Shape",
+                        entity_id,
+                        "ColliderShape",
+                        theme,
+                        w,
+                    ) {
+                        ctx.pending_actions.push(EditorAction::RemoveComponent {
+                            entity: entity_id,
+                            component_type: "ColliderShape".to_string(),
+                        });
+                    }
+
+                    let shape_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 20.0));
+                    let shape_label = edit.collider_shape_type.label();
+                    if ui
+                        .add(
+                            Button::new(shape_label)
+                                .bounds(shape_bounds)
+                                .id("collider_shape_btn")
+                                .fill_color(theme.button_bg)
+                                .hover_color(theme.button_hover)
+                                .border(theme.border),
+                        )
+                        .clicked
+                    {
+                        let next = match edit.collider_shape_type {
+                            ColliderShapeType::Sphere => ColliderShapeType::Box,
+                            ColliderShapeType::Box => ColliderShapeType::Capsule,
+                            ColliderShapeType::Capsule => ColliderShapeType::Sphere,
+                        };
+                        edit.collider_shape_type = next;
+                        ctx.pending_actions
+                            .push(EditorAction::SetColliderShapeType {
+                                entity: entity_id,
+                                shape_type: next,
+                            });
+                    }
+                    ui.set_cursor(Vec2::new(x, ui.cursor().y() + 4.0));
+
+                    match edit.collider_shape_type {
+                        ColliderShapeType::Sphere => {
+                            scalar_row(
+                                ui,
+                                "Radius",
+                                &mut edit.collider_sphere_radius,
+                                0.01..=100.0,
+                                w,
+                            );
+                        }
+                        ColliderShapeType::Box => {
+                            scalar_row(
+                                ui,
+                                "Half X",
+                                &mut edit.collider_box_half_extents[0],
+                                0.01..=100.0,
+                                w,
+                            );
+                            scalar_row(
+                                ui,
+                                "Half Y",
+                                &mut edit.collider_box_half_extents[1],
+                                0.01..=100.0,
+                                w,
+                            );
+                            scalar_row(
+                                ui,
+                                "Half Z",
+                                &mut edit.collider_box_half_extents[2],
+                                0.01..=100.0,
+                                w,
+                            );
+                        }
+                        ColliderShapeType::Capsule => {
+                            scalar_row(
+                                ui,
+                                "Half Height",
+                                &mut edit.collider_capsule_half_height,
+                                0.01..=100.0,
+                                w,
+                            );
+                            scalar_row(
+                                ui,
+                                "Radius",
+                                &mut edit.collider_capsule_radius,
+                                0.01..=100.0,
+                                w,
+                            );
+                        }
+                    }
+
+                    section_gap(ui);
+                }
+
+                if entity.rigid_body.is_some() {
+                    if section_header_with_remove(
+                        ui,
+                        "Rigid Body",
+                        entity_id,
+                        "RigidBody",
+                        theme,
+                        w,
+                    ) {
+                        ctx.pending_actions.push(EditorAction::RemoveComponent {
+                            entity: entity_id,
+                            component_type: "RigidBody".to_string(),
+                        });
+                    }
+
+                    let body_bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 20.0));
+                    let body_label = edit.rigid_body_type.label();
+                    if ui
+                        .add(
+                            Button::new(body_label)
+                                .bounds(body_bounds)
+                                .id("rigid_body_type_btn")
+                                .fill_color(theme.button_bg)
+                                .hover_color(theme.button_hover)
+                                .border(theme.border),
+                        )
+                        .clicked
+                    {
+                        let next = match edit.rigid_body_type {
+                            RigidBodyType::Static => RigidBodyType::Dynamic,
+                            RigidBodyType::Dynamic => RigidBodyType::Kinematic,
+                            RigidBodyType::Kinematic => RigidBodyType::Static,
+                        };
+                        edit.rigid_body_type = next;
+                        ctx.pending_actions.push(EditorAction::SetRigidBodyType {
+                            entity: entity_id,
+                            body_type: next,
+                        });
+                    }
+                    ui.set_cursor(Vec2::new(x, ui.cursor().y() + 4.0));
+
+                    scalar_row(
+                        ui,
+                        "Gravity Scale",
+                        &mut edit.rigid_body_gravity_scale,
+                        0.0..=10.0,
+                        w,
+                    );
+
+                    ui.property_row("Vel X", &format!("{:.2}", edit.rigid_body_velocity[0]));
+                    ui.property_row("Vel Y", &format!("{:.2}", edit.rigid_body_velocity[1]));
+                    ui.property_row("Vel Z", &format!("{:.2}", edit.rigid_body_velocity[2]));
+
+                    section_gap(ui);
+                }
+
+                if entity.physics_material.is_some() {
+                    if section_header_with_remove(
+                        ui,
+                        "Physics Material",
+                        entity_id,
+                        "PhysicsMaterial",
+                        theme,
+                        w,
+                    ) {
+                        ctx.pending_actions.push(EditorAction::RemoveComponent {
+                            entity: entity_id,
+                            component_type: "PhysicsMaterial".to_string(),
+                        });
+                    }
+
+                    scalar_row(ui, "Friction", &mut edit.physics_friction, 0.0..=1.0, w);
+                    scalar_row(
+                        ui,
+                        "Restitution",
+                        &mut edit.physics_restitution,
+                        0.0..=1.0,
+                        w,
+                    );
+                    scalar_row(ui, "Density", &mut edit.physics_density, 0.01..=100.0, w);
+
                     section_gap(ui);
                 }
 

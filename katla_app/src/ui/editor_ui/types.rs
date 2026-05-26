@@ -139,6 +139,12 @@ pub struct EntityInfo {
     pub directional_light: Option<DirectionalLightInfo>,
     /// Audio emitter data (if entity has AudioEmitter)
     pub audio_emitter: Option<AudioEmitterInfo>,
+    /// Collider shape data (if entity has ColliderShape)
+    pub collider_shape: Option<ColliderShapeInfo>,
+    /// Rigid body data (if entity has RigidBody)
+    pub rigid_body: Option<RigidBodyInfo>,
+    /// Physics material data (if entity has PhysicsMaterial)
+    pub physics_material: Option<PhysicsMaterialInfo>,
 }
 
 /// Point light inspector data.
@@ -198,6 +204,103 @@ pub struct AudioEmitterInfo {
     pub min_distance: f32,
     pub max_distance: f32,
     pub rolloff_factor: f32,
+}
+
+/// Collider shape type for the inspector dropdown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColliderShapeType {
+    Sphere,
+    Box,
+    Capsule,
+}
+
+impl ColliderShapeType {
+    pub fn label(self) -> &'static str {
+        match self {
+            ColliderShapeType::Sphere => "Sphere",
+            ColliderShapeType::Box => "Box",
+            ColliderShapeType::Capsule => "Capsule",
+        }
+    }
+
+    pub fn all() -> &'static [ColliderShapeType] {
+        &[
+            ColliderShapeType::Sphere,
+            ColliderShapeType::Box,
+            ColliderShapeType::Capsule,
+        ]
+    }
+
+    pub fn from_label(label: &str) -> Option<Self> {
+        match label {
+            "Sphere" => Some(ColliderShapeType::Sphere),
+            "Box" => Some(ColliderShapeType::Box),
+            "Capsule" => Some(ColliderShapeType::Capsule),
+            _ => None,
+        }
+    }
+}
+
+/// Collider shape inspector data.
+#[derive(Debug, Clone)]
+pub struct ColliderShapeInfo {
+    pub shape_type: ColliderShapeType,
+    pub sphere_radius: f32,
+    pub box_half_extents: [f32; 3],
+    pub capsule_half_height: f32,
+    pub capsule_radius: f32,
+}
+
+/// Rigid body type for the inspector dropdown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RigidBodyType {
+    Static,
+    Dynamic,
+    Kinematic,
+}
+
+impl RigidBodyType {
+    pub fn label(self) -> &'static str {
+        match self {
+            RigidBodyType::Static => "Static",
+            RigidBodyType::Dynamic => "Dynamic",
+            RigidBodyType::Kinematic => "Kinematic",
+        }
+    }
+
+    pub fn all() -> &'static [RigidBodyType] {
+        &[
+            RigidBodyType::Static,
+            RigidBodyType::Dynamic,
+            RigidBodyType::Kinematic,
+        ]
+    }
+}
+
+impl From<katla_physics::BodyType> for RigidBodyType {
+    fn from(bt: katla_physics::BodyType) -> Self {
+        match bt {
+            katla_physics::BodyType::Static => RigidBodyType::Static,
+            katla_physics::BodyType::Dynamic => RigidBodyType::Dynamic,
+            katla_physics::BodyType::Kinematic => RigidBodyType::Kinematic,
+        }
+    }
+}
+
+/// Rigid body inspector data.
+#[derive(Debug, Clone)]
+pub struct RigidBodyInfo {
+    pub body_type: RigidBodyType,
+    pub gravity_scale: f32,
+    pub linear_velocity: [f32; 3],
+}
+
+/// Physics material inspector data.
+#[derive(Debug, Clone)]
+pub struct PhysicsMaterialInfo {
+    pub friction: f32,
+    pub restitution: f32,
+    pub density: f32,
 }
 
 /// Audio emitter f32 field names for inspector edits.
@@ -336,6 +439,59 @@ pub enum EditorAction {
     },
     /// Play/stop audio preview in asset browser.
     AudioPreviewToggle { path: std::path::PathBuf },
+    /// Change collider shape type on an entity.
+    SetColliderShapeType {
+        entity: EntityId,
+        shape_type: ColliderShapeType,
+    },
+    /// Set a collider shape parameter on an entity.
+    SetColliderField {
+        entity: EntityId,
+        field: ColliderField,
+        value: f32,
+    },
+    /// Change rigid body type on an entity.
+    SetRigidBodyType {
+        entity: EntityId,
+        body_type: RigidBodyType,
+    },
+    /// Set a rigid body field on an entity.
+    SetRigidBodyField {
+        entity: EntityId,
+        field: RigidBodyField,
+        value: f32,
+    },
+    /// Set a physics material field on an entity.
+    SetPhysicsMaterialField {
+        entity: EntityId,
+        field: PhysicsMaterialField,
+        value: f32,
+    },
+}
+
+/// Collider shape field names for inspector edits.
+#[derive(Debug, Clone)]
+pub enum ColliderField {
+    SphereRadius,
+    BoxHalfExtentX,
+    BoxHalfExtentY,
+    BoxHalfExtentZ,
+    CapsuleHalfHeight,
+    CapsuleRadius,
+}
+
+/// Rigid body field names for inspector edits.
+#[derive(Debug, Clone)]
+pub enum RigidBodyField {
+    GravityScale,
+}
+
+/// Physics material field names for inspector edits.
+#[derive(Debug, Clone)]
+pub enum PhysicsMaterialField {
+    Friction,
+    Restitution,
+    Density,
 }
 
 /// Active tab in the bottom panel strip.
@@ -414,6 +570,17 @@ pub struct InspectorEditState {
     pub audio_min_distance: f32,
     pub audio_max_distance: f32,
     pub audio_rolloff_factor: f32,
+    pub collider_shape_type: ColliderShapeType,
+    pub collider_sphere_radius: f32,
+    pub collider_box_half_extents: [f32; 3],
+    pub collider_capsule_half_height: f32,
+    pub collider_capsule_radius: f32,
+    pub rigid_body_type: RigidBodyType,
+    pub rigid_body_gravity_scale: f32,
+    pub rigid_body_velocity: [f32; 3],
+    pub physics_friction: f32,
+    pub physics_restitution: f32,
+    pub physics_density: f32,
 }
 
 impl Default for InspectorEditState {
@@ -448,6 +615,17 @@ impl Default for InspectorEditState {
             audio_min_distance: 1.0,
             audio_max_distance: 100.0,
             audio_rolloff_factor: 1.0,
+            collider_shape_type: ColliderShapeType::Sphere,
+            collider_sphere_radius: 0.5,
+            collider_box_half_extents: [0.5, 0.5, 0.5],
+            collider_capsule_half_height: 0.5,
+            collider_capsule_radius: 0.25,
+            rigid_body_type: RigidBodyType::Dynamic,
+            rigid_body_gravity_scale: 1.0,
+            rigid_body_velocity: [0.0; 3],
+            physics_friction: 0.5,
+            physics_restitution: 0.0,
+            physics_density: 1.0,
         }
     }
 }
