@@ -155,9 +155,33 @@ impl MetalUIRenderer {
         encoder: &mut super::render_encoder::MetalRenderEncoder,
         draw_list: &UIDrawList,
         render_pass_w: u32,
-        _render_pass_h: u32,
+        render_pass_h: u32,
     ) {
+        let full_scissor = (0u32, 0u32, render_pass_w, render_pass_h);
+        let mut prev_scissor = full_scissor;
+
         for cmd in &draw_list.commands {
+            let scissor = if let Some([x, y, w, h]) = cmd.clip_rect {
+                let s = draw_list.scale_factor;
+                let sx = (x * s).max(0.0) as u32;
+                let sy = (y * s).max(0.0) as u32;
+                let sw = (w * s).max(0.0) as u32;
+                let sh = (h * s).max(0.0) as u32;
+                (
+                    sx.min(render_pass_w),
+                    sy.min(render_pass_h),
+                    sw.min(render_pass_w.saturating_sub(sx)),
+                    sh.min(render_pass_h.saturating_sub(sy)),
+                )
+            } else {
+                full_scissor
+            };
+
+            if scissor != prev_scissor {
+                encoder.set_scissor(scissor.0, scissor.1, scissor.2, scissor.3);
+                prev_scissor = scissor;
+            }
+
             let uniform_data = UiUniforms {
                 screen_size: [draw_list.screen_size[0], draw_list.screen_size[1]],
                 ndc_y_flip: -1.0,
@@ -169,6 +193,15 @@ impl MetalUIRenderer {
                 crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
             );
             encoder.draw_indexed(cmd.index_count, 1, cmd.index_offset, 0, 0);
+        }
+
+        if prev_scissor != full_scissor {
+            encoder.set_scissor(
+                full_scissor.0,
+                full_scissor.1,
+                full_scissor.2,
+                full_scissor.3,
+            );
         }
     }
 }
