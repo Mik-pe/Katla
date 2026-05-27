@@ -1521,6 +1521,11 @@ pub fn process_editor_actions(app: &mut Application) {
                         }
                         EmitterField::Color(v) => emitter.config.color = v,
                         EmitterField::ColorVariation(v) => emitter.config.color_variation = v,
+                        EmitterField::ColorEnd(v) => {
+                            use katla_gfx::particles::Align16Vec4;
+                            emitter.config.color_end = Align16Vec4(v)
+                        }
+                        EmitterField::ScaleEnd(v) => emitter.config.scale_end = v,
                         EmitterField::ShapePoint => {
                             emitter.config.shape = katla_gfx::particles::EmitterShape::Point;
                             emitter.config.shape_params = [0.0; 4];
@@ -1814,6 +1819,8 @@ fn collect_particle_inspector_data(app: &mut Application) {
                 scale_variation: emitter.config.scale_variation,
                 color: emitter.config.color,
                 color_variation: emitter.config.color_variation,
+                color_end: emitter.config.color_end.0,
+                scale_end: emitter.config.scale_end,
                 gravity: emitter.config.gravity,
                 turbulence_strength: emitter.config.turbulence_strength,
                 turbulence_frequency: emitter.config.turbulence_frequency,

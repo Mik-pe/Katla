@@ -18,7 +18,7 @@ unsafe impl bytemuck::Zeroable for EmitterShape {}
 
 /// 16-byte aligned `[f32; 4]` to match WGSL `vec4f` alignment.
 #[repr(C, align(16))]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct Align16Vec4(pub [f32; 4]);
 
 // Safety: Align16Vec4 is repr(C) with align(16), contains only f32 (Pod).
@@ -79,8 +79,9 @@ pub struct EmitterConfig {
     #[serde(default = "default_color_variation")]
     pub color_variation: f32,
 
-    #[serde(skip)]
-    pub _pad_color: Align16Vec4,
+    /// Target color at end of particle lifetime (linearly interpolated from `color`)
+    #[serde(default = "default_color_end")]
+    pub color_end: Align16Vec4,
 
     /// Shape parameters (length/radius for Line/Circle/Sphere, dimensions for Box)
     #[serde(default)]
@@ -101,10 +102,17 @@ pub struct EmitterConfig {
     /// When non-zero, the simulate shader immediately kills all particles belonging to this emitter.
     #[serde(skip)]
     pub kill_all: u32,
+
+    /// Scale multiplier at end of particle lifetime (1.0 = no change, 0.0 = shrink to nothing)
+    #[serde(default = "default_scale_end")]
+    pub scale_end: f32,
+
+    #[serde(skip)]
+    pub _pad2: [f32; 3],
 }
 
 // Safety: EmitterConfig is repr(C), all fields are Pod (EmitterShape is repr(u32), f32, u32, Align16Vec4).
-// The 12 bytes of padding between color_variation and _pad_color are never read uninitialized
+// The 12 bytes of implicit padding between color_variation and color_end are never read uninitialized
 // because the struct is always created via Default or explicit field init.
 unsafe impl bytemuck::Pod for EmitterConfig {}
 unsafe impl bytemuck::Zeroable for EmitterConfig {}
@@ -206,6 +214,16 @@ impl EmitterConfigBuilder {
         self
     }
 
+    pub fn color_end(mut self, r: f32, g: f32, b: f32, a: f32) -> Self {
+        self.config.color_end = Align16Vec4([r, g, b, a]);
+        self
+    }
+
+    pub fn scale_end(mut self, scale: f32) -> Self {
+        self.config.scale_end = scale;
+        self
+    }
+
     pub fn build(self) -> EmitterConfig {
         self.config
     }
@@ -254,6 +272,12 @@ fn default_color_variation() -> f32 {
 fn default_turbulence_frequency() -> f32 {
     3.0
 }
+fn default_color_end() -> Align16Vec4 {
+    Align16Vec4([1.0, 1.0, 1.0, 1.0])
+}
+fn default_scale_end() -> f32 {
+    1.0
+}
 
 impl Default for EmitterConfig {
     fn default() -> Self {
@@ -272,12 +296,14 @@ impl Default for EmitterConfig {
             scale_variation: 0.5,
             color: [1.0, 1.0, 1.0, 1.0],
             color_variation: 0.1,
-            _pad_color: Align16Vec4([0.0; 4]),
+            color_end: Align16Vec4([1.0, 1.0, 1.0, 1.0]),
             shape_params: [0.0; 4],
             gravity: -9.8,
             turbulence_strength: 0.0,
             turbulence_frequency: 3.0,
             kill_all: 0,
+            scale_end: 1.0,
+            _pad2: [0.0; 3],
         }
     }
 }

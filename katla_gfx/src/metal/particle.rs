@@ -50,7 +50,9 @@ struct ParticleData {
     lifetime: f32,
     color: [f32; 4],
     emitter_index: u32,
-    _pad: [f32; 3],
+    max_lifetime: f32,
+    initial_scale: f32,
+    _pad: f32,
 }
 
 /// Per-frame data for particle simulation (32 bytes).
@@ -933,7 +935,7 @@ mod tests {
 
     #[test]
     fn test_emitter_config_size() {
-        assert_eq!(std::mem::size_of::<EmitterConfig>(), 144);
+        assert_eq!(std::mem::size_of::<EmitterConfig>(), 160);
     }
 
     #[test]

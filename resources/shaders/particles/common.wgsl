@@ -11,7 +11,9 @@ struct ParticleData {
     lifetime: f32,
     color: vec4f,
     emitter_index: u32,
-    _pad: array<f32, 3>,
+    max_lifetime: f32,
+    initial_scale: f32,
+    _pad: f32,
 }
 
 // Per-frame data (updated via push descriptors)
@@ -53,12 +55,16 @@ struct EmitterConfig {
     scale_variation: f32,
     color: vec4f,
     color_variation: f32,
-    _pad_color: vec4f,
+    color_end: vec4f,
     shape_params: vec4f,
     gravity: f32,
     turbulence_strength: f32,
     turbulence_frequency: f32,
     kill_all: u32,
+    scale_end: f32,
+    _pad2_0: f32,
+    _pad2_1: f32,
+    _pad2_2: f32,
 }
 
 const MAX_EMITTERS: u32 = 1024u;
