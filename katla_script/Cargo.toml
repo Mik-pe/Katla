@@ -14,3 +14,10 @@ katla_math = { path = "../katla_math" }
 katla_derive = { path = "../katla_derive" }
 log = { workspace = true }
 serde = { workspace = true }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "script_benchmarks"
+harness = false
