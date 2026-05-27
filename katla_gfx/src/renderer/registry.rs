@@ -247,6 +247,28 @@ impl AssetRegistry {
         self.materials.len()
     }
 
+    /// Find all materials whose shader path matches the given file name.
+    ///
+    /// Used for shader hot reload to identify which materials need recompilation
+    /// when a shader file changes on disk.
+    pub fn materials_for_shader(
+        &self,
+        shader_path: &std::path::Path,
+    ) -> Vec<(MaterialHandle, std::path::PathBuf)> {
+        let file_name = shader_path.file_name();
+        self.materials
+            .iter_enumerated()
+            .filter_map(|(idx, mat)| {
+                let sp = mat.shader_path.as_ref()?;
+                if sp.file_name() == file_name {
+                    Some((MaterialHandle::new(idx), sp.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     /// Remove a mesh by handle, returning the removed asset for GPU cleanup.
     ///
     /// Returns `None` if the handle is invalid or already removed.

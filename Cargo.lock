@@ -2422,6 +2422,7 @@ dependencies = [
 name = "katla_script"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "katla_derive",
  "katla_ecs",
  "katla_math",

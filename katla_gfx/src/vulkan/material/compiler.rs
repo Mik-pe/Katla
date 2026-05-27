@@ -545,6 +545,39 @@ impl MaterialCompiler {
         self.skeleton_descriptor_layout.unwrap()
     }
 
+    /// Invalidate cached shader modules for the given path.
+    pub(crate) fn invalidate_shader_cache(&self, path: &Path) {
+        self.shader_cache.borrow_mut().invalidate(path);
+    }
+
+    /// Load a shader module for the given path and stage.
+    pub(crate) fn load_shader(
+        &self,
+        path: &Path,
+        stage: vk::ShaderStageFlags,
+    ) -> Result<vk::ShaderModule, MaterialError> {
+        self.shader_cache
+            .borrow_mut()
+            .load_shader(path, stage)
+            .map_err(|e| MaterialError::ShaderCompilation(format!("{:?}", e)))
+    }
+
+    /// Build a pipeline from pre-loaded shader modules.
+    ///
+    /// Combines descriptor layout construction and pipeline building into a
+    /// single call. Used by hot reload to rebuild a pipeline with fresh shaders.
+    pub(crate) fn build_pipeline_from_modules(
+        &mut self,
+        options: &MaterialOptions,
+        _material_type: MaterialType,
+        vert_module: vk::ShaderModule,
+        frag_module: vk::ShaderModule,
+        vertex_binding: &crate::vulkan::vertexbinding::VertexBinding,
+    ) -> Result<crate::vulkan::material::builder::Pipeline, MaterialError> {
+        let layouts = self.build_descriptor_layouts(options)?;
+        self.build_pipeline(options, vert_module, frag_module, &layouts, vertex_binding)
+    }
+
     /// Set the compositing descriptor set layout for compiling compositing materials.
     ///
     /// This must be set before compiling a material with `is_compositing: true`.

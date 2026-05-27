@@ -135,4 +135,136 @@ impl VulkanRenderer {
         self.default_material_handle
             .expect("default_material() called before init_default_material()")
     }
+
+    /// Recompile all materials whose shader path matches the given file.
+    ///
+    /// Invalidates cached shader modules for the path, then recompiles each
+    /// matching material in-place (keeping the same handle/slot index).
+    /// Returns the number of materials recompiled.
+    pub(crate) fn recompile_materials_for_shader(
+        &mut self,
+        changed_path: &std::path::Path,
+    ) -> usize {
+        let matches = self.asset_registry.materials_for_shader(changed_path);
+        if matches.is_empty() {
+            return 0;
+        }
+
+        log::info!(
+            "Recompiling {} material(s) for shader: {}",
+            matches.len(),
+            changed_path.display()
+        );
+
+        let count = matches.len();
+        for (handle, stored_path) in &matches {
+            // Invalidate cached shader modules so load_shader re-reads from disk
+            self.material_compiler.invalidate_shader_cache(stored_path);
+
+            if let Err(e) = self.recompile_single_material(*handle) {
+                log::warn!(
+                    "Failed to recompile material {:?} for shader '{}': {}",
+                    handle,
+                    stored_path.display(),
+                    e
+                );
+            }
+        }
+        count
+    }
+
+    /// Recompile a single material in-place using its stored shader path and options.
+    fn recompile_single_material(&mut self, handle: MaterialHandle) -> Result<(), RendererError> {
+        use crate::vulkan::material::compiler::{MaterialOptions, MaterialType};
+
+        // Extract stored material info (immutable borrow of registry)
+        let (
+            shader_path,
+            vertex_type,
+            is_compositing,
+            alpha_blended,
+            double_sided,
+            wireframe,
+            depth_test,
+            vertex_binding,
+            color_format,
+            old_pipeline_handle,
+            textures,
+        ) = {
+            let mat = self.asset_registry.get_material(handle).ok_or_else(|| {
+                RendererError::InvalidOperation(format!("Material handle {:?} not found", handle))
+            })?;
+
+            let shader_path = mat.shader_path.clone().ok_or_else(|| {
+                RendererError::InvalidOperation(format!("Material {:?} has no shader path", handle))
+            })?;
+
+            (
+                shader_path,
+                mat.vertex_type,
+                mat.is_compositing,
+                mat.alpha_blended,
+                mat.double_sided,
+                mat.wireframe,
+                mat.depth_test,
+                mat.vertex_binding.clone(),
+                mat.color_format,
+                mat.pipeline,
+                mat.textures,
+            )
+        };
+
+        // Load shaders (cache was invalidated, so this reads from disk)
+        let vert_module = self
+            .material_compiler
+            .load_shader(&shader_path, ash::vk::ShaderStageFlags::VERTEX)?;
+        let frag_module = self
+            .material_compiler
+            .load_shader(&shader_path, ash::vk::ShaderStageFlags::FRAGMENT)?;
+
+        let material_type = match vertex_type {
+            crate::vulkan::material::compiler::VertexType::Pbr => MaterialType::Pbr,
+            crate::vulkan::material::compiler::VertexType::Ui => MaterialType::Ui,
+            _ => MaterialType::Auto,
+        };
+
+        let options = MaterialOptions {
+            color_format,
+            vertex_type,
+            is_compositing,
+            alpha_blended,
+            double_sided,
+            wireframe,
+            depth_test,
+        };
+
+        // Build new pipeline via material_compiler
+        let pipeline = self.material_compiler.build_pipeline_from_modules(
+            &options,
+            material_type,
+            vert_module,
+            frag_module,
+            &vertex_binding,
+        )?;
+
+        // Register new pipeline and update material in-place
+        let new_pipeline_handle = self.asset_registry.register_pipeline(pipeline);
+
+        if let Some(mat) = self.asset_registry.get_material_mut(handle) {
+            mat.pipeline = Some(new_pipeline_handle);
+            mat.fully_compiled = true;
+        }
+
+        // Destroy old pipeline
+        if let Some(old) = old_pipeline_handle {
+            self.asset_registry.remove_pipeline(old);
+        }
+
+        // Restore texture indices
+        if let Some(mat) = self.asset_registry.get_material_mut(handle) {
+            mat.textures = textures;
+        }
+
+        Ok(())
+    }
 }

@@ -42,6 +42,11 @@ impl super::Application {
             handle.index()
         );
 
+        #[cfg(feature = "editor")]
+        {
+            self.editor.texture_paths.insert(path.to_path_buf(), handle);
+        }
+
         Ok(handle)
     }
 
@@ -70,6 +75,11 @@ impl super::Application {
             height,
             handle.index()
         );
+
+        #[cfg(feature = "editor")]
+        {
+            self.editor.texture_paths.insert(path.to_path_buf(), handle);
+        }
 
         Ok(handle)
     }

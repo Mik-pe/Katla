@@ -393,20 +393,63 @@ impl Application {
         for change in watcher.poll_changes() {
             match change.kind {
                 crate::util::AssetChangeKind::Shader => {
-                    log::info!(
-                        "Shader changed: {} — recompilation not yet implemented",
-                        change.path.display()
-                    );
+                    let count = self.renderer.recompile_materials_for_shader(&change.path);
+                    if count > 0 {
+                        info!(
+                            "Hot reloaded shader: {} ({} material(s) recompiled)",
+                            change.path.display(),
+                            count
+                        );
+                    } else {
+                        debug!(
+                            "Shader changed: {} (no matching materials)",
+                            change.path.display()
+                        );
+                    }
                 }
                 crate::util::AssetChangeKind::Texture => {
-                    log::info!(
-                        "Texture changed: {} — re-upload not yet implemented",
-                        change.path.display()
-                    );
+                    self.reload_texture(&change.path);
                 }
                 crate::util::AssetChangeKind::Script => {
                     // Script hot reload is handled by ScriptWatcher in katla_script
                 }
+            }
+        }
+    }
+
+    /// Reload a texture from disk and update the GPU resource in-place.
+    #[cfg(feature = "editor")]
+    fn reload_texture(&mut self, path: &std::path::Path) {
+        let handle = match self.editor.texture_paths.get(path).copied() {
+            Some(h) => h,
+            None => {
+                debug!("Texture changed but not tracked: {}", path.display());
+                return;
+            }
+        };
+
+        let img = match image::open(path) {
+            Ok(img) => img.to_rgba8(),
+            Err(e) => {
+                warn!("Failed to reload texture '{}': {}", path.display(), e);
+                return;
+            }
+        };
+
+        match self.renderer.update_texture(handle, img.as_raw()) {
+            Ok(()) => {
+                info!(
+                    "Hot reloaded texture: {} -> handle {}",
+                    path.display(),
+                    handle.index()
+                );
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to upload reloaded texture '{}': {}",
+                    path.display(),
+                    e
+                );
             }
         }
     }
