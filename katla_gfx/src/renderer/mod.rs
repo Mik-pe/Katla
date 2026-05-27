@@ -832,10 +832,7 @@ impl VulkanRenderer {
         }
     }
 
-    pub fn recreate_swapchain(
-        &mut self,
-        frame_graph: &mut crate::render_graph::FrameGraph<Self>,
-    ) -> Result<Vec<(String, u32)>, crate::error::RendererError> {
+    pub fn recreate_swapchain(&mut self) -> Result<(), crate::error::RendererError> {
         self.wait_for_device();
         self.first_frame_rendered = false;
 
@@ -872,20 +869,7 @@ impl VulkanRenderer {
         // Recreate light culling buffers for new dimensions
         self.resize_light_culling(new_extent.width, new_extent.height);
 
-        // Recreate transient textures with new dimensions
-        match frame_graph.recreate_transient_textures(self, new_extent.width, new_extent.height) {
-            Ok(recreated_textures) => {
-                info!(
-                    "Recreated {} transient textures for resize",
-                    recreated_textures.len()
-                );
-                Ok(recreated_textures)
-            }
-            Err(e) => {
-                log::error!("Failed to recreate transient textures: {}", e);
-                Ok(Vec::new())
-            }
-        }
+        Ok(())
     }
 
     pub fn num_images(&self) -> usize {

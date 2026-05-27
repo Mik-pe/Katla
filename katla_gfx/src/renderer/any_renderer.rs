@@ -616,25 +616,15 @@ impl AnyRenderer {
         }
     }
 
-    /// Recreate the swapchain (Vulkan) or resize (Metal).
-    /// Returns updated transient texture names and bindless slots.
-    pub fn recreate_swapchain(
-        &mut self,
-        frame_graph: &mut crate::render_graph::any_frame_graph::AnyFrameGraph,
-    ) -> Result<Vec<(String, u32)>, RendererError> {
+    /// Recreate the swapchain (Vulkan only).
+    /// Metal uses resize() + recreate_transient_textures() separately.
+    pub fn recreate_swapchain(&mut self) -> Result<(), RendererError> {
         match self {
-            AnyRenderer::Vulkan(r) => {
-                let fg = frame_graph.as_vulkan_mut();
-                r.recreate_swapchain(fg)
-            }
+            AnyRenderer::Vulkan(r) => r.recreate_swapchain(),
             #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(_r) => {
-                // MetalRenderer doesn't have recreate_swapchain with frame graph.
-                // Metal swapchain recreation happens via resize() + recreate_transient_textures.
-                Err(RendererError::InvalidOperation(
-                    "Metal backend uses resize(), not recreate_swapchain()".into(),
-                ))
-            }
+            AnyRenderer::Metal(_r) => Err(RendererError::InvalidOperation(
+                "Metal backend uses resize(), not recreate_swapchain()".into(),
+            )),
         }
     }
 

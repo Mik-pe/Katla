@@ -444,23 +444,26 @@ impl Application {
     /// - The window is unoccluded (`WindowEvent::Occluded(false)`)
     /// - `acquire_next_image` or `queue_present` returns `VK_SUBOPTIMAL_KHR` / `VK_ERROR_OUT_OF_DATE_KHR`
     pub(crate) fn recreate_swapchain_resources(&mut self) {
-        let recreated_textures = match self.renderer.recreate_swapchain(&mut self.frame_graph) {
-            Ok(textures) => textures,
-            Err(e) => {
-                log::error!("Failed to recreate swapchain: {}", e);
-                return;
-            }
-        };
+        if let Err(e) = self.renderer.recreate_swapchain() {
+            log::error!("Failed to recreate swapchain: {}", e);
+            return;
+        }
 
         let extent = self.renderer.swapchain_extent();
 
-        for (name, slot) in recreated_textures {
-            if name == "hdr_color" {
-                self.frame_graph
-                    .set_tonemap_texture_index(self.pass_ids.tonemap, slot)
-                    .expect("Failed to update tonemap texture index");
-            } else if name == "viewport_0" {
-                self.on_viewport_texture_recreated(slot);
+        if let Ok(recreated_textures) = self.frame_graph.recreate_transient_textures(
+            &mut self.renderer,
+            extent.width,
+            extent.height,
+        ) {
+            for (name, slot) in recreated_textures {
+                if name == "hdr_color" {
+                    self.frame_graph
+                        .set_tonemap_texture_index(self.pass_ids.tonemap, slot)
+                        .expect("Failed to update tonemap texture index");
+                } else if name == "viewport_0" {
+                    self.on_viewport_texture_recreated(slot);
+                }
             }
         }
 
