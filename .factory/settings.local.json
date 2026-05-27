@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo test *)",
+      "Bash(MTL_DEBUG_LAYER=1 cargo test -p katla_gfx --features metal test_headless_render_not_white -- --nocapture)",
+      "Bash(git add *)"
+    ]
+  }
+}
