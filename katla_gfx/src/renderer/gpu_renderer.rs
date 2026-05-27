@@ -175,6 +175,15 @@ pub trait GpuRenderer: Sized + 'static {
     /// Get the default PBR material handle.
     fn default_material(&self) -> MaterialHandle;
 
+    /// Recompile all materials compiled from the given shader file.
+    ///
+    /// Invalidates cached shader modules, re-reads the shader from disk,
+    /// and rebuilds pipelines for each matching material in-place (keeping
+    /// the same handle). Returns the number of materials recompiled.
+    fn recompile_materials_for_shader(&mut self, _shader_path: &std::path::Path) -> usize {
+        0
+    }
+
     // ========================================================================
     // Destruction
     // ========================================================================
@@ -505,6 +514,10 @@ impl GpuRenderer for VulkanRenderer {
 
     fn default_material(&self) -> MaterialHandle {
         VulkanRenderer::default_material(self)
+    }
+
+    fn recompile_materials_for_shader(&mut self, shader_path: &std::path::Path) -> usize {
+        VulkanRenderer::recompile_materials_for_shader(self, shader_path)
     }
 
     fn destroy_mesh(&mut self, handle: MeshHandle) {

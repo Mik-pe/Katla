@@ -336,6 +336,14 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
+    fn recompile_materials_for_shader(&mut self, shader_path: &std::path::Path) -> usize {
+        match self {
+            AnyRenderer::Vulkan(r) => r.recompile_materials_for_shader(shader_path),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.recompile_materials_for_shader(shader_path),
+        }
+    }
+
     fn destroy_mesh(&mut self, handle: MeshHandle) {
         match self {
             AnyRenderer::Vulkan(r) => r.destroy_mesh(handle),

@@ -89,6 +89,8 @@ pub(crate) struct EditorState {
     pub(crate) background_loader: BackgroundLoader,
     /// Mapping of thumbnail paths to their uploaded texture handles
     pub(crate) thumbnail_texture_handles: HashMap<PathBuf, katla_gfx::TextureHandle>,
+    /// Mapping of texture file paths to their GPU handles (for hot reload)
+    pub(crate) texture_paths: HashMap<PathBuf, katla_gfx::TextureHandle>,
     /// Reusable buffer for collecting (instance_index, EntityId) pairs during
     /// collect_draws_with_context. Cleared and refilled each frame to avoid
     /// per-frame Vec allocation.
@@ -171,6 +173,7 @@ impl EditorState {
             gui_state,
             background_loader: BackgroundLoader::new(),
             thumbnail_texture_handles: HashMap::new(),
+            texture_paths: HashMap::new(),
             draw_entity_map_entries: Vec::new(),
             entity_instance_map: std::collections::HashMap::new(),
             entity_to_instance_indices: std::collections::HashMap::new(),

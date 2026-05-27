@@ -119,6 +119,8 @@ impl MetalRenderer {
         let material = MetalMaterial {
             pipeline: Some(pipeline),
             texture_indices: [0, 1, 2, 0],
+            shader_path: Some(shader_path.to_string()),
+            vertex_type: Some(vertex_type.to_string()),
         };
         let id = self.materials.insert(material);
         Ok(MaterialHandle::new(id))
@@ -140,5 +142,73 @@ impl MetalRenderer {
 
     pub(crate) fn destroy_material_impl(&mut self, handle: MaterialHandle) {
         self.materials.remove(handle.index());
+    }
+
+    /// Recompile all materials whose shader path matches the given file.
+    ///
+    /// Iterates all stored materials, finds those compiled from the changed
+    /// shader, and recompiles their pipelines in-place (keeping the same handle).
+    pub(crate) fn recompile_materials_for_shader_impl(
+        &mut self,
+        changed_path: &std::path::Path,
+    ) -> usize {
+        let file_name = changed_path.file_name().and_then(|n| n.to_str());
+        let Some(file_name) = file_name else {
+            return 0;
+        };
+
+        let handles: Vec<MaterialHandle> = self
+            .materials
+            .iter_enumerated()
+            .filter_map(|(idx, mat)| {
+                let sp = mat.shader_path.as_ref()?;
+                let mat_file = std::path::Path::new(sp).file_name()?.to_str()?;
+                if mat_file == file_name {
+                    Some(MaterialHandle::new(idx))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let count = handles.len();
+        for handle in handles {
+            let (shader_path, vertex_type) = {
+                let Some(mat) = self.materials.get(handle.index()) else {
+                    continue;
+                };
+                let sp = match mat.shader_path.as_ref() {
+                    Some(p) => p.clone(),
+                    None => continue,
+                };
+                let vt = match mat.vertex_type.as_ref() {
+                    Some(v) => v.clone(),
+                    None => continue,
+                };
+                (sp, vt)
+            };
+
+            match self.compile_material_impl(&shader_path, &vertex_type) {
+                Ok(new_handle) => {
+                    let new_pipeline = self
+                        .materials
+                        .get(new_handle.index())
+                        .and_then(|m| m.pipeline.clone());
+                    if let Some(old_mat) = self.materials.get_mut(handle.index()) {
+                        old_mat.pipeline = new_pipeline;
+                    }
+                    self.materials.remove(new_handle.index());
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to recompile material '{}' for shader '{}': {}",
+                        vertex_type,
+                        shader_path,
+                        e
+                    );
+                }
+            }
+        }
+        count
     }
 }

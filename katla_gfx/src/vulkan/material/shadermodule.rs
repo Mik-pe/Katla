@@ -261,6 +261,26 @@ impl ShaderCache {
         Ok(module)
     }
 
+    /// Invalidate cached shader modules for a specific path.
+    ///
+    /// Removes all cached modules (vertex, fragment, compute stages) for the
+    /// given shader path and destroys the underlying Vulkan shader modules.
+    /// Used for shader hot reload to force recompilation from disk.
+    pub fn invalidate(&mut self, path: &Path) {
+        let stages = [
+            vk::ShaderStageFlags::VERTEX,
+            vk::ShaderStageFlags::FRAGMENT,
+            vk::ShaderStageFlags::COMPUTE,
+        ];
+        for stage in stages {
+            if let Some(module) = self.shaders.remove(&(path.to_path_buf(), stage)) {
+                unsafe {
+                    self.device.destroy_shader_module(module, None);
+                }
+            }
+        }
+    }
+
     pub fn clear(&mut self) {
         for (_, module) in self.shaders.drain() {
             unsafe {

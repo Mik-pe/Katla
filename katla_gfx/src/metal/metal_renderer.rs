@@ -57,6 +57,8 @@ pub(crate) struct MetalMesh {
 pub(crate) struct MetalMaterial {
     pub(crate) pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
     pub(crate) texture_indices: [u32; 4],
+    pub(crate) shader_path: Option<String>,
+    pub(crate) vertex_type: Option<String>,
 }
 
 /// A texture stored with its bindless slot.
@@ -336,6 +338,8 @@ impl MetalRenderer {
         let default_mat = MetalMaterial {
             pipeline: None,
             texture_indices: [0, 1, 2, 0],
+            shader_path: None,
+            vertex_type: None,
         };
         let id = renderer.materials.insert(default_mat);
         renderer.default_material = Some(MaterialHandle::new(id));
@@ -1084,6 +1088,10 @@ impl GpuRenderer for MetalRenderer {
 
     fn default_material(&self) -> MaterialHandle {
         self.default_material_impl()
+    }
+
+    fn recompile_materials_for_shader(&mut self, shader_path: &std::path::Path) -> usize {
+        self.recompile_materials_for_shader_impl(shader_path)
     }
 
     fn destroy_material(&mut self, handle: MaterialHandle) {

@@ -223,6 +223,13 @@ impl<T> ResourceStorage<T> {
         self.resources.iter().filter_map(|slot| slot.as_ref())
     }
 
+    pub fn iter_enumerated(&self) -> impl Iterator<Item = (u32, &T)> {
+        self.resources
+            .iter()
+            .enumerate()
+            .filter_map(|(i, slot)| slot.as_ref().map(|v| (i as u32, v)))
+    }
+
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.resources.iter_mut().filter_map(|slot| slot.as_mut())
     }
