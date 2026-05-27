@@ -11,6 +11,7 @@ pub(crate) mod types;
 
 pub mod any_renderer;
 pub mod gpu_renderer;
+pub mod pipeline_kind;
 
 pub(crate) mod animation_init;
 pub(crate) mod bindless_queries;

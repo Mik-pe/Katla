@@ -237,7 +237,7 @@ impl ApplicationBuilder {
 
     fn build_metal_frame_graph(renderer: &mut katla_gfx::MetalRenderer) -> AppResult<FrameGraph> {
         use katla_gfx::render_graph::{
-            FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassKind, PassType, SimplePass,
+            FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassType, SimplePass,
         };
         use katla_gfx::texture::ImageFormat;
 
@@ -376,27 +376,39 @@ impl ApplicationBuilder {
         // Initialize shadow depth pipeline (depth-only rendering from light's perspective)
         let shadow_shader_path = resources.shader_path("shadow/shadow_depth.wgsl");
         renderer
-            .init_shadow_pipeline(&shadow_shader_path)
+            .init_pass_pipeline(katla_gfx::PipelineKind::Shadow, &[&shadow_shader_path])
             .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         let shadow_skinned_shader_path = resources.shader_path("shadow/shadow_depth_skinned.wgsl");
         renderer
-            .init_shadow_pipeline_skinned(&shadow_skinned_shader_path)
+            .init_pass_pipeline(
+                katla_gfx::PipelineKind::ShadowSkinned,
+                &[&shadow_skinned_shader_path],
+            )
             .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         let depth_prepass_shader_path = resources.shader_path("depth_prepass.wgsl");
         renderer
-            .init_depth_prepass_pipeline(&depth_prepass_shader_path)
+            .init_pass_pipeline(
+                katla_gfx::PipelineKind::DepthPrepass,
+                &[&depth_prepass_shader_path],
+            )
             .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         let depth_prepass_skinned_shader_path = resources.shader_path("depth_prepass_skinned.wgsl");
         renderer
-            .init_depth_prepass_skinned_pipeline(&depth_prepass_skinned_shader_path)
+            .init_pass_pipeline(
+                katla_gfx::PipelineKind::DepthPrepassSkinned,
+                &[&depth_prepass_skinned_shader_path],
+            )
             .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         let billboard_depth_shader_path = resources.shader_path("billboard_depth.wgsl");
         renderer
-            .init_depth_prepass_billboard_pipeline(&billboard_depth_shader_path)
+            .init_pass_pipeline(
+                katla_gfx::PipelineKind::DepthPrepassBillboard,
+                &[&billboard_depth_shader_path],
+            )
             .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         // Initialize outline pipelines for stencil-based selection highlight
@@ -407,11 +419,14 @@ impl ApplicationBuilder {
         let outline_draw_skinned_shader_path =
             resources.shader_path("outline/outline_draw_skinned.wgsl");
         renderer
-            .init_outline_pipelines(
-                &stencil_mark_shader_path,
-                &stencil_mark_skinned_shader_path,
-                &outline_draw_shader_path,
-                &outline_draw_skinned_shader_path,
+            .init_pass_pipeline(
+                katla_gfx::PipelineKind::Outline,
+                &[
+                    &stencil_mark_shader_path,
+                    &stencil_mark_skinned_shader_path,
+                    &outline_draw_shader_path,
+                    &outline_draw_skinned_shader_path,
+                ],
             )
             .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
@@ -420,9 +435,12 @@ impl ApplicationBuilder {
         let stencil_indicator_skinned_shader_path =
             resources.shader_path("outline/stencil_indicator_skinned.wgsl");
         renderer
-            .init_stencil_indicator_pipelines(
-                &stencil_indicator_shader_path,
-                &stencil_indicator_skinned_shader_path,
+            .init_pass_pipeline(
+                katla_gfx::PipelineKind::StencilIndicator,
+                &[
+                    &stencil_indicator_shader_path,
+                    &stencil_indicator_skinned_shader_path,
+                ],
             )
             .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
