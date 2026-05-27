@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+pub mod asset_watcher;
 pub mod background_loader;
 pub mod cache;
 pub mod config;
@@ -9,6 +10,8 @@ pub mod modelcache;
 pub mod stl_parser;
 pub mod timer;
 
+#[cfg(feature = "editor")]
+pub use asset_watcher::*;
 #[cfg(feature = "editor")]
 pub use background_loader::*;
 pub use cache::*;

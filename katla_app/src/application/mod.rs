@@ -361,6 +361,9 @@ pub struct Application {
     pub(crate) on_update: Option<builder::UpdateHook>,
     /// Hook called during cleanup_on_exit().
     pub(crate) on_shutdown: Option<builder::ShutdownHook>,
+    /// File watcher for shader and texture hot reload (editor only).
+    #[cfg(feature = "editor")]
+    pub(crate) asset_watcher: Option<crate::util::AssetWatcher>,
 }
 
 impl ApplicationHandler for Application {

@@ -41,3 +41,4 @@ skrifa = { workspace = true }
 toml = { workspace = true }
 rayon = { workspace = true }
 vello_cpu = { workspace = true }
+notify = { workspace = true }
