@@ -113,6 +113,11 @@ pub(crate) fn build_asset_browser_from_ctx(
             AssetAction::AudioPreviewToggle { path } => {
                 pending_actions.push(EditorAction::AudioPreviewToggle { path });
             }
+            AssetAction::DragScriptToEntity { path, screen_pos } => {
+                if viewport_bounds.contains(screen_pos) {
+                    pending_actions.push(EditorAction::SpawnScriptEntity { path, screen_pos });
+                }
+            }
             AssetAction::CreateFolder(parent_path) => {
                 let mut new_folder = parent_path.join("New Folder");
                 let mut counter = 1;

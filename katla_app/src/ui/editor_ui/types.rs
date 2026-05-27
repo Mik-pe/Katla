@@ -439,6 +439,19 @@ pub enum EditorAction {
         entity: EntityId,
         field: AudioEmitterBoolField,
     },
+    /// Attach a script to the selected entity.
+    AttachScript { entity: EntityId, path: String },
+    /// Spawn a new entity with a ScriptComponent at a viewport position.
+    SpawnScriptEntity {
+        path: std::path::PathBuf,
+        screen_pos: katla_math::Vec2,
+    },
+    /// Set a script variable on an entity's script instance.
+    SetScriptVar {
+        entity: EntityId,
+        var_name: String,
+        value: katla_script::ScriptVarValue,
+    },
     /// Play/stop audio preview in asset browser.
     AudioPreviewToggle { path: std::path::PathBuf },
     /// Change collider shape type on an entity.
@@ -583,6 +596,8 @@ pub struct InspectorEditState {
     pub physics_friction: f32,
     pub physics_restitution: f32,
     pub physics_density: f32,
+    /// Cached script variables from the current frame's script instance.
+    pub script_vars: Vec<(String, katla_script::ScriptVarValue)>,
 }
 
 impl Default for InspectorEditState {
@@ -628,6 +643,7 @@ impl Default for InspectorEditState {
             physics_friction: 0.5,
             physics_restitution: 0.0,
             physics_density: 1.0,
+            script_vars: Vec::new(),
         }
     }
 }

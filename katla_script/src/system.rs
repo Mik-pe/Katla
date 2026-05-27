@@ -66,6 +66,29 @@ pub enum PhysicsCollisionEventType {
 #[derive(Default)]
 pub struct PendingPhysicsEvents(pub Vec<PhysicsCollisionEvent>);
 
+/// Resource holding script variable snapshots for the editor inspector.
+/// `ScriptSystem` populates this each frame during editing mode.
+#[derive(Default)]
+pub struct ScriptInspectorData {
+    /// Per-entity script variable snapshots: (entity_id, script_path, vars)
+    pub entries: Vec<(
+        katla_ecs::EntityId,
+        String,
+        Vec<(String, crate::engine::ScriptVarValue)>,
+    )>,
+}
+
+/// Resource telling the script system whether to populate inspector data.
+#[derive(Default)]
+pub struct PopulateScriptInspector(pub bool);
+
+/// Resource holding pending script variable edits from the editor inspector.
+/// `katla_app` pushes edits, `ScriptSystem` applies them each frame.
+#[derive(Default)]
+pub struct PendingScriptVarEdits(
+    pub Vec<(katla_ecs::EntityId, String, crate::engine::ScriptVarValue)>,
+);
+
 pub struct ScriptSystem {
     pub(crate) engine: ScriptEngine,
     pub(crate) event_bus: EventBus,
@@ -545,5 +568,55 @@ impl System for ScriptSystem {
         self.process_events();
         self.dispatch_physics_events(world);
         self.process_destroyed(world);
+        self.apply_script_var_edits(world);
+        self.populate_inspector_data(world);
+    }
+}
+
+impl ScriptSystem {
+    /// Apply pending script variable edits from the editor inspector.
+    fn apply_script_var_edits(&mut self, world: &mut World) {
+        let edits: Vec<(katla_ecs::EntityId, String, crate::engine::ScriptVarValue)> = world
+            .get_resource_mut::<PendingScriptVarEdits>()
+            .map(|r| std::mem::take(&mut r.0))
+            .unwrap_or_default();
+
+        for (entity, var_name, value) in edits {
+            let handle = match world.get_component::<ScriptComponent>(entity) {
+                Some(comp) => comp.instance_handle,
+                None => continue,
+            };
+            let Some(handle) = handle else { continue };
+            if let Err(e) = self.engine.set_instance_var(handle, &var_name, value) {
+                debug!("Failed to set script var '{var_name}' on entity {entity}: {e}");
+            }
+        }
+    }
+
+    /// Populate ScriptInspectorData for the editor if requested.
+    fn populate_inspector_data(&mut self, world: &mut World) {
+        let should_populate = world
+            .get_resource::<PopulateScriptInspector>()
+            .map(|p| p.0)
+            .unwrap_or(false);
+        if !should_populate {
+            return;
+        }
+
+        let mut entries = Vec::new();
+        for (idx, instance) in self.engine.instances.iter().enumerate() {
+            let Some(inst) = instance else { continue };
+            let handle = ScriptInstanceHandle {
+                index: idx as u32,
+                generation: inst.generation,
+            };
+            if let Ok(vars) = self.engine.inspect_instance_vars(handle) {
+                entries.push((inst.entity, inst.script_path.clone(), vars));
+            }
+        }
+
+        if let Some(inspector) = world.get_resource_mut::<ScriptInspectorData>() {
+            inspector.entries = entries;
+        }
     }
 }

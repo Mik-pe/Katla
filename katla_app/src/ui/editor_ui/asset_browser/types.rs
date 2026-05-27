@@ -97,6 +97,8 @@ pub enum AssetAction {
     },
     /// Toggle audio preview play/stop
     AudioPreviewToggle { path: PathBuf },
+    /// Drag script asset onto an entity (inspector/hierarchy)
+    DragScriptToEntity { path: PathBuf, screen_pos: Vec2 },
 }
 
 impl AssetType {

@@ -81,8 +81,16 @@ impl Application {
 
         // Sync editor camera speed to input state before systems run
         #[cfg(feature = "editor")]
-        if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {
-            input.camera_speed = self.editor.editor_ui.editor_settings().camera_speed;
+        {
+            if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {
+                input.camera_speed = self.editor.editor_ui.editor_settings().camera_speed;
+            }
+            if let Some(flag) = self
+                .world
+                .get_resource_mut::<katla_script::PopulateScriptInspector>()
+            {
+                flag.0 = true;
+            }
         }
 
         // Update world (runs ECS systems in parallel where possible)

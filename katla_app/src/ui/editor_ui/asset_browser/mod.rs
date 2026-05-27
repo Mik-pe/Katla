@@ -602,6 +602,11 @@ pub fn build_asset_browser(
                                     asset_type: *asset_type,
                                     screen_pos: mouse_pos,
                                 });
+                            } else if matches!(asset_type, AssetType::Script) {
+                                state.pending_actions.push(AssetAction::DragScriptToEntity {
+                                    path: asset_path.clone(),
+                                    screen_pos: mouse_pos,
+                                });
                             }
                         }
                     }

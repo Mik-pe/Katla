@@ -14,6 +14,14 @@ use crate::bindings::world::ScriptCommand;
 use crate::component::ScriptInstanceHandle;
 use crate::error::ScriptError;
 
+/// A scalar value from a script environment, for inspector display/editing.
+#[derive(Debug, Clone)]
+pub enum ScriptVarValue {
+    Number(f64),
+    Boolean(bool),
+    String(String),
+}
+
 const INSTRUCTION_LIMIT: u64 = 10_000_000;
 
 pub struct ScriptEngine {
@@ -902,6 +910,98 @@ impl ScriptEngine {
         }
 
         Ok(())
+    }
+
+    /// Inspect the scalar variables of a script instance's environment.
+    /// Returns (variable_name, value) pairs for numbers, booleans, and strings.
+    /// Skips functions and tables.
+    pub fn inspect_instance_vars(
+        &self,
+        handle: ScriptInstanceHandle,
+    ) -> Result<Vec<(String, ScriptVarValue)>, ScriptError> {
+        let raw = self.gather_scalar_state(handle)?;
+        let mut vars = Vec::with_capacity(raw.len());
+        for (name, value) in raw {
+            let var = match &value {
+                mlua::Value::Number(n) => ScriptVarValue::Number(*n),
+                mlua::Value::Integer(i) => ScriptVarValue::Number(*i as f64),
+                mlua::Value::Boolean(b) => ScriptVarValue::Boolean(*b),
+                mlua::Value::String(s) => {
+                    ScriptVarValue::String(s.to_str().map(|s| s.to_string()).unwrap_or_default())
+                }
+                _ => continue,
+            };
+            vars.push((name, var));
+        }
+        vars.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(vars)
+    }
+
+    /// Set a scalar variable on a script instance's environment.
+    pub fn set_instance_var(
+        &self,
+        handle: ScriptInstanceHandle,
+        name: &str,
+        value: ScriptVarValue,
+    ) -> Result<(), ScriptError> {
+        let instance = self
+            .instances
+            .get(handle.index as usize)
+            .and_then(|opt| opt.as_ref())
+            .filter(|inst| inst.generation == handle.generation)
+            .ok_or(ScriptError::InstanceNotFound(handle))?;
+
+        let env: mlua::Table = self.vm.registry_value(&instance._env_key).map_err(|e| {
+            ScriptError::ExecutionFailed {
+                path: instance.script_path.clone(),
+                line: None,
+                source: e,
+            }
+        })?;
+
+        let lua_val = match value {
+            ScriptVarValue::Number(n) => mlua::Value::Number(n),
+            ScriptVarValue::Boolean(b) => mlua::Value::Boolean(b),
+            ScriptVarValue::String(s) => self
+                .vm
+                .create_string(&s)
+                .map(|s| mlua::Value::String(s))
+                .map_err(|e| ScriptError::ExecutionFailed {
+                    path: instance.script_path.clone(),
+                    line: None,
+                    source: e,
+                })?,
+        };
+
+        env.raw_set(name, lua_val)
+            .map_err(|e| ScriptError::ExecutionFailed {
+                path: instance.script_path.clone(),
+                line: None,
+                source: e,
+            })?;
+
+        Ok(())
+    }
+
+    /// Get the script path for a given instance handle.
+    pub fn instance_script_path(&self, handle: ScriptInstanceHandle) -> Option<String> {
+        self.instances
+            .get(handle.index as usize)
+            .and_then(|opt| opt.as_ref())
+            .filter(|inst| inst.generation == handle.generation)
+            .map(|inst| inst.script_path.clone())
+    }
+
+    /// Get the handle for a script instance attached to an entity.
+    pub fn instance_for_entity(&self, entity: EntityId) -> Option<ScriptInstanceHandle> {
+        self.instances.iter().enumerate().find_map(|(i, opt)| {
+            opt.as_ref()
+                .filter(|inst| inst.entity == entity)
+                .map(|inst| ScriptInstanceHandle {
+                    index: i as u32,
+                    generation: inst.generation,
+                })
+        })
     }
 }
 
