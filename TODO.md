@@ -373,7 +373,7 @@
 - [x] Add event delivery system — each frame, drain pending events from bus, dispatch to registered script callbacks; ensure delivery order is deterministic
 - [x] Add physics bindings — `world:raycast(origin, direction, max_distance)` returning hit entity + point + normal (depends on Physics Phase 4)
 - [x] Add audio bindings — `world:play_sound("explosion")`, `world:play_sound_at("explosion", position)` (depends on Audio Phase 2)
-- [ ] Performance profile — benchmark 1000 script entities with on_update, optimize hot paths
+- [x] Performance profile — benchmark 1000 script entities with on_update, optimize hot paths
 - [x] Optimize script dispatch — batch entity queries, reduce per-hook overhead, consider JIT hints
 
 ### Phase 6: Editor integration
@@ -407,8 +407,8 @@
 #### Hot reload
 - [x] Integrate `notify` crate for file watching — watch `shaders/` and `resources/` directories recursively for file changes
 - [x] Add file change event routing — map changed file paths to asset types (shader -> recompile material, texture -> reload, script -> hot reload)
-- [ ] Implement shader hot reload — detect `.wgsl` changes, recompile material pipeline, swap in on next frame
-- [ ] Implement texture hot reload — detect image changes, re-upload texture data to GPU, keep same bindless slot
+- [x] Implement shader hot reload — detect `.wgsl` changes, recompile material pipeline, swap in on next frame
+- [x] Implement texture hot reload — detect image changes, re-upload texture data to GPU, keep same bindless slot
 
 #### Asset bundling
 - [ ] Design asset bundle format — header (magic, version, file table), compressed entries, support random access for large assets
