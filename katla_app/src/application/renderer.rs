@@ -799,7 +799,9 @@ impl Application {
 
         if self.needs_swapchain_recreate {
             self.needs_swapchain_recreate = false;
-            let (w, h) = self.viewport_size();
+            let inner = self.window.inner_size();
+            let w = (inner.width as f32 / self.scale_factor) as u32;
+            let h = (inner.height as f32 / self.scale_factor) as u32;
             if w > 0 && h > 0 {
                 if let Err(e) = self.renderer.wait_for_frame() {
                     log::error!("Failed to wait for GPU before resize: {}", e);
