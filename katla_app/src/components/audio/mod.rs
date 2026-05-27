@@ -67,3 +67,55 @@ impl AudioEmitter {
         self
     }
 }
+
+/// Defines a reverb zone in the scene as an axis-aligned box centered on the entity's position.
+///
+/// When the audio listener is inside the box, the zone's reverb parameters are blended
+/// into the global zone reverb bus. Multiple overlapping zones have their parameters
+/// averaged.
+#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ReverbZone {
+    /// Reverb feedback/decay (0.0-0.99). Higher = longer tail.
+    pub decay: f32,
+    /// Wet/dry mix of the reverb effect (0.0-1.0).
+    pub wet: f32,
+    /// High-frequency dampening (0.0-1.0). Higher = more dampened.
+    pub dampening: f32,
+    /// Half-extents of the AABB box shape (distance from center to each face).
+    pub half_extents: [f32; 3],
+}
+
+impl Default for ReverbZone {
+    fn default() -> Self {
+        ReverbZone {
+            decay: 0.7,
+            wet: 0.4,
+            dampening: 0.3,
+            half_extents: [5.0, 3.0, 5.0],
+        }
+    }
+}
+
+impl ReverbZone {
+    pub fn new(half_extents: [f32; 3]) -> Self {
+        ReverbZone {
+            half_extents,
+            ..Default::default()
+        }
+    }
+
+    pub fn with_params(mut self, decay: f32, wet: f32, dampening: f32) -> Self {
+        self.decay = decay;
+        self.wet = wet;
+        self.dampening = dampening;
+        self
+    }
+
+    /// Check if a point is inside this zone, given the zone's world position.
+    pub fn contains(&self, zone_position: &[f32; 3], point: &[f32; 3]) -> bool {
+        let dx = (point[0] - zone_position[0]).abs();
+        let dy = (point[1] - zone_position[1]).abs();
+        let dz = (point[2] - zone_position[2]).abs();
+        dx <= self.half_extents[0] && dy <= self.half_extents[1] && dz <= self.half_extents[2]
+    }
+}

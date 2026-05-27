@@ -7,7 +7,7 @@ use katla_ecs::scene_tool::registry::{ComponentRegistry, ComponentRegistryEntry,
 use crate::components::ParticleEmitterComponent;
 use crate::components::{
     AudioEmitter, DirectionalLight, DragComponent, MassComponent, NameComponent,
-    PerspectiveComponent, PointLight, VelocityComponent,
+    PerspectiveComponent, PointLight, ReverbZone, VelocityComponent,
 };
 use katla_physics::{ColliderShape, CollisionFilter, PhysicsMaterial, RigidBody};
 
@@ -500,6 +500,55 @@ fn register_audio_emitter(registry: &mut ComponentRegistry) {
     });
 }
 
+fn register_reverb_zone(registry: &mut ComponentRegistry) {
+    registry.register(ComponentRegistryEntry {
+        type_name: "ReverbZone",
+        has_component: |world: &World, entity: EntityId| {
+            world.get_component::<ReverbZone>(entity).is_some()
+        },
+        create_default: |world: &mut World, entity: EntityId| {
+            world.add_component(entity, ReverbZone::default());
+        },
+        remove_component: |world: &mut World, entity: EntityId| {
+            world.remove_component::<ReverbZone>(entity);
+        },
+        get_fields: |_world: &World, _entity: EntityId| ReverbZone::fields(),
+        get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
+            let comp = world.get_component_mut::<ReverbZone>(entity)?;
+            let field_mut = comp.field_mut(field_name)?;
+            Some(match field_mut {
+                FieldMut::F32(v) => FieldValue::F32(*v),
+                _ => FieldValue::Unknown,
+            })
+        },
+        set_field_value: |world: &mut World,
+                          entity: EntityId,
+                          field_name: &str,
+                          value: FieldValue|
+         -> Result<(), SceneToolError> {
+            let comp = world
+                .get_component_mut::<ReverbZone>(entity)
+                .ok_or_else(|| SceneToolError::ComponentNotFound {
+                    entity,
+                    component: "ReverbZone".to_string(),
+                })?;
+            let field_mut =
+                comp.field_mut(field_name)
+                    .ok_or_else(|| SceneToolError::FieldNotFound {
+                        component: "ReverbZone".to_string(),
+                        field: field_name.to_string(),
+                    })?;
+            match (field_mut, value) {
+                (FieldMut::F32(ref mut target), FieldValue::F32(v)) => {
+                    **target = v;
+                    Ok(())
+                }
+                (_, v) => Err(field_type_mismatch(field_name, "f32", v)),
+            }
+        },
+    });
+}
+
 fn register_collider_shape(registry: &mut ComponentRegistry) {
     registry.register(ComponentRegistryEntry {
         type_name: "ColliderShape",
@@ -647,6 +696,7 @@ pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     register_velocity_component(&mut registry);
     register_particle_emitter_component(&mut registry);
     register_audio_emitter(&mut registry);
+    register_reverb_zone(&mut registry);
     register_collider_shape(&mut registry);
     register_collision_filter(&mut registry);
     register_rigid_body(&mut registry);
