@@ -10,6 +10,7 @@
 use crate::Size2D;
 use crate::error::RendererError;
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
+use crate::renderer::pipeline_kind::PipelineKind;
 use crate::renderer::types::{DrawList, FrameUniforms, PointLightGPU, UIDrawList};
 use crate::texture::TextureDescriptor;
 use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
@@ -289,80 +290,19 @@ pub trait GpuRenderer: Sized + 'static {
         Ok(())
     }
 
-    fn init_shadow_pipeline(
+    /// Initialize a GPU pipeline by kind.
+    ///
+    /// Consolidates the individual `init_*_pipeline` methods into a single entry
+    /// point. The `shader_paths` slice length depends on the kind:
+    ///
+    /// - **1 path**: Shadow, ShadowSkinned, DepthPrepass, DepthPrepassSkinned,
+    ///   DepthPrepassBillboard, Picking, PickingSkinned, Sky, Tonemap
+    /// - **2 paths**: StencilIndicator (base + skinned)
+    /// - **4 paths**: Outline (stencil_mark + stencil_mark_skinned + outline_draw + outline_draw_skinned)
+    fn init_pass_pipeline(
         &mut self,
-        _shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    fn init_shadow_pipeline_skinned(
-        &mut self,
-        _shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    fn init_depth_prepass_pipeline(
-        &mut self,
-        _shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    fn init_depth_prepass_skinned_pipeline(
-        &mut self,
-        _shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    fn init_depth_prepass_billboard_pipeline(
-        &mut self,
-        _shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    fn init_outline_pipelines(
-        &mut self,
-        _stencil_mark_path: &std::path::Path,
-        _stencil_mark_skinned_path: &std::path::Path,
-        _outline_draw_path: &std::path::Path,
-        _outline_draw_skinned_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    fn init_stencil_indicator_pipelines(
-        &mut self,
-        _shader_path: &std::path::Path,
-        _skinned_shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    fn init_picking_pipeline(
-        &mut self,
-        _shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    fn init_picking_skinned_pipeline(
-        &mut self,
-        _shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    fn init_sky_pipeline(&mut self, _shader_path: &std::path::Path) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    fn init_tonemap_pipeline(
-        &mut self,
-        _shader_path: &std::path::Path,
+        _kind: PipelineKind,
+        _shader_paths: &[&std::path::Path],
     ) -> Result<(), RendererError> {
         Ok(())
     }
@@ -691,31 +631,42 @@ impl GpuRenderer for VulkanRenderer {
         VulkanRenderer::init_shadow_resources(self, None, crate::shadow::CascadeParams::default())
     }
 
-    fn init_shadow_pipeline(&mut self, shader_path: &std::path::Path) -> Result<(), RendererError> {
-        VulkanRenderer::init_shadow_pipeline(self, shader_path)
-    }
-
-    fn init_depth_prepass_pipeline(
+    fn init_pass_pipeline(
         &mut self,
-        shader_path: &std::path::Path,
+        kind: PipelineKind,
+        shader_paths: &[&std::path::Path],
     ) -> Result<(), RendererError> {
-        VulkanRenderer::init_depth_prepass_pipeline(self, shader_path)
-    }
-
-    fn init_outline_pipelines(
-        &mut self,
-        stencil_mark_path: &std::path::Path,
-        stencil_mark_skinned_path: &std::path::Path,
-        outline_draw_path: &std::path::Path,
-        outline_draw_skinned_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        VulkanRenderer::init_outline_pipelines(
-            self,
-            stencil_mark_path,
-            stencil_mark_skinned_path,
-            outline_draw_path,
-            outline_draw_skinned_path,
-        )
+        match kind {
+            PipelineKind::Shadow => VulkanRenderer::init_shadow_pipeline(self, shader_paths[0]),
+            PipelineKind::ShadowSkinned => {
+                VulkanRenderer::init_shadow_pipeline_skinned(self, shader_paths[0])
+            }
+            PipelineKind::DepthPrepass => {
+                VulkanRenderer::init_depth_prepass_pipeline(self, shader_paths[0])
+            }
+            PipelineKind::DepthPrepassSkinned => {
+                VulkanRenderer::init_depth_prepass_skinned_pipeline(self, shader_paths[0])
+            }
+            PipelineKind::DepthPrepassBillboard => {
+                VulkanRenderer::init_depth_prepass_billboard_pipeline(self, shader_paths[0])
+            }
+            PipelineKind::Outline => VulkanRenderer::init_outline_pipelines(
+                self,
+                shader_paths[0],
+                shader_paths[1],
+                shader_paths[2],
+                shader_paths[3],
+            ),
+            PipelineKind::StencilIndicator => VulkanRenderer::init_stencil_indicator_pipelines(
+                self,
+                shader_paths[0],
+                shader_paths[1],
+            ),
+            PipelineKind::Picking
+            | PipelineKind::PickingSkinned
+            | PipelineKind::Sky
+            | PipelineKind::Tonemap => Ok(()),
+        }
     }
 
     fn begin_timestamp(&mut self, label: &str) {

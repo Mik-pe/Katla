@@ -24,6 +24,7 @@ use crate::handle::{MaterialHandle, MeshHandle, ResourceStorage, SkeletonHandle,
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::renderer::MAX_OBJECTS_PER_FRAME;
 use crate::renderer::gpu_renderer::GpuRenderer;
+use crate::renderer::pipeline_kind::PipelineKind;
 use crate::renderer::types::{DrawList, FrameUniforms};
 use crate::size::Size2D;
 use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
@@ -1226,85 +1227,44 @@ impl GpuRenderer for MetalRenderer {
         self.shadow.create_shadow_map(&self.context)
     }
 
-    fn init_shadow_pipeline(&mut self, shader_path: &std::path::Path) -> Result<(), RendererError> {
-        MetalRenderer::init_shadow_pipeline(self, shader_path)
-    }
-
-    fn init_shadow_pipeline_skinned(
+    fn init_pass_pipeline(
         &mut self,
-        shader_path: &std::path::Path,
+        kind: crate::renderer::pipeline_kind::PipelineKind,
+        shader_paths: &[&std::path::Path],
     ) -> Result<(), RendererError> {
-        MetalRenderer::init_shadow_pipeline_skinned(self, shader_path)
-    }
-
-    fn init_depth_prepass_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        MetalRenderer::init_depth_prepass_pipeline(self, shader_path)
-    }
-
-    fn init_depth_prepass_skinned_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        MetalRenderer::init_depth_prepass_skinned_pipeline(self, shader_path)
-    }
-
-    fn init_depth_prepass_billboard_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        MetalRenderer::init_depth_prepass_billboard_pipeline(self, shader_path)
-    }
-
-    fn init_outline_pipelines(
-        &mut self,
-        stencil_mark_path: &std::path::Path,
-        stencil_mark_skinned_path: &std::path::Path,
-        outline_draw_path: &std::path::Path,
-        outline_draw_skinned_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        MetalRenderer::init_outline_pipelines(
-            self,
-            stencil_mark_path,
-            stencil_mark_skinned_path,
-            outline_draw_path,
-            outline_draw_skinned_path,
-        )
-    }
-
-    fn init_stencil_indicator_pipelines(
-        &mut self,
-        shader_path: &std::path::Path,
-        skinned_shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        MetalRenderer::init_stencil_indicator_pipelines(self, shader_path, skinned_shader_path)
-    }
-
-    fn init_picking_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        MetalRenderer::init_picking_pipeline(self, shader_path)
-    }
-
-    fn init_picking_skinned_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        MetalRenderer::init_picking_skinned_pipeline(self, shader_path)
-    }
-
-    fn init_sky_pipeline(&mut self, shader_path: &std::path::Path) -> Result<(), RendererError> {
-        MetalRenderer::init_sky_pipeline(self, shader_path)
-    }
-
-    fn init_tonemap_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        MetalRenderer::init_tonemap_pipeline(self, shader_path)
+        match kind {
+            PipelineKind::Shadow => MetalRenderer::init_shadow_pipeline(self, shader_paths[0]),
+            PipelineKind::ShadowSkinned => {
+                MetalRenderer::init_shadow_pipeline_skinned(self, shader_paths[0])
+            }
+            PipelineKind::DepthPrepass => {
+                MetalRenderer::init_depth_prepass_pipeline(self, shader_paths[0])
+            }
+            PipelineKind::DepthPrepassSkinned => {
+                MetalRenderer::init_depth_prepass_skinned_pipeline(self, shader_paths[0])
+            }
+            PipelineKind::DepthPrepassBillboard => {
+                MetalRenderer::init_depth_prepass_billboard_pipeline(self, shader_paths[0])
+            }
+            PipelineKind::Outline => MetalRenderer::init_outline_pipelines(
+                self,
+                shader_paths[0],
+                shader_paths[1],
+                shader_paths[2],
+                shader_paths[3],
+            ),
+            PipelineKind::StencilIndicator => MetalRenderer::init_stencil_indicator_pipelines(
+                self,
+                shader_paths[0],
+                shader_paths[1],
+            ),
+            PipelineKind::Picking => MetalRenderer::init_picking_pipeline(self, shader_paths[0]),
+            PipelineKind::PickingSkinned => {
+                MetalRenderer::init_picking_skinned_pipeline(self, shader_paths[0])
+            }
+            PipelineKind::Sky => MetalRenderer::init_sky_pipeline(self, shader_paths[0]),
+            PipelineKind::Tonemap => MetalRenderer::init_tonemap_pipeline(self, shader_paths[0]),
+        }
     }
 
     fn set_viewport_bindless_slot(&mut self, slot: u32) {

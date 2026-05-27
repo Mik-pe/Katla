@@ -90,15 +90,15 @@
 - [x] If SOA mesh creation is needed later, design a proper typed API (e.g. `AttributeType` enum key) as a separate trait or method, not on the core GpuRenderer
 - [x] Run `cargo check --workspace` and `cargo test --workspace`
 
-### J. Decompose GpuRenderer monolith — consolidate pipeline init methods into a single register_pass_pipeline
+### J. Decompose GpuRenderer monolith — consolidate pipeline init methods into a single init_pass_pipeline
 
-- [ ] Add `PassKind`-based `init_pass_pipeline` method to `GpuRenderer` trait — `fn init_pass_pipeline(&mut self, kind: PassKind, shader_paths: &[&Path]) -> Result<(), RendererError>` with a default no-op impl
-- [ ] Add `init_pass_pipeline` dispatch to `AnyRenderer` — match on backend, delegate to backend impl
-- [ ] Implement `init_pass_pipeline` for `VulkanRenderer` — match on `PassKind` to call the existing `init_shadow_pipeline`, `init_depth_prepass_pipeline`, `init_outline_pipelines`, etc. internally
-- [ ] Implement `init_pass_pipeline` for `MetalRenderer` — match on `PassKind` to call the existing Metal pipeline init methods internally
-- [ ] Update all `init_*_pipeline` call sites in `katla_app` to use the new single `init_pass_pipeline(kind, paths)` API
-- [ ] Mark old individual `init_*_pipeline` methods as deprecated or remove them from the trait (keep them as private backend methods)
-- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+- [x] Add `PipelineKind`-based `init_pass_pipeline` method to `GpuRenderer` trait — `fn init_pass_pipeline(&mut self, kind: PipelineKind, shader_paths: &[&Path]) -> Result<(), RendererError>` with a default no-op impl
+- [x] Add `init_pass_pipeline` dispatch to `AnyRenderer` — match on backend, delegate to backend impl
+- [x] Implement `init_pass_pipeline` for `VulkanRenderer` — match on `PipelineKind` to call the existing `init_shadow_pipeline`, `init_depth_prepass_pipeline`, `init_outline_pipelines`, etc. internally
+- [x] Implement `init_pass_pipeline` for `MetalRenderer` — match on `PipelineKind` to call the existing Metal pipeline init methods internally
+- [x] Update all `init_*_pipeline` call sites in `katla_app` to use the new single `init_pass_pipeline(kind, paths)` API
+- [x] Remove old individual `init_*_pipeline` methods from the trait (kept as private backend methods)
+- [x] Run `cargo check --workspace` and `cargo test --workspace`
 
 ### K. Unify frame lifecycle — fix begin_frame / end_frame / render_frame asymmetry
 

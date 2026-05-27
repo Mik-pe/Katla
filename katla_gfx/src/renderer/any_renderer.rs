@@ -7,6 +7,7 @@
 use crate::error::RendererError;
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use crate::renderer::gpu_renderer::GpuRenderer;
+use crate::renderer::pipeline_kind::PipelineKind;
 use crate::renderer::types::{DrawCall, DrawList, FrameUniforms, PointLightGPU, UIDrawList};
 use crate::texture::TextureDescriptor;
 use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
@@ -482,6 +483,18 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
+    fn init_pass_pipeline(
+        &mut self,
+        kind: PipelineKind,
+        shader_paths: &[&std::path::Path],
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.init_pass_pipeline(kind, shader_paths),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.init_pass_pipeline(kind, shader_paths),
+        }
+    }
+
     fn set_ui_material(&mut self, material: MaterialHandle) {
         match self {
             AnyRenderer::Vulkan(r) => r.set_ui_material(material),
@@ -646,123 +659,11 @@ impl AnyRenderer {
         GpuRenderer::init_shadow_resources(self)
     }
 
-    pub fn init_shadow_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_shadow_pipeline(shader_path),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_shadow_pipeline(shader_path),
-        }
-    }
-
-    pub fn init_shadow_pipeline_skinned(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_shadow_pipeline_skinned(shader_path),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_shadow_pipeline_skinned(shader_path),
-        }
-    }
-
-    pub fn init_sky_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_sky_pipeline(shader_path),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_sky_pipeline(shader_path),
-        }
-    }
-
-    pub fn init_tonemap_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_tonemap_pipeline(shader_path),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_tonemap_pipeline(shader_path),
-        }
-    }
-
     pub fn set_viewport_bindless_slot(&mut self, slot: u32) {
         match self {
             AnyRenderer::Vulkan(r) => r.set_viewport_bindless_slot(slot),
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.set_viewport_bindless_slot(slot),
-        }
-    }
-
-    pub fn init_depth_prepass_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_depth_prepass_pipeline(shader_path),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_depth_prepass_pipeline(shader_path),
-        }
-    }
-
-    pub fn init_depth_prepass_skinned_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_depth_prepass_skinned_pipeline(shader_path),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_depth_prepass_skinned_pipeline(shader_path),
-        }
-    }
-
-    pub fn init_outline_pipelines(
-        &mut self,
-        stencil_mark_path: &std::path::Path,
-        stencil_mark_skinned_path: &std::path::Path,
-        outline_draw_path: &std::path::Path,
-        outline_draw_skinned_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_outline_pipelines(
-                stencil_mark_path,
-                stencil_mark_skinned_path,
-                outline_draw_path,
-                outline_draw_skinned_path,
-            ),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_outline_pipelines(
-                stencil_mark_path,
-                stencil_mark_skinned_path,
-                outline_draw_path,
-                outline_draw_skinned_path,
-            ),
-        }
-    }
-
-    pub fn init_picking_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_picking_pipeline(shader_path),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_picking_pipeline(shader_path),
-        }
-    }
-
-    pub fn init_picking_skinned_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_picking_skinned_pipeline(shader_path),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_picking_skinned_pipeline(shader_path),
         }
     }
 
