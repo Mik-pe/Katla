@@ -5,7 +5,9 @@ use katla_audio::{AudioBuffer, AudioEngine, SoundCue, VoiceHandle, VoiceState};
 use katla_ecs::World;
 use katla_math::Vec3;
 
-use crate::components::{AudioEmitter, AudioListener, DistanceModel, TransformComponent};
+use crate::components::{
+    AudioEmitter, AudioListener, DistanceModel, ReverbZone, TransformComponent,
+};
 
 /// Maximum occlusion factor (0.0 = not occluded, 1.0 = fully occluded).
 const MAX_OCCLUSION: f32 = 0.85;
@@ -27,6 +29,7 @@ pub struct AudioSystem {
 impl AudioSystem {
     pub fn new() -> Result<Self, katla_audio::AudioError> {
         let engine = AudioEngine::new()?;
+        engine.create_zone_reverb_bus();
         Ok(AudioSystem {
             engine,
             buffers: HashMap::new(),
@@ -100,6 +103,9 @@ impl AudioSystem {
             .prev_listener_pos
             .map_or(Vec3::ZERO, |prev| (listener_pos - prev) / dt.max(0.001));
         self.prev_listener_pos = Some(listener_pos);
+
+        // Update reverb zones — blend parameters from all zones containing the listener
+        self.update_reverb_zones(world, listener_pos);
 
         // Start new voices for emitters that aren't yet playing
         for (entity, emitter) in world.query::<&AudioEmitter>() {
@@ -201,6 +207,39 @@ impl AudioSystem {
             if let Some(emitter) = world.get_component_mut::<AudioEmitter>(entity) {
                 emitter.playing = false;
             }
+        }
+    }
+
+    fn update_reverb_zones(&self, world: &World, listener_pos: Vec3) {
+        let mut total_decay = 0.0f32;
+        let mut total_wet = 0.0f32;
+        let mut total_dampening = 0.0f32;
+        let mut count = 0usize;
+
+        let lp = [listener_pos.x(), listener_pos.y(), listener_pos.z()];
+
+        for (entity, zone) in world.query_ref::<&ReverbZone>() {
+            if let Some(transform) = world.get_component::<TransformComponent>(entity) {
+                let pos = [
+                    transform.transform.position.x(),
+                    transform.transform.position.y(),
+                    transform.transform.position.z(),
+                ];
+                if zone.contains(&pos, &lp) {
+                    total_decay += zone.decay;
+                    total_wet += zone.wet;
+                    total_dampening += zone.dampening;
+                    count += 1;
+                }
+            }
+        }
+
+        if count > 0 {
+            let inv = 1.0 / count as f32;
+            self.engine
+                .set_zone_reverb(total_decay * inv, total_wet * inv, total_dampening * inv);
+        } else {
+            self.engine.set_zone_reverb(0.0, 0.0, 0.2);
         }
     }
 

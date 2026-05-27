@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::buffer::AudioBuffer;
 use crate::command_queue::{AudioCategoryValue, AudioCommand, CommandQueue};
+use crate::effect::zone_reverb::ZoneReverbEffect;
 use crate::effect::{AuxBus, EffectChain};
 use crate::streaming_voice::StreamingVoice;
 use crate::voice::{CategoryVolumes, Voice, VoiceId, VoiceState};
@@ -261,6 +262,9 @@ pub struct AudioMixer {
     next_id: AtomicU32,
     master_volume: AtomicU32,
     category_volumes: Arc<CategoryVolumes>,
+    zone_reverb_decay: Arc<AtomicU32>,
+    zone_reverb_wet: Arc<AtomicU32>,
+    zone_reverb_dampening: Arc<AtomicU32>,
     sample_rate: u32,
     channels: u16,
 }
@@ -276,6 +280,9 @@ fn category_index(cat: AudioCategoryValue) -> usize {
 impl AudioMixer {
     pub fn new(sample_rate: u32, channels: u16) -> Self {
         let category_volumes = Arc::new(CategoryVolumes::new());
+        let zone_reverb_decay = Arc::new(AtomicU32::new(0.0f32.to_bits()));
+        let zone_reverb_wet = Arc::new(AtomicU32::new(0.0f32.to_bits()));
+        let zone_reverb_dampening = Arc::new(AtomicU32::new(0.2f32.to_bits()));
         AudioMixer {
             state: Mutex::new(MixerState {
                 voices: Vec::new(),
@@ -290,6 +297,9 @@ impl AudioMixer {
             next_id: AtomicU32::new(1),
             master_volume: AtomicU32::new(f32_to_bits(1.0)),
             category_volumes,
+            zone_reverb_decay,
+            zone_reverb_wet,
+            zone_reverb_dampening,
             sample_rate,
             channels,
         }
@@ -415,6 +425,27 @@ impl AudioMixer {
     pub fn add_aux_bus(&self, bus: AuxBus) {
         let mut state = self.state.lock().unwrap();
         state.aux_buses.push(bus);
+    }
+
+    pub fn create_zone_reverb_bus(&self) {
+        let effect = ZoneReverbEffect::new(
+            self.sample_rate,
+            self.zone_reverb_decay.clone(),
+            self.zone_reverb_wet.clone(),
+            self.zone_reverb_dampening.clone(),
+        );
+        let mut bus = AuxBus::new(1.0, 1.0);
+        bus.add_effect(Box::new(effect));
+        let mut state = self.state.lock().unwrap();
+        state.aux_buses.push(bus);
+    }
+
+    pub fn set_zone_reverb(&self, decay: f32, wet: f32, dampening: f32) {
+        self.zone_reverb_decay
+            .store(decay.to_bits(), Ordering::Relaxed);
+        self.zone_reverb_wet.store(wet.to_bits(), Ordering::Relaxed);
+        self.zone_reverb_dampening
+            .store(dampening.to_bits(), Ordering::Relaxed);
     }
 
     pub fn play_streaming(

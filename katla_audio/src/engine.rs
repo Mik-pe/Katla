@@ -189,6 +189,14 @@ impl AudioEngine {
         self.mixer.add_aux_bus(bus);
     }
 
+    pub fn create_zone_reverb_bus(&self) {
+        self.mixer.create_zone_reverb_bus();
+    }
+
+    pub fn set_zone_reverb(&self, decay: f32, wet: f32, dampening: f32) {
+        self.mixer.set_zone_reverb(decay, wet, dampening);
+    }
+
     pub fn play_streaming(&self, path: &Path) -> Result<StreamingVoiceHandle, AudioError> {
         self.play_streaming_with_category(path, AudioCategory::Music)
     }

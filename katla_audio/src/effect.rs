@@ -1,5 +1,6 @@
 pub mod biquad;
 pub mod reverb;
+pub mod zone_reverb;
 
 pub trait AudioEffect {
     fn process(&mut self, input: &mut [f32], channels: usize);
