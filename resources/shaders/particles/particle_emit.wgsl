@@ -158,6 +158,8 @@ fn emit_particle(particle_idx: u32, emitter_idx: u32, seed: ptr<function, u32>) 
     particle.color = clamp(particle.color, vec4f(0.0), vec4f(1.0));
 
     particle.emitter_index = emitter_idx;
+    particle.max_lifetime = particle.lifetime;
+    particle.initial_scale = particle.scale;
 
     return particle;
 }

@@ -479,7 +479,7 @@ mod tests {
 
     #[test]
     fn test_emitter_config_size() {
-        assert_eq!(std::mem::size_of::<EmitterConfig>(), 144);
+        assert_eq!(std::mem::size_of::<EmitterConfig>(), 160);
     }
 
     #[test]
@@ -558,12 +558,14 @@ mod tests {
             scale_variation: 0.3,
             color: [1.0, 0.5, 0.0, 1.0],
             color_variation: 0.2,
-            _pad_color: Align16Vec4([0.0; 4]),
+            color_end: Align16Vec4([0.0; 4]),
             shape_params: [2.5, 0.0, 0.0, 0.0],
             gravity: -9.8,
             turbulence_strength: 0.0,
             turbulence_frequency: 3.0,
             kill_all: 0,
+            scale_end: 1.0,
+            _pad2: [0.0; 3],
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -588,8 +590,12 @@ mod tests {
         assert_eq!(std::mem::offset_of!(EmitterConfig, scale_variation), 60);
         assert_eq!(std::mem::offset_of!(EmitterConfig, color), 64);
         assert_eq!(std::mem::offset_of!(EmitterConfig, color_variation), 80);
-        assert_eq!(std::mem::offset_of!(EmitterConfig, _pad_color), 96);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, color_end), 96);
         assert_eq!(std::mem::offset_of!(EmitterConfig, shape_params), 112);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, gravity), 128);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, kill_all), 140);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, scale_end), 144);
+        assert_eq!(std::mem::offset_of!(EmitterConfig, _pad2), 148);
     }
 
     #[test]

@@ -430,6 +430,23 @@ fn render_emitter_config(
         0.0..=1.0,
         EmitterField::ColorVariation
     );
+    {
+        read_only_row!(
+            "Color End:",
+            &format!(
+                "R:{:.2} G:{:.2} B:{:.2} A:{:.2}",
+                config.color_end[0], config.color_end[1], config.color_end[2], config.color_end[3]
+            )
+        );
+    }
+
+    heading!("Size Over Lifetime");
+    scalar_slider!(
+        "Scale End",
+        config.scale_end,
+        0.0..=3.0,
+        EmitterField::ScaleEnd
+    );
 
     heading!("Forces");
     scalar_slider!(

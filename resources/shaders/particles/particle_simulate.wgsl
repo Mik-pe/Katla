@@ -58,8 +58,9 @@ fn simulate_particle(particle: ptr<function, ParticleData>, delta_time: f32) {
         (*particle).position += (*particle).velocity * delta_time;
         (*particle).velocity.y += emitter.gravity * delta_time;
 
-        let age = emitter.base_lifetime - (*particle).lifetime;
-        let life_ratio = (*particle).lifetime / emitter.base_lifetime;
+        let age = (*particle).max_lifetime - (*particle).lifetime;
+        let life_ratio = (*particle).lifetime / (*particle).max_lifetime;
+        let normalized_age = clamp(age / (*particle).max_lifetime, 0.0, 1.0);
 
         if (emitter.turbulence_strength > 0.0) {
             let freq = emitter.turbulence_frequency;
@@ -72,10 +73,17 @@ fn simulate_particle(particle: ptr<function, ParticleData>, delta_time: f32) {
             (*particle).velocity.z += wave_z * emitter.turbulence_strength * delta_time;
         }
 
+        // Color over lifetime: interpolate from emitter start color to end color
+        let gradient_color = mix(emitter.color, emitter.color_end, normalized_age);
+
         let fade_in = clamp(age / 0.2, 0.0, 1.0);
         let fade_out = clamp(life_ratio / 0.3, 0.0, 1.0);
 
-        (*particle).color.a = fade_in * fade_out;
+        (*particle).color = vec4f(gradient_color.r, gradient_color.g, gradient_color.b, fade_in * fade_out);
+
+        // Size over lifetime: interpolate scale multiplier from 1.0 to scale_end
+        let scale_factor = mix(1.0, emitter.scale_end, normalized_age);
+        (*particle).scale = (*particle).initial_scale * scale_factor;
     }
 }
 

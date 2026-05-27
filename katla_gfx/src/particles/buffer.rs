@@ -31,8 +31,12 @@ pub struct ParticleData {
     pub color: [f32; 4],
     /// Index of the emitter that spawned this particle
     pub emitter_index: u32,
+    /// Total lifetime assigned at emit (used to compute normalized age for color/size curves)
+    pub max_lifetime: f32,
+    /// Scale assigned at emit (used as base for size-over-lifetime curve)
+    pub initial_scale: f32,
     /// Padding to match WGSL struct alignment (vec3f align = 16, struct size must be multiple of 16)
-    pub _pad: [f32; 3],
+    pub _pad: f32,
 }
 
 /// Per-frame data for particle simulation (updated via push descriptors).
