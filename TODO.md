@@ -158,7 +158,7 @@
 - [x] Change ParticleSystem::update to take &mut GlobalParticleSystem instead of &mut Option<GlobalParticleSystem> — avoids silent skip and awkward call sites
 - [x] Add per-emitter alive count feedback — allow querying actual alive particle count per emitter, not just theoretical estimated_max_alive
 - [x] Add kill-all-particles-on-destroy option — optionally immediately kill all living particles when an emitter is destroyed instead of letting them expire naturally
-- [ ] Add color over lifetime and size over lifetime curves — enable fire (bright to dark), smoke (opaque to transparent), sparks (big to small) effects without shader modifications
+- [x] Add color over lifetime and size over lifetime curves — enable fire (bright to dark), smoke (opaque to transparent), sparks (big to small) effects without shader modifications
 
 ## Audio System
 
@@ -228,7 +228,7 @@
 
 ### Phase 10: Spatial audio improvements (depends on Phase 6 bug fixes + Phase 7 DSP effects)
 - [x] Add occlusion/obstruction — when line-of-sight from emitter to listener is blocked by geometry, apply low-pass filter and volume attenuation to simulate sound passing through/around obstacles. **Requires Phase 7 low-pass filter effect; requires physics raycast (Physics Phase 4)**
-- [ ] Add reverb zones — define volumes in the scene (box/sphere shapes) with reverb parameters (decay, wet mix, pre-delay); when the listener is inside a zone, blend the zone's reverb into the effect send; blend between overlapping zones. **Requires Phase 7 reverb effect and send/return buses**
+- [x] Add reverb zones — define volumes in the scene (box/sphere shapes) with reverb parameters (decay, wet mix, pre-delay); when the listener is inside a zone, blend the zone's reverb into the effect send; blend between overlapping zones. **Requires Phase 7 reverb effect and send/return buses**
 - [x] Add Doppler effect — `compute_doppler()` uses the standard Doppler formula with speed of sound (343 m/s); velocity tracked per-frame from previous positions stored on `AudioSystem`; pitch shift clamped to 0.5-2.0x and applied via `set_pitch_tweened`
 - [x] Add listener orientation for spatialization — `compute_spatialization` now takes `listener_up` in addition to `listener_forward`; right vector computed as `forward × up` instead of `forward × Y_AXIS`, giving correct panning for any listener orientation (including tilted/rolled cameras)
 
@@ -405,8 +405,8 @@
 ### General asset pipeline
 
 #### Hot reload
-- [ ] Integrate `notify` crate for file watching — watch `shaders/` and `resources/` directories recursively for file changes
-- [ ] Add file change event routing — map changed file paths to asset types (shader -> recompile material, texture -> reload, script -> hot reload)
+- [x] Integrate `notify` crate for file watching — watch `shaders/` and `resources/` directories recursively for file changes
+- [x] Add file change event routing — map changed file paths to asset types (shader -> recompile material, texture -> reload, script -> hot reload)
 - [ ] Implement shader hot reload — detect `.wgsl` changes, recompile material pipeline, swap in on next frame
 - [ ] Implement texture hot reload — detect image changes, re-upload texture data to GPU, keep same bindless slot
 
