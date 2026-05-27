@@ -371,7 +371,7 @@
 - [x] Design gameplay event bus — `EventBus<T>` with `emit(event)` and `subscribe(handler)`; support typed events in katla_script via string-keyed bus
 - [x] Implement script event bindings — `world:emit("event_name", table)` and `world:on_event("event_name", callback)` registering Luau functions as handlers
 - [x] Add event delivery system — each frame, drain pending events from bus, dispatch to registered script callbacks; ensure delivery order is deterministic
-- [ ] Add physics bindings — `world:raycast(origin, direction, max_distance)` returning hit entity + point + normal (depends on Physics Phase 4)
+- [x] Add physics bindings — `world:raycast(origin, direction, max_distance)` returning hit entity + point + normal (depends on Physics Phase 4)
 - [x] Add audio bindings — `world:play_sound("explosion")`, `world:play_sound_at("explosion", position)` (depends on Audio Phase 2)
 - [ ] Performance profile — benchmark 1000 script entities with on_update, optimize hot paths
 - [x] Optimize script dispatch — batch entity queries, reduce per-hook overhead, consider JIT hints
@@ -388,7 +388,7 @@
 - [ ] Add `GameStateManager` as ECS resource — accessible by systems and scripts; systems query current state to conditionally run
 - [ ] Design gameplay event system — `EventBus<E>` generic typed event bus for gameplay-level events (OnDamage, OnCollect, OnCollision, etc.) decoupled from ECS events
 - [ ] Implement `EventBus` — `emit(event)`, `subscribe(handler)`, `drain()` per frame; type-erased storage for multiple event types
-- [ ] Wire gameplay events into ECS — collision events from physics, trigger events from trigger volumes, script events from Luau
+- [x] Wire gameplay events into ECS — collision events from physics, trigger events from trigger volumes, script events from Luau
 - [ ] Design cutscene/timeline data model — `Timeline` asset with tracks (animation, audio, camera, event), keyframes per track, duration
 - [ ] Implement timeline playback — `TimelinePlayer` component with play/pause/scrub, evaluate all tracks at current time, dispatch results
 - [ ] Add timeline editor UI — track lanes, keyframe diamonds, scrubber bar, playback controls (depends on Editor dockable layout)

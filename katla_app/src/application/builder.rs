@@ -923,6 +923,7 @@ impl ApplicationBuilder {
         world.insert_resource(katla_script::PendingAudioCommands::default());
         world.insert_resource(katla_script::PendingRaycastCommands::default());
         world.insert_resource(katla_script::PendingRaycastResults::default());
+        world.insert_resource(katla_script::PendingPhysicsEvents::default());
         world.insert_resource(katla_physics::PhysicsWorld::new());
 
         let app = Application {

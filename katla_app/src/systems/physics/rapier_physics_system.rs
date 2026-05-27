@@ -6,6 +6,7 @@ use katla_physics::{
     BodyType, ColliderShape, Joint, PhysicsMaterial, PhysicsWorld, RigidBody, TriggerEvent,
     TriggerVolume,
 };
+use katla_script::{PendingPhysicsEvents, PhysicsCollisionEvent, PhysicsCollisionEventType};
 
 use crate::components::TransformComponent;
 
@@ -199,6 +200,8 @@ fn process_trigger_events(world: &mut World) {
     let mut trigger_overlaps: std::collections::HashMap<u64, Vec<u64>> =
         std::collections::HashMap::new();
 
+    let mut script_events = Vec::new();
+
     for event in events {
         match event {
             TriggerEvent::Enter {
@@ -209,8 +212,22 @@ fn process_trigger_events(world: &mut World) {
                     .entry(trigger_entity)
                     .or_default()
                     .push(other_entity);
+                script_events.push(PhysicsCollisionEvent {
+                    event_type: PhysicsCollisionEventType::CollisionEnter,
+                    entity_a: trigger_entity,
+                    entity_b: other_entity,
+                });
             }
-            TriggerEvent::Exit { .. } => {}
+            TriggerEvent::Exit {
+                trigger_entity,
+                other_entity,
+            } => {
+                script_events.push(PhysicsCollisionEvent {
+                    event_type: PhysicsCollisionEventType::CollisionExit,
+                    entity_a: trigger_entity,
+                    entity_b: other_entity,
+                });
+            }
         }
     }
 
@@ -218,6 +235,12 @@ fn process_trigger_events(world: &mut World) {
         let entity = EntityId::from_raw(trigger_id);
         if let Some(mut tv) = world.get_component_mut::<TriggerVolume>(entity) {
             tv.overlapping_entities = overlapping;
+        }
+    }
+
+    if !script_events.is_empty() {
+        if let Some(mut pending) = world.get_resource_mut::<PendingPhysicsEvents>() {
+            pending.0.extend(script_events);
         }
     }
 }

@@ -46,6 +46,26 @@ pub struct PendingRaycastResults(
 #[derive(Default)]
 pub struct PendingRaycastCommands(pub Vec<crate::bindings::world::ScriptCommand>);
 
+/// A collision event from the physics system.
+#[derive(Debug, Clone)]
+pub struct PhysicsCollisionEvent {
+    pub event_type: PhysicsCollisionEventType,
+    pub entity_a: u64,
+    pub entity_b: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhysicsCollisionEventType {
+    CollisionEnter,
+    CollisionExit,
+}
+
+/// Resource holding collision events produced by the physics system each frame.
+/// `ScriptSystem` drains these and dispatches them as script events
+/// (`"collision_enter"`, `"collision_exit"`).
+#[derive(Default)]
+pub struct PendingPhysicsEvents(pub Vec<PhysicsCollisionEvent>);
+
 pub struct ScriptSystem {
     pub(crate) engine: ScriptEngine,
     pub(crate) event_bus: EventBus,
@@ -392,6 +412,58 @@ impl ScriptSystem {
             self.event_bus.emit(name, data);
         }
     }
+
+    /// Drain pending physics collision events and emit them as script events.
+    fn dispatch_physics_events(&mut self, world: &mut World) {
+        let events: Vec<PhysicsCollisionEvent> =
+            match world.get_resource_mut::<PendingPhysicsEvents>() {
+                Some(mut r) => std::mem::take(&mut r.0),
+                None => return,
+            };
+
+        if events.is_empty() {
+            return;
+        }
+
+        let has_collision_enter = !self.event_bus.handlers("collision_enter").is_empty();
+        let has_collision_exit = !self.event_bus.handlers("collision_exit").is_empty();
+
+        if !has_collision_enter && !has_collision_exit {
+            return;
+        }
+
+        for event in events {
+            let event_name = match event.event_type {
+                PhysicsCollisionEventType::CollisionEnter => "collision_enter",
+                PhysicsCollisionEventType::CollisionExit => "collision_exit",
+            };
+
+            // Skip if no handlers registered for this event type
+            if self.event_bus.handlers(event_name).is_empty() {
+                continue;
+            }
+
+            let table = match self.engine.vm.create_table() {
+                Ok(t) => t,
+                Err(e) => {
+                    error!("Failed to create physics event table: {e}");
+                    continue;
+                }
+            };
+
+            if let Err(e) = table.set("entity_a", event.entity_a) {
+                error!("Failed to set entity_a: {e}");
+                continue;
+            }
+            if let Err(e) = table.set("entity_b", event.entity_b) {
+                error!("Failed to set entity_b: {e}");
+                continue;
+            }
+
+            self.event_bus
+                .emit(event_name.to_string(), mlua::Value::Table(table));
+        }
+    }
 }
 
 impl System for ScriptSystem {
@@ -471,6 +543,7 @@ impl System for ScriptSystem {
         self.apply_commands(all_commands, world);
 
         self.process_events();
+        self.dispatch_physics_events(world);
         self.process_destroyed(world);
     }
 }
