@@ -1084,7 +1084,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 let path = std::path::PathBuf::from("assets/scenes/default.katla");
                 match crate::scene::SceneManager::load_from_file(app, &path) {
                     Ok(()) => {
-                        app.editor.editor_ui.selected_entity = None;
+                        app.editor.clear_entity_references();
                         info!("Scene loaded from {:?}", path);
                     }
                     Err(e) => log::error!("Failed to load scene: {}", e),
@@ -1133,10 +1133,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 for id in to_remove {
                     app.world.destroy_entity(id);
                 }
-                app.editor.editor_ui.selected_entity = None;
-                app.editor.agent_undo_stack.clear();
-                app.editor.agent_redo_stack.clear();
-                app.editor.entity_gpu_handles.clear();
+                app.editor.clear_entity_references();
                 info!("New scene created");
             }
             EditorAction::Quit => {
@@ -1335,6 +1332,7 @@ pub fn process_editor_actions(app: &mut Application) {
                     if let Some(snapshot) = app.scene_snapshot.take() {
                         snapshot.restore(app);
                     }
+                    app.editor.clear_entity_references();
                     app.play_mode = super::game_state::PlayMode::Editing;
                     if let Some(active) =
                         app.world.get_resource_mut::<katla_script::ScriptsActive>()

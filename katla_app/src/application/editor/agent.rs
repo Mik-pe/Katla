@@ -713,7 +713,7 @@ fn execute_load_scene(app: &mut super::super::Application, tool_call: &ToolCall)
     let path = std::path::Path::new(&args.path);
     match crate::scene::SceneManager::load_from_file(app, path) {
         Ok(()) => {
-            app.editor.editor_ui.selected_entity = None;
+            app.editor.clear_entity_references();
             let json = serde_json::json!({
                 "success": true,
                 "message": format!("Scene loaded from '{}'", args.path),
