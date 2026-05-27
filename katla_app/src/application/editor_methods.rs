@@ -196,8 +196,6 @@ impl Application {
                             0 // Fallback to slot 0
                         });
 
-                    let bindless_slot: u32 = 0;
-
                     // Register the bindless slot with the UI renderer
                     self.editor
                         .ui_renderer

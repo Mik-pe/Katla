@@ -239,6 +239,9 @@ impl UIRenderer {
                 id.0
             );
             self.white_texture_bindless_slot.unwrap_or(0)
+        } else if let Some(slot) = self.bindless_slots.get(&(id.0 as u32)) {
+            // TextureId created via from_handle_index — look up bindless slot directly
+            return *slot;
         } else {
             // Fallback to white texture slot for unknown textures
             log::warn!(
