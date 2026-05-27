@@ -211,6 +211,14 @@ impl EditorUI {
         }
     }
 
+    /// Clear all entity references held by the UI.
+    /// Called after scene restore invalidates all EntityIds.
+    pub fn clear_entity_references(&mut self) {
+        self.selected_entity = None;
+        self.selected_particle_emitter = None;
+        self.hierarchy_state.expanded_entities.clear();
+    }
+
     /// Set the shared log buffer (called by ApplicationBuilder after ConsoleLogger init).
     pub(crate) fn set_log_buffer(&mut self, buffer: Arc<Mutex<LogBuffer>>) {
         self.log_buffer = buffer;

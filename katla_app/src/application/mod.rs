@@ -202,6 +202,19 @@ impl EditorState {
         state
     }
 
+    /// Clear all editor state that holds EntityId references.
+    /// Must be called after any operation that invalidates entity IDs
+    /// (e.g. scene restore after play mode, new scene).
+    pub(crate) fn clear_entity_references(&mut self) {
+        self.editor_ui.clear_entity_references();
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+        self.agent_undo_stack.clear();
+        self.agent_redo_stack.clear();
+        self.entity_gpu_handles.clear();
+        self.inspector_drag_snapshot = None;
+    }
+
     pub(crate) fn push_undo(&mut self, group: katla_ecs::scene_tool::UndoGroup) {
         self.redo_stack.clear();
         self.undo_stack.push(group);

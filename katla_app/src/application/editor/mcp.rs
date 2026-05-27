@@ -54,7 +54,7 @@ fn execute_load_scene(app: &mut crate::application::Application, path: &str) -> 
     let file_path = std::path::Path::new(path);
     match crate::scene::SceneManager::load_from_file(app, file_path) {
         Ok(()) => {
-            app.editor.editor_ui.selected_entity = None;
+            app.editor.clear_entity_references();
             McpResponse {
                 result: Ok(serde_json::json!({
                     "success": true,
