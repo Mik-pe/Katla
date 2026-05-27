@@ -543,13 +543,8 @@ impl GpuRenderer for VulkanRenderer {
         VulkanRenderer::destroy_viewport(self, handle);
     }
 
-    fn resize(&mut self, width: u32, height: u32) -> Result<(), RendererError> {
-        VulkanRenderer::recreate_swapchain(
-            self,
-            &mut crate::render_graph::FrameGraph::<VulkanRenderer>::new(),
-        )?;
-        let _ = (width, height);
-        Ok(())
+    fn resize(&mut self, _width: u32, _height: u32) -> Result<(), RendererError> {
+        VulkanRenderer::recreate_swapchain(self)
     }
 
     fn create_skeleton(&mut self, joint_count: usize) -> Result<SkeletonHandle, RendererError> {
