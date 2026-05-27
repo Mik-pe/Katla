@@ -46,10 +46,10 @@
 
 ### E. Align Metal backend with shared FrameGraph<B> execution path
 
-- [ ] Verify `RenderGraphBackend` impl for `MetalRenderer` is complete (create/destroy transient textures, bindless registration, swapchain/depth image views)
-- [ ] Verify `Frame<'_, MetalRenderer>` execution dispatches all pass types (geometry, shadow, fullscreen, compositing, particles, outline, UI, depth prepass) through `RenderGraphBackend` trait methods
-- [ ] Ensure Metal backend's `render_frame()` goes through `FrameGraph<MetalRenderer>::execute()` identically to the Vulkan path, not through a separate hardcoded pass sequence
-- [ ] Remove any remaining dual-code-path divergence between how Vulkan and Metal execute the same frame graph
+- [x] Verify `RenderGraphBackend` impl for `MetalRenderer` is complete (create/destroy transient textures, bindless registration, swapchain/depth image views) — Verified complete: all 15 trait methods implemented in `metal_backend.rs`
+- [ ] Verify `Frame<'_, MetalRenderer>` execution dispatches all pass types (geometry, shadow, fullscreen, compositing, particles, outline, UI, depth prepass) through `RenderGraphBackend` trait methods — Partial: Metal routes 5 of ~9 pass kinds; missing particles, compositing, stencil-indicator, generic compute
+- [ ] Ensure Metal backend's `render_frame()` goes through `FrameGraph<MetalRenderer>::execute()` identically to the Vulkan path, not through a separate hardcoded pass sequence — Metal uses `collect_draw_lists()` + hardcoded `render_frame()`, not `FrameGraph::execute()`
+- [ ] Remove any remaining dual-code-path divergence between how Vulkan and Metal execute the same frame graph — Requires migrating Metal from hardcoded pass sequence to data-driven graph execution
 - [x] Delete the `render_frame()` method from `GpuRenderer` — removed from trait, Vulkan no-op removed, Metal impl moved to `metal/frame_render.rs` (see section K)
 
 ### F. Reduce cfg(target_os = "macos") count across katla_gfx
