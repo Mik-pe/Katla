@@ -226,6 +226,9 @@ impl Application {
         // Poll background loader for completed asset loads
         self.poll_background_loader();
 
+        // Poll asset watcher for shader/texture changes
+        self.poll_asset_watcher();
+
         // Note: Transient textures are double-buffered (one per FRAMES_IN_FLIGHT).
         // The viewport bindless index must be updated BEFORE generating the UI
         // draw list so the UI samples from the correct per-frame texture.
@@ -380,4 +383,34 @@ impl Application {
         );
         Ok(())
     }
+
+    #[cfg(feature = "editor")]
+    fn poll_asset_watcher(&mut self) {
+        let Some(ref mut watcher) = self.asset_watcher else {
+            return;
+        };
+
+        for change in watcher.poll_changes() {
+            match change.kind {
+                crate::util::AssetChangeKind::Shader => {
+                    log::info!(
+                        "Shader changed: {} — recompilation not yet implemented",
+                        change.path.display()
+                    );
+                }
+                crate::util::AssetChangeKind::Texture => {
+                    log::info!(
+                        "Texture changed: {} — re-upload not yet implemented",
+                        change.path.display()
+                    );
+                }
+                crate::util::AssetChangeKind::Script => {
+                    // Script hot reload is handled by ScriptWatcher in katla_script
+                }
+            }
+        }
+    }
+
+    #[cfg(not(feature = "editor"))]
+    fn poll_asset_watcher(&mut self) {}
 }

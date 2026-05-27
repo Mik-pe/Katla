@@ -2325,6 +2325,7 @@ dependencies = [
  "katla_script",
  "katla_ui",
  "log",
+ "notify",
  "png",
  "rayon",
  "ron",

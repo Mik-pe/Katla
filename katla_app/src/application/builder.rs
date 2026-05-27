@@ -649,6 +649,22 @@ impl ApplicationBuilder {
         Ok(FrameGraph::from_vulkan(graph))
     }
 
+    #[cfg(feature = "editor")]
+    fn create_asset_watcher() -> Option<crate::util::AssetWatcher> {
+        use std::path::PathBuf;
+
+        let resources_dir = PathBuf::from("resources");
+        let dirs = vec![resources_dir];
+
+        match crate::util::AssetWatcher::new(&dirs) {
+            Ok(watcher) => Some(watcher),
+            Err(e) => {
+                log::warn!("Failed to create asset watcher: {e}");
+                None
+            }
+        }
+    }
+
     pub fn build(self) -> AppResult<(Application, EventLoop<()>)> {
         let event_loop = Self::build_event_loop();
 
@@ -992,6 +1008,8 @@ impl ApplicationBuilder {
             play_mode: super::game_state::PlayMode::Editing,
             #[cfg(feature = "editor")]
             scene_snapshot: None,
+            #[cfg(feature = "editor")]
+            asset_watcher: Self::create_asset_watcher(),
         };
 
         Ok((app, event_loop))
