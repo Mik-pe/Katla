@@ -5,7 +5,7 @@
 // - 0: ACES Filmic (default, cinematic look)
 // - 1: Reinhard (simple, preserves colors)
 // - 2: TonyMcMapface (popular, good balance)
-// - 3: Linear (no tonemapping, just gamma)
+// - 3: Linear (no tonemapping, exposure only)
 
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
@@ -43,14 +43,9 @@ fn tony_mcmapface(x: vec3f) -> vec3f {
     return clamp(c, vec3f(0.0), vec3f(1.0));
 }
 
-fn gamma_correct(x: vec3f, gamma: f32) -> vec3f {
-    return pow(x, vec3f(1.0 / gamma));
-}
-
 @fragment
 fn fs_main(in: FullscreenVertexOutput) -> @location(0) vec4f {
     let exposure = frame_data.tonemap.x;
-    let gamma = frame_data.tonemap.y;
     let mode = u32(frame_data.tonemap.z);
     let hdr_texture_idx = u32(frame_data.tonemap.w);
 
@@ -76,7 +71,7 @@ fn fs_main(in: FullscreenVertexOutput) -> @location(0) vec4f {
         }
     }
 
-    color = gamma_correct(color, gamma);
-
+    // Output is linear; sRGB conversion is handled by the GPU
+    // when writing to sRGB-format textures (both Metal and Vulkan).
     return vec4f(color, 1.0);
 }
