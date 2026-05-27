@@ -924,6 +924,9 @@ impl ApplicationBuilder {
         world.insert_resource(katla_script::PendingRaycastCommands::default());
         world.insert_resource(katla_script::PendingRaycastResults::default());
         world.insert_resource(katla_script::PendingPhysicsEvents::default());
+        world.insert_resource(katla_script::ScriptInspectorData::default());
+        world.insert_resource(katla_script::PopulateScriptInspector(false));
+        world.insert_resource(katla_script::PendingScriptVarEdits::default());
         world.insert_resource(katla_physics::PhysicsWorld::new());
 
         let app = Application {

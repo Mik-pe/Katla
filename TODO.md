@@ -377,9 +377,9 @@
 - [x] Optimize script dispatch — batch entity queries, reduce per-hook overhead, consider JIT hints
 
 ### Phase 6: Editor integration
-- [ ] Add script inspector panel — show attached script path, expose script variables for live editing
-- [ ] Add script file browser — show `.luau` files in asset browser, drag-to-attach to entity
-- [ ] Generate Luau type definition files (.d.luau) — autocomplete support for engine API in external editors
+- [x] Add script inspector panel — show attached script path, expose script variables for live editing
+- [x] Add script file browser — show `.luau` files in asset browser, drag-to-attach to entity
+- [x] Generate Luau type definition files (.d.luau) — autocomplete support for engine API in external editors
 - [x] Add script console — `print()`/`warn()` already route to `log::info!`/`log::warn!` in debug builds, captured by console panel
 
 ### Gameplay framework (independent of scripting)

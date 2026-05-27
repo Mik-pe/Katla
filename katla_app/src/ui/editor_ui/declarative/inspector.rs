@@ -548,6 +548,93 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                         });
                     }
                     ui.set_cursor(Vec2::new(x, ui.cursor().y() + 26.0));
+
+                    // Script variables section
+                    if !edit.script_vars.is_empty() {
+                        let font_size = ui.style().font_size;
+                        ui.draw_text("Variables", ui.cursor(), theme.text_muted, font_size);
+                        let label_h = ui.measure_text("Variables", font_size).y();
+                        ui.set_cursor(Vec2::new(x, ui.cursor().y() + label_h + 2.0));
+
+                        for (var_name, var_value) in &mut edit.script_vars {
+                            match var_value {
+                                katla_script::ScriptVarValue::Number(n) => {
+                                    let mut f = *n as f32;
+                                    let row_h = ui.style().slider_default_height;
+                                    let bounds =
+                                        Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, row_h));
+                                    let resp = ui.add(
+                                        LabeledSlider::new(var_name, &mut f, -1000.0..=1000.0)
+                                            .bounds(bounds)
+                                            .label_width(80.0)
+                                            .show_value(true)
+                                            .precision(2),
+                                    );
+                                    if resp.changed {
+                                        *n = f as f64;
+                                        ctx.pending_actions.push(EditorAction::SetScriptVar {
+                                            entity: entity_id,
+                                            var_name: var_name.clone(),
+                                            value: katla_script::ScriptVarValue::Number(*n),
+                                        });
+                                    }
+                                }
+                                katla_script::ScriptVarValue::Boolean(b) => {
+                                    let toggle_bounds =
+                                        Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 20.0));
+                                    let label = format!(
+                                        "{}: {}",
+                                        var_name,
+                                        if *b { "true" } else { "false" }
+                                    );
+                                    if ui
+                                        .add(
+                                            katla_ui::widgets::ToggleButton::new(*b, &label)
+                                                .bounds(toggle_bounds),
+                                        )
+                                        .clicked
+                                    {
+                                        *b = !*b;
+                                        ctx.pending_actions.push(EditorAction::SetScriptVar {
+                                            entity: entity_id,
+                                            var_name: var_name.clone(),
+                                            value: katla_script::ScriptVarValue::Boolean(*b),
+                                        });
+                                    }
+                                    ui.set_cursor(Vec2::new(x, ui.cursor().y() + 24.0));
+                                }
+                                katla_script::ScriptVarValue::String(s) => {
+                                    let label_h =
+                                        ui.measure_text(var_name, ui.style().font_size).y();
+                                    ui.draw_text(
+                                        var_name,
+                                        ui.cursor(),
+                                        theme.text_muted,
+                                        ui.style().font_size,
+                                    );
+                                    ui.set_cursor(Vec2::new(x, ui.cursor().y() + label_h + 2.0));
+                                    let input_bounds =
+                                        Rect2D::from_origin_size(ui.cursor(), Vec2::new(w, 22.0));
+                                    let resp = ui.add(
+                                        katla_ui::widgets::TextInput::new(
+                                            &format!("script_var_{var_name}"),
+                                            s,
+                                        )
+                                        .bounds(input_bounds),
+                                    );
+                                    if resp.changed || resp.enter_pressed {
+                                        ctx.pending_actions.push(EditorAction::SetScriptVar {
+                                            entity: entity_id,
+                                            var_name: var_name.clone(),
+                                            value: katla_script::ScriptVarValue::String(s.clone()),
+                                        });
+                                    }
+                                    ui.set_cursor(Vec2::new(x, ui.cursor().y() + 26.0));
+                                }
+                            }
+                        }
+                    }
+
                     section_gap(ui);
                 }
 

@@ -387,6 +387,8 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
 
     // Sync inspector editing state from current entity data
     app.editor.editor_ui.sync_inspector_edit_state(&entity_info);
+    // Refresh script variables for the selected entity
+    app.editor.editor_ui.refresh_script_vars(&app.world);
 
     // Set current time for UI animations (cursor blink etc.)
     app.ui_context
@@ -727,6 +729,7 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         physics_friction,
         physics_restitution,
         physics_density,
+        script_vars: _,
     } = &app.editor.editor_ui.inspector_edit;
 
     let _ = (emit_rate, velocity, lifetime, gravity, particle_scale);
@@ -1422,6 +1425,76 @@ pub fn process_editor_actions(app: &mut Application) {
                     .get_component_mut::<katla_script::ScriptComponent>(entity)
                 {
                     comp.script_path = path;
+                }
+            }
+            EditorAction::AttachScript { entity, path } => {
+                if let Some(comp) = app
+                    .world
+                    .get_component_mut::<katla_script::ScriptComponent>(entity)
+                {
+                    comp.script_path = path;
+                } else {
+                    let op = SceneOp::AddComponent {
+                        entity,
+                        component: "ScriptComponent".to_string(),
+                    };
+                    match katla_ecs::scene_tool::SceneToolExecutor::execute(
+                        op,
+                        &mut app.world,
+                        &app.editor.component_registry,
+                    ) {
+                        Ok(_) => {
+                            if let Some(comp) = app
+                                .world
+                                .get_component_mut::<katla_script::ScriptComponent>(entity)
+                            {
+                                comp.script_path = path;
+                            }
+                        }
+                        Err(e) => log::error!("Failed to add ScriptComponent: {}", e),
+                    }
+                }
+            }
+            EditorAction::SpawnScriptEntity { path, screen_pos } => {
+                let world_pos = unproject_to_ground_plane(app, screen_pos);
+                let entity = app.world.create_entity();
+                app.world
+                    .add_component(entity, TransformComponent::from_position(world_pos));
+                let script_name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Script Entity");
+                app.world
+                    .add_component(entity, NameComponent::new(script_name));
+                let mut script = katla_script::ScriptComponent::new(String::new());
+                let resources_dir = &app.resources.root;
+                if resources_dir.exists() {
+                    let rel = path
+                        .strip_prefix(resources_dir)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .to_string();
+                    let rel = rel.trim_start_matches("scripts/");
+                    let rel = rel.trim_start_matches("resources/scripts/");
+                    let rel = rel.trim_end_matches(".luau").trim_end_matches(".lua");
+                    script.script_path = rel.to_string();
+                } else {
+                    script.script_path = path.to_string_lossy().to_string();
+                }
+                app.world.add_component(entity, script);
+                app.editor.editor_ui.selected_entity = Some(entity);
+                info!("Spawned script entity '{}' at {:?}", script_name, world_pos);
+            }
+            EditorAction::SetScriptVar {
+                entity,
+                var_name,
+                value,
+            } => {
+                if let Some(pending) = app
+                    .world
+                    .get_resource_mut::<katla_script::PendingScriptVarEdits>()
+                {
+                    pending.0.push((entity, var_name, value));
                 }
             }
             EditorAction::SetEmitterField { entity, field } => {

@@ -321,6 +321,24 @@ impl EditorUI {
         }
     }
 
+    /// Refresh script variable state from the script engine for the selected entity.
+    /// Reads from the ScriptInspectorData ECS resource that the ScriptSystem populates.
+    pub fn refresh_script_vars(&mut self, world: &katla_ecs::World) {
+        let data = world.get_resource::<katla_script::ScriptInspectorData>();
+        if let Some(data) = data {
+            if let Some(entity) = self.selected_entity {
+                self.inspector_edit.script_vars = data
+                    .entries
+                    .iter()
+                    .find(|(id, _, _)| *id == entity)
+                    .map(|(_, _, vars)| vars.clone())
+                    .unwrap_or_default();
+            } else {
+                self.inspector_edit.script_vars.clear();
+            }
+        }
+    }
+
     /// Set the font scale.
     pub fn set_font_scale(&mut self, scale: f32) {
         self.font_scale = scale.clamp(0.5, 3.0);
