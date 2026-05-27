@@ -190,6 +190,22 @@ impl MixerState {
         }
     }
 
+    fn set_voice_occlusion(&self, id: VoiceId, occlusion: f32) {
+        if let Some(kind) = self.voice_slot(id) {
+            match kind {
+                VoiceKind::Regular(slot) => {
+                    if let Some(voice) = &self.voices[slot] {
+                        voice.set_occlusion(occlusion);
+                    }
+                }
+                VoiceKind::Streaming(_) => {
+                    // Streaming voices don't support occlusion yet
+                    let _ = (id, occlusion);
+                }
+            }
+        }
+    }
+
     fn voice_volume(&self, id: VoiceId) -> f32 {
         if let Some(kind) = self.voice_slot(id) {
             match kind {
@@ -352,6 +368,11 @@ impl AudioMixer {
     pub fn set_voice_pitch_tweened(&self, id: VoiceId, pitch: f32) {
         let state = self.state.lock().unwrap();
         state.set_voice_pitch_tweened(id, pitch);
+    }
+
+    pub fn set_voice_occlusion(&self, id: VoiceId, occlusion: f32) {
+        let state = self.state.lock().unwrap();
+        state.set_voice_occlusion(id, occlusion);
     }
 
     pub fn voice_state(&self, id: VoiceId) -> VoiceState {

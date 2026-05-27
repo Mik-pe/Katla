@@ -8,6 +8,39 @@ const FRAC_BITS: u32 = 24;
 const FRAC_MASK: u64 = (1u64 << FRAC_BITS) - 1;
 const FIXED_ONE: u64 = 1u64 << FRAC_BITS;
 
+/// Per-voice one-pole low-pass filter for occlusion.
+/// When occlusion > 0, the cutoff frequency is reduced, simulating
+/// sound passing through walls/obstacles.
+struct OcclusionFilter {
+    state: [std::cell::Cell<f32>; 2],
+    coefficient: std::cell::Cell<f32>,
+}
+
+impl OcclusionFilter {
+    fn new() -> Self {
+        OcclusionFilter {
+            state: [std::cell::Cell::new(0.0), std::cell::Cell::new(0.0)],
+            coefficient: std::cell::Cell::new(1.0),
+        }
+    }
+
+    fn set_occlusion(&self, occlusion: f32, sample_rate: f32) {
+        let occlusion = occlusion.clamp(0.0, 1.0);
+        let min_cutoff = 200.0f32;
+        let max_cutoff = sample_rate * 0.5;
+        let cutoff = max_cutoff * (1.0 - occlusion) + min_cutoff * occlusion;
+        let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
+        let dt = 1.0 / sample_rate;
+        self.coefficient.set(dt / (rc + dt));
+    }
+
+    fn process_sample(&self, ch: usize, sample: f32) -> f32 {
+        let s = self.state[ch].get() + self.coefficient.get() * (sample - self.state[ch].get());
+        self.state[ch].set(s);
+        s
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VoiceId(pub u32);
 
@@ -41,11 +74,13 @@ pub struct Voice {
     volume_target: AtomicU32,
     pan_target: AtomicU32,
     pitch_target: AtomicU32,
+    occlusion: AtomicU32,
     tween_smoothing: f32,
     looping: bool,
     finished: AtomicBool,
     category: AudioCategoryValue,
     category_volumes: Arc<CategoryVolumes>,
+    occlusion_filter: OcclusionFilter,
 }
 
 impl Voice {
@@ -69,11 +104,13 @@ impl Voice {
             volume_target: AtomicU32::new(1.0f32.to_bits()),
             pan_target: AtomicU32::new(0.0f32.to_bits()),
             pitch_target: AtomicU32::new(1.0f32.to_bits()),
+            occlusion: AtomicU32::new(0.0f32.to_bits()),
             tween_smoothing: 0.3,
             looping,
             finished: AtomicBool::new(false),
             category,
             category_volumes,
+            occlusion_filter: OcclusionFilter::new(),
         }
     }
 
@@ -132,6 +169,15 @@ impl Voice {
         f32::from_bits(self.pitch.load(Ordering::Relaxed))
     }
 
+    pub fn set_occlusion(&self, occlusion: f32) {
+        self.occlusion
+            .store(occlusion.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
+    }
+
+    pub fn occlusion(&self) -> f32 {
+        f32::from_bits(self.occlusion.load(Ordering::Relaxed))
+    }
+
     pub fn category(&self) -> AudioCategoryValue {
         self.category
     }
@@ -162,6 +208,11 @@ impl Voice {
         let tgt_pitch = f32::from_bits(self.pitch_target.load(Ordering::Relaxed));
         let new_pitch = cur_pitch + (tgt_pitch - cur_pitch) * s;
         self.pitch.store(new_pitch.to_bits(), Ordering::Relaxed);
+
+        if self.occlusion() > 0.0 {
+            self.occlusion_filter
+                .set_occlusion(self.occlusion(), self.buffer.sample_rate as f32);
+        }
     }
 
     pub fn is_looping(&self) -> bool {
@@ -199,6 +250,12 @@ impl Voice {
             return;
         }
 
+        let occluded = self.occlusion() > 0.0;
+        if occluded {
+            self.occlusion_filter
+                .set_occlusion(self.occlusion(), output_sample_rate as f32);
+        }
+
         let mut fixed_pos = self.fixed_position.load(Ordering::Relaxed);
 
         if src_channels == output_channels {
@@ -223,8 +280,12 @@ impl Voice {
                     } else {
                         r0
                     };
-                    let l = l0 + (l1 - l0) * frac;
-                    let r = r0 + (r1 - r0) * frac;
+                    let mut l = l0 + (l1 - l0) * frac;
+                    let mut r = r0 + (r1 - r0) * frac;
+                    if occluded {
+                        l = self.occlusion_filter.process_sample(0, l);
+                        r = self.occlusion_filter.process_sample(1, r);
+                    }
                     chunk[0] += l * voice_volume * left_gain;
                     chunk[1] += r * voice_volume * right_gain;
                 } else {
@@ -235,7 +296,11 @@ impl Voice {
                         } else {
                             s0
                         };
-                        chunk[ch] += (s0 + (s1 - s0) * frac) * voice_volume;
+                        let mut s = s0 + (s1 - s0) * frac;
+                        if occluded {
+                            s = self.occlusion_filter.process_sample(ch.min(1), s);
+                        }
+                        chunk[ch] += s * voice_volume;
                     }
                 }
 
@@ -256,9 +321,12 @@ impl Voice {
                 } else {
                     s0
                 };
-                let mono = (s0 + (s1 - s0) * frac) * voice_volume;
-                chunk[0] += mono * left_gain;
-                chunk[1] += mono * right_gain;
+                let mut mono = s0 + (s1 - s0) * frac;
+                if occluded {
+                    mono = self.occlusion_filter.process_sample(0, mono);
+                }
+                chunk[0] += mono * voice_volume * left_gain;
+                chunk[1] += mono * voice_volume * right_gain;
 
                 fixed_pos += step_fixed;
             }
@@ -283,8 +351,12 @@ impl Voice {
                 } else {
                     r0
                 };
-                let l = l0 + (l1 - l0) * frac;
-                let r = r0 + (r1 - r0) * frac;
+                let mut l = l0 + (l1 - l0) * frac;
+                let mut r = r0 + (r1 - r0) * frac;
+                if occluded {
+                    l = self.occlusion_filter.process_sample(0, l);
+                    r = self.occlusion_filter.process_sample(1, r);
+                }
                 *out += (l * left_gain + r * right_gain) * 0.5 * voice_volume;
 
                 fixed_pos += step_fixed * 2;
@@ -347,6 +419,10 @@ impl VoiceHandle {
 
     pub fn set_pitch_tweened(&self, pitch: f32) {
         self.mixer.set_voice_pitch_tweened(self.id, pitch);
+    }
+
+    pub fn set_occlusion(&self, occlusion: f32) {
+        self.mixer.set_voice_occlusion(self.id, occlusion);
     }
 
     pub fn state(&self) -> VoiceState {

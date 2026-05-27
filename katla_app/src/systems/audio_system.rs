@@ -7,6 +7,13 @@ use katla_math::Vec3;
 
 use crate::components::{AudioEmitter, AudioListener, DistanceModel, TransformComponent};
 
+/// Maximum occlusion factor (0.0 = not occluded, 1.0 = fully occluded).
+const MAX_OCCLUSION: f32 = 0.85;
+
+/// How much of the ray distance must be left after a hit to count as occlusion.
+/// A hit very close to the listener barely occludes.
+const OCCLUSION_MIN_RATIO: f32 = 0.1;
+
 pub struct AudioSystem {
     engine: AudioEngine,
     buffers: HashMap<String, Arc<AudioBuffer>>,
@@ -125,7 +132,7 @@ impl AudioSystem {
 
         // Update spatial volume/pan and detect stopped voices
         let mut stopped_entities = Vec::new();
-        let mut spatial_updates: Vec<(katla_ecs::EntityId, f32, f32, f32)> = Vec::new();
+        let mut spatial_updates: Vec<(katla_ecs::EntityId, f32, f32, f32, f32)> = Vec::new();
         for (entity, emitter) in world.query_ref::<&AudioEmitter>() {
             let Some(handle) = self.active_voices.get(&entity) else {
                 continue;
@@ -158,11 +165,15 @@ impl AudioSystem {
                         compute_doppler(emitter_pos, listener_pos, emitter_vel, listener_vel);
                     self.prev_emitter_positions.insert(entity, emitter_pos);
 
+                    // Compute occlusion via physics raycast
+                    let occlusion = compute_occlusion(world, emitter_pos, listener_pos);
+
                     spatial_updates.push((
                         entity,
                         emitter.volume * spatial_volume,
                         pan,
                         doppler_pitch,
+                        occlusion,
                     ));
                 }
             } else {
@@ -170,11 +181,12 @@ impl AudioSystem {
             }
         }
 
-        for (entity, volume, pan, doppler_pitch) in &spatial_updates {
+        for (entity, volume, pan, doppler_pitch, occlusion) in &spatial_updates {
             if let Some(handle) = self.active_voices.get(entity) {
                 handle.set_volume_tweened(*volume);
                 handle.set_pan_tweened(*pan);
                 handle.set_pitch(*doppler_pitch);
+                handle.set_occlusion(*occlusion);
             }
         }
 
@@ -324,4 +336,33 @@ fn compute_doppler(
     }
 
     (SPEED_OF_SOUND / denominator).clamp(0.5, 2.0)
+}
+
+fn compute_occlusion(world: &World, emitter_pos: Vec3, listener_pos: Vec3) -> f32 {
+    let physics = match world.get_resource::<katla_physics::PhysicsWorld>() {
+        Some(p) => p,
+        None => return 0.0,
+    };
+
+    let to_listener = listener_pos - emitter_pos;
+    let distance = to_listener.length();
+    if distance < 0.001 {
+        return 0.0;
+    }
+
+    let direction = to_listener / distance;
+
+    // Cast a ray slightly short of the listener to avoid self-intersection
+    let max_distance = distance * 0.99;
+
+    if let Some(hit) = physics.raycast(emitter_pos, direction, max_distance) {
+        // Occlusion is based on how far along the ray the hit is.
+        // A hit close to the emitter = heavily occluded.
+        // A hit close to the listener = barely occluded.
+        let ratio = hit.distance / distance;
+        let occlusion = (1.0 - ratio).clamp(OCCLUSION_MIN_RATIO, 1.0) * MAX_OCCLUSION;
+        occlusion
+    } else {
+        0.0
+    }
 }

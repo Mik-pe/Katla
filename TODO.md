@@ -227,7 +227,7 @@
 - [x] Add `SoundCue` scripting bindings — `ScriptCommand::PlaySoundCue` variant added to `katla_script`, `world:play_sound_cue("name")` binding in ScriptWorldProxy, `AudioSystem::register_cue`/`play_cue` for cue registry and playback
 
 ### Phase 10: Spatial audio improvements (depends on Phase 6 bug fixes + Phase 7 DSP effects)
-- [ ] Add occlusion/obstruction — when line-of-sight from emitter to listener is blocked by geometry, apply low-pass filter and volume attenuation to simulate sound passing through/around obstacles. **Requires Phase 7 low-pass filter effect; requires physics raycast (Physics Phase 4)**
+- [x] Add occlusion/obstruction — when line-of-sight from emitter to listener is blocked by geometry, apply low-pass filter and volume attenuation to simulate sound passing through/around obstacles. **Requires Phase 7 low-pass filter effect; requires physics raycast (Physics Phase 4)**
 - [ ] Add reverb zones — define volumes in the scene (box/sphere shapes) with reverb parameters (decay, wet mix, pre-delay); when the listener is inside a zone, blend the zone's reverb into the effect send; blend between overlapping zones. **Requires Phase 7 reverb effect and send/return buses**
 - [x] Add Doppler effect — `compute_doppler()` uses the standard Doppler formula with speed of sound (343 m/s); velocity tracked per-frame from previous positions stored on `AudioSystem`; pitch shift clamped to 0.5-2.0x and applied via `set_pitch_tweened`
 - [x] Add listener orientation for spatialization — `compute_spatialization` now takes `listener_up` in addition to `listener_forward`; right vector computed as `forward × up` instead of `forward × Y_AXIS`, giving correct panning for any listener orientation (including tilted/rolled cameras)
