@@ -110,11 +110,11 @@
 
 ### L. Fix resize() semantic — stop silently discarding frame graph state
 
-- [ ] Change `GpuRenderer::resize` signature to accept a frame graph reference: `fn resize(&mut self, width: u32, height: u32, frame_graph: &mut dyn FrameGraphResize) -> Result<(), RendererError>` or equivalent
-- [ ] Update Vulkan impl to pass the actual app's frame graph to `recreate_swapchain` instead of creating a throwaway `FrameGraph::new()`
-- [ ] Update Metal impl to handle resize properly (recreate render targets, transient textures)
-- [ ] Update `AnyRenderer` dispatch and all call sites in `katla_app`
-- [ ] Run `cargo check --workspace` and `cargo test --workspace`
+- [x] Decouple `recreate_swapchain` from FrameGraph — removed FrameGraph parameter from `VulkanRenderer::recreate_swapchain()`, fixed `GpuRenderer::resize()` Vulkan impl to not create throwaway FrameGraph, moved transient texture recreation to `recreate_swapchain_resources()` in katla_app
+- [x] Update Vulkan impl to pass the actual app's frame graph to `recreate_swapchain` instead of creating a throwaway `FrameGraph::new()` — replaced with swapchain-only recreation; transient textures now recreated at app level via `frame_graph.recreate_transient_textures()`
+- [x] Update Metal impl to handle resize properly (recreate render targets, transient textures) — Metal already follows the correct pattern: `renderer.resize()` + `frame_graph.recreate_transient_textures()`
+- [x] Update `AnyRenderer` dispatch and all call sites in `katla_app` — simplified `AnyRenderer::recreate_swapchain()` signature, updated `recreate_swapchain_resources()` to call both swapchain and transient texture recreation
+- [x] Run `cargo check --workspace` and `cargo test --workspace`
 
 ### M. Generalize texture update API — remove font atlas special-case
 
