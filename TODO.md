@@ -386,17 +386,17 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 **Implementation tasks:**
 
-- [ ] Create `katla_ui/src/declarative/constructors.rs` — module for all free functions. Each is a plain `fn foo(...) -> ViewDescriptor` that fills defaults for optional fields. Start with the trivial ones: `empty()`, `toggle()`, `radio()`, `property_row()`, `color_picker()`.
-- [ ] Add leaf free functions with optionals — `text()`, `button()`, `image_button()`, `slider()`, `labeled_slider()`, `textfield()`, `progress()`, `image()`. All optional fields default to `None` / `false` / `0`. These work standalone even before modifier methods exist.
-- [ ] Add container free functions with `impl IntoIterator` — `hstack()`, `vstack()` take `impl IntoIterator<Item = ViewDescriptor>`, `zstack()` takes `impl IntoIterator<Item = (Alignment, ViewDescriptor)>`. Single-child containers (`scroll`, `panel`, `overlay`, `statusbar`) take `ViewDescriptor` directly. `draggle_panel`, `menubar`, `tree_view` take their specific struct args.
-- [ ] Add modifier methods on `ViewDescriptor` — implement in `descriptor.rs` as `impl ViewDescriptor`. Each method consumes `self`, pattern-matches to the relevant variant(s), updates the field, returns `self`. Start with: `.color()`, `.font_size()`, `.fill()`, `.hover()`, `.border()`, `.on_click()`, `.enabled()`, `.on_submit()`, `.show_value()`, `.precision()`, `.label_width()`, `.uv()`. Add `debug_assert!` in the else branch to catch misapplied modifiers in tests.
-- [ ] Add container modifier methods — `.spacing()`, `.padding()`, `.padding_all()`, `.align()` on `HStack`/`VStack`. `.padding()` on `ZStack`. `.header_height()` on `Panel`. `.close_on_outside()` on `DraggablePanel`. `.right_content()` and `.height()` on `MenuBar`. `.row_height()`, `.indent()`, `.on_select()`, `.on_right_click()` on `TreeView`.
-- [ ] Re-export everything from `declarative/mod.rs` — `pub use constructors::*` so users write `use katla_ui::declarative::{text, button, hstack};`.
-- [ ] Add unit tests — for each free function, verify it produces the correct `ViewDescriptor` variant with expected defaults. For each modifier, verify it sets the field and that misapplied modifiers no-op (test the `debug_assert!` fires).
-- [ ] Refactor `StatusBarView` — replace all struct-literal `ViewDescriptor::Text` and `ViewDescriptor::HStack` with `text().color()` and `hstack().spacing().padding_all().align()`. First real consumer, validates the end-to-end feel.
-- [ ] Refactor `GizmoButtonsView` — replace `RadioButton` struct literals with `radio()`, `HStack` with `hstack().spacing().padding_all()`.
-- [ ] Refactor `EditorRootView` — replace `ZStack` struct literal with `zstack([...])`.
-- [ ] Refactor `helpers.rs` — rewrite `section_header()`, `delete_button()` to use free functions + modifiers internally.
+ - [x] Create `katla_ui/src/declarative/constructors.rs` — module for all free functions. Each is a plain `fn foo(...) -> ViewDescriptor` that fills defaults for optional fields. Start with the trivial ones: `empty()`, `toggle()`, `radio()`, `property_row()`, `color_picker()`.
+- [x] Add leaf free functions with optionals — `text()`, `button()`, `image_button()`, `slider()`, `labeled_slider()`, `textfield()`, `progress()`, `image()`. All optional fields default to `None` / `false` / `0`. These work standalone even before modifier methods exist.
+- [x] Add container free functions with `impl IntoIterator` — `hstack()`, `vstack()` take `impl IntoIterator<Item = ViewDescriptor>`, `zstack()` takes `impl IntoIterator<Item = (Alignment, ViewDescriptor)>`. Single-child containers (`scroll`, `panel`, `overlay`, `statusbar`) take `ViewDescriptor` directly. `draggle_panel`, `menubar`, `tree_view` take their specific struct args.
+- [x] Add modifier methods on `ViewDescriptor` — implement in `descriptor.rs` as `impl ViewDescriptor`. Each method consumes `self`, pattern-matches to the relevant variant(s), updates the field, returns `self`. Start with: `.color()`, `.font_size()`, `.fill()`, `.hover()`, `.border()`, `.on_click()`, `.enabled()`, `.on_submit()`, `.show_value()`, `.precision()`, `.label_width()`, `.uv()`. Add `debug_assert!` in the else branch to catch misapplied modifiers in tests.
+- [x] Add container modifier methods — `.spacing()`, `.padding()`, `.padding_all()`, `.align()` on `HStack`/`VStack`. `.padding()` on `ZStack`. `.header_height()` on `Panel`. `.close_on_outside()` on `DraggablePanel`. `.right_content()` and `.height()` on `MenuBar`. `.row_height()`, `.indent()`, `.on_select()`, `.on_right_click()` on `TreeView`.
+- [x] Re-export everything from `declarative/mod.rs` — `pub use constructors::*` so users write `use katla_ui::declarative::{text, button, hstack};`.
+- [x] Add unit tests — for each free function, verify it produces the correct `ViewDescriptor` variant with expected defaults. For each modifier, verify it sets the field and that misapplied modifiers no-op (test the `debug_assert!` fires).
+- [x] Refactor `StatusBarView` — replace all struct-literal `ViewDescriptor::Text` and `ViewDescriptor::HStack` with `text().color()` and `hstack().spacing().padding_all().align()`. First real consumer, validates the end-to-end feel.
+- [x] Refactor `GizmoButtonsView` — replace `RadioButton` struct literals with `radio()`, `HStack` with `hstack().spacing().padding_all()`.
+- [x] Refactor `EditorRootView` — replace `ZStack` struct literal with `zstack([...])`.
+- [x] Refactor `helpers.rs` — rewrite `section_header()`, `delete_button()` to use free functions + modifiers internally.
 
 #### Prerequisites: layout and diffing infrastructure
 
@@ -405,13 +405,13 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 #### Widget gaps: missing declarative features needed for migration
 
-- [ ] Add `Section` descriptor — collapsible section with header row (label + optional remove button + expand/collapse chevron). Equivalent to the `section_header()` helper but as a proper container variant. Needed by Inspector.
+- [x] Add `Section` descriptor — collapsible section with header row (label + optional remove button + expand/collapse chevron). Equivalent to the `section_header()` helper but as a proper container variant. Needed by Inspector.
 - [ ] Add `TabBar` descriptor — tab strip with selectable tabs, content area below. Equivalent to immediate-mode `begin_row` with styled buttons. Needed by Preferences.
 - [ ] Add `Grid` descriptor — `GridDescriptor { columns: usize, cell_size: Vec2, spacing: f32, children: Vec<ViewDescriptor> }` mapped to a wrapping Taffy flex layout. Needed by Preferences and Viewport Grid.
-- [ ] Add `Separator` descriptor — horizontal or vertical divider line. Needed by most panels.
-- [ ] Add `Icon` descriptor — render a ForkAwesome icon by char code with configurable size and color. Needed by Toolbar and Inspector.
+- [x] Add `Separator` descriptor — horizontal or vertical divider line. Needed by most panels.
+- [x] Add `Icon` descriptor — render a ForkAwesome icon by char code with configurable size and color. Needed by Toolbar and Inspector.
 - [ ] Add `ProgressBar` improvements — add optional label text overlay on the progress bar track.
-- [ ] Add `Selectable` descriptor — wrapper that highlights on hover and fires on_click, for list items and grid cells. Needed by Asset Browser and Hierarchy.
+- [x] Add `Selectable` descriptor — wrapper that highlights on hover and fires on_click, for list items and grid cells. Needed by Asset Browser and Hierarchy.
 - [ ] Add `Conditional` descriptor or extend `show_if` helper — support `if`/`else` branching in descriptor trees with stable identity on both branches so diffing doesn't destroy state.
 
 #### Phase 1: Migrate simple panels (build confidence)
