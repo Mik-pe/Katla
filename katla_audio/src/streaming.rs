@@ -14,7 +14,7 @@ pub struct StreamingDecoder {
 
 enum StreamingDecoderInner {
     Wav(hound::WavReader<std::io::BufReader<std::fs::File>>),
-    Ogg(OggStreamState),
+    Ogg(Box<OggStreamState>),
     Mp3(Mp3StreamState),
 }
 
@@ -48,7 +48,7 @@ impl StreamingDecoder {
         let channels = reader.ident_hdr.audio_channels as u16;
         let sample_rate = reader.ident_hdr.audio_sample_rate;
         Ok(StreamingDecoder {
-            inner: StreamingDecoderInner::Ogg(OggStreamState { reader }),
+            inner: StreamingDecoderInner::Ogg(Box::new(OggStreamState { reader })),
             channels,
             sample_rate,
             exhausted: false,

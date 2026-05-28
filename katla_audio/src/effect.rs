@@ -10,6 +10,12 @@ pub struct EffectChain {
     effects: Vec<Box<dyn AudioEffect + Send>>,
 }
 
+impl Default for EffectChain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EffectChain {
     pub fn new() -> Self {
         EffectChain {
@@ -51,14 +57,6 @@ impl AuxBus {
 
     pub fn add_effect(&mut self, effect: Box<dyn AudioEffect + Send>) {
         self.effects.add_effect(effect);
-    }
-
-    fn ensure_buffer(&mut self, frames: usize, channels: usize) {
-        let needed = frames * channels;
-        if self.buffer.len() != needed {
-            self.buffer.resize(needed, 0.0);
-        }
-        self.buffer.fill(0.0);
     }
 
     pub fn accumulate(&mut self, main_buffer: &[f32]) {
