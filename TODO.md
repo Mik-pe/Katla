@@ -97,14 +97,14 @@
 
 ### Phase 9: Physics robustness and testing
 
-- [ ] **Add test for static body spawn tracking** — Verify that static bodies correctly track their spawned state despite having no Rapier `RigidBodyHandle` (related to the invalid-handle fix in Phase 5).
+ - [x] **Add test for static body spawn tracking** — Verify that static bodies correctly track their spawned state despite having no Rapier `RigidBodyHandle` (related to the invalid-handle fix in Phase 5).
  - [x] **Add test for entity destruction cleanup** — Spawn a dynamic body, destroy the entity, verify that `PhysicsWorld` body/collider counts decrease correctly.
-- [ ] **Add test for joint spawning** — Create two entities with `RigidBody` + `ColliderShape`, add a `Joint` component referencing both, run one frame, verify the joint is created in `PhysicsWorld`.
-- [ ] **Add test for play-mode gating** — Verify that physics simulation does not advance when play mode is `Editing` or `Paused`, and does advance when `Playing`.
+ - [x] **Add test for joint spawning** — Create two entities with `RigidBody` + `ColliderShape`, add a `Joint` component referencing both, run one frame, verify the joint is created in `PhysicsWorld`.
+ - ~~**Add test for play-mode gating**~~ — Already covered by `test_play_mode_gating` (PhysicsActive false) and `test_gravity_affects_dynamic` (PhysicsActive true).
 - [ ] **Add integration test for physics scene round-trip** — Create entities with physics components, serialize to RON, deserialize, verify components are recreated correctly and Rapier bodies are spawned.
-- [ ] **Add test for kinematic body sync** — Spawn a kinematic body, move its `TransformComponent`, run one frame, verify Rapier body position matches the new transform.
+ - [x] **Add test for kinematic body sync** — Spawn a kinematic body, move its `TransformComponent`, run one frame, verify Rapier body position matches the new transform.
 - [ ] **Add stress test for many dynamic bodies** — Spawn 100+ dynamic bodies, step for N frames, verify no panics or deadlocks. Identify performance bottlenecks in the spawn/sync loop.
-- [ ] **Add test for `apply_force` and `apply_impulse` through ECS** — Current tests only verify body creation and gravity. Add tests that apply forces/impulses and verify velocity/position changes.
+ - [x] **Add test for `apply_force` and `apply_impulse` through ECS** — Current tests only verify body creation and gravity. Add tests that apply forces/impulses and verify velocity/position changes.
 
 ### Phase 10: Physics scripting polish
 
