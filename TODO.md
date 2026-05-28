@@ -267,7 +267,16 @@
 
 - [x] Add Modal/ContextMenu variants to ViewDescriptor — used by inspector "Add Component" popup, hierarchy right-click
 - [x] Migrate StatusBarView from ViewDescriptor::Custom to declarative + remove scratch bridge
-- [ ] Migrate remaining panels from ViewDescriptor::Custom to declarative trees (toolbar, console, preferences, inspector, hierarchy, co-creator, particle-inspector, viewport-grid, asset-browser)
+- [ ] Migrate remaining panels from ViewDescriptor::Custom to declarative trees
+  - **Toolbar**: needs declarative MenuBar with dropdown hover-to-switch, icon buttons with callbacks
+  - **Console**: needs declarative ScrollArea with per-row hit-testing, text selection, clipboard
+  - **Preferences**: needs declarative DraggablePanel, tab bar, grid layout (begin_grid/grid_item)
+  - **Inspector**: needs declarative DraggablePanel, modal (Add Component), ColorPicker overlay, section headers with remove buttons, dynamic enum-driven widget trees
+  - **Hierarchy**: needs declarative TreeView with custom row rendering (icons, badges), ContextMenu integration
+  - **Co-Creator**: needs declarative DraggablePanel, markdown rendering, multiline TextInput
+  - **Particle Inspector**: needs declarative DraggablePanel, dynamic shape-parameter branching
+  - **Viewport Grid**: needs dynamic texture grid with per-cell Image + border + label, mouse hit-testing for slot hover
+  - **Asset Browser**: needs marquee selection, drag-and-drop, z-index tooltips, keyboard capture, context menu, modal — currently a no-op Custom wrapper
 - [ ] Remove thread_local bridges from all migrated panels
 - [ ] Remove immediate-mode widgets with declarative equivalents from widgets/mod.rs public API (Button, Slider, LabeledSlider, Vec3Slider, ToggleButton, TextInput, RadioButton, ImageButton, Panel)
 - [ ] Restrict or remove ViewDescriptor::Custom escape hatch
