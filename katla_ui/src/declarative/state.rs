@@ -11,6 +11,16 @@ pub struct StateId {
     slot: u32,
 }
 
+impl StateId {
+    #[cfg(test)]
+    pub fn test_id() -> Self {
+        Self {
+            node: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            slot: 0,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct StateArena {
     cells: HashMap<StateId, StateCell>,
