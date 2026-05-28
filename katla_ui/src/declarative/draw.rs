@@ -865,6 +865,83 @@ pub(crate) fn draw_descriptor_with_id(
             }
         }
 
+        ViewDescriptor::Modal(desc) => {
+            let is_open: bool = state_arena.get(desc.open_id);
+            if !is_open {
+                return;
+            }
+
+            let screen_size = ui.screen_size();
+            let screen_bounds = Rect2D::new(Vec2::new(0.0, 0.0), screen_size);
+            ui.draw_rect(screen_bounds, ui.style().popup_shadow);
+
+            let cx = (screen_size.x() - desc.width) * 0.5;
+            let cy = (screen_size.y() - desc.height) * 0.5;
+            let modal_bounds =
+                Rect2D::from_origin_size(Vec2::new(cx, cy), Vec2::new(desc.width, desc.height));
+
+            ui.draw_rect_border(
+                modal_bounds,
+                ui.style().window_bg,
+                ui.style().window_border,
+                1.0,
+            );
+        }
+
+        ViewDescriptor::ContextMenu(desc) => {
+            let is_open: bool = state_arena.get(desc.open_id);
+            if !is_open {
+                return;
+            }
+
+            let font_size = ui.style().font_size;
+            let item_height = 28.0_f32;
+            let item_spacing = ui.style().item_inner_spacing;
+            let max_label_width: f32 = desc
+                .items
+                .iter()
+                .map(|item| ui.measure_text(&item.label, font_size).x())
+                .fold(0.0_f32, f32::max);
+            let menu_width = max_label_width + item_spacing * 4.0;
+            let menu_height = desc.items.len() as f32 * item_height;
+
+            let menu_bounds =
+                Rect2D::from_origin_size(bounds.min, Vec2::new(menu_width, menu_height));
+
+            ui.draw_rect(menu_bounds, ui.style().window_bg);
+            ui.draw_rect_border(
+                menu_bounds,
+                ui.style().window_bg,
+                ui.style().window_border,
+                1.0,
+            );
+
+            for (i, entry) in desc.items.iter().enumerate() {
+                let entry_bounds = Rect2D::from_origin_size(
+                    Vec2::new(bounds.min.x(), bounds.min.y() + i as f32 * item_height),
+                    Vec2::new(menu_width, item_height),
+                );
+
+                let entry_hovered = entry_bounds.contains(ui.mouse_pos());
+                if entry_hovered && !entry.disabled {
+                    ui.draw_rect(entry_bounds, ui.style().selectable_hovered);
+                }
+
+                let text_color = if entry.disabled {
+                    ui.style().text_disabled
+                } else {
+                    ui.style().text_color
+                };
+                let label_y = entry_bounds.center().y() - font_size * 0.5;
+                ui.draw_text(
+                    &entry.label,
+                    Vec2::new(entry_bounds.min.x() + item_spacing * 2.0, label_y),
+                    text_color,
+                    font_size,
+                );
+            }
+        }
+
         ViewDescriptor::Custom(draw_fn) => {
             draw_fn(ui, bounds);
         }

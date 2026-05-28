@@ -170,7 +170,6 @@ impl EditorUI {
             save_confirmation_timer: self.save_confirmation_timer,
         };
         self.view_tree.env_mut().set(status_data.clone());
-        ui.set_scratch(status_data);
 
         let toolbar_height = 36.0;
         self.toolbar_state.undo_count = params.undo_count;

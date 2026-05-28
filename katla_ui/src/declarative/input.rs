@@ -70,7 +70,9 @@ fn is_interactive(descriptor: &ViewDescriptor) -> bool {
         | ViewDescriptor::RadioButton { .. }
         | ViewDescriptor::DraggablePanel { .. }
         | ViewDescriptor::MenuBar { .. }
-        | ViewDescriptor::TreeView { .. } => true,
+        | ViewDescriptor::TreeView { .. }
+        | ViewDescriptor::Modal { .. }
+        | ViewDescriptor::ContextMenu { .. } => true,
 
         ViewDescriptor::Empty
         | ViewDescriptor::Text { .. }
@@ -499,6 +501,65 @@ pub(crate) fn process_input(
                         }
                     }
                 }
+            }
+        }
+
+        ViewDescriptor::Modal(desc) => {
+            let is_open: bool = tree.state_arena().get(desc.open_id);
+            if !is_open {
+                return result;
+            }
+
+            let Some(node_bounds) = bounds_map.get(&hit.id).copied() else {
+                return result;
+            };
+
+            if !node_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT) {
+                tree.state_arena_mut().set(desc.open_id, false);
+                result.input_consumed = true;
+                return result;
+            }
+
+            if input.key_pressed(KeyCode::Escape) {
+                tree.state_arena_mut().set(desc.open_id, false);
+                result.input_consumed = true;
+            }
+        }
+
+        ViewDescriptor::ContextMenu(desc) => {
+            let is_open: bool = tree.state_arena().get(desc.open_id);
+            if !is_open {
+                return result;
+            }
+
+            let Some(node_bounds) = bounds_map.get(&hit.id).copied() else {
+                return result;
+            };
+
+            if node_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT) {
+                let item_height = 28.0_f32;
+                for (i, entry) in desc.items.iter().enumerate() {
+                    let entry_bounds = Rect2D::from_origin_size(
+                        Vec2::new(
+                            node_bounds.min.x(),
+                            node_bounds.min.y() + i as f32 * item_height,
+                        ),
+                        Vec2::new(node_bounds.width(), item_height),
+                    );
+                    if entry_bounds.contains(input.mouse_pos) && !entry.disabled {
+                        if let Some(ref callback) = entry.on_click {
+                            callbacks.invoke(callback);
+                        }
+                        tree.state_arena_mut().set(desc.open_id, false);
+                        result.input_consumed = true;
+                        return result;
+                    }
+                }
+            }
+
+            if !node_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT) {
+                tree.state_arena_mut().set(desc.open_id, false);
+                result.input_consumed = true;
             }
         }
 

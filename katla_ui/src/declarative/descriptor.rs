@@ -140,6 +140,10 @@ pub enum ViewDescriptor {
 
     TreeView(Box<TreeViewDescriptor>),
 
+    Modal(Box<ModalDescriptor>),
+
+    ContextMenu(Box<ContextMenuDescriptor>),
+
     Custom(CustomDrawFn),
 }
 
@@ -258,6 +262,27 @@ pub struct TreeItem {
     pub label: String,
     pub depth: u32,
     pub has_children: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ModalDescriptor {
+    pub width: f32,
+    pub height: f32,
+    pub open_id: StateId,
+    pub content: Box<ViewDescriptor>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ContextMenuDescriptor {
+    pub items: Vec<ContextMenuEntry>,
+    pub open_id: StateId,
+}
+
+#[derive(Clone, Debug)]
+pub struct ContextMenuEntry {
+    pub label: String,
+    pub on_click: Option<Callback>,
+    pub disabled: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -502,6 +527,8 @@ impl std::fmt::Debug for ViewDescriptor {
             ViewDescriptor::DraggablePanel(s) => f.debug_tuple("DraggablePanel").field(s).finish(),
             ViewDescriptor::MenuBar(s) => f.debug_tuple("MenuBar").field(s).finish(),
             ViewDescriptor::TreeView(s) => f.debug_tuple("TreeView").field(s).finish(),
+            ViewDescriptor::Modal(s) => f.debug_tuple("Modal").field(s).finish(),
+            ViewDescriptor::ContextMenu(s) => f.debug_tuple("ContextMenu").field(s).finish(),
             ViewDescriptor::TransitionContainer { child, .. } => {
                 f.debug_tuple("TransitionContainer").field(child).finish()
             }
