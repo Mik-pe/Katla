@@ -2,13 +2,12 @@
 
 use super::ParticleStats;
 use katla_ecs::EntityId;
-use katla_ui::{ScrollAreaState, widgets::DraggablePanelState};
+use katla_ui::widgets::DraggablePanelState;
 
 /// State for the particle inspector floating panel.
 #[derive(Debug, Clone, Default)]
 pub struct ParticleInspectorState {
     pub panel: DraggablePanelState,
-    pub scroll_state: ScrollAreaState,
 }
 
 /// Pre-collected data for the particle inspector, gathered from World + GlobalParticleSystem.
