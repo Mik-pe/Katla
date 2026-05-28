@@ -18,6 +18,14 @@ impl Application {
             katla_gfx::AnyRenderer::Metal(_) => self.init_metal(),
         }
 
+        match crate::systems::AudioSystem::new() {
+            Ok(audio) => {
+                info!("Audio system initialized");
+                self.audio_system = Some(audio);
+            }
+            Err(e) => warn!("Failed to initialize audio: {}", e),
+        }
+
         // Load scene from disk
         let scene_path_str = self
             .info
