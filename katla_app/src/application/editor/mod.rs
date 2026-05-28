@@ -1253,6 +1253,11 @@ pub fn process_editor_actions(app: &mut Application) {
                     {
                         active.0 = true;
                     }
+                    if let Some(physics) =
+                        app.world.get_resource_mut::<katla_physics::PhysicsActive>()
+                    {
+                        physics.0 = true;
+                    }
                     info!("Entered play mode");
                 }
             }
@@ -1264,6 +1269,11 @@ pub fn process_editor_actions(app: &mut Application) {
                     {
                         active.0 = false;
                     }
+                    if let Some(physics) =
+                        app.world.get_resource_mut::<katla_physics::PhysicsActive>()
+                    {
+                        physics.0 = false;
+                    }
                     info!("Play mode paused");
                 }
                 super::game_state::PlayMode::Paused => {
@@ -1272,6 +1282,11 @@ pub fn process_editor_actions(app: &mut Application) {
                         app.world.get_resource_mut::<katla_script::ScriptsActive>()
                     {
                         active.0 = true;
+                    }
+                    if let Some(physics) =
+                        app.world.get_resource_mut::<katla_physics::PhysicsActive>()
+                    {
+                        physics.0 = true;
                     }
                     info!("Play mode resumed");
                 }
@@ -1288,6 +1303,11 @@ pub fn process_editor_actions(app: &mut Application) {
                         app.world.get_resource_mut::<katla_script::ScriptsActive>()
                     {
                         active.0 = false;
+                    }
+                    if let Some(physics) =
+                        app.world.get_resource_mut::<katla_physics::PhysicsActive>()
+                    {
+                        physics.0 = false;
                     }
                     info!("Stopped play mode, scene restored");
                 }

@@ -22,3 +22,10 @@ pub use rapier3d::geometry::ColliderHandle;
 pub use rigid_body::{BodyType, RigidBody};
 pub use shape::{BoxShape, CapsuleShape, SphereShape};
 pub use trigger::{TriggerEvent, TriggerVolume};
+
+/// Resource that controls whether the physics simulation steps.
+///
+/// Insert into the ECS World to gate physics stepping behind play mode.
+/// Defaults to `false` (simulation paused).
+#[derive(Debug, Clone, Copy)]
+pub struct PhysicsActive(pub bool);
