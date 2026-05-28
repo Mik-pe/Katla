@@ -602,6 +602,7 @@ impl ViewTree {
     fn collect_children(descriptor: &ViewDescriptor) -> &[ViewDescriptor] {
         match descriptor {
             ViewDescriptor::HStack(s) | ViewDescriptor::VStack(s) => &s.children,
+            ViewDescriptor::Grid(s) => &s.children,
             ViewDescriptor::ZStack(_) => &[],
             ViewDescriptor::ScrollView(_) => &[],
             ViewDescriptor::Panel(_) => &[],
@@ -621,6 +622,7 @@ impl ViewTree {
             ViewDescriptor::TransitionContainer { child, .. } => Some(child),
             ViewDescriptor::Selectable { child, .. } => Some(child),
             ViewDescriptor::Section { child, .. } => Some(child),
+            ViewDescriptor::TabBar(s) => Some(&s.content),
             _ => None,
         }
     }

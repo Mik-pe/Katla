@@ -75,7 +75,8 @@ fn is_interactive(descriptor: &ViewDescriptor) -> bool {
         | ViewDescriptor::ContextMenu { .. }
         | ViewDescriptor::ScrollView(_)
         | ViewDescriptor::Selectable { .. }
-        | ViewDescriptor::Section { .. } => true,
+        | ViewDescriptor::Section { .. }
+        | ViewDescriptor::TabBar(_) => true,
 
         ViewDescriptor::Empty
         | ViewDescriptor::Text { .. }
@@ -84,6 +85,7 @@ fn is_interactive(descriptor: &ViewDescriptor) -> bool {
         | ViewDescriptor::PropertyRow { .. }
         | ViewDescriptor::Separator { .. }
         | ViewDescriptor::Icon { .. }
+        | ViewDescriptor::Grid(_)
         | ViewDescriptor::HStack(_)
         | ViewDescriptor::VStack(_)
         | ViewDescriptor::ZStack(_)
@@ -624,6 +626,23 @@ pub(crate) fn process_input(
                 let expanded: bool = tree.state_arena().get(*expanded_id);
                 tree.state_arena_mut().set(*expanded_id, !expanded);
                 result.input_consumed = true;
+            }
+        }
+
+        ViewDescriptor::TabBar(desc) => {
+            let Some(node_bounds) = bounds_map.get(&hit.id).copied() else {
+                return result;
+            };
+            let tab_count = desc.tabs.len().max(1);
+            let tab_width = node_bounds.width() / tab_count as f32;
+
+            if node_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT) {
+                let tab_index = ((input.mouse_pos.x() - node_bounds.min.x()) / tab_width)
+                    .clamp(0.0, tab_count as f32 - 0.01) as usize;
+                if tab_index < desc.tabs.len() {
+                    tree.state_arena_mut().set(desc.selected_id, tab_index);
+                    result.input_consumed = true;
+                }
             }
         }
 

@@ -23,21 +23,22 @@ pub use animation::{
 pub use build::{Build, BuildContext, CallbackTable, Environment};
 pub use constructors::{
     button, color_picker, context_entry, context_entry_disabled, context_menu, draggable_panel,
-    empty, hstack, icon, image, image_button, labeled_slider, menu_entry, menu_entry_disabled,
-    menu_group, menubar, modal, overlay, panel, progress, property_row, radio, scroll, section,
-    selectable, separator, separator_horizontal, separator_vertical, slider, statusbar, text,
-    textfield, toggle, tree_view, vstack, zstack,
+    empty, grid, hstack, icon, image, image_button, labeled_slider, menu_entry,
+    menu_entry_disabled, menu_group, menubar, modal, overlay, panel, progress, property_row, radio,
+    scroll, section, selectable, separator, separator_horizontal, separator_vertical, slider,
+    statusbar, tab_bar, tab_item, text, textfield, toggle, tree_view, vstack, zstack,
 };
 pub use descriptor::{
     Alignment, Anchor, Callback, ContextMenuDescriptor, ContextMenuEntry, CustomDrawFn,
     DraggablePanelDescriptor, DraggablePanelState, DraggablePanelVisibility, FlexProps,
-    MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor, OverlayDescriptor, Padding,
-    PanelDescriptor, ScrollDescriptor, SeparatorDirection, StackDescriptor, StatusBarDescriptor,
-    TreeItem, TreeViewDescriptor, ViewDescriptor, ZStackDescriptor,
+    GridDescriptor, MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor, OverlayDescriptor,
+    Padding, PanelDescriptor, ScrollDescriptor, SeparatorDirection, StackDescriptor,
+    StatusBarDescriptor, TabBarDescriptor, TabItem, TreeItem, TreeViewDescriptor, ViewDescriptor,
+    ZStackDescriptor,
 };
 pub use diff::{DiffAction, Patch, diff_descriptor};
 pub use focus::{Direction, FocusManager, GamepadNavigator};
-pub use helpers::{delete_button, section_header, show_if, show_if_with_transition};
+pub use helpers::{delete_button, section_header, show_if, show_if_else, show_if_with_transition};
 pub use ime::ImeRequest;
 pub use layout::{TaffyNodeMap, apply_flex_props, measure_text_descriptor};
 pub use serialize::{BindingResolver, ViewDescriptorData, resolve_descriptor};
