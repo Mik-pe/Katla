@@ -26,6 +26,7 @@ pub struct RapierPhysicsSystem;
 impl System for RapierPhysicsSystem {
     fn update(&mut self, world: &mut World, delta_time: f32) {
         cleanup_destroyed_bodies(world);
+        cleanup_destroyed_joints(world);
         spawn_new_bodies(world);
         spawn_new_joints(world);
 
@@ -200,6 +201,37 @@ fn cleanup_destroyed_bodies(world: &mut World) {
             physics.remove_body(body, collider_handle);
         } else {
             physics.remove_static_collider(collider_handle);
+        }
+    }
+}
+
+fn cleanup_destroyed_joints(world: &mut World) {
+    let active_ids: std::collections::HashSet<u64> = world
+        .query::<&RigidBody>()
+        .filter(|(_, rb)| rb.is_spawned())
+        .map(|(entity, _)| entity.id())
+        .collect();
+
+    let stale_joints: Vec<_> = world
+        .query::<&mut Joint>()
+        .filter(|(_, joint)| joint.is_spawned())
+        .filter(|(_, joint)| {
+            !active_ids.contains(&joint.entity_a) || !active_ids.contains(&joint.entity_b)
+        })
+        .map(|(entity, _)| entity)
+        .collect();
+
+    if stale_joints.is_empty() {
+        return;
+    }
+
+    for entity in stale_joints {
+        if let Some(mut j) = world.get_component_mut::<Joint>(entity) {
+            if let Some(handle) = j.joint_handle.take() {
+                if let Some(mut physics) = world.get_resource_mut::<PhysicsWorld>() {
+                    physics.remove_joint(handle);
+                }
+            }
         }
     }
 }
@@ -654,6 +686,99 @@ mod tests {
         assert!(
             rb.linear_velocity.y() > 0.0,
             "Body should have upward velocity after impulse"
+        );
+    }
+
+    #[test]
+    fn test_stress_many_dynamic_bodies() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+        world.insert_resource(PhysicsActive(true));
+
+        let count = 100;
+        let mut entities = Vec::with_capacity(count);
+
+        for i in 0..count {
+            let x = (i as f32 % 10.0) * 2.0;
+            let y = (i as f32 / 10.0) * 2.0 + 1.0;
+            let entity = world.create_entity();
+            world.add_component(
+                entity,
+                TransformComponent::new(Transform::new_from_position(Vec3::new(x, y, 0.0))),
+            );
+            world.add_component(entity, ColliderShape::Sphere(SphereShape::new(0.5)));
+            world.add_component(entity, RigidBody::dynamic());
+            entities.push(entity);
+        }
+
+        let mut system = RapierPhysicsSystem;
+        system.update(&mut world, 1.0 / 60.0);
+
+        for entity in &entities {
+            let rb = world.get_component::<RigidBody>(*entity).unwrap();
+            assert!(rb.is_spawned());
+        }
+
+        let physics = world.get_resource::<PhysicsWorld>().unwrap();
+        assert_eq!(physics.collider_count(), count);
+        drop(physics);
+
+        for _ in 0..60 {
+            system.update(&mut world, 1.0 / 60.0);
+        }
+
+        let physics = world.get_resource::<PhysicsWorld>().unwrap();
+        assert_eq!(physics.collider_count(), count);
+    }
+
+    #[test]
+    fn test_joint_cleanup_on_entity_destruction() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+        world.insert_resource(PhysicsActive(true));
+
+        let entity_a = world.create_entity();
+        world.add_component(
+            entity_a,
+            TransformComponent::new(Transform::new_from_position(Vec3::new(-2.0, 0.0, 0.0))),
+        );
+        world.add_component(entity_a, ColliderShape::Sphere(SphereShape::new(0.5)));
+        world.add_component(entity_a, RigidBody::dynamic());
+
+        let entity_b = world.create_entity();
+        world.add_component(
+            entity_b,
+            TransformComponent::new(Transform::new_from_position(Vec3::new(2.0, 0.0, 0.0))),
+        );
+        world.add_component(entity_b, ColliderShape::Sphere(SphereShape::new(0.5)));
+        world.add_component(entity_b, RigidBody::dynamic());
+
+        let mut system = RapierPhysicsSystem;
+        system.update(&mut world, 1.0 / 60.0);
+
+        world.add_component(
+            entity_b,
+            Joint::point_to_point(
+                entity_a.id(),
+                entity_b.id(),
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+            ),
+        );
+
+        system.update(&mut world, 1.0 / 60.0);
+
+        let joint = world.get_component::<Joint>(entity_b).unwrap();
+        assert!(joint.is_spawned());
+        drop(joint);
+
+        world.destroy_entity(entity_a);
+        system.update(&mut world, 1.0 / 60.0);
+
+        let joint = world.get_component::<Joint>(entity_b).unwrap();
+        assert!(
+            !joint.is_spawned(),
+            "Joint should be cleaned up when referenced entity is destroyed"
         );
     }
 }

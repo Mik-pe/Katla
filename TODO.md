@@ -78,7 +78,7 @@
 
 ### Phase 7: Physics entity lifecycle
 
-- [ ] **Handle entity destruction for joints** — Same issue: joints referencing destroyed entities leak Rapier joint handles. Add cleanup for `Joint` components whose `entity_a` or `entity_b` no longer exist.
+ - [x] **Handle entity destruction for joints** — Same issue: joints referencing destroyed entities leak Rapier joint handles. Add cleanup for `Joint` components whose `entity_a` or `entity_b` no longer exist.
 - [ ] **Add entity despawn callback for physics** — When the editor removes a `RigidBody` or `ColliderShape` component from an entity, the corresponding Rapier handles should be cleaned up. Wire into the existing `EditorAction::RemoveComponent` handler.
 
 ### Phase 8: Collider mesh fitting, shape types, and prefabs
@@ -101,9 +101,9 @@
  - [x] **Add test for entity destruction cleanup** — Spawn a dynamic body, destroy the entity, verify that `PhysicsWorld` body/collider counts decrease correctly.
  - [x] **Add test for joint spawning** — Create two entities with `RigidBody` + `ColliderShape`, add a `Joint` component referencing both, run one frame, verify the joint is created in `PhysicsWorld`.
  - ~~**Add test for play-mode gating**~~ — Already covered by `test_play_mode_gating` (PhysicsActive false) and `test_gravity_affects_dynamic` (PhysicsActive true).
-- [ ] **Add integration test for physics scene round-trip** — Create entities with physics components, serialize to RON, deserialize, verify components are recreated correctly and Rapier bodies are spawned.
+ - ~~**Add integration test for physics scene round-trip**~~ — Blocked on Phase 6: physics components have no scene serialization support yet.
  - [x] **Add test for kinematic body sync** — Spawn a kinematic body, move its `TransformComponent`, run one frame, verify Rapier body position matches the new transform.
-- [ ] **Add stress test for many dynamic bodies** — Spawn 100+ dynamic bodies, step for N frames, verify no panics or deadlocks. Identify performance bottlenecks in the spawn/sync loop.
+ - [x] **Add stress test for many dynamic bodies** — Spawn 100+ dynamic bodies, step for N frames, verify no panics or deadlocks. Identify performance bottlenecks in the spawn/sync loop.
  - [x] **Add test for `apply_force` and `apply_impulse` through ECS** — Current tests only verify body creation and gravity. Add tests that apply forces/impulses and verify velocity/position changes.
 
 ### Phase 10: Physics scripting polish
