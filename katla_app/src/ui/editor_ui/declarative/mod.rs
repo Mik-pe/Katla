@@ -15,7 +15,7 @@ pub(super) use asset_browser::{AssetBrowserDrawCtx, build_asset_browser_from_ctx
 pub(super) use co_creator::{set_co_creator_ctx, take_co_creator_ctx};
 pub(super) use console::{ConsoleDrawCtx, ConsoleState, set_console_ctx, take_console_ctx};
 pub(super) use editor_root::EditorRootView;
-pub(super) use gizmo::GizmoDrawCtx;
+pub(super) use gizmo::{GizmoDrawCtx, GizmoModeChanged};
 pub(super) use hierarchy::{HierarchyDrawCtx, set_hierarchy_ctx, take_hierarchy_ctx};
 pub(super) use inspector::{InspectorDrawCtx, set_inspector_ctx, take_inspector_ctx};
 pub(super) use particle_inspector::{set_particle_inspector_ctx, take_particle_inspector_ctx};

@@ -13,14 +13,29 @@ pub fn diff_descriptor(old: &ViewDescriptor, new: &ViewDescriptor) -> DiffAction
         (ViewDescriptor::Empty, ViewDescriptor::Empty) => DiffAction::Update,
         (ViewDescriptor::Text { .. }, ViewDescriptor::Text { .. }) => DiffAction::Update,
         (ViewDescriptor::Button { .. }, ViewDescriptor::Button { .. }) => DiffAction::Update,
+        (ViewDescriptor::LabeledSlider { .. }, ViewDescriptor::LabeledSlider { .. }) => {
+            DiffAction::Update
+        }
         (ViewDescriptor::Slider { .. }, ViewDescriptor::Slider { .. }) => DiffAction::Update,
+        (ViewDescriptor::Vec3Slider { .. }, ViewDescriptor::Vec3Slider { .. }) => {
+            DiffAction::Update
+        }
         (ViewDescriptor::Toggle { .. }, ViewDescriptor::Toggle { .. }) => DiffAction::Update,
         (ViewDescriptor::TextField { .. }, ViewDescriptor::TextField { .. }) => DiffAction::Update,
         (ViewDescriptor::Progress { .. }, ViewDescriptor::Progress { .. }) => DiffAction::Update,
         (ViewDescriptor::ColorPicker { .. }, ViewDescriptor::ColorPicker { .. }) => {
             DiffAction::Update
         }
+        (ViewDescriptor::ImageButton { .. }, ViewDescriptor::ImageButton { .. }) => {
+            DiffAction::Update
+        }
+        (ViewDescriptor::RadioButton { .. }, ViewDescriptor::RadioButton { .. }) => {
+            DiffAction::Update
+        }
         (ViewDescriptor::Image { .. }, ViewDescriptor::Image { .. }) => DiffAction::Update,
+        (ViewDescriptor::PropertyRow { .. }, ViewDescriptor::PropertyRow { .. }) => {
+            DiffAction::Update
+        }
         (ViewDescriptor::Custom(_), ViewDescriptor::Custom(_)) => DiffAction::Update,
 
         // TransitionContainer -> RecurseChildren (has single child)

@@ -42,11 +42,34 @@ pub enum ViewDescriptor {
         on_click: Option<Callback>,
     },
 
+    /// A slider with a label prefix and optional value display.
+    ///
+    /// Layout: `[label (label_width)] [track (fills remaining)] [value (if show_value)]`
+    LabeledSlider {
+        label: String,
+        value_id: StateId,
+        range: RangeInclusive<f32>,
+        label_width: f32,
+        show_value: bool,
+        precision: usize,
+    },
+
+    /// A basic slider without label prefix or value display.
     Slider {
         label: String,
         value_id: StateId,
         range: RangeInclusive<f32>,
         show_value: bool,
+        precision: usize,
+    },
+
+    /// A three-axis slider for Vec3/f32[3] values with colored axis labels.
+    Vec3Slider {
+        label: String,
+        value_ids: [StateId; 3],
+        range: RangeInclusive<f32>,
+        axis_labels: [String; 3],
+        axis_colors: [Color; 3],
         precision: usize,
     },
 
@@ -72,10 +95,33 @@ pub enum ViewDescriptor {
         value_id: StateId,
     },
 
+    /// An icon-only clickable button.
+    ImageButton {
+        icon: char,
+        enabled: bool,
+        fill_color: Option<Color>,
+        on_click: Option<Callback>,
+    },
+
+    /// A radio button for selecting one option from a group.
+    ///
+    /// `value_id` holds the current selection index. `index` is this button's value.
+    RadioButton {
+        value_id: StateId,
+        index: usize,
+        label: String,
+    },
+
     Image {
         texture: TextureId,
         uv: Option<Rect2D>,
         tint: Color,
+    },
+
+    /// Read-only property display: `[label] [value]` on a single row.
+    PropertyRow {
+        label: String,
+        value: String,
     },
 
     HStack(Box<StackDescriptor>),
@@ -247,6 +293,22 @@ impl std::fmt::Debug for ViewDescriptor {
                 .field("border_color", border_color)
                 .field("on_click", on_click)
                 .finish(),
+            ViewDescriptor::LabeledSlider {
+                label,
+                value_id,
+                range,
+                label_width,
+                show_value,
+                precision,
+            } => f
+                .debug_struct("LabeledSlider")
+                .field("label", label)
+                .field("value_id", value_id)
+                .field("range", &format_args!("{:?}", range))
+                .field("label_width", label_width)
+                .field("show_value", show_value)
+                .field("precision", precision)
+                .finish(),
             ViewDescriptor::Slider {
                 label,
                 value_id,
@@ -259,6 +321,22 @@ impl std::fmt::Debug for ViewDescriptor {
                 .field("value_id", value_id)
                 .field("range", &format_args!("{:?}", range))
                 .field("show_value", show_value)
+                .field("precision", precision)
+                .finish(),
+            ViewDescriptor::Vec3Slider {
+                label,
+                value_ids,
+                range,
+                axis_labels,
+                axis_colors,
+                precision,
+            } => f
+                .debug_struct("Vec3Slider")
+                .field("label", label)
+                .field("value_ids", &format_args!("{:?}", value_ids))
+                .field("range", &format_args!("{:?}", range))
+                .field("axis_labels", axis_labels)
+                .field("axis_colors", axis_colors)
                 .field("precision", precision)
                 .finish(),
             ViewDescriptor::Toggle { label, value_id } => f
@@ -291,11 +369,37 @@ impl std::fmt::Debug for ViewDescriptor {
                 .field("label", label)
                 .field("value_id", value_id)
                 .finish(),
+            ViewDescriptor::ImageButton {
+                icon,
+                enabled,
+                fill_color,
+                on_click: _,
+            } => f
+                .debug_struct("ImageButton")
+                .field("icon", icon)
+                .field("enabled", enabled)
+                .field("fill_color", fill_color)
+                .finish(),
+            ViewDescriptor::RadioButton {
+                value_id,
+                index,
+                label,
+            } => f
+                .debug_struct("RadioButton")
+                .field("value_id", value_id)
+                .field("index", index)
+                .field("label", label)
+                .finish(),
             ViewDescriptor::Image { texture, uv, tint } => f
                 .debug_struct("Image")
                 .field("texture", texture)
                 .field("uv", uv)
                 .field("tint", tint)
+                .finish(),
+            ViewDescriptor::PropertyRow { label, value } => f
+                .debug_struct("PropertyRow")
+                .field("label", label)
+                .field("value", value)
                 .finish(),
             ViewDescriptor::HStack(s) => f.debug_tuple("HStack").field(s).finish(),
             ViewDescriptor::VStack(s) => f.debug_tuple("VStack").field(s).finish(),

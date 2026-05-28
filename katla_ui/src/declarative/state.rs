@@ -27,6 +27,14 @@ impl StateArena {
         Self::default()
     }
 
+    /// Reset all slot counters. Call at the start of each build frame so that
+    /// `get_or_create` reuses the same slots across frames.
+    pub fn reset_slots(&mut self) {
+        for slot in self.slot_counters.values_mut() {
+            *slot = 0;
+        }
+    }
+
     pub fn get_or_create<T: Clone + PartialEq + 'static>(
         &mut self,
         node_id: ViewId,

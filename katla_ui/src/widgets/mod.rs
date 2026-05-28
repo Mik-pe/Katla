@@ -1,13 +1,30 @@
-//! Builder widgets — internal rendering primitives.
+//! Immediate-mode builder widgets — internal rendering primitives.
 //!
 //! These widgets provide an immediate-mode builder pattern on top of `UiContext`.
 //! They are used internally by the declarative draw pipeline and as escape hatches
 //! for complex custom rendering via `ViewDescriptor::Custom`.
 //!
-//! For new UI code, prefer the declarative system (`crate::declarative`) which
-//! provides `ViewDescriptor` variants with automatic layout, diffing, and input
-//! handling. Use these builders only when a declarative equivalent does not yet
-//! exist or when porting legacy immediate-mode code.
+//! **For new UI code, prefer the declarative system** (`crate::declarative`) which
+//! provides `ViewDescriptor` variants with automatic layout, diffing, input handling,
+//! and animation support. Use these builders only when:
+//!
+//! - A declarative equivalent does not yet exist (TreeView, DraggablePanel, MenuBar,
+//!   StatusBar, DockArea)
+//! - Inside a `ViewDescriptor::Custom` callback for complex custom rendering
+//!
+//! ## Declarative equivalents
+//!
+//! | Immediate-mode widget | Declarative equivalent |
+//! |---|---|
+//! | `Button` | `ViewDescriptor::Button` |
+//! | `Slider` | `ViewDescriptor::Slider` |
+//! | `LabeledSlider` | `ViewDescriptor::LabeledSlider` |
+//! | `Vec3Slider` | `ViewDescriptor::Vec3Slider` |
+//! | `ToggleButton` | `ViewDescriptor::Toggle` |
+//! | `TextInput` | `ViewDescriptor::TextField` |
+//! | `RadioButton` | `ViewDescriptor::RadioButton` |
+//! | `Panel` | `ViewDescriptor::Panel` |
+//! | `ImageButton` | `ViewDescriptor::ImageButton` |
 
 pub(crate) struct ToggleButtonParams<'a> {
     pub id: &'a str,

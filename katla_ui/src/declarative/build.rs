@@ -64,6 +64,7 @@ impl Default for CallbackTable {
 /// Context provided during [`Build::build()`] for accessing state, callbacks, and environment data.
 ///
 /// - `ctx.state(initial)` — get or create persistent state scoped to this view node
+/// - `ctx.get_state(id)` / `ctx.set_state(id, value)` — read/write state by [`StateId`]
 /// - `ctx.env::<T>()` — read typed data injected by the application before the frame
 /// - `ctx.on_click(f)` — register a click callback, returns a `Callback` handle
 /// - `ctx.emit(action)` — emit a typed action that can be drained after the frame
@@ -94,6 +95,16 @@ impl<'a> BuildContext<'a> {
 
     pub fn state<T: Clone + PartialEq + 'static>(&mut self, initial: T) -> StateId {
         self.state_arena.get_or_create(self.node_id, initial)
+    }
+
+    /// Read a value from the state arena by its [`StateId`].
+    pub fn get_state<T: Clone + 'static>(&self, id: StateId) -> T {
+        self.state_arena.get(id)
+    }
+
+    /// Write a value to the state arena by its [`StateId`].
+    pub fn set_state<T: PartialEq + 'static>(&mut self, id: StateId, value: T) {
+        self.state_arena.set(id, value);
     }
 
     pub fn env<T: Clone + 'static>(&self) -> Option<&T> {

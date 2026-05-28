@@ -58,15 +58,20 @@ fn hit_test_recursive(
 fn is_interactive(descriptor: &ViewDescriptor) -> bool {
     match descriptor {
         ViewDescriptor::Button { .. }
+        | ViewDescriptor::LabeledSlider { .. }
+        | ViewDescriptor::Slider { .. }
+        | ViewDescriptor::Vec3Slider { .. }
         | ViewDescriptor::Toggle { .. }
         | ViewDescriptor::TextField { .. }
-        | ViewDescriptor::Slider { .. }
-        | ViewDescriptor::ColorPicker { .. } => true,
+        | ViewDescriptor::ColorPicker { .. }
+        | ViewDescriptor::ImageButton { .. }
+        | ViewDescriptor::RadioButton { .. } => true,
 
         ViewDescriptor::Empty
         | ViewDescriptor::Text { .. }
         | ViewDescriptor::Progress { .. }
         | ViewDescriptor::Image { .. }
+        | ViewDescriptor::PropertyRow { .. }
         | ViewDescriptor::HStack(_)
         | ViewDescriptor::VStack(_)
         | ViewDescriptor::ZStack(_)
@@ -81,6 +86,7 @@ fn is_interactive(descriptor: &ViewDescriptor) -> bool {
 fn get_callback(descriptor: &ViewDescriptor) -> Option<&Callback> {
     match descriptor {
         ViewDescriptor::Button { on_click, .. } => on_click.as_ref(),
+        ViewDescriptor::ImageButton { on_click, .. } => on_click.as_ref(),
         ViewDescriptor::TextField { on_submit, .. } => on_submit.as_ref(),
         _ => None,
     }
@@ -104,15 +110,21 @@ pub(crate) fn process_input(
     // Extract data from the active node before mutating the tree.
     let active_slider_info: Option<(super::state::StateId, f32, f32)> =
         if let Some(active_id) = tree.interaction().active_id {
-            tree.get(active_id).and_then(|node| {
-                if let ViewDescriptor::Slider {
+            tree.get(active_id).and_then(|node| match &node.descriptor {
+                ViewDescriptor::Slider {
                     value_id, range, ..
-                } = &node.descriptor
-                {
-                    Some((*value_id, *range.start(), *range.end()))
-                } else {
-                    None
                 }
+                | ViewDescriptor::LabeledSlider {
+                    value_id, range, ..
+                } => Some((*value_id, *range.start(), *range.end())),
+                ViewDescriptor::Vec3Slider {
+                    value_ids, range, ..
+                } => {
+                    let axis = tree.interaction().drag_axis.unwrap_or(0);
+                    let value_id = value_ids[axis.min(2)];
+                    Some((value_id, *range.start(), *range.end()))
+                }
+                _ => None,
             })
         } else {
             None
@@ -148,7 +160,9 @@ pub(crate) fn process_input(
     let descriptor = node.descriptor.clone();
 
     match &descriptor {
-        ViewDescriptor::Button { .. } if input.mouse_clicked(mouse_button::LEFT) => {
+        ViewDescriptor::Button { .. } | ViewDescriptor::ImageButton { .. }
+            if input.mouse_clicked(mouse_button::LEFT) =>
+        {
             if let Some(callback) = get_callback(&descriptor).cloned() {
                 callbacks.invoke(&callback);
             }
@@ -156,16 +170,67 @@ pub(crate) fn process_input(
             result.clicked_id = Some(hit.id);
         }
 
-        ViewDescriptor::Slider {
+        ViewDescriptor::LabeledSlider {
+            value_id, range, ..
+        }
+        | ViewDescriptor::Slider {
             value_id, range, ..
         } if tree.interaction().active_id.is_none() && input.mouse_pressed[mouse_button::LEFT] => {
             tree.interaction_mut().active_id = Some(hit.id);
+            tree.interaction_mut().drag_axis = None;
             if let Some(bounds) = bounds_map.get(&hit.id) {
-                let t = ((input.mouse_pos.x() - bounds.min.x()) / bounds.width()).clamp(0.0, 1.0);
+                // For LabeledSlider, the track starts after label_width
+                let track_x = match &descriptor {
+                    ViewDescriptor::LabeledSlider { label_width, .. } => {
+                        bounds.min.x() + *label_width
+                    }
+                    _ => bounds.min.x(),
+                };
+                let track_width = bounds.max.x() - track_x;
+                let t = if track_width > 0.0 {
+                    ((input.mouse_pos.x() - track_x) / track_width).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
                 let new_val = *range.start() + t * (*range.end() - *range.start());
                 tree.state_arena_mut().set(*value_id, new_val);
             }
             result.input_consumed = true;
+        }
+
+        ViewDescriptor::Vec3Slider {
+            value_ids, range, ..
+        } if tree.interaction().active_id.is_none() && input.mouse_pressed[mouse_button::LEFT] => {
+            if let Some(bounds) = bounds_map.get(&hit.id) {
+                let row_height = bounds.height() / 3.0;
+                let axis =
+                    ((input.mouse_pos.y() - bounds.min.y()) / row_height).clamp(0.0, 2.99) as usize;
+                tree.interaction_mut().active_id = Some(hit.id);
+                tree.interaction_mut().drag_axis = Some(axis);
+                let axis_label_width = 20.0;
+                let track_x = bounds.min.x() + axis_label_width;
+                let track_width = bounds.max.x() - track_x - 40.0;
+                let t = if track_width > 0.0 {
+                    ((input.mouse_pos.x() - track_x) / track_width).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let new_val = *range.start() + t * (*range.end() - *range.start());
+                tree.state_arena_mut().set(value_ids[axis], new_val);
+            }
+            result.input_consumed = true;
+        }
+
+        ViewDescriptor::Slider { .. }
+        | ViewDescriptor::LabeledSlider { .. }
+        | ViewDescriptor::Vec3Slider { .. } => {}
+
+        ViewDescriptor::RadioButton {
+            value_id, index, ..
+        } if input.mouse_clicked(mouse_button::LEFT) => {
+            tree.state_arena_mut().set(*value_id, *index);
+            result.input_consumed = true;
+            result.clicked_id = Some(hit.id);
         }
 
         ViewDescriptor::Toggle { value_id, .. } if input.mouse_clicked(mouse_button::LEFT) => {
@@ -210,9 +275,15 @@ pub(crate) fn process_input(
     if !input.mouse_down[mouse_button::LEFT]
         && let Some(active) = tree.interaction().active_id
         && let Some(node) = tree.get(active)
-        && !matches!(node.descriptor, ViewDescriptor::Slider { .. })
+        && !matches!(
+            node.descriptor,
+            ViewDescriptor::Slider { .. }
+                | ViewDescriptor::LabeledSlider { .. }
+                | ViewDescriptor::Vec3Slider { .. }
+        )
     {
         tree.interaction_mut().active_id = None;
+        tree.interaction_mut().drag_axis = None;
     }
 
     result

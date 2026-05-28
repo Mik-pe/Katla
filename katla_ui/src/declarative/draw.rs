@@ -93,6 +93,295 @@ pub(crate) fn draw_descriptor_with_id(
             );
         }
 
+        ViewDescriptor::LabeledSlider {
+            label,
+            value_id,
+            range,
+            label_width,
+            show_value,
+            precision,
+        } => {
+            let value: f32 = state_arena.get(*value_id);
+            let t = (value - range.start()) / (range.end() - range.start());
+
+            let font_size = ui.style().font_size;
+            let text_color = anim_state.apply_to_color(ui.style().text_color);
+
+            // Label text on the left
+            let label_size = ui.measure_text(label, font_size);
+            let label_y = bounds.center().y() - label_size.y() * 0.5;
+            ui.draw_text(
+                label,
+                Vec2::new(bounds.min.x(), label_y),
+                text_color,
+                font_size,
+            );
+
+            // Track region starts after label_width
+            let track_x = bounds.min.x() + *label_width;
+
+            // Value text width if showing
+            let value_text_width = if *show_value {
+                let value_text = format!("{:.1$}", value, precision);
+                let size = ui.measure_text(&value_text, font_size);
+                size.x() + 8.0
+            } else {
+                0.0
+            };
+
+            let track_end = bounds.max.x() - value_text_width;
+            let track_width = (track_end - track_x).max(0.0);
+            let track_height = ui.style().slider_track_height;
+            let track_center_y = bounds.center().y();
+            let track_bounds = Rect2D::from_center_size(
+                Vec2::new(track_x + track_width * 0.5, track_center_y),
+                Vec2::new(track_width, track_height),
+            );
+
+            // Track
+            ui.draw_rounded_rect(track_bounds, ui.style().slider_track, track_height * 0.5);
+
+            // Fill
+            let fill_width = t * track_width;
+            if fill_width > 0.0 {
+                let fill_bounds =
+                    Rect2D::from_origin_size(track_bounds.min, Vec2::new(fill_width, track_height));
+                ui.draw_rounded_rect(
+                    fill_bounds,
+                    anim_state.apply_to_color(ui.style().slider_grab),
+                    track_height * 0.5,
+                );
+            }
+
+            // Grab handle
+            let grab_color = if is_active {
+                ui.style().slider_grab_active
+            } else if is_hovered {
+                ui.style().slider_grab_hovered
+            } else {
+                ui.style().slider_grab
+            };
+            let grab_center_x = track_x + t * track_width;
+            let grab_center = Vec2::new(grab_center_x, track_center_y);
+            let base_radius = ui.style().slider_grab_size * 0.5;
+            let grab_radius = if is_active {
+                base_radius * 1.25
+            } else if is_hovered {
+                base_radius * 1.15
+            } else {
+                base_radius
+            };
+            ui.draw_circle(
+                Vec2::new(grab_center.x(), grab_center.y() + 1.0),
+                grab_radius,
+                Color::new(0.0, 0.0, 0.0, 0.3),
+            );
+            ui.draw_circle(grab_center, grab_radius, grab_color);
+
+            // Value text on the right
+            if *show_value {
+                let value_text = format!("{:.1$}", value, precision);
+                let text_size = ui.measure_text(&value_text, font_size);
+                let value_x = bounds.max.x() - text_size.x();
+                let value_y = bounds.center().y() - text_size.y() * 0.5;
+                ui.draw_text(
+                    &value_text,
+                    Vec2::new(value_x, value_y),
+                    text_color,
+                    font_size,
+                );
+            }
+        }
+
+        ViewDescriptor::Vec3Slider {
+            label: _,
+            value_ids,
+            range,
+            axis_labels,
+            axis_colors,
+            precision,
+        } => {
+            let font_size = ui.style().font_size;
+            let text_color = anim_state.apply_to_color(ui.style().text_color);
+            let row_height = bounds.height() / 3.0;
+            let axis_label_width = 20.0;
+            let value_text_width = 40.0;
+
+            for i in 0..3 {
+                let row_y = bounds.min.y() + row_height * i as f32;
+                let row_bounds = Rect2D::from_origin_size(
+                    Vec2::new(bounds.min.x(), row_y),
+                    Vec2::new(bounds.width(), row_height),
+                );
+
+                // Axis label
+                let axis_label = &axis_labels[i];
+                let axis_color = axis_colors[i];
+                let axis_label_size = ui.measure_text(axis_label, font_size);
+                let axis_label_y = row_bounds.center().y() - axis_label_size.y() * 0.5;
+                ui.draw_text(
+                    axis_label,
+                    Vec2::new(row_bounds.min.x(), axis_label_y),
+                    axis_color,
+                    font_size,
+                );
+
+                // Track
+                let value: f32 = state_arena.get(value_ids[i]);
+                let t = (value - range.start()) / (range.end() - range.start());
+                let track_x = row_bounds.min.x() + axis_label_width;
+                let track_end = row_bounds.max.x() - value_text_width;
+                let track_width = (track_end - track_x).max(0.0);
+                let track_height = ui.style().slider_track_height;
+                let track_center_y = row_bounds.center().y();
+
+                let track_bounds = Rect2D::from_center_size(
+                    Vec2::new(track_x + track_width * 0.5, track_center_y),
+                    Vec2::new(track_width, track_height),
+                );
+                ui.draw_rounded_rect(track_bounds, ui.style().slider_track, track_height * 0.5);
+
+                // Fill
+                let fill_width = t * track_width;
+                if fill_width > 0.0 {
+                    let fill_bounds = Rect2D::from_origin_size(
+                        track_bounds.min,
+                        Vec2::new(fill_width, track_height),
+                    );
+                    ui.draw_rounded_rect(fill_bounds, ui.style().slider_grab, track_height * 0.5);
+                }
+
+                // Grab
+                let grab_center_x = track_x + t * track_width;
+                let grab_center = Vec2::new(grab_center_x, track_center_y);
+                let grab_radius = ui.style().slider_grab_size * 0.5;
+                ui.draw_circle(grab_center, grab_radius, ui.style().slider_grab);
+
+                // Value text
+                let value_text = format!("{:.1$}", value, precision);
+                let text_size = ui.measure_text(&value_text, font_size);
+                let value_x = row_bounds.max.x() - text_size.x();
+                let value_y = row_bounds.center().y() - text_size.y() * 0.5;
+                ui.draw_text(
+                    &value_text,
+                    Vec2::new(value_x, value_y),
+                    text_color,
+                    font_size,
+                );
+            }
+        }
+
+        ViewDescriptor::ImageButton {
+            icon,
+            enabled,
+            fill_color,
+            on_click: _,
+        } => {
+            let bg = if !enabled {
+                fill_color.unwrap_or(ui.style().button_normal)
+            } else if is_active {
+                fill_color.unwrap_or(ui.style().button_active)
+            } else if is_hovered {
+                fill_color.unwrap_or(ui.style().button_hovered)
+            } else {
+                fill_color.unwrap_or(ui.style().button_normal)
+            };
+            let bg = anim_state.apply_to_color(bg);
+            let radius = anim_state.apply_to_corner_radius(ui.style().button_rounding);
+            ui.draw_rounded_rect(bounds, bg, radius);
+
+            let font_size = ui.style().icon_button_size * 0.6;
+            let text_size = ui.measure_text(&icon.to_string(), font_size);
+            let text_pos = Vec2::new(
+                bounds.center().x() - text_size.x() * 0.5,
+                bounds.center().y() - text_size.y() * 0.5,
+            );
+            let icon_color = if *enabled {
+                ui.style().button_text
+            } else {
+                ui.style().text_hint
+            };
+            ui.draw_text(
+                &icon.to_string(),
+                text_pos,
+                anim_state.apply_to_color(icon_color),
+                font_size,
+            );
+        }
+
+        ViewDescriptor::RadioButton {
+            value_id,
+            index,
+            label,
+        } => {
+            let selected: usize = state_arena.get(*value_id);
+            let is_selected = selected == *index;
+
+            let bg = if is_selected {
+                ui.style().selectable_selected
+            } else if is_hovered {
+                ui.style().button_hovered
+            } else {
+                ui.style().button_normal
+            };
+            let bg = anim_state.apply_to_color(bg);
+            let radius = anim_state.apply_to_corner_radius(ui.style().button_rounding);
+            ui.draw_rounded_rect(bounds, bg, radius);
+
+            // Radio indicator circle
+            let indicator_radius = bounds.height() * 0.15;
+            let indicator_center =
+                Vec2::new(bounds.min.x() + indicator_radius * 2.0, bounds.center().y());
+            ui.draw_circle(
+                indicator_center,
+                indicator_radius,
+                anim_state.apply_to_color(ui.style().window_border),
+            );
+            if is_selected {
+                ui.draw_circle(
+                    indicator_center,
+                    indicator_radius * 0.6,
+                    anim_state.apply_to_color(ui.style().text_color),
+                );
+            }
+
+            // Label
+            let font_size = ui.style().font_size;
+            let text_size = ui.measure_text(label, font_size);
+            let text_pos = Vec2::new(
+                bounds.min.x() + indicator_radius * 4.0,
+                bounds.center().y() - text_size.y() * 0.5,
+            );
+            ui.draw_text(
+                label,
+                text_pos,
+                anim_state.apply_to_color(ui.style().button_text),
+                font_size,
+            );
+        }
+
+        ViewDescriptor::PropertyRow { label, value } => {
+            let font_size = ui.style().font_size;
+            let text_color = ui.style().text_color;
+            let label_size = ui.measure_text(label, font_size);
+            let label_y = bounds.center().y() - label_size.y() * 0.5;
+            ui.draw_text(
+                label,
+                Vec2::new(bounds.min.x(), label_y),
+                anim_state.apply_to_color(text_color),
+                font_size,
+            );
+            let value_size = ui.measure_text(value, font_size);
+            let value_x = bounds.max.x() - value_size.x();
+            let value_y = bounds.center().y() - value_size.y() * 0.5;
+            ui.draw_text(
+                value,
+                Vec2::new(value_x, value_y),
+                anim_state.apply_to_color(ui.style().text_hint),
+                font_size,
+            );
+        }
+
         ViewDescriptor::Slider {
             label,
             value_id,

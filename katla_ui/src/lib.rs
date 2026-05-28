@@ -9,25 +9,63 @@
 //!
 //! # Architecture
 //!
-//! The primary API is the **declarative system** (`declarative` module):
+//! The primary API is the **declarative system** ([`declarative`] module):
 //!
 //! 1. Implement [`Build`] to produce a [`ViewDescriptor`] tree each frame
 //! 2. Drive rendering with [`ViewTree::frame()`] which handles build, diff, layout,
 //!    input, and drawing in one call
 //! 3. Drain typed actions from [`ViewTree::actions_mut()`]
 //!
-//! The [`widgets`] module provides lower-level builder widgets used internally
-//! by declarative views and as escape hatches for complex custom rendering.
+//! ## Available ViewDescriptor widgets
+//!
+//! **Leaf widgets:**
+//! - [`Text`](declarative::ViewDescriptor::Text) — labeled text display
+//! - [`Button`](declarative::ViewDescriptor::Button) — clickable button with callback
+//! - [`Slider`](declarative::ViewDescriptor::Slider) — basic numeric slider
+//! - [`LabeledSlider`](declarative::ViewDescriptor::LabeledSlider) — slider with label prefix and value display
+//! - [`Vec3Slider`](declarative::ViewDescriptor::Vec3Slider) — three-axis slider with colored labels
+//! - [`Toggle`](declarative::ViewDescriptor::Toggle) — on/off toggle switch
+//! - [`TextField`](declarative::ViewDescriptor::TextField) — text input with placeholder
+//! - [`Progress`](declarative::ViewDescriptor::Progress) — progress bar
+//! - [`ColorPicker`](declarative::ViewDescriptor::ColorPicker) — color swatch picker
+//! - [`ImageButton`](declarative::ViewDescriptor::ImageButton) — icon-only clickable button
+//! - [`RadioButton`](declarative::ViewDescriptor::RadioButton) — single-selection radio group
+//! - [`Image`](declarative::ViewDescriptor::Image) — textured image display
+//! - [`PropertyRow`](declarative::ViewDescriptor::PropertyRow) — read-only label:value row
+//!
+//! **Layout containers:**
+//! - [`HStack`](declarative::ViewDescriptor::HStack) — horizontal flex layout
+//! - [`VStack`](declarative::ViewDescriptor::VStack) — vertical flex layout
+//! - [`ZStack`](declarative::ViewDescriptor::ZStack) — layered (z-order) layout
+//! - [`ScrollView`](declarative::ViewDescriptor::ScrollView) — scrollable content area
+//! - [`Panel`](declarative::ViewDescriptor::Panel) — titled panel with header
+//! - [`Overlay`](declarative::ViewDescriptor::Overlay) — anchored overlay positioning
+//!
+//! ## State management
+//!
+//! Use [`BuildContext::state()`] to create persistent state scoped to each view node.
+//! State survives across frames and is automatically cleaned up when nodes are removed.
+//!
+//! ## Actions
+//!
+//! Use [`BuildContext::emit()`] to send typed actions from any widget.
+//! Drain them after the frame via [`ViewTree::actions_mut()`].
+//!
+//! # Lower-level API
+//!
+//! The [`widgets`] module provides immediate-mode builder widgets used internally
+//! by the declarative draw pipeline. Use these only when a declarative equivalent
+//! does not yet exist or for complex custom rendering via
+//! [`ViewDescriptor::Custom`](declarative::ViewDescriptor::Custom).
 //!
 //! # Example
 //!
 //! ```ignore
 //! use katla_ui::declarative::{
 //!     Build, BuildContext, ViewDescriptor, ViewTree,
-//!     HStack, StackDescriptor, Padding, Alignment,
+//!     StackDescriptor, Padding, Alignment,
 //! };
 //!
-//! // Define a view
 //! struct MyHud;
 //!
 //! impl Build for MyHud {
@@ -51,11 +89,10 @@
 //!             spacing: 8.0,
 //!             padding: Padding::all(10.0),
 //!             alignment: Alignment::Leading,
-//!         })
+//!         }))
 //!     }
 //! }
 //!
-//! // Per-frame rendering
 //! let mut view_tree = ViewTree::new();
 //! let input_consumed = view_tree.frame(&mut ui, &MyHud, screen_size);
 //! for action in view_tree.actions_mut().drain::<MyAction>() {
