@@ -514,12 +514,6 @@ impl AudioMixer {
             match cmd {
                 AudioCommand::Stop(id) => state.stop(id),
                 AudioCommand::StopAll => state.stop_all(),
-                AudioCommand::SetVolume(id, vol) => state.set_voice_volume(id, vol),
-                AudioCommand::SetPan(id, pan) => state.set_voice_pan(id, pan),
-                AudioCommand::SetPitch(id, pitch) => state.set_voice_pitch(id, pitch),
-                AudioCommand::SetMasterVolume(_) | AudioCommand::SetCategoryVolume(_, _) => {
-                    // These use atomics, no state mutation needed
-                }
             }
         }
     }

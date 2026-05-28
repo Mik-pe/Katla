@@ -16,11 +16,6 @@ pub enum AudioCategoryValue {
 pub enum AudioCommand {
     Stop(VoiceId),
     StopAll,
-    SetVolume(VoiceId, f32),
-    SetPan(VoiceId, f32),
-    SetPitch(VoiceId, f32),
-    SetMasterVolume(f32),
-    SetCategoryVolume(AudioCategoryValue, f32),
 }
 
 struct CommandSlot {
