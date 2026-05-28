@@ -282,8 +282,8 @@
 - [ ] Add playback position query — no way to query the current playback position of a voice (in seconds or samples). Add `VoiceHandle::position() -> f32` and `StreamingVoiceHandle::position() -> f32` for UI scrub bars, subtitle sync, and gameplay triggers.
 - [ ] Add seek API for streaming voices — `StreamingVoiceHandle` has no seek method. Add `StreamingVoiceHandle::seek(position: Duration)` to allow scrubbing to arbitrary positions in a streaming file.
 - [ ] Add audio recording/bounce — no way to capture the final mix output to a file. Add an offline render mode that writes the mixed output to a WAV file, useful for exporting game audio or cutscene bounces.
-- [ ] Add FLAC streaming support — `StreamingDecoder` supports WAV, OGG, and MP3 streaming but not FLAC. Add `open_flac()` using claxon's streaming API.
-- [ ] Add volume units (dB) API — all volume controls use linear 0.0-1.0 scale, but audio professionals think in dB. Add conversion helpers (`db_to_linear`, `linear_to_db`) and optionally dB-based setter methods on handles.
+- [x] Add FLAC streaming support — `StreamingDecoder` supports WAV, OGG, and MP3 streaming but not FLAC. Add `open_flac()` using claxon's streaming API.
+- [x] Add volume units (dB) API — all volume controls use linear 0.0-1.0 scale, but audio professionals think in dB. Add conversion helpers (`db_to_linear`, `linear_to_db`) and optionally dB-based setter methods on handles.
 
 ### Phase 17: Audio system activation and global settings
 - [x] Wire AudioSystem into Application — `ApplicationBuilder::build()` sets `audio_system: None` and nothing ever initializes it. `AudioSystem::new()` is never called, so the entire audio system (playback, spatialization, zone reverb, script audio) is dead code. Fix: call `AudioSystem::new()` in the builder, store as `Some(audio_system)`, and handle the case where no audio device is available (log a warning, keep `None`). This is the single highest-priority audio item — nothing else matters if the system isn't running.
