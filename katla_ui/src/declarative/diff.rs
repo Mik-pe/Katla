@@ -61,6 +61,10 @@ pub fn diff_descriptor(old: &ViewDescriptor, new: &ViewDescriptor) -> DiffAction
         // Self-managed rendering -> Update
         (ViewDescriptor::MenuBar(_), ViewDescriptor::MenuBar(_)) => DiffAction::Update,
         (ViewDescriptor::TreeView(_), ViewDescriptor::TreeView(_)) => DiffAction::Update,
+        (ViewDescriptor::ContextMenu(_), ViewDescriptor::ContextMenu(_)) => DiffAction::Update,
+
+        // Container with single child -> RecurseChildren
+        (ViewDescriptor::Modal(_), ViewDescriptor::Modal(_)) => DiffAction::RecurseChildren,
 
         // Different variants -> Replace
         _ => DiffAction::Replace,

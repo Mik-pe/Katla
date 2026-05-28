@@ -21,8 +21,11 @@ pub use animation::{
 };
 pub use build::{Build, BuildContext, CallbackTable, Environment};
 pub use descriptor::{
-    Alignment, Anchor, Callback, CustomDrawFn, FlexProps, OverlayDescriptor, Padding,
-    PanelDescriptor, ScrollDescriptor, StackDescriptor, ViewDescriptor, ZStackDescriptor,
+    Alignment, Anchor, Callback, ContextMenuDescriptor, ContextMenuEntry, CustomDrawFn,
+    DraggablePanelDescriptor, DraggablePanelState, DraggablePanelVisibility, FlexProps,
+    MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor, OverlayDescriptor, Padding,
+    PanelDescriptor, ScrollDescriptor, StackDescriptor, StatusBarDescriptor, TreeItem,
+    TreeViewDescriptor, ViewDescriptor, ZStackDescriptor,
 };
 pub use diff::{DiffAction, Patch, diff_descriptor};
 pub use focus::{Direction, FocusManager, GamepadNavigator};

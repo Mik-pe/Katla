@@ -1,6 +1,8 @@
-use katla_math::{Rect2D, Vec2};
-use katla_ui::declarative::{Build, BuildContext, ViewDescriptor};
-use katla_ui::{ColorScheme, UiContext, widgets::StatusBar as StatusBarWidget};
+use katla_math::Vec2;
+use katla_ui::ColorScheme;
+use katla_ui::declarative::{
+    Alignment, Build, BuildContext, Padding, StackDescriptor, StatusBarDescriptor, ViewDescriptor,
+};
 
 /// Snapshot of data needed to render the status bar each frame.
 #[derive(Clone)]
@@ -23,121 +25,125 @@ pub(crate) struct StatusBarView;
 
 impl Build for StatusBarView {
     fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
-        let data = ctx.env::<StatusBarData>();
-        if data.is_none() {
+        let Some(data) = ctx.env::<StatusBarData>() else {
             return ViewDescriptor::Empty;
-        }
-        ViewDescriptor::Custom(draw_status_bar)
-    }
-}
-
-fn draw_status_bar(ui: &mut UiContext, _bounds: Rect2D) {
-    let data = match ui.get_scratch::<StatusBarData>().cloned() {
-        Some(d) => d,
-        None => return,
-    };
-
-    let screen_size = data.screen_size;
-    let height = data.height;
-    let y = screen_size.y() - height;
-
-    let bar = StatusBarWidget::new(screen_size.x(), height, y);
-    bar.show(ui);
-
-    let font_size = ui.style().font_size;
-    let bar_top_y = y + (height - font_size) * 0.5;
-
-    let fps_text = format!("FPS: {:.0}", data.fps);
-    let fps_color = if data.fps >= 55.0 {
-        data.theme.success
-    } else if data.fps >= 30.0 {
-        data.theme.warning
-    } else {
-        data.theme.error
-    };
-    ui.status_label(&fps_text, fps_color);
-
-    ui.status_separator();
-
-    let frame_time_text = format!("{:.2} ms", data.frame_time_ms);
-    let frame_time_color = if data.frame_time_ms <= 18.0 {
-        data.theme.success
-    } else if data.frame_time_ms <= 33.0 {
-        data.theme.warning
-    } else {
-        data.theme.error
-    };
-    ui.status_label(&frame_time_text, frame_time_color);
-
-    ui.status_separator();
-
-    let frame_text = format!("Frame: {}", data.frame_count);
-    ui.status_label(&frame_text, data.theme.text_secondary);
-
-    ui.status_separator();
-
-    let entity_text = format!("Entities: {}", data.entity_count);
-    ui.status_label(&entity_text, data.theme.text_secondary);
-
-    ui.status_separator();
-
-    let draw_text = format!("Draws: {}", data.draw_call_count);
-    ui.status_label(&draw_text, data.theme.text_secondary);
-
-    ui.status_separator();
-
-    let selection_text = if data.selected_count > 0 {
-        format!("Selected: {} / {}", data.selected_count, data.total_assets)
-    } else {
-        format!("Assets: {}", data.total_assets)
-    };
-    let selection_color = if data.selected_count > 0 {
-        data.theme.highlight
-    } else {
-        data.theme.text_secondary
-    };
-    ui.status_label(&selection_text, selection_color);
-
-    let mode_text = if data.is_playing {
-        "PLAYING"
-    } else {
-        "EDITING"
-    };
-    let mode_color = if data.is_playing {
-        data.theme.success
-    } else {
-        data.theme.text_secondary
-    };
-    let mode_size = ui.measure_text(mode_text, font_size);
-    let mode_pos = Vec2::new(
-        screen_size.x() - mode_size.x() - ui.style().panel_padding,
-        bar_top_y,
-    );
-    ui.draw_text(mode_text, mode_pos, mode_color, font_size);
-
-    let theme_text = format!("ColorScheme: {}", data.theme.name);
-    let theme_size = ui.measure_text(&theme_text, font_size);
-    let theme_pos = Vec2::new(
-        screen_size.x() - mode_size.x() - theme_size.x() - 100.0,
-        bar_top_y,
-    );
-    ui.draw_text(&theme_text, theme_pos, data.theme.text_muted, font_size);
-
-    if data.save_confirmation_timer > 0.0 {
-        let save_text = "✓ Scene saved";
-        let save_size = ui.measure_text(save_text, font_size);
-        let save_x = (screen_size.x() - save_size.x()) * 0.5;
-        let alpha = if data.save_confirmation_timer < 0.5 {
-            data.save_confirmation_timer / 0.5
-        } else {
-            1.0
         };
-        let save_color = data.theme.success.with_alpha(alpha);
-        ui.draw_text(
-            save_text,
-            Vec2::new(save_x, bar_top_y),
-            save_color,
-            font_size,
-        );
+
+        let fps_color = if data.fps >= 55.0 {
+            data.theme.success
+        } else if data.fps >= 30.0 {
+            data.theme.warning
+        } else {
+            data.theme.error
+        };
+
+        let frame_time_color = if data.frame_time_ms <= 18.0 {
+            data.theme.success
+        } else if data.frame_time_ms <= 33.0 {
+            data.theme.warning
+        } else {
+            data.theme.error
+        };
+
+        let selection_color = if data.selected_count > 0 {
+            data.theme.highlight
+        } else {
+            data.theme.text_secondary
+        };
+
+        let selection_text = if data.selected_count > 0 {
+            format!("Selected: {} / {}", data.selected_count, data.total_assets)
+        } else {
+            format!("Assets: {}", data.total_assets)
+        };
+
+        let mode_text = if data.is_playing {
+            "PLAYING"
+        } else {
+            "EDITING"
+        };
+        let mode_color = if data.is_playing {
+            data.theme.success
+        } else {
+            data.theme.text_secondary
+        };
+
+        let left_items = vec![
+            ViewDescriptor::Text {
+                content: format!("FPS: {:.0}", data.fps),
+                color: Some(fps_color),
+                font_size: None,
+            },
+            ViewDescriptor::Text {
+                content: format!("{:.2} ms", data.frame_time_ms),
+                color: Some(frame_time_color),
+                font_size: None,
+            },
+            ViewDescriptor::Text {
+                content: format!("Frame: {}", data.frame_count),
+                color: Some(data.theme.text_secondary),
+                font_size: None,
+            },
+            ViewDescriptor::Text {
+                content: format!("Entities: {}", data.entity_count),
+                color: Some(data.theme.text_secondary),
+                font_size: None,
+            },
+            ViewDescriptor::Text {
+                content: format!("Draws: {}", data.draw_call_count),
+                color: Some(data.theme.text_secondary),
+                font_size: None,
+            },
+            ViewDescriptor::Text {
+                content: selection_text,
+                color: Some(selection_color),
+                font_size: None,
+            },
+        ];
+
+        let right_items = vec![
+            ViewDescriptor::Text {
+                content: format!("ColorScheme: {}", data.theme.name),
+                color: Some(data.theme.text_muted),
+                font_size: None,
+            },
+            ViewDescriptor::Text {
+                content: mode_text.to_string(),
+                color: Some(mode_color),
+                font_size: None,
+            },
+        ];
+
+        let mut content_children = vec![ViewDescriptor::HStack(Box::new(StackDescriptor {
+            children: left_items,
+            spacing: 8.0,
+            padding: Padding::all(4.0),
+            alignment: Alignment::Center,
+        }))];
+
+        if data.save_confirmation_timer > 0.0 {
+            content_children.push(ViewDescriptor::Text {
+                content: "✓ Scene saved".to_string(),
+                color: Some(data.theme.success),
+                font_size: None,
+            });
+        }
+
+        content_children.push(ViewDescriptor::HStack(Box::new(StackDescriptor {
+            children: right_items,
+            spacing: 8.0,
+            padding: Padding::horizontal(16.0),
+            alignment: Alignment::Trailing,
+        })));
+
+        ViewDescriptor::StatusBar(Box::new(StatusBarDescriptor {
+            height: data.height,
+            content: Box::new(ViewDescriptor::HStack(Box::new(StackDescriptor {
+                children: content_children,
+                spacing: 0.0,
+                padding: Padding::zero(),
+                alignment: Alignment::Leading,
+            }))),
+        }))
     }
 }

@@ -250,6 +250,20 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
             ..Style::default()
         },
 
+        ViewDescriptor::Modal(desc) => Style {
+            position: taffy::Position::Absolute,
+            size: Size {
+                width: Dimension::Length(desc.width),
+                height: Dimension::Length(desc.height),
+            },
+            ..Style::default()
+        },
+
+        ViewDescriptor::ContextMenu(_) => Style {
+            position: taffy::Position::Absolute,
+            ..Style::default()
+        },
+
         ViewDescriptor::LabeledSlider { label, .. } => {
             let text_size = measure_text_descriptor(label, None);
             Style {

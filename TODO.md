@@ -2,267 +2,25 @@
 
 ## Backend Abstraction Cleanup
 
-### A. Remove MetalFrameGraph (dead code)
-
-- [x] Delete `katla_gfx/src/metal/metal_frame_graph.rs` entirely
-- [x] Remove `mod metal_frame_graph` and `pub use` from `katla_gfx/src/metal/mod.rs`
-- [x] Verify no remaining imports or references to `MetalFrameGraph` across the codebase
-
-### B. Modularize MetalRenderer (2998-line monolith → ~15 files)
-
-- [x] Extract `bind_common_resources` and `draw_objects` into `metal/draw_helpers.rs`
-- [x] Extract all `init_*_pipeline` methods into `metal/init_pipelines.rs`
-- [x] Extract `recreate_render_targets` into `metal/render_targets.rs`
-- [x] Make all struct fields `pub(crate)` for submodule access
-- [x] Make constants and `read_shader`/`resolve_wgsl_includes` `pub(crate)`
-- [x] Extract mesh management (`MetalMesh`, `create_mesh*`, `register_mesh_raw`, `update_mesh_dynamic`) into `metal/mesh_api.rs`
-- [x] Extract texture management (`MetalTextureEntry`, `create_texture`, `create_texture_solid`, bindless slot queries) into `metal/texture_api.rs`
-- [x] Extract material/pipeline management (`MetalMaterial`, `compile_material`) into `metal/material_api.rs`
-- [x] Extract skeleton management (`create_skeleton`, `update_skeleton`) into `metal/skeleton_api.rs`
-- [x] Extract viewport management (`create_viewport`, `viewport_count`, `get_viewport`, `destroy_viewport`) into `metal/viewport_api.rs`
-- [x] Extract frame lifecycle (`begin_frame`, `end_frame`, `render_frame`, `wait_for_frame`) into `metal/frame_lifecycle.rs`
-- [x] Extract font atlas (`create_ui_font_atlas`, `update_ui_font_atlas`) into `metal/font_atlas.rs`
-
 ### C. Unify pipeline initialization — eliminate Metal-specific methods on AnyRenderer
 
-- [x] Add `init_light_culling(width, height, shader_path)` to `GpuRenderer` trait with default no-op impl
-- [x] Add `init_shadow_resources()` to `GpuRenderer` trait with default no-op impl
-- [x] Add `init_shadow_pipeline(shader_path)` and `init_shadow_pipeline_skinned(shader_path)` to `GpuRenderer` trait
-- [x] Add `init_sky_pipeline(shader_path)` to `GpuRenderer` trait with default no-op impl
-- [x] Add `init_tonemap_pipeline(shader_path)` to `GpuRenderer` trait with default no-op impl
-- [x] Add `init_depth_prepass_pipeline(shader_path)`, `init_depth_prepass_skinned_pipeline`, `init_depth_prepass_billboard_pipeline` to `GpuRenderer` trait
-- [x] Add `init_outline_pipelines(stencil_mark, stencil_mark_skinned, outline_draw, outline_draw_skinned)` to `GpuRenderer` trait
-- [x] Add `init_picking_pipeline(shader_path)` and `init_picking_skinned_pipeline(shader_path)` to `GpuRenderer` trait
-- [x] Add `init_stencil_indicator_pipelines` to `GpuRenderer` trait
-- [x] Add `set_viewport_bindless_slot(slot)` to `GpuRenderer` trait with default no-op impl
-- [x] Remove `#[cfg(target_os = "macos")]` from init_* and set_viewport_bindless_slot on AnyRenderer — now dispatches to both backends
 - [ ] Add `set_geometry_hdr_view` and `set_tonemap_output_view` to `GpuRenderer` trait — needs backend-agnostic texture view type
 
 ### D. Clean up `cfg(target_os = "macos")` gating in AnyFrameGraph / AnyFrame
 
-- [x] Verify `AnyFrame` has no Metal-only methods (confirmed clean — just `submit`, `submit_ui`, `dispatch`)
 - [ ] Remove `transient_image_view_metal()` and `transient_texture_metal()` Metal-only methods from `AnyFrameGraph` — requires backend-agnostic texture view type
 - [ ] Audit `AnyFrameGraph` for all `#[cfg(target_os = "macos")]` branches that could be collapsed — verified: only enum variants, match arms, and two Metal-specific accessors (`transient_image_view_metal`, `transient_texture_metal`) remain; the accessors require a backend-agnostic texture view type to remove (same blocker as D item above)
 
 ### E. Align Metal backend with shared FrameGraph<B> execution path
 
-- [x] Verify `RenderGraphBackend` impl for `MetalRenderer` is complete (create/destroy transient textures, bindless registration, swapchain/depth image views) — Verified complete: all 15 trait methods implemented in `metal_backend.rs`
 - [ ] Verify `Frame<'_, MetalRenderer>` execution dispatches all pass types (geometry, shadow, fullscreen, compositing, particles, outline, UI, depth prepass) through `RenderGraphBackend` trait methods — Partial: Metal routes 5 of ~9 pass kinds; missing particles, compositing, stencil-indicator, generic compute
 - [ ] Ensure Metal backend's `render_frame()` goes through `FrameGraph<MetalRenderer>::execute()` identically to the Vulkan path, not through a separate hardcoded pass sequence — Metal uses `collect_draw_lists()` + hardcoded `render_frame()`, not `FrameGraph::execute()`
 - [ ] Remove any remaining dual-code-path divergence between how Vulkan and Metal execute the same frame graph — Requires migrating Metal from hardcoded pass sequence to data-driven graph execution
-- [x] Delete the `render_frame()` method from `GpuRenderer` — removed from trait, Vulkan no-op removed, Metal impl moved to `metal/frame_render.rs` (see section K)
-
-### F. Reduce cfg(target_os = "macos") count across katla_gfx
-
-- [x] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/lib.rs` — minimize to module declarations only
-- [x] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/renderer/any_renderer.rs` — after task C, the only remaining ones should be the enum variant definitions and match arms
-- [x] Audit all `#[cfg(target_os = "macos")]` in `katla_gfx/src/render_graph/any_frame_graph.rs` — after task D, only enum variant + match arms remain
-~~Ensure `katla_app` has zero `cfg(target_os)` or `cfg(metal/vulkan)` gates~~ — Not feasible. All 15 remaining cfg gates in katla_app are match arms on `AnyRenderer::Metal(_)` or Metal-specific init/dispatch blocks. These are necessary because the Metal variant only compiles on macOS. Removing them would require removing the Metal backend.
-
-### G. Decompose GpuRenderer monolith — extract primitive mesh generators off the trait
-
-- [x] Create `katla_gfx/src/primitives/mod.rs` as a public submodule — move all `generate_cube_vertices`, `generate_sphere_vertices`, etc. functions out of `MeshManager` and `renderer/mesh_manager.rs` into free functions in this new module
-- [x] Add public `create_primitive_mesh()` free function in `katla_gfx/src/primitives/mod.rs` — takes `&mut impl GpuRenderer`, calls the appropriate generator, then calls `renderer.create_mesh()` on the result; this replaces calling `renderer.create_cube_mesh()` etc.
-- [x] Add `create_cube()`, `create_sphere()`, `create_plane()`, `create_cone()`, `create_cylinder()`, `create_torus()`, `create_plane_xy()` convenience free functions that delegate to `create_primitive_mesh()`
-- [x] Remove `create_cube_mesh`, `create_sphere_mesh`, `create_plane_mesh`, `create_cone_mesh`, `create_cylinder_mesh`, `create_torus_mesh`, `create_plane_xy_mesh` from `GpuRenderer` trait
-- [x] Remove the 7 methods from `VulkanRenderer` impl of `GpuRenderer` — these now delegate to MeshManager internally, and the free functions call `create_mesh` instead
-- [x] Remove the 7 methods from `MetalRenderer` impl of `GpuRenderer`
-- [x] Remove the 7 match arms from `AnyRenderer` impl of `GpuRenderer`
-- [x] Update all call sites in `katla_app` — replace `renderer.create_cube_mesh(size)` with `primitives::create_cube(&mut renderer, size)` etc.
-- [x] Run `cargo check --workspace` to verify no compile errors
-- [x] Run `cargo test --workspace` to verify all tests pass
-
-### H. Decompose GpuRenderer monolith — remove register_mesh_raw from trait
-
-- [x] Remove `register_mesh_raw` from `GpuRenderer` trait — it is documented as "Backend-specific; callers should use backend types directly", which means it does not belong on a backend-agnostic trait
-- [x] Remove `register_mesh_raw` from `VulkanRenderer` impl of `GpuRenderer` — callers that need raw mesh registration should use `VulkanRenderer::create_mesh_dynamic()` directly
-- [x] Remove `register_mesh_raw` from `MetalRenderer` impl of `GpuRenderer`
-- [x] Remove `register_mesh_raw` match arm from `AnyRenderer` impl of `GpuRenderer`
-- [x] Update any call sites in `katla_app` to use `create_mesh_dynamic` instead, or go through `as_vulkan()`/`as_metal()` escape hatch
-- [x] Run `cargo check --workspace` and `cargo test --workspace`
-
-### I. Decompose GpuRenderer monolith — remove create_mesh_soa from trait
-
-- [x] Remove `create_mesh_soa` from `GpuRenderer` trait — it is unimplemented on Vulkan (`todo!()`) and takes `HashMap<u32, Vec<u8>>` which loses type safety
-- [x] Remove `create_mesh_soa` from `VulkanRenderer` impl — already `todo!()`, so no functional change
-- [x] Remove `create_mesh_soa` from `MetalRenderer` impl
-- [x] Remove `create_mesh_soa` match arm from `AnyRenderer` impl
-- [x] If SOA mesh creation is needed later, design a proper typed API (e.g. `AttributeType` enum key) as a separate trait or method, not on the core GpuRenderer
-- [x] Run `cargo check --workspace` and `cargo test --workspace`
-
-### J. Decompose GpuRenderer monolith — consolidate pipeline init methods into a single init_pass_pipeline
-
-- [x] Add `PipelineKind`-based `init_pass_pipeline` method to `GpuRenderer` trait — `fn init_pass_pipeline(&mut self, kind: PipelineKind, shader_paths: &[&Path]) -> Result<(), RendererError>` with a default no-op impl
-- [x] Add `init_pass_pipeline` dispatch to `AnyRenderer` — match on backend, delegate to backend impl
-- [x] Implement `init_pass_pipeline` for `VulkanRenderer` — match on `PipelineKind` to call the existing `init_shadow_pipeline`, `init_depth_prepass_pipeline`, `init_outline_pipelines`, etc. internally
-- [x] Implement `init_pass_pipeline` for `MetalRenderer` — match on `PipelineKind` to call the existing Metal pipeline init methods internally
-- [x] Update all `init_*_pipeline` call sites in `katla_app` to use the new single `init_pass_pipeline(kind, paths)` API
-- [x] Remove old individual `init_*_pipeline` methods from the trait (kept as private backend methods)
-- [x] Run `cargo check --workspace` and `cargo test --workspace`
-
-### K. Unify frame lifecycle — fix begin_frame / end_frame / render_frame asymmetry
-
-- [x] Audit how Vulkan and Metal backends use `begin_frame`, `end_frame`, `render_frame`, `wait_for_frame` — document the actual control flow for each backend
-- [x] Remove `render_frame` from `GpuRenderer` trait — extracted to `MetalRenderer::render_frame()` in `metal/frame_render.rs`, Vulkan no-op removed, AnyRenderer dispatch removed
-- [x] Ensure Metal `begin_frame` + `end_frame` pair covers acquire + present, matching Vulkan's `wait_for_frame` + `render()` pattern — verified: `begin_frame` acquires drawable, `render()` presents, `end_frame` cleans up
-- [x] Document the canonical frame lifecycle in GpuRenderer trait docs: `begin_frame()` -> `set_frame_uniforms()` -> `execute_draw_calls()` -> render graph `render()` -> (implicit present)
-- [x] Run `cargo check --workspace` and `cargo test --workspace`
-
-### L. Fix resize() semantic — stop silently discarding frame graph state
-
-- [x] Decouple `recreate_swapchain` from FrameGraph — removed FrameGraph parameter from `VulkanRenderer::recreate_swapchain()`, fixed `GpuRenderer::resize()` Vulkan impl to not create throwaway FrameGraph, moved transient texture recreation to `recreate_swapchain_resources()` in katla_app
-- [x] Update Vulkan impl to pass the actual app's frame graph to `recreate_swapchain` instead of creating a throwaway `FrameGraph::new()` — replaced with swapchain-only recreation; transient textures now recreated at app level via `frame_graph.recreate_transient_textures()`
-- [x] Update Metal impl to handle resize properly (recreate render targets, transient textures) — Metal already follows the correct pattern: `renderer.resize()` + `frame_graph.recreate_transient_textures()`
-- [x] Update `AnyRenderer` dispatch and all call sites in `katla_app` — simplified `AnyRenderer::recreate_swapchain()` signature, updated `recreate_swapchain_resources()` to call both swapchain and transient texture recreation
-- [x] Run `cargo check --workspace` and `cargo test --workspace`
-
-### M. Generalize texture update API — remove font atlas special-case
-
-- [x] Add `update_texture(&mut self, handle: TextureHandle, data: &[u8])` to `GpuRenderer` trait — general-purpose texture subresource update (default no-op impl; real impl deferred to when concrete use cases arise)
-- [x] Add `update_texture` dispatch to `AnyRenderer` (uses default impl, no explicit dispatch needed)
-- [x] Implement `update_texture` for `VulkanRenderer` — copy data to existing texture, handle buffer-image copy
-- [x] Implement `update_texture` for `MetalRenderer` — replace texture data via blit
-- [x] Refactor `update_ui_font_atlas` to use `update_texture` internally — Vulkan hot path now uses `GpuRenderer::update_texture` instead of `texture.update_data` directly
-- [x] Refactor `create_ui_font_atlas` to use `create_texture` internally — already uses `create_texture` in both Vulkan and Metal backends
-~~Consider removing `create_ui_font_atlas` and `update_ui_font_atlas` from the trait once the general API works~~ — Not feasible. These methods encapsulate backend-specific logic (bindless slot registration, UI renderer state tracking, Metal region replacement, resize handling) that cannot be trivially replaced by `create_texture`/`update_texture` at call sites.
-- [x] Run `cargo check --workspace` and `cargo test --workspace`
-
-### N. Add GPU capability queries to GpuRenderer
-
-- [x] Define `GpuCapabilities` struct in `katla_gfx/src/renderer/` — fields: `max_texture_size: u32`, `max_bindless_textures: u32`, `supports_compute: bool`, `max_frame_in_flight: usize`, `vendor: GpuVendor` (enum: Nvidia, Amd, Intel, Apple, Unknown)
-- [x] Add `fn capabilities(&self) -> &GpuCapabilities` to `GpuRenderer` trait
-- [x] Populate `GpuCapabilities` in `VulkanRenderer` from Vulkan physical device properties
-- [x] Populate `GpuCapabilities` in `MetalRenderer` from Metal device properties
-- [x] Add dispatch to `AnyRenderer`
-- [x] Replace `has_light_culling()` bool on the trait with a field on `GpuCapabilities`
-- [x] Run `cargo check --workspace` and `cargo test --workspace`
-
-### O. Add timestamp query API for GPU profiling
-
-- [x] Define `GpuTimestamp` struct — `pass_name: String`, `duration_ms: f64`
-- [x] Add `fn begin_timestamp(&mut self, label: &str)` and `fn end_timestamp(&mut self, label: &str)` to `GpuRenderer` trait with default no-op impls
-- [x] Add `fn read_timestamps(&self) -> Vec<GpuTimestamp>` to `GpuRenderer` trait with default empty impl
-- [x] Implement timestamp queries for `VulkanRenderer` using Vulkan timestamp queries
-- [x] Implement timestamp queries for `MetalRenderer` using `MTLCounterSampleBuffer`
-- [x] Add dispatch to `AnyRenderer`
-- [x] Run `cargo check --workspace` and `cargo test --workspace`
-
-## Particle System Usability
-
-- [x] Fix position duplication between Transform and EmitterConfig — ParticleSystem::update should read the entity's TransformComponent and override config.position so emitters follow their entity when moved
-- [x] Wrap EmitterConfig GPU padding behind a user-facing builder or separate user config struct — users should not need to set _pad_position, _pad_velocity, _pad_color, _pad_forces manually
-- [x] Change EmitterConfig.shape from raw u32 to EmitterShape enum — provide direct field access without requiring set_shape()/get_shape() helpers
-- [x] Fix with_line_shape axis parameter being silently ignored — removed the unused axis parameter since the shader only supports Y-axis lines
-- [x] Add editing controls to the ParticleInspector — sliders/drag fields for emit rate, lifetime, scale, color, forces etc. instead of read-only text rows
-- [x] Add built-in preset factory functions — EmitterPreset::fire(), EmitterPreset::smoke(), EmitterPreset::sparks() etc. with sensible defaults
-- [x] Change ParticleSystem::update to take &mut GlobalParticleSystem instead of &mut Option<GlobalParticleSystem> — avoids silent skip and awkward call sites
-- [x] Add per-emitter alive count feedback — allow querying actual alive particle count per emitter, not just theoretical estimated_max_alive
-- [x] Add kill-all-particles-on-destroy option — optionally immediately kill all living particles when an emitter is destroyed instead of letting them expire naturally
-- [x] Add color over lifetime and size over lifetime curves — enable fire (bright to dark), smoke (opaque to transparent), sparks (big to small) effects without shader modifications
 
 ## Audio System
 
-### Phase 1: Crate skeleton + backend setup
-- [x] Create `katla_audio` crate in workspace — add to `Cargo.toml` workspace members, create crate skeleton with `lib.rs`
-- [x] Choose and integrate audio backend — evaluate `cpal` (low-level) vs `kira` (high-level) for output; add dependency to `katla_audio/Cargo.toml`
-- [x] Add audio decoder dependency — `lewton` for OGG Vorbis, `hound` for WAV; wrap behind a common `DecodedAudio` struct (sample rate, channel count, PCM samples)
-- [x] Implement `AudioDevice` — open default output device, create output stream, manage sample rate and buffer size
-- [x] Implement `AudioMixer` — mix N active voices into a single output buffer, handle clipping prevention (soft clamp)
-- [x] Implement `AudioVoice` — represents a single playing sound: source buffer, playback position, volume, looping flag, finished flag
-- [x] Add basic playback API — `AudioEngine::play(sound: &AudioBuffer) -> VoiceHandle`, `VoiceHandle::stop()`, `VoiceHandle::set_volume()`
-- [x] Write unit tests — decode WAV/OGG files to PCM, mix two buffers, verify output sample ranges
-
-### Phase 2: ECS integration
-- [x] Add `AudioSource` component — holds asset path to sound file, derives `Component` via katla_derive
-- [x] Add `AudioListener` component — marks the camera entity that receives positional audio (only one active at a time)
-- [x] Add `AudioEmitter` component — holds volume, looping, playback state; references AudioSource path
-- [x] Implement `AudioSystem` (ECS System trait) — discover entities with AudioEmitter, trigger playback on spawn, stop on destroy
-- [x] Register audio types in `ApplicationBuilder` — add AudioEngine as a resource, register AudioSystem at appropriate execution order
-- [x] Add component serialization for AudioSource and AudioEmitter — RON round-trip support
-
-### Phase 3: 3D positional audio
-- [x] Add `AudioListener` position tracking — read listener entity's TransformComponent each frame, feed position + orientation to spatializer
-- [x] Implement distance-based attenuation — inverse distance model (clamped) for volume falloff based on emitter-to-listener distance
-- [x] Implement panning / spatialization — stereo pan based on emitter direction relative to listener forward vector
-- [x] Add distance model options — linear, inverse clamped, exponential; configurable per-emitter or globally
-- [x] Add minimum/maximum distance and rolloff factor to AudioEmitter — control attenuation curve parameters
-
-### Phase 4: Mixing and streaming
-- [x] Add master volume control — global volume slider applied to final mix output
-- [x] Add audio category channels — SFX, Music, Ambient sub-mixes with independent volume controls
-- [x] Add per-source volume and pitch — VoiceHandle::set_volume(), VoiceHandle::set_pitch() (resampling)
-- [x] Implement audio streaming — stream long audio files (music) in chunks instead of loading entire file; ring buffer for decoded chunks
-- [x] Add looping support — seamless loop points for music, configurable loop region for one-shot variations
-
-### Phase 5: Editor and asset integration
-- [x] Add audio file loading to asset pipeline — recognize .wav/.ogg extensions, decode and cache AudioBuffers
-- [x] Add audio entries to asset browser — show audio files with icon, duration, sample rate metadata
-- [x] Add audio preview in asset browser — play/pause button on audio asset hover or selection
-- [x] Add audio inspector UI — volume slider, looping toggle, category selector for AudioSource/AudioEmitter components
-- [x] Add drag-to-spawn AudioEmitter — drag audio file from asset browser into viewport to create entity with AudioEmitter
-
-### Phase 6: Bug fixes (foundational — must complete before Phase 7+)
-- [x] Replace RwLock with lock-free voice queue — `AudioMixer` now uses a `Mutex<MixerState>` for the voice list with a lock-free SPSC `CommandQueue` for `stop`/`stop_all` commands from the main thread; per-voice property changes (volume, pan, pitch) go through the mutex but use atomics on Voice for lock-free reads in the audio thread
-- [x] Add voice category tagging and apply category volumes — voices are tagged with `AudioCategoryValue` (Sfx/Music/Ambient) at creation; category volumes are stored as `AtomicU32` on the mixer and multiplied into the voice's effective volume during mixing; `AudioEngine::set_category_volume` now actually works
-- [x] Add sample rate conversion — `Voice::mix_into` now computes `rate_ratio = src_sample_rate / output_sample_rate` and incorporates it into the fixed-point step size so audio plays at the correct speed regardless of device vs source sample rate
-- [x] Fix pan law to use equal-power panning — `compute_pan_gains` now uses `cos/sin((pan+1)*pi/4)` for constant-power panning; center is `(0.707, 0.707)` instead of `(1.0, 1.0)`, eliminating +6dB boost at center
-- [x] Fix `load_buffer` to use its `_data` parameter — removed dead `load_buffer` method entirely (no callers); all buffer loading goes through `get_or_load_buffer`
-- [x] Fix fixed-point pitch truncation — `Voice::mix_into` now computes `step_fixed` using `f64` arithmetic with `.round()` instead of truncating `f32 as u64`
-
-### Phase 7: DSP effects (depends on Phase 6 lock-free queue and category volumes)
-- [x] Add effect chain infrastructure — `AudioEffect` trait with `process(&mut [f32], channels)`, `EffectChain` container for chaining effects, wired into `AudioMixer` master bus
-- [x] Add low-pass filter effect — `BiquadFilter` with `FilterKind::LowPass`, configurable cutoff frequency and Q factor; implemented as cookbook biquad with state per-channel. **Blocks Phase 10 occlusion which applies LPF when line-of-sight is blocked**
-- [x] Add reverb effect — `ReverbEffect` using 4 parallel comb filters (with dampening) and 2 series allpass filters; configurable wet/dry mix, decay, and dampening. **Blocks Phase 10 reverb zones which need per-zone reverb instances**
-- [x] Add effect send/return buses — `AuxBus` with configurable send/return levels and its own `EffectChain`; accumulates a copy of the main mix scaled by send level, processes through effects, and mixes back at return level. `AudioEngine::add_aux_bus()`
-- [x] Add high-pass filter effect — `BiquadFilter` with `FilterKind::HighPass`, same configurable cutoff and Q; removes low-frequency rumble
-
-### Phase 8: Smooth transitions and tweens (depends on Phase 6 lock-free queue)
-- [x] Add voice property tweening — `VoiceHandle::set_volume_tweened()` / `set_pan_tweened()` set a target value; `Voice::tick_tweens()` lerps current toward target each render frame using exponential smoothing (factor 0.3). Immediate setters (`set_volume`/`set_pan`/`set_pitch`) also set target for consistency.
-- [x] Add default tween duration for spatial audio — `AudioSystem::update` now uses `set_volume_tweened`/`set_pan_tweened` for spatial emitter updates, preventing zipper noise from frame-to-frame position changes.
-
-### Phase 9: Sound containers and variation (independent of Phase 7-8)
-- [x] Add `SoundCue` asset — `SoundCue` holds multiple `Arc<AudioBuffer>` references with builder-pattern API (`with_buffer`, `with_buffers`, `with_play_mode`); includes `AudioCategory` for routing
-- [x] Add random pitch/volume variation per play — `SoundCue::with_pitch_variation(semitones)` and `with_volume_variation(db)` apply random ±range each play using xoshiro PRNG, preventing repetitive "machine gun" effect
-- [x] Add sequential and shuffle container modes — `CuePlayMode::Sequential` cycles in order, `CuePlayMode::Shuffle` uses Fisher-Yates partial shuffle for non-repeating random selection
-- [x] Add `SoundCue` scripting bindings — `ScriptCommand::PlaySoundCue` variant added to `katla_script`, `world:play_sound_cue("name")` binding in ScriptWorldProxy, `AudioSystem::register_cue`/`play_cue` for cue registry and playback
-
-### Phase 10: Spatial audio improvements (depends on Phase 6 bug fixes + Phase 7 DSP effects)
-- [x] Add occlusion/obstruction — when line-of-sight from emitter to listener is blocked by geometry, apply low-pass filter and volume attenuation to simulate sound passing through/around obstacles. **Requires Phase 7 low-pass filter effect; requires physics raycast (Physics Phase 4)**
-- [x] Add reverb zones — define volumes in the scene (box/sphere shapes) with reverb parameters (decay, wet mix, pre-delay); when the listener is inside a zone, blend the zone's reverb into the effect send; blend between overlapping zones. **Requires Phase 7 reverb effect and send/return buses**
-- [x] Add Doppler effect — `compute_doppler()` uses the standard Doppler formula with speed of sound (343 m/s); velocity tracked per-frame from previous positions stored on `AudioSystem`; pitch shift clamped to 0.5-2.0x and applied via `set_pitch_tweened`
-- [x] Add listener orientation for spatialization — `compute_spatialization` now takes `listener_up` in addition to `listener_forward`; right vector computed as `forward × up` instead of `forward × Y_AXIS`, giving correct panning for any listener orientation (including tilted/rolled cameras)
-
-### Phase 11: Format and streaming support (independent, can start after Phase 6)
-- [x] Add OGG Vorbis streaming — `StreamingDecoder` now supports OGG via `open_ogg()` and auto-detection via `open()`; reads OGG packets in chunks using `lewton::inside_ogg::OggStreamReader`
-- [x] Add MP3 decode support — added `minimp3` dependency, `load_mp3()` function, and `.mp3` extension support in `load_audio` dispatcher and asset browser
-- [x] Add FLAC decode support — added `claxon` dependency, `load_flac()` function, and `.flac` extension support in `load_audio` dispatcher and asset browser
-- [x] Add streaming integration with AudioMixer — wire `StreamingDecoder` into a streaming voice type that decodes chunks on demand during playback instead of requiring the full buffer upfront; use a background decode thread to stay ahead of playback position
-
-### Phase 12: Bug fixes and correctness (from commit review)
-- [x] Fix category volume not applying to already-playing voices — `Voice::category_volume` is a snapshot taken at creation time and never updated; when `AudioEngine::set_category_volume` is called, existing voices keep their stale value. Fix: propagate current category volume to all voices in the render loop, or look up the atomic category volume at mix time instead of storing a snapshot
-- [x] Fix Doppler pitch using tweened setter — `AudioSystem::update` calls `set_pitch_tweened(doppler_pitch)` every frame, but Doppler pitch can change rapidly between frames and the smoothing factor (0.3) causes audible lag. Change spatial Doppler to use `set_pitch()` (immediate) instead of tweening
-- [x] Remove dead `AudioCommand::Play` variant from `CommandQueue` — it is pushed nowhere and skipped with a comment in `process_commands`. Remove the variant and any related dead code to avoid confusion
-- [x] Replace global mutable static RNG in `SoundCue` — `static RNG_STATE: AtomicU32` is an unseeded Xorshift PRNG that produces the same sequence every run and prevents test isolation. Replace with `fastrand::Rng` or a per-`SoundCue` RNG instance
-- [x] Add safety documentation to `unsafe impl Send/Sync` on `CommandQueue` — the SPSC invariant (single producer on main thread, single consumer on audio thread) is not documented. Add a `// SAFETY:` comment block explaining why this is sound, matching the existing pattern on `ScriptWorldProxy`
-- [x] Fix script audio command bridge — `ScriptSystem::drain_audio_commands()` exists but `katla_app` never calls it to forward `PlaySound`/`PlaySoundAt`/`PlaySoundCue` commands to `AudioSystem`. Without this, `world:play_sound()` and `world:play_sound_cue()` in scripts queue commands that are never executed. Wire `drain_audio_commands()` into the frame loop after script update
-
-### Phase 13: Audio patterns and robustness
-- [x] Replace `Result<T, String>` with typed error enum in `katla_audio` — all public APIs return `Result<_, String>`. Define `AudioError` enum (DeviceNotFound, FormatUnsupported, DecodeFailed, StreamError, InvalidHandle) matching the `RendererError` pattern in `katla_gfx`
-- [x] Add O(log n) or O(1) voice lookup by ID — added `HashMap<VoiceId, usize>` to `MixerState` for O(1) voice slot lookup; all `set_voice_*` and `voice_state` methods now use direct index instead of linear scan
-- [x] Use temp-file guards in script tests — `write_temp_script` creates files that are only cleaned up on success; panics leave orphan temp files. Replace with a `TempScript` struct that cleans up on `Drop`
-- [x] Add integration test for category volume changes affecting playing voices — verify that changing `AudioEngine::set_category_volume(AudioCategory::Sfx, 0.5)` actually reduces volume of an already-playing voice (will fail until Phase 12 category-volume fix lands)
-
 ### Phase 14: Production bugs and correctness
-- [x] Fix aux bus accumulation feedback loop — `AuxBus::accumulate()` uses `+=` on the bus buffer but the buffer is never cleared between frames. This causes previous frame's reverb output to feed back into the next frame's accumulate step, creating a positive feedback loop where the aux bus output grows louder over time. Fix: clear the bus buffer at the start of each frame before accumulating sends. The reverb tail is correctly preserved in the reverb's internal delay line state and does NOT need to persist in the bus buffer.
 - [ ] Move streaming decode off the audio thread — `StreamingVoice::fill_ring_buffer()` performs synchronous file I/O (via `StreamingDecoder`) inside the audio render callback under the mixer's Mutex. Disk reads can take milliseconds, causing audible glitching or callback timeouts. Fix: add a background decode thread that fills the ring buffer ahead of the read position, with the audio thread only consuming from the ring buffer (no I/O in callback). This was described in Phase 11 TODO but never implemented.
-- [x] Fix FLAC 24-bit sample conversion — `load_flac` converts 24-bit samples via `(s >> 8) as i16 as f32 / i16::MAX as f32`, discarding the lower 8 bits of precision. Should use `s as f32 / 8388608.0` (2^23) to preserve full 24-bit dynamic range.
-- [x] Fix MP3 streaming looping — `StreamingDecoder::seek_to_start()` returns `Err(InvalidOperation)` for MP3, making `StreamingVoice::fill_ring_buffer()` fail on loop wrap, silently ending playback. Either implement MP3 seeking (reopen file and decode to position) or document that MP3 streaming does not support looping and fall back to full-buffer loading for looping MP3 playback.
-- [x] Remove stale `#[allow(dead_code)]` on `AudioEngine::stream` — the `stream` field is actively used by `resume()` and `pause()` methods; the allow attribute is incorrect and masks a real usage.
-- [x] Remove dead `AudioCommand` variants — `SetVolume`, `SetPan`, `SetPitch`, `SetMasterVolume`, `SetCategoryVolume` are defined but never pushed to the command queue. Volume/pan/pitch changes bypass the command queue via `MixerState`'s Mutex. Either remove the dead variants or route property changes through the command queue for consistency (and to reduce mutex contention on the audio thread).
-- [x] Remove dead code flagged by clippy — `AuxBus::ensure_buffer`, `zone_reverb::f32_to_bits`, `Voice::with_loop_region`, `Voice::category` are unused. Remove them.
-- [x] Fix clippy large enum variant — `StreamingDecoderInner::Ogg` is 592 bytes vs 96 bytes for MP3. Box the OGG variant to reduce the enum size and avoid stack bloat when constructing/returning `StreamingDecoder`.
-- [x] Fix redundant closures in buffer loading — `map_err(|e| AudioError::Io(e))` should be `map_err(AudioError::Io)` in `load_ogg` and `load_mp3`.
-- [x] Add `Default` impl for `EffectChain` — clippy warns about `new_without_default`.
 
 ### Phase 15: Audio quality and robustness
 - [ ] Add automatic fade-in/fade-out on voice start/stop — voices currently start and stop instantly with no gain ramp, causing audible clicks/pops. Add a short (1-5ms) linear fade-in when a voice begins playback and a fade-out when stopped, before marking it finished. This is standard practice in all production audio engines (Kira, FMOD, Wwise).
@@ -282,11 +40,8 @@
 - [ ] Add playback position query — no way to query the current playback position of a voice (in seconds or samples). Add `VoiceHandle::position() -> f32` and `StreamingVoiceHandle::position() -> f32` for UI scrub bars, subtitle sync, and gameplay triggers.
 - [ ] Add seek API for streaming voices — `StreamingVoiceHandle` has no seek method. Add `StreamingVoiceHandle::seek(position: Duration)` to allow scrubbing to arbitrary positions in a streaming file.
 - [ ] Add audio recording/bounce — no way to capture the final mix output to a file. Add an offline render mode that writes the mixed output to a WAV file, useful for exporting game audio or cutscene bounces.
-- [x] Add FLAC streaming support — `StreamingDecoder` supports WAV, OGG, and MP3 streaming but not FLAC. Add `open_flac()` using claxon's streaming API.
-- [x] Add volume units (dB) API — all volume controls use linear 0.0-1.0 scale, but audio professionals think in dB. Add conversion helpers (`db_to_linear`, `linear_to_db`) and optionally dB-based setter methods on handles.
 
 ### Phase 17: Audio system activation and global settings
-- [x] Wire AudioSystem into Application — `ApplicationBuilder::build()` sets `audio_system: None` and nothing ever initializes it. `AudioSystem::new()` is never called, so the entire audio system (playback, spatialization, zone reverb, script audio) is dead code. Fix: call `AudioSystem::new()` in the builder, store as `Some(audio_system)`, and handle the case where no audio device is available (log a warning, keep `None`). This is the single highest-priority audio item — nothing else matters if the system isn't running.
 - [ ] Add AudioSettings to Preferences — `Preferences` struct has no audio fields. Add: `master_volume: f32`, `sfx_volume: f32`, `music_volume: f32`, `ambient_volume: f32`. Serialize to `preferences.toml`. Apply to `AudioEngine` on startup and on change.
 - [ ] Add Audio tab to preferences panel — currently only General, Viewport, and AI tabs exist. Add an Audio tab with: master volume slider, SFX volume slider, music volume slider, ambient volume slider. Changes should apply immediately (live preview) and persist to `preferences.toml` on save.
 - [ ] Apply saved audio settings on startup — after `AudioSystem::new()`, read `Preferences::audio_settings` and call `engine.set_master_volume()`, `engine.set_category_volume()` for each category. Currently all volumes reset to 1.0 every launch.
@@ -301,57 +56,6 @@
 
 ## Physics
 
-### Phase 0: Architecture decision
-- [x] Evaluate physics crates (rapier, physx, jolt) vs custom — compare API ergonomics, ECS compatibility, feature set, license, and maintenance status for the engine's scope
-- [x] Write ADR (Architecture Decision Record) documenting the choice — include rationale, tradeoffs, and integration strategy
-
-### Phase 1: Crate skeleton + collision shapes
-- [x] Create `katla_physics` crate in workspace — added to `Cargo.toml` workspace members, created crate skeleton with `lib.rs`, `shape.rs`, `collider.rs`
-- [x] Define collision shape types — `SphereShape(f32)`, `BoxShape { half_extents: [f32; 3] }`, `CapsuleShape { half_height, radius }`, with constructors and `local_aabb()` on `ColliderShape` enum
-- [x] Add `ColliderShape` component — enum wrapping SphereShape/BoxShape/CapsuleShape, derives `Component` via katla_derive, with `local_aabb()` method
-- [x] Add `ColliderState` component — stores computed world-space AABB, `is_colliding` flag
-- [x] Implement AABB computation for each shape — transform local shape by entity TransformComponent to get world-space AABB
-- [x] Add serialization for collider components — RON round-trip for ColliderShape and CollisionFilter via serde
-- [x] Register collider components in `ApplicationBuilder` and component registry
-
-### Phase 2: Rapier integration
-- [x] Add `rapier3d` dependency to `katla_physics` — v0.32 with glamx backend
-- [x] Create `PhysicsWorld` wrapper — owns Rapier pipeline, body/collider sets, joints; provides `step()`, `create_dynamic_body()`, `create_static_collider()`, `raycast()`
-- [x] Implement raycast query API — `PhysicsWorld::raycast(origin, direction, max_distance) -> Option<RayHit>` with entity lookup via collider user data
-- [x] Create `RigidBody` component — body type (static, dynamic, kinematic), stores Rapier handles, derives `Component`
-- [x] Implement `PhysicsSystem` (ECS System trait) — discover entities with ColliderShape/RigidBody, create Rapier bodies on spawn, remove on destroy, step simulation, sync transforms back
-- [x] Add force/impulse API — expose `PhysicsWorld::apply_force/apply_impulse` through the system or a resource
-- [x] Wire `PhysicsWorld` into `ApplicationBuilder` as an ECS resource
-- [x] Add physics materials — `PhysicsMaterial { friction, restitution, density }` component mapped to Rapier material properties
-- [x] Implement constraints — point-to-point, hinge, distance joints via Rapier joint API
-- [x] Add shape cast query — `PhysicsWorld::shape_cast()` via Rapier scene query pipeline
-- [x] Add trigger volumes — collider with sensor flag (no collision response, emits overlap events)
-- [x] Expose raycasting to scripting — `world:raycast(origin, direction, max_distance)` binding
-
-### Phase 3: Debug visualization
-- [x] Add wireframe collider rendering — draw sphere, box, capsule outlines in editor viewport using line primitives
-- [x] Color-code collider types — static=blue, dynamic=green, kinematic=yellow, trigger=purple, sleeping=dimmed
-- [x] Add contact point visualization — render contact normals and penetration depth for selected entity
-- [x] Add physics debug toggle — menu option or hotkey to enable/disable physics wireframe overlay
-- [x] Add raycast visualization — render ray and hit point when performing interactive raycasts in editor
-
-### Phase 4: Editor integration
-- [x] Add collider inspector UI — shape type dropdown, shape-specific parameters (radius, half-extents), physics material fields
-- [x] Add rigid body inspector UI — body type dropdown, mass/inertia fields, velocity display (read-only in play mode)
-- [x] Add Add Component entries — ColliderShape, RigidBody in categorized Add Component menu
-- [x] Add drag-to-add collider — automatically fit collider shape to mesh bounds when attached to mesh entity
-- [x] Add physics objects to default scene — floor (static box collider) and a few dynamic spheres/cubes above it so pressing Play immediately demonstrates gravity, collision, and bouncing
-
-### Phase 5: Production readiness — critical fixes
-
-- [x] **Register RapierPhysicsSystem in game main.rs** — Replaced custom `PhysicsSystem`/`VelocitySystem` with `RapierPhysicsSystem` at `NORMAL` order. Removed custom F=ma systems entirely per "No Hybrid Implementations" rule.
-- [x] **Decide on single physics paradigm** — Removed custom `PhysicsSystem`/`VelocitySystem` and their components (`ForceComponent`, `MassComponent`, `DragComponent`). Rapier is now the sole physics engine. Fly camera migrated to direct transform manipulation with internal velocity in `FlyCameraLookComponent`.
-- [x] **Gate physics simulation behind play mode** — `RapierPhysicsSystem::step_simulation()` runs unconditionally every frame with no check for `Application::play_mode`. Physics objects should only step when the editor is in `Playing` state, not during `Editing` or `Paused`. The system needs access to the play mode state (either as an ECS resource or passed through `delta_time`).
-- [x] **Fix static body returning invalid RigidBodyHandle** — Changed `is_spawned()` to check `collider_handle.is_some()` instead of `body_handle.is_some()`, since all body types (including static) get a valid collider handle.
-- [x] **Wire `gravity_scale` to Rapier** — `RigidBody::gravity_scale` is now passed to `RigidBodyBuilder::gravity_scale()` during body creation via `create_body_ex()`.
-- [x] **Wire `CollisionFilter` to Rapier collision groups** — `CollisionFilter` component's `layers`/`mask` fields are now passed to Rapier's `InteractionGroups` on `ColliderBuilder` during body spawn.
-- [x] **Remove or repurpose dead `ColliderState` component** — Removed `ColliderState` entirely. It was never written to by any system and served no purpose with Rapier.
-
 ### Phase 6: Physics component scene serialization
 
 - [ ] **Add physics descriptors to EntityDescriptor** — `EntityDescriptor` has no fields for Rapier physics components. Add: `rigid_body: Option<RigidBodyDescriptor>` (body_type enum), `collider_shape: Option<ColliderShapeDescriptor>` (sphere/box/capsule variants with dimensions), `physics_material: Option<PhysicsMaterialDescriptor>` (friction, restitution, density), `trigger_volume: Option<TriggerVolumeDescriptor>` (unit struct / empty), `collision_filter: Option<CollisionFilterDescriptor>` (layers, mask).
@@ -362,9 +66,7 @@
 
 ### Phase 7: Physics entity lifecycle
 
-- [x] **Handle entity destruction for Rapier bodies** — When an entity with `RigidBody` + `ColliderShape` is destroyed, the Rapier bodies/colliders are never removed from `PhysicsWorld`. Add a cleanup pass in `RapierPhysicsSystem` that detects destroyed entities (bodies that existed last frame but whose entity no longer exists) and calls `remove_body()` / `remove_static_collider()`.
 - [ ] **Handle entity destruction for joints** — Same issue: joints referencing destroyed entities leak Rapier joint handles. Add cleanup for `Joint` components whose `entity_a` or `entity_b` no longer exist.
-- [x] **Sync kinematic body transforms to Rapier** — Currently `sync_transforms_back` only writes Rapier→ECS for dynamic bodies. For kinematic bodies, the opposite direction is needed: read ECS `TransformComponent` each frame and write it to the Rapier body's position so the kinematic body follows script/animation-driven movement.
 - [ ] **Add entity despawn callback for physics** — When the editor removes a `RigidBody` or `ColliderShape` component from an entity, the corresponding Rapier handles should be cleaned up. Wire into the existing `EditorAction::RemoveComponent` handler.
 
 ### Phase 8: Collider mesh fitting, shape types, and prefabs
@@ -401,7 +103,10 @@
 
 ## Rendering
 
-- [x] Remove all `cfg(metal/vulkan)` from katla_app — backend-specific conditionals should only exist in katla_gfx
+### Metal rendering bugs
+- [ ] Billboard icons don't show in Metal
+- [ ] Animated fox (skinned mesh) doesn't show in Metal
+- [ ] Particle systems don't show in Metal
 
 ### Post-processing pipeline
 - [ ] Add post-process pass infrastructure — reusable fullscreen-quad pass builder in the render graph that takes an input color texture and outputs a processed color texture
@@ -442,77 +147,17 @@
 
 ## Scripting & Game Logic
 
-### Phase 1: Crate skeleton + on_update
-- [x] Create `katla_script` crate with `mlua` dependency (features: `luau`, `vendored`, `serialize`)
-- [x] Implement `ScriptComponent` — holds script path + `ScriptInstanceHandle`, derives `Component` via katla_derive
-- [x] Implement `ScriptEngine` — single Luau VM, script cache (path -> compiled chunk), instance registry
-- [x] Implement `ScriptSystem` (ECS System trait) — discovers entities with ScriptComponent, calls `on_update(entity, world, dt)`
-- [x] Register `Vec3` and `Transform` as Luau `UserData` — field getters/setters, operator overloads (+, -, * scalar), utility methods (length, normalize, dot, cross)
-- [x] Implement command queue — `ScriptWorld` proxy queues mutations (SetTransform, SetPosition, SpawnEntity, DestroyEntity), applied after all scripts run
-- [x] Define `ScriptWorldAccess` trait in `katla_script` — abstract interface for get_transform/set_transform/spawn/destroy using raw `katla_math` types; `katla_app` provides concrete impl that bridges to TransformComponent
-- [x] Wire `ScriptSystem` into `ApplicationBuilder` at `NORMAL` execution order
-
-### Phase 2: Lifecycle hooks + entity operations
-- [x] Add `on_spawn` hook — called when entity first gets a ScriptComponent
-- [x] Add `on_destroy` hook — called when entity with ScriptComponent is destroyed
-- [x] Register `EntityId` as Luau `UserData` — `id()`, `__tostring`, comparison operators
-- [x] Add entity spawn/destroy from scripts — `world:spawn_entity()` returns EntityId, `world:destroy_entity(id)` queues destruction
-- [x] Add entity query from scripts — `world:get_all_with("ScriptComponent")` (entity_exists already implemented)
-
-### Phase 3: Input + serialization + error handling
-- [x] Add input bindings — `world:is_action_pressed("move_forward")`, `world:get_mouse_delta()`, reads from InputState resource
-- [x] Add `ScriptComponent` to scene serialization — `ScriptComponent(script_path: "scripts/player")` in RON scene files
-- [x] Add script error recovery — wrap all hook calls in error handlers, log errors with script path + line number, optionally disable broken instances
-- [x] Add `Color` and `Quat` UserData bindings — constructors, field access, utility methods (Quat.from_axis_angle, Color.from_rgb, etc.)
-
-### Phase 4: Hot reload + sandboxing
-- [x] Add file watcher for `.luau` scripts — detect changes in `resources/scripts/`, trigger recompile
-- [x] Implement hot reload — recompile chunk, create new per-script environment, preserve scalar state from old env, swap instances
-- [x] Harden VM sandboxing — initialize with `StdLib::ALL_SAFE` (no io/os/debug), configure interrupt watchdog for runaway scripts
-- [x] Add `print`/`warn` bridges — route to `log::info!`/`log::warn!` in debug builds only
-
-### Phase 5: Polish + events
-- [x] Design gameplay event bus — `EventBus<T>` with `emit(event)` and `subscribe(handler)`; support typed events in katla_script via string-keyed bus
-- [x] Implement script event bindings — `world:emit("event_name", table)` and `world:on_event("event_name", callback)` registering Luau functions as handlers
-- [x] Add event delivery system — each frame, drain pending events from bus, dispatch to registered script callbacks; ensure delivery order is deterministic
-- [x] Add physics bindings — `world:raycast(origin, direction, max_distance)` returning hit entity + point + normal (depends on Physics Phase 4)
-- [x] Add audio bindings — `world:play_sound("explosion")`, `world:play_sound_at("explosion", position)` (depends on Audio Phase 2)
-- [x] Performance profile — benchmark 1000 script entities with on_update, optimize hot paths
-- [x] Optimize script dispatch — batch entity queries, reduce per-hook overhead, consider JIT hints
-
-### Phase 6: Editor integration
-- [x] Add script inspector panel — show attached script path, expose script variables for live editing
-- [x] Add script file browser — show `.luau` files in asset browser, drag-to-attach to entity
-- [x] Generate Luau type definition files (.d.luau) — autocomplete support for engine API in external editors
-- [x] Add script console — `print()`/`warn()` already route to `log::info!`/`log::warn!` in debug builds, captured by console panel
-
-### Gameplay framework (independent of scripting)
+### Gameplay framework
 - [ ] Design game state machine — states (Menu, Loading, Playing, Paused, Cutscene), transitions, enter/exit hooks
 - [ ] Implement `GameState` enum and `GameStateMachine` — state stack (push/pop), transition hooks (`on_enter`, `on_exit`), per-state update dispatch
 - [ ] Add `GameStateManager` as ECS resource — accessible by systems and scripts; systems query current state to conditionally run
 - [ ] Design gameplay event system — `EventBus<E>` generic typed event bus for gameplay-level events (OnDamage, OnCollect, OnCollision, etc.) decoupled from ECS events
 - [ ] Implement `EventBus` — `emit(event)`, `subscribe(handler)`, `drain()` per frame; type-erased storage for multiple event types
-- [x] Wire gameplay events into ECS — collision events from physics, trigger events from trigger volumes, script events from Luau
 - [ ] Design cutscene/timeline data model — `Timeline` asset with tracks (animation, audio, camera, event), keyframes per track, duration
 - [ ] Implement timeline playback — `TimelinePlayer` component with play/pause/scrub, evaluate all tracks at current time, dispatch results
 - [ ] Add timeline editor UI — track lanes, keyframe diamonds, scrubber bar, playback controls (depends on Editor dockable layout)
 
 ## Asset Pipeline
-
-### AI Agent — Asset & Script Tools
-
-- [x] Add `list_assets` tool to AI agent — list files in `resources/` recursively, with optional extension filter (`"luau"`, `"gltf"`) and subdir filter (`"scripts"`). Lets the AI discover available scripts and assets.
-- [x] Add `read_asset` tool to AI agent — read file contents from `resources/` by relative path. Lets the AI inspect existing scripts, materials, etc.
-- [x] Add `write_asset` tool to AI agent — create or overwrite files in `resources/` with given path and content. Enables full workflow: AI creates a script, adds ScriptComponent, sets the path, script is ready to run.
-- [x] Add `delete_asset` tool to AI agent — delete files from `resources/` by relative path. Should refuse to delete non-empty directories.
-
-### General asset pipeline
-
-#### Hot reload
-- [x] Integrate `notify` crate for file watching — watch `shaders/` and `resources/` directories recursively for file changes
-- [x] Add file change event routing — map changed file paths to asset types (shader -> recompile material, texture -> reload, script -> hot reload)
-- [x] Implement shader hot reload — detect `.wgsl` changes, recompile material pipeline, swap in on next frame
-- [x] Implement texture hot reload — detect image changes, re-upload texture data to GPU, keep same bindless slot
 
 #### Asset bundling
 - [ ] Design asset bundle format — header (magic, version, file table), compressed entries, support random access for large assets
@@ -533,8 +178,6 @@
 - [ ] Add import manifest — track source-to-engine format mappings, re-import when source changes
 
 ## Release & Deployment
-
-- [x] Add CI/CD pipeline — GitHub Actions for build, test, clippy, fmt on push; artifact upload for release builds
 
 ### macOS packaging
 - [ ] Generate macOS `.app` bundle structure — `Contents/MacOS/` binary, `Contents/Resources/` assets, `Info.plist` with app metadata
@@ -569,31 +212,10 @@
 
 ## Editor
 
-### Inspector component UX
-
-- [x] Add inspector UI for all registered components — `MassComponent` (mass slider), `DragComponent` (coefficient slider), `PerspectiveComponent` (fov/near/aspect_ratio sliders), `DirectionalLight` (direction Vec3, color picker, intensity slider). Each needs a `section_header_with_remove` section with editable widgets.
-- [x] Add remove button to ParticleEmitter inspector section — switch from `section_header` to `section_header_with_remove`, handle `EditorAction::RemoveComponent` for `"ParticleEmitterComponent"`
-- [x] Categorize the Add Component popup menu — group flat list into Lighting (PointLight, DirectionalLight), Physics (MassComponent, DragComponent), Scripting (ScriptComponent), Camera (PerspectiveComponent) with category headers
-- [x] Auto-focus script path input after adding ScriptComponent — focus the text input so the user can immediately type the path without clicking
-- [x] Wire up undo/redo for Add/Remove Component — store proper `SceneCommand`s instead of discarding the `UndoGroup`, so Ctrl+Z works after adding or removing components
-
-### Scene lifecycle
-
-- [x] Preserve entity names when playing a scene — all spawned entities now get a `NameComponent` derived from their `EntitySource::display_name()`, ensuring stable names across play/stop cycles
-- [x] Fix entities (fox, helmet) disappearing from view on play/stop — `spawn_from_descriptor` in `game_state.rs` now properly handles `GltfModel` and `StlModel` sources instead of falling through to a transform-only fallback
-
-### Component registry completeness
-
-- [x] Register ParticleEmitterComponent in the component registry — has full inspector UI (5 sliders) but can't be added via "Add Component" or AI agent
-- [x] Register VelocityComponent in the component registry — serialized in scenes but not addable from UI or AI
-- [x] Add serialization round-trip for components missing it — MassComponent, DragComponent, PerspectiveComponent, DirectionalLight are registered but lost on scene save/load
-
-### Inspector menu
-
-~~Make inspector menu scrollable — when many components are attached to an entity, the inspector overflows and content below the viewport becomes inaccessible~~ — False positive. Inspector already has ScrollArea wrapping all content.
-- [x] Make "Add Component" menu scrollable — too many items to fit in the viewport, needs scrolling to access components that overflow
-
 ### Panels and tooling
+
+#### Asset browser context windows
+- [ ] Double-click (or open in context menu) items in the asset browser to open a dedicated floating window with the selected item as context — model preview, material preview, code editor (for scripts), image viewer, audio player, etc.
 
 #### Timeline/animation editor
 - [ ] Design timeline data model — `Timeline` asset with multiple tracks (bone animation, float curves, events), keyframes per track
@@ -634,7 +256,6 @@
 - [ ] Collect per-pass timing data — store pass name + duration in a frame timing buffer
 - [ ] Add profiler overlay UI — floating panel with frame time graph (sparkline), per-pass timing bars, FPS counter
 - [ ] Add memory tracking — track GPU allocation counts and total bytes per resource type
-- [x] Add draw call counter — displayed in status bar as "Draws: N"
 
 #### Gamepad input
 - [ ] Add gamepad crate dependency — `gilrs` for cross-platform gamepad support
@@ -642,22 +263,10 @@
 - [ ] Extend `InputMapper` with gamepad bindings — map gamepad axes/buttons to logical actions alongside keyboard/mouse
 - [ ] Add gamepad to scripting bindings — expose `world:is_gamepad_pressed()`, `world:get_gamepad_axis()` to Luau
 
-- [x] Add console/output log panel — capture log output in editor, filter by level, search
-- [x] Fix asset browser tooltip line spacing — hover tooltip on asset items has inconsistent line spacing compared to the rest of the UI
-- [x] Fix text input selection/active highlight being too opaque — the "Filter" input in asset browser and "Script" path input have a selection color that's too bright/invasive, obscuring the text. Investigate if transparency isn't rendering correctly. Should be fixed in a reusable text input style so all text inputs benefit.
-
 ### Declarative UI migration
 
-- [x] Add LabeledSlider, Vec3Slider, ImageButton, RadioButton, PropertyRow variants to ViewDescriptor with full draw/input/layout/diff support
-- [x] Migrate GizmoButtonsView from ViewDescriptor::Custom + scratch bridge to declarative RadioButton + ActionStream
-- [x] Add get_state/set_state to BuildContext for external state sync
-- [x] Fix StateArena slot counter bug (reset_slots) for cross-frame state stability
-- [x] Add DraggablePanel variant to ViewDescriptor — used by preferences, co-creator, particle-inspector (3 panels)
-- [x] Add StatusBar variant to ViewDescriptor — used by status bar panel
-- [x] Add MenuBar + MenuItem + MenuDropdown variants to ViewDescriptor — used by toolbar
-- [x] Add TreeView variant to ViewDescriptor — used by hierarchy panel (virtualized, expand/collapse, selection)
-- [ ] Add Modal/ContextMenu variants to ViewDescriptor — used by inspector "Add Component" popup, hierarchy right-click
-- [ ] Migrate StatusBarView from ViewDescriptor::Custom to declarative + remove scratch bridge
+- [x] Add Modal/ContextMenu variants to ViewDescriptor — used by inspector "Add Component" popup, hierarchy right-click
+- [x] Migrate StatusBarView from ViewDescriptor::Custom to declarative + remove scratch bridge
 - [ ] Migrate remaining panels from ViewDescriptor::Custom to declarative trees (toolbar, console, preferences, inspector, hierarchy, co-creator, particle-inspector, viewport-grid, asset-browser)
 - [ ] Remove thread_local bridges from all migrated panels
 - [ ] Remove immediate-mode widgets with declarative equivalents from widgets/mod.rs public API (Button, Slider, LabeledSlider, Vec3Slider, ToggleButton, TextInput, RadioButton, ImageButton, Panel)
@@ -681,14 +290,10 @@
 ### Profiling and instrumentation
 - [ ] Add Tracy integration — conditional Tracy profiler markers on render passes and ECS systems (behind `tracy` feature flag)
 - [ ] Add GPU timestamp queries — insert timestamp queries at render pass boundaries, collect per-pass durations
-- [x] Add frame timing display — frame time (ms) shown in status bar alongside FPS, color-coded by performance tier
 - [ ] Add system timing — measure ECS system execution time, display in debug overlay
 
 ### Testing
 - [ ] Design integration test framework — headless app init, entity spawning, frame execution, state assertions
 - [ ] Add render test infrastructure — render N frames, read back pixels, compare against golden images
 - [ ] Add ECS round-trip tests — spawn entity, add components, serialize, deserialize, verify equivalence
-- [x] Add scripting integration tests — load script, call on_update, verify world mutations via command queue
 - [ ] Add headless CI test suite — run integration tests without GPU in CI (mock renderer or software rasterizer)
-
-- [x] Fix AppError::Graphics to carry typed RendererError instead of String — preserve error chain for debugging
