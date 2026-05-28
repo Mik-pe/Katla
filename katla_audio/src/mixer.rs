@@ -207,6 +207,23 @@ impl MixerState {
         }
     }
 
+    fn set_tween_speed(&mut self, id: VoiceId, speed: f32) {
+        if let Some(kind) = self.voice_slot(id) {
+            match kind {
+                VoiceKind::Regular(slot) => {
+                    if let Some(voice) = &mut self.voices[slot] {
+                        voice.set_tween_speed(speed);
+                    }
+                }
+                VoiceKind::Streaming(slot) => {
+                    if let Some(voice) = &mut self.streaming_voices[slot] {
+                        voice.set_tween_speed(speed);
+                    }
+                }
+            }
+        }
+    }
+
     fn voice_volume(&self, id: VoiceId) -> f32 {
         if let Some(kind) = self.voice_slot(id) {
             match kind {
@@ -385,6 +402,11 @@ impl AudioMixer {
         state.set_voice_occlusion(id, occlusion);
     }
 
+    pub fn set_voice_tween_speed(&self, id: VoiceId, speed: f32) {
+        let mut state = self.state.lock().unwrap();
+        state.set_tween_speed(id, speed);
+    }
+
     pub fn voice_state(&self, id: VoiceId) -> VoiceState {
         let state = self.state.lock().unwrap();
         state.voice_state(id)
@@ -509,6 +531,11 @@ impl AudioMixer {
         state.voice_state(id)
     }
 
+    pub fn set_streaming_voice_tween_speed(&self, id: VoiceId, speed: f32) {
+        let mut state = self.state.lock().unwrap();
+        state.set_tween_speed(id, speed);
+    }
+
     fn process_commands(state: &mut MixerState, queue: &CommandQueue) {
         while let Some(cmd) = queue.pop() {
             match cmd {
@@ -546,7 +573,7 @@ impl AudioMixer {
                 }
             }
 
-            for voice in state.streaming_voices.iter().flatten() {
+            for voice in state.streaming_voices.iter_mut().flatten() {
                 if !voice.is_finished() {
                     voice.mix_into(output, channels, sample_rate);
                 }

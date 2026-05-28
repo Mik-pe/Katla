@@ -129,6 +129,10 @@ impl Voice {
             .store(volume.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
     }
 
+    pub fn set_tween_speed(&mut self, speed: f32) {
+        self.tween_smoothing = speed.clamp(0.0, 1.0);
+    }
+
     pub fn volume(&self) -> f32 {
         f32::from_bits(self.volume.load(Ordering::Relaxed))
     }
@@ -424,6 +428,10 @@ impl VoiceHandle {
 
     pub fn set_occlusion(&self, occlusion: f32) {
         self.mixer.set_voice_occlusion(self.id, occlusion);
+    }
+
+    pub fn set_tween_speed(&self, speed: f32) {
+        self.mixer.set_voice_tween_speed(self.id, speed);
     }
 
     pub fn state(&self) -> VoiceState {
