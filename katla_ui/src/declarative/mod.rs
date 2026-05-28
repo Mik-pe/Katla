@@ -1,6 +1,7 @@
 pub mod actions;
 pub mod animation;
 pub mod build;
+pub mod constructors;
 pub mod descriptor;
 pub mod diff;
 pub mod draw;
@@ -20,12 +21,19 @@ pub use animation::{
     Tween,
 };
 pub use build::{Build, BuildContext, CallbackTable, Environment};
+pub use constructors::{
+    button, color_picker, context_entry, context_entry_disabled, context_menu, draggable_panel,
+    empty, hstack, icon, image, image_button, labeled_slider, menu_entry, menu_entry_disabled,
+    menu_group, menubar, modal, overlay, panel, progress, property_row, radio, scroll, section,
+    selectable, separator, separator_horizontal, separator_vertical, slider, statusbar, text,
+    textfield, toggle, tree_view, vstack, zstack,
+};
 pub use descriptor::{
     Alignment, Anchor, Callback, ContextMenuDescriptor, ContextMenuEntry, CustomDrawFn,
     DraggablePanelDescriptor, DraggablePanelState, DraggablePanelVisibility, FlexProps,
     MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor, OverlayDescriptor, Padding,
-    PanelDescriptor, ScrollDescriptor, StackDescriptor, StatusBarDescriptor, TreeItem,
-    TreeViewDescriptor, ViewDescriptor, ZStackDescriptor,
+    PanelDescriptor, ScrollDescriptor, SeparatorDirection, StackDescriptor, StatusBarDescriptor,
+    TreeItem, TreeViewDescriptor, ViewDescriptor, ZStackDescriptor,
 };
 pub use diff::{DiffAction, Patch, diff_descriptor};
 pub use focus::{Direction, FocusManager, GamepadNavigator};

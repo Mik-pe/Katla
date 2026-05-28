@@ -388,9 +388,19 @@ impl ViewTree {
             None
         };
 
+        // Skip drawing children for collapsed Section
+        let skip_children = if let ViewDescriptor::Section { expanded_id, .. } = descriptor {
+            let expanded: bool = self.state.get(*expanded_id);
+            !expanded
+        } else {
+            false
+        };
+
         // Draw children
-        for &child_id in &children {
-            self.draw_child_recursive(child_id, ui, bounds, descriptor, scroll_offset);
+        if !skip_children {
+            for &child_id in &children {
+                self.draw_child_recursive(child_id, ui, bounds, descriptor, scroll_offset);
+            }
         }
 
         if is_scroll_view {
@@ -609,6 +619,8 @@ impl ViewTree {
             ViewDescriptor::DraggablePanel(s) => Some(&s.content),
             ViewDescriptor::Modal(s) => Some(&s.content),
             ViewDescriptor::TransitionContainer { child, .. } => Some(child),
+            ViewDescriptor::Selectable { child, .. } => Some(child),
+            ViewDescriptor::Section { child, .. } => Some(child),
             _ => None,
         }
     }

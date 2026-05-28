@@ -127,6 +127,8 @@ fn is_focusable(descriptor: &ViewDescriptor) -> bool {
         ViewDescriptor::TextField { .. } => true,
         ViewDescriptor::Slider { .. } => true,
         ViewDescriptor::ColorPicker { .. } => true,
+        ViewDescriptor::Selectable { on_click, .. } => on_click.is_some(),
+        ViewDescriptor::Section { .. } => true,
         _ => false,
     }
 }
