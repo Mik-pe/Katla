@@ -16,7 +16,7 @@ use super::draw::draw_descriptor_with_id;
 use super::focus::{self, FocusManager};
 use super::ime::ImeRequest;
 use super::input;
-use super::layout::{MeasureFn, TaffyNodeMap};
+use super::layout::TaffyNodeMap;
 use super::state::{StateArena, ViewId};
 use super::transition::Transition;
 use crate::style::FontSize;
