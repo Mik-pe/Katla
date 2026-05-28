@@ -132,6 +132,14 @@ pub enum ViewDescriptor {
     Panel(Box<PanelDescriptor>),
     Overlay(Box<OverlayDescriptor>),
 
+    StatusBar(Box<StatusBarDescriptor>),
+
+    DraggablePanel(Box<DraggablePanelDescriptor>),
+
+    MenuBar(Box<MenuBarDescriptor>),
+
+    TreeView(Box<TreeViewDescriptor>),
+
     Custom(CustomDrawFn),
 }
 
@@ -167,6 +175,89 @@ pub struct OverlayDescriptor {
     pub anchor: Anchor,
     pub offset: Vec2,
     pub content: Box<ViewDescriptor>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StatusBarDescriptor {
+    pub height: f32,
+    pub content: Box<ViewDescriptor>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DraggablePanelDescriptor {
+    pub title: String,
+    pub width: f32,
+    pub height: f32,
+    pub content: Box<ViewDescriptor>,
+    pub state_id: StateId,
+    pub close_on_outside_click: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DraggablePanelState {
+    pub position: Option<Vec2>,
+    pub visibility: DraggablePanelVisibility,
+    pub dragging: bool,
+    pub drag_offset: Vec2,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DraggablePanelVisibility {
+    #[default]
+    Hidden,
+    JustOpened,
+    Visible,
+}
+
+impl DraggablePanelVisibility {
+    pub fn is_visible(&self) -> bool {
+        !matches!(self, Self::Hidden)
+    }
+
+    pub fn is_just_opened(&self) -> bool {
+        matches!(self, Self::JustOpened)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MenuBarDescriptor {
+    pub groups: Vec<MenuGroup>,
+    pub right_content: Option<Box<ViewDescriptor>>,
+    pub height: f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct MenuGroup {
+    pub label: String,
+    pub open_id: StateId,
+    pub items: Vec<MenuEntry>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MenuEntry {
+    pub label: String,
+    pub on_click: Option<Callback>,
+    pub disabled: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct TreeViewDescriptor {
+    pub items: Vec<TreeItem>,
+    pub expanded_id: StateId,
+    pub selected_id: StateId,
+    pub scroll_id: StateId,
+    pub row_height: f32,
+    pub indent_per_level: f32,
+    pub on_select: Option<Callback>,
+    pub on_right_click: Option<Callback>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TreeItem {
+    pub id: u64,
+    pub label: String,
+    pub depth: u32,
+    pub has_children: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -407,6 +498,10 @@ impl std::fmt::Debug for ViewDescriptor {
             ViewDescriptor::ScrollView(s) => f.debug_tuple("ScrollView").field(s).finish(),
             ViewDescriptor::Panel(s) => f.debug_tuple("Panel").field(s).finish(),
             ViewDescriptor::Overlay(s) => f.debug_tuple("Overlay").field(s).finish(),
+            ViewDescriptor::StatusBar(s) => f.debug_tuple("StatusBar").field(s).finish(),
+            ViewDescriptor::DraggablePanel(s) => f.debug_tuple("DraggablePanel").field(s).finish(),
+            ViewDescriptor::MenuBar(s) => f.debug_tuple("MenuBar").field(s).finish(),
+            ViewDescriptor::TreeView(s) => f.debug_tuple("TreeView").field(s).finish(),
             ViewDescriptor::TransitionContainer { child, .. } => {
                 f.debug_tuple("TransitionContainer").field(child).finish()
             }
