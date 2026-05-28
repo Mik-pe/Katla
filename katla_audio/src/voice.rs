@@ -373,6 +373,17 @@ pub fn compute_pan_gains(pan: f32) -> (f32, f32) {
     (angle.cos(), angle.sin())
 }
 
+pub fn db_to_linear(db: f32) -> f32 {
+    10.0f32.powf(db / 20.0)
+}
+
+pub fn linear_to_db(linear: f32) -> f32 {
+    if linear <= 0.0 {
+        return f32::NEG_INFINITY;
+    }
+    20.0 * linear.log10()
+}
+
 pub struct VoiceHandle {
     pub id: VoiceId,
     pub(crate) mixer: Arc<crate::mixer::AudioMixer>,
