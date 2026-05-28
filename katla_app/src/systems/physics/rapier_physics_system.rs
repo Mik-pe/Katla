@@ -327,7 +327,7 @@ mod tests {
     use super::*;
     use katla_ecs::World;
     use katla_math::{Transform, Vec3};
-    use katla_physics::{ColliderShape, SphereShape};
+    use katla_physics::{ColliderShape, Joint, PhysicsActive, SphereShape};
 
     #[test]
     fn test_spawn_dynamic_body() {
@@ -455,6 +455,205 @@ mod tests {
             physics.collider_count(),
             0,
             "Orphaned collider should be cleaned up"
+        );
+    }
+
+    #[test]
+    fn test_static_body_spawn_tracking() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+
+        let entity = world.create_entity();
+        world.add_component(entity, TransformComponent::default());
+        world.add_component(entity, ColliderShape::Sphere(SphereShape::new(1.0)));
+        world.add_component(entity, RigidBody::static_body());
+
+        let mut system = RapierPhysicsSystem;
+        system.update(&mut world, 1.0 / 60.0);
+
+        let rb = world.get_component::<RigidBody>(entity).unwrap();
+        assert!(rb.is_spawned(), "Static body should be marked as spawned");
+        assert!(
+            rb.collider_handle.is_some(),
+            "Static body should have a collider handle"
+        );
+        assert!(
+            rb.body_handle.is_some(),
+            "Static body should have a body handle slot (even if invalid)"
+        );
+
+        let physics = world.get_resource::<PhysicsWorld>().unwrap();
+        assert_eq!(physics.collider_count(), 1);
+        assert!(
+            physics.body_transform(rb.body_handle.unwrap()).is_none(),
+            "Static body should have no actual Rapier rigid body"
+        );
+    }
+
+    #[test]
+    fn test_joint_spawning() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+
+        let entity_a = world.create_entity();
+        world.add_component(
+            entity_a,
+            TransformComponent::new(Transform::new_from_position(Vec3::new(-2.0, 0.0, 0.0))),
+        );
+        world.add_component(entity_a, ColliderShape::Sphere(SphereShape::new(0.5)));
+        world.add_component(entity_a, RigidBody::dynamic());
+
+        let entity_b = world.create_entity();
+        world.add_component(
+            entity_b,
+            TransformComponent::new(Transform::new_from_position(Vec3::new(2.0, 0.0, 0.0))),
+        );
+        world.add_component(entity_b, ColliderShape::Sphere(SphereShape::new(0.5)));
+        world.add_component(entity_b, RigidBody::dynamic());
+
+        let mut system = RapierPhysicsSystem;
+        system.update(&mut world, 1.0 / 60.0);
+
+        let rb_a = world.get_component::<RigidBody>(entity_a).unwrap();
+        let rb_b = world.get_component::<RigidBody>(entity_b).unwrap();
+        assert!(rb_a.is_spawned());
+        assert!(rb_b.is_spawned());
+
+        world.add_component(
+            entity_b,
+            Joint::point_to_point(
+                entity_a.id(),
+                entity_b.id(),
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+            ),
+        );
+
+        system.update(&mut world, 1.0 / 60.0);
+
+        let joint = world.get_component::<Joint>(entity_b).unwrap();
+        assert!(
+            joint.is_spawned(),
+            "Joint should have a handle after system update"
+        );
+    }
+
+    #[test]
+    fn test_kinematic_body_sync() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+        world.insert_resource(PhysicsActive(true));
+
+        let entity = world.create_entity();
+        world.add_component(
+            entity,
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0))),
+        );
+        world.add_component(entity, ColliderShape::Sphere(SphereShape::new(0.5)));
+        world.add_component(entity, RigidBody::kinematic());
+
+        let mut system = RapierPhysicsSystem;
+        system.update(&mut world, 1.0 / 60.0);
+
+        let rb = world.get_component::<RigidBody>(entity).unwrap();
+        assert!(rb.is_spawned());
+        drop(rb);
+
+        let new_pos = Vec3::new(5.0, 10.0, 3.0);
+        {
+            let mut tc = world
+                .get_component_mut::<TransformComponent>(entity)
+                .unwrap();
+            tc.transform = Transform::new_from_position(new_pos);
+        }
+
+        system.update(&mut world, 1.0 / 60.0);
+
+        let rb = world.get_component::<RigidBody>(entity).unwrap();
+        let body_handle = rb.body_handle.unwrap();
+        let physics = world.get_resource::<PhysicsWorld>().unwrap();
+        let body_transform = physics.body_transform(body_handle).unwrap();
+        let pos = body_transform.position;
+        assert!((pos.x() - new_pos.x()).abs() < 0.01);
+        assert!((pos.y() - new_pos.y()).abs() < 0.01);
+        assert!((pos.z() - new_pos.z()).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_apply_force_through_ecs() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+        world.insert_resource(PhysicsActive(true));
+
+        let entity = world.create_entity();
+        world.add_component(
+            entity,
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0))),
+        );
+        world.add_component(entity, ColliderShape::Sphere(SphereShape::new(0.5)));
+        world.add_component(entity, RigidBody::dynamic());
+
+        let mut system = RapierPhysicsSystem;
+        system.update(&mut world, 1.0 / 60.0);
+
+        let rb = world.get_component::<RigidBody>(entity).unwrap();
+        let body_handle = rb.body_handle.unwrap();
+        drop(rb);
+
+        {
+            let mut physics = world.get_resource_mut::<PhysicsWorld>().unwrap();
+            physics.apply_force(body_handle, Vec3::new(0.0, 1000.0, 0.0));
+        }
+
+        for _ in 0..10 {
+            system.update(&mut world, 1.0 / 60.0);
+        }
+
+        let tc = world.get_component::<TransformComponent>(entity).unwrap();
+        assert!(
+            tc.transform.position.y() > 0.0,
+            "Body should have moved upward after upward force"
+        );
+
+        let rb = world.get_component::<RigidBody>(entity).unwrap();
+        assert!(
+            rb.linear_velocity.y() > 0.0,
+            "Body should have upward velocity after force"
+        );
+    }
+
+    #[test]
+    fn test_apply_impulse_through_ecs() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+        world.insert_resource(PhysicsActive(true));
+
+        let entity = world.create_entity();
+        world.add_component(
+            entity,
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 0.0, 0.0))),
+        );
+        world.add_component(entity, ColliderShape::Sphere(SphereShape::new(0.5)));
+        world.add_component(entity, RigidBody::dynamic());
+
+        let mut system = RapierPhysicsSystem;
+        system.update(&mut world, 1.0 / 60.0);
+
+        let rb = world.get_component::<RigidBody>(entity).unwrap();
+        let body_handle = rb.body_handle.unwrap();
+        drop(rb);
+
+        {
+            let mut physics = world.get_resource_mut::<PhysicsWorld>().unwrap();
+            physics.apply_impulse(body_handle, Vec3::new(0.0, 10.0, 0.0));
+        }
+
+        system.update(&mut world, 1.0 / 60.0);
+
+        let rb = world.get_component::<RigidBody>(entity).unwrap();
+        assert!(
+            rb.linear_velocity.y() > 0.0,
+            "Body should have upward velocity after impulse"
         );
     }
 }
