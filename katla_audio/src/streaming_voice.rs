@@ -9,6 +9,8 @@ use crate::voice::{CategoryVolumes, VoiceId, VoiceState, compute_pan_gains};
 
 const STREAM_RING_BUFFER_SAMPLES: usize = 44100 * 2 * 4;
 const CHUNK_THRESHOLD: usize = 44100 * 2;
+const SILENCE_THRESHOLD: f32 = 0.001;
+const SILENCE_FRAMES_BEFORE_SKIP: u32 = 3;
 
 const FRAC_BITS: u32 = 24;
 const FRAC_MASK: u64 = (1u64 << FRAC_BITS) - 1;
@@ -29,6 +31,7 @@ pub struct StreamingVoice {
     pan_target: AtomicU32,
     pitch_target: AtomicU32,
     tween_smoothing: f32,
+    silent_frame_count: u32,
     looping: bool,
     finished: AtomicBool,
     category: AudioCategoryValue,
@@ -88,6 +91,7 @@ impl StreamingVoice {
             pan_target: AtomicU32::new(0.0f32.to_bits()),
             pitch_target: AtomicU32::new(1.0f32.to_bits()),
             tween_smoothing: 0.3,
+            silent_frame_count: 0,
             looping,
             finished: AtomicBool::new(false),
             category,
@@ -142,6 +146,10 @@ impl StreamingVoice {
     pub fn set_pitch_tweened(&self, pitch: f32) {
         self.pitch_target
             .store(pitch.clamp(0.1, 4.0).to_bits(), Ordering::Relaxed);
+    }
+
+    pub fn set_tween_speed(&mut self, speed: f32) {
+        self.tween_smoothing = speed.clamp(0.0, 1.0);
     }
 
     pub fn tick_tweens(&self) {
@@ -221,13 +229,24 @@ impl StreamingVoice {
         }
     }
 
-    pub fn mix_into(&self, output: &mut [f32], output_channels: usize, output_sample_rate: u32) {
-        self.fill_ring_buffer();
-
+    pub fn mix_into(
+        &mut self,
+        output: &mut [f32],
+        output_channels: usize,
+        output_sample_rate: u32,
+    ) {
         let voice_volume = self.volume() * self.category_volume();
-        if voice_volume == 0.0 {
-            return;
+
+        if voice_volume < SILENCE_THRESHOLD {
+            self.silent_frame_count += 1;
+            if self.silent_frame_count >= SILENCE_FRAMES_BEFORE_SKIP {
+                return;
+            }
+        } else {
+            self.silent_frame_count = 0;
         }
+
+        self.fill_ring_buffer();
 
         // SAFETY: Only accessed under MixerState's Mutex in the render callback.
         let ring_buffer = unsafe { &*self.ring_buffer.get() };
@@ -344,6 +363,10 @@ impl StreamingVoiceHandle {
 
     pub fn set_pitch_tweened(&self, pitch: f32) {
         self.mixer.set_streaming_voice_pitch_tweened(self.id, pitch);
+    }
+
+    pub fn set_tween_speed(&self, speed: f32) {
+        self.mixer.set_streaming_voice_tween_speed(self.id, speed);
     }
 
     pub fn state(&self) -> VoiceState {

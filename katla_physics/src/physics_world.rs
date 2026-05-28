@@ -666,4 +666,36 @@ mod tests {
             "Body should have fallen due to gravity"
         );
     }
+
+    #[test]
+    fn test_entity_destruction_cleanup() {
+        let mut world = PhysicsWorld::new();
+
+        let shape = ColliderShape::Sphere(SphereShape::new(0.5));
+        let transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 0.0));
+        let (body, collider) = world.create_dynamic_body(&shape, &transform, 1);
+
+        assert_eq!(world.bodies.len(), 1);
+        assert_eq!(world.colliders.len(), 1);
+
+        world.remove_body(body, collider);
+
+        assert_eq!(world.bodies.len(), 0);
+        assert_eq!(world.colliders.len(), 0);
+    }
+
+    #[test]
+    fn test_static_collider_destruction() {
+        let mut world = PhysicsWorld::new();
+
+        let shape = ColliderShape::Sphere(SphereShape::new(1.0));
+        let transform = Transform::default();
+        let collider = world.create_static_collider(&shape, &transform, 42);
+
+        assert_eq!(world.colliders.len(), 1);
+
+        world.remove_static_collider(collider);
+
+        assert_eq!(world.colliders.len(), 0);
+    }
 }
