@@ -2,8 +2,7 @@ use katla_ecs::{EntityId, World};
 use katla_math::{Mat4, Quat, Transform, Vec3};
 
 use crate::components::{
-    DragComponent, EditorHidden, OrbitCameraControllerComponent, PerspectiveComponent,
-    TransformComponent, VelocityComponent,
+    EditorHidden, OrbitCameraControllerComponent, PerspectiveComponent, TransformComponent,
 };
 
 pub(crate) struct Camera {
@@ -23,8 +22,6 @@ impl Camera {
 
         let entity = world.spawn((
             TransformComponent::new(transform),
-            VelocityComponent::default(),
-            DragComponent::new(0.25),
             PerspectiveComponent::default(),
             orbit,
             EditorHidden,

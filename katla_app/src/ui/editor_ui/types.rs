@@ -129,10 +129,6 @@ pub struct EntityInfo {
     pub particle_emitter: Option<ParticleEmitterInfo>,
     /// Script path (if entity has ScriptComponent)
     pub script_path: Option<String>,
-    /// Mass component data (if entity has MassComponent)
-    pub mass: Option<MassInfo>,
-    /// Drag component data (if entity has DragComponent)
-    pub drag: Option<DragInfo>,
     /// Perspective camera data (if entity has PerspectiveComponent)
     pub perspective: Option<PerspectiveInfo>,
     /// Directional light data (if entity has DirectionalLight)
@@ -163,18 +159,6 @@ pub struct ParticleEmitterInfo {
     pub base_lifetime: f32,
     pub gravity: f32,
     pub base_scale: f32,
-}
-
-/// Mass component inspector data.
-#[derive(Debug, Clone)]
-pub struct MassInfo {
-    pub mass: f32,
-}
-
-/// Drag component inspector data.
-#[derive(Debug, Clone)]
-pub struct DragInfo {
-    pub coefficient: f32,
 }
 
 /// Perspective camera inspector data.
@@ -569,8 +553,6 @@ pub struct InspectorEditState {
     pub particle_scale: f32,
     pub light_color_picker: ColorPickerState,
     pub script_path: String,
-    pub mass: f32,
-    pub drag_coefficient: f32,
     pub fov: f32,
     pub near: f32,
     pub aspect_ratio: f32,
@@ -616,8 +598,6 @@ impl Default for InspectorEditState {
             particle_scale: 0.1,
             light_color_picker: ColorPickerState::new(),
             script_path: String::new(),
-            mass: 1.0,
-            drag_coefficient: 0.0,
             fov: 60.0,
             near: 0.001,
             aspect_ratio: 16.0 / 9.0,

@@ -6,8 +6,8 @@ use katla_ecs::scene_tool::registry::{ComponentRegistry, ComponentRegistryEntry,
 
 use crate::components::ParticleEmitterComponent;
 use crate::components::{
-    AudioEmitter, DirectionalLight, DragComponent, MassComponent, NameComponent,
-    PerspectiveComponent, PointLight, ReverbZone, VelocityComponent,
+    AudioEmitter, DirectionalLight, NameComponent, PerspectiveComponent, PointLight, ReverbZone,
+    VelocityComponent,
 };
 use katla_physics::{ColliderShape, CollisionFilter, PhysicsMaterial, RigidBody};
 
@@ -104,104 +104,6 @@ fn register_point_light(registry: &mut ComponentRegistry) {
                 comp.field_mut(field_name)
                     .ok_or_else(|| SceneToolError::FieldNotFound {
                         component: "PointLight".to_string(),
-                        field: field_name.to_string(),
-                    })?;
-            match (field_mut, value) {
-                (FieldMut::F32(ref mut target), FieldValue::F32(v)) => {
-                    **target = v;
-                    Ok(())
-                }
-                (_, v) => Err(field_type_mismatch(field_name, "f32", v)),
-            }
-        },
-    });
-}
-
-fn register_mass_component(registry: &mut ComponentRegistry) {
-    registry.register(ComponentRegistryEntry {
-        type_name: "MassComponent",
-        has_component: |world: &World, entity: EntityId| {
-            world.get_component::<MassComponent>(entity).is_some()
-        },
-        create_default: |world: &mut World, entity: EntityId| {
-            world.add_component(entity, MassComponent::default());
-        },
-        remove_component: |world: &mut World, entity: EntityId| {
-            world.remove_component::<MassComponent>(entity);
-        },
-        get_fields: |_world: &World, _entity: EntityId| MassComponent::fields(),
-        get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
-            let comp = world.get_component_mut::<MassComponent>(entity)?;
-            let field_mut = comp.field_mut(field_name)?;
-            Some(match field_mut {
-                FieldMut::F32(v) => FieldValue::F32(*v),
-                _ => FieldValue::Unknown,
-            })
-        },
-        set_field_value: |world: &mut World,
-                          entity: EntityId,
-                          field_name: &str,
-                          value: FieldValue|
-         -> Result<(), SceneToolError> {
-            let comp = world
-                .get_component_mut::<MassComponent>(entity)
-                .ok_or_else(|| SceneToolError::ComponentNotFound {
-                    entity,
-                    component: "MassComponent".to_string(),
-                })?;
-            let field_mut =
-                comp.field_mut(field_name)
-                    .ok_or_else(|| SceneToolError::FieldNotFound {
-                        component: "MassComponent".to_string(),
-                        field: field_name.to_string(),
-                    })?;
-            match (field_mut, value) {
-                (FieldMut::F32(ref mut target), FieldValue::F32(v)) => {
-                    **target = v;
-                    Ok(())
-                }
-                (_, v) => Err(field_type_mismatch(field_name, "f32", v)),
-            }
-        },
-    });
-}
-
-fn register_drag_component(registry: &mut ComponentRegistry) {
-    registry.register(ComponentRegistryEntry {
-        type_name: "DragComponent",
-        has_component: |world: &World, entity: EntityId| {
-            world.get_component::<DragComponent>(entity).is_some()
-        },
-        create_default: |world: &mut World, entity: EntityId| {
-            world.add_component(entity, DragComponent::default());
-        },
-        remove_component: |world: &mut World, entity: EntityId| {
-            world.remove_component::<DragComponent>(entity);
-        },
-        get_fields: |_world: &World, _entity: EntityId| DragComponent::fields(),
-        get_field_value: |world: &mut World, entity: EntityId, field_name: &str| {
-            let comp = world.get_component_mut::<DragComponent>(entity)?;
-            let field_mut = comp.field_mut(field_name)?;
-            Some(match field_mut {
-                FieldMut::F32(v) => FieldValue::F32(*v),
-                _ => FieldValue::Unknown,
-            })
-        },
-        set_field_value: |world: &mut World,
-                          entity: EntityId,
-                          field_name: &str,
-                          value: FieldValue|
-         -> Result<(), SceneToolError> {
-            let comp = world
-                .get_component_mut::<DragComponent>(entity)
-                .ok_or_else(|| SceneToolError::ComponentNotFound {
-                    entity,
-                    component: "DragComponent".to_string(),
-                })?;
-            let field_mut =
-                comp.field_mut(field_name)
-                    .ok_or_else(|| SceneToolError::FieldNotFound {
-                        component: "DragComponent".to_string(),
                         field: field_name.to_string(),
                     })?;
             match (field_mut, value) {
@@ -688,8 +590,6 @@ pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     let mut registry = ComponentRegistry::new();
     register_name_component(&mut registry);
     register_point_light(&mut registry);
-    register_mass_component(&mut registry);
-    register_drag_component(&mut registry);
     register_perspective_component(&mut registry);
     register_directional_light(&mut registry);
     register_script_component(&mut registry);
@@ -713,8 +613,6 @@ mod tests {
         let registry = build_editor_component_registry();
         assert!(registry.is_registered("NameComponent"));
         assert!(registry.is_registered("PointLight"));
-        assert!(registry.is_registered("MassComponent"));
-        assert!(registry.is_registered("DragComponent"));
         assert!(registry.is_registered("PerspectiveComponent"));
         assert!(registry.is_registered("DirectionalLight"));
         assert!(registry.is_registered("ScriptComponent"));
@@ -756,19 +654,5 @@ mod tests {
 
         let range = (entry.get_field_value)(&mut world, entity, "range").unwrap();
         assert_eq!(range.as_f32(), Some(50.0));
-    }
-
-    #[test]
-    fn test_set_field_value() {
-        let mut world = World::new();
-        let registry = build_editor_component_registry();
-        let entity = world.create_entity();
-        world.add_component(entity, MassComponent { mass: 1.0 });
-
-        let entry = registry.get("MassComponent").unwrap();
-        (entry.set_field_value)(&mut world, entity, "mass", FieldValue::F32(5.0)).unwrap();
-
-        let comp = world.get_component::<MassComponent>(entity).unwrap();
-        assert!((comp.mass - 5.0).abs() < 1e-6);
     }
 }

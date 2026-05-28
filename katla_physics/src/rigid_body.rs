@@ -77,6 +77,6 @@ impl RigidBody {
     }
 
     pub fn is_spawned(&self) -> bool {
-        self.body_handle.is_some()
+        self.collider_handle.is_some()
     }
 }

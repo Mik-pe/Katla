@@ -115,18 +115,6 @@ pub struct VelocityDescriptor {
     pub acceleration: [f32; 3],
 }
 
-/// Mass data for serialization.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MassDescriptor {
-    pub mass: f32,
-}
-
-/// Drag data for serialization.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DragDescriptor {
-    pub coefficient: f32,
-}
-
 /// Perspective camera data for serialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PerspectiveDescriptor {
@@ -209,10 +197,6 @@ pub struct EntityDescriptor {
     pub velocity: Option<VelocityDescriptor>,
     #[serde(default)]
     pub script: Option<ScriptDescriptor>,
-    #[serde(default)]
-    pub mass: Option<MassDescriptor>,
-    #[serde(default)]
-    pub drag: Option<DragDescriptor>,
     #[serde(default)]
     pub perspective: Option<PerspectiveDescriptor>,
     #[serde(default)]

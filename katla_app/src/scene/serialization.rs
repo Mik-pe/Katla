@@ -1,8 +1,7 @@
 use super::descriptors::{
-    AnimationDescriptor, AudioEmitterDescriptor, DirectionalLightDescriptor, DragDescriptor,
-    DrawableDescriptor, EntityDescriptor, MassDescriptor, ParticleEmitterDescriptor,
-    PerspectiveDescriptor, PointLightDescriptor, Scene, ScriptDescriptor, TransformDescriptor,
-    VelocityDescriptor,
+    AnimationDescriptor, AudioEmitterDescriptor, DirectionalLightDescriptor, DrawableDescriptor,
+    EntityDescriptor, ParticleEmitterDescriptor, PerspectiveDescriptor, PointLightDescriptor,
+    Scene, ScriptDescriptor, TransformDescriptor, VelocityDescriptor,
 };
 use super::entity_source::EntitySource;
 use log::{info, warn};
@@ -15,8 +14,8 @@ use crate::animation::AnimationPlayer;
 use crate::application::Application;
 use crate::components::ParticleEmitterComponent;
 use crate::components::{
-    DirectionalLight, DragComponent, DrawableComponent, MassComponent, NameComponent,
-    PerspectiveComponent, PointLight, TransformComponent, VelocityComponent,
+    DirectionalLight, DrawableComponent, NameComponent, PerspectiveComponent, PointLight,
+    TransformComponent, VelocityComponent,
 };
 use katla_script::ScriptComponent;
 
@@ -209,18 +208,6 @@ impl SceneManager {
                     script_path: s.script_path.clone(),
                 });
 
-            let mass = app
-                .world
-                .get_component::<MassComponent>(entity_id)
-                .map(|m| MassDescriptor { mass: m.mass });
-
-            let drag = app
-                .world
-                .get_component::<DragComponent>(entity_id)
-                .map(|d| DragDescriptor {
-                    coefficient: d.coefficient,
-                });
-
             let perspective = app
                 .world
                 .get_component::<PerspectiveComponent>(entity_id)
@@ -265,8 +252,6 @@ impl SceneManager {
                 animation,
                 velocity,
                 script,
-                mass,
-                drag,
                 perspective,
                 directional_light,
                 audio_emitter,
@@ -694,26 +679,6 @@ impl SceneManager {
         if let Some(ref script_desc) = desc.script {
             app.world
                 .add_component(entity_id, ScriptComponent::new(&script_desc.script_path));
-        }
-
-        // Apply mass
-        if let Some(ref mass_desc) = desc.mass {
-            app.world.add_component(
-                entity_id,
-                MassComponent {
-                    mass: mass_desc.mass,
-                },
-            );
-        }
-
-        // Apply drag
-        if let Some(ref drag_desc) = desc.drag {
-            app.world.add_component(
-                entity_id,
-                DragComponent {
-                    coefficient: drag_desc.coefficient,
-                },
-            );
         }
 
         // Apply perspective

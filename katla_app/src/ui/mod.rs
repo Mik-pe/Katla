@@ -14,8 +14,8 @@ pub mod renderer;
 #[cfg(feature = "editor")]
 pub use editor_ui::{
     AudioEmitterBoolField, AudioEmitterField, AudioEmitterInfo, ColliderField, ColliderShapeInfo,
-    ColliderShapeType, DirectionalLightInfo, DragInfo, EditorAction, EditorRenderParams, EditorUI,
-    EntityInfo, FocusedPanel, InspectorEditState, MassInfo, ParticleEmitterInfo, PerspectiveInfo,
+    ColliderShapeType, DirectionalLightInfo, EditorAction, EditorRenderParams, EditorUI,
+    EntityInfo, FocusedPanel, InspectorEditState, ParticleEmitterInfo, PerspectiveInfo,
     PhysicsMaterialField, PhysicsMaterialInfo, PointLightInfo, RigidBodyField, RigidBodyInfo,
     RigidBodyType, SpawnableModel, ThumbnailState,
 };

@@ -396,24 +396,24 @@ impl ComponentStorageManager {
     /// use katla_ecs::{World, Component};
     ///
     /// #[derive(Component)]
-    /// struct VelocityComponent { value: f32 }
+    /// struct HealthComponent { value: f32 }
     ///
     /// #[derive(Component)]
-    /// struct ForceComponent { force: f32 }
+    /// struct DamageComponent { amount: f32 }
     ///
     /// let mut world = World::new();
     /// let e = world.spawn((
-    ///     VelocityComponent { value: 0.0 },
-    ///     ForceComponent { force: 10.0 },
+    ///     HealthComponent { value: 100.0 },
+    ///     DamageComponent { amount: 10.0 },
     /// ));
     ///
     /// // Query with mutable and immutable access
-    /// for (_entity, velocity, force) in world.query::<(&mut VelocityComponent, &ForceComponent)>() {
-    ///     velocity.value += force.force;
+    /// for (_entity, health, damage) in world.query::<(&mut HealthComponent, &DamageComponent)>() {
+    ///     health.value -= damage.amount;
     /// }
     ///
-    /// let v = world.get_component::<VelocityComponent>(e).unwrap();
-    /// assert_eq!(v.value, 10.0);
+    /// let v = world.get_component::<HealthComponent>(e).unwrap();
+    /// assert_eq!(v.value, 90.0);
     /// ```
     pub fn query<Q: QueryData>(&mut self) -> Q::Iter<'_> {
         Q::fetch(self)

@@ -295,6 +295,63 @@
 - [x] Add drag-to-add collider — automatically fit collider shape to mesh bounds when attached to mesh entity
 - [x] Add physics objects to default scene — floor (static box collider) and a few dynamic spheres/cubes above it so pressing Play immediately demonstrates gravity, collision, and bouncing
 
+### Phase 5: Production readiness — critical fixes
+
+- [x] **Register RapierPhysicsSystem in game main.rs** — Replaced custom `PhysicsSystem`/`VelocitySystem` with `RapierPhysicsSystem` at `NORMAL` order. Removed custom F=ma systems entirely per "No Hybrid Implementations" rule.
+- [x] **Decide on single physics paradigm** — Removed custom `PhysicsSystem`/`VelocitySystem` and their components (`ForceComponent`, `MassComponent`, `DragComponent`). Rapier is now the sole physics engine. Fly camera migrated to direct transform manipulation with internal velocity in `FlyCameraLookComponent`.
+- [ ] **Gate physics simulation behind play mode** — `RapierPhysicsSystem::step_simulation()` runs unconditionally every frame with no check for `Application::play_mode`. Physics objects should only step when the editor is in `Playing` state, not during `Editing` or `Paused`. The system needs access to the play mode state (either as an ECS resource or passed through `delta_time`).
+- [x] **Fix static body returning invalid RigidBodyHandle** — Changed `is_spawned()` to check `collider_handle.is_some()` instead of `body_handle.is_some()`, since all body types (including static) get a valid collider handle.
+- [x] **Wire `gravity_scale` to Rapier** — `RigidBody::gravity_scale` is now passed to `RigidBodyBuilder::gravity_scale()` during body creation via `create_body_ex()`.
+- [x] **Wire `CollisionFilter` to Rapier collision groups** — `CollisionFilter` component's `layers`/`mask` fields are now passed to Rapier's `InteractionGroups` on `ColliderBuilder` during body spawn.
+- [x] **Remove or repurpose dead `ColliderState` component** — Removed `ColliderState` entirely. It was never written to by any system and served no purpose with Rapier.
+
+### Phase 6: Physics component scene serialization
+
+- [ ] **Add physics descriptors to EntityDescriptor** — `EntityDescriptor` has no fields for Rapier physics components. Add: `rigid_body: Option<RigidBodyDescriptor>` (body_type enum), `collider_shape: Option<ColliderShapeDescriptor>` (sphere/box/capsule variants with dimensions), `physics_material: Option<PhysicsMaterialDescriptor>` (friction, restitution, density), `trigger_volume: Option<TriggerVolumeDescriptor>` (unit struct / empty), `collision_filter: Option<CollisionFilterDescriptor>` (layers, mask).
+- [ ] **Implement save path for Rapier physics components** — In `serialization.rs` scene save, read `RigidBody`, `ColliderShape`, `PhysicsMaterial`, `TriggerVolume`, `CollisionFilter` from ECS entities and convert to their descriptor types. Skip runtime-only fields (handles, velocities, overlapping_entities).
+- [ ] **Implement load path for Rapier physics components** — In `serialization.rs` scene load, create ECS components from physics descriptors and add them to spawned entities. The RapierPhysicsSystem will then auto-discover and spawn them in Rapier.
+- [ ] **Remove hardcoded `spawn_physics_demo_objects()`** — Once physics components serialize to scene files, replace the hardcoded init spawn with physics objects in the default `.katla` scene. The demo objects currently have no mesh/drawable, making them invisible. The scene-file objects should have visible meshes (cube/sphere primitives) alongside their colliders.
+- [ ] **Add physics entities to default.katla scene** — Add a static floor plane with box collider + PBR material, and several dynamic spheres/cubes with colliders + PBR materials at various heights. These should be visible (have drawable + mesh) and demonstrate physics on scene load.
+
+### Phase 7: Physics entity lifecycle
+
+- [ ] **Handle entity destruction for Rapier bodies** — When an entity with `RigidBody` + `ColliderShape` is destroyed, the Rapier bodies/colliders are never removed from `PhysicsWorld`. Add a cleanup pass in `RapierPhysicsSystem` that detects destroyed entities (bodies that existed last frame but whose entity no longer exists) and calls `remove_body()` / `remove_static_collider()`.
+- [ ] **Handle entity destruction for joints** — Same issue: joints referencing destroyed entities leak Rapier joint handles. Add cleanup for `Joint` components whose `entity_a` or `entity_b` no longer exist.
+- [ ] **Sync kinematic body transforms to Rapier** — Currently `sync_transforms_back` only writes Rapier→ECS for dynamic bodies. For kinematic bodies, the opposite direction is needed: read ECS `TransformComponent` each frame and write it to the Rapier body's position so the kinematic body follows script/animation-driven movement.
+- [ ] **Add entity despawn callback for physics** — When the editor removes a `RigidBody` or `ColliderShape` component from an entity, the corresponding Rapier handles should be cleaned up. Wire into the existing `EditorAction::RemoveComponent` handler.
+
+### Phase 8: Collider mesh fitting, shape types, and prefabs
+
+- [ ] **Add geometry data cache for mesh vertex positions** — CPU-side vertex/index data exists in `GLTFModel` at load time but is discarded after GPU upload. `MeshHandle` has no readback path. Add a geometry cache (e.g. `HashMap<MeshHandle, Arc<MeshGeometryData>>`) that retains vertex positions and triangle indices alongside `MeshHandle`, populated during mesh loading before GPU upload discards the data. This is a prerequisite for trimesh, convex hull, and any mesh-derived collider generation.
+- [ ] **Extend `ColliderShape` enum with mesh-derived variants** — Add `ColliderShape::Trimesh`, `ColliderShape::ConvexHull`, and `ColliderShape::Heightfield` variants alongside existing Sphere/Box/Capsule. Trimesh stores vertex positions + triangle indices (for static environment geometry). ConvexHull stores vertex positions (for dynamic props). Heightfield stores a 2D height grid (for terrain). All three reference data from the geometry cache rather than duplicating it.
+- [ ] **Wire new `ColliderShape` variants through `collider_shape_to_rapier()`** — In `physics_world.rs`, add Rapier `SharedShape` construction for Trimesh (via `SharedShape::trimesh`), ConvexHull (via `SharedShape::convex_hull`), and Heightfield (via `SharedShape::heightfield`). Wire the geometry cache lookup so the system can resolve the mesh data at spawn time.
+- [ ] **Implement trimesh collider generation for static environment meshes** — For static environment geometry (floors, walls, level architecture), generate exact trimesh colliders from the mesh's vertex/index data. Add an editor action or auto-detection: when a static `RigidBody` entity has a mesh, default to trimesh collider. Trimesh colliders only work with static bodies in Rapier.
+- [ ] **Implement convex hull collider generation for dynamic props** — For dynamic/kinematic objects with complex meshes, compute a convex hull from vertex positions using Rapier's `SharedShape::convex_hull`. Convex hulls support dynamic simulation (unlike trimesh) but are approximate — they enclose the mesh but may have gaps. Add editor action to convert a mesh entity's collider to convex hull.
+- [ ] **Implement capsule auto-fit from mesh dimensions** — Capsule colliders are ideal for character-like objects (humanoids, pillars, barrels). When auto-fitting a collider, compute the mesh AABB and check if it is tall and narrow (height > 2 × width). If so, generate a `CapsuleShape { half_height: height/2 - radius, radius: width/2 }` instead of a box. Add capsule as an explicit option in the editor collider type picker so users can override auto-fit.
+- [ ] **Implement best-fit shape selection logic** — When auto-generating a collider for a mesh entity, choose the best shape type based on mesh characteristics: (a) sphere if AABB is roughly cubic and small, (b) capsule if tall/narrow (height > 2 × width), (c) box for general shapes, (d) convex hull for complex dynamic props, (e) trimesh for static environment geometry. This replaces the current box-only auto-fit.
+- [ ] **Design collider cache system** — Computing convex hulls/trimesh colliders from mesh data is expensive. Design a collider cache that: (a) stores computed Rapier `SharedShape` instances keyed by mesh handle + shape type, (b) reuses cached shapes when multiple entities share the same mesh, (c) invalidates when the mesh changes (hot reload). This avoids recomputing hull decompositions every frame or on every entity spawn.
+- [ ] **Update editor collider type picker UI** — The editor inspector for `ColliderShape` currently shows Sphere/Box/Capsule dropdown. Extend to show all shape types: Sphere, Box, Capsule, Trimesh, ConvexHull, Heightfield. When switching type, reset to auto-fit dimensions from the entity's mesh bounds. Disable Trimesh for non-static bodies (Rapier constraint). Disable Heightfield for non-mesh entities.
+- [ ] **Design prefab system for physics objects** — Physics entities (e.g., a "bouncy ball" with sphere collider + PBR material + dynamic body) are currently assembled manually each time. Design a prefab/template system that bundles a set of components (mesh, material, collider, rigid body) into a reusable definition that can be instantiated multiple times. This would also benefit non-physics entities.
+- [ ] **Add physics entity spawn from asset browser** — Drag a physics prefab or mesh from the asset browser into the viewport to spawn an entity with auto-fitted collider + rigid body + default material.
+
+### Phase 9: Physics robustness and testing
+
+- [ ] **Add test for static body spawn tracking** — Verify that static bodies correctly track their spawned state despite having no Rapier `RigidBodyHandle` (related to the invalid-handle fix in Phase 5).
+- [ ] **Add test for entity destruction cleanup** — Spawn a dynamic body, destroy the entity, verify that `PhysicsWorld` body/collider counts decrease correctly.
+- [ ] **Add test for joint spawning** — Create two entities with `RigidBody` + `ColliderShape`, add a `Joint` component referencing both, run one frame, verify the joint is created in `PhysicsWorld`.
+- [ ] **Add test for play-mode gating** — Verify that physics simulation does not advance when play mode is `Editing` or `Paused`, and does advance when `Playing`.
+- [ ] **Add integration test for physics scene round-trip** — Create entities with physics components, serialize to RON, deserialize, verify components are recreated correctly and Rapier bodies are spawned.
+- [ ] **Add test for kinematic body sync** — Spawn a kinematic body, move its `TransformComponent`, run one frame, verify Rapier body position matches the new transform.
+- [ ] **Add stress test for many dynamic bodies** — Spawn 100+ dynamic bodies, step for N frames, verify no panics or deadlocks. Identify performance bottlenecks in the spawn/sync loop.
+- [ ] **Add test for `apply_force` and `apply_impulse` through ECS** — Current tests only verify body creation and gravity. Add tests that apply forces/impulses and verify velocity/position changes.
+
+### Phase 10: Physics scripting polish
+
+- [ ] **Expose `apply_force` / `apply_impulse` to Luau scripts** — Scripts can raycast but cannot apply forces or impulses to physics bodies. Add `world:apply_force(entity_id, force: Vec3)` and `world:apply_impulse(entity_id, impulse: Vec3)` script bindings.
+- [ ] **Expose body velocity read/write to scripts** — Add `world:get_velocity(entity_id) -> Vec3` and `world:set_velocity(entity_id, velocity: Vec3)` for script-driven physics control.
+- [ ] **Expose trigger volume queries to scripts** — Scripts should be able to check if an entity with a `TriggerVolume` is currently overlapping with specific entities, not just receive enter/exit events.
+- [ ] **Add physics collision event scripting** — Wire `PendingPhysicsEvents` into the script event system so scripts can subscribe to collision events via `world:on_event("collision_enter", callback)` instead of needing a separate resource.
+
 ## Rendering
 
 - [x] Remove all `cfg(metal/vulkan)` from katla_app — backend-specific conditionals should only exist in katla_gfx

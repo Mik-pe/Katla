@@ -9,8 +9,7 @@ use crate::shape::SphereShape;
 /// A collision shape attached to an entity.
 ///
 /// Defines the local-space geometry used for collision detection.
-/// The shape is transformed to world space using the entity's `TransformComponent`
-/// to compute the world-space AABB stored in `ColliderState`.
+/// The shape is transformed to world space using the entity's `TransformComponent`.
 #[derive(Component, Debug, Clone, Serialize, Deserialize)]
 pub enum ColliderShape {
     Sphere(SphereShape),
@@ -61,27 +60,6 @@ pub struct CollisionFilter {
 impl CollisionFilter {
     pub fn new(layers: u32, mask: u32) -> Self {
         Self { layers, mask }
-    }
-}
-
-/// Per-entity collision state computed each frame.
-///
-/// Stores the world-space AABB and other runtime collision data.
-/// Updated by the broadphase system after transform changes.
-#[derive(Component, Debug, Clone)]
-pub struct ColliderState {
-    /// World-space bounding box computed from the shape and transform.
-    pub world_aabb: AABB,
-    /// Whether this collider participated in any collisions this frame.
-    pub is_colliding: bool,
-}
-
-impl ColliderState {
-    pub fn new(world_aabb: AABB) -> Self {
-        Self {
-            world_aabb,
-            is_colliding: false,
-        }
     }
 }
 

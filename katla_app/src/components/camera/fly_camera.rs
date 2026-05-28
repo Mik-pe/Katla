@@ -1,4 +1,5 @@
 use katla_ecs::Component;
+use katla_math::Vec3;
 
 #[derive(Component, Debug, Clone, Copy)]
 pub struct FlyCameraControllerComponent {
@@ -21,4 +22,5 @@ impl Default for FlyCameraControllerComponent {
 pub struct FlyCameraLookComponent {
     pub yaw: f32,
     pub pitch: f32,
+    pub velocity: Vec3,
 }
