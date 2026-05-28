@@ -36,7 +36,6 @@ pub struct LoadId(pub u64);
 
 /// Types of assets the loader can handle.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum LoadRequest {
     /// Load image as thumbnail (resized, for asset browser).
     ImageThumbnail {
@@ -58,7 +57,6 @@ pub enum LoadRequest {
 
 /// Results from background loading.
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum LoadResult {
     /// Image thumbnail ready for GPU upload.
     ImageThumbnailLoaded {
@@ -115,7 +113,6 @@ pub struct BackgroundLoader {
     next_load_id: u64,
 }
 
-#[allow(dead_code)]
 impl BackgroundLoader {
     /// Create a new background loader with a rayon thread pool.
     pub fn new() -> Self {
@@ -157,31 +154,6 @@ impl BackgroundLoader {
                 debug!("Background loader: result channel closed, dropping result");
             }
         });
-    }
-
-    /// Submit multiple load requests to the thread pool at once.
-    pub fn submit_batch(&self, requests: Vec<LoadRequest>) {
-        let result_tx = self.result_sender.clone();
-        for request in requests {
-            let tx = result_tx.clone();
-            self.pool.spawn(move || {
-                let result = match request {
-                    LoadRequest::ImageThumbnail { id, path, max_size } => {
-                        Self::load_image_thumbnail(id, &path, max_size)
-                    }
-                    LoadRequest::FullTexture {
-                        id,
-                        path,
-                        generate_mipmaps,
-                    } => Self::load_full_texture(id, &path, generate_mipmaps),
-                    LoadRequest::GltfModel { id, path } => Self::load_gltf_model(id, &path),
-                };
-
-                if tx.send(result).is_err() {
-                    debug!("Background loader: result channel closed, dropping result");
-                }
-            });
-        }
     }
 
     /// Load an image and resize it for thumbnail display.
