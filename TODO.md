@@ -13,25 +13,32 @@
 
 ### E. Align Metal backend with shared FrameGraph<B> execution path
 
-- [ ] Verify `Frame<'_, MetalRenderer>` execution dispatches all pass types (geometry, shadow, fullscreen, compositing, particles, outline, UI, depth prepass) through `RenderGraphBackend` trait methods — Partial: Metal routes 5 of ~9 pass kinds; missing particles, compositing, stencil-indicator, generic compute
-- [ ] Ensure Metal backend's `render_frame()` goes through `FrameGraph<MetalRenderer>::execute()` identically to the Vulkan path, not through a separate hardcoded pass sequence — Metal uses `collect_draw_lists()` + hardcoded `render_frame()`, not `FrameGraph::execute()`
-- [ ] Remove any remaining dual-code-path divergence between how Vulkan and Metal execute the same frame graph — Requires migrating Metal from hardcoded pass sequence to data-driven graph execution
+- [ ] Add particles pass dispatch through `RenderGraphBackend` on Metal
+- [ ] Add compositing pass dispatch through `RenderGraphBackend` on Metal
+- [ ] Add stencil-indicator pass dispatch through `RenderGraphBackend` on Metal
+- [ ] Add generic compute pass dispatch through `RenderGraphBackend` on Metal
+- [ ] Refactor Metal `collect_draw_lists()` to produce `FrameGraph<MetalRenderer>` nodes instead of a hardcoded list
+- [ ] Wire Metal `render_frame()` through `FrameGraph<MetalRenderer>::execute()` instead of the hardcoded pass sequence
+- [ ] Remove the Metal-specific hardcoded pass execution path once data-driven graph execution is working
 
 ## Audio System
 
 ### Phase 14: Production bugs and correctness
-- [ ] Move streaming decode off the audio thread — `StreamingVoice::fill_ring_buffer()` performs synchronous file I/O (via `StreamingDecoder`) inside the audio render callback under the mixer's Mutex. Disk reads can take milliseconds, causing audible glitching or callback timeouts. Fix: add a background decode thread that fills the ring buffer ahead of the read position, with the audio thread only consuming from the ring buffer (no I/O in callback). This was described in Phase 11 TODO but never implemented.
+
+- [ ] Add background decode thread infrastructure — create a thread that owns `StreamingDecoder` instances and fills ring buffers ahead of the audio thread's read position
+- [ ] Refactor `StreamingVoice::fill_ring_buffer()` to consume from the pre-filled ring buffer without performing I/O
+- [ ] Wire background decode thread lifecycle (start/stop) into `AudioEngine` init/shutdown
 
 ### Phase 15: Audio quality and robustness
 - [ ] Add automatic fade-in/fade-out on voice start/stop — voices currently start and stop instantly with no gain ramp, causing audible clicks/pops. Add a short (1-5ms) linear fade-in when a voice begins playback and a fade-out when stopped, before marking it finished. This is standard practice in all production audio engines (Kira, FMOD, Wwise).
-- [ ] Add configurable tween duration — `Voice::tween_smoothing` and `StreamingVoice::tween_smoothing` are hardcoded to 0.3 with no API to change them. Kira uses time-based tweens (e.g., `Tween { duration: 200ms }`). Expose tween duration or speed as a parameter on `VoiceHandle::set_volume_tweened()` etc.
+ - [x] Add configurable tween duration — `Voice::tween_smoothing` and `StreamingVoice::tween_smoothing` are hardcoded to 0.3 with no API to change them. Kira uses time-based tweens (e.g., `Tween { duration: 200ms }`). Expose tween duration or speed as a parameter on `VoiceHandle::set_volume_tweened()` etc.
 - [ ] Add per-voice aux send levels — aux buses currently accumulate a copy of the entire main mix at a fixed `send_level`. Production audio engines allow each voice to have its own send level to each aux bus (e.g., a specific SFX sends 50% to reverb while music sends 0%). Add a `sends: Vec<(AuxBusId, f32)>` field to `Voice` and `StreamingVoice`.
 - [ ] Add voice steal/priority system — there is no limit on the number of simultaneous voices. With enough concurrent sounds, the mix saturates and quality degrades. Add a maximum voice count and a priority-based voice stealing mechanism (lowest priority voice is stopped to make room for a new one).
 - [ ] Add voice pooling — voices are allocated and deallocated every time a sound plays/stops, causing allocation pressure in the audio thread's Mutex. Pre-allocate a fixed pool of Voice objects and reuse slots.
 - [ ] Improve resampling quality — both `Voice` and `StreamingVoice` use linear interpolation for sample rate conversion and pitch shifting. For production quality, add at least cubic (Catmull-Rom) interpolation, optionally sinc for offline/bounce. Linear interpolation causes audible artifacts with high-frequency content.
 - [ ] Add proper reverb stereo decorrelation — `ReverbEffect` processes a mono sum of the input and applies the same mono reverb to both channels, collapsing stereo image. Use separate delay lines for left/right with slightly different delay times, or process L/R independently with decorrelation filters.
 - [ ] Add audio device hot-swap — when the output device disconnects (headphones unplugged, Bluetooth disconnected), `cpal` fires the error callback but there is no recovery. Detect device changes via cpal's device change events and recreate the audio stream on the new default device.
-- [ ] Add silence detection for streaming voices — `StreamingVoice::mix_into()` processes the full output buffer even when volume is 0.0 (only skips when `voice_volume == 0.0`, but tweening can make this check imprecise). Add an early-out when the voice has been silent for multiple consecutive frames.
+ - [x] Add silence detection for streaming voices — `StreamingVoice::mix_into()` processes the full output buffer even when volume is 0.0 (only skips when `voice_volume == 0.0`, but tweening can make this check imprecise). Add an early-out when the voice has been silent for multiple consecutive frames.
 
 ### Phase 16: Feature parity with production audio engines
 - [ ] Add audio clock/timeline — no way to schedule audio events at specific times or sync playback to game time. Add an audio clock (sample-accurate position counter) and the ability to schedule play/stop/volume changes at specific clock positions. Required for music synchronization and cutscene audio.
@@ -49,16 +56,21 @@
 - [ ] Add AudioListener indicator in inspector — `AudioListener` component exists but has no UI. Add a minimal inspector section showing which entity is the active listener (there should be only one). Warn if multiple AudioListener components exist.
 
 ### Phase 18: Audio mixer UI
-- [ ] Add audio mixer panel — a dockable panel showing the current mix state: master bus with VU meter + fader, SFX/Music/Ambient sub-buses with VU meters + faders, aux bus sends with wet/dry controls. VU meters should show real-time peak/RMS levels from the mixer's render output.
-- [ ] Add real-time level metering to AudioMixer — the mixer currently has no peak/RMS measurement. Add per-category and master level meters computed during `render()` using atomic double-buffered level snapshots (write in audio thread, read in UI thread). Required for the mixer panel VU meters.
-- [ ] Add voice pool status display — show active voice count, peak voice count, and which voices are playing (with name/category/volume) in the mixer panel or a debug overlay. Useful for diagnosing voice leaks and tuning voice limits.
+- [ ] Add peak/RMS level computation in `AudioMixer::render()` — compute per-category and master peak and RMS levels during the render callback
+- [ ] Add atomic double-buffered level snapshots — write levels in audio thread, read in UI thread without locking; one write buffer, one read buffer, swap on read
+- [ ] Add VU meter widget to katla_ui — vertical bar showing peak/RMS with peak hold falloff, color-graded (green/yellow/red)
+- [ ] Add mixer panel layout — dockable panel with master bus fader + VU meter, SFX/Music/Ambient sub-buses with faders + VU meters, aux bus sends with wet/dry controls
+- [ ] Add voice pool status display — show active voice count, peak voice count, and which voices are playing (with name/category/volume) in the mixer panel or a debug overlay
 - [ ] Add reverb zone visualizer — `ReverbZone` components exist but are invisible in the editor. Draw wireframe boxes/spheres showing reverb zone extents with color-coding for decay/wet parameters, similar to physics collider visualization.
 
 ## Physics
 
 ### Phase 6: Physics component scene serialization
 
-- [ ] **Add physics descriptors to EntityDescriptor** — `EntityDescriptor` has no fields for Rapier physics components. Add: `rigid_body: Option<RigidBodyDescriptor>` (body_type enum), `collider_shape: Option<ColliderShapeDescriptor>` (sphere/box/capsule variants with dimensions), `physics_material: Option<PhysicsMaterialDescriptor>` (friction, restitution, density), `trigger_volume: Option<TriggerVolumeDescriptor>` (unit struct / empty), `collision_filter: Option<CollisionFilterDescriptor>` (layers, mask).
+- [ ] **Add `RigidBodyDescriptor`** — enum with Static, Dynamic, Kinematic variants; add to `EntityDescriptor`
+- [ ] **Add `ColliderShapeDescriptor`** — enum with Sphere(radius), Box(half_extents), Capsule { half_height, radius } variants; add to `EntityDescriptor`
+- [ ] **Add `PhysicsMaterialDescriptor`** — struct with friction, restitution, density fields; add to `EntityDescriptor`
+- [ ] **Add `TriggerVolumeDescriptor` and `CollisionFilterDescriptor`** — trigger volume as unit struct; collision filter with layers/mask; add both to `EntityDescriptor`
 - [ ] **Implement save path for Rapier physics components** — In `serialization.rs` scene save, read `RigidBody`, `ColliderShape`, `PhysicsMaterial`, `TriggerVolume`, `CollisionFilter` from ECS entities and convert to their descriptor types. Skip runtime-only fields (handles, velocities, overlapping_entities).
 - [ ] **Implement load path for Rapier physics components** — In `serialization.rs` scene load, create ECS components from physics descriptors and add them to spawned entities. The RapierPhysicsSystem will then auto-discover and spawn them in Rapier.
 - [ ] **Remove hardcoded `spawn_physics_demo_objects()`** — Once physics components serialize to scene files, replace the hardcoded init spawn with physics objects in the default `.katla` scene. The demo objects currently have no mesh/drawable, making them invisible. The scene-file objects should have visible meshes (cube/sphere primitives) alongside their colliders.
@@ -86,7 +98,7 @@
 ### Phase 9: Physics robustness and testing
 
 - [ ] **Add test for static body spawn tracking** — Verify that static bodies correctly track their spawned state despite having no Rapier `RigidBodyHandle` (related to the invalid-handle fix in Phase 5).
-- [ ] **Add test for entity destruction cleanup** — Spawn a dynamic body, destroy the entity, verify that `PhysicsWorld` body/collider counts decrease correctly.
+ - [x] **Add test for entity destruction cleanup** — Spawn a dynamic body, destroy the entity, verify that `PhysicsWorld` body/collider counts decrease correctly.
 - [ ] **Add test for joint spawning** — Create two entities with `RigidBody` + `ColliderShape`, add a `Joint` component referencing both, run one frame, verify the joint is created in `PhysicsWorld`.
 - [ ] **Add test for play-mode gating** — Verify that physics simulation does not advance when play mode is `Editing` or `Paused`, and does advance when `Playing`.
 - [ ] **Add integration test for physics scene round-trip** — Create entities with physics components, serialize to RON, deserialize, verify components are recreated correctly and Rapier bodies are spawned.
@@ -104,21 +116,40 @@
 ## Rendering
 
 ### Metal rendering bugs
-- [x] Billboard icons don't show in Metal — Fixed: added "billboard" vertex type with alpha blending and double-sided rendering to Metal material compilation
-- [ ] Animated fox (skinned mesh) doesn't show in Metal — Partial: skeleton buffers now initialized with identity matrices (shows T-pose); full fix requires porting GPU animation compute pipeline from Vulkan to Metal (frame_loop.rs:189 is Vulkan-only)
-- [ ] Particle systems don't show in Metal — Requires adding particle compute dispatch and particle render pass to Metal's render_frame(); MetalParticleSubsystem exists but is not wired into the frame loop
+- [ ] Billboard icons don't show in Metal
+- [ ] Animated fox (skinned mesh) doesn't show in Metal
+- [ ] Particle systems don't show in Metal
 
 ### Post-processing pipeline
 - [ ] Add post-process pass infrastructure — reusable fullscreen-quad pass builder in the render graph that takes an input color texture and outputs a processed color texture
-- [ ] Add FXAA pass — luminance edge detection, sub-pixel blending; add `fxaa.wgsl` shader; wire into render graph after tonemapping
-- [ ] Add bloom pass — bright extraction threshold pass, two-pass gaussian blur (horizontal + vertical) at half resolution, additive compositing onto scene; add bloom shader(s)
-- [ ] Add motion blur pass — per-pixel velocity buffer from depth + camera motion, tile-max velocity, blur in motion direction; add `motion_blur.wgsl`
-- [ ] Add depth of field pass — circle-of-confusion calculation from depth, separate near/far bokeh blur, compositing; add `dof.wgsl`
+- [ ] Add FXAA pass
+  - [ ] Write `fxaa.wgsl` shader — luminance edge detection, sub-pixel blending
+  - [ ] Wire FXAA pass into render graph after tonemapping
+- [ ] Add bloom pass
+  - [ ] Add bright extraction threshold pass — extract pixels above luminance threshold at full resolution
+  - [ ] Add two-pass gaussian blur — horizontal + vertical blur at half resolution
+  - [ ] Add additive compositing pass — blend blurred bloom onto scene output
+  - [ ] Write bloom shader(s)
+- [ ] Add motion blur pass
+  - [ ] Generate per-pixel velocity buffer from depth + camera motion
+  - [ ] Implement tile-max velocity computation
+  - [ ] Write `motion_blur.wgsl` — blur in motion direction using tile-max
+- [ ] Add depth of field pass
+  - [ ] Compute circle-of-confusion from depth and camera focus settings
+  - [ ] Implement separate near/far bokeh blur passes
+  - [ ] Add compositing pass — blend near/far bokeh with in-focus image
+  - [ ] Write `dof.wgsl`
 
 ### Screen-space effects
-- [ ] Add SSAO pass — generate depth+normal buffer, hemisphere sampling kernel, bilateral blur, integrate into lighting shader as ambient occlusion term; add `ssao.wgsl`
-- [ ] Add SSR pass — ray-march depth buffer from reflected fragments, fade by distance/edge, temporal accumulation for stability; add `ssr.wgsl`
-- [ ] Add ambient lighting integration — expose SSAO texture in lighting pass, sample in PBR shader to modulate ambient term
+- [ ] Add SSAO pass
+  - [ ] Generate depth + normal buffer (G-buffer extension or dedicated pass)
+  - [ ] Implement hemisphere sampling kernel in `ssao.wgsl`
+  - [ ] Add bilateral blur pass to denoise SSAO output
+  - [ ] Integrate SSAO texture into PBR lighting shader as ambient occlusion term
+- [ ] Add SSR pass
+  - [ ] Implement depth buffer ray-marching from reflected fragments in `ssr.wgsl`
+  - [ ] Add distance/edge fade and temporal accumulation for stability
+  - [ ] Wire SSR output into lighting/compositing pass
 
 ### Texture compression
 - [ ] Add BC1-5 decompression for desktop — support DXT-compressed KTX2 files in texture loader
@@ -265,19 +296,18 @@
 
 ### Declarative UI migration
 
-- [ ] Migrate remaining panels from ViewDescriptor::Custom to declarative trees
-  - **Toolbar**: needs declarative MenuBar with dropdown hover-to-switch, icon buttons with callbacks
-  - **Console**: needs declarative ScrollArea with per-row hit-testing, text selection, clipboard
-  - **Preferences**: needs declarative DraggablePanel, tab bar, grid layout (begin_grid/grid_item)
-  - **Inspector**: needs declarative DraggablePanel, modal (Add Component), ColorPicker overlay, section headers with remove buttons, dynamic enum-driven widget trees
-  - **Hierarchy**: needs declarative TreeView with custom row rendering (icons, badges), ContextMenu integration
-  - **Co-Creator**: needs declarative DraggablePanel, markdown rendering, multiline TextInput
-  - **Particle Inspector**: needs declarative DraggablePanel, dynamic shape-parameter branching
-  - **Viewport Grid**: needs dynamic texture grid with per-cell Image + border + label, mouse hit-testing for slot hover
-  - **Asset Browser**: needs marquee selection, drag-and-drop, z-index tooltips, keyboard capture, context menu, modal — currently a no-op Custom wrapper
+- [ ] Migrate Toolbar panel from `ViewDescriptor::Custom` to declarative tree — needs MenuBar with dropdown hover-to-switch, icon buttons with callbacks
+- [ ] Migrate Console panel from `ViewDescriptor::Custom` to declarative tree — needs ScrollArea with per-row hit-testing, text selection, clipboard
+- [ ] Migrate Preferences panel from `ViewDescriptor::Custom` to declarative tree — needs DraggablePanel, tab bar, grid layout (begin_grid/grid_item)
+- [ ] Migrate Inspector panel from `ViewDescriptor::Custom` to declarative tree — needs DraggablePanel, modal (Add Component), ColorPicker overlay, section headers with remove buttons, dynamic enum-driven widget trees
+- [ ] Migrate Hierarchy panel from `ViewDescriptor::Custom` to declarative tree — needs TreeView with custom row rendering (icons, badges), ContextMenu integration
+- [ ] Migrate Co-Creator panel from `ViewDescriptor::Custom` to declarative tree — needs DraggablePanel, markdown rendering, multiline TextInput
+- [ ] Migrate Particle Inspector panel from `ViewDescriptor::Custom` to declarative tree — needs DraggablePanel, dynamic shape-parameter branching
+- [ ] Migrate Viewport Grid panel from `ViewDescriptor::Custom` to declarative tree — needs dynamic texture grid with per-cell Image + border + label, mouse hit-testing for slot hover
+- [ ] Migrate Asset Browser panel from `ViewDescriptor::Custom` to declarative tree — needs marquee selection, drag-and-drop, z-index tooltips, keyboard capture, context menu, modal
 - [ ] Remove thread_local bridges from all migrated panels
 - [ ] Remove immediate-mode widgets with declarative equivalents from widgets/mod.rs public API (Button, Slider, LabeledSlider, Vec3Slider, ToggleButton, TextInput, RadioButton, ImageButton, Panel)
-- [ ] Restrict or remove ViewDescriptor::Custom escape hatch
+- [ ] Restrict or remove `ViewDescriptor::Custom` escape hatch
 
 ## Developer Experience
 
