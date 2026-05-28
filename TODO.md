@@ -252,6 +252,53 @@
 - [x] Use temp-file guards in script tests — `write_temp_script` creates files that are only cleaned up on success; panics leave orphan temp files. Replace with a `TempScript` struct that cleans up on `Drop`
 - [x] Add integration test for category volume changes affecting playing voices — verify that changing `AudioEngine::set_category_volume(AudioCategory::Sfx, 0.5)` actually reduces volume of an already-playing voice (will fail until Phase 12 category-volume fix lands)
 
+### Phase 14: Production bugs and correctness
+- [ ] Fix aux bus accumulation feedback loop — `AuxBus::accumulate()` uses `+=` on the bus buffer but the buffer is never cleared between frames. This causes previous frame's reverb output to feed back into the next frame's accumulate step, creating a positive feedback loop where the aux bus output grows louder over time. Fix: clear the bus buffer at the start of each frame before accumulating sends. The reverb tail is correctly preserved in the reverb's internal delay line state and does NOT need to persist in the bus buffer.
+- [ ] Move streaming decode off the audio thread — `StreamingVoice::fill_ring_buffer()` performs synchronous file I/O (via `StreamingDecoder`) inside the audio render callback under the mixer's Mutex. Disk reads can take milliseconds, causing audible glitching or callback timeouts. Fix: add a background decode thread that fills the ring buffer ahead of the read position, with the audio thread only consuming from the ring buffer (no I/O in callback). This was described in Phase 11 TODO but never implemented.
+- [ ] Fix FLAC 24-bit sample conversion — `load_flac` converts 24-bit samples via `(s >> 8) as i16 as f32 / i16::MAX as f32`, discarding the lower 8 bits of precision. Should use `s as f32 / 8388608.0` (2^23) to preserve full 24-bit dynamic range.
+- [ ] Fix MP3 streaming looping — `StreamingDecoder::seek_to_start()` returns `Err(InvalidOperation)` for MP3, making `StreamingVoice::fill_ring_buffer()` fail on loop wrap, silently ending playback. Either implement MP3 seeking (reopen file and decode to position) or document that MP3 streaming does not support looping and fall back to full-buffer loading for looping MP3 playback.
+- [ ] Remove stale `#[allow(dead_code)]` on `AudioEngine::stream` — the `stream` field is actively used by `resume()` and `pause()` methods; the allow attribute is incorrect and masks a real usage.
+- [ ] Remove dead `AudioCommand` variants — `SetVolume`, `SetPan`, `SetPitch`, `SetMasterVolume`, `SetCategoryVolume` are defined but never pushed to the command queue. Volume/pan/pitch changes bypass the command queue via `MixerState`'s Mutex. Either remove the dead variants or route property changes through the command queue for consistency (and to reduce mutex contention on the audio thread).
+- [ ] Remove dead code flagged by clippy — `AuxBus::ensure_buffer`, `zone_reverb::f32_to_bits`, `Voice::with_loop_region`, `Voice::category` are unused. Remove them.
+- [ ] Fix clippy large enum variant — `StreamingDecoderInner::Ogg` is 592 bytes vs 96 bytes for MP3. Box the OGG variant to reduce the enum size and avoid stack bloat when constructing/returning `StreamingDecoder`.
+- [ ] Fix redundant closures in buffer loading — `map_err(|e| AudioError::Io(e))` should be `map_err(AudioError::Io)` in `load_ogg` and `load_mp3`.
+- [ ] Add `Default` impl for `EffectChain` — clippy warns about `new_without_default`.
+
+### Phase 15: Audio quality and robustness
+- [ ] Add automatic fade-in/fade-out on voice start/stop — voices currently start and stop instantly with no gain ramp, causing audible clicks/pops. Add a short (1-5ms) linear fade-in when a voice begins playback and a fade-out when stopped, before marking it finished. This is standard practice in all production audio engines (Kira, FMOD, Wwise).
+- [ ] Add configurable tween duration — `Voice::tween_smoothing` and `StreamingVoice::tween_smoothing` are hardcoded to 0.3 with no API to change them. Kira uses time-based tweens (e.g., `Tween { duration: 200ms }`). Expose tween duration or speed as a parameter on `VoiceHandle::set_volume_tweened()` etc.
+- [ ] Add per-voice aux send levels — aux buses currently accumulate a copy of the entire main mix at a fixed `send_level`. Production audio engines allow each voice to have its own send level to each aux bus (e.g., a specific SFX sends 50% to reverb while music sends 0%). Add a `sends: Vec<(AuxBusId, f32)>` field to `Voice` and `StreamingVoice`.
+- [ ] Add voice steal/priority system — there is no limit on the number of simultaneous voices. With enough concurrent sounds, the mix saturates and quality degrades. Add a maximum voice count and a priority-based voice stealing mechanism (lowest priority voice is stopped to make room for a new one).
+- [ ] Add voice pooling — voices are allocated and deallocated every time a sound plays/stops, causing allocation pressure in the audio thread's Mutex. Pre-allocate a fixed pool of Voice objects and reuse slots.
+- [ ] Improve resampling quality — both `Voice` and `StreamingVoice` use linear interpolation for sample rate conversion and pitch shifting. For production quality, add at least cubic (Catmull-Rom) interpolation, optionally sinc for offline/bounce. Linear interpolation causes audible artifacts with high-frequency content.
+- [ ] Add proper reverb stereo decorrelation — `ReverbEffect` processes a mono sum of the input and applies the same mono reverb to both channels, collapsing stereo image. Use separate delay lines for left/right with slightly different delay times, or process L/R independently with decorrelation filters.
+- [ ] Add audio device hot-swap — when the output device disconnects (headphones unplugged, Bluetooth disconnected), `cpal` fires the error callback but there is no recovery. Detect device changes via cpal's device change events and recreate the audio stream on the new default device.
+- [ ] Add silence detection for streaming voices — `StreamingVoice::mix_into()` processes the full output buffer even when volume is 0.0 (only skips when `voice_volume == 0.0`, but tweening can make this check imprecise). Add an early-out when the voice has been silent for multiple consecutive frames.
+
+### Phase 16: Feature parity with production audio engines
+- [ ] Add audio clock/timeline — no way to schedule audio events at specific times or sync playback to game time. Add an audio clock (sample-accurate position counter) and the ability to schedule play/stop/volume changes at specific clock positions. Required for music synchronization and cutscene audio.
+- [ ] Add audio file metadata query — no way to query duration, sample rate, or channel count of an audio file without fully decoding it. Add `AudioBuffer::from_path_metadata()` or similar that reads headers only (WAV fmt chunk, OGG/MP3 frame headers) without decoding the entire file. Needed for the asset browser duration display.
+- [ ] Add looping crossfade support — seamless loop transitions currently just jump from `loop_end` to `loop_start`, which can cause clicks if the waveform doesn't align. Add a short crossfade region at the loop point (mix the tail of the loop with the head of the next iteration).
+- [ ] Add playback position query — no way to query the current playback position of a voice (in seconds or samples). Add `VoiceHandle::position() -> f32` and `StreamingVoiceHandle::position() -> f32` for UI scrub bars, subtitle sync, and gameplay triggers.
+- [ ] Add seek API for streaming voices — `StreamingVoiceHandle` has no seek method. Add `StreamingVoiceHandle::seek(position: Duration)` to allow scrubbing to arbitrary positions in a streaming file.
+- [ ] Add audio recording/bounce — no way to capture the final mix output to a file. Add an offline render mode that writes the mixed output to a WAV file, useful for exporting game audio or cutscene bounces.
+- [ ] Add FLAC streaming support — `StreamingDecoder` supports WAV, OGG, and MP3 streaming but not FLAC. Add `open_flac()` using claxon's streaming API.
+- [ ] Add volume units (dB) API — all volume controls use linear 0.0-1.0 scale, but audio professionals think in dB. Add conversion helpers (`db_to_linear`, `linear_to_db`) and optionally dB-based setter methods on handles.
+
+### Phase 17: Audio system activation and global settings
+- [ ] Wire AudioSystem into Application — `ApplicationBuilder::build()` sets `audio_system: None` and nothing ever initializes it. `AudioSystem::new()` is never called, so the entire audio system (playback, spatialization, zone reverb, script audio) is dead code. Fix: call `AudioSystem::new()` in the builder, store as `Some(audio_system)`, and handle the case where no audio device is available (log a warning, keep `None`). This is the single highest-priority audio item — nothing else matters if the system isn't running.
+- [ ] Add AudioSettings to Preferences — `Preferences` struct has no audio fields. Add: `master_volume: f32`, `sfx_volume: f32`, `music_volume: f32`, `ambient_volume: f32`. Serialize to `preferences.toml`. Apply to `AudioEngine` on startup and on change.
+- [ ] Add Audio tab to preferences panel — currently only General, Viewport, and AI tabs exist. Add an Audio tab with: master volume slider, SFX volume slider, music volume slider, ambient volume slider. Changes should apply immediately (live preview) and persist to `preferences.toml` on save.
+- [ ] Apply saved audio settings on startup — after `AudioSystem::new()`, read `Preferences::audio_settings` and call `engine.set_master_volume()`, `engine.set_category_volume()` for each category. Currently all volumes reset to 1.0 every launch.
+- [ ] Add AudioSource inspector UI — `AudioSource` component exists but has no inspector section. Add a read-only section showing: source file path, sample rate, channel count, duration. Add a "Play Preview" button to audition the clip.
+- [ ] Add AudioListener indicator in inspector — `AudioListener` component exists but has no UI. Add a minimal inspector section showing which entity is the active listener (there should be only one). Warn if multiple AudioListener components exist.
+
+### Phase 18: Audio mixer UI
+- [ ] Add audio mixer panel — a dockable panel showing the current mix state: master bus with VU meter + fader, SFX/Music/Ambient sub-buses with VU meters + faders, aux bus sends with wet/dry controls. VU meters should show real-time peak/RMS levels from the mixer's render output.
+- [ ] Add real-time level metering to AudioMixer — the mixer currently has no peak/RMS measurement. Add per-category and master level meters computed during `render()` using atomic double-buffered level snapshots (write in audio thread, read in UI thread). Required for the mixer panel VU meters.
+- [ ] Add voice pool status display — show active voice count, peak voice count, and which voices are playing (with name/category/volume) in the mixer panel or a debug overlay. Useful for diagnosing voice leaks and tuning voice limits.
+- [ ] Add reverb zone visualizer — `ReverbZone` components exist but are invisible in the editor. Draw wireframe boxes/spheres showing reverb zone extents with color-coding for decay/wet parameters, similar to physics collider visualization.
+
 ## Physics
 
 ### Phase 0: Architecture decision
@@ -598,6 +645,23 @@
 - [x] Add console/output log panel — capture log output in editor, filter by level, search
 - [x] Fix asset browser tooltip line spacing — hover tooltip on asset items has inconsistent line spacing compared to the rest of the UI
 - [x] Fix text input selection/active highlight being too opaque — the "Filter" input in asset browser and "Script" path input have a selection color that's too bright/invasive, obscuring the text. Investigate if transparency isn't rendering correctly. Should be fixed in a reusable text input style so all text inputs benefit.
+
+### Declarative UI migration
+
+- [x] Add LabeledSlider, Vec3Slider, ImageButton, RadioButton, PropertyRow variants to ViewDescriptor with full draw/input/layout/diff support
+- [x] Migrate GizmoButtonsView from ViewDescriptor::Custom + scratch bridge to declarative RadioButton + ActionStream
+- [x] Add get_state/set_state to BuildContext for external state sync
+- [x] Fix StateArena slot counter bug (reset_slots) for cross-frame state stability
+- [ ] Add DraggablePanel variant to ViewDescriptor — used by preferences, co-creator, particle-inspector (3 panels)
+- [ ] Add StatusBar variant to ViewDescriptor — used by status bar panel
+- [ ] Add MenuBar + MenuItem + MenuDropdown variants to ViewDescriptor — used by toolbar
+- [ ] Add TreeView variant to ViewDescriptor — used by hierarchy panel (virtualized, expand/collapse, selection)
+- [ ] Add Modal/ContextMenu variants to ViewDescriptor — used by inspector "Add Component" popup, hierarchy right-click
+- [ ] Migrate StatusBarView from ViewDescriptor::Custom to declarative + remove scratch bridge
+- [ ] Migrate remaining panels from ViewDescriptor::Custom to declarative trees (toolbar, console, preferences, inspector, hierarchy, co-creator, particle-inspector, viewport-grid, asset-browser)
+- [ ] Remove thread_local bridges from all migrated panels
+- [ ] Remove immediate-mode widgets with declarative equivalents from widgets/mod.rs public API (Button, Slider, LabeledSlider, Vec3Slider, ToggleButton, TextInput, RadioButton, ImageButton, Panel)
+- [ ] Restrict or remove ViewDescriptor::Custom escape hatch
 
 ## Developer Experience
 
