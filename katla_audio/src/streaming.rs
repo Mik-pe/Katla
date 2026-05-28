@@ -16,6 +16,7 @@ enum StreamingDecoderInner {
     Wav(hound::WavReader<std::io::BufReader<std::fs::File>>),
     Ogg(Box<OggStreamState>),
     Mp3(Mp3StreamState),
+    Flac(FlacStreamState),
 }
 
 struct OggStreamState {
@@ -24,6 +25,11 @@ struct OggStreamState {
 
 struct Mp3StreamState {
     decoder: minimp3::Decoder<std::io::BufReader<std::fs::File>>,
+    path: std::path::PathBuf,
+}
+
+struct FlacStreamState {
+    reader: claxon::FlacReader<std::io::BufReader<std::fs::File>>,
     path: std::path::PathBuf,
 }
 
@@ -71,11 +77,29 @@ impl StreamingDecoder {
         })
     }
 
+    pub fn open_flac(path: &Path) -> Result<Self, AudioError> {
+        use std::fs::File;
+        let file = File::open(path).map_err(AudioError::Io)?;
+        let reader = claxon::FlacReader::new(std::io::BufReader::new(file))
+            .map_err(|e| AudioError::DecodeFailed(format!("Failed to parse FLAC: {e}")))?;
+        let info = reader.streaminfo();
+        Ok(StreamingDecoder {
+            inner: StreamingDecoderInner::Flac(FlacStreamState {
+                reader,
+                path: path.to_path_buf(),
+            }),
+            channels: info.channels as u16,
+            sample_rate: info.sample_rate,
+            exhausted: false,
+        })
+    }
+
     pub fn open(path: &Path) -> Result<Self, AudioError> {
         match path.extension().and_then(|e| e.to_str()) {
             Some("wav") | Some("WAV") => Self::open_wav(path),
             Some("ogg") | Some("OGG") => Self::open_ogg(path),
             Some("mp3") | Some("MP3") => Self::open_mp3(path),
+            Some("flac") | Some("FLAC") => Self::open_flac(path),
             _ => Err(AudioError::FormatUnsupported(format!(
                 "Unsupported streaming format: {}",
                 path.display()
@@ -204,6 +228,37 @@ impl StreamingDecoder {
                     samples: all_samples,
                 })
             }
+            StreamingDecoderInner::Flac(state) => {
+                let info = state.reader.streaminfo();
+                let bits_per_sample = info.bits_per_sample;
+                let mut all_samples = Vec::with_capacity(STREAM_CHUNK_SAMPLES);
+                for s in state.reader.samples().take(STREAM_CHUNK_SAMPLES) {
+                    match s {
+                        Ok(s) => {
+                            let v = match bits_per_sample {
+                                16 => (s as i16) as f32 / i16::MAX as f32,
+                                24 => s as f32 / 8388608.0,
+                                32 => s as f32 / i32::MAX as f32,
+                                _ => s as f32 / (1i64 << (bits_per_sample - 1)) as f32,
+                            };
+                            all_samples.push(v);
+                        }
+                        Err(_) => {
+                            self.exhausted = true;
+                            break;
+                        }
+                    }
+                }
+                if all_samples.is_empty() {
+                    self.exhausted = true;
+                    return None;
+                }
+                Some(AudioBuffer {
+                    sample_rate: self.sample_rate,
+                    channels: self.channels,
+                    samples: all_samples,
+                })
+            }
         }
     }
 
@@ -224,6 +279,12 @@ impl StreamingDecoder {
                 use std::fs::File;
                 let file = File::open(&state.path).map_err(AudioError::Io)?;
                 state.decoder = minimp3::Decoder::new(std::io::BufReader::new(file));
+            }
+            StreamingDecoderInner::Flac(state) => {
+                use std::fs::File;
+                let file = File::open(&state.path).map_err(AudioError::Io)?;
+                state.reader = claxon::FlacReader::new(std::io::BufReader::new(file))
+                    .map_err(|e| AudioError::DecodeFailed(format!("FLAC seek failed: {e}")))?;
             }
         }
         self.exhausted = false;

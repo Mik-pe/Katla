@@ -21,7 +21,7 @@ pub use error::AudioError;
 pub use sound_cue::{CuePlayMode, SoundCue};
 pub use streaming::StreamingDecoder;
 pub use streaming_voice::StreamingVoiceHandle;
-pub use voice::{VoiceHandle, VoiceId, VoiceState, compute_pan_gains};
+pub use voice::{VoiceHandle, VoiceId, VoiceState, compute_pan_gains, db_to_linear, linear_to_db};
 
 #[cfg(test)]
 mod tests;
