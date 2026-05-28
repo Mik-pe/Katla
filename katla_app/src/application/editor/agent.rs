@@ -1482,7 +1482,7 @@ fn execute_local_actions(app: &mut super::super::Application, actions: &[LocalAc
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{MassComponent, NameComponent, PointLight};
+    use crate::components::{NameComponent, PointLight};
 
     fn test_world_and_registry() -> (katla_ecs::World, ComponentRegistry) {
         (
@@ -1497,7 +1497,6 @@ mod tests {
         let entity = world.create_entity();
         world.add_component(entity, NameComponent::new("TestEntity"));
         world.add_component(entity, PointLight::new([1.0, 0.0, 0.0], 5.0, 20.0));
-        world.add_component(entity, MassComponent { mass: 2.5 });
 
         let json = get_scene_context_json(&mut world, &registry, Some(entity));
         assert!(json.contains("TestEntity"));

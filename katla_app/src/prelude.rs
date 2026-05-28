@@ -15,9 +15,7 @@ pub use crate::components::camera::{
 };
 pub use crate::components::lighting::{DirectionalLight, PointLight};
 pub use crate::components::particle::ParticleEmitterComponent;
-pub use crate::components::physics::{
-    DragComponent, ForceComponent, MassComponent, VelocityComponent,
-};
+pub use crate::components::physics::VelocityComponent;
 pub use crate::components::rendering::DrawableComponent;
 pub use crate::components::scene::{Children, EditorHidden, NameComponent, Parent};
 pub use crate::components::transform::{TransformComponent, TransformDirty, WorldTransform};
@@ -25,7 +23,7 @@ pub use crate::components::transform::{TransformComponent, TransformDirty, World
 // Systems
 pub use crate::systems::camera::{FlyCameraLookSystem, OrbitCameraSystem};
 pub use crate::systems::particle_system::ParticleSystem;
-pub use crate::systems::physics::{PhysicsSystem, VelocitySystem};
+pub use crate::systems::physics::RapierPhysicsSystem;
 pub use crate::systems::transform::{TransformHierarchySystem, TransformOptimization};
 
 // Animation

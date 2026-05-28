@@ -57,8 +57,7 @@ const COMPONENT_CATEGORIES: &[(&str, &[&str])] = &[
             "ColliderShape",
             "RigidBody",
             "PhysicsMaterial",
-            "MassComponent",
-            "DragComponent",
+            "CollisionFilter",
             "VelocityComponent",
         ],
     ),
@@ -469,30 +468,6 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                     scalar_row(ui, "Lifetime", &mut edit.lifetime, 0.1..=30.0, w);
                     scalar_row(ui, "Gravity", &mut edit.gravity, -30.0..=30.0, w);
                     scalar_row(ui, "Scale", &mut edit.particle_scale, 0.01..=5.0, w);
-                    section_gap(ui);
-                }
-
-                if entity.mass.is_some() {
-                    if section_header_with_remove(ui, "Mass", entity_id, "MassComponent", theme, w)
-                    {
-                        ctx.pending_actions.push(EditorAction::RemoveComponent {
-                            entity: entity_id,
-                            component_type: "MassComponent".to_string(),
-                        });
-                    }
-                    scalar_row(ui, "Mass", &mut edit.mass, 0.01..=1000.0, w);
-                    section_gap(ui);
-                }
-
-                if entity.drag.is_some() {
-                    if section_header_with_remove(ui, "Drag", entity_id, "DragComponent", theme, w)
-                    {
-                        ctx.pending_actions.push(EditorAction::RemoveComponent {
-                            entity: entity_id,
-                            component_type: "DragComponent".to_string(),
-                        });
-                    }
-                    scalar_row(ui, "Coefficient", &mut edit.drag_coefficient, 0.0..=10.0, w);
                     section_gap(ui);
                 }
 

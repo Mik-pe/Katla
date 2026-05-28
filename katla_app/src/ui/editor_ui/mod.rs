@@ -275,12 +275,6 @@ impl EditorUI {
                 } else {
                     self.inspector_edit.script_path.clear();
                 }
-                if let Some(ref m) = entity.mass {
-                    self.inspector_edit.mass = m.mass;
-                }
-                if let Some(ref d) = entity.drag {
-                    self.inspector_edit.drag_coefficient = d.coefficient;
-                }
                 if let Some(ref p) = entity.perspective {
                     self.inspector_edit.fov = p.fov;
                     self.inspector_edit.near = p.near;

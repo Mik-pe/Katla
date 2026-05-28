@@ -17,15 +17,15 @@ use katla_math::{Vec2, Vec3, Vec4};
 
 use crate::components::ParticleEmitterComponent;
 use crate::components::{
-    Children, DirectionalLight, DragComponent, DrawableComponent, EditorHidden, MassComponent,
-    NameComponent, Parent, PerspectiveComponent, PointLight, TransformComponent,
+    Children, DirectionalLight, DrawableComponent, EditorHidden, NameComponent, Parent,
+    PerspectiveComponent, PointLight, TransformComponent,
 };
 
 use crate::ui::{
     AudioEmitterBoolField, AudioEmitterField, AudioEmitterInfo, ColliderField, ColliderShapeInfo,
-    ColliderShapeType, DirectionalLightInfo, DragInfo, EditorAction, EntityInfo, MassInfo,
-    ParticleEmitterInfo, PerspectiveInfo, PhysicsMaterialField, PhysicsMaterialInfo,
-    PointLightInfo, RigidBodyField, RigidBodyInfo, RigidBodyType,
+    ColliderShapeType, DirectionalLightInfo, EditorAction, EntityInfo, ParticleEmitterInfo,
+    PerspectiveInfo, PhysicsMaterialField, PhysicsMaterialInfo, PointLightInfo, RigidBodyField,
+    RigidBodyInfo, RigidBodyType,
 };
 
 use super::Application;
@@ -44,8 +44,6 @@ pub(crate) struct InspectorDragSnapshot {
     lifetime: Option<f32>,
     gravity: Option<f32>,
     particle_scale: Option<f32>,
-    mass: Option<f32>,
-    drag_coefficient: Option<f32>,
     fov: Option<f32>,
     near: Option<f32>,
     aspect_ratio: Option<f32>,
@@ -141,16 +139,6 @@ fn apply_inspector_snapshot(
             emitter.config.base_scale = sc;
         }
     }
-    if let Some(mass_comp) = world.get_component_mut::<MassComponent>(entity) {
-        if let Some(m) = snapshot.mass {
-            mass_comp.mass = m;
-        }
-    }
-    if let Some(drag_comp) = world.get_component_mut::<DragComponent>(entity) {
-        if let Some(c) = snapshot.drag_coefficient {
-            drag_comp.coefficient = c;
-        }
-    }
     if let Some(persp) = world.get_component_mut::<PerspectiveComponent>(entity) {
         if let Some(fov) = snapshot.fov {
             persp.fov = fov;
@@ -213,14 +201,6 @@ fn snapshot_inspector_state(app: &Application, entity: EntityId) -> InspectorDra
             (None, None, None, None, None)
         };
 
-    let mass = app
-        .world
-        .get_component::<MassComponent>(entity)
-        .map(|m| m.mass);
-    let drag_coefficient = app
-        .world
-        .get_component::<DragComponent>(entity)
-        .map(|d| d.coefficient);
     let (fov, near, aspect_ratio) = app
         .world
         .get_component::<PerspectiveComponent>(entity)
@@ -251,8 +231,6 @@ fn snapshot_inspector_state(app: &Application, entity: EntityId) -> InspectorDra
         lifetime,
         gravity,
         particle_scale,
-        mass,
-        drag_coefficient,
         fov,
         near,
         aspect_ratio,
@@ -552,18 +530,6 @@ fn inspector_values_differ_from_ecs(
         }
     }
 
-    if let Some(mass_comp) = world.get_component::<MassComponent>(entity) {
-        if (edit.mass - mass_comp.mass).abs() > 1e-4 {
-            return true;
-        }
-    }
-
-    if let Some(drag_comp) = world.get_component::<DragComponent>(entity) {
-        if (edit.drag_coefficient - drag_comp.coefficient).abs() > 1e-4 {
-            return true;
-        }
-    }
-
     if let Some(persp) = world.get_component::<PerspectiveComponent>(entity) {
         if (edit.fov - persp.fov).abs() > 1e-4 {
             return true;
@@ -702,8 +668,6 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         particle_scale,
         light_color_picker: _,
         script_path: _,
-        mass,
-        drag_coefficient,
         fov,
         near,
         aspect_ratio,
@@ -791,20 +755,6 @@ fn apply_inspector_slider_changes(app: &mut Application) {
             emitter.config.base_lifetime = *lifetime;
             emitter.config.gravity = *gravity;
             emitter.config.base_scale = *particle_scale;
-        }
-    }
-
-    // MassComponent
-    if let Some(mass_comp) = app.world.get_component_mut::<MassComponent>(entity_id) {
-        if (*mass - mass_comp.mass).abs() > 1e-4 {
-            mass_comp.mass = *mass;
-        }
-    }
-
-    // DragComponent
-    if let Some(drag_comp) = app.world.get_component_mut::<DragComponent>(entity_id) {
-        if (*drag_coefficient - drag_comp.coefficient).abs() > 1e-4 {
-            drag_comp.coefficient = *drag_coefficient;
         }
     }
 
@@ -1875,8 +1825,6 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         Option<PointLightInfo>,
         Option<ParticleEmitterInfo>,
         Option<String>,
-        Option<MassInfo>,
-        Option<DragInfo>,
         Option<PerspectiveInfo>,
         Option<DirectionalLightInfo>,
         Option<crate::ui::AudioEmitterInfo>,
@@ -1937,16 +1885,6 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         let has_parent = app.world.get_component::<Parent>(entity_id).is_some();
         let has_children = app.world.get_component::<Children>(entity_id).is_some();
 
-        let mass_info = app
-            .world
-            .get_component::<MassComponent>(entity_id)
-            .map(|m| MassInfo { mass: m.mass });
-        let drag_info = app
-            .world
-            .get_component::<DragComponent>(entity_id)
-            .map(|d| DragInfo {
-                coefficient: d.coefficient,
-            });
         let perspective_info = app
             .world
             .get_component::<PerspectiveComponent>(entity_id)
@@ -1995,12 +1933,6 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         }
         if particle_emitter.is_some() {
             components.push("ParticleEmitter");
-        }
-        if mass_info.is_some() {
-            components.push("MassComponent");
-        }
-        if drag_info.is_some() {
-            components.push("DragComponent");
         }
         if perspective_info.is_some() {
             components.push("PerspectiveComponent");
@@ -2114,8 +2046,6 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 point_light,
                 particle_emitter,
                 script_path,
-                mass_info,
-                drag_info,
                 perspective_info,
                 directional_info,
                 audio_emitter_info,
@@ -2160,8 +2090,6 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 point_light,
                 particle_emitter,
                 script_path,
-                mass,
-                drag,
                 perspective,
                 directional_light,
                 audio_emitter,
@@ -2188,8 +2116,6 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 point_light: point_light.clone(),
                 particle_emitter: particle_emitter.clone(),
                 script_path: script_path.clone(),
-                mass: mass.clone(),
-                drag: drag.clone(),
                 perspective: perspective.clone(),
                 directional_light: directional_light.clone(),
                 audio_emitter: audio_emitter.clone(),

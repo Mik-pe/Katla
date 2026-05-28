@@ -3,8 +3,8 @@
 use katla_ecs::{ComponentAccess, EntityId, System, World};
 use katla_math::Vec3;
 use katla_physics::{
-    BodyType, ColliderShape, Joint, PhysicsMaterial, PhysicsWorld, RigidBody, TriggerEvent,
-    TriggerVolume,
+    BodyType, ColliderShape, CollisionFilter, Joint, PhysicsMaterial, PhysicsWorld, RigidBody,
+    TriggerEvent, TriggerVolume,
 };
 use katla_script::{PendingPhysicsEvents, PhysicsCollisionEvent, PhysicsCollisionEventType};
 
@@ -42,6 +42,7 @@ impl System for RapierPhysicsSystem {
             ComponentAccess::write::<RigidBody>(),
             ComponentAccess::read::<ColliderShape>(),
             ComponentAccess::read::<PhysicsMaterial>(),
+            ComponentAccess::read::<CollisionFilter>(),
             ComponentAccess::write::<TransformComponent>(),
             ComponentAccess::write::<Joint>(),
             ComponentAccess::read::<TriggerVolume>(),
@@ -53,6 +54,7 @@ impl System for RapierPhysicsSystem {
             ComponentAccess::write::<RigidBody>(),
             ComponentAccess::read::<ColliderShape>(),
             ComponentAccess::read::<PhysicsMaterial>(),
+            ComponentAccess::read::<CollisionFilter>(),
             ComponentAccess::write::<TransformComponent>(),
             ComponentAccess::write::<Joint>(),
             ComponentAccess::read::<TriggerVolume>(),
@@ -85,6 +87,13 @@ fn spawn_new_bodies(world: &mut World) {
         let is_sensor = world.get_component::<TriggerVolume>(entity).is_some();
 
         let entity_id = entity.id();
+        let gravity_scale = world
+            .get_component::<RigidBody>(entity)
+            .map(|rb| rb.gravity_scale)
+            .unwrap_or(1.0);
+
+        let collision_filter = world.get_component::<CollisionFilter>(entity).copied();
+
         let (body_handle, collider_handle) = world
             .get_resource_mut::<PhysicsWorld>()
             .unwrap()
@@ -95,6 +104,8 @@ fn spawn_new_bodies(world: &mut World) {
                 mat.as_ref(),
                 entity_id,
                 is_sensor,
+                gravity_scale,
+                collision_filter.as_ref(),
             );
 
         if let Some(mut rb) = world.get_component_mut::<RigidBody>(entity) {

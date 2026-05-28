@@ -257,10 +257,12 @@ impl PhysicsWorld {
         material: Option<&PhysicsMaterial>,
         entity_id: u64,
     ) -> (RigidBodyHandle, ColliderHandle) {
-        self.create_body_ex(shape, transform, body_type, material, entity_id, false)
+        self.create_body_ex(
+            shape, transform, body_type, material, entity_id, false, 1.0, None,
+        )
     }
 
-    /// Extended version of `create_body` with sensor support.
+    /// Extended version of `create_body` with sensor and collision filter support.
     pub fn create_body_ex(
         &mut self,
         shape: &ColliderShape,
@@ -269,6 +271,8 @@ impl PhysicsWorld {
         material: Option<&PhysicsMaterial>,
         entity_id: u64,
         is_sensor: bool,
+        gravity_scale: f32,
+        collision_filter: Option<&crate::collider::CollisionFilter>,
     ) -> (RigidBodyHandle, ColliderHandle) {
         let pose = katla_to_rapier_pose(transform);
         let rapier_shape = collider_shape_to_rapier(shape);
@@ -290,6 +294,14 @@ impl PhysicsWorld {
                 .active_events(rapier3d::pipeline::ActiveEvents::COLLISION_EVENTS);
         }
 
+        if let Some(filter) = collision_filter {
+            collider_builder = collider_builder.collision_groups(InteractionGroups::new(
+                Group::from_bits(filter.layers).unwrap_or(Group::ALL),
+                Group::from_bits(filter.mask).unwrap_or(Group::ALL),
+                InteractionTestMode::And,
+            ));
+        }
+
         let rapier_body_type = match body_type {
             BodyType::Static => RigidBodyType::Fixed,
             BodyType::Dynamic => RigidBodyType::Dynamic,
@@ -304,6 +316,7 @@ impl PhysicsWorld {
 
         let body = RigidBodyBuilder::new(rapier_body_type)
             .pose(pose.into())
+            .gravity_scale(gravity_scale)
             .build();
         let body_handle = self.bodies.insert(body);
 

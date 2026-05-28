@@ -3,9 +3,7 @@ use katla_app::animation::AnimationUpdateSystem;
 use katla_app::application::ApplicationBuilder;
 use katla_app::components::transform::TransformComponent;
 use katla_app::input::{Action, InputState};
-use katla_app::systems::{
-    OrbitCameraSystem, PhysicsSystem, TransformHierarchySystem, VelocitySystem,
-};
+use katla_app::systems::{OrbitCameraSystem, RapierPhysicsSystem, TransformHierarchySystem};
 use katla_ecs::SystemExecutionOrder;
 use katla_script::{InputSnapshot, ScriptSystem};
 use log::info;
@@ -58,8 +56,7 @@ fn main() {
             SystemExecutionOrder::NORMAL,
         )
         .with_system(Box::new(OrbitCameraSystem), SystemExecutionOrder::NORMAL)
-        .with_system(Box::new(PhysicsSystem), SystemExecutionOrder::NORMAL)
-        .with_system(Box::new(VelocitySystem), SystemExecutionOrder::LATE)
+        .with_system(Box::new(RapierPhysicsSystem), SystemExecutionOrder::NORMAL)
         .with_system(
             Box::new(
                 ScriptSystem::new()
@@ -141,9 +138,6 @@ fn main() {
                         }
                         register!(katla_app::components::transform::TransformComponent);
                         register!(katla_app::components::transform::WorldTransform);
-                        register!(katla_app::components::physics::MassComponent);
-                        register!(katla_app::components::physics::DragComponent);
-                        register!(katla_app::components::physics::ForceComponent);
                         register!(katla_app::components::physics::VelocityComponent);
                         register!(katla_app::components::scene::NameComponent);
                         register!(katla_app::components::rendering::DrawableComponent);

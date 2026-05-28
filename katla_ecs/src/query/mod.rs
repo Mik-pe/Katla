@@ -16,9 +16,6 @@
 //! #[derive(Component)]
 //! struct VelocityComponent { vx: f32, vy: f32, vz: f32 }
 //!
-//! #[derive(Component)]
-//! struct ForceComponent { fx: f32, fy: f32, fz: f32 }
-//!
 //! let mut world = World::new();
 //! world.spawn((
 //!     TransformComponent { x: 0.0, y: 0.0, z: 0.0 },
@@ -27,7 +24,6 @@
 //! world.spawn((
 //!     TransformComponent { x: 5.0, y: 0.0, z: 0.0 },
 //!     VelocityComponent { vx: 2.0, vy: 0.0, vz: 0.0 },
-//!     ForceComponent { fx: 0.0, fy: -9.8, fz: 0.0 },
 //! ));
 //!
 //! // Query single component
@@ -36,8 +32,8 @@
 //! }
 //!
 //! // Query two components
-//! for (_entity, velocity, force) in world.query::<(&VelocityComponent, &ForceComponent)>() {
-//!     assert_eq!(force.fy, -9.8);
+//! for (_entity, transform, velocity) in world.query::<(&TransformComponent, &VelocityComponent)>() {
+//!     assert!(velocity.vx > 0.0);
 //! }
 //! ```
 

@@ -1,17 +1,9 @@
 use katla_ecs::{ComponentAccess, System, World};
 use katla_math::{Quat, Vec3};
 
-use crate::components::{
-    FlyCameraControllerComponent, FlyCameraLookComponent, ForceComponent, VelocityComponent,
-};
+use crate::components::{FlyCameraControllerComponent, FlyCameraLookComponent};
 use crate::input::{Action, InputState};
 
-/// Compute the camera movement direction vector from input state.
-///
-/// Returns a normalized-ish direction vector where:
-/// - X: positive = right, negative = left
-/// - Y: positive = up, negative = down
-/// - Z: negative = forward, positive = backward
 fn compute_movement_direction(input: &InputState) -> Vec3 {
     let fwd = input.is_action_pressed(Action::MoveForward) as i32 as f32;
     let back = input.is_action_pressed(Action::MoveBackward) as i32 as f32;
@@ -51,68 +43,62 @@ impl System for FlyCameraLookSystem {
         let delta = input.mouse_delta;
         let has_movement_input = input_dir.length_squared() > 0.0;
 
-        // Collect all updates first
-        let transform_updates: Vec<(katla_ecs::EntityId, Quat, bool)> = world
+        let updates: Vec<(katla_ecs::EntityId, Quat, Vec3, Vec3)> = world
             .query::<(
                 &FlyCameraControllerComponent,
                 &mut FlyCameraLookComponent,
                 &crate::components::TransformComponent,
             )>()
             .map(|(entity, ctrl, look, transform)| {
-                if should_look {
+                let rotation = if should_look {
                     look.yaw -= ctrl.sensitivity * delta.0;
                     look.pitch -= ctrl.sensitivity * delta.1;
 
                     let limit = ctrl.pitch_limit.max(0.0);
                     look.pitch = look.pitch.clamp(-limit, limit);
-                    (
-                        entity,
-                        Quat::new_from_yaw_pitch(look.yaw, look.pitch),
-                        has_movement_input,
-                    )
+                    Quat::new_from_yaw_pitch(look.yaw, look.pitch)
                 } else {
-                    (entity, transform.transform.rotation, has_movement_input)
-                }
+                    transform.transform.rotation
+                };
+
+                let velocity = if has_movement_input {
+                    let world_dir = rotation.rotate_vec3(input_dir);
+                    look.velocity + world_dir.mul(speed * delta_time)
+                } else {
+                    let vel_speed = look.velocity.length();
+                    if vel_speed > 0.01 {
+                        let damping = 0.85_f32.powf(delta_time * 60.0);
+                        look.velocity * damping
+                    } else {
+                        Vec3::new(0.0, 0.0, 0.0)
+                    }
+                };
+                look.velocity = velocity;
+
+                let new_position = transform.transform.position + velocity * delta_time;
+
+                (entity, rotation, velocity, new_position)
             })
             .collect();
 
-        // Apply transform updates
-        for (entity, rotation, _has_input) in &transform_updates {
+        for (entity, rotation, _velocity, new_position) in updates {
             if let Some(transform) =
-                world.get_component_mut::<crate::components::TransformComponent>(*entity)
+                world.get_component_mut::<crate::components::TransformComponent>(entity)
             {
-                transform.transform.rotation = *rotation;
-            }
-        }
-
-        // Apply force/velocity updates
-        for (entity, rotation, has_input) in transform_updates {
-            if has_input {
-                if let Some(force) = world.get_component_mut::<ForceComponent>(entity) {
-                    let world_dir = rotation.rotate_vec3(input_dir);
-                    force.force += world_dir.mul(speed * delta_time);
-                }
-            } else {
-                if let Some(velocity) = world.get_component_mut::<VelocityComponent>(entity) {
-                    let vel_speed = velocity.velocity.length();
-                    if vel_speed > 0.01 {
-                        let damping = 0.85_f32.powf(delta_time * 60.0);
-                        velocity.velocity *= damping;
-                    } else {
-                        velocity.velocity = Vec3::new(0.0, 0.0, 0.0);
-                    }
-                }
+                transform.transform.rotation = rotation;
+                transform.transform.position = new_position;
             }
         }
     }
 
-    fn component_access() -> Vec<ComponentAccess> {
+    fn component_access() -> Vec<ComponentAccess>
+    where
+        Self: Sized,
+    {
         vec![
             ComponentAccess::read::<FlyCameraControllerComponent>(),
             ComponentAccess::write::<FlyCameraLookComponent>(),
             ComponentAccess::write::<crate::components::TransformComponent>(),
-            ComponentAccess::write::<ForceComponent>(),
-            ComponentAccess::write::<VelocityComponent>(),
         ]
     }
 
@@ -121,8 +107,6 @@ impl System for FlyCameraLookSystem {
             ComponentAccess::read::<FlyCameraControllerComponent>(),
             ComponentAccess::write::<FlyCameraLookComponent>(),
             ComponentAccess::write::<crate::components::TransformComponent>(),
-            ComponentAccess::write::<ForceComponent>(),
-            ComponentAccess::write::<VelocityComponent>(),
         ]
     }
 }
