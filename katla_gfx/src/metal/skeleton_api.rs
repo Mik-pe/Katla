@@ -11,6 +11,19 @@ impl MetalRenderer {
     ) -> Result<SkeletonHandle, RendererError> {
         let buffer_size = (joint_count * 64) as u64;
         let buffer = self.context.create_buffer(buffer_size, true)?;
+
+        let identity: [f32; 16] = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let ptr = buffer.map();
+        unsafe {
+            let dst = ptr as *mut [f32; 16];
+            for i in 0..joint_count {
+                dst.add(i).write(identity);
+            }
+        }
+        buffer.unmap();
+
         let id = self.skeletons.insert(buffer);
         Ok(SkeletonHandle::new(id))
     }

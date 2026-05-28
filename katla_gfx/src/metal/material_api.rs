@@ -66,6 +66,7 @@ impl MetalRenderer {
         };
 
         let is_skinned = vertex_type == "skinned";
+        let is_billboard = vertex_type == "billboard";
 
         let pipeline = if is_ui {
             let vd = super::context::ui_vertex_descriptor();
@@ -100,6 +101,22 @@ impl MetalRenderer {
                     objc2_metal::MTLWinding::Clockwise,
                     Some(&vd),
                     false,
+                )?
+        } else if is_billboard {
+            self.context
+                .create_graphics_pipeline_with_vertex_descriptor(
+                    vertex_fn,
+                    fragment_fn
+                        .as_ref()
+                        .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
+                    color_formats,
+                    depth_format,
+                    true,
+                    crate::pipeline::CompareOp::GreaterOrEqual,
+                    objc2_metal::MTLCullMode::None,
+                    objc2_metal::MTLWinding::Clockwise,
+                    None,
+                    true,
                 )?
         } else {
             self.context.create_graphics_pipeline(
