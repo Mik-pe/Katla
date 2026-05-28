@@ -4,10 +4,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use super::AudioEffect;
 use crate::effect::reverb::ReverbEffect;
 
-fn f32_to_bits(v: f32) -> u32 {
-    v.to_bits()
-}
-
 fn bits_to_f32(v: u32) -> f32 {
     f32::from_bits(v)
 }

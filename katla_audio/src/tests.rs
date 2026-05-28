@@ -176,7 +176,7 @@ fn test_mono_to_stereo_upmix() {
     let mut output = vec![0.0f32; 64];
     mixer.render(&mut output);
 
-    let (left_gain, right_gain) = crate::voice::compute_pan_gains(0.0);
+    let (left_gain, _right_gain) = crate::voice::compute_pan_gains(0.0);
     let expected = 0.7 * left_gain;
     for frame in 0..32 {
         let left = output[frame * 2];
@@ -339,7 +339,7 @@ fn test_category_volume_applied() {
     let mut output = vec![0.0f32; 64];
     mixer.render(&mut output);
 
-    let (left_gain, right_gain) = crate::voice::compute_pan_gains(0.0);
+    let (left_gain, _right_gain) = crate::voice::compute_pan_gains(0.0);
     let expected = 1.0 * 0.5 * left_gain;
     for sample in &output {
         assert!(
@@ -509,7 +509,7 @@ fn test_aux_bus_zero_send() {
     let mut output = vec![0.0f32; 128];
     mixer.render(&mut output);
 
-    let (left_gain, right_gain) = crate::voice::compute_pan_gains(0.0);
+    let (left_gain, _right_gain) = crate::voice::compute_pan_gains(0.0);
     let expected = 1.0 * left_gain;
     for sample in &output {
         assert!(

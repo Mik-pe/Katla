@@ -114,12 +114,6 @@ impl Voice {
         }
     }
 
-    pub fn with_loop_region(mut self, start_sample: usize, end_sample: usize) -> Self {
-        self.loop_start = start_sample as u64 * FIXED_ONE;
-        self.loop_end = end_sample as u64 * FIXED_ONE;
-        self
-    }
-
     pub fn id(&self) -> VoiceId {
         self.id
     }
@@ -176,10 +170,6 @@ impl Voice {
 
     pub fn occlusion(&self) -> f32 {
         f32::from_bits(self.occlusion.load(Ordering::Relaxed))
-    }
-
-    pub fn category(&self) -> AudioCategoryValue {
-        self.category
     }
 
     fn category_volume(&self) -> f32 {
