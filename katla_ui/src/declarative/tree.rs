@@ -16,9 +16,10 @@ use super::draw::draw_descriptor_with_id;
 use super::focus::{self, FocusManager};
 use super::ime::ImeRequest;
 use super::input;
-use super::layout::TaffyNodeMap;
+use super::layout::{MeasureFn, TaffyNodeMap};
 use super::state::{StateArena, ViewId};
 use super::transition::Transition;
+use crate::style::FontSize;
 
 pub struct ViewNode {
     pub descriptor: ViewDescriptor,
@@ -185,7 +186,16 @@ impl ViewTree {
         // 2. Sync Taffy layout and compute bounds
         let root_id = self.root.unwrap();
         let mut taffy = std::mem::take(&mut self.taffy);
-        taffy.sync(self);
+        {
+            let fonts = ui.fonts.clone();
+            let font_id = ui.current_font;
+            let scale = ui.scale_factor;
+            let measure = |content: &str, font_size: Option<FontSize>| {
+                let size = font_size.unwrap_or(FontSize::Medium).to_pixels();
+                fonts.borrow().measure_text(font_id, content, size, scale)
+            };
+            taffy.sync(self, &measure);
+        }
         let bounds = taffy.compute(root_id, screen_size, self);
         self.taffy = taffy;
         self.bounds_map = bounds;

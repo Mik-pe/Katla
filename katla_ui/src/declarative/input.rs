@@ -765,5 +765,5 @@ fn compute_visible_tree_items_input(
 
 fn measure_menu_label(label: &str, font_size: f32) -> f32 {
     let char_width = font_size * 0.6;
-    label.len() as f32 * char_width
+    label.chars().count() as f32 * char_width
 }
