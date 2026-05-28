@@ -11,7 +11,6 @@ pub(crate) struct ViewportGridDrawCtx {
     pub state: ViewportGridState,
     pub texture_ids: [Option<TextureId>; 4],
     pub theme: ColorScheme,
-    pub hovered_slot: Option<usize>,
 }
 
 pub(crate) struct ViewportGridView;
@@ -49,14 +48,13 @@ fn get_slot_at_position(bounds: Rect2D, state: &ViewportGridState, pos: Vec2) ->
 }
 
 fn draw_viewport_grid(ui: &mut UiContext, _bounds: Rect2D) {
-    let mut ctx = match ui.get_scratch::<ViewportGridDrawCtx>().cloned() {
+    let ctx = match ui.get_scratch::<ViewportGridDrawCtx>().cloned() {
         Some(c) => c,
         None => return,
     };
 
     let (rows, cols) = ctx.state.layout.grid_dimensions();
     let hovered_slot = get_slot_at_position(ctx.bounds, &ctx.state, ui.mouse_pos());
-    ctx.hovered_slot = hovered_slot;
 
     for row in 0..rows {
         for col in 0..cols {
@@ -120,8 +118,6 @@ fn draw_viewport_grid(ui: &mut UiContext, _bounds: Rect2D) {
             );
         }
     }
-
-    ui.set_scratch(ctx);
 }
 
 #[cfg(test)]
