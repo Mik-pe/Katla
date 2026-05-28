@@ -9,6 +9,14 @@ use crate::types::TextureId;
 use super::state::StateId;
 use super::transition::Transition;
 
+/// Declarative description of a UI view tree.
+///
+/// Each variant describes a leaf widget (Text, Button, Slider, etc.) or a
+/// layout container (HStack, VStack, ZStack, Panel, ScrollView, Overlay).
+///
+/// Implement [`Build`](super::Build) to produce a `ViewDescriptor` tree each frame.
+/// The [`ViewTree`](super::ViewTree) handles diffing, layout, input, and rendering
+/// automatically.
 #[derive(Clone)]
 pub enum ViewDescriptor {
     Empty,

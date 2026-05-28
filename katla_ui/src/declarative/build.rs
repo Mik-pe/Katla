@@ -61,6 +61,12 @@ impl Default for CallbackTable {
     }
 }
 
+/// Context provided during [`Build::build()`] for accessing state, callbacks, and environment data.
+///
+/// - `ctx.state(initial)` — get or create persistent state scoped to this view node
+/// - `ctx.env::<T>()` — read typed data injected by the application before the frame
+/// - `ctx.on_click(f)` — register a click callback, returns a `Callback` handle
+/// - `ctx.emit(action)` — emit a typed action that can be drained after the frame
 pub struct BuildContext<'a> {
     node_id: ViewId,
     state_arena: &'a mut StateArena,
@@ -103,6 +109,29 @@ impl<'a> BuildContext<'a> {
     }
 }
 
+/// Trait for types that produce a [`ViewDescriptor`](super::descriptor::ViewDescriptor) tree.
+///
+/// Implement this on a struct (unit struct is fine) and use [`BuildContext`]
+/// to access state, environment data, register callbacks, and emit actions.
+///
+/// # Example
+///
+/// ```ignore
+/// struct MyView;
+///
+/// impl Build for MyView {
+///     fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+///         let count = ctx.state(0u32);
+///         ViewDescriptor::Button {
+///             label: format!("Count: {}", count),
+///             fill_color: None,
+///             hover_color: None,
+///             border_color: None,
+///             on_click: Some(ctx.on_click(|| println!("clicked"))),
+///         }
+///     }
+/// }
+/// ```
 pub trait Build {
     fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor;
 }
