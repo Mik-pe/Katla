@@ -1,13 +1,11 @@
-use katla_math::Vec2;
 use katla_ui::ColorScheme;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, Padding, StackDescriptor, StatusBarDescriptor, ViewDescriptor,
+    Alignment, Build, BuildContext, Padding, ViewDescriptor, hstack, statusbar, text,
 };
 
 /// Snapshot of data needed to render the status bar each frame.
 #[derive(Clone)]
 pub(crate) struct StatusBarData {
-    pub screen_size: Vec2,
     pub height: f32,
     pub fps: f32,
     pub frame_time_ms: f32,
@@ -69,81 +67,37 @@ impl Build for StatusBarView {
         };
 
         let left_items = vec![
-            ViewDescriptor::Text {
-                content: format!("FPS: {:.0}", data.fps),
-                color: Some(fps_color),
-                font_size: None,
-            },
-            ViewDescriptor::Text {
-                content: format!("{:.2} ms", data.frame_time_ms),
-                color: Some(frame_time_color),
-                font_size: None,
-            },
-            ViewDescriptor::Text {
-                content: format!("Frame: {}", data.frame_count),
-                color: Some(data.theme.text_secondary),
-                font_size: None,
-            },
-            ViewDescriptor::Text {
-                content: format!("Entities: {}", data.entity_count),
-                color: Some(data.theme.text_secondary),
-                font_size: None,
-            },
-            ViewDescriptor::Text {
-                content: format!("Draws: {}", data.draw_call_count),
-                color: Some(data.theme.text_secondary),
-                font_size: None,
-            },
-            ViewDescriptor::Text {
-                content: selection_text,
-                color: Some(selection_color),
-                font_size: None,
-            },
+            text(format!("FPS: {:.0}", data.fps)).color(fps_color),
+            text(format!("{:.2} ms", data.frame_time_ms)).color(frame_time_color),
+            text(format!("Frame: {}", data.frame_count)).color(data.theme.text_secondary),
+            text(format!("Entities: {}", data.entity_count)).color(data.theme.text_secondary),
+            text(format!("Draws: {}", data.draw_call_count)).color(data.theme.text_secondary),
+            text(selection_text).color(selection_color),
         ];
 
         let right_items = vec![
-            ViewDescriptor::Text {
-                content: format!("ColorScheme: {}", data.theme.name),
-                color: Some(data.theme.text_muted),
-                font_size: None,
-            },
-            ViewDescriptor::Text {
-                content: mode_text.to_string(),
-                color: Some(mode_color),
-                font_size: None,
-            },
+            text(format!("ColorScheme: {}", data.theme.name)).color(data.theme.text_muted),
+            text(mode_text).color(mode_color),
         ];
 
-        let mut content_children = vec![ViewDescriptor::HStack(Box::new(StackDescriptor {
-            children: left_items,
-            spacing: 8.0,
-            padding: Padding::all(4.0),
-            alignment: Alignment::Center,
-        }))];
+        let mut content_children = vec![
+            hstack(left_items)
+                .spacing(8.0)
+                .padding_all(4.0)
+                .align(Alignment::Center),
+        ];
 
         if data.save_confirmation_timer > 0.0 {
-            content_children.push(ViewDescriptor::Text {
-                content: "✓ Scene saved".to_string(),
-                color: Some(data.theme.success),
-                font_size: None,
-            });
+            content_children.push(text("✓ Scene saved").color(data.theme.success));
         }
 
-        content_children.push(ViewDescriptor::HStack(Box::new(StackDescriptor {
-            children: right_items,
-            spacing: 8.0,
-            padding: Padding::horizontal(16.0),
-            alignment: Alignment::Trailing,
-        })));
+        content_children.push(
+            hstack(right_items)
+                .spacing(8.0)
+                .padding(Padding::horizontal(16.0))
+                .align(Alignment::Trailing),
+        );
 
-        ViewDescriptor::StatusBar(Box::new(StatusBarDescriptor {
-            height: data.height,
-            content: Box::new(ViewDescriptor::HStack(Box::new(StackDescriptor {
-                children: content_children,
-                spacing: 0.0,
-                padding: Padding::zero(),
-                alignment: Alignment::Leading,
-            }))),
-        }))
+        statusbar(data.height, hstack(content_children))
     }
 }

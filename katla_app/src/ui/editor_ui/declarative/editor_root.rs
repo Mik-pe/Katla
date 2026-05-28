@@ -1,4 +1,4 @@
-use katla_ui::declarative::{Alignment, Build, BuildContext, Padding, ViewDescriptor};
+use katla_ui::declarative::{Alignment, Build, BuildContext, ViewDescriptor, zstack};
 
 use super::asset_browser::AssetBrowserView;
 use super::co_creator::CoCreatorView;
@@ -28,21 +28,18 @@ impl Build for EditorRootView {
         let asset_browser = AssetBrowserView.build(ctx);
         let console = ConsoleView.build(ctx);
 
-        ViewDescriptor::ZStack(Box::new(katla_ui::declarative::ZStackDescriptor {
-            children: vec![
-                (Alignment::TopLeading, viewport_grid),
-                (Alignment::TopLeading, hierarchy),
-                (Alignment::TopLeading, toolbar),
-                (Alignment::BottomLeading, status_bar),
-                (Alignment::TopLeading, gizmo),
-                (Alignment::TopLeading, inspector),
-                (Alignment::TopLeading, co_creator),
-                (Alignment::TopLeading, particle_inspector),
-                (Alignment::TopLeading, preferences),
-                (Alignment::TopLeading, asset_browser),
-                (Alignment::TopLeading, console),
-            ],
-            padding: Padding::zero(),
-        }))
+        zstack([
+            (Alignment::TopLeading, viewport_grid),
+            (Alignment::TopLeading, hierarchy),
+            (Alignment::TopLeading, toolbar),
+            (Alignment::BottomLeading, status_bar),
+            (Alignment::TopLeading, gizmo),
+            (Alignment::TopLeading, inspector),
+            (Alignment::TopLeading, co_creator),
+            (Alignment::TopLeading, particle_inspector),
+            (Alignment::TopLeading, preferences),
+            (Alignment::TopLeading, asset_browser),
+            (Alignment::TopLeading, console),
+        ])
     }
 }
