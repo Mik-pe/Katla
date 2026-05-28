@@ -88,6 +88,7 @@ pub enum ViewDescriptor {
         value: f32,
         range: RangeInclusive<f32>,
         fill_color: Option<Color>,
+        label: Option<String>,
     },
 
     ColorPicker {
@@ -152,6 +153,14 @@ pub enum ViewDescriptor {
         expanded_id: StateId,
         on_remove: Option<Callback>,
     },
+
+    /// Tab strip with selectable tabs and content area below.
+    /// `selected_id` holds the current tab index. `tabs` provides labels.
+    /// `content` is the child shown below the tab strip.
+    TabBar(Box<TabBarDescriptor>),
+
+    /// Wrapping grid layout with fixed column count and uniform cell size.
+    Grid(Box<GridDescriptor>),
 
     HStack(Box<StackDescriptor>),
     VStack(Box<StackDescriptor>),
@@ -318,6 +327,26 @@ pub struct ContextMenuEntry {
 pub enum SeparatorDirection {
     Horizontal,
     Vertical,
+}
+
+#[derive(Clone, Debug)]
+pub struct TabBarDescriptor {
+    pub tabs: Vec<TabItem>,
+    pub selected_id: StateId,
+    pub content: Box<ViewDescriptor>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TabItem {
+    pub label: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct GridDescriptor {
+    pub columns: usize,
+    pub cell_size: Vec2,
+    pub spacing: f32,
+    pub children: Vec<ViewDescriptor>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -509,11 +538,13 @@ impl std::fmt::Debug for ViewDescriptor {
                 value,
                 range,
                 fill_color,
+                label,
             } => f
                 .debug_struct("Progress")
                 .field("value", value)
                 .field("range", &format_args!("{:?}", range))
                 .field("fill_color", fill_color)
+                .field("label", label)
                 .finish(),
             ViewDescriptor::ColorPicker { label, value_id } => f
                 .debug_struct("ColorPicker")
@@ -580,6 +611,14 @@ impl std::fmt::Debug for ViewDescriptor {
                 .field("title", title)
                 .field("expanded_id", expanded_id)
                 .field("on_remove", on_remove)
+                .finish(),
+            ViewDescriptor::TabBar(desc) => {
+                f.debug_tuple("TabBar").field(&desc.tabs.len()).finish()
+            }
+            ViewDescriptor::Grid(desc) => f
+                .debug_tuple("Grid")
+                .field(&desc.columns)
+                .field(&desc.children.len())
                 .finish(),
             ViewDescriptor::HStack(s) => f.debug_tuple("HStack").field(s).finish(),
             ViewDescriptor::VStack(s) => f.debug_tuple("VStack").field(s).finish(),

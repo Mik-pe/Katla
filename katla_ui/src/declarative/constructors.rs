@@ -90,6 +90,7 @@ pub fn progress(value: f32, range: RangeInclusive<f32>) -> ViewDescriptor {
         value,
         range,
         fill_color: None,
+        label: None,
     }
 }
 
@@ -172,6 +173,37 @@ pub fn section(
         expanded_id,
         on_remove: None,
     }
+}
+
+pub fn tab_bar(
+    tabs: Vec<super::descriptor::TabItem>,
+    selected_id: StateId,
+    content: ViewDescriptor,
+) -> ViewDescriptor {
+    ViewDescriptor::TabBar(Box::new(super::descriptor::TabBarDescriptor {
+        tabs,
+        selected_id,
+        content: Box::new(content),
+    }))
+}
+
+pub fn tab_item(label: impl Into<String>) -> super::descriptor::TabItem {
+    super::descriptor::TabItem {
+        label: label.into(),
+    }
+}
+
+pub fn grid(
+    columns: usize,
+    cell_size: katla_math::Vec2,
+    children: impl IntoIterator<Item = ViewDescriptor>,
+) -> ViewDescriptor {
+    ViewDescriptor::Grid(Box::new(super::descriptor::GridDescriptor {
+        columns,
+        cell_size,
+        spacing: 0.0,
+        children: children.into_iter().collect(),
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -620,6 +652,29 @@ impl ViewDescriptor {
         }
         self
     }
+
+    // -- Progress / Grid modifiers --
+
+    pub fn progress_label(mut self, label: impl Into<String>) -> ViewDescriptor {
+        if let ViewDescriptor::Progress { label: l, .. } = &mut self {
+            *l = Some(label.into());
+        } else {
+            debug_assert!(
+                false,
+                "progress_label() modifier applied to non-Progress variant"
+            );
+        }
+        self
+    }
+
+    pub fn grid_spacing(mut self, spacing: f32) -> ViewDescriptor {
+        if let ViewDescriptor::Grid(desc) = &mut self {
+            desc.spacing = spacing;
+        } else {
+            debug_assert!(false, "grid_spacing() modifier applied to non-Grid variant");
+        }
+        self
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -813,6 +868,7 @@ mod tests {
             value,
             range: _,
             fill_color,
+            ..
         } = progress(0.5, 0.0..=1.0)
         else {
             panic!("expected Progress")
@@ -1368,6 +1424,67 @@ mod tests {
             panic!("expected Section")
         };
         assert!(on_remove.is_some());
+    }
+
+    // -- TabBar tests --
+
+    #[test]
+    fn test_tab_bar_defaults() {
+        let id = dummy_state_id();
+        let ViewDescriptor::TabBar(desc) =
+            tab_bar(vec![tab_item("A"), tab_item("B")], id, text("content"))
+        else {
+            panic!("expected TabBar")
+        };
+        assert_eq!(desc.tabs.len(), 2);
+        assert_eq!(desc.tabs[0].label, "A");
+        assert_eq!(desc.selected_id, id);
+        assert!(matches!(*desc.content, ViewDescriptor::Text { .. }));
+    }
+
+    // -- Grid tests --
+
+    #[test]
+    fn test_grid_defaults() {
+        let vd = grid(3, Vec2::new(100.0, 50.0), [text("a"), text("b"), text("c")]);
+        let ViewDescriptor::Grid(desc) = vd else {
+            panic!("expected Grid")
+        };
+        assert_eq!(desc.columns, 3);
+        assert_eq!(desc.cell_size, Vec2::new(100.0, 50.0));
+        assert_eq!(desc.spacing, 0.0);
+        assert_eq!(desc.children.len(), 3);
+    }
+
+    #[test]
+    fn test_grid_spacing_modifier() {
+        let vd = grid(2, Vec2::new(50.0, 50.0), []).grid_spacing(8.0);
+        let ViewDescriptor::Grid { .. } = vd else {
+            panic!("expected Grid")
+        };
+        let ViewDescriptor::Grid(desc) = vd else {
+            panic!("expected Grid")
+        };
+        assert_eq!(desc.spacing, 8.0);
+    }
+
+    // -- Progress label tests --
+
+    #[test]
+    fn test_progress_defaults_no_label() {
+        let ViewDescriptor::Progress { label, .. } = progress(0.5, 0.0..=1.0) else {
+            panic!("expected Progress")
+        };
+        assert!(label.is_none());
+    }
+
+    #[test]
+    fn test_progress_label_modifier() {
+        let vd = progress(0.5, 0.0..=1.0).progress_label("50%");
+        let ViewDescriptor::Progress { label, .. } = vd else {
+            panic!("expected Progress")
+        };
+        assert_eq!(label, Some("50%".to_string()));
     }
 
     // Misapplied modifiers fire debug_assert! in debug builds, which is the

@@ -592,6 +592,7 @@ pub(crate) fn draw_descriptor_with_id(
             value,
             range,
             fill_color,
+            label,
         } => {
             let t = (value - range.start()) / (range.end() - range.start());
             let track_color = ui.style().slider_track;
@@ -607,6 +608,16 @@ pub(crate) fn draw_descriptor_with_id(
                     anim_state.apply_to_color(bar_color),
                     bounds.height() * 0.5,
                 );
+            }
+
+            if let Some(label_text) = label {
+                let font_size = ui.style().font_size;
+                let text_size = ui.measure_text(label_text, font_size);
+                let text_pos = Vec2::new(
+                    bounds.center().x() - text_size.x() * 0.5,
+                    bounds.center().y() - text_size.y() * 0.5,
+                );
+                ui.draw_text(label_text, text_pos, ui.style().button_text, font_size);
             }
         }
 
@@ -746,6 +757,54 @@ pub(crate) fn draw_descriptor_with_id(
                 );
             }
         }
+
+        ViewDescriptor::TabBar(desc) => {
+            let font_size = ui.style().font_size;
+            let selected: usize = state_arena.get(desc.selected_id);
+            let tab_count = desc.tabs.len().max(1);
+            let tab_width = bounds.width() / tab_count as f32;
+
+            for (i, tab) in desc.tabs.iter().enumerate() {
+                let tab_bounds = Rect2D::from_origin_size(
+                    Vec2::new(bounds.min.x() + i as f32 * tab_width, bounds.min.y()),
+                    Vec2::new(tab_width, bounds.height()),
+                );
+                let is_selected = i == selected;
+                let is_tab_hovered = tab_bounds.contains(ui.mouse_pos());
+
+                let bg = if is_selected {
+                    ui.style().selectable_selected
+                } else if is_tab_hovered {
+                    ui.style().button_hovered
+                } else {
+                    ui.style().button_normal
+                };
+                ui.draw_rect(tab_bounds, anim_state.apply_to_color(bg));
+
+                if is_selected {
+                    ui.draw_line(
+                        Vec2::new(tab_bounds.min.x(), tab_bounds.max.y() - 2.0),
+                        Vec2::new(tab_bounds.max.x(), tab_bounds.max.y() - 2.0),
+                        anim_state.apply_to_color(ui.style().text_color),
+                        2.0,
+                    );
+                }
+
+                let label_size = ui.measure_text(&tab.label, font_size);
+                let text_pos = Vec2::new(
+                    tab_bounds.center().x() - label_size.x() * 0.5,
+                    tab_bounds.center().y() - label_size.y() * 0.5,
+                );
+                ui.draw_text(
+                    &tab.label,
+                    text_pos,
+                    anim_state.apply_to_color(ui.style().text_color),
+                    font_size,
+                );
+            }
+        }
+
+        ViewDescriptor::Grid(_) => {}
 
         ViewDescriptor::HStack(_) | ViewDescriptor::VStack(_) | ViewDescriptor::ZStack(_) => {}
 

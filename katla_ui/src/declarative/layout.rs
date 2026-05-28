@@ -413,6 +413,47 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
             flex_direction: FlexDirection::Column,
             ..Style::default()
         },
+
+        ViewDescriptor::TabBar(desc) => {
+            let _tab_count = desc.tabs.len().max(1);
+            let tab_height = 28.0_f32;
+            Style {
+                size: Size {
+                    width: Dimension::Percent(1.0),
+                    height: Dimension::Length(tab_height),
+                },
+                flex_direction: FlexDirection::Row,
+                gap: Size {
+                    width: LengthPercentage::Length(0.0),
+                    height: LengthPercentage::Length(0.0),
+                },
+                ..Style::default()
+            }
+        }
+
+        ViewDescriptor::Grid(desc) => {
+            let col_width = desc.cell_size.x();
+            let row_height = desc.cell_size.y();
+            let rows = (desc.children.len().max(1) + desc.columns - 1) / desc.columns.max(1);
+            Style {
+                size: Size {
+                    width: Dimension::Length(
+                        col_width * desc.columns as f32
+                            + desc.spacing * (desc.columns as f32 - 1.0),
+                    ),
+                    height: Dimension::Length(
+                        row_height * rows as f32 + desc.spacing * (rows as f32 - 1.0),
+                    ),
+                },
+                flex_direction: FlexDirection::Row,
+                flex_wrap: taffy::FlexWrap::Wrap,
+                gap: Size {
+                    width: LengthPercentage::Length(desc.spacing),
+                    height: LengthPercentage::Length(desc.spacing),
+                },
+                ..Style::default()
+            }
+        }
     }
 }
 

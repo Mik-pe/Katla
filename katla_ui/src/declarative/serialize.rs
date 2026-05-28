@@ -110,6 +110,7 @@ pub fn resolve_descriptor(
             value: *value,
             range: range[0]..=range[1],
             fill_color: None,
+            label: None,
         },
 
         ViewDescriptorData::HStack {

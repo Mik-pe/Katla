@@ -70,6 +70,8 @@ pub fn diff_descriptor(old: &ViewDescriptor, new: &ViewDescriptor) -> DiffAction
         (ViewDescriptor::MenuBar(_), ViewDescriptor::MenuBar(_)) => DiffAction::Update,
         (ViewDescriptor::TreeView(_), ViewDescriptor::TreeView(_)) => DiffAction::Update,
         (ViewDescriptor::ContextMenu(_), ViewDescriptor::ContextMenu(_)) => DiffAction::Update,
+        (ViewDescriptor::TabBar(_), ViewDescriptor::TabBar(_)) => DiffAction::RecurseChildren,
+        (ViewDescriptor::Grid(_), ViewDescriptor::Grid(_)) => DiffAction::RecurseChildren,
 
         // Container with single child -> RecurseChildren
         (ViewDescriptor::Modal(_), ViewDescriptor::Modal(_)) => DiffAction::RecurseChildren,

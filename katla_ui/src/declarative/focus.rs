@@ -129,6 +129,7 @@ fn is_focusable(descriptor: &ViewDescriptor) -> bool {
         ViewDescriptor::ColorPicker { .. } => true,
         ViewDescriptor::Selectable { on_click, .. } => on_click.is_some(),
         ViewDescriptor::Section { .. } => true,
+        ViewDescriptor::TabBar(_) => true,
         _ => false,
     }
 }
