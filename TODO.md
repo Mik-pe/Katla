@@ -265,8 +265,6 @@
 
 ### Declarative UI migration
 
-- [x] Add Modal/ContextMenu variants to ViewDescriptor — used by inspector "Add Component" popup, hierarchy right-click
-- [x] Migrate StatusBarView from ViewDescriptor::Custom to declarative + remove scratch bridge
 - [ ] Migrate remaining panels from ViewDescriptor::Custom to declarative trees
   - **Toolbar**: needs declarative MenuBar with dropdown hover-to-switch, icon buttons with callbacks
   - **Console**: needs declarative ScrollArea with per-row hit-testing, text selection, clipboard
