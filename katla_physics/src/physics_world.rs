@@ -55,7 +55,10 @@ pub struct PhysicsWorld {
 
 impl PhysicsWorld {
     pub fn new() -> Self {
-        let gravity = Vector::new(0.0, -9.81, 0.0);
+        Self::with_gravity(Vector::new(0.0, -9.81, 0.0))
+    }
+
+    pub fn with_gravity(gravity: Vector) -> Self {
         let integration_parameters = IntegrationParameters::default();
         let pipeline = PhysicsPipeline::new();
         let islands = IslandManager::new();
@@ -268,6 +271,7 @@ impl PhysicsWorld {
     }
 
     /// Extended version of `create_body` with sensor and collision filter support.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_body_ex(
         &mut self,
         shape: &ColliderShape,

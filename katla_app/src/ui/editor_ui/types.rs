@@ -313,7 +313,6 @@ pub enum Panel {
 
 /// Action requested from the editor UI.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum EditorAction {
     /// Spawn a new model at the given position.
     SpawnModel(SpawnableModel, Vec3),
@@ -510,14 +509,6 @@ impl BottomPanelTab {
         match self {
             BottomPanelTab::AssetBrowser => "Assets",
             BottomPanelTab::Console => "Console",
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn icon(self) -> char {
-        match self {
-            BottomPanelTab::AssetBrowser => katla_ui::ForkAwesome::FOLDER_OPEN,
-            BottomPanelTab::Console => katla_ui::ForkAwesome::LIST,
         }
     }
 }

@@ -3,6 +3,9 @@ name = "katla_physics"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+editor = []
+
 [dependencies]
 katla_ecs = { workspace = true }
 katla_math = { workspace = true }
