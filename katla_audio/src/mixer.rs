@@ -63,16 +63,16 @@ impl MixerState {
     }
 
     fn stop(&mut self, id: VoiceId) {
-        if let Some(kind) = self.voice_index.remove(&id) {
+        if let Some(kind) = self.voice_index.get(&id) {
             match kind {
                 VoiceKind::Regular(slot) => {
-                    if slot < self.voices.len() {
-                        self.voices[slot] = None;
+                    if let Some(voice) = &self.voices[*slot] {
+                        voice.begin_fade_out();
                     }
                 }
                 VoiceKind::Streaming(slot) => {
-                    if slot < self.streaming_voices.len() {
-                        self.streaming_voices[slot] = None;
+                    if let Some(voice) = &self.streaming_voices[*slot] {
+                        voice.begin_fade_out();
                     }
                 }
             }
@@ -594,7 +594,6 @@ impl AudioMixer {
             for i in 0..state.voices.len() {
                 if let Some(v) = &state.voices[i]
                     && v.is_finished()
-                    && !v.is_looping()
                 {
                     finished_ids.push(v.id());
                     state.voices[i] = None;
@@ -603,7 +602,6 @@ impl AudioMixer {
             for i in 0..state.streaming_voices.len() {
                 if let Some(v) = &state.streaming_voices[i]
                     && v.is_finished()
-                    && !v.is_looping()
                 {
                     finished_ids.push(v.id());
                     state.streaming_voices[i] = None;

@@ -30,7 +30,7 @@
 - [ ] Wire background decode thread lifecycle (start/stop) into `AudioEngine` init/shutdown
 
 ### Phase 15: Audio quality and robustness
-- [ ] Add automatic fade-in/fade-out on voice start/stop — voices currently start and stop instantly with no gain ramp, causing audible clicks/pops. Add a short (1-5ms) linear fade-in when a voice begins playback and a fade-out when stopped, before marking it finished. This is standard practice in all production audio engines (Kira, FMOD, Wwise).
+- [x] Add automatic fade-in/fade-out on voice start/stop — voices currently start and stop instantly with no gain ramp, causing audible clicks/pops. Add a short (1-5ms) linear fade-in when a voice begins playback and a fade-out when stopped, before marking it finished. This is standard practice in all production audio engines (Kira, FMOD, Wwise).
  - [x] Add configurable tween duration — `Voice::tween_smoothing` and `StreamingVoice::tween_smoothing` are hardcoded to 0.3 with no API to change them. Kira uses time-based tweens (e.g., `Tween { duration: 200ms }`). Expose tween duration or speed as a parameter on `VoiceHandle::set_volume_tweened()` etc.
 - [ ] Add per-voice aux send levels — aux buses currently accumulate a copy of the entire main mix at a fixed `send_level`. Production audio engines allow each voice to have its own send level to each aux bus (e.g., a specific SFX sends 50% to reverb while music sends 0%). Add a `sends: Vec<(AuxBusId, f32)>` field to `Voice` and `StreamingVoice`.
 - [ ] Add voice steal/priority system — there is no limit on the number of simultaneous voices. With enough concurrent sounds, the mix saturates and quality degrades. Add a maximum voice count and a priority-based voice stealing mechanism (lowest priority voice is stopped to make room for a new one).
@@ -79,7 +79,7 @@
 ### Phase 7: Physics entity lifecycle
 
  - [x] **Handle entity destruction for joints** — Same issue: joints referencing destroyed entities leak Rapier joint handles. Add cleanup for `Joint` components whose `entity_a` or `entity_b` no longer exist.
-- [ ] **Add entity despawn callback for physics** — When the editor removes a `RigidBody` or `ColliderShape` component from an entity, the corresponding Rapier handles should be cleaned up. Wire into the existing `EditorAction::RemoveComponent` handler.
+- [x] **Add entity despawn callback for physics** — When the editor removes a `RigidBody` or `ColliderShape` component from an entity, the corresponding Rapier handles should be cleaned up. Wire into the existing `EditorAction::RemoveComponent` handler.
 
 ### Phase 8: Collider mesh fitting, shape types, and prefabs
 
@@ -296,18 +296,150 @@
 
 ### Declarative UI migration
 
-- [ ] Migrate Toolbar panel from `ViewDescriptor::Custom` to declarative tree — needs MenuBar with dropdown hover-to-switch, icon buttons with callbacks
-- [ ] Migrate Console panel from `ViewDescriptor::Custom` to declarative tree — needs ScrollArea with per-row hit-testing, text selection, clipboard
-- [ ] Migrate Preferences panel from `ViewDescriptor::Custom` to declarative tree — needs DraggablePanel, tab bar, grid layout (begin_grid/grid_item)
-- [ ] Migrate Inspector panel from `ViewDescriptor::Custom` to declarative tree — needs DraggablePanel, modal (Add Component), ColorPicker overlay, section headers with remove buttons, dynamic enum-driven widget trees
-- [ ] Migrate Hierarchy panel from `ViewDescriptor::Custom` to declarative tree — needs TreeView with custom row rendering (icons, badges), ContextMenu integration
-- [ ] Migrate Co-Creator panel from `ViewDescriptor::Custom` to declarative tree — needs DraggablePanel, markdown rendering, multiline TextInput
-- [ ] Migrate Particle Inspector panel from `ViewDescriptor::Custom` to declarative tree — needs DraggablePanel, dynamic shape-parameter branching
-- [ ] Migrate Viewport Grid panel from `ViewDescriptor::Custom` to declarative tree — needs dynamic texture grid with per-cell Image + border + label, mouse hit-testing for slot hover
-- [ ] Migrate Asset Browser panel from `ViewDescriptor::Custom` to declarative tree — needs marquee selection, drag-and-drop, z-index tooltips, keyboard capture, context menu, modal
-- [ ] Remove thread_local bridges from all migrated panels
-- [ ] Remove immediate-mode widgets with declarative equivalents from widgets/mod.rs public API (Button, Slider, LabeledSlider, Vec3Slider, ToggleButton, TextInput, RadioButton, ImageButton, Panel)
-- [ ] Restrict or remove `ViewDescriptor::Custom` escape hatch
+#### Prerequisites: ergonomic view constructors
+
+No builder structs. Free functions return `ViewDescriptor` directly. Optional fields are set via modifier methods on `ViewDescriptor` that pattern-match the variant. Containers accept `impl IntoIterator<Item = ViewDescriptor>` so you pass arrays `[child1, child2]` instead of `vec![]`. Everything is one type, everything composes.
+
+**Design:**
+
+```
+Free functions (all return ViewDescriptor)    Modifier methods (consume self, return Self)
+─────────────────────────────────────────     ────────────────────────────────────────────
+text(content)                                 .color(c) .font_size(fs)
+button(label)                                 .fill(c) .hover(c) .border(c) .on_click(cb)
+image_button(icon)                            .enabled(b) .fill(c) .on_click(cb)
+slider(label, value_id, range)                .show_value(b) .precision(n)
+labeled_slider(label, value_id, range)        .label_width(w) .show_value(b) .precision(n)
+textfield(placeholder, value_id)              .on_submit(cb)
+progress(value, range)                        .fill(c)
+image(texture, tint)                          .uv(rect)
+hstack(impl IntoIterator<Item = VD>)          .spacing(f) .padding(p) .padding_all(f) .align(a)
+vstack(impl IntoIterator<Item = VD>)          (same)
+zstack(impl IntoIterator<Item = (Align, VD)>) .padding(p)
+panel(title, content)                         .header_height(f)
+scroll(content, scroll_id)                    —
+overlay(anchor, offset, content)              —
+statusbar(height, content)                    —
+modal(width, height, open_id, content)        —
+context_menu(items, open_id)                  —
+empty()                                       —
+toggle(label, state_id)                       —
+radio(value_id, index, label)                 —
+property_row(label, value)                    —
+color_picker(label, state_id)                 —
+draggle_panel(t, w, h, content, state_id)     .close_on_outside(b)
+menubar(groups)                               .right_content(vd) .height(f)
+tree_view(items, exp_id, sel_id, scroll_id)   .row_height(f) .indent(f) .on_select(cb) .on_right_click(cb)
+```
+
+Modifier methods match on the variant — `.color()` sets `Text.color`, `.on_click()` sets `Button.on_click`, `.spacing()` sets `HStack`/`VStack` spacing. Misapplied modifiers (e.g. `.color()` on a `ScrollView`) are a no-op with a `debug_assert!` in test builds. This tradeoff is acceptable — same approach egui uses.
+
+**Before/after:**
+
+```rust
+// TODAY — StatusBarView (6 lines per text, every None spelled out)
+ViewDescriptor::Text {
+    content: format!("FPS: {:.0}", data.fps),
+    color: Some(fps_color),
+    font_size: None,
+}
+ViewDescriptor::HStack(Box::new(StackDescriptor {
+    children: left_items,
+    spacing: 8.0,
+    padding: Padding::all(4.0),
+    alignment: Alignment::Center,
+}))
+
+// AFTER — same thing
+text(format!("FPS: {:.0}", data.fps)).color(fps_color)
+hstack(left_items).spacing(8.0).padding_all(4.0).align(Alignment::Center)
+```
+
+```rust
+// TODAY — EditorRootView
+ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
+    children: vec![
+        (Alignment::TopLeading, viewport_grid),
+        (Alignment::TopLeading, toolbar),
+    ],
+    padding: Padding::zero(),
+}))
+
+// AFTER — no vec![], no Padding::zero()
+zstack([
+    (Alignment::TopLeading, viewport_grid),
+    (Alignment::TopLeading, toolbar),
+])
+```
+
+```rust
+// TODAY — GizmoButtonsView
+ViewDescriptor::RadioButton { value_id: mode_id, index, label: label.to_string() }
+ViewDescriptor::HStack(Box::new(StackDescriptor {
+    children, spacing: 2.0, padding: Padding::all(10.0), alignment: Alignment::Leading,
+}))
+
+// AFTER
+radio(mode_id, index, label)
+hstack(children).spacing(2.0).padding_all(10.0)
+```
+
+**Implementation tasks:**
+
+- [ ] Create `katla_ui/src/declarative/constructors.rs` — module for all free functions. Each is a plain `fn foo(...) -> ViewDescriptor` that fills defaults for optional fields. Start with the trivial ones: `empty()`, `toggle()`, `radio()`, `property_row()`, `color_picker()`.
+- [ ] Add leaf free functions with optionals — `text()`, `button()`, `image_button()`, `slider()`, `labeled_slider()`, `textfield()`, `progress()`, `image()`. All optional fields default to `None` / `false` / `0`. These work standalone even before modifier methods exist.
+- [ ] Add container free functions with `impl IntoIterator` — `hstack()`, `vstack()` take `impl IntoIterator<Item = ViewDescriptor>`, `zstack()` takes `impl IntoIterator<Item = (Alignment, ViewDescriptor)>`. Single-child containers (`scroll`, `panel`, `overlay`, `statusbar`) take `ViewDescriptor` directly. `draggle_panel`, `menubar`, `tree_view` take their specific struct args.
+- [ ] Add modifier methods on `ViewDescriptor` — implement in `descriptor.rs` as `impl ViewDescriptor`. Each method consumes `self`, pattern-matches to the relevant variant(s), updates the field, returns `self`. Start with: `.color()`, `.font_size()`, `.fill()`, `.hover()`, `.border()`, `.on_click()`, `.enabled()`, `.on_submit()`, `.show_value()`, `.precision()`, `.label_width()`, `.uv()`. Add `debug_assert!` in the else branch to catch misapplied modifiers in tests.
+- [ ] Add container modifier methods — `.spacing()`, `.padding()`, `.padding_all()`, `.align()` on `HStack`/`VStack`. `.padding()` on `ZStack`. `.header_height()` on `Panel`. `.close_on_outside()` on `DraggablePanel`. `.right_content()` and `.height()` on `MenuBar`. `.row_height()`, `.indent()`, `.on_select()`, `.on_right_click()` on `TreeView`.
+- [ ] Re-export everything from `declarative/mod.rs` — `pub use constructors::*` so users write `use katla_ui::declarative::{text, button, hstack};`.
+- [ ] Add unit tests — for each free function, verify it produces the correct `ViewDescriptor` variant with expected defaults. For each modifier, verify it sets the field and that misapplied modifiers no-op (test the `debug_assert!` fires).
+- [ ] Refactor `StatusBarView` — replace all struct-literal `ViewDescriptor::Text` and `ViewDescriptor::HStack` with `text().color()` and `hstack().spacing().padding_all().align()`. First real consumer, validates the end-to-end feel.
+- [ ] Refactor `GizmoButtonsView` — replace `RadioButton` struct literals with `radio()`, `HStack` with `hstack().spacing().padding_all()`.
+- [ ] Refactor `EditorRootView` — replace `ZStack` struct literal with `zstack([...])`.
+- [ ] Refactor `helpers.rs` — rewrite `section_header()`, `delete_button()` to use free functions + modifiers internally.
+
+#### Prerequisites: layout and diffing infrastructure
+
+- [ ] Replace heuristic text measurement with real font metrics — `measure_text_descriptor()` currently uses `char_count * height * 0.6`. Use the existing `FontSystem` to measure actual glyph advances for the layout string, so Taffy flexbox sizes match what the renderer draws.
+- [ ] Add stable child identity for list diffing — add an optional `key: Option<u64>` to `StackDescriptor` children (or a `KeyedChild` wrapper) so diffing can match children by identity instead of index. Prevents state corruption and spurious animations when list order changes.
+
+#### Widget gaps: missing declarative features needed for migration
+
+- [ ] Add `Section` descriptor — collapsible section with header row (label + optional remove button + expand/collapse chevron). Equivalent to the `section_header()` helper but as a proper container variant. Needed by Inspector.
+- [ ] Add `TabBar` descriptor — tab strip with selectable tabs, content area below. Equivalent to immediate-mode `begin_row` with styled buttons. Needed by Preferences.
+- [ ] Add `Grid` descriptor — `GridDescriptor { columns: usize, cell_size: Vec2, spacing: f32, children: Vec<ViewDescriptor> }` mapped to a wrapping Taffy flex layout. Needed by Preferences and Viewport Grid.
+- [ ] Add `Separator` descriptor — horizontal or vertical divider line. Needed by most panels.
+- [ ] Add `Icon` descriptor — render a ForkAwesome icon by char code with configurable size and color. Needed by Toolbar and Inspector.
+- [ ] Add `ProgressBar` improvements — add optional label text overlay on the progress bar track.
+- [ ] Add `Selectable` descriptor — wrapper that highlights on hover and fires on_click, for list items and grid cells. Needed by Asset Browser and Hierarchy.
+- [ ] Add `Conditional` descriptor or extend `show_if` helper — support `if`/`else` branching in descriptor trees with stable identity on both branches so diffing doesn't destroy state.
+
+#### Phase 1: Migrate simple panels (build confidence)
+
+- [ ] Migrate Viewport Grid panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ViewportGridDrawCtx`, inject data via `Environment`, build a `Grid` or `VStack` of `Image` + `Text` cells with hit-testing via `Selectable` descriptors. Remove `set_viewport_grid_ctx`/`take_viewport_grid_ctx`.
+- [ ] Migrate Toolbar panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ToolbarDrawCtx`, inject via `Environment`, build `MenuBar` with `MenuGroup` dropdowns and `ImageButton` descriptors. Remove `set_toolbar_ctx`/`take_toolbar_ctx`.
+- [ ] Migrate Gizmo panel fully declarative — already uses `RadioButton` descriptors but reads `GizmoDrawCtx` from `Environment` via thread-local. Move the gizmo data to `Environment` only, remove any thread-local remnants.
+
+#### Phase 2: Migrate medium panels
+
+- [ ] Migrate Preferences panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `PreferencesDrawCtx`, inject via `Environment`. Use `TabBar` for General/Viewport/AI tabs, `Grid` for label+widget rows, `LabeledSlider`/`Toggle` for settings. Remove `set_preferences_ctx`/`take_preferences_ctx`.
+- [ ] Migrate Co-Creator panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `CoCreatorDrawCtx`. Use `DraggablePanel`, `ScrollView` with markdown-rendered `Text` rows, `TextField` for input. Remove `set_co_creator_ctx`/`take_co_creator_ctx`.
+- [ ] Migrate Particle Inspector panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ParticleInspectorDrawCtx`. Use `DraggablePanel`, `Section` for particle modules (emitter, color over lifetime, size over lifetime), `LabeledSlider`/`Vec3Slider` per module. Remove `set_particle_inspector_ctx`/`take_particle_inspector_ctx`.
+
+#### Phase 3: Migrate complex panels
+
+- [ ] Migrate Hierarchy panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `HierarchyDrawCtx`. Use `TreeView` descriptor with `TreeItem` data from `Environment`, `ContextMenu` for right-click actions, `on_select` callback. Remove `set_hierarchy_ctx`/`take_hierarchy_ctx`.
+- [ ] Migrate Inspector panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `InspectorDrawCtx`. Use `DraggablePanel`, `Section` per component with `delete_button`, `LabeledSlider`/`Vec3Slider`/`Toggle`/`ColorPicker` per field, `Modal` for Add Component picker. This is the hardest migration. Remove `set_inspector_ctx`/`take_inspector_ctx`.
+- [ ] Migrate Console panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ConsoleDrawCtx`. Use `DraggablePanel`, `ScrollView` with `Text` rows (colored by log level), `TextField` for command input with `on_submit`. Remove `set_console_ctx`/`take_console_ctx`.
+- [ ] Migrate Asset Browser panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `AssetBrowserDrawCtx`. Use `Grid` or custom `Selectable` grid for thumbnails, `ContextMenu` for right-click, `TextField` for search, `Modal` for rename/delete confirmations. Remove `set_asset_browser_ctx`/`take_asset_browser_ctx`.
+
+#### Cleanup: remove legacy code
+
+- [ ] Remove all thread-local `RefCell<Option<DrawCtx>>` bridges — `set_*_ctx`/`take_*_ctx` functions for every migrated panel. Verify no remaining `thread_local!` blocks in `editor_ui/`.
+- [ ] Remove or gate `ViewDescriptor::Custom` escape hatch — make it `#[cfg(test)]` or remove entirely once all panels are migrated. If kept for extensibility, document the constraints (no diffing, no state, no layout).
+- [ ] Remove immediate-mode builder widgets that have declarative equivalents — `Button`, `Slider`, `LabeledSlider`, `Vec3Slider`, `ToggleButton`, `TextInput`, `RadioButton`, `ImageButton`, `Panel` from `widgets/mod.rs` public API. Keep only widgets with no declarative counterpart (e.g. `DockArea`).
+- [ ] Add `ViewDescriptor` construction tests — unit tests for the builder constructors, diff correctness (including keyed children), and layout for each new container variant.
+- [ ] Add declarative integration tests — frame-level tests that build a descriptor tree, run `ViewTree::frame()`, assert bounds, actions, and state mutations for each widget type. Cover the gaps identified in review: no tests for `diff_descriptor`, `ViewTree::sync_tree`, `TransitionContainer`, `DockArea`, `ColorPicker`, `BindingResolver`.
 
 ## Developer Experience
 
