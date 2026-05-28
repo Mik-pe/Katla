@@ -299,7 +299,7 @@
 
 - [x] **Register RapierPhysicsSystem in game main.rs** — Replaced custom `PhysicsSystem`/`VelocitySystem` with `RapierPhysicsSystem` at `NORMAL` order. Removed custom F=ma systems entirely per "No Hybrid Implementations" rule.
 - [x] **Decide on single physics paradigm** — Removed custom `PhysicsSystem`/`VelocitySystem` and their components (`ForceComponent`, `MassComponent`, `DragComponent`). Rapier is now the sole physics engine. Fly camera migrated to direct transform manipulation with internal velocity in `FlyCameraLookComponent`.
-- [ ] **Gate physics simulation behind play mode** — `RapierPhysicsSystem::step_simulation()` runs unconditionally every frame with no check for `Application::play_mode`. Physics objects should only step when the editor is in `Playing` state, not during `Editing` or `Paused`. The system needs access to the play mode state (either as an ECS resource or passed through `delta_time`).
+- [x] **Gate physics simulation behind play mode** — `RapierPhysicsSystem::step_simulation()` runs unconditionally every frame with no check for `Application::play_mode`. Physics objects should only step when the editor is in `Playing` state, not during `Editing` or `Paused`. The system needs access to the play mode state (either as an ECS resource or passed through `delta_time`).
 - [x] **Fix static body returning invalid RigidBodyHandle** — Changed `is_spawned()` to check `collider_handle.is_some()` instead of `body_handle.is_some()`, since all body types (including static) get a valid collider handle.
 - [x] **Wire `gravity_scale` to Rapier** — `RigidBody::gravity_scale` is now passed to `RigidBodyBuilder::gravity_scale()` during body creation via `create_body_ex()`.
 - [x] **Wire `CollisionFilter` to Rapier collision groups** — `CollisionFilter` component's `layers`/`mask` fields are now passed to Rapier's `InteractionGroups` on `ColliderBuilder` during body spawn.
@@ -315,9 +315,9 @@
 
 ### Phase 7: Physics entity lifecycle
 
-- [ ] **Handle entity destruction for Rapier bodies** — When an entity with `RigidBody` + `ColliderShape` is destroyed, the Rapier bodies/colliders are never removed from `PhysicsWorld`. Add a cleanup pass in `RapierPhysicsSystem` that detects destroyed entities (bodies that existed last frame but whose entity no longer exists) and calls `remove_body()` / `remove_static_collider()`.
+- [x] **Handle entity destruction for Rapier bodies** — When an entity with `RigidBody` + `ColliderShape` is destroyed, the Rapier bodies/colliders are never removed from `PhysicsWorld`. Add a cleanup pass in `RapierPhysicsSystem` that detects destroyed entities (bodies that existed last frame but whose entity no longer exists) and calls `remove_body()` / `remove_static_collider()`.
 - [ ] **Handle entity destruction for joints** — Same issue: joints referencing destroyed entities leak Rapier joint handles. Add cleanup for `Joint` components whose `entity_a` or `entity_b` no longer exist.
-- [ ] **Sync kinematic body transforms to Rapier** — Currently `sync_transforms_back` only writes Rapier→ECS for dynamic bodies. For kinematic bodies, the opposite direction is needed: read ECS `TransformComponent` each frame and write it to the Rapier body's position so the kinematic body follows script/animation-driven movement.
+- [x] **Sync kinematic body transforms to Rapier** — Currently `sync_transforms_back` only writes Rapier→ECS for dynamic bodies. For kinematic bodies, the opposite direction is needed: read ECS `TransformComponent` each frame and write it to the Rapier body's position so the kinematic body follows script/animation-driven movement.
 - [ ] **Add entity despawn callback for physics** — When the editor removes a `RigidBody` or `ColliderShape` component from an entity, the corresponding Rapier handles should be cleaned up. Wire into the existing `EditorAction::RemoveComponent` handler.
 
 ### Phase 8: Collider mesh fitting, shape types, and prefabs

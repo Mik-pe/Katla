@@ -3,8 +3,8 @@
 use katla_ecs::{ComponentAccess, EntityId, System, World};
 use katla_math::Vec3;
 use katla_physics::{
-    BodyType, ColliderShape, CollisionFilter, Joint, PhysicsMaterial, PhysicsWorld, RigidBody,
-    TriggerEvent, TriggerVolume,
+    BodyType, ColliderShape, CollisionFilter, Joint, PhysicsActive, PhysicsMaterial, PhysicsWorld,
+    RigidBody, TriggerEvent, TriggerVolume,
 };
 use katla_script::{PendingPhysicsEvents, PhysicsCollisionEvent, PhysicsCollisionEventType};
 
@@ -13,21 +13,34 @@ use crate::components::TransformComponent;
 /// System that synchronizes ECS physics components with the Rapier simulation.
 ///
 /// Each frame:
-/// 1. Discovers entities with `RigidBody` + `ColliderShape` that haven't been spawned yet
-/// 2. Creates corresponding Rapier bodies/colliders in the `PhysicsWorld` resource
-/// 3. Discovers `Joint` components and creates Rapier joints
-/// 4. Steps the Rapier simulation
-/// 5. Reads back transforms and velocities from Rapier to ECS components
-/// 6. Processes trigger volume overlap events
+/// 1. Cleans up Rapier bodies/colliders for destroyed ECS entities
+/// 2. Discovers entities with `RigidBody` + `ColliderShape` that haven't been spawned yet
+/// 3. Creates corresponding Rapier bodies/colliders in the `PhysicsWorld` resource
+/// 4. Discovers `Joint` components and creates Rapier joints
+/// 5. Syncs kinematic body transforms from ECS to Rapier
+/// 6. Steps the Rapier simulation (only when `PhysicsActive` is true)
+/// 7. Reads back transforms and velocities from Rapier to ECS components (dynamic only)
+/// 8. Processes trigger volume overlap events
 pub struct RapierPhysicsSystem;
 
 impl System for RapierPhysicsSystem {
     fn update(&mut self, world: &mut World, delta_time: f32) {
+        cleanup_destroyed_bodies(world);
         spawn_new_bodies(world);
         spawn_new_joints(world);
-        step_simulation(world, delta_time);
-        sync_transforms_back(world);
-        process_trigger_events(world);
+
+        let active = world
+            .get_resource::<PhysicsActive>()
+            .map(|p| p.0)
+            .unwrap_or(false);
+
+        sync_kinematic_transforms(world);
+
+        if active {
+            step_simulation(world, delta_time);
+            sync_transforms_back(world);
+            process_trigger_events(world);
+        }
     }
 
     fn name(&self) -> &str {
@@ -159,6 +172,59 @@ fn find_rigid_body_handle(world: &World, entity_id: u64) -> Option<katla_physics
 fn step_simulation(world: &mut World, delta_time: f32) {
     if let Some(mut physics) = world.get_resource_mut::<PhysicsWorld>() {
         physics.step(delta_time);
+    }
+}
+
+fn cleanup_destroyed_bodies(world: &mut World) {
+    let active_ids: std::collections::HashSet<u64> = world
+        .query::<&RigidBody>()
+        .filter(|(_, rb)| rb.is_spawned())
+        .map(|(entity, _)| entity.id())
+        .collect();
+
+    let orphaned = {
+        let physics = match world.get_resource::<PhysicsWorld>() {
+            Some(p) => p,
+            None => return,
+        };
+        physics.find_orphaned_colliders(&active_ids)
+    };
+
+    if orphaned.is_empty() {
+        return;
+    }
+
+    let mut physics = world.get_resource_mut::<PhysicsWorld>().unwrap();
+    for (collider_handle, body_handle) in orphaned {
+        if let Some(body) = body_handle {
+            physics.remove_body(body, collider_handle);
+        } else {
+            physics.remove_static_collider(collider_handle);
+        }
+    }
+}
+
+fn sync_kinematic_transforms(world: &mut World) {
+    let kinematic_handles: Vec<_> = world
+        .query::<(&RigidBody, &TransformComponent)>()
+        .filter(|(_, rb, _)| rb.is_spawned() && rb.body_type == BodyType::Kinematic)
+        .filter_map(|(entity, rb, tc)| {
+            let handle = rb.body_handle?;
+            Some((entity, handle, tc.transform))
+        })
+        .collect();
+
+    if kinematic_handles.is_empty() {
+        return;
+    }
+
+    let mut physics = match world.get_resource_mut::<PhysicsWorld>() {
+        Some(p) => p,
+        None => return,
+    };
+
+    for (_entity, handle, transform) in kinematic_handles {
+        physics.set_kinematic_position(handle, &transform);
     }
 }
 
@@ -304,6 +370,7 @@ mod tests {
     fn test_gravity_affects_dynamic() {
         let mut world = World::new();
         world.insert_resource(PhysicsWorld::new());
+        world.insert_resource(PhysicsActive(true));
 
         let entity = world.create_entity();
         world.add_component(
@@ -334,5 +401,60 @@ mod tests {
 
         let mut system = RapierPhysicsSystem;
         system.update(&mut world, 1.0 / 60.0);
+    }
+
+    #[test]
+    fn test_play_mode_gating() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+        world.insert_resource(PhysicsActive(false));
+
+        let entity = world.create_entity();
+        world.add_component(
+            entity,
+            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, 10.0, 0.0))),
+        );
+        world.add_component(entity, ColliderShape::Sphere(SphereShape::new(0.5)));
+        world.add_component(entity, RigidBody::dynamic());
+
+        let mut system = RapierPhysicsSystem;
+        for _ in 0..60 {
+            system.update(&mut world, 1.0 / 60.0);
+        }
+
+        let tc = world.get_component::<TransformComponent>(entity).unwrap();
+        assert_eq!(
+            tc.transform.position.y(),
+            10.0,
+            "Body should not move when physics is inactive"
+        );
+    }
+
+    #[test]
+    fn test_entity_destruction_cleanup() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+
+        let entity = world.create_entity();
+        world.add_component(entity, TransformComponent::default());
+        world.add_component(entity, ColliderShape::Sphere(SphereShape::new(1.0)));
+        world.add_component(entity, RigidBody::dynamic());
+
+        let mut system = RapierPhysicsSystem;
+        system.update(&mut world, 1.0 / 60.0);
+
+        let physics = world.get_resource::<PhysicsWorld>().unwrap();
+        assert_eq!(physics.collider_count(), 1);
+
+        drop(physics);
+        world.destroy_entity(entity);
+        system.update(&mut world, 1.0 / 60.0);
+
+        let physics = world.get_resource::<PhysicsWorld>().unwrap();
+        assert_eq!(
+            physics.collider_count(),
+            0,
+            "Orphaned collider should be cleaned up"
+        );
     }
 }

@@ -146,6 +146,11 @@ impl PhysicsWorld {
         std::mem::take(&mut self.collision_events)
     }
 
+    /// Number of colliders currently in the simulation.
+    pub fn collider_count(&self) -> usize {
+        self.colliders.len()
+    }
+
     /// Get all active contact pairs with their world-space contact points and normals.
     ///
     /// Returns (entity1, entity2, point, normal, depth) for each contact.
@@ -346,6 +351,31 @@ impl PhysicsWorld {
     pub fn remove_static_collider(&mut self, collider: ColliderHandle) {
         self.colliders
             .remove(collider, &mut self.islands, &mut self.bodies, true);
+    }
+
+    /// Find colliders whose entity no longer has a `RigidBody` component in ECS.
+    ///
+    /// Returns `(collider_handle, parent_body_handle)` pairs. `parent_body_handle`
+    /// is `None` for static colliders.
+    pub fn find_orphaned_colliders(
+        &self,
+        active_entity_ids: &std::collections::HashSet<u64>,
+    ) -> Vec<(ColliderHandle, Option<RigidBodyHandle>)> {
+        self.colliders
+            .iter()
+            .filter(|(_, collider)| {
+                let id = collider.user_data as u64;
+                !active_entity_ids.contains(&id)
+            })
+            .map(|(handle, collider)| (handle, collider.parent()))
+            .collect()
+    }
+
+    /// Set the target position of a kinematic body for the next simulation step.
+    pub fn set_kinematic_position(&mut self, body: RigidBodyHandle, transform: &Transform) {
+        if let Some(b) = self.bodies.get_mut(body) {
+            b.set_position(katla_to_rapier_pose(transform).into(), true);
+        }
     }
 
     /// Read the world-space position and rotation of a rigid body.
