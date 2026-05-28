@@ -65,6 +65,15 @@
 
 ## Physics
 
+### Phase 5.5: Physics production readiness
+
+- [ ] **Fix `editor` feature cfg warnings in katla_physics** — katla_physics uses Component derive from katla_derive which has `#[cfg(feature = "editor")]` but katla_physics doesn't declare this feature. Add `editor = []` feature to katla_physics/Cargo.toml to resolve 5 warnings in collider.rs, joint.rs, material.rs, rigid_body.rs, trigger.rs.
+- [ ] **Fix clippy::too_many_arguments warning** — `create_body_ex` in physics_world.rs has 9 arguments. Either add `#[allow(clippy::too_many_arguments)]` or refactor to use a builder pattern with `BodyBuilder` struct.
+- [ ] **Make gravity configurable** — `PhysicsWorld::new()` hardcodes gravity as `Vector::new(0.0, -9.81, 0.0)`. Add `PhysicsWorld::with_gravity(gravity: Vec3)` constructor or `set_gravity(&mut self, gravity: Vec3)` method.
+- [ ] **Add `PhysicsError` enum for explicit error handling** — PhysicsWorld uses `Option` for fallible operations (body_transform, body_velocity). Add a `PhysicsError` enum with variants like `BodyNotFound`, `ColliderNotFound`, `InvalidHandle` and return `Result<T, PhysicsError>` from methods where appropriate.
+- [ ] **Expose CCD configuration** — Rapier supports Continuous Collision Detection for fast-moving bodies but it's not exposed in katla_physics. Add CCD enable/disable parameter to body creation methods or as a global PhysicsWorld setting.
+- [ ] **Add character controller support** — Implement a `CharacterController` component that wraps Rapier's KinematicCharacterController for first/third-person character movement with slope handling, stairs, and collision response.
+
 ### Phase 6: Physics component scene serialization
 
 - [ ] **Add `RigidBodyDescriptor`** — enum with Static, Dynamic, Kinematic variants; add to `EntityDescriptor`
@@ -400,7 +409,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 #### Prerequisites: layout and diffing infrastructure
 
-- [ ] Replace heuristic text measurement with real font metrics — `measure_text_descriptor()` currently uses `char_count * height * 0.6`. Use the existing `FontSystem` to measure actual glyph advances for the layout string, so Taffy flexbox sizes match what the renderer draws.
+- [x] Replace heuristic text measurement with real font metrics — `measure_text_descriptor()` currently uses `char_count * height * 0.6`. Use the existing `FontSystem` to measure actual glyph advances for the layout string, so Taffy flexbox sizes match what the renderer draws.
 - [ ] Add stable child identity for list diffing — add an optional `key: Option<u64>` to `StackDescriptor` children (or a `KeyedChild` wrapper) so diffing can match children by identity instead of index. Prevents state corruption and spurious animations when list order changes.
 
 #### Widget gaps: missing declarative features needed for migration
@@ -418,7 +427,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 - [ ] Migrate Viewport Grid panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ViewportGridDrawCtx`, inject data via `Environment`, build a `Grid` or `VStack` of `Image` + `Text` cells with hit-testing via `Selectable` descriptors. Remove `set_viewport_grid_ctx`/`take_viewport_grid_ctx`.
 - [ ] Migrate Toolbar panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ToolbarDrawCtx`, inject via `Environment`, build `MenuBar` with `MenuGroup` dropdowns and `ImageButton` descriptors. Remove `set_toolbar_ctx`/`take_toolbar_ctx`.
-- [ ] Migrate Gizmo panel fully declarative — already uses `RadioButton` descriptors but reads `GizmoDrawCtx` from `Environment` via thread-local. Move the gizmo data to `Environment` only, remove any thread-local remnants.
+- [x] Migrate Gizmo panel fully declarative — already uses `RadioButton` descriptors but reads `GizmoDrawCtx` from `Environment` via thread-local. Move the gizmo data to `Environment` only, remove any thread-local remnants.
 
 #### Phase 2: Migrate medium panels
 

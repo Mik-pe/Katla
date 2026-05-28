@@ -11,6 +11,9 @@ use super::descriptor::{Alignment, FlexProps, Padding, ViewDescriptor};
 use super::state::ViewId;
 use super::tree::ViewTree;
 
+/// Function signature for measuring text dimensions during layout.
+pub type MeasureFn<'a> = &'a dyn Fn(&str, Option<FontSize>) -> Vec2;
+
 pub struct TaffyNodeMap {
     taffy: TaffyTree,
     mapping: HashMap<ViewId, TaffyNodeId>,
@@ -32,7 +35,7 @@ impl TaffyNodeMap {
         }
     }
 
-    pub fn sync(&mut self, tree: &ViewTree) {
+    pub fn sync(&mut self, tree: &ViewTree, measure: MeasureFn<'_>) {
         let Some(root_id) = tree.root() else {
             return;
         };
@@ -41,15 +44,15 @@ impl TaffyNodeMap {
         self.mapping.clear();
         self.reverse.clear();
 
-        self.sync_recursive(tree, root_id);
+        self.sync_recursive(tree, root_id, measure);
     }
 
-    fn sync_recursive(&mut self, tree: &ViewTree, view_id: ViewId) {
+    fn sync_recursive(&mut self, tree: &ViewTree, view_id: ViewId, measure: MeasureFn<'_>) {
         let Some(node) = tree.get(view_id) else {
             return;
         };
 
-        let style = descriptor_to_style(&node.descriptor);
+        let style = descriptor_to_style(&node.descriptor, measure);
         let children = &node.children;
 
         if children.is_empty() {
@@ -60,7 +63,7 @@ impl TaffyNodeMap {
             let child_taffy_ids: Vec<TaffyNodeId> = children
                 .iter()
                 .filter_map(|&child_id| {
-                    self.sync_recursive(tree, child_id);
+                    self.sync_recursive(tree, child_id, measure);
                     self.mapping.get(&child_id).copied()
                 })
                 .collect();
@@ -131,14 +134,14 @@ impl TaffyNodeMap {
     }
 }
 
-fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
+fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> Style {
     match descriptor {
         ViewDescriptor::Empty => Style::default(),
 
         ViewDescriptor::Text {
             content, font_size, ..
         } => {
-            let size = measure_text_descriptor(content, *font_size);
+            let size = measure(content, *font_size);
             Style {
                 size: Size {
                     width: Dimension::Length(size.x()),
@@ -149,7 +152,7 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
         }
 
         ViewDescriptor::Button { label, .. } => {
-            let text_size = measure_text_descriptor(label, None);
+            let text_size = measure(label, None);
             let h_padding = 16.0;
             let v_padding = 8.0;
             Style {
@@ -265,7 +268,7 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
         },
 
         ViewDescriptor::LabeledSlider { label, .. } => {
-            let text_size = measure_text_descriptor(label, None);
+            let text_size = measure(label, None);
             Style {
                 size: Size {
                     width: Dimension::Length((text_size.x() + 120.0).max(200.0)),
@@ -276,7 +279,7 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
         }
 
         ViewDescriptor::Slider { label, .. } | ViewDescriptor::ColorPicker { label, .. } => {
-            let text_size = measure_text_descriptor(label, None);
+            let text_size = measure(label, None);
             Style {
                 size: Size {
                     width: Dimension::Length((text_size.x() + 40.0).max(100.0)),
@@ -287,7 +290,7 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
         }
 
         ViewDescriptor::Toggle { label, .. } => {
-            let text_size = measure_text_descriptor(label, None);
+            let text_size = measure(label, None);
             Style {
                 size: Size {
                     width: Dimension::Length(text_size.x() + 28.0),
@@ -298,7 +301,7 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
         }
 
         ViewDescriptor::TextField { placeholder, .. } => {
-            let text_size = measure_text_descriptor(placeholder, None);
+            let text_size = measure(placeholder, None);
             Style {
                 size: Size {
                     width: Dimension::Length(text_size.x() + 16.0),
@@ -317,7 +320,7 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
         },
 
         ViewDescriptor::Vec3Slider { label, .. } => {
-            let text_size = measure_text_descriptor(label, None);
+            let text_size = measure(label, None);
             Style {
                 size: Size {
                     width: Dimension::Length((text_size.x() + 120.0).max(200.0)),
@@ -336,7 +339,7 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
         },
 
         ViewDescriptor::RadioButton { label, .. } => {
-            let text_size = measure_text_descriptor(label, None);
+            let text_size = measure(label, None);
             Style {
                 size: Size {
                     width: Dimension::Length(text_size.x() + 24.0),
@@ -347,8 +350,8 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
         }
 
         ViewDescriptor::PropertyRow { label, value } => {
-            let label_size = measure_text_descriptor(label, None);
-            let value_size = measure_text_descriptor(value, None);
+            let label_size = measure(label, None);
+            let value_size = measure(value, None);
             Style {
                 size: Size {
                     width: Dimension::Length(label_size.x() + value_size.x() + 16.0),
@@ -596,7 +599,7 @@ mod tests {
         build_tree(&mut tree, descriptor);
 
         let mut layout = TaffyNodeMap::new();
-        layout.sync(&tree);
+        layout.sync(&tree, &measure_text_descriptor);
 
         let bounds = layout.compute(tree.root().unwrap(), Vec2::new(800.0, 600.0), &tree);
 
@@ -633,7 +636,7 @@ mod tests {
         build_tree(&mut tree, descriptor);
 
         let mut layout = TaffyNodeMap::new();
-        layout.sync(&tree);
+        layout.sync(&tree, &measure_text_descriptor);
 
         let bounds = layout.compute(tree.root().unwrap(), Vec2::new(800.0, 600.0), &tree);
 
@@ -682,7 +685,7 @@ mod tests {
         build_tree(&mut tree, descriptor);
 
         let mut layout = TaffyNodeMap::new();
-        layout.sync(&tree);
+        layout.sync(&tree, &measure_text_descriptor);
 
         let bounds = layout.compute(tree.root().unwrap(), Vec2::new(800.0, 600.0), &tree);
 
@@ -725,7 +728,7 @@ mod tests {
         build_tree(&mut tree, descriptor);
 
         let mut layout = TaffyNodeMap::new();
-        layout.sync(&tree);
+        layout.sync(&tree, &measure_text_descriptor);
 
         let bounds = layout.compute(tree.root().unwrap(), Vec2::new(800.0, 600.0), &tree);
 
