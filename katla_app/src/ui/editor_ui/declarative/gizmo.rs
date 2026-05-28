@@ -1,41 +1,17 @@
-use std::cell::RefCell;
-
 use katla_math::{Rect2D, Vec2};
 use katla_ui::declarative::{Build, BuildContext, ViewDescriptor};
 use katla_ui::{UiContext, widgets::RadioButton};
 
 use crate::ui::EditorAction;
 
-thread_local! {
-    static GIZMO_CTX: RefCell<Option<GizmoDrawCtx>> = const { RefCell::new(None) };
-}
-
-struct GizmoDrawCtx {
-    gizmo_mode: u8,
-    viewport_bounds: Rect2D,
-    actions: Vec<EditorAction>,
+#[derive(Clone)]
+pub(crate) struct GizmoDrawCtx {
+    pub gizmo_mode: u8,
+    pub viewport_bounds: Rect2D,
+    pub actions: Vec<EditorAction>,
 }
 
 pub struct GizmoButtonsView;
-
-pub fn set_gizmo_ctx(gizmo_mode: u8, viewport_bounds: Rect2D) {
-    GIZMO_CTX.with(|c| {
-        *c.borrow_mut() = Some(GizmoDrawCtx {
-            gizmo_mode,
-            viewport_bounds,
-            actions: Vec::new(),
-        })
-    });
-}
-
-pub fn take_gizmo_actions() -> Vec<EditorAction> {
-    GIZMO_CTX.with(|c| {
-        c.borrow_mut()
-            .as_mut()
-            .map(|ctx| std::mem::take(&mut ctx.actions))
-            .unwrap_or_default()
-    })
-}
 
 impl Build for GizmoButtonsView {
     fn build(&self, _ctx: &mut BuildContext) -> ViewDescriptor {
@@ -44,9 +20,9 @@ impl Build for GizmoButtonsView {
 }
 
 fn draw_gizmo_buttons(ui: &mut UiContext, _bounds: Rect2D) {
-    let ctx = GIZMO_CTX.with(|c| c.borrow_mut().take());
-    let Some(mut ctx) = ctx else {
-        return;
+    let mut ctx = match ui.get_scratch::<GizmoDrawCtx>().cloned() {
+        Some(c) => c,
+        None => return,
     };
 
     let gizmo_modes: &[(usize, &str)] = &[(0, "W:Move"), (1, "E:Rotate"), (2, "R:Scale")];
@@ -77,5 +53,5 @@ fn draw_gizmo_buttons(ui: &mut UiContext, _bounds: Rect2D) {
         }
     }
 
-    GIZMO_CTX.with(|c| *c.borrow_mut() = Some(ctx));
+    ui.set_scratch(ctx);
 }

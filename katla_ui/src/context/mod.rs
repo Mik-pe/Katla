@@ -337,6 +337,13 @@ impl UiContext {
             .and_then(|v| v.downcast_ref::<T>())
     }
 
+    /// Retrieve a typed mutable reference from the scratch data slot.
+    pub fn get_scratch_mut<T: Clone + 'static>(&mut self) -> Option<&mut T> {
+        self.scratch_data
+            .get_mut(&std::any::TypeId::of::<T>())
+            .and_then(|v| v.downcast_mut::<T>())
+    }
+
     /// Clear all scratch data slots (typically at the start of each frame).
     pub fn clear_scratch(&mut self) {
         self.scratch_data.clear();

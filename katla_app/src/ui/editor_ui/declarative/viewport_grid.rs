@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::declarative::{Build, BuildContext, ViewDescriptor};
 use katla_ui::{FontSize, TextureId, UiContext};
@@ -7,41 +5,13 @@ use katla_ui::{FontSize, TextureId, UiContext};
 use crate::resources::viewport_state::{ViewportGridState, ViewportLayout};
 use crate::ui::editor_ui::ColorScheme;
 
-thread_local! {
-    static VP_GRID_CTX: RefCell<Option<ViewportGridDrawCtx>> = const { RefCell::new(None) };
-}
-
-struct ViewportGridDrawCtx {
-    bounds: Rect2D,
-    state: ViewportGridState,
-    texture_ids: [Option<TextureId>; 4],
-    theme: ColorScheme,
-    hovered_slot: Option<usize>,
-}
-
-pub(crate) fn set_viewport_grid_ctx(
-    bounds: Rect2D,
-    state: &ViewportGridState,
-    texture_ids: &[Option<TextureId>; 4],
-    theme: &ColorScheme,
-) {
-    VP_GRID_CTX.with(|c| {
-        *c.borrow_mut() = Some(ViewportGridDrawCtx {
-            bounds,
-            state: state.clone(),
-            texture_ids: *texture_ids,
-            theme: theme.clone(),
-            hovered_slot: None,
-        })
-    });
-}
-
-pub(crate) fn take_viewport_grid_hovered() -> Option<(Rect2D, Option<usize>)> {
-    VP_GRID_CTX.with(|c| {
-        c.borrow_mut()
-            .as_mut()
-            .map(|ctx| (ctx.bounds, ctx.hovered_slot))
-    })
+#[derive(Clone)]
+pub(crate) struct ViewportGridDrawCtx {
+    pub bounds: Rect2D,
+    pub state: ViewportGridState,
+    pub texture_ids: [Option<TextureId>; 4],
+    pub theme: ColorScheme,
+    pub hovered_slot: Option<usize>,
 }
 
 pub(crate) struct ViewportGridView;
@@ -79,9 +49,9 @@ fn get_slot_at_position(bounds: Rect2D, state: &ViewportGridState, pos: Vec2) ->
 }
 
 fn draw_viewport_grid(ui: &mut UiContext, _bounds: Rect2D) {
-    let ctx = VP_GRID_CTX.with(|c| c.borrow_mut().take());
-    let Some(mut ctx) = ctx else {
-        return;
+    let mut ctx = match ui.get_scratch::<ViewportGridDrawCtx>().cloned() {
+        Some(c) => c,
+        None => return,
     };
 
     let (rows, cols) = ctx.state.layout.grid_dimensions();
@@ -151,7 +121,7 @@ fn draw_viewport_grid(ui: &mut UiContext, _bounds: Rect2D) {
         }
     }
 
-    VP_GRID_CTX.with(|c| *c.borrow_mut() = Some(ctx));
+    ui.set_scratch(ctx);
 }
 
 #[cfg(test)]

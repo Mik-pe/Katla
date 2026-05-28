@@ -6,13 +6,12 @@ use katla_ui::{
 };
 
 use super::declarative::{
-    ConsoleDrawCtx, EditorRootView, HierarchyDrawCtx, InspectorDrawCtx, PreferencesDrawCtx,
-    StatusBarData, ToolbarDrawCtx, build_asset_browser_from_ctx, set_asset_browser_ctx,
-    set_co_creator_ctx, set_console_ctx, set_gizmo_ctx, set_hierarchy_ctx, set_inspector_ctx,
-    set_particle_inspector_ctx, set_preferences_ctx, set_toolbar_ctx, set_viewport_grid_ctx,
-    take_co_creator_ctx, take_console_ctx, take_gizmo_actions, take_hierarchy_ctx,
-    take_inspector_ctx, take_particle_inspector_ctx, take_preferences_ctx, take_toolbar_ctx,
-    take_viewport_grid_hovered,
+    AssetBrowserDrawCtx, ConsoleDrawCtx, EditorRootView, GizmoDrawCtx, HierarchyDrawCtx,
+    InspectorDrawCtx, PreferencesDrawCtx, StatusBarData, ToolbarDrawCtx, ViewportGridDrawCtx,
+    build_asset_browser_from_ctx, set_co_creator_ctx, set_console_ctx, set_hierarchy_ctx,
+    set_inspector_ctx, set_particle_inspector_ctx, set_preferences_ctx, set_toolbar_ctx,
+    take_co_creator_ctx, take_console_ctx, take_hierarchy_ctx, take_inspector_ctx,
+    take_particle_inspector_ctx, take_preferences_ctx, take_toolbar_ctx,
 };
 use super::{
     EditorAction, EditorRenderParams, EditorUI, co_creator,
@@ -189,14 +188,19 @@ impl EditorUI {
             self.theme.warning,
         );
         set_toolbar_ctx(toolbar_ctx);
-        set_gizmo_ctx(self.gizmo_mode, self.last_viewport_bounds);
+        ui.set_scratch(GizmoDrawCtx {
+            gizmo_mode: self.gizmo_mode,
+            viewport_bounds: self.last_viewport_bounds,
+            actions: Vec::new(),
+        });
 
-        set_viewport_grid_ctx(
-            self.last_viewport_bounds,
-            &self.viewport_grid_state,
-            &self.viewport_texture_ids,
-            &self.theme,
-        );
+        ui.set_scratch(ViewportGridDrawCtx {
+            bounds: self.last_viewport_bounds,
+            state: self.viewport_grid_state.clone(),
+            texture_ids: self.viewport_texture_ids,
+            theme: self.theme.clone(),
+            hovered_slot: None,
+        });
 
         let right_panel_x = screen_size.x() - self.right_panel_width;
 
@@ -335,10 +339,10 @@ impl EditorUI {
 
         ui.register_panel(3, viewport_bounds);
 
-        if let Some((grid_bounds, hovered_slot)) = take_viewport_grid_hovered() {
-            if hovered_slot.is_some() {
-                let min = grid_bounds.min;
-                let max = grid_bounds.max;
+        if let Some(vp_ctx) = ui.get_scratch::<ViewportGridDrawCtx>().cloned() {
+            if vp_ctx.hovered_slot.is_some() {
+                let min = vp_ctx.bounds.min;
+                let max = vp_ctx.bounds.max;
                 crate::input::update_active_viewport(
                     &mut self.viewport_grid_state,
                     ui.mouse_pos(),
@@ -381,12 +385,12 @@ impl EditorUI {
         // Only set context for the active bottom tab
         match self.bottom_panel_tab {
             BottomPanelTab::AssetBrowser => {
-                set_asset_browser_ctx(
-                    bottom_content_bounds,
-                    self.theme.clone(),
-                    self.focused_panel == super::FocusedPanel::AssetBrowser,
+                ui.set_scratch(AssetBrowserDrawCtx {
+                    bounds: bottom_content_bounds,
+                    theme: self.theme.clone(),
+                    is_focused: self.focused_panel == super::FocusedPanel::AssetBrowser,
                     viewport_bounds,
-                );
+                });
             }
             BottomPanelTab::Console => {
                 set_console_ctx(ConsoleDrawCtx {
@@ -460,7 +464,9 @@ impl EditorUI {
                 .append(&mut self.toolbar_state.pending_actions);
         }
 
-        self.pending_actions.append(&mut take_gizmo_actions());
+        if let Some(gizmo_ctx) = ui.get_scratch::<GizmoDrawCtx>().cloned() {
+            self.pending_actions.extend(gizmo_ctx.actions);
+        }
 
         if let Some(inspector_ctx) = take_inspector_ctx() {
             self.inspector_edit = inspector_ctx.edit;

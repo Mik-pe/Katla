@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -13,31 +12,12 @@ use crate::ui::editor_ui::asset_browser::{
 };
 use crate::ui::editor_ui::{EditorAction, SpawnableModel};
 
-thread_local! {
-    static ASSET_BROWSER_CTX: RefCell<Option<AssetBrowserDrawCtx>> = const { RefCell::new(None) };
-}
-
-struct AssetBrowserDrawCtx {
-    bounds: Rect2D,
-    theme: ColorScheme,
-    is_focused: bool,
-    viewport_bounds: Rect2D,
-}
-
-pub(crate) fn set_asset_browser_ctx(
-    bounds: Rect2D,
-    theme: ColorScheme,
-    is_focused: bool,
-    viewport_bounds: Rect2D,
-) {
-    ASSET_BROWSER_CTX.with(|c| {
-        *c.borrow_mut() = Some(AssetBrowserDrawCtx {
-            bounds,
-            theme,
-            is_focused,
-            viewport_bounds,
-        })
-    });
+#[derive(Clone)]
+pub(crate) struct AssetBrowserDrawCtx {
+    pub bounds: Rect2D,
+    pub theme: ColorScheme,
+    pub is_focused: bool,
+    pub viewport_bounds: Rect2D,
 }
 
 pub(crate) struct AssetBrowserView;
@@ -50,12 +30,11 @@ impl Build for AssetBrowserView {
 
 fn draw_asset_browser_placeholder(_ui: &mut UiContext, _bounds: Rect2D) {
     // The actual asset browser drawing happens in layout.rs via build_asset_browser_from_ctx()
-    // because it needs &mut BackgroundLoader and thumbnail handles that can't go through
-    // thread-local storage. This Custom node ensures the asset browser participates in the
-    // declarative ViewTree.
+    // because it needs &mut BackgroundLoader and thumbnail handles. This Custom node
+    // ensures the asset browser participates in the declarative ViewTree.
 }
 
-/// Build the asset browser using the context set before the view tree frame.
+/// Build the asset browser using the scratch context set before the view tree frame.
 /// Called from layout.rs after view_tree.frame() with access to the loader and thumbnails.
 pub(crate) fn build_asset_browser_from_ctx(
     state: &mut AssetBrowserState,
@@ -63,9 +42,9 @@ pub(crate) fn build_asset_browser_from_ctx(
     loader: &mut crate::util::BackgroundLoader,
     thumbnail_texture_handles: &HashMap<PathBuf, TextureHandle>,
 ) -> Vec<EditorAction> {
-    let ctx = ASSET_BROWSER_CTX.with(|c| c.borrow_mut().take());
-    let Some(ctx) = ctx else {
-        return Vec::new();
+    let ctx = match ui.get_scratch::<AssetBrowserDrawCtx>().cloned() {
+        Some(c) => c,
+        None => return Vec::new(),
     };
 
     build_asset_browser(
