@@ -104,9 +104,9 @@
 ## Rendering
 
 ### Metal rendering bugs
-- [ ] Billboard icons don't show in Metal
-- [ ] Animated fox (skinned mesh) doesn't show in Metal
-- [ ] Particle systems don't show in Metal
+- [x] Billboard icons don't show in Metal — Fixed: added "billboard" vertex type with alpha blending and double-sided rendering to Metal material compilation
+- [ ] Animated fox (skinned mesh) doesn't show in Metal — Partial: skeleton buffers now initialized with identity matrices (shows T-pose); full fix requires porting GPU animation compute pipeline from Vulkan to Metal (frame_loop.rs:189 is Vulkan-only)
+- [ ] Particle systems don't show in Metal — Requires adding particle compute dispatch and particle render pass to Metal's render_frame(); MetalParticleSubsystem exists but is not wired into the frame loop
 
 ### Post-processing pipeline
 - [ ] Add post-process pass infrastructure — reusable fullscreen-quad pass builder in the render graph that takes an input color texture and outputs a processed color texture

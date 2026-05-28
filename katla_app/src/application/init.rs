@@ -688,7 +688,7 @@ impl Application {
             #[cfg(target_os = "macos")]
             katla_gfx::AnyRenderer::Metal(_) => self
                 .renderer
-                .compile_material(&shader_path.to_string_lossy(), "pbr")
+                .compile_material(&shader_path.to_string_lossy(), "billboard")
                 .expect("Failed to create billboard material"),
         };
 
