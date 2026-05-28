@@ -73,13 +73,17 @@ fn is_interactive(descriptor: &ViewDescriptor) -> bool {
         | ViewDescriptor::TreeView { .. }
         | ViewDescriptor::Modal { .. }
         | ViewDescriptor::ContextMenu { .. }
-        | ViewDescriptor::ScrollView(_) => true,
+        | ViewDescriptor::ScrollView(_)
+        | ViewDescriptor::Selectable { .. }
+        | ViewDescriptor::Section { .. } => true,
 
         ViewDescriptor::Empty
         | ViewDescriptor::Text { .. }
         | ViewDescriptor::Progress { .. }
         | ViewDescriptor::Image { .. }
         | ViewDescriptor::PropertyRow { .. }
+        | ViewDescriptor::Separator { .. }
+        | ViewDescriptor::Icon { .. }
         | ViewDescriptor::HStack(_)
         | ViewDescriptor::VStack(_)
         | ViewDescriptor::ZStack(_)
@@ -569,6 +573,56 @@ pub(crate) fn process_input(
                 offset -= input.scroll_delta.y() * 30.0;
                 offset = offset.max(0.0);
                 tree.state_arena_mut().set(desc.scroll_state_id, offset);
+                result.input_consumed = true;
+            }
+        }
+
+        ViewDescriptor::Selectable { on_click, .. } => {
+            if input.mouse_clicked(mouse_button::LEFT) {
+                if let Some(callback) = on_click {
+                    callbacks.invoke(callback);
+                }
+                result.input_consumed = true;
+                result.clicked_id = Some(hit.id);
+            }
+        }
+
+        ViewDescriptor::Section {
+            expanded_id,
+            on_remove,
+            ..
+        } => {
+            let Some(node_bounds) = bounds_map.get(&hit.id).copied() else {
+                return result;
+            };
+            let font_size = 14.0_f32;
+            let header_height = font_size + 8.0;
+
+            // Check remove button click first
+            if on_remove.is_some() {
+                let close_x = node_bounds.max.x() - font_size - 4.0;
+                let close_bounds = Rect2D::from_origin_size(
+                    Vec2::new(close_x, node_bounds.min.y()),
+                    Vec2::new(font_size + 4.0, header_height),
+                );
+                if close_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT)
+                {
+                    if let Some(callback) = on_remove {
+                        callbacks.invoke(callback);
+                    }
+                    result.input_consumed = true;
+                    return result;
+                }
+            }
+
+            // Header click toggles expanded
+            let header_bounds = Rect2D::from_origin_size(
+                node_bounds.min,
+                Vec2::new(node_bounds.width(), header_height),
+            );
+            if header_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT) {
+                let expanded: bool = tree.state_arena().get(*expanded_id);
+                tree.state_arena_mut().set(*expanded_id, !expanded);
                 result.input_consumed = true;
             }
         }

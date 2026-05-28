@@ -369,6 +369,50 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
         ViewDescriptor::Custom(_) => Style::default(),
 
         ViewDescriptor::TransitionContainer { .. } => Style::default(),
+
+        ViewDescriptor::Separator { direction, .. } => {
+            let thickness = 1.0;
+            match direction {
+                super::descriptor::SeparatorDirection::Horizontal => Style {
+                    size: Size {
+                        width: Dimension::Percent(1.0),
+                        height: Dimension::Length(thickness),
+                    },
+                    ..Style::default()
+                },
+                super::descriptor::SeparatorDirection::Vertical => Style {
+                    size: Size {
+                        width: Dimension::Length(thickness),
+                        height: Dimension::Percent(1.0),
+                    },
+                    ..Style::default()
+                },
+            }
+        }
+
+        ViewDescriptor::Icon { icon, size, .. } => {
+            let font_size = size.unwrap_or(FontSize::Medium);
+            let h = font_size.to_pixels();
+            let w = h;
+            let _ = icon;
+            Style {
+                size: Size {
+                    width: Dimension::Length(w),
+                    height: Dimension::Length(h),
+                },
+                ..Style::default()
+            }
+        }
+
+        ViewDescriptor::Selectable { .. } => Style {
+            flex_direction: FlexDirection::Column,
+            ..Style::default()
+        },
+
+        ViewDescriptor::Section { .. } => Style {
+            flex_direction: FlexDirection::Column,
+            ..Style::default()
+        },
     }
 }
 

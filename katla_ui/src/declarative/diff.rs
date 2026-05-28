@@ -36,6 +36,11 @@ pub fn diff_descriptor(old: &ViewDescriptor, new: &ViewDescriptor) -> DiffAction
         (ViewDescriptor::PropertyRow { .. }, ViewDescriptor::PropertyRow { .. }) => {
             DiffAction::Update
         }
+        (ViewDescriptor::Separator { .. }, ViewDescriptor::Separator { .. }) => DiffAction::Update,
+        (ViewDescriptor::Icon { .. }, ViewDescriptor::Icon { .. }) => DiffAction::Update,
+        (ViewDescriptor::Section { .. }, ViewDescriptor::Section { .. }) => {
+            DiffAction::RecurseChildren
+        }
         (ViewDescriptor::Custom(_), ViewDescriptor::Custom(_)) => DiffAction::Update,
 
         // TransitionContainer -> RecurseChildren (has single child)
@@ -55,6 +60,9 @@ pub fn diff_descriptor(old: &ViewDescriptor, new: &ViewDescriptor) -> DiffAction
         (ViewDescriptor::Overlay(_), ViewDescriptor::Overlay(_)) => DiffAction::RecurseChildren,
         (ViewDescriptor::StatusBar(_), ViewDescriptor::StatusBar(_)) => DiffAction::RecurseChildren,
         (ViewDescriptor::DraggablePanel(_), ViewDescriptor::DraggablePanel(_)) => {
+            DiffAction::RecurseChildren
+        }
+        (ViewDescriptor::Selectable { .. }, ViewDescriptor::Selectable { .. }) => {
             DiffAction::RecurseChildren
         }
 

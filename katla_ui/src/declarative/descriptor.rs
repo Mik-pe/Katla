@@ -124,6 +124,35 @@ pub enum ViewDescriptor {
         value: String,
     },
 
+    /// A horizontal or vertical divider line.
+    Separator {
+        direction: SeparatorDirection,
+        color: Option<Color>,
+    },
+
+    /// Render an icon glyph with configurable size and color.
+    Icon {
+        icon: char,
+        size: Option<FontSize>,
+        color: Option<Color>,
+    },
+
+    /// Wrapper that highlights on hover and fires on_click.
+    Selectable {
+        child: Box<ViewDescriptor>,
+        on_click: Option<Callback>,
+        selected: bool,
+    },
+
+    /// Collapsible section with header row, optional remove button,
+    /// and expand/collapse chevron.
+    Section {
+        title: String,
+        child: Box<ViewDescriptor>,
+        expanded_id: StateId,
+        on_remove: Option<Callback>,
+    },
+
     HStack(Box<StackDescriptor>),
     VStack(Box<StackDescriptor>),
     ZStack(Box<ZStackDescriptor>),
@@ -285,6 +314,12 @@ pub struct ContextMenuEntry {
     pub disabled: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SeparatorDirection {
+    Horizontal,
+    Vertical,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Anchor {
     TopLeft,
@@ -296,7 +331,7 @@ pub enum Anchor {
     Center,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Padding {
     pub top: f32,
     pub right: f32,
@@ -333,7 +368,7 @@ impl Padding {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Alignment {
     Leading,
     Trailing,
@@ -516,6 +551,35 @@ impl std::fmt::Debug for ViewDescriptor {
                 .debug_struct("PropertyRow")
                 .field("label", label)
                 .field("value", value)
+                .finish(),
+            ViewDescriptor::Separator { direction, color } => f
+                .debug_struct("Separator")
+                .field("direction", direction)
+                .field("color", color)
+                .finish(),
+            ViewDescriptor::Icon { icon, size, color } => f
+                .debug_struct("Icon")
+                .field("icon", icon)
+                .field("size", size)
+                .field("color", color)
+                .finish(),
+            ViewDescriptor::Selectable {
+                on_click, selected, ..
+            } => f
+                .debug_struct("Selectable")
+                .field("on_click", on_click)
+                .field("selected", selected)
+                .finish(),
+            ViewDescriptor::Section {
+                title,
+                expanded_id,
+                on_remove,
+                ..
+            } => f
+                .debug_struct("Section")
+                .field("title", title)
+                .field("expanded_id", expanded_id)
+                .field("on_remove", on_remove)
                 .finish(),
             ViewDescriptor::HStack(s) => f.debug_tuple("HStack").field(s).finish(),
             ViewDescriptor::VStack(s) => f.debug_tuple("VStack").field(s).finish(),

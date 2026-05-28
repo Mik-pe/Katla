@@ -643,6 +643,110 @@ pub(crate) fn draw_descriptor_with_id(
             ui.draw_image(bounds, uv_rect.min, uv_rect.max, *tint, *texture);
         }
 
+        ViewDescriptor::Separator { direction, color } => {
+            let line_color = color.unwrap_or(ui.style().separator);
+            match direction {
+                super::descriptor::SeparatorDirection::Horizontal => {
+                    let y = bounds.center().y();
+                    ui.draw_line(
+                        Vec2::new(bounds.min.x(), y),
+                        Vec2::new(bounds.max.x(), y),
+                        anim_state.apply_to_color(line_color),
+                        1.0,
+                    );
+                }
+                super::descriptor::SeparatorDirection::Vertical => {
+                    let x = bounds.center().x();
+                    ui.draw_line(
+                        Vec2::new(x, bounds.min.y()),
+                        Vec2::new(x, bounds.max.y()),
+                        anim_state.apply_to_color(line_color),
+                        1.0,
+                    );
+                }
+            }
+        }
+
+        ViewDescriptor::Icon { icon, size, color } => {
+            let font_size = size
+                .map(|fs| ui.scaled_font_size(fs))
+                .unwrap_or(ui.style().font_size);
+            let icon_color = color.unwrap_or(ui.style().text_color);
+            let text_size = ui.measure_text(&icon.to_string(), font_size);
+            let text_pos = Vec2::new(
+                bounds.center().x() - text_size.x() * 0.5,
+                bounds.center().y() - text_size.y() * 0.5,
+            );
+            ui.draw_text(
+                &icon.to_string(),
+                text_pos,
+                anim_state.apply_to_color(icon_color),
+                font_size,
+            );
+        }
+
+        ViewDescriptor::Selectable {
+            on_click: _,
+            selected,
+            child: _,
+        } => {
+            if *selected {
+                ui.draw_rect(bounds, ui.style().selectable_selected);
+            } else if is_hovered {
+                ui.draw_rect(bounds, ui.style().selectable_hovered);
+            }
+        }
+
+        ViewDescriptor::Section {
+            title,
+            expanded_id,
+            on_remove,
+            ..
+        } => {
+            let expanded: bool = state_arena.get(*expanded_id);
+            let font_size = ui.style().font_size;
+
+            // Header background
+            let header_height = font_size + 8.0;
+            let header_bounds =
+                Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), header_height));
+            ui.draw_rect(header_bounds, ui.style().window_title_bg);
+
+            // Chevron
+            let chevron = if expanded {
+                katla_icons::ForkAwesome::CHEVRON_DOWN.to_string()
+            } else {
+                katla_icons::ForkAwesome::CHEVRON_RIGHT.to_string()
+            };
+            let chevron_y = header_bounds.center().y() - font_size * 0.5;
+            ui.draw_text(
+                &chevron,
+                Vec2::new(bounds.min.x() + 4.0, chevron_y),
+                ui.style().text_color,
+                font_size,
+            );
+
+            // Title
+            let title_x = bounds.min.x() + font_size + 8.0;
+            ui.draw_text(
+                title,
+                Vec2::new(title_x, chevron_y),
+                anim_state.apply_to_color(ui.style().text_color),
+                font_size,
+            );
+
+            // Remove button (×)
+            if on_remove.is_some() {
+                let close_x = bounds.max.x() - font_size - 4.0;
+                ui.draw_text(
+                    "\u{00d7}",
+                    Vec2::new(close_x, chevron_y),
+                    ui.style().text_disabled,
+                    font_size,
+                );
+            }
+        }
+
         ViewDescriptor::HStack(_) | ViewDescriptor::VStack(_) | ViewDescriptor::ZStack(_) => {}
 
         ViewDescriptor::ScrollView(_) => {
