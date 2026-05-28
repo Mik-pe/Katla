@@ -66,8 +66,9 @@ impl AuxBus {
         if self.buffer.len() != main_buffer.len() {
             self.buffer.resize(main_buffer.len(), 0.0);
         }
+        self.buffer.fill(0.0);
         for (dst, src) in self.buffer.iter_mut().zip(main_buffer.iter()) {
-            *dst += src * self.send_level;
+            *dst = src * self.send_level;
         }
     }
 

@@ -152,7 +152,7 @@ pub fn load_flac(path: &Path) -> Result<AudioBuffer, AudioError> {
         .map(|s| {
             s.map(|s| match bits_per_sample {
                 16 => (s as i16) as f32 / i16::MAX as f32,
-                24 => (s >> 8) as i16 as f32 / i16::MAX as f32,
+                24 => s as f32 / 8388608.0,
                 32 => s as f32 / i32::MAX as f32,
                 _ => s as f32 / (1i64 << (bits_per_sample - 1)) as f32,
             })

@@ -24,6 +24,7 @@ struct OggStreamState {
 
 struct Mp3StreamState {
     decoder: minimp3::Decoder<std::io::BufReader<std::fs::File>>,
+    path: std::path::PathBuf,
 }
 
 impl StreamingDecoder {
@@ -60,7 +61,10 @@ impl StreamingDecoder {
         let file = File::open(path).map_err(AudioError::Io)?;
         let decoder = minimp3::Decoder::new(std::io::BufReader::new(file));
         Ok(StreamingDecoder {
-            inner: StreamingDecoderInner::Mp3(Mp3StreamState { decoder }),
+            inner: StreamingDecoderInner::Mp3(Mp3StreamState {
+                decoder,
+                path: path.to_path_buf(),
+            }),
             channels: 0,
             sample_rate: 0,
             exhausted: false,
@@ -216,10 +220,10 @@ impl StreamingDecoder {
                     .seek_absgp_pg(0)
                     .map_err(|e| AudioError::DecodeFailed(format!("OGG seek failed: {e}")))?;
             }
-            StreamingDecoderInner::Mp3(_) => {
-                return Err(AudioError::InvalidOperation(
-                    "MP3 streaming does not support seeking".into(),
-                ));
+            StreamingDecoderInner::Mp3(state) => {
+                use std::fs::File;
+                let file = File::open(&state.path).map_err(AudioError::Io)?;
+                state.decoder = minimp3::Decoder::new(std::io::BufReader::new(file));
             }
         }
         self.exhausted = false;
