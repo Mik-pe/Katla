@@ -1,6 +1,6 @@
 use std::cell::UnsafeCell;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use crate::command_queue::AudioCategoryValue;
 use crate::error::AudioError;
@@ -15,6 +15,11 @@ const SILENCE_FRAMES_BEFORE_SKIP: u32 = 3;
 const FRAC_BITS: u32 = 24;
 const FRAC_MASK: u64 = (1u64 << FRAC_BITS) - 1;
 const FIXED_ONE: u64 = 1u64 << FRAC_BITS;
+
+const FADE_NONE: u8 = 0;
+const FADE_IN: u8 = 1;
+const FADE_OUT: u8 = 2;
+const FADE_DURATION_MS: f32 = 3.0;
 
 pub struct StreamingVoice {
     id: VoiceId,
@@ -36,6 +41,8 @@ pub struct StreamingVoice {
     finished: AtomicBool,
     category: AudioCategoryValue,
     category_volumes: Arc<CategoryVolumes>,
+    fade_state: AtomicU8,
+    fade_position: AtomicUsize,
 }
 
 // SAFETY: StreamingVoice is only accessed from two contexts:
@@ -96,6 +103,8 @@ impl StreamingVoice {
             finished: AtomicBool::new(false),
             category,
             category_volumes,
+            fade_state: AtomicU8::new(FADE_IN),
+            fade_position: AtomicUsize::new(0),
         })
     }
 
@@ -109,6 +118,11 @@ impl StreamingVoice {
 
     pub fn is_looping(&self) -> bool {
         self.looping
+    }
+
+    pub fn begin_fade_out(&self) {
+        self.fade_state.store(FADE_OUT, Ordering::Relaxed);
+        self.fade_position.store(0, Ordering::Relaxed);
     }
 
     pub fn set_volume(&self, volume: f32) {
@@ -237,7 +251,8 @@ impl StreamingVoice {
     ) {
         let voice_volume = self.volume() * self.category_volume();
 
-        if voice_volume < SILENCE_THRESHOLD {
+        if voice_volume < SILENCE_THRESHOLD && self.fade_state.load(Ordering::Relaxed) == FADE_NONE
+        {
             self.silent_frame_count += 1;
             if self.silent_frame_count >= SILENCE_FRAMES_BEFORE_SKIP {
                 return;
@@ -245,6 +260,11 @@ impl StreamingVoice {
         } else {
             self.silent_frame_count = 0;
         }
+
+        let fade_state = self.fade_state.load(Ordering::Relaxed);
+        let fade_pos_start = self.fade_position.load(Ordering::Relaxed);
+        let fade_length = (FADE_DURATION_MS * output_sample_rate as f32 / 1000.0) as usize;
+        let mut frames_mixed = 0usize;
 
         self.fill_ring_buffer();
 
@@ -289,15 +309,20 @@ impl StreamingVoice {
                     break;
                 }
 
+                let fade_gain =
+                    streaming_fade_gain(fade_state, fade_pos_start + frames_mixed, fade_length);
+                let vol = voice_volume * fade_gain;
+
                 let l0 = ring_buffer[int_pos];
                 let r0 = ring_buffer[int_pos + 1];
                 let l1 = ring_buffer[int_pos + 2];
                 let r1 = ring_buffer[int_pos + 3];
                 let l = l0 + (l1 - l0) * frac;
                 let r = r0 + (r1 - r0) * frac;
-                chunk[0] += l * voice_volume * left_gain;
-                chunk[1] += r * voice_volume * right_gain;
+                chunk[0] += l * vol * left_gain;
+                chunk[1] += r * vol * right_gain;
 
+                frames_mixed += 1;
                 fixed_pos += step_fixed * 2;
             }
         } else if src_channels == 1 && output_channels == 2 {
@@ -312,17 +337,46 @@ impl StreamingVoice {
                     break;
                 }
 
+                let fade_gain =
+                    streaming_fade_gain(fade_state, fade_pos_start + frames_mixed, fade_length);
+                let vol = voice_volume * fade_gain;
+
                 let s0 = ring_buffer[int_pos];
                 let s1 = ring_buffer[int_pos + 1];
-                let mono = (s0 + (s1 - s0) * frac) * voice_volume;
+                let mono = (s0 + (s1 - s0) * frac) * vol;
                 chunk[0] += mono * left_gain;
                 chunk[1] += mono * right_gain;
 
+                frames_mixed += 1;
                 fixed_pos += step_fixed;
             }
         }
 
         self.read_fixed.store(fixed_pos, Ordering::Relaxed);
+
+        if fade_state != FADE_NONE {
+            let new_pos = fade_pos_start + frames_mixed;
+            self.fade_position.store(new_pos, Ordering::Relaxed);
+            if new_pos >= fade_length {
+                if fade_state == FADE_IN {
+                    self.fade_state.store(FADE_NONE, Ordering::Relaxed);
+                } else if fade_state == FADE_OUT {
+                    self.finished.store(true, Ordering::Relaxed);
+                }
+            }
+        }
+    }
+}
+
+#[inline]
+fn streaming_fade_gain(fade_state: u8, pos: usize, len: usize) -> f32 {
+    if len == 0 || fade_state == FADE_NONE {
+        return 1.0;
+    }
+    match fade_state {
+        FADE_IN => (pos as f32 / len as f32).min(1.0),
+        FADE_OUT => (1.0 - pos as f32 / len as f32).max(0.0),
+        _ => 1.0,
     }
 }
 
