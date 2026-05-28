@@ -195,7 +195,6 @@ impl EditorUI {
             state: self.viewport_grid_state.clone(),
             texture_ids: self.viewport_texture_ids,
             theme: self.theme.clone(),
-            hovered_slot: None,
         });
 
         let right_panel_x = screen_size.x() - self.right_panel_width;
@@ -335,17 +334,17 @@ impl EditorUI {
 
         ui.register_panel(3, viewport_bounds);
 
-        if let Some(vp_ctx) = ui.get_scratch::<ViewportGridDrawCtx>().cloned() {
-            if vp_ctx.hovered_slot.is_some() {
-                let min = vp_ctx.bounds.min;
-                let max = vp_ctx.bounds.max;
-                crate::input::update_active_viewport(
-                    &mut self.viewport_grid_state,
-                    ui.mouse_pos(),
-                    min,
-                    max,
-                );
-            }
+        // Update active viewport based on mouse position within viewport bounds.
+        // This replaces the old two-phase scratch read-back where the Custom draw
+        // function computed hovered_slot and layout.rs read it back after the frame.
+        let mouse_pos = ui.mouse_pos();
+        if viewport_bounds.contains(mouse_pos) {
+            crate::input::update_active_viewport(
+                &mut self.viewport_grid_state,
+                mouse_pos,
+                viewport_bounds.min,
+                viewport_bounds.max,
+            );
         }
 
         let bottom_bounds = Rect2D::from_origin_size(
