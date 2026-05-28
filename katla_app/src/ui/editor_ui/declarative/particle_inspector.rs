@@ -1,8 +1,9 @@
 use katla_ecs::EntityId;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, DraggablePanelDescriptor, DraggablePanelState,
-    DraggablePanelVisibility, Padding, ScrollDescriptor, StackDescriptor, StateId, ViewDescriptor,
+    Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId,
+    ViewDescriptor, draggable_panel, hstack, labeled_slider, property_row, radio, scroll, text,
+    toggle, vstack,
 };
 
 use crate::ui::particle_inspector::EmitterField;
@@ -66,19 +67,19 @@ impl Build for ParticleInspectorView {
         let mut children: Vec<ViewDescriptor> = Vec::new();
 
         // Emitter label
-        children.push(ViewDescriptor::Text {
-            content: "Emitter:".to_string(),
-            color: Some(theme.text_primary),
-            font_size: Some(FontSize::Small),
-        });
+        children.push(
+            text("Emitter:")
+                .color(theme.text_primary)
+                .font_size(FontSize::Small),
+        );
 
         // Emitter selector via RadioButton group
         if data.emitter_entities.is_empty() {
-            children.push(ViewDescriptor::Text {
-                content: "No particle emitters in scene".to_string(),
-                color: Some(theme.text_muted),
-                font_size: Some(FontSize::Small),
-            });
+            children.push(
+                text("No particle emitters in scene")
+                    .color(theme.text_muted)
+                    .font_size(FontSize::Small),
+            );
         } else {
             let selected_idx = data
                 .selected_emitter_entity
@@ -95,12 +96,8 @@ impl Build for ParticleInspectorView {
             }
             ctx.set_state(emitter_sel_id, selected_idx);
 
-            for (idx, _entity_id) in data.emitter_entities.iter().enumerate() {
-                children.push(ViewDescriptor::RadioButton {
-                    value_id: emitter_sel_id,
-                    index: idx,
-                    label: format!("Emitter {}", idx),
-                });
+            for (idx, _) in data.emitter_entities.iter().enumerate() {
+                children.push(radio(emitter_sel_id, idx, format!("Emitter {}", idx)));
             }
         }
 
@@ -132,20 +129,12 @@ impl Build for ParticleInspectorView {
                 }
                 ctx.set_state(shape_sel_id, shape_idx);
 
-                let mut shape_buttons = Vec::new();
-                for (i, name) in shape_names.iter().enumerate() {
-                    shape_buttons.push(ViewDescriptor::RadioButton {
-                        value_id: shape_sel_id,
-                        index: i,
-                        label: name.to_string(),
-                    });
-                }
-                config_children.push(ViewDescriptor::HStack(Box::new(StackDescriptor {
-                    children: shape_buttons,
-                    spacing: 2.0,
-                    padding: Padding::zero(),
-                    alignment: Alignment::Leading,
-                })));
+                let shape_buttons: Vec<ViewDescriptor> = shape_names
+                    .iter()
+                    .enumerate()
+                    .map(|(i, name)| radio(shape_sel_id, i, *name))
+                    .collect();
+                config_children.push(hstack(shape_buttons).spacing(2.0));
 
                 // Shape params
                 match config.shape_name {
@@ -355,10 +344,10 @@ impl Build for ParticleInspectorView {
                     ctx.emit(ParticleInspectorAction::ToggleEmitter);
                     ctx.set_state(active_id, config.active);
                 }
-                config_children.push(ViewDescriptor::Toggle {
-                    label: if config.active { "Disable" } else { "Enable" }.to_string(),
-                    value_id: active_id,
-                });
+                config_children.push(toggle(
+                    if config.active { "Disable" } else { "Enable" },
+                    active_id,
+                ));
 
                 let reset_id: StateId = ctx.state(false);
                 let reset_val: bool = ctx.get_state(reset_id);
@@ -366,53 +355,38 @@ impl Build for ParticleInspectorView {
                     ctx.emit(ParticleInspectorAction::ResetSystem);
                     ctx.set_state(reset_id, false);
                 }
-                config_children.push(ViewDescriptor::Toggle {
-                    label: "Reset System".to_string(),
-                    value_id: reset_id,
-                });
+                config_children.push(toggle("Reset System", reset_id));
 
                 children.extend(config_children);
             }
         } else if data.selected_emitter_entity.is_some() {
-            children.push(ViewDescriptor::Text {
-                content: "Selected emitter not found".to_string(),
-                color: Some(theme.text_muted),
-                font_size: Some(FontSize::Small),
-            });
+            children.push(
+                text("Selected emitter not found")
+                    .color(theme.text_muted)
+                    .font_size(FontSize::Small),
+            );
         }
 
-        ViewDescriptor::DraggablePanel(Box::new(DraggablePanelDescriptor {
-            title: "Particle Inspector".to_string(),
-            width: 320.0,
-            height: 600.0,
-            content: Box::new(ViewDescriptor::ScrollView(Box::new(ScrollDescriptor {
-                content: Box::new(ViewDescriptor::VStack(Box::new(StackDescriptor {
-                    children,
-                    spacing: 4.0,
-                    padding: Padding::all(8.0),
-                    alignment: Alignment::Leading,
-                }))),
-                scroll_state_id: scroll_id,
-            }))),
-            state_id: panel_id,
-            close_on_outside_click: false,
-        }))
+        draggable_panel(
+            "Particle Inspector",
+            320.0,
+            600.0,
+            scroll(
+                vstack(children)
+                    .spacing(4.0)
+                    .padding_all(8.0)
+                    .align(Alignment::Leading),
+                scroll_id,
+            ),
+            panel_id,
+        )
     }
 }
 
-fn heading(text: &str, theme: &ColorScheme) -> ViewDescriptor {
-    ViewDescriptor::Text {
-        content: text.to_string(),
-        color: Some(theme.text_accent),
-        font_size: Some(FontSize::Small),
-    }
-}
-
-fn property_row(label: &str, value: &str) -> ViewDescriptor {
-    ViewDescriptor::PropertyRow {
-        label: label.to_string(),
-        value: value.to_string(),
-    }
+fn heading(label: &str, theme: &ColorScheme) -> ViewDescriptor {
+    text(label)
+        .color(theme.text_accent)
+        .font_size(FontSize::Small)
 }
 
 fn scalar_slider(
@@ -431,24 +405,16 @@ fn scalar_slider(
             field(current),
         ));
     }
-    ViewDescriptor::LabeledSlider {
-        label: label.to_string(),
-        value_id,
-        range,
-        label_width: 100.0,
-        show_value: true,
-        precision: 2,
-    }
+    labeled_slider(label, value_id, range)
+        .label_width(100.0)
+        .show_value(true)
+        .precision(2)
 }
 
 fn statistics_section(stats: &ParticleStats) -> ViewDescriptor {
     let mut children = Vec::new();
 
-    children.push(ViewDescriptor::Text {
-        content: "Statistics".to_string(),
-        color: None,
-        font_size: Some(FontSize::Small),
-    });
+    children.push(text("Statistics").font_size(FontSize::Small));
     children.push(property_row(
         "Alive:",
         &format!("{} / {}", stats.current_alive_count, stats.max_alive_count),
@@ -463,11 +429,7 @@ fn statistics_section(stats: &ParticleStats) -> ViewDescriptor {
         &format!("{:.2} MB", stats.memory_used_mb),
     ));
 
-    children.push(ViewDescriptor::Text {
-        content: "Performance".to_string(),
-        color: None,
-        font_size: Some(FontSize::Small),
-    });
+    children.push(text("Performance").font_size(FontSize::Small));
     children.push(property_row(
         "Compute:",
         &format!("{:.3} ms", stats.compute_time_ms),
@@ -481,11 +443,7 @@ fn statistics_section(stats: &ParticleStats) -> ViewDescriptor {
         &format!("{:.3} ms", stats.peak_compute_time_ms),
     ));
 
-    children.push(ViewDescriptor::Text {
-        content: "Lifetime".to_string(),
-        color: None,
-        font_size: Some(FontSize::Small),
-    });
+    children.push(text("Lifetime").font_size(FontSize::Small));
     children.push(property_row(
         "Emitted:",
         &format!("{}", stats.total_emitted),
@@ -497,10 +455,5 @@ fn statistics_section(stats: &ParticleStats) -> ViewDescriptor {
         &format!("{}", stats.total_dispatches),
     ));
 
-    ViewDescriptor::VStack(Box::new(StackDescriptor {
-        children,
-        spacing: 4.0,
-        padding: Padding::zero(),
-        alignment: Alignment::Leading,
-    }))
+    vstack(children).spacing(4.0)
 }

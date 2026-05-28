@@ -156,7 +156,6 @@ impl EditorUI {
         let total_assets = self.asset_browser.assets.len();
 
         let status_data = StatusBarData {
-            screen_size,
             height: status_bar_height,
             fps: params.fps,
             frame_time_ms: params.frame_time_ms,
@@ -189,7 +188,6 @@ impl EditorUI {
         set_toolbar_ctx(toolbar_ctx);
         self.view_tree.env_mut().set(GizmoDrawCtx {
             gizmo_mode: self.gizmo_mode,
-            viewport_bounds: self.last_viewport_bounds,
         });
 
         ui.set_scratch(ViewportGridDrawCtx {

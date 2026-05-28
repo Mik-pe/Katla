@@ -1,13 +1,8 @@
-use katla_ui::declarative::{
-    Alignment, Build, BuildContext, Padding, StackDescriptor, StateId, ViewDescriptor,
-};
-
-use crate::ui::EditorAction;
+use katla_ui::declarative::{Build, BuildContext, StateId, ViewDescriptor, hstack, radio};
 
 #[derive(Clone)]
 pub(crate) struct GizmoDrawCtx {
     pub gizmo_mode: u8,
-    pub viewport_bounds: katla_math::Rect2D,
 }
 
 /// Action emitted when the gizmo mode changes via the declarative radio buttons.
@@ -38,18 +33,9 @@ impl Build for GizmoButtonsView {
         let modes: [(usize, &str); 3] = [(0, "W:Move"), (1, "E:Rotate"), (2, "R:Scale")];
 
         let children: Vec<ViewDescriptor> = modes
-            .map(|(index, label)| ViewDescriptor::RadioButton {
-                value_id: mode_id,
-                index,
-                label: label.to_string(),
-            })
+            .map(|(index, label)| radio(mode_id, index, label))
             .to_vec();
 
-        ViewDescriptor::HStack(Box::new(StackDescriptor {
-            children,
-            spacing: 2.0,
-            padding: Padding::all(10.0),
-            alignment: Alignment::Leading,
-        }))
+        hstack(children).spacing(2.0).padding_all(10.0)
     }
 }
