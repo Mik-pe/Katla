@@ -70,6 +70,15 @@ impl Rect2D {
         Vec2::new(self.width() * 0.5, self.height() * 0.5)
     }
 
+    /// Translate the rectangle by an offset.
+    #[inline]
+    pub fn translate(&self, offset: Vec2) -> Self {
+        Rect2D {
+            min: self.min + offset,
+            max: self.max + offset,
+        }
+    }
+
     /// Check if a point is contained in the rectangle
     #[inline]
     pub fn contains(&self, point: Vec2) -> bool {

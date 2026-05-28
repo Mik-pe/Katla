@@ -7,11 +7,11 @@ use katla_ui::{
 
 use super::declarative::{
     AssetBrowserDrawCtx, ConsoleDrawCtx, EditorRootView, GizmoDrawCtx, GizmoModeChanged,
-    HierarchyDrawCtx, InspectorDrawCtx, PreferencesDrawCtx, StatusBarData, ToolbarDrawCtx,
-    ViewportGridDrawCtx, build_asset_browser_from_ctx, set_co_creator_ctx, set_console_ctx,
-    set_hierarchy_ctx, set_inspector_ctx, set_particle_inspector_ctx, set_preferences_ctx,
-    set_toolbar_ctx, take_co_creator_ctx, take_console_ctx, take_hierarchy_ctx, take_inspector_ctx,
-    take_particle_inspector_ctx, take_preferences_ctx, take_toolbar_ctx,
+    HierarchyDrawCtx, InspectorDrawCtx, ParticleInspectorDrawCtx, ParticleInspectorPanelSync,
+    PreferencesDrawCtx, StatusBarData, ToolbarDrawCtx, ViewportGridDrawCtx,
+    build_asset_browser_from_ctx, set_co_creator_ctx, set_console_ctx, set_hierarchy_ctx,
+    set_inspector_ctx, set_preferences_ctx, set_toolbar_ctx, take_co_creator_ctx, take_console_ctx,
+    take_hierarchy_ctx, take_inspector_ctx, take_preferences_ctx, take_toolbar_ctx,
 };
 use super::{
     EditorAction, EditorRenderParams, EditorUI, co_creator,
@@ -417,13 +417,11 @@ impl EditorUI {
             pending_actions: Vec::new(),
         });
 
-        set_particle_inspector_ctx(
-            std::mem::take(&mut self.particle_inspector_state.panel),
-            std::mem::take(&mut self.particle_inspector_state.scroll_state),
-            self.selected_particle_emitter,
-            &self.theme,
-            &self.particle_inspector_data,
-        );
+        self.view_tree.env_mut().set(ParticleInspectorDrawCtx {
+            data: self.particle_inspector_data.clone(),
+            theme: self.theme.clone(),
+            is_open: self.particle_inspector_state.panel.is_visible(),
+        });
 
         if self.co_creator.is_open() {
             let style = co_creator::CoCreatorStyle::from_theme(&self.theme);
@@ -486,15 +484,30 @@ impl EditorUI {
                 .extend_from_slice(&hierarchy_ctx.pending_actions);
         }
 
-        if let Some((panel, scroll_state, selected_emitter, actions)) =
-            take_particle_inspector_ctx()
+        for sync in self
+            .view_tree
+            .actions_mut()
+            .drain::<ParticleInspectorPanelSync>()
         {
-            self.particle_inspector_state.panel = panel;
-            self.particle_inspector_state.scroll_state = scroll_state;
-            self.selected_particle_emitter = selected_emitter;
-            for action in actions {
-                self.apply_particle_inspector_action(action);
-            }
+            self.particle_inspector_state.panel.position = sync.position;
+            self.particle_inspector_state.panel.visibility = match sync.visibility {
+                katla_ui::declarative::DraggablePanelVisibility::Hidden => {
+                    katla_ui::widgets::PanelState::Hidden
+                }
+                katla_ui::declarative::DraggablePanelVisibility::JustOpened => {
+                    katla_ui::widgets::PanelState::JustOpened
+                }
+                katla_ui::declarative::DraggablePanelVisibility::Visible => {
+                    katla_ui::widgets::PanelState::Visible
+                }
+            };
+        }
+        for action in self
+            .view_tree
+            .actions_mut()
+            .drain::<crate::ui::ParticleInspectorAction>()
+        {
+            self.apply_particle_inspector_action(action);
         }
 
         if let Some((state, response)) = take_co_creator_ctx() {

@@ -18,7 +18,7 @@ pub(super) use editor_root::EditorRootView;
 pub(super) use gizmo::{GizmoDrawCtx, GizmoModeChanged};
 pub(super) use hierarchy::{HierarchyDrawCtx, set_hierarchy_ctx, take_hierarchy_ctx};
 pub(super) use inspector::{InspectorDrawCtx, set_inspector_ctx, take_inspector_ctx};
-pub(super) use particle_inspector::{set_particle_inspector_ctx, take_particle_inspector_ctx};
+pub(super) use particle_inspector::{ParticleInspectorDrawCtx, ParticleInspectorPanelSync};
 pub(super) use preferences::{PreferencesDrawCtx, set_preferences_ctx, take_preferences_ctx};
 pub(super) use status_bar::StatusBarData;
 pub(super) use toolbar::{ToolbarDrawCtx, set_toolbar_ctx, take_toolbar_ctx};

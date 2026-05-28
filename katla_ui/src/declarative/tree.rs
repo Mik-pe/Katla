@@ -381,9 +381,16 @@ impl ViewTree {
             &anim_state,
         );
 
+        // Compute scroll offset for children
+        let scroll_offset = if let ViewDescriptor::ScrollView(desc) = descriptor {
+            Some(self.state.get::<f32>(desc.scroll_state_id))
+        } else {
+            None
+        };
+
         // Draw children
         for &child_id in &children {
-            self.draw_child_recursive(child_id, ui, bounds, descriptor);
+            self.draw_child_recursive(child_id, ui, bounds, descriptor, scroll_offset);
         }
 
         if is_scroll_view {
@@ -397,6 +404,7 @@ impl ViewTree {
         ui: &mut UiContext,
         parent_bounds: Rect2D,
         parent_descriptor: &ViewDescriptor,
+        scroll_offset: Option<f32>,
     ) {
         let Some(child_node) = self.nodes.get(child_id) else {
             return;
@@ -418,12 +426,17 @@ impl ViewTree {
             child_bounds = anim_state.apply_to_bounds(child_bounds);
         }
 
-        // Clip children to parent for ScrollView
+        // Clip children to parent for ScrollView and apply scroll offset
         let is_scroll_content = matches!(parent_descriptor, ViewDescriptor::ScrollView(_));
         if is_scroll_content {
             child_bounds = child_bounds
                 .intersection(&parent_bounds)
                 .unwrap_or(Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)));
+        }
+
+        // Apply inherited scroll offset from ancestor ScrollView
+        if let Some(offset) = scroll_offset {
+            child_bounds = child_bounds.translate(Vec2::new(0.0, -offset));
         }
 
         let grandchildren: Vec<ViewId> = child_node.children.clone();
@@ -448,8 +461,21 @@ impl ViewTree {
             &anim_state,
         );
 
+        // Compute scroll offset for this node's children
+        let child_scroll = if let ViewDescriptor::ScrollView(desc) = &child_node.descriptor {
+            Some(self.state.get::<f32>(desc.scroll_state_id))
+        } else {
+            scroll_offset
+        };
+
         for &grandchild_id in &grandchildren {
-            self.draw_child_recursive(grandchild_id, ui, child_bounds, &child_node.descriptor);
+            self.draw_child_recursive(
+                grandchild_id,
+                ui,
+                child_bounds,
+                &child_node.descriptor,
+                child_scroll,
+            );
         }
 
         if is_scroll_view {

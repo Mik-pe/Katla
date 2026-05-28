@@ -72,7 +72,8 @@ fn is_interactive(descriptor: &ViewDescriptor) -> bool {
         | ViewDescriptor::MenuBar { .. }
         | ViewDescriptor::TreeView { .. }
         | ViewDescriptor::Modal { .. }
-        | ViewDescriptor::ContextMenu { .. } => true,
+        | ViewDescriptor::ContextMenu { .. }
+        | ViewDescriptor::ScrollView(_) => true,
 
         ViewDescriptor::Empty
         | ViewDescriptor::Text { .. }
@@ -82,7 +83,6 @@ fn is_interactive(descriptor: &ViewDescriptor) -> bool {
         | ViewDescriptor::HStack(_)
         | ViewDescriptor::VStack(_)
         | ViewDescriptor::ZStack(_)
-        | ViewDescriptor::ScrollView(_)
         | ViewDescriptor::Panel(_)
         | ViewDescriptor::Overlay(_)
         | ViewDescriptor::StatusBar(_)
@@ -559,6 +559,16 @@ pub(crate) fn process_input(
 
             if !node_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT) {
                 tree.state_arena_mut().set(desc.open_id, false);
+                result.input_consumed = true;
+            }
+        }
+
+        ViewDescriptor::ScrollView(desc) => {
+            if input.scroll_delta.y() != 0.0 && bounds_map.get(&hit.id).is_some() {
+                let mut offset: f32 = tree.state_arena().get(desc.scroll_state_id);
+                offset -= input.scroll_delta.y() * 30.0;
+                offset = offset.max(0.0);
+                tree.state_arena_mut().set(desc.scroll_state_id, offset);
                 result.input_consumed = true;
             }
         }
