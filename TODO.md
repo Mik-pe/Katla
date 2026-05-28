@@ -67,9 +67,9 @@
 
 ### Phase 5.5: Physics production readiness
 
-- [ ] **Fix `editor` feature cfg warnings in katla_physics** — katla_physics uses Component derive from katla_derive which has `#[cfg(feature = "editor")]` but katla_physics doesn't declare this feature. Add `editor = []` feature to katla_physics/Cargo.toml to resolve 5 warnings in collider.rs, joint.rs, material.rs, rigid_body.rs, trigger.rs.
-- [ ] **Fix clippy::too_many_arguments warning** — `create_body_ex` in physics_world.rs has 9 arguments. Either add `#[allow(clippy::too_many_arguments)]` or refactor to use a builder pattern with `BodyBuilder` struct.
-- [ ] **Make gravity configurable** — `PhysicsWorld::new()` hardcodes gravity as `Vector::new(0.0, -9.81, 0.0)`. Add `PhysicsWorld::with_gravity(gravity: Vec3)` constructor or `set_gravity(&mut self, gravity: Vec3)` method.
+- [x] **Fix `editor` feature cfg warnings in katla_physics** — katla_physics uses Component derive from katla_derive which has `#[cfg(feature = "editor")]` but katla_physics doesn't declare this feature. Add `editor = []` feature to katla_physics/Cargo.toml to resolve 5 warnings in collider.rs, joint.rs, material.rs, rigid_body.rs, trigger.rs.
+- [x] **Fix clippy::too_many_arguments warning** — `create_body_ex` in physics_world.rs has 9 arguments. Either add `#[allow(clippy::too_many_arguments)]` or refactor to use a builder pattern with `BodyBuilder` struct.
+- [x] **Make gravity configurable** — `PhysicsWorld::new()` hardcodes gravity as `Vector::new(0.0, -9.81, 0.0)`. Add `PhysicsWorld::with_gravity(gravity: Vec3)` constructor or `set_gravity(&mut self, gravity: Vec3)` method.
 - [ ] **Add `PhysicsError` enum for explicit error handling** — PhysicsWorld uses `Option` for fallible operations (body_transform, body_velocity). Add a `PhysicsError` enum with variants like `BodyNotFound`, `ColliderNotFound`, `InvalidHandle` and return `Result<T, PhysicsError>` from methods where appropriate.
 - [ ] **Expose CCD configuration** — Rapier supports Continuous Collision Detection for fast-moving bodies but it's not exposed in katla_physics. Add CCD enable/disable parameter to body creation methods or as a global PhysicsWorld setting.
 - [ ] **Add character controller support** — Implement a `CharacterController` component that wraps Rapier's KinematicCharacterController for first/third-person character movement with slope handling, stairs, and collision response.
@@ -475,3 +475,104 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] Add render test infrastructure — render N frames, read back pixels, compare against golden images
 - [ ] Add ECS round-trip tests — spawn entity, add components, serialize, deserialize, verify equivalence
 - [ ] Add headless CI test suite — run integration tests without GPU in CI (mock renderer or software rasterizer)
+
+## Production Readiness
+
+### katla_app - Critical Issues (Block Production)
+
+- [x] **Remove all `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. Remove unused code instead. Locations: `ui/editor_ui/types.rs:316,516`, `ui/particle_inspector.rs:46`, `ui/renderer.rs:1`, `util/background_loader.rs:1,39,61,118`
+- [ ] **Eliminate 214 `unwrap()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `AppResult` propagation with `?` operator throughout `katla_app/src/`
+- [ ] **Eliminate 10 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling and propagation
+- [ ] **Fix clippy warnings blocking `-D warnings` builds** — Run `cargo clippy -p katla_app -- -D warnings` to identify and fix all warnings
+- [ ] **Fix unresolved documentation links** — `application/resource_loading.rs:90` references `Spawner::spawn_primitive` and `DrawableComponent::with_handles` (not in scope), `resource_loading.rs:95` references `Application::spawn_gltf_model` (context issue), `resources/viewport_state.rs:86` references `ViewportManager` (in katla_gfx, not katla_app)
+
+### katla_app - Major Issues (Should Fix Before Production)
+
+- [ ] **Improve error handling in Preferences** — `preferences.rs:load()` silently returns defaults on error. Should propagate errors or at minimum log with `error!` level
+- [ ] **Complete audio spatial positioning** — `systems/audio_system.rs:290` has TODO comment. Spatial audio is needed for production-quality audio experience
+- [ ] **Make resource path discovery more robust** — `resources/mod.rs` uses multiple fallback paths that depend on runtime context. Consider using `CARGO_MANIFEST_DIR` as primary with explicit override via environment variable
+- [ ] **Add retry logic for background loading** — `util/background_loader.rs` has no retry mechanism for transient failures (network timeouts, disk I/O errors)
+- [ ] **Add GPU resource health checks** — No validation that GPU resources (textures, buffers, pipelines) are in good state after initialization or during runtime
+
+### katla_app - Documentation
+
+- [ ] **Add production deployment guide** — Document requirements, configuration, and steps for deploying katla_app-based applications to end users
+- [ ] **Add error handling best practices guide** — Document patterns for proper error propagation in katla_app, especially for plugin/script authors
+
+### katla_audio - Critical Issues (Block Production)
+
+- [ ] **Remove unused `is_looping()` methods** — `voice.rs:221` and `streaming_voice.rs:119` have `pub fn is_looping()` that are never used. Violates project rule against `#[allow(dead_code)]` — either use them or remove them
+- [ ] **Eliminate 34 `unwrap()`/`expect()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `Result` propagation: `engine.rs:101,115,209,227`, `buffer.rs:57,61,159`, plus others throughout
+- [ ] **Fix clippy warnings blocking `-D warnings` builds** — 2 warnings from unused `is_looping` methods prevent clean builds with `-D warnings`
+
+### katla_audio - Major Issues (Should Fix Before Production)
+
+- [ ] **Improve device error handling** — `AudioEngine::new()` returns `Result` but callers may not handle all error cases properly. Add better recovery/error messages for common failures (no device, permissions, etc.)
+- [ ] **Add stream error recovery** — Audio stream errors (device disconnection, underrun) should attempt recovery rather than failing permanently
+- [ ] **Document thread safety guarantees** — Real-time audio thread constraints should be documented for API users to avoid deadlocks
+- [ ] **Add audio device hot-swap** — When output device disconnects, there is no automatic recovery path (see also TODO.md Audio Phase 17)
+
+### katla_audio - Documentation
+
+- [ ] **Add API usage examples** — Document common patterns: playing sounds, streaming music, applying effects, spatial audio
+- [ ] **Add performance considerations guide** — Document voice limits, mixing overhead, CPU usage per effect type
+
+### katla_script - Critical Issues (Block Production)
+
+- [ ] **Eliminate 126 `unwrap()`/`expect()` calls** — Violates project rule "avoid `unwrap()` in production". Notable: `system.rs:113` uses `.expect("failed to create script engine")` which should be proper error handling. Convert all to `Result` propagation
+- [ ] **Eliminate 18 `panic!()` calls** — Uncontrolled crashes throughout the crate. Replace with proper error handling
+- [ ] **Remove unused mutable variable** — Clippy warning: "variable does not need to be mutable" blocks `-D warnings` builds
+- [ ] **Fix clippy warnings blocking `-D warnings` builds** — 5 warnings prevent clean builds. Run `cargo clippy -p katla_script -- -D warnings`
+
+### katla_script - Major Issues (Should Fix Before Production)
+
+- [ ] **ScriptSystem initialization should not panic** — `system.rs:113`: `ScriptEngine::new().expect("failed to create script engine")` — this should return `Result<ScriptSystem>` instead of panicking on creation failure
+- [ ] **Improve error messages from Lua** — Script errors should provide more context (which script, which function, stack traces where available)
+- [ ] **Add script timeout protection** — Long-running scripts can block the main thread. Add execution time limits or yield points
+- [ ] **Sandbox script capabilities** — Scripts currently have full access. Need safe subset of Lua APIs for production (restrict file I/O, network, etc.)
+- [ ] **Add script state serialization** — Script component state should serialize/deserialize for scene save/load
+
+### katla_script - Documentation
+
+- [ ] **Add Lua API reference** — Comprehensive documentation of all bindings available to scripts
+- [ ] **Add script best practices guide** — Patterns for performance, error handling, event subscription
+
+### katla_ecs - Critical Issues (Block Production)
+
+- [ ] **Remove all 7 `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. `scene_tool/command.rs:127,399` (`type_name`, `position_offset` fields), `unsafe_world_cell.rs:42,55,67,79,94` (methods: `storage`, `storage_mut`, `entities`, `world`, `storage_cell`). Either use these fields/methods or remove them
+- [ ] **Eliminate 133 `unwrap()`/`expect()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `Result` propagation throughout the crate
+- [ ] **Eliminate 8 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling and propagation
+- [ ] **Implement `std::error::Error` for `SceneToolError`** — `scene_tool/mod.rs:138` has `SceneToolError` with `Display` impl but no `Error` impl, preventing proper error handling chains
+
+### katla_ecs - Major Issues (Should Fix Before Production)
+
+- [ ] **Fix unresolved doc link to `ParallelIterator`** — `world.rs:265` and other locations reference `rayon::iter::ParallelIterator` which needs proper intra-doc linking with `rayon` crate
+- [ ] **Address test clippy warnings** — 6 warnings in tests: unused fields (`value`, `dx`, `dy`), identity function map, always-true assertion, loop variable usage. These indicate potential logic issues
+- [ ] **Improve parallel query safety documentation** — `par_query` and parallel iterators need clearer safety guarantees and usage documentation for users
+- [ ] **Add World state validation** — No validation that `World` is in consistent state after operations (e.g., entity existence checks, component type registration)
+
+### katla_ecs - Documentation
+
+- [ ] **Add ECS architecture overview** — Document component storage, archetype system, parallel query execution model
+- [ ] **Add system authoring guide** — Best practices for writing systems, accessing components, parallel execution safety
+- [ ] **Add migration guide from other ECS libraries** — Help users coming from Specs, Bevy, Legion understand Katla's ECS model
+
+### katla_agent - Critical Issues (Block Production)
+
+- [ ] **Eliminate 24 `unwrap()`/`expect()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `Result` propagation throughout the crate
+- [ ] **Eliminate 7 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling
+- [ ] **Fix test compilation errors** — Tests fail to compile due to feature-gated items (`llm-assistant` feature) not being available in test context. Use `#[cfg(feature = "llm-assistant")]` on tests or provide mock implementations
+- [ ] **Implement `std::error::Error` for `LlmError`** — `llm/mod.rs:112` has `LlmError` with `Display` impl but no `Error` impl
+
+### katla_agent - Major Issues (Should Fix Before Production)
+
+- [ ] **Add LLM feature availability checks** — Code using `async-openai`, `tokio` should gracefully handle cases where `llm-assistant` feature is disabled
+- [ ] **Add co-creator tool error handling** — Tools in `co_creator/` module should return `Result` instead of using `unwrap()`/`expect()`
+- [ ] **Improve configuration validation** — `config.rs` should validate configuration on load and provide clear error messages
+- [ ] **Add rate limiting for LLM calls** — Prevent rapid successive LLM calls from overwhelming API rate limits or causing excessive costs
+
+### katla_agent - Documentation
+
+- [ ] **Add agent architecture overview** — Document how co-creator, LLM integration, and tool execution work together
+- [ ] **Add tool development guide** — How to create new tools for the co-creator system
+- [ ] **Document LLM configuration** — Configuration options, API keys, rate limits, model selection
