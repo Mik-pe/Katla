@@ -1,39 +1,13 @@
-//! Built-in UI widgets - Public builder API.
+//! Builder widgets — internal rendering primitives.
 //!
-//! This module provides the public-facing widget builders using the builder pattern.
-//! These are ergonomic, composable widgets that implement the `Widget` trait.
+//! These widgets provide an immediate-mode builder pattern on top of `UiContext`.
+//! They are used internally by the declarative draw pipeline and as escape hatches
+//! for complex custom rendering via `ViewDescriptor::Custom`.
 //!
-//! # Architecture
-//!
-//! ## Three-Layer System
-//!
-//! 1. **Public Builders** (this module) - User-facing API
-//!    - `Button::new("Click").bounds(my_bounds)`
-//!    - Ergonomic, discoverable, composable
-//!
-//! 2. **Internal Implementation** (`context/widgets/basic.rs` etc.)
-//!    - `UiContext::button()` - actual rendering
-//!    - Private implementation details
-//!
-//! 3. **Convenience Methods** (`context/widgets.rs`)
-//!    - `UiContext::button_auto()` - auto-layout helpers
-//!
-//! # Using Builder Widgets
-//!
-//! ```ignore
-//! use katla_ui::widgets::Button;
-//!
-//! // Basic usage
-//! if ui.add(Button::new("Click Me").bounds(my_bounds)).clicked {
-//!     // handle click
-//! }
-//!
-//! // With options
-//! ui.add(Button::new("Submit")
-//!     .bounds(my_bounds)
-//!     .fill_color(Color::BLUE)
-//!     .hover_color(Color::LIGHT_BLUE));
-//! ```
+//! For new UI code, prefer the declarative system (`crate::declarative`) which
+//! provides `ViewDescriptor` variants with automatic layout, diffing, and input
+//! handling. Use these builders only when a declarative equivalent does not yet
+//! exist or when porting legacy immediate-mode code.
 
 pub(crate) struct ToggleButtonParams<'a> {
     pub id: &'a str,

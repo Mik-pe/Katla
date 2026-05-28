@@ -1,44 +1,66 @@
-//! Katla UI - Immediate mode UI system for the Katla engine.
+//! Katla UI - Declarative UI system for the Katla engine.
 //!
-//! This crate provides a simple, immediate mode UI system suitable for:
+//! This crate provides a retained-mode declarative UI system layered on top of
+//! an immediate-mode rendering core, suitable for:
+//! - In-game HUDs and menus
 //! - Debug overlays and development tools
-//! - In-game HUDs
 //! - Settings panels
 //! - Editor interfaces
 //!
 //! # Architecture
 //!
-//! The UI system follows an immediate mode pattern:
-//! 1. Call `context.begin()` at the start of the frame
-//! 2. Call widget functions or use builder widgets to build the UI
-//! 3. Call `context.end()` to finalize and get the draw list
-//! 4. Render the draw list
+//! The primary API is the **declarative system** (`declarative` module):
+//!
+//! 1. Implement [`Build`] to produce a [`ViewDescriptor`] tree each frame
+//! 2. Drive rendering with [`ViewTree::frame()`] which handles build, diff, layout,
+//!    input, and drawing in one call
+//! 3. Drain typed actions from [`ViewTree::actions_mut()`]
+//!
+//! The [`widgets`] module provides lower-level builder widgets used internally
+//! by declarative views and as escape hatches for complex custom rendering.
 //!
 //! # Example
 //!
 //! ```ignore
-//! use katla_ui::{UiContext, UiInputState, widgets::Button};
-//! use katla_math::{Vec2, Rect2D, Color};
+//! use katla_ui::declarative::{
+//!     Build, BuildContext, ViewDescriptor, ViewTree,
+//!     HStack, StackDescriptor, Padding, Alignment,
+//! };
 //!
-//! // Initialize context
-//! let mut ui = UiContext::new();
+//! // Define a view
+//! struct MyHud;
 //!
-//! // Per-frame input update
-//! ui.input.mouse_pos = mouse_position;
-//! ui.input.mouse_down[0] = left_mouse_pressed;
-//!
-//! // Build UI
-//! ui.begin(screen_size);
-//!
-//! // Using builder widgets
-//! if ui.add(Button::new("Click Me!").bounds(my_bounds)).clicked {
-//!     println!("Button clicked!");
+//! impl Build for MyHud {
+//!     fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+//!         let health = ctx.state(100.0f32);
+//!         ViewDescriptor::HStack(Box::new(StackDescriptor {
+//!             children: vec![
+//!                 ViewDescriptor::Text {
+//!                     content: "Health".into(),
+//!                     color: None,
+//!                     font_size: None,
+//!                 },
+//!                 ViewDescriptor::Slider {
+//!                     label: String::new(),
+//!                     value_id: health,
+//!                     range: 0.0..=100.0,
+//!                     show_value: true,
+//!                     precision: 0,
+//!                 },
+//!             ],
+//!             spacing: 8.0,
+//!             padding: Padding::all(10.0),
+//!             alignment: Alignment::Leading,
+//!         })
+//!     }
 //! }
 //!
-//! let draw_list = ui.end();
-//!
-//! // Render the draw list with your renderer
-//! my_renderer.render(draw_list);
+//! // Per-frame rendering
+//! let mut view_tree = ViewTree::new();
+//! let input_consumed = view_tree.frame(&mut ui, &MyHud, screen_size);
+//! for action in view_tree.actions_mut().drain::<MyAction>() {
+//!     // handle actions
+//! }
 //! ```
 
 mod context;
