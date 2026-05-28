@@ -212,6 +212,17 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
             ..Style::default()
         },
 
+        ViewDescriptor::LabeledSlider { label, .. } => {
+            let text_size = measure_text_descriptor(label, None);
+            Style {
+                size: Size {
+                    width: Dimension::Length((text_size.x() + 120.0).max(200.0)),
+                    height: Dimension::Length(text_size.y() + 12.0),
+                },
+                ..Style::default()
+            }
+        }
+
         ViewDescriptor::Slider { label, .. } | ViewDescriptor::ColorPicker { label, .. } => {
             let text_size = measure_text_descriptor(label, None);
             Style {
@@ -252,6 +263,48 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
             },
             ..Style::default()
         },
+
+        ViewDescriptor::Vec3Slider { label, .. } => {
+            let text_size = measure_text_descriptor(label, None);
+            Style {
+                size: Size {
+                    width: Dimension::Length((text_size.x() + 120.0).max(200.0)),
+                    height: Dimension::Length(text_size.y() * 3.0 + 20.0),
+                },
+                ..Style::default()
+            }
+        }
+
+        ViewDescriptor::ImageButton { .. } => Style {
+            size: Size {
+                width: Dimension::Length(28.0),
+                height: Dimension::Length(28.0),
+            },
+            ..Style::default()
+        },
+
+        ViewDescriptor::RadioButton { label, .. } => {
+            let text_size = measure_text_descriptor(label, None);
+            Style {
+                size: Size {
+                    width: Dimension::Length(text_size.x() + 24.0),
+                    height: Dimension::Length(text_size.y() + 8.0),
+                },
+                ..Style::default()
+            }
+        }
+
+        ViewDescriptor::PropertyRow { label, value } => {
+            let label_size = measure_text_descriptor(label, None);
+            let value_size = measure_text_descriptor(value, None);
+            Style {
+                size: Size {
+                    width: Dimension::Length(label_size.x() + value_size.x() + 16.0),
+                    height: Dimension::Length(label_size.y().max(value_size.y()) + 4.0),
+                },
+                ..Style::default()
+            }
+        }
 
         ViewDescriptor::Image { .. } => Style {
             size: Size {

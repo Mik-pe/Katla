@@ -45,6 +45,8 @@ pub struct InteractionState {
     pub hovered_id: Option<ViewId>,
     /// Node with keyboard focus (synced with FocusManager).
     pub focused_id: Option<ViewId>,
+    /// For Vec3Slider: which axis (0, 1, 2) is being dragged.
+    pub drag_axis: Option<usize>,
 }
 
 pub struct ViewTree {
@@ -493,6 +495,7 @@ impl ViewTree {
 
     pub fn build_from<B: BuildTrait + ?Sized>(&mut self, builder: &B) {
         self.callbacks.clear();
+        self.state.reset_slots();
 
         let root_id = self.root.unwrap_or_else(|| {
             let id = self.nodes.insert(ViewNode {

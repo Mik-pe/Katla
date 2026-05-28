@@ -6,11 +6,11 @@ use katla_ui::{
 };
 
 use super::declarative::{
-    AssetBrowserDrawCtx, ConsoleDrawCtx, EditorRootView, GizmoDrawCtx, HierarchyDrawCtx,
-    InspectorDrawCtx, PreferencesDrawCtx, StatusBarData, ToolbarDrawCtx, ViewportGridDrawCtx,
-    build_asset_browser_from_ctx, set_co_creator_ctx, set_console_ctx, set_hierarchy_ctx,
-    set_inspector_ctx, set_particle_inspector_ctx, set_preferences_ctx, set_toolbar_ctx,
-    take_co_creator_ctx, take_console_ctx, take_hierarchy_ctx, take_inspector_ctx,
+    AssetBrowserDrawCtx, ConsoleDrawCtx, EditorRootView, GizmoDrawCtx, GizmoModeChanged,
+    HierarchyDrawCtx, InspectorDrawCtx, PreferencesDrawCtx, StatusBarData, ToolbarDrawCtx,
+    ViewportGridDrawCtx, build_asset_browser_from_ctx, set_co_creator_ctx, set_console_ctx,
+    set_hierarchy_ctx, set_inspector_ctx, set_particle_inspector_ctx, set_preferences_ctx,
+    set_toolbar_ctx, take_co_creator_ctx, take_console_ctx, take_hierarchy_ctx, take_inspector_ctx,
     take_particle_inspector_ctx, take_preferences_ctx, take_toolbar_ctx,
 };
 use super::{
@@ -188,10 +188,9 @@ impl EditorUI {
             self.theme.warning,
         );
         set_toolbar_ctx(toolbar_ctx);
-        ui.set_scratch(GizmoDrawCtx {
+        self.view_tree.env_mut().set(GizmoDrawCtx {
             gizmo_mode: self.gizmo_mode,
             viewport_bounds: self.last_viewport_bounds,
-            actions: Vec::new(),
         });
 
         ui.set_scratch(ViewportGridDrawCtx {
@@ -464,8 +463,9 @@ impl EditorUI {
                 .append(&mut self.toolbar_state.pending_actions);
         }
 
-        if let Some(gizmo_ctx) = ui.get_scratch::<GizmoDrawCtx>().cloned() {
-            self.pending_actions.extend(gizmo_ctx.actions);
+        for action in self.view_tree.actions_mut().drain::<GizmoModeChanged>() {
+            self.pending_actions
+                .push(EditorAction::SetGizmoMode(action.0));
         }
 
         if let Some(inspector_ctx) = take_inspector_ctx() {
