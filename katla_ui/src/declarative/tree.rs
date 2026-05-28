@@ -579,6 +579,8 @@ impl ViewTree {
             ViewDescriptor::ScrollView(s) => Some(&s.content),
             ViewDescriptor::Panel(s) => Some(&s.content),
             ViewDescriptor::Overlay(s) => Some(&s.content),
+            ViewDescriptor::StatusBar(s) => Some(&s.content),
+            ViewDescriptor::DraggablePanel(s) => Some(&s.content),
             ViewDescriptor::TransitionContainer { child, .. } => Some(child),
             _ => None,
         }

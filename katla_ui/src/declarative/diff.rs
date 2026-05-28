@@ -53,6 +53,14 @@ pub fn diff_descriptor(old: &ViewDescriptor, new: &ViewDescriptor) -> DiffAction
         }
         (ViewDescriptor::Panel(_), ViewDescriptor::Panel(_)) => DiffAction::RecurseChildren,
         (ViewDescriptor::Overlay(_), ViewDescriptor::Overlay(_)) => DiffAction::RecurseChildren,
+        (ViewDescriptor::StatusBar(_), ViewDescriptor::StatusBar(_)) => DiffAction::RecurseChildren,
+        (ViewDescriptor::DraggablePanel(_), ViewDescriptor::DraggablePanel(_)) => {
+            DiffAction::RecurseChildren
+        }
+
+        // Self-managed rendering -> Update
+        (ViewDescriptor::MenuBar(_), ViewDescriptor::MenuBar(_)) => DiffAction::Update,
+        (ViewDescriptor::TreeView(_), ViewDescriptor::TreeView(_)) => DiffAction::Update,
 
         // Different variants -> Replace
         _ => DiffAction::Replace,

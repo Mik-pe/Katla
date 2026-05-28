@@ -1,10 +1,12 @@
+use std::collections::HashSet;
+
 use katla_math::{Color, Rect2D, Vec2};
 
 use crate::context::UiContext;
 
 use super::animation::AnimationState;
 use super::descriptor::ViewDescriptor;
-use super::state::StateArena;
+use super::state::{StateArena, StateId};
 use super::tree::InteractionState;
 
 pub(crate) fn draw_descriptor_with_id(
@@ -683,8 +685,224 @@ pub(crate) fn draw_descriptor_with_id(
 
         ViewDescriptor::Overlay(_) => {}
 
+        ViewDescriptor::StatusBar(_) => {
+            ui.draw_line(
+                Vec2::new(bounds.min.x(), bounds.min.y()),
+                Vec2::new(bounds.max.x(), bounds.min.y()),
+                ui.style().separator,
+                1.0,
+            );
+            ui.draw_rect(bounds, ui.style().window_bg);
+        }
+
+        ViewDescriptor::DraggablePanel(desc) => {
+            let title_bar_height = 25.0_f32;
+
+            let shadow_offset = Vec2::new(6.0, 6.0);
+            let shadow_bounds = Rect2D::new(bounds.min + shadow_offset, bounds.max + shadow_offset);
+            ui.draw_rect(shadow_bounds, ui.style().popup_shadow);
+
+            ui.draw_rect(bounds, ui.style().window_bg);
+            ui.draw_rect_border(bounds, ui.style().window_bg, ui.style().window_border, 1.0);
+
+            let title_bounds = Rect2D::new(
+                bounds.min,
+                Vec2::new(bounds.max.x(), bounds.min.y() + title_bar_height),
+            );
+
+            let can_drag = is_hovered && mouse_in_rect(title_bounds, ui);
+            let title_color = if is_active || can_drag {
+                ui.style().window_title_bg_active
+            } else {
+                ui.style().window_title_bg
+            };
+            ui.draw_rect(title_bounds, title_color);
+
+            let handle_x = bounds.min.x() + desc.width * 0.5 - 20.0;
+            let handle_y = bounds.min.y() + 6.0;
+            for i in 0..3 {
+                let line_y = handle_y + i as f32 * 3.0;
+                ui.draw_line(
+                    Vec2::new(handle_x, line_y),
+                    Vec2::new(handle_x + 40.0, line_y),
+                    ui.style().text_disabled,
+                    1.0,
+                );
+            }
+
+            let font_size = ui.style().font_size;
+            let title_pos = Vec2::new(bounds.min.x() + font_size, bounds.min.y() + font_size);
+            ui.draw_text(&desc.title, title_pos, ui.style().text_color, font_size);
+
+            let close_size = 24.0;
+            let close_bounds = Rect2D::from_origin_size(
+                Vec2::new(bounds.max.x() - close_size - 6.0, bounds.min.y() + 4.0),
+                Vec2::new(close_size, close_size),
+            );
+            let close_hovered = close_bounds.contains(ui.mouse_pos());
+            let close_bg = if close_hovered {
+                ui.style().button_hovered
+            } else {
+                title_color
+            };
+            ui.draw_rect(close_bounds, close_bg);
+            ui.draw_text(
+                "\u{00d7}",
+                Vec2::new(close_bounds.min.x() + 6.0, close_bounds.min.y() + 2.0),
+                ui.style().text_color,
+                font_size,
+            );
+        }
+
+        ViewDescriptor::MenuBar(desc) => {
+            ui.draw_rect(bounds, ui.style().menu_bg);
+            ui.draw_line(
+                Vec2::new(bounds.min.x(), bounds.max.y()),
+                Vec2::new(bounds.max.x(), bounds.max.y()),
+                ui.style().separator,
+                1.0,
+            );
+
+            let font_size = ui.style().font_size;
+            let item_spacing = ui.style().window_padding;
+            let mut x = bounds.min.x() + item_spacing;
+            let y_center = bounds.min.y() + (desc.height - font_size) * 0.5;
+
+            for group in &desc.groups {
+                let label_size = ui.measure_text(&group.label, font_size);
+                let group_bounds = Rect2D::from_origin_size(
+                    Vec2::new(x, bounds.min.y()),
+                    Vec2::new(label_size.x() + item_spacing * 2.0, desc.height),
+                );
+                let group_hovered = group_bounds.contains(ui.mouse_pos());
+                if group_hovered {
+                    ui.draw_rect(group_bounds, ui.style().button_hovered);
+                }
+                ui.draw_text(
+                    &group.label,
+                    Vec2::new(x + item_spacing, y_center),
+                    ui.style().text_color,
+                    font_size,
+                );
+
+                x += label_size.x() + item_spacing * 2.0;
+            }
+        }
+
+        ViewDescriptor::TreeView(desc) => {
+            let font_size = ui.style().font_size;
+            let row_height = desc.row_height;
+            let indent = desc.indent_per_level;
+            let item_spacing = ui.style().item_inner_spacing;
+
+            let visible_indices =
+                compute_visible_tree_items(&desc.items, state_arena, desc.expanded_id);
+
+            let scroll_offset: f32 = state_arena.get(desc.scroll_id);
+            let selected_id: Option<u64> = state_arena.get(desc.selected_id);
+            let expanded: HashSet<u64> = state_arena.get(desc.expanded_id);
+
+            let visible_count = visible_indices.len();
+            let first_row =
+                ((scroll_offset.max(0.0) / row_height).floor() as usize).min(visible_count);
+            let last_row = ((scroll_offset + bounds.height()) / row_height).ceil() as usize;
+            let last_row = last_row.min(visible_count);
+
+            for vis_idx in first_row..last_row {
+                let data_idx = visible_indices[vis_idx];
+                let item = &desc.items[data_idx];
+                let item_y = bounds.min.y() + vis_idx as f32 * row_height - scroll_offset;
+                let item_bounds = Rect2D::from_origin_size(
+                    Vec2::new(bounds.min.x(), item_y),
+                    Vec2::new(bounds.width(), row_height),
+                );
+
+                let is_selected = selected_id == Some(item.id);
+                let row_hovered =
+                    bounds.contains(ui.mouse_pos()) && item_bounds.contains(ui.mouse_pos());
+
+                if is_selected {
+                    ui.draw_rect(item_bounds, ui.style().selectable_selected);
+                } else if row_hovered {
+                    ui.draw_rect(item_bounds, ui.style().selectable_hovered);
+                }
+
+                for depth_level in 0..item.depth {
+                    let guide_x = bounds.min.x() + depth_level as f32 * indent + item_spacing;
+                    ui.draw_line(
+                        Vec2::new(guide_x, item_bounds.min.y()),
+                        Vec2::new(guide_x, item_bounds.max.y()),
+                        ui.style().border,
+                        1.0,
+                    );
+                }
+
+                let arrow_x = bounds.min.x() + item.depth as f32 * indent + item_spacing;
+                let arrow_y = item_bounds.center().y() - font_size * 0.5;
+
+                if item.has_children {
+                    let arrow_char = if expanded.contains(&item.id) {
+                        katla_icons::ForkAwesome::CHEVRON_DOWN.to_string()
+                    } else {
+                        katla_icons::ForkAwesome::CHEVRON_RIGHT.to_string()
+                    };
+                    ui.draw_text(
+                        &arrow_char,
+                        Vec2::new(arrow_x, arrow_y),
+                        ui.style().text_disabled,
+                        font_size,
+                    );
+                }
+
+                let content_x = arrow_x + indent;
+                let label_y = item_bounds.center().y() - font_size * 0.5;
+                ui.draw_text(
+                    &item.label,
+                    Vec2::new(content_x, label_y),
+                    ui.style().text_color,
+                    font_size,
+                );
+            }
+        }
+
         ViewDescriptor::Custom(draw_fn) => {
             draw_fn(ui, bounds);
         }
     }
+}
+
+fn mouse_in_rect(rect: Rect2D, ui: &UiContext) -> bool {
+    rect.contains(ui.mouse_pos())
+}
+
+fn compute_visible_tree_items(
+    items: &[super::descriptor::TreeItem],
+    state_arena: &StateArena,
+    expanded_id: StateId,
+) -> Vec<usize> {
+    let expanded: HashSet<u64> = state_arena.get(expanded_id);
+    let mut visible = Vec::new();
+    let mut parent_stack: Vec<u64> = Vec::new();
+
+    for (i, item) in items.iter().enumerate() {
+        while parent_stack.len() > item.depth as usize {
+            parent_stack.pop();
+        }
+
+        if item.depth == 0 {
+            visible.push(i);
+        } else if let Some(&parent_id) = parent_stack.last() {
+            if expanded.contains(&parent_id) {
+                visible.push(i);
+            } else {
+                continue;
+            }
+        }
+
+        if item.has_children {
+            parent_stack.push(item.id);
+        }
+    }
+
+    visible
 }

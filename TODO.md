@@ -286,7 +286,7 @@
 - [ ] Add volume units (dB) API — all volume controls use linear 0.0-1.0 scale, but audio professionals think in dB. Add conversion helpers (`db_to_linear`, `linear_to_db`) and optionally dB-based setter methods on handles.
 
 ### Phase 17: Audio system activation and global settings
-- [ ] Wire AudioSystem into Application — `ApplicationBuilder::build()` sets `audio_system: None` and nothing ever initializes it. `AudioSystem::new()` is never called, so the entire audio system (playback, spatialization, zone reverb, script audio) is dead code. Fix: call `AudioSystem::new()` in the builder, store as `Some(audio_system)`, and handle the case where no audio device is available (log a warning, keep `None`). This is the single highest-priority audio item — nothing else matters if the system isn't running.
+- [x] Wire AudioSystem into Application — `ApplicationBuilder::build()` sets `audio_system: None` and nothing ever initializes it. `AudioSystem::new()` is never called, so the entire audio system (playback, spatialization, zone reverb, script audio) is dead code. Fix: call `AudioSystem::new()` in the builder, store as `Some(audio_system)`, and handle the case where no audio device is available (log a warning, keep `None`). This is the single highest-priority audio item — nothing else matters if the system isn't running.
 - [ ] Add AudioSettings to Preferences — `Preferences` struct has no audio fields. Add: `master_volume: f32`, `sfx_volume: f32`, `music_volume: f32`, `ambient_volume: f32`. Serialize to `preferences.toml`. Apply to `AudioEngine` on startup and on change.
 - [ ] Add Audio tab to preferences panel — currently only General, Viewport, and AI tabs exist. Add an Audio tab with: master volume slider, SFX volume slider, music volume slider, ambient volume slider. Changes should apply immediately (live preview) and persist to `preferences.toml` on save.
 - [ ] Apply saved audio settings on startup — after `AudioSystem::new()`, read `Preferences::audio_settings` and call `engine.set_master_volume()`, `engine.set_category_volume()` for each category. Currently all volumes reset to 1.0 every launch.
@@ -652,10 +652,10 @@
 - [x] Migrate GizmoButtonsView from ViewDescriptor::Custom + scratch bridge to declarative RadioButton + ActionStream
 - [x] Add get_state/set_state to BuildContext for external state sync
 - [x] Fix StateArena slot counter bug (reset_slots) for cross-frame state stability
-- [ ] Add DraggablePanel variant to ViewDescriptor — used by preferences, co-creator, particle-inspector (3 panels)
-- [ ] Add StatusBar variant to ViewDescriptor — used by status bar panel
-- [ ] Add MenuBar + MenuItem + MenuDropdown variants to ViewDescriptor — used by toolbar
-- [ ] Add TreeView variant to ViewDescriptor — used by hierarchy panel (virtualized, expand/collapse, selection)
+- [x] Add DraggablePanel variant to ViewDescriptor — used by preferences, co-creator, particle-inspector (3 panels)
+- [x] Add StatusBar variant to ViewDescriptor — used by status bar panel
+- [x] Add MenuBar + MenuItem + MenuDropdown variants to ViewDescriptor — used by toolbar
+- [x] Add TreeView variant to ViewDescriptor — used by hierarchy panel (virtualized, expand/collapse, selection)
 - [ ] Add Modal/ContextMenu variants to ViewDescriptor — used by inspector "Add Component" popup, hierarchy right-click
 - [ ] Migrate StatusBarView from ViewDescriptor::Custom to declarative + remove scratch bridge
 - [ ] Migrate remaining panels from ViewDescriptor::Custom to declarative trees (toolbar, console, preferences, inspector, hierarchy, co-creator, particle-inspector, viewport-grid, asset-browser)

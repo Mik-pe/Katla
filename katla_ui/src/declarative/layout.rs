@@ -212,6 +212,44 @@ fn descriptor_to_style(descriptor: &ViewDescriptor) -> Style {
             ..Style::default()
         },
 
+        ViewDescriptor::StatusBar(desc) => Style {
+            size: Size {
+                width: Dimension::Percent(1.0),
+                height: Dimension::Length(desc.height),
+            },
+            flex_direction: FlexDirection::Column,
+            padding: taffy::Rect {
+                top: LengthPercentage::Length(0.0),
+                right: LengthPercentage::Length(0.0),
+                bottom: LengthPercentage::Length(0.0),
+                left: LengthPercentage::Length(0.0),
+            },
+            ..Style::default()
+        },
+
+        ViewDescriptor::DraggablePanel(desc) => Style {
+            position: taffy::Position::Absolute,
+            size: Size {
+                width: Dimension::Length(desc.width),
+                height: Dimension::Length(desc.height),
+            },
+            ..Style::default()
+        },
+
+        ViewDescriptor::MenuBar(desc) => Style {
+            size: Size {
+                width: Dimension::Percent(1.0),
+                height: Dimension::Length(desc.height),
+            },
+            ..Style::default()
+        },
+
+        ViewDescriptor::TreeView(_) => Style {
+            flex_grow: 1.0,
+            flex_shrink: 1.0,
+            ..Style::default()
+        },
+
         ViewDescriptor::LabeledSlider { label, .. } => {
             let text_size = measure_text_descriptor(label, None);
             Style {

@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
-use katla_math::Rect2D;
+use std::collections::HashSet;
+
+use katla_math::{Rect2D, Vec2};
 
 use crate::input::{KeyCode, mouse_button};
 
 use super::build::CallbackTable;
-use super::descriptor::{Callback, ViewDescriptor};
+use super::descriptor::{Callback, DraggablePanelState, DraggablePanelVisibility, ViewDescriptor};
 use super::state::ViewId;
 use super::tree::ViewTree;
 
@@ -65,7 +67,10 @@ fn is_interactive(descriptor: &ViewDescriptor) -> bool {
         | ViewDescriptor::TextField { .. }
         | ViewDescriptor::ColorPicker { .. }
         | ViewDescriptor::ImageButton { .. }
-        | ViewDescriptor::RadioButton { .. } => true,
+        | ViewDescriptor::RadioButton { .. }
+        | ViewDescriptor::DraggablePanel { .. }
+        | ViewDescriptor::MenuBar { .. }
+        | ViewDescriptor::TreeView { .. } => true,
 
         ViewDescriptor::Empty
         | ViewDescriptor::Text { .. }
@@ -78,6 +83,7 @@ fn is_interactive(descriptor: &ViewDescriptor) -> bool {
         | ViewDescriptor::ScrollView(_)
         | ViewDescriptor::Panel(_)
         | ViewDescriptor::Overlay(_)
+        | ViewDescriptor::StatusBar(_)
         | ViewDescriptor::TransitionContainer { .. }
         | ViewDescriptor::Custom(_) => false,
     }
@@ -261,11 +267,239 @@ pub(crate) fn process_input(
         }
 
         ViewDescriptor::ColorPicker { value_id, .. } if input.mouse_clicked(mouse_button::LEFT) => {
-            // Toggle picker open state
             let current = tree.state_arena().get::<bool>(*value_id);
             tree.state_arena_mut().set(*value_id, !current);
             result.input_consumed = true;
             result.clicked_id = Some(hit.id);
+        }
+
+        ViewDescriptor::DraggablePanel(desc) => {
+            let Some(node_bounds) = bounds_map.get(&hit.id).copied() else {
+                return result;
+            };
+            let mut state: DraggablePanelState = tree.state_arena().get(desc.state_id);
+
+            if !state.visibility.is_visible() {
+                return result;
+            }
+
+            let title_bar_height = 25.0_f32;
+            let close_size = 24.0;
+            let close_bounds = Rect2D::from_origin_size(
+                Vec2::new(
+                    node_bounds.max.x() - close_size - 6.0,
+                    node_bounds.min.y() + 4.0,
+                ),
+                Vec2::new(close_size, close_size),
+            );
+
+            if close_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT) {
+                state.visibility = DraggablePanelVisibility::Hidden;
+                tree.state_arena_mut().set(desc.state_id, state);
+                result.input_consumed = true;
+                return result;
+            }
+
+            let title_bounds = Rect2D::new(
+                node_bounds.min,
+                Vec2::new(node_bounds.max.x(), node_bounds.min.y() + title_bar_height),
+            );
+            let in_title = title_bounds.contains(input.mouse_pos);
+            let in_close = close_bounds.contains(input.mouse_pos);
+
+            if state.dragging {
+                if input.mouse_down[mouse_button::LEFT] {
+                    let new_pos = input.mouse_pos - state.drag_offset;
+                    state.position = Some(new_pos);
+                    tree.state_arena_mut().set(desc.state_id, state);
+                } else {
+                    state.dragging = false;
+                    tree.state_arena_mut().set(desc.state_id, state);
+                }
+                result.input_consumed = true;
+                return result;
+            }
+
+            if in_title && !in_close && input.mouse_pressed[mouse_button::LEFT] {
+                state.dragging = true;
+                state.drag_offset = input.mouse_pos - node_bounds.min;
+                tree.state_arena_mut().set(desc.state_id, state);
+                result.input_consumed = true;
+            }
+        }
+
+        ViewDescriptor::MenuBar(desc) => {
+            let Some(node_bounds) = bounds_map.get(&hit.id).copied() else {
+                return result;
+            };
+            let font_size = 14.0_f32;
+            let item_spacing = 8.0_f32;
+            let mut x = node_bounds.min.x() + item_spacing;
+            let bar_height = desc.height;
+
+            for group in &desc.groups {
+                let label_size = measure_menu_label(&group.label, font_size);
+                let group_bounds = Rect2D::from_origin_size(
+                    Vec2::new(x, node_bounds.min.y()),
+                    Vec2::new(label_size + item_spacing * 2.0, bar_height),
+                );
+
+                if group_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT)
+                {
+                    let is_open: bool = tree.state_arena().get(group.open_id);
+                    tree.state_arena_mut().set(group.open_id, !is_open);
+                    result.input_consumed = true;
+                    break;
+                }
+
+                let is_open: bool = tree.state_arena().get(group.open_id);
+                if is_open {
+                    let dropdown_y = group_bounds.max.y();
+                    let dropdown_width = 180.0_f32;
+                    let dropdown_bounds = Rect2D::from_origin_size(
+                        Vec2::new(group_bounds.min.x(), dropdown_y),
+                        Vec2::new(dropdown_width, group.items.len() as f32 * 28.0),
+                    );
+
+                    if dropdown_bounds.contains(input.mouse_pos)
+                        && input.mouse_clicked(mouse_button::LEFT)
+                    {
+                        for (ii, entry) in group.items.iter().enumerate() {
+                            let entry_bounds = Rect2D::from_origin_size(
+                                Vec2::new(dropdown_bounds.min.x(), dropdown_y + ii as f32 * 28.0),
+                                Vec2::new(dropdown_width, 28.0),
+                            );
+                            if entry_bounds.contains(input.mouse_pos) && !entry.disabled {
+                                if let Some(ref callback) = entry.on_click {
+                                    callbacks.invoke(callback);
+                                }
+                                tree.state_arena_mut().set(group.open_id, false);
+                                result.input_consumed = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if !group_bounds.contains(input.mouse_pos)
+                        && !dropdown_bounds.contains(input.mouse_pos)
+                        && input.mouse_clicked(mouse_button::LEFT)
+                    {
+                        tree.state_arena_mut().set(group.open_id, false);
+                        result.input_consumed = true;
+                    }
+                }
+
+                x += label_size + item_spacing * 2.0;
+            }
+        }
+
+        ViewDescriptor::TreeView(desc) => {
+            let Some(node_bounds) = bounds_map.get(&hit.id).copied() else {
+                return result;
+            };
+            let row_height = desc.row_height;
+            let indent = desc.indent_per_level;
+            let item_spacing = 8.0_f32;
+
+            let visible_indices =
+                compute_visible_tree_items_input(&desc.items, tree, desc.expanded_id);
+            let scroll_offset: f32 = tree.state_arena().get(desc.scroll_id);
+            let selected: Option<u64> = tree.state_arena().get(desc.selected_id);
+
+            let visible_count = visible_indices.len();
+            let first_row =
+                ((scroll_offset.max(0.0) / row_height).floor() as usize).min(visible_count);
+            let last_row = ((scroll_offset + node_bounds.height()) / row_height).ceil() as usize;
+            let last_row = last_row.min(visible_count);
+
+            for vis_idx in first_row..last_row {
+                let data_idx = visible_indices[vis_idx];
+                let item = &desc.items[data_idx];
+                let item_y = node_bounds.min.y() + vis_idx as f32 * row_height - scroll_offset;
+                let item_bounds = Rect2D::from_origin_size(
+                    Vec2::new(node_bounds.min.x(), item_y),
+                    Vec2::new(node_bounds.width(), row_height),
+                );
+
+                if item_bounds.contains(input.mouse_pos) {
+                    let arrow_x = node_bounds.min.x() + item.depth as f32 * indent + item_spacing;
+                    let chevron_bounds = Rect2D::from_origin_size(
+                        Vec2::new(arrow_x, item_y),
+                        Vec2::new(16.0, row_height),
+                    );
+
+                    if item.has_children
+                        && chevron_bounds.contains(input.mouse_pos)
+                        && input.mouse_clicked(mouse_button::LEFT)
+                    {
+                        let mut expanded: HashSet<u64> = tree.state_arena().get(desc.expanded_id);
+                        if expanded.contains(&item.id) {
+                            expanded.remove(&item.id);
+                        } else {
+                            expanded.insert(item.id);
+                        }
+                        tree.state_arena_mut().set(desc.expanded_id, expanded);
+                        result.input_consumed = true;
+                        break;
+                    }
+
+                    if input.mouse_clicked(mouse_button::LEFT) {
+                        tree.state_arena_mut().set(desc.selected_id, Some(item.id));
+                        if let Some(ref callback) = desc.on_select {
+                            callbacks.invoke(callback);
+                        }
+                        result.input_consumed = true;
+                        break;
+                    }
+
+                    if input.mouse_clicked(mouse_button::RIGHT) {
+                        tree.state_arena_mut().set(desc.selected_id, Some(item.id));
+                        if let Some(ref callback) = desc.on_right_click {
+                            callbacks.invoke(callback);
+                        }
+                        result.input_consumed = true;
+                        break;
+                    }
+                }
+            }
+
+            if let Some(selected_id) = selected {
+                if let Some(vis_pos) = visible_indices
+                    .iter()
+                    .position(|&idx| desc.items[idx].id == selected_id)
+                {
+                    let data_idx = visible_indices[vis_pos];
+                    let item = &desc.items[data_idx];
+
+                    if input.key_pressed(KeyCode::ArrowDown) && vis_pos + 1 < visible_count {
+                        tree.state_arena_mut().set(
+                            desc.selected_id,
+                            Some(desc.items[visible_indices[vis_pos + 1]].id),
+                        );
+                        result.input_consumed = true;
+                    } else if input.key_pressed(KeyCode::ArrowUp) && vis_pos > 0 {
+                        tree.state_arena_mut().set(
+                            desc.selected_id,
+                            Some(desc.items[visible_indices[vis_pos - 1]].id),
+                        );
+                        result.input_consumed = true;
+                    } else if input.key_pressed(KeyCode::ArrowRight) && item.has_children {
+                        let mut expanded: HashSet<u64> = tree.state_arena().get(desc.expanded_id);
+                        if !expanded.contains(&item.id) {
+                            expanded.insert(item.id);
+                            tree.state_arena_mut().set(desc.expanded_id, expanded);
+                            result.input_consumed = true;
+                        }
+                    } else if input.key_pressed(KeyCode::ArrowLeft) && item.has_children {
+                        let mut expanded: HashSet<u64> = tree.state_arena().get(desc.expanded_id);
+                        if expanded.contains(&item.id) {
+                            expanded.remove(&item.id);
+                            tree.state_arena_mut().set(desc.expanded_id, expanded);
+                            result.input_consumed = true;
+                        }
+                    }
+                }
+            }
         }
 
         _ => {}
@@ -351,4 +585,41 @@ pub(crate) struct InputResult {
     pub hovered_id: Option<ViewId>,
     /// The node that was clicked this frame.
     pub clicked_id: Option<ViewId>,
+}
+
+fn compute_visible_tree_items_input(
+    items: &[super::descriptor::TreeItem],
+    tree: &ViewTree,
+    expanded_id: super::state::StateId,
+) -> Vec<usize> {
+    let expanded: HashSet<u64> = tree.state_arena().get(expanded_id);
+    let mut visible = Vec::new();
+    let mut parent_stack: Vec<u64> = Vec::new();
+
+    for (i, item) in items.iter().enumerate() {
+        while parent_stack.len() > item.depth as usize {
+            parent_stack.pop();
+        }
+
+        if item.depth == 0 {
+            visible.push(i);
+        } else if let Some(&parent_id) = parent_stack.last() {
+            if expanded.contains(&parent_id) {
+                visible.push(i);
+            } else {
+                continue;
+            }
+        }
+
+        if item.has_children {
+            parent_stack.push(item.id);
+        }
+    }
+
+    visible
+}
+
+fn measure_menu_label(label: &str, font_size: f32) -> f32 {
+    let char_width = font_size * 0.6;
+    label.len() as f32 * char_width
 }
