@@ -73,7 +73,7 @@ pub fn load_ogg(path: &Path) -> Result<AudioBuffer, AudioError> {
     use std::fs::File;
     use std::io::BufReader;
 
-    let file = File::open(path).map_err(|e| AudioError::Io(e))?;
+    let file = File::open(path).map_err(AudioError::Io)?;
     let mut reader = lewton::inside_ogg::OggStreamReader::new(BufReader::new(file))
         .map_err(|e| AudioError::DecodeFailed(format!("Failed to parse OGG: {e}")))?;
 
@@ -108,7 +108,7 @@ pub fn load_mp3(path: &Path) -> Result<AudioBuffer, AudioError> {
     use std::fs::File;
     use std::io::BufReader;
 
-    let file = File::open(path).map_err(|e| AudioError::Io(e))?;
+    let file = File::open(path).map_err(AudioError::Io)?;
     let mut reader = minimp3::Decoder::new(BufReader::new(file));
 
     let mut all_samples: Vec<f32> = Vec::new();

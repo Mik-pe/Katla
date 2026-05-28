@@ -33,7 +33,6 @@ impl AudioCategory {
 
 pub struct AudioEngine {
     mixer: Arc<AudioMixer>,
-    #[allow(dead_code)]
     stream: cpal::Stream,
 }
 
