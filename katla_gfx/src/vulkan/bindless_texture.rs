@@ -103,7 +103,7 @@ impl BindlessTextureManager {
     ///
     /// # Returns
     /// A new BindlessTextureManager, or an error if creation fails
-    pub fn new(context: Rc<VulkanContext>) -> Result<Self, RendererError> {
+    pub fn new(context: &Rc<VulkanContext>) -> Result<Self, RendererError> {
         // Create shared sampler with reasonable defaults
         let shared_sampler = context.create_sampler_repeat_anisotropic()?;
 
@@ -190,7 +190,7 @@ impl BindlessTextureManager {
 
         // Create default textures (1x1 pixels for each type)
         let (default_image_views, default_textures) =
-            Self::create_default_textures(&context, descriptor_set);
+            Self::create_default_textures(context, descriptor_set);
 
         // Initialize slots with default textures at reserved positions
         let mut slots = vec![None; MAX_BINDLESS_TEXTURES as usize];

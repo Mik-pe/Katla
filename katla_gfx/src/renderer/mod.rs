@@ -401,7 +401,7 @@ impl VulkanRenderer {
 
         let bindless_manager = Self::init_step(
             "bindless texture manager",
-            BindlessTextureManager::new(context.clone()),
+            BindlessTextureManager::new(&context),
         )?;
         info!(
             "Bindless texture system initialized (max {} textures)",
@@ -412,7 +412,7 @@ impl VulkanRenderer {
             Self::init_step("texture manager", TextureManager::new(context.clone()))?;
         info!("Texture manager initialized");
 
-        let storage_manager = StorageUniformManager::new(context.clone(), FRAMES_IN_FLIGHT)?;
+        let storage_manager = StorageUniformManager::new(&context, FRAMES_IN_FLIGHT)?;
         let storage_descriptor_sets =
             Self::create_storage_descriptor_sets(&context, &storage_manager)?;
 
