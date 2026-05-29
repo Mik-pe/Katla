@@ -1,5 +1,5 @@
 use katla_ecs::EntityId;
-use katla_math::{Rect2D, Vec2};
+use katla_math::{Rect2D, Vec2, Vec3};
 use katla_ui::{
     FontSize, ForkAwesome, UiContext, mouse_button,
     widgets::{DockArea, ResizeHandle},
@@ -8,10 +8,10 @@ use katla_ui::{
 use super::declarative::{
     AssetBrowserDrawCtx, ConsoleDrawCtx, EditorRootView, GizmoDrawCtx, GizmoModeChanged,
     HierarchyDrawCtx, InspectorDrawCtx, ParticleInspectorDrawCtx, ParticleInspectorPanelSync,
-    PreferencesDrawCtx, StatusBarData, ToolbarDrawCtx, ViewportGridDrawCtx,
+    PreferencesDrawCtx, StatusBarData, ToolbarAction, ToolbarDrawCtx, ViewportGridDrawCtx,
     build_asset_browser_from_ctx, set_co_creator_ctx, set_console_ctx, set_hierarchy_ctx,
-    set_inspector_ctx, set_preferences_ctx, set_toolbar_ctx, take_co_creator_ctx, take_console_ctx,
-    take_hierarchy_ctx, take_inspector_ctx, take_preferences_ctx, take_toolbar_ctx,
+    set_inspector_ctx, set_preferences_ctx, take_co_creator_ctx, take_console_ctx,
+    take_hierarchy_ctx, take_inspector_ctx, take_preferences_ctx,
 };
 use super::{
     EditorAction, EditorRenderParams, EditorUI, co_creator,
@@ -171,30 +171,27 @@ impl EditorUI {
         self.view_tree.env_mut().set(status_data);
 
         let toolbar_height = 36.0;
-        self.toolbar_state.undo_count = params.undo_count;
-        self.toolbar_state.redo_count = params.redo_count;
-
-        let toolbar_ctx = ToolbarDrawCtx::new(
-            std::mem::take(&mut self.toolbar_state),
-            screen_size.x(),
-            params.preferences,
-            self.theme.text_muted,
-            self.is_playing,
-            self.is_paused,
-            self.theme.highlight,
-            self.theme.success,
-            self.theme.warning,
-        );
-        set_toolbar_ctx(toolbar_ctx);
+        self.view_tree.env_mut().set(ToolbarDrawCtx {
+            show_grid: params.preferences.show_grid,
+            show_stats: params.preferences.show_stats,
+            show_physics_debug: params.preferences.show_physics_debug,
+            text_muted: self.theme.text_muted,
+            is_playing: self.is_playing,
+            is_paused: self.is_paused,
+            highlight: self.theme.highlight,
+            success: self.theme.success,
+            warning: self.theme.warning,
+        });
         self.view_tree.env_mut().set(GizmoDrawCtx {
             gizmo_mode: self.gizmo_mode,
         });
 
-        ui.set_scratch(ViewportGridDrawCtx {
+        self.view_tree.env_mut().set(ViewportGridDrawCtx {
             bounds: self.last_viewport_bounds,
             state: self.viewport_grid_state.clone(),
             texture_ids: self.viewport_texture_ids,
             theme: self.theme.clone(),
+            mouse_pos: ui.mouse_pos(),
         });
 
         let right_panel_x = screen_size.x() - self.right_panel_width;
@@ -451,10 +448,33 @@ impl EditorUI {
             self.pending_actions.extend(asset_actions);
         }
 
-        if let Some(toolbar_ctx) = take_toolbar_ctx() {
-            self.toolbar_state = toolbar_ctx.state;
-            self.pending_actions
-                .append(&mut self.toolbar_state.pending_actions);
+        for action in self.view_tree.actions_mut().drain::<ToolbarAction>() {
+            self.pending_actions.push(match action {
+                ToolbarAction::NewScene => EditorAction::NewScene,
+                ToolbarAction::OpenScene => EditorAction::OpenScene,
+                ToolbarAction::SaveScene => EditorAction::SaveScene,
+                ToolbarAction::Quit => EditorAction::Quit,
+                ToolbarAction::Undo => EditorAction::Undo,
+                ToolbarAction::Redo => EditorAction::Redo,
+                ToolbarAction::OpenPreferences => {
+                    EditorAction::OpenPanel(crate::ui::editor_ui::Panel::Preferences)
+                }
+                ToolbarAction::ToggleGrid => EditorAction::ToggleGrid,
+                ToolbarAction::ToggleStats => EditorAction::ToggleStats,
+                ToolbarAction::TogglePhysicsDebug => EditorAction::TogglePhysicsDebug,
+                ToolbarAction::OpenParticleInspector => {
+                    EditorAction::OpenPanel(crate::ui::editor_ui::Panel::ParticleInspector)
+                }
+                ToolbarAction::OpenCoCreator => {
+                    EditorAction::OpenPanel(crate::ui::editor_ui::Panel::CoCreator)
+                }
+                ToolbarAction::SpawnModel(model) => {
+                    EditorAction::SpawnModel(model, Vec3::new(0.0, 0.0, 0.0))
+                }
+                ToolbarAction::PlayStart => EditorAction::PlayStart,
+                ToolbarAction::PlayPause => EditorAction::PlayPause,
+                ToolbarAction::PlayStop => EditorAction::PlayStop,
+            });
         }
 
         for action in self.view_tree.actions_mut().drain::<GizmoModeChanged>() {

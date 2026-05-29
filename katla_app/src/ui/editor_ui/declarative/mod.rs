@@ -21,5 +21,5 @@ pub(super) use inspector::{InspectorDrawCtx, set_inspector_ctx, take_inspector_c
 pub(super) use particle_inspector::{ParticleInspectorDrawCtx, ParticleInspectorPanelSync};
 pub(super) use preferences::{PreferencesDrawCtx, set_preferences_ctx, take_preferences_ctx};
 pub(super) use status_bar::StatusBarData;
-pub(super) use toolbar::{ToolbarDrawCtx, set_toolbar_ctx, take_toolbar_ctx};
+pub(super) use toolbar::{ToolbarAction, ToolbarDrawCtx};
 pub(super) use viewport_grid::ViewportGridDrawCtx;

@@ -948,6 +948,53 @@ pub(crate) fn draw_descriptor_with_id(
                     font_size,
                 );
 
+                let is_open: bool = state_arena.get(group.open_id);
+                if is_open {
+                    let dropdown_y = group_bounds.max.y();
+                    let dropdown_width = 180.0_f32;
+                    let entry_height = 28.0_f32;
+                    let dropdown_bounds = Rect2D::from_origin_size(
+                        Vec2::new(group_bounds.min.x(), dropdown_y),
+                        Vec2::new(dropdown_width, group.items.len() as f32 * entry_height),
+                    );
+
+                    ui.draw_rect(dropdown_bounds, ui.style().window_bg);
+                    ui.draw_rect_border(
+                        dropdown_bounds,
+                        ui.style().window_bg,
+                        ui.style().window_border,
+                        1.0,
+                    );
+
+                    for (i, entry) in group.items.iter().enumerate() {
+                        let entry_bounds = Rect2D::from_origin_size(
+                            Vec2::new(
+                                dropdown_bounds.min.x(),
+                                dropdown_y + i as f32 * entry_height,
+                            ),
+                            Vec2::new(dropdown_width, entry_height),
+                        );
+
+                        let entry_hovered = entry_bounds.contains(ui.mouse_pos());
+                        if entry_hovered && !entry.disabled {
+                            ui.draw_rect(entry_bounds, ui.style().selectable_hovered);
+                        }
+
+                        let text_color = if entry.disabled {
+                            ui.style().text_disabled
+                        } else {
+                            ui.style().text_color
+                        };
+                        let entry_y = entry_bounds.center().y() - font_size * 0.5;
+                        ui.draw_text(
+                            &entry.label,
+                            Vec2::new(entry_bounds.min.x() + item_spacing, entry_y),
+                            text_color,
+                            font_size,
+                        );
+                    }
+                }
+
                 x += label_size.x() + item_spacing * 2.0;
             }
         }
