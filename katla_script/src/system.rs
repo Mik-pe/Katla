@@ -14,6 +14,8 @@ use crate::engine::ScriptEngine;
 use crate::event_bus::EventBus;
 use crate::watcher::ScriptWatcher;
 
+/// Maximum number of consecutive errors before a script instance is disabled.
+/// Prevents spamming the log with errors from broken scripts.
 const MAX_SCRIPT_ERRORS: u32 = 10;
 
 type TransformProvider = Box<dyn FnMut(&World) -> Vec<(EntityId, Transform)>>;
@@ -24,17 +26,24 @@ type ComponentEntitiesProvider =
 
 /// Resource that controls whether scripts execute their `on_update` hooks.
 /// Insert into the ECS World to signal play mode. Defaults to `false` (suspended).
+///
+/// When `ScriptsActive(false)` (default), scripts only process spawn/destroy events.
+/// When `ScriptsActive(true)` is inserted, scripts run their `on_update` hooks each frame.
 #[derive(Debug, Clone, Copy)]
 pub struct ScriptsActive(pub bool);
 
 /// Resource holding audio commands queued by scripts during the last ECS update.
 /// `katla_app` drains this after `world.update()` and forwards to `AudioSystem`.
+///
+/// Contains commands like `PlaySound`, `PlaySoundAt`, `PlaySoundCue`.
 #[derive(Default)]
 pub struct PendingAudioCommands(pub Vec<ScriptCommand>);
 
 /// Resource holding raycast results from the previous frame.
 /// Scripts call `world:raycast()` to queue a command, then `world:get_raycast_result()`
 /// on the next frame to retrieve the result.
+///
+/// The results are indexed by the return value from `world:raycast()`.
 #[derive(Default)]
 pub struct PendingRaycastResults(
     pub std::collections::HashMap<usize, crate::bindings::script_world::RaycastResult>,
@@ -47,16 +56,24 @@ pub struct PendingRaycastResults(
 pub struct PendingRaycastCommands(pub Vec<crate::bindings::world::ScriptCommand>);
 
 /// A collision event from the physics system.
+///
+/// Dispatched to scripts as `"collision_enter"` or `"collision_exit"` events.
 #[derive(Debug, Clone)]
 pub struct PhysicsCollisionEvent {
+    /// Type of collision event.
     pub event_type: PhysicsCollisionEventType,
+    /// First entity involved in the collision (raw entity ID).
     pub entity_a: u64,
+    /// Second entity involved in the collision (raw entity ID).
     pub entity_b: u64,
 }
 
+/// Type of physics collision event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PhysicsCollisionEventType {
+    /// Two entities have started colliding.
     CollisionEnter,
+    /// Two entities have stopped colliding.
     CollisionExit,
 }
 
@@ -66,34 +83,68 @@ pub enum PhysicsCollisionEventType {
 #[derive(Default)]
 pub struct PendingPhysicsEvents(pub Vec<PhysicsCollisionEvent>);
 
-/// Resource holding script variable snapshots for the editor inspector.
-/// `ScriptSystem` populates this each frame during editing mode.
+/// A single entity's script variable snapshot for the inspector.
+/// Contains entity ID, script path, and variable name-value pairs.
 type ScriptVarEntry = (
     katla_ecs::EntityId,
     String,
     Vec<(String, crate::engine::ScriptVarValue)>,
 );
 
+/// Resource holding script variable snapshots for the editor inspector.
+/// `ScriptSystem` populates this each frame during editing mode.
+///
+/// The inspector UI can read this to display and edit script variables.
 #[derive(Default)]
 pub struct ScriptInspectorData {
     /// Per-entity script variable snapshots: (entity_id, script_path, vars)
+    /// Each var is a (name, value) pair where value is Number, Boolean, or String.
     pub entries: Vec<ScriptVarEntry>,
 }
 
 /// Resource telling the script system whether to populate inspector data.
+///
+/// Set to `PopulateScriptInspector(true)` to enable inspector data collection.
 #[derive(Default)]
 pub struct PopulateScriptInspector(pub bool);
 
 /// Resource holding pending script variable edits from the editor inspector.
 /// `katla_app` pushes edits, `ScriptSystem` applies them each frame.
+///
+/// Each edit is a tuple of (entity_id, variable_name, new_value).
 #[derive(Default)]
 pub struct PendingScriptVarEdits(
     pub Vec<(katla_ecs::EntityId, String, crate::engine::ScriptVarValue)>,
 );
 
+/// The ECS system that manages script execution.
+///
+/// This system:
+/// - Creates script instances for entities with `ScriptComponent`
+/// - Executes script `on_update` hooks each frame (when `ScriptsActive(true)`)
+/// - Processes script commands (transforms, spawning, audio, etc.)
+/// - Handles hot-reloading of changed scripts
+/// - Dispatches events between scripts
+/// - Manages physics collision events
+///
+/// # Setup
+///
+/// Use the builder methods to configure the system before adding to the ECS world:
+///
+/// ```ignore
+/// let script_system = ScriptSystem::new()
+///     .with_scripts_dir("resources/scripts")
+///     .with_transform_provider(|world| { ... })
+///     .with_command_consumer(|world, commands| { ... });
+/// ```
+///
+/// # Thread Safety
+///
+/// **Warning:** `ScriptSystem` is NOT thread-safe (`!Send + !Sync`).
+/// The ECS should run this system on a single thread only.
 pub struct ScriptSystem {
-    pub(crate) engine: ScriptEngine,
-    pub(crate) event_bus: EventBus,
+    engine: ScriptEngine,
+    event_bus: EventBus,
     watcher: Option<ScriptWatcher>,
     transform_provider: Option<TransformProvider>,
     command_consumer: Option<CommandConsumer>,

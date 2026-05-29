@@ -6,7 +6,15 @@ use std::time::Duration;
 use log::{debug, info};
 use notify::Watcher;
 
-/// watches a directory for `.luau` file changes and reports which scripts need reloading.
+/// Watches a directory for `.luau` file changes and reports which scripts need reloading.
+///
+/// This enables hot-reload functionality: when a script file is modified on disk,
+/// the `ScriptSystem` will reload it and update all running instances with the new code.
+///
+/// # Usage
+///
+/// The watcher is automatically started by `ScriptSystem::with_scripts_dir()`.
+/// Each frame, `ScriptSystem` polls for changes via `ScriptWatcher::poll_changes()`.
 pub struct ScriptWatcher {
     _watcher: notify::RecommendedWatcher,
     rx: mpsc::Receiver<notify::Event>,
@@ -15,6 +23,8 @@ pub struct ScriptWatcher {
 
 impl ScriptWatcher {
     /// Start watching `scripts_dir` recursively for `.luau` changes.
+    ///
+    /// Returns an error if the directory cannot be watched (e.g., doesn't exist).
     pub fn new(scripts_dir: impl Into<PathBuf>) -> Result<Self, notify::Error> {
         let scripts_dir = scripts_dir.into();
         let (tx, rx) = mpsc::channel();
@@ -43,6 +53,10 @@ impl ScriptWatcher {
 
     /// Poll for changed scripts, returning script names (relative paths without extension)
     /// that need hot-reloading. Call once per frame.
+    ///
+    /// Returns a list of script names that were created or modified since the last poll.
+    /// Only `.luau` files are tracked. The returned names are relative to the watched
+    /// directory and have the `.luau` extension stripped.
     pub fn poll_changes(&mut self) -> Vec<String> {
         let mut changed = HashSet::new();
 

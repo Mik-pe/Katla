@@ -23,6 +23,19 @@ macro_rules! impl_from_lua_userdata {
     };
 }
 
+/// Lua userdata wrapper for Vec3.
+///
+/// Provides vector math operations to Lua scripts.
+///
+/// # Lua API
+///
+/// ```lua
+/// local v1 = Vec3.new(1, 2, 3)
+/// local v2 = Vec3.new(4, 5, 6)
+/// local sum = v1 + v2
+/// local len = v1:length()
+/// local normalized = v1:normalize()
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct LuaVec3(pub Vec3);
 
@@ -93,6 +106,17 @@ impl UserData for LuaVec3 {
     }
 }
 
+/// Lua userdata wrapper for Quat (quaternion).
+///
+/// Provides quaternion operations to Lua scripts.
+///
+/// # Lua API
+///
+/// ```lua
+/// local q1 = Quat.new(0, 0, 0, 1)  -- identity
+/// local q2 = Quat.from_axis_angle(Vec3.new(0, 1, 0), 3.14159)
+/// local combined = q1 * q2
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct LuaQuat(pub Quat);
 
@@ -153,6 +177,19 @@ impl UserData for LuaQuat {
     }
 }
 
+/// Lua userdata wrapper for Transform.
+///
+/// Provides transform operations to Lua scripts.
+///
+/// # Lua API
+///
+/// ```lua
+/// local t = Transform.new()
+/// t.position = Vec3.new(1, 2, 3)
+/// t.rotation = Quat.identity()
+/// t.scale = Vec3.new(1, 1, 1)
+/// local forward = t:forward()
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct LuaTransform(pub Transform);
 
@@ -259,6 +296,7 @@ impl UserData for LuaColor {
     }
 }
 
+/// Register all math types (Vec3, Quat, Transform, Color) with the Lua VM.
 pub fn register_math_types(lua: &Lua) -> Result<(), mlua::Error> {
     lua.register_userdata_type::<LuaVec3>(|reg| {
         LuaVec3::add_fields(reg);

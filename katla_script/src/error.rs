@@ -2,25 +2,27 @@ use std::fmt;
 
 use crate::component::ScriptInstanceHandle;
 
+/// Errors that can occur during script loading, execution, or management.
 #[derive(Debug)]
 pub enum ScriptError {
-    LoadFailed {
-        path: String,
-        source: mlua::Error,
-    },
+    /// Failed to load a script file (IO error or Lua syntax error).
+    LoadFailed { path: String, source: mlua::Error },
+    /// A script execution error occurred (runtime error in Lua code).
     ExecutionFailed {
         path: String,
         line: Option<usize>,
         source: mlua::Error,
     },
-    InvalidHook {
-        path: String,
-        hook: String,
-    },
+    /// A script defines a hook (on_update, on_spawn, on_destroy) with a non-function value.
+    InvalidHook { path: String, hook: String },
+    /// Attempted to access a script instance that no longer exists.
+    /// This can happen if the instance was removed or the entity was destroyed.
     InstanceNotFound(ScriptInstanceHandle),
-    ScriptNotLoaded {
-        path: String,
-    },
+    /// Attempted to access a script that was never loaded or was unloaded.
+    ScriptNotLoaded { path: String },
+    /// Attempted to load a script from a path outside the configured scripts directory.
+    /// This is a security measure to prevent scripts from reading arbitrary files.
+    PathOutsideScriptsDir { path: String, scripts_dir: String },
 }
 
 impl fmt::Display for ScriptError {
@@ -52,6 +54,12 @@ impl fmt::Display for ScriptError {
             ScriptError::ScriptNotLoaded { path } => {
                 write!(f, "script not loaded: '{path}'")
             }
+            ScriptError::PathOutsideScriptsDir { path, scripts_dir } => {
+                write!(
+                    f,
+                    "script path '{path}' is outside the scripts directory '{scripts_dir}'"
+                )
+            }
         }
     }
 }
@@ -64,6 +72,7 @@ impl std::error::Error for ScriptError {
             ScriptError::InvalidHook { .. } => None,
             ScriptError::InstanceNotFound(_) => None,
             ScriptError::ScriptNotLoaded { .. } => None,
+            ScriptError::PathOutsideScriptsDir { .. } => None,
         }
     }
 }

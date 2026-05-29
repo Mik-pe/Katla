@@ -1,6 +1,5 @@
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::path::Path;
 use std::rc::Rc;
 
 use katla_ecs::EntityId;
@@ -15,15 +14,38 @@ use crate::component::ScriptInstanceHandle;
 use crate::error::ScriptError;
 
 /// A scalar value from a script environment, for inspector display/editing.
+/// Used to expose script variables to the editor UI.
 #[derive(Debug, Clone)]
 pub enum ScriptVarValue {
+    /// A numeric value from the script.
     Number(f64),
+    /// A boolean value from the script.
     Boolean(bool),
+    /// A string value from the script.
     String(String),
 }
 
+/// Maximum number of Lua bytecode instructions allowed per script execution.
+/// Prevents infinite loops from hanging the engine.
 const INSTRUCTION_LIMIT: u64 = 10_000_000;
 
+/// The script engine manages Lua script loading, execution, and instance lifecycle.
+///
+/// # Thread Safety
+///
+/// **Warning:** `ScriptEngine` is NOT thread-safe (`!Send + !Sync`).
+/// The underlying `mlua::Lua` VM is single-threaded.
+/// If you need to use scripts from multiple threads, create a separate `ScriptEngine`
+/// per thread or use external synchronization.
+///
+/// # Usage
+///
+/// ```ignore
+/// let mut engine = ScriptEngine::new()?;
+/// engine.set_scripts_dir("resources/scripts");
+/// engine.load_script("player")?;
+/// let handle = engine.create_instance(entity_id, "player")?;
+/// ```
 pub struct ScriptEngine {
     pub(crate) vm: Lua,
     pub(crate) loaded_scripts: HashMap<String, RegistryKey>,
@@ -32,23 +54,71 @@ pub struct ScriptEngine {
     pub(crate) free_list: Vec<u32>,
     /// Base directory for script resolution (e.g. "resources/scripts").
     /// When set, bare script names are resolved relative to this directory.
-    pub(crate) scripts_dir: Option<String>,
+    scripts_dir: Option<String>,
     instruction_count: Rc<Cell<u64>>,
 }
 
+/// Internal representation of a script instance attached to an entity.
+///
+/// Each entity with a `ScriptComponent` has one associated instance.
 pub(crate) struct ScriptInstance {
+    /// Path to the script file (relative to scripts_dir).
     pub script_path: String,
+    /// The entity this script is attached to.
     pub entity: EntityId,
+    /// Registry key for the Lua environment table.
     pub _env_key: RegistryKey,
+    /// Extracted hook functions from the script.
     pub hooks: ScriptHooks,
+    /// Generation counter for handle validation.
     pub generation: u32,
+    /// Number of consecutive errors from this instance.
     pub(crate) error_count: u32,
 }
 
+/// Extracted hook function references from a script.
+///
+/// Scripts can define these optional functions:
+/// - `on_update(entity, world, dt)` - Called every frame
+/// - `on_spawn(entity, world)` - Called when entity is spawned
+/// - `on_destroy(entity)` - Called when entity is destroyed
 pub(crate) struct ScriptHooks {
+    /// The on_update hook function, if defined in the script.
     pub on_update: Option<RegistryKey>,
+    /// The on_spawn hook function, if defined in the script.
     pub on_spawn: Option<RegistryKey>,
+    /// The on_destroy hook function, if defined in the script.
     pub on_destroy: Option<RegistryKey>,
+}
+
+impl Drop for ScriptEngine {
+    fn drop(&mut self) {
+        // Clean up all loaded script registry values to prevent memory leaks
+        // We need to take ownership of the keys to pass them to remove_registry_value
+        // Since we're in Drop, we can safely consume the HashMap
+        let loaded_scripts = std::mem::take(&mut self.loaded_scripts);
+        for (_, key) in loaded_scripts {
+            let _ = self.vm.remove_registry_value(key);
+        }
+
+        // Clean up instance environment and hook registry values
+        // Take ownership of instances to consume them
+        let instances = std::mem::take(&mut self.instances);
+        for instance in instances {
+            if let Some(inst) = instance {
+                let _ = self.vm.remove_registry_value(inst._env_key);
+                if let Some(key) = inst.hooks.on_update {
+                    let _ = self.vm.remove_registry_value(key);
+                }
+                if let Some(key) = inst.hooks.on_spawn {
+                    let _ = self.vm.remove_registry_value(key);
+                }
+                if let Some(key) = inst.hooks.on_destroy {
+                    let _ = self.vm.remove_registry_value(key);
+                }
+            }
+        }
+    }
 }
 
 impl ScriptEngine {
@@ -326,6 +396,48 @@ impl ScriptEngine {
         self.scripts_dir = Some(dir.into());
     }
 
+    /// Get the current scripts directory.
+    pub fn scripts_dir(&self) -> Option<&str> {
+        self.scripts_dir.as_deref()
+    }
+
+    /// Resolve a script path to a full filesystem path.
+    /// Validates that the resolved path is within the scripts directory.
+    fn resolve_script_path(&self, path: &str) -> Result<std::path::PathBuf, ScriptError> {
+        use std::path::Path;
+
+        let input_path = Path::new(path);
+
+        // If it's already an absolute path that exists, check it's in scripts_dir
+        if input_path.is_absolute() {
+            if input_path.exists() {
+                if let Some(dir) = &self.scripts_dir {
+                    let dir_path = Path::new(dir);
+                    if !input_path.starts_with(dir_path) {
+                        return Err(ScriptError::PathOutsideScriptsDir {
+                            path: path.to_string(),
+                            scripts_dir: dir.clone(),
+                        });
+                    }
+                }
+                return Ok(input_path.to_path_buf());
+            }
+            // Absolute path doesn't exist, will fail later
+            return Ok(input_path.to_path_buf());
+        }
+
+        // Relative path: resolve relative to scripts_dir or default
+        let full_path = if let Some(dir) = &self.scripts_dir {
+            Path::new(dir).join(path).with_extension("luau")
+        } else {
+            Path::new("resources/scripts")
+                .join(path)
+                .with_extension("luau")
+        };
+
+        Ok(full_path)
+    }
+
     pub fn reset_instruction_counter(&self) {
         self.instruction_count.set(0);
     }
@@ -335,21 +447,13 @@ impl ScriptEngine {
             return Ok(());
         }
 
-        let source = if Path::new(path).exists() {
-            std::fs::read_to_string(path).map_err(|e| ScriptError::LoadFailed {
-                path: path.into(),
+        let resolved_path = self.resolve_script_path(path)?;
+
+        let source =
+            std::fs::read_to_string(&resolved_path).map_err(|e| ScriptError::LoadFailed {
+                path: resolved_path.display().to_string(),
                 source: mlua::Error::external(e),
-            })?
-        } else {
-            let full_path = match &self.scripts_dir {
-                Some(dir) => format!("{dir}/{path}.luau"),
-                None => format!("resources/scripts/{path}.luau"),
-            };
-            std::fs::read_to_string(&full_path).map_err(|e| ScriptError::LoadFailed {
-                path: full_path.clone(),
-                source: mlua::Error::external(e),
-            })?
-        };
+            })?;
 
         let func = self
             .vm
@@ -752,21 +856,11 @@ impl ScriptEngine {
     }
 
     fn read_script_source(&self, script_path: &str) -> Result<String, ScriptError> {
-        if Path::new(script_path).exists() {
-            std::fs::read_to_string(script_path).map_err(|e| ScriptError::LoadFailed {
-                path: script_path.into(),
-                source: mlua::Error::external(e),
-            })
-        } else {
-            let full_path = match &self.scripts_dir {
-                Some(dir) => format!("{dir}/{script_path}.luau"),
-                None => format!("resources/scripts/{script_path}.luau"),
-            };
-            std::fs::read_to_string(&full_path).map_err(|e| ScriptError::LoadFailed {
-                path: full_path.clone(),
-                source: mlua::Error::external(e),
-            })
-        }
+        let resolved_path = self.resolve_script_path(script_path)?;
+        std::fs::read_to_string(&resolved_path).map_err(|e| ScriptError::LoadFailed {
+            path: resolved_path.display().to_string(),
+            source: mlua::Error::external(e),
+        })
     }
 
     fn hot_reload_single_instance(
