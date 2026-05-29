@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::buffer::AudioBuffer;
 use crate::command_queue::{AudioCategoryValue, AudioCommand, CommandQueue};
@@ -8,6 +9,9 @@ use crate::effect::zone_reverb::ZoneReverbEffect;
 use crate::effect::{AuxBus, EffectChain};
 use crate::streaming_voice::StreamingVoice;
 use crate::voice::{CategoryVolumes, Voice, VoiceId, VoiceState};
+
+const MAX_VOICES: usize = 64;
+const MAX_STREAMING_VOICES: usize = 8;
 
 fn f32_to_bits(v: f32) -> u32 {
     v.to_bits()
@@ -17,9 +21,17 @@ fn bits_to_f32(v: u32) -> f32 {
     f32::from_bits(v)
 }
 
+#[derive(Clone, Copy)]
+enum VoiceKind {
+    Regular(usize),
+    Streaming(usize),
+}
+
 struct MixerState {
     voices: Vec<Option<Voice>>,
     streaming_voices: Vec<Option<StreamingVoice>>,
+    free_voice_slots: Vec<usize>,
+    free_streaming_slots: Vec<usize>,
     voice_index: HashMap<VoiceId, VoiceKind>,
     master_effects: EffectChain,
     aux_buses: Vec<AuxBus>,
@@ -27,39 +39,62 @@ struct MixerState {
     channels: u16,
 }
 
-#[derive(Clone, Copy)]
-enum VoiceKind {
-    Regular(usize),
-    Streaming(usize),
-}
-
 impl MixerState {
-    fn find_free_slot<T>(voices: &[Option<T>]) -> Option<usize> {
-        voices.iter().position(|v| v.is_none())
+    fn play_voice(
+        &mut self,
+        id: VoiceId,
+        buffer: Arc<AudioBuffer>,
+        looping: bool,
+        category: AudioCategoryValue,
+        category_volumes: Arc<CategoryVolumes>,
+    ) -> bool {
+        let slot = match self.free_voice_slots.pop() {
+            Some(s) => s,
+            None => {
+                log::warn!("Voice pool full ({}), dropping play", MAX_VOICES);
+                return false;
+            }
+        };
+        if let Some(existing) = &mut self.voices[slot] {
+            existing.reset(id, buffer, looping, category, category_volumes);
+        } else {
+            self.voices[slot] = Some(Voice::new(id, buffer, looping, category, category_volumes));
+        }
+        self.voice_index.insert(id, VoiceKind::Regular(slot));
+        true
     }
 
-    fn add_voice(&mut self, voice: Voice) {
-        let id = voice.id();
-        if let Some(slot) = Self::find_free_slot(&self.voices) {
-            self.voices[slot] = Some(voice);
-            self.voice_index.insert(id, VoiceKind::Regular(slot));
+    fn play_streaming_voice(
+        &mut self,
+        id: VoiceId,
+        decoder: crate::streaming::StreamingDecoder,
+        looping: bool,
+        category: AudioCategoryValue,
+        category_volumes: Arc<CategoryVolumes>,
+    ) -> Result<bool, crate::error::AudioError> {
+        let slot = match self.free_streaming_slots.pop() {
+            Some(s) => s,
+            None => {
+                log::warn!(
+                    "Streaming voice pool full ({}), dropping play",
+                    MAX_STREAMING_VOICES
+                );
+                return Ok(false);
+            }
+        };
+        if let Some(existing) = &mut self.streaming_voices[slot] {
+            existing.reset(id, decoder, looping, category, category_volumes)?;
         } else {
-            self.voices.push(Some(voice));
-            self.voice_index
-                .insert(id, VoiceKind::Regular(self.voices.len() - 1));
+            self.streaming_voices[slot] = Some(StreamingVoice::new(
+                id,
+                decoder,
+                looping,
+                category,
+                category_volumes,
+            )?);
         }
-    }
-
-    fn add_streaming_voice(&mut self, voice: StreamingVoice) {
-        let id = voice.id();
-        if let Some(slot) = Self::find_free_slot(&self.streaming_voices) {
-            self.streaming_voices[slot] = Some(voice);
-            self.voice_index.insert(id, VoiceKind::Streaming(slot));
-        } else {
-            self.streaming_voices.push(Some(voice));
-            self.voice_index
-                .insert(id, VoiceKind::Streaming(self.streaming_voices.len() - 1));
-        }
+        self.voice_index.insert(id, VoiceKind::Streaming(slot));
+        Ok(true)
     }
 
     fn stop(&mut self, id: VoiceId) {
@@ -80,8 +115,20 @@ impl MixerState {
     }
 
     fn stop_all(&mut self) {
-        self.voices.clear();
-        self.streaming_voices.clear();
+        for i in 0..self.voices.len() {
+            self.voices[i] = None;
+        }
+        for i in 0..self.streaming_voices.len() {
+            self.streaming_voices[i] = None;
+        }
+        self.free_voice_slots.clear();
+        for i in (0..self.voices.len()).rev() {
+            self.free_voice_slots.push(i);
+        }
+        self.free_streaming_slots.clear();
+        for i in (0..self.streaming_voices.len()).rev() {
+            self.free_streaming_slots.push(i);
+        }
         self.voice_index.clear();
     }
 
@@ -200,7 +247,6 @@ impl MixerState {
                     }
                 }
                 VoiceKind::Streaming(_) => {
-                    // Streaming voices don't support occlusion yet
                     let _ = (id, occlusion);
                 }
             }
@@ -242,6 +288,32 @@ impl MixerState {
         0.0
     }
 
+    fn voice_position(&self, id: VoiceId) -> f32 {
+        if let Some(VoiceKind::Regular(slot)) = self.voice_slot(id)
+            && let Some(voice) = &self.voices[slot]
+        {
+            return voice.position();
+        }
+        0.0
+    }
+
+    fn streaming_voice_position(&self, id: VoiceId) -> f32 {
+        if let Some(VoiceKind::Streaming(slot)) = self.voice_slot(id)
+            && let Some(voice) = &self.streaming_voices[slot]
+        {
+            return voice.position();
+        }
+        0.0
+    }
+
+    fn seek_streaming_voice(&self, id: VoiceId, position: Duration) {
+        if let Some(VoiceKind::Streaming(slot)) = self.voice_slot(id)
+            && let Some(voice) = &self.streaming_voices[slot]
+        {
+            voice.seek(position);
+        }
+    }
+
     fn voice_state(&self, id: VoiceId) -> VoiceState {
         if let Some(kind) = self.voice_slot(id) {
             let finished = match kind {
@@ -268,8 +340,7 @@ impl MixerState {
     }
 
     fn active_voice_count(&self) -> usize {
-        self.voices.iter().filter(|v| v.is_some()).count()
-            + self.streaming_voices.iter().filter(|v| v.is_some()).count()
+        self.voice_index.len()
     }
 }
 
@@ -302,9 +373,11 @@ impl AudioMixer {
         let zone_reverb_dampening = Arc::new(AtomicU32::new(0.2f32.to_bits()));
         AudioMixer {
             state: Mutex::new(MixerState {
-                voices: Vec::new(),
-                streaming_voices: Vec::new(),
-                voice_index: HashMap::new(),
+                voices: (0..MAX_VOICES).map(|_| None).collect(),
+                streaming_voices: (0..MAX_STREAMING_VOICES).map(|_| None).collect(),
+                free_voice_slots: (0..MAX_VOICES).rev().collect(),
+                free_streaming_slots: (0..MAX_STREAMING_VOICES).rev().collect(),
+                voice_index: HashMap::with_capacity(MAX_VOICES + MAX_STREAMING_VOICES),
                 master_effects: EffectChain::new(),
                 aux_buses: Vec::new(),
                 sample_rate,
@@ -346,11 +419,8 @@ impl AudioMixer {
         category: AudioCategoryValue,
     ) -> VoiceId {
         let id = self.allocate_id();
-        let voice = Voice::new(id, buffer, looping, category, self.category_volumes.clone());
-
         let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
-        state.add_voice(voice);
-
+        state.play_voice(id, buffer, looping, category, self.category_volumes.clone());
         id
     }
 
@@ -410,6 +480,21 @@ impl AudioMixer {
     pub fn voice_state(&self, id: VoiceId) -> VoiceState {
         let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.voice_state(id)
+    }
+
+    pub fn voice_position(&self, id: VoiceId) -> f32 {
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
+        state.voice_position(id)
+    }
+
+    pub fn streaming_voice_position(&self, id: VoiceId) -> f32 {
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
+        state.streaming_voice_position(id)
+    }
+
+    pub fn seek_streaming_voice(&self, id: VoiceId, position: Duration) {
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
+        state.seek_streaming_voice(id, position);
     }
 
     pub fn set_master_volume(&self, volume: f32) {
@@ -477,17 +562,14 @@ impl AudioMixer {
         category: AudioCategoryValue,
     ) -> Result<VoiceId, crate::error::AudioError> {
         let id = self.allocate_id();
-        let voice = StreamingVoice::new(
+        let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
+        state.play_streaming_voice(
             id,
             decoder,
             looping,
             category,
             self.category_volumes.clone(),
         )?;
-
-        let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
-        state.add_streaming_voice(voice);
-
         Ok(id)
     }
 
@@ -590,25 +672,37 @@ impl AudioMixer {
 
             state.master_effects.process(output, channels);
 
-            let mut finished_ids: Vec<VoiceId> = Vec::new();
+            let mut finished_voice_count = 0usize;
+            let mut finished_voices: [(usize, VoiceId); MAX_VOICES] = [(0, VoiceId(0)); MAX_VOICES];
             for i in 0..state.voices.len() {
                 if let Some(v) = &state.voices[i]
                     && v.is_finished()
                 {
-                    finished_ids.push(v.id());
-                    state.voices[i] = None;
+                    finished_voices[finished_voice_count] = (i, v.id());
+                    finished_voice_count += 1;
                 }
             }
+            for &(i, id) in finished_voices.iter().take(finished_voice_count) {
+                if state.voice_index.remove(&id).is_some() {
+                    state.free_voice_slots.push(i);
+                }
+            }
+
+            let mut finished_streaming_count = 0usize;
+            let mut finished_streaming: [(usize, VoiceId); MAX_STREAMING_VOICES] =
+                [(0, VoiceId(0)); MAX_STREAMING_VOICES];
             for i in 0..state.streaming_voices.len() {
                 if let Some(v) = &state.streaming_voices[i]
                     && v.is_finished()
                 {
-                    finished_ids.push(v.id());
-                    state.streaming_voices[i] = None;
+                    finished_streaming[finished_streaming_count] = (i, v.id());
+                    finished_streaming_count += 1;
                 }
             }
-            for id in finished_ids {
-                state.voice_index.remove(&id);
+            for &(i, id) in finished_streaming.iter().take(finished_streaming_count) {
+                if state.voice_index.remove(&id).is_some() {
+                    state.free_streaming_slots.push(i);
+                }
             }
         }
 

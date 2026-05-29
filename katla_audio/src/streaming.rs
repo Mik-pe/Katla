@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 
 use crate::buffer::AudioBuffer;
 use crate::error::AudioError;
@@ -285,6 +286,60 @@ impl StreamingDecoder {
                 let file = File::open(&state.path).map_err(AudioError::Io)?;
                 state.reader = claxon::FlacReader::new(std::io::BufReader::new(file))
                     .map_err(|e| AudioError::DecodeFailed(format!("FLAC seek failed: {e}")))?;
+            }
+        }
+        self.exhausted = false;
+        Ok(())
+    }
+
+    pub fn seek(&mut self, position: Duration) -> Result<(), AudioError> {
+        if position <= Duration::ZERO {
+            return self.seek_to_start();
+        }
+
+        let target_frame = (position.as_secs_f64() * self.sample_rate as f64).round() as u64;
+
+        match &mut self.inner {
+            StreamingDecoderInner::Wav(reader) => {
+                reader
+                    .seek(target_frame as u32)
+                    .map_err(|e| AudioError::DecodeFailed(format!("WAV seek failed: {e}")))?;
+            }
+            StreamingDecoderInner::Ogg(state) => {
+                state
+                    .reader
+                    .seek_absgp_pg(target_frame)
+                    .map_err(|e| AudioError::DecodeFailed(format!("OGG seek failed: {e}")))?;
+            }
+            StreamingDecoderInner::Mp3(state) => {
+                use std::fs::File;
+                let file = File::open(&state.path).map_err(AudioError::Io)?;
+                state.decoder = minimp3::Decoder::new(std::io::BufReader::new(file));
+                let skip_samples = target_frame as usize * self.channels as usize;
+                let mut skipped = 0usize;
+                while skipped < skip_samples {
+                    match state.decoder.next_frame() {
+                        Ok(frame) => {
+                            if self.sample_rate == 0 {
+                                self.sample_rate = frame.sample_rate as u32;
+                                self.channels = frame.channels as u16;
+                            }
+                            skipped += frame.data.len();
+                        }
+                        Err(minimp3::Error::Eof) => break,
+                        Err(_) => break,
+                    }
+                }
+            }
+            StreamingDecoderInner::Flac(state) => {
+                use std::fs::File;
+                let file = File::open(&state.path).map_err(AudioError::Io)?;
+                state.reader = claxon::FlacReader::new(std::io::BufReader::new(file))
+                    .map_err(|e| AudioError::DecodeFailed(format!("FLAC seek failed: {e}")))?;
+                let skip_samples = target_frame as usize * self.channels as usize;
+                for _ in state.reader.samples().take(skip_samples) {
+                    // discard
+                }
             }
         }
         self.exhausted = false;
