@@ -1,4 +1,5 @@
 .vscode
+.vibe
 /target
 **/*.rs.bk
 imgui.ini
