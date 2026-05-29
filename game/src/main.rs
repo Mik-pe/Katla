@@ -60,6 +60,7 @@ fn main() {
         .with_system(
             Box::new(
                 ScriptSystem::new()
+                    .expect("failed to create script system")
                     .with_scripts_dir("resources/scripts")
                     .with_transform_provider(|world| {
                         world
