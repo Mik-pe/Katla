@@ -76,7 +76,7 @@ pub(crate) struct OutlineSubsystem {
     /// Skinned stencil indicator pipeline.
     pub stencil_indicator_skinned_pipeline: PipelineHandle,
     /// Descriptor set layout for outline params uniform buffer.
-    pub params_descriptor_layout: vk::DescriptorSetLayout,
+    pub params_descriptor_layout: Option<vk::DescriptorSetLayout>,
     /// Per-frame descriptor sets for outline params (set 1 non-skinned, set 3 skinned).
     pub params_descriptor_sets: Vec<vk::DescriptorSet>,
     /// Per-frame uniform buffers for outline params.
@@ -84,7 +84,7 @@ pub(crate) struct OutlineSubsystem {
     /// Per-frame buffer allocations for outline params.
     pub params_allocations: Vec<gpu_allocator::vulkan::Allocation>,
     /// Descriptor pool for outline params.
-    pub params_descriptor_pool: vk::DescriptorPool,
+    pub params_descriptor_pool: Option<vk::DescriptorPool>,
 }
 
 /// Dependencies needed from VulkanRenderer for outline subsystem initialization.
@@ -315,11 +315,11 @@ impl OutlineSubsystem {
             params_allocations.push(allocation);
         }
 
-        self.params_descriptor_layout = params_descriptor_layout;
+        self.params_descriptor_layout = Some(params_descriptor_layout);
         self.params_descriptor_sets = params_descriptor_sets;
         self.params_buffers = params_buffers;
         self.params_allocations = params_allocations;
-        self.params_descriptor_pool = params_descriptor_pool;
+        self.params_descriptor_pool = Some(params_descriptor_pool);
 
         // === Stencil Mark Pipeline ===
         {
@@ -490,7 +490,7 @@ impl OutlineSubsystem {
                         | vk::ColorComponentFlags::B
                         | vk::ColorComponentFlags::A,
                     empty_layout: None,
-                    params_layout: Some(self.params_descriptor_layout),
+                    params_layout: self.params_descriptor_layout,
                 },
             )?;
             self.outline_draw_pipeline = handle;
@@ -528,7 +528,7 @@ impl OutlineSubsystem {
                         | vk::ColorComponentFlags::B
                         | vk::ColorComponentFlags::A,
                     empty_layout: Some(ctx.shared_empty_descriptor_layout),
-                    params_layout: Some(self.params_descriptor_layout),
+                    params_layout: self.params_descriptor_layout,
                 },
             )?;
             self.outline_draw_skinned_pipeline = handle;
@@ -632,13 +632,10 @@ impl OutlineSubsystem {
     ///
     /// Frees the descriptor pool, per-frame buffers, and descriptor layout.
     pub fn destroy(&mut self, context: &Rc<VulkanContext>) {
-        if self.params_descriptor_pool != vk::DescriptorPool::null() {
+        if let Some(pool) = self.params_descriptor_pool.take() {
             unsafe {
-                context
-                    .device
-                    .destroy_descriptor_pool(self.params_descriptor_pool, None);
+                context.device.destroy_descriptor_pool(pool, None);
             }
-            self.params_descriptor_pool = vk::DescriptorPool::null();
         }
         for (buffer, allocation) in self
             .params_buffers
@@ -647,13 +644,10 @@ impl OutlineSubsystem {
         {
             context.free_buffer(buffer, allocation);
         }
-        if self.params_descriptor_layout != vk::DescriptorSetLayout::null() {
+        if let Some(layout) = self.params_descriptor_layout.take() {
             unsafe {
-                context
-                    .device
-                    .destroy_descriptor_set_layout(self.params_descriptor_layout, None);
+                context.device.destroy_descriptor_set_layout(layout, None);
             }
-            self.params_descriptor_layout = vk::DescriptorSetLayout::null();
         }
 
         self.stencil_mark_pipeline = PipelineHandle::NONE;

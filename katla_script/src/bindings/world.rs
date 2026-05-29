@@ -54,4 +54,10 @@ pub enum ScriptCommand {
         /// Index used to retrieve the result from `PendingRaycastResults`.
         return_index: usize,
     },
+    /// Apply a continuous force to a physics body.
+    ApplyForce { entity_id: u64, force: [f32; 3] },
+    /// Apply an instantaneous impulse to a physics body.
+    ApplyImpulse { entity_id: u64, impulse: [f32; 3] },
+    /// Set the linear velocity of a physics body.
+    SetVelocity { entity_id: u64, velocity: [f32; 3] },
 }
