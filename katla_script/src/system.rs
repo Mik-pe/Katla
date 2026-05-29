@@ -21,6 +21,7 @@ use crate::watcher::ScriptWatcher;
 const MAX_SCRIPT_ERRORS: u32 = 10;
 
 type TransformProvider = Box<dyn FnMut(&World) -> Vec<(EntityId, Transform)>>;
+type VelocityProvider = Box<dyn FnMut(&World) -> Vec<(EntityId, katla_math::Vec3)>>;
 type CommandConsumer = Box<dyn FnMut(&mut World, &[ScriptCommand])>;
 type InputProvider = Box<dyn FnMut(&World) -> InputSnapshot>;
 type ComponentEntitiesProvider =
@@ -56,6 +57,16 @@ pub struct PendingRaycastResults(
 /// `PhysicsWorld`, and stores results in `PendingRaycastResults`.
 #[derive(Default)]
 pub struct PendingRaycastCommands(pub Vec<crate::bindings::world::ScriptCommand>);
+
+/// Resource holding physics force/impulse commands queued by scripts during the last ECS update.
+/// `katla_app` drains this after `world.update()` and applies them to `PhysicsWorld`.
+#[derive(Default)]
+pub struct PendingPhysicsForceCommands(pub Vec<crate::bindings::world::ScriptCommand>);
+
+/// Resource holding velocity commands queued by scripts during the last ECS update.
+/// `katla_app` drains this after `world.update()` and applies them to `PhysicsWorld`.
+#[derive(Default)]
+pub struct PendingVelocityCommands(pub Vec<crate::bindings::world::ScriptCommand>);
 
 /// A collision event from the physics system.
 ///
@@ -149,6 +160,7 @@ pub struct ScriptSystem {
     event_bus: EventBus,
     watcher: Option<ScriptWatcher>,
     transform_provider: Option<TransformProvider>,
+    velocity_provider: Option<VelocityProvider>,
     command_consumer: Option<CommandConsumer>,
     input_provider: Option<InputProvider>,
     component_entities_provider: Option<ComponentEntitiesProvider>,
@@ -169,6 +181,7 @@ impl ScriptSystem {
             event_bus: EventBus::new(),
             watcher: None,
             transform_provider: None,
+            velocity_provider: None,
             command_consumer: None,
             input_provider: None,
             component_entities_provider: None,
@@ -203,6 +216,18 @@ impl ScriptSystem {
         F: FnMut(&World) -> Vec<(EntityId, Transform)> + 'static,
     {
         self.transform_provider = Some(Box::new(f));
+        self
+    }
+
+    /// Set the velocity snapshot provider. Called by the app bridge.
+    ///
+    /// The closure is invoked each frame to gather `(EntityId, Vec3)` pairs
+    /// from the world, which scripts can then read via `world:get_velocity()`.
+    pub fn with_velocity_provider<F>(mut self, f: F) -> Self
+    where
+        F: FnMut(&World) -> Vec<(EntityId, katla_math::Vec3)> + 'static,
+    {
+        self.velocity_provider = Some(Box::new(f));
         self
     }
 
@@ -295,6 +320,11 @@ impl ScriptSystem {
             None => Vec::new(),
         };
 
+        let velocities = match self.velocity_provider.as_mut() {
+            Some(provider) => provider(world),
+            None => Vec::new(),
+        };
+
         let input = match self.input_provider.as_mut() {
             Some(provider) => provider(world),
             None => InputSnapshot::default(),
@@ -314,6 +344,7 @@ impl ScriptSystem {
 
         SharedWorldData {
             transforms: transforms.into_iter().collect(),
+            velocities: velocities.into_iter().collect(),
             live_entities,
             component_entities,
             input_state: input,
@@ -324,6 +355,8 @@ impl ScriptSystem {
     fn apply_commands(&mut self, commands: Vec<ScriptCommand>, world: &mut World) {
         let mut audio_cmds = Vec::new();
         let mut raycast_cmds = Vec::new();
+        let mut force_cmds = Vec::new();
+        let mut velocity_cmds = Vec::new();
         let mut core_cmds = Vec::new();
         for cmd in commands {
             match &cmd {
@@ -334,6 +367,12 @@ impl ScriptSystem {
                 }
                 ScriptCommand::Raycast { .. } => {
                     raycast_cmds.push(cmd);
+                }
+                ScriptCommand::ApplyForce { .. } | ScriptCommand::ApplyImpulse { .. } => {
+                    force_cmds.push(cmd);
+                }
+                ScriptCommand::SetVelocity { .. } => {
+                    velocity_cmds.push(cmd);
                 }
                 _ => core_cmds.push(cmd),
             }
@@ -349,6 +388,18 @@ impl ScriptSystem {
             && let Some(pending) = world.get_resource_mut::<PendingRaycastCommands>()
         {
             pending.0.extend(raycast_cmds);
+        }
+
+        if !force_cmds.is_empty()
+            && let Some(pending) = world.get_resource_mut::<PendingPhysicsForceCommands>()
+        {
+            pending.0.extend(force_cmds);
+        }
+
+        if !velocity_cmds.is_empty()
+            && let Some(pending) = world.get_resource_mut::<PendingVelocityCommands>()
+        {
+            pending.0.extend(velocity_cmds);
         }
 
         if let Some(consumer) = self.command_consumer.as_mut() {
@@ -386,7 +437,10 @@ impl ScriptSystem {
                     ScriptCommand::PlaySound { .. }
                     | ScriptCommand::PlaySoundAt { .. }
                     | ScriptCommand::PlaySoundCue { .. }
-                    | ScriptCommand::Raycast { .. } => {}
+                    | ScriptCommand::Raycast { .. }
+                    | ScriptCommand::ApplyForce { .. }
+                    | ScriptCommand::ApplyImpulse { .. }
+                    | ScriptCommand::SetVelocity { .. } => {}
                 }
             }
         }

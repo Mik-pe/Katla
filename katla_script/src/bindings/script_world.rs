@@ -46,6 +46,8 @@ pub struct InputSnapshot {
 pub(crate) struct SharedWorldData {
     /// Current transforms for all entities with Transform components.
     pub transforms: HashMap<EntityId, katla_math::Transform>,
+    /// Current linear velocities for all entities with RigidBody components.
+    pub velocities: HashMap<EntityId, katla_math::Vec3>,
     /// All currently alive entities.
     pub live_entities: Vec<EntityId>,
     /// Map from component type names to lists of entities that have that component.
@@ -101,6 +103,10 @@ pub struct SharedEventBus {
 /// ## Physics
 /// - `world:raycast(origin, direction, max_distance)` - Perform raycast
 /// - `world:get_raycast_result(index)` - Get raycast result
+/// - `world:apply_force(entity, force)` - Apply continuous force to a physics body
+/// - `world:apply_impulse(entity, impulse)` - Apply instantaneous impulse to a physics body
+/// - `world:get_velocity(entity)` - Get an entity's linear velocity
+/// - `world:set_velocity(entity, velocity)` - Set an entity's linear velocity
 ///
 /// ## Events
 /// - `world:emit(name, data)` - Emit an event
@@ -147,6 +153,7 @@ impl ScriptWorldProxy {
             commands: Vec::new(),
             shared: Rc::new(SharedWorldData {
                 transforms: transforms.into_iter().collect(),
+                velocities: HashMap::new(),
                 live_entities: Vec::new(),
                 component_entities: HashMap::new(),
                 input_state: InputSnapshot::default(),
@@ -206,6 +213,11 @@ impl ScriptWorldProxy {
     /// Get the result of a previously issued raycast command by its return index.
     pub fn get_raycast_result(&self, index: usize) -> Option<RaycastResult> {
         self.shared.raycast_results.get(&index).cloned()
+    }
+
+    /// Get the linear velocity of an entity.
+    pub fn get_velocity(&self, entity: EntityId) -> Option<katla_math::Vec3> {
+        self.shared.velocities.get(&entity).copied()
     }
 }
 
@@ -347,6 +359,46 @@ impl UserData for ScriptWorldProxy {
                     return_index,
                 });
                 Ok(return_index)
+            },
+        );
+
+        methods.add_method_mut(
+            "apply_force",
+            |_, this, (entity, force): (LuaEntityId, LuaVec3)| {
+                this.commands.push(ScriptCommand::ApplyForce {
+                    entity_id: entity.0.id(),
+                    force: force.0.to_array(),
+                });
+                Ok(())
+            },
+        );
+
+        methods.add_method_mut(
+            "apply_impulse",
+            |_, this, (entity, impulse): (LuaEntityId, LuaVec3)| {
+                this.commands.push(ScriptCommand::ApplyImpulse {
+                    entity_id: entity.0.id(),
+                    impulse: impulse.0.to_array(),
+                });
+                Ok(())
+            },
+        );
+
+        methods.add_method("get_velocity", |_, this, entity: LuaEntityId| {
+            match this.get_velocity(entity.0) {
+                Some(velocity) => Ok(Some(LuaVec3(velocity))),
+                None => Ok(None),
+            }
+        });
+
+        methods.add_method_mut(
+            "set_velocity",
+            |_, this, (entity, velocity): (LuaEntityId, LuaVec3)| {
+                this.commands.push(ScriptCommand::SetVelocity {
+                    entity_id: entity.0.id(),
+                    velocity: velocity.0.to_array(),
+                });
+                Ok(())
             },
         );
 

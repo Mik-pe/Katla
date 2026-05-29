@@ -51,9 +51,9 @@ pub struct BufferBinding {
 pub struct ComputePass {
     context: Rc<VulkanContext>,
     pipeline_handle: PipelineHandle,
-    descriptor_set: vk::DescriptorSet,
-    descriptor_pool: vk::DescriptorPool,
-    descriptor_layout: vk::DescriptorSetLayout,
+    descriptor_set: Option<vk::DescriptorSet>,
+    descriptor_pool: Option<vk::DescriptorPool>,
+    descriptor_layout: Option<vk::DescriptorSetLayout>,
     push_descriptor_layout: Option<vk::DescriptorSetLayout>,
     bindings: Vec<BufferBinding>,
 }
@@ -102,14 +102,14 @@ impl ComputePass {
 
         if self.push_descriptor_layout.is_some() {
             push_descriptors(&self.context, &self.bindings, cmd, layout);
-        } else if self.descriptor_set != vk::DescriptorSet::null() {
+        } else if let Some(ds) = self.descriptor_set {
             unsafe {
                 device.cmd_bind_descriptor_sets(
                     cmd,
                     vk::PipelineBindPoint::COMPUTE,
                     layout,
                     0,
-                    std::slice::from_ref(&self.descriptor_set),
+                    std::slice::from_ref(&ds),
                     &[],
                 );
             }
@@ -220,6 +220,11 @@ impl ComputePass {
             return;
         }
 
+        let Some(descriptor_set) = self.descriptor_set else {
+            log::warn!("Cannot update binding: no descriptor set");
+            return;
+        };
+
         let buffer_info = [vk::DescriptorBufferInfo {
             buffer,
             offset,
@@ -227,7 +232,7 @@ impl ComputePass {
         }];
 
         let write = vk::WriteDescriptorSet::default()
-            .dst_set(self.descriptor_set)
+            .dst_set(descriptor_set)
             .dst_binding(binding.binding)
             .descriptor_type(binding.descriptor_type)
             .descriptor_count(1)
@@ -250,13 +255,11 @@ impl ComputePass {
         let device = &self.context.device;
 
         unsafe {
-            if self.descriptor_pool != vk::DescriptorPool::null() {
-                device.destroy_descriptor_pool(self.descriptor_pool, None);
-                self.descriptor_pool = vk::DescriptorPool::null();
+            if let Some(pool) = self.descriptor_pool.take() {
+                device.destroy_descriptor_pool(pool, None);
             }
-            if self.descriptor_layout != vk::DescriptorSetLayout::null() {
-                device.destroy_descriptor_set_layout(self.descriptor_layout, None);
-                self.descriptor_layout = vk::DescriptorSetLayout::null();
+            if let Some(layout) = self.descriptor_layout.take() {
+                device.destroy_descriptor_set_layout(layout, None);
             }
             if let Some(layout) = self.push_descriptor_layout.take() {
                 device.destroy_descriptor_set_layout(layout, None);
@@ -439,7 +442,7 @@ impl ComputePassBuilder {
         let pipeline_handle = asset_registry.register_compute_pipeline(pipeline);
 
         let (descriptor_set, descriptor_pool) = if self.use_push_descriptors {
-            (vk::DescriptorSet::null(), vk::DescriptorPool::null())
+            (None, None)
         } else {
             let mut storage_count = 0u32;
             let mut uniform_count = 0u32;
@@ -520,7 +523,7 @@ impl ComputePassBuilder {
                 device.update_descriptor_sets(&writes, &[]);
             }
 
-            (ds, pool)
+            (Some(ds), Some(pool))
         };
 
         info!(
@@ -539,9 +542,9 @@ impl ComputePassBuilder {
             descriptor_set,
             descriptor_pool,
             descriptor_layout: if self.use_push_descriptors {
-                vk::DescriptorSetLayout::null()
+                None
             } else {
-                descriptor_layout
+                Some(descriptor_layout)
             },
             push_descriptor_layout: if self.use_push_descriptors {
                 Some(descriptor_layout)
