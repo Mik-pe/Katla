@@ -16,6 +16,7 @@ use rapier3d::pipeline::PhysicsPipeline;
 use rapier3d::prelude::*;
 
 use crate::collider::ColliderShape;
+use crate::error::PhysicsError;
 use crate::material::PhysicsMaterial;
 use crate::rigid_body::BodyType;
 use crate::trigger::TriggerEvent;
@@ -383,17 +384,23 @@ impl PhysicsWorld {
     }
 
     /// Read the world-space position and rotation of a rigid body.
-    pub fn body_transform(&self, body: RigidBodyHandle) -> Option<Transform> {
-        let body = self.bodies.get(body)?;
+    pub fn body_transform(&self, body: RigidBodyHandle) -> Result<Transform, PhysicsError> {
+        let body = self
+            .bodies
+            .get(body)
+            .ok_or(PhysicsError::BodyNotFound(body))?;
         let pos = body.position();
-        Some(rapier_pose_to_katla(pos))
+        Ok(rapier_pose_to_katla(pos))
     }
 
     /// Read the linear velocity of a rigid body.
-    pub fn body_velocity(&self, body: RigidBodyHandle) -> Option<Vec3> {
-        let body = self.bodies.get(body)?;
+    pub fn body_velocity(&self, body: RigidBodyHandle) -> Result<Vec3, PhysicsError> {
+        let body = self
+            .bodies
+            .get(body)
+            .ok_or(PhysicsError::BodyNotFound(body))?;
         let vel = body.linvel();
-        Some(Vec3::new(vel.x, vel.y, vel.z))
+        Ok(Vec3::new(vel.x, vel.y, vel.z))
     }
 
     /// Apply a force to a dynamic body at its center of mass.
@@ -416,7 +423,7 @@ impl PhysicsWorld {
         joint: &crate::joint::Joint,
         body_a: RigidBodyHandle,
         body_b: RigidBodyHandle,
-    ) -> Option<ImpulseJointHandle> {
+    ) -> Result<ImpulseJointHandle, PhysicsError> {
         use rapier3d::dynamics::{
             FixedJointBuilder, RevoluteJointBuilder, SphericalJointBuilder, SpringJointBuilder,
         };
@@ -462,7 +469,7 @@ impl PhysicsWorld {
         };
 
         let handle = self.impulse_joints.insert(body_a, body_b, generic, true);
-        Some(handle)
+        Ok(handle)
     }
 
     /// Remove a joint by its handle.
@@ -664,7 +671,7 @@ mod tests {
             world.step(1.0 / 60.0);
         }
 
-        let new_transform = world.body_transform(body).unwrap();
+        let new_transform = world.body_transform(body).unwrap(); // test unwrap is fine
         assert!(
             new_transform.position.y() < 10.0,
             "Body should have fallen due to gravity"

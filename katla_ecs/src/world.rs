@@ -495,7 +495,13 @@ impl World {
                 .enumerate()
                 .map(|(i, os)| (i, os.access_patterns.clone()))
                 .collect();
-            self.scheduler_cache = Some(SystemScheduler::build(&access_patterns));
+            self.scheduler_cache = match SystemScheduler::build(&access_patterns) {
+                Ok(scheduler) => Some(scheduler),
+                Err(e) => {
+                    eprintln!("Failed to build system scheduler: {e}");
+                    return;
+                }
+            };
         }
 
         let systems = std::mem::take(&mut self.systems);

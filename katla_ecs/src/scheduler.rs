@@ -41,6 +41,25 @@ pub(crate) struct SystemScheduler {
     groups: Vec<Vec<usize>>,
 }
 
+/// Error returned when the system scheduler cannot be built.
+#[derive(Debug)]
+pub(crate) enum SchedulerError {
+    /// The system dependency graph contains a cycle.
+    DependencyCycle,
+}
+
+impl std::fmt::Display for SchedulerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SchedulerError::DependencyCycle => {
+                write!(f, "cycle detected in system dependency graph")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SchedulerError {}
+
 impl SystemScheduler {
     /// Build a DAG from a list of (system_index, access_pattern) pairs.
     ///
@@ -50,7 +69,7 @@ impl SystemScheduler {
     ///
     /// Two systems that only read the same component do NOT conflict and
     /// may execute in parallel.
-    pub fn build(systems: &[(usize, Vec<ComponentAccess>)]) -> Self {
+    pub fn build(systems: &[(usize, Vec<ComponentAccess>)]) -> Result<Self, SchedulerError> {
         let nodes: Vec<SystemNode> = systems
             .iter()
             .map(|(sys_index, access)| SystemNode {
@@ -68,8 +87,8 @@ impl SystemScheduler {
         };
 
         scheduler.build_edges();
-        scheduler.compute_groups();
-        scheduler
+        scheduler.compute_groups()?;
+        Ok(scheduler)
     }
 
     /// Get the execution groups (systems within each group can run in parallel).
@@ -146,10 +165,10 @@ impl SystemScheduler {
         }
     }
 
-    fn compute_groups(&mut self) {
+    fn compute_groups(&mut self) -> Result<(), SchedulerError> {
         let n = self.nodes.len();
         if n == 0 {
-            return;
+            return Ok(());
         }
 
         // Initialize unresolved_deps from the dependency counts.
@@ -180,7 +199,7 @@ impl SystemScheduler {
             }
 
             if group.is_empty() {
-                panic!("cycle detected in system dependency graph");
+                return Err(SchedulerError::DependencyCycle);
             }
 
             for &i in &group {
@@ -196,6 +215,8 @@ impl SystemScheduler {
             self.groups
                 .push(group.iter().map(|&i| self.nodes[i].index).collect());
         }
+
+        Ok(())
     }
 }
 
@@ -233,7 +254,7 @@ mod tests {
             vec![ComponentAccess::Write(type_id)],
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 2);
@@ -248,7 +269,7 @@ mod tests {
             vec![ComponentAccess::Write(TypeId::of::<u64>())],
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 1);
@@ -263,7 +284,7 @@ mod tests {
             vec![ComponentAccess::Read(type_id)],
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 1);
@@ -278,7 +299,7 @@ mod tests {
             vec![ComponentAccess::Write(type_id)],
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 2);
@@ -301,7 +322,7 @@ mod tests {
             vec![ComponentAccess::Read(type_y)],  // C
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 3);
@@ -330,7 +351,7 @@ mod tests {
             vec![ComponentAccess::Read(type_y), ComponentAccess::Read(type_z)], // D
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         // Group 0: A
@@ -346,14 +367,14 @@ mod tests {
 
     #[test]
     fn test_empty_systems() {
-        let scheduler = SystemScheduler::build(&[]);
+        let scheduler = SystemScheduler::build(&[]).unwrap();
         assert!(scheduler.groups().is_empty());
     }
 
     #[test]
     fn test_single_system() {
         let systems = make_systems(vec![vec![ComponentAccess::Write(TypeId::of::<u32>())]]);
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
 
         assert_eq!(scheduler.groups().len(), 1);
         assert_eq!(scheduler.groups()[0], vec![0]);
@@ -362,7 +383,7 @@ mod tests {
     #[test]
     fn test_no_access_no_conflict() {
         let systems = make_systems(vec![Vec::new(), Vec::new()]);
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
 
         assert_eq!(scheduler.groups().len(), 1);
         assert_eq!(scheduler.groups()[0].len(), 2);
@@ -390,7 +411,7 @@ mod tests {
             vec![ComponentAccess::Read(type_c)],
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 3);
@@ -412,7 +433,7 @@ mod tests {
             vec![ComponentAccess::Read(type_x), ComponentAccess::Read(type_y)], // C (index 2)
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 2);
@@ -434,7 +455,7 @@ mod tests {
             vec![ComponentAccess::Write(type_z)], // C
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 1);
@@ -455,7 +476,7 @@ mod tests {
             vec![ComponentAccess::Write(type_x)], // C
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 3);
@@ -471,7 +492,7 @@ mod tests {
             (10, vec![ComponentAccess::Write(TypeId::of::<u64>())]),
         ];
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 1);
@@ -499,7 +520,7 @@ mod tests {
             ],
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 2);
@@ -542,7 +563,7 @@ mod tests {
             ], // F
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 2);
@@ -584,7 +605,7 @@ mod tests {
             vec![ComponentAccess::Read(type_w), ComponentAccess::Read(type_v)], // F
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 4);
@@ -617,7 +638,7 @@ mod tests {
             ],
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 1);
@@ -644,7 +665,7 @@ mod tests {
             ],
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 2);
@@ -676,7 +697,7 @@ mod tests {
             ],
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 2); // sequential due to C conflict
@@ -695,7 +716,7 @@ mod tests {
             vec![ComponentAccess::Read(type_x)],
         ]);
 
-        let scheduler = SystemScheduler::build(&systems);
+        let scheduler = SystemScheduler::build(&systems).unwrap();
         let groups = scheduler.groups();
 
         assert_eq!(groups.len(), 2);
