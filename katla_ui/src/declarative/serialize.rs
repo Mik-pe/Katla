@@ -3,7 +3,9 @@ use katla_math::Color;
 use crate::style::FontSize;
 use crate::types::TextureId;
 
-use super::descriptor::{Padding, StackDescriptor, ViewDescriptor, ZStackDescriptor};
+use super::descriptor::{
+    ChildDescriptor, Padding, StackDescriptor, ViewDescriptor, ZStackDescriptor,
+};
 
 /// Serializable subset of ViewDescriptor with no callbacks or fn pointers.
 ///
@@ -120,7 +122,7 @@ pub fn resolve_descriptor(
         } => ViewDescriptor::HStack(Box::new(StackDescriptor {
             children: children
                 .iter()
-                .map(|c| resolve_descriptor(c, _resolver, texture_lookup))
+                .map(|c| ChildDescriptor::from(resolve_descriptor(c, _resolver, texture_lookup)))
                 .collect(),
             spacing: *spacing,
             padding: padding_from_array(*padding),
@@ -134,7 +136,7 @@ pub fn resolve_descriptor(
         } => ViewDescriptor::VStack(Box::new(StackDescriptor {
             children: children
                 .iter()
-                .map(|c| resolve_descriptor(c, _resolver, texture_lookup))
+                .map(|c| ChildDescriptor::from(resolve_descriptor(c, _resolver, texture_lookup)))
                 .collect(),
             spacing: *spacing,
             padding: padding_from_array(*padding),
@@ -148,7 +150,7 @@ pub fn resolve_descriptor(
                     .map(|c| {
                         (
                             super::descriptor::Alignment::Center,
-                            resolve_descriptor(c, _resolver, texture_lookup),
+                            ChildDescriptor::from(resolve_descriptor(c, _resolver, texture_lookup)),
                         )
                     })
                     .collect(),

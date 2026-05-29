@@ -6,10 +6,10 @@ use crate::style::FontSize;
 use crate::types::TextureId;
 
 use super::descriptor::{
-    Alignment, Anchor, Callback, ContextMenuDescriptor, ContextMenuEntry, DraggablePanelDescriptor,
-    MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor, OverlayDescriptor, Padding,
-    PanelDescriptor, ScrollDescriptor, StackDescriptor, StatusBarDescriptor, TreeItem,
-    TreeViewDescriptor, ViewDescriptor, ZStackDescriptor,
+    Alignment, Anchor, Callback, ChildDescriptor, ContextMenuDescriptor, ContextMenuEntry,
+    DraggablePanelDescriptor, MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor,
+    OverlayDescriptor, Padding, PanelDescriptor, ScrollDescriptor, StackDescriptor,
+    StatusBarDescriptor, TreeItem, TreeViewDescriptor, ViewDescriptor, ZStackDescriptor,
 };
 use super::state::StateId;
 
@@ -221,7 +221,7 @@ pub fn grid(
         columns,
         cell_size,
         spacing: 0.0,
-        children: children.into_iter().collect(),
+        children: children.into_iter().map(ChildDescriptor::from).collect(),
     }))
 }
 
@@ -231,7 +231,7 @@ pub fn grid(
 
 pub fn hstack(children: impl IntoIterator<Item = ViewDescriptor>) -> ViewDescriptor {
     ViewDescriptor::HStack(Box::new(StackDescriptor {
-        children: children.into_iter().collect(),
+        children: children.into_iter().map(ChildDescriptor::from).collect(),
         spacing: 0.0,
         padding: Padding::zero(),
         alignment: Alignment::Leading,
@@ -240,7 +240,7 @@ pub fn hstack(children: impl IntoIterator<Item = ViewDescriptor>) -> ViewDescrip
 
 pub fn vstack(children: impl IntoIterator<Item = ViewDescriptor>) -> ViewDescriptor {
     ViewDescriptor::VStack(Box::new(StackDescriptor {
-        children: children.into_iter().collect(),
+        children: children.into_iter().map(ChildDescriptor::from).collect(),
         spacing: 0.0,
         padding: Padding::zero(),
         alignment: Alignment::Leading,
@@ -249,7 +249,10 @@ pub fn vstack(children: impl IntoIterator<Item = ViewDescriptor>) -> ViewDescrip
 
 pub fn zstack(children: impl IntoIterator<Item = (Alignment, ViewDescriptor)>) -> ViewDescriptor {
     ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
-        children: children.into_iter().collect(),
+        children: children
+            .into_iter()
+            .map(|(a, d)| (a, ChildDescriptor::from(d)))
+            .collect(),
         padding: Padding::zero(),
     }))
 }
@@ -338,6 +341,55 @@ pub fn modal(width: f32, height: f32, open_id: StateId, content: ViewDescriptor)
 
 pub fn context_menu(items: Vec<ContextMenuEntry>, open_id: StateId) -> ViewDescriptor {
     ViewDescriptor::ContextMenu(Box::new(ContextMenuDescriptor { items, open_id }))
+}
+
+// ---------------------------------------------------------------------------
+// Keyed child helper
+// ---------------------------------------------------------------------------
+
+pub fn keyed(key: u64, descriptor: ViewDescriptor) -> ChildDescriptor {
+    ChildDescriptor {
+        key: Some(key),
+        descriptor,
+    }
+}
+
+pub fn hstack_keyed(children: Vec<ChildDescriptor>) -> ViewDescriptor {
+    ViewDescriptor::HStack(Box::new(StackDescriptor {
+        children,
+        spacing: 0.0,
+        padding: Padding::zero(),
+        alignment: Alignment::Leading,
+    }))
+}
+
+pub fn vstack_keyed(children: Vec<ChildDescriptor>) -> ViewDescriptor {
+    ViewDescriptor::VStack(Box::new(StackDescriptor {
+        children,
+        spacing: 0.0,
+        padding: Padding::zero(),
+        alignment: Alignment::Leading,
+    }))
+}
+
+pub fn zstack_keyed(children: Vec<(Alignment, ChildDescriptor)>) -> ViewDescriptor {
+    ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
+        children,
+        padding: Padding::zero(),
+    }))
+}
+
+pub fn grid_keyed(
+    columns: usize,
+    cell_size: katla_math::Vec2,
+    children: Vec<ChildDescriptor>,
+) -> ViewDescriptor {
+    ViewDescriptor::Grid(Box::new(super::descriptor::GridDescriptor {
+        columns,
+        cell_size,
+        spacing: 0.0,
+        children,
+    }))
 }
 
 // ---------------------------------------------------------------------------

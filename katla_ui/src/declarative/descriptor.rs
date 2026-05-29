@@ -186,8 +186,23 @@ pub enum ViewDescriptor {
 }
 
 #[derive(Clone, Debug)]
+pub struct ChildDescriptor {
+    pub key: Option<u64>,
+    pub descriptor: ViewDescriptor,
+}
+
+impl From<ViewDescriptor> for ChildDescriptor {
+    fn from(descriptor: ViewDescriptor) -> Self {
+        Self {
+            key: None,
+            descriptor,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct StackDescriptor {
-    pub children: Vec<ViewDescriptor>,
+    pub children: Vec<ChildDescriptor>,
     pub spacing: f32,
     pub padding: Padding,
     pub alignment: Alignment,
@@ -195,7 +210,7 @@ pub struct StackDescriptor {
 
 #[derive(Clone, Debug)]
 pub struct ZStackDescriptor {
-    pub children: Vec<(Alignment, ViewDescriptor)>,
+    pub children: Vec<(Alignment, ChildDescriptor)>,
     pub padding: Padding,
 }
 
@@ -346,7 +361,7 @@ pub struct GridDescriptor {
     pub columns: usize,
     pub cell_size: Vec2,
     pub spacing: f32,
-    pub children: Vec<ViewDescriptor>,
+    pub children: Vec<ChildDescriptor>,
 }
 
 #[derive(Clone, Copy, Debug)]

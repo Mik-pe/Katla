@@ -276,4 +276,13 @@ mod tests {
         let b = icon('X');
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Replace);
     }
+
+    #[test]
+    fn test_keyed_child_descriptor_has_key() {
+        use super::super::descriptor::ChildDescriptor;
+        let cd = super::super::constructors::keyed(42, text("hello"));
+        assert_eq!(cd.key, Some(42));
+        let cd_nokey: ChildDescriptor = ChildDescriptor::from(text("hello"));
+        assert_eq!(cd_nokey.key, None);
+    }
 }
