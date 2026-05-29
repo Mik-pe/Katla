@@ -9,6 +9,7 @@ use super::descriptor::ViewDescriptor;
 use super::state::{StateArena, StateId};
 use super::tree::InteractionState;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_descriptor_with_id(
     descriptor: &ViewDescriptor,
     ui: &mut UiContext,
@@ -1018,8 +1019,12 @@ pub(crate) fn draw_descriptor_with_id(
             let last_row = ((scroll_offset + bounds.height()) / row_height).ceil() as usize;
             let last_row = last_row.min(visible_count);
 
-            for vis_idx in first_row..last_row {
-                let data_idx = visible_indices[vis_idx];
+            for (vis_idx, &data_idx) in visible_indices
+                .iter()
+                .enumerate()
+                .skip(first_row)
+                .take(last_row - first_row)
+            {
                 let item = &desc.items[data_idx];
                 let item_y = bounds.min.y() + vis_idx as f32 * row_height - scroll_offset;
                 let item_bounds = Rect2D::from_origin_size(

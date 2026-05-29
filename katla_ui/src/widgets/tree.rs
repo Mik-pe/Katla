@@ -228,8 +228,12 @@ impl Widget for TreeView<'_> {
                 let arrow_color = ui.style.text_disabled;
                 let item_spacing = ui.style.item_inner_spacing;
 
-                for vis_idx in first_row..last_row {
-                    let data_idx = visible_indices[vis_idx];
+                for (vis_idx, &data_idx) in visible_indices
+                    .iter()
+                    .enumerate()
+                    .skip(first_row)
+                    .take(last_row - first_row)
+                {
                     let item = &self.data[data_idx];
 
                     let item_y =

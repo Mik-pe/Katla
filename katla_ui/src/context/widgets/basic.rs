@@ -227,29 +227,29 @@ fn apply_text_edits(
         }
     }
 
-    if inp.ctrl && inp.key_v {
-        if let Some(cb) = clipboard {
-            if let Some(pasted) = cb.get() {
-                let available = inp.max_len.saturating_sub(text.len());
-                if available > 0 {
-                    if state.has_selection() {
-                        let (start, end) = state.selection_range();
-                        text.drain(start..end);
-                        state.cursor = start;
-                        state.selection_anchor = start;
-                    }
-                    let pasted_chars: String = pasted
-                        .chars()
-                        .filter(|c| *c >= ' ')
-                        .take(available)
-                        .collect();
-                    let insert_len = pasted_chars.len();
-                    text.insert_str(state.cursor, &pasted_chars);
-                    state.cursor += insert_len;
-                    state.selection_anchor = state.cursor;
-                    changed = true;
-                }
+    if inp.ctrl
+        && inp.key_v
+        && let Some(cb) = clipboard
+        && let Some(pasted) = cb.get()
+    {
+        let available = inp.max_len.saturating_sub(text.len());
+        if available > 0 {
+            if state.has_selection() {
+                let (start, end) = state.selection_range();
+                text.drain(start..end);
+                state.cursor = start;
+                state.selection_anchor = start;
             }
+            let pasted_chars: String = pasted
+                .chars()
+                .filter(|c| *c >= ' ')
+                .take(available)
+                .collect();
+            let insert_len = pasted_chars.len();
+            text.insert_str(state.cursor, &pasted_chars);
+            state.cursor += insert_len;
+            state.selection_anchor = state.cursor;
+            changed = true;
         }
     }
 
@@ -442,6 +442,7 @@ impl UiContext {
     }
 
     /// Draw a slider (internal - use `widgets::Slider` instead).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn slider(
         &mut self,
         id: &str,

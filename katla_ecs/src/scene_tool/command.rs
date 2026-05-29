@@ -334,10 +334,10 @@ impl RemoveComponentCommand {
     ) -> Self {
         let mut field_snapshots = Vec::new();
         for field_info in (entry.get_fields)(world, entity) {
-            if let Some(value) = (entry.get_field_value)(world, entity, field_info.name) {
-                if !matches!(value, FieldValue::Unknown) {
-                    field_snapshots.push((field_info.name.to_string(), value));
-                }
+            if let Some(value) = (entry.get_field_value)(world, entity, field_info.name)
+                && !matches!(value, FieldValue::Unknown)
+            {
+                field_snapshots.push((field_info.name.to_string(), value));
             }
         }
         Self {

@@ -766,19 +766,18 @@ impl ViewTree {
                 }
 
                 // Detect removal when going from TransitionContainer → Empty
-                if matches!(descriptor, ViewDescriptor::Empty) {
-                    if let ViewDescriptor::TransitionContainer { transition, .. } = &old_descriptor
+                if matches!(descriptor, ViewDescriptor::Empty)
+                    && let ViewDescriptor::TransitionContainer { transition, .. } = &old_descriptor
+                {
+                    let old_children: Vec<ViewId> = self
+                        .nodes
+                        .get(node_id)
+                        .map(|n| n.children.clone())
+                        .unwrap_or_default();
+                    if let Some(&child_id) = old_children.first()
+                        && let Some(node) = self.nodes.get_mut(child_id)
                     {
-                        let old_children: Vec<ViewId> = self
-                            .nodes
-                            .get(node_id)
-                            .map(|n| n.children.clone())
-                            .unwrap_or_default();
-                        if let Some(&child_id) = old_children.first() {
-                            if let Some(node) = self.nodes.get_mut(child_id) {
-                                Self::start_remove_animation(node, transition, self.current_time);
-                            }
-                        }
+                        Self::start_remove_animation(node, transition, self.current_time);
                     }
                 }
 
@@ -852,26 +851,25 @@ impl ViewTree {
             }
             DiffAction::Replace => {
                 // Detect TransitionContainer → Empty: start remove animation on child
-                if matches!(descriptor, ViewDescriptor::Empty) {
-                    if let ViewDescriptor::TransitionContainer { transition, .. } = &old_descriptor
+                if matches!(descriptor, ViewDescriptor::Empty)
+                    && let ViewDescriptor::TransitionContainer { transition, .. } = &old_descriptor
+                {
+                    let old_children: Vec<ViewId> = self
+                        .nodes
+                        .get(node_id)
+                        .map(|n| n.children.clone())
+                        .unwrap_or_default();
+                    if let Some(&child_id) = old_children.first()
+                        && let Some(node) = self.nodes.get_mut(child_id)
                     {
-                        let old_children: Vec<ViewId> = self
-                            .nodes
-                            .get(node_id)
-                            .map(|n| n.children.clone())
-                            .unwrap_or_default();
-                        if let Some(&child_id) = old_children.first() {
-                            if let Some(node) = self.nodes.get_mut(child_id) {
-                                Self::start_remove_animation(node, transition, self.current_time);
-                            }
-                        }
-                        // Update descriptor but keep child alive for animation
-                        if let Some(node) = self.nodes.get_mut(node_id) {
-                            node.descriptor = descriptor.clone();
-                            node.state_version += 1;
-                        }
-                        return;
+                        Self::start_remove_animation(node, transition, self.current_time);
                     }
+                    // Update descriptor but keep child alive for animation
+                    if let Some(node) = self.nodes.get_mut(node_id) {
+                        node.descriptor = descriptor.clone();
+                        node.state_version += 1;
+                    }
+                    return;
                 }
 
                 // Detect Empty → TransitionContainer: insert child with insert animation

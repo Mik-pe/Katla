@@ -420,8 +420,12 @@ pub(crate) fn process_input(
             let last_row = ((scroll_offset + node_bounds.height()) / row_height).ceil() as usize;
             let last_row = last_row.min(visible_count);
 
-            for vis_idx in first_row..last_row {
-                let data_idx = visible_indices[vis_idx];
+            for (vis_idx, &data_idx) in visible_indices
+                .iter()
+                .enumerate()
+                .skip(first_row)
+                .take(last_row - first_row)
+            {
                 let item = &desc.items[data_idx];
                 let item_y = node_bounds.min.y() + vis_idx as f32 * row_height - scroll_offset;
                 let item_bounds = Rect2D::from_origin_size(
@@ -471,40 +475,39 @@ pub(crate) fn process_input(
                 }
             }
 
-            if let Some(selected_id) = selected {
-                if let Some(vis_pos) = visible_indices
+            if let Some(selected_id) = selected
+                && let Some(vis_pos) = visible_indices
                     .iter()
                     .position(|&idx| desc.items[idx].id == selected_id)
-                {
-                    let data_idx = visible_indices[vis_pos];
-                    let item = &desc.items[data_idx];
+            {
+                let data_idx = visible_indices[vis_pos];
+                let item = &desc.items[data_idx];
 
-                    if input.key_pressed(KeyCode::ArrowDown) && vis_pos + 1 < visible_count {
-                        tree.state_arena_mut().set(
-                            desc.selected_id,
-                            Some(desc.items[visible_indices[vis_pos + 1]].id),
-                        );
+                if input.key_pressed(KeyCode::ArrowDown) && vis_pos + 1 < visible_count {
+                    tree.state_arena_mut().set(
+                        desc.selected_id,
+                        Some(desc.items[visible_indices[vis_pos + 1]].id),
+                    );
+                    result.input_consumed = true;
+                } else if input.key_pressed(KeyCode::ArrowUp) && vis_pos > 0 {
+                    tree.state_arena_mut().set(
+                        desc.selected_id,
+                        Some(desc.items[visible_indices[vis_pos - 1]].id),
+                    );
+                    result.input_consumed = true;
+                } else if input.key_pressed(KeyCode::ArrowRight) && item.has_children {
+                    let mut expanded: HashSet<u64> = tree.state_arena().get(desc.expanded_id);
+                    if !expanded.contains(&item.id) {
+                        expanded.insert(item.id);
+                        tree.state_arena_mut().set(desc.expanded_id, expanded);
                         result.input_consumed = true;
-                    } else if input.key_pressed(KeyCode::ArrowUp) && vis_pos > 0 {
-                        tree.state_arena_mut().set(
-                            desc.selected_id,
-                            Some(desc.items[visible_indices[vis_pos - 1]].id),
-                        );
+                    }
+                } else if input.key_pressed(KeyCode::ArrowLeft) && item.has_children {
+                    let mut expanded: HashSet<u64> = tree.state_arena().get(desc.expanded_id);
+                    if expanded.contains(&item.id) {
+                        expanded.remove(&item.id);
+                        tree.state_arena_mut().set(desc.expanded_id, expanded);
                         result.input_consumed = true;
-                    } else if input.key_pressed(KeyCode::ArrowRight) && item.has_children {
-                        let mut expanded: HashSet<u64> = tree.state_arena().get(desc.expanded_id);
-                        if !expanded.contains(&item.id) {
-                            expanded.insert(item.id);
-                            tree.state_arena_mut().set(desc.expanded_id, expanded);
-                            result.input_consumed = true;
-                        }
-                    } else if input.key_pressed(KeyCode::ArrowLeft) && item.has_children {
-                        let mut expanded: HashSet<u64> = tree.state_arena().get(desc.expanded_id);
-                        if expanded.contains(&item.id) {
-                            expanded.remove(&item.id);
-                            tree.state_arena_mut().set(desc.expanded_id, expanded);
-                            result.input_consumed = true;
-                        }
                     }
                 }
             }
@@ -569,24 +572,22 @@ pub(crate) fn process_input(
             }
         }
 
-        ViewDescriptor::ScrollView(desc) => {
-            if input.scroll_delta.y() != 0.0 && bounds_map.get(&hit.id).is_some() {
-                let mut offset: f32 = tree.state_arena().get(desc.scroll_state_id);
-                offset -= input.scroll_delta.y() * 30.0;
-                offset = offset.max(0.0);
-                tree.state_arena_mut().set(desc.scroll_state_id, offset);
-                result.input_consumed = true;
-            }
+        ViewDescriptor::ScrollView(desc)
+            if input.scroll_delta.y() != 0.0 && bounds_map.get(&hit.id).is_some() =>
+        {
+            let mut offset: f32 = tree.state_arena().get(desc.scroll_state_id);
+            offset -= input.scroll_delta.y() * 30.0;
+            offset = offset.max(0.0);
+            tree.state_arena_mut().set(desc.scroll_state_id, offset);
+            result.input_consumed = true;
         }
 
-        ViewDescriptor::Selectable { on_click, .. } => {
-            if input.mouse_clicked(mouse_button::LEFT) {
-                if let Some(callback) = on_click {
-                    callbacks.invoke(callback, tree.actions_mut());
-                }
-                result.input_consumed = true;
-                result.clicked_id = Some(hit.id);
+        ViewDescriptor::Selectable { on_click, .. } if input.mouse_clicked(mouse_button::LEFT) => {
+            if let Some(callback) = on_click {
+                callbacks.invoke(callback, tree.actions_mut());
             }
+            result.input_consumed = true;
+            result.clicked_id = Some(hit.id);
         }
 
         ViewDescriptor::Section {
