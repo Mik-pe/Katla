@@ -158,7 +158,9 @@ impl ScriptWorldProxy {
     }
 
     pub fn with_input(mut self, input: InputSnapshot) -> Self {
-        Rc::get_mut(&mut self.shared).unwrap().input_state = input;
+        if let Some(shared) = Rc::get_mut(&mut self.shared) {
+            shared.input_state = input;
+        }
         self
     }
 

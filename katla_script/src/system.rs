@@ -7,6 +7,7 @@ use katla_ecs::{EntityId, System, World};
 use katla_math::Transform;
 use log::{debug, error, info};
 
+use crate::ScriptError;
 use crate::bindings::script_world::{InputSnapshot, ScriptWorldProxy, SharedWorldData};
 use crate::bindings::world::ScriptCommand;
 use crate::component::{ScriptComponent, ScriptInstanceHandle};
@@ -156,14 +157,14 @@ pub struct ScriptSystem {
 
 impl Default for ScriptSystem {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("failed to create script system")
     }
 }
 
 impl ScriptSystem {
-    pub fn new() -> Self {
-        Self {
-            engine: ScriptEngine::new().expect("failed to create script engine"),
+    pub fn new() -> Result<Self, ScriptError> {
+        Ok(Self {
+            engine: ScriptEngine::new()?,
             event_bus: EventBus::new(),
             watcher: None,
             transform_provider: None,
@@ -173,7 +174,7 @@ impl ScriptSystem {
             shared_event_bus: Rc::new(RefCell::new(
                 crate::bindings::script_world::SharedEventBus::default(),
             )),
-        }
+        })
     }
 
     /// Set the base directory for resolving bare script names.
