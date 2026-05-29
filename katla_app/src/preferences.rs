@@ -2,7 +2,7 @@
 
 use std::io;
 
-use log::warn;
+use log::{error, warn};
 
 use crate::ui::ColorScheme;
 
@@ -40,7 +40,7 @@ impl Preferences {
         let content = match crate::util::load_config_file("preferences.toml") {
             Some(c) => c,
             None => {
-                warn!("Could not load preferences file");
+                error!("Could not load preferences file");
                 return Self::default();
             }
         };
@@ -48,7 +48,7 @@ impl Preferences {
         let mut prefs: Self = match toml::from_str(&content) {
             Ok(p) => p,
             Err(e) => {
-                warn!("Failed to parse preferences: {}", e);
+                error!("Failed to parse preferences: {}", e);
                 return Self::default();
             }
         };
