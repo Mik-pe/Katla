@@ -1,6 +1,16 @@
 use katla_ecs::EntityId;
 use mlua::{FromLua, Lua, UserData, UserDataMethods, Value};
 
+/// Lua userdata wrapper for EntityId.
+///
+/// This allows Lua scripts to hold and pass around entity references.
+///
+/// # Lua API
+///
+/// ```lua
+/// local entity = Entity.from_raw(123)
+/// local id = entity:id()  -- Get the raw ID
+/// ```
 #[derive(Clone)]
 pub struct LuaEntityId(pub EntityId);
 
@@ -34,6 +44,9 @@ impl UserData for LuaEntityId {
     }
 }
 
+/// Register the Entity type and its constructor with the Lua VM.
+///
+/// Creates a global `Entity` table with a `from_raw` constructor function.
 pub fn register_entity_type(lua: &mlua::Lua) -> Result<(), mlua::Error> {
     let entity_table = lua.create_table()?;
 

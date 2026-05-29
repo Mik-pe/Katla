@@ -3,13 +3,18 @@ use std::collections::HashMap;
 use mlua::RegistryKey;
 
 /// A pending event waiting to be delivered to script handlers.
+///
+/// Events are queued when emitted and dispatched at the end of each frame.
 #[derive(Clone)]
 pub struct ScriptEvent {
+    /// The event name/channel.
     pub name: String,
+    /// The event data (arbitrary Lua value).
     pub data: mlua::Value,
 }
 
-/// Stores event subscriptions (script path -> list of handler registry keys).
+/// Internal storage for event subscriptions.
+/// Maps event names to lists of Lua function registry keys.
 struct EventSubscription {
     handler_keys: Vec<RegistryKey>,
 }
@@ -19,6 +24,23 @@ struct EventSubscription {
 /// Scripts emit events via `world:emit("name", data)` and subscribe via
 /// `world:on_event("name", callback)`. Each frame, the `ScriptSystem` drains
 /// pending events and dispatches them to all registered handlers in insertion order.
+///
+/// # Usage in Lua
+///
+/// ```lua
+/// -- Emit an event
+/// world:emit("player_died", { killer = "dragon", score = 100 })
+///
+/// -- Subscribe to an event
+/// world:on_event("player_died", function(name, data)
+///     print("Player died! Killer: " .. data.killer)
+/// end)
+/// ```
+///
+/// # Thread Safety
+///
+/// **Warning:** `EventBus` is NOT thread-safe. All event emission and subscription
+/// should happen on the same thread as script execution.
 pub struct EventBus {
     subscriptions: HashMap<String, EventSubscription>,
     pending: Vec<ScriptEvent>,

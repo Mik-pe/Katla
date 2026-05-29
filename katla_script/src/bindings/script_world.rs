@@ -10,31 +10,56 @@ use crate::bindings::entity::LuaEntityId;
 use crate::bindings::math::{LuaTransform, LuaVec3};
 use crate::bindings::world::ScriptCommand;
 
+/// Result of a raycast operation.
+///
+/// Returned by `world:get_raycast_result(index)` after calling `world:raycast()`.
 #[derive(Clone, Debug)]
 pub struct RaycastResult {
+    /// The entity that was hit, if any (raw entity ID).
     pub entity: Option<u64>,
+    /// The point in world space where the ray hit.
     pub point: katla_math::Vec3,
+    /// The normal vector at the hit point.
     pub normal: katla_math::Vec3,
+    /// The distance from the ray origin to the hit point.
     pub distance: f32,
 }
 
+/// Snapshot of input state for a frame.
+///
+/// This is captured at the beginning of each frame and passed to all scripts.
 #[derive(Clone, Default)]
 pub struct InputSnapshot {
+    /// Set of action names that are currently pressed.
+    /// Populated by the input system from keyboard/mouse/gamepad bindings.
     pub pressed_actions: HashSet<String>,
+    /// Mouse movement delta since last frame (x, y).
     pub mouse_delta: (f32, f32),
+    /// Mouse wheel scroll amount since last frame.
     pub mouse_wheel: f32,
 }
 
+/// Shared world data passed to all script instances each frame.
+///
+/// Contains immutable snapshots of world state that scripts can query.
 #[derive(Clone)]
 pub(crate) struct SharedWorldData {
+    /// Current transforms for all entities with Transform components.
     pub transforms: HashMap<EntityId, katla_math::Transform>,
+    /// All currently alive entities.
     pub live_entities: Vec<EntityId>,
+    /// Map from component type names to lists of entities that have that component.
     pub component_entities: HashMap<String, Vec<EntityId>>,
+    /// Current input state.
     pub input_state: InputSnapshot,
+    /// Results of raycasts from the previous frame.
     pub raycast_results: HashMap<usize, RaycastResult>,
 }
 
 /// Shared event bus wrapper that allows scripts to emit events and register handlers.
+///
+/// This is used to collect events and subscriptions from Lua across the Lua/C boundary.
+/// At the end of each frame, the `ScriptSystem` flushes these into the main `EventBus`.
 #[derive(Default)]
 pub struct SharedEventBus {
     /// Events emitted by scripts during the current frame.
@@ -43,6 +68,43 @@ pub struct SharedEventBus {
     pub pending_subscriptions: Vec<(String, RegistryKey)>,
 }
 
+/// Proxy object passed to Lua scripts as the `world` parameter.
+///
+/// This provides the script API for interacting with the game world.
+/// All mutating operations queue commands that are processed after script execution.
+///
+/// # Lua API
+///
+/// The following methods are available to Lua scripts:
+///
+/// ## Entity Management
+/// - `world:get_transform(entity)` - Get an entity's transform
+/// - `world:set_transform(entity, transform)` - Set an entity's transform
+/// - `world:set_position(entity, position)` - Set an entity's position
+/// - `world:spawn_entity()` - Spawn a new entity, returns index
+/// - `world:destroy_entity(entity)` - Destroy an entity
+/// - `world:entity_exists(entity)` - Check if entity exists
+///
+/// ## Querying
+/// - `world:get_all_with("ComponentName")` - Get all entities with a component
+///
+/// ## Input
+/// - `world:is_action_pressed("action")` - Check if action is pressed
+/// - `world:get_mouse_delta()` - Get mouse movement delta
+/// - `world:get_mouse_wheel()` - Get mouse wheel delta
+///
+/// ## Audio
+/// - `world:play_sound(path, volume, looping)` - Play a sound
+/// - `world:play_sound_at(path, position, volume, looping)` - Play sound at position
+/// - `world:play_sound_cue(cue_name)` - Play a sound cue
+///
+/// ## Physics
+/// - `world:raycast(origin, direction, max_distance)` - Perform raycast
+/// - `world:get_raycast_result(index)` - Get raycast result
+///
+/// ## Events
+/// - `world:emit(name, data)` - Emit an event
+/// - `world:on_event(name, callback)` - Subscribe to an event
 pub struct ScriptWorldProxy {
     pub(crate) commands: Vec<ScriptCommand>,
     pub(crate) shared: Rc<SharedWorldData>,
