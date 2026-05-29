@@ -23,18 +23,19 @@ pub use animation::{
 pub use build::{Build, BuildContext, CallbackTable, Environment};
 pub use constructors::{
     button, color_picker, context_entry, context_entry_disabled, context_menu, draggable_panel,
-    empty, grid, hstack, icon, image, image_button, labeled_slider, menu_entry,
-    menu_entry_disabled, menu_group, menubar, modal, overlay, panel, progress, property_row, radio,
-    scroll, section, selectable, separator, separator_horizontal, separator_vertical, slider,
-    statusbar, tab_bar, tab_item, text, textfield, toggle, tree_view, vec3_slider, vstack, zstack,
+    empty, grid, grid_keyed, hstack, hstack_keyed, icon, image, image_button, keyed,
+    labeled_slider, menu_entry, menu_entry_disabled, menu_group, menubar, modal, overlay, panel,
+    progress, property_row, radio, scroll, section, selectable, separator, separator_horizontal,
+    separator_vertical, slider, statusbar, tab_bar, tab_item, text, textfield, toggle, tree_view,
+    vec3_slider, vstack, vstack_keyed, zstack, zstack_keyed,
 };
 pub use descriptor::{
-    Alignment, Anchor, Callback, ContextMenuDescriptor, ContextMenuEntry, CustomDrawFn,
-    DraggablePanelDescriptor, DraggablePanelState, DraggablePanelVisibility, FlexProps,
-    GridDescriptor, MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor, OverlayDescriptor,
-    Padding, PanelDescriptor, ScrollDescriptor, SeparatorDirection, StackDescriptor,
-    StatusBarDescriptor, TabBarDescriptor, TabItem, TreeItem, TreeViewDescriptor, ViewDescriptor,
-    ZStackDescriptor,
+    Alignment, Anchor, Callback, ChildDescriptor, ContextMenuDescriptor, ContextMenuEntry,
+    CustomDrawFn, DraggablePanelDescriptor, DraggablePanelState, DraggablePanelVisibility,
+    FlexProps, GridDescriptor, MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor,
+    OverlayDescriptor, Padding, PanelDescriptor, ScrollDescriptor, SeparatorDirection,
+    StackDescriptor, StatusBarDescriptor, TabBarDescriptor, TabItem, TreeItem, TreeViewDescriptor,
+    ViewDescriptor, ZStackDescriptor,
 };
 pub use diff::{DiffAction, Patch, diff_descriptor};
 pub use focus::{Direction, FocusManager, GamepadNavigator};

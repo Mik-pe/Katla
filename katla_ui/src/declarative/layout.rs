@@ -548,7 +548,7 @@ pub fn measure_text_descriptor(content: &str, font_size: Option<FontSize>) -> Ve
 mod tests {
     use super::*;
     use crate::declarative::build::{Build, BuildContext};
-    use crate::declarative::descriptor::{StackDescriptor, ViewDescriptor};
+    use crate::declarative::descriptor::{ChildDescriptor, StackDescriptor, ViewDescriptor};
     use crate::declarative::tree::ViewTree;
     use katla_math::Vec2;
 
@@ -580,16 +580,16 @@ mod tests {
         let mut tree = ViewTree::new();
         let descriptor = ViewDescriptor::HStack(Box::new(StackDescriptor {
             children: vec![
-                ViewDescriptor::Text {
+                ChildDescriptor::from(ViewDescriptor::Text {
                     content: "A".into(),
                     color: None,
                     font_size: None,
-                },
-                ViewDescriptor::Text {
+                }),
+                ChildDescriptor::from(ViewDescriptor::Text {
                     content: "B".into(),
                     color: None,
                     font_size: None,
-                },
+                }),
             ],
             spacing: 10.0,
             padding: Padding::all(8.0),
@@ -617,16 +617,16 @@ mod tests {
         let mut tree = ViewTree::new();
         let descriptor = ViewDescriptor::VStack(Box::new(StackDescriptor {
             children: vec![
-                ViewDescriptor::Text {
+                ChildDescriptor::from(ViewDescriptor::Text {
                     content: "Line 1".into(),
                     color: None,
                     font_size: None,
-                },
-                ViewDescriptor::Text {
+                }),
+                ChildDescriptor::from(ViewDescriptor::Text {
                     content: "Line 2".into(),
                     color: None,
                     font_size: None,
-                },
+                }),
             ],
             spacing: 4.0,
             padding: Padding::zero(),
@@ -666,16 +666,16 @@ mod tests {
         let mut tree = ViewTree::new();
         let descriptor = ViewDescriptor::VStack(Box::new(StackDescriptor {
             children: vec![
-                ViewDescriptor::Text {
+                ChildDescriptor::from(ViewDescriptor::Text {
                     content: "Top".into(),
                     color: None,
                     font_size: None,
-                },
-                ViewDescriptor::Text {
+                }),
+                ChildDescriptor::from(ViewDescriptor::Text {
                     content: "Bottom".into(),
                     color: None,
                     font_size: None,
-                },
+                }),
             ],
             spacing: 0.0,
             padding: Padding::zero(),
@@ -715,11 +715,11 @@ mod tests {
     fn test_padding_applied() {
         let mut tree = ViewTree::new();
         let descriptor = ViewDescriptor::HStack(Box::new(StackDescriptor {
-            children: vec![ViewDescriptor::Text {
+            children: vec![ChildDescriptor::from(ViewDescriptor::Text {
                 content: "X".into(),
                 color: None,
                 font_size: None,
-            }],
+            })],
             spacing: 0.0,
             padding: Padding::all(20.0),
             alignment: Alignment::Leading,

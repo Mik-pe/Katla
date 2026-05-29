@@ -10,7 +10,7 @@ use crate::context::UiContext;
 use super::actions::ActionStream;
 use super::animation::{AnimatedProperty, Animation, AnimationState, KeyframeAnimation, Tween};
 use super::build::{Build as BuildTrait, BuildContext, CallbackTable, Environment};
-use super::descriptor::{Anchor, Callback, ViewDescriptor};
+use super::descriptor::{Anchor, Callback, ChildDescriptor, ViewDescriptor};
 use super::diff::{DiffAction, Patch, diff_descriptor};
 use super::draw::draw_descriptor_with_id;
 use super::focus::{self, FocusManager};
@@ -32,6 +32,7 @@ pub struct ViewNode {
     pub bounds: Rect2D,
     pub state_version: u32,
     pub taffy_id: Option<TaffyNodeId>,
+    pub key: Option<u64>,
 }
 
 /// Tracks interactive state across frames for the declarative view tree.
@@ -99,7 +100,7 @@ impl ViewTree {
                 node.descriptor = descriptor;
             }
         } else {
-            let root_id = self.insert_node(None, ViewDescriptor::Empty);
+            let root_id = self.insert_node(None, ViewDescriptor::Empty, None);
             self.root = Some(root_id);
             self.sync_tree(root_id, &descriptor);
         }
@@ -560,6 +561,7 @@ impl ViewTree {
                 ),
                 state_version: 0,
                 taffy_id: None,
+                key: None,
             });
             self.root = Some(id);
             id
@@ -579,7 +581,12 @@ impl ViewTree {
         self.dirty = false;
     }
 
-    fn insert_node(&mut self, parent: Option<ViewId>, descriptor: ViewDescriptor) -> ViewId {
+    fn insert_node(
+        &mut self,
+        parent: Option<ViewId>,
+        descriptor: ViewDescriptor,
+        key: Option<u64>,
+    ) -> ViewId {
         let id = self.nodes.insert(ViewNode {
             descriptor,
             children: Vec::new(),
@@ -594,6 +601,7 @@ impl ViewTree {
             ),
             state_version: 0,
             taffy_id: None,
+            key,
         });
         if let Some(pid) = parent
             && let Some(p) = self.nodes.get_mut(pid)
@@ -611,7 +619,7 @@ impl ViewTree {
         }
     }
 
-    fn collect_children(descriptor: &ViewDescriptor) -> &[ViewDescriptor] {
+    fn collect_children(descriptor: &ViewDescriptor) -> &[ChildDescriptor] {
         match descriptor {
             ViewDescriptor::HStack(s) | ViewDescriptor::VStack(s) => &s.children,
             ViewDescriptor::Grid(s) => &s.children,
@@ -701,6 +709,103 @@ impl ViewTree {
         }
     }
 
+    fn sync_keyed_children(
+        &mut self,
+        node_id: ViewId,
+        old_children: &[ViewId],
+        new_children: &[(Option<u64>, &ViewDescriptor)],
+    ) {
+        let has_any_key = new_children.iter().any(|(k, _)| k.is_some());
+
+        if !has_any_key {
+            self.sync_children_by_index(node_id, old_children, new_children);
+            return;
+        }
+
+        let old_keys: Vec<Option<u64>> = old_children
+            .iter()
+            .map(|&id| self.nodes.get(id).and_then(|n| n.key))
+            .collect();
+
+        let mut matched: Vec<Option<usize>> = vec![None; new_children.len()];
+        let mut old_matched: Vec<bool> = vec![false; old_children.len()];
+
+        for (new_i, (key, _)) in new_children.iter().enumerate() {
+            if let Some(k) = key {
+                for (old_i, old_key) in old_keys.iter().enumerate() {
+                    if !old_matched[old_i] && *old_key == Some(*k) {
+                        matched[new_i] = Some(old_i);
+                        old_matched[old_i] = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        for (new_i, _) in new_children.iter().enumerate() {
+            if matched[new_i].is_none() {
+                for (old_i, was_matched) in old_matched.iter_mut().enumerate() {
+                    if !*was_matched {
+                        matched[new_i] = Some(old_i);
+                        *was_matched = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        let mut new_child_ids: Vec<ViewId> = Vec::with_capacity(new_children.len());
+
+        for (new_i, (key, new_desc)) in new_children.iter().enumerate() {
+            if let Some(old_i) = matched[new_i] {
+                let old_id = old_children[old_i];
+                self.sync_tree(old_id, new_desc);
+                new_child_ids.push(old_id);
+            } else {
+                let child_id = self.insert_node(Some(node_id), (*new_desc).clone(), *key);
+                self.sync_tree(child_id, new_desc);
+                new_child_ids.push(child_id);
+            }
+        }
+
+        for (old_i, &was_matched) in old_matched.iter().enumerate() {
+            if !was_matched {
+                self.remove_node_recursive(old_children[old_i]);
+            }
+        }
+
+        if let Some(node) = self.nodes.get_mut(node_id) {
+            node.children = new_child_ids;
+        }
+    }
+
+    fn sync_children_by_index(
+        &mut self,
+        node_id: ViewId,
+        old_children: &[ViewId],
+        new_children: &[(Option<u64>, &ViewDescriptor)],
+    ) {
+        let new_count = new_children.len();
+
+        for (i, (key, child_desc)) in new_children.iter().enumerate() {
+            if i < old_children.len() {
+                self.sync_tree(old_children[i], child_desc);
+            } else {
+                let child_id = self.insert_node(Some(node_id), (*child_desc).clone(), *key);
+                self.sync_tree(child_id, child_desc);
+            }
+        }
+
+        if old_children.len() > new_count {
+            if let Some(node) = self.nodes.get_mut(node_id) {
+                node.children.truncate(new_count);
+            }
+            for old_id in old_children[new_count..].iter() {
+                self.remove_node_recursive(*old_id);
+            }
+        }
+    }
+
     fn sync_tree(&mut self, node_id: ViewId, descriptor: &ViewDescriptor) {
         let old_descriptor = if let Some(node) = self.nodes.get(node_id) {
             node.descriptor.clone()
@@ -752,7 +857,7 @@ impl ViewTree {
                         }
                     } else {
                         // No old child — insert new child with insert animation
-                        let child_id = self.insert_node(Some(node_id), new_child.clone());
+                        let child_id = self.insert_node(Some(node_id), new_child.clone(), None);
                         self.sync_tree(child_id, new_child);
                         if let Some(node) = self.nodes.get_mut(child_id) {
                             Self::start_insert_animation(
@@ -792,7 +897,7 @@ impl ViewTree {
                     if let Some(&child_id) = old_children.first() {
                         self.sync_tree(child_id, new_child);
                     } else {
-                        let child_id = self.insert_node(Some(node_id), new_child.clone());
+                        let child_id = self.insert_node(Some(node_id), new_child.clone(), None);
                         self.sync_tree(child_id, new_child);
                     }
                     return;
@@ -807,47 +912,22 @@ impl ViewTree {
 
                 // Handle ZStack separately
                 if let ViewDescriptor::ZStack(zstack) = descriptor {
-                    let new_count = zstack.children.len();
-                    for (i, (_, child_desc)) in zstack.children.iter().enumerate() {
-                        if i < old_children.len() {
-                            self.sync_tree(old_children[i], child_desc);
-                        } else {
-                            let child_id = self.insert_node(Some(node_id), child_desc.clone());
-                            self.sync_tree(child_id, child_desc);
-                        }
-                    }
-                    // Remove excess old children
-                    if old_children.len() > new_count {
-                        if let Some(node) = self.nodes.get_mut(node_id) {
-                            node.children.truncate(new_count);
-                        }
-                        for old_id in old_children[new_count..].iter() {
-                            self.remove_node_recursive(*old_id);
-                        }
-                    }
+                    let new_children: Vec<(Option<u64>, &ViewDescriptor)> = zstack
+                        .children
+                        .iter()
+                        .map(|(_, cd)| (cd.key, &cd.descriptor))
+                        .collect();
+                    self.sync_keyed_children(node_id, &old_children, &new_children);
                     return;
                 }
 
-                let new_children_descs = Self::collect_children(descriptor);
-                let new_count = new_children_descs.len();
+                let new_children: Vec<(Option<u64>, &ViewDescriptor)> =
+                    Self::collect_children(descriptor)
+                        .iter()
+                        .map(|cd| (cd.key, &cd.descriptor))
+                        .collect();
 
-                for (i, child_desc) in new_children_descs.iter().enumerate() {
-                    if i < old_children.len() {
-                        self.sync_tree(old_children[i], child_desc);
-                    } else {
-                        let child_id = self.insert_node(Some(node_id), child_desc.clone());
-                        self.sync_tree(child_id, child_desc);
-                    }
-                }
-
-                if old_children.len() > new_count {
-                    if let Some(node) = self.nodes.get_mut(node_id) {
-                        node.children.truncate(new_count);
-                    }
-                    for old_id in old_children[new_count..].iter() {
-                        self.remove_node_recursive(*old_id);
-                    }
-                }
+                self.sync_keyed_children(node_id, &old_children, &new_children);
             }
             DiffAction::Replace => {
                 // Detect TransitionContainer → Empty: start remove animation on child
@@ -889,7 +969,7 @@ impl ViewTree {
                         node.state_version += 1;
                     }
                     if let Some(new_child) = Self::get_single_child(descriptor) {
-                        let child_id = self.insert_node(Some(node_id), new_child.clone());
+                        let child_id = self.insert_node(Some(node_id), new_child.clone(), None);
                         self.sync_tree(child_id, new_child);
                         if let Some(node) = self.nodes.get_mut(child_id) {
                             Self::start_insert_animation(node, transition, self.current_time);
@@ -914,19 +994,27 @@ impl ViewTree {
 
                 let new_children_descs = Self::collect_children(descriptor);
                 for child_desc in new_children_descs {
-                    let child_id = self.insert_node(Some(node_id), child_desc.clone());
-                    self.sync_tree(child_id, child_desc);
+                    let child_id = self.insert_node(
+                        Some(node_id),
+                        child_desc.descriptor.clone(),
+                        child_desc.key,
+                    );
+                    self.sync_tree(child_id, &child_desc.descriptor);
                 }
 
                 if let Some(new_child) = Self::get_single_child(descriptor) {
-                    let child_id = self.insert_node(Some(node_id), new_child.clone());
+                    let child_id = self.insert_node(Some(node_id), new_child.clone(), None);
                     self.sync_tree(child_id, new_child);
                 }
 
                 if let ViewDescriptor::ZStack(zstack) = descriptor {
                     for (_, child_desc) in &zstack.children {
-                        let child_id = self.insert_node(Some(node_id), child_desc.clone());
-                        self.sync_tree(child_id, child_desc);
+                        let child_id = self.insert_node(
+                            Some(node_id),
+                            child_desc.descriptor.clone(),
+                            child_desc.key,
+                        );
+                        self.sync_tree(child_id, &child_desc.descriptor);
                     }
                 }
             }
@@ -978,7 +1066,7 @@ impl ViewTree {
                     index: _,
                     descriptor,
                 } => {
-                    self.insert_node(*parent, descriptor.clone());
+                    self.insert_node(*parent, descriptor.clone(), None);
                 }
                 Patch::Update { node, descriptor } => {
                     if let Some(n) = self.nodes.get_mut(*node) {
@@ -991,5 +1079,105 @@ impl ViewTree {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::declarative::constructors::{keyed, text, vstack, vstack_keyed};
+
+    struct StaticDescriptor(ViewDescriptor);
+
+    impl super::super::build::Build for StaticDescriptor {
+        fn build(&self, _ctx: &mut super::super::build::BuildContext) -> ViewDescriptor {
+            self.0.clone()
+        }
+    }
+
+    fn build_tree(tree: &mut ViewTree, descriptor: ViewDescriptor) {
+        tree.build_from(&StaticDescriptor(descriptor));
+    }
+
+    fn child_ids(tree: &ViewTree) -> Vec<ViewId> {
+        let root = tree.root().unwrap();
+        tree.get(root)
+            .map(|n| n.children.clone())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn test_keyed_reorder_preserves_identity() {
+        let mut tree = ViewTree::new();
+
+        let desc_a = vstack_keyed(vec![
+            keyed(1, text("first")),
+            keyed(2, text("second")),
+            keyed(3, text("third")),
+        ]);
+        build_tree(&mut tree, desc_a);
+        let ids_before = child_ids(&tree);
+        assert_eq!(ids_before.len(), 3);
+
+        let desc_b = vstack_keyed(vec![
+            keyed(3, text("third")),
+            keyed(1, text("first")),
+            keyed(2, text("second")),
+        ]);
+        build_tree(&mut tree, desc_b);
+        let ids_after = child_ids(&tree);
+        assert_eq!(ids_after.len(), 3);
+
+        assert_eq!(ids_before[0], ids_after[1], "key=1 should map to same node");
+        assert_eq!(ids_before[1], ids_after[2], "key=2 should map to same node");
+        assert_eq!(ids_before[2], ids_after[0], "key=3 should map to same node");
+    }
+
+    #[test]
+    fn test_unkeyed_children_use_index_matching() {
+        let mut tree = ViewTree::new();
+
+        let desc_a = vstack([text("first"), text("second"), text("third")]);
+        build_tree(&mut tree, desc_a);
+        let ids_before = child_ids(&tree);
+        assert_eq!(ids_before.len(), 3);
+
+        let desc_b = vstack([text("third"), text("first"), text("second")]);
+        build_tree(&mut tree, desc_b);
+        let ids_after = child_ids(&tree);
+        assert_eq!(ids_after.len(), 3);
+
+        assert_eq!(
+            ids_before[0], ids_after[0],
+            "unkeyed: index 0 maps to index 0"
+        );
+        assert_eq!(
+            ids_before[1], ids_after[1],
+            "unkeyed: index 1 maps to index 1"
+        );
+        assert_eq!(
+            ids_before[2], ids_after[2],
+            "unkeyed: index 2 maps to index 2"
+        );
+    }
+
+    #[test]
+    fn test_keyed_add_and_remove() {
+        let mut tree = ViewTree::new();
+
+        let desc_a = vstack_keyed(vec![keyed(1, text("a")), keyed(2, text("b"))]);
+        build_tree(&mut tree, desc_a);
+        let ids_a = child_ids(&tree);
+        assert_eq!(ids_a.len(), 2);
+
+        let desc_b = vstack_keyed(vec![keyed(2, text("b")), keyed(3, text("c"))]);
+        build_tree(&mut tree, desc_b);
+        let ids_b = child_ids(&tree);
+        assert_eq!(ids_b.len(), 2);
+
+        assert_eq!(
+            ids_a[1], ids_b[0],
+            "key=2 survives from first to second build"
+        );
     }
 }
