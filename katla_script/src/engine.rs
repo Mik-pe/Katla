@@ -104,18 +104,16 @@ impl Drop for ScriptEngine {
         // Clean up instance environment and hook registry values
         // Take ownership of instances to consume them
         let instances = std::mem::take(&mut self.instances);
-        for instance in instances {
-            if let Some(inst) = instance {
-                let _ = self.vm.remove_registry_value(inst._env_key);
-                if let Some(key) = inst.hooks.on_update {
-                    let _ = self.vm.remove_registry_value(key);
-                }
-                if let Some(key) = inst.hooks.on_spawn {
-                    let _ = self.vm.remove_registry_value(key);
-                }
-                if let Some(key) = inst.hooks.on_destroy {
-                    let _ = self.vm.remove_registry_value(key);
-                }
+        for inst in instances.into_iter().flatten() {
+            let _ = self.vm.remove_registry_value(inst._env_key);
+            if let Some(key) = inst.hooks.on_update {
+                let _ = self.vm.remove_registry_value(key);
+            }
+            if let Some(key) = inst.hooks.on_spawn {
+                let _ = self.vm.remove_registry_value(key);
+            }
+            if let Some(key) = inst.hooks.on_destroy {
+                let _ = self.vm.remove_registry_value(key);
             }
         }
     }
