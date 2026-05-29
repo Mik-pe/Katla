@@ -134,7 +134,6 @@ impl CascadeShadowMap {
         }
     }
 
-    #[allow(dead_code)]
     pub fn cascades(&self) -> &[CascadeInfo] {
         &self.cascades
     }
