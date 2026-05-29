@@ -3,8 +3,10 @@ use crate::effect::AudioEffect;
 const COMB_COUNT: usize = 4;
 const ALLPASS_COUNT: usize = 2;
 
-const COMB_DELAYS: [usize; COMB_COUNT] = [1557, 1617, 1491, 1422];
-const ALLPASS_DELAYS: [usize; ALLPASS_COUNT] = [225, 556];
+const COMB_DELAYS_L: [usize; COMB_COUNT] = [1557, 1617, 1491, 1422];
+const COMB_DELAYS_R: [usize; COMB_COUNT] = [1666, 1730, 1595, 1522];
+const ALLPASS_DELAYS_L: [usize; ALLPASS_COUNT] = [225, 556];
+const ALLPASS_DELAYS_R: [usize; ALLPASS_COUNT] = [239, 589];
 const ALLPASS_FEEDBACK: f32 = 0.5;
 
 struct CombFilter {
@@ -70,49 +72,40 @@ impl AllPassFilter {
     }
 }
 
-pub struct ReverbEffect {
+struct ReverbChannel {
     combs: [CombFilter; COMB_COUNT],
     allpasses: [AllPassFilter; ALLPASS_COUNT],
-    wet: f32,
 }
 
-impl ReverbEffect {
-    pub fn new(sample_rate: u32) -> Self {
+impl ReverbChannel {
+    fn new(
+        comb_delays: &[usize; COMB_COUNT],
+        allpass_delays: &[usize; ALLPASS_COUNT],
+        sample_rate: u32,
+    ) -> Self {
         let scale = sample_rate as f32 / 44100.0;
-        let combs = COMB_DELAYS.map(|d| CombFilter::new((d as f32 * scale) as usize));
-        let allpasses = ALLPASS_DELAYS
+        let combs = comb_delays.map(|d| CombFilter::new((d as f32 * scale) as usize));
+        let allpasses = allpass_delays
             .map(|d| AllPassFilter::new((d as f32 * scale) as usize, ALLPASS_FEEDBACK));
 
-        ReverbEffect {
-            combs,
-            allpasses,
-            wet: 0.3,
-        }
+        ReverbChannel { combs, allpasses }
     }
 
-    pub fn set_wet(&mut self, wet: f32) {
-        self.wet = wet.clamp(0.0, 1.0);
-    }
-
-    pub fn wet(&self) -> f32 {
-        self.wet
-    }
-
-    pub fn set_decay(&mut self, decay: f32) {
+    fn set_decay(&mut self, decay: f32) {
         let fb = decay.clamp(0.0, 0.99);
         for comb in &mut self.combs {
             comb.feedback = fb;
         }
     }
 
-    pub fn set_dampening(&mut self, dampening: f32) {
+    fn set_dampening(&mut self, dampening: f32) {
         let d = dampening.clamp(0.0, 1.0);
         for comb in &mut self.combs {
             comb.dampening = d;
         }
     }
 
-    pub fn clear(&mut self) {
+    fn clear(&mut self) {
         for comb in &mut self.combs {
             comb.clear();
         }
@@ -121,7 +114,7 @@ impl ReverbEffect {
         }
     }
 
-    fn process_sample_reverb(&mut self, input: f32) -> f32 {
+    fn process_sample(&mut self, input: f32) -> f32 {
         let mut reverb = 0.0;
         for comb in &mut self.combs {
             reverb += comb.process(input);
@@ -135,37 +128,78 @@ impl ReverbEffect {
     }
 }
 
+pub struct ReverbEffect {
+    left: ReverbChannel,
+    right: ReverbChannel,
+    wet: f32,
+}
+
+impl ReverbEffect {
+    pub fn new(sample_rate: u32) -> Self {
+        let left = ReverbChannel::new(&COMB_DELAYS_L, &ALLPASS_DELAYS_L, sample_rate);
+        let right = ReverbChannel::new(&COMB_DELAYS_R, &ALLPASS_DELAYS_R, sample_rate);
+
+        ReverbEffect {
+            left,
+            right,
+            wet: 0.3,
+        }
+    }
+
+    pub fn set_wet(&mut self, wet: f32) {
+        self.wet = wet.clamp(0.0, 1.0);
+    }
+
+    pub fn wet(&self) -> f32 {
+        self.wet
+    }
+
+    pub fn set_decay(&mut self, decay: f32) {
+        self.left.set_decay(decay);
+        self.right.set_decay(decay);
+    }
+
+    pub fn set_dampening(&mut self, dampening: f32) {
+        self.left.set_dampening(dampening);
+        self.right.set_dampening(dampening);
+    }
+
+    pub fn clear(&mut self) {
+        self.left.clear();
+        self.right.clear();
+    }
+}
+
 impl AudioEffect for ReverbEffect {
     fn process(&mut self, input: &mut [f32], channels: usize) {
         match channels {
             1 => {
                 for sample in input.iter_mut() {
                     let dry = *sample;
-                    let wet = self.process_sample_reverb(dry);
+                    let wet = self.left.process_sample(dry);
                     *sample = dry * (1.0 - self.wet) + wet * self.wet;
                 }
             }
             2 => {
                 for frame in input.chunks_exact_mut(2) {
-                    let mono_in = (frame[0] + frame[1]) * 0.5;
                     let dry_l = frame[0];
                     let dry_r = frame[1];
-                    let wet = self.process_sample_reverb(mono_in);
-                    frame[0] = dry_l * (1.0 - self.wet) + wet * self.wet;
-                    frame[1] = dry_r * (1.0 - self.wet) + wet * self.wet;
+                    let wet_l = self.left.process_sample(dry_l);
+                    let wet_r = self.right.process_sample(dry_r);
+                    frame[0] = dry_l * (1.0 - self.wet) + wet_l * self.wet;
+                    frame[1] = dry_r * (1.0 - self.wet) + wet_r * self.wet;
                 }
             }
             _ => {
                 for frame in input.chunks_exact_mut(channels) {
-                    let mut mono_in = 0.0;
-                    for s in &*frame {
-                        mono_in += *s;
-                    }
-                    mono_in /= channels as f32;
-                    let wet = self.process_sample_reverb(mono_in);
+                    let dry_l = frame[0];
+                    let dry_r = *frame.last().unwrap();
+                    let wet_l = self.left.process_sample(dry_l);
+                    let wet_r = self.right.process_sample(dry_r);
                     let wet_gain = self.wet;
-                    for sample in frame.iter_mut() {
+                    for (i, sample) in frame.iter_mut().enumerate() {
                         let dry = *sample;
+                        let wet = if i == 0 { wet_l } else { wet_r };
                         *sample = dry * (1.0 - wet_gain) + wet * wet_gain;
                     }
                 }
