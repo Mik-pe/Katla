@@ -422,6 +422,11 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] Add `ProgressBar` improvements — add optional label text overlay on the progress bar track.
 - [x] Add `Selectable` descriptor — wrapper that highlights on hover and fires on_click, for list items and grid cells. Needed by Asset Browser and Hierarchy.
 - [x] Add `Conditional` descriptor or extend `show_if` helper — support `if`/`else` branching in descriptor trees with stable identity on both branches so diffing doesn't destroy state.
+- [ ] Add `Vec3Slider` free function constructor — descriptor exists but lacks a `vec3_slider(label, value_id, range) -> ViewDescriptor` constructor function for use in Inspector and other panels.
+
+#### Prerequisites: Environment injection pattern
+
+- [ ] Standardize Environment injection pattern across all declarative panels — migrate remaining panels (ViewportGrid, Toolbar, Preferences, CoCreator, Hierarchy, Inspector, Console, AssetBrowser) from `thread_local!` RefCell bridges to `ctx.env::<PanelState>()` injection pattern used by ParticleInspector.
 
 #### Phase 1: Migrate simple panels (build confidence)
 
@@ -449,6 +454,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] Remove immediate-mode builder widgets that have declarative equivalents — `Button`, `Slider`, `LabeledSlider`, `Vec3Slider`, `ToggleButton`, `TextInput`, `RadioButton`, `ImageButton`, `Panel` from `widgets/mod.rs` public API. Keep only widgets with no declarative counterpart (e.g. `DockArea`).
 - [ ] Add `ViewDescriptor` construction tests — unit tests for the builder constructors, diff correctness (including keyed children), and layout for each new container variant.
 - [ ] Add declarative integration tests — frame-level tests that build a descriptor tree, run `ViewTree::frame()`, assert bounds, actions, and state mutations for each widget type. Cover the gaps identified in review: no tests for `diff_descriptor`, `ViewTree::sync_tree`, `TransitionContainer`, `DockArea`, `ColorPicker`, `BindingResolver`.
+- [ ] Add integration tests for new widget descriptors — add tests for `Section`, `TabBar`, `Grid`, `Separator`, `Icon`, `Selectable` descriptors to ensure they build, diff, layout, and render correctly.
 
 ## Developer Experience
 
@@ -546,7 +552,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### katla_ecs - Major Issues (Should Fix Before Production)
 
-- [ ] **Fix unresolved doc link to `ParallelIterator`** — `world.rs:265` and other locations reference `rayon::iter::ParallelIterator` which needs proper intra-doc linking with `rayon` crate
+- [x] **Fix unresolved doc link to `ParallelIterator`** — `world.rs:265` and other locations reference `rayon::iter::ParallelIterator` which needs proper intra-doc linking with `rayon` crate
 - [x] **Address test clippy warnings** — 6 warnings in tests: unused fields (`value`, `dx`, `dy`), identity function map, always-true assertion, loop variable usage. These indicate potential logic issues
 - [ ] **Improve parallel query safety documentation** — `par_query` and parallel iterators need clearer safety guarantees and usage documentation for users
 - [ ] **Add World state validation** — No validation that `World` is in consistent state after operations (e.g., entity existence checks, component type registration)
@@ -582,7 +588,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### P0 - Critical Issues (Block Production)
 - [x] **Remove all `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. Removed from: `pipeline.rs:32` (`CompareOp` enum), `render_graph/compiler.rs:38` (`PassDagNode` struct), `lib.rs:175` (backend/pipeline modules), `vulkan/material/builder.rs:144` (`with_push_constant_range` method), `shadow/cascade.rs:137` (`cascades()` method). Also removed dead code: `with_push_constant_range` method (never used) and unused re-exports in `backend/mod.rs`.
 - [x] **Add `Drop` impl for `VulkanRenderer`** — Currently requires manual `destroy()` call. Missing `Drop` can cause resource leaks if user forgets to call it
-- [ ] **Fix Metal backend parity for `update_texture()`** — Default impl is no-op, Vulkan implements it, Metal inherits no-op. Either implement for Metal or remove default impl
+- [x] **Fix Metal backend parity for `update_texture()`** — Default impl is no-op, Vulkan implements it, Metal inherits no-op. Either implement for Metal or remove default impl
 
 ### P1 - Backend Parity (Must Fix)
 - [ ] **Unify frame lifecycle across backends** — Vulkan uses frame graph via `render()`, Metal uses hardcoded `render_frame()` path. Both should use `FrameGraph<B>::execute()`
@@ -597,7 +603,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] **Add runtime bindless texture limit warnings** — `MAX_BINDLESS_TEXTURES = 4096` has no runtime check. Add warning when approaching limit, error when exceeded
 
 ### P3 - Error Handling
-- [ ] **Preserve error context in `RendererError`** — Many places drop original error: `format!("Failed to create {}", label)` loses `e`. Use `format!("{}: {:?}", label, e)`
+- [x] **Preserve error context in `RendererError`** — Many places drop original error: `format!("Failed to create {}", label)` loses `e`. Use `format!("{}: {:?}", label, e)`
 - [ ] **Make default trait impls fail explicitly** — `update_texture()`, `recompile_materials_for_shader()`, and other default no-ops should return `Err(RendererError::InvalidOperation(...))` instead of `Ok(())`
 - [ ] **Add Metal error types** — Metal backend uses `RendererError` but some internal paths return `Result<(), ()>`. Standardize on proper error types
 
