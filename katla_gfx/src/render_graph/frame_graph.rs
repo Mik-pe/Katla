@@ -10,8 +10,6 @@ use super::pass::PassDesc;
 use super::passes::geometry::GeometryPassData;
 use super::resource::{GraphResourceDesc, GraphResourceHandle};
 
-/// Special resource name for the swapchain backbuffer.
-
 /// Per-frame parameters for render graph execution.
 ///
 /// These values change every frame and are set before calling `execute()`.
@@ -360,8 +358,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             .transient_textures
             .first()
             .and_then(|textures| textures.get(&resource_id))
-            .map(B::transient_texture_bindless_slot)
-            .flatten()
+            .and_then(B::transient_texture_bindless_slot)
             .ok_or_else(|| RenderGraphError::ResourceNotFound(name.to_string()))?;
 
         if name == "ldr_color" {

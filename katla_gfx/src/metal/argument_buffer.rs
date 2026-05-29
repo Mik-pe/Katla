@@ -78,7 +78,7 @@ impl MetalBindlessTextureManager {
 
         unsafe {
             let encoder = device
-                .newArgumentEncoderWithArguments(&*descriptors)
+                .newArgumentEncoderWithArguments(&descriptors)
                 .expect("Failed to create argument encoder for bindless textures");
 
             let encoded_length = encoder.encodedLength();
@@ -194,6 +194,6 @@ impl MetalBindlessTextureManager {
         self.textures
             .iter()
             .filter_map(|opt| opt.as_deref())
-            .chain(self.default_texture.as_deref().into_iter())
+            .chain(self.default_texture.as_deref())
     }
 }

@@ -743,18 +743,18 @@ impl PoseComputePipeline {
                 .cmd_bind_pipeline(cmd, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
         }
 
-        if let Some(descriptor_set) = self.descriptor_set {
-            if descriptor_set != vk::DescriptorSet::null() {
-                unsafe {
-                    self.context.device.cmd_bind_descriptor_sets(
-                        cmd,
-                        vk::PipelineBindPoint::COMPUTE,
-                        vk_layout,
-                        0,
-                        std::slice::from_ref(&descriptor_set),
-                        &[],
-                    );
-                }
+        if let Some(descriptor_set) = self.descriptor_set
+            && descriptor_set != vk::DescriptorSet::null()
+        {
+            unsafe {
+                self.context.device.cmd_bind_descriptor_sets(
+                    cmd,
+                    vk::PipelineBindPoint::COMPUTE,
+                    vk_layout,
+                    0,
+                    std::slice::from_ref(&descriptor_set),
+                    &[],
+                );
             }
         }
 

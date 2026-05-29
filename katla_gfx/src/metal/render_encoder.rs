@@ -143,7 +143,7 @@ impl GpuRenderEncoder<MetalBackend> for MetalRenderEncoder {
     fn set_push_constants(&mut self, data: &[u8], index: u32, stages: ShaderStages) {
         unsafe {
             let ptr = NonNull::new(data.as_ptr() as *mut c_void).unwrap();
-            let len = data.len() as usize;
+            let len = data.len();
             if stages.vertex {
                 self.inner
                     .setVertexBytes_length_atIndex(ptr, len, index as usize);

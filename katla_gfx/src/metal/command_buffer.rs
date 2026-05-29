@@ -97,23 +97,19 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
         let pass_desc = MTLRenderPassDescriptor::new();
 
         for (i, attachment) in desc.color_attachments.iter().enumerate() {
-            let color_desc = unsafe {
-                pass_desc
-                    .colorAttachments()
-                    .objectAtIndexedSubscript(i as usize)
-            };
+            let color_desc = unsafe { pass_desc.colorAttachments().objectAtIndexedSubscript(i) };
             color_desc.setTexture(Some(&attachment.view.inner));
             color_desc.setLoadAction(to_mtl_load_action(attachment.load_op));
             color_desc.setStoreAction(to_mtl_store_action(attachment.store_op));
-            if attachment.load_op == LoadOp::Clear {
-                if let ClearValue::Color([r, g, b, a]) = attachment.clear_value {
-                    color_desc.setClearColor(objc2_metal::MTLClearColor {
-                        red: r as f64,
-                        green: g as f64,
-                        blue: b as f64,
-                        alpha: a as f64,
-                    });
-                }
+            if attachment.load_op == LoadOp::Clear
+                && let ClearValue::Color([r, g, b, a]) = attachment.clear_value
+            {
+                color_desc.setClearColor(objc2_metal::MTLClearColor {
+                    red: r as f64,
+                    green: g as f64,
+                    blue: b as f64,
+                    alpha: a as f64,
+                });
             }
         }
 
@@ -122,10 +118,10 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
             depth_desc.setTexture(Some(&depth.view.inner));
             depth_desc.setLoadAction(to_mtl_load_action(depth.load_op));
             depth_desc.setStoreAction(to_mtl_store_action(depth.store_op));
-            if depth.load_op == LoadOp::Clear {
-                if let ClearValue::DepthStencil { depth: d, .. } = depth.clear_value {
-                    depth_desc.setClearDepth(d as f64);
-                }
+            if depth.load_op == LoadOp::Clear
+                && let ClearValue::DepthStencil { depth: d, .. } = depth.clear_value
+            {
+                depth_desc.setClearDepth(d as f64);
             }
 
             if matches!(
@@ -137,10 +133,10 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
                 stencil_desc.setTexture(Some(&depth.view.inner));
                 stencil_desc.setLoadAction(to_mtl_load_action(depth.load_op));
                 stencil_desc.setStoreAction(to_mtl_store_action(depth.store_op));
-                if depth.load_op == LoadOp::Clear {
-                    if let ClearValue::DepthStencil { stencil: s, .. } = depth.clear_value {
-                        stencil_desc.setClearStencil(s);
-                    }
+                if depth.load_op == LoadOp::Clear
+                    && let ClearValue::DepthStencil { stencil: s, .. } = depth.clear_value
+                {
+                    stencil_desc.setClearStencil(s);
                 }
             }
         }

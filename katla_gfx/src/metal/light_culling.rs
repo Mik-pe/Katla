@@ -8,7 +8,6 @@
 
 use bytemuck::{Pod, Zeroable};
 use log::info;
-use objc2_metal::MTLCommandBuffer;
 
 use crate::backend::command::{GpuCommandBuffer, GpuComputeEncoder};
 use crate::backend::resource::GpuBuffer;

@@ -74,7 +74,7 @@ impl GpuComputeEncoder<MetalBackend> for MetalComputeEncoder {
         unsafe {
             let ptr = NonNull::new(data.as_ptr() as *mut c_void).unwrap();
             self.inner
-                .setBytes_length_atIndex(ptr, data.len() as usize, index as usize);
+                .setBytes_length_atIndex(ptr, data.len(), index as usize);
         }
     }
 

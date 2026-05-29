@@ -1,7 +1,6 @@
-use objc2_metal::{MTLRenderCommandEncoder, MTLRenderStages, MTLResourceUsage};
+use objc2_metal::MTLRenderCommandEncoder;
 
 use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
-use crate::backend::resource::GpuBuffer;
 use crate::renderer::types::DrawList;
 
 use super::metal_renderer::MetalRenderer;
@@ -9,8 +8,6 @@ use super::render_encoder::MetalRenderEncoder;
 
 impl MetalRenderer {
     pub(crate) fn bind_common_resources(&self, encoder: &mut MetalRenderEncoder) {
-        use crate::backend::resource::GpuBuffer;
-
         if let (Some(frame_buf), Some(object_buf)) = (
             self.current_frame_uniform_buffer(),
             self.current_object_storage_buffer(),
@@ -64,7 +61,7 @@ impl MetalRenderer {
             encoder.bind_storage_buffer(shadow_buf, 0, 7, stages);
         }
 
-        if let Some(ref shadow_view) = self.shadow.shadow_map_view() {
+        if let Some(shadow_view) = self.shadow.shadow_map_view() {
             unsafe {
                 encoder
                     .inner
@@ -118,10 +115,10 @@ impl MetalRenderer {
 
             encoder.bind_graphics_pipeline(pipeline);
 
-            if !draw.skeleton.is_none() {
-                if let Some(skeleton_buf) = self.skeletons.get(draw.skeleton.index()) {
-                    encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
-                }
+            if !draw.skeleton.is_none()
+                && let Some(skeleton_buf) = self.skeletons.get(draw.skeleton.index())
+            {
+                encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
             }
 
             encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);

@@ -76,14 +76,14 @@ impl MetalRenderer {
     }
 
     pub(crate) fn default_texture_impl(&self) -> TextureHandle {
-        self.default_texture.unwrap_or(TextureHandle::default())
+        self.default_texture.unwrap_or_default()
     }
 
     pub(crate) fn destroy_texture_impl(&mut self, handle: TextureHandle) {
-        if let Some(entry) = self.textures.remove(handle.index()) {
-            if let Some(slot) = entry.bindless_slot {
-                self.bindless_manager.release_slot(slot);
-            }
+        if let Some(entry) = self.textures.remove(handle.index())
+            && let Some(slot) = entry.bindless_slot
+        {
+            self.bindless_manager.release_slot(slot);
         }
     }
 
