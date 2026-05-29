@@ -501,9 +501,9 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### katla_audio - Critical Issues (Block Production)
 
-- [ ] **Remove unused `is_looping()` methods** — `voice.rs:221` and `streaming_voice.rs:119` have `pub fn is_looping()` that are never used. Violates project rule against `#[allow(dead_code)]` — either use them or remove them
+- [x] **Remove unused `is_looping()` methods** — `voice.rs:221` and `streaming_voice.rs:119` have `pub fn is_looping()` that are never used. Violates project rule against `#[allow(dead_code)]` — either use them or remove them
 - [ ] **Eliminate 34 `unwrap()`/`expect()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `Result` propagation: `engine.rs:101,115,209,227`, `buffer.rs:57,61,159`, plus others throughout
-- [ ] **Fix clippy warnings blocking `-D warnings` builds** — 2 warnings from unused `is_looping` methods prevent clean builds with `-D warnings`
+- [x] **Fix clippy warnings blocking `-D warnings` builds** — 2 warnings from unused `is_looping` methods prevent clean builds with `-D warnings`
 
 ### katla_audio - Major Issues (Should Fix Before Production)
 
@@ -521,8 +521,8 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 - [ ] **Eliminate 126 `unwrap()`/`expect()` calls** — Violates project rule "avoid `unwrap()` in production". Notable: `system.rs:113` uses `.expect("failed to create script engine")` which should be proper error handling. Convert all to `Result` propagation
 - [ ] **Eliminate 18 `panic!()` calls** — Uncontrolled crashes throughout the crate. Replace with proper error handling
-- [ ] **Remove unused mutable variable** — Clippy warning: "variable does not need to be mutable" blocks `-D warnings` builds
-- [ ] **Fix clippy warnings blocking `-D warnings` builds** — 5 warnings prevent clean builds. Run `cargo clippy -p katla_script -- -D warnings`
+- [x] **Remove unused mutable variable** — Clippy warning: "variable does not need to be mutable" blocks `-D warnings` builds
+- [x] **Fix clippy warnings blocking `-D warnings` builds** — 5 warnings prevent clean builds. Run `cargo clippy -p katla_script -- -D warnings`
 
 ### katla_script - Major Issues (Should Fix Before Production)
 
@@ -539,10 +539,10 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### katla_ecs - Critical Issues (Block Production)
 
-- [ ] **Remove all 7 `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. `scene_tool/command.rs:127,399` (`type_name`, `position_offset` fields), `unsafe_world_cell.rs:42,55,67,79,94` (methods: `storage`, `storage_mut`, `entities`, `world`, `storage_cell`). Either use these fields/methods or remove them
+- [x] **Remove all 7 `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. `scene_tool/command.rs:127,399` (`type_name`, `position_offset` fields), `unsafe_world_cell.rs:42,55,67,79,94` (methods: `storage`, `storage_mut`, `entities`, `world`, `storage_cell`). Either use these fields/methods or remove them
 - [ ] **Eliminate 133 `unwrap()`/`expect()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `Result` propagation throughout the crate
 - [ ] **Eliminate 8 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling and propagation
-- [ ] **Implement `std::error::Error` for `SceneToolError`** — `scene_tool/mod.rs:138` has `SceneToolError` with `Display` impl but no `Error` impl, preventing proper error handling chains
+- ~~**Implement `std::error::Error` for `SceneToolError`**~~ — Already implemented at `scene_tool/mod.rs:181`.
 
 ### katla_ecs - Major Issues (Should Fix Before Production)
 
@@ -562,7 +562,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] **Eliminate 24 `unwrap()`/`expect()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `Result` propagation throughout the crate
 - [ ] **Eliminate 7 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling
 - [ ] **Fix test compilation errors** — Tests fail to compile due to feature-gated items (`llm-assistant` feature) not being available in test context. Use `#[cfg(feature = "llm-assistant")]` on tests or provide mock implementations
-- [ ] **Implement `std::error::Error` for `LlmError`** — `llm/mod.rs:112` has `LlmError` with `Display` impl but no `Error` impl
+- ~~**Implement `std::error::Error` for `LlmError`**~~ — Already implemented at `llm/mod.rs:132`.
 
 ### katla_agent - Major Issues (Should Fix Before Production)
 
