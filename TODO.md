@@ -1,5 +1,9 @@
 # TODO
 
+## Task Sizing Convention
+
+Individual tasks should be small enough to complete in a single focused session. For large features (new subsystems, architectural changes, cross-cutting refactors), the TODO item is scoped as **exploration, ideation, and architecture** — research patterns, evaluate alternatives, and produce a concrete implementation plan as smaller TODO items. The output of such a task is a breakdown, not working code.
+
 ## Backend Abstraction Cleanup
 
 ### C. Unify pipeline initialization — eliminate Metal-specific methods on AnyRenderer
@@ -25,7 +29,7 @@
 
 ### Phase 14: Production bugs and correctness
 
-- [ ] Add background decode thread infrastructure — create a thread that owns `StreamingDecoder` instances and fills ring buffers ahead of the audio thread's read position
+- [ ] **Explore background decode thread design** — Research threading model for audio streaming: thread ownership of `StreamingDecoder`, ring buffer sizing, synchronization primitives, and shutdown coordination. Produce concrete implementation TODO items.
 - [ ] Refactor `StreamingVoice::fill_ring_buffer()` to consume from the pre-filled ring buffer without performing I/O
 - [ ] Wire background decode thread lifecycle (start/stop) into `AudioEngine` init/shutdown
 
@@ -41,12 +45,12 @@
  - [x] Add silence detection for streaming voices — `StreamingVoice::mix_into()` processes the full output buffer even when volume is 0.0 (only skips when `voice_volume == 0.0`, but tweening can make this check imprecise). Add an early-out when the voice has been silent for multiple consecutive frames.
 
 ### Phase 16: Feature parity with production audio engines
-- [ ] Add audio clock/timeline — no way to schedule audio events at specific times or sync playback to game time. Add an audio clock (sample-accurate position counter) and the ability to schedule play/stop/volume changes at specific clock positions. Required for music synchronization and cutscene audio.
+- [ ] **Explore audio clock/timeline architecture** — Research sample-accurate scheduling APIs from production engines (Kira, FMOD, Wwise), evaluate clock design (position counter, scheduling queue, voice integration), and produce concrete implementation TODO items.
 - [x] Add audio file metadata query — no way to query duration, sample rate, or channel count of an audio file without fully decoding it. Add `AudioBuffer::from_path_metadata()` or similar that reads headers only (WAV fmt chunk, OGG/MP3 frame headers) without decoding the entire file. Needed for the asset browser duration display.
 - [x] Add looping crossfade support — seamless loop transitions currently just jump from `loop_end` to `loop_start`, which can cause clicks if the waveform doesn't align. Add a short crossfade region at the loop point (mix the tail of the loop with the head of the next iteration).
 - [x] Add playback position query — no way to query the current playback position of a voice (in seconds or samples). Add `VoiceHandle::position() -> f32` and `StreamingVoiceHandle::position() -> f32` for UI scrub bars, subtitle sync, and gameplay triggers.
 - [x] Add seek API for streaming voices — `StreamingVoiceHandle` has no seek method. Add `StreamingVoiceHandle::seek(position: Duration)` to allow scrubbing to arbitrary positions in a streaming file.
-- [ ] Add audio recording/bounce — no way to capture the final mix output to a file. Add an offline render mode that writes the mixed output to a WAV file, useful for exporting game audio or cutscene bounces.
+- [ ] **Explore audio recording/bounce design** — Research offline render patterns: capturing the final mix to WAV, non-realtime rendering, cutscene bounce workflows. Produce concrete implementation TODO items.
 
 ### Phase 17: Audio system activation and global settings
 - [ ] Add AudioSettings to Preferences — `Preferences` struct has no audio fields. Add: `master_volume: f32`, `sfx_volume: f32`, `music_volume: f32`, `ambient_volume: f32`. Serialize to `preferences.toml`. Apply to `AudioEngine` on startup and on change.
@@ -61,7 +65,7 @@
 - [ ] Add VU meter widget to katla_ui — vertical bar showing peak/RMS with peak hold falloff, color-graded (green/yellow/red)
 - [ ] Add mixer panel layout — dockable panel with master bus fader + VU meter, SFX/Music/Ambient sub-buses with faders + VU meters, aux bus sends with wet/dry controls
 - [ ] Add voice pool status display — show active voice count, peak voice count, and which voices are playing (with name/category/volume) in the mixer panel or a debug overlay
-- [ ] Add reverb zone visualizer — `ReverbZone` components exist but are invisible in the editor. Draw wireframe boxes/spheres showing reverb zone extents with color-coding for decay/wet parameters, similar to physics collider visualization.
+- [x] Add reverb zone visualizer — `ReverbZone` components exist but are invisible in the editor. Draw wireframe boxes/spheres showing reverb zone extents with color-coding for decay/wet parameters, similar to physics collider visualization.
 
 ## Physics
 
@@ -72,7 +76,7 @@
 - [x] **Make gravity configurable** — `PhysicsWorld::new()` hardcodes gravity as `Vector::new(0.0, -9.81, 0.0)`. Add `PhysicsWorld::with_gravity(gravity: Vec3)` constructor or `set_gravity(&mut self, gravity: Vec3)` method.
 - [x] **Add `PhysicsError` enum for explicit error handling** — PhysicsWorld uses `Option` for fallible operations (body_transform, body_velocity). Add a `PhysicsError` enum with variants like `BodyNotFound`, `ColliderNotFound`, `InvalidHandle` and return `Result<T, PhysicsError>` from methods where appropriate.
 - [x] **Expose CCD configuration** — Rapier supports Continuous Collision Detection for fast-moving bodies but it's not exposed in katla_physics. Add CCD enable/disable parameter to body creation methods or as a global PhysicsWorld setting.
-- [ ] **Add character controller support** — Implement a `CharacterController` component that wraps Rapier's KinematicCharacterController for first/third-person character movement with slope handling, stairs, and collision response.
+- [ ] **Explore character controller design** — Evaluate Rapier's `KinematicCharacterController` API, research common patterns (slope handling, stairs, step-assist, jump), design `CharacterController` component fields and system integration, produce concrete implementation TODO items.
 
 ### Phase 6: Physics component scene serialization
 
@@ -99,9 +103,9 @@
 - [ ] **Implement convex hull collider generation for dynamic props** — For dynamic/kinematic objects with complex meshes, compute a convex hull from vertex positions using Rapier's `SharedShape::convex_hull`. Convex hulls support dynamic simulation (unlike trimesh) but are approximate — they enclose the mesh but may have gaps. Add editor action to convert a mesh entity's collider to convex hull.
 - [ ] **Implement capsule auto-fit from mesh dimensions** — Capsule colliders are ideal for character-like objects (humanoids, pillars, barrels). When auto-fitting a collider, compute the mesh AABB and check if it is tall and narrow (height > 2 × width). If so, generate a `CapsuleShape { half_height: height/2 - radius, radius: width/2 }` instead of a box. Add capsule as an explicit option in the editor collider type picker so users can override auto-fit.
 - [ ] **Implement best-fit shape selection logic** — When auto-generating a collider for a mesh entity, choose the best shape type based on mesh characteristics: (a) sphere if AABB is roughly cubic and small, (b) capsule if tall/narrow (height > 2 × width), (c) box for general shapes, (d) convex hull for complex dynamic props, (e) trimesh for static environment geometry. This replaces the current box-only auto-fit.
-- [ ] **Design collider cache system** — Computing convex hulls/trimesh colliders from mesh data is expensive. Design a collider cache that: (a) stores computed Rapier `SharedShape` instances keyed by mesh handle + shape type, (b) reuses cached shapes when multiple entities share the same mesh, (c) invalidates when the mesh changes (hot reload). This avoids recomputing hull decompositions every frame or on every entity spawn.
+- [ ] **Explore collider cache design** — Computing convex hulls/trimesh colliders from mesh data is expensive. Research caching strategies: key by mesh handle + shape type, reuse across entities sharing the same mesh, invalidation on mesh hot-reload. Produce concrete implementation TODO items.
 - [ ] **Update editor collider type picker UI** — The editor inspector for `ColliderShape` currently shows Sphere/Box/Capsule dropdown. Extend to show all shape types: Sphere, Box, Capsule, Trimesh, ConvexHull, Heightfield. When switching type, reset to auto-fit dimensions from the entity's mesh bounds. Disable Trimesh for non-static bodies (Rapier constraint). Disable Heightfield for non-mesh entities.
-- [ ] **Design prefab system for physics objects** — Physics entities (e.g., a "bouncy ball" with sphere collider + PBR material + dynamic body) are currently assembled manually each time. Design a prefab/template system that bundles a set of components (mesh, material, collider, rigid body) into a reusable definition that can be instantiated multiple times. This would also benefit non-physics entities.
+- [ ] **Explore prefab system design** — Research ECS prefab patterns (component bundles, template entities, nested prefabs). Evaluate how other engines handle prefab instantiation and overrides. Produce concrete implementation TODO items.
 - [ ] **Add physics entity spawn from asset browser** — Drag a physics prefab or mesh from the asset browser into the viewport to spawn an entity with auto-fitted collider + rigid body + default material.
 
 ### Phase 9: Physics robustness and testing
@@ -182,39 +186,27 @@
 - [ ] Add `AnimationSystem` (ECS System trait) — advance animation time, evaluate state machine transitions, sample clips, write skeleton pose
 
 ### Reflections
-- [ ] Add planar reflection pass — render scene from reflected camera for flat reflective surfaces (water, mirrors)
+- [ ] **Explore planar reflection architecture** — Research reflection rendering techniques (reflected camera, oblique clipping, mirror textures). Produce concrete implementation TODO items.
 - [ ] Integrate planar reflections into material system — bind reflection texture on materials with reflective property
 
 ## Scripting & Game Logic
 
 ### Gameplay framework
-- [ ] Design game state machine — states (Menu, Loading, Playing, Paused, Cutscene), transitions, enter/exit hooks
-- [ ] Implement `GameState` enum and `GameStateMachine` — state stack (push/pop), transition hooks (`on_enter`, `on_exit`), per-state update dispatch
-- [ ] Add `GameStateManager` as ECS resource — accessible by systems and scripts; systems query current state to conditionally run
-- [ ] Design gameplay event system — `EventBus<E>` generic typed event bus for gameplay-level events (OnDamage, OnCollect, OnCollision, etc.) decoupled from ECS events
-- [ ] Implement `EventBus` — `emit(event)`, `subscribe(handler)`, `drain()` per frame; type-erased storage for multiple event types
-- [ ] Design cutscene/timeline data model — `Timeline` asset with tracks (animation, audio, camera, event), keyframes per track, duration
-- [ ] Implement timeline playback — `TimelinePlayer` component with play/pause/scrub, evaluate all tracks at current time, dispatch results
-- [ ] Add timeline editor UI — track lanes, keyframe diamonds, scrubber bar, playback controls (depends on Editor dockable layout)
+- [ ] **Explore game state machine architecture** — Research state stack patterns (push/pop, transition hooks, per-state update dispatch). Evaluate how Bevy/Unity/Unreal handle game states. Produce concrete implementation TODO items for `GameState` enum, `GameStateMachine`, and `GameStateManager` ECS resource.
+- [ ] **Explore gameplay event system design** — Research typed event bus patterns (`EventBus<E>`) for gameplay events (OnDamage, OnCollect, OnCollision). Evaluate type-erased storage, subscription models, frame-scoped vs persistent events. Produce concrete implementation TODO items.
+- [ ] **Explore cutscene/timeline data model** — Research timeline asset design (tracks, keyframes, duration), playback engine patterns (play/pause/scrub, multi-track evaluation), and editor UI approaches (track lanes, keyframe diamonds, scrubber). Produce concrete implementation TODO items.
 
 ## Asset Pipeline
 
 #### Asset bundling
-- [ ] Design asset bundle format — header (magic, version, file table), compressed entries, support random access for large assets
-- [ ] Implement bundle packer tool — walk `resources/`, compress entries, write bundle file; as cargo xtask or build script
-- [ ] Implement bundle reader — `BundleFs` implementing virtual filesystem interface, mount bundle at runtime
-- [ ] Add release build integration — automatically bundle resources in release mode, fall back to filesystem in debug
+- [ ] **Explore asset bundle format and tooling** — Research virtual filesystem patterns (header + compressed entries, random access), evaluate existing Rust VFS crates, design packer tool and runtime reader. Produce concrete implementation TODO items covering bundle format, packer, reader, and release integration.
 
 #### Serialization improvements
-- [ ] Add component serialization registry — `SerializationRegistry` mapping type IDs to serialize/deserialize closures; auto-register on component registration
-- [ ] Implement generic scene serializer — walk entity hierarchy, look up each component type in registry, emit RON dynamically
-- [ ] Implement generic scene deserializer — parse RON, look up component types by name in registry, construct components dynamically
-- [ ] Add binary serialization option — `bincode` format alongside RON; selector based on file extension (`.scene` vs `.bscene`)
-- [ ] Benchmark binary vs RON load times — verify bincode is meaningfully faster before committing to dual format
+- [ ] **Explore component serialization registry design** — Research type-erased serialization patterns (type ID to serialize/deserialize closures), evaluate RON vs bincode tradeoffs, design the generic scene serializer/deserializer architecture. Produce concrete implementation TODO items.
 
 #### Editor integration
 - [ ] Add native file dialogs — integrate `rfd` for Open Scene, Save Scene As, Import Asset dialogs
-- [ ] Add asset import pipeline — convert source formats (FBX, PSD, TGA) to engine formats (glTF, PNG) as a preprocessing step
+- [ ] **Explore asset import pipeline design** — Research format conversion workflows (FBX→glTF, PSD→PNG, TGA→PNG), evaluate existing Rust libraries for each format, design the import manifest and re-import trigger system. Produce concrete implementation TODO items.
 - [ ] Add import manifest — track source-to-engine format mappings, re-import when source changes
 
 ## Release & Deployment
@@ -255,7 +247,7 @@
 ### Panels and tooling
 
 #### Asset browser context windows
-- [ ] Double-click (or open in context menu) items in the asset browser to open a dedicated floating window with the selected item as context — model preview, material preview, code editor (for scripts), image viewer, audio player, etc.
+- [ ] **Explore asset browser context window architecture** — Research floating window patterns for different asset types (model preview, material preview, code editor, image viewer, audio player). Evaluate shared window shell vs per-type panels. Produce concrete implementation TODO items.
 
 #### Timeline/animation editor
 - [ ] Design timeline data model — `Timeline` asset with multiple tracks (bone animation, float curves, events), keyframes per track
@@ -274,10 +266,10 @@
 
 #### Terrain editor
 - [ ] Design terrain component — `TerrainComponent` with heightmap, layer count, grid resolution
-- [ ] Implement heightmap painting — raise/lower/flatten/smooth brushes with adjustable radius and strength
+- [ ] **Explore heightmap painting architecture** — Research brush systems for terrain editing (raise/lower/flatten/smooth), evaluate GPU vs CPU brush application, design brush parameter UI. Produce concrete implementation TODO items.
 - [ ] Add terrain layer blending — paint blend weights for multiple material layers (grass, rock, dirt)
-- [ ] Add foliage scattering — scatter mesh instances on terrain surface with density/rule parameters
-- [ ] Add terrain mesh generation — generate LOD mesh from heightmap with configurable tessellation
+- [ ] **Explore foliage scattering design** — Research instanced mesh scattering on terrain (density rules, slope filtering, collision avoidance). Produce concrete implementation TODO items.
+- [ ] **Explore terrain mesh generation approaches** — Research LOD mesh generation from heightmaps (tessellation levels, seam stitching, chunk boundaries). Produce concrete implementation TODO items.
 
 #### Undo history panel
 - [ ] Implement undo stack UI — list of operation names with timestamps, current position highlighted
@@ -285,11 +277,7 @@
 - [ ] Add undo stack visualization — show branch points when redo stack is discarded by new operation
 
 #### Dockable layout system
-- [ ] Complete `DockLayout` skeleton — implement dock node tree (split, tab, leaf) with serialization
-- [ ] Implement tab dragging — drag tab from one dock area to another, show drop preview overlay
-- [ ] Implement split/dock gestures — drag to edge of panel to split, drag to tab bar to tab
-- [ ] Add layout persistence — save/restore dock layout to disk on app shutdown/startup
-- [ ] Convert existing panels to dockable — migrate scene hierarchy, inspector, asset browser, console to dock system
+- [ ] **Explore dockable layout architecture** — Research dock node tree patterns (split, tab, leaf), serialization, drag-and-drop panel docking, and layout persistence. Evaluate existing Rust docking libraries (egui dock, etc). Produce concrete implementation TODO items covering: tree structure, tab dragging, split gestures, layout persistence, and panel migration.
 
 #### Profiler overlay
 - [ ] Add GPU timestamp queries — insert timestamp queries at render pass boundaries in frame graph
@@ -445,15 +433,30 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] Migrate Hierarchy panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `HierarchyDrawCtx`. Use `TreeView` descriptor with `TreeItem` data from `Environment`, `ContextMenu` for right-click actions, `on_select` callback. Remove `set_hierarchy_ctx`/`take_hierarchy_ctx`.
 - [x] Migrate Inspector panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `InspectorDrawCtx`. Use `DraggablePanel`, `Section` per component with `delete_button`, `LabeledSlider`/`Vec3Slider`/`Toggle`/`ColorPicker` per field, `Modal` for Add Component picker. This is the hardest migration. Remove `set_inspector_ctx`/`take_inspector_ctx`.
 - [x] Migrate Console panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ConsoleDrawCtx`. Use `DraggablePanel`, `ScrollView` with `Text` rows (colored by log level), `TextField` for command input with `on_submit`. Remove `set_console_ctx`/`take_console_ctx`.
-- [ ] Migrate Asset Browser panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `AssetBrowserDrawCtx`. Use `Grid` or custom `Selectable` grid for thumbnails, `ContextMenu` for right-click, `TextField` for search, `Modal` for rename/delete confirmations. Remove `set_asset_browser_ctx`/`take_asset_browser_ctx`.
+- [x] Migrate Asset Browser panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `AssetBrowserDrawCtx`. Use `Grid` or custom `Selectable` grid for thumbnails, `ContextMenu` for right-click, `TextField` for search, `Modal` for rename/delete confirmations. Remove `set_asset_browser_ctx`/`take_asset_browser_ctx`.
 
 #### Cleanup: remove legacy code
 
 - [ ] Remove all thread-local `RefCell<Option<DrawCtx>>` bridges — `set_*_ctx`/`take_*_ctx` functions for every migrated panel. Verify no remaining `thread_local!` blocks in `editor_ui/`.
 - [ ] Remove or gate `ViewDescriptor::Custom` escape hatch — make it `#[cfg(test)]` or remove entirely once all panels are migrated. If kept for extensibility, document the constraints (no diffing, no state, no layout).
-- [ ] Remove immediate-mode builder widgets that have declarative equivalents — `Button`, `Slider`, `LabeledSlider`, `Vec3Slider`, `ToggleButton`, `TextInput`, `RadioButton`, `ImageButton`, `Panel` from `widgets/mod.rs` public API. Keep only widgets with no declarative counterpart (e.g. `DockArea`).
+- [ ] **Remove immediate-mode builder widgets that have declarative equivalents** — Remove from `widgets/mod.rs` public API and update all callers. Keep only widgets with no declarative counterpart (e.g. `DockArea`). Remove one at a time:
+  - [ ] Remove `Button` — callers use `button()`
+  - [ ] Remove `Slider` — callers use `slider()`
+  - [ ] Remove `LabeledSlider` — callers use `labeled_slider()`
+  - [ ] Remove `Vec3Slider` — callers use `vec3_slider()`
+  - [ ] Remove `ToggleButton` — callers use `toggle()`
+  - [ ] Remove `TextInput` — callers use `textfield()`
+  - [ ] Remove `RadioButton` — callers use `radio()`
+  - [ ] Remove `ImageButton` — callers use `image_button()`
+  - [ ] Remove `Panel` — callers use `panel()`
 - [ ] Add `ViewDescriptor` construction tests — unit tests for the builder constructors, diff correctness (including keyed children), and layout for each new container variant.
-- [ ] Add declarative integration tests — frame-level tests that build a descriptor tree, run `ViewTree::frame()`, assert bounds, actions, and state mutations for each widget type. Cover the gaps identified in review: no tests for `diff_descriptor`, `ViewTree::sync_tree`, `TransitionContainer`, `DockArea`, `ColorPicker`, `BindingResolver`.
+- [ ] **Add declarative integration tests** — frame-level tests that build a descriptor tree, run `ViewTree::frame()`, assert bounds, actions, and state mutations:
+  - [ ] Add tests for `diff_descriptor` — verify keyed and unkeyed children diff correctly (insert, remove, reorder, type change)
+  - [ ] Add tests for `ViewTree::sync_tree` — verify tree sync preserves state across descriptor changes, handles mount/unmount
+  - [ ] Add tests for `TransitionContainer` — verify enter/exit transitions fire correctly, animation state management
+  - [ ] Add tests for `DockArea` — verify tab/panel docking, splitting, and layout computation
+  - [ ] Add tests for `ColorPicker` — verify color selection, HSV state, and callback invocation
+  - [ ] Add tests for `BindingResolver` — verify state binding resolution, nested bindings, and error handling for missing keys
 - [x] Add integration tests for new widget descriptors — add tests for `Section`, `TabBar`, `Grid`, `Separator`, `Icon`, `Selectable` descriptors to ensure they build, diff, layout, and render correctly.
 
 ## Developer Experience
@@ -477,17 +480,22 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] Add system timing — measure ECS system execution time, display in debug overlay
 
 ### Testing
-- [ ] Design integration test framework — headless app init, entity spawning, frame execution, state assertions
-- [ ] Add render test infrastructure — render N frames, read back pixels, compare against golden images
+- [ ] **Explore integration test framework design** — Research headless app init patterns (mock renderer, software rasterizer, GPU-less CI), entity spawning test helpers, frame execution harness, and state assertion utilities. Produce concrete implementation TODO items.
 - [ ] Add ECS round-trip tests — spawn entity, add components, serialize, deserialize, verify equivalence
-- [ ] Add headless CI test suite — run integration tests without GPU in CI (mock renderer or software rasterizer)
 
 ## Production Readiness
 
 ### katla_app - Critical Issues (Block Production)
 
 - [x] **Remove all `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. Remove unused code instead. Locations: `ui/editor_ui/types.rs:316,516`, `ui/particle_inspector.rs:46`, `ui/renderer.rs:1`, `util/background_loader.rs:1,39,61,118`
-- [ ] **Eliminate 161 `unwrap()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `AppResult` propagation with `?` operator throughout `katla_app/src/`
+- [ ] **Eliminate `unwrap()` in `rapier_physics_system.rs`** — 35 unwraps. Convert Mutex/RwLock locks and Rapier handle lookups to proper error returns with `AppResult`
+- [ ] **Eliminate `unwrap()` in `editor/mod.rs`** — 12 unwraps. Editor initialization and command handling should propagate errors
+- [ ] **Eliminate `unwrap()` in `stl_parser.rs`** — 9 unwraps. Parsing code should return `Result` instead of unwrapping on malformed input
+- [ ] **Eliminate `unwrap()` in `spawner.rs`** — 6 unwraps. Entity spawning should handle missing components/resources gracefully
+- [ ] **Eliminate `unwrap()` in `editor/agent.rs`** — 6 unwraps. Agent tool execution should return errors, not panic
+- [ ] **Eliminate `unwrap()` in `builder.rs`** — 6 unwraps. Application builder should propagate initialization failures
+- [ ] **Eliminate `unwrap()` in remaining katla_app files** — ~12 unwraps across `editor/component_registry.rs` (5), `preferences.rs` (3), `gizmo.rs` (2), `asset_watcher.rs` (1), `layout.rs` (1), `viewport_grid.rs` (1), `application/mod.rs` (1), `editor/mcp.rs` (1), `animation/gltf_loader.rs` (1)
+- [ ] **Eliminate `expect()` in katla_app production code** — ~30 expects across `init.rs` (15), `builder.rs` (8), `gltf_loader.rs` (5), `modelcache.rs` (4), `background_loader.rs` (4), `gizmo.rs` (2), `game_state.rs` (2), `billboard_icons.rs` (1), `renderer.rs` (1). Convert to proper error propagation
 - [x] **Eliminate 10 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling and propagation
 - [x] **Fix clippy warnings blocking `-D warnings` builds** — Run `cargo clippy -p katla_app -- -D warnings` to identify and fix all warnings
 - [x] **Fix `ViewportManager` cross-crate doc link** — `resources/viewport_state.rs:86` references `ViewportManager` (in katla_gfx, not katla_app). The other doc links in `resource_loading.rs` have been fixed.
@@ -515,7 +523,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 - [x] **Improve device error handling** — `AudioEngine::new()` returns `Result` but callers may not handle all error cases properly. Add better recovery/error messages for common failures (no device, permissions, etc.)
 - [x] **Add stream error recovery** — Audio stream errors (device disconnection, underrun) should attempt recovery rather than failing permanently
-- [ ] **Document thread safety guarantees** — Real-time audio thread constraints should be documented for API users to avoid deadlocks
+- [x] **Document thread safety guarantees** — Real-time audio thread constraints should be documented for API users to avoid deadlocks
 - [ ] **Add audio device hot-swap** — When output device disconnects, there is no automatic recovery path (see also TODO.md Audio Phase 17)
 
 ### katla_audio - Documentation
@@ -525,7 +533,8 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### katla_script - Critical Issues (Block Production)
 
-- [ ] **Eliminate 126 `unwrap()`/`expect()` calls** — Fixed `ScriptSystem::new()` to return `Result<Self, ScriptError>` and `Rc::get_mut().unwrap()` in script_world.rs. Remaining calls are in test code.
+- [ ] **Eliminate `unwrap()`/`expect()` in `sandbox.rs`** — 35 unwraps + 1 expect. Script sandbox initialization and evaluation should return `ScriptError` instead of panicking
+- [ ] **Eliminate `expect()` in `system.rs`** — 1 expect. Script system execution should propagate errors
 - ~~**Eliminate 18 `panic!()` calls**~~ — False positive. All 18 are in test assertion code (`tests.rs`), which is standard Rust test practice.
 - [x] **Remove unused mutable variable** — Clippy warning: "variable does not need to be mutable" blocks `-D warnings` builds
 - [x] **Fix clippy warnings blocking `-D warnings` builds** — 5 warnings prevent clean builds. Run `cargo clippy -p katla_script -- -D warnings`
@@ -546,7 +555,12 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### katla_ecs - Critical Issues (Block Production)
 
 - [x] **Remove all 7 `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. `scene_tool/command.rs:127,399` (`type_name`, `position_offset` fields), `unsafe_world_cell.rs:42,55,67,79,94` (methods: `storage`, `storage_mut`, `entities`, `world`, `storage_cell`). Either use these fields/methods or remove them
-- [ ] **Eliminate 133 `unwrap()`/`expect()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `Result` propagation throughout the crate
+- [ ] **Eliminate `unwrap()` in `scheduler.rs`** — 21 unwraps. System scheduling should propagate errors for invalid system configurations
+- [ ] **Eliminate `unwrap()` in `world.rs`** — 18 unwraps. World operations (entity spawn, component access) should return `Result` for missing entities/components
+- [ ] **Eliminate `unwrap()` in `resource.rs`** — 11 unwraps. Resource get/insert operations should handle missing resources gracefully
+- [ ] **Eliminate `unwrap()` in `storage.rs`** — 6 unwraps. Component storage operations should handle missing types/entities
+- [ ] **Eliminate `unwrap()` in remaining katla_ecs files** — ~7 unwraps across `sparse_set.rs` (2), `scene_tool/executor.rs` (2), `query/filter.rs` (1), `agent/harness.rs` (1)
+- [ ] **Eliminate `expect()` in katla_ecs production code** — 9 expects across `world.rs` (6), `storage.rs` (3). Convert to proper error returns
 - ~~**Eliminate 8 `panic!()` calls**~~ — 6 of 8 are in test code (test assertions are fine as panics). The 2 production panics: scheduler cycle detection converted to `Result<_, SchedulerError>`, filter/query disjoint assertion kept as panic (invariant violation in generic iterator-returning API with no Result propagation path).
 - ~~**Implement `std::error::Error` for `SceneToolError`**~~ — Already implemented at `scene_tool/mod.rs:181`.
 
@@ -559,18 +573,27 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### katla_ecs - Architecture & Soundness (Production Readiness Review)
 
-- [ ] **Fix unsound parallel system access to World** — `update_parallel()` hands `UnsafeWorldCell` to all systems in a group. Systems get `&mut World` simultaneously. If a system accesses `resources`, `entity_events`, `component_events`, or `entity_allocator` (all shared World fields), it creates data races. The scheduler only tracks `ComponentAccess` but World has much more mutable state. Add resource access tracking to the scheduler (declare resource read/write like component access) or split World into separate borrows for parallel execution.
+- [ ] **Fix unsound parallel system access to World** — `update_parallel()` hands `UnsafeWorldCell` to all systems in a group. Systems get `&mut World` simultaneously. If a system accesses `resources`, `entity_events`, `component_events`, or `entity_allocator` (all shared World fields), it creates data races. The scheduler only tracks `ComponentAccess` but World has much more mutable state.
+  - [ ] Audit all systems for `World` field access beyond `ComponentAccess` — enumerate which systems touch `resources`, `entity_events`, `component_events`, `entity_allocator` during `update_parallel()`
+  - [ ] Add `ResourceAccess` declaration to the `System` trait — similar to `ComponentAccess`, systems declare which resources they read/write
+  - [ ] Extend scheduler `conflicts()` to check resource access — add resource read/write conflict detection alongside existing component conflict detection
+  - [ ] Validate with existing systems — update all system implementations to declare their resource access, verify no false conflicts
+  - [ ] Add tests for resource-conflicting system scheduling — verify the scheduler correctly detects and prevents concurrent access to shared resources
 - [ ] **Fix lifetime transmute in par_query** — `par_query.rs` uses `std::mem::transmute` to erase lifetimes to `'static` on `&ComponentStorage` and `&[(EntityId, T)]`. While bounded by the return type, this is fragile. Replace with a safer pattern (e.g. `UnsafeWorldCell`-style wrapper with explicit lifetime scoping, similar to Bevy's `WorldBorrow`).
 - [ ] **Add `Send + Sync` bounds to `Component` trait** — `Component: Any {}` carries no thread-safety bounds. This means `ComponentStorage<T>` cannot be `Send`, limiting future parallel strategies. Add `Component: Any + Send + Sync` and update all downstream types.
-- [ ] **Track resource access in parallel scheduler** — The `SystemScheduler` DAG only checks `ComponentAccess` conflicts. Systems that access `World::get_resource_mut()` concurrently in the same group cause data races. Extend `ComponentAccess` or add a separate `ResourceAccess` declaration to the `System` trait, and check conflicts in the scheduler's `conflicts()` function.
+- [ ] **Track resource access in parallel scheduler** — The `SystemScheduler` DAG only checks `ComponentAccess` conflicts. Systems that access `World::get_resource_mut()` concurrently in the same group cause data races.
+  - [ ] Add `ResourceAccess` struct mirroring `ComponentAccess` — track resource type IDs with read/write flags
+  - [ ] Add `fn resource_access() -> ResourceAccess` to the `System` trait — default to empty, systems override
+  - [ ] Extend `SystemScheduler::conflicts()` to check both `ComponentAccess` and `ResourceAccess` — union the conflict sets
+  - [ ] Update all system implementations to declare resource access — audit each system's `update()` for `world.get_resource()` / `world.get_resource_mut()` calls
 - [ ] **Fix `get_component_mut` unconditionally marking dirty** — `get_component_mut` always marks the entity as changed even if no mutation occurs, causing unnecessary `query_changed` results. Add a `Mut<T>` wrapper (like Bevy) that only bumps the dirty flag on actual mutation (via DerefMut) or explicit `bump()` call.
 - [x] **Remove or integrate dead archetype module** — Removed 860 lines of unused code (Archetype, ComponentColumn, ArchetypeRegistry, Signature). Not referenced by any other module in the crate.
-- [ ] **Add serialization/deserialization for scenes** — No built-in scene save/load. The `scene_tool` module has undo/redo commands but no serialization. Production games need entity + component serialization (blocked on component serialization registry, see Asset Pipeline section).
-- [ ] **Extend event system beyond frame-scoped** — Events are accumulated per frame and flushed at `update()` end. Systems cannot observe events from previous frames. Add buffered events or event persistence for deferred/reactive patterns if needed by gameplay systems.
+- [ ] **Explore scene serialization architecture** — No built-in scene save/load. Research entity hierarchy traversal + dynamic component serialization patterns. Blocked on component serialization registry (see Asset Pipeline section). Produce concrete implementation TODO items once unblocked.
+- [ ] **Explore event system persistence patterns** — Events are currently frame-scoped (accumulated and flushed at `update()` end). Research buffered events, event persistence, and reactive patterns from other ECS frameworks. Evaluate whether gameplay systems need this and produce concrete TODO items if so.
 
 ### katla_ecs - Long-Term: Sparse-Set to Archetype Migration
 
-- [ ] **Plan the sparse-set to archetype migration** — The ECS currently uses a sparse-set storage model. Archetype-based storage (where entities with the same component set are stored together in contiguous memory) enables better cache locality for system iteration, more efficient component addition/removal, and simplifies parallel query execution. Create a detailed task breakdown covering: (a) current architecture analysis, (b) target archetype design (Archetype struct, ArchetypeRegistry, move semantics), (c) migration strategy (incremental vs big-bang, compatibility during transition), (d) impact on World, System, and Query APIs, (e) impact on katla_app systems and serialization, (f) testing strategy, (g) performance validation plan.
+- [ ] **Explore sparse-set to archetype migration** — Research archetype-based ECS storage patterns (contiguous component arrays, archetype graphs, add/remove component performance). Analyze current sparse-set architecture, evaluate migration strategies (incremental vs big-bang), and assess impact on World/System/Query APIs. Produce a detailed migration plan as concrete TODO items.
 
 ### katla_ecs - Documentation
 
@@ -606,7 +629,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] **Fix Metal backend parity for `update_texture()`** — Default impl is no-op, Vulkan implements it, Metal inherits no-op. Either implement for Metal or remove default impl
 
 ### P1 - Backend Parity (Must Fix)
-- [ ] **Unify frame lifecycle across backends** — Vulkan uses frame graph via `render()`, Metal uses hardcoded `render_frame()` path. Both should use `FrameGraph<B>::execute()`
+- [ ] **Explore frame lifecycle unification across backends** — Vulkan uses frame graph via `render()`, Metal uses hardcoded `render_frame()`. Research how to route Metal through `FrameGraph<B>::execute()`, identify which passes need `RenderGraphBackend` dispatch implementations on Metal. Produce concrete implementation TODO items.
 - [ ] **Implement `recompile_materials_for_shader()` for Metal** — Currently no-op (inherited default). Metal backend needs real implementation
 - [ ] **Implement `init_animation_pipeline()` for Metal** — Currently no-op (inherited default). Metal backend needs real implementation
 - [ ] **Remove `render_frame()` from Metal backend** — Replace with frame graph execution through `render()` method once parity is achieved
@@ -628,14 +651,26 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] **Batch single-time commands** — `begin_single_time_commands()` creates new command buffer each call. Batch operations where possible
 
 ### P5 - API Design
-- [ ] **Reduce public API surface** — `lib.rs` exposes 80+ items. Many internal modules (`barrier`, `sync`, `pipeline`) shouldn't be public
+- [ ] **Reduce public API surface** — `lib.rs` exposes 80+ items. Many internal modules shouldn't be public. Audit and restrict one module at a time:
+  - [ ] Audit `lib.rs` exports — identify which items are used outside katla_gfx vs internal-only
+  - [ ] Make `barrier` module `pub(crate)` — likely internal-only
+  - [ ] Make `sync` module `pub(crate)` — likely internal-only
+  - [ ] Make `pipeline` module `pub(crate)` — likely internal-only
+  - [ ] Review remaining 80+ items and restrict visibility where possible
 - [ ] **Consolidate frame lifecycle methods** — `begin_frame()`/`end_frame()` vs `render()` vs `wait_for_frame()` — confusing, multiple ways to do same thing
 - [ ] **Replace `Rc<RefCell<ShaderCache>>` with better pattern** — Interior mutability + reference counting. Consider `Arc<Mutex<ShaderCache>>` or restructure to avoid shared mutation
 
 ### P6 - Code Quality
 - ~~**Remove unused imports in `backend/mod.rs`**~~ — Stale. No `#[allow(unused_imports)]` annotations remain in katla_gfx.
-- [ ] **Fix inconsistent naming** — `swap_data` vs `frame_context`, `asset_registry` vs `mesh_manager` vs `texture_manager`, `bindless_manager` vs `storage_manager`
-- [ ] **Add missing documentation** — Many public items in `GpuRenderer` trait lack `///` docs. Add comprehensive API documentation
+- [ ] **Fix inconsistent naming** — rename to consistent patterns one group at a time:
+  - [ ] Unify frame data naming — `swap_data` vs `frame_context`, pick one name
+  - [ ] Unify resource manager naming — `asset_registry` vs `mesh_manager` vs `texture_manager`, pick consistent suffix
+  - [ ] Unify GPU resource naming — `bindless_manager` vs `storage_manager`, pick consistent prefix/suffix
+- [ ] **Add missing documentation for `GpuRenderer` trait** — many public items lack `///` docs. Add docs grouped by functionality:
+  - [ ] Document lifecycle methods — `init()`, `begin_frame()`, `end_frame()`, `render()`, `wait_for_frame()`, `destroy()`
+  - [ ] Document resource creation methods — texture, buffer, pipeline creation methods
+  - [ ] Document drawing methods — draw, dispatch, and pass-related methods
+  - [ ] Document query/state methods — timestamp queries, readback, synchronization
 
 ### Metal Backend Specific
 - [ ] **Fix billboard icons rendering** — Billboard icons don't show in Metal backend
