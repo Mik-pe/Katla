@@ -525,14 +525,14 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### katla_script - Critical Issues (Block Production)
 
-- [ ] **Eliminate 126 `unwrap()`/`expect()` calls** — Violates project rule "avoid `unwrap()` in production". Notable: `system.rs:113` uses `.expect("failed to create script engine")` which should be proper error handling. Convert all to `Result` propagation
-- [ ] **Eliminate 18 `panic!()` calls** — Uncontrolled crashes throughout the crate. Replace with proper error handling
+- [ ] **Eliminate 126 `unwrap()`/`expect()` calls** — Fixed `ScriptSystem::new()` to return `Result<Self, ScriptError>` and `Rc::get_mut().unwrap()` in script_world.rs. Remaining calls are in test code.
+- ~~**Eliminate 18 `panic!()` calls**~~ — False positive. All 18 are in test assertion code (`tests.rs`), which is standard Rust test practice.
 - [x] **Remove unused mutable variable** — Clippy warning: "variable does not need to be mutable" blocks `-D warnings` builds
 - [x] **Fix clippy warnings blocking `-D warnings` builds** — 5 warnings prevent clean builds. Run `cargo clippy -p katla_script -- -D warnings`
 
 ### katla_script - Major Issues (Should Fix Before Production)
 
-- [ ] **ScriptSystem initialization should not panic** — `system.rs:113`: `ScriptEngine::new().expect("failed to create script engine")` — this should return `Result<ScriptSystem>` instead of panicking on creation failure
+- [x] **ScriptSystem initialization should not panic** — `ScriptSystem::new()` now returns `Result<Self, ScriptError>` instead of panicking.
 - [ ] **Improve error messages from Lua** — Script errors should provide more context (which script, which function, stack traces where available)
 - [ ] **Add script timeout protection** — Long-running scripts can block the main thread. Add execution time limits or yield points
 - [ ] **Sandbox script capabilities** — Scripts currently have full access. Need safe subset of Lua APIs for production (restrict file I/O, network, etc.)
@@ -577,7 +577,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### katla_agent - Critical Issues (Block Production)
 
 - [x] **Eliminate 24 `unwrap()`/`expect()` calls** — Replaced the single production `Runtime::new().unwrap()` in mcp.rs with proper error handling. All other unwraps are in test code.
-- [ ] **Eliminate 7 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling
+- ~~**Eliminate 7 `panic!()` calls**~~ — False positive. All 7 are in test assertion code (`*_test.rs`), which is standard Rust test practice.
 - [x] **Fix test compilation errors** — Tests fail to compile due to feature-gated items (`llm-assistant` feature) not being available in test context. Use `#[cfg(feature = "llm-assistant")]` on tests or provide mock implementations
 - ~~**Implement `std::error::Error` for `LlmError`**~~ — Already implemented at `llm/mod.rs:132`.
 
