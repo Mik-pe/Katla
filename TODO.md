@@ -547,7 +547,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### katla_ecs - Major Issues (Should Fix Before Production)
 
 - [ ] **Fix unresolved doc link to `ParallelIterator`** — `world.rs:265` and other locations reference `rayon::iter::ParallelIterator` which needs proper intra-doc linking with `rayon` crate
-- [ ] **Address test clippy warnings** — 6 warnings in tests: unused fields (`value`, `dx`, `dy`), identity function map, always-true assertion, loop variable usage. These indicate potential logic issues
+- [x] **Address test clippy warnings** — 6 warnings in tests: unused fields (`value`, `dx`, `dy`), identity function map, always-true assertion, loop variable usage. These indicate potential logic issues
 - [ ] **Improve parallel query safety documentation** — `par_query` and parallel iterators need clearer safety guarantees and usage documentation for users
 - [ ] **Add World state validation** — No validation that `World` is in consistent state after operations (e.g., entity existence checks, component type registration)
 
