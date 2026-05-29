@@ -180,9 +180,8 @@ impl FrameContext {
         let start_idx = self.next_instance_index;
         self.next_instance_index += count;
 
-        // Panic in debug mode if we exceed max instances
-        if cfg!(debug_assertions) && self.next_instance_index > self.max_instances {
-            panic!(
+        if self.next_instance_index > self.max_instances {
+            log::error!(
                 "FrameContext: exceeded maximum instances per frame ({})",
                 self.max_instances
             );

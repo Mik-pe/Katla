@@ -298,7 +298,7 @@ impl super::Application {
         // 1. Load model from cache
         let path_buf = path.as_ref().to_path_buf();
         let path_display = path.as_ref().to_string_lossy().to_string();
-        let model = self.gltf_cache.read(path_buf);
+        let model = self.gltf_cache.read(path_buf)?;
 
         // 2. Convert indices to u32 (generate sequential indices for non-indexed geometry)
         let vertex_count = if model.has_skinning {

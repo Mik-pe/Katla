@@ -24,6 +24,7 @@
 //! handles it automatically.
 
 use std::ffi::CString;
+use std::path::PathBuf;
 use std::time::Instant;
 
 use katla_ecs::{System, SystemExecutionOrder, World};
@@ -795,10 +796,11 @@ impl ApplicationBuilder {
             log::warn!("Icon font file not found: {}", icon_font_path.display());
         }
 
-        // Create GLTF cache with loader that panics on error (same as old From<PathBuf> impl)
-        let gltf_loader = Box::new(|path: &std::path::PathBuf| {
-            GLTFModel::new(path)
-                .unwrap_or_else(|e| panic!("Failed to load GLTF model from {:?}: {}", path, e))
+        let gltf_loader: crate::util::GltfLoaderFn = Box::new(|path: &PathBuf| {
+            GLTFModel::new(path).map_err(|e| {
+                log::error!("Failed to load GLTF model from {:?}: {e}", path);
+                e
+            })
         });
 
         #[allow(deprecated)]

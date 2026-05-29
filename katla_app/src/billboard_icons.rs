@@ -87,22 +87,34 @@ fn icon_to_char(icon: BillboardIcon) -> char {
 /// a square bitmap of the given `size`.
 pub fn rasterize_icon(icon: BillboardIcon, size: u32) -> RasterizedIcon {
     let font_data = include_bytes!("../../resources/fonts/forkawesome-webfont.ttf");
-    let font = skrifa::FontRef::new(font_data).expect("Failed to parse ForkAwesome font");
+    let font = match skrifa::FontRef::new(font_data) {
+        Ok(f) => f,
+        Err(e) => {
+            log::error!("Failed to parse ForkAwesome font: {e}");
+            return empty_icon(size);
+        }
+    };
 
     let glyph_char = icon_to_char(icon);
 
-    let glyph_id = font
-        .charmap()
-        .map(glyph_char)
-        .unwrap_or_else(|| panic!("Glyph '{}' not found in ForkAwesome font", glyph_char));
+    let glyph_id = match font.charmap().map(glyph_char) {
+        Some(id) => id,
+        None => {
+            log::error!("Glyph '{glyph_char}' not found in ForkAwesome font");
+            return empty_icon(size);
+        }
+    };
 
     let size_obj = Size::new(size as f32);
     let location = LocationRef::default();
 
-    let outline_glyph = font
-        .outline_glyphs()
-        .get(glyph_id)
-        .unwrap_or_else(|| panic!("No outline for glyph '{}'", glyph_char));
+    let outline_glyph = match font.outline_glyphs().get(glyph_id) {
+        Some(g) => g,
+        None => {
+            log::error!("No outline for glyph '{glyph_char}'");
+            return empty_icon(size);
+        }
+    };
 
     let settings = DrawSettings::unhinted(size_obj, location);
 
