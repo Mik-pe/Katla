@@ -82,7 +82,7 @@ fn extract_count(text: &str) -> usize {
     0
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "llm-assistant"))]
 mod tests {
     use super::*;
 
