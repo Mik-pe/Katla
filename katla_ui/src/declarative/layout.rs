@@ -755,4 +755,150 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_section_layout() {
+        use crate::declarative::constructors::{section, text};
+        use crate::declarative::state::{StateArena, ViewId};
+
+        let mut tree = ViewTree::new();
+        let mut arena = StateArena::default();
+        let state_id = arena.get_or_create(ViewId::default(), false);
+        let descriptor = section("My Section", text("content"), state_id);
+
+        build_tree(&mut tree, descriptor);
+
+        let mut layout = TaffyNodeMap::new();
+        layout.sync(&tree, &measure_text_descriptor);
+
+        let bounds = layout.compute(tree.root().unwrap(), Vec2::new(800.0, 600.0), &tree);
+
+        let root_bounds = bounds
+            .get(&tree.root().unwrap())
+            .copied()
+            .unwrap_or_default();
+
+        assert!(root_bounds.width() > 0.0);
+        assert!(root_bounds.height() > 0.0);
+    }
+
+    #[test]
+    fn test_tab_bar_layout() {
+        use crate::declarative::constructors::{tab_bar, tab_item, text};
+        use crate::declarative::state::{StateArena, ViewId};
+
+        let mut tree = ViewTree::new();
+        let mut arena = StateArena::default();
+        let state_id = arena.get_or_create(ViewId::default(), 0usize);
+        let tabs = vec![tab_item("Tab 1"), tab_item("Tab 2")];
+        let descriptor = tab_bar(tabs, state_id, text("content"));
+
+        build_tree(&mut tree, descriptor);
+
+        let mut layout = TaffyNodeMap::new();
+        layout.sync(&tree, &measure_text_descriptor);
+
+        let bounds = layout.compute(tree.root().unwrap(), Vec2::new(800.0, 600.0), &tree);
+
+        let root_bounds = bounds
+            .get(&tree.root().unwrap())
+            .copied()
+            .unwrap_or_default();
+
+        assert!(root_bounds.width() > 0.0);
+        assert!(root_bounds.height() > 0.0);
+    }
+
+    #[test]
+    fn test_grid_layout() {
+        use crate::declarative::constructors::{grid, text};
+
+        let mut tree = ViewTree::new();
+        let descriptor = grid(2, Vec2::new(100.0, 50.0), vec![text("A"), text("B"), text("C")]);
+
+        build_tree(&mut tree, descriptor);
+
+        let mut layout = TaffyNodeMap::new();
+        layout.sync(&tree, &measure_text_descriptor);
+
+        let bounds = layout.compute(tree.root().unwrap(), Vec2::new(800.0, 600.0), &tree);
+
+        let root_bounds = bounds
+            .get(&tree.root().unwrap())
+            .copied()
+            .unwrap_or_default();
+
+        assert!(root_bounds.width() > 0.0);
+        assert!(root_bounds.height() > 0.0);
+    }
+
+    #[test]
+    fn test_separator_layout() {
+        use crate::declarative::constructors::separator_horizontal;
+
+        let mut tree = ViewTree::new();
+        let descriptor = separator_horizontal();
+
+        build_tree(&mut tree, descriptor);
+
+        let mut layout = TaffyNodeMap::new();
+        layout.sync(&tree, &measure_text_descriptor);
+
+        let bounds = layout.compute(tree.root().unwrap(), Vec2::new(800.0, 600.0), &tree);
+
+        let root_bounds = bounds
+            .get(&tree.root().unwrap())
+            .copied()
+            .unwrap_or_default();
+
+        assert!(root_bounds.width() > 0.0);
+        // Separator should have minimal height
+        assert!(root_bounds.height() >= 0.0);
+    }
+
+    #[test]
+    fn test_icon_layout() {
+        use crate::declarative::constructors::icon;
+
+        let mut tree = ViewTree::new();
+        let descriptor = icon('X');
+
+        build_tree(&mut tree, descriptor);
+
+        let mut layout = TaffyNodeMap::new();
+        layout.sync(&tree, &measure_text_descriptor);
+
+        let bounds = layout.compute(tree.root().unwrap(), Vec2::new(800.0, 600.0), &tree);
+
+        let root_bounds = bounds
+            .get(&tree.root().unwrap())
+            .copied()
+            .unwrap_or_default();
+
+        assert!(root_bounds.width() > 0.0);
+        assert!(root_bounds.height() > 0.0);
+    }
+
+    #[test]
+    fn test_selectable_layout() {
+        use crate::declarative::constructors::{selectable, text};
+
+        let mut tree = ViewTree::new();
+        let descriptor = selectable(text("Select me"));
+
+        build_tree(&mut tree, descriptor);
+
+        let mut layout = TaffyNodeMap::new();
+        layout.sync(&tree, &measure_text_descriptor);
+
+        let bounds = layout.compute(tree.root().unwrap(), Vec2::new(800.0, 600.0), &tree);
+
+        let root_bounds = bounds
+            .get(&tree.root().unwrap())
+            .copied()
+            .unwrap_or_default();
+
+        assert!(root_bounds.width() > 0.0);
+        assert!(root_bounds.height() > 0.0);
+    }
 }
