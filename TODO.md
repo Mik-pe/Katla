@@ -497,7 +497,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] **Improve error handling in Preferences** — `preferences.rs:load()` silently returns defaults on error. Should propagate errors or at minimum log with `error!` level
 - [ ] **Complete audio spatial positioning** — `systems/audio_system.rs:290` has TODO comment. Spatial audio is needed for production-quality audio experience
 - [x] **Make resource path discovery more robust** — `resources/mod.rs` uses multiple fallback paths that depend on runtime context. Consider using `CARGO_MANIFEST_DIR` as primary with explicit override via environment variable
-- [ ] **Add retry logic for background loading** — `util/background_loader.rs` has no retry mechanism for transient failures (network timeouts, disk I/O errors)
+- [x] **Add retry logic for background loading** — `util/background_loader.rs` has no retry mechanism for transient failures (network timeouts, disk I/O errors)
 - [ ] **Add GPU resource health checks** — No validation that GPU resources (textures, buffers, pipelines) are in good state after initialization or during runtime
 
 ### katla_app - Documentation
@@ -514,7 +514,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### katla_audio - Major Issues (Should Fix Before Production)
 
 - [x] **Improve device error handling** — `AudioEngine::new()` returns `Result` but callers may not handle all error cases properly. Add better recovery/error messages for common failures (no device, permissions, etc.)
-- [ ] **Add stream error recovery** — Audio stream errors (device disconnection, underrun) should attempt recovery rather than failing permanently
+- [x] **Add stream error recovery** — Audio stream errors (device disconnection, underrun) should attempt recovery rather than failing permanently
 - [ ] **Document thread safety guarantees** — Real-time audio thread constraints should be documented for API users to avoid deadlocks
 - [ ] **Add audio device hot-swap** — When output device disconnects, there is no automatic recovery path (see also TODO.md Audio Phase 17)
 
@@ -533,7 +533,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### katla_script - Major Issues (Should Fix Before Production)
 
 - [x] **ScriptSystem initialization should not panic** — `ScriptSystem::new()` now returns `Result<Self, ScriptError>` instead of panicking.
-- [ ] **Improve error messages from Lua** — Script errors should provide more context (which script, which function, stack traces where available)
+- [x] **Improve error messages from Lua** — Script errors should provide more context (which script, which function, stack traces where available)
 - [ ] **Add script timeout protection** — Long-running scripts can block the main thread. Add execution time limits or yield points
 - [ ] **Sandbox script capabilities** — Scripts currently have full access. Need safe subset of Lua APIs for production (restrict file I/O, network, etc.)
 - [ ] **Add script state serialization** — Script component state should serialize/deserialize for scene save/load
