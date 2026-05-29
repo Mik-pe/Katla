@@ -481,10 +481,10 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### katla_app - Critical Issues (Block Production)
 
 - [x] **Remove all `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. Remove unused code instead. Locations: `ui/editor_ui/types.rs:316,516`, `ui/particle_inspector.rs:46`, `ui/renderer.rs:1`, `util/background_loader.rs:1,39,61,118`
-- [ ] **Eliminate 214 `unwrap()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `AppResult` propagation with `?` operator throughout `katla_app/src/`
+- [ ] **Eliminate 161 `unwrap()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `AppResult` propagation with `?` operator throughout `katla_app/src/`
 - [ ] **Eliminate 10 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling and propagation
 - [ ] **Fix clippy warnings blocking `-D warnings` builds** — Run `cargo clippy -p katla_app -- -D warnings` to identify and fix all warnings
-- [ ] **Fix unresolved documentation links** — `application/resource_loading.rs:90` references `Spawner::spawn_primitive` and `DrawableComponent::with_handles` (not in scope), `resource_loading.rs:95` references `Application::spawn_gltf_model` (context issue), `resources/viewport_state.rs:86` references `ViewportManager` (in katla_gfx, not katla_app)
+- [ ] **Fix `ViewportManager` cross-crate doc link** — `resources/viewport_state.rs:86` references `ViewportManager` (in katla_gfx, not katla_app). The other doc links in `resource_loading.rs` have been fixed.
 
 ### katla_app - Major Issues (Should Fix Before Production)
 
