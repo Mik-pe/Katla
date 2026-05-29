@@ -116,10 +116,6 @@ impl StreamingVoice {
         self.finished.load(Ordering::Relaxed)
     }
 
-    pub fn is_looping(&self) -> bool {
-        self.looping
-    }
-
     pub fn begin_fade_out(&self) {
         self.fade_state.store(FADE_OUT, Ordering::Relaxed);
         self.fade_position.store(0, Ordering::Relaxed);
