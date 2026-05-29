@@ -488,7 +488,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 - [x] **Remove all `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. Remove unused code instead. Locations: `ui/editor_ui/types.rs:316,516`, `ui/particle_inspector.rs:46`, `ui/renderer.rs:1`, `util/background_loader.rs:1,39,61,118`
 - [ ] **Eliminate 161 `unwrap()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `AppResult` propagation with `?` operator throughout `katla_app/src/`
-- [ ] **Eliminate 10 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling and propagation
+- [x] **Eliminate 10 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling and propagation
 - [x] **Fix clippy warnings blocking `-D warnings` builds** — Run `cargo clippy -p katla_app -- -D warnings` to identify and fix all warnings
 - [x] **Fix `ViewportManager` cross-crate doc link** — `resources/viewport_state.rs:86` references `ViewportManager` (in katla_gfx, not katla_app). The other doc links in `resource_loading.rs` have been fixed.
 
@@ -496,7 +496,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 - [x] **Improve error handling in Preferences** — `preferences.rs:load()` silently returns defaults on error. Should propagate errors or at minimum log with `error!` level
 - [ ] **Complete audio spatial positioning** — `systems/audio_system.rs:290` has TODO comment. Spatial audio is needed for production-quality audio experience
-- [ ] **Make resource path discovery more robust** — `resources/mod.rs` uses multiple fallback paths that depend on runtime context. Consider using `CARGO_MANIFEST_DIR` as primary with explicit override via environment variable
+- [x] **Make resource path discovery more robust** — `resources/mod.rs` uses multiple fallback paths that depend on runtime context. Consider using `CARGO_MANIFEST_DIR` as primary with explicit override via environment variable
 - [ ] **Add retry logic for background loading** — `util/background_loader.rs` has no retry mechanism for transient failures (network timeouts, disk I/O errors)
 - [ ] **Add GPU resource health checks** — No validation that GPU resources (textures, buffers, pipelines) are in good state after initialization or during runtime
 
@@ -556,6 +556,17 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] **Address test clippy warnings** — 6 warnings in tests: unused fields (`value`, `dx`, `dy`), identity function map, always-true assertion, loop variable usage. These indicate potential logic issues
 - [ ] **Improve parallel query safety documentation** — `par_query` and parallel iterators need clearer safety guarantees and usage documentation for users
 - [ ] **Add World state validation** — No validation that `World` is in consistent state after operations (e.g., entity existence checks, component type registration)
+
+### katla_ecs - Architecture & Soundness (Production Readiness Review)
+
+- [ ] **Fix unsound parallel system access to World** — `update_parallel()` hands `UnsafeWorldCell` to all systems in a group. Systems get `&mut World` simultaneously. If a system accesses `resources`, `entity_events`, `component_events`, or `entity_allocator` (all shared World fields), it creates data races. The scheduler only tracks `ComponentAccess` but World has much more mutable state. Add resource access tracking to the scheduler (declare resource read/write like component access) or split World into separate borrows for parallel execution.
+- [ ] **Fix lifetime transmute in par_query** — `par_query.rs` uses `std::mem::transmute` to erase lifetimes to `'static` on `&ComponentStorage` and `&[(EntityId, T)]`. While bounded by the return type, this is fragile. Replace with a safer pattern (e.g. `UnsafeWorldCell`-style wrapper with explicit lifetime scoping, similar to Bevy's `WorldBorrow`).
+- [ ] **Add `Send + Sync` bounds to `Component` trait** — `Component: Any {}` carries no thread-safety bounds. This means `ComponentStorage<T>` cannot be `Send`, limiting future parallel strategies. Add `Component: Any + Send + Sync` and update all downstream types.
+- [ ] **Track resource access in parallel scheduler** — The `SystemScheduler` DAG only checks `ComponentAccess` conflicts. Systems that access `World::get_resource_mut()` concurrently in the same group cause data races. Extend `ComponentAccess` or add a separate `ResourceAccess` declaration to the `System` trait, and check conflicts in the scheduler's `conflicts()` function.
+- [ ] **Fix `get_component_mut` unconditionally marking dirty** — `get_component_mut` always marks the entity as changed even if no mutation occurs, causing unnecessary `query_changed` results. Add a `Mut<T>` wrapper (like Bevy) that only bumps the dirty flag on actual mutation (via DerefMut) or explicit `bump()` call.
+- [ ] **Remove or integrate dead archetype module** — `archetype/` module (Archetype, ComponentColumn, ArchetypeRegistry) exists but is not exported from `lib.rs` and is unused by the main storage path. Either remove it or integrate it as an alternative storage backend for iteration-heavy workloads. Sparse-set queries scale poorly for multi-component iteration (N-1 random-access lookups per entity).
+- [ ] **Add serialization/deserialization for scenes** — No built-in scene save/load. The `scene_tool` module has undo/redo commands but no serialization. Production games need entity + component serialization (blocked on component serialization registry, see Asset Pipeline section).
+- [ ] **Extend event system beyond frame-scoped** — Events are accumulated per frame and flushed at `update()` end. Systems cannot observe events from previous frames. Add buffered events or event persistence for deferred/reactive patterns if needed by gameplay systems.
 
 ### katla_ecs - Documentation
 
