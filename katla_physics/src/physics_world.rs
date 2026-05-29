@@ -267,7 +267,7 @@ impl PhysicsWorld {
         entity_id: u64,
     ) -> (RigidBodyHandle, ColliderHandle) {
         self.create_body_ex(
-            shape, transform, body_type, material, entity_id, false, 1.0, None,
+            shape, transform, body_type, material, entity_id, false, 1.0, false, None,
         )
     }
 
@@ -282,6 +282,7 @@ impl PhysicsWorld {
         entity_id: u64,
         is_sensor: bool,
         gravity_scale: f32,
+        ccd_enabled: bool,
         collision_filter: Option<&crate::collider::CollisionFilter>,
     ) -> (RigidBodyHandle, ColliderHandle) {
         let pose = katla_to_rapier_pose(transform);
@@ -327,6 +328,7 @@ impl PhysicsWorld {
         let body = RigidBodyBuilder::new(rapier_body_type)
             .pose(pose.into())
             .gravity_scale(gravity_scale)
+            .ccd_enabled(ccd_enabled)
             .build();
         let body_handle = self.bodies.insert(body);
 
@@ -708,5 +710,35 @@ mod tests {
         world.remove_static_collider(collider);
 
         assert_eq!(world.colliders.len(), 0);
+    }
+
+    #[test]
+    fn test_ccd_enabled_on_dynamic_body() {
+        let mut world = PhysicsWorld::new();
+        let shape = ColliderShape::Sphere(SphereShape::new(0.5));
+        let transform = Transform::new_from_position(Vec3::new(0.0, 10.0, 0.0));
+        let (body, _collider) = world.create_body_ex(
+            &shape,
+            &transform,
+            BodyType::Dynamic,
+            None,
+            1,
+            false,
+            1.0,
+            true,
+            None,
+        );
+        let rb = world.bodies.get(body).unwrap();
+        assert!(rb.is_ccd_enabled(), "CCD should be enabled on the body");
+    }
+
+    #[test]
+    fn test_ccd_disabled_by_default() {
+        let mut world = PhysicsWorld::new();
+        let shape = ColliderShape::Sphere(SphereShape::new(0.5));
+        let transform = Transform::new_from_position(Vec3::new(0.0, 10.0, 0.0));
+        let (body, _collider) = world.create_dynamic_body(&shape, &transform, 1);
+        let rb = world.bodies.get(body).unwrap();
+        assert!(!rb.is_ccd_enabled(), "CCD should be disabled by default");
     }
 }
