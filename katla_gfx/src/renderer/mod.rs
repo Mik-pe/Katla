@@ -223,6 +223,8 @@ pub struct VulkanRenderer {
     first_frame_rendered: bool,
     /// GPU hardware capabilities and limits.
     pub(crate) capabilities: types::GpuCapabilities,
+    /// Whether destroy() has already been called.
+    destroyed: bool,
 }
 
 /// Number of frames that can be processed concurrently.
@@ -483,6 +485,7 @@ impl VulkanRenderer {
             depth_texture_base_index: None,
             first_frame_rendered: false,
             capabilities: gpu_capabilities,
+            destroyed: false,
         })
     }
 
@@ -709,6 +712,11 @@ impl VulkanRenderer {
     }
 
     pub fn destroy(&mut self) {
+        if self.destroyed {
+            return;
+        }
+        self.destroyed = true;
+
         // Note: Pending readback should have been cleaned up by wait_for_pending_readback()
         // in cleanup_on_exit(). This is a safety check in case destroy() is called directly.
         if let Some(readback) = self.pending_readback.take() {
@@ -1356,6 +1364,15 @@ impl VulkanRenderer {
         self.swap_data.step_frame();
 
         Ok(())
+    }
+}
+
+impl Drop for VulkanRenderer {
+    fn drop(&mut self) {
+        if !self.destroyed {
+            log::warn!("VulkanRenderer dropped without explicit destroy() call");
+            self.destroy();
+        }
     }
 }
 
