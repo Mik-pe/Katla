@@ -3,6 +3,7 @@ pub mod component;
 pub mod engine;
 pub mod error;
 pub mod event_bus;
+mod sandbox;
 pub mod system;
 pub mod watcher;
 

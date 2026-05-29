@@ -142,6 +142,8 @@ impl ScriptEngine {
             }
         })?;
 
+        crate::sandbox::apply_sandbox(&vm)?;
+
         crate::bindings::math::register_math_types(&vm).map_err(|e| ScriptError::LoadFailed {
             path: "<vm>".into(),
             source: e,

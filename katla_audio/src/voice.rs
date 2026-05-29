@@ -281,20 +281,17 @@ impl Voice {
                 let vol = voice_volume * fade_gain;
 
                 if src_channels == 2 {
-                    let l0 = src_samples[int_pos];
-                    let r0 = src_samples[int_pos + 1];
-                    let l1 = if int_pos + 3 < total_src_samples {
-                        src_samples[int_pos + 2]
-                    } else {
-                        l0
-                    };
-                    let r1 = if int_pos + 3 < total_src_samples {
-                        src_samples[int_pos + 3]
-                    } else {
-                        r0
-                    };
-                    let mut l = l0 + (l1 - l0) * frac;
-                    let mut r = r0 + (r1 - r0) * frac;
+                    let ip = int_pos as isize;
+                    let lp0 = fetch_sample(src_samples, ip - 2, total_src_samples);
+                    let rp0 = fetch_sample(src_samples, ip - 1, total_src_samples);
+                    let lp1 = src_samples[int_pos];
+                    let rp1 = src_samples[int_pos + 1];
+                    let lp2 = fetch_sample(src_samples, ip + 2, total_src_samples);
+                    let rp2 = fetch_sample(src_samples, ip + 3, total_src_samples);
+                    let lp3 = fetch_sample(src_samples, ip + 4, total_src_samples);
+                    let rp3 = fetch_sample(src_samples, ip + 5, total_src_samples);
+                    let mut l = catmull_rom(lp0, lp1, lp2, lp3, frac);
+                    let mut r = catmull_rom(rp0, rp1, rp2, rp3, frac);
                     if occluded {
                         l = self.occlusion_filter.process_sample(0, l);
                         r = self.occlusion_filter.process_sample(1, r);
@@ -302,14 +299,14 @@ impl Voice {
                     chunk[0] += l * vol * left_gain;
                     chunk[1] += r * vol * right_gain;
                 } else {
+                    let stride = src_channels as isize;
                     for ch in 0..src_channels {
-                        let s0 = src_samples[int_pos + ch];
-                        let s1 = if int_pos + src_channels + ch < total_src_samples {
-                            src_samples[int_pos + src_channels + ch]
-                        } else {
-                            s0
-                        };
-                        let mut s = s0 + (s1 - s0) * frac;
+                        let base = int_pos as isize + ch as isize;
+                        let sp0 = fetch_sample(src_samples, base - stride, total_src_samples);
+                        let sp1 = src_samples[int_pos + ch];
+                        let sp2 = fetch_sample(src_samples, base + stride, total_src_samples);
+                        let sp3 = fetch_sample(src_samples, base + 2 * stride, total_src_samples);
+                        let mut s = catmull_rom(sp0, sp1, sp2, sp3, frac);
                         if occluded {
                             s = self.occlusion_filter.process_sample(ch.min(1), s);
                         }
@@ -333,13 +330,12 @@ impl Voice {
                     compute_fade_gain(fade_state, fade_pos_start + frames_mixed, fade_length);
                 let vol = voice_volume * fade_gain;
 
-                let s0 = src_samples[int_pos];
-                let s1 = if int_pos + 1 < total_src_samples {
-                    src_samples[int_pos + 1]
-                } else {
-                    s0
-                };
-                let mut mono = s0 + (s1 - s0) * frac;
+                let ip = int_pos as isize;
+                let sp0 = fetch_sample(src_samples, ip - 1, total_src_samples);
+                let sp1 = src_samples[int_pos];
+                let sp2 = fetch_sample(src_samples, ip + 1, total_src_samples);
+                let sp3 = fetch_sample(src_samples, ip + 2, total_src_samples);
+                let mut mono = catmull_rom(sp0, sp1, sp2, sp3, frac);
                 if occluded {
                     mono = self.occlusion_filter.process_sample(0, mono);
                 }
@@ -362,20 +358,17 @@ impl Voice {
                     compute_fade_gain(fade_state, fade_pos_start + frames_mixed, fade_length);
                 let vol = voice_volume * fade_gain;
 
-                let l0 = src_samples[int_pos];
-                let r0 = src_samples[int_pos + 1];
-                let l1 = if int_pos + 3 < total_src_samples {
-                    src_samples[int_pos + 2]
-                } else {
-                    l0
-                };
-                let r1 = if int_pos + 3 < total_src_samples {
-                    src_samples[int_pos + 3]
-                } else {
-                    r0
-                };
-                let mut l = l0 + (l1 - l0) * frac;
-                let mut r = r0 + (r1 - r0) * frac;
+                let ip = int_pos as isize;
+                let lp0 = fetch_sample(src_samples, ip - 2, total_src_samples);
+                let rp0 = fetch_sample(src_samples, ip - 1, total_src_samples);
+                let lp1 = src_samples[int_pos];
+                let rp1 = src_samples[int_pos + 1];
+                let lp2 = fetch_sample(src_samples, ip + 2, total_src_samples);
+                let rp2 = fetch_sample(src_samples, ip + 3, total_src_samples);
+                let lp3 = fetch_sample(src_samples, ip + 4, total_src_samples);
+                let rp3 = fetch_sample(src_samples, ip + 5, total_src_samples);
+                let mut l = catmull_rom(lp0, lp1, lp2, lp3, frac);
+                let mut r = catmull_rom(rp0, rp1, rp2, rp3, frac);
                 if occluded {
                     l = self.occlusion_filter.process_sample(0, l);
                     r = self.occlusion_filter.process_sample(1, r);
@@ -412,6 +405,27 @@ impl Voice {
         } else {
             self.fixed_position.store(fixed_pos, Ordering::Relaxed);
         }
+    }
+}
+
+#[inline]
+pub(crate) fn catmull_rom(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
+    let t2 = t * t;
+    let t3 = t2 * t;
+    0.5 * ((2.0 * p1)
+        + (-p0 + p2) * t
+        + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+        + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+}
+
+#[inline]
+pub(crate) fn fetch_sample(samples: &[f32], index: isize, len: usize) -> f32 {
+    if index < 0 {
+        samples[0]
+    } else if index as usize >= len {
+        samples[len - 1]
+    } else {
+        samples[index as usize]
     }
 }
 

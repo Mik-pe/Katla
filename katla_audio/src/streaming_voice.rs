@@ -5,7 +5,9 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, AtomicUsize,
 use crate::command_queue::AudioCategoryValue;
 use crate::error::AudioError;
 use crate::streaming::StreamingDecoder;
-use crate::voice::{CategoryVolumes, VoiceId, VoiceState, compute_pan_gains};
+use crate::voice::{
+    CategoryVolumes, VoiceId, VoiceState, catmull_rom, compute_pan_gains, fetch_sample,
+};
 
 const STREAM_RING_BUFFER_SAMPLES: usize = 44100 * 2 * 4;
 const CHUNK_THRESHOLD: usize = 44100 * 2;
@@ -309,12 +311,17 @@ impl StreamingVoice {
                     streaming_fade_gain(fade_state, fade_pos_start + frames_mixed, fade_length);
                 let vol = voice_volume * fade_gain;
 
-                let l0 = ring_buffer[int_pos];
-                let r0 = ring_buffer[int_pos + 1];
-                let l1 = ring_buffer[int_pos + 2];
-                let r1 = ring_buffer[int_pos + 3];
-                let l = l0 + (l1 - l0) * frac;
-                let r = r0 + (r1 - r0) * frac;
+                let ip = int_pos as isize;
+                let lp0 = fetch_sample(ring_buffer, ip - 2, ring_len);
+                let rp0 = fetch_sample(ring_buffer, ip - 1, ring_len);
+                let lp1 = ring_buffer[int_pos];
+                let rp1 = ring_buffer[int_pos + 1];
+                let lp2 = fetch_sample(ring_buffer, ip + 2, ring_len);
+                let rp2 = fetch_sample(ring_buffer, ip + 3, ring_len);
+                let lp3 = fetch_sample(ring_buffer, ip + 4, ring_len);
+                let rp3 = fetch_sample(ring_buffer, ip + 5, ring_len);
+                let l = catmull_rom(lp0, lp1, lp2, lp3, frac);
+                let r = catmull_rom(rp0, rp1, rp2, rp3, frac);
                 chunk[0] += l * vol * left_gain;
                 chunk[1] += r * vol * right_gain;
 
@@ -337,9 +344,12 @@ impl StreamingVoice {
                     streaming_fade_gain(fade_state, fade_pos_start + frames_mixed, fade_length);
                 let vol = voice_volume * fade_gain;
 
-                let s0 = ring_buffer[int_pos];
-                let s1 = ring_buffer[int_pos + 1];
-                let mono = (s0 + (s1 - s0) * frac) * vol;
+                let ip = int_pos as isize;
+                let sp0 = fetch_sample(ring_buffer, ip - 1, ring_len);
+                let sp1 = ring_buffer[int_pos];
+                let sp2 = fetch_sample(ring_buffer, ip + 1, ring_len);
+                let sp3 = fetch_sample(ring_buffer, ip + 2, ring_len);
+                let mono = catmull_rom(sp0, sp1, sp2, sp3, frac) * vol;
                 chunk[0] += mono * left_gain;
                 chunk[1] += mono * right_gain;
 
