@@ -101,10 +101,9 @@ fn spawn_new_bodies(world: &mut World) {
         let is_sensor = world.get_component::<TriggerVolume>(entity).is_some();
 
         let entity_id = entity.id();
-        let gravity_scale = world
-            .get_component::<RigidBody>(entity)
-            .map(|rb| rb.gravity_scale)
-            .unwrap_or(1.0);
+        let rb_ref = world.get_component::<RigidBody>(entity);
+        let gravity_scale = rb_ref.as_ref().map(|rb| rb.gravity_scale).unwrap_or(1.0);
+        let ccd_enabled = rb_ref.as_ref().map(|rb| rb.ccd_enabled).unwrap_or(false);
 
         let collision_filter = world.get_component::<CollisionFilter>(entity).copied();
 
@@ -119,6 +118,7 @@ fn spawn_new_bodies(world: &mut World) {
                 entity_id,
                 is_sensor,
                 gravity_scale,
+                ccd_enabled,
                 collision_filter.as_ref(),
             );
 

@@ -29,6 +29,8 @@ pub struct RigidBody {
     pub body_type: BodyType,
     /// Additional gravity scale (1.0 = normal, 0.0 = no gravity, 2.0 = double).
     pub gravity_scale: f32,
+    /// Enable continuous collision detection for fast-moving bodies.
+    pub ccd_enabled: bool,
     /// Linear velocity in world space (read from Rapier after step).
     #[serde(skip)]
     pub linear_velocity: katla_math::Vec3,
@@ -45,6 +47,7 @@ impl RigidBody {
         Self {
             body_type: BodyType::Dynamic,
             gravity_scale: 1.0,
+            ccd_enabled: false,
             linear_velocity: katla_math::Vec3::default(),
             body_handle: None,
             collider_handle: None,
@@ -55,6 +58,7 @@ impl RigidBody {
         Self {
             body_type: BodyType::Static,
             gravity_scale: 1.0,
+            ccd_enabled: false,
             linear_velocity: katla_math::Vec3::default(),
             body_handle: None,
             collider_handle: None,
@@ -65,6 +69,7 @@ impl RigidBody {
         Self {
             body_type: BodyType::Kinematic,
             gravity_scale: 1.0,
+            ccd_enabled: false,
             linear_velocity: katla_math::Vec3::default(),
             body_handle: None,
             collider_handle: None,
@@ -73,6 +78,11 @@ impl RigidBody {
 
     pub fn with_gravity_scale(mut self, scale: f32) -> Self {
         self.gravity_scale = scale;
+        self
+    }
+
+    pub fn with_ccd(mut self, enabled: bool) -> Self {
+        self.ccd_enabled = enabled;
         self
     }
 
