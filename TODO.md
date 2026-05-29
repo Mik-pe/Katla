@@ -488,7 +488,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### katla_app - Major Issues (Should Fix Before Production)
 
-- [ ] **Improve error handling in Preferences** — `preferences.rs:load()` silently returns defaults on error. Should propagate errors or at minimum log with `error!` level
+- [x] **Improve error handling in Preferences** — `preferences.rs:load()` silently returns defaults on error. Should propagate errors or at minimum log with `error!` level
 - [ ] **Complete audio spatial positioning** — `systems/audio_system.rs:290` has TODO comment. Spatial audio is needed for production-quality audio experience
 - [ ] **Make resource path discovery more robust** — `resources/mod.rs` uses multiple fallback paths that depend on runtime context. Consider using `CARGO_MANIFEST_DIR` as primary with explicit override via environment variable
 - [ ] **Add retry logic for background loading** — `util/background_loader.rs` has no retry mechanism for transient failures (network timeouts, disk I/O errors)
