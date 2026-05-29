@@ -198,7 +198,7 @@ impl StlMesh {
             if lower.starts_with("facet normal") {
                 in_loop = false;
                 vertex_idx = 0;
-                normal = parse_vec3_from_parts(&lower["facet normal".len()..].trim(), line_num)?;
+                normal = parse_vec3_from_parts(lower["facet normal".len()..].trim(), line_num)?;
                 continue;
             }
 
@@ -238,7 +238,7 @@ impl StlMesh {
                         reason: "more than 3 vertices in facet".into(),
                     });
                 }
-                let v = parse_vec3_from_parts(&lower["vertex".len()..].trim(), line_num)?;
+                let v = parse_vec3_from_parts(lower["vertex".len()..].trim(), line_num)?;
                 vertices[vertex_idx] = v;
                 vertex_idx += 1;
                 continue;

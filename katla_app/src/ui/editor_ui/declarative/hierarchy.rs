@@ -240,13 +240,13 @@ fn draw_hierarchy(ui: &mut UiContext, _bounds: Rect2D) {
         }
     }
 
-    if response.right_clicked {
-        if let Some(selected_u64) = tree_state.selected {
-            let entity_id = EntityId::from_raw(selected_u64);
-            ctx.selected_entity = Some(entity_id);
-            ctx.hierarchy_state.context_entity = Some(entity_id);
-            ctx.hierarchy_state.context_menu_open = true;
-        }
+    if response.right_clicked
+        && let Some(selected_u64) = tree_state.selected
+    {
+        let entity_id = EntityId::from_raw(selected_u64);
+        ctx.selected_entity = Some(entity_id);
+        ctx.hierarchy_state.context_entity = Some(entity_id);
+        ctx.hierarchy_state.context_menu_open = true;
     }
 
     let mut clicked_action: Option<&str> = None;

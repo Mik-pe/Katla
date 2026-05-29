@@ -10,8 +10,7 @@ use katla_ui::{
 
 use crate::ui::editor_ui::ColorScheme;
 use crate::ui::editor_ui::types::{
-    ColliderField, ColliderShapeType, EditorAction, EntityInfo, InspectorEditState,
-    PhysicsMaterialField, RigidBodyField, RigidBodyType,
+    ColliderShapeType, EditorAction, EntityInfo, InspectorEditState, RigidBodyType,
 };
 
 thread_local! {
@@ -901,7 +900,7 @@ fn draw_inspector(ui: &mut UiContext, _bounds: Rect2D) {
                             for &(category_name, _) in COMPONENT_CATEGORIES {
                                 let category_items: Vec<&&str> = filtered
                                     .iter()
-                                    .filter(|name| component_category(*name) == category_name)
+                                    .filter(|name| component_category(name) == category_name)
                                     .collect();
                                 if category_items.is_empty() {
                                     continue;

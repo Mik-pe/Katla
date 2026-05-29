@@ -374,15 +374,16 @@ fn draw_console(ui: &mut UiContext, _bounds: Rect2D) {
     );
 
     let cmd_held = ui.key_down(KeyCode::Control) || ui.key_down(KeyCode::Super);
-    if cmd_held && ui.key_pressed(KeyCode::C) {
-        if let Some((start, end)) = selection_range(ctx.selection_anchor, ctx.selection_cursor) {
-            let lines: Vec<String> = (start..=end)
-                .filter_map(|i| filtered_entries.get(i))
-                .map(|e| format!("[{}] {} — {}", e.level, e.message, e.target))
-                .collect();
-            let text = lines.join("\n");
-            ui.copy_to_clipboard(&text);
-        }
+    if cmd_held
+        && ui.key_pressed(KeyCode::C)
+        && let Some((start, end)) = selection_range(ctx.selection_anchor, ctx.selection_cursor)
+    {
+        let lines: Vec<String> = (start..=end)
+            .filter_map(|i| filtered_entries.get(i))
+            .map(|e| format!("[{}] {} — {}", e.level, e.message, e.target))
+            .collect();
+        let text = lines.join("\n");
+        ui.copy_to_clipboard(&text);
     }
 
     set_console_ctx(ctx);

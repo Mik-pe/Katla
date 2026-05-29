@@ -521,10 +521,9 @@ impl Application {
             && !self.current_modifiers.shift_key()
             && !self.current_modifiers.alt_key()
             && !self.editor.editor_ui.prev_want_capture_keyboard
+            && self.editor.perform_undo(&mut self.world)
         {
-            if self.editor.perform_undo(&mut self.world) {
-                info!("Undo performed");
-            }
+            info!("Undo performed");
         }
 
         if keycode == KeyCode::KeyZ
@@ -532,10 +531,9 @@ impl Application {
             && self.current_modifiers.shift_key()
             && !self.current_modifiers.alt_key()
             && !self.editor.editor_ui.prev_want_capture_keyboard
+            && self.editor.perform_redo(&mut self.world)
         {
-            if self.editor.perform_redo(&mut self.world) {
-                info!("Redo performed");
-            }
+            info!("Redo performed");
         }
     }
 

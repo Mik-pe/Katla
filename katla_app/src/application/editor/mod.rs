@@ -22,10 +22,10 @@ use crate::components::{
 };
 
 use crate::ui::{
-    AudioEmitterBoolField, AudioEmitterField, AudioEmitterInfo, ColliderField, ColliderShapeInfo,
-    ColliderShapeType, DirectionalLightInfo, EditorAction, EntityInfo, ParticleEmitterInfo,
-    PerspectiveInfo, PhysicsMaterialField, PhysicsMaterialInfo, PointLightInfo, RigidBodyField,
-    RigidBodyInfo, RigidBodyType,
+    AudioEmitterBoolField, AudioEmitterField, ColliderField, ColliderShapeInfo, ColliderShapeType,
+    DirectionalLightInfo, EditorAction, EntityInfo, ParticleEmitterInfo, PerspectiveInfo,
+    PhysicsMaterialField, PhysicsMaterialInfo, PointLightInfo, RigidBodyField, RigidBodyInfo,
+    RigidBodyType,
 };
 
 use super::Application;
@@ -453,16 +453,16 @@ fn handle_inspector_drag_undo(app: &mut Application) {
         app.editor.inspector_drag_snapshot = Some(snapshot_inspector_state(app, entity_id));
     }
 
-    if !slider_active && was_active {
-        if let Some(snapshot) = app.editor.inspector_drag_snapshot.take() {
-            if inspector_snapshot_differs_from_ecs(entity_id, &snapshot, &app.world) {
-                let mut undo_group = UndoGroup::new("Inspector slider drag");
-                undo_group
-                    .commands
-                    .push(Box::new(InspectorDragUndo::new(snapshot)));
-                app.editor.push_undo(undo_group);
-            }
-        }
+    if !slider_active
+        && was_active
+        && let Some(snapshot) = app.editor.inspector_drag_snapshot.take()
+        && inspector_snapshot_differs_from_ecs(entity_id, &snapshot, &app.world)
+    {
+        let mut undo_group = UndoGroup::new("Inspector slider drag");
+        undo_group
+            .commands
+            .push(Box::new(InspectorDragUndo::new(snapshot)));
+        app.editor.push_undo(undo_group);
     }
 
     app.editor.inspector_slider_was_active = slider_active;
@@ -593,50 +593,49 @@ fn inspector_snapshot_differs_from_ecs(
         }
     }
     if let Some(light) = world.get_component::<PointLight>(entity) {
-        if let Some(color) = snapshot.light_color {
-            if (color[0] - light.color[0]).abs() > 1e-3
+        if let Some(color) = snapshot.light_color
+            && ((color[0] - light.color[0]).abs() > 1e-3
                 || (color[1] - light.color[1]).abs() > 1e-3
-                || (color[2] - light.color[2]).abs() > 1e-3
-            {
-                return true;
-            }
+                || (color[2] - light.color[2]).abs() > 1e-3)
+        {
+            return true;
         }
-        if let Some(intensity) = snapshot.light_intensity {
-            if (intensity - light.intensity).abs() > 1e-4 {
-                return true;
-            }
+        if let Some(intensity) = snapshot.light_intensity
+            && (intensity - light.intensity).abs() > 1e-4
+        {
+            return true;
         }
-        if let Some(range) = snapshot.light_range {
-            if (range - light.range).abs() > 1e-4 {
-                return true;
-            }
+        if let Some(range) = snapshot.light_range
+            && (range - light.range).abs() > 1e-4
+        {
+            return true;
         }
     }
     if let Some(emitter) = world.get_component::<ParticleEmitterComponent>(entity) {
-        if let Some(rate) = snapshot.emit_rate {
-            if (rate - emitter.config.emit_rate).abs() > 1e-4 {
-                return true;
-            }
+        if let Some(rate) = snapshot.emit_rate
+            && (rate - emitter.config.emit_rate).abs() > 1e-4
+        {
+            return true;
         }
-        if let Some(vel) = snapshot.velocity {
-            if (vel - emitter.config.velocity_magnitude).abs() > 1e-4 {
-                return true;
-            }
+        if let Some(vel) = snapshot.velocity
+            && (vel - emitter.config.velocity_magnitude).abs() > 1e-4
+        {
+            return true;
         }
-        if let Some(life) = snapshot.lifetime {
-            if (life - emitter.config.base_lifetime).abs() > 1e-4 {
-                return true;
-            }
+        if let Some(life) = snapshot.lifetime
+            && (life - emitter.config.base_lifetime).abs() > 1e-4
+        {
+            return true;
         }
-        if let Some(grav) = snapshot.gravity {
-            if (grav - emitter.config.gravity).abs() > 1e-4 {
-                return true;
-            }
+        if let Some(grav) = snapshot.gravity
+            && (grav - emitter.config.gravity).abs() > 1e-4
+        {
+            return true;
         }
-        if let Some(sc) = snapshot.particle_scale {
-            if (sc - emitter.config.base_scale).abs() > 1e-4 {
-                return true;
-            }
+        if let Some(sc) = snapshot.particle_scale
+            && (sc - emitter.config.base_scale).abs() > 1e-4
+        {
+            return true;
         }
     }
     false
@@ -841,7 +840,7 @@ fn apply_inspector_slider_changes(app: &mut Application) {
                     c.radius = *collider_capsule_radius;
                 }
             }
-            if let Some(mut rb) = app
+            if let Some(rb) = app
                 .world
                 .get_component_mut::<katla_physics::RigidBody>(entity_id)
             {
@@ -855,10 +854,9 @@ fn apply_inspector_slider_changes(app: &mut Application) {
     if let Some(rb) = app
         .world
         .get_component_mut::<katla_physics::RigidBody>(entity_id)
+        && (*rigid_body_gravity_scale - rb.gravity_scale).abs() > 1e-4
     {
-        if (*rigid_body_gravity_scale - rb.gravity_scale).abs() > 1e-4 {
-            rb.gravity_scale = *rigid_body_gravity_scale;
-        }
+        rb.gravity_scale = *rigid_body_gravity_scale;
     }
 
     // PhysicsMaterial
@@ -920,7 +918,7 @@ pub fn process_editor_actions(app: &mut Application) {
                     .extension()
                     .is_some_and(|ext| ext.eq_ignore_ascii_case("stl"));
 
-                let result = if is_stl {
+                let _result = if is_stl {
                     app.spawn_stl_model(&path, [world_pos.x(), world_pos.y(), world_pos.z()])
                 } else {
                     app.spawn_gltf_model(&path, [world_pos.x(), world_pos.y(), world_pos.z()], None)
@@ -1151,55 +1149,55 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
             }
             EditorAction::ResetParticleSystem => {
-                if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut app.renderer {
-                    if let Some(ps) = &mut vulkan_renderer.particle_system {
-                        use katla_gfx::particles::EmitterHandle;
+                if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut app.renderer
+                    && let Some(ps) = &mut vulkan_renderer.particle_system
+                {
+                    use katla_gfx::particles::EmitterHandle;
 
-                        let entity_configs: Vec<(
-                            EntityId,
-                            EmitterHandle,
-                            katla_gfx::particles::EmitterConfig,
-                            bool,
-                        )> = app
-                            .world
-                            .query::<&mut ParticleEmitterComponent>()
-                            .filter_map(|(id, emitter)| {
-                                emitter
-                                    .emitter_handle
-                                    .map(|h| (id, h, emitter.config, emitter.kill_on_destroy))
-                            })
-                            .collect();
+                    let entity_configs: Vec<(
+                        EntityId,
+                        EmitterHandle,
+                        katla_gfx::particles::EmitterConfig,
+                        bool,
+                    )> = app
+                        .world
+                        .query::<&mut ParticleEmitterComponent>()
+                        .filter_map(|(id, emitter)| {
+                            emitter
+                                .emitter_handle
+                                .map(|h| (id, h, emitter.config, emitter.kill_on_destroy))
+                        })
+                        .collect();
 
-                        for (id, handle, _config, kill_on_destroy) in &entity_configs {
-                            ps.destroy_emitter(*handle, *kill_on_destroy);
-                            if let Some(emitter) =
-                                app.world.get_component_mut::<ParticleEmitterComponent>(*id)
-                            {
-                                emitter.emitter_handle = None;
-                            }
+                    for (id, handle, _config, kill_on_destroy) in &entity_configs {
+                        ps.destroy_emitter(*handle, *kill_on_destroy);
+                        if let Some(emitter) =
+                            app.world.get_component_mut::<ParticleEmitterComponent>(*id)
+                        {
+                            emitter.emitter_handle = None;
                         }
-
-                        if let Err(e) = ps.reset_all() {
-                            log::error!("Failed to reset particle system: {}", e);
-                        }
-
-                        for (id, _old_handle, config, _kill_on_destroy) in entity_configs {
-                            match ps.create_emitter(config) {
-                                Ok(handle) => {
-                                    if let Some(emitter) =
-                                        app.world.get_component_mut::<ParticleEmitterComponent>(id)
-                                    {
-                                        emitter.emitter_handle = Some(handle);
-                                    }
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to recreate particle emitter: {}", e);
-                                }
-                            }
-                        }
-
-                        info!("Particle system reset complete");
                     }
+
+                    if let Err(e) = ps.reset_all() {
+                        log::error!("Failed to reset particle system: {}", e);
+                    }
+
+                    for (id, _old_handle, config, _kill_on_destroy) in entity_configs {
+                        match ps.create_emitter(config) {
+                            Ok(handle) => {
+                                if let Some(emitter) =
+                                    app.world.get_component_mut::<ParticleEmitterComponent>(id)
+                                {
+                                    emitter.emitter_handle = Some(handle);
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Failed to recreate particle emitter: {}", e);
+                            }
+                        }
+                    }
+
+                    info!("Particle system reset complete");
                 }
             }
             EditorAction::SetGizmoMode(mode_id) => {
@@ -1337,7 +1335,7 @@ pub fn process_editor_actions(app: &mut Application) {
                             let he = bounds.extent;
                             let fitted =
                                 katla_physics::ColliderShape::Box(katla_physics::BoxShape::new(he));
-                            if let Some(mut collider) = app
+                            if let Some(collider) = app
                                 .world
                                 .get_component_mut::<katla_physics::ColliderShape>(entity)
                             {
@@ -1607,7 +1605,7 @@ pub fn process_editor_actions(app: &mut Application) {
                         katla_physics::CapsuleShape::new(0.5, 0.25),
                     ),
                 };
-                if let Some(mut rb) = app
+                if let Some(rb) = app
                     .world
                     .get_component_mut::<katla_physics::RigidBody>(entity)
                 {
@@ -1658,7 +1656,7 @@ pub fn process_editor_actions(app: &mut Application) {
                         }
                     }
                 }
-                if let Some(mut rb) = app
+                if let Some(rb) = app
                     .world
                     .get_component_mut::<katla_physics::RigidBody>(entity)
                 {
@@ -1667,7 +1665,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
             }
             EditorAction::SetRigidBodyType { entity, body_type } => {
-                if let Some(mut rb) = app
+                if let Some(rb) = app
                     .world
                     .get_component_mut::<katla_physics::RigidBody>(entity)
                 {
@@ -1685,7 +1683,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 field,
                 value,
             } => {
-                if let Some(mut rb) = app
+                if let Some(rb) = app
                     .world
                     .get_component_mut::<katla_physics::RigidBody>(entity)
                 {
@@ -1699,7 +1697,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 field,
                 value,
             } => {
-                if let Some(mut pm) = app
+                if let Some(pm) = app
                     .world
                     .get_component_mut::<katla_physics::PhysicsMaterial>(entity)
                 {
@@ -1891,7 +1889,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                     intensity: pl.intensity,
                     range: pl.range,
                 });
-        let particle_emitter = app
+        let _particle_emitter = app
             .world
             .get_component::<ParticleEmitterComponent>(entity_id)
             .map(|pe| ParticleEmitterInfo {

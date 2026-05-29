@@ -923,10 +923,10 @@ fn execute_create_resource(
         None => content.unwrap_or("").to_string(),
     };
 
-    if let Some(parent) = file_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            return format!("Error creating parent directory: {e}");
-        }
+    if let Some(parent) = file_path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return format!("Error creating parent directory: {e}");
     }
 
     match std::fs::write(&file_path, &body) {
@@ -986,10 +986,10 @@ fn execute_generate_resource(
 
     let body = generate_resource_content(resource_type, description);
 
-    if let Some(parent) = file_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            return format!("Error creating parent directory: {e}");
-        }
+    if let Some(parent) = file_path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return format!("Error creating parent directory: {e}");
     }
 
     match std::fs::write(&file_path, &body) {

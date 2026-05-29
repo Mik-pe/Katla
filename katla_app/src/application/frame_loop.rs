@@ -109,12 +109,12 @@ impl Application {
             let mut audio_cmds = self
                 .world
                 .get_resource_mut::<katla_script::PendingAudioCommands>()
-                .map(|mut r| std::mem::take(&mut r.0))
+                .map(|r| std::mem::take(&mut r.0))
                 .unwrap_or_default();
-            if !audio_cmds.is_empty() {
-                if let Some(ref mut audio) = self.audio_system {
-                    audio.process_script_audio_commands(&mut audio_cmds);
-                }
+            if !audio_cmds.is_empty()
+                && let Some(ref mut audio) = self.audio_system
+            {
+                audio.process_script_audio_commands(&mut audio_cmds);
             }
         }
 
@@ -135,28 +135,26 @@ impl Application {
                             max_distance,
                             return_index,
                         } = cmd
+                            && let Some(hit) = physics.raycast(origin, direction, max_distance)
                         {
-                            if let Some(hit) = physics.raycast(origin, direction, max_distance) {
-                                results.insert(
-                                    return_index,
-                                    katla_script::bindings::script_world::RaycastResult {
-                                        entity: hit.entity,
-                                        point: hit.point,
-                                        normal: hit.normal,
-                                        distance: hit.distance,
-                                    },
-                                );
-                            }
+                            results.insert(
+                                return_index,
+                                katla_script::bindings::script_world::RaycastResult {
+                                    entity: hit.entity,
+                                    point: hit.point,
+                                    normal: hit.normal,
+                                    distance: hit.distance,
+                                },
+                            );
                         }
                     }
                 }
-                if !results.is_empty() {
-                    if let Some(pending) = self
+                if !results.is_empty()
+                    && let Some(pending) = self
                         .world
                         .get_resource_mut::<katla_script::PendingRaycastResults>()
-                    {
-                        pending.0.extend(results);
-                    }
+                {
+                    pending.0.extend(results);
                 }
             }
         }
@@ -174,10 +172,10 @@ impl Application {
         );
 
         // Update particle emitters from ECS components
-        if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer {
-            if let Some(ref mut ps) = vulkan_renderer.particle_system {
-                self.particle_system.update(&mut self.world, ps, dt);
-            }
+        if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer
+            && let Some(ref mut ps) = vulkan_renderer.particle_system
+        {
+            self.particle_system.update(&mut self.world, ps, dt);
         }
 
         // Update audio system — process AudioEmitter components
@@ -186,41 +184,41 @@ impl Application {
         }
 
         // Update GPU animation: prepare data and upload per-frame params
-        if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer {
-            if let (Some(gpu_anim), Some(pipeline), Some(buffers)) = (
+        if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer
+            && let (Some(gpu_anim), Some(pipeline), Some(buffers)) = (
                 &mut self.gpu_animation_system,
                 &mut vulkan_renderer.animation_pipeline,
                 &mut vulkan_renderer.animation_buffers,
-            ) {
-                gpu_anim
-                    .prepare(&mut self.world, pipeline, buffers)
-                    .unwrap_or_else(|e| {
-                        log::error!("GPU animation prepare failed: {:?}", e);
-                    });
-                gpu_anim.update_params(&mut self.world, buffers);
-                self.frame_graph
-                    .as_vulkan_mut()
-                    .set_animation_skeleton_count(gpu_anim.skeleton_count() as u32);
+            )
+        {
+            gpu_anim
+                .prepare(&mut self.world, pipeline, buffers)
+                .unwrap_or_else(|e| {
+                    log::error!("GPU animation prepare failed: {:?}", e);
+                });
+            gpu_anim.update_params(&mut self.world, buffers);
+            self.frame_graph
+                .as_vulkan_mut()
+                .set_animation_skeleton_count(gpu_anim.skeleton_count() as u32);
 
-                // Build per-entity skeleton copy commands:
-                // (skeleton_handle_index, joint_offset, joint_count)
-                use crate::components::DrawableComponent;
-                let mut copy_cmds = Vec::new();
-                for entity in gpu_anim.entities() {
-                    if let Some(drawable) = self.world.get_component::<DrawableComponent>(entity)
-                        && let Some(info) = gpu_anim.entity_info(entity)
-                    {
-                        copy_cmds.push((
-                            drawable.skeleton_handle.index(),
-                            info.joint_offset,
-                            info.joint_count,
-                        ));
-                    }
+            // Build per-entity skeleton copy commands:
+            // (skeleton_handle_index, joint_offset, joint_count)
+            use crate::components::DrawableComponent;
+            let mut copy_cmds = Vec::new();
+            for entity in gpu_anim.entities() {
+                if let Some(drawable) = self.world.get_component::<DrawableComponent>(entity)
+                    && let Some(info) = gpu_anim.entity_info(entity)
+                {
+                    copy_cmds.push((
+                        drawable.skeleton_handle.index(),
+                        info.joint_offset,
+                        info.joint_count,
+                    ));
                 }
-                self.frame_graph
-                    .as_vulkan_mut()
-                    .set_skeleton_copy_commands(copy_cmds);
             }
+            self.frame_graph
+                .as_vulkan_mut()
+                .set_skeleton_copy_commands(copy_cmds);
         }
 
         // Poll background loader for completed asset loads
@@ -328,13 +326,13 @@ impl Application {
         // Handle max_frames limit (after readback to ensure last frame's readback is queued)
         self.frame_count += 1;
 
-        if let Some(max) = self.info.max_frames {
-            if self.frame_count >= max {
-                info!("Rendered {} frames, exiting", self.frame_count);
-                // Call cleanup directly since exiting() may not be triggered
-                self.cleanup_on_exit();
-                event_loop.exit();
-            }
+        if let Some(max) = self.info.max_frames
+            && self.frame_count >= max
+        {
+            info!("Rendered {} frames, exiting", self.frame_count);
+            // Call cleanup directly since exiting() may not be triggered
+            self.cleanup_on_exit();
+            event_loop.exit();
         }
 
         self.window.request_redraw();

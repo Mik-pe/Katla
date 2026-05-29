@@ -168,7 +168,7 @@ impl EditorUI {
             theme: self.theme.clone(),
             save_confirmation_timer: self.save_confirmation_timer,
         };
-        self.view_tree.env_mut().set(status_data.clone());
+        self.view_tree.env_mut().set(status_data);
 
         let toolbar_height = 36.0;
         self.toolbar_state.undo_count = params.undo_count;
@@ -525,17 +525,17 @@ impl EditorUI {
             }
         }
 
-        if self.bottom_panel_tab == BottomPanelTab::Console {
-            if let Some(console_ctx) = take_console_ctx() {
-                self.console_state.scroll_state = console_ctx.scroll_state;
-                self.console_state.filter_levels = console_ctx.filter_levels;
-                self.console_state.search_filter = console_ctx.search_filter;
-                self.console_state.auto_scroll = console_ctx.auto_scroll;
-                self.console_state.selection_anchor = console_ctx.selection_anchor;
-                self.console_state.selection_cursor = console_ctx.selection_cursor;
-                for action in console_ctx.pending_actions {
-                    self.pending_actions.push(action);
-                }
+        if self.bottom_panel_tab == BottomPanelTab::Console
+            && let Some(console_ctx) = take_console_ctx()
+        {
+            self.console_state.scroll_state = console_ctx.scroll_state;
+            self.console_state.filter_levels = console_ctx.filter_levels;
+            self.console_state.search_filter = console_ctx.search_filter;
+            self.console_state.auto_scroll = console_ctx.auto_scroll;
+            self.console_state.selection_anchor = console_ctx.selection_anchor;
+            self.console_state.selection_cursor = console_ctx.selection_cursor;
+            for action in console_ctx.pending_actions {
+                self.pending_actions.push(action);
             }
         }
 
