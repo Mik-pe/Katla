@@ -29,7 +29,6 @@
 // Katla-native Pipeline State Enums
 
 /// Compare operation for depth/stencil testing.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CompareOp {
     /// Never passes.

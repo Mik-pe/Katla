@@ -172,7 +172,6 @@ pub mod texture;
 pub mod vertex;
 
 // Internal modules (pipeline state is implementation detail)
-#[allow(dead_code)]
 pub(crate) mod backend;
 pub(crate) mod pipeline;
 

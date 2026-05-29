@@ -561,7 +561,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 - [ ] **Eliminate 24 `unwrap()`/`expect()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `Result` propagation throughout the crate
 - [ ] **Eliminate 7 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling
-- [ ] **Fix test compilation errors** — Tests fail to compile due to feature-gated items (`llm-assistant` feature) not being available in test context. Use `#[cfg(feature = "llm-assistant")]` on tests or provide mock implementations
+- [x] **Fix test compilation errors** — Tests fail to compile due to feature-gated items (`llm-assistant` feature) not being available in test context. Use `#[cfg(feature = "llm-assistant")]` on tests or provide mock implementations
 - ~~**Implement `std::error::Error` for `LlmError`**~~ — Already implemented at `llm/mod.rs:132`.
 
 ### katla_agent - Major Issues (Should Fix Before Production)
@@ -576,3 +576,47 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] **Add agent architecture overview** — Document how co-creator, LLM integration, and tool execution work together
 - [ ] **Add tool development guide** — How to create new tools for the co-creator system
 - [ ] **Document LLM configuration** — Configuration options, API keys, rate limits, model selection
+
+## Rendering - katla_gfx
+
+### P0 - Critical Issues (Block Production)
+- [x] **Remove all `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. Removed from: `pipeline.rs:32` (`CompareOp` enum), `render_graph/compiler.rs:38` (`PassDagNode` struct), `lib.rs:175` (backend/pipeline modules), `vulkan/material/builder.rs:144` (`with_push_constant_range` method), `shadow/cascade.rs:137` (`cascades()` method). Also removed dead code: `with_push_constant_range` method (never used) and unused re-exports in `backend/mod.rs`.
+- [ ] **Add `Drop` impl for `VulkanRenderer`** — Currently requires manual `destroy()` call. Missing `Drop` can cause resource leaks if user forgets to call it
+- [ ] **Fix Metal backend parity for `update_texture()`** — Default impl is no-op, Vulkan implements it, Metal inherits no-op. Either implement for Metal or remove default impl
+
+### P1 - Backend Parity (Must Fix)
+- [ ] **Unify frame lifecycle across backends** — Vulkan uses frame graph via `render()`, Metal uses hardcoded `render_frame()` path. Both should use `FrameGraph<B>::execute()`
+- [ ] **Implement `recompile_materials_for_shader()` for Metal** — Currently no-op (inherited default). Metal backend needs real implementation
+- [ ] **Implement `init_animation_pipeline()` for Metal** — Currently no-op (inherited default). Metal backend needs real implementation
+- [ ] **Remove `render_frame()` from Metal backend** — Replace with frame graph execution through `render()` method once parity is achieved
+- [ ] **Remove Metal-specific methods from `AnyRenderer`** — `set_geometry_hdr_view()`, `set_tonemap_output_view()`, `queue_metal_picking_readback()`, `check_metal_picking_readback()`, `has_pending_metal_picking_readback()` should be in `GpuRenderer` trait or removed
+
+### P2 - Resource Management
+- [ ] **Fix pending readback cleanup** — `VulkanRenderer::destroy()` silently cleans up pending readback. Should either fail loudly or ensure cleanup happens in normal flow via `wait_for_pending_readback()`
+- [ ] **Use `Option` for nullable Vulkan handles** — Replace manual null checks (`!= vk::DescriptorPool::null()`) with `Option<vk::DescriptorPool>` throughout
+- [ ] **Add runtime bindless texture limit warnings** — `MAX_BINDLESS_TEXTURES = 4096` has no runtime check. Add warning when approaching limit, error when exceeded
+
+### P3 - Error Handling
+- [ ] **Preserve error context in `RendererError`** — Many places drop original error: `format!("Failed to create {}", label)` loses `e`. Use `format!("{}: {:?}", label, e)`
+- [ ] **Make default trait impls fail explicitly** — `update_texture()`, `recompile_materials_for_shader()`, and other default no-ops should return `Err(RendererError::InvalidOperation(...))` instead of `Ok(())`
+- [ ] **Add Metal error types** — Metal backend uses `RendererError` but some internal paths return `Result<(), ()>`. Standardize on proper error types
+
+### P4 - Performance
+- [ ] **Reduce `Rc<VulkanContext>` cloning in initialization** — `VulkanRenderer::init()` clones context 8+ times. Pass `&Rc<VulkanContext>` where possible
+- [ ] **Cache frame graph barrier compilation** — Currently recompiles barriers every frame. Cache compilation results where possible
+- [ ] **Batch single-time commands** — `begin_single_time_commands()` creates new command buffer each call. Batch operations where possible
+
+### P5 - API Design
+- [ ] **Reduce public API surface** — `lib.rs` exposes 80+ items. Many internal modules (`barrier`, `sync`, `pipeline`) shouldn't be public
+- [ ] **Consolidate frame lifecycle methods** — `begin_frame()`/`end_frame()` vs `render()` vs `wait_for_frame()` — confusing, multiple ways to do same thing
+- [ ] **Replace `Rc<RefCell<ShaderCache>>` with better pattern** — Interior mutability + reference counting. Consider `Arc<Mutex<ShaderCache>>` or restructure to avoid shared mutation
+
+### P6 - Code Quality
+- [ ] **Remove unused imports in `backend/mod.rs`** — Has 3 `#[allow(unused_imports)]` that should be cleaned up
+- [ ] **Fix inconsistent naming** — `swap_data` vs `frame_context`, `asset_registry` vs `mesh_manager` vs `texture_manager`, `bindless_manager` vs `storage_manager`
+- [ ] **Add missing documentation** — Many public items in `GpuRenderer` trait lack `///` docs. Add comprehensive API documentation
+
+### Metal Backend Specific
+- [ ] **Fix billboard icons rendering** — Billboard icons don't show in Metal backend
+- [ ] **Fix animated fox (skinned mesh) rendering** — Skinned mesh doesn't show in Metal backend
+- [ ] **Fix particle systems rendering** — Particle systems don't show in Metal backend

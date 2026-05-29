@@ -140,23 +140,6 @@ impl PipelineBuilder {
         self
     }
 
-    /// Add a push constant range to the pipeline layout.
-    #[allow(dead_code)]
-    pub fn with_push_constant_range(
-        mut self,
-        stages: vk::ShaderStageFlags,
-        offset: u32,
-        size: u32,
-    ) -> Self {
-        self.push_constant_ranges.push(
-            vk::PushConstantRange::default()
-                .stage_flags(stages)
-                .offset(offset)
-                .size(size),
-        );
-        self
-    }
-
     pub fn with_polygon_mode(mut self, mode: PolygonMode) -> Self {
         self.polygon_mode = mode;
         self
