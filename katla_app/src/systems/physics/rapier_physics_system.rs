@@ -152,7 +152,8 @@ fn spawn_new_joints(world: &mut World) {
             let joint_handle = world
                 .get_resource_mut::<PhysicsWorld>()
                 .unwrap()
-                .create_joint(&joint, ha, hb);
+                .create_joint(&joint, ha, hb)
+                .ok();
 
             // Find the Joint component for entity_b (joints are typically owned by entity_b)
             let target_entity = EntityId::from_raw(joint.entity_b);
@@ -277,8 +278,10 @@ fn sync_transforms_back(world: &mut World) {
     let updates: Vec<_> = dynamic_handles
         .into_iter()
         .filter_map(|(entity, handle)| {
-            let new_transform = physics.body_transform(handle)?;
-            let velocity = physics.body_velocity(handle).unwrap_or_else(Vec3::default);
+            let new_transform = physics.body_transform(handle).ok()?;
+            let velocity = physics
+                .body_velocity(handle)
+                .unwrap_or_else(|_| Vec3::default());
             Some((entity, new_transform, velocity))
         })
         .collect();
@@ -516,7 +519,7 @@ mod tests {
         let physics = world.get_resource::<PhysicsWorld>().unwrap();
         assert_eq!(physics.collider_count(), 1);
         assert!(
-            physics.body_transform(rb.body_handle.unwrap()).is_none(),
+            physics.body_transform(rb.body_handle.unwrap()).is_err(),
             "Static body should have no actual Rapier rigid body"
         );
     }

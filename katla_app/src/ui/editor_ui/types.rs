@@ -518,6 +518,7 @@ pub enum FocusedPanel {
 }
 
 /// Mutable inspector editing state for all editable properties.
+#[derive(Clone, Debug)]
 pub struct InspectorEditState {
     pub pos: [f32; 3],
     pub rot: [f32; 3],
