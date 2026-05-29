@@ -9,8 +9,8 @@ use super::declarative::{
     AssetBrowserDrawCtx, ConsoleDrawCtx, EditorRootView, GizmoDrawCtx, GizmoModeChanged,
     HierarchyDrawCtx, InspectorDrawCtx, ParticleInspectorDrawCtx, ParticleInspectorPanelSync,
     PreferencesDrawCtx, PreferencesPanelSync, StatusBarData, ToolbarAction, ToolbarDrawCtx,
-    ViewportGridDrawCtx, build_asset_browser_from_ctx, set_console_ctx, set_hierarchy_ctx,
-    set_inspector_ctx, take_console_ctx, take_hierarchy_ctx, take_inspector_ctx,
+    ViewportGridDrawCtx, build_asset_browser_from_ctx, set_console_ctx, set_inspector_ctx,
+    take_console_ctx, take_inspector_ctx,
 };
 use super::{
     EditorAction, EditorRenderParams, EditorUI, co_creator,
@@ -209,7 +209,7 @@ impl EditorUI {
             Vec2::new(0.0, toolbar_height),
             Vec2::new(self.left_panel_width, panel_height),
         );
-        let hierarchy_ctx = HierarchyDrawCtx {
+        self.view_tree.env_mut().set(HierarchyDrawCtx {
             bounds: left_panel_bounds_for_hierarchy,
             entities: params.entities.to_vec(),
             selected_entity: self.selected_entity,
@@ -217,8 +217,7 @@ impl EditorUI {
             theme: self.theme.clone(),
             pending_actions: Vec::new(),
             search_filter: self.hierarchy_search_filter.clone(),
-        };
-        set_hierarchy_ctx(hierarchy_ctx);
+        });
 
         let inspector_bounds = Rect2D::from_origin_size(
             Vec2::new(right_panel_x, toolbar_height),
@@ -507,13 +506,7 @@ impl EditorUI {
                 .extend_from_slice(&inspector_ctx.pending_actions);
         }
 
-        if let Some(hierarchy_ctx) = take_hierarchy_ctx() {
-            self.hierarchy_state = hierarchy_ctx.hierarchy_state;
-            self.hierarchy_search_filter = hierarchy_ctx.search_filter;
-            self.selected_entity = hierarchy_ctx.selected_entity;
-            self.pending_actions
-                .extend_from_slice(&hierarchy_ctx.pending_actions);
-        }
+        // TODO: Implement HierarchySync action emission to sync state back from declarative panel
 
         for sync in self
             .view_tree
