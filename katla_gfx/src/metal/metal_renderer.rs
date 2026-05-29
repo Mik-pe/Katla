@@ -187,6 +187,7 @@ pub struct MetalRenderer {
     pub(crate) shadow_cascade_buffer: Option<MetalBuffer>,
     pub(crate) shadow_sampler: Option<super::sampler::MetalSamplerState>,
     pub(crate) buffer_sizes_buffer: Option<MetalBuffer>,
+    #[expect(dead_code)]
     pub(crate) scene_color_view: Option<MetalTextureView>,
     pub(crate) viewport_bindless_slot: Option<u32>,
     pub(crate) tonemap_output_view: Option<MetalTextureView>,
@@ -1307,6 +1308,7 @@ mod tests {
     use super::*;
     use crate::renderer::gpu_renderer::GpuRenderer;
     use crate::renderer::types::{DrawCall, DrawList, FrameUniforms};
+    use crate::texture::TextureUsage;
 
     fn create_renderer() -> MetalRenderer {
         let context = MetalContext::init_headless().expect("Failed to create headless context");

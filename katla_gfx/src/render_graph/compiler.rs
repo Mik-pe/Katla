@@ -34,6 +34,7 @@ use super::pass::PassDesc;
 /// for a single pass, along with the topological level used for
 /// parallel scheduling.
 #[derive(Debug, Clone)]
+#[expect(dead_code)]
 pub(crate) struct PassDagNode {
     /// Index into the pass list.
     pub pass_index: usize,

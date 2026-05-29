@@ -19,6 +19,7 @@ use crate::renderer::VulkanRenderer;
 ///
 /// Implements `GpuRenderer` by delegating to the active variant.
 /// Backend-specific methods are available via `as_vulkan()` / `as_metal()`.
+#[allow(clippy::large_enum_variant)]
 pub enum AnyRenderer {
     Vulkan(VulkanRenderer),
     #[cfg(target_os = "macos")]

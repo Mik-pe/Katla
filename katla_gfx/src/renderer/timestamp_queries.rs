@@ -39,6 +39,7 @@ impl TimestampQueries {
         // Each begin/end pair uses 2 query indices; the label is recorded at begin
     }
 
+    #[expect(dead_code)]
     pub fn record_pending(&mut self, device: &ash::Device, command_buffer: vk::CommandBuffer) {
         let total_queries = self.pending_labels.len() * 2;
         if total_queries == 0 || total_queries > MAX_TIMESTAMP_QUERIES {
@@ -76,6 +77,7 @@ impl TimestampQueries {
     }
 
     /// Read GPU results and update the cache. Call this once per frame after GPU work completes.
+    #[expect(dead_code)]
     pub fn read_and_cache(&mut self, device: &ash::Device) {
         self.results = self.read_results_inner(device);
     }

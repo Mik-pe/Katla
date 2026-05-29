@@ -230,6 +230,7 @@ impl MetalOutlineSubsystem {
 ///
 /// Draws selected objects writing stencil ref 1 to mark their silhouette.
 /// Switches between non-skinned and skinned pipelines based on draw call skeleton state.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_stencil_mark(
     cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
     stencil_pipeline: &MetalGraphicsPipeline,
@@ -316,6 +317,7 @@ pub(crate) fn render_stencil_mark(
 /// Draws selected objects slightly scaled up, only where stencil != 1,
 /// creating the outline effect around selected objects.
 /// Switches between non-skinned and skinned pipelines based on draw call skeleton state.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_outline(
     cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
     outline_pipeline: &MetalGraphicsPipeline,

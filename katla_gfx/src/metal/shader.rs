@@ -33,9 +33,11 @@ pub(crate) enum ShaderProfile {
 /// - Set 1, Binding 1: Shared sampler → [[sampler(0)]]
 /// - Set 2, Binding 0: Joint matrices (storage buffer) → [[buffer(2)]]
 pub(crate) fn katla_msl_options() -> msl::Options {
-    let mut options = msl::Options::default();
-    options.lang_version = (2, 0);
-    options.fake_missing_bindings = true;
+    let mut options = msl::Options {
+        lang_version: (2, 0),
+        fake_missing_bindings: true,
+        ..msl::Options::default()
+    };
 
     let graphics_bindings = create_graphics_binding_map();
     options
@@ -56,9 +58,11 @@ pub(crate) fn katla_msl_options() -> msl::Options {
 /// - Set 1, Binding 0: Bindless texture array → [[buffer(9)]]
 /// - Set 1, Binding 1: Shared sampler → [[sampler(1)]]
 pub(crate) fn katla_msl_options_ui() -> msl::Options {
-    let mut options = msl::Options::default();
-    options.lang_version = (2, 0);
-    options.fake_missing_bindings = true;
+    let mut options = msl::Options {
+        lang_version: (2, 0),
+        fake_missing_bindings: true,
+        ..msl::Options::default()
+    };
 
     let ui_bindings = create_ui_binding_map();
     options
@@ -416,9 +420,11 @@ pub(crate) fn compile_wgsl_to_metal(
         ShaderProfile::Graphics => katla_msl_options(),
         ShaderProfile::Ui => katla_msl_options_ui(),
         ShaderProfile::Outline => {
-            let mut options = msl::Options::default();
-            options.lang_version = (2, 0);
-            options.fake_missing_bindings = true;
+            let mut options = msl::Options {
+                lang_version: (2, 0),
+                fake_missing_bindings: true,
+                ..msl::Options::default()
+            };
             let bindings = create_outline_binding_map();
             options
                 .per_entry_point_map
@@ -429,9 +435,11 @@ pub(crate) fn compile_wgsl_to_metal(
             options
         }
         ShaderProfile::OutlineSkinned => {
-            let mut options = msl::Options::default();
-            options.lang_version = (2, 0);
-            options.fake_missing_bindings = true;
+            let mut options = msl::Options {
+                lang_version: (2, 0),
+                fake_missing_bindings: true,
+                ..msl::Options::default()
+            };
             let bindings = create_outline_skinned_binding_map();
             options
                 .per_entry_point_map

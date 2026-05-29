@@ -287,6 +287,7 @@ impl Frame<'_, VulkanRenderer> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_outline_meshes(
         &mut self,
         cmd: &CommandBuffer,

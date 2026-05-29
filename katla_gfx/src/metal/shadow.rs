@@ -182,6 +182,7 @@ impl MetalShadowSubsystem {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_cascade(
     cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
     shadow_pipeline: &MetalGraphicsPipeline,
