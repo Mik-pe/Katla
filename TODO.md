@@ -454,7 +454,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] Remove immediate-mode builder widgets that have declarative equivalents — `Button`, `Slider`, `LabeledSlider`, `Vec3Slider`, `ToggleButton`, `TextInput`, `RadioButton`, `ImageButton`, `Panel` from `widgets/mod.rs` public API. Keep only widgets with no declarative counterpart (e.g. `DockArea`).
 - [ ] Add `ViewDescriptor` construction tests — unit tests for the builder constructors, diff correctness (including keyed children), and layout for each new container variant.
 - [ ] Add declarative integration tests — frame-level tests that build a descriptor tree, run `ViewTree::frame()`, assert bounds, actions, and state mutations for each widget type. Cover the gaps identified in review: no tests for `diff_descriptor`, `ViewTree::sync_tree`, `TransitionContainer`, `DockArea`, `ColorPicker`, `BindingResolver`.
-- [ ] Add integration tests for new widget descriptors — add tests for `Section`, `TabBar`, `Grid`, `Separator`, `Icon`, `Selectable` descriptors to ensure they build, diff, layout, and render correctly.
+- [x] Add integration tests for new widget descriptors — add tests for `Section`, `TabBar`, `Grid`, `Separator`, `Icon`, `Selectable` descriptors to ensure they build, diff, layout, and render correctly.
 
 ## Developer Experience
 
