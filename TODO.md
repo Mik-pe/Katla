@@ -71,7 +71,7 @@
 - [x] **Fix clippy::too_many_arguments warning** — `create_body_ex` in physics_world.rs has 9 arguments. Either add `#[allow(clippy::too_many_arguments)]` or refactor to use a builder pattern with `BodyBuilder` struct.
 - [x] **Make gravity configurable** — `PhysicsWorld::new()` hardcodes gravity as `Vector::new(0.0, -9.81, 0.0)`. Add `PhysicsWorld::with_gravity(gravity: Vec3)` constructor or `set_gravity(&mut self, gravity: Vec3)` method.
 - [x] **Add `PhysicsError` enum for explicit error handling** — PhysicsWorld uses `Option` for fallible operations (body_transform, body_velocity). Add a `PhysicsError` enum with variants like `BodyNotFound`, `ColliderNotFound`, `InvalidHandle` and return `Result<T, PhysicsError>` from methods where appropriate.
-- [ ] **Expose CCD configuration** — Rapier supports Continuous Collision Detection for fast-moving bodies but it's not exposed in katla_physics. Add CCD enable/disable parameter to body creation methods or as a global PhysicsWorld setting.
+- [x] **Expose CCD configuration** — Rapier supports Continuous Collision Detection for fast-moving bodies but it's not exposed in katla_physics. Add CCD enable/disable parameter to body creation methods or as a global PhysicsWorld setting.
 - [ ] **Add character controller support** — Implement a `CharacterController` component that wraps Rapier's KinematicCharacterController for first/third-person character movement with slope handling, stairs, and collision response.
 
 ### Phase 6: Physics component scene serialization
@@ -489,7 +489,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] **Remove all `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. Remove unused code instead. Locations: `ui/editor_ui/types.rs:316,516`, `ui/particle_inspector.rs:46`, `ui/renderer.rs:1`, `util/background_loader.rs:1,39,61,118`
 - [ ] **Eliminate 161 `unwrap()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `AppResult` propagation with `?` operator throughout `katla_app/src/`
 - [ ] **Eliminate 10 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling and propagation
-- [ ] **Fix clippy warnings blocking `-D warnings` builds** — Run `cargo clippy -p katla_app -- -D warnings` to identify and fix all warnings
+- [x] **Fix clippy warnings blocking `-D warnings` builds** — Run `cargo clippy -p katla_app -- -D warnings` to identify and fix all warnings
 - [x] **Fix `ViewportManager` cross-crate doc link** — `resources/viewport_state.rs:86` references `ViewportManager` (in katla_gfx, not katla_app). The other doc links in `resource_loading.rs` have been fixed.
 
 ### katla_app - Major Issues (Should Fix Before Production)
