@@ -4,6 +4,7 @@ use std::io;
 #[derive(Debug)]
 pub enum AudioError {
     DeviceNotFound(String),
+    DeviceAccessDenied(String),
     FormatUnsupported(String),
     DecodeFailed(String),
     StreamError(String),
@@ -16,6 +17,9 @@ impl fmt::Display for AudioError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AudioError::DeviceNotFound(msg) => write!(f, "Audio device not found: {msg}"),
+            AudioError::DeviceAccessDenied(msg) => {
+                write!(f, "Audio device access denied: {msg}")
+            }
             AudioError::FormatUnsupported(msg) => write!(f, "Unsupported audio format: {msg}"),
             AudioError::DecodeFailed(msg) => write!(f, "Audio decode failed: {msg}"),
             AudioError::StreamError(msg) => write!(f, "Audio stream error: {msg}"),

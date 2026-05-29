@@ -23,7 +23,18 @@ impl Application {
                 info!("Audio system initialized");
                 self.audio_system = Some(audio);
             }
-            Err(e) => warn!("Failed to initialize audio: {}", e),
+            Err(katla_audio::AudioError::DeviceAccessDenied(ref msg)) => {
+                warn!("Audio initialization failed (access denied): {msg}");
+                warn!("Audio will be unavailable. Grant audio permissions and restart.");
+            }
+            Err(katla_audio::AudioError::DeviceNotFound(ref msg)) => {
+                warn!("Audio initialization failed (no device): {msg}");
+                warn!("Audio will be unavailable until an output device is connected.");
+            }
+            Err(e) => {
+                warn!("Audio initialization failed: {e}");
+                warn!("Audio will be unavailable.");
+            }
         }
 
         // Load scene from disk
