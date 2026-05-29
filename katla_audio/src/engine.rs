@@ -39,16 +39,37 @@ pub struct AudioEngine {
 impl AudioEngine {
     pub fn new() -> Result<Self, AudioError> {
         let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or(AudioError::DeviceNotFound(
-                "No audio output device found".into(),
-            ))?;
+
+        let device = host.default_output_device().ok_or_else(|| {
+            let host_id = host.id().name();
+            AudioError::DeviceNotFound(format!(
+                "No default output device available on host '{host_id}'. \
+                 Check that an audio device is connected and enabled in system settings."
+            ))
+        })?;
+
+        let device_name = device
+            .description()
+            .map(|d| d.name().to_string())
+            .unwrap_or_else(|_| "<unknown>".into());
 
         let supported_config = device
             .supported_output_configs()
             .map_err(|e| {
-                AudioError::DeviceNotFound(format!("Failed to query output configs: {e}"))
+                let msg = e.to_string();
+                if msg.to_lowercase().contains("permission")
+                    || msg.to_lowercase().contains("access")
+                    || msg.to_lowercase().contains("denied")
+                {
+                    AudioError::DeviceAccessDenied(format!(
+                        "Permission denied querying configs for device '{device_name}': {e}. \
+                         Grant microphone/audio access in System Settings > Privacy & Security."
+                    ))
+                } else {
+                    AudioError::DeviceNotFound(format!(
+                        "Failed to query output configs for device '{device_name}': {e}"
+                    ))
+                }
             })?
             .find(|c| c.channels() <= 2 && c.sample_format() == cpal::SampleFormat::F32)
             .or_else(|| {
@@ -57,12 +78,14 @@ impl AudioEngine {
                     .ok()?
                     .find(|c| c.channels() <= 2)
             })
-            .ok_or(AudioError::DeviceNotFound(
-                "No suitable audio output config found".into(),
-            ))?;
+            .ok_or_else(|| {
+                AudioError::FormatUnsupported(format!(
+                    "Device '{device_name}' does not support stereo F32 or I16 output. \
+                     Audio engine requires <= 2 channel output."
+                ))
+            })?;
 
         let config = supported_config.with_max_sample_rate().config();
-
         let sample_rate = config.sample_rate;
         let channels = config.channels;
 
@@ -80,7 +103,23 @@ impl AudioEngine {
                 },
                 None,
             )
-            .map_err(|e| AudioError::StreamError(format!("Failed to build audio stream: {e}")))?;
+            .map_err(|e| {
+                let kind = e.to_string();
+                if kind.to_lowercase().contains("permission")
+                    || kind.to_lowercase().contains("access")
+                    || kind.to_lowercase().contains("denied")
+                {
+                    AudioError::DeviceAccessDenied(format!(
+                        "Permission denied creating stream on device '{device_name}': {e}. \
+                         Grant audio access in System Settings > Privacy & Security."
+                    ))
+                } else {
+                    AudioError::StreamError(format!(
+                        "Failed to build audio stream on device '{device_name}' \
+                         ({sample_rate}Hz, {channels}ch): {e}"
+                    ))
+                }
+            })?;
 
         stream
             .pause()
