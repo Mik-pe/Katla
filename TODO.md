@@ -484,7 +484,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] **Eliminate 161 `unwrap()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `AppResult` propagation with `?` operator throughout `katla_app/src/`
 - [ ] **Eliminate 10 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling and propagation
 - [ ] **Fix clippy warnings blocking `-D warnings` builds** — Run `cargo clippy -p katla_app -- -D warnings` to identify and fix all warnings
-- [ ] **Fix `ViewportManager` cross-crate doc link** — `resources/viewport_state.rs:86` references `ViewportManager` (in katla_gfx, not katla_app). The other doc links in `resource_loading.rs` have been fixed.
+- [x] **Fix `ViewportManager` cross-crate doc link** — `resources/viewport_state.rs:86` references `ViewportManager` (in katla_gfx, not katla_app). The other doc links in `resource_loading.rs` have been fixed.
 
 ### katla_app - Major Issues (Should Fix Before Production)
 
@@ -581,7 +581,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### P0 - Critical Issues (Block Production)
 - [x] **Remove all `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. Removed from: `pipeline.rs:32` (`CompareOp` enum), `render_graph/compiler.rs:38` (`PassDagNode` struct), `lib.rs:175` (backend/pipeline modules), `vulkan/material/builder.rs:144` (`with_push_constant_range` method), `shadow/cascade.rs:137` (`cascades()` method). Also removed dead code: `with_push_constant_range` method (never used) and unused re-exports in `backend/mod.rs`.
-- [ ] **Add `Drop` impl for `VulkanRenderer`** — Currently requires manual `destroy()` call. Missing `Drop` can cause resource leaks if user forgets to call it
+- [x] **Add `Drop` impl for `VulkanRenderer`** — Currently requires manual `destroy()` call. Missing `Drop` can cause resource leaks if user forgets to call it
 - [ ] **Fix Metal backend parity for `update_texture()`** — Default impl is no-op, Vulkan implements it, Metal inherits no-op. Either implement for Metal or remove default impl
 
 ### P1 - Backend Parity (Must Fix)
@@ -594,7 +594,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### P2 - Resource Management
 - [ ] **Fix pending readback cleanup** — `VulkanRenderer::destroy()` silently cleans up pending readback. Should either fail loudly or ensure cleanup happens in normal flow via `wait_for_pending_readback()`
 - [ ] **Use `Option` for nullable Vulkan handles** — Replace manual null checks (`!= vk::DescriptorPool::null()`) with `Option<vk::DescriptorPool>` throughout
-- [ ] **Add runtime bindless texture limit warnings** — `MAX_BINDLESS_TEXTURES = 4096` has no runtime check. Add warning when approaching limit, error when exceeded
+- [x] **Add runtime bindless texture limit warnings** — `MAX_BINDLESS_TEXTURES = 4096` has no runtime check. Add warning when approaching limit, error when exceeded
 
 ### P3 - Error Handling
 - [ ] **Preserve error context in `RendererError`** — Many places drop original error: `format!("Failed to create {}", label)` loses `e`. Use `format!("{}: {:?}", label, e)`
@@ -612,7 +612,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] **Replace `Rc<RefCell<ShaderCache>>` with better pattern** — Interior mutability + reference counting. Consider `Arc<Mutex<ShaderCache>>` or restructure to avoid shared mutation
 
 ### P6 - Code Quality
-- [ ] **Remove unused imports in `backend/mod.rs`** — Has 3 `#[allow(unused_imports)]` that should be cleaned up
+- ~~**Remove unused imports in `backend/mod.rs`**~~ — Stale. No `#[allow(unused_imports)]` annotations remain in katla_gfx.
 - [ ] **Fix inconsistent naming** — `swap_data` vs `frame_context`, `asset_registry` vs `mesh_manager` vs `texture_manager`, `bindless_manager` vs `storage_manager`
 - [ ] **Add missing documentation** — Many public items in `GpuRenderer` trait lack `///` docs. Add comprehensive API documentation
 
