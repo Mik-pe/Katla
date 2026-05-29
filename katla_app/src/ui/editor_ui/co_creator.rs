@@ -25,6 +25,7 @@ pub struct CoCreatorState {
     /// Status message shown when idle.
     pub status_message: String,
     /// Scroll state for the message area.
+    #[expect(dead_code)]
     pub scroll_state: ScrollAreaState,
 }
 
@@ -147,6 +148,7 @@ impl CoCreatorStyle {
 }
 
 /// Whether the co-creator panel submitted a message this frame.
+#[expect(dead_code)]
 pub struct CoCreatorResponse {
     pub _submitted: bool,
     pub submitted_text: Option<String>,

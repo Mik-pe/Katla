@@ -15,11 +15,11 @@ pub(super) use asset_browser::{AssetBrowserDrawCtx, build_asset_browser_from_ctx
 pub(super) use co_creator::{
     CoCreatorDrawCtx, CoCreatorPanelSync, CoCreatorSubmitAction, CoCreatorUndoAction,
 };
-pub(super) use console::{ConsoleDrawCtx, ConsoleState, ConsoleSync};
+pub(super) use console::{ConsoleDrawCtx, ConsoleState};
 pub(super) use editor_root::EditorRootView;
 pub(super) use gizmo::{GizmoDrawCtx, GizmoModeChanged};
-pub(super) use hierarchy::{HierarchyDrawCtx, HierarchySync};
-pub(super) use inspector::{InspectorDrawCtx, InspectorSync};
+pub(super) use hierarchy::HierarchyDrawCtx;
+pub(super) use inspector::InspectorDrawCtx;
 pub(super) use particle_inspector::{ParticleInspectorDrawCtx, ParticleInspectorPanelSync};
 pub(super) use preferences::{PreferencesDrawCtx, PreferencesPanelSync};
 pub(super) use status_bar::StatusBarData;

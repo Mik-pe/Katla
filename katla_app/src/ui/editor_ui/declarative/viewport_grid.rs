@@ -11,6 +11,7 @@ pub(crate) struct ViewportGridDrawCtx {
     pub bounds: Rect2D,
     pub state: ViewportGridState,
     pub texture_ids: [Option<TextureId>; 4],
+    #[expect(dead_code)]
     pub theme: ColorScheme,
     pub mouse_pos: Vec2,
 }
@@ -40,7 +41,7 @@ impl Build for ViewportGridView {
             for col in 0..cols {
                 let slot_index = draw_ctx.state.layout.slot_index(row, col).unwrap();
                 let is_active = draw_ctx.state.active_viewport == Some(slot_index);
-                let is_hovered = hovered_slot == Some(slot_index);
+                let _is_hovered = hovered_slot == Some(slot_index);
 
                 let texture = draw_ctx.texture_ids[slot_index];
 

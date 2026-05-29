@@ -9,6 +9,7 @@ pub(crate) struct LogEntry {
     pub _timestamp: std::time::Instant,
     pub level: Level,
     pub message: String,
+    #[expect(dead_code)]
     pub target: String,
 }
 
@@ -50,6 +51,7 @@ impl LogBuffer {
         self.entries.iter()
     }
 
+    #[expect(dead_code)]
     pub fn clear(&mut self) {
         self.entries.clear();
     }

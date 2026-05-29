@@ -234,7 +234,6 @@ impl ApplicationBuilder {
     /// Creates transient resources (hdr_color, viewport_0) without passes.
     /// Metal uses hardcoded pass execution but benefits from frame graph
     /// transient texture management and bindless registration.
-
     fn build_metal_frame_graph(renderer: &mut katla_gfx::MetalRenderer) -> AppResult<FrameGraph> {
         use katla_gfx::render_graph::{
             FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassType, SimplePass,

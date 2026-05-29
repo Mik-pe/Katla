@@ -1,6 +1,5 @@
 //! Editor play mode state machine and scene snapshot for play/stop cycle.
 
-use katla_gfx::GpuRenderer;
 use katla_gfx::primitives;
 use log::info;
 

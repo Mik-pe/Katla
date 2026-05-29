@@ -300,6 +300,7 @@ impl AudioSystem {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compute_spatialization(
     emitter_pos: Vec3,
     listener_pos: Vec3,

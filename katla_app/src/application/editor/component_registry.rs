@@ -467,7 +467,7 @@ fn register_collider_shape(registry: &mut ComponentRegistry) {
             if let Some(rb) = world.get_component::<RigidBody>(entity)
                 && let (Some(body_h), Some(collider_h)) = (rb.body_handle, rb.collider_handle)
             {
-                drop(rb);
+                let _ = rb;
                 if let Some(physics) = world.get_resource_mut::<PhysicsWorld>() {
                     physics.remove_body(body_h, collider_h);
                 }
@@ -545,7 +545,7 @@ fn register_rigid_body(registry: &mut ComponentRegistry) {
             if let Some(rb) = world.get_component::<RigidBody>(entity)
                 && let (Some(body_h), Some(collider_h)) = (rb.body_handle, rb.collider_handle)
             {
-                drop(rb);
+                let _ = rb;
                 if let Some(physics) = world.get_resource_mut::<PhysicsWorld>() {
                     physics.remove_body(body_h, collider_h);
                 }
