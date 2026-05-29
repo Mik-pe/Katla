@@ -568,6 +568,10 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] **Add serialization/deserialization for scenes** — No built-in scene save/load. The `scene_tool` module has undo/redo commands but no serialization. Production games need entity + component serialization (blocked on component serialization registry, see Asset Pipeline section).
 - [ ] **Extend event system beyond frame-scoped** — Events are accumulated per frame and flushed at `update()` end. Systems cannot observe events from previous frames. Add buffered events or event persistence for deferred/reactive patterns if needed by gameplay systems.
 
+### katla_ecs - Long-Term: Sparse-Set to Archetype Migration
+
+- [ ] **Plan the sparse-set to archetype migration** — The ECS currently uses a sparse-set storage model. Archetype-based storage (where entities with the same component set are stored together in contiguous memory) enables better cache locality for system iteration, more efficient component addition/removal, and simplifies parallel query execution. Create a detailed task breakdown covering: (a) current architecture analysis, (b) target archetype design (Archetype struct, ArchetypeRegistry, move semantics), (c) migration strategy (incremental vs big-bang, compatibility during transition), (d) impact on World, System, and Query APIs, (e) impact on katla_app systems and serialization, (f) testing strategy, (g) performance validation plan.
+
 ### katla_ecs - Documentation
 
 - [ ] **Add ECS architecture overview** — Document component storage, archetype system, parallel query execution model
@@ -616,7 +620,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### P3 - Error Handling
 - [x] **Preserve error context in `RendererError`** — Many places drop original error: `format!("Failed to create {}", label)` loses `e`. Use `format!("{}: {:?}", label, e)`
 - [x] **Make default trait impls fail explicitly** — `update_texture()`, `recompile_materials_for_shader()`, and other default no-ops should return `Err(RendererError::InvalidOperation(...))` instead of `Ok(())`
-- [ ] **Add Metal error types** — Metal backend uses `RendererError` but some internal paths return `Result<(), String>` (particles, shadows, debug readback). Standardize on `Result<(), RendererError>` throughout. Lighting module done.
+- [x] **Add Metal error types** — Standardized error types across lighting, shadow buffers, and entire particles subsystem. Added `From<String>` and `From<&str>` for `RendererError`.
 
 ### P4 - Performance
 - [ ] **Reduce `Rc<VulkanContext>` cloning in initialization** — `VulkanRenderer::init()` clones context 8+ times. Pass `&Rc<VulkanContext>` where possible
