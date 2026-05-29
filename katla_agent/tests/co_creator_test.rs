@@ -1,3 +1,4 @@
+#![cfg(feature = "llm-assistant")]
 use katla_agent::CoCreatorAgent;
 use katla_agent::co_creator::build_system_prompt;
 use katla_agent::llm::MockStreamProvider;

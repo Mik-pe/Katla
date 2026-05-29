@@ -450,7 +450,7 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "llm-assistant"))]
 mod tests {
     use super::*;
 
