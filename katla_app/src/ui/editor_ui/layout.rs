@@ -9,7 +9,7 @@ use super::declarative::{
     AssetBrowserDrawCtx, ConsoleDrawCtx, EditorRootView, GizmoDrawCtx, GizmoModeChanged,
     HierarchyDrawCtx, InspectorDrawCtx, ParticleInspectorDrawCtx, ParticleInspectorPanelSync,
     PreferencesDrawCtx, PreferencesPanelSync, StatusBarData, ToolbarAction, ToolbarDrawCtx,
-    ViewportGridDrawCtx, build_asset_browser_from_ctx, set_inspector_ctx, take_inspector_ctx,
+    ViewportGridDrawCtx, build_asset_browser_from_ctx,
 };
 use super::{
     EditorAction, EditorRenderParams, EditorUI, co_creator,
@@ -218,12 +218,11 @@ impl EditorUI {
             search_filter: self.hierarchy_search_filter.clone(),
         });
 
-        let inspector_bounds = Rect2D::from_origin_size(
-            Vec2::new(right_panel_x, toolbar_height),
-            Vec2::new(self.right_panel_width, panel_height),
-        );
-        let inspector_ctx = InspectorDrawCtx {
-            bounds: inspector_bounds,
+        self.view_tree.env_mut().set(InspectorDrawCtx {
+            bounds: Rect2D::from_origin_size(
+                Vec2::new(right_panel_x, toolbar_height),
+                Vec2::new(self.right_panel_width, panel_height),
+            ),
             selected_entity: self.selected_entity,
             entities: params.entities.to_vec(),
             edit: std::mem::take(&mut self.inspector_edit),
@@ -235,8 +234,7 @@ impl EditorUI {
             add_component_open: self.add_component_open,
             add_component_filter: self.add_component_filter.clone(),
             focus_script_input: self.focus_script_input,
-        };
-        set_inspector_ctx(inspector_ctx);
+        });
 
         let resize_handle_width = 5.0;
         let min_panel_width = 150.0;
@@ -494,16 +492,7 @@ impl EditorUI {
                 .push(EditorAction::SetGizmoMode(action.0));
         }
 
-        if let Some(inspector_ctx) = take_inspector_ctx() {
-            self.inspector_edit = inspector_ctx.edit;
-            self.inspector_scroll_state = inspector_ctx.scroll_state;
-            self.add_component_open = inspector_ctx.add_component_open;
-            self.add_component_scroll_state = inspector_ctx.add_component_scroll_state;
-            self.add_component_filter = inspector_ctx.add_component_filter;
-            self.focus_script_input = inspector_ctx.focus_script_input;
-            self.pending_actions
-                .extend_from_slice(&inspector_ctx.pending_actions);
-        }
+        // TODO: Implement InspectorSync action emission to sync state back from declarative panel
 
         // TODO: Implement HierarchySync action emission to sync state back from declarative panel
 

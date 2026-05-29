@@ -19,7 +19,7 @@ pub(super) use console::{ConsoleDrawCtx, ConsoleState, ConsoleSync};
 pub(super) use editor_root::EditorRootView;
 pub(super) use gizmo::{GizmoDrawCtx, GizmoModeChanged};
 pub(super) use hierarchy::{HierarchyDrawCtx, HierarchySync};
-pub(super) use inspector::{InspectorDrawCtx, set_inspector_ctx, take_inspector_ctx};
+pub(super) use inspector::{InspectorDrawCtx, InspectorSync};
 pub(super) use particle_inspector::{ParticleInspectorDrawCtx, ParticleInspectorPanelSync};
 pub(super) use preferences::{PreferencesDrawCtx, PreferencesPanelSync};
 pub(super) use status_bar::StatusBarData;
