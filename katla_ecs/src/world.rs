@@ -262,7 +262,7 @@ impl World {
 
     /// Read-only parallel query using rayon for concurrent iteration.
     ///
-    /// Takes `&self` and returns a [`rayon::iter::ParallelIterator`] over entities
+    /// Takes `&self` and returns a `rayon::iter::ParallelIterator` over entities
     /// with the specified component combination. Only supports immutable
     /// access patterns for soundness in parallel contexts.
     ///

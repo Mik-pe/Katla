@@ -247,7 +247,7 @@ impl VulkanRenderer {
     ) -> Result<T, RendererError> {
         result.map_err(|e| {
             error!("Failed to create {}: {:?}", label, e);
-            RendererError::InitializationFailed(format!("Failed to create {}", label))
+            RendererError::InitializationFailed(format!("Failed to create {}: {:?}", label, e))
         })
     }
 
