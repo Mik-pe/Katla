@@ -15,6 +15,7 @@ use bytemuck::{Pod, Zeroable};
 use gpu_allocator::vulkan::Allocation;
 use log::info;
 
+use crate::error::RendererError;
 use crate::gpu_buffer::create_buffer;
 use crate::vulkan::context::VulkanContext;
 
@@ -352,12 +353,10 @@ impl LightCullingBuffers {
         &self,
         cmd: vk::CommandBuffer,
         pipeline_layout: vk::PipelineLayout,
-    ) -> Result<(), String> {
-        let push_descriptor = self
-            .context
-            .push_descriptor_khr
-            .as_ref()
-            .ok_or_else(|| "VK_KHR_push_descriptor not available".to_string())?;
+    ) -> Result<(), RendererError> {
+        let push_descriptor = self.context.push_descriptor_khr.as_ref().ok_or_else(|| {
+            RendererError::InvalidOperation("VK_KHR_push_descriptor not available".into())
+        })?;
 
         let light_info = [vk::DescriptorBufferInfo::default()
             .buffer(self.light_buffer)
@@ -423,12 +422,10 @@ impl LightCullingBuffers {
         &self,
         cmd: vk::CommandBuffer,
         pipeline_layout: vk::PipelineLayout,
-    ) -> Result<(), String> {
-        let push_descriptor = self
-            .context
-            .push_descriptor_khr
-            .as_ref()
-            .ok_or_else(|| "VK_KHR_push_descriptor not available".to_string())?;
+    ) -> Result<(), RendererError> {
+        let push_descriptor = self.context.push_descriptor_khr.as_ref().ok_or_else(|| {
+            RendererError::InvalidOperation("VK_KHR_push_descriptor not available".into())
+        })?;
         self.push_fragment_descriptors_with_ext(push_descriptor, cmd, pipeline_layout)
     }
 
@@ -441,7 +438,7 @@ impl LightCullingBuffers {
         push_descriptor: &ash::khr::push_descriptor::Device,
         cmd: vk::CommandBuffer,
         pipeline_layout: vk::PipelineLayout,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         let light_info = [vk::DescriptorBufferInfo::default()
             .buffer(self.light_buffer)
             .offset(0)
