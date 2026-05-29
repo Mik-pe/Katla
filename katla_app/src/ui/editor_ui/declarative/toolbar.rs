@@ -13,6 +13,7 @@ pub(crate) struct ToolbarDrawCtx {
     pub show_grid: bool,
     pub show_stats: bool,
     pub show_physics_debug: bool,
+    pub show_reverb_debug: bool,
     pub text_muted: Color,
     pub is_playing: bool,
     pub is_paused: bool,
@@ -34,6 +35,7 @@ pub(crate) enum ToolbarAction {
     ToggleGrid,
     ToggleStats,
     TogglePhysicsDebug,
+    ToggleReverbDebug,
     OpenParticleInspector,
     OpenCoCreator,
     SpawnModel(SpawnableModel),
@@ -151,6 +153,14 @@ fn build_view_menu(
         })
         .on_click(ctx.on_click(|actions| {
             actions.emit(ToolbarAction::TogglePhysicsDebug);
+        })),
+        menu_entry(if draw_ctx.show_reverb_debug {
+            "Reverb Zones (on)"
+        } else {
+            "Reverb Zones (off)"
+        })
+        .on_click(ctx.on_click(|actions| {
+            actions.emit(ToolbarAction::ToggleReverbDebug);
         })),
         katla_ui::declarative::MenuEntry {
             label: String::new(),

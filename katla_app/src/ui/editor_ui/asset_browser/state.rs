@@ -17,12 +17,6 @@ pub struct AssetBrowserState {
     pub selected_index: Option<usize>,
     /// Multi-selected asset indices
     pub selected_indices: std::collections::HashSet<usize>,
-    /// Selection rectangle start position (for marquee selection)
-    pub(crate) selection_rect_start: Option<katla_math::Vec2>,
-    /// Selection rectangle current position
-    pub(crate) selection_rect_current: Option<katla_math::Vec2>,
-    /// Whether marquee selection is active
-    pub(crate) is_marquee_selecting: bool,
     /// Scroll state for the content area
     pub scroll_state: ScrollAreaState,
     /// Panel height in pixels (when not collapsed)
@@ -31,12 +25,8 @@ pub struct AssetBrowserState {
     pub collapsed: bool,
     /// Last time directory was scanned
     pub last_scan: Option<Instant>,
-    /// Index of last clicked item (for double-click same-item check)
-    pub(crate) last_click_index: Option<usize>,
     /// Search/filter text
     pub search_filter: String,
-    /// Whether search input is focused
-    pub search_focused: bool,
     /// Context menu is open
     pub context_menu_open: bool,
     /// Context menu for asset index (None = empty space context menu)
@@ -47,14 +37,6 @@ pub struct AssetBrowserState {
     pub nav_history_pos: usize,
     /// Pending actions to be processed
     pub pending_actions: Vec<AssetAction>,
-    /// Drag state - asset being dragged
-    pub drag_asset: Option<usize>,
-    /// Drag state - start position
-    pub(crate) drag_start_pos: Option<katla_math::Vec2>,
-    /// Drag state - is actively dragging (moved past threshold)
-    pub is_dragging: bool,
-    /// Drag threshold in pixels
-    pub(crate) drag_threshold: f32,
     /// Rename mode active
     pub rename_mode: bool,
     /// Asset being renamed
@@ -77,31 +59,21 @@ impl AssetBrowserState {
         let current_path = PathBuf::from("resources");
         let nav_history = vec![current_path.clone()];
 
-        // Initial scan will happen in build_asset_browser when needs_rescan() returns true
         Self {
             current_path,
             assets: Vec::new(),
             selected_index: None,
             selected_indices: std::collections::HashSet::new(),
-            selection_rect_start: None,
-            selection_rect_current: None,
-            is_marquee_selecting: false,
             scroll_state: ScrollAreaState::default(),
             panel_height: 150.0,
             collapsed: false,
             last_scan: None,
-            last_click_index: None,
             search_filter: String::new(),
-            search_focused: false,
             context_menu_open: false,
             context_menu_asset: None,
             nav_history,
             nav_history_pos: 0,
             pending_actions: Vec::new(),
-            drag_asset: None,
-            drag_start_pos: None,
-            is_dragging: false,
-            drag_threshold: 5.0,
             rename_mode: false,
             rename_asset: None,
             rename_buffer: String::new(),
@@ -117,7 +89,6 @@ impl AssetBrowserState {
         &mut self,
         thumbnail_texture_handles: &HashMap<PathBuf, katla_gfx::TextureHandle>,
     ) {
-        // Preserve thumbnail states before clearing
         let old_thumbnails: HashMap<PathBuf, ThumbnailState> = self
             .assets
             .iter()
@@ -126,7 +97,6 @@ impl AssetBrowserState {
 
         self.assets.clear();
 
-        // Add parent directory entry if not at root (parent must be different from current)
         if let Some(parent) = self.current_path.parent()
             && parent != self.current_path
             && !parent.as_os_str().is_empty()
@@ -139,7 +109,6 @@ impl AssetBrowserState {
             });
         }
 
-        // Read directory entries
         if let Ok(entries) = fs::read_dir(&self.current_path) {
             let mut dirs: Vec<AssetEntry> = Vec::new();
             let mut files: Vec<AssetEntry> = Vec::new();
@@ -187,18 +156,14 @@ impl AssetBrowserState {
                 }
             }
 
-            // Sort directories and files alphabetically
             dirs.sort_by_key(|a| a.name.to_lowercase());
             files.sort_by_key(|a| a.name.to_lowercase());
 
-            // Directories first, then files
             self.assets.extend(dirs);
             self.assets.extend(files);
         }
 
         self.last_scan = Some(Instant::now());
-        // Don't clear selection on rescan - only clear on navigation
-        // Reset scroll on rescan
         self.scroll_state.scroll_offset = 0.0;
     }
 
@@ -226,14 +191,11 @@ impl AssetBrowserState {
         thumbnail_texture_handles: &HashMap<PathBuf, katla_gfx::TextureHandle>,
     ) {
         if path.is_dir() && path != &self.current_path {
-            // Clear forward history
             self.nav_history.truncate(self.nav_history_pos + 1);
-            // Add to history
             self.nav_history.push(path.clone());
             self.nav_history_pos = self.nav_history.len() - 1;
 
             self.current_path = path.clone();
-            // Clear selection when navigating to a new directory
             self.selected_index = None;
             self.selected_indices.clear();
             self.scan_directory(thumbnail_texture_handles);
@@ -315,43 +277,6 @@ impl AssetBrowserState {
             .collect()
     }
 
-    /// Start dragging an asset.
-    pub fn start_drag(&mut self, asset_index: usize, pos: katla_math::Vec2) {
-        self.drag_asset = Some(asset_index);
-        self.drag_start_pos = Some(pos);
-        self.is_dragging = false;
-    }
-
-    /// Update drag position and check threshold.
-    pub fn update_drag(&mut self, current_pos: katla_math::Vec2) {
-        if let Some(start_pos) = self.drag_start_pos {
-            let dist = (current_pos - start_pos).length();
-            if dist > self.drag_threshold {
-                self.is_dragging = true;
-            }
-        }
-    }
-
-    /// End drag operation.
-    pub fn end_drag(&mut self) -> Option<(usize, katla_math::Vec2)> {
-        let result = if self.is_dragging {
-            self.drag_asset.zip(self.drag_start_pos)
-        } else {
-            None
-        };
-        self.drag_asset = None;
-        self.drag_start_pos = None;
-        self.is_dragging = false;
-        result
-    }
-
-    /// Cancel drag operation.
-    pub fn cancel_drag(&mut self) {
-        self.drag_asset = None;
-        self.drag_start_pos = None;
-        self.is_dragging = false;
-    }
-
     /// Start rename mode for an asset.
     pub fn start_rename(&mut self, asset_index: usize) {
         if let Some(asset) = self.assets.get(asset_index) {
@@ -362,117 +287,9 @@ impl AssetBrowserState {
         }
     }
 
-    /// Cancel rename mode.
-    pub fn cancel_rename(&mut self) {
-        self.rename_mode = false;
-        self.rename_asset = None;
-        self.rename_buffer.clear();
-    }
-
     /// Take pending actions, clearing the list.
     pub fn take_actions(&mut self) -> Vec<AssetAction> {
         std::mem::take(&mut self.pending_actions)
-    }
-
-    /// Handle keyboard navigation.
-    pub fn handle_keyboard(
-        &mut self,
-        key: katla_ui::input::KeyCode,
-        thumbnail_texture_handles: &HashMap<PathBuf, katla_gfx::TextureHandle>,
-    ) -> Option<AssetAction> {
-        if self.search_focused || self.assets.is_empty() {
-            return None;
-        }
-
-        let col_count = self.last_col_count.max(1);
-
-        match key {
-            katla_ui::input::KeyCode::ArrowUp => {
-                if let Some(idx) = self.selected_index {
-                    if idx >= col_count {
-                        self.selected_index = Some(idx - col_count);
-                        self.scroll_to_selected();
-                    }
-                } else {
-                    self.selected_index = Some(0);
-                }
-            }
-            katla_ui::input::KeyCode::ArrowDown => {
-                if let Some(idx) = self.selected_index {
-                    if idx + col_count < self.assets.len() {
-                        self.selected_index = Some(idx + col_count);
-                        self.scroll_to_selected();
-                    }
-                } else {
-                    self.selected_index = Some(0);
-                }
-            }
-            katla_ui::input::KeyCode::ArrowLeft => {
-                if let Some(idx) = self.selected_index {
-                    if idx > 0 {
-                        self.selected_index = Some(idx - 1);
-                        self.scroll_to_selected();
-                    }
-                } else {
-                    self.selected_index = Some(0);
-                }
-            }
-            katla_ui::input::KeyCode::ArrowRight => {
-                if let Some(idx) = self.selected_index {
-                    if idx + 1 < self.assets.len() {
-                        self.selected_index = Some(idx + 1);
-                        self.scroll_to_selected();
-                    }
-                } else {
-                    self.selected_index = Some(0);
-                }
-            }
-            katla_ui::input::KeyCode::Enter => {
-                if let Some(idx) = self.selected_index {
-                    let asset_type = self.assets[idx].asset_type;
-                    let is_parent = self.assets[idx].name == "..";
-                    let path = self.assets[idx].path.clone();
-
-                    if asset_type == AssetType::Folder {
-                        if is_parent {
-                            self.navigate_up(thumbnail_texture_handles);
-                        } else {
-                            self.navigate_to(&path, thumbnail_texture_handles);
-                        }
-                    } else {
-                        return Some(AssetAction::Open(path));
-                    }
-                }
-            }
-            katla_ui::input::KeyCode::Backspace => {
-                self.navigate_up(thumbnail_texture_handles);
-            }
-            _ => {}
-        }
-
-        None
-    }
-
-    /// Scroll to ensure selected item is visible.
-    fn scroll_to_selected(&mut self) {
-        let item_size = 64.0;
-        let row_height = item_size + 24.0;
-        let col_count = self.last_col_count.max(1);
-
-        if let Some(idx) = self.selected_index {
-            let row = idx / col_count;
-            let item_y = row as f32 * row_height;
-
-            // Scroll to make item visible (with some padding)
-            let visible_top = self.scroll_state.scroll_offset;
-            let visible_bottom = self.scroll_state.scroll_offset + 100.0; // Approximate visible height
-
-            if item_y < visible_top {
-                self.scroll_state.scroll_offset = item_y;
-            } else if item_y + row_height > visible_bottom {
-                self.scroll_state.scroll_offset = item_y + row_height - 100.0;
-            }
-        }
     }
 }
 

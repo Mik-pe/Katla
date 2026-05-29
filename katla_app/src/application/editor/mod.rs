@@ -1122,6 +1122,10 @@ pub fn process_editor_actions(app: &mut Application) {
                 app.editor.editor_ui.show_physics_debug = !app.editor.editor_ui.show_physics_debug;
                 app.preferences.show_physics_debug = app.editor.editor_ui.show_physics_debug;
             }
+            EditorAction::ToggleReverbDebug => {
+                app.editor.editor_ui.show_reverb_debug = !app.editor.editor_ui.show_reverb_debug;
+                app.preferences.show_reverb_debug = app.editor.editor_ui.show_reverb_debug;
+            }
             EditorAction::SetFontScale(scale) => {
                 app.editor.editor_ui.set_font_scale(scale);
                 app.preferences.font_scale = scale;

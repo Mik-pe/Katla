@@ -34,6 +34,13 @@ impl AudioCategory {
     }
 }
 
+/// Entry point for the audio system.
+///
+/// Opens the default output device via cpal and owns the [`AudioMixer`] and output stream.
+/// Created paused; call [`resume()`](AudioEngine::resume) to start playback.
+///
+/// All methods are safe to call from the main thread. See the [crate-level documentation](crate)
+/// for thread safety details.
 pub struct AudioEngine {
     mixer: Arc<AudioMixer>,
     stream: Option<cpal::Stream>,

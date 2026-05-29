@@ -6,13 +6,16 @@ use katla_ui::{
 };
 
 use super::declarative::{
-    AssetBrowserDrawCtx, ConsoleDrawCtx, EditorRootView, GizmoDrawCtx, GizmoModeChanged,
-    HierarchyDrawCtx, InspectorDrawCtx, ParticleInspectorDrawCtx, ParticleInspectorPanelSync,
-    PreferencesDrawCtx, PreferencesPanelSync, StatusBarData, ToolbarAction, ToolbarDrawCtx,
-    ViewportGridDrawCtx, build_asset_browser_from_ctx,
+    AssetBrowserAction, AssetBrowserDrawCtx, AssetRenderData, ConsoleDrawCtx, EditorRootView,
+    GizmoDrawCtx, GizmoModeChanged, HierarchyDrawCtx, InspectorDrawCtx, ParticleInspectorDrawCtx,
+    ParticleInspectorPanelSync, PreferencesDrawCtx, PreferencesPanelSync, StatusBarData,
+    ToolbarAction, ToolbarDrawCtx, ViewportGridDrawCtx, process_asset_actions,
+    process_declarative_actions,
 };
 use super::{
-    EditorAction, EditorRenderParams, EditorUI, co_creator,
+    EditorAction, EditorRenderParams, EditorUI,
+    asset_browser::AssetType,
+    co_creator,
     types::{self as editor_types, BottomPanelTab, PreferencesAction},
 };
 
@@ -173,6 +176,7 @@ impl EditorUI {
             show_grid: params.preferences.show_grid,
             show_stats: params.preferences.show_stats,
             show_physics_debug: params.preferences.show_physics_debug,
+            show_reverb_debug: params.preferences.show_reverb_debug,
             text_muted: self.theme.text_muted,
             is_playing: self.is_playing,
             is_paused: self.is_paused,
@@ -362,11 +366,33 @@ impl EditorUI {
         // Only set context for the active bottom tab
         match self.bottom_panel_tab {
             BottomPanelTab::AssetBrowser => {
-                ui.set_scratch(AssetBrowserDrawCtx {
+                let ab = &self.asset_browser;
+                let context_menu_is_asset = ab.context_menu_asset.is_some();
+                let assets: Vec<AssetRenderData> = ab
+                    .assets
+                    .iter()
+                    .map(|a| AssetRenderData {
+                        name: a.name.clone(),
+                        path: a.path.clone(),
+                        asset_type: a.asset_type,
+                        thumbnail_state: a.thumbnail_state.clone(),
+                    })
+                    .collect();
+
+                self.view_tree.env_mut().set(AssetBrowserDrawCtx {
                     bounds: bottom_content_bounds,
                     theme: self.theme.clone(),
-                    is_focused: self.focused_panel == super::FocusedPanel::AssetBrowser,
-                    viewport_bounds,
+                    assets,
+                    selected_index: ab.selected_index,
+                    path_segments: ab.path_segments(),
+                    can_go_back: ab.can_go_back(),
+                    can_go_forward: ab.can_go_forward(),
+                    search_filter: ab.search_filter.clone(),
+                    context_menu_open: ab.context_menu_open,
+                    context_menu_is_asset,
+                    confirm_dialog_open: ab.confirm_dialog_open,
+                    confirm_dialog_message: ab.confirm_dialog_message.clone(),
+                    collapsed: ab.collapsed,
                 });
             }
             BottomPanelTab::Console => {
@@ -427,19 +453,67 @@ impl EditorUI {
             self.pending_actions.push(action);
         }
 
-        // Build the asset browser from the declarative context (only if active tab)
+        // Process asset browser declarative actions and post-frame handling
         let entities = params.entities;
         let loader = &mut *params.loader;
         let thumbnail_texture_handles = params.thumbnail_texture_handles;
 
         if self.bottom_panel_tab == BottomPanelTab::AssetBrowser {
-            let asset_actions = build_asset_browser_from_ctx(
+            // Auto-rescan
+            if self.asset_browser.needs_rescan() {
+                self.asset_browser.scan_directory(thumbnail_texture_handles);
+            }
+
+            // Request thumbnails for visible assets
+            {
+                let scroll_offset = self.asset_browser.scroll_state.scroll_offset;
+                let content_height = bottom_content_bounds.height();
+                let item_size = 64.0;
+                let row_height = item_size + 24.0;
+                let col_count = self.asset_browser.last_col_count.max(1);
+
+                let mut thumbs_to_request: Vec<(usize, std::path::PathBuf)> = Vec::new();
+                for (i, asset) in self.asset_browser.assets.iter().enumerate() {
+                    if asset.asset_type != AssetType::Image {
+                        continue;
+                    }
+                    let row = i / col_count;
+                    let item_y = row as f32 * row_height - scroll_offset;
+                    if item_y + row_height < 0.0 || item_y > content_height {
+                        continue;
+                    }
+                    if matches!(
+                        asset.thumbnail_state,
+                        super::asset_browser::ThumbnailState::Pending
+                    ) && !loader.is_loading(&asset.path)
+                    {
+                        thumbs_to_request.push((i, asset.path.clone()));
+                    }
+                }
+                for (idx, path) in thumbs_to_request.into_iter().take(4) {
+                    loader.request_thumbnail(path, item_size as u32);
+                    self.asset_browser.assets[idx].thumbnail_state =
+                        super::asset_browser::ThumbnailState::Loading;
+                }
+            }
+
+            // Process declarative actions
+            let ab_actions: Vec<AssetBrowserAction> = self.view_tree.actions_mut().drain();
+            let asset_actions = process_declarative_actions(
                 &mut self.asset_browser,
-                ui,
-                loader,
                 thumbnail_texture_handles,
+                viewport_bounds,
+                ab_actions,
             );
             self.pending_actions.extend(asset_actions);
+
+            // Process remaining pending actions from drag/drop etc.
+            let remaining = process_asset_actions(
+                &mut self.asset_browser,
+                thumbnail_texture_handles,
+                viewport_bounds,
+            );
+            self.pending_actions.extend(remaining);
         }
 
         for action in self.view_tree.actions_mut().drain::<ToolbarAction>() {
@@ -456,6 +530,7 @@ impl EditorUI {
                 ToolbarAction::ToggleGrid => EditorAction::ToggleGrid,
                 ToolbarAction::ToggleStats => EditorAction::ToggleStats,
                 ToolbarAction::TogglePhysicsDebug => EditorAction::TogglePhysicsDebug,
+                ToolbarAction::ToggleReverbDebug => EditorAction::ToggleReverbDebug,
                 ToolbarAction::OpenParticleInspector => {
                     EditorAction::OpenPanel(crate::ui::editor_ui::Panel::ParticleInspector)
                 }
@@ -652,61 +727,6 @@ impl EditorUI {
                 4 => super::FocusedPanel::AssetBrowser,
                 _ => self.focused_panel,
             };
-        }
-
-        if self.asset_browser.is_dragging
-            && let Some(drag_idx) = self.asset_browser.drag_asset
-            && let Some(asset) = self.asset_browser.assets.get(drag_idx)
-        {
-            let mouse_pos = ui.mouse_pos();
-
-            let preview_size = 64.0;
-            let preview_offset = Vec2::new(preview_size * 0.5, preview_size * 0.5);
-
-            ui.with_z_index(katla_ui::z_index::TOOLTIP, |ui| {
-                let preview_bounds = Rect2D::from_origin_size(
-                    mouse_pos - preview_offset,
-                    Vec2::new(preview_size, preview_size),
-                );
-                ui.draw_rect(preview_bounds, self.theme.background.with_alpha(0.9));
-                ui.draw_rect_border(
-                    preview_bounds,
-                    self.theme.background.with_alpha(0.9),
-                    self.theme.highlight,
-                    2.0,
-                );
-
-                let icon_char = asset.asset_type.icon();
-                let icon_size = preview_size * 0.4;
-                ui.draw_icon(
-                    icon_char,
-                    Vec2::new(
-                        preview_bounds.center().x() - icon_size * 0.5,
-                        preview_bounds.center().y() - icon_size * 0.5 - 8.0,
-                    ),
-                    icon_size,
-                    self.theme.highlight,
-                );
-
-                let max_chars = 12;
-                let display_name = if asset.name.chars().count() > max_chars {
-                    format!(
-                        "{}...",
-                        asset.name.chars().take(max_chars).collect::<String>()
-                    )
-                } else {
-                    asset.name.clone()
-                };
-                ui.draw_text(
-                    &display_name,
-                    Vec2::new(
-                        preview_bounds.min.x() + 4.0,
-                        preview_bounds.min.y() + preview_size - 16.0,
-                    ),
-                    self.theme.text_primary,
-                    ui.scaled_font_size(FontSize::XSmall),
-                );
-            });
         }
 
         // Dockable layout skeleton — renders alongside the hardcoded layout for

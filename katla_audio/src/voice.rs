@@ -48,18 +48,23 @@ impl OcclusionFilter {
     }
 }
 
+/// Unique identifier for a playing voice, allocated atomically by the mixer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VoiceId(pub u32);
 
+/// Identifier for an auxiliary send bus (e.g. reverb).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AuxBusId(pub u32);
 
+/// Whether a voice is currently playing or has finished/stopped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoiceState {
     Playing,
     Stopped,
 }
 
+/// Voice priority for steal-based voice management when the pool is full.
+/// Lower-priority voices are recycled first when a higher-priority play is requested.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum VoicePriority {
     Low,
@@ -641,6 +646,14 @@ pub fn linear_to_db(linear: f32) -> f32 {
     20.0 * linear.log10()
 }
 
+/// Main-thread handle to a playing voice.
+///
+/// Safe to clone and hold. Internally holds an `Arc<AudioMixer>` and a [`VoiceId`].
+/// If the underlying voice finishes and its slot is recycled, method calls on this
+/// handle will silently target the new voice in that slot. Use [`state()`](VoiceHandle::state)
+/// to check if the voice is still playing.
+///
+/// All methods are safe to call from the main thread.
 pub struct VoiceHandle {
     pub id: VoiceId,
     pub(crate) mixer: Arc<crate::mixer::AudioMixer>,

@@ -287,7 +287,7 @@ fn draw_capsule_wireframe(
     }
 }
 
-fn draw_edge(
+pub(crate) fn draw_edge(
     resources: &PhysicsDebugResources,
     p0: Vec3,
     p1: Vec3,

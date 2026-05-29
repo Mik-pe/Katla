@@ -170,6 +170,7 @@ impl EditorState {
                 editor.show_grid = preferences.show_grid;
                 editor.show_stats = preferences.show_stats;
                 editor.show_physics_debug = preferences.show_physics_debug;
+                editor.show_reverb_debug = preferences.show_reverb_debug;
                 editor.set_font_scale(preferences.font_scale);
                 editor.left_panel_width = gui_state.left_panel_width;
                 editor.right_panel_width = gui_state.right_panel_width;

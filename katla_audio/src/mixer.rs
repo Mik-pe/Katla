@@ -416,6 +416,13 @@ impl MixerState {
     }
 }
 
+/// Thread-safe audio mixer that owns active voices and renders the output mix.
+///
+/// Shared between the main thread (via `Arc<AudioMixer>` in [`AudioEngine`](crate::AudioEngine)
+/// and handles) and the audio callback thread (via [`render()`](AudioMixer::render)).
+///
+/// Parameter updates (volume, pan, pitch) use atomic operations. Stop requests go through
+/// an SPSC command queue. Voice pool management uses a `Mutex<MixerState>`.
 pub struct AudioMixer {
     state: Mutex<MixerState>,
     command_queue: Arc<CommandQueue>,

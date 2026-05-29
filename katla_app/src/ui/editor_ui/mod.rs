@@ -87,6 +87,8 @@ pub struct EditorUI {
     pub show_stats: bool,
     /// Physics debug wireframe overlay visible.
     pub show_physics_debug: bool,
+    /// Reverb zone wireframe overlay visible.
+    pub show_reverb_debug: bool,
     /// Draw calls submitted last frame.
     pub last_draw_call_count: usize,
     /// Font scale multiplier (1.0 = 100%).
@@ -177,6 +179,7 @@ impl EditorUI {
             show_grid: true,
             show_stats: true,
             show_physics_debug: false,
+            show_reverb_debug: false,
             last_draw_call_count: 0,
             font_scale: 1.0,
             pending_actions: Vec::new(),
