@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -11,6 +12,8 @@ use crate::mixer::AudioMixer;
 use crate::streaming::StreamingDecoder;
 use crate::streaming_voice::StreamingVoiceHandle;
 use crate::voice::{VoiceHandle, VoiceId, VoiceState};
+
+const MAX_RECOVERY_ATTEMPTS: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AudioCategory {
@@ -33,11 +36,35 @@ impl AudioCategory {
 
 pub struct AudioEngine {
     mixer: Arc<AudioMixer>,
-    stream: cpal::Stream,
+    stream: Option<cpal::Stream>,
+    stream_error_flag: Arc<AtomicBool>,
+    recovery_count: u32,
+    was_playing: bool,
 }
 
 impl AudioEngine {
     pub fn new() -> Result<Self, AudioError> {
+        let stream_error_flag = Arc::new(AtomicBool::new(false));
+        let flag_clone = stream_error_flag.clone();
+
+        let (mixer, stream) = Self::build_stream(move || flag_clone.clone())?;
+
+        stream
+            .pause()
+            .map_err(|e| AudioError::StreamError(format!("Failed to pause stream: {e}")))?;
+
+        Ok(AudioEngine {
+            mixer,
+            stream: Some(stream),
+            stream_error_flag,
+            recovery_count: 0,
+            was_playing: false,
+        })
+    }
+
+    fn build_stream(
+        error_flag_factory: impl FnOnce() -> Arc<AtomicBool>,
+    ) -> Result<(Arc<AudioMixer>, cpal::Stream), AudioError> {
         let host = cpal::default_host();
 
         let device = host.default_output_device().ok_or_else(|| {
@@ -92,14 +119,16 @@ impl AudioEngine {
         let mixer = Arc::new(AudioMixer::new(sample_rate, channels));
 
         let mixer_clone = mixer.clone();
+        let error_flag = error_flag_factory();
         let stream = device
             .build_output_stream(
                 &config,
                 move |output: &mut [f32], _: &cpal::OutputCallbackInfo| {
                     mixer_clone.render(output);
                 },
-                |err| {
+                move |err| {
                     log::error!("Audio stream error: {err}");
+                    error_flag.store(true, Ordering::Relaxed);
                 },
                 None,
             )
@@ -121,11 +150,7 @@ impl AudioEngine {
                 }
             })?;
 
-        stream
-            .pause()
-            .map_err(|e| AudioError::StreamError(format!("Failed to pause stream: {e}")))?;
-
-        Ok(AudioEngine { mixer, stream })
+        Ok((mixer, stream))
     }
 
     pub fn play(&self, buffer: &Arc<AudioBuffer>) -> VoiceHandle {
@@ -164,15 +189,74 @@ impl AudioEngine {
     }
 
     pub fn resume(&self) -> Result<(), AudioError> {
-        self.stream
-            .play()
-            .map_err(|e| AudioError::StreamError(format!("Failed to resume audio stream: {e}")))
+        if let Some(ref stream) = self.stream {
+            stream.play().map_err(|e| {
+                AudioError::StreamError(format!("Failed to resume audio stream: {e}"))
+            })?;
+        }
+        Ok(())
     }
 
     pub fn pause(&self) -> Result<(), AudioError> {
-        self.stream
-            .pause()
-            .map_err(|e| AudioError::StreamError(format!("Failed to pause audio stream: {e}")))
+        if let Some(ref stream) = self.stream {
+            stream.pause().map_err(|e| {
+                AudioError::StreamError(format!("Failed to pause audio stream: {e}"))
+            })?;
+        }
+        Ok(())
+    }
+
+    pub fn try_recover_stream(&mut self) -> Result<bool, AudioError> {
+        if !self.stream_error_flag.load(Ordering::Relaxed) {
+            return Ok(true);
+        }
+
+        if self.recovery_count >= MAX_RECOVERY_ATTEMPTS {
+            log::error!(
+                "Stream recovery abandoned after {} attempts",
+                MAX_RECOVERY_ATTEMPTS
+            );
+            return Ok(false);
+        }
+
+        self.recovery_count += 1;
+        log::warn!(
+            "Attempting stream recovery (attempt {}/{})",
+            self.recovery_count,
+            MAX_RECOVERY_ATTEMPTS
+        );
+
+        let flag_clone = self.stream_error_flag.clone();
+        match Self::build_stream(move || flag_clone) {
+            Ok((_mixer, new_stream)) => {
+                self.stream_error_flag.store(false, Ordering::Relaxed);
+                self.stream = Some(new_stream);
+
+                if self.was_playing
+                    && let Some(ref stream) = self.stream
+                    && let Err(e) = stream.play()
+                {
+                    log::error!("Failed to resume recovered stream: {e}");
+                    return Ok(false);
+                }
+
+                self.recovery_count = 0;
+                log::info!("Stream recovery succeeded");
+                Ok(true)
+            }
+            Err(e) => {
+                log::error!("Stream recovery failed: {e}");
+                Ok(false)
+            }
+        }
+    }
+
+    pub fn check_and_recover(&mut self) -> Result<bool, AudioError> {
+        let recovered = self.try_recover_stream()?;
+        if recovered {
+            self.was_playing = self.stream.is_some();
+        }
+        Ok(recovered)
     }
 
     pub fn stop_all(&self) {
