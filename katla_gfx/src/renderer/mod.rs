@@ -717,11 +717,11 @@ impl VulkanRenderer {
         }
         self.destroyed = true;
 
-        // Note: Pending readback should have been cleaned up by wait_for_pending_readback()
-        // in cleanup_on_exit(). This is a safety check in case destroy() is called directly.
+        // Pending readback should have been cleaned up by wait_for_pending_readback()
+        // before destroy() is called. This handles the leak case.
         if let Some(readback) = self.pending_readback.take() {
-            log::warn!(
-                "Pending readback found during destroy() - cleanup should have happened earlier"
+            log::error!(
+                "Pending readback leaked during destroy() — call wait_for_pending_readback() before shutdown"
             );
             unsafe {
                 let _ = self
