@@ -351,7 +351,10 @@ impl StorageUniformManager {
     ///
     /// # Errors
     /// Returns `RendererError::VulkanError` if allocation fails
-    pub fn new(context: Rc<VulkanContext>, frames_in_flight: usize) -> Result<Self, RendererError> {
+    pub fn new(
+        context: &Rc<VulkanContext>,
+        frames_in_flight: usize,
+    ) -> Result<Self, RendererError> {
         let mut buffers = Vec::with_capacity(frames_in_flight);
         for _ in 0..frames_in_flight {
             buffers.push(DeviceAddressBuffer::new_persistent(
