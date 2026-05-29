@@ -598,7 +598,7 @@ impl System for ScriptSystem {
                     all_commands.extend(commands);
                 }
                 Err(e) => {
-                    error!("Script on_update error for entity {entity}: {e}");
+                    error!("Entity {entity}: {e}");
                     if let Some(Some(inst)) = self.engine.instances.get(handle.index as usize)
                         && inst.generation == handle.generation
                         && inst.error_count >= MAX_SCRIPT_ERRORS
