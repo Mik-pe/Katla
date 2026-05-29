@@ -1,6 +1,7 @@
 use std::cell::UnsafeCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::time::Duration;
 
 use crate::command_queue::AudioCategoryValue;
 use crate::error::AudioError;
@@ -45,6 +46,7 @@ pub struct StreamingVoice {
     category_volumes: Arc<CategoryVolumes>,
     fade_state: AtomicU8,
     fade_position: AtomicUsize,
+    position_secs: AtomicU32,
 }
 
 // SAFETY: StreamingVoice is only accessed from two contexts:
@@ -107,11 +109,72 @@ impl StreamingVoice {
             category_volumes,
             fade_state: AtomicU8::new(FADE_IN),
             fade_position: AtomicUsize::new(0),
+            position_secs: AtomicU32::new(0.0f32.to_bits()),
         })
     }
 
     pub fn id(&self) -> VoiceId {
         self.id
+    }
+
+    pub(crate) fn reset(
+        &mut self,
+        id: VoiceId,
+        mut decoder: StreamingDecoder,
+        looping: bool,
+        category: AudioCategoryValue,
+        category_volumes: Arc<CategoryVolumes>,
+    ) -> Result<(), AudioError> {
+        let channels = decoder.channels();
+        let sample_rate = decoder.sample_rate();
+
+        if channels == 0 || sample_rate == 0 {
+            return Err(AudioError::DecodeFailed(
+                "StreamingDecoder has no audio format info".into(),
+            ));
+        }
+
+        let initial_chunk = decoder.read_chunk().ok_or(AudioError::DecodeFailed(
+            "StreamingDecoder produced no initial data".into(),
+        ))?;
+
+        // SAFETY: Called from the main thread while the voice slot is inactive.
+        let ring_buffer = unsafe { &mut *self.ring_buffer.get() };
+        ring_buffer.fill(0.0f32);
+        let copy_len = initial_chunk.samples.len().min(ring_buffer.len());
+        ring_buffer[..copy_len].copy_from_slice(&initial_chunk.samples[..copy_len]);
+
+        let initial_write = copy_len * FIXED_ONE as usize;
+
+        self.id = id;
+        *self.decoder.lock().unwrap() = decoder;
+        self.write_pos.store(initial_write, Ordering::Relaxed);
+        self.read_fixed.store(0, Ordering::Relaxed);
+        self.ring_channels = initial_chunk.channels;
+        self.ring_sample_rate = initial_chunk.sample_rate;
+        self.volume.store(1.0f32.to_bits(), Ordering::Relaxed);
+        self.pan.store(0.0f32.to_bits(), Ordering::Relaxed);
+        self.pitch.store(1.0f32.to_bits(), Ordering::Relaxed);
+        self.volume_target
+            .store(1.0f32.to_bits(), Ordering::Relaxed);
+        self.pan_target.store(0.0f32.to_bits(), Ordering::Relaxed);
+        self.pitch_target.store(1.0f32.to_bits(), Ordering::Relaxed);
+        self.tween_smoothing = 0.3;
+        self.silent_frame_count = 0;
+        self.looping = looping;
+        self.finished.store(false, Ordering::Relaxed);
+        self.category = category;
+        self.category_volumes = category_volumes;
+        self.fade_state.store(FADE_IN, Ordering::Relaxed);
+        self.fade_position.store(0, Ordering::Relaxed);
+        self.position_secs
+            .store(0.0f32.to_bits(), Ordering::Relaxed);
+
+        Ok(())
+    }
+
+    pub fn position(&self) -> f32 {
+        f32::from_bits(self.position_secs.load(Ordering::Relaxed))
     }
 
     pub fn is_finished(&self) -> bool {
@@ -121,6 +184,39 @@ impl StreamingVoice {
     pub fn begin_fade_out(&self) {
         self.fade_state.store(FADE_OUT, Ordering::Relaxed);
         self.fade_position.store(0, Ordering::Relaxed);
+    }
+
+    pub fn seek(&self, position: Duration) {
+        let mut decoder = match self.decoder.lock() {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+
+        if let Err(e) = decoder.seek(position) {
+            log::warn!("StreamingVoice seek failed: {e}");
+            return;
+        }
+
+        // SAFETY: Called under MixerState's Mutex (via AudioMixer::seek_streaming_voice).
+        let ring_buffer = unsafe { &mut *self.ring_buffer.get() };
+        ring_buffer.fill(0.0f32);
+
+        self.read_fixed.store(0, Ordering::Relaxed);
+
+        let mut write_samples = 0usize;
+        if let Some(chunk) = decoder.read_chunk() {
+            let copy_len = chunk.samples.len().min(ring_buffer.len());
+            ring_buffer[..copy_len].copy_from_slice(&chunk.samples[..copy_len]);
+            write_samples = copy_len;
+        }
+
+        self.write_pos
+            .store(write_samples * FIXED_ONE as usize, Ordering::Relaxed);
+        self.finished.store(false, Ordering::Relaxed);
+        self.fade_state.store(FADE_IN, Ordering::Relaxed);
+        self.fade_position.store(0, Ordering::Relaxed);
+        self.position_secs
+            .store(position.as_secs_f32().to_bits(), Ordering::Relaxed);
     }
 
     pub fn set_volume(&self, volume: f32) {
@@ -360,6 +456,11 @@ impl StreamingVoice {
 
         self.read_fixed.store(fixed_pos, Ordering::Relaxed);
 
+        let elapsed = frames_mixed as f32 / output_sample_rate as f32;
+        let prev = f32::from_bits(self.position_secs.load(Ordering::Relaxed));
+        self.position_secs
+            .store((prev + elapsed).to_bits(), Ordering::Relaxed);
+
         if fade_state != FADE_NONE {
             let new_pos = fade_pos_start + frames_mixed;
             self.fade_position.store(new_pos, Ordering::Relaxed);
@@ -423,6 +524,14 @@ impl StreamingVoiceHandle {
 
     pub fn set_pitch_tweened(&self, pitch: f32) {
         self.mixer.set_streaming_voice_pitch_tweened(self.id, pitch);
+    }
+
+    pub fn position(&self) -> f32 {
+        self.mixer.streaming_voice_position(self.id)
+    }
+
+    pub fn seek(&self, position: Duration) {
+        self.mixer.seek_streaming_voice(self.id, position);
     }
 
     pub fn set_tween_speed(&self, speed: f32) {

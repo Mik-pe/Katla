@@ -127,6 +127,38 @@ impl Voice {
         self.id
     }
 
+    pub(crate) fn reset(
+        &mut self,
+        id: VoiceId,
+        buffer: Arc<AudioBuffer>,
+        looping: bool,
+        category: AudioCategoryValue,
+        category_volumes: Arc<CategoryVolumes>,
+    ) {
+        let total_fixed = buffer.samples.len() as u64 * FIXED_ONE;
+        self.id = id;
+        self.buffer = buffer;
+        self.fixed_position.store(0, Ordering::Relaxed);
+        self.loop_start = 0;
+        self.loop_end = total_fixed;
+        self.volume.store(1.0f32.to_bits(), Ordering::Relaxed);
+        self.pan.store(0.0f32.to_bits(), Ordering::Relaxed);
+        self.pitch.store(1.0f32.to_bits(), Ordering::Relaxed);
+        self.volume_target
+            .store(1.0f32.to_bits(), Ordering::Relaxed);
+        self.pan_target.store(0.0f32.to_bits(), Ordering::Relaxed);
+        self.pitch_target.store(1.0f32.to_bits(), Ordering::Relaxed);
+        self.occlusion.store(0.0f32.to_bits(), Ordering::Relaxed);
+        self.tween_smoothing = 0.3;
+        self.looping = looping;
+        self.finished.store(false, Ordering::Relaxed);
+        self.category = category;
+        self.category_volumes = category_volumes;
+        self.occlusion_filter = OcclusionFilter::new();
+        self.fade_state.store(FADE_IN, Ordering::Relaxed);
+        self.fade_position.store(0, Ordering::Relaxed);
+    }
+
     pub fn set_volume(&self, volume: f32) {
         let v = volume.clamp(0.0, 1.0);
         self.volume_target.store(v.to_bits(), Ordering::Relaxed);
@@ -216,6 +248,12 @@ impl Voice {
             self.occlusion_filter
                 .set_occlusion(self.occlusion(), self.buffer.sample_rate as f32);
         }
+    }
+
+    pub fn position(&self) -> f32 {
+        let fixed_pos = self.fixed_position.load(Ordering::Relaxed);
+        let sample_index = (fixed_pos >> FRAC_BITS) as f32;
+        sample_index / (self.buffer.sample_rate as f32 * self.buffer.channels as f32)
     }
 
     pub fn is_finished(&self) -> bool {
@@ -501,6 +539,10 @@ impl VoiceHandle {
 
     pub fn set_tween_speed(&self, speed: f32) {
         self.mixer.set_voice_tween_speed(self.id, speed);
+    }
+
+    pub fn position(&self) -> f32 {
+        self.mixer.voice_position(self.id)
     }
 
     pub fn state(&self) -> VoiceState {
