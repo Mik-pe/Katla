@@ -70,7 +70,7 @@
 - [x] **Fix `editor` feature cfg warnings in katla_physics** — katla_physics uses Component derive from katla_derive which has `#[cfg(feature = "editor")]` but katla_physics doesn't declare this feature. Add `editor = []` feature to katla_physics/Cargo.toml to resolve 5 warnings in collider.rs, joint.rs, material.rs, rigid_body.rs, trigger.rs.
 - [x] **Fix clippy::too_many_arguments warning** — `create_body_ex` in physics_world.rs has 9 arguments. Either add `#[allow(clippy::too_many_arguments)]` or refactor to use a builder pattern with `BodyBuilder` struct.
 - [x] **Make gravity configurable** — `PhysicsWorld::new()` hardcodes gravity as `Vector::new(0.0, -9.81, 0.0)`. Add `PhysicsWorld::with_gravity(gravity: Vec3)` constructor or `set_gravity(&mut self, gravity: Vec3)` method.
-- [ ] **Add `PhysicsError` enum for explicit error handling** — PhysicsWorld uses `Option` for fallible operations (body_transform, body_velocity). Add a `PhysicsError` enum with variants like `BodyNotFound`, `ColliderNotFound`, `InvalidHandle` and return `Result<T, PhysicsError>` from methods where appropriate.
+- [x] **Add `PhysicsError` enum for explicit error handling** — PhysicsWorld uses `Option` for fallible operations (body_transform, body_velocity). Add a `PhysicsError` enum with variants like `BodyNotFound`, `ColliderNotFound`, `InvalidHandle` and return `Result<T, PhysicsError>` from methods where appropriate.
 - [ ] **Expose CCD configuration** — Rapier supports Continuous Collision Detection for fast-moving bodies but it's not exposed in katla_physics. Add CCD enable/disable parameter to body creation methods or as a global PhysicsWorld setting.
 - [ ] **Add character controller support** — Implement a `CharacterController` component that wraps Rapier's KinematicCharacterController for first/third-person character movement with slope handling, stairs, and collision response.
 
@@ -547,7 +547,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 - [x] **Remove all 7 `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. `scene_tool/command.rs:127,399` (`type_name`, `position_offset` fields), `unsafe_world_cell.rs:42,55,67,79,94` (methods: `storage`, `storage_mut`, `entities`, `world`, `storage_cell`). Either use these fields/methods or remove them
 - [ ] **Eliminate 133 `unwrap()`/`expect()` calls** — Violates project rule "avoid `unwrap()` in production". Convert to proper `Result` propagation throughout the crate
-- [ ] **Eliminate 8 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling and propagation
+- ~~**Eliminate 8 `panic!()` calls**~~ — 6 of 8 are in test code (test assertions are fine as panics). The 2 production panics: scheduler cycle detection converted to `Result<_, SchedulerError>`, filter/query disjoint assertion kept as panic (invariant violation in generic iterator-returning API with no Result propagation path).
 - ~~**Implement `std::error::Error` for `SceneToolError`**~~ — Already implemented at `scene_tool/mod.rs:181`.
 
 ### katla_ecs - Major Issues (Should Fix Before Production)
@@ -604,7 +604,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### P3 - Error Handling
 - [x] **Preserve error context in `RendererError`** — Many places drop original error: `format!("Failed to create {}", label)` loses `e`. Use `format!("{}: {:?}", label, e)`
-- [ ] **Make default trait impls fail explicitly** — `update_texture()`, `recompile_materials_for_shader()`, and other default no-ops should return `Err(RendererError::InvalidOperation(...))` instead of `Ok(())`
+- [x] **Make default trait impls fail explicitly** — `update_texture()`, `recompile_materials_for_shader()`, and other default no-ops should return `Err(RendererError::InvalidOperation(...))` instead of `Ok(())`
 - [ ] **Add Metal error types** — Metal backend uses `RendererError` but some internal paths return `Result<(), ()>`. Standardize on proper error types
 
 ### P4 - Performance
