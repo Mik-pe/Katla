@@ -410,7 +410,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 #### Prerequisites: layout and diffing infrastructure
 
 - [x] Replace heuristic text measurement with real font metrics — `measure_text_descriptor()` currently uses `char_count * height * 0.6`. Use the existing `FontSystem` to measure actual glyph advances for the layout string, so Taffy flexbox sizes match what the renderer draws.
-- [ ] Add stable child identity for list diffing — add an optional `key: Option<u64>` to `StackDescriptor` children (or a `KeyedChild` wrapper) so diffing can match children by identity instead of index. Prevents state corruption and spurious animations when list order changes.
+- [x] Add stable child identity for list diffing — add an optional `key: Option<u64>` to `StackDescriptor` children (or a `KeyedChild` wrapper) so diffing can match children by identity instead of index. Prevents state corruption and spurious animations when list order changes.
 
 #### Widget gaps: missing declarative features needed for migration
 
@@ -513,7 +513,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### katla_audio - Major Issues (Should Fix Before Production)
 
-- [ ] **Improve device error handling** — `AudioEngine::new()` returns `Result` but callers may not handle all error cases properly. Add better recovery/error messages for common failures (no device, permissions, etc.)
+- [x] **Improve device error handling** — `AudioEngine::new()` returns `Result` but callers may not handle all error cases properly. Add better recovery/error messages for common failures (no device, permissions, etc.)
 - [ ] **Add stream error recovery** — Audio stream errors (device disconnection, underrun) should attempt recovery rather than failing permanently
 - [ ] **Document thread safety guarantees** — Real-time audio thread constraints should be documented for API users to avoid deadlocks
 - [ ] **Add audio device hot-swap** — When output device disconnects, there is no automatic recovery path (see also TODO.md Audio Phase 17)
@@ -623,7 +623,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] **Add Metal error types** — Standardized error types across lighting, shadow buffers, and entire particles subsystem. Added `From<String>` and `From<&str>` for `RendererError`.
 
 ### P4 - Performance
-- [ ] **Reduce `Rc<VulkanContext>` cloning in initialization** — `VulkanRenderer::init()` clones context 8+ times. Pass `&Rc<VulkanContext>` where possible
+- [x] **Reduce `Rc<VulkanContext>` cloning in initialization** — `VulkanRenderer::init()` clones context 8+ times. Pass `&Rc<VulkanContext>` where possible
 - [ ] **Cache frame graph barrier compilation** — Currently recompiles barriers every frame. Cache compilation results where possible
 - [ ] **Batch single-time commands** — `begin_single_time_commands()` creates new command buffer each call. Batch operations where possible
 
