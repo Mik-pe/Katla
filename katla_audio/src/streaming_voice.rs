@@ -530,6 +530,10 @@ fn streaming_fade_gain(fade_state: u8, pos: usize, len: usize) -> f32 {
     }
 }
 
+/// Main-thread handle to a streaming voice (long audio, e.g. music).
+///
+/// Behaves like [`VoiceHandle`] but adds [`seek()`](StreamingVoiceHandle::seek) for
+/// seeking within the stream. Same thread safety considerations apply.
 pub struct StreamingVoiceHandle {
     pub id: VoiceId,
     pub(crate) mixer: Arc<crate::mixer::AudioMixer>,

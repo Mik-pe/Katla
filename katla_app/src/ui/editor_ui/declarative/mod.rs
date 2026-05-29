@@ -11,7 +11,10 @@ pub(super) mod status_bar;
 pub(super) mod toolbar;
 pub(super) mod viewport_grid;
 
-pub(super) use asset_browser::{AssetBrowserDrawCtx, build_asset_browser_from_ctx};
+pub(super) use asset_browser::{
+    AssetBrowserAction, AssetBrowserDrawCtx, AssetRenderData, process_asset_actions,
+    process_declarative_actions,
+};
 pub(super) use co_creator::{
     CoCreatorDrawCtx, CoCreatorPanelSync, CoCreatorSubmitAction, CoCreatorUndoAction,
 };

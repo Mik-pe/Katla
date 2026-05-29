@@ -331,6 +331,8 @@ pub enum EditorAction {
     ToggleStats,
     /// Toggle physics debug wireframe overlay.
     TogglePhysicsDebug,
+    /// Toggle reverb zone wireframe overlay.
+    ToggleReverbDebug,
     /// Set font scale (1.0 = 100%).
     SetFontScale(f32),
     /// Open panel

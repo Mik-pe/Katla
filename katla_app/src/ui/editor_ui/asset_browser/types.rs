@@ -1,18 +1,9 @@
 use std::path::PathBuf;
 
 use katla_gfx::TextureHandle;
-use katla_math::{Color, Vec2};
+use katla_math::Color;
 
 use crate::ui::ColorScheme;
-
-/// Build a rectangle from two corner points (handles any ordering).
-#[inline]
-pub fn rect_from_points(a: Vec2, b: Vec2) -> katla_math::Rect2D {
-    katla_math::Rect2D::new(
-        Vec2::new(a.x().min(b.x()), a.y().min(b.y())),
-        Vec2::new(a.x().max(b.x()), a.y().max(b.y())),
-    )
-}
 
 /// Asset type classification for icons and filtering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,28 +68,10 @@ pub enum AssetAction {
     ShowInExplorer(PathBuf),
     /// Delete asset
     Delete(PathBuf),
-    /// Rename asset (old_path, new_path)
-    Rename {
-        old_path: PathBuf,
-        new_path: PathBuf,
-    },
     /// Create new folder
     CreateFolder(PathBuf),
-    /// Drag asset to viewport (spawn entity)
-    DragToViewport {
-        path: PathBuf,
-        asset_type: AssetType,
-        screen_pos: Vec2,
-    },
-    /// Move asset to folder
-    MoveToFolder {
-        asset_path: PathBuf,
-        folder_path: PathBuf,
-    },
     /// Toggle audio preview play/stop
     AudioPreviewToggle { path: PathBuf },
-    /// Drag script asset onto an entity (inspector/hierarchy)
-    DragScriptToEntity { path: PathBuf, screen_pos: Vec2 },
 }
 
 impl AssetType {

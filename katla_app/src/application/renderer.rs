@@ -494,6 +494,7 @@ impl Application {
     ) {
         self.collect_gizmo_draw_calls(draw_list);
         self.collect_physics_debug_draw_calls(draw_list);
+        self.collect_reverb_debug_draw_calls(draw_list);
 
         let shadow_draw_list = {
             let draws = draw_list
@@ -679,6 +680,34 @@ impl Application {
             for draw in contact_draws {
                 draw_list.push(draw);
             }
+        }
+    }
+
+    /// Generate reverb zone wireframe draw calls if the overlay is enabled.
+    fn collect_reverb_debug_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
+        if !self.editor.editor_ui.show_reverb_debug
+            || !self.editor.physics_debug_resources.initialized
+        {
+            return;
+        }
+
+        use crate::rendering::reverb_debug;
+
+        let mut next_instance = draw_list
+            .iter()
+            .map(|d| d.instance_index)
+            .max()
+            .unwrap_or(0)
+            + 1;
+
+        let debug_draws = reverb_debug::generate_reverb_zone_wireframe(
+            &mut self.world,
+            &self.editor.physics_debug_resources,
+            &mut next_instance,
+        );
+
+        for draw in debug_draws {
+            draw_list.push(draw);
         }
     }
 
