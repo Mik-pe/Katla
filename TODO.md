@@ -534,7 +534,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 - [x] **ScriptSystem initialization should not panic** — `ScriptSystem::new()` now returns `Result<Self, ScriptError>` instead of panicking.
 - [x] **Improve error messages from Lua** — Script errors should provide more context (which script, which function, stack traces where available)
-- [ ] **Add script timeout protection** — Long-running scripts can block the main thread. Add execution time limits or yield points
+- [x] **Add script timeout protection** — Long-running scripts can block the main thread. Add execution time limits or yield points
 - [ ] **Sandbox script capabilities** — Scripts currently have full access. Need safe subset of Lua APIs for production (restrict file I/O, network, etc.)
 - [ ] **Add script state serialization** — Script component state should serialize/deserialize for scene save/load
 
@@ -588,8 +588,8 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### katla_agent - Major Issues (Should Fix Before Production)
 
 - [ ] **Add LLM feature availability checks** — Code using `async-openai`, `tokio` should gracefully handle cases where `llm-assistant` feature is disabled
-- [ ] **Add co-creator tool error handling** — Tools in `co_creator/` module should return `Result` instead of using `unwrap()`/`expect()`
-- [ ] **Improve configuration validation** — `config.rs` should validate configuration on load and provide clear error messages
+- [x] **Add co-creator tool error handling** — Tools in `co_creator/` module should return `Result` instead of using `unwrap()`/`expect()`
+- [x] **Improve configuration validation** — `config.rs` should validate configuration on load and provide clear error messages
 - [ ] **Add rate limiting for LLM calls** — Prevent rapid successive LLM calls from overwhelming API rate limits or causing excessive costs
 
 ### katla_agent - Documentation
