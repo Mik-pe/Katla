@@ -25,6 +25,8 @@ const FADE_IN: u8 = 1;
 const FADE_OUT: u8 = 2;
 const FADE_DURATION_MS: f32 = 3.0;
 
+const LOOP_CROSSFADE_SAMPLES: usize = 256;
+
 pub struct StreamingVoice {
     id: VoiceId,
     decoder: std::sync::Mutex<StreamingDecoder>,
@@ -50,6 +52,7 @@ pub struct StreamingVoice {
     position_secs: AtomicU32,
     priority: VoicePriority,
     pub(crate) aux_sends: Vec<(AuxBusId, f32)>,
+    loop_crossfade_tail: UnsafeCell<Vec<f32>>,
 }
 
 // SAFETY: StreamingVoice is only accessed from two contexts:
@@ -116,6 +119,7 @@ impl StreamingVoice {
             position_secs: AtomicU32::new(0.0f32.to_bits()),
             priority,
             aux_sends: Vec::new(),
+            loop_crossfade_tail: UnsafeCell::new(Vec::new()),
         })
     }
 
@@ -189,6 +193,7 @@ impl StreamingVoice {
             .store(0.0f32.to_bits(), Ordering::Relaxed);
         self.priority = priority;
         self.aux_sends.clear();
+        unsafe { &mut *self.loop_crossfade_tail.get() }.clear();
 
         Ok(())
     }
@@ -332,8 +337,11 @@ impl StreamingVoice {
             Err(_) => return,
         };
 
+        let looping = self.looping;
+        let is_looping = decoder.is_exhausted() && looping;
+
         if decoder.is_exhausted() {
-            if self.looping {
+            if looping {
                 if decoder.seek_to_start().is_err() {
                     return;
                 }
@@ -342,7 +350,17 @@ impl StreamingVoice {
             }
         }
 
-        if let Some(chunk) = decoder.read_chunk() {
+        if let Some(mut chunk) = decoder.read_chunk() {
+            if is_looping {
+                let tail = unsafe { &*self.loop_crossfade_tail.get() };
+                let fade_len = tail.len().min(chunk.samples.len());
+                for (i, chunk_sample) in chunk.samples.iter_mut().enumerate().take(fade_len) {
+                    let t = i as f32 / fade_len as f32;
+                    let angle = t * std::f32::consts::FRAC_PI_2;
+                    *chunk_sample = tail[i] * angle.cos() + *chunk_sample * angle.sin();
+                }
+            }
+
             let write_idx = write_fixed / FIXED_ONE as usize;
             let copy_len = chunk.samples.len().min(ring_len);
             let first_part = copy_len.min(ring_len - write_idx);
@@ -354,6 +372,11 @@ impl StreamingVoice {
             }
             let new_write = (write_fixed + copy_len * FIXED_ONE as usize) % ring_len;
             self.write_pos.store(new_write, Ordering::Relaxed);
+
+            let tail_len = LOOP_CROSSFADE_SAMPLES.min(chunk.samples.len());
+            let tail_buf = unsafe { &mut *self.loop_crossfade_tail.get() };
+            tail_buf.resize(tail_len, 0.0);
+            tail_buf.copy_from_slice(&chunk.samples[chunk.samples.len() - tail_len..]);
         }
     }
 

@@ -13,6 +13,8 @@ const FADE_IN: u8 = 1;
 const FADE_OUT: u8 = 2;
 const FADE_DURATION_MS: f32 = 3.0;
 
+const CROSSFADE_LENGTH_SAMPLES: u64 = 256;
+
 /// Per-voice one-pole low-pass filter for occlusion.
 /// When occlusion > 0, the cutoff frequency is reduced, simulating
 /// sound passing through walls/obstacles.
@@ -333,6 +335,15 @@ impl Voice {
                 .set_occlusion(self.occlusion(), output_sample_rate as f32);
         }
 
+        let crossfade_len_fixed = if self.looping {
+            let max_cf = CROSSFADE_LENGTH_SAMPLES * FIXED_ONE;
+            let loop_region = loop_end.saturating_sub(self.loop_start);
+            max_cf.min(loop_region / 2)
+        } else {
+            0
+        };
+        let crossfade_start = loop_end.saturating_sub(crossfade_len_fixed);
+
         let mut fixed_pos = self.fixed_position.load(Ordering::Relaxed);
 
         if src_channels == output_channels {
@@ -360,6 +371,33 @@ impl Voice {
                     let rp3 = fetch_sample(src_samples, ip + 5, total_src_samples);
                     let mut l = catmull_rom(lp0, lp1, lp2, lp3, frac);
                     let mut r = catmull_rom(rp0, rp1, rp2, rp3, frac);
+
+                    if crossfade_len_fixed > 0
+                        && fixed_pos >= crossfade_start
+                        && fixed_pos < loop_end
+                    {
+                        let t = ((fixed_pos - crossfade_start) as f32 / crossfade_len_fixed as f32)
+                            .min(1.0);
+                        let head_fixed = self.loop_start + (fixed_pos - crossfade_start);
+                        let head_int = (head_fixed >> FRAC_BITS) as usize;
+                        let head_frac = (head_fixed & FRAC_MASK) as f32 / FIXED_ONE as f32;
+                        if head_int + 5 < total_src_samples {
+                            let hip = head_int as isize;
+                            let hl0 = fetch_sample(src_samples, hip - 2, total_src_samples);
+                            let hr0 = fetch_sample(src_samples, hip - 1, total_src_samples);
+                            let hl1 = src_samples[head_int];
+                            let hr1 = src_samples[head_int + 1];
+                            let hl2 = fetch_sample(src_samples, hip + 2, total_src_samples);
+                            let hr2 = fetch_sample(src_samples, hip + 3, total_src_samples);
+                            let hl3 = fetch_sample(src_samples, hip + 4, total_src_samples);
+                            let hr3 = fetch_sample(src_samples, hip + 5, total_src_samples);
+                            let head_l = catmull_rom(hl0, hl1, hl2, hl3, head_frac);
+                            let head_r = catmull_rom(hr0, hr1, hr2, hr3, head_frac);
+                            l = equal_power_crossfade(l, head_l, t);
+                            r = equal_power_crossfade(r, head_r, t);
+                        }
+                    }
+
                     if occluded {
                         l = self.occlusion_filter.process_sample(0, l);
                         r = self.occlusion_filter.process_sample(1, r);
@@ -375,6 +413,34 @@ impl Voice {
                         let sp2 = fetch_sample(src_samples, base + stride, total_src_samples);
                         let sp3 = fetch_sample(src_samples, base + 2 * stride, total_src_samples);
                         let mut s = catmull_rom(sp0, sp1, sp2, sp3, frac);
+
+                        if crossfade_len_fixed > 0
+                            && fixed_pos >= crossfade_start
+                            && fixed_pos < loop_end
+                        {
+                            let t = ((fixed_pos - crossfade_start) as f32
+                                / crossfade_len_fixed as f32)
+                                .min(1.0);
+                            let head_fixed = self.loop_start + (fixed_pos - crossfade_start);
+                            let head_int = (head_fixed >> FRAC_BITS) as usize;
+                            let head_frac = (head_fixed & FRAC_MASK) as f32 / FIXED_ONE as f32;
+                            if head_int + 2 * (stride as usize) < total_src_samples {
+                                let hbase = head_int as isize + ch as isize;
+                                let hs0 =
+                                    fetch_sample(src_samples, hbase - stride, total_src_samples);
+                                let hs1 = src_samples[head_int + ch];
+                                let hs2 =
+                                    fetch_sample(src_samples, hbase + stride, total_src_samples);
+                                let hs3 = fetch_sample(
+                                    src_samples,
+                                    hbase + 2 * stride,
+                                    total_src_samples,
+                                );
+                                let head_s = catmull_rom(hs0, hs1, hs2, hs3, head_frac);
+                                s = equal_power_crossfade(s, head_s, t);
+                            }
+                        }
+
                         if occluded {
                             s = self.occlusion_filter.process_sample(ch.min(1), s);
                         }
@@ -404,6 +470,24 @@ impl Voice {
                 let sp2 = fetch_sample(src_samples, ip + 1, total_src_samples);
                 let sp3 = fetch_sample(src_samples, ip + 2, total_src_samples);
                 let mut mono = catmull_rom(sp0, sp1, sp2, sp3, frac);
+
+                if crossfade_len_fixed > 0 && fixed_pos >= crossfade_start && fixed_pos < loop_end {
+                    let t = ((fixed_pos - crossfade_start) as f32 / crossfade_len_fixed as f32)
+                        .min(1.0);
+                    let head_fixed = self.loop_start + (fixed_pos - crossfade_start);
+                    let head_int = (head_fixed >> FRAC_BITS) as usize;
+                    let head_frac = (head_fixed & FRAC_MASK) as f32 / FIXED_ONE as f32;
+                    if head_int + 2 < total_src_samples {
+                        let hip = head_int as isize;
+                        let hs0 = fetch_sample(src_samples, hip - 1, total_src_samples);
+                        let hs1 = src_samples[head_int];
+                        let hs2 = fetch_sample(src_samples, hip + 1, total_src_samples);
+                        let hs3 = fetch_sample(src_samples, hip + 2, total_src_samples);
+                        let head_mono = catmull_rom(hs0, hs1, hs2, hs3, head_frac);
+                        mono = equal_power_crossfade(mono, head_mono, t);
+                    }
+                }
+
                 if occluded {
                     mono = self.occlusion_filter.process_sample(0, mono);
                 }
@@ -437,6 +521,30 @@ impl Voice {
                 let rp3 = fetch_sample(src_samples, ip + 5, total_src_samples);
                 let mut l = catmull_rom(lp0, lp1, lp2, lp3, frac);
                 let mut r = catmull_rom(rp0, rp1, rp2, rp3, frac);
+
+                if crossfade_len_fixed > 0 && fixed_pos >= crossfade_start && fixed_pos < loop_end {
+                    let t = ((fixed_pos - crossfade_start) as f32 / crossfade_len_fixed as f32)
+                        .min(1.0);
+                    let head_fixed = self.loop_start + (fixed_pos - crossfade_start);
+                    let head_int = (head_fixed >> FRAC_BITS) as usize;
+                    let head_frac = (head_fixed & FRAC_MASK) as f32 / FIXED_ONE as f32;
+                    if head_int + 5 < total_src_samples {
+                        let hip = head_int as isize;
+                        let hl0 = fetch_sample(src_samples, hip - 2, total_src_samples);
+                        let hr0 = fetch_sample(src_samples, hip - 1, total_src_samples);
+                        let hl1 = src_samples[head_int];
+                        let hr1 = src_samples[head_int + 1];
+                        let hl2 = fetch_sample(src_samples, hip + 2, total_src_samples);
+                        let hr2 = fetch_sample(src_samples, hip + 3, total_src_samples);
+                        let hl3 = fetch_sample(src_samples, hip + 4, total_src_samples);
+                        let hr3 = fetch_sample(src_samples, hip + 5, total_src_samples);
+                        let head_l = catmull_rom(hl0, hl1, hl2, hl3, head_frac);
+                        let head_r = catmull_rom(hr0, hr1, hr2, hr3, head_frac);
+                        l = equal_power_crossfade(l, head_l, t);
+                        r = equal_power_crossfade(r, head_r, t);
+                    }
+                }
+
                 if occluded {
                     l = self.occlusion_filter.process_sample(0, l);
                     r = self.occlusion_filter.process_sample(1, r);
@@ -464,8 +572,10 @@ impl Voice {
         if fixed_pos >= loop_end {
             if self.looping {
                 let overshoot = fixed_pos - loop_end;
-                self.fixed_position
-                    .store(self.loop_start + overshoot, Ordering::Relaxed);
+                self.fixed_position.store(
+                    self.loop_start + crossfade_len_fixed + overshoot,
+                    Ordering::Relaxed,
+                );
             } else {
                 self.fixed_position.store(total_fixed, Ordering::Relaxed);
                 self.finished.store(true, Ordering::Relaxed);
@@ -512,6 +622,12 @@ fn compute_fade_gain(fade_state: u8, pos: usize, len: usize) -> f32 {
         FADE_OUT => (1.0 - pos as f32 / len as f32).max(0.0),
         _ => 1.0,
     }
+}
+
+#[inline]
+fn equal_power_crossfade(tail: f32, head: f32, t: f32) -> f32 {
+    let angle = t * std::f32::consts::FRAC_PI_2;
+    tail * angle.cos() + head * angle.sin()
 }
 
 pub fn db_to_linear(db: f32) -> f32 {
