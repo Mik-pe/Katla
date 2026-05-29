@@ -49,10 +49,21 @@ impl OcclusionFilter {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VoiceId(pub u32);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AuxBusId(pub u32);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoiceState {
     Playing,
     Stopped,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum VoicePriority {
+    Low,
+    #[default]
+    Medium,
+    High,
 }
 
 pub struct CategoryVolumes(pub [AtomicU32; 3]);
@@ -88,6 +99,8 @@ pub struct Voice {
     occlusion_filter: OcclusionFilter,
     fade_state: AtomicU8,
     fade_position: AtomicUsize,
+    priority: VoicePriority,
+    pub(crate) aux_sends: Vec<(AuxBusId, f32)>,
 }
 
 impl Voice {
@@ -97,6 +110,7 @@ impl Voice {
         looping: bool,
         category: AudioCategoryValue,
         category_volumes: Arc<CategoryVolumes>,
+        priority: VoicePriority,
     ) -> Self {
         let total_fixed = buffer.samples.len() as u64 * FIXED_ONE;
         Voice {
@@ -120,11 +134,24 @@ impl Voice {
             occlusion_filter: OcclusionFilter::new(),
             fade_state: AtomicU8::new(FADE_IN),
             fade_position: AtomicUsize::new(0),
+            priority,
+            aux_sends: Vec::new(),
         }
     }
 
     pub fn id(&self) -> VoiceId {
         self.id
+    }
+
+    pub fn priority(&self) -> VoicePriority {
+        self.priority
+    }
+
+    pub fn aux_send_level(&self, bus_id: AuxBusId) -> Option<f32> {
+        self.aux_sends
+            .iter()
+            .find(|(id, _)| *id == bus_id)
+            .map(|(_, level)| *level)
     }
 
     pub(crate) fn reset(
@@ -134,6 +161,7 @@ impl Voice {
         looping: bool,
         category: AudioCategoryValue,
         category_volumes: Arc<CategoryVolumes>,
+        priority: VoicePriority,
     ) {
         let total_fixed = buffer.samples.len() as u64 * FIXED_ONE;
         self.id = id;
@@ -157,6 +185,8 @@ impl Voice {
         self.occlusion_filter = OcclusionFilter::new();
         self.fade_state.store(FADE_IN, Ordering::Relaxed);
         self.fade_position.store(0, Ordering::Relaxed);
+        self.priority = priority;
+        self.aux_sends.clear();
     }
 
     pub fn set_volume(&self, volume: f32) {
@@ -547,5 +577,9 @@ impl VoiceHandle {
 
     pub fn state(&self) -> VoiceState {
         self.mixer.voice_state(self.id)
+    }
+
+    pub fn set_aux_sends(&self, sends: Vec<(AuxBusId, f32)>) {
+        self.mixer.set_voice_aux_sends(self.id, sends);
     }
 }

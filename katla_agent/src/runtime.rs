@@ -1,7 +1,9 @@
+use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::Duration;
 
 use crate::llm::{ChatMessage, ChatResponse, LlmError, LlmProvider, StreamChunk, ToolDefinition};
+use crate::rate_limiter::{RateLimitResult, RateLimiter};
 
 /// Bridge between the synchronous render loop and async LLM calls.
 ///
@@ -9,6 +11,7 @@ use crate::llm::{ChatMessage, ChatResponse, LlmError, LlmProvider, StreamChunk, 
 /// requests and polls for results each frame.
 pub struct AsyncBridge {
     runtime: tokio::runtime::Runtime,
+    rate_limiter: Option<Arc<RateLimiter>>,
 }
 
 /// A pending chat request that can be polled for completion.
@@ -26,7 +29,25 @@ impl AsyncBridge {
     pub fn new() -> Result<Self, LlmError> {
         let runtime = tokio::runtime::Runtime::new()
             .map_err(|e| LlmError::Config(format!("Failed to create tokio runtime: {e}")))?;
-        Ok(Self { runtime })
+        Ok(Self {
+            runtime,
+            rate_limiter: None,
+        })
+    }
+
+    pub fn with_rate_limits(
+        min_interval: Duration,
+        max_calls_per_minute: u32,
+    ) -> Result<Self, LlmError> {
+        let runtime = tokio::runtime::Runtime::new()
+            .map_err(|e| LlmError::Config(format!("Failed to create tokio runtime: {e}")))?;
+        Ok(Self {
+            runtime,
+            rate_limiter: Some(Arc::new(RateLimiter::new(
+                min_interval,
+                max_calls_per_minute,
+            ))),
+        })
     }
 
     /// Submit a chat completion request to the background runtime.
@@ -37,7 +58,29 @@ impl AsyncBridge {
         tools: Vec<ToolDefinition>,
     ) -> PendingChatRequest {
         let (tx, rx) = mpsc::channel();
+        let rate_limiter = self.rate_limiter.clone();
         self.runtime.spawn(async move {
+            if let Some(ref limiter) = rate_limiter {
+                match limiter.check_and_record() {
+                    RateLimitResult::Allowed => {}
+                    RateLimitResult::Wait(duration) => {
+                        log::warn!(
+                            "LLM rate limit: waiting {:.0}ms before next call",
+                            duration.as_millis()
+                        );
+                        tokio::time::sleep(duration).await;
+                        limiter.record();
+                    }
+                    RateLimitResult::Exceeded { retry_after } => {
+                        let _ = tx.send(Err(LlmError::RateLimited(format!(
+                            "Max calls per minute exceeded. Retry after {:.0}s",
+                            retry_after.as_secs_f32()
+                        ))));
+                        return;
+                    }
+                }
+            }
+
             let result = tokio::time::timeout(
                 Duration::from_secs(120),
                 provider.chat_completion(&messages, &tools),
@@ -58,7 +101,29 @@ impl AsyncBridge {
         tools: Vec<ToolDefinition>,
     ) -> PendingStreamRequest {
         let (tx, rx) = mpsc::channel();
+        let rate_limiter = self.rate_limiter.clone();
         self.runtime.spawn(async move {
+            if let Some(ref limiter) = rate_limiter {
+                match limiter.check_and_record() {
+                    RateLimitResult::Allowed => {}
+                    RateLimitResult::Wait(duration) => {
+                        log::warn!(
+                            "LLM rate limit: waiting {:.0}ms before next call",
+                            duration.as_millis()
+                        );
+                        tokio::time::sleep(duration).await;
+                        limiter.record();
+                    }
+                    RateLimitResult::Exceeded { retry_after } => {
+                        let _ = tx.send(Err(LlmError::RateLimited(format!(
+                            "Max calls per minute exceeded. Retry after {:.0}s",
+                            retry_after.as_secs_f32()
+                        ))));
+                        return;
+                    }
+                }
+            }
+
             use futures::StreamExt;
             let mut stream = std::pin::pin!(provider.chat_completion_stream(&messages, &tools));
             loop {

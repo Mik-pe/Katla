@@ -2,6 +2,8 @@ pub mod biquad;
 pub mod reverb;
 pub mod zone_reverb;
 
+use crate::voice::AuxBusId;
+
 pub trait AudioEffect {
     fn process(&mut self, input: &mut [f32], channels: usize);
 }
@@ -39,6 +41,7 @@ impl EffectChain {
 }
 
 pub struct AuxBus {
+    pub id: AuxBusId,
     pub send_level: f32,
     pub return_level: f32,
     pub effects: EffectChain,
@@ -48,6 +51,7 @@ pub struct AuxBus {
 impl AuxBus {
     pub fn new(send_level: f32, return_level: f32) -> Self {
         AuxBus {
+            id: AuxBusId(0),
             send_level,
             return_level,
             effects: EffectChain::new(),
@@ -59,16 +63,19 @@ impl AuxBus {
         self.effects.add_effect(effect);
     }
 
-    pub fn accumulate(&mut self, main_buffer: &[f32]) {
-        if self.send_level == 0.0 {
-            return;
-        }
-        if self.buffer.len() != main_buffer.len() {
-            self.buffer.resize(main_buffer.len(), 0.0);
+    pub fn prepare(&mut self, len: usize) {
+        if self.buffer.len() != len {
+            self.buffer.resize(len, 0.0);
         }
         self.buffer.fill(0.0);
-        for (dst, src) in self.buffer.iter_mut().zip(main_buffer.iter()) {
-            *dst = src * self.send_level;
+    }
+
+    pub fn accumulate_voice(&mut self, voice_buffer: &[f32], send_level: f32) {
+        if send_level == 0.0 {
+            return;
+        }
+        for (dst, src) in self.buffer.iter_mut().zip(voice_buffer.iter()) {
+            *dst += src * send_level;
         }
     }
 

@@ -55,6 +55,10 @@ pub struct LlmConfig {
     pub max_tokens: u32,
     /// Sampling temperature (0.0–2.0).
     pub temperature: f32,
+    /// Minimum interval between consecutive LLM calls in milliseconds.
+    pub rate_limit_min_interval_ms: u64,
+    /// Maximum number of LLM calls per rolling 60-second window.
+    pub rate_limit_max_calls_per_minute: u32,
 }
 
 impl Default for LlmConfig {
@@ -66,6 +70,8 @@ impl Default for LlmConfig {
             model: "gpt-4o".to_string(),
             max_tokens: 4096,
             temperature: 0.7,
+            rate_limit_min_interval_ms: 1000,
+            rate_limit_max_calls_per_minute: 20,
         }
     }
 }
@@ -79,6 +85,14 @@ impl fmt::Debug for LlmConfig {
             .field("model", &self.model)
             .field("max_tokens", &self.max_tokens)
             .field("temperature", &self.temperature)
+            .field(
+                "rate_limit_min_interval_ms",
+                &self.rate_limit_min_interval_ms,
+            )
+            .field(
+                "rate_limit_max_calls_per_minute",
+                &self.rate_limit_max_calls_per_minute,
+            )
             .finish()
     }
 }
@@ -94,6 +108,11 @@ impl fmt::Display for LlmConfig {
 
         write!(f, ", temperature: {}", self.temperature)?;
         write!(f, ", max_tokens: {}", self.max_tokens)?;
+        write!(
+            f,
+            ", rate_limit: {}/min, {}ms interval",
+            self.rate_limit_max_calls_per_minute, self.rate_limit_min_interval_ms
+        )?;
 
         if self.api_key.is_empty() {
             write!(f, ", api_key: <not set>")?;
@@ -250,6 +269,12 @@ impl LlmConfig {
             }
         }
 
+        if self.rate_limit_max_calls_per_minute == 0 {
+            issues.push(ConfigIssue {
+                message: "rate_limit_max_calls_per_minute is 0, will default to 20.".to_string(),
+            });
+        }
+
         issues
     }
 
@@ -261,6 +286,9 @@ impl LlmConfig {
         }
         if self.model.is_empty() {
             self.model = "gpt-4o".to_string();
+        }
+        if self.rate_limit_max_calls_per_minute == 0 {
+            self.rate_limit_max_calls_per_minute = 20;
         }
     }
 }

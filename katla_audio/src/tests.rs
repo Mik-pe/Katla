@@ -4,7 +4,7 @@ use crate::effect::biquad::{BiquadFilter, FilterKind};
 use crate::effect::reverb::ReverbEffect;
 use crate::effect::{AudioEffect, AuxBus};
 use crate::engine::AudioEngine;
-use crate::voice::VoiceState;
+use crate::voice::{VoicePriority, VoiceState};
 use std::sync::Arc;
 
 fn make_test_buffer(sample_rate: u32, channels: u16, samples: Vec<f32>) -> AudioBuffer {
@@ -60,8 +60,8 @@ fn test_mixer_mixes_voices() {
     let buf1 = Arc::new(make_test_buffer(44100, 2, vec![0.5; 2048]));
     let buf2 = Arc::new(make_test_buffer(44100, 2, vec![0.3; 2048]));
 
-    mixer.play(buf1, AudioCategoryValue::Sfx);
-    mixer.play(buf2, AudioCategoryValue::Sfx);
+    mixer.play(buf1, AudioCategoryValue::Sfx, VoicePriority::default());
+    mixer.play(buf2, AudioCategoryValue::Sfx, VoicePriority::default());
 
     let mut fade_buf = vec![0.0f32; 512];
     mixer.render(&mut fade_buf);
@@ -83,7 +83,7 @@ fn test_mixer_master_volume() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 2048]));
-    mixer.play(buf, AudioCategoryValue::Sfx);
+    mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
     mixer.set_master_volume(0.5);
 
     let mut fade_buf = vec![0.0f32; 512];
@@ -106,8 +106,12 @@ fn test_mixer_clamping() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![0.9; 2048]));
-    mixer.play(buf.clone(), AudioCategoryValue::Sfx);
-    mixer.play(buf, AudioCategoryValue::Sfx);
+    mixer.play(
+        buf.clone(),
+        AudioCategoryValue::Sfx,
+        VoicePriority::default(),
+    );
+    mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
     mixer.set_master_volume(1.0);
 
     let mut fade_buf = vec![0.0f32; 512];
@@ -126,7 +130,7 @@ fn test_voice_stop() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 8192]));
-    let id = mixer.play(buf, AudioCategoryValue::Sfx);
+    let id = mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
 
     let mut fade_buf = vec![0.0f32; 512];
     mixer.render(&mut fade_buf);
@@ -154,7 +158,7 @@ fn test_voice_finished_cleanup() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![0.5; 64]));
-    mixer.play(buf, AudioCategoryValue::Sfx);
+    mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
 
     let mut output = vec![0.0f32; 64];
     mixer.render(&mut output);
@@ -166,7 +170,7 @@ fn test_voice_set_volume() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 2048]));
-    let id = mixer.play(buf, AudioCategoryValue::Sfx);
+    let id = mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
     mixer.set_voice_volume(id, 0.25);
 
     let mut fade_buf = vec![0.0f32; 512];
@@ -189,7 +193,7 @@ fn test_mono_to_stereo_upmix() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 1, vec![0.7; 1024]));
-    mixer.play(buf, AudioCategoryValue::Sfx);
+    mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
 
     let mut fade_buf = vec![0.0f32; 512];
     mixer.render(&mut fade_buf);
@@ -277,7 +281,7 @@ fn test_voice_pan_stereo() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 2048]));
-    let id = mixer.play(buf, AudioCategoryValue::Sfx);
+    let id = mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
     mixer.set_voice_pan(id, 1.0);
 
     let mut fade_buf = vec![0.0f32; 512];
@@ -301,7 +305,7 @@ fn test_voice_pan_mono_source() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 1, vec![1.0; 1024]));
-    let id = mixer.play(buf, AudioCategoryValue::Sfx);
+    let id = mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
     mixer.set_voice_pan(id, -1.0);
 
     let mut fade_buf = vec![0.0f32; 512];
@@ -361,7 +365,7 @@ fn test_category_volume_applied() {
     mixer.set_category_volume(AudioCategoryValue::Music, 0.5);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 2048]));
-    mixer.play(buf, AudioCategoryValue::Music);
+    mixer.play(buf, AudioCategoryValue::Music, VoicePriority::default());
 
     let mut fade_buf = vec![0.0f32; 512];
     mixer.render(&mut fade_buf);
@@ -480,7 +484,7 @@ fn test_effect_chain_on_mixer() {
     mixer.add_master_effect(Box::new(lpf));
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 2048]));
-    mixer.play(buf, AudioCategoryValue::Sfx);
+    mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
 
     let mut fade_buf = vec![0.0f32; 512];
     mixer.render(&mut fade_buf);
@@ -508,7 +512,7 @@ fn test_aux_bus_send_return() {
     mixer.add_aux_bus(bus);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 8192]));
-    mixer.play(buf, AudioCategoryValue::Sfx);
+    mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
 
     let mut fade_buf = vec![0.0f32; 512];
     mixer.render(&mut fade_buf);
@@ -520,7 +524,7 @@ fn test_aux_bus_send_return() {
 
     let mixer_no_bus = crate::mixer::AudioMixer::new(44100, 2);
     let buf2 = Arc::new(make_test_buffer(44100, 2, vec![1.0; 8192]));
-    mixer_no_bus.play(buf2, AudioCategoryValue::Sfx);
+    mixer_no_bus.play(buf2, AudioCategoryValue::Sfx, VoicePriority::default());
     let mut fade_buf2 = vec![0.0f32; 512];
     mixer_no_bus.render(&mut fade_buf2);
     let mut output_no_bus = vec![0.0f32; 512];
@@ -542,7 +546,7 @@ fn test_aux_bus_zero_send() {
     mixer.add_aux_bus(bus);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 2048]));
-    mixer.play(buf, AudioCategoryValue::Sfx);
+    mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
 
     let mut fade_buf = vec![0.0f32; 512];
     mixer.render(&mut fade_buf);
@@ -565,7 +569,7 @@ fn test_volume_tween_converges() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 8192]));
-    let id = mixer.play(buf, AudioCategoryValue::Sfx);
+    let id = mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
 
     mixer.set_voice_volume_tweened(id, 0.0);
 
@@ -590,7 +594,7 @@ fn test_pan_tween_converges() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 16384]));
-    let id = mixer.play(buf, AudioCategoryValue::Sfx);
+    let id = mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
 
     mixer.set_voice_pan_tweened(id, 1.0);
 
@@ -692,7 +696,7 @@ fn test_category_volume_change_affects_playing_voice() {
     let mixer = crate::mixer::AudioMixer::new(44100, 2);
 
     let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 8192]));
-    mixer.play(buf, AudioCategoryValue::Sfx);
+    mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::default());
 
     let mut fade_buf = vec![0.0f32; 512];
     mixer.render(&mut fade_buf);
@@ -702,7 +706,7 @@ fn test_category_volume_change_affects_playing_voice() {
     let energy_full: f32 = output_full.iter().map(|s| s * s).sum();
 
     let buf2 = Arc::new(make_test_buffer(44100, 2, vec![1.0; 8192]));
-    mixer.play(buf2, AudioCategoryValue::Sfx);
+    mixer.play(buf2, AudioCategoryValue::Sfx, VoicePriority::default());
     mixer.set_category_volume(AudioCategoryValue::Sfx, 0.25);
 
     let mut output_quiet = vec![0.0f32; 64];
@@ -712,5 +716,120 @@ fn test_category_volume_change_affects_playing_voice() {
     assert!(
         energy_quiet < energy_full * 0.3,
         "Category volume change should reduce output energy: full={energy_full}, quiet={energy_quiet}"
+    );
+}
+
+#[test]
+fn test_voice_stealing_higher_priority_takes_slot() {
+    let mixer = crate::mixer::AudioMixer::with_pool_size(44100, 2, 1, 1);
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![0.5; 8192]));
+    let low_id = mixer.play(buf.clone(), AudioCategoryValue::Sfx, VoicePriority::Low);
+
+    let mut fade_buf = vec![0.0f32; 512];
+    mixer.render(&mut fade_buf);
+
+    assert_eq!(mixer.active_voice_count(), 1);
+    assert_eq!(mixer.voice_state(low_id), VoiceState::Playing);
+
+    let high_id = mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::High);
+
+    let mut fade_buf2 = vec![0.0f32; 512];
+    mixer.render(&mut fade_buf2);
+
+    assert_eq!(mixer.active_voice_count(), 1);
+    assert_eq!(mixer.voice_state(high_id), VoiceState::Playing);
+}
+
+#[test]
+fn test_voice_stealing_same_priority_rejected() {
+    let mixer = crate::mixer::AudioMixer::with_pool_size(44100, 2, 1, 1);
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![0.5; 8192]));
+    let id1 = mixer.play(buf.clone(), AudioCategoryValue::Sfx, VoicePriority::Low);
+
+    let mut fade_buf = vec![0.0f32; 512];
+    mixer.render(&mut fade_buf);
+
+    assert_eq!(mixer.active_voice_count(), 1);
+
+    let id2 = mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::Low);
+
+    let mut fade_buf2 = vec![0.0f32; 512];
+    mixer.render(&mut fade_buf2);
+
+    assert_eq!(mixer.active_voice_count(), 1);
+    assert_eq!(mixer.voice_state(id1), VoiceState::Playing);
+    assert_eq!(mixer.voice_state(id2), VoiceState::Stopped);
+}
+
+#[test]
+fn test_voice_stealing_lower_priority_cannot_steal() {
+    let mixer = crate::mixer::AudioMixer::with_pool_size(44100, 2, 1, 1);
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![0.5; 8192]));
+    let high_id = mixer.play(buf.clone(), AudioCategoryValue::Sfx, VoicePriority::High);
+
+    let mut fade_buf = vec![0.0f32; 512];
+    mixer.render(&mut fade_buf);
+
+    assert_eq!(mixer.active_voice_count(), 1);
+
+    let low_id = mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::Low);
+
+    let mut fade_buf2 = vec![0.0f32; 512];
+    mixer.render(&mut fade_buf2);
+
+    assert_eq!(mixer.active_voice_count(), 1);
+    assert_eq!(mixer.voice_state(high_id), VoiceState::Playing);
+    assert_eq!(mixer.voice_state(low_id), VoiceState::Stopped);
+}
+
+#[test]
+fn test_voice_stealing_prefers_lowest_priority() {
+    let mixer = crate::mixer::AudioMixer::with_pool_size(44100, 2, 2, 1);
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![0.5; 8192]));
+    let _low_id = mixer.play(buf.clone(), AudioCategoryValue::Sfx, VoicePriority::Low);
+
+    let mut fade_buf = vec![0.0f32; 512];
+    mixer.render(&mut fade_buf);
+
+    let med_id = mixer.play(buf.clone(), AudioCategoryValue::Sfx, VoicePriority::Medium);
+
+    let mut fade_buf2 = vec![0.0f32; 512];
+    mixer.render(&mut fade_buf2);
+
+    assert_eq!(mixer.active_voice_count(), 2);
+
+    let high_id = mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::High);
+
+    let mut fade_buf3 = vec![0.0f32; 512];
+    mixer.render(&mut fade_buf3);
+
+    assert_eq!(mixer.active_voice_count(), 2);
+    assert_eq!(mixer.voice_state(med_id), VoiceState::Playing);
+    assert_eq!(mixer.voice_state(high_id), VoiceState::Playing);
+}
+
+#[test]
+fn test_voice_stealing_fade_in_prevents_click() {
+    let mixer = crate::mixer::AudioMixer::with_pool_size(44100, 2, 1, 1);
+
+    let buf = Arc::new(make_test_buffer(44100, 2, vec![1.0; 8192]));
+    let _low_id = mixer.play(buf.clone(), AudioCategoryValue::Sfx, VoicePriority::Low);
+
+    let mut fade_buf = vec![0.0f32; 512];
+    mixer.render(&mut fade_buf);
+
+    let _high_id = mixer.play(buf, AudioCategoryValue::Sfx, VoicePriority::High);
+
+    let mut first_frame = vec![0.0f32; 2];
+    mixer.render(&mut first_frame);
+
+    assert!(
+        first_frame[0] < 0.5,
+        "Stolen voice should fade in, first sample should be attenuated: got {}",
+        first_frame[0]
     );
 }
