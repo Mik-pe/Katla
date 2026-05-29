@@ -956,10 +956,7 @@ mod tests {
         assert_eq!(value_ids, ids);
         assert_eq!(range, -10.0..=10.0);
         assert_eq!(axis_labels, ["X", "Y", "Z"]);
-        assert_eq!(
-            axis_colors,
-            [Color::RED, Color::GREEN, Color::BLUE]
-        );
+        assert_eq!(axis_colors, [Color::RED, Color::GREEN, Color::BLUE]);
         assert_eq!(precision, 2);
     }
 

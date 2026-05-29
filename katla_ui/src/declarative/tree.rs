@@ -333,10 +333,12 @@ impl ViewTree {
 
             // Fire on_complete callbacks
             let mut callbacks = std::mem::take(&mut self.callbacks);
+            let mut actions = std::mem::take(&mut self.actions);
             for cb_id in completed_callbacks {
-                callbacks.invoke(&Callback(cb_id));
+                callbacks.invoke(&Callback(cb_id), &mut actions);
             }
             self.callbacks = callbacks;
+            self.actions = actions;
         }
 
         // Remove nodes that are pending_remove and have no active animations

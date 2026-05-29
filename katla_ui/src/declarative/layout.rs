@@ -814,7 +814,11 @@ mod tests {
         use crate::declarative::constructors::{grid, text};
 
         let mut tree = ViewTree::new();
-        let descriptor = grid(2, Vec2::new(100.0, 50.0), vec![text("A"), text("B"), text("C")]);
+        let descriptor = grid(
+            2,
+            Vec2::new(100.0, 50.0),
+            vec![text("A"), text("B"), text("C")],
+        );
 
         build_tree(&mut tree, descriptor);
 

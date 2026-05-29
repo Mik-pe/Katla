@@ -1,23 +1,94 @@
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::declarative::{Build, BuildContext, ViewDescriptor};
-use katla_ui::{FontSize, TextureId, UiContext};
+use katla_ui::declarative::{Alignment, Build, BuildContext, ViewDescriptor};
+use katla_ui::{FontSize, TextureId};
 
 use crate::resources::viewport_state::{ViewportGridState, ViewportLayout};
 use crate::ui::editor_ui::ColorScheme;
 
+/// Environment data injected before each frame for the viewport grid.
 #[derive(Clone)]
 pub(crate) struct ViewportGridDrawCtx {
     pub bounds: Rect2D,
     pub state: ViewportGridState,
     pub texture_ids: [Option<TextureId>; 4],
     pub theme: ColorScheme,
+    pub mouse_pos: Vec2,
 }
 
 pub(crate) struct ViewportGridView;
 
 impl Build for ViewportGridView {
-    fn build(&self, _ctx: &mut BuildContext) -> ViewDescriptor {
-        ViewDescriptor::Custom(draw_viewport_grid)
+    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+        use katla_ui::declarative::{grid, image, text, zstack};
+
+        let draw_ctx = ctx.env::<ViewportGridDrawCtx>().cloned();
+        let Some(draw_ctx) = draw_ctx else {
+            return ViewDescriptor::Empty;
+        };
+
+        let (rows, cols) = draw_ctx.state.layout.grid_dimensions();
+        let cell_width = draw_ctx.bounds.width() / cols as f32;
+        let cell_height = draw_ctx.bounds.height() / rows as f32;
+        let cell_size = Vec2::new(cell_width, cell_height);
+
+        let hovered_slot =
+            get_slot_at_position(draw_ctx.bounds, &draw_ctx.state, draw_ctx.mouse_pos);
+
+        let mut grid_children = Vec::new();
+
+        for row in 0..rows {
+            for col in 0..cols {
+                let slot_index = draw_ctx.state.layout.slot_index(row, col).unwrap();
+                let is_active = draw_ctx.state.active_viewport == Some(slot_index);
+                let is_hovered = hovered_slot == Some(slot_index);
+
+                let texture = draw_ctx.texture_ids[slot_index];
+
+                let label = match draw_ctx.state.layout {
+                    ViewportLayout::Single => "3D View",
+                    ViewportLayout::Horizontal2 => {
+                        if slot_index == 0 {
+                            "Left"
+                        } else {
+                            "Right"
+                        }
+                    }
+                    ViewportLayout::Vertical2 => {
+                        if slot_index == 0 {
+                            "Top"
+                        } else {
+                            "Bottom"
+                        }
+                    }
+                    ViewportLayout::Quad2x2 => match slot_index {
+                        0 => "Top-Left",
+                        1 => "Top-Right",
+                        2 => "Bottom-Left",
+                        _ => "Bottom-Right",
+                    },
+                };
+
+                let mut cell_content = Vec::new();
+
+                if let Some(texture) = texture {
+                    cell_content.push((Alignment::Center, image(texture, Color::WHITE)));
+                }
+
+                let label_text = text(label)
+                    .color(Color::WHITE.with_alpha(0.8))
+                    .font_size(FontSize::Small);
+
+                cell_content.push((Alignment::Leading, label_text));
+
+                let content = zstack(cell_content);
+
+                // Use selectable for visual feedback (hover/active highlighting)
+                // The actual selection is handled in layout.rs via update_active_viewport
+                grid_children.push(katla_ui::declarative::selectable(content).selected(is_active));
+            }
+        }
+
+        grid(cols, cell_size, grid_children).grid_spacing(0.0)
     }
 }
 
@@ -45,79 +116,6 @@ fn get_slot_at_position(bounds: Rect2D, state: &ViewportGridState, pos: Vec2) ->
     let col = ((pos.x() - bounds.min.x()) / cell_width).floor() as usize;
     let row = ((pos.y() - bounds.min.y()) / cell_height).floor() as usize;
     state.layout.slot_index(row, col)
-}
-
-fn draw_viewport_grid(ui: &mut UiContext, _bounds: Rect2D) {
-    let ctx = match ui.get_scratch::<ViewportGridDrawCtx>().cloned() {
-        Some(c) => c,
-        None => return,
-    };
-
-    let (rows, cols) = ctx.state.layout.grid_dimensions();
-    let hovered_slot = get_slot_at_position(ctx.bounds, &ctx.state, ui.mouse_pos());
-
-    for row in 0..rows {
-        for col in 0..cols {
-            let slot_index = ctx.state.layout.slot_index(row, col).unwrap();
-            let viewport_bounds = get_viewport_bounds(ctx.bounds, &ctx.state, row, col);
-
-            if let Some(texture) = ctx.texture_ids[slot_index] {
-                ui.image(texture, viewport_bounds, None, Some(Color::WHITE));
-            }
-
-            let is_active = ctx.state.active_viewport == Some(slot_index);
-            let is_hovered = hovered_slot == Some(slot_index);
-            let border_color = if is_active {
-                ctx.theme.selection
-            } else if is_hovered {
-                ctx.theme.selection_hover
-            } else {
-                ctx.theme.viewport_border
-            };
-            ui.draw_selection_border(viewport_bounds, border_color, 2.0);
-
-            let label = match ctx.state.layout {
-                ViewportLayout::Single => "3D View",
-                ViewportLayout::Horizontal2 => {
-                    if slot_index == 0 {
-                        "Left"
-                    } else {
-                        "Right"
-                    }
-                }
-                ViewportLayout::Vertical2 => {
-                    if slot_index == 0 {
-                        "Top"
-                    } else {
-                        "Bottom"
-                    }
-                }
-                ViewportLayout::Quad2x2 => match slot_index {
-                    0 => "Top-Left",
-                    1 => "Top-Right",
-                    2 => "Bottom-Left",
-                    _ => "Bottom-Right",
-                },
-            };
-            let label_pos = Vec2::new(viewport_bounds.min.x() + 8.0, viewport_bounds.min.y() + 8.0);
-            let label_size = ui.measure_text(label, ui.scaled_font_size(FontSize::Small));
-            let bg_padding = 4.0;
-            let bg_bounds = Rect2D::from_origin_size(
-                Vec2::new(label_pos.x() - bg_padding, label_pos.y() - bg_padding),
-                Vec2::new(
-                    label_size.x() + bg_padding * 2.0,
-                    label_size.y() + bg_padding * 2.0,
-                ),
-            );
-            ui.draw_rect(bg_bounds, Color::new(0.0, 0.0, 0.0, 0.5));
-            ui.draw_text(
-                label,
-                label_pos,
-                Color::WHITE.with_alpha(0.8),
-                ui.scaled_font_size(FontSize::Small),
-            );
-        }
-    }
 }
 
 #[cfg(test)]
