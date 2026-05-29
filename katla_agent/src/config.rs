@@ -12,6 +12,18 @@ use std::path::PathBuf;
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 
+/// Configuration validation issue with a human-readable description.
+#[derive(Debug, Clone)]
+pub(crate) struct ConfigIssue {
+    pub(crate) message: String,
+}
+
+impl fmt::Display for ConfigIssue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
 const CONFIG_FILENAME: &str = "llm.toml";
 
 /// LLM provider type.
@@ -116,6 +128,9 @@ fn redacted_key(key: &str) -> String {
 
 impl LlmConfig {
     /// Load configuration from disk, or return defaults if not found.
+    ///
+    /// Validates the loaded config and logs warnings for any issues before
+    /// applying defaults to invalid fields.
     pub fn load() -> Self {
         let content = match load_config_file(CONFIG_FILENAME) {
             Some(c) => c,
@@ -133,7 +148,12 @@ impl LlmConfig {
             }
         };
 
-        config.validate();
+        let issues = config.validate();
+        for issue in &issues {
+            warn!("LLM config issue: {}", issue);
+        }
+
+        config.sanitize();
         config
     }
 
@@ -171,7 +191,70 @@ impl LlmConfig {
         }
     }
 
-    fn validate(&mut self) {
+    /// Validate configuration and return a list of issues without modifying the config.
+    ///
+    /// Checks for missing required fields based on the selected provider and
+    /// reports out-of-range values.
+    pub(crate) fn validate(&self) -> Vec<ConfigIssue> {
+        let mut issues = Vec::new();
+
+        match self.provider {
+            LlmProviderKind::Disabled => {}
+            LlmProviderKind::OpenAi | LlmProviderKind::OpenAiCompatible => {
+                if self.resolve_api_key().is_empty() {
+                    issues.push(ConfigIssue {
+                        message: format!(
+                            "api_key is required for provider {:?} but is not set. \
+                             Set api_key in llm.toml or use $ENV_VAR syntax (e.g. $OPENAI_API_KEY).",
+                            self.provider
+                        ),
+                    });
+                }
+            }
+        }
+
+        if self.provider == LlmProviderKind::OpenAiCompatible && self.base_url.is_none() {
+            issues.push(ConfigIssue {
+                message: "base_url is required for provider open_ai_compatible \
+                          (e.g. http://localhost:11434/v1)."
+                    .to_string(),
+            });
+        }
+
+        if self.model.is_empty() {
+            issues.push(ConfigIssue {
+                message: "model is empty, will default to \"gpt-4o\".".to_string(),
+            });
+        }
+
+        if self.max_tokens == 0 {
+            issues.push(ConfigIssue {
+                message: "max_tokens is 0, will default to 4096.".to_string(),
+            });
+        }
+
+        if !(0.0..=2.0).contains(&self.temperature) {
+            issues.push(ConfigIssue {
+                message: format!(
+                    "temperature {} is outside valid range [0.0, 2.0], will be clamped.",
+                    self.temperature
+                ),
+            });
+        }
+
+        if let Some(ref url) = self.base_url {
+            if url.is_empty() {
+                issues.push(ConfigIssue {
+                    message: "base_url is set but empty.".to_string(),
+                });
+            }
+        }
+
+        issues
+    }
+
+    /// Apply default values to invalid fields.
+    fn sanitize(&mut self) {
         self.temperature = self.temperature.clamp(0.0, 2.0);
         if self.max_tokens == 0 {
             self.max_tokens = 4096;
@@ -258,7 +341,8 @@ max_tokens = 2048
 temperature = 0.5
 "#;
         let mut config: LlmConfig = toml::from_str(content).unwrap();
-        config.validate();
+        assert!(config.validate().is_empty());
+        config.sanitize();
         assert_eq!(config.provider, LlmProviderKind::OpenAi);
         assert_eq!(config.api_key, "sk-test-key");
         assert_eq!(config.model, "gpt-4o-mini");
@@ -309,7 +393,9 @@ model = "llama3"
             temperature: 5.0,
             ..Default::default()
         };
-        config.validate();
+        let issues = config.validate();
+        assert!(issues.iter().any(|i| i.message.contains("temperature")));
+        config.sanitize();
         assert_eq!(config.temperature, 2.0);
     }
 
@@ -319,7 +405,9 @@ model = "llama3"
             model: String::new(),
             ..Default::default()
         };
-        config.validate();
+        let issues = config.validate();
+        assert!(issues.iter().any(|i| i.message.contains("model")));
+        config.sanitize();
         assert_eq!(config.model, "gpt-4o");
     }
 
@@ -341,5 +429,88 @@ model = "llama3"
             ..Default::default()
         };
         assert_eq!(config.effective_base_url(), None);
+    }
+
+    #[test]
+    fn test_validate_missing_api_key() {
+        let config = LlmConfig {
+            provider: LlmProviderKind::OpenAi,
+            api_key: String::new(),
+            model: "gpt-4o".to_string(),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(issues.iter().any(|i| i.message.contains("api_key")));
+    }
+
+    #[test]
+    fn test_validate_missing_base_url_for_compatible() {
+        let config = LlmConfig {
+            provider: LlmProviderKind::OpenAiCompatible,
+            api_key: "test-key".to_string(),
+            base_url: None,
+            model: "llama3".to_string(),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(issues.iter().any(|i| i.message.contains("base_url")));
+    }
+
+    #[test]
+    fn test_validate_disabled_no_issues() {
+        let config = LlmConfig::default();
+        let issues = config.validate();
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_validate_valid_config_no_issues() {
+        let config = LlmConfig {
+            provider: LlmProviderKind::OpenAi,
+            api_key: "sk-key".to_string(),
+            model: "gpt-4o".to_string(),
+            max_tokens: 2048,
+            temperature: 0.7,
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_validate_zero_max_tokens() {
+        let config = LlmConfig {
+            max_tokens: 0,
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(issues.iter().any(|i| i.message.contains("max_tokens")));
+    }
+
+    #[test]
+    fn test_validate_empty_base_url() {
+        let config = LlmConfig {
+            provider: LlmProviderKind::OpenAiCompatible,
+            api_key: "key".to_string(),
+            base_url: Some(String::new()),
+            model: "llama3".to_string(),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.message.contains("base_url is set but empty"))
+        );
+    }
+
+    #[test]
+    fn test_validate_negative_temperature() {
+        let config = LlmConfig {
+            temperature: -1.0,
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(issues.iter().any(|i| i.message.contains("temperature")));
     }
 }
