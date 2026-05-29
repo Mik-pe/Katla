@@ -141,7 +141,9 @@ pub trait GpuRenderer: Sized + 'static {
     /// The data must match the texture's format and dimensions.
     fn update_texture(&mut self, handle: TextureHandle, data: &[u8]) -> Result<(), RendererError> {
         let _ = (handle, data);
-        Ok(())
+        Err(RendererError::InvalidOperation(
+            "update_texture not implemented for this backend".into(),
+        ))
     }
 
     /// Get the bindless slot for a texture handle.
@@ -279,7 +281,9 @@ pub trait GpuRenderer: Sized + 'static {
         &mut self,
         _shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
-        Ok(())
+        Err(RendererError::InvalidOperation(
+            "init_animation_pipeline not implemented for this backend".into(),
+        ))
     }
 
     // ========================================================================

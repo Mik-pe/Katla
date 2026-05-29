@@ -5,12 +5,15 @@
 //! narrowphase collision detection.
 
 mod collider;
+pub(crate) mod error;
 mod joint;
 mod material;
 mod physics_world;
 mod rigid_body;
 mod shape;
 mod trigger;
+
+pub use error::PhysicsError;
 
 pub use collider::{ColliderShape, CollisionFilter};
 pub use joint::{Joint, JointLimits, JointType};
