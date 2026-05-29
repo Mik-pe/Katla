@@ -415,6 +415,7 @@ impl MetalContext {
         MetalCommandBuffer { inner: cmd_buffer }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn create_graphics_pipeline(
         &self,
         vertex_function: &ProtocolObject<dyn MTLFunction>,
@@ -440,6 +441,7 @@ impl MetalContext {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn create_graphics_pipeline_with_vertex_descriptor(
         &self,
         vertex_function: &ProtocolObject<dyn MTLFunction>,
@@ -558,6 +560,7 @@ impl MetalContext {
             .expect("Failed to create depth-stencil state with stencil")
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn create_graphics_pipeline_with_stencil(
         &self,
         vertex_function: &ProtocolObject<dyn MTLFunction>,
@@ -584,6 +587,7 @@ impl MetalContext {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn create_graphics_pipeline_with_stencil_and_vertex_descriptor(
         &self,
         vertex_function: &ProtocolObject<dyn MTLFunction>,

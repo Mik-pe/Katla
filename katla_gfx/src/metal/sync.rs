@@ -11,16 +11,19 @@ pub(crate) struct MetalFence {
 }
 
 impl MetalFence {
+    #[expect(dead_code)]
     pub(crate) fn new() -> Self {
         Self {
             signaled: AtomicBool::new(false),
         }
     }
 
+    #[expect(dead_code)]
     pub(crate) fn signal(&self) {
         self.signaled.store(true, Ordering::Release);
     }
 
+    #[expect(dead_code)]
     pub(crate) fn reset(&self) {
         self.signaled.store(false, Ordering::Release);
     }
@@ -33,7 +36,9 @@ impl GpuFence for MetalFence {
 }
 
 pub(crate) struct MetalEvent {
+    #[expect(dead_code)]
     pub(crate) inner: Retained<ProtocolObject<dyn MTLSharedEvent>>,
+    #[expect(dead_code)]
     pub(crate) value: u64,
 }
 

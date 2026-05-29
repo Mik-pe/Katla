@@ -81,6 +81,7 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
     fn end(&mut self) {}
 
     fn submit(&self, _context: &<MetalBackend as GpuBackend>::Context) {
+        #[allow(clippy::type_complexity)]
         let block: RcBlock<dyn Fn(NonNull<ProtocolObject<dyn MTLCommandBuffer>>)> = RcBlock::new(
             |cmd_buffer: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
                 let cmd_buffer = unsafe { cmd_buffer.as_ref() };

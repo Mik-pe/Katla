@@ -151,11 +151,13 @@ impl MetalRenderer {
         Ok(())
     }
 
+    #[expect(dead_code)]
     pub(crate) fn create_cube_mesh_impl(&mut self, size: [f32; 3]) -> MeshHandle {
         let (vertices, indices) = primitives::generate_cube(size);
         self.create_primitive_mesh(vertices, indices)
     }
 
+    #[expect(dead_code)]
     pub(crate) fn create_sphere_mesh_impl(
         &mut self,
         radius: f32,
@@ -166,11 +168,13 @@ impl MetalRenderer {
         self.create_primitive_mesh(vertices, indices)
     }
 
+    #[expect(dead_code)]
     pub(crate) fn create_plane_mesh_impl(&mut self, width: f32, height: f32) -> MeshHandle {
         let (vertices, indices) = primitives::generate_plane(width, height);
         self.create_primitive_mesh(vertices, indices)
     }
 
+    #[expect(dead_code)]
     pub(crate) fn create_cone_mesh_impl(
         &mut self,
         height: f32,
@@ -181,6 +185,7 @@ impl MetalRenderer {
         self.create_primitive_mesh(vertices, indices)
     }
 
+    #[expect(dead_code)]
     pub(crate) fn create_cylinder_mesh_impl(
         &mut self,
         height: f32,
@@ -191,6 +196,7 @@ impl MetalRenderer {
         self.create_primitive_mesh(vertices, indices)
     }
 
+    #[expect(dead_code)]
     pub(crate) fn create_torus_mesh_impl(
         &mut self,
         major_radius: f32,
@@ -203,6 +209,7 @@ impl MetalRenderer {
         self.create_primitive_mesh(vertices, indices)
     }
 
+    #[expect(dead_code)]
     pub(crate) fn create_plane_xy_mesh_impl(
         &mut self,
         width: f32,

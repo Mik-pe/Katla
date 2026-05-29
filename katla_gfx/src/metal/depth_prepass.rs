@@ -97,6 +97,7 @@ impl MetalDepthPrepass {
 ///
 /// Creates a depth-only render pass and draws all opaque geometry to populate the depth buffer.
 /// Switches between non-skinned and skinned pipelines based on draw call skeleton state.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_depth_prepass(
     cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
     depth_pipeline: &MetalGraphicsPipeline,

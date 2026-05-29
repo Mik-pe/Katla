@@ -54,10 +54,12 @@ impl MetalTimestampQueries {
 
     pub fn end(&mut self, _label: &str) {}
 
+    #[expect(dead_code)]
     pub fn sample_buffer(&self) -> Option<&Retained<ProtocolObject<dyn MTLCounterSampleBuffer>>> {
         self.sample_buffer.as_ref()
     }
 
+    #[expect(dead_code)]
     pub fn pending_count(&self) -> usize {
         self.pending_labels.len()
     }
@@ -66,6 +68,7 @@ impl MetalTimestampQueries {
         self.results.clone()
     }
 
+    #[expect(dead_code)]
     pub fn resolve_and_cache(&mut self) {
         let Some(ref sb) = self.sample_buffer else {
             self.pending_labels.clear();

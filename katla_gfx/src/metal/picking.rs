@@ -268,6 +268,7 @@ impl MetalPickingSubsystem {
 ///
 /// Draws all objects encoding instance_index + 1 into the R32Uint texture.
 /// Reuses depth from the depth prepass for correct occlusion.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_object_id_pass(
     cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
     picking_pipeline: &MetalGraphicsPipeline,
