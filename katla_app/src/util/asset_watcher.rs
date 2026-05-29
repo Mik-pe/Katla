@@ -8,6 +8,7 @@ use notify::Watcher;
 
 /// File types that can be hot-reloaded.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[expect(dead_code)]
 pub enum AssetChangeKind {
     /// WGSL shader file changed
     Shader,

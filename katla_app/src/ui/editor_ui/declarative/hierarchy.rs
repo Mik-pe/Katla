@@ -1,35 +1,17 @@
 use katla_ecs::EntityId;
-use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::declarative::{Alignment, Build, BuildContext, Padding, StateId, ViewDescriptor};
-use katla_ui::widgets::TextInput;
-use katla_ui::{FontSize, ForkAwesome};
+use katla_ui::FontSize;
+use katla_ui::declarative::{Build, BuildContext, Padding, StateId, ViewDescriptor};
 
 use crate::ui::editor_ui::ColorScheme;
-use crate::ui::editor_ui::types::{
-    EditorAction, EntityInfo, HierarchyState, is_entity_visible_fast,
-};
+use crate::ui::editor_ui::types::{EntityInfo, HierarchyState, is_entity_visible_fast};
 
 /// Environment data injected before each frame for the hierarchy panel.
 #[derive(Clone)]
 pub(crate) struct HierarchyDrawCtx {
-    pub bounds: Rect2D,
     pub entities: Vec<EntityInfo>,
-    pub selected_entity: Option<EntityId>,
     pub hierarchy_state: HierarchyState,
     pub theme: ColorScheme,
-    pub pending_actions: Vec<EditorAction>,
     pub search_filter: String,
-}
-
-/// Actions emitted by the hierarchy panel to sync state back to the application.
-#[derive(Clone, Debug)]
-pub(crate) struct HierarchySync {
-    pub expanded_entities: Vec<EntityId>,
-    pub selected_entity: Option<EntityId>,
-    pub search_filter: String,
-    pub pending_actions: Vec<EditorAction>,
-    pub context_entity: Option<EntityId>,
-    pub context_menu_open: bool,
 }
 
 pub(crate) struct HierarchyView;

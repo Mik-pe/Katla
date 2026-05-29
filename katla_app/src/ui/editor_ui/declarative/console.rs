@@ -1,49 +1,32 @@
 use std::sync::{Arc, Mutex};
 
-use katla_math::{Color, Rect2D, Vec2};
+use katla_math::Color;
 use katla_ui::declarative::{Build, BuildContext, Padding, StateId, ViewDescriptor};
-use katla_ui::input::KeyCode;
-use katla_ui::widgets::Button;
-use katla_ui::{FontSize, ScrollArea, ScrollAreaState};
+use katla_ui::{FontSize, ScrollAreaState};
 
 use crate::ui::console::LogBuffer;
 use crate::ui::editor_ui::ColorScheme;
-use crate::ui::editor_ui::types::EditorAction;
 
 /// Environment data injected before each frame for the console panel.
 #[derive(Clone)]
 pub(crate) struct ConsoleDrawCtx {
-    pub bounds: Rect2D,
     pub theme: ColorScheme,
-    pub scroll_state: ScrollAreaState,
     pub filter_levels: [bool; 5],
     pub search_filter: String,
     pub log_buffer: Arc<Mutex<LogBuffer>>,
-    pub pending_actions: Vec<EditorAction>,
-    pub auto_scroll: bool,
-    pub selection_anchor: Option<usize>,
-    pub selection_cursor: Option<usize>,
-}
-
-/// Actions emitted by the console panel to sync state back to the application.
-#[derive(Clone, Debug)]
-pub(crate) struct ConsoleSync {
-    pub scroll_state: ScrollAreaState,
-    pub filter_levels: [bool; 5],
-    pub search_filter: String,
-    pub auto_scroll: bool,
-    pub selection_anchor: Option<usize>,
-    pub selection_cursor: Option<usize>,
-    pub pending_actions: Vec<EditorAction>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct ConsoleState {
+    #[expect(dead_code)]
     pub scroll_state: ScrollAreaState,
     pub filter_levels: [bool; 5],
     pub search_filter: String,
+    #[expect(dead_code)]
     pub auto_scroll: bool,
+    #[expect(dead_code)]
     pub selection_anchor: Option<usize>,
+    #[expect(dead_code)]
     pub selection_cursor: Option<usize>,
 }
 
@@ -57,13 +40,6 @@ impl Default for ConsoleState {
             selection_anchor: None,
             selection_cursor: None,
         }
-    }
-}
-
-fn selection_range(anchor: Option<usize>, cursor: Option<usize>) -> Option<(usize, usize)> {
-    match (anchor, cursor) {
-        (Some(a), Some(c)) => Some((a.min(c), a.max(c))),
-        _ => None,
     }
 }
 

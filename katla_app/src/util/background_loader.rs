@@ -57,6 +57,7 @@ pub enum LoadRequest {
 
 /// Results from background loading.
 #[derive(Debug)]
+#[expect(dead_code)]
 pub enum LoadResult {
     /// Image thumbnail ready for GPU upload.
     ImageThumbnailLoaded {
@@ -301,6 +302,7 @@ impl BackgroundLoader {
     /// Request a full-size texture to be loaded.
     ///
     /// Returns the LoadId for tracking. Check `poll()` for the result.
+    #[expect(dead_code)]
     pub fn request_full_texture(&mut self, path: PathBuf, generate_mipmaps: bool) -> LoadId {
         let id = LoadId(self.next_load_id);
         self.next_load_id += 1;
@@ -320,6 +322,7 @@ impl BackgroundLoader {
     /// Request a glTF model to be loaded.
     ///
     /// Returns the LoadId for tracking. Check `poll()` for the result.
+    #[expect(dead_code)]
     pub fn request_gltf_model(&mut self, path: PathBuf) -> LoadId {
         let id = LoadId(self.next_load_id);
         self.next_load_id += 1;

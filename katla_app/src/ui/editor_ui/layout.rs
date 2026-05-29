@@ -204,32 +204,22 @@ impl EditorUI {
         let panel_bottom = screen_size.y() - status_bar_height - bottom_panel_height;
         let panel_height = panel_bottom - panel_top;
 
-        let left_panel_bounds_for_hierarchy = Rect2D::from_origin_size(
+        let _left_panel_bounds_for_hierarchy = Rect2D::from_origin_size(
             Vec2::new(0.0, toolbar_height),
             Vec2::new(self.left_panel_width, panel_height),
         );
         self.view_tree.env_mut().set(HierarchyDrawCtx {
-            bounds: left_panel_bounds_for_hierarchy,
             entities: params.entities.to_vec(),
-            selected_entity: self.selected_entity,
             hierarchy_state: std::mem::take(&mut self.hierarchy_state),
             theme: self.theme.clone(),
-            pending_actions: Vec::new(),
             search_filter: self.hierarchy_search_filter.clone(),
         });
 
         self.view_tree.env_mut().set(InspectorDrawCtx {
-            bounds: Rect2D::from_origin_size(
-                Vec2::new(right_panel_x, toolbar_height),
-                Vec2::new(self.right_panel_width, panel_height),
-            ),
             selected_entity: self.selected_entity,
             entities: params.entities.to_vec(),
             edit: std::mem::take(&mut self.inspector_edit),
-            scroll_state: std::mem::take(&mut self.inspector_scroll_state),
-            add_component_scroll_state: std::mem::take(&mut self.add_component_scroll_state),
             theme: self.theme.clone(),
-            pending_actions: Vec::new(),
             available_components: self.available_components.clone(),
             add_component_open: self.add_component_open,
             add_component_filter: self.add_component_filter.clone(),
@@ -381,16 +371,10 @@ impl EditorUI {
             }
             BottomPanelTab::Console => {
                 self.view_tree.env_mut().set(ConsoleDrawCtx {
-                    bounds: bottom_content_bounds,
                     theme: self.theme.clone(),
-                    scroll_state: self.console_state.scroll_state.clone(),
                     filter_levels: self.console_state.filter_levels,
                     search_filter: self.console_state.search_filter.clone(),
                     log_buffer: self.log_buffer.clone(),
-                    pending_actions: Vec::new(),
-                    auto_scroll: self.console_state.auto_scroll,
-                    selection_anchor: self.console_state.selection_anchor,
-                    selection_cursor: self.console_state.selection_cursor,
                 });
             }
         }

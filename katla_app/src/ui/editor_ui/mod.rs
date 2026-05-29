@@ -13,6 +13,7 @@ mod declarative;
 mod layout;
 #[cfg(test)]
 mod tests;
+#[allow(dead_code)]
 mod types;
 
 use std::sync::{Arc, Mutex};
@@ -55,7 +56,9 @@ pub struct EditorRenderParams<'a> {
     pub loader: &'a mut BackgroundLoader,
     pub thumbnail_texture_handles: &'a std::collections::HashMap<std::path::PathBuf, TextureHandle>,
     pub llm_config: &'a katla_agent::LlmConfig,
+    #[expect(dead_code)]
     pub undo_count: usize,
+    #[expect(dead_code)]
     pub redo_count: usize,
     pub agent_undo_count: usize,
 }
@@ -131,10 +134,12 @@ pub struct EditorUI {
     /// AI Co-Creator chat panel state.
     pub co_creator: CoCreatorState,
     /// Inspector panel scroll state.
+    #[expect(dead_code)]
     inspector_scroll_state: katla_ui::ScrollAreaState,
     /// Whether the "Add Component" dropdown is open.
     add_component_open: bool,
     /// Scroll state for the "Add Component" popup list.
+    #[expect(dead_code)]
     add_component_scroll_state: katla_ui::ScrollAreaState,
     /// Search filter for the "Add Component" dropdown.
     add_component_filter: String,

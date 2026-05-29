@@ -4,7 +4,6 @@ use katla_agent::serialize_scene_context;
 use katla_agent::{LocalAction, OpenAiProvider, StreamEvent, ToolCall};
 use katla_ecs::EntityId;
 use katla_ecs::scene_tool::{ComponentRegistry, ResourceOp, SceneOp, SceneToolExecutor};
-use katla_gfx::GpuRenderer;
 use katla_gfx::primitives;
 use katla_math::Vec3;
 use log::warn;
@@ -318,10 +317,7 @@ const RESOURCE_TOOL_NAMES: &[&str] = &[
 /// Execute a single tool call against the ECS world.
 fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
     if tool_call.name == "spawn_model" {
-        {
-            return execute_spawn_model(app, tool_call);
-        }
-        return "Error: spawn_model not yet supported on this backend".to_string();
+        return execute_spawn_model(app, tool_call);
     }
 
     if tool_call.name == "load_scene" {

@@ -1,42 +1,25 @@
 use katla_ecs::EntityId;
-use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::declarative::{Build, BuildContext, Padding, StateId, ViewDescriptor};
-use katla_ui::{
-    FontSize, ForkAwesome, ScrollArea, ScrollAreaState,
-    widgets::{Button, ColorPickerButton, LabeledSlider, Vec3Slider},
-};
+use katla_ui::FontSize;
+use katla_ui::declarative::{Build, BuildContext, StateId, ViewDescriptor};
 
 use crate::ui::editor_ui::ColorScheme;
-use crate::ui::editor_ui::types::{
-    ColliderShapeType, EditorAction, EntityInfo, InspectorEditState, RigidBodyType,
-};
+use crate::ui::editor_ui::types::{EntityInfo, InspectorEditState};
 
 /// Environment data injected before each frame for the inspector panel.
 #[derive(Clone)]
 pub(crate) struct InspectorDrawCtx {
-    pub bounds: Rect2D,
     pub selected_entity: Option<EntityId>,
     pub entities: Vec<EntityInfo>,
+    #[expect(dead_code)]
     pub edit: InspectorEditState,
-    pub scroll_state: ScrollAreaState,
-    pub add_component_scroll_state: ScrollAreaState,
     pub theme: ColorScheme,
-    pub pending_actions: Vec<EditorAction>,
+    #[expect(dead_code)]
     pub available_components: Vec<&'static str>,
+    #[expect(dead_code)]
     pub add_component_open: bool,
+    #[expect(dead_code)]
     pub add_component_filter: String,
-    pub focus_script_input: bool,
-}
-
-/// Actions emitted by the inspector panel to sync state back to the application.
-#[derive(Clone, Debug)]
-pub(crate) struct InspectorSync {
-    pub edit: InspectorEditState,
-    pub scroll_state: ScrollAreaState,
-    pub add_component_scroll_state: ScrollAreaState,
-    pub pending_actions: Vec<EditorAction>,
-    pub add_component_open: bool,
-    pub add_component_filter: String,
+    #[expect(dead_code)]
     pub focus_script_input: bool,
 }
 
@@ -44,9 +27,7 @@ pub(crate) struct InspectorView;
 
 impl Build for InspectorView {
     fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
-        use katla_ui::declarative::{
-            button, hstack, panel, scroll, separator_horizontal, text, textfield, vstack,
-        };
+        use katla_ui::declarative::{panel, scroll, separator_horizontal, text, vstack};
 
         let draw_ctx = ctx.env::<InspectorDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
@@ -54,7 +35,7 @@ impl Build for InspectorView {
         };
 
         let scroll_id: StateId = ctx.state(0.0f32);
-        let add_scroll_id: StateId = ctx.state(0.0f32);
+        let _add_scroll_id: StateId = ctx.state(0.0f32);
 
         let header_text = if let Some(entity_id) = draw_ctx.selected_entity {
             format!("Inspector: Entity {}", entity_id.id())

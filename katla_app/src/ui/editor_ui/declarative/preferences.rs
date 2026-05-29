@@ -1,8 +1,8 @@
 use katla_ui::FontSize;
 use katla_ui::declarative::{
     Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId,
-    ViewDescriptor, button, draggable_panel, grid, hstack, labeled_slider, scroll, selectable,
-    tab_bar, tab_item, text, textfield, toggle, vstack,
+    ViewDescriptor, draggable_panel, grid, labeled_slider, selectable, tab_bar, tab_item, text,
+    textfield, toggle, vstack,
 };
 
 use crate::Preferences;
@@ -69,7 +69,7 @@ impl Build for PreferencesView {
             PreferencesTab::Ai => build_ai_tab(ctx, theme, &draw_ctx),
         };
 
-        let scroll_id: StateId = ctx.state(0.0f32);
+        let _scroll_id: StateId = ctx.state(0.0f32);
 
         draggable_panel(
             "Preferences",

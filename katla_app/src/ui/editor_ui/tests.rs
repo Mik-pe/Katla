@@ -143,12 +143,9 @@ fn test_hierarchy_entity_selection_works() {
     ui.input_mut().mouse_down[mouse_button::LEFT] = true;
 
     let hierarchy_ctx = HierarchyDrawCtx {
-        bounds,
         entities: entities.clone(),
-        selected_entity: None,
         hierarchy_state: std::mem::take(&mut state),
         theme: theme.clone(),
-        pending_actions: Vec::new(),
         search_filter: String::new(),
     };
 
