@@ -527,14 +527,13 @@ impl ScriptEngine {
             })?;
 
         self.reset_instruction_counter();
-        script_func.call::<()>(()).map_err(|e| {
-            log::error!("Script top-level execution failed for '{script_path}': {e}");
-            ScriptError::ExecutionFailed {
+        script_func
+            .call::<()>(())
+            .map_err(|e| ScriptError::ExecutionFailed {
                 path: script_path.into(),
-                line: extract_line_number(&e),
+                function: "<top-level>".into(),
                 source: e,
-            }
-        })?;
+            })?;
 
         let hooks = ScriptHooks {
             on_update: self.extract_hook(&env, "on_update", script_path)?,
@@ -643,7 +642,7 @@ impl ScriptEngine {
                 .registry_value(hook_key)
                 .map_err(|e| ScriptError::ExecutionFailed {
                     path: script_path.clone(),
-                    line: None,
+                    function: "on_update".into(),
                     source: e,
                 })?;
 
@@ -652,7 +651,7 @@ impl ScriptEngine {
             .create_userdata(proxy)
             .map_err(|e| ScriptError::ExecutionFailed {
                 path: script_path.clone(),
-                line: None,
+                function: "on_update".into(),
                 source: e,
             })?;
 
@@ -664,10 +663,9 @@ impl ScriptEngine {
                 {
                     inst.error_count += 1;
                 }
-                log::error!("Script on_update failed for '{script_path}': {e}");
                 ScriptError::ExecutionFailed {
                     path: script_path.clone(),
-                    line: extract_line_number(&e),
+                    function: "on_update".into(),
                     source: e,
                 }
             })?;
@@ -676,7 +674,7 @@ impl ScriptEngine {
             ud.borrow::<ScriptWorldProxy>()
                 .map_err(|e| ScriptError::ExecutionFailed {
                     path: script_path,
-                    line: None,
+                    function: "on_update".into(),
                     source: e,
                 })?;
 
@@ -707,7 +705,7 @@ impl ScriptEngine {
                 .registry_value(hook_key)
                 .map_err(|e| ScriptError::ExecutionFailed {
                     path: script_path.clone(),
-                    line: None,
+                    function: "on_spawn".into(),
                     source: e,
                 })?;
 
@@ -716,26 +714,23 @@ impl ScriptEngine {
             .create_userdata(proxy)
             .map_err(|e| ScriptError::ExecutionFailed {
                 path: script_path.clone(),
-                line: None,
+                function: "on_spawn".into(),
                 source: e,
             })?;
 
         self.reset_instruction_counter();
         func.call::<()>((LuaEntityId(entity), ud.clone()))
-            .map_err(|e| {
-                log::error!("Script on_spawn failed for '{script_path}': {e}");
-                ScriptError::ExecutionFailed {
-                    path: script_path.clone(),
-                    line: extract_line_number(&e),
-                    source: e,
-                }
+            .map_err(|e| ScriptError::ExecutionFailed {
+                path: script_path.clone(),
+                function: "on_spawn".into(),
+                source: e,
             })?;
 
         let borrowed =
             ud.borrow::<ScriptWorldProxy>()
                 .map_err(|e| ScriptError::ExecutionFailed {
                     path: script_path,
-                    line: None,
+                    function: "on_spawn".into(),
                     source: e,
                 })?;
 
@@ -765,19 +760,17 @@ impl ScriptEngine {
                 .registry_value(hook_key)
                 .map_err(|e| ScriptError::ExecutionFailed {
                     path: script_path.clone(),
-                    line: None,
+                    function: "on_destroy".into(),
                     source: e,
                 })?;
 
         self.reset_instruction_counter();
-        func.call::<()>(LuaEntityId(entity)).map_err(|e| {
-            log::error!("Script on_destroy failed for '{script_path}': {e}");
-            ScriptError::ExecutionFailed {
+        func.call::<()>(LuaEntityId(entity))
+            .map_err(|e| ScriptError::ExecutionFailed {
                 path: script_path,
-                line: extract_line_number(&e),
+                function: "on_destroy".into(),
                 source: e,
-            }
-        })?;
+            })?;
 
         Ok(())
     }
@@ -910,7 +903,7 @@ impl ScriptEngine {
         let env: mlua::Table = self.vm.registry_value(&instance._env_key).map_err(|e| {
             ScriptError::ExecutionFailed {
                 path: instance.script_path.clone(),
-                line: None,
+                function: "<internal>".into(),
                 source: e,
             }
         })?;
@@ -924,7 +917,7 @@ impl ScriptEngine {
                 .raw_get("next")
                 .map_err(|e| ScriptError::ExecutionFailed {
                     path: instance.script_path.clone(),
-                    line: None,
+                    function: "<internal>".into(),
                     source: e,
                 })?;
 
@@ -935,7 +928,7 @@ impl ScriptEngine {
                     .call((env.clone(), key))
                     .map_err(|e| ScriptError::ExecutionFailed {
                         path: instance.script_path.clone(),
-                        line: None,
+                        function: "<internal>".into(),
                         source: e,
                     })?;
 
@@ -987,7 +980,7 @@ impl ScriptEngine {
         let env: mlua::Table = self.vm.registry_value(&instance._env_key).map_err(|e| {
             ScriptError::ExecutionFailed {
                 path: instance.script_path.clone(),
-                line: None,
+                function: "<internal>".into(),
                 source: e,
             }
         })?;
@@ -996,7 +989,7 @@ impl ScriptEngine {
             env.raw_set(key, value)
                 .map_err(|e| ScriptError::ExecutionFailed {
                     path: instance.script_path.clone(),
-                    line: None,
+                    function: "<internal>".into(),
                     source: e,
                 })?;
         }
@@ -1046,7 +1039,7 @@ impl ScriptEngine {
         let env: mlua::Table = self.vm.registry_value(&instance._env_key).map_err(|e| {
             ScriptError::ExecutionFailed {
                 path: instance.script_path.clone(),
-                line: None,
+                function: "<internal>".into(),
                 source: e,
             }
         })?;
@@ -1060,7 +1053,7 @@ impl ScriptEngine {
                 .map(mlua::Value::String)
                 .map_err(|e| ScriptError::ExecutionFailed {
                     path: instance.script_path.clone(),
-                    line: None,
+                    function: "<internal>".into(),
                     source: e,
                 })?,
         };
@@ -1068,7 +1061,7 @@ impl ScriptEngine {
         env.raw_set(name, lua_val)
             .map_err(|e| ScriptError::ExecutionFailed {
                 path: instance.script_path.clone(),
-                line: None,
+                function: "<internal>".into(),
                 source: e,
             })?;
 
@@ -1095,19 +1088,4 @@ impl ScriptEngine {
                 })
         })
     }
-}
-
-fn extract_line_number(error: &mlua::Error) -> Option<usize> {
-    let msg = error.to_string();
-    let line_prefixes = [":", "line "];
-    for prefix in &line_prefixes {
-        if let Some(pos) = msg.rfind(prefix) {
-            let rest = &msg[pos + prefix.len()..];
-            let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-            if let Ok(line) = num_str.parse::<usize>() {
-                return Some(line);
-            }
-        }
-    }
-    None
 }

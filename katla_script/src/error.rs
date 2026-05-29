@@ -10,7 +10,7 @@ pub enum ScriptError {
     /// A script execution error occurred (runtime error in Lua code).
     ExecutionFailed {
         path: String,
-        line: Option<usize>,
+        function: String,
         source: mlua::Error,
     },
     /// A script defines a hook (on_update, on_spawn, on_destroy) with a non-function value.
@@ -33,17 +33,10 @@ impl fmt::Display for ScriptError {
             }
             ScriptError::ExecutionFailed {
                 path,
-                line: Some(line),
+                function,
                 source,
             } => {
-                write!(f, "execution error in '{path}' at line {line}: {source}")
-            }
-            ScriptError::ExecutionFailed {
-                path,
-                line: None,
-                source,
-            } => {
-                write!(f, "execution error in '{path}': {source}")
+                write!(f, "error in '{function}' (script: '{path}'): {source}")
             }
             ScriptError::InvalidHook { path, hook } => {
                 write!(f, "invalid hook '{hook}' in script '{path}'")
