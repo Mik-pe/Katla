@@ -12,14 +12,16 @@ pub(super) mod toolbar;
 pub(super) mod viewport_grid;
 
 pub(super) use asset_browser::{AssetBrowserDrawCtx, build_asset_browser_from_ctx};
-pub(super) use co_creator::{set_co_creator_ctx, take_co_creator_ctx};
+pub(super) use co_creator::{
+    CoCreatorDrawCtx, CoCreatorPanelSync, CoCreatorSubmitAction, CoCreatorUndoAction,
+};
 pub(super) use console::{ConsoleDrawCtx, ConsoleState, set_console_ctx, take_console_ctx};
 pub(super) use editor_root::EditorRootView;
 pub(super) use gizmo::{GizmoDrawCtx, GizmoModeChanged};
 pub(super) use hierarchy::{HierarchyDrawCtx, set_hierarchy_ctx, take_hierarchy_ctx};
 pub(super) use inspector::{InspectorDrawCtx, set_inspector_ctx, take_inspector_ctx};
 pub(super) use particle_inspector::{ParticleInspectorDrawCtx, ParticleInspectorPanelSync};
-pub(super) use preferences::{PreferencesDrawCtx, set_preferences_ctx, take_preferences_ctx};
+pub(super) use preferences::{PreferencesDrawCtx, PreferencesPanelSync};
 pub(super) use status_bar::StatusBarData;
 pub(super) use toolbar::{ToolbarAction, ToolbarDrawCtx};
 pub(super) use viewport_grid::ViewportGridDrawCtx;
