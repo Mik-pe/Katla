@@ -32,7 +32,7 @@ use crate::{
     ui::{
         ParticleInspectorAction, ParticleInspectorData, ParticleInspectorState,
         editor_ui::types::{
-            EditorSettings, HierarchyState, PreferencesAction, PreferencesPanelState, ToolbarState,
+            EditorSettings, HierarchyState, PreferencesAction, PreferencesPanelState,
         },
     },
 };
@@ -97,7 +97,6 @@ pub struct EditorUI {
     /// Last known screen size (for computing floating panel default positions).
     last_screen_size: Vec2,
 
-    toolbar_state: ToolbarState,
     /// Current color scheme.
     pub theme: ColorScheme,
     /// Asset browser panel state.
@@ -179,7 +178,6 @@ impl EditorUI {
             last_viewport_size: (800, 600),
             last_viewport_bounds: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(800.0, 600.0)),
             last_screen_size: Vec2::new(800.0, 600.0),
-            toolbar_state: ToolbarState::default(),
             theme: ColorScheme::default_theme(),
             asset_browser: AssetBrowserState::new(),
             focused_panel: FocusedPanel::Viewport,

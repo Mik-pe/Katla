@@ -2,6 +2,7 @@ use crate::style::ColorScheme;
 use crate::style::FontSize;
 use katla_math::Color;
 
+use super::actions::ActionStream;
 use super::build::BuildContext;
 use super::constructors::{button, text};
 use super::descriptor::ViewDescriptor;
@@ -17,7 +18,10 @@ pub fn section_header(label: &str, theme: &ColorScheme) -> ViewDescriptor {
 }
 
 /// Create a delete button with error styling.
-pub fn delete_button(ctx: &mut BuildContext, on_click: impl FnMut() + 'static) -> ViewDescriptor {
+pub fn delete_button(
+    ctx: &mut BuildContext,
+    on_click: impl FnMut(&mut ActionStream) + 'static,
+) -> ViewDescriptor {
     button("Delete Entity")
         .fill(Color::new(0.4, 0.1, 0.1, 1.0))
         .hover(Color::new(0.5, 0.15, 0.15, 1.0))

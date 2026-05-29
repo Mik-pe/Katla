@@ -94,18 +94,6 @@ impl SpawnableModel {
     }
 }
 
-/// Toolbar state: menu open flags, pending actions, undo/redo counts.
-#[derive(Debug, Clone, Default)]
-pub struct ToolbarState {
-    pub file_menu_open: bool,
-    pub edit_menu_open: bool,
-    pub view_menu_open: bool,
-    pub create_menu_open: bool,
-    pub pending_actions: Vec<EditorAction>,
-    pub undo_count: usize,
-    pub redo_count: usize,
-}
-
 /// Entity info for the hierarchy panel.
 #[derive(Debug, Clone)]
 pub struct EntityInfo {

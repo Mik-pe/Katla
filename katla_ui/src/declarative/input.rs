@@ -178,7 +178,7 @@ pub(crate) fn process_input(
             if input.mouse_clicked(mouse_button::LEFT) =>
         {
             if let Some(callback) = get_callback(&descriptor).cloned() {
-                callbacks.invoke(&callback);
+                callbacks.invoke(&callback, tree.actions_mut());
             }
             result.input_consumed = true;
             result.clicked_id = Some(hit.id);
@@ -379,7 +379,7 @@ pub(crate) fn process_input(
                             );
                             if entry_bounds.contains(input.mouse_pos) && !entry.disabled {
                                 if let Some(ref callback) = entry.on_click {
-                                    callbacks.invoke(callback);
+                                    callbacks.invoke(callback, tree.actions_mut());
                                 }
                                 tree.state_arena_mut().set(group.open_id, false);
                                 result.input_consumed = true;
@@ -454,7 +454,7 @@ pub(crate) fn process_input(
                     if input.mouse_clicked(mouse_button::LEFT) {
                         tree.state_arena_mut().set(desc.selected_id, Some(item.id));
                         if let Some(ref callback) = desc.on_select {
-                            callbacks.invoke(callback);
+                            callbacks.invoke(callback, tree.actions_mut());
                         }
                         result.input_consumed = true;
                         break;
@@ -463,7 +463,7 @@ pub(crate) fn process_input(
                     if input.mouse_clicked(mouse_button::RIGHT) {
                         tree.state_arena_mut().set(desc.selected_id, Some(item.id));
                         if let Some(ref callback) = desc.on_right_click {
-                            callbacks.invoke(callback);
+                            callbacks.invoke(callback, tree.actions_mut());
                         }
                         result.input_consumed = true;
                         break;
@@ -554,7 +554,7 @@ pub(crate) fn process_input(
                     );
                     if entry_bounds.contains(input.mouse_pos) && !entry.disabled {
                         if let Some(ref callback) = entry.on_click {
-                            callbacks.invoke(callback);
+                            callbacks.invoke(callback, tree.actions_mut());
                         }
                         tree.state_arena_mut().set(desc.open_id, false);
                         result.input_consumed = true;
@@ -582,7 +582,7 @@ pub(crate) fn process_input(
         ViewDescriptor::Selectable { on_click, .. } => {
             if input.mouse_clicked(mouse_button::LEFT) {
                 if let Some(callback) = on_click {
-                    callbacks.invoke(callback);
+                    callbacks.invoke(callback, tree.actions_mut());
                 }
                 result.input_consumed = true;
                 result.clicked_id = Some(hit.id);
@@ -610,7 +610,7 @@ pub(crate) fn process_input(
                 if close_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT)
                 {
                     if let Some(callback) = on_remove {
-                        callbacks.invoke(callback);
+                        callbacks.invoke(callback, tree.actions_mut());
                     }
                     result.input_consumed = true;
                     return result;
@@ -699,7 +699,7 @@ fn handle_text_field_input(
     if input.key_pressed(KeyCode::Enter)
         && let Some(callback) = on_submit
     {
-        callbacks.invoke(&callback);
+        callbacks.invoke(&callback, tree.actions_mut());
     }
 
     // Escape — clear focus

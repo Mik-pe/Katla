@@ -426,12 +426,12 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 #### Prerequisites: Environment injection pattern
 
-- [ ] Standardize Environment injection pattern across all declarative panels — migrate remaining panels (ViewportGrid, Toolbar, Preferences, CoCreator, Hierarchy, Inspector, Console, AssetBrowser) from `thread_local!` RefCell bridges to `ctx.env::<PanelState>()` injection pattern used by ParticleInspector.
+- [ ] Standardize Environment injection pattern across all declarative panels — migrate remaining panels (Preferences, CoCreator, Hierarchy, Inspector, Console, AssetBrowser) from `thread_local!` RefCell bridges to `ctx.env::<PanelState>()` injection pattern used by ParticleInspector.
 
 #### Phase 1: Migrate simple panels (build confidence)
 
-- [ ] Migrate Viewport Grid panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ViewportGridDrawCtx`, inject data via `Environment`, build a `Grid` or `VStack` of `Image` + `Text` cells with hit-testing via `Selectable` descriptors. Remove `set_viewport_grid_ctx`/`take_viewport_grid_ctx`.
-- [ ] Migrate Toolbar panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ToolbarDrawCtx`, inject via `Environment`, build `MenuBar` with `MenuGroup` dropdowns and `ImageButton` descriptors. Remove `set_toolbar_ctx`/`take_toolbar_ctx`.
+- [x] Migrate Viewport Grid panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ViewportGridDrawCtx`, inject data via `Environment`, build a `Grid` or `VStack` of `Image` + `Text` cells with hit-testing via `Selectable` descriptors. Remove `set_viewport_grid_ctx`/`take_viewport_grid_ctx`.
+- [x] Migrate Toolbar panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ToolbarDrawCtx`, inject via `Environment`, build `MenuBar` with `MenuGroup` dropdowns and `ImageButton` descriptors. Remove `set_toolbar_ctx`/`take_toolbar_ctx`.
 - [x] Migrate Gizmo panel fully declarative — already uses `RadioButton` descriptors but reads `GizmoDrawCtx` from `Environment` via thread-local. Move the gizmo data to `Environment` only, remove any thread-local remnants.
 
 #### Phase 2: Migrate medium panels

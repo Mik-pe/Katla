@@ -27,8 +27,10 @@ impl Environment {
     }
 }
 
+type ActionCallback = dyn FnMut(&mut ActionStream);
+
 pub struct CallbackTable {
-    callbacks: Vec<Box<dyn FnMut()>>,
+    callbacks: Vec<Box<ActionCallback>>,
 }
 
 impl CallbackTable {
@@ -38,15 +40,15 @@ impl CallbackTable {
         }
     }
 
-    pub fn push<F: FnMut() + 'static>(&mut self, f: F) -> Callback {
+    pub fn push<F: FnMut(&mut ActionStream) + 'static>(&mut self, f: F) -> Callback {
         let index = self.callbacks.len() as u32;
-        self.callbacks.push(Box::new(f));
+        self.callbacks.push(Box::new(f) as Box<ActionCallback>);
         Callback(index)
     }
 
-    pub fn invoke(&mut self, callback: &Callback) {
+    pub fn invoke(&mut self, callback: &Callback, actions: &mut ActionStream) {
         if let Some(f) = self.callbacks.get_mut(callback.0 as usize) {
-            f();
+            f(actions);
         }
     }
 
@@ -111,7 +113,7 @@ impl<'a> BuildContext<'a> {
         self.env.get::<T>()
     }
 
-    pub fn on_click<F: FnMut() + 'static>(&mut self, f: F) -> Callback {
+    pub fn on_click<F: FnMut(&mut ActionStream) + 'static>(&mut self, f: F) -> Callback {
         self.callbacks.push(f)
     }
 
