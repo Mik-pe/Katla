@@ -122,7 +122,7 @@ fn spawn_new_bodies(world: &mut World) {
                 collision_filter.as_ref(),
             );
 
-        if let Some(mut rb) = world.get_component_mut::<RigidBody>(entity) {
+        if let Some(rb) = world.get_component_mut::<RigidBody>(entity) {
             rb.body_handle = Some(body_handle);
             rb.collider_handle = Some(collider_handle);
         }
@@ -156,7 +156,7 @@ fn spawn_new_joints(world: &mut World) {
 
             // Find the Joint component for entity_b (joints are typically owned by entity_b)
             let target_entity = EntityId::from_raw(joint.entity_b);
-            if let Some(mut j) = world.get_component_mut::<Joint>(target_entity) {
+            if let Some(j) = world.get_component_mut::<Joint>(target_entity) {
                 j.joint_handle = joint_handle;
             }
         }
@@ -171,7 +171,7 @@ fn find_rigid_body_handle(world: &World, entity_id: u64) -> Option<katla_physics
 }
 
 fn step_simulation(world: &mut World, delta_time: f32) {
-    if let Some(mut physics) = world.get_resource_mut::<PhysicsWorld>() {
+    if let Some(physics) = world.get_resource_mut::<PhysicsWorld>() {
         physics.step(delta_time);
     }
 }
@@ -195,7 +195,7 @@ fn cleanup_destroyed_bodies(world: &mut World) {
         return;
     }
 
-    let mut physics = world.get_resource_mut::<PhysicsWorld>().unwrap();
+    let physics = world.get_resource_mut::<PhysicsWorld>().unwrap();
     for (collider_handle, body_handle) in orphaned {
         if let Some(body) = body_handle {
             physics.remove_body(body, collider_handle);
@@ -226,12 +226,11 @@ fn cleanup_destroyed_joints(world: &mut World) {
     }
 
     for entity in stale_joints {
-        if let Some(mut j) = world.get_component_mut::<Joint>(entity) {
-            if let Some(handle) = j.joint_handle.take() {
-                if let Some(mut physics) = world.get_resource_mut::<PhysicsWorld>() {
-                    physics.remove_joint(handle);
-                }
-            }
+        if let Some(j) = world.get_component_mut::<Joint>(entity)
+            && let Some(handle) = j.joint_handle.take()
+            && let Some(physics) = world.get_resource_mut::<PhysicsWorld>()
+        {
+            physics.remove_joint(handle);
         }
     }
 }
@@ -250,7 +249,7 @@ fn sync_kinematic_transforms(world: &mut World) {
         return;
     }
 
-    let mut physics = match world.get_resource_mut::<PhysicsWorld>() {
+    let physics = match world.get_resource_mut::<PhysicsWorld>() {
         Some(p) => p,
         None => return,
     };
@@ -287,10 +286,10 @@ fn sync_transforms_back(world: &mut World) {
     let _ = physics;
 
     for (entity, new_transform, velocity) in updates {
-        if let Some(mut tc) = world.get_component_mut::<TransformComponent>(entity) {
+        if let Some(tc) = world.get_component_mut::<TransformComponent>(entity) {
             tc.transform = new_transform;
         }
-        if let Some(mut rb) = world.get_component_mut::<RigidBody>(entity) {
+        if let Some(rb) = world.get_component_mut::<RigidBody>(entity) {
             rb.linear_velocity = velocity;
         }
     }
@@ -298,7 +297,7 @@ fn sync_transforms_back(world: &mut World) {
 
 fn process_trigger_events(world: &mut World) {
     let events: Vec<TriggerEvent> = match world.get_resource_mut::<PhysicsWorld>() {
-        Some(mut physics) => physics.drain_collision_events(),
+        Some(physics) => physics.drain_collision_events(),
         None => return,
     };
 
@@ -342,15 +341,15 @@ fn process_trigger_events(world: &mut World) {
 
     for (trigger_id, overlapping) in trigger_overlaps {
         let entity = EntityId::from_raw(trigger_id);
-        if let Some(mut tv) = world.get_component_mut::<TriggerVolume>(entity) {
+        if let Some(tv) = world.get_component_mut::<TriggerVolume>(entity) {
             tv.overlapping_entities = overlapping;
         }
     }
 
-    if !script_events.is_empty() {
-        if let Some(mut pending) = world.get_resource_mut::<PendingPhysicsEvents>() {
-            pending.0.extend(script_events);
-        }
+    if !script_events.is_empty()
+        && let Some(pending) = world.get_resource_mut::<PendingPhysicsEvents>()
+    {
+        pending.0.extend(script_events);
     }
 }
 

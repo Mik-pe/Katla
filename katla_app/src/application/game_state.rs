@@ -100,21 +100,19 @@ impl SceneSnapshot {
         // Resolve parent relationships
         for (idx, desc) in scene.entities.iter().enumerate() {
             let child_id = spawned_ids[idx];
-            if let Some(ref parent_name) = desc.parent {
-                if let Some(&parent_id) = name_to_entity.get(parent_name) {
+            if let Some(ref parent_name) = desc.parent
+                && let Some(&parent_id) = name_to_entity.get(parent_name)
+            {
+                app.world
+                    .add_component(child_id, crate::components::Parent::new(parent_id));
+                if let Some(children) = app
+                    .world
+                    .get_component_mut::<crate::components::Children>(parent_id)
+                {
+                    children.children.push(child_id);
+                } else {
                     app.world
-                        .add_component(child_id, crate::components::Parent::new(parent_id));
-                    if let Some(children) = app
-                        .world
-                        .get_component_mut::<crate::components::Children>(parent_id)
-                    {
-                        children.children.push(child_id);
-                    } else {
-                        app.world.add_component(
-                            parent_id,
-                            crate::components::Children::new(vec![child_id]),
-                        );
-                    }
+                        .add_component(parent_id, crate::components::Children::new(vec![child_id]));
                 }
             }
         }

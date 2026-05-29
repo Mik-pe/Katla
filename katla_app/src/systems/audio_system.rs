@@ -399,8 +399,8 @@ fn compute_occlusion(world: &World, emitter_pos: Vec3, listener_pos: Vec3) -> f3
         // A hit close to the emitter = heavily occluded.
         // A hit close to the listener = barely occluded.
         let ratio = hit.distance / distance;
-        let occlusion = (1.0 - ratio).clamp(OCCLUSION_MIN_RATIO, 1.0) * MAX_OCCLUSION;
-        occlusion
+
+        (1.0 - ratio).clamp(OCCLUSION_MIN_RATIO, 1.0) * MAX_OCCLUSION
     } else {
         0.0
     }

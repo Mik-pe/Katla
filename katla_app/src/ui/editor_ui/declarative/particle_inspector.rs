@@ -40,10 +40,10 @@ impl Build for ParticleInspectorView {
         // Sync open state from app
         if draw_ctx.is_open && !panel_state.visibility.is_visible() {
             panel_state.visibility = DraggablePanelVisibility::JustOpened;
-            ctx.set_state(panel_id, panel_state.clone());
+            ctx.set_state(panel_id, panel_state);
         } else if !draw_ctx.is_open && panel_state.visibility.is_visible() {
             panel_state.visibility = DraggablePanelVisibility::Hidden;
-            ctx.set_state(panel_id, panel_state.clone());
+            ctx.set_state(panel_id, panel_state);
         }
 
         // Always emit panel sync
@@ -268,7 +268,7 @@ impl Build for ParticleInspectorView {
                 config_children.push(heading("Color", theme));
                 config_children.push(property_row(
                     "Color:",
-                    &format!(
+                    format!(
                         "R:{:.2} G:{:.2} B:{:.2} A:{:.2}",
                         config.color[0], config.color[1], config.color[2], config.color[3]
                     ),
@@ -283,7 +283,7 @@ impl Build for ParticleInspectorView {
                 ));
                 config_children.push(property_row(
                     "Color End:",
-                    &format!(
+                    format!(
                         "R:{:.2} G:{:.2} B:{:.2} A:{:.2}",
                         config.color_end[0],
                         config.color_end[1],
@@ -417,42 +417,39 @@ fn statistics_section(stats: &ParticleStats) -> ViewDescriptor {
     children.push(text("Statistics").font_size(FontSize::Small));
     children.push(property_row(
         "Alive:",
-        &format!("{} / {}", stats.current_alive_count, stats.max_alive_count),
+        format!("{} / {}", stats.current_alive_count, stats.max_alive_count),
     ));
-    children.push(property_row("Dead:", &format!("{}", stats.dead_count)));
+    children.push(property_row("Dead:", format!("{}", stats.dead_count)));
     children.push(property_row(
         "Buffer:",
-        &format!("{:.1}%", stats.buffer_utilization * 100.0),
+        format!("{:.1}%", stats.buffer_utilization * 100.0),
     ));
     children.push(property_row(
         "Memory:",
-        &format!("{:.2} MB", stats.memory_used_mb),
+        format!("{:.2} MB", stats.memory_used_mb),
     ));
 
     children.push(text("Performance").font_size(FontSize::Small));
     children.push(property_row(
         "Compute:",
-        &format!("{:.3} ms", stats.compute_time_ms),
+        format!("{:.3} ms", stats.compute_time_ms),
     ));
     children.push(property_row(
         "Avg:",
-        &format!("{:.3} ms", stats.avg_compute_time_ms),
+        format!("{:.3} ms", stats.avg_compute_time_ms),
     ));
     children.push(property_row(
         "Peak:",
-        &format!("{:.3} ms", stats.peak_compute_time_ms),
+        format!("{:.3} ms", stats.peak_compute_time_ms),
     ));
 
     children.push(text("Lifetime").font_size(FontSize::Small));
-    children.push(property_row(
-        "Emitted:",
-        &format!("{}", stats.total_emitted),
-    ));
-    children.push(property_row("Died:", &format!("{}", stats.total_died)));
-    children.push(property_row("Frames:", &format!("{}", stats.frame_count)));
+    children.push(property_row("Emitted:", format!("{}", stats.total_emitted)));
+    children.push(property_row("Died:", format!("{}", stats.total_died)));
+    children.push(property_row("Frames:", format!("{}", stats.frame_count)));
     children.push(property_row(
         "Dispatches:",
-        &format!("{}", stats.total_dispatches),
+        format!("{}", stats.total_dispatches),
     ));
 
     vstack(children).spacing(4.0)

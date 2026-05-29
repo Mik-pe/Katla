@@ -7,8 +7,6 @@ use super::Application;
 use crate::rendering::FrameContext;
 use katla_gfx::GpuRenderer;
 use katla_gfx::renderer::FrameUniforms;
-use katla_gfx::renderer::UIDrawList;
-use log::info;
 
 // Shared backend-agnostic helper methods used by both Vulkan and Metal paths.
 impl Application {

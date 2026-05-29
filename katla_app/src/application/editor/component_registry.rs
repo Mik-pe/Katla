@@ -464,16 +464,16 @@ fn register_collider_shape(registry: &mut ComponentRegistry) {
             );
         },
         remove_component: |world: &mut World, entity: EntityId| {
-            if let Some(rb) = world.get_component::<RigidBody>(entity) {
-                if let (Some(body_h), Some(collider_h)) = (rb.body_handle, rb.collider_handle) {
-                    drop(rb);
-                    if let Some(mut physics) = world.get_resource_mut::<PhysicsWorld>() {
-                        physics.remove_body(body_h, collider_h);
-                    }
-                    if let Some(mut rb) = world.get_component_mut::<RigidBody>(entity) {
-                        rb.body_handle = None;
-                        rb.collider_handle = None;
-                    }
+            if let Some(rb) = world.get_component::<RigidBody>(entity)
+                && let (Some(body_h), Some(collider_h)) = (rb.body_handle, rb.collider_handle)
+            {
+                drop(rb);
+                if let Some(physics) = world.get_resource_mut::<PhysicsWorld>() {
+                    physics.remove_body(body_h, collider_h);
+                }
+                if let Some(rb) = world.get_component_mut::<RigidBody>(entity) {
+                    rb.body_handle = None;
+                    rb.collider_handle = None;
                 }
             }
             world.remove_component::<ColliderShape>(entity);
@@ -542,12 +542,12 @@ fn register_rigid_body(registry: &mut ComponentRegistry) {
             world.add_component(entity, RigidBody::dynamic());
         },
         remove_component: |world: &mut World, entity: EntityId| {
-            if let Some(rb) = world.get_component::<RigidBody>(entity) {
-                if let (Some(body_h), Some(collider_h)) = (rb.body_handle, rb.collider_handle) {
-                    drop(rb);
-                    if let Some(mut physics) = world.get_resource_mut::<PhysicsWorld>() {
-                        physics.remove_body(body_h, collider_h);
-                    }
+            if let Some(rb) = world.get_component::<RigidBody>(entity)
+                && let (Some(body_h), Some(collider_h)) = (rb.body_handle, rb.collider_handle)
+            {
+                drop(rb);
+                if let Some(physics) = world.get_resource_mut::<PhysicsWorld>() {
+                    physics.remove_body(body_h, collider_h);
                 }
             }
             world.remove_component::<RigidBody>(entity);

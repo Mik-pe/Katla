@@ -891,8 +891,6 @@ impl ApplicationBuilder {
             }
             #[cfg(target_os = "macos")]
             katla_gfx::AnyRenderer::Metal(_) => {
-                use katla_gfx::RenderGraphBackend;
-
                 let hdr_slot = frame_graph
                     .register_transient_texture_bindless(&mut renderer, "hdr_color")
                     .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
@@ -943,11 +941,11 @@ impl ApplicationBuilder {
             }
             #[cfg(target_os = "macos")]
             katla_gfx::AnyRenderer::Metal(_) => {
-                if let Some(font_handle) = renderer.ui_font_atlas_handle() {
-                    if let Some(bindless_slot) = renderer.get_bindless_slot(font_handle) {
-                        ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
-                        log::info!("Font atlas bindless slot initialized: {}", bindless_slot);
-                    }
+                if let Some(font_handle) = renderer.ui_font_atlas_handle()
+                    && let Some(bindless_slot) = renderer.get_bindless_slot(font_handle)
+                {
+                    ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
+                    log::info!("Font atlas bindless slot initialized: {}", bindless_slot);
                 }
             }
         }

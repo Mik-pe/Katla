@@ -149,7 +149,7 @@ impl SceneManager {
                         range: l.range,
                     });
 
-            let particle_emitter = app
+            let _particle_emitter = app
                 .world
                 .get_component::<ParticleEmitterComponent>(entity_id)
                 .map(|p| ParticleEmitterDescriptor {
