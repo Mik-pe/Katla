@@ -83,5 +83,13 @@ impl From<std::io::Error> for AppError {
     }
 }
 
+impl From<Box<dyn std::error::Error>> for AppError {
+    fn from(err: Box<dyn std::error::Error>) -> Self {
+        Self::Other {
+            message: err.to_string(),
+        }
+    }
+}
+
 /// Result type for app operations.
 pub type AppResult<T> = Result<T, AppError>;

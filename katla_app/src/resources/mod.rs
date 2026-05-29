@@ -38,42 +38,57 @@ impl ResourceManager {
     /// Discover resource paths by searching common locations.
     ///
     /// Searches in order:
-    /// 1. Current directory (workspace root)
-    /// 2. Parent directory (crate root)
-    /// 3. Grandparent directory (target/debug)
-    /// 4. CARGO_MANIFEST_DIR absolute path
+    /// 1. `KATLA_RESOURCES_PATH` environment variable (explicit override)
+    /// 2. Absolute path derived from `CARGO_MANIFEST_DIR` (most reliable)
+    /// 3. Current directory (workspace root)
+    /// 4. Parent directory (crate root)
+    /// 5. Grandparent directory (target/debug)
     ///
     /// # Returns
     /// `Ok(ResourceManager)` if a valid resources directory was found
     /// `Err(AppError::ResourcesNotFound)` if no valid directory was found
     pub fn discover() -> AppResult<Self> {
-        // List of possible root paths to check, in order of preference
-        let possible_roots = vec![
-            // Current directory (for running from workspace root)
-            PathBuf::from("resources"),
-            // Parent directory (for running from katla_app)
-            PathBuf::from("../resources"),
-            // Grandparent directory (for running from target/debug)
-            PathBuf::from("../../resources"),
-            // Absolute path using CARGO_MANIFEST_DIR (for tests)
-            {
-                let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-                path.pop(); // Go up from katla_app to workspace root
-                path.push("resources");
-                path
-            },
-        ];
+        let possible_roots = Self::discover_paths();
 
-        for root in possible_roots {
+        for root in &possible_roots {
             if root.exists() {
                 info!("Found resources at: {}", root.display());
-                return Ok(Self::from_root(root));
+                return Ok(Self::from_root(root.clone()));
             }
         }
 
         Err(AppError::ResourcesNotFound {
-            path: "resources/".to_string(),
+            path: possible_roots
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
         })
+    }
+
+    /// Build the ordered list of candidate resource paths.
+    fn discover_paths() -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+
+        // 1. Explicit override via environment variable
+        if let Ok(env_path) = std::env::var("KATLA_RESOURCES_PATH") {
+            paths.push(PathBuf::from(env_path));
+        }
+
+        // 2. Absolute path from CARGO_MANIFEST_DIR (most reliable, works from any cwd)
+        {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.pop();
+            path.push("resources");
+            paths.push(path);
+        }
+
+        // 3-5. Relative fallbacks (depend on working directory)
+        paths.push(PathBuf::from("resources"));
+        paths.push(PathBuf::from("../resources"));
+        paths.push(PathBuf::from("../../resources"));
+
+        paths
     }
 
     /// Create ResourceManager from an explicit root path.

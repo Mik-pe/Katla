@@ -20,5 +20,8 @@ pub use modelcache::*;
 pub use stl_parser::*;
 pub use timer::*;
 
-/// Cache for loaded glTF models with a boxed loader function.
-pub type GltfCache = FileCache<GLTFModel, Box<dyn Fn(&PathBuf) -> GLTFModel>>;
+pub type GltfLoaderResult = Result<GLTFModel, Box<dyn std::error::Error>>;
+pub type GltfLoaderFn = Box<dyn Fn(&PathBuf) -> GltfLoaderResult>;
+
+/// Cache for loaded glTF models with a fallible loader function.
+pub type GltfCache = FileCache<GLTFModel, Box<dyn std::error::Error>, GltfLoaderFn>;
