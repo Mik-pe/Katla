@@ -23,6 +23,8 @@ pub enum ScriptError {
     /// Attempted to load a script from a path outside the configured scripts directory.
     /// This is a security measure to prevent scripts from reading arbitrary files.
     PathOutsideScriptsDir { path: String, scripts_dir: String },
+    /// Script execution exceeded the configured time limit.
+    ScriptTimeout { path: String, timeout_secs: f64 },
 }
 
 impl fmt::Display for ScriptError {
@@ -53,6 +55,9 @@ impl fmt::Display for ScriptError {
                     "script path '{path}' is outside the scripts directory '{scripts_dir}'"
                 )
             }
+            ScriptError::ScriptTimeout { path, timeout_secs } => {
+                write!(f, "script '{path}' timed out after {timeout_secs}s")
+            }
         }
     }
 }
@@ -66,6 +71,7 @@ impl std::error::Error for ScriptError {
             ScriptError::InstanceNotFound(_) => None,
             ScriptError::ScriptNotLoaded { .. } => None,
             ScriptError::PathOutsideScriptsDir { .. } => None,
+            ScriptError::ScriptTimeout { .. } => None,
         }
     }
 }

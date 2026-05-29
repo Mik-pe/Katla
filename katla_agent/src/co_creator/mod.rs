@@ -235,7 +235,17 @@ impl CoCreatorAgent {
 
         for key in keys {
             if let Some(acc) = self.tool_call_accumulators.remove(&key) {
-                let arguments = serde_json::from_str(&acc.arguments).unwrap_or_default();
+                let arguments = match serde_json::from_str(&acc.arguments) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to parse tool call arguments for '{}': {e}. Raw: {:.200}",
+                            acc.name,
+                            acc.arguments
+                        );
+                        serde_json::Value::Null
+                    }
+                };
                 results.push(ToolCall {
                     id: acc.id,
                     name: acc.name,

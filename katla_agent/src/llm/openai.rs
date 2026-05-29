@@ -216,10 +216,22 @@ impl LlmProvider for OpenAiProvider {
             let tool_calls = choice.message.tool_calls.map(|calls| {
                 calls
                     .into_iter()
-                    .map(|tc| super::ToolCall {
-                        id: tc.id,
-                        name: tc.function.name,
-                        arguments: serde_json::from_str(&tc.function.arguments).unwrap_or_default(),
+                    .map(|tc| {
+                        let arguments = match serde_json::from_str(&tc.function.arguments) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                log::warn!(
+                                    "Failed to parse tool call arguments for '{}': {e}",
+                                    tc.function.name
+                                );
+                                serde_json::Value::Null
+                            }
+                        };
+                        super::ToolCall {
+                            id: tc.id,
+                            name: tc.function.name,
+                            arguments,
+                        }
                     })
                     .collect()
             });

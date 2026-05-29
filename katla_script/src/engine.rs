@@ -1,6 +1,7 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use katla_ecs::EntityId;
 use katla_math::{Color, Quat, Vec3};
@@ -29,6 +30,17 @@ pub enum ScriptVarValue {
 /// Prevents infinite loops from hanging the engine.
 const INSTRUCTION_LIMIT: u64 = 10_000_000;
 
+/// Default time limit for a single script execution (e.g., one `on_update` call).
+const DEFAULT_SCRIPT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How often (in instruction count) the timeout check runs.
+/// Avoids calling `Instant::now()` on every single instruction.
+const TIMEOUT_CHECK_INTERVAL: u64 = 1000;
+
+/// Marker prefix inserted into timeout errors so they can be distinguished
+/// from other Lua runtime errors.
+const TIMEOUT_ERROR_PREFIX: &str = "__katla_script_timeout__";
+
 /// The script engine manages Lua script loading, execution, and instance lifecycle.
 ///
 /// # Thread Safety
@@ -56,6 +68,8 @@ pub struct ScriptEngine {
     /// When set, bare script names are resolved relative to this directory.
     scripts_dir: Option<String>,
     instruction_count: Rc<Cell<u64>>,
+    timeout: Rc<RefCell<Duration>>,
+    execution_start: Rc<RefCell<Option<Instant>>>,
 }
 
 /// Internal representation of a script instance attached to an entity.
@@ -366,7 +380,12 @@ impl ScriptEngine {
         }
 
         let instruction_count = Rc::new(Cell::new(0u64));
+        let timeout = Rc::new(RefCell::new(DEFAULT_SCRIPT_TIMEOUT));
+        let execution_start = Rc::new(RefCell::new(None::<Instant>));
+
         let count_clone = instruction_count.clone();
+        let timeout_clone = timeout.clone();
+        let start_clone = execution_start.clone();
         vm.set_interrupt(move |_| {
             let c = count_clone.get();
             if c >= INSTRUCTION_LIMIT {
@@ -375,6 +394,16 @@ impl ScriptEngine {
                 )));
             }
             count_clone.set(c + 1);
+
+            if c.is_multiple_of(TIMEOUT_CHECK_INTERVAL) {
+                let start = start_clone.borrow();
+                if let Some(start) = *start
+                    && start.elapsed() >= *timeout_clone.borrow()
+                {
+                    return Err(mlua::Error::external(TIMEOUT_ERROR_PREFIX.to_string()));
+                }
+            }
+
             Ok(VmState::Continue)
         });
 
@@ -386,6 +415,8 @@ impl ScriptEngine {
             free_list: Vec::new(),
             scripts_dir: None,
             instruction_count,
+            timeout,
+            execution_start,
         })
     }
 
@@ -438,6 +469,12 @@ impl ScriptEngine {
 
     pub fn reset_instruction_counter(&self) {
         self.instruction_count.set(0);
+        *self.execution_start.borrow_mut() = Some(Instant::now());
+    }
+
+    /// Set the per-call script execution timeout.
+    pub fn set_timeout(&self, timeout: Duration) {
+        *self.timeout.borrow_mut() = timeout;
     }
 
     pub fn load_script(&mut self, path: &str) -> Result<(), ScriptError> {
@@ -658,6 +695,12 @@ impl ScriptEngine {
         self.reset_instruction_counter();
         func.call::<()>((LuaEntityId(entity), ud.clone(), dt))
             .map_err(|e| {
+                if e.to_string().contains(TIMEOUT_ERROR_PREFIX) {
+                    return ScriptError::ScriptTimeout {
+                        path: script_path.clone(),
+                        timeout_secs: self.timeout.borrow().as_secs_f64(),
+                    };
+                }
                 if let Some(Some(inst)) = self.instances.get_mut(handle.index as usize)
                     && inst.generation == handle.generation
                 {
@@ -720,10 +763,18 @@ impl ScriptEngine {
 
         self.reset_instruction_counter();
         func.call::<()>((LuaEntityId(entity), ud.clone()))
-            .map_err(|e| ScriptError::ExecutionFailed {
-                path: script_path.clone(),
-                function: "on_spawn".into(),
-                source: e,
+            .map_err(|e| {
+                if e.to_string().contains(TIMEOUT_ERROR_PREFIX) {
+                    return ScriptError::ScriptTimeout {
+                        path: script_path.clone(),
+                        timeout_secs: self.timeout.borrow().as_secs_f64(),
+                    };
+                }
+                ScriptError::ExecutionFailed {
+                    path: script_path.clone(),
+                    function: "on_spawn".into(),
+                    source: e,
+                }
             })?;
 
         let borrowed =
@@ -765,12 +816,19 @@ impl ScriptEngine {
                 })?;
 
         self.reset_instruction_counter();
-        func.call::<()>(LuaEntityId(entity))
-            .map_err(|e| ScriptError::ExecutionFailed {
+        func.call::<()>(LuaEntityId(entity)).map_err(|e| {
+            if e.to_string().contains(TIMEOUT_ERROR_PREFIX) {
+                return ScriptError::ScriptTimeout {
+                    path: script_path,
+                    timeout_secs: self.timeout.borrow().as_secs_f64(),
+                };
+            }
+            ScriptError::ExecutionFailed {
                 path: script_path,
                 function: "on_destroy".into(),
                 source: e,
-            })?;
+            }
+        })?;
 
         Ok(())
     }

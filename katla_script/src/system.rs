@@ -1,6 +1,7 @@
 use std::any::TypeId;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 
 use katla_ecs::events::{ComponentEvent, EntityEvent};
 use katla_ecs::{EntityId, System, World};
@@ -234,6 +235,14 @@ impl ScriptSystem {
         F: FnMut(&World) -> std::collections::HashMap<String, Vec<EntityId>> + 'static,
     {
         self.component_entities_provider = Some(Box::new(f));
+        self
+    }
+
+    /// Set the per-call script execution timeout.
+    ///
+    /// Scripts that exceed this duration are aborted.
+    pub fn with_timeout(self, timeout: Duration) -> Self {
+        self.engine.set_timeout(timeout);
         self
     }
 
