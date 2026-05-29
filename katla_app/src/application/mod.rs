@@ -157,6 +157,12 @@ impl EditorState {
         let component_registry =
             crate::application::editor::component_registry::build_editor_component_registry();
         let available = component_registry.type_names();
+        let llm_config = katla_agent::LlmConfig::load();
+        let async_bridge = katla_agent::AsyncBridge::with_rate_limits(
+            std::time::Duration::from_millis(llm_config.rate_limit_min_interval_ms),
+            llm_config.rate_limit_max_calls_per_minute,
+        )
+        .ok();
         let mut state = Self {
             ui_renderer,
             editor_ui: {
@@ -187,8 +193,8 @@ impl EditorState {
             prev_mouse_screen: None,
             component_registry,
             _agent_harness: katla_ecs::agent::AgentHarness::new(),
-            llm_config: katla_agent::LlmConfig::load(),
-            async_bridge: katla_agent::AsyncBridge::new().ok(),
+            llm_config,
+            async_bridge,
             co_creator_agent: katla_agent::CoCreatorAgent::new(),
             #[cfg(feature = "mcp")]
             mcp_state: crate::application::editor::mcp::McpState::new(),

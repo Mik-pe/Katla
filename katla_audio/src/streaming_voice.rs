@@ -7,7 +7,8 @@ use crate::command_queue::AudioCategoryValue;
 use crate::error::AudioError;
 use crate::streaming::StreamingDecoder;
 use crate::voice::{
-    CategoryVolumes, VoiceId, VoiceState, catmull_rom, compute_pan_gains, fetch_sample,
+    AuxBusId, CategoryVolumes, VoiceId, VoicePriority, VoiceState, catmull_rom, compute_pan_gains,
+    fetch_sample,
 };
 
 const STREAM_RING_BUFFER_SAMPLES: usize = 44100 * 2 * 4;
@@ -47,6 +48,8 @@ pub struct StreamingVoice {
     fade_state: AtomicU8,
     fade_position: AtomicUsize,
     position_secs: AtomicU32,
+    priority: VoicePriority,
+    pub(crate) aux_sends: Vec<(AuxBusId, f32)>,
 }
 
 // SAFETY: StreamingVoice is only accessed from two contexts:
@@ -64,6 +67,7 @@ impl StreamingVoice {
         looping: bool,
         category: AudioCategoryValue,
         category_volumes: Arc<CategoryVolumes>,
+        priority: VoicePriority,
     ) -> Result<Self, AudioError> {
         let channels = decoder.channels();
         let sample_rate = decoder.sample_rate();
@@ -110,11 +114,24 @@ impl StreamingVoice {
             fade_state: AtomicU8::new(FADE_IN),
             fade_position: AtomicUsize::new(0),
             position_secs: AtomicU32::new(0.0f32.to_bits()),
+            priority,
+            aux_sends: Vec::new(),
         })
     }
 
     pub fn id(&self) -> VoiceId {
         self.id
+    }
+
+    pub fn priority(&self) -> VoicePriority {
+        self.priority
+    }
+
+    pub fn aux_send_level(&self, bus_id: AuxBusId) -> Option<f32> {
+        self.aux_sends
+            .iter()
+            .find(|(id, _)| *id == bus_id)
+            .map(|(_, level)| *level)
     }
 
     pub(crate) fn reset(
@@ -124,6 +141,7 @@ impl StreamingVoice {
         looping: bool,
         category: AudioCategoryValue,
         category_volumes: Arc<CategoryVolumes>,
+        priority: VoicePriority,
     ) -> Result<(), AudioError> {
         let channels = decoder.channels();
         let sample_rate = decoder.sample_rate();
@@ -169,6 +187,8 @@ impl StreamingVoice {
         self.fade_position.store(0, Ordering::Relaxed);
         self.position_secs
             .store(0.0f32.to_bits(), Ordering::Relaxed);
+        self.priority = priority;
+        self.aux_sends.clear();
 
         Ok(())
     }
@@ -540,5 +560,9 @@ impl StreamingVoiceHandle {
 
     pub fn state(&self) -> VoiceState {
         self.mixer.streaming_voice_state(self.id)
+    }
+
+    pub fn set_aux_sends(&self, sends: Vec<(AuxBusId, f32)>) {
+        self.mixer.set_streaming_voice_aux_sends(self.id, sends);
     }
 }

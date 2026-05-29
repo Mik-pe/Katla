@@ -115,6 +115,7 @@ pub enum LlmError {
     Serialization(String),
     Timeout,
     Config(String),
+    RateLimited(String),
 }
 
 impl std::fmt::Display for LlmError {
@@ -125,6 +126,7 @@ impl std::fmt::Display for LlmError {
             LlmError::Serialization(s) => write!(f, "Serialization error: {s}"),
             LlmError::Timeout => write!(f, "Request timed out"),
             LlmError::Config(s) => write!(f, "Configuration error: {s}"),
+            LlmError::RateLimited(s) => write!(f, "Rate limited: {s}"),
         }
     }
 }

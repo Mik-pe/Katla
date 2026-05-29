@@ -15,6 +15,9 @@ pub use tools::{assets, placement, templates, tuning};
 pub mod config;
 
 #[cfg(feature = "llm-assistant")]
+mod rate_limiter;
+
+#[cfg(feature = "llm-assistant")]
 pub mod llm;
 
 #[cfg(feature = "llm-assistant")]

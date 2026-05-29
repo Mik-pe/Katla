@@ -11,7 +11,7 @@ use crate::error::AudioError;
 use crate::mixer::AudioMixer;
 use crate::streaming::StreamingDecoder;
 use crate::streaming_voice::StreamingVoiceHandle;
-use crate::voice::{VoiceHandle, VoiceId, VoiceState};
+use crate::voice::{AuxBusId, VoiceHandle, VoiceId, VoicePriority, VoiceState};
 
 const MAX_RECOVERY_ATTEMPTS: u32 = 3;
 
@@ -162,8 +162,25 @@ impl AudioEngine {
         buffer: &Arc<AudioBuffer>,
         category: AudioCategory,
     ) -> VoiceHandle {
+        self.play_with_category_and_priority(buffer, category, VoicePriority::default())
+    }
+
+    pub fn play_with_priority(
+        &self,
+        buffer: &Arc<AudioBuffer>,
+        priority: VoicePriority,
+    ) -> VoiceHandle {
+        self.play_with_category_and_priority(buffer, AudioCategory::Sfx, priority)
+    }
+
+    pub fn play_with_category_and_priority(
+        &self,
+        buffer: &Arc<AudioBuffer>,
+        category: AudioCategory,
+        priority: VoicePriority,
+    ) -> VoiceHandle {
         let cat_val = category.to_value().unwrap_or(AudioCategoryValue::Sfx);
-        let voice_id = self.mixer.play(buffer.clone(), cat_val);
+        let voice_id = self.mixer.play(buffer.clone(), cat_val, priority);
         self.handle(voice_id)
     }
 
@@ -176,8 +193,25 @@ impl AudioEngine {
         buffer: &Arc<AudioBuffer>,
         category: AudioCategory,
     ) -> VoiceHandle {
+        self.play_looping_with_category_and_priority(buffer, category, VoicePriority::default())
+    }
+
+    pub fn play_looping_with_priority(
+        &self,
+        buffer: &Arc<AudioBuffer>,
+        priority: VoicePriority,
+    ) -> VoiceHandle {
+        self.play_looping_with_category_and_priority(buffer, AudioCategory::Sfx, priority)
+    }
+
+    pub fn play_looping_with_category_and_priority(
+        &self,
+        buffer: &Arc<AudioBuffer>,
+        category: AudioCategory,
+        priority: VoicePriority,
+    ) -> VoiceHandle {
         let cat_val = category.to_value().unwrap_or(AudioCategoryValue::Sfx);
-        let voice_id = self.mixer.play_looping(buffer.clone(), cat_val);
+        let voice_id = self.mixer.play_looping(buffer.clone(), cat_val, priority);
         self.handle(voice_id)
     }
 
@@ -307,12 +341,12 @@ impl AudioEngine {
         self.mixer.add_master_effect(effect);
     }
 
-    pub fn add_aux_bus(&self, bus: AuxBus) {
-        self.mixer.add_aux_bus(bus);
+    pub fn add_aux_bus(&self, bus: AuxBus) -> AuxBusId {
+        self.mixer.add_aux_bus(bus)
     }
 
-    pub fn create_zone_reverb_bus(&self) {
-        self.mixer.create_zone_reverb_bus();
+    pub fn create_zone_reverb_bus(&self) -> AuxBusId {
+        self.mixer.create_zone_reverb_bus()
     }
 
     pub fn set_zone_reverb(&self, decay: f32, wet: f32, dampening: f32) {
@@ -328,9 +362,28 @@ impl AudioEngine {
         path: &Path,
         category: AudioCategory,
     ) -> Result<StreamingVoiceHandle, AudioError> {
+        self.play_streaming_with_category_and_priority(path, category, VoicePriority::default())
+    }
+
+    pub fn play_streaming_with_priority(
+        &self,
+        path: &Path,
+        priority: VoicePriority,
+    ) -> Result<StreamingVoiceHandle, AudioError> {
+        self.play_streaming_with_category_and_priority(path, AudioCategory::Music, priority)
+    }
+
+    pub fn play_streaming_with_category_and_priority(
+        &self,
+        path: &Path,
+        category: AudioCategory,
+        priority: VoicePriority,
+    ) -> Result<StreamingVoiceHandle, AudioError> {
         let decoder = StreamingDecoder::open(path)?;
         let cat_val = category.to_value().unwrap_or(AudioCategoryValue::Music);
-        let voice_id = self.mixer.play_streaming(decoder, false, cat_val)?;
+        let voice_id = self
+            .mixer
+            .play_streaming(decoder, false, cat_val, priority)?;
         Ok(StreamingVoiceHandle {
             id: voice_id,
             mixer: self.mixer.clone(),
@@ -346,9 +399,32 @@ impl AudioEngine {
         path: &Path,
         category: AudioCategory,
     ) -> Result<StreamingVoiceHandle, AudioError> {
+        self.play_streaming_looping_with_category_and_priority(
+            path,
+            category,
+            VoicePriority::default(),
+        )
+    }
+
+    pub fn play_streaming_looping_with_priority(
+        &self,
+        path: &Path,
+        priority: VoicePriority,
+    ) -> Result<StreamingVoiceHandle, AudioError> {
+        self.play_streaming_looping_with_category_and_priority(path, AudioCategory::Music, priority)
+    }
+
+    pub fn play_streaming_looping_with_category_and_priority(
+        &self,
+        path: &Path,
+        category: AudioCategory,
+        priority: VoicePriority,
+    ) -> Result<StreamingVoiceHandle, AudioError> {
         let decoder = StreamingDecoder::open(path)?;
         let cat_val = category.to_value().unwrap_or(AudioCategoryValue::Music);
-        let voice_id = self.mixer.play_streaming(decoder, true, cat_val)?;
+        let voice_id = self
+            .mixer
+            .play_streaming(decoder, true, cat_val, priority)?;
         Ok(StreamingVoiceHandle {
             id: voice_id,
             mixer: self.mixer.clone(),
