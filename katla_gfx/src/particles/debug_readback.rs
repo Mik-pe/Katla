@@ -5,6 +5,7 @@ use std::rc::Rc;
 use ash::vk;
 use log::{info, warn};
 
+use crate::error::RendererError;
 use crate::sync::VkBuffer;
 use crate::vulkan::context::VulkanContext;
 
@@ -258,7 +259,7 @@ struct ReadbackStagingBuffer {
 
 impl ReadbackStagingBuffer {
     /// Create a new staging buffer for readback.
-    fn new(context: &Rc<VulkanContext>, size: u64, name: &str) -> Result<Self, String> {
+    fn new(context: &Rc<VulkanContext>, size: u64, name: &str) -> Result<Self, RendererError> {
         let buffer_info = vk::BufferCreateInfo::default()
             .size(size)
             .usage(vk::BufferUsageFlags::TRANSFER_DST)
@@ -332,7 +333,7 @@ pub struct ParticleDebugReadback {
 
 impl ParticleDebugReadback {
     /// Create a new debug readback helper.
-    pub fn new(context: &Rc<VulkanContext>, max_particles: u32) -> Result<Self, String> {
+    pub fn new(context: &Rc<VulkanContext>, max_particles: u32) -> Result<Self, RendererError> {
         info!("Creating particle debug readback helper");
 
         // Particle data staging buffer (48 bytes per particle)
@@ -387,7 +388,7 @@ impl ParticleDebugReadback {
         command_buffer: vk::CommandBuffer,
         particle_buffer: &GlobalParticleBuffer,
         frame_index: usize,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         let device = &self.context.device;
         let layout = particle_buffer.layout();
         let fi = frame_index % 2;
@@ -627,7 +628,7 @@ impl ParticleDebugReadback {
     pub fn read(
         &self,
         particle_buffer: &GlobalParticleBuffer,
-    ) -> Result<ParticleDebugData, String> {
+    ) -> Result<ParticleDebugData, RendererError> {
         let layout = particle_buffer.layout();
         let max_particles = particle_buffer.max_particles() as usize;
 

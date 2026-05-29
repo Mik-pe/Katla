@@ -3,6 +3,7 @@ use std::rc::Rc;
 use ash::vk;
 use log::info;
 
+use crate::error::RendererError;
 use crate::vulkan::context::VulkanContext;
 
 use super::{EmitterConfig, FrameData, GlobalParticleSystem, MAX_EMITTERS, buffer};
@@ -12,7 +13,7 @@ impl GlobalParticleSystem {
     pub(crate) fn create_descriptor_layouts(
         &mut self,
         context: &Rc<VulkanContext>,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         // Compute layout (Set 0: static buffers only - particles, dead list, alive lists, counters, indirect draw)
         let compute_bindings = [
             vk::DescriptorSetLayoutBinding::default()
@@ -192,7 +193,7 @@ impl GlobalParticleSystem {
     pub(crate) fn create_push_descriptor_buffers(
         &mut self,
         context: &Rc<VulkanContext>,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         for frame_idx in 0..2 {
             // Frame data buffer (uniform + storage, CPU-visible)
             let frame_data_size = std::mem::size_of::<FrameData>() as u64;
@@ -351,7 +352,7 @@ impl GlobalParticleSystem {
         pool_name: &str,
         validate_alignment: bool,
         include_indirect_binding: bool,
-    ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
+    ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), RendererError> {
         // Create descriptor pool
         let descriptor_count = if include_indirect_binding { 6 } else { 5 };
         let pool_sizes = [vk::DescriptorPoolSize::default()
@@ -541,10 +542,10 @@ impl GlobalParticleSystem {
 
             for (binding, offset) in binding_offsets.iter() {
                 if offset % min_storage_buffer_offset_alignment != 0 {
-                    return Err(format!(
+                    return Err(RendererError::InvalidOperation(format!(
                         "Descriptor set binding {} offset {} is not aligned to min_storage_buffer_offset_alignment ({})",
                         binding, offset, min_storage_buffer_offset_alignment
-                    ));
+                    )));
                 }
             }
         }
@@ -559,7 +560,7 @@ impl GlobalParticleSystem {
     /// Create descriptor pool and allocate static descriptor set for compute (Set 0).
     pub(super) fn create_compute_descriptor_set(
         &mut self,
-    ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
+    ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), RendererError> {
         let compute_layout = self
             .descriptors
             .compute_layout
@@ -572,7 +573,7 @@ impl GlobalParticleSystem {
     /// Uses VERTEX/FRAGMENT stage flags instead of COMPUTE for graphics pipeline compatibility.
     pub(super) fn create_render_descriptor_set(
         &mut self,
-    ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), String> {
+    ) -> Result<(vk::DescriptorSet, vk::DescriptorPool), RendererError> {
         let render_layout = self
             .descriptors
             .render_layout
@@ -581,7 +582,10 @@ impl GlobalParticleSystem {
         self.create_descriptor_set_internal(render_layout, "render", false, false)
     }
 
-    pub fn update_compute_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
+    pub fn update_compute_descriptor_binding(
+        &self,
+        frame_index: usize,
+    ) -> Result<(), RendererError> {
         let device = &self.context.device;
         let fi = frame_index % 2;
         let descriptor_set =
@@ -648,7 +652,10 @@ impl GlobalParticleSystem {
         Ok(())
     }
 
-    pub fn update_render_descriptor_binding(&self, frame_index: usize) -> Result<(), String> {
+    pub fn update_render_descriptor_binding(
+        &self,
+        frame_index: usize,
+    ) -> Result<(), RendererError> {
         let device = &self.context.device;
         let fi = frame_index % 2;
         let descriptor_set =

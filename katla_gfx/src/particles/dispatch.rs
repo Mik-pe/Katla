@@ -1,10 +1,15 @@
 use ash::vk;
 
 use super::*;
+use crate::error::RendererError;
 use crate::renderer::registry::AssetRegistry;
 
 impl GlobalParticleSystem {
-    pub fn update(&mut self, delta_time: f32, frame_index: u32) -> Result<(u32, u32), String> {
+    pub fn update(
+        &mut self,
+        delta_time: f32,
+        frame_index: u32,
+    ) -> Result<(u32, u32), RendererError> {
         self.frame_count += 1;
 
         self.upload_emitter_configs(frame_index as usize)?;
@@ -54,7 +59,7 @@ impl GlobalParticleSystem {
         Ok((self.estimated_max_alive, emit_count))
     }
 
-    pub(super) fn upload_emitter_configs(&self, frame_index: usize) -> Result<(), String> {
+    pub(super) fn upload_emitter_configs(&self, frame_index: usize) -> Result<(), RendererError> {
         let fi = frame_index % 2;
         if let Some((_buffer, allocation)) = &self.buffers.emitter_configs[fi] {
             if let Some(mapped) = allocation.mapped_ptr() {
@@ -74,11 +79,15 @@ impl GlobalParticleSystem {
                 );
             } else {
                 log::warn!("Emitter configs buffer is not mapped for CPU access");
-                return Err("Emitter configs buffer mapping failed".to_string());
+                return Err(RendererError::InvalidOperation(
+                    "Emitter configs buffer mapping failed".into(),
+                ));
             }
         } else {
             log::warn!("Emitter configs buffer not initialized");
-            return Err("Emitter configs buffer not created".to_string());
+            return Err(RendererError::InvalidOperation(
+                "Emitter configs buffer not created".into(),
+            ));
         }
         Ok(())
     }
@@ -89,7 +98,7 @@ impl GlobalParticleSystem {
         emit_count: u32,
         burst_count: u32,
         frame_index: u32,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         let fi = (frame_index as usize) % 2;
         if let Some((_buffer, allocation)) = &self.buffers.frame_data[fi] {
             if let Some(mapped) = allocation.mapped_ptr() {
@@ -139,11 +148,15 @@ impl GlobalParticleSystem {
                 );
             } else {
                 log::warn!("Frame data buffer is not mapped for CPU access");
-                return Err("Frame data buffer mapping failed".to_string());
+                return Err(RendererError::InvalidOperation(
+                    "Frame data buffer mapping failed".into(),
+                ));
             }
         } else {
             log::warn!("Frame data buffer not initialized");
-            return Err("Frame data buffer not created".to_string());
+            return Err(RendererError::InvalidOperation(
+                "Frame data buffer not created".into(),
+            ));
         }
         Ok(())
     }
@@ -218,7 +231,7 @@ impl GlobalParticleSystem {
         asset_registry: &AssetRegistry,
         emit_workgroups: u32,
         frame_index: usize,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         let pipeline = self.pipelines.emit.ok_or("Emit pipeline not created")?;
 
         let compute_pipeline = asset_registry
@@ -303,10 +316,14 @@ impl GlobalParticleSystem {
                     );
                 }
             } else {
-                return Err("Emit compute descriptor set is null".to_string());
+                return Err(RendererError::InvalidOperation(
+                    "Emit compute descriptor set is null".into(),
+                ));
             }
         } else {
-            return Err("Compute descriptor set not allocated".to_string());
+            return Err(RendererError::InvalidOperation(
+                "Compute descriptor set not allocated".into(),
+            ));
         }
 
         let fi = frame_index % 2;
@@ -372,7 +389,7 @@ impl GlobalParticleSystem {
         asset_registry: &AssetRegistry,
         simulate_workgroups: u32,
         frame_index: usize,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         let device = &self.context.device;
 
         let pipeline = self
@@ -404,10 +421,14 @@ impl GlobalParticleSystem {
                     );
                 }
             } else {
-                return Err("Simulate compute descriptor set is null".to_string());
+                return Err(RendererError::InvalidOperation(
+                    "Simulate compute descriptor set is null".into(),
+                ));
             }
         } else {
-            return Err("Compute descriptor set not allocated".to_string());
+            return Err(RendererError::InvalidOperation(
+                "Compute descriptor set not allocated".into(),
+            ));
         }
 
         let fi = frame_index % 2;
@@ -485,7 +506,7 @@ impl GlobalParticleSystem {
         command_buffer: vk::CommandBuffer,
         asset_registry: &AssetRegistry,
         frame_index: usize,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         let device = &self.context.device;
         let fi = frame_index % 2;
 

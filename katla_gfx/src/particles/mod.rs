@@ -28,6 +28,7 @@ use std::rc::Rc;
 use ash::vk;
 use log::{info, warn};
 
+use crate::error::RendererError;
 use crate::handle::PipelineHandle;
 use crate::vulkan::context::VulkanContext;
 
@@ -102,7 +103,7 @@ pub struct GlobalParticleSystem {
 }
 
 impl GlobalParticleSystem {
-    pub fn new(context: &Rc<VulkanContext>, max_particles: u32) -> Result<Self, String> {
+    pub fn new(context: &Rc<VulkanContext>, max_particles: u32) -> Result<Self, RendererError> {
         info!(
             "Initializing modern particle system (max particles: {})",
             max_particles
@@ -338,7 +339,7 @@ impl GlobalParticleSystem {
         info!("  particle system destroy done");
     }
 
-    pub fn init_debug_readback(&mut self) -> Result<(), String> {
+    pub fn init_debug_readback(&mut self) -> Result<(), RendererError> {
         if self.debug_readback.is_some() {
             warn!("Debug readback already initialized");
             return Ok(());
@@ -355,20 +356,24 @@ impl GlobalParticleSystem {
         &mut self,
         command_buffer: vk::CommandBuffer,
         frame_index: usize,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         if let Some(ref mut readback) = self.debug_readback {
             readback.record_copy(command_buffer, &self.buffer, frame_index)?;
             Ok(())
         } else {
-            Err("Debug readback not initialized. Call init_debug_readback() first.".to_string())
+            Err(RendererError::InvalidOperation(
+                "Debug readback not initialized. Call init_debug_readback() first.".into(),
+            ))
         }
     }
 
-    pub fn read_debug_data(&self) -> Result<ParticleDebugData, String> {
+    pub fn read_debug_data(&self) -> Result<ParticleDebugData, RendererError> {
         if let Some(ref readback) = self.debug_readback {
             readback.read(&self.buffer)
         } else {
-            Err("Debug readback not initialized. Call init_debug_readback() first.".to_string())
+            Err(RendererError::InvalidOperation(
+                "Debug readback not initialized. Call init_debug_readback() first.".into(),
+            ))
         }
     }
 
@@ -389,7 +394,7 @@ impl GlobalParticleSystem {
     /// runtime state (burst counts, accumulators), and reinitializes GPU buffers
     /// (particle data zeroed, dead list repopulated, alive lists cleared, counters reset).
     /// Emitter configurations are preserved.
-    pub fn reset_all(&mut self) -> Result<(), String> {
+    pub fn reset_all(&mut self) -> Result<(), RendererError> {
         info!("Resetting particle system");
 
         self.frame_count = 0;

@@ -4,6 +4,7 @@ use ash::vk;
 use gpu_allocator::vulkan::Allocation;
 use log::info;
 
+use crate::error::RendererError;
 use crate::gpu_buffer::create_buffer;
 use crate::shadow::cascade::ShadowFrameData;
 use crate::vulkan::context::VulkanContext;
@@ -104,17 +105,21 @@ impl ShadowBuffers {
         pipeline_layout: vk::PipelineLayout,
         descriptor_set: vk::DescriptorSet,
         frame_idx: usize,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         let shadow_atlas_view = self
             .shadow_atlas_views
             .get(frame_idx)
             .and_then(|v| *v)
             .filter(|v| *v != vk::ImageView::null())
-            .ok_or_else(|| "Shadow atlas view not set or null".to_string())?;
+            .ok_or_else(|| {
+                RendererError::InvalidOperation("Shadow atlas view not set or null".into())
+            })?;
         let shadow_sampler = self
             .shadow_sampler
             .filter(|s| *s != vk::Sampler::null())
-            .ok_or_else(|| "Shadow sampler not set or null".to_string())?;
+            .ok_or_else(|| {
+                RendererError::InvalidOperation("Shadow sampler not set or null".into())
+            })?;
 
         let buffer_info = [vk::DescriptorBufferInfo::default()
             .buffer(self.shadow_data_buffer)

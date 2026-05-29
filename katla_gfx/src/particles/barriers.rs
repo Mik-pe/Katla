@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::RendererError;
 
 use crate::sync::{
     AccessFlags2, BufferMemoryBarrier2, DependencyInfo, PipelineStage2Flags, VkBuffer,
@@ -9,7 +10,7 @@ impl GlobalParticleSystem {
         &self,
         command_buffer: vk::CommandBuffer,
         frame_index: usize,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         let particle_buffer = self.buffer.particle_buffer();
         let counters_buffer = self.buffer.counters_buffer(frame_index);
         let device = &self.context.device;

@@ -4,6 +4,8 @@ use std::rc::Rc;
 
 use ash::vk;
 use bytemuck::{Pod, Zeroable};
+
+use crate::error::RendererError;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc};
 use std::mem::ManuallyDrop;
 
@@ -166,17 +168,19 @@ impl GlobalParticleBuffer {
     const SHADER_MAX_PARTICLES: u32 = 1_048_576;
 
     /// Create a new global particle buffer.
-    pub fn new(context: Rc<VulkanContext>, max_particles: u32) -> Result<Self, String> {
+    pub fn new(context: Rc<VulkanContext>, max_particles: u32) -> Result<Self, RendererError> {
         // Validate max_particles parameter to prevent allocation failures and shader overflow
         if max_particles == 0 {
-            return Err("max_particles must be greater than 0".to_string());
+            return Err(RendererError::InvalidOperation(
+                "max_particles must be greater than 0".into(),
+            ));
         }
         if max_particles > Self::SHADER_MAX_PARTICLES {
-            return Err(format!(
+            return Err(RendererError::ResourceCreationFailed(format!(
                 "max_particles ({}) exceeds shader limit ({}), please update shaders if more particles are needed",
                 max_particles,
                 Self::SHADER_MAX_PARTICLES
-            ));
+            )));
         }
 
         let alignment = unsafe {
@@ -443,10 +447,10 @@ impl GlobalParticleBuffer {
 
         for (name, offset) in offsets.iter() {
             if offset % min_storage_buffer_offset_alignment != 0 {
-                return Err(format!(
+                return Err(RendererError::InvalidOperation(format!(
                     "Buffer offset for {} ({}) is not aligned to min_storage_buffer_offset_alignment ({})",
                     name, offset, min_storage_buffer_offset_alignment
-                ));
+                )));
             }
         }
 
@@ -465,7 +469,7 @@ impl GlobalParticleBuffer {
     }
 
     /// Initialize all index lists (dead list starts full, alive lists start empty).
-    pub fn initialize_index_lists(&self) -> Result<(), String> {
+    pub fn initialize_index_lists(&self) -> Result<(), RendererError> {
         let cmd = self
             .context
             .begin_single_time_commands()
@@ -719,7 +723,7 @@ impl GlobalParticleBuffer {
     ///
     /// Invalidates mapped memory before reading to ensure GPU writes are visible.
     /// Must be called after the GPU command buffer that wrote to counters has completed.
-    pub fn get_alive_count(&self, frame_index: usize) -> Result<u32, String> {
+    pub fn get_alive_count(&self, frame_index: usize) -> Result<u32, RendererError> {
         let fi = frame_index % 2;
         let counters_allocation = &self.counters_allocations[fi];
         let _ = self.context.invalidate_mapped_memory(
@@ -738,7 +742,7 @@ impl GlobalParticleBuffer {
     ///
     /// Invalidates mapped memory before reading to ensure GPU writes are visible.
     /// Must be called after the GPU command buffer that wrote to counters has completed.
-    pub fn get_dead_count(&self, frame_index: usize) -> Result<u32, String> {
+    pub fn get_dead_count(&self, frame_index: usize) -> Result<u32, RendererError> {
         let fi = frame_index % 2;
         let counters_allocation = &self.counters_allocations[fi];
         let _ = self.context.invalidate_mapped_memory(
