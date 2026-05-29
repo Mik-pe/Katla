@@ -117,8 +117,8 @@
 
 ### Phase 10: Physics scripting polish
 
-- [ ] **Expose `apply_force` / `apply_impulse` to Luau scripts** — Scripts can raycast but cannot apply forces or impulses to physics bodies. Add `world:apply_force(entity_id, force: Vec3)` and `world:apply_impulse(entity_id, impulse: Vec3)` script bindings.
-- [ ] **Expose body velocity read/write to scripts** — Add `world:get_velocity(entity_id) -> Vec3` and `world:set_velocity(entity_id, velocity: Vec3)` for script-driven physics control.
+- [x] **Expose `apply_force` / `apply_impulse` to Luau scripts** — Scripts can raycast but cannot apply forces or impulses to physics bodies. Add `world:apply_force(entity_id, force: Vec3)` and `world:apply_impulse(entity_id, impulse: Vec3)` script bindings.
+- [x] **Expose body velocity read/write to scripts** — Add `world:get_velocity(entity_id) -> Vec3` and `world:set_velocity(entity_id, velocity: Vec3)` for script-driven physics control.
 - [ ] **Expose trigger volume queries to scripts** — Scripts should be able to check if an entity with a `TriggerVolume` is currently overlapping with specific entities, not just receive enter/exit events.
 - [ ] **Add physics collision event scripting** — Wire `PendingPhysicsEvents` into the script event system so scripts can subscribe to collision events via `world:on_event("collision_enter", callback)` instead of needing a separate resource.
 
@@ -614,7 +614,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### P2 - Resource Management
 - [x] **Fix pending readback cleanup** — Upgraded warn to error log level in `VulkanRenderer::destroy()` and fixed stale comment referencing nonexistent `cleanup_on_exit()`.
-- [ ] **Use `Option` for nullable Vulkan handles** — Replace manual null checks (`!= vk::DescriptorPool::null()`) with `Option<vk::DescriptorPool>` throughout
+- [ ] **Use `Option` for nullable Vulkan handles** — Replace manual null checks (`!= vk::DescriptorPool::null()`) with `Option<vk::DescriptorPool>` throughout. ComputePass and OutlineSubsystem converted; remaining structs need same treatment.
 - [x] **Add runtime bindless texture limit warnings** — `MAX_BINDLESS_TEXTURES = 4096` has no runtime check. Add warning when approaching limit, error when exceeded
 
 ### P3 - Error Handling
