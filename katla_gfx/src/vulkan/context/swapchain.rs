@@ -30,7 +30,7 @@ impl RenderTexture {
                 self.context.device.destroy_image_view(ds_view.vk(), None);
             }
 
-            let image_memory = std::mem::replace(&mut self.image_memory, Allocation::default());
+            let image_memory = std::mem::take(&mut self.image_memory);
             self.context.free_image(self.image, image_memory);
         }
     }

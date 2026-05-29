@@ -4,7 +4,6 @@ use ash::{Entry, ext::debug_utils::Instance as DebugInstance, vk};
 use log::debug;
 
 use super::LAYER_KHRONOS_VALIDATION;
-use crate::error::ValidationMode;
 
 /// Validation message severity level (internal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

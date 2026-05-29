@@ -3,31 +3,23 @@
 //! MetalRenderer wraps MetalContext and provides the same rendering API as
 //! VulkanRenderer, allowing katla_app to be generic over the graphics backend.
 
-use std::collections::HashMap;
 use std::mem;
 
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal::{
-    MTLBlitCommandEncoder, MTLCommandBuffer, MTLCommandEncoder, MTLDevice, MTLFence,
-    MTLRenderCommandEncoder, MTLTexture,
-};
+use objc2_metal::{MTLCommandBuffer, MTLDevice, MTLTexture};
 
-use crate::backend::command::{
-    ColorAttachmentInfo, DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType,
-    RenderPassInfo, ShaderStages,
-};
+use crate::backend::command::GpuCommandBuffer;
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::handle::{MaterialHandle, MeshHandle, ResourceStorage, SkeletonHandle, TextureHandle};
 
-use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::renderer::MAX_OBJECTS_PER_FRAME;
 use crate::renderer::gpu_renderer::GpuRenderer;
 use crate::renderer::pipeline_kind::PipelineKind;
 use crate::renderer::types::{DrawList, FrameUniforms};
 use crate::size::Size2D;
-use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
+use crate::texture::{ImageFormat, TextureDescriptor};
 use crate::viewport::Viewport;
 
 use super::animation::MetalAnimationSystem;
@@ -40,7 +32,7 @@ use super::outline::MetalOutlineSubsystem;
 use super::particle::MetalParticleSubsystem;
 use super::picking::MetalPickingSubsystem;
 use super::shadow::MetalShadowSubsystem;
-use super::texture::{MetalTexture, MetalTextureView};
+use super::texture::MetalTextureView;
 use super::ui_renderer::MetalUIRenderer;
 
 pub(crate) const OBJECT_UNIFORM_SIZE: u64 = 16 * 4 + 4 * 4 + 4 * 4 + 4 * 4;
@@ -302,7 +294,7 @@ impl MetalRenderer {
                 use crate::renderer::types::{GpuCapabilities, GpuVendor};
                 GpuCapabilities {
                     max_texture_size: 16384,
-                    max_bindless_textures: features.max_bindless_textures as u32,
+                    max_bindless_textures: features.max_bindless_textures,
                     supports_compute: true,
                     max_frames_in_flight: FRAMES_IN_FLIGHT,
                     vendor: GpuVendor::Apple,
@@ -476,10 +468,10 @@ impl MetalRenderer {
 
         let view_matrix = self.frame_uniforms.view_matrix;
         let proj_matrix = self.frame_uniforms.proj_matrix;
-        if let Some(ref lc) = self.light_culling {
-            if lc.light_count() > 0 {
-                self.dispatch_light_culling(&(), &view_matrix, &proj_matrix);
-            }
+        if let Some(ref lc) = self.light_culling
+            && lc.light_count() > 0
+        {
+            self.dispatch_light_culling(&(), &view_matrix, &proj_matrix);
         }
 
         self.execute_metal_passes(pending, frame_graph, frame_idx)?;
@@ -543,10 +535,10 @@ impl MetalRenderer {
         let ui_data = frame_graph
             .pass_id("ui")
             .and_then(|id| pending.remove(&(id.0 as usize)));
-        if let Some(data) = &ui_data {
-            if let Some(ui_list) = data.ui_draw_lists.first() {
-                self.pending_ui_draw_list = Some(ui_list.clone());
-            }
+        if let Some(data) = &ui_data
+            && let Some(ui_list) = data.ui_draw_lists.first()
+        {
+            self.pending_ui_draw_list = Some(ui_list.clone());
         }
 
         self.render_frame()?;
@@ -605,10 +597,10 @@ impl MetalRenderer {
 
     /// Recreate light culling buffers for new screen dimensions.
     pub fn resize_light_culling(&mut self, screen_width: u32, screen_height: u32) {
-        if let Some(ref mut lc) = self.light_culling {
-            if let Err(e) = lc.resize(&self.context, screen_width, screen_height) {
-                log::error!("Failed to resize Metal light culling: {}", e);
-            }
+        if let Some(ref mut lc) = self.light_culling
+            && let Err(e) = lc.resize(&self.context, screen_width, screen_height)
+        {
+            log::error!("Failed to resize Metal light culling: {}", e);
         }
     }
 
@@ -667,10 +659,10 @@ impl MetalRenderer {
 
     /// Render the shadow pass for all cascades.
     pub fn render_shadow_pass(&mut self) -> Result<(), RendererError> {
-        let Some(ref shadow_map) = self.shadow.shadow_map_view() else {
+        let Some(shadow_map) = self.shadow.shadow_map_view() else {
             return Ok(());
         };
-        let Some(ref pipeline) = self.shadow.pipeline() else {
+        let Some(pipeline) = self.shadow.pipeline() else {
             return Ok(());
         };
         let Some(ref draw_list) = self.pending_draw_list else {
@@ -688,7 +680,7 @@ impl MetalRenderer {
 
         let mut cmd_buffer = self.context.create_command_buffer();
         cmd_buffer.begin();
-        unsafe {
+        {
             let label = objc2_foundation::NSString::from_str("shadow_pass");
             cmd_buffer.inner.setLabel(Some(&label));
         }
@@ -717,7 +709,7 @@ impl MetalRenderer {
 
     /// Render the depth prepass.
     pub fn render_depth_prepass(&mut self) -> Result<(), RendererError> {
-        let Some(ref pipeline) = self.depth_prepass.pipeline() else {
+        let Some(pipeline) = self.depth_prepass.pipeline() else {
             return Ok(());
         };
         let Some(ref draw_list) = self.pending_draw_list else {
@@ -738,7 +730,7 @@ impl MetalRenderer {
 
         let mut cmd_buffer = self.context.create_command_buffer();
         cmd_buffer.begin();
-        unsafe {
+        {
             let label = objc2_foundation::NSString::from_str("depth_prepass");
             cmd_buffer.inner.setLabel(Some(&label));
         }
@@ -766,10 +758,10 @@ impl MetalRenderer {
 
     /// Render the outline pass for selected objects.
     pub fn render_outline_pass(&mut self) -> Result<(), RendererError> {
-        let Some(ref stencil_pipeline) = self.outline.stencil_mark_pipeline() else {
+        let Some(stencil_pipeline) = self.outline.stencil_mark_pipeline() else {
             return Ok(());
         };
-        let Some(ref outline_pipeline) = self.outline.outline_draw_pipeline() else {
+        let Some(outline_pipeline) = self.outline.outline_draw_pipeline() else {
             return Ok(());
         };
         let Some(ref draw_list) = self.pending_draw_list else {

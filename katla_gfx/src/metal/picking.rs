@@ -189,7 +189,7 @@ impl MetalPickingSubsystem {
 
         let cmd_buffer = context.create_command_buffer();
         let label = NSString::from_str("picking_readback");
-        unsafe { cmd_buffer.inner.setLabel(Some(&label)) };
+        cmd_buffer.inner.setLabel(Some(&label));
 
         // Use blit encoder to copy a single pixel from GPU-private texture to Shared buffer
         let blit_encoder = cmd_buffer
@@ -336,10 +336,8 @@ pub(crate) fn render_object_id_pass(
             current_is_skinned = is_skinned;
         }
 
-        if is_skinned {
-            if let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton.index()) {
-                encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
-            }
+        if is_skinned && let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton.index()) {
+            encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
         }
 
         encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);

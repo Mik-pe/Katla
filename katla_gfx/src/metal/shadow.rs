@@ -16,7 +16,7 @@ use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
 use super::buffer::MetalBuffer;
 use super::context::MetalContext;
 use super::pipeline::MetalGraphicsPipeline;
-use super::texture::{MetalTexture, MetalTextureView};
+use super::texture::MetalTextureView;
 
 const DEFAULT_SHADOW_RESOLUTION: u32 = 2048;
 const DEFAULT_CASCADE_COUNT: u32 = 4;

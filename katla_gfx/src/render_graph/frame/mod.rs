@@ -347,7 +347,7 @@ impl<'a> Frame<'a, VulkanRenderer> {
                     if let Some(ref compute_fn) = pass.compute_fn {
                         compute_fn(self, &cmd, pass.pipeline.unwrap_or_default())?;
                     } else if let Some(pipeline) = pass.pipeline {
-                        self.execute_compute_pass(&cmd, pass, pipeline, data.dispatch.clone())?;
+                        self.execute_compute_pass(&cmd, pass, pipeline, data.dispatch)?;
                     } else {
                         log::warn!(
                             "Compute pass '{}' has no pipeline and no compute_fn",

@@ -417,11 +417,11 @@ impl GlobalParticleSystem {
     /// returns zeros if unavailable.
     pub fn emitter_alive_counts(&self) -> Vec<u32> {
         let n = self.emitter_pool.emitters.len();
-        if let Some(ref readback) = self.debug_readback {
-            if let Ok(debug_data) = readback.read(&self.buffer) {
-                let counts = debug_data.emitter_alive_counts(n);
-                return counts[..n].to_vec();
-            }
+        if let Some(ref readback) = self.debug_readback
+            && let Ok(debug_data) = readback.read(&self.buffer)
+        {
+            let counts = debug_data.emitter_alive_counts(n);
+            return counts[..n].to_vec();
         }
         vec![0; n]
     }

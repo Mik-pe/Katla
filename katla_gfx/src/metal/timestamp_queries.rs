@@ -30,11 +30,9 @@ impl MetalTimestampQueries {
         desc.setStorageMode(MTLStorageMode::Shared);
         desc.setLabel(&NSString::from_str("Katla Timestamp Queries"));
 
-        let sample_buffer = unsafe {
-            device
-                .newCounterSampleBufferWithDescriptor_error(&desc)
-                .ok()
-        };
+        let sample_buffer = device
+            .newCounterSampleBufferWithDescriptor_error(&desc)
+            .ok();
 
         if sample_buffer.is_none() {
             log::warn!("Failed to create Metal counter sample buffer for timestamp queries");

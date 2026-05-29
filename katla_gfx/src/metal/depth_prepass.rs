@@ -162,10 +162,8 @@ pub(crate) fn render_depth_prepass(
             current_is_skinned = is_skinned;
         }
 
-        if is_skinned {
-            if let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton.index()) {
-                encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
-            }
+        if is_skinned && let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton.index()) {
+            encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
         }
 
         encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);

@@ -151,18 +151,18 @@ impl RenderGraphBackend for VulkanRenderer {
     }
 
     fn transient_texture_view(texture: &Self::TransientTexture) -> Self::ImageView {
-        texture.image_view.clone()
+        texture.image_view
     }
 
     fn swapchain_image_view(&self, image_index: u32) -> Self::ImageView {
-        self.frame_context.swapchain_image_views[image_index as usize].clone()
+        self.frame_context.swapchain_image_views[image_index as usize]
     }
 
     fn depth_image_view(&self, frame_index: usize) -> Option<Self::ImageView> {
         self.frame_context
             .depth_render_textures
             .get(frame_index)
-            .map(|dt| dt.image_view.clone())
+            .map(|dt| dt.image_view)
     }
 
     fn transition_texture(

@@ -380,7 +380,7 @@ impl VulkanRenderer {
             };
             GpuCapabilities {
                 max_texture_size: props.limits.max_image_dimension2_d,
-                max_bindless_textures: MAX_BINDLESS_TEXTURES as u32,
+                max_bindless_textures: MAX_BINDLESS_TEXTURES,
                 supports_compute: true,
                 max_frames_in_flight: FRAMES_IN_FLIGHT,
                 vendor,
@@ -1469,10 +1469,7 @@ impl Drop for OutputRenderTarget {
                 .device
                 .destroy_image_view(self.color_image_view, None);
             self.context.device.destroy_image(self.color_image, None);
-            let memory = std::mem::replace(
-                &mut self.color_memory,
-                gpu_allocator::vulkan::Allocation::default(),
-            );
+            let memory = std::mem::take(&mut self.color_memory);
             self.context.allocator.free(memory, "output render target");
         }
     }

@@ -1,7 +1,6 @@
 use objc2_metal::MTLPixelFormat;
 
 use crate::error::RendererError;
-use crate::pipeline::CompareOp;
 
 use super::metal_renderer::{MetalRenderer, read_shader};
 use super::shader::{self, ShaderProfile};

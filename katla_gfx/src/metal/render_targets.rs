@@ -1,4 +1,3 @@
-use crate::error::RendererError;
 use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
 
 use super::metal_renderer::MetalRenderer;

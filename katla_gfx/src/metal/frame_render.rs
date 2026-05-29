@@ -5,11 +5,8 @@
 
 use std::mem;
 
-use objc2::rc::Retained;
-use objc2::runtime::ProtocolObject;
 use objc2_metal::{
     MTLBlitCommandEncoder, MTLCommandBuffer, MTLCommandEncoder, MTLRenderCommandEncoder,
-    MTLRenderStages, MTLResourceUsage,
 };
 
 use crate::backend::command::{
@@ -22,7 +19,6 @@ use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::renderer::types::FrameUniforms;
 use crate::texture::ImageFormat;
 
-use super::buffer::MetalBuffer;
 use super::metal_renderer::MetalRenderer;
 use super::texture::{MetalTexture, MetalTextureView};
 
@@ -51,7 +47,7 @@ impl MetalRenderer {
 
         let mut cmd_buffer = self.context.create_command_buffer();
         cmd_buffer.begin();
-        unsafe {
+        {
             let label = objc2_foundation::NSString::from_str("main_render");
             cmd_buffer.inner.setLabel(Some(&label));
         }
@@ -62,31 +58,29 @@ impl MetalRenderer {
         // =========================================================================
         // Pass 0: Shadow cascade rendering → shadow map texture
         // =========================================================================
-        if let Some(shadow_draw_list) = self.pending_shadow_draw_list.take() {
-            if !shadow_draw_list.draws.is_empty() {
-                if let (Some(shadow_pipeline), Some(shadow_map_view)) =
-                    (self.shadow.pipeline(), self.shadow.shadow_map_view())
-                {
-                    let shadow_res = self.shadow.shadow_resolution();
-                    let frame_buf = self.current_frame_uniform_buffer().unwrap();
-                    let object_buf = self.current_object_storage_buffer().unwrap();
-                    let shadow_buf = self.shadow_cascade_buffer.as_ref().unwrap();
-                    for cascade_idx in 0..self.shadow.cascade_count() as usize {
-                        super::shadow::render_cascade(
-                            &mut cmd_buffer,
-                            shadow_pipeline,
-                            shadow_map_view,
-                            shadow_res,
-                            frame_buf,
-                            object_buf,
-                            shadow_buf,
-                            cascade_idx as u32,
-                            &self.meshes,
-                            &self.materials,
-                            &shadow_draw_list,
-                        );
-                    }
-                }
+        if let Some(shadow_draw_list) = self.pending_shadow_draw_list.take()
+            && !shadow_draw_list.draws.is_empty()
+            && let (Some(shadow_pipeline), Some(shadow_map_view)) =
+                (self.shadow.pipeline(), self.shadow.shadow_map_view())
+        {
+            let shadow_res = self.shadow.shadow_resolution();
+            let frame_buf = self.current_frame_uniform_buffer().unwrap();
+            let object_buf = self.current_object_storage_buffer().unwrap();
+            let shadow_buf = self.shadow_cascade_buffer.as_ref().unwrap();
+            for cascade_idx in 0..self.shadow.cascade_count() as usize {
+                super::shadow::render_cascade(
+                    &mut cmd_buffer,
+                    shadow_pipeline,
+                    shadow_map_view,
+                    shadow_res,
+                    frame_buf,
+                    object_buf,
+                    shadow_buf,
+                    cascade_idx as u32,
+                    &self.meshes,
+                    &self.materials,
+                    &shadow_draw_list,
+                );
             }
         }
 
@@ -134,7 +128,7 @@ impl MetalRenderer {
                 encoder.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
             }
 
-            Self::bind_common_resources(&self, &mut encoder);
+            Self::bind_common_resources(self, &mut encoder);
 
             if let Some(ref sky_pipeline) = self.sky_pipeline {
                 if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
@@ -145,7 +139,7 @@ impl MetalRenderer {
             }
 
             if let Some(draw_list) = &draw_list {
-                Self::draw_objects(&self, &mut encoder, draw_list);
+                Self::draw_objects(self, &mut encoder, draw_list);
             }
 
             encoder.end_encoding();
@@ -179,7 +173,7 @@ impl MetalRenderer {
                 encoder.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
             }
 
-            Self::bind_common_resources(&self, &mut encoder);
+            Self::bind_common_resources(self, &mut encoder);
 
             if let Some(ref sky_pipeline) = self.sky_pipeline {
                 if let (Some(frame_buf), Some(object_buf)) = (
@@ -201,7 +195,7 @@ impl MetalRenderer {
             }
 
             if let Some(draw_list) = &draw_list {
-                Self::draw_objects(&self, &mut encoder, draw_list);
+                Self::draw_objects(self, &mut encoder, draw_list);
             }
 
             encoder.end_encoding();
@@ -210,89 +204,89 @@ impl MetalRenderer {
         // =========================================================================
         // Pass 1.5: Outline (stencil mark + outline draw on HDR texture)
         // =========================================================================
-        if let Some(outline_draw_list) = self.pending_outline_draw_list.take() {
-            if !outline_draw_list.draws.is_empty() && has_tonemap {
-                let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
-                let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
-                    RendererError::InvalidOperation(
-                        "Outline pass requires D32SfloatS8Uint depth-stencil texture".into(),
-                    )
-                })?;
-                let frame_buf = self.current_frame_uniform_buffer().unwrap();
-                let object_buf = self.current_object_storage_buffer().unwrap();
-                let w = self.drawable_size.width as u32;
-                let h = self.drawable_size.height as u32;
+        if let Some(outline_draw_list) = self.pending_outline_draw_list.take()
+            && !outline_draw_list.draws.is_empty()
+            && has_tonemap
+        {
+            let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
+            let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
+                RendererError::InvalidOperation(
+                    "Outline pass requires D32SfloatS8Uint depth-stencil texture".into(),
+                )
+            })?;
+            let frame_buf = self.current_frame_uniform_buffer().unwrap();
+            let object_buf = self.current_object_storage_buffer().unwrap();
+            let w = self.drawable_size.width;
+            let h = self.drawable_size.height;
 
-                if let Some(stencil_pipeline) = self.outline.stencil_mark_pipeline() {
-                    super::outline::render_stencil_mark(
-                        &mut cmd_buffer,
-                        stencil_pipeline,
-                        self.outline.stencil_mark_skinned_pipeline(),
-                        geometry_hdr_view,
-                        depth_view,
-                        w,
-                        h,
-                        frame_buf,
-                        object_buf,
-                        &self.meshes,
-                        &self.materials,
-                        &outline_draw_list,
-                        &self.skeletons,
-                    );
-                }
+            if let Some(stencil_pipeline) = self.outline.stencil_mark_pipeline() {
+                super::outline::render_stencil_mark(
+                    &mut cmd_buffer,
+                    stencil_pipeline,
+                    self.outline.stencil_mark_skinned_pipeline(),
+                    geometry_hdr_view,
+                    depth_view,
+                    w,
+                    h,
+                    frame_buf,
+                    object_buf,
+                    &self.meshes,
+                    &self.materials,
+                    &outline_draw_list,
+                    &self.skeletons,
+                );
+            }
 
-                if let Some(outline_pipeline) = self.outline.outline_draw_pipeline() {
-                    super::outline::render_outline(
-                        &mut cmd_buffer,
-                        outline_pipeline,
-                        self.outline.outline_draw_skinned_pipeline(),
-                        geometry_hdr_view,
-                        depth_view,
-                        w,
-                        h,
-                        frame_buf,
-                        object_buf,
-                        &self.meshes,
-                        &self.materials,
-                        &outline_draw_list,
-                        &self.skeletons,
-                    );
-                }
+            if let Some(outline_pipeline) = self.outline.outline_draw_pipeline() {
+                super::outline::render_outline(
+                    &mut cmd_buffer,
+                    outline_pipeline,
+                    self.outline.outline_draw_skinned_pipeline(),
+                    geometry_hdr_view,
+                    depth_view,
+                    w,
+                    h,
+                    frame_buf,
+                    object_buf,
+                    &self.meshes,
+                    &self.materials,
+                    &outline_draw_list,
+                    &self.skeletons,
+                );
             }
         }
 
         // =========================================================================
         // Pass 1.6: Object-ID picking → R32Uint texture
         // =========================================================================
-        if let Some(ref picking_dl) = picking_draw_list {
-            if !picking_dl.draws.is_empty() {
-                if let (Some(picking_pipeline), Some(id_view), Some(depth_view)) = (
-                    self.picking.pipeline(),
-                    self.picking.object_id_texture(),
-                    self.depth_stencil_view.as_ref(),
-                ) {
-                    let frame_buf = self.current_frame_uniform_buffer().unwrap();
-                    let object_buf = self.current_object_storage_buffer().unwrap();
-                    let w = self.drawable_size.width as u32;
-                    let h = self.drawable_size.height as u32;
+        if let Some(ref picking_dl) = picking_draw_list
+            && !picking_dl.draws.is_empty()
+            && let (Some(picking_pipeline), Some(id_view), Some(depth_view)) = (
+                self.picking.pipeline(),
+                self.picking.object_id_texture(),
+                self.depth_stencil_view.as_ref(),
+            )
+        {
+            let frame_buf = self.current_frame_uniform_buffer().unwrap();
+            let object_buf = self.current_object_storage_buffer().unwrap();
+            let w = self.drawable_size.width;
+            let h = self.drawable_size.height;
 
-                    super::picking::render_object_id_pass(
-                        &mut cmd_buffer,
-                        picking_pipeline,
-                        self.picking.pipeline_skinned(),
-                        id_view,
-                        depth_view,
-                        w,
-                        h,
-                        frame_buf,
-                        object_buf,
-                        &self.meshes,
-                        &self.materials,
-                        picking_dl,
-                        &self.skeletons,
-                    );
-                }
-            }
+            super::picking::render_object_id_pass(
+                &mut cmd_buffer,
+                picking_pipeline,
+                self.picking.pipeline_skinned(),
+                id_view,
+                depth_view,
+                w,
+                h,
+                frame_buf,
+                object_buf,
+                &self.meshes,
+                &self.materials,
+                picking_dl,
+                &self.skeletons,
+            );
         }
 
         // =========================================================================
@@ -421,115 +415,101 @@ impl MetalRenderer {
         // =========================================================================
         // Pass 3: UI overlay → drawable (loads previous pass output)
         // =========================================================================
-        if let Some(ui_draw_list) = self.pending_ui_draw_list.take() {
-            if !ui_draw_list.is_empty() {
-                if self
-                    .ui_renderer
-                    .upload_draw_list(&self.context, &ui_draw_list)
-                    .is_ok()
-                {
-                    let ui_material_handle = self.ui_renderer.ui_material();
-                    if let Some(ui_mat_handle) = ui_material_handle {
-                        if let Some(ui_material) = self.materials.get(ui_mat_handle.index()) {
-                            if let Some(ref ui_pipeline) = ui_material.pipeline {
-                                drawable_written = true;
-                                // When tonemap writes to viewport_0 (offscreen), the drawable
-                                // has no prior content — clear it and let UI draw everything.
-                                // Otherwise the tonemap wrote to the drawable directly, so load it.
-                                let ui_load_op = if self.tonemap_output_view.is_some() {
-                                    LoadOp::Clear
-                                } else {
-                                    LoadOp::Load
-                                };
-                                let ui_pass_info = RenderPassInfo {
-                                    color_attachments: vec![ColorAttachmentInfo {
-                                        view: drawable_view.clone(),
-                                        load_op: ui_load_op,
-                                        store_op: StoreOp::Store,
-                                        clear_value: ClearValue::OPAQUE_BLACK,
-                                    }],
-                                    depth_attachment: None,
-                                };
+        if let Some(ui_draw_list) = self.pending_ui_draw_list.take()
+            && !ui_draw_list.is_empty()
+            && self
+                .ui_renderer
+                .upload_draw_list(&self.context, &ui_draw_list)
+                .is_ok()
+        {
+            let ui_material_handle = self.ui_renderer.ui_material();
+            if let Some(ui_mat_handle) = ui_material_handle
+                && let Some(ui_material) = self.materials.get(ui_mat_handle.index())
+                && let Some(ref ui_pipeline) = ui_material.pipeline
+            {
+                drawable_written = true;
+                // When tonemap writes to viewport_0 (offscreen), the drawable
+                // has no prior content — clear it and let UI draw everything.
+                // Otherwise the tonemap wrote to the drawable directly, so load it.
+                let ui_load_op = if self.tonemap_output_view.is_some() {
+                    LoadOp::Clear
+                } else {
+                    LoadOp::Load
+                };
+                let ui_pass_info = RenderPassInfo {
+                    color_attachments: vec![ColorAttachmentInfo {
+                        view: drawable_view.clone(),
+                        load_op: ui_load_op,
+                        store_op: StoreOp::Store,
+                        clear_value: ClearValue::OPAQUE_BLACK,
+                    }],
+                    depth_attachment: None,
+                };
 
-                                let mut encoder = cmd_buffer.begin_render_pass(ui_pass_info);
+                let mut encoder = cmd_buffer.begin_render_pass(ui_pass_info);
 
-                                if let Some(ref fence) = self.tonemap_fence {
-                                    encoder.inner.waitForFence_beforeStages(
-                                        fence,
-                                        objc2_metal::MTLRenderStages::Fragment,
-                                    );
-                                }
+                if let Some(ref fence) = self.tonemap_fence {
+                    encoder
+                        .inner
+                        .waitForFence_beforeStages(fence, objc2_metal::MTLRenderStages::Fragment);
+                }
 
-                                let dw = self.drawable_size.width as f32;
-                                let dh = self.drawable_size.height as f32;
-                                encoder.set_viewport(0.0, 0.0, dw, dh, 0.0, 1.0);
+                let dw = self.drawable_size.width as f32;
+                let dh = self.drawable_size.height as f32;
+                encoder.set_viewport(0.0, 0.0, dw, dh, 0.0, 1.0);
 
-                                encoder.bind_graphics_pipeline(ui_pipeline);
+                encoder.bind_graphics_pipeline(ui_pipeline);
 
-                                if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
-                                    unsafe {
-                                        encoder.inner.setVertexBuffer_offset_atIndex(
-                                            Some(arg_buffer),
-                                            0,
-                                            9,
-                                        );
-                                        encoder.inner.setFragmentBuffer_offset_atIndex(
-                                            Some(arg_buffer),
-                                            0,
-                                            9,
-                                        );
-                                    }
-                                    encoder.use_buffer(
-                                        arg_buffer,
-                                        objc2_metal::MTLResourceUsage::Read,
-                                        objc2_metal::MTLRenderStages::Vertex
-                                            | objc2_metal::MTLRenderStages::Fragment,
-                                    );
-                                    for texture in self.bindless_manager.registered_textures() {
-                                        encoder.use_texture(
-                                            texture,
-                                            objc2_metal::MTLResourceUsage::Read,
-                                            objc2_metal::MTLRenderStages::Vertex
-                                                | objc2_metal::MTLRenderStages::Fragment,
-                                        );
-                                    }
-                                }
-
-                                if let Some(ref sampler) = self.shared_sampler {
-                                    unsafe {
-                                        encoder.inner.setFragmentSamplerState_atIndex(
-                                            Some(&sampler.inner),
-                                            0,
-                                        );
-                                    }
-                                }
-
-                                if let Some(ref vb) = self.ui_renderer.vertex_buffer() {
-                                    encoder.bind_vertex_buffer(vb, 0, 10);
-                                }
-                                if let Some(ref ib) = self.ui_renderer.index_buffer() {
-                                    encoder.bind_index_buffer(ib, 0, IndexType::Uint32);
-                                }
-                                if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
-                                    encoder.bind_storage_buffer(
-                                        buf_sizes,
-                                        0,
-                                        8,
-                                        ShaderStages::VERTEX_FRAGMENT,
-                                    );
-                                }
-                                self.ui_renderer.render_ui_commands(
-                                    &mut encoder,
-                                    &ui_draw_list,
-                                    self.drawable_size.width,
-                                    self.drawable_size.height,
-                                );
-
-                                encoder.end_encoding();
-                            }
-                        }
+                if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
+                    unsafe {
+                        encoder
+                            .inner
+                            .setVertexBuffer_offset_atIndex(Some(arg_buffer), 0, 9);
+                        encoder
+                            .inner
+                            .setFragmentBuffer_offset_atIndex(Some(arg_buffer), 0, 9);
+                    }
+                    encoder.use_buffer(
+                        arg_buffer,
+                        objc2_metal::MTLResourceUsage::Read,
+                        objc2_metal::MTLRenderStages::Vertex
+                            | objc2_metal::MTLRenderStages::Fragment,
+                    );
+                    for texture in self.bindless_manager.registered_textures() {
+                        encoder.use_texture(
+                            texture,
+                            objc2_metal::MTLResourceUsage::Read,
+                            objc2_metal::MTLRenderStages::Vertex
+                                | objc2_metal::MTLRenderStages::Fragment,
+                        );
                     }
                 }
+
+                if let Some(ref sampler) = self.shared_sampler {
+                    unsafe {
+                        encoder
+                            .inner
+                            .setFragmentSamplerState_atIndex(Some(&sampler.inner), 0);
+                    }
+                }
+
+                if let Some(vb) = self.ui_renderer.vertex_buffer() {
+                    encoder.bind_vertex_buffer(vb, 0, 10);
+                }
+                if let Some(ib) = self.ui_renderer.index_buffer() {
+                    encoder.bind_index_buffer(ib, 0, IndexType::Uint32);
+                }
+                if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
+                    encoder.bind_storage_buffer(buf_sizes, 0, 8, ShaderStages::VERTEX_FRAGMENT);
+                }
+                self.ui_renderer.render_ui_commands(
+                    &mut encoder,
+                    &ui_draw_list,
+                    self.drawable_size.width,
+                    self.drawable_size.height,
+                );
+
+                encoder.end_encoding();
             }
         }
 

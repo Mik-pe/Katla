@@ -154,7 +154,7 @@ impl MetalRenderer {
     }
 
     pub(crate) fn default_material_impl(&self) -> MaterialHandle {
-        self.default_material.unwrap_or(MaterialHandle::default())
+        self.default_material.unwrap_or_default()
     }
 
     pub(crate) fn destroy_material_impl(&mut self, handle: MaterialHandle) {
