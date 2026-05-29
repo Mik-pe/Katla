@@ -564,7 +564,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] **Add `Send + Sync` bounds to `Component` trait** — `Component: Any {}` carries no thread-safety bounds. This means `ComponentStorage<T>` cannot be `Send`, limiting future parallel strategies. Add `Component: Any + Send + Sync` and update all downstream types.
 - [ ] **Track resource access in parallel scheduler** — The `SystemScheduler` DAG only checks `ComponentAccess` conflicts. Systems that access `World::get_resource_mut()` concurrently in the same group cause data races. Extend `ComponentAccess` or add a separate `ResourceAccess` declaration to the `System` trait, and check conflicts in the scheduler's `conflicts()` function.
 - [ ] **Fix `get_component_mut` unconditionally marking dirty** — `get_component_mut` always marks the entity as changed even if no mutation occurs, causing unnecessary `query_changed` results. Add a `Mut<T>` wrapper (like Bevy) that only bumps the dirty flag on actual mutation (via DerefMut) or explicit `bump()` call.
-- [ ] **Remove or integrate dead archetype module** — `archetype/` module (Archetype, ComponentColumn, ArchetypeRegistry) exists but is not exported from `lib.rs` and is unused by the main storage path. Either remove it or integrate it as an alternative storage backend for iteration-heavy workloads. Sparse-set queries scale poorly for multi-component iteration (N-1 random-access lookups per entity).
+- [x] **Remove or integrate dead archetype module** — Removed 860 lines of unused code (Archetype, ComponentColumn, ArchetypeRegistry, Signature). Not referenced by any other module in the crate.
 - [ ] **Add serialization/deserialization for scenes** — No built-in scene save/load. The `scene_tool` module has undo/redo commands but no serialization. Production games need entity + component serialization (blocked on component serialization registry, see Asset Pipeline section).
 - [ ] **Extend event system beyond frame-scoped** — Events are accumulated per frame and flushed at `update()` end. Systems cannot observe events from previous frames. Add buffered events or event persistence for deferred/reactive patterns if needed by gameplay systems.
 
@@ -609,7 +609,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] **Remove Metal-specific methods from `AnyRenderer`** — `set_geometry_hdr_view()`, `set_tonemap_output_view()`, `queue_metal_picking_readback()`, `check_metal_picking_readback()`, `has_pending_metal_picking_readback()` should be in `GpuRenderer` trait or removed
 
 ### P2 - Resource Management
-- [ ] **Fix pending readback cleanup** — `VulkanRenderer::destroy()` silently cleans up pending readback. Should either fail loudly or ensure cleanup happens in normal flow via `wait_for_pending_readback()`
+- [x] **Fix pending readback cleanup** — Upgraded warn to error log level in `VulkanRenderer::destroy()` and fixed stale comment referencing nonexistent `cleanup_on_exit()`.
 - [ ] **Use `Option` for nullable Vulkan handles** — Replace manual null checks (`!= vk::DescriptorPool::null()`) with `Option<vk::DescriptorPool>` throughout
 - [x] **Add runtime bindless texture limit warnings** — `MAX_BINDLESS_TEXTURES = 4096` has no runtime check. Add warning when approaching limit, error when exceeded
 
