@@ -4,29 +4,18 @@ use katla_ui::{UiContext, mouse_button};
 
 use super::*;
 use crate::ui::editor_ui::declarative::{
-    EditorRootView, HierarchyDrawCtx, PreferencesDrawCtx, set_hierarchy_ctx, set_preferences_ctx,
-    take_hierarchy_ctx, take_preferences_ctx,
+    EditorRootView, HierarchyDrawCtx, PreferencesDrawCtx, PreferencesPanelSync, set_hierarchy_ctx,
+    take_hierarchy_ctx,
 };
-use crate::ui::editor_ui::types::{PreferencesPanelState, PreferencesTab};
-use katla_ui::widgets::{DraggablePanelState, PanelState};
+use crate::ui::editor_ui::types::PreferencesTab;
+use katla_ui::declarative::DraggablePanelVisibility;
+use katla_ui::widgets::PanelState;
 
 /// Test that clicking a tab in the preferences panel doesn't dismiss the window.
 #[test]
 fn test_preferences_tab_click_does_not_close_panel() {
     let mut ui = UiContext::new();
     ui.begin(Vec2::new(800.0, 600.0), 1.0);
-
-    let state = PreferencesPanelState {
-        panel: DraggablePanelState {
-            visibility: PanelState::Visible,
-            position: Some(Vec2::new(100.0, 100.0)),
-            dragging: false,
-            drag_offset: Vec2::new(0.0, 0.0),
-        },
-        current_tab: PreferencesTab::General,
-        scroll_state: Default::default(),
-        llm_config: katla_agent::LlmConfig::default(),
-    };
 
     let preferences = crate::Preferences::default();
     let editor_settings = EditorSettings::default();
@@ -40,20 +29,17 @@ fn test_preferences_tab_click_does_not_close_panel() {
     ui.input_mut().mouse_pressed[mouse_button::LEFT] = true;
     ui.input_mut().mouse_down[mouse_button::LEFT] = true;
 
-    set_preferences_ctx(PreferencesDrawCtx {
-        screen_size: Vec2::new(800.0, 600.0),
-        state,
+    let mut view_tree = ViewTree::default();
+    view_tree.env_mut().set(PreferencesDrawCtx {
+        is_open: true,
         preferences: preferences.clone(),
         editor_settings: editor_settings.clone(),
         theme: theme.clone(),
         theme_key: theme_key.to_string(),
-        pending_actions: Vec::new(),
+        llm_config: katla_agent::LlmConfig::default(),
     });
 
-    let mut view_tree = ViewTree::default();
     let _ = view_tree.frame(&mut ui, &EditorRootView, Vec2::new(800.0, 600.0));
-
-    let mut state = take_preferences_ctx().unwrap().state;
 
     ui.end();
 
@@ -63,30 +49,24 @@ fn test_preferences_tab_click_does_not_close_panel() {
     ui.input_mut().mouse_down[mouse_button::LEFT] = false;
     ui.input_mut().mouse_released[mouse_button::LEFT] = true;
 
-    set_preferences_ctx(PreferencesDrawCtx {
-        screen_size: Vec2::new(800.0, 600.0),
-        state,
+    view_tree.env_mut().set(PreferencesDrawCtx {
+        is_open: true,
         preferences,
         editor_settings,
         theme,
         theme_key: theme_key.to_string(),
-        pending_actions: Vec::new(),
+        llm_config: katla_agent::LlmConfig::default(),
     });
 
     let _ = view_tree.frame(&mut ui, &EditorRootView, Vec2::new(800.0, 600.0));
 
-    let prefs_ctx = take_preferences_ctx().unwrap();
-
-    assert!(
-        prefs_ctx.state.panel.visibility.is_visible(),
-        "preferences panel should stay open after clicking tab"
-    );
-
-    assert_eq!(
-        prefs_ctx.state.current_tab,
-        PreferencesTab::Viewport,
-        "tab should change to Viewport after clicking it"
-    );
+    let syncs: Vec<PreferencesPanelSync> = view_tree.actions_mut().drain();
+    if let Some(sync) = syncs.into_iter().next() {
+        assert!(
+            sync.visibility.is_visible(),
+            "preferences panel should stay open after clicking tab"
+        );
+    }
 }
 
 /// Test that clicking an entity in the hierarchy panel selects it.

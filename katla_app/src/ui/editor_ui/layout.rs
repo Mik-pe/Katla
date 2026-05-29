@@ -8,14 +8,13 @@ use katla_ui::{
 use super::declarative::{
     AssetBrowserDrawCtx, ConsoleDrawCtx, EditorRootView, GizmoDrawCtx, GizmoModeChanged,
     HierarchyDrawCtx, InspectorDrawCtx, ParticleInspectorDrawCtx, ParticleInspectorPanelSync,
-    PreferencesDrawCtx, StatusBarData, ToolbarAction, ToolbarDrawCtx, ViewportGridDrawCtx,
-    build_asset_browser_from_ctx, set_co_creator_ctx, set_console_ctx, set_hierarchy_ctx,
-    set_inspector_ctx, set_preferences_ctx, take_co_creator_ctx, take_console_ctx,
-    take_hierarchy_ctx, take_inspector_ctx, take_preferences_ctx,
+    PreferencesDrawCtx, PreferencesPanelSync, StatusBarData, ToolbarAction, ToolbarDrawCtx,
+    ViewportGridDrawCtx, build_asset_browser_from_ctx, set_console_ctx, set_hierarchy_ctx,
+    set_inspector_ctx, take_console_ctx, take_hierarchy_ctx, take_inspector_ctx,
 };
 use super::{
     EditorAction, EditorRenderParams, EditorUI, co_creator,
-    types::{self as editor_types, BottomPanelTab},
+    types::{self as editor_types, BottomPanelTab, PreferencesAction},
 };
 
 const BOTTOM_TAB_HEIGHT: f32 = 28.0;
@@ -401,14 +400,17 @@ impl EditorUI {
         }
 
         // Set contexts for panels that need them before the view tree frame
-        set_preferences_ctx(PreferencesDrawCtx {
-            screen_size,
-            state: std::mem::take(&mut self.preferences_panel_state),
+        let prefs_is_open = self.preferences_panel_state.panel.is_visible();
+        let prefs_llm_config = self.preferences_panel_state.llm_config.clone();
+        let prefs_theme_key = self.theme_key().to_string();
+
+        self.view_tree.env_mut().set(PreferencesDrawCtx {
+            is_open: prefs_is_open,
             preferences: params.preferences.clone(),
             editor_settings: self.editor_settings.clone(),
             theme: self.theme.clone(),
-            theme_key: self.theme_key().to_string(),
-            pending_actions: Vec::new(),
+            theme_key: prefs_theme_key,
+            llm_config: prefs_llm_config,
         });
 
         self.view_tree.env_mut().set(ParticleInspectorDrawCtx {
@@ -417,14 +419,26 @@ impl EditorUI {
             is_open: self.particle_inspector_state.panel.is_visible(),
         });
 
-        if self.co_creator.is_open() {
+        {
             let style = co_creator::CoCreatorStyle::from_theme(&self.theme);
-            set_co_creator_ctx(
-                std::mem::take(&mut self.co_creator),
-                style,
-                screen_size,
-                params.agent_undo_count,
-            );
+            self.view_tree
+                .env_mut()
+                .set(super::declarative::CoCreatorDrawCtx {
+                    messages: self
+                        .co_creator
+                        .messages
+                        .iter()
+                        .map(|m| (m.role.clone(), m.text.clone()))
+                        .collect(),
+                    processing: self.co_creator.processing,
+                    status_message: self.co_creator.status_message.clone(),
+                    user_msg_color: style.user_msg_color,
+                    assistant_msg_color: style.assistant_msg_color,
+                    system_msg_color: style.system_msg_color,
+                    text_muted: style.text_muted,
+                    agent_undo_count: params.agent_undo_count,
+                    is_open: self.co_creator.is_open(),
+                });
         }
 
         let input_consumed = self.view_tree.frame(ui, &EditorRootView, screen_size);
@@ -527,22 +541,58 @@ impl EditorUI {
             self.apply_particle_inspector_action(action);
         }
 
-        if let Some((state, response)) = take_co_creator_ctx() {
-            self.co_creator = state;
-            if let Some(text) = response.submitted_text {
+        for sync in self
+            .view_tree
+            .actions_mut()
+            .drain::<super::declarative::CoCreatorPanelSync>()
+        {
+            self.co_creator.panel.visibility = match sync.visibility {
+                katla_ui::declarative::DraggablePanelVisibility::Hidden => {
+                    katla_ui::widgets::PanelState::Hidden
+                }
+                katla_ui::declarative::DraggablePanelVisibility::JustOpened => {
+                    katla_ui::widgets::PanelState::JustOpened
+                }
+                katla_ui::declarative::DraggablePanelVisibility::Visible => {
+                    katla_ui::widgets::PanelState::Visible
+                }
+            };
+        }
+        for action in self
+            .view_tree
+            .actions_mut()
+            .drain::<super::declarative::CoCreatorSubmitAction>()
+        {
+            let text = action.text;
+            if !text.trim().is_empty() {
+                self.co_creator.submit_message(&text);
                 self.pending_actions
                     .push(EditorAction::CoCreatorRequest(text));
             }
-            if response.undo_clicked {
-                self.pending_actions.push(EditorAction::AgentUndo);
-            }
+        }
+        for _ in self
+            .view_tree
+            .actions_mut()
+            .drain::<super::declarative::CoCreatorUndoAction>()
+        {
+            self.pending_actions.push(EditorAction::AgentUndo);
         }
 
-        if let Some(prefs_ctx) = take_preferences_ctx() {
-            self.preferences_panel_state = prefs_ctx.state;
-            for action in prefs_ctx.pending_actions {
-                self.apply_preferences_action(action);
-            }
+        for sync in self.view_tree.actions_mut().drain::<PreferencesPanelSync>() {
+            self.preferences_panel_state.panel.visibility = match sync.visibility {
+                katla_ui::declarative::DraggablePanelVisibility::Hidden => {
+                    katla_ui::widgets::PanelState::Hidden
+                }
+                katla_ui::declarative::DraggablePanelVisibility::JustOpened => {
+                    katla_ui::widgets::PanelState::JustOpened
+                }
+                katla_ui::declarative::DraggablePanelVisibility::Visible => {
+                    katla_ui::widgets::PanelState::Visible
+                }
+            };
+        }
+        for action in self.view_tree.actions_mut().drain::<PreferencesAction>() {
+            self.apply_preferences_action(action);
         }
 
         if self.bottom_panel_tab == BottomPanelTab::Console
