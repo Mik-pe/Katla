@@ -965,7 +965,7 @@ impl ScriptEngine {
             ScriptVarValue::String(s) => self
                 .vm
                 .create_string(&s)
-                .map(|s| mlua::Value::String(s))
+                .map(mlua::Value::String)
                 .map_err(|e| ScriptError::ExecutionFailed {
                     path: instance.script_path.clone(),
                     line: None,

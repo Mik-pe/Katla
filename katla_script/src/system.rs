@@ -68,14 +68,16 @@ pub struct PendingPhysicsEvents(pub Vec<PhysicsCollisionEvent>);
 
 /// Resource holding script variable snapshots for the editor inspector.
 /// `ScriptSystem` populates this each frame during editing mode.
+type ScriptVarEntry = (
+    katla_ecs::EntityId,
+    String,
+    Vec<(String, crate::engine::ScriptVarValue)>,
+);
+
 #[derive(Default)]
 pub struct ScriptInspectorData {
     /// Per-entity script variable snapshots: (entity_id, script_path, vars)
-    pub entries: Vec<(
-        katla_ecs::EntityId,
-        String,
-        Vec<(String, crate::engine::ScriptVarValue)>,
-    )>,
+    pub entries: Vec<ScriptVarEntry>,
 }
 
 /// Resource telling the script system whether to populate inspector data.
@@ -276,17 +278,16 @@ impl ScriptSystem {
             }
         }
 
-        if !audio_cmds.is_empty() {
-            if let Some(pending) = world.get_resource_mut::<PendingAudioCommands>() {
-                pending.0.extend(audio_cmds);
-            }
+        if !audio_cmds.is_empty()
+            && let Some(pending) = world.get_resource_mut::<PendingAudioCommands>()
+        {
+            pending.0.extend(audio_cmds);
         }
 
-        // Forward raycast commands for app bridge to process
-        if !raycast_cmds.is_empty() {
-            if let Some(pending) = world.get_resource_mut::<PendingRaycastCommands>() {
-                pending.0.extend(raycast_cmds);
-            }
+        if !raycast_cmds.is_empty()
+            && let Some(pending) = world.get_resource_mut::<PendingRaycastCommands>()
+        {
+            pending.0.extend(raycast_cmds);
         }
 
         if let Some(consumer) = self.command_consumer.as_mut() {
@@ -440,7 +441,7 @@ impl ScriptSystem {
     fn dispatch_physics_events(&mut self, world: &mut World) {
         let events: Vec<PhysicsCollisionEvent> =
             match world.get_resource_mut::<PendingPhysicsEvents>() {
-                Some(mut r) => std::mem::take(&mut r.0),
+                Some(r) => std::mem::take(&mut r.0),
                 None => return,
             };
 

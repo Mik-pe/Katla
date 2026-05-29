@@ -409,7 +409,7 @@ impl World {
 
     /// Sorts systems by their execution order.
     fn sort_systems(&mut self) {
-        self.systems.sort_by(|a, b| a.order.cmp(&b.order));
+        self.systems.sort_by_key(|a| a.order);
     }
 
     /// Updates all systems.

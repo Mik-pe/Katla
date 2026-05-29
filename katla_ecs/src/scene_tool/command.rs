@@ -124,8 +124,6 @@ pub struct DestroyEntityCommand {
 
 /// Snapshot of a single component's field values, with restoration function pointers.
 struct ComponentSnapshot {
-    #[allow(dead_code)]
-    type_name: &'static str,
     fields: Vec<(/* field name */ String, FieldValue)>,
     create_default: fn(&mut World, EntityId),
     set_fn: fn(&mut World, EntityId, &str, FieldValue) -> Result<(), SceneToolError>,
@@ -161,7 +159,6 @@ impl DestroyEntityCommand {
             }
             if !fields.is_empty() {
                 self.component_snapshots.push(ComponentSnapshot {
-                    type_name: entry.type_name,
                     fields,
                     create_default: entry.create_default,
                     set_fn: entry.set_field_value,
@@ -396,16 +393,13 @@ impl SceneCommand for RemoveComponentCommand {
 pub struct DuplicateEntityCommand {
     source: EntityId,
     duplicate: Option<EntityId>,
-    #[allow(dead_code)]
-    position_offset: Option<[f32; 3]>,
 }
 
 impl DuplicateEntityCommand {
-    pub fn new(source: EntityId, position_offset: Option<[f32; 3]>) -> Self {
+    pub fn new(source: EntityId, _position_offset: Option<[f32; 3]>) -> Self {
         Self {
             source,
             duplicate: None,
-            position_offset,
         }
     }
 

@@ -218,10 +218,6 @@ impl Voice {
         }
     }
 
-    pub fn is_looping(&self) -> bool {
-        self.looping
-    }
-
     pub fn is_finished(&self) -> bool {
         self.finished.load(Ordering::Relaxed)
     }
