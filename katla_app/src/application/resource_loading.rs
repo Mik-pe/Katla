@@ -87,12 +87,13 @@ impl super::Application {
     /// Load a GLTF/GLB mesh from disk and upload vertex/index data to the GPU.
     ///
     /// Returns a [`MeshHandle`] for the loaded geometry. The handle can be used
-    /// with [`Spawner::spawn_primitive`] or [`DrawableComponent::with_handles`]
+    /// with [`Spawner::spawn_primitive`](crate::spawner::Spawner::spawn_primitive)
+    /// or [`DrawableComponent::with_handles`](katla_app::components::rendering::DrawableComponent::with_handles)
     /// to create renderable entities.
     ///
     /// This does **not** spawn an entity or set up materials/textures/skinning.
     /// For full GLTF import with textures and animation, use
-    /// [`Application::spawn_gltf_model`].
+    /// [`Application::spawn_gltf_model`](crate::application::Application::spawn_gltf_model).
     pub fn load_mesh(
         &mut self,
         path: impl AsRef<std::path::Path>,
