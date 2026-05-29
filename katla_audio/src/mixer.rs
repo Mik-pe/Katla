@@ -348,7 +348,7 @@ impl AudioMixer {
         let id = self.allocate_id();
         let voice = Voice::new(id, buffer, looping, category, self.category_volumes.clone());
 
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.add_voice(voice);
 
         id
@@ -363,52 +363,52 @@ impl AudioMixer {
     }
 
     pub fn set_voice_volume(&self, id: VoiceId, volume: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_volume(id, volume);
     }
 
     pub fn set_voice_volume_tweened(&self, id: VoiceId, volume: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_volume_tweened(id, volume);
     }
 
     pub fn voice_volume(&self, id: VoiceId) -> f32 {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.voice_volume(id)
     }
 
     pub fn set_voice_pan(&self, id: VoiceId, pan: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_pan(id, pan);
     }
 
     pub fn set_voice_pan_tweened(&self, id: VoiceId, pan: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_pan_tweened(id, pan);
     }
 
     pub fn set_voice_pitch(&self, id: VoiceId, pitch: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_pitch(id, pitch);
     }
 
     pub fn set_voice_pitch_tweened(&self, id: VoiceId, pitch: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_pitch_tweened(id, pitch);
     }
 
     pub fn set_voice_occlusion(&self, id: VoiceId, occlusion: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_occlusion(id, occlusion);
     }
 
     pub fn set_voice_tween_speed(&self, id: VoiceId, speed: f32) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_tween_speed(id, speed);
     }
 
     pub fn voice_state(&self, id: VoiceId) -> VoiceState {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.voice_state(id)
     }
 
@@ -427,7 +427,7 @@ impl AudioMixer {
     }
 
     pub fn active_voice_count(&self) -> usize {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.active_voice_count()
     }
 
@@ -440,12 +440,12 @@ impl AudioMixer {
     }
 
     pub fn add_master_effect(&self, effect: Box<dyn crate::effect::AudioEffect + Send>) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.master_effects.add_effect(effect);
     }
 
     pub fn add_aux_bus(&self, bus: AuxBus) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.aux_buses.push(bus);
     }
 
@@ -458,7 +458,7 @@ impl AudioMixer {
         );
         let mut bus = AuxBus::new(1.0, 1.0);
         bus.add_effect(Box::new(effect));
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.aux_buses.push(bus);
     }
 
@@ -485,54 +485,54 @@ impl AudioMixer {
             self.category_volumes.clone(),
         )?;
 
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.add_streaming_voice(voice);
 
         Ok(id)
     }
 
     pub fn set_streaming_voice_volume(&self, id: VoiceId, volume: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_volume(id, volume);
     }
 
     pub fn set_streaming_voice_volume_tweened(&self, id: VoiceId, volume: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_volume_tweened(id, volume);
     }
 
     pub fn streaming_voice_volume(&self, id: VoiceId) -> f32 {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.voice_volume(id)
     }
 
     pub fn set_streaming_voice_pan(&self, id: VoiceId, pan: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_pan(id, pan);
     }
 
     pub fn set_streaming_voice_pan_tweened(&self, id: VoiceId, pan: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_pan_tweened(id, pan);
     }
 
     pub fn set_streaming_voice_pitch(&self, id: VoiceId, pitch: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_pitch(id, pitch);
     }
 
     pub fn set_streaming_voice_pitch_tweened(&self, id: VoiceId, pitch: f32) {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_voice_pitch_tweened(id, pitch);
     }
 
     pub fn streaming_voice_state(&self, id: VoiceId) -> VoiceState {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.voice_state(id)
     }
 
     pub fn set_streaming_voice_tween_speed(&self, id: VoiceId, speed: f32) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.set_tween_speed(id, speed);
     }
 
@@ -547,7 +547,7 @@ impl AudioMixer {
 
     pub fn render(&self, output: &mut [f32]) {
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
             Self::process_commands(&mut state, &self.command_queue);
 
             output.fill(0.0f32);

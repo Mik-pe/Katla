@@ -261,7 +261,13 @@ pub fn start_mcp_server_thread(
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) {
     std::thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new().unwrap();
+        let rt = match tokio::runtime::Runtime::new() {
+            Ok(rt) => rt,
+            Err(e) => {
+                log::error!("Failed to create tokio runtime for MCP server: {}", e);
+                return;
+            }
+        };
         rt.block_on(async {
             let transport = (tokio::io::stdin(), tokio::io::stdout());
             let result = tokio::select! {
