@@ -436,8 +436,8 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 #### Phase 2: Migrate medium panels
 
-- [ ] Migrate Preferences panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `PreferencesDrawCtx`, inject via `Environment`. Use `TabBar` for General/Viewport/AI tabs, `Grid` for label+widget rows, `LabeledSlider`/`Toggle` for settings. Remove `set_preferences_ctx`/`take_preferences_ctx`.
-- [ ] Migrate Co-Creator panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `CoCreatorDrawCtx`. Use `DraggablePanel`, `ScrollView` with markdown-rendered `Text` rows, `TextField` for input. Remove `set_co_creator_ctx`/`take_co_creator_ctx`.
+- [x] Migrate Preferences panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `PreferencesDrawCtx`, inject via `Environment`. Use `TabBar` for General/Viewport/AI tabs, `Grid` for label+widget rows, `LabeledSlider`/`Toggle` for settings. Remove `set_preferences_ctx`/`take_preferences_ctx`.
+- [x] Migrate Co-Creator panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `CoCreatorDrawCtx`. Use `DraggablePanel`, `ScrollView` with `Text` rows, `TextField` for input. Remove `set_co_creator_ctx`/`take_co_creator_ctx`.
 - [x] Migrate Particle Inspector panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ParticleInspectorDrawCtx`. Use `DraggablePanel`, `Section` for particle modules (emitter, color over lifetime, size over lifetime), `LabeledSlider`/`Vec3Slider` per module. Remove `set_particle_inspector_ctx`/`take_particle_inspector_ctx`.
 
 #### Phase 3: Migrate complex panels
