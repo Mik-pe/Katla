@@ -1,6 +1,7 @@
 use ash::vk;
 use log::info;
 
+use crate::error::RendererError;
 use crate::renderer::registry::AssetRegistry;
 use crate::sync::VkShaderModule;
 
@@ -12,7 +13,7 @@ impl GlobalParticleSystem {
         &mut self,
         asset_registry: &mut AssetRegistry,
         shader_module: VkShaderModule,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         use crate::vulkan::material::compute_pipeline::ComputePipelineBuilder;
 
         let compute_layout = self
@@ -46,7 +47,7 @@ impl GlobalParticleSystem {
         &mut self,
         asset_registry: &mut AssetRegistry,
         shader_module: VkShaderModule,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         use crate::vulkan::material::compute_pipeline::ComputePipelineBuilder;
 
         let compute_layout = self
@@ -84,7 +85,7 @@ impl GlobalParticleSystem {
         &mut self,
         asset_registry: &mut AssetRegistry,
         shader_module: VkShaderModule,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         use crate::vulkan::material::compute_pipeline::ComputePipelineBuilder;
 
         let device = &self.context.device;
@@ -143,7 +144,7 @@ impl GlobalParticleSystem {
         asset_registry: &mut AssetRegistry,
         vertex_shader: VkShaderModule,
         fragment_shader: VkShaderModule,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         use crate::pipeline::{CullMode, FrontFace};
         use crate::texture::ImageFormat;
         use crate::vulkan::material::builder::PipelineBuilder;

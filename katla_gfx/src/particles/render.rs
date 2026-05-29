@@ -1,3 +1,5 @@
+use crate::error::RendererError;
+
 use super::*;
 
 impl GlobalParticleSystem {
@@ -60,7 +62,7 @@ impl GlobalParticleSystem {
         layout: vk::PipelineLayout,
         storage_descriptor_set: vk::DescriptorSet,
         frame_index: usize,
-    ) -> Result<(), String> {
+    ) -> Result<(), RendererError> {
         let device = &self.context.device;
 
         unsafe {
@@ -82,10 +84,14 @@ impl GlobalParticleSystem {
                     );
                 }
             } else {
-                return Err("Particle render descriptor set is null".to_string());
+                return Err(RendererError::InvalidOperation(
+                    "Particle render descriptor set is null".into(),
+                ));
             }
         } else {
-            return Err("Particle render descriptor set not allocated".to_string());
+            return Err(RendererError::InvalidOperation(
+                "Particle render descriptor set not allocated".into(),
+            ));
         }
 
         if storage_descriptor_set != vk::DescriptorSet::null() {

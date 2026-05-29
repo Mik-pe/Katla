@@ -1,15 +1,22 @@
 use super::*;
+use crate::error::RendererError;
 
 use types::EmitterState;
 
 impl GlobalParticleSystem {
-    pub fn create_emitter(&mut self, config: EmitterConfig) -> Result<EmitterHandle, String> {
+    pub fn create_emitter(
+        &mut self,
+        config: EmitterConfig,
+    ) -> Result<EmitterHandle, RendererError> {
         if self.emitter_pool.emitters.len() >= MAX_EMITTERS as usize {
             log::warn!(
                 "Cannot create emitter: maximum emitter count ({}) reached",
                 MAX_EMITTERS
             );
-            return Err(format!("Maximum emitter count ({}) reached", MAX_EMITTERS));
+            return Err(RendererError::ResourceCreationFailed(format!(
+                "Maximum emitter count ({}) reached",
+                MAX_EMITTERS
+            )));
         }
 
         let index = self
@@ -55,13 +62,16 @@ impl GlobalParticleSystem {
         }
     }
 
-    pub fn burst(&mut self, handle: EmitterHandle, count: u32) -> Result<(), String> {
+    pub fn burst(&mut self, handle: EmitterHandle, count: u32) -> Result<(), RendererError> {
         if handle.index() < self.emitter_pool.emitter_states.len() as u32 {
             self.emitter_pool.emitter_states[handle.index() as usize].burst_count = count;
             log::debug!("Burst {} particles from emitter {}", count, handle.index());
             Ok(())
         } else {
-            Err(format!("Invalid emitter handle: {:?}", handle))
+            Err(RendererError::InvalidOperation(format!(
+                "Invalid emitter handle: {:?}",
+                handle
+            )))
         }
     }
 

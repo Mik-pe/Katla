@@ -137,6 +137,18 @@ impl From<MaterialError> for RendererError {
     }
 }
 
+impl From<String> for RendererError {
+    fn from(msg: String) -> Self {
+        RendererError::InvalidOperation(msg)
+    }
+}
+
+impl From<&str> for RendererError {
+    fn from(msg: &str) -> Self {
+        RendererError::InvalidOperation(msg.to_string())
+    }
+}
+
 impl RendererError {
     pub(crate) fn from_allocation_error(
         resource: &str,

@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+use crate::error::RendererError;
+
 use super::{EmitterConfig, EmitterShape};
 
 /// Particle emitter preset with metadata.
@@ -132,7 +134,7 @@ impl EmitterPreset {
     ///
     /// # Errors
     /// Returns error if file creation or JSON serialization fails
-    pub fn save_to_file(&self, path: &Path) -> Result<(), String> {
+    pub fn save_to_file(&self, path: &Path) -> Result<(), RendererError> {
         // Create parent directories if they don't exist
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
@@ -162,7 +164,7 @@ impl EmitterPreset {
     ///
     /// # Errors
     /// Returns error if file read or JSON deserialization fails
-    pub fn load_from_file(path: &Path) -> Result<Self, String> {
+    pub fn load_from_file(path: &Path) -> Result<Self, RendererError> {
         // Read file
         let json = fs::read_to_string(path)
             .map_err(|e| format!("Failed to read preset file {}: {}", path.display(), e))?;

@@ -33,7 +33,7 @@ fn test_load_nonexistent_preset() {
         "Should return error for nonexistent preset"
     );
 
-    let error_msg = result.unwrap_err();
+    let error_msg = result.unwrap_err().to_string();
     assert!(
         error_msg.contains("Failed to read preset file"),
         "Error message should mention file read failure"
@@ -76,7 +76,7 @@ fn test_load_invalid_json_preset() {
     // Verify it returns a deserialization error
     assert!(result.is_err(), "Should return error for invalid JSON");
 
-    let error_msg = result.unwrap_err();
+    let error_msg = result.unwrap_err().to_string();
     assert!(
         error_msg.contains("Failed to deserialize preset"),
         "Error message should mention deserialization failure"
@@ -216,7 +216,7 @@ fn test_load_incomplete_json_preset() {
     // Verify it returns a deserialization error
     assert!(result.is_err(), "Should return error for incomplete JSON");
 
-    let error_msg = result.unwrap_err();
+    let error_msg = result.unwrap_err().to_string();
     assert!(
         error_msg.contains("Failed to deserialize preset"),
         "Error message should mention deserialization failure"
