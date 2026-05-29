@@ -9,8 +9,7 @@ use super::declarative::{
     AssetBrowserDrawCtx, ConsoleDrawCtx, EditorRootView, GizmoDrawCtx, GizmoModeChanged,
     HierarchyDrawCtx, InspectorDrawCtx, ParticleInspectorDrawCtx, ParticleInspectorPanelSync,
     PreferencesDrawCtx, PreferencesPanelSync, StatusBarData, ToolbarAction, ToolbarDrawCtx,
-    ViewportGridDrawCtx, build_asset_browser_from_ctx, set_console_ctx, set_inspector_ctx,
-    take_console_ctx, take_inspector_ctx,
+    ViewportGridDrawCtx, build_asset_browser_from_ctx, set_inspector_ctx, take_inspector_ctx,
 };
 use super::{
     EditorAction, EditorRenderParams, EditorUI, co_creator,
@@ -383,12 +382,12 @@ impl EditorUI {
                 });
             }
             BottomPanelTab::Console => {
-                set_console_ctx(ConsoleDrawCtx {
+                self.view_tree.env_mut().set(ConsoleDrawCtx {
                     bounds: bottom_content_bounds,
                     theme: self.theme.clone(),
-                    scroll_state: std::mem::take(&mut self.console_state.scroll_state),
+                    scroll_state: self.console_state.scroll_state.clone(),
                     filter_levels: self.console_state.filter_levels,
-                    search_filter: std::mem::take(&mut self.console_state.search_filter),
+                    search_filter: self.console_state.search_filter.clone(),
                     log_buffer: self.log_buffer.clone(),
                     pending_actions: Vec::new(),
                     auto_scroll: self.console_state.auto_scroll,
@@ -588,19 +587,7 @@ impl EditorUI {
             self.apply_preferences_action(action);
         }
 
-        if self.bottom_panel_tab == BottomPanelTab::Console
-            && let Some(console_ctx) = take_console_ctx()
-        {
-            self.console_state.scroll_state = console_ctx.scroll_state;
-            self.console_state.filter_levels = console_ctx.filter_levels;
-            self.console_state.search_filter = console_ctx.search_filter;
-            self.console_state.auto_scroll = console_ctx.auto_scroll;
-            self.console_state.selection_anchor = console_ctx.selection_anchor;
-            self.console_state.selection_cursor = console_ctx.selection_cursor;
-            for action in console_ctx.pending_actions {
-                self.pending_actions.push(action);
-            }
-        }
+        // TODO: Implement ConsoleSync action emission to sync state back from declarative panel
 
         self.preferences_panel_state.llm_config = params.llm_config.clone();
 

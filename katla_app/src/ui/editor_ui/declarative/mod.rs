@@ -15,7 +15,7 @@ pub(super) use asset_browser::{AssetBrowserDrawCtx, build_asset_browser_from_ctx
 pub(super) use co_creator::{
     CoCreatorDrawCtx, CoCreatorPanelSync, CoCreatorSubmitAction, CoCreatorUndoAction,
 };
-pub(super) use console::{ConsoleDrawCtx, ConsoleState, set_console_ctx, take_console_ctx};
+pub(super) use console::{ConsoleDrawCtx, ConsoleState, ConsoleSync};
 pub(super) use editor_root::EditorRootView;
 pub(super) use gizmo::{GizmoDrawCtx, GizmoModeChanged};
 pub(super) use hierarchy::{HierarchyDrawCtx, HierarchySync};
