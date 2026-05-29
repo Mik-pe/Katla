@@ -26,7 +26,7 @@ pub use constructors::{
     empty, grid, hstack, icon, image, image_button, labeled_slider, menu_entry,
     menu_entry_disabled, menu_group, menubar, modal, overlay, panel, progress, property_row, radio,
     scroll, section, selectable, separator, separator_horizontal, separator_vertical, slider,
-    statusbar, tab_bar, tab_item, text, textfield, toggle, tree_view, vstack, zstack,
+    statusbar, tab_bar, tab_item, text, textfield, toggle, tree_view, vec3_slider, vstack, zstack,
 };
 pub use descriptor::{
     Alignment, Anchor, Callback, ContextMenuDescriptor, ContextMenuEntry, CustomDrawFn,

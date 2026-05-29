@@ -131,6 +131,25 @@ pub fn color_picker(label: impl Into<String>, value_id: StateId) -> ViewDescript
     }
 }
 
+pub fn vec3_slider(
+    label: impl Into<String>,
+    value_ids: [StateId; 3],
+    range: RangeInclusive<f32>,
+) -> ViewDescriptor {
+    ViewDescriptor::Vec3Slider {
+        label: label.into(),
+        value_ids,
+        range,
+        axis_labels: ["X".to_string(), "Y".to_string(), "Z".to_string()],
+        axis_colors: [
+            katla_math::Color::RED,
+            katla_math::Color::GREEN,
+            katla_math::Color::BLUE,
+        ],
+        precision: 2,
+    }
+}
+
 pub fn separator(direction: super::descriptor::SeparatorDirection) -> ViewDescriptor {
     ViewDescriptor::Separator {
         direction,
@@ -917,6 +936,31 @@ mod tests {
             color_picker("bg", id),
             ViewDescriptor::ColorPicker { .. }
         ));
+    }
+
+    #[test]
+    fn test_vec3_slider_constructor() {
+        let ids = [dummy_state_id(), dummy_state_id(), dummy_state_id()];
+        let ViewDescriptor::Vec3Slider {
+            label,
+            value_ids,
+            range,
+            axis_labels,
+            axis_colors,
+            precision,
+        } = vec3_slider("position", ids, -10.0..=10.0)
+        else {
+            panic!("expected Vec3Slider");
+        };
+        assert_eq!(label, "position");
+        assert_eq!(value_ids, ids);
+        assert_eq!(range, -10.0..=10.0);
+        assert_eq!(axis_labels, ["X", "Y", "Z"]);
+        assert_eq!(
+            axis_colors,
+            [Color::RED, Color::GREEN, Color::BLUE]
+        );
+        assert_eq!(precision, 2);
     }
 
     #[test]

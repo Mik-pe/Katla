@@ -422,7 +422,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] Add `ProgressBar` improvements — add optional label text overlay on the progress bar track.
 - [x] Add `Selectable` descriptor — wrapper that highlights on hover and fires on_click, for list items and grid cells. Needed by Asset Browser and Hierarchy.
 - [x] Add `Conditional` descriptor or extend `show_if` helper — support `if`/`else` branching in descriptor trees with stable identity on both branches so diffing doesn't destroy state.
-- [ ] Add `Vec3Slider` free function constructor — descriptor exists but lacks a `vec3_slider(label, value_id, range) -> ViewDescriptor` constructor function for use in Inspector and other panels.
+- [x] Add `Vec3Slider` free function constructor — descriptor exists but lacks a `vec3_slider(label, value_ids, range) -> ViewDescriptor` constructor function for use in Inspector and other panels.
 
 #### Prerequisites: Environment injection pattern
 
