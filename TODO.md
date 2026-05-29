@@ -426,7 +426,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 #### Prerequisites: Environment injection pattern
 
-- [ ] Standardize Environment injection pattern across all declarative panels — migrate remaining panels (Preferences, CoCreator, Hierarchy, Inspector, Console, AssetBrowser) from `thread_local!` RefCell bridges to `ctx.env::<PanelState>()` injection pattern used by ParticleInspector.
+- [ ] Standardize Environment injection pattern across all declarative panels — migrate remaining panels (AssetBrowser) from `thread_local!` RefCell bridges to `ctx.env::<PanelState>()` injection pattern used by ParticleInspector. Preferences, CoCreator, Hierarchy, Inspector, and Console are done.
 
 #### Phase 1: Migrate simple panels (build confidence)
 
@@ -442,9 +442,9 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 #### Phase 3: Migrate complex panels
 
-- [ ] Migrate Hierarchy panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `HierarchyDrawCtx`. Use `TreeView` descriptor with `TreeItem` data from `Environment`, `ContextMenu` for right-click actions, `on_select` callback. Remove `set_hierarchy_ctx`/`take_hierarchy_ctx`.
-- [ ] Migrate Inspector panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `InspectorDrawCtx`. Use `DraggablePanel`, `Section` per component with `delete_button`, `LabeledSlider`/`Vec3Slider`/`Toggle`/`ColorPicker` per field, `Modal` for Add Component picker. This is the hardest migration. Remove `set_inspector_ctx`/`take_inspector_ctx`.
-- [ ] Migrate Console panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ConsoleDrawCtx`. Use `DraggablePanel`, `ScrollView` with `Text` rows (colored by log level), `TextField` for command input with `on_submit`. Remove `set_console_ctx`/`take_console_ctx`.
+- [x] Migrate Hierarchy panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `HierarchyDrawCtx`. Use `TreeView` descriptor with `TreeItem` data from `Environment`, `ContextMenu` for right-click actions, `on_select` callback. Remove `set_hierarchy_ctx`/`take_hierarchy_ctx`.
+- [x] Migrate Inspector panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `InspectorDrawCtx`. Use `DraggablePanel`, `Section` per component with `delete_button`, `LabeledSlider`/`Vec3Slider`/`Toggle`/`ColorPicker` per field, `Modal` for Add Component picker. This is the hardest migration. Remove `set_inspector_ctx`/`take_inspector_ctx`.
+- [x] Migrate Console panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `ConsoleDrawCtx`. Use `DraggablePanel`, `ScrollView` with `Text` rows (colored by log level), `TextField` for command input with `on_submit`. Remove `set_console_ctx`/`take_console_ctx`.
 - [ ] Migrate Asset Browser panel from `ViewDescriptor::Custom` to declarative tree — remove thread-local `AssetBrowserDrawCtx`. Use `Grid` or custom `Selectable` grid for thumbnails, `ContextMenu` for right-click, `TextField` for search, `Modal` for rename/delete confirmations. Remove `set_asset_browser_ctx`/`take_asset_browser_ctx`.
 
 #### Cleanup: remove legacy code
