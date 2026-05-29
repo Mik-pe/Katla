@@ -1009,7 +1009,6 @@ mod tests {
         // We can't easily check the system's internal state after it's boxed,
         // but we can verify events were there during the tick by checking
         // that events are now flushed after update
-        assert!(true); // If no panic occurred, events were accessible during update
     }
 
     #[test]
@@ -1651,7 +1650,12 @@ mod tests {
 
         let id_both = world.create_entity();
         world.add_component(id_both, CompA { x: 42 });
-        world.add_component(id_both, CompB { y: 3.14 });
+        world.add_component(
+            id_both,
+            CompB {
+                y: std::f32::consts::PI,
+            },
+        );
 
         let id_only_a = world.create_entity();
         world.add_component(id_only_a, CompA { x: 99 });
@@ -1663,7 +1667,10 @@ mod tests {
             .collect();
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0], (id_both, 42, 3.14));
+        let (eid, x, y) = results[0];
+        assert_eq!(eid, id_both);
+        assert_eq!(x, 42);
+        assert!((y - std::f32::consts::PI).abs() < 1e-6);
     }
 
     // --- Performance benchmarks (VAL-ECS-025, VAL-ECS-026) ---
@@ -1769,9 +1776,9 @@ mod tests {
         assert!(changed.contains(&ids[999]));
 
         // Verify no other entities leaked in
-        for i in 0..1000 {
+        for (i, id) in ids.iter().enumerate() {
             if i != 10 && i != 500 && i != 999 {
-                assert!(!changed.contains(&ids[i]));
+                assert!(!changed.contains(id));
             }
         }
     }
@@ -1828,7 +1835,10 @@ mod tests {
 
         let results: std::collections::HashSet<EntityId> = world
             .par_query::<(&TestComponent, &Velocity)>()
-            .map(|(eid, _, _)| eid)
+            .map(|(eid, _, vel)| {
+                let _ = (vel.dx, vel.dy);
+                eid
+            })
             .collect();
 
         assert_eq!(results.len(), 100);

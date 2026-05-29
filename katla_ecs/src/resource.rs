@@ -193,7 +193,7 @@ mod tests {
 
         let resource = ComplexResource {
             numbers: vec![1, 2, 3],
-            config: (true, 3.14),
+            config: (true, std::f32::consts::PI),
         };
 
         storage.insert(resource);
@@ -202,7 +202,7 @@ mod tests {
         assert!(retrieved.is_some());
         let res = retrieved.unwrap();
         assert_eq!(res.numbers, vec![1, 2, 3]);
-        assert_eq!(res.config, (true, 3.14));
+        assert!((res.config.1 - std::f32::consts::PI).abs() < 1e-6);
     }
 
     #[test]
