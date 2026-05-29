@@ -276,8 +276,24 @@ impl BindlessTextureManager {
     /// # Returns
     /// The slot index for this texture, or an error if no slots are available.
     pub fn register_texture(&mut self, image_view: vk::ImageView) -> Result<u32, RendererError> {
+        let used_count = MAX_BINDLESS_TEXTURES - self.free_slots.len() as u32;
+        let threshold = (MAX_BINDLESS_TEXTURES as f32 * 0.8) as u32;
+        if used_count >= threshold {
+            log::warn!(
+                "Bindless texture slots approaching limit: {}/{} ({:.0}%)",
+                used_count,
+                MAX_BINDLESS_TEXTURES,
+                (used_count as f32 / MAX_BINDLESS_TEXTURES as f32) * 100.0
+            );
+        }
+
         // Allocate a slot
         let slot = self.free_slots.pop().ok_or_else(|| {
+            log::error!(
+                "Bindless texture limit exceeded: {}/{} slots used",
+                used_count,
+                MAX_BINDLESS_TEXTURES
+            );
             RendererError::InvalidOperation("No free bindless texture slots available".into())
         })?;
 
