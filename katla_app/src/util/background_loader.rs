@@ -26,9 +26,14 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
+use std::time::Duration;
 
 use log::{debug, warn};
 use rayon::ThreadPool;
+
+const MAX_RETRIES: u32 = 3;
+const INITIAL_BACKOFF_MS: u64 = 100;
 
 /// Unique identifier for load requests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -157,52 +162,98 @@ impl BackgroundLoader {
         });
     }
 
+    fn is_transient_image_error(error: &image::ImageError) -> bool {
+        match error {
+            image::ImageError::IoError(io_err) => {
+                !matches!(io_err.kind(), std::io::ErrorKind::NotFound)
+            }
+            _ => false,
+        }
+    }
+
+    fn is_transient_gltf_error(error: &gltf::Error) -> bool {
+        match error {
+            gltf::Error::Io(io_err) => !matches!(io_err.kind(), std::io::ErrorKind::NotFound),
+            _ => false,
+        }
+    }
+
+    fn backoff(attempt: u32) {
+        let delay_ms = INITIAL_BACKOFF_MS * 2u64.pow(attempt);
+        thread::sleep(Duration::from_millis(delay_ms));
+    }
+
     /// Load an image and resize it for thumbnail display.
     fn load_image_thumbnail(id: LoadId, path: &PathBuf, max_size: u32) -> LoadResult {
         debug!("Loading thumbnail: {:?}", path);
 
-        match image::open(path) {
-            Ok(img) => {
-                // Resize if larger than max_size
-                let (orig_width, orig_height) = (img.width(), img.height());
-                let (new_width, new_height) = if orig_width > max_size || orig_height > max_size {
-                    let ratio = (max_size as f32 / orig_width.max(orig_height) as f32).min(1.0);
-                    (
-                        (orig_width as f32 * ratio) as u32,
-                        (orig_height as f32 * ratio) as u32,
-                    )
-                } else {
-                    (orig_width, orig_height)
-                };
+        let mut last_error = None;
+        for attempt in 0..=MAX_RETRIES {
+            match image::open(path) {
+                Ok(img) => {
+                    let (orig_width, orig_height) = (img.width(), img.height());
+                    let (new_width, new_height) = if orig_width > max_size || orig_height > max_size
+                    {
+                        let ratio = (max_size as f32 / orig_width.max(orig_height) as f32).min(1.0);
+                        (
+                            (orig_width as f32 * ratio) as u32,
+                            (orig_height as f32 * ratio) as u32,
+                        )
+                    } else {
+                        (orig_width, orig_height)
+                    };
 
-                // Resize and convert to RGBA8
-                let resized =
-                    img.resize(new_width, new_height, image::imageops::FilterType::Lanczos3);
-                let rgba = resized.to_rgba8();
-                let (width, height) = rgba.dimensions();
-                let pixels = rgba.into_raw();
+                    let resized =
+                        img.resize(new_width, new_height, image::imageops::FilterType::Lanczos3);
+                    let rgba = resized.to_rgba8();
+                    let (width, height) = rgba.dimensions();
+                    let pixels = rgba.into_raw();
 
-                debug!(
-                    "Loaded thumbnail: {:?} ({}x{} -> {}x{})",
-                    path, orig_width, orig_height, width, height
-                );
+                    debug!(
+                        "Loaded thumbnail: {:?} ({}x{} -> {}x{})",
+                        path, orig_width, orig_height, width, height
+                    );
 
-                LoadResult::ImageThumbnailLoaded {
-                    id,
-                    path: path.clone(),
-                    width,
-                    height,
-                    pixels,
+                    return LoadResult::ImageThumbnailLoaded {
+                        id,
+                        path: path.clone(),
+                        width,
+                        height,
+                        pixels,
+                    };
+                }
+                Err(e) => {
+                    if attempt < MAX_RETRIES && Self::is_transient_image_error(&e) {
+                        warn!(
+                            "Transient error loading thumbnail {:?} (attempt {}/{}): {}",
+                            path,
+                            attempt + 1,
+                            MAX_RETRIES,
+                            e
+                        );
+                        Self::backoff(attempt);
+                        last_error = Some(e);
+                    } else {
+                        warn!("Failed to load thumbnail {:?}: {}", path, e);
+                        return LoadResult::Failed {
+                            id,
+                            path: path.clone(),
+                            error: e.to_string(),
+                        };
+                    }
                 }
             }
-            Err(e) => {
-                warn!("Failed to load thumbnail {:?}: {}", path, e);
-                LoadResult::Failed {
-                    id,
-                    path: path.clone(),
-                    error: e.to_string(),
-                }
-            }
+        }
+
+        let error = last_error.expect("retry loop must have captured an error");
+        warn!(
+            "Failed to load thumbnail {:?} after {} retries: {}",
+            path, MAX_RETRIES, error
+        );
+        LoadResult::Failed {
+            id,
+            path: path.clone(),
+            error: error.to_string(),
         }
     }
 
@@ -210,39 +261,65 @@ impl BackgroundLoader {
     fn load_full_texture(id: LoadId, path: &PathBuf, generate_mipmaps: bool) -> LoadResult {
         debug!("Loading full texture: {:?}", path);
 
-        match image::open(path) {
-            Ok(img) => {
-                let rgba = img.to_rgba8();
-                let (width, height) = rgba.dimensions();
-                let pixels = rgba.into_raw();
+        let mut last_error = None;
+        for attempt in 0..=MAX_RETRIES {
+            match image::open(path) {
+                Ok(img) => {
+                    let rgba = img.to_rgba8();
+                    let (width, height) = rgba.dimensions();
+                    let pixels = rgba.into_raw();
 
-                let mip_levels = if generate_mipmaps {
-                    (width.max(height) as f32).log2().floor() as u32 + 1
-                } else {
-                    1
-                };
+                    let mip_levels = if generate_mipmaps {
+                        (width.max(height) as f32).log2().floor() as u32 + 1
+                    } else {
+                        1
+                    };
 
-                debug!(
-                    "Loaded full texture: {:?} ({}x{}, mip_levels={})",
-                    path, width, height, mip_levels
-                );
+                    debug!(
+                        "Loaded full texture: {:?} ({}x{}, mip_levels={})",
+                        path, width, height, mip_levels
+                    );
 
-                LoadResult::FullTextureLoaded {
-                    id,
-                    width,
-                    height,
-                    mip_levels,
-                    pixels,
+                    return LoadResult::FullTextureLoaded {
+                        id,
+                        width,
+                        height,
+                        mip_levels,
+                        pixels,
+                    };
+                }
+                Err(e) => {
+                    if attempt < MAX_RETRIES && Self::is_transient_image_error(&e) {
+                        warn!(
+                            "Transient error loading texture {:?} (attempt {}/{}): {}",
+                            path,
+                            attempt + 1,
+                            MAX_RETRIES,
+                            e
+                        );
+                        Self::backoff(attempt);
+                        last_error = Some(e);
+                    } else {
+                        warn!("Failed to load texture {:?}: {}", path, e);
+                        return LoadResult::Failed {
+                            id,
+                            path: path.clone(),
+                            error: e.to_string(),
+                        };
+                    }
                 }
             }
-            Err(e) => {
-                warn!("Failed to load texture {:?}: {}", path, e);
-                LoadResult::Failed {
-                    id,
-                    path: path.clone(),
-                    error: e.to_string(),
-                }
-            }
+        }
+
+        let error = last_error.expect("retry loop must have captured an error");
+        warn!(
+            "Failed to load texture {:?} after {} retries: {}",
+            path, MAX_RETRIES, error
+        );
+        LoadResult::Failed {
+            id,
+            path: path.clone(),
+            error: error.to_string(),
         }
     }
 
@@ -259,22 +336,48 @@ impl BackgroundLoader {
             };
         }
 
-        match gltf::import(path) {
-            Ok(_import) => {
-                debug!("glTF model parsed: {:?}", path);
-                LoadResult::GltfModelLoaded {
-                    id,
-                    path: path.clone(),
+        let mut last_error = None;
+        for attempt in 0..=MAX_RETRIES {
+            match gltf::import(path) {
+                Ok(_import) => {
+                    debug!("glTF model parsed: {:?}", path);
+                    return LoadResult::GltfModelLoaded {
+                        id,
+                        path: path.clone(),
+                    };
+                }
+                Err(e) => {
+                    if attempt < MAX_RETRIES && Self::is_transient_gltf_error(&e) {
+                        warn!(
+                            "Transient error loading glTF model {:?} (attempt {}/{}): {}",
+                            path,
+                            attempt + 1,
+                            MAX_RETRIES,
+                            e
+                        );
+                        Self::backoff(attempt);
+                        last_error = Some(e);
+                    } else {
+                        warn!("Failed to load glTF model {:?}: {}", path, e);
+                        return LoadResult::Failed {
+                            id,
+                            path: path.clone(),
+                            error: e.to_string(),
+                        };
+                    }
                 }
             }
-            Err(e) => {
-                warn!("Failed to load glTF model {:?}: {}", path, e);
-                LoadResult::Failed {
-                    id,
-                    path: path.clone(),
-                    error: e.to_string(),
-                }
-            }
+        }
+
+        let error = last_error.expect("retry loop must have captured an error");
+        warn!(
+            "Failed to load glTF model {:?} after {} retries: {}",
+            path, MAX_RETRIES, error
+        );
+        LoadResult::Failed {
+            id,
+            path: path.clone(),
+            error: error.to_string(),
         }
     }
 
