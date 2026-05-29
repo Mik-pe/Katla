@@ -205,9 +205,7 @@ mod tests {
     }
 
     #[derive(Component, Default)]
-    struct Mass {
-        value: f32,
-    }
+    struct Mass;
 
     #[derive(Component, Default)]
     struct Tag;
@@ -231,7 +229,7 @@ mod tests {
                     dy: i as f32 * 0.2,
                 },
             );
-            storage.add_component(id, Mass { value: i as f32 });
+            storage.add_component(id, Mass);
             storage.add_component(id, Tag);
         }
         ids

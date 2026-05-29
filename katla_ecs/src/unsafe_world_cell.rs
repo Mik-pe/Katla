@@ -40,19 +40,6 @@ unsafe impl Sync for UnsafeWorldCell {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::Component;
-
-    #[derive(Component, Default, PartialEq, Debug)]
-    struct Position {
-        x: f32,
-        y: f32,
-    }
-
-    #[derive(Component, Default, PartialEq, Debug)]
-    struct Velocity {
-        dx: f32,
-        dy: f32,
-    }
 
     #[test]
     fn test_create_from_world() {

@@ -222,11 +222,7 @@ mod tests {
     use super::*;
 
     fn make_systems(access: Vec<Vec<ComponentAccess>>) -> Vec<(usize, Vec<ComponentAccess>)> {
-        access
-            .into_iter()
-            .enumerate()
-            .map(|(i, a)| (i, a))
-            .collect()
+        access.into_iter().enumerate().collect()
     }
 
     #[test]
