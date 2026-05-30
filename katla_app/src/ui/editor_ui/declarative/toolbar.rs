@@ -81,6 +81,7 @@ impl Build for ToolbarView {
             (Alignment::Center, title),
             (Alignment::TopTrailing, controls),
         ])
+        .flex_height(TOOLBAR_HEIGHT)
     }
 }
 

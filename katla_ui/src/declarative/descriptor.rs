@@ -116,6 +116,8 @@ pub enum ViewDescriptor {
         texture: TextureId,
         uv: Option<Rect2D>,
         tint: Color,
+        width: Option<f32>,
+        height: Option<f32>,
     },
 
     /// Read-only property display: `[label] [value]` on a single row.
@@ -212,6 +214,7 @@ pub struct StackDescriptor {
 pub struct ZStackDescriptor {
     pub children: Vec<(Alignment, ChildDescriptor)>,
     pub padding: Padding,
+    pub flex: FlexProps,
 }
 
 #[derive(Clone, Debug)]
@@ -594,7 +597,13 @@ impl std::fmt::Debug for ViewDescriptor {
                 .field("index", index)
                 .field("label", label)
                 .finish(),
-            ViewDescriptor::Image { texture, uv, tint } => f
+            ViewDescriptor::Image {
+                texture,
+                uv,
+                tint,
+                width: _,
+                height: _,
+            } => f
                 .debug_struct("Image")
                 .field("texture", texture)
                 .field("uv", uv)

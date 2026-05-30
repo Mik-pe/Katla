@@ -417,7 +417,14 @@ impl ViewTree {
         // Draw children
         if !skip_children {
             for &child_id in &children {
-                self.draw_child_recursive(child_id, ui, bounds, descriptor, scroll_offset);
+                self.draw_child_recursive(
+                    child_id,
+                    ui,
+                    bounds,
+                    descriptor,
+                    scroll_offset,
+                    Vec2::new(0.0, 0.0),
+                );
             }
         }
 
@@ -433,6 +440,7 @@ impl ViewTree {
         parent_bounds: Rect2D,
         parent_descriptor: &ViewDescriptor,
         scroll_offset: Option<f32>,
+        translation: Vec2,
     ) {
         let Some(child_node) = self.nodes.get(child_id) else {
             return;
@@ -441,23 +449,32 @@ impl ViewTree {
         let anim_state = child_node.animation_state.clone();
         let mut child_bounds = anim_state.apply_to_bounds(child_node.bounds);
 
-        // Handle Overlay positioning
-        if let ViewDescriptor::Overlay(overlay_desc) = &child_node.descriptor {
-            let base_bounds = child_node.bounds;
+        // Apply accumulated overlay translation from ancestor overlays
+        child_bounds = child_bounds.translate(translation);
+
+        // Handle Overlay positioning — takes precedence over ZStack alignment.
+        // Overlays compute their own position via anchor + offset, so ZStack
+        // alignment must not override them.
+        let overlay_delta = if let ViewDescriptor::Overlay(overlay_desc) = &child_node.descriptor {
+            let base_bounds = child_bounds;
             child_bounds = Self::resolve_overlay_bounds(
                 overlay_desc.anchor,
                 overlay_desc.offset,
                 parent_bounds,
                 base_bounds,
             );
-            // Re-apply animation offset/scale on top of overlay positioning
             child_bounds = anim_state.apply_to_bounds(child_bounds);
-        }
+            child_bounds.min - base_bounds.min
+        } else {
+            // Handle ZStack alignment positioning (non-Overlay only)
+            if let Some(alignment) = child_node.zstack_alignment {
+                child_bounds =
+                    Self::resolve_zstack_alignment(alignment, parent_bounds, child_bounds);
+            }
+            Vec2::new(0.0, 0.0)
+        };
 
-        // Handle ZStack alignment positioning
-        if let Some(alignment) = child_node.zstack_alignment {
-            child_bounds = Self::resolve_zstack_alignment(alignment, parent_bounds, child_bounds);
-        }
+        let child_translation = translation + overlay_delta;
 
         // Clip children to parent for ScrollView and apply scroll offset
         let is_scroll_content = matches!(parent_descriptor, ViewDescriptor::ScrollView(_));
@@ -508,6 +525,7 @@ impl ViewTree {
                 child_bounds,
                 &child_node.descriptor,
                 child_scroll,
+                child_translation,
             );
         }
 

@@ -55,15 +55,13 @@ impl TaffyNodeMap {
         let mut style = descriptor_to_style(&node.descriptor, measure);
 
         // ZStack children need absolute positioning so they stack rather than
-        // participate in flex flow.
+        // participate in flex flow.  Do NOT set all-four insets to 0% — that
+        // stretches every child to the parent size, which makes
+        // resolve_zstack_alignment compute wrong positions (e.g. BottomLeading
+        // collapses to y=0).  Each child keeps its natural / explicit size and
+        // is repositioned during draw.
         if node.zstack_alignment.is_some() {
             style.position = taffy::Position::Absolute;
-            style.inset = taffy::Rect {
-                top: taffy::LengthPercentageAuto::Percent(0.0),
-                right: taffy::LengthPercentageAuto::Percent(0.0),
-                bottom: taffy::LengthPercentageAuto::Percent(0.0),
-                left: taffy::LengthPercentageAuto::Percent(0.0),
-            };
         }
 
         let children = &node.children;
@@ -207,10 +205,18 @@ fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> S
             style
         }
 
-        ViewDescriptor::ZStack(zstack) => Style {
-            padding: padding_to_taffy(&zstack.padding),
-            ..Style::default()
-        },
+        ViewDescriptor::ZStack(zstack) => {
+            let mut style = Style {
+                size: Size {
+                    width: Dimension::Percent(1.0),
+                    height: Dimension::Percent(1.0),
+                },
+                padding: padding_to_taffy(&zstack.padding),
+                ..Style::default()
+            };
+            apply_flex_props(&mut style, &zstack.flex);
+            style
+        }
 
         ViewDescriptor::ScrollView(desc) => {
             let mut style = Style {
@@ -233,10 +239,14 @@ fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> S
             style
         }
 
-        ViewDescriptor::Overlay(_) => Style {
-            position: taffy::Position::Absolute,
-            ..Style::default()
-        },
+        ViewDescriptor::Overlay(desc) => {
+            let content_style = descriptor_to_style(&desc.content, measure);
+            Style {
+                position: taffy::Position::Absolute,
+                size: content_style.size,
+                ..Style::default()
+            }
+        }
 
         ViewDescriptor::StatusBar(desc) => Style {
             size: Size {
@@ -392,13 +402,17 @@ fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> S
             }
         }
 
-        ViewDescriptor::Image { .. } => Style {
-            size: Size {
-                width: Dimension::Length(64.0),
-                height: Dimension::Length(64.0),
-            },
-            ..Style::default()
-        },
+        ViewDescriptor::Image { width, height, .. } => {
+            let w = width.unwrap_or(64.0);
+            let h = height.unwrap_or(64.0);
+            Style {
+                size: Size {
+                    width: Dimension::Length(w),
+                    height: Dimension::Length(h),
+                },
+                ..Style::default()
+            }
+        }
 
         ViewDescriptor::TransitionContainer { .. } => Style::default(),
 
@@ -438,6 +452,7 @@ fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> S
 
         ViewDescriptor::Selectable { .. } => Style {
             flex_direction: FlexDirection::Column,
+            flex_grow: 1.0,
             ..Style::default()
         },
 
@@ -502,12 +517,14 @@ fn padding_to_taffy(padding: &Padding) -> taffy::Rect<LengthPercentage> {
 
 fn apply_alignment_to_style(style: &mut Style, alignment: Alignment) {
     match alignment {
+        // Single-axis alignments: only set the relevant property.
+        // Leading/Trailing affect justify_content (main axis) without
+        // overriding align_items, preserving the default Stretch so
+        // children with Percent(1.0) width resolve correctly.
         Alignment::Leading => {
-            style.align_items = Some(taffy::AlignItems::Start);
             style.justify_content = Some(taffy::JustifyContent::Start);
         }
         Alignment::Trailing => {
-            style.align_items = Some(taffy::AlignItems::End);
             style.justify_content = Some(taffy::JustifyContent::End);
         }
         Alignment::Center => {
@@ -525,7 +542,7 @@ fn apply_alignment_to_style(style: &mut Style, alignment: Alignment) {
             style.justify_content = Some(taffy::JustifyContent::Start);
         }
         Alignment::TopTrailing => {
-            style.align_items = Some(taffy::AlignItems::Start);
+            style.align_items = Some(taffy::AlignItems::End);
             style.justify_content = Some(taffy::JustifyContent::End);
         }
         Alignment::BottomLeading => {
@@ -535,6 +552,10 @@ fn apply_alignment_to_style(style: &mut Style, alignment: Alignment) {
         Alignment::BottomTrailing => {
             style.align_items = Some(taffy::AlignItems::End);
             style.justify_content = Some(taffy::JustifyContent::End);
+        }
+        Alignment::BottomCenter => {
+            style.align_items = Some(taffy::AlignItems::End);
+            style.justify_content = Some(taffy::JustifyContent::Center);
         }
         Alignment::BottomCenter => {
             style.align_items = Some(taffy::AlignItems::End);
@@ -939,5 +960,86 @@ mod tests {
 
         assert!(root_bounds.width() > 0.0);
         assert!(root_bounds.height() > 0.0);
+    }
+
+    #[test]
+    fn test_zstack_in_selectable_fills_parent() {
+        use crate::declarative::constructors::{
+            grid, image, menubar, overlay, selectable, statusbar, text, zstack,
+        };
+        use crate::declarative::descriptor::Alignment;
+        use crate::types::TextureId;
+        use katla_math::Color;
+
+        // Reproduce the viewport grid cell layout:
+        // grid(1, cell_size, [selectable(zstack([(Center, image)]))])
+        let cell_w = 800.0;
+        let cell_h = 600.0;
+        let cell_size = Vec2::new(cell_w, cell_h);
+
+        let img = image(TextureId(0), Color::WHITE);
+        // Manually set image_size like viewport_grid.rs does
+        let img = ViewDescriptor::Image {
+            texture: TextureId(0),
+            uv: None,
+            tint: Color::WHITE,
+            width: Some(cell_w),
+            height: Some(cell_h),
+        };
+
+        let inner_zstack = zstack([(Alignment::Center, img)]);
+        let sel = selectable(inner_zstack);
+        let desc = grid(1, cell_size, [sel])
+            .flex_width(cell_w)
+            .flex_height(cell_h);
+
+        let mut tree = ViewTree::new();
+        build_tree(&mut tree, desc);
+
+        let mut layout = TaffyNodeMap::new();
+        layout.sync(&tree, &measure_text_descriptor);
+
+        let screen = Vec2::new(1200.0, 800.0);
+        let bounds = layout.compute(tree.root().unwrap(), screen, &tree);
+
+        // Find the ZStack node and check its bounds
+        let root = tree.root().unwrap();
+        let root_node = tree.get(root).unwrap();
+        // root = Grid
+        // root.children[0] = VStack wrapper (from grid constructor)
+        let vstack_id = root_node.children[0];
+        let vstack_node = tree.get(vstack_id).unwrap();
+        // vstack.children[0] = Selectable
+        let selectable_id = vstack_node.children[0];
+        let selectable_node = tree.get(selectable_id).unwrap();
+        // selectable.children[0] = ZStack
+        let zstack_id = selectable_node.children[0];
+        let zstack_node = tree.get(zstack_id).unwrap();
+        // zstack.children[0] = Image
+        let image_id = zstack_node.children[0];
+
+        let zstack_bounds = bounds.get(&zstack_id).copied().unwrap_or_default();
+        let selectable_bounds = bounds.get(&selectable_id).copied().unwrap_or_default();
+        let image_bounds = bounds.get(&image_id).copied().unwrap_or_default();
+        let grid_bounds = bounds.get(&root).copied().unwrap_or_default();
+
+        eprintln!("grid_bounds: {:?}", grid_bounds);
+        eprintln!("selectable_bounds: {:?}", selectable_bounds);
+        eprintln!("zstack_bounds: {:?}", zstack_bounds);
+        eprintln!("image_bounds: {:?}", image_bounds);
+
+        // ZStack should fill the entire cell (800x600), not be 50% size
+        assert!(
+            approx_eq(zstack_bounds.width(), cell_w),
+            "ZStack width should be {} but got {}",
+            cell_w,
+            zstack_bounds.width()
+        );
+        assert!(
+            approx_eq(zstack_bounds.height(), cell_h),
+            "ZStack height should be {} but got {}",
+            cell_h,
+            zstack_bounds.height()
+        );
     }
 }

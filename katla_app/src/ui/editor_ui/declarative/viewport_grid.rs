@@ -74,7 +74,10 @@ impl Build for ViewportGridView {
                 let mut cell_content = Vec::new();
 
                 if let Some(texture) = texture {
-                    cell_content.push((Alignment::Center, image(texture, Color::WHITE)));
+                    cell_content.push((
+                        Alignment::Center,
+                        image(texture, Color::WHITE).image_size(cell_width, cell_height),
+                    ));
                 }
 
                 let label_text = text(label)
