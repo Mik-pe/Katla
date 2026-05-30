@@ -18,12 +18,11 @@ pub(super) struct ResolvedShadowDraw {
     layout: vk::PipelineLayout,
     storage_ds: vk::DescriptorSet,
     extra_sets: Vec<(u32, vk::DescriptorSet)>,
-    skeleton_ds: vk::DescriptorSet,
-    is_skinned: bool,
+    skeleton_ds: Option<vk::DescriptorSet>,
     pos_buf: vk::Buffer,
-    joints_buf: vk::Buffer,
-    weights_buf: vk::Buffer,
-    index_buf: vk::Buffer,
+    joints_buf: Option<vk::Buffer>,
+    weights_buf: Option<vk::Buffer>,
+    index_buf: Option<vk::Buffer>,
     index_count: u32,
     instance_index: u32,
 }
@@ -117,14 +116,14 @@ fn record_shadow_cascade(
             }
         }
 
-        if draw.is_skinned && draw.skeleton_ds != vk::DescriptorSet::null() {
+        if let Some(skeleton_ds) = draw.skeleton_ds {
             unsafe {
                 dev.cmd_bind_descriptor_sets(
                     cb,
                     vk::PipelineBindPoint::GRAPHICS,
                     draw.layout,
                     3,
-                    &[draw.skeleton_ds],
+                    &[skeleton_ds],
                     &[],
                 );
             }
@@ -133,7 +132,11 @@ fn record_shadow_cascade(
                 dev.cmd_bind_vertex_buffers(
                     cb,
                     0,
-                    &[draw.pos_buf, draw.joints_buf, draw.weights_buf],
+                    &[
+                        draw.pos_buf,
+                        draw.joints_buf.unwrap_or(vk::Buffer::null()),
+                        draw.weights_buf.unwrap_or(vk::Buffer::null()),
+                    ],
                     &[0u64, 0u64, 0u64],
                 );
             }
@@ -143,9 +146,9 @@ fn record_shadow_cascade(
             }
         }
 
-        if draw.index_count > 0 {
+        if let Some(index_buf) = draw.index_buf {
             unsafe {
-                dev.cmd_bind_index_buffer(cb, draw.index_buf, 0, vk::IndexType::UINT32);
+                dev.cmd_bind_index_buffer(cb, index_buf, 0, vk::IndexType::UINT32);
                 dev.cmd_draw_indexed(cb, draw.index_count, 1, 0, 0, draw.instance_index);
             }
         }
@@ -238,12 +241,14 @@ impl Frame<'_, VulkanRenderer> {
                 let storage_ds = self.renderer.storage_descriptor_sets[config.frame_idx].vk_set();
 
                 let skeleton_ds = if is_skinned {
-                    self.renderer
-                        .get_skeleton_descriptor(draw_call.skeleton)
-                        .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?
-                        .vk_set()
+                    Some(
+                        self.renderer
+                            .get_skeleton_descriptor(draw_call.skeleton)
+                            .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?
+                            .vk_set(),
+                    )
                 } else {
-                    vk::DescriptorSet::null()
+                    None
                 };
 
                 let mesh = self
@@ -260,24 +265,18 @@ impl Frame<'_, VulkanRenderer> {
                 let joints_buf = if is_skinned {
                     mesh.get_attribute_buffer(AttributeType::JointIndices)
                         .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null())
                 } else {
-                    vk::Buffer::null()
+                    None
                 };
 
                 let weights_buf = if is_skinned {
                     mesh.get_attribute_buffer(AttributeType::JointWeights)
                         .map(|vb| vb.object())
-                        .unwrap_or(vk::Buffer::null())
                 } else {
-                    vk::Buffer::null()
+                    None
                 };
 
-                let index_buf = mesh
-                    .index_buffer
-                    .as_ref()
-                    .map(|ib| ib.object())
-                    .unwrap_or(vk::Buffer::null());
+                let index_buf = mesh.index_buffer.as_ref().map(|ib| ib.object());
                 let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
 
                 all_draws.push(ResolvedShadowDraw {
@@ -286,7 +285,6 @@ impl Frame<'_, VulkanRenderer> {
                     storage_ds,
                     extra_sets: config.extra_sets.to_vec(),
                     skeleton_ds,
-                    is_skinned,
                     pos_buf,
                     joints_buf,
                     weights_buf,
@@ -419,12 +417,11 @@ mod tests {
                 layout: vk::PipelineLayout::null(),
                 storage_ds: vk::DescriptorSet::null(),
                 extra_sets: vec![],
-                skeleton_ds: vk::DescriptorSet::null(),
-                is_skinned: false,
+                skeleton_ds: None,
                 pos_buf: vk::Buffer::null(),
-                joints_buf: vk::Buffer::null(),
-                weights_buf: vk::Buffer::null(),
-                index_buf: vk::Buffer::null(),
+                joints_buf: None,
+                weights_buf: None,
+                index_buf: None,
                 index_count: 0,
                 instance_index: 0,
             })

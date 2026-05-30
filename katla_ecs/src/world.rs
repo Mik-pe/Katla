@@ -399,8 +399,10 @@ impl World {
     ///
     pub fn register_system(&mut self, system: Box<dyn System>, order: SystemExecutionOrder) {
         let access = system.component_access_dyn();
+        let resource_access = system.resource_access_dyn();
         let mut ordered_system = OrderedSystem::new(system, order);
         ordered_system.access_patterns = access;
+        ordered_system.resource_access_patterns = resource_access;
         ordered_system.system.initialize();
         self.systems.push(ordered_system);
         self.sort_systems();
@@ -479,11 +481,21 @@ impl World {
     /// built once and cached until systems are added or removed.
     pub fn update_parallel(&mut self, delta_time: f32) {
         if self.scheduler_cache.is_none() {
-            let access_patterns: Vec<(usize, Vec<crate::system::ComponentAccess>)> = self
+            let access_patterns: Vec<(
+                usize,
+                Vec<crate::system::ComponentAccess>,
+                Vec<crate::system::ResourceAccess>,
+            )> = self
                 .systems
                 .iter()
                 .enumerate()
-                .map(|(i, os)| (i, os.access_patterns.clone()))
+                .map(|(i, os)| {
+                    (
+                        i,
+                        os.access_patterns.clone(),
+                        os.resource_access_patterns.clone(),
+                    )
+                })
                 .collect();
             self.scheduler_cache = match SystemScheduler::build(&access_patterns) {
                 Ok(scheduler) => Some(scheduler),

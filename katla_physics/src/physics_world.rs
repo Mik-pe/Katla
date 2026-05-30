@@ -15,7 +15,7 @@ use rapier3d::na;
 use rapier3d::pipeline::PhysicsPipeline;
 use rapier3d::prelude::*;
 
-use crate::collider::ColliderShape;
+use crate::collider::{ColliderShape, MeshColliderData};
 use crate::error::PhysicsError;
 use crate::material::PhysicsMaterial;
 use crate::rigid_body::BodyType;
@@ -220,11 +220,12 @@ impl PhysicsWorld {
     pub fn create_dynamic_body(
         &mut self,
         shape: &ColliderShape,
+        mesh_data: Option<&MeshColliderData>,
         transform: &Transform,
         entity_id: u64,
     ) -> (RigidBodyHandle, ColliderHandle) {
         let pose = katla_to_rapier_pose(transform);
-        let rapier_shape = collider_shape_to_rapier(shape);
+        let rapier_shape = collider_shape_to_rapier(shape, mesh_data);
 
         let body = RigidBodyBuilder::dynamic().pose(pose.into()).build();
         let body_handle = self.bodies.insert(body);
@@ -244,11 +245,19 @@ impl PhysicsWorld {
     pub fn create_static_collider(
         &mut self,
         shape: &ColliderShape,
+        mesh_data: Option<&MeshColliderData>,
         transform: &Transform,
         entity_id: u64,
     ) -> ColliderHandle {
-        self.create_body(shape, transform, BodyType::Static, None, entity_id)
-            .1
+        self.create_body(
+            shape,
+            mesh_data,
+            transform,
+            BodyType::Static,
+            None,
+            entity_id,
+        )
+        .1
     }
 
     /// Create a rigid body with a collider.
@@ -261,13 +270,14 @@ impl PhysicsWorld {
     pub fn create_body(
         &mut self,
         shape: &ColliderShape,
+        mesh_data: Option<&MeshColliderData>,
         transform: &Transform,
         body_type: BodyType,
         material: Option<&PhysicsMaterial>,
         entity_id: u64,
     ) -> (RigidBodyHandle, ColliderHandle) {
         self.create_body_ex(
-            shape, transform, body_type, material, entity_id, false, 1.0, false, None,
+            shape, mesh_data, transform, body_type, material, entity_id, false, 1.0, false, None,
         )
     }
 
@@ -276,6 +286,7 @@ impl PhysicsWorld {
     pub fn create_body_ex(
         &mut self,
         shape: &ColliderShape,
+        mesh_data: Option<&MeshColliderData>,
         transform: &Transform,
         body_type: BodyType,
         material: Option<&PhysicsMaterial>,
@@ -286,7 +297,7 @@ impl PhysicsWorld {
         collision_filter: Option<&crate::collider::CollisionFilter>,
     ) -> (RigidBodyHandle, ColliderHandle) {
         let pose = katla_to_rapier_pose(transform);
-        let rapier_shape = collider_shape_to_rapier(shape);
+        let rapier_shape = collider_shape_to_rapier(shape, mesh_data);
 
         let mut collider_builder = ColliderBuilder::new(rapier_shape)
             .position(pose.into())
@@ -483,11 +494,12 @@ impl PhysicsWorld {
     pub fn shape_cast(
         &self,
         shape: &ColliderShape,
+        mesh_data: Option<&MeshColliderData>,
         origin: Vec3,
         direction: Vec3,
         max_distance: f32,
     ) -> Option<RayHit> {
-        let rapier_shape = collider_shape_to_rapier(shape);
+        let rapier_shape = collider_shape_to_rapier(shape, mesh_data);
         let query_pipeline = self.broad_phase.as_query_pipeline(
             self.narrow_phase.query_dispatcher(),
             &self.bodies,
@@ -588,7 +600,10 @@ fn vec3_to_rapier(v: &Vec3) -> Vector {
     Vector::new(v.x(), v.y(), v.z())
 }
 
-fn collider_shape_to_rapier(shape: &ColliderShape) -> rapier3d::geometry::SharedShape {
+fn collider_shape_to_rapier(
+    shape: &ColliderShape,
+    mesh_data: Option<&MeshColliderData>,
+) -> rapier3d::geometry::SharedShape {
     match shape {
         ColliderShape::Sphere(s) => rapier3d::geometry::SharedShape::ball(s.radius),
         ColliderShape::Box(b) => {
@@ -598,10 +613,38 @@ fn collider_shape_to_rapier(shape: &ColliderShape) -> rapier3d::geometry::Shared
         ColliderShape::Capsule(c) => {
             rapier3d::geometry::SharedShape::capsule_y(c.half_height, c.radius)
         }
-        ColliderShape::Trimesh(_)
-        | ColliderShape::ConvexHull(_)
-        | ColliderShape::Heightfield(_) => {
-            unimplemented!("Trimesh/ConvexHull/Heightfield rapier conversion not yet implemented")
+        ColliderShape::Trimesh(_) => {
+            let data = mesh_data.expect("Trimesh requires MeshColliderData");
+            let vertices: Vec<Vector> = data
+                .positions
+                .iter()
+                .map(|p| Vector::new(p[0], p[1], p[2]))
+                .collect();
+            rapier3d::geometry::SharedShape::trimesh(vertices, data.triangles.clone())
+                .expect("invalid trimesh geometry")
+        }
+        ColliderShape::ConvexHull(_) => {
+            let data = mesh_data.expect("ConvexHull requires MeshColliderData");
+            let points: Vec<Vector> = data
+                .positions
+                .iter()
+                .map(|p| Vector::new(p[0], p[1], p[2]))
+                .collect();
+            rapier3d::geometry::SharedShape::convex_hull(&points)
+                .expect("failed to compute convex hull")
+        }
+        ColliderShape::Heightfield(h) => {
+            let nrows = h.rows as usize;
+            let ncols = h.cols as usize;
+            let mut col_major = vec![0.0f32; nrows * ncols];
+            for r in 0..nrows {
+                for c in 0..ncols {
+                    col_major[r + c * nrows] = h.heights[r * ncols + c];
+                }
+            }
+            let heights = rapier3d::parry::utils::Array2::new(nrows, ncols, col_major);
+            let scale = Vector::new(ncols as f32, 1.0, nrows as f32);
+            rapier3d::geometry::SharedShape::heightfield(heights, scale)
         }
     }
 }
@@ -623,7 +666,7 @@ mod tests {
         let mut world = PhysicsWorld::new();
         let shape = ColliderShape::Sphere(SphereShape::new(1.0));
         let transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 0.0));
-        let handle = world.create_static_collider(&shape, &transform, 42);
+        let handle = world.create_static_collider(&shape, None, &transform, 42);
         assert_eq!(world.colliders.len(), 1);
         let collider = world.colliders.get(handle).unwrap();
         assert_eq!(collider.user_data as u64, 42);
@@ -634,7 +677,7 @@ mod tests {
         let mut world = PhysicsWorld::new();
         let shape = ColliderShape::Sphere(SphereShape::new(0.5));
         let transform = Transform::new_from_position(Vec3::new(0.0, 10.0, 0.0));
-        let (body, _collider) = world.create_dynamic_body(&shape, &transform, 1);
+        let (body, _collider) = world.create_dynamic_body(&shape, None, &transform, 1);
         assert_eq!(world.bodies.len(), 1);
         assert_eq!(world.colliders.len(), 1);
         assert!(world.bodies.get(body).unwrap().is_dynamic());
@@ -645,7 +688,7 @@ mod tests {
         let mut world = PhysicsWorld::new();
         let shape = ColliderShape::Sphere(SphereShape::new(1.0));
         let transform = Transform::default();
-        world.create_static_collider(&shape, &transform, 99);
+        world.create_static_collider(&shape, None, &transform, 99);
         world.step(1.0 / 60.0);
 
         let hit = world.raycast(Vec3::new(0.0, 0.0, -5.0), Vec3::new(0.0, 0.0, 1.0), 10.0);
@@ -660,7 +703,7 @@ mod tests {
         let mut world = PhysicsWorld::new();
         let shape = ColliderShape::Sphere(SphereShape::new(1.0));
         let transform = Transform::default();
-        world.create_static_collider(&shape, &transform, 1);
+        world.create_static_collider(&shape, None, &transform, 1);
         world.step(1.0 / 60.0);
 
         let hit = world.raycast(Vec3::new(10.0, 0.0, -5.0), Vec3::new(0.0, 0.0, 1.0), 10.0);
@@ -672,13 +715,13 @@ mod tests {
         let mut world = PhysicsWorld::new();
         let shape = ColliderShape::Sphere(SphereShape::new(0.5));
         let transform = Transform::new_from_position(Vec3::new(0.0, 10.0, 0.0));
-        let (body, _) = world.create_dynamic_body(&shape, &transform, 1);
+        let (body, _) = world.create_dynamic_body(&shape, None, &transform, 1);
 
         for _ in 0..60 {
             world.step(1.0 / 60.0);
         }
 
-        let new_transform = world.body_transform(body).unwrap(); // test unwrap is fine
+        let new_transform = world.body_transform(body).unwrap();
         assert!(
             new_transform.position.y() < 10.0,
             "Body should have fallen due to gravity"
@@ -691,7 +734,7 @@ mod tests {
 
         let shape = ColliderShape::Sphere(SphereShape::new(0.5));
         let transform = Transform::new_from_position(Vec3::new(0.0, 5.0, 0.0));
-        let (body, collider) = world.create_dynamic_body(&shape, &transform, 1);
+        let (body, collider) = world.create_dynamic_body(&shape, None, &transform, 1);
 
         assert_eq!(world.bodies.len(), 1);
         assert_eq!(world.colliders.len(), 1);
@@ -708,7 +751,7 @@ mod tests {
 
         let shape = ColliderShape::Sphere(SphereShape::new(1.0));
         let transform = Transform::default();
-        let collider = world.create_static_collider(&shape, &transform, 42);
+        let collider = world.create_static_collider(&shape, None, &transform, 42);
 
         assert_eq!(world.colliders.len(), 1);
 
@@ -724,6 +767,7 @@ mod tests {
         let transform = Transform::new_from_position(Vec3::new(0.0, 10.0, 0.0));
         let (body, _collider) = world.create_body_ex(
             &shape,
+            None,
             &transform,
             BodyType::Dynamic,
             None,
@@ -742,7 +786,7 @@ mod tests {
         let mut world = PhysicsWorld::new();
         let shape = ColliderShape::Sphere(SphereShape::new(0.5));
         let transform = Transform::new_from_position(Vec3::new(0.0, 10.0, 0.0));
-        let (body, _collider) = world.create_dynamic_body(&shape, &transform, 1);
+        let (body, _collider) = world.create_dynamic_body(&shape, None, &transform, 1);
         let rb = world.bodies.get(body).unwrap();
         assert!(!rb.is_ccd_enabled(), "CCD should be disabled by default");
     }

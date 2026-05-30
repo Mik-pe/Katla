@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicUsize;
 
 use crate::system::ComponentAccess;
 use crate::system::OrderedSystem;
+use crate::system::ResourceAccess;
 use crate::unsafe_world_cell::UnsafeWorldCell;
 
 #[derive(Copy, Clone)]
@@ -25,6 +26,8 @@ pub(crate) struct SystemNode {
     dependents: Vec<usize>,
     /// Component access pattern for this system.
     access: Vec<ComponentAccess>,
+    /// Resource access pattern for this system.
+    resource_access: Vec<ResourceAccess>,
     /// Number of unresolved dependencies (for topological execution).
     unresolved_deps: AtomicUsize,
 }
@@ -61,22 +64,27 @@ impl std::fmt::Display for SchedulerError {
 impl std::error::Error for SchedulerError {}
 
 impl SystemScheduler {
-    /// Build a DAG from a list of (system_index, access_pattern) pairs.
+    /// Build a DAG from a list of (system_index, access_pattern, resource_access_pattern) triples.
     ///
     /// For each pair of systems, a conflict is detected when:
     /// - Both write the same component type, or
     /// - One reads and the other writes the same component type.
+    /// - Both write the same resource type, or
+    /// - One reads and the other writes the same resource type.
     ///
-    /// Two systems that only read the same component do NOT conflict and
-    /// may execute in parallel.
-    pub fn build(systems: &[(usize, Vec<ComponentAccess>)]) -> Result<Self, SchedulerError> {
+    /// Two systems that only read the same component or resource do NOT conflict
+    /// and may execute in parallel.
+    pub fn build(
+        systems: &[(usize, Vec<ComponentAccess>, Vec<ResourceAccess>)],
+    ) -> Result<Self, SchedulerError> {
         let nodes: Vec<SystemNode> = systems
             .iter()
-            .map(|(sys_index, access)| SystemNode {
+            .map(|(sys_index, access, resource_access)| SystemNode {
                 index: *sys_index,
                 dependencies: Vec::new(),
                 dependents: Vec::new(),
                 access: access.clone(),
+                resource_access: resource_access.clone(),
                 unresolved_deps: AtomicUsize::new(0),
             })
             .collect();
@@ -157,7 +165,12 @@ impl SystemScheduler {
         let n = self.nodes.len();
         for i in 0..n {
             for j in (i + 1)..n {
-                if conflicts(&self.nodes[i].access, &self.nodes[j].access) {
+                if conflicts(
+                    &self.nodes[i].access,
+                    &self.nodes[j].access,
+                    &self.nodes[i].resource_access,
+                    &self.nodes[j].resource_access,
+                ) {
                     self.nodes[j].dependencies.push(i);
                     self.nodes[i].dependents.push(j);
                 }
@@ -220,7 +233,16 @@ impl SystemScheduler {
     }
 }
 
-fn conflicts(a: &[ComponentAccess], b: &[ComponentAccess]) -> bool {
+fn conflicts(
+    comp_a: &[ComponentAccess],
+    comp_b: &[ComponentAccess],
+    res_a: &[ResourceAccess],
+    res_b: &[ResourceAccess],
+) -> bool {
+    component_conflicts(comp_a, comp_b) || resource_conflicts(res_a, res_b)
+}
+
+fn component_conflicts(a: &[ComponentAccess], b: &[ComponentAccess]) -> bool {
     for access_a in a {
         for access_b in b {
             match (access_a, access_b) {
@@ -236,14 +258,46 @@ fn conflicts(a: &[ComponentAccess], b: &[ComponentAccess]) -> bool {
     false
 }
 
+fn resource_conflicts(a: &[ResourceAccess], b: &[ResourceAccess]) -> bool {
+    for access_a in a {
+        for access_b in b {
+            match (access_a, access_b) {
+                (ResourceAccess::Write(ta), ResourceAccess::Write(tb)) if ta == tb => {
+                    return true;
+                }
+                (ResourceAccess::Write(ta), ResourceAccess::Read(tb)) if ta == tb => return true,
+                (ResourceAccess::Read(ta), ResourceAccess::Write(tb)) if ta == tb => return true,
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use std::any::TypeId;
 
     use super::*;
 
-    fn make_systems(access: Vec<Vec<ComponentAccess>>) -> Vec<(usize, Vec<ComponentAccess>)> {
-        access.into_iter().enumerate().collect()
+    fn make_systems(
+        access: Vec<Vec<ComponentAccess>>,
+    ) -> Vec<(usize, Vec<ComponentAccess>, Vec<ResourceAccess>)> {
+        access
+            .into_iter()
+            .enumerate()
+            .map(|(i, a)| (i, a, Vec::new()))
+            .collect()
+    }
+
+    fn make_systems_with_resources(
+        access: Vec<(Vec<ComponentAccess>, Vec<ResourceAccess>)>,
+    ) -> Vec<(usize, Vec<ComponentAccess>, Vec<ResourceAccess>)> {
+        access
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a, r))| (i, a, r))
+            .collect()
     }
 
     #[test]
@@ -487,9 +541,17 @@ mod tests {
 
     #[test]
     fn test_preserves_system_indices() {
-        let systems: Vec<(usize, Vec<ComponentAccess>)> = vec![
-            (5, vec![ComponentAccess::Write(TypeId::of::<u32>())]),
-            (10, vec![ComponentAccess::Write(TypeId::of::<u64>())]),
+        let systems: Vec<(usize, Vec<ComponentAccess>, Vec<ResourceAccess>)> = vec![
+            (
+                5,
+                vec![ComponentAccess::Write(TypeId::of::<u32>())],
+                Vec::new(),
+            ),
+            (
+                10,
+                vec![ComponentAccess::Write(TypeId::of::<u64>())],
+                Vec::new(),
+            ),
         ];
 
         let scheduler = SystemScheduler::build(&systems).unwrap();
@@ -724,5 +786,110 @@ mod tests {
         assert_eq!(groups[1].len(), 2);
         assert!(groups[1].contains(&1));
         assert!(groups[1].contains(&2));
+    }
+
+    #[test]
+    fn test_resource_write_write_same_creates_edge() {
+        let res_x = TypeId::of::<u32>();
+        let systems = make_systems_with_resources(vec![
+            (Vec::new(), vec![ResourceAccess::Write(res_x)]),
+            (Vec::new(), vec![ResourceAccess::Write(res_x)]),
+        ]);
+
+        let scheduler = SystemScheduler::build(&systems).unwrap();
+        let groups = scheduler.groups();
+
+        assert_eq!(groups.len(), 2);
+        assert!(groups[0].contains(&0));
+        assert!(groups[1].contains(&1));
+    }
+
+    #[test]
+    fn test_resource_read_write_same_creates_edge() {
+        let res_x = TypeId::of::<u32>();
+        let systems = make_systems_with_resources(vec![
+            (Vec::new(), vec![ResourceAccess::Read(res_x)]),
+            (Vec::new(), vec![ResourceAccess::Write(res_x)]),
+        ]);
+
+        let scheduler = SystemScheduler::build(&systems).unwrap();
+        let groups = scheduler.groups();
+
+        assert_eq!(groups.len(), 2);
+        assert!(groups[0].contains(&0));
+        assert!(groups[1].contains(&1));
+    }
+
+    #[test]
+    fn test_resource_read_read_no_conflict() {
+        let res_x = TypeId::of::<u32>();
+        let systems = make_systems_with_resources(vec![
+            (Vec::new(), vec![ResourceAccess::Read(res_x)]),
+            (Vec::new(), vec![ResourceAccess::Read(res_x)]),
+        ]);
+
+        let scheduler = SystemScheduler::build(&systems).unwrap();
+        let groups = scheduler.groups();
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].len(), 2);
+    }
+
+    #[test]
+    fn test_resource_write_different_no_conflict() {
+        let systems = make_systems_with_resources(vec![
+            (Vec::new(), vec![ResourceAccess::Write(TypeId::of::<u32>())]),
+            (Vec::new(), vec![ResourceAccess::Write(TypeId::of::<u64>())]),
+        ]);
+
+        let scheduler = SystemScheduler::build(&systems).unwrap();
+        let groups = scheduler.groups();
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].len(), 2);
+    }
+
+    #[test]
+    fn test_resource_conflict_independent_of_component_access() {
+        // No component conflict, but resource write-write conflict
+        let type_a = TypeId::of::<u32>();
+        let res_x = TypeId::of::<u64>();
+
+        let systems = make_systems_with_resources(vec![
+            (
+                vec![ComponentAccess::Write(type_a)],
+                vec![ResourceAccess::Write(res_x)],
+            ),
+            (Vec::new(), vec![ResourceAccess::Write(res_x)]),
+        ]);
+
+        let scheduler = SystemScheduler::build(&systems).unwrap();
+        let groups = scheduler.groups();
+
+        assert_eq!(groups.len(), 2);
+    }
+
+    #[test]
+    fn test_component_and_resource_conflict_combined() {
+        // Component conflict between sys0 and sys1, resource conflict between sys1 and sys2
+        let type_a = TypeId::of::<u32>();
+        let res_x = TypeId::of::<u64>();
+
+        let systems = make_systems_with_resources(vec![
+            (vec![ComponentAccess::Write(type_a)], Vec::new()),
+            (
+                vec![ComponentAccess::Write(type_a)],
+                vec![ResourceAccess::Write(res_x)],
+            ),
+            (Vec::new(), vec![ResourceAccess::Write(res_x)]),
+        ]);
+
+        let scheduler = SystemScheduler::build(&systems).unwrap();
+        let groups = scheduler.groups();
+
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0], vec![0]);
+        assert_eq!(groups[1], vec![1]);
+        assert_eq!(groups[2], vec![2]);
     }
 }

@@ -203,6 +203,7 @@ pub struct OrderedSystem {
     pub system: Box<dyn System>,
     pub order: SystemExecutionOrder,
     pub access_patterns: Vec<ComponentAccess>,
+    pub resource_access_patterns: Vec<ResourceAccess>,
 }
 
 impl OrderedSystem {
@@ -211,6 +212,7 @@ impl OrderedSystem {
             system,
             order,
             access_patterns: Vec::new(),
+            resource_access_patterns: Vec::new(),
         }
     }
 }

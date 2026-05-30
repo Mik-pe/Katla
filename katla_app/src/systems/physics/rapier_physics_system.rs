@@ -3,8 +3,8 @@
 use katla_ecs::{ComponentAccess, EntityId, System, World};
 use katla_math::Vec3;
 use katla_physics::{
-    BodyType, ColliderShape, CollisionFilter, Joint, PhysicsActive, PhysicsMaterial, PhysicsWorld,
-    RigidBody, TriggerEvent, TriggerVolume,
+    BodyType, ColliderShape, CollisionFilter, Joint, MeshColliderData, PhysicsActive,
+    PhysicsMaterial, PhysicsWorld, RigidBody, TriggerEvent, TriggerVolume,
 };
 use katla_script::{PendingPhysicsEvents, PhysicsCollisionEvent, PhysicsCollisionEventType};
 
@@ -107,12 +107,15 @@ fn spawn_new_bodies(world: &mut World) {
 
         let collision_filter = world.get_component::<CollisionFilter>(entity).copied();
 
+        let mesh_data = resolve_mesh_data(&shape, world);
+
         let (body_handle, collider_handle) = {
             let Some(physics) = world.get_resource_mut::<PhysicsWorld>() else {
                 continue;
             };
             physics.create_body_ex(
                 &shape,
+                mesh_data.as_ref(),
                 &transform,
                 body_type,
                 mat.as_ref(),
@@ -129,6 +132,20 @@ fn spawn_new_bodies(world: &mut World) {
             rb.collider_handle = Some(collider_handle);
         }
     }
+}
+
+fn resolve_mesh_data(shape: &ColliderShape, world: &World) -> Option<MeshColliderData> {
+    let handle = match shape {
+        ColliderShape::Trimesh(h) | ColliderShape::ConvexHull(h) => *h,
+        _ => return None,
+    };
+
+    let cache = world.get_resource::<crate::geometry_cache::GeometryCache>()?;
+    let data = cache.get(handle)?;
+    Some(MeshColliderData {
+        positions: data.positions.clone(),
+        triangles: data.triangles.clone(),
+    })
 }
 
 fn spawn_new_joints(world: &mut World) {

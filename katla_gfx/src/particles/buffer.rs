@@ -137,6 +137,11 @@ impl ParticleBufferLayout {
 ///   Total: ~60 MB
 ///
 /// Counters, indirect draw, and emitter configs use separate per-frame buffers
+struct StagingBuffer {
+    buffer: vk::Buffer,
+    allocation: Allocation,
+}
+
 /// (double-buffered to avoid races between frames-in-flight).
 pub struct GlobalParticleBuffer {
     context: Rc<VulkanContext>,
@@ -468,79 +473,63 @@ impl GlobalParticleBuffer {
         })
     }
 
+    fn create_staging_buffer(&self, name: &str, size: u64) -> Result<StagingBuffer, RendererError> {
+        let buffer_info = vk::BufferCreateInfo::default()
+            .size(size)
+            .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+        let buffer = unsafe {
+            self.context
+                .device
+                .create_buffer(&buffer_info, None)
+                .map_err(|e| format!("Failed to create staging buffer '{}': {:?}", name, e))?
+        };
+        let requirements = unsafe { self.context.device.get_buffer_memory_requirements(buffer) };
+        let allocation = self
+            .context
+            .allocator
+            .try_borrow_mut_string(name)?
+            .allocate(&AllocationCreateDesc {
+                name,
+                requirements,
+                location: gpu_allocator::MemoryLocation::CpuToGpu,
+                linear: true,
+                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
+            })
+            .map_err(|e| format!("Failed to allocate staging memory '{}': {}", name, e))?;
+        unsafe {
+            self.context
+                .device
+                .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
+                .map_err(|e| format!("Failed to bind staging memory '{}': {:?}", name, e))?;
+        }
+        Ok(StagingBuffer { buffer, allocation })
+    }
+
     /// Initialize all index lists (dead list starts full, alive lists start empty).
     pub fn initialize_index_lists(&self) -> Result<(), RendererError> {
-        let cmd = self
-            .context
-            .begin_single_time_commands()
-            .map_err(|e| format!("Failed to begin single-time commands: {}", e))?;
-
-        // Zero-fill the particle data region
-        unsafe {
-            self.context.device.cmd_fill_buffer(
-                cmd.vk_command_buffer(),
-                self.particle_buffer(),
-                0,
-                self.layout.particles_size,
-                0,
-            );
-        }
-
-        // Initialize dead list with indices 0..MAX_PARTICLES
-        // All particles start in the dead list, ready to be allocated
+        // Prepare dead list staging data
         let indices: Vec<u32> = (0..self.max_particles).collect();
         let dead_list_data: Vec<u8> = indices
             .iter()
             .flat_map(|i| i.to_le_bytes().to_vec())
             .collect();
-
         let dead_list_size = dead_list_data.len() as u64;
 
-        // Create staging buffer for dead list initialization
-        let staging_buffer_info = vk::BufferCreateInfo::default()
-            .size(dead_list_size)
-            .usage(vk::BufferUsageFlags::TRANSFER_SRC)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let staging_buffer = unsafe {
-            self.context
-                .device
-                .create_buffer(&staging_buffer_info, None)
-                .map_err(|e| format!("Failed to create staging buffer: {:?}", e))?
+        // Prepare counters staging data
+        let counters_data = ParticleCounters {
+            alive_count: 0,
+            dead_count: self.max_particles,
+            emit_count: 0,
+            workgroups_finished: 0,
         };
+        let counters_bytes = bytemuck::bytes_of(&counters_data);
+        let counters_size = counters_bytes.len() as u64;
 
-        let staging_requirements = unsafe {
-            self.context
-                .device
-                .get_buffer_memory_requirements(staging_buffer)
-        };
-
-        let staging_allocation = self
-            .context
-            .allocator
-            .try_borrow_mut_string("particle_dead_list_staging")?
-            .allocate(&AllocationCreateDesc {
-                name: "particle_dead_list_staging",
-                requirements: staging_requirements,
-                location: gpu_allocator::MemoryLocation::CpuToGpu,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate staging memory: {}", e))?;
-
-        unsafe {
-            self.context
-                .device
-                .bind_buffer_memory(
-                    staging_buffer,
-                    staging_allocation.memory(),
-                    staging_allocation.offset(),
-                )
-                .map_err(|e| format!("Failed to bind staging memory: {:?}", e))?
-        }
-
-        // Copy data to staging buffer
-        if let Some(mapped) = staging_allocation.mapped_ptr() {
+        // Create dead list staging buffer
+        let dead_staging =
+            self.create_staging_buffer("particle_dead_list_staging", dead_list_size)?;
+        if let Some(mapped) = dead_staging.allocation.mapped_ptr() {
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     dead_list_data.as_ptr(),
@@ -550,127 +539,16 @@ impl GlobalParticleBuffer {
             }
             let _ = self
                 .context
-                .flush_mapped_memory(&staging_allocation, 0, dead_list_size);
+                .flush_mapped_memory(&dead_staging.allocation, 0, dead_list_size);
         }
 
-        // Copy from staging to dead list
-        unsafe {
-            let copy_region = vk::BufferCopy::default()
-                .src_offset(0)
-                .dst_offset(self.layout.dead_list_offset)
-                .size(dead_list_size);
-
-            self.context.device.cmd_copy_buffer(
-                cmd.vk_command_buffer(),
-                staging_buffer,
-                self.particle_buffer(),
-                std::slice::from_ref(&copy_region),
-            );
-        }
-
-        self.context
-            .end_single_time_commands(cmd)
-            .map_err(|e| format!("Failed to end single-time commands: {}", e))?;
-
-        // Cleanup staging buffer
-        unsafe {
-            self.context.device.destroy_buffer(staging_buffer, None);
-        }
-        self.context
-            .allocator
-            .free(staging_allocation, "particle staging buffer");
-
-        // Initialize alive lists to zero (empty on startup)
-        let cmd = self
-            .context
-            .begin_single_time_commands()
-            .map_err(|e| format!("Failed to begin single-time commands: {}", e))?;
-
-        unsafe {
-            for frame_idx in 0..2 {
-                self.context.device.cmd_fill_buffer(
-                    cmd.vk_command_buffer(),
-                    self.particle_buffer(),
-                    self.layout.alive_frame_offset[frame_idx],
-                    self.layout.alive_list_size,
-                    0,
-                );
-            }
-        }
-
-        self.context
-            .end_single_time_commands(cmd)
-            .map_err(|e| format!("Failed to end single-time commands: {}", e))?;
-
-        // Initialize atomic counters for both frames
-        for frame_idx in 0..2 {
-            let cmd = self
-                .context
-                .begin_single_time_commands()
-                .map_err(|e| format!("Failed to begin single-time commands: {}", e))?;
-            let counters_data = ParticleCounters {
-                alive_count: 0,
-                dead_count: self.max_particles,
-                emit_count: 0,
-                workgroups_finished: 0,
-            };
-            let counters_bytes: Vec<u8> = bytemuck::bytes_of(&counters_data).to_vec();
-
-            let staging_buffer_info = vk::BufferCreateInfo::default()
-                .size(counters_bytes.len() as u64)
-                .usage(vk::BufferUsageFlags::TRANSFER_SRC | vk::BufferUsageFlags::TRANSFER_DST)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE);
-            let staging_buffer = unsafe {
-                self.context
-                    .device
-                    .create_buffer(&staging_buffer_info, None)
-                    .map_err(|e| {
-                        format!(
-                            "Failed to create counters staging buffer[{}]: {:?}",
-                            frame_idx, e
-                        )
-                    })?
-            };
-            let staging_requirements = unsafe {
-                self.context
-                    .device
-                    .get_buffer_memory_requirements(staging_buffer)
-            };
-            let staging_allocation = self
-                .context
-                .allocator
-                .try_borrow_mut_string("particle_counters_staging")?
-                .allocate(&AllocationCreateDesc {
-                    name: &format!("particle_counters_staging[{}]", frame_idx),
-                    requirements: staging_requirements,
-                    location: gpu_allocator::MemoryLocation::CpuToGpu,
-                    linear: true,
-                    allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-                })
-                .map_err(|e| {
-                    format!(
-                        "Failed to allocate counters staging memory[{}]: {}",
-                        frame_idx, e
-                    )
-                })?;
-
-            unsafe {
-                self.context
-                    .device
-                    .bind_buffer_memory(
-                        staging_buffer,
-                        staging_allocation.memory(),
-                        staging_allocation.offset(),
-                    )
-                    .map_err(|e| {
-                        format!(
-                            "Failed to bind counters staging memory[{}]: {:?}",
-                            frame_idx, e
-                        )
-                    })?;
-            }
-
-            if let Some(mapped) = staging_allocation.mapped_ptr() {
+        // Create counters staging buffers for both frames
+        let counters_staging_0 =
+            self.create_staging_buffer("particle_counters_staging[0]", counters_size)?;
+        let counters_staging_1 =
+            self.create_staging_buffer("particle_counters_staging[1]", counters_size)?;
+        for staging in [&counters_staging_0, &counters_staging_1] {
+            if let Some(mapped) = staging.allocation.mapped_ptr() {
                 unsafe {
                     std::ptr::copy_nonoverlapping(
                         counters_bytes.as_ptr(),
@@ -678,36 +556,83 @@ impl GlobalParticleBuffer {
                         counters_bytes.len(),
                     );
                 }
-                let _ = self.context.flush_mapped_memory(
-                    &staging_allocation,
+                let _ = self
+                    .context
+                    .flush_mapped_memory(&staging.allocation, 0, counters_size);
+            }
+        }
+
+        // Record all initialization commands into a single command buffer
+        let cmd = self
+            .context
+            .begin_single_time_commands()
+            .map_err(|e| format!("Failed to begin single-time commands: {}", e))?;
+
+        unsafe {
+            let vk_cmd = cmd.vk_command_buffer();
+
+            // Zero-fill the particle data region
+            self.context.device.cmd_fill_buffer(
+                vk_cmd,
+                self.particle_buffer(),
+                0,
+                self.layout.particles_size,
+                0,
+            );
+
+            // Copy dead list indices from staging
+            let dead_copy = vk::BufferCopy::default()
+                .src_offset(0)
+                .dst_offset(self.layout.dead_list_offset)
+                .size(dead_list_size);
+            self.context.device.cmd_copy_buffer(
+                vk_cmd,
+                dead_staging.buffer,
+                self.particle_buffer(),
+                std::slice::from_ref(&dead_copy),
+            );
+
+            // Zero-fill alive lists for both frames
+            for frame_idx in 0..2 {
+                self.context.device.cmd_fill_buffer(
+                    vk_cmd,
+                    self.particle_buffer(),
+                    self.layout.alive_frame_offset[frame_idx],
+                    self.layout.alive_list_size,
                     0,
-                    counters_bytes.len() as u64,
                 );
             }
 
-            unsafe {
-                let copy_region = vk::BufferCopy::default()
+            // Copy counters from staging for both frames
+            for (frame_idx, staging) in [&counters_staging_0, &counters_staging_1]
+                .into_iter()
+                .enumerate()
+            {
+                let counters_copy = vk::BufferCopy::default()
                     .src_offset(0)
                     .dst_offset(0)
-                    .size(counters_bytes.len() as u64);
+                    .size(counters_size);
                 self.context.device.cmd_copy_buffer(
-                    cmd.vk_command_buffer(),
+                    vk_cmd,
+                    staging.buffer,
                     self.counters_buffer(frame_idx),
-                    staging_buffer,
-                    std::slice::from_ref(&copy_region),
+                    std::slice::from_ref(&counters_copy),
                 );
             }
+        }
 
-            self.context
-                .end_single_time_commands(cmd)
-                .map_err(|e| format!("Failed to end single-time commands: {}", e))?;
+        self.context
+            .end_single_time_commands(cmd)
+            .map_err(|e| format!("Failed to end single-time commands: {}", e))?;
 
+        // Cleanup all staging buffers
+        for staging in [dead_staging, counters_staging_0, counters_staging_1] {
             unsafe {
-                self.context.device.destroy_buffer(staging_buffer, None);
+                self.context.device.destroy_buffer(staging.buffer, None);
             }
             self.context
                 .allocator
-                .free(staging_allocation, "particle index staging buffer");
+                .free(staging.allocation, "particle init staging");
         }
 
         info!(
