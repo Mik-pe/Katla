@@ -10,6 +10,16 @@ use super::pass::PassDesc;
 use super::passes::geometry::GeometryPassData;
 use super::resource::{GraphResourceDesc, GraphResourceHandle};
 
+const BACKBUFFER_NAME: &str = super::BACKBUFFER_NAME;
+
+#[derive(Debug, Clone, Default)]
+pub(super) struct PassBarrierCache {
+    pub(super) pre_write_resources: Vec<ResourceId>,
+    pub(super) pre_read_resources: Vec<ResourceId>,
+    pub(super) post_write_to_read_resources: Vec<ResourceId>,
+    pub(super) needs_depth_sync: bool,
+}
+
 /// Per-frame parameters for render graph execution.
 ///
 /// These values change every frame and are set before calling `execute()`.
@@ -59,6 +69,12 @@ pub struct FrameGraph<B: RenderGraphBackend> {
     /// Whether the graph has been compiled.
     compiled: bool,
 
+    /// Whether the barrier cache needs recomputation.
+    barriers_dirty: bool,
+
+    /// Cached barrier info per pass (indexed by pass index).
+    barrier_cache: Vec<PassBarrierCache>,
+
     /// Transient resource descriptors (for lazy GPU resource creation).
     pub(super) transient_resources: Vec<GraphResourceDesc>,
 
@@ -92,6 +108,8 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             pass_names: HashMap::new(),
             execution_plan: None,
             compiled: false,
+            barriers_dirty: true,
+            barrier_cache: Vec::new(),
             transient_resources: Vec::new(),
             transient_textures: Vec::new(),
             ldr_texture_base_index: None,
@@ -107,6 +125,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         self.passes.push(pass);
         self.compiled = false;
         self.execution_plan = None;
+        self.barriers_dirty = true;
         PassId(index as u32)
     }
 
@@ -119,6 +138,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         }
         self.compiled = false;
         self.execution_plan = None;
+        self.barriers_dirty = true;
     }
 
     /// Create or get a ResourceId for a named resource.
@@ -139,6 +159,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         self.resource_by_name.insert(name, id);
         self.compiled = false;
         self.execution_plan = None;
+        self.barriers_dirty = true;
         id
     }
 
@@ -164,6 +185,90 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         self.execution_plan = Some(execution_plan);
         self.compiled = true;
         Ok(())
+    }
+
+    /// Ensure the barrier cache is up to date.
+    ///
+    /// Recomputes cached per-pass barrier info when the graph structure has changed.
+    /// This avoids re-scanning the execution order and pass dependencies every frame.
+    pub(crate) fn ensure_barrier_cache(&mut self) {
+        if !self.barriers_dirty {
+            return;
+        }
+        let Some(plan) = &self.execution_plan else {
+            return;
+        };
+
+        let mut cache = vec![PassBarrierCache::default(); self.passes.len()];
+        let mut depth_written = false;
+
+        for &pass_idx in &plan.sorted_passes {
+            let pass = &self.passes[pass_idx];
+            let mut pre_writes = Vec::new();
+            let mut pre_reads = Vec::new();
+            let mut post_writes = Vec::new();
+
+            let needs_depth_sync = pass.uses_depth && depth_written;
+
+            for &write_id in &pass.writes {
+                if self.resource_name(write_id) == Some(BACKBUFFER_NAME) {
+                    continue;
+                }
+                pre_writes.push(write_id);
+            }
+
+            for &read_id in &pass.reads {
+                if self.resource_name(read_id) == Some(BACKBUFFER_NAME) {
+                    continue;
+                }
+                if pass.writes.contains(&read_id) {
+                    continue;
+                }
+                pre_reads.push(read_id);
+            }
+
+            let current_pos = plan.sorted_passes.iter().position(|&p| p == pass_idx);
+            if let Some(pos) = current_pos {
+                for &write_id in &pass.writes {
+                    if self.resource_name(write_id) == Some(BACKBUFFER_NAME) {
+                        continue;
+                    }
+                    let next_access = plan.sorted_passes[pos + 1..].iter().find(|&&idx| {
+                        let p = &self.passes[idx];
+                        p.reads.contains(&write_id) || p.writes.contains(&write_id)
+                    });
+                    let next_is_read = match next_access {
+                        Some(&idx) => {
+                            let p = &self.passes[idx];
+                            p.reads.contains(&write_id) && !p.writes.contains(&write_id)
+                        }
+                        None => true,
+                    };
+                    if next_is_read {
+                        post_writes.push(write_id);
+                    }
+                }
+            }
+
+            if pass.uses_depth {
+                depth_written = true;
+            }
+
+            cache[pass_idx] = PassBarrierCache {
+                pre_write_resources: pre_writes,
+                pre_read_resources: pre_reads,
+                post_write_to_read_resources: post_writes,
+                needs_depth_sync,
+            };
+        }
+
+        self.barrier_cache = cache;
+        self.barriers_dirty = false;
+    }
+
+    /// Get cached barrier info for a pass.
+    pub(super) fn barrier_cache(&self, pass_index: usize) -> Option<&PassBarrierCache> {
+        self.barrier_cache.get(pass_index)
     }
 
     /// Get a pass index by name.
@@ -573,6 +678,8 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
         if !self.compiled {
             self.compile()?;
         }
+
+        self.ensure_barrier_cache();
 
         self.initialize_transient_textures(renderer)?;
 

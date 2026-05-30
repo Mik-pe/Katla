@@ -1,4 +1,3 @@
-use crate::render_graph::BACKBUFFER_NAME;
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
 use crate::render_graph::resource::ResourceState;
@@ -7,11 +6,11 @@ use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
 impl Frame<'_, VulkanRenderer> {
-    /// Insert barriers for a pass.
+    /// Insert barriers for a pass using cached barrier info.
     ///
-    /// Computes required resource states based on pass reads/writes and
-    /// inserts layout transitions as needed. Uses `TransientTexture::state()`
-    /// as the single source of truth for layout state.
+    /// Uses pre-computed resource lists from the barrier cache to avoid
+    /// re-scanning pass dependencies every frame. Layout transitions are
+    /// only issued when the current texture state differs from the target.
     pub(super) fn insert_barriers(
         &mut self,
         cmd: &CommandBuffer,
@@ -23,6 +22,8 @@ impl Frame<'_, VulkanRenderer> {
             return Ok(());
         };
 
+        let cache = self.graph.barrier_cache(pass_index);
+
         log::debug!(
             "[BARRIER] Pre-pass barriers for '{}': reads={:?}, writes={:?}",
             pass.name,
@@ -33,10 +34,7 @@ impl Frame<'_, VulkanRenderer> {
         let cmd_vk = cmd.vk_command_buffer();
         let device = &self.renderer.context.device;
 
-        // Synchronize global depth buffer between consecutive depth-using passes.
-        // When a depth prepass writes depth followed by a geometry pass that reads it,
-        // an image memory barrier is required even though the layout stays the same.
-        if pass.uses_depth && self.depth_buffer_written {
+        if cache.is_some_and(|c| c.needs_depth_sync) && self.depth_buffer_written {
             let frame_idx = self.current_frame();
             if let Some(depth_texture) = self
                 .renderer
@@ -52,12 +50,14 @@ impl Frame<'_, VulkanRenderer> {
             }
         }
 
-        for &write_id in &pass.writes {
-            // Skip backbuffer - it's managed by the swapchain
-            if self.graph.resource_name(write_id) == Some(BACKBUFFER_NAME) {
-                continue;
-            }
+        let write_resources = cache
+            .map(|c| c.pre_write_resources.as_slice())
+            .unwrap_or(&[]);
+        let read_resources = cache
+            .map(|c| c.pre_read_resources.as_slice())
+            .unwrap_or(&[]);
 
+        for &write_id in write_resources {
             let Some(transient) = self
                 .graph
                 .transient_texture_by_id(write_id, self.current_frame())
@@ -92,7 +92,6 @@ impl Frame<'_, VulkanRenderer> {
                     required_layout
                 );
 
-                // Use depth-specific subresource range for depth textures
                 if is_depth {
                     ImageBarrier::transition_with_range(
                         &cmd_vk,
@@ -123,17 +122,7 @@ impl Frame<'_, VulkanRenderer> {
             }
         }
 
-        for &read_id in &pass.reads {
-            // Skip backbuffer - not read by shaders
-            if self.graph.resource_name(read_id) == Some(BACKBUFFER_NAME) {
-                continue;
-            }
-
-            // Skip resources that are also written by this pass
-            if pass.writes.contains(&read_id) {
-                continue;
-            }
-
+        for &read_id in read_resources {
             let Some(transient) = self
                 .graph
                 .transient_texture_by_id(read_id, self.current_frame())
@@ -200,11 +189,10 @@ impl Frame<'_, VulkanRenderer> {
         Ok(())
     }
 
-    /// Insert post-pass barriers to ensure proper synchronization.
+    /// Insert post-pass barriers using cached next-access info.
     ///
-    /// This method transitions textures written by the current pass to SHADER_READ_ONLY
-    /// only if the immediately next pass that accesses the resource will read it (not write it).
-    /// If the next pass writes to the resource, the pre-barrier will handle the transition.
+    /// Uses pre-computed resource lists from the barrier cache to avoid
+    /// scanning the execution order for the next accessing pass every frame.
     pub(super) fn insert_post_pass_barriers(
         &mut self,
         cmd: &CommandBuffer,
@@ -216,44 +204,20 @@ impl Frame<'_, VulkanRenderer> {
             return Ok(());
         };
 
+        let Some(cache) = self.graph.barrier_cache(pass_index) else {
+            return Ok(());
+        };
+
         let cmd_vk = cmd.vk_command_buffer();
         let device = &self.renderer.context.device;
 
-        for &write_id in &current_pass.writes {
-            // Skip backbuffer
-            if self.graph.resource_name(write_id) == Some(BACKBUFFER_NAME) {
-                continue;
-            }
-
+        for &write_id in &cache.post_write_to_read_resources {
             let Some(transient) = self
                 .graph
                 .transient_texture_by_id(write_id, self.current_frame())
             else {
                 continue;
             };
-
-            // Find the next pass in execution order that accesses this resource
-            let execution_order = self.graph.execution_order();
-            let current_pos = execution_order.iter().position(|&p| p == pass_index);
-            let next_access = current_pos.and_then(|pos| {
-                execution_order[pos + 1..]
-                    .iter()
-                    .find(|&&idx| {
-                        let p = &self.graph.passes[idx];
-                        p.reads.contains(&write_id) || p.writes.contains(&write_id)
-                    })
-                    .map(|&idx| &self.graph.passes[idx])
-            });
-
-            // Only transition to SHADER_READ_ONLY if the next access is a read.
-            let next_is_read = match next_access {
-                Some(pass) => pass.reads.contains(&write_id) && !pass.writes.contains(&write_id),
-                None => true,
-            };
-
-            if !next_is_read {
-                continue;
-            }
 
             let current_state = transient.state();
 

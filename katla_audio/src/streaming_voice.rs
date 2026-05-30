@@ -131,6 +131,10 @@ impl StreamingVoice {
         self.priority
     }
 
+    pub fn category(&self) -> AudioCategoryValue {
+        self.category
+    }
+
     pub fn aux_send_level(&self, bus_id: AuxBusId) -> Option<f32> {
         self.aux_sends
             .iter()
