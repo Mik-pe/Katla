@@ -31,11 +31,11 @@ pub use constructors::{
 };
 pub use descriptor::{
     Alignment, Anchor, Callback, ChildDescriptor, ContextMenuDescriptor, ContextMenuEntry,
-    CustomDrawFn, DraggablePanelDescriptor, DraggablePanelState, DraggablePanelVisibility,
-    FlexProps, GridDescriptor, MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor,
-    OverlayDescriptor, Padding, PanelDescriptor, ScrollDescriptor, SeparatorDirection,
-    StackDescriptor, StatusBarDescriptor, TabBarDescriptor, TabItem, TreeItem, TreeViewDescriptor,
-    ViewDescriptor, ZStackDescriptor,
+    DraggablePanelDescriptor, DraggablePanelState, DraggablePanelVisibility, FlexProps,
+    GridDescriptor, MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor, OverlayDescriptor,
+    Padding, PanelDescriptor, ScrollDescriptor, SeparatorDirection, StackDescriptor,
+    StatusBarDescriptor, TabBarDescriptor, TabItem, TreeItem, TreeViewDescriptor, ViewDescriptor,
+    ZStackDescriptor,
 };
 pub use diff::{DiffAction, Patch, diff_descriptor};
 pub use focus::{Direction, FocusManager, GamepadNavigator};

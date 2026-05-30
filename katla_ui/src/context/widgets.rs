@@ -13,7 +13,7 @@
 //!    - Ergonomic, composable, discoverable API
 //!
 //! 2. **Internal Implementations** (submodules here)
-//!    - Actual rendering logic: `UiContext::button_with_colors()`, `UiContext::checkbox()`
+//!    - Actual rendering logic: `UiContext::button_with_colors()`, `UiContext::slider()`
 //!    - Private implementation details
 //!    - Called by builder widgets via the `Widget` trait
 //!
@@ -23,13 +23,12 @@
 //! // User code (layer 1)
 //! ui.add(ImageButton::new('X').bounds(my_bounds))
 //!
-//! // ImageButton::ui() calls (layer 2)
-//! ui.image_button("image_btn", 'X', my_bounds, true)
+//! // ToggleButton::ui() calls (layer 2)
+//! ui.toggle_button(&ToggleButtonParams { ... })
 //! ```
 
 mod basic;
 mod scroll_area;
-mod toggle_button;
 mod utility;
 
 pub use scroll_area::{ScrollArea, ScrollAreaState};

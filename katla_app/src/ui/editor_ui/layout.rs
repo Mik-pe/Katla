@@ -64,7 +64,7 @@ fn draw_bottom_tab_bar(
         ForkAwesome::CHEVRON_DOWN
     };
     if ui
-        .add(katla_ui::widgets::ImageButton::new(toggle_icon).bounds(toggle_bounds))
+        .image_button("toggle_collapse", toggle_icon, toggle_bounds, true)
         .clicked
     {
         // Collapse/expand handled by caller via AssetBrowserState
