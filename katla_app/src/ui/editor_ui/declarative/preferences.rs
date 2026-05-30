@@ -60,12 +60,14 @@ impl Build for PreferencesView {
         let active_tab = match current_tab {
             0 => PreferencesTab::General,
             1 => PreferencesTab::Viewport,
+            2 => PreferencesTab::Audio,
             _ => PreferencesTab::Ai,
         };
 
         let content = match active_tab {
             PreferencesTab::General => build_general_tab(ctx, theme, &draw_ctx),
             PreferencesTab::Viewport => build_viewport_tab(ctx, theme, &draw_ctx),
+            PreferencesTab::Audio => build_audio_tab(ctx, theme, &draw_ctx),
             PreferencesTab::Ai => build_ai_tab(ctx, theme, &draw_ctx),
         };
 
@@ -76,7 +78,12 @@ impl Build for PreferencesView {
             450.0,
             500.0,
             vstack([tab_bar(
-                vec![tab_item("General"), tab_item("Viewport"), tab_item("AI")],
+                vec![
+                    tab_item("General"),
+                    tab_item("Viewport"),
+                    tab_item("Audio"),
+                    tab_item("AI"),
+                ],
                 tab_sel_id,
                 content,
             )])
@@ -228,6 +235,70 @@ fn build_viewport_tab(
     children.push(
         labeled_slider("Speed:", speed_id, 5.0..=200.0)
             .label_width(60.0)
+            .show_value(true)
+            .precision(0),
+    );
+
+    vstack(children).spacing(8.0)
+}
+
+fn build_audio_tab(
+    ctx: &mut BuildContext,
+    theme: &ColorScheme,
+    draw_ctx: &PreferencesDrawCtx,
+) -> ViewDescriptor {
+    let mut children: Vec<ViewDescriptor> = Vec::new();
+
+    children.push(
+        text("VOLUME")
+            .color(theme.text_secondary)
+            .font_size(FontSize::Small),
+    );
+
+    let master_id: StateId = ctx.state(draw_ctx.preferences.audio.master_volume);
+    let current_master: f32 = ctx.get_state(master_id);
+    if (current_master - draw_ctx.preferences.audio.master_volume).abs() > 1e-4 {
+        ctx.emit(PreferencesAction::SetMasterVolume(current_master));
+    }
+    children.push(
+        labeled_slider("Master:", master_id, 0.0..=1.0)
+            .label_width(70.0)
+            .show_value(true)
+            .precision(0),
+    );
+
+    let sfx_id: StateId = ctx.state(draw_ctx.preferences.audio.sfx_volume);
+    let current_sfx: f32 = ctx.get_state(sfx_id);
+    if (current_sfx - draw_ctx.preferences.audio.sfx_volume).abs() > 1e-4 {
+        ctx.emit(PreferencesAction::SetSfxVolume(current_sfx));
+    }
+    children.push(
+        labeled_slider("SFX:", sfx_id, 0.0..=1.0)
+            .label_width(70.0)
+            .show_value(true)
+            .precision(0),
+    );
+
+    let music_id: StateId = ctx.state(draw_ctx.preferences.audio.music_volume);
+    let current_music: f32 = ctx.get_state(music_id);
+    if (current_music - draw_ctx.preferences.audio.music_volume).abs() > 1e-4 {
+        ctx.emit(PreferencesAction::SetMusicVolume(current_music));
+    }
+    children.push(
+        labeled_slider("Music:", music_id, 0.0..=1.0)
+            .label_width(70.0)
+            .show_value(true)
+            .precision(0),
+    );
+
+    let ambient_id: StateId = ctx.state(draw_ctx.preferences.audio.ambient_volume);
+    let current_ambient: f32 = ctx.get_state(ambient_id);
+    if (current_ambient - draw_ctx.preferences.audio.ambient_volume).abs() > 1e-4 {
+        ctx.emit(PreferencesAction::SetAmbientVolume(current_ambient));
+    }
+    children.push(
+        labeled_slider("Ambient:", ambient_id, 0.0..=1.0)
+            .label_width(70.0)
             .show_value(true)
             .precision(0),
     );

@@ -1132,6 +1132,36 @@ pub fn process_editor_actions(app: &mut Application) {
                 app.preferences.font_scale = scale;
                 info!("Font scale changed to: {:.0}%", scale * 100.0);
             }
+            EditorAction::SetMasterVolume(vol) => {
+                app.preferences.audio.master_volume = vol;
+                if let Some(ref audio) = app.audio_system {
+                    audio.engine().set_master_volume(vol);
+                }
+            }
+            EditorAction::SetSfxVolume(vol) => {
+                app.preferences.audio.sfx_volume = vol;
+                if let Some(ref audio) = app.audio_system {
+                    audio
+                        .engine()
+                        .set_category_volume(katla_audio::AudioCategory::Sfx, vol);
+                }
+            }
+            EditorAction::SetMusicVolume(vol) => {
+                app.preferences.audio.music_volume = vol;
+                if let Some(ref audio) = app.audio_system {
+                    audio
+                        .engine()
+                        .set_category_volume(katla_audio::AudioCategory::Music, vol);
+                }
+            }
+            EditorAction::SetAmbientVolume(vol) => {
+                app.preferences.audio.ambient_volume = vol;
+                if let Some(ref audio) = app.audio_system {
+                    audio
+                        .engine()
+                        .set_category_volume(katla_audio::AudioCategory::Ambient, vol);
+                }
+            }
             EditorAction::OpenPanel(panel) => {
                 app.editor.editor_ui.open_panel(panel);
             }

@@ -426,6 +426,20 @@ impl EditorUI {
             PreferencesAction::SetFontScale(scale) => {
                 self.pending_actions.push(EditorAction::SetFontScale(scale));
             }
+            PreferencesAction::SetMasterVolume(vol) => {
+                self.pending_actions
+                    .push(EditorAction::SetMasterVolume(vol));
+            }
+            PreferencesAction::SetSfxVolume(vol) => {
+                self.pending_actions.push(EditorAction::SetSfxVolume(vol));
+            }
+            PreferencesAction::SetMusicVolume(vol) => {
+                self.pending_actions.push(EditorAction::SetMusicVolume(vol));
+            }
+            PreferencesAction::SetAmbientVolume(vol) => {
+                self.pending_actions
+                    .push(EditorAction::SetAmbientVolume(vol));
+            }
             PreferencesAction::SetSnapToGrid(value) => {
                 self.editor_settings.snap_to_grid = value;
             }

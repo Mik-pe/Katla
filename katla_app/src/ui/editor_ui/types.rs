@@ -348,6 +348,14 @@ pub enum EditorAction {
     ToggleReverbDebug,
     /// Set font scale (1.0 = 100%).
     SetFontScale(f32),
+    /// Set master volume (0.0-1.0).
+    SetMasterVolume(f32),
+    /// Set SFX volume (0.0-1.0).
+    SetSfxVolume(f32),
+    /// Set music volume (0.0-1.0).
+    SetMusicVolume(f32),
+    /// Set ambient volume (0.0-1.0).
+    SetAmbientVolume(f32),
     /// Open panel
     OpenPanel(Panel),
     /// Toggle the selected particle emitter active/inactive.
@@ -641,6 +649,7 @@ pub enum PreferencesTab {
     #[default]
     General,
     Viewport,
+    Audio,
     Ai,
 }
 
@@ -649,6 +658,7 @@ impl PreferencesTab {
         &[
             PreferencesTab::General,
             PreferencesTab::Viewport,
+            PreferencesTab::Audio,
             PreferencesTab::Ai,
         ]
     }
@@ -657,6 +667,7 @@ impl PreferencesTab {
         match self {
             PreferencesTab::General => "General",
             PreferencesTab::Viewport => "Viewport",
+            PreferencesTab::Audio => "Audio",
             PreferencesTab::Ai => "AI",
         }
     }
@@ -665,6 +676,7 @@ impl PreferencesTab {
         match self {
             PreferencesTab::General => ForkAwesome::PAINT_BRUSH,
             PreferencesTab::Viewport => ForkAwesome::CUBE,
+            PreferencesTab::Audio => ForkAwesome::VOLUME_UP,
             PreferencesTab::Ai => ForkAwesome::CUBE,
         }
     }
@@ -708,6 +720,10 @@ pub enum PreferencesAction {
     SetSnapToGrid(bool),
     SetCameraSpeed(f32),
     SetGridSize(f32),
+    SetMasterVolume(f32),
+    SetSfxVolume(f32),
+    SetMusicVolume(f32),
+    SetAmbientVolume(f32),
     SetLlmProvider(String),
     SetLlmApiKey(String),
     SetLlmBaseUrl(String),

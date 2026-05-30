@@ -64,68 +64,8 @@ impl Application {
             Err(e) => error!("Failed to load scene from {}: {}", scene_path_str, e),
         }
 
-        self.spawn_physics_demo_objects();
-
         info!("Application::init() completed");
         Ok(())
-    }
-
-    fn spawn_physics_demo_objects(&mut self) {
-        use crate::components::TransformComponent;
-        use katla_math::{Transform, Vec3};
-        use katla_physics::{BoxShape, ColliderShape, PhysicsMaterial, RigidBody, SphereShape};
-
-        // Static floor collider (invisible)
-        let floor = self.world.create_entity();
-        self.world.add_component(
-            floor,
-            TransformComponent::new(Transform::new_from_position(Vec3::new(0.0, -1.0, 0.0))),
-        );
-        self.world.add_component(
-            floor,
-            ColliderShape::Box(BoxShape::from_extents(20.0, 0.1, 20.0)),
-        );
-        self.world.add_component(floor, RigidBody::static_body());
-        self.world
-            .add_component(floor, PhysicsMaterial::new(0.7, 0.3, 1.0));
-
-        // Dynamic spheres
-        let sphere_positions = [
-            Vec3::new(-2.0, 3.0, 0.0),
-            Vec3::new(0.0, 5.0, 0.0),
-            Vec3::new(2.0, 4.0, 0.0),
-        ];
-        for pos in sphere_positions {
-            let entity = self.world.create_entity();
-            self.world.add_component(
-                entity,
-                TransformComponent::new(Transform::new_from_position(pos)),
-            );
-            self.world
-                .add_component(entity, ColliderShape::Sphere(SphereShape::new(0.5)));
-            self.world.add_component(entity, RigidBody::dynamic());
-            self.world
-                .add_component(entity, PhysicsMaterial::new(0.5, 0.6, 1.0));
-        }
-
-        // Dynamic cubes
-        let cube_positions = [Vec3::new(-1.0, 7.0, 1.0), Vec3::new(1.0, 9.0, -1.0)];
-        for pos in cube_positions {
-            let entity = self.world.create_entity();
-            self.world.add_component(
-                entity,
-                TransformComponent::new(Transform::new_from_position(pos)),
-            );
-            self.world.add_component(
-                entity,
-                ColliderShape::Box(BoxShape::from_extents(1.0, 1.0, 1.0)),
-            );
-            self.world.add_component(entity, RigidBody::dynamic());
-            self.world
-                .add_component(entity, PhysicsMaterial::new(0.5, 0.4, 1.0));
-        }
-
-        info!("Spawned physics demo objects (1 floor, 3 spheres, 2 cubes)");
     }
 }
 
