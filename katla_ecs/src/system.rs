@@ -21,6 +21,25 @@ impl ComponentAccess {
     }
 }
 
+/// Describes how a system accesses a resource type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ResourceAccess {
+    /// System reads the resource (immutable access).
+    Read(TypeId),
+    /// System writes the resource (mutable access).
+    Write(TypeId),
+}
+
+impl ResourceAccess {
+    pub fn read<T: 'static>() -> Self {
+        ResourceAccess::Read(TypeId::of::<T>())
+    }
+
+    pub fn write<T: 'static>() -> Self {
+        ResourceAccess::Write(TypeId::of::<T>())
+    }
+}
+
 /// System trait for the ECS framework.
 ///
 /// Systems contain the logic that operates on entities with specific components.
@@ -135,6 +154,26 @@ pub trait System {
     /// has no conflicts and may run it concurrently with systems that access the same
     /// components, causing data races.
     fn component_access_dyn(&self) -> Vec<ComponentAccess> {
+        Vec::new()
+    }
+
+    /// Returns the resource access patterns for this system.
+    ///
+    /// Override this to declare which resources your system reads or writes.
+    /// Used by the parallel scheduler to detect conflicts and run independent
+    /// systems concurrently.
+    fn resource_access() -> Vec<ResourceAccess>
+    where
+        Self: Sized,
+    {
+        Vec::new()
+    }
+
+    /// Trait-object-compatible version of [`resource_access`](System::resource_access).
+    ///
+    /// Returns the resource access patterns for this system. Concrete types that override
+    /// `resource_access()` should also override this to return the same value.
+    fn resource_access_dyn(&self) -> Vec<ResourceAccess> {
         Vec::new()
     }
 }

@@ -622,6 +622,56 @@ pub(crate) fn draw_descriptor_with_id(
             }
         }
 
+        ViewDescriptor::VuMeter(desc) => {
+            let track_color = ui.style().slider_track;
+
+            // Map dB to 0..1 range: -60dB -> 0, 0dB -> 1
+            let db_to_t = |db: f32| (db + 60.0).clamp(0.0, 60.0) / 60.0;
+
+            let rms_t = db_to_t(desc.rms_db);
+            let peak_t = db_to_t(desc.peak_db);
+
+            // Background track
+            ui.draw_rounded_rect(bounds, track_color, 2.0);
+
+            // RMS fill — bottom to top, color-graded by level
+            let fill_height = rms_t * bounds.height();
+            if fill_height > 0.0 {
+                let fill_bounds = Rect2D::from_origin_size(
+                    Vec2::new(bounds.min.x(), bounds.max.y() - fill_height),
+                    Vec2::new(bounds.width(), fill_height),
+                );
+
+                let bar_color = if desc.rms_db >= -3.0 {
+                    Color::new(0.9, 0.15, 0.15, 1.0)
+                } else if desc.rms_db >= -12.0 {
+                    Color::new(0.9, 0.75, 0.1, 1.0)
+                } else {
+                    Color::new(0.2, 0.8, 0.2, 1.0)
+                };
+
+                ui.draw_rounded_rect(fill_bounds, bar_color, 2.0);
+            }
+
+            // Peak hold indicator line
+            if peak_t > 0.0 {
+                let peak_y = bounds.max.y() - peak_t * bounds.height();
+                let peak_color = if desc.peak_db >= -3.0 {
+                    Color::new(1.0, 0.3, 0.3, 1.0)
+                } else if desc.peak_db >= -12.0 {
+                    Color::new(1.0, 0.9, 0.3, 1.0)
+                } else {
+                    Color::new(0.5, 1.0, 0.5, 1.0)
+                };
+                ui.draw_line(
+                    Vec2::new(bounds.min.x(), peak_y),
+                    Vec2::new(bounds.max.x(), peak_y),
+                    peak_color,
+                    2.0,
+                );
+            }
+        }
+
         ViewDescriptor::ColorPicker { label, value_id } => {
             let color: Color = state_arena.get(*value_id);
 

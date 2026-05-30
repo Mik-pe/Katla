@@ -180,6 +180,8 @@ pub enum ViewDescriptor {
     Modal(Box<ModalDescriptor>),
 
     ContextMenu(Box<ContextMenuDescriptor>),
+
+    VuMeter(Box<VuMeterDescriptor>),
 }
 
 #[derive(Clone, Debug)]
@@ -333,6 +335,12 @@ pub struct ContextMenuEntry {
     pub label: String,
     pub on_click: Option<Callback>,
     pub disabled: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct VuMeterDescriptor {
+    pub peak_db: f32,
+    pub rms_db: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -642,6 +650,7 @@ impl std::fmt::Debug for ViewDescriptor {
             ViewDescriptor::TreeView(s) => f.debug_tuple("TreeView").field(s).finish(),
             ViewDescriptor::Modal(s) => f.debug_tuple("Modal").field(s).finish(),
             ViewDescriptor::ContextMenu(s) => f.debug_tuple("ContextMenu").field(s).finish(),
+            ViewDescriptor::VuMeter(s) => f.debug_tuple("VuMeter").field(s).finish(),
             ViewDescriptor::TransitionContainer { child, .. } => {
                 f.debug_tuple("TransitionContainer").field(child).finish()
             }

@@ -94,6 +94,13 @@ pub fn progress(value: f32, range: RangeInclusive<f32>) -> ViewDescriptor {
     }
 }
 
+pub fn vu_meter(peak_db: f32, rms_db: f32) -> ViewDescriptor {
+    ViewDescriptor::VuMeter(Box::new(super::descriptor::VuMeterDescriptor {
+        peak_db,
+        rms_db,
+    }))
+}
+
 pub fn image(texture: TextureId, tint: katla_math::Color) -> ViewDescriptor {
     ViewDescriptor::Image {
         texture,

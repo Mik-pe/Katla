@@ -23,7 +23,7 @@ pub use rapier3d::dynamics::ImpulseJointHandle;
 pub use rapier3d::dynamics::RigidBodyHandle;
 pub use rapier3d::geometry::ColliderHandle;
 pub use rigid_body::{BodyType, RigidBody};
-pub use shape::{BoxShape, CapsuleShape, SphereShape};
+pub use shape::{BoxShape, CapsuleShape, HeightfieldShape, SphereShape};
 pub use trigger::{TriggerEvent, TriggerVolume};
 
 /// Resource that controls whether the physics simulation steps.

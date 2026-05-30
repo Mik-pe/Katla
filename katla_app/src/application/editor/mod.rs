@@ -829,6 +829,9 @@ fn apply_inspector_slider_changes(app: &mut Application) {
                 (*collider_capsule_half_height - c.half_height).abs() > 1e-4
                     || (*collider_capsule_radius - c.radius).abs() > 1e-4
             }
+            katla_physics::ColliderShape::Trimesh(_)
+            | katla_physics::ColliderShape::ConvexHull(_)
+            | katla_physics::ColliderShape::Heightfield(_) => false,
         };
         if changed {
             match cs {
@@ -840,6 +843,9 @@ fn apply_inspector_slider_changes(app: &mut Application) {
                     c.half_height = *collider_capsule_half_height;
                     c.radius = *collider_capsule_radius;
                 }
+                katla_physics::ColliderShape::Trimesh(_)
+                | katla_physics::ColliderShape::ConvexHull(_)
+                | katla_physics::ColliderShape::Heightfield(_) => {}
             }
             if let Some(rb) = app
                 .world
@@ -2053,6 +2059,11 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                         c.half_height,
                         c.radius,
                     ),
+                    katla_physics::ColliderShape::Trimesh(_)
+                    | katla_physics::ColliderShape::ConvexHull(_)
+                    | katla_physics::ColliderShape::Heightfield(_) => {
+                        (ColliderShapeType::Sphere, 0.5, [0.5, 0.5, 0.5], 0.5, 0.25)
+                    }
                 };
                 ColliderShapeInfo {
                     shape_type,

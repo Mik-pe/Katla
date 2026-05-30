@@ -61,3 +61,24 @@ impl CapsuleShape {
         }
     }
 }
+
+/// A heightfield defined by a 2D grid of height values.
+///
+/// Heights are stored in row-major order with `cols` values per row and `rows` rows total.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HeightfieldShape {
+    pub rows: u32,
+    pub cols: u32,
+    pub heights: Vec<f32>,
+}
+
+impl HeightfieldShape {
+    pub fn new(rows: u32, cols: u32, heights: Vec<f32>) -> Self {
+        assert_eq!(heights.len(), (rows * cols) as usize);
+        Self {
+            rows,
+            cols,
+            heights,
+        }
+    }
+}

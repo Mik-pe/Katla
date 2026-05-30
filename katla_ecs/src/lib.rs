@@ -34,7 +34,7 @@ pub use query::{FilteredQueryIter, QueryFilter, With, Without};
 pub use resource::Resource;
 pub use spawn::Spawnable;
 pub(crate) use storage::ComponentStorageManager;
-pub use system::{ComponentAccess, System, SystemExecutionOrder};
+pub use system::{ComponentAccess, ResourceAccess, System, SystemExecutionOrder};
 pub use world::World;
 
 #[cfg(feature = "editor")]

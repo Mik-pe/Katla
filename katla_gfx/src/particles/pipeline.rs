@@ -124,7 +124,7 @@ impl GlobalParticleSystem {
 
         self.descriptors.draw_command_set = None;
         self.descriptors.draw_command_layout = Some(descriptor_layout);
-        self.descriptors._draw_command_pool = vk::DescriptorPool::null();
+        self.descriptors._draw_command_pool = None;
 
         let pipeline_handle = asset_registry.register_compute_pipeline(pipeline);
         self.pipelines.draw_command = Some(pipeline_handle);
