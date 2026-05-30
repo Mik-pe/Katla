@@ -225,7 +225,7 @@ impl StlMesh {
                 continue;
             }
 
-            if lower.starts_with("vertex") {
+            if let Some(rest) = lower.strip_prefix("vertex") {
                 if !in_loop {
                     return Err(StlError::InvalidAsciiData {
                         line: line_num,
@@ -238,8 +238,7 @@ impl StlMesh {
                         reason: "more than 3 vertices in facet".into(),
                     });
                 }
-                let v =
-                    parse_vec3_from_parts(lower.strip_prefix("vertex").unwrap().trim(), line_num)?;
+                let v = parse_vec3_from_parts(rest.trim(), line_num)?;
                 vertices[vertex_idx] = v;
                 vertex_idx += 1;
                 continue;

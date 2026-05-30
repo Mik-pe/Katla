@@ -179,10 +179,13 @@ impl ApplicationBuilder {
         self
     }
 
-    fn build_event_loop() -> EventLoop<()> {
-        let event_loop = EventLoop::new().unwrap();
+    fn build_event_loop() -> AppResult<EventLoop<()>> {
+        let event_loop =
+            EventLoop::new().map_err(|e| crate::error::AppError::RendererInitFailed {
+                reason: e.to_string(),
+            })?;
         event_loop.set_control_flow(ControlFlow::Poll);
-        event_loop
+        Ok(event_loop)
     }
 
     /// Initialize the renderer using the default backend for the current platform.
@@ -193,9 +196,15 @@ impl ApplicationBuilder {
         window: &Window,
         info: &ApplicationInfo,
         _resources: &ResourceManager,
-    ) -> Renderer {
-        let engine_name = CString::new("Katla Engine").unwrap();
-        let app_name = CString::new(info.name.as_str()).unwrap();
+    ) -> AppResult<Renderer> {
+        let engine_name =
+            CString::new("Katla Engine").map_err(|e| crate::error::AppError::Other {
+                message: e.to_string(),
+            })?;
+        let app_name =
+            CString::new(info.name.as_str()).map_err(|e| crate::error::AppError::Other {
+                message: e.to_string(),
+            })?;
 
         let mut renderer = {
             #[cfg(target_os = "macos")]
@@ -207,7 +216,7 @@ impl ApplicationBuilder {
                     app_name,
                     engine_name,
                 )
-                .expect("Failed to initialize Metal renderer")
+                .map_err(|e| crate::error::AppError::Graphics { source: e })?
             }
             #[cfg(not(target_os = "macos"))]
             {
@@ -218,16 +227,15 @@ impl ApplicationBuilder {
                     app_name,
                     engine_name,
                 )
-                .expect("Failed to initialize Vulkan renderer")
+                .map_err(|e| crate::error::AppError::Graphics { source: e })?
             }
         };
 
-        // Initialize particle system
         renderer
             .init_particle_system()
-            .expect("Failed to initialize particle system");
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
-        renderer
+        Ok(renderer)
     }
 
     /// Build a minimal frame graph for the Metal backend.
@@ -666,7 +674,7 @@ impl ApplicationBuilder {
     }
 
     pub fn build(self) -> AppResult<(Application, EventLoop<()>)> {
-        let event_loop = Self::build_event_loop();
+        let event_loop = Self::build_event_loop()?;
 
         // Install console logger early so all subsequent log messages are captured.
         // Wraps env_logger as secondary so stderr output is preserved.
@@ -683,8 +691,11 @@ impl ApplicationBuilder {
                 ),
             );
             let buffer = console_handle.buffer();
-            log::set_boxed_logger(console_handle.into_logger())
-                .expect("Failed to set console logger");
+            log::set_boxed_logger(console_handle.into_logger()).map_err(|e| {
+                crate::error::AppError::Other {
+                    message: e.to_string(),
+                }
+            })?;
             log::set_max_level(log::LevelFilter::Debug);
             buffer
         };
@@ -815,9 +826,11 @@ impl ApplicationBuilder {
                         height: 600.0,
                     }),
             )
-            .unwrap();
+            .map_err(|e| crate::error::AppError::RendererInitFailed {
+                reason: e.to_string(),
+            })?;
 
-        let mut renderer = Self::init_renderer(&event_loop, &window, &info, &resources);
+        let mut renderer = Self::init_renderer(&event_loop, &window, &info, &resources)?;
 
         // Upload initial font atlas texture to GPU
         let (font_atlas_handle, atlas_width, atlas_height) = {
@@ -852,10 +865,14 @@ impl ApplicationBuilder {
                 .unwrap_or(katla_gfx::render_graph::PassId(0)),
             geometry: frame_graph
                 .pass_id("geometry")
-                .expect("Frame graph must contain a 'geometry' pass"),
+                .ok_or(crate::error::AppError::Other {
+                    message: "Frame graph must contain a 'geometry' pass".to_string(),
+                })?,
             shadow: frame_graph
                 .pass_id("shadow")
-                .expect("Frame graph must contain a 'shadow' pass"),
+                .ok_or(crate::error::AppError::Other {
+                    message: "Frame graph must contain a 'shadow' pass".to_string(),
+                })?,
             outline: frame_graph
                 .pass_id("outline")
                 .unwrap_or(katla_gfx::render_graph::PassId(0)),
@@ -864,10 +881,14 @@ impl ApplicationBuilder {
                 .unwrap_or(katla_gfx::render_graph::PassId(0)),
             ui: frame_graph
                 .pass_id("ui")
-                .expect("Frame graph must contain a 'ui' pass"),
+                .ok_or(crate::error::AppError::Other {
+                    message: "Frame graph must contain a 'ui' pass".to_string(),
+                })?,
             tonemap: frame_graph
                 .pass_id("tonemap")
-                .expect("Frame graph must contain a 'tonemap' pass"),
+                .ok_or(crate::error::AppError::Other {
+                    message: "Frame graph must contain a 'tonemap' pass".to_string(),
+                })?,
             wallhack_overlay: frame_graph
                 .pass_id("wallhack_overlay")
                 .unwrap_or(katla_gfx::render_graph::PassId(0)),
@@ -1028,7 +1049,11 @@ impl ApplicationBuilder {
             hook(&mut application);
         }
 
-        event_loop.run_app(&mut application).unwrap();
+        event_loop
+            .run_app(&mut application)
+            .map_err(|e| crate::error::AppError::Other {
+                message: e.to_string(),
+            })?;
         Ok(())
     }
 }
