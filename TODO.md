@@ -45,7 +45,7 @@ Individual tasks should be small enough to complete in a single focused session.
  - [x] Add silence detection for streaming voices — `StreamingVoice::mix_into()` processes the full output buffer even when volume is 0.0 (only skips when `voice_volume == 0.0`, but tweening can make this check imprecise). Add an early-out when the voice has been silent for multiple consecutive frames.
 
 ### Phase 16: Feature parity with production audio engines
-- [ ] **Explore audio clock/timeline architecture** — Research sample-accurate scheduling APIs from production engines (Kira, FMOD, Wwise), evaluate clock design (position counter, scheduling queue, voice integration), and produce concrete implementation TODO items.
+- [x] **Explore audio clock/timeline architecture** — Research sample-accurate scheduling APIs from production engines (Kira, FMOD, Wwise), evaluate clock design (position counter, scheduling queue, voice integration), and produce concrete implementation TODO items.
 - [x] Add audio file metadata query — no way to query duration, sample rate, or channel count of an audio file without fully decoding it. Add `AudioBuffer::from_path_metadata()` or similar that reads headers only (WAV fmt chunk, OGG/MP3 frame headers) without decoding the entire file. Needed for the asset browser duration display.
 - [x] Add looping crossfade support — seamless loop transitions currently just jump from `loop_end` to `loop_start`, which can cause clicks if the waveform doesn't align. Add a short crossfade region at the loop point (mix the tail of the loop with the head of the next iteration).
 - [x] Add playback position query — no way to query the current playback position of a voice (in seconds or samples). Add `VoiceHandle::position() -> f32` and `StreamingVoiceHandle::position() -> f32` for UI scrub bars, subtitle sync, and gameplay triggers.
@@ -123,13 +123,13 @@ Individual tasks should be small enough to complete in a single focused session.
 
 - [x] **Expose `apply_force` / `apply_impulse` to Luau scripts** — Scripts can raycast but cannot apply forces or impulses to physics bodies. Add `world:apply_force(entity_id, force: Vec3)` and `world:apply_impulse(entity_id, impulse: Vec3)` script bindings.
 - [x] **Expose body velocity read/write to scripts** — Add `world:get_velocity(entity_id) -> Vec3` and `world:set_velocity(entity_id, velocity: Vec3)` for script-driven physics control.
-- [ ] **Expose trigger volume queries to scripts** — Scripts should be able to check if an entity with a `TriggerVolume` is currently overlapping with specific entities, not just receive enter/exit events.
+- [x] **Expose trigger volume queries to scripts** — Scripts should be able to check if an entity with a `TriggerVolume` is currently overlapping with specific entities, not just receive enter/exit events.
 - [ ] **Add physics collision event scripting** — Wire `PendingPhysicsEvents` into the script event system so scripts can subscribe to collision events via `world:on_event("collision_enter", callback)` instead of needing a separate resource.
 
 ## Rendering
 
 ### Metal rendering bugs
-- [ ] Billboard icons don't show in Metal
+- [x] Billboard icons don't show in Metal
 - [ ] Animated fox (skinned mesh) doesn't show in Metal
 - [ ] Particle systems don't show in Metal
 
@@ -673,6 +673,6 @@ hstack(children).spacing(2.0).padding_all(10.0)
   - [ ] Document query/state methods — timestamp queries, readback, synchronization
 
 ### Metal Backend Specific
-- [ ] **Fix billboard icons rendering** — Billboard icons don't show in Metal backend
+- [x] **Fix billboard icons rendering** — Billboard icons don't show in Metal backend
 - [ ] **Fix animated fox (skinned mesh) rendering** — Skinned mesh doesn't show in Metal backend
 - [ ] **Fix particle systems rendering** — Particle systems don't show in Metal backend
