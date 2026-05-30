@@ -98,7 +98,7 @@ Individual tasks should be small enough to complete in a single focused session.
 
 - [x] **Add geometry data cache for mesh vertex positions** — Added GeometryCache (HashMap<MeshHandle, Arc<MeshGeometryData>>) populated during mesh loading.
 - [x] **Extend `ColliderShape` enum with mesh-derived variants** — Added Trimesh(MeshHandle), ConvexHull(MeshHandle), Heightfield(HeightfieldShape) with serde support.
-- [ ] **Wire new `ColliderShape` variants through `collider_shape_to_rapier()`** — In `physics_world.rs`, add Rapier `SharedShape` construction for Trimesh (via `SharedShape::trimesh`), ConvexHull (via `SharedShape::convex_hull`), and Heightfield (via `SharedShape::heightfield`). Wire the geometry cache lookup so the system can resolve the mesh data at spawn time.
+- [x] **Wire new `ColliderShape` variants through `collider_shape_to_rapier()`** — Trimesh/ConvexHull use MeshColliderData from geometry cache, Heightfield uses inline data.
 - [ ] **Implement trimesh collider generation for static environment meshes** — For static environment geometry (floors, walls, level architecture), generate exact trimesh colliders from the mesh's vertex/index data. Add an editor action or auto-detection: when a static `RigidBody` entity has a mesh, default to trimesh collider. Trimesh colliders only work with static bodies in Rapier.
 - [ ] **Implement convex hull collider generation for dynamic props** — For dynamic/kinematic objects with complex meshes, compute a convex hull from vertex positions using Rapier's `SharedShape::convex_hull`. Convex hulls support dynamic simulation (unlike trimesh) but are approximate — they enclose the mesh but may have gaps. Add editor action to convert a mesh entity's collider to convex hull.
 - [ ] **Implement capsule auto-fit from mesh dimensions** — Capsule colliders are ideal for character-like objects (humanoids, pillars, barrels). When auto-fitting a collider, compute the mesh AABB and check if it is tall and narrow (height > 2 × width). If so, generate a `CapsuleShape { half_height: height/2 - radius, radius: width/2 }` instead of a box. Add capsule as an explicit option in the editor collider type picker so users can override auto-fit.
@@ -576,12 +576,12 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] **Fix unsound parallel system access to World** — `update_parallel()` hands `UnsafeWorldCell` to all systems in a group. Systems get `&mut World` simultaneously. If a system accesses `resources`, `entity_events`, `component_events`, or `entity_allocator` (all shared World fields), it creates data races. The scheduler only tracks `ComponentAccess` but World has much more mutable state.
   - [ ] Audit all systems for `World` field access beyond `ComponentAccess` — enumerate which systems touch `resources`, `entity_events`, `component_events`, `entity_allocator` during `update_parallel()`
   - [x] Add `ResourceAccess` declaration to the `System` trait — similar to `ComponentAccess`, systems declare which resources they read/write
-  - [ ] Extend scheduler `conflicts()` to check resource access — add resource read/write conflict detection alongside existing component conflict detection
+  - [x] Extend scheduler `conflicts()` to check resource access — added resource_conflicts() with 7 tests
   - [ ] Validate with existing systems — update all system implementations to declare their resource access, verify no false conflicts
   - [ ] Add tests for resource-conflicting system scheduling — verify the scheduler correctly detects and prevents concurrent access to shared resources
 - [ ] **Fix lifetime transmute in par_query** — `par_query.rs` uses `std::mem::transmute` to erase lifetimes to `'static` on `&ComponentStorage` and `&[(EntityId, T)]`. While bounded by the return type, this is fragile. Replace with a safer pattern (e.g. `UnsafeWorldCell`-style wrapper with explicit lifetime scoping, similar to Bevy's `WorldBorrow`).
 - [ ] **Add `Send + Sync` bounds to `Component` trait** — `Component: Any {}` carries no thread-safety bounds. This means `ComponentStorage<T>` cannot be `Send`, limiting future parallel strategies. Add `Component: Any + Send + Sync` and update all downstream types.
-- [ ] **Track resource access in parallel scheduler** — The `SystemScheduler` DAG only checks `ComponentAccess` conflicts. Systems that access `World::get_resource_mut()` concurrently in the same group cause data races.
+- [x] **Track resource access in parallel scheduler** — Extended SystemScheduler with ResourceAccess conflict detection alongside ComponentAccess.
   - [x] Add `ResourceAccess` struct mirroring `ComponentAccess` — track resource type IDs with read/write flags
   - [ ] Add `fn resource_access() -> ResourceAccess` to the `System` trait — default to empty, systems override
   - [ ] Extend `SystemScheduler::conflicts()` to check both `ComponentAccess` and `ResourceAccess` — union the conflict sets
@@ -648,7 +648,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### P4 - Performance
 - [x] **Reduce `Rc<VulkanContext>` cloning in initialization** — `VulkanRenderer::init()` clones context 8+ times. Pass `&Rc<VulkanContext>` where possible
 - [x] **Cache frame graph barrier compilation** — Added PassBarrierCache with dirty flag, only recompiles when graph structure changes.
-- [ ] **Batch single-time commands** — `begin_single_time_commands()` creates new command buffer each call. Batch operations where possible
+- [x] **Batch single-time commands** — Batched particle buffer initialization from 4 submit-wait cycles to 1.
 
 ### P5 - API Design
 - [ ] **Reduce public API surface** — `lib.rs` exposes 80+ items. Many internal modules shouldn't be public. Audit and restrict one module at a time:
