@@ -60,4 +60,7 @@ pub enum ScriptCommand {
     ApplyImpulse { entity_id: u64, impulse: [f32; 3] },
     /// Set the linear velocity of a physics body.
     SetVelocity { entity_id: u64, velocity: [f32; 3] },
+    /// Query which entities are currently overlapping a trigger volume.
+    /// Results can be retrieved on the next frame using `get_trigger_overlaps`.
+    QueryTriggerOverlaps { entity_id: u64, return_index: usize },
 }

@@ -68,6 +68,20 @@ pub struct PendingPhysicsForceCommands(pub Vec<crate::bindings::world::ScriptCom
 #[derive(Default)]
 pub struct PendingVelocityCommands(pub Vec<crate::bindings::world::ScriptCommand>);
 
+/// Resource holding trigger overlap query results from the previous frame.
+/// Scripts call `world:query_trigger_overlaps()` to queue a query, then
+/// `world:get_trigger_overlaps()` on the next frame to retrieve the result.
+#[derive(Default)]
+pub struct PendingTriggerQueryResults(
+    pub std::collections::HashMap<usize, crate::bindings::script_world::TriggerOverlapResult>,
+);
+
+/// Resource holding trigger overlap query commands queued by scripts during the last ECS update.
+/// `katla_app` drains this after `world.update()`, queries `PhysicsWorld` for current
+/// trigger overlaps, and stores results in `PendingTriggerQueryResults`.
+#[derive(Default)]
+pub struct PendingTriggerQueryCommands(pub Vec<crate::bindings::world::ScriptCommand>);
+
 /// A collision event from the physics system.
 ///
 /// Dispatched to scripts as `"collision_enter"` or `"collision_exit"` events.
@@ -342,6 +356,11 @@ impl ScriptSystem {
             .map(|r| r.0.clone())
             .unwrap_or_default();
 
+        let trigger_overlap_results = world
+            .get_resource::<PendingTriggerQueryResults>()
+            .map(|r| r.0.clone())
+            .unwrap_or_default();
+
         SharedWorldData {
             transforms: transforms.into_iter().collect(),
             velocities: velocities.into_iter().collect(),
@@ -349,6 +368,7 @@ impl ScriptSystem {
             component_entities,
             input_state: input,
             raycast_results,
+            trigger_overlap_results,
         }
     }
 
@@ -357,6 +377,7 @@ impl ScriptSystem {
         let mut raycast_cmds = Vec::new();
         let mut force_cmds = Vec::new();
         let mut velocity_cmds = Vec::new();
+        let mut trigger_query_cmds = Vec::new();
         let mut core_cmds = Vec::new();
         for cmd in commands {
             match &cmd {
@@ -373,6 +394,9 @@ impl ScriptSystem {
                 }
                 ScriptCommand::SetVelocity { .. } => {
                     velocity_cmds.push(cmd);
+                }
+                ScriptCommand::QueryTriggerOverlaps { .. } => {
+                    trigger_query_cmds.push(cmd);
                 }
                 _ => core_cmds.push(cmd),
             }
@@ -400,6 +424,12 @@ impl ScriptSystem {
             && let Some(pending) = world.get_resource_mut::<PendingVelocityCommands>()
         {
             pending.0.extend(velocity_cmds);
+        }
+
+        if !trigger_query_cmds.is_empty()
+            && let Some(pending) = world.get_resource_mut::<PendingTriggerQueryCommands>()
+        {
+            pending.0.extend(trigger_query_cmds);
         }
 
         if let Some(consumer) = self.command_consumer.as_mut() {
@@ -440,7 +470,8 @@ impl ScriptSystem {
                     | ScriptCommand::Raycast { .. }
                     | ScriptCommand::ApplyForce { .. }
                     | ScriptCommand::ApplyImpulse { .. }
-                    | ScriptCommand::SetVelocity { .. } => {}
+                    | ScriptCommand::SetVelocity { .. }
+                    | ScriptCommand::QueryTriggerOverlaps { .. } => {}
                 }
             }
         }

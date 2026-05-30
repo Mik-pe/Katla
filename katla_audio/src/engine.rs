@@ -360,6 +360,35 @@ impl AudioEngine {
         self.mixer.set_zone_reverb(decay, wet, dampening);
     }
 
+    pub fn clock_time(&self) -> f64 {
+        self.mixer.clock_time()
+    }
+
+    pub fn clock_time_after_samples(&self, n: u64) -> f64 {
+        self.mixer.clock_time_after_samples(n)
+    }
+
+    pub fn schedule_play(
+        &self,
+        buffer: &Arc<AudioBuffer>,
+        category: AudioCategory,
+        priority: VoicePriority,
+        time_secs: f64,
+    ) {
+        let cat_val = category.to_value().unwrap_or(AudioCategoryValue::Sfx);
+        self.mixer
+            .schedule_play(buffer.clone(), cat_val, priority, time_secs);
+    }
+
+    pub fn schedule_stop(&self, voice_id: VoiceId, time_secs: f64) {
+        self.mixer.schedule_stop(voice_id, time_secs);
+    }
+
+    pub fn schedule_volume_change(&self, voice_id: VoiceId, volume: f32, time_secs: f64) {
+        self.mixer
+            .schedule_volume_change(voice_id, volume, time_secs);
+    }
+
     pub fn play_streaming(&self, path: &Path) -> Result<StreamingVoiceHandle, AudioError> {
         self.play_streaming_with_category(path, AudioCategory::Music)
     }
