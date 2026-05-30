@@ -7,12 +7,17 @@
 //! # Quick start
 //!
 //! ```no_run
+//! use std::path::Path;
+//! use std::sync::Arc;
 //! use katla_audio::{AudioEngine, load_audio};
 //!
-//! let engine = AudioEngine::new()?;
-//! let buffer = load_audio("sound.wav")?;
-//! let voice = engine.play(&buffer);
-//! engine.resume()?;
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let engine = AudioEngine::new()?;
+//!     let buffer = load_audio(Path::new("sound.wav"))?;
+//!     let voice = engine.play(&Arc::new(buffer));
+//!     engine.resume()?;
+//!     Ok(())
+//! }
 //! ```
 //!
 //! # Thread architecture
@@ -113,11 +118,13 @@
 //! during mixing.
 
 mod buffer;
+mod clock;
 mod command_queue;
 mod effect;
 mod engine;
 mod error;
 mod mixer;
+mod scheduled_event;
 mod sound_cue;
 mod streaming;
 mod streaming_voice;

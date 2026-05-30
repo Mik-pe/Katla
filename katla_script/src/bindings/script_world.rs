@@ -25,6 +25,15 @@ pub struct RaycastResult {
     pub distance: f32,
 }
 
+/// Result of a trigger overlap query.
+///
+/// Returned by `world:get_trigger_overlaps(index)` after calling `world:query_trigger_overlaps()`.
+#[derive(Clone, Debug)]
+pub struct TriggerOverlapResult {
+    /// Entity IDs currently overlapping the trigger volume.
+    pub overlapping_entities: Vec<u64>,
+}
+
 /// Snapshot of input state for a frame.
 ///
 /// This is captured at the beginning of each frame and passed to all scripts.
@@ -56,6 +65,8 @@ pub(crate) struct SharedWorldData {
     pub input_state: InputSnapshot,
     /// Results of raycasts from the previous frame.
     pub raycast_results: HashMap<usize, RaycastResult>,
+    /// Results of trigger overlap queries from the previous frame.
+    pub trigger_overlap_results: HashMap<usize, TriggerOverlapResult>,
 }
 
 /// Shared event bus wrapper that allows scripts to emit events and register handlers.
@@ -158,6 +169,7 @@ impl ScriptWorldProxy {
                 component_entities: HashMap::new(),
                 input_state: InputSnapshot::default(),
                 raycast_results: HashMap::new(),
+                trigger_overlap_results: HashMap::new(),
             }),
             event_bus: Rc::new(RefCell::new(SharedEventBus::default())),
             vm: None,
@@ -213,6 +225,11 @@ impl ScriptWorldProxy {
     /// Get the result of a previously issued raycast command by its return index.
     pub fn get_raycast_result(&self, index: usize) -> Option<RaycastResult> {
         self.shared.raycast_results.get(&index).cloned()
+    }
+
+    /// Get the result of a previously issued trigger overlap query by its return index.
+    pub fn get_trigger_overlaps(&self, index: usize) -> Option<TriggerOverlapResult> {
+        self.shared.trigger_overlap_results.get(&index).cloned()
     }
 
     /// Get the linear velocity of an entity.
@@ -416,6 +433,28 @@ impl UserData for ScriptWorldProxy {
                 }
                 None => Ok(None),
             }
+        });
+
+        methods.add_method_mut("query_trigger_overlaps", |_, this, entity: LuaEntityId| {
+            let return_index = this.commands.len();
+            this.commands.push(ScriptCommand::QueryTriggerOverlaps {
+                entity_id: entity.0.id(),
+                return_index,
+            });
+            Ok(return_index)
+        });
+
+        methods.add_method("get_trigger_overlaps", |lua, this, index: usize| match this
+            .get_trigger_overlaps(index)
+        {
+            Some(result) => {
+                let table = lua.create_table()?;
+                for (i, entity_id) in result.overlapping_entities.iter().enumerate() {
+                    table.set(i + 1, LuaEntityId(EntityId::from_raw(*entity_id)))?;
+                }
+                Ok(Some(table))
+            }
+            None => Ok(None),
         });
     }
 }

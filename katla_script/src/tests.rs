@@ -68,6 +68,7 @@ fn make_proxy() -> ScriptWorldProxy {
         component_entities: Default::default(),
         input_state: Default::default(),
         raycast_results: Default::default(),
+        trigger_overlap_results: Default::default(),
         velocities: Default::default(),
     }))
 }
@@ -221,6 +222,7 @@ fn make_proxy_with_components(
         component_entities,
         input_state: Default::default(),
         raycast_results: Default::default(),
+        trigger_overlap_results: Default::default(),
         velocities: Default::default(),
     }))
 }
@@ -428,6 +430,7 @@ fn test_script_reads_transform() {
         component_entities: Default::default(),
         input_state: Default::default(),
         raycast_results: Default::default(),
+        trigger_overlap_results: Default::default(),
         velocities: Default::default(),
     }));
 
@@ -476,6 +479,7 @@ fn test_input_bindings_pressed() {
         component_entities: Default::default(),
         input_state: input,
         raycast_results: Default::default(),
+        trigger_overlap_results: Default::default(),
         velocities: Default::default(),
     }));
 
@@ -524,6 +528,7 @@ fn test_entity_exists_binding() {
         component_entities: Default::default(),
         input_state: Default::default(),
         raycast_results: Default::default(),
+        trigger_overlap_results: Default::default(),
         velocities: Default::default(),
     }));
     let commands = engine.execute_on_update(handle, e1, proxy, 0.016).unwrap();

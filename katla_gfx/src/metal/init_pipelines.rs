@@ -94,7 +94,8 @@ impl MetalRenderer {
                 "Billboard depth prepass vertex entry point not found".into(),
             )
         })?;
-        self.depth_prepass.create_pipeline(&self.context, vertex_fn)
+        self.depth_prepass
+            .create_pipeline_billboard(&self.context, vertex_fn)
     }
 
     pub fn init_outline_pipelines(

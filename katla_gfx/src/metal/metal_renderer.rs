@@ -740,6 +740,7 @@ impl MetalRenderer {
             &mut cmd_buffer,
             pipeline,
             self.depth_prepass.pipeline_skinned(),
+            self.depth_prepass.pipeline_billboard(),
             depth_view,
             width,
             height,

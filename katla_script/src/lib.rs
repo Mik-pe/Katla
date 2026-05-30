@@ -20,6 +20,8 @@ pub use system::PendingPhysicsForceCommands;
 pub use system::PendingRaycastCommands;
 pub use system::PendingRaycastResults;
 pub use system::PendingScriptVarEdits;
+pub use system::PendingTriggerQueryCommands;
+pub use system::PendingTriggerQueryResults;
 pub use system::PendingVelocityCommands;
 pub use system::PhysicsCollisionEvent;
 pub use system::PhysicsCollisionEventType;

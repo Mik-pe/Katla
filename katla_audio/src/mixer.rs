@@ -4,9 +4,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::buffer::AudioBuffer;
+use crate::clock::AudioClock;
 use crate::command_queue::{AudioCategoryValue, AudioCommand, CommandQueue};
 use crate::effect::zone_reverb::ZoneReverbEffect;
 use crate::effect::{AuxBus, EffectChain};
+use crate::scheduled_event::ScheduledEvent;
 use crate::streaming_voice::StreamingVoice;
 use crate::voice::{AuxBusId, CategoryVolumes, Voice, VoiceId, VoicePriority, VoiceState};
 
@@ -432,6 +434,8 @@ pub struct AudioMixer {
     zone_reverb_decay: Arc<AtomicU32>,
     zone_reverb_wet: Arc<AtomicU32>,
     zone_reverb_dampening: Arc<AtomicU32>,
+    clock: AudioClock,
+    scheduled_events: Mutex<Vec<ScheduledEvent>>,
     sample_rate: u32,
     channels: u16,
 }
@@ -480,6 +484,8 @@ impl AudioMixer {
             zone_reverb_decay,
             zone_reverb_wet,
             zone_reverb_dampening,
+            clock: AudioClock::new(sample_rate),
+            scheduled_events: Mutex::new(Vec::new()),
             sample_rate,
             channels,
         }
@@ -681,6 +687,56 @@ impl AudioMixer {
             .store(dampening.to_bits(), Ordering::Relaxed);
     }
 
+    pub fn clock_time(&self) -> f64 {
+        self.clock.time_secs()
+    }
+
+    pub fn clock_time_after_samples(&self, n: u64) -> f64 {
+        self.clock.time_of_next_sample_count(n)
+    }
+
+    pub fn schedule_play(
+        &self,
+        buffer: Arc<AudioBuffer>,
+        category: AudioCategoryValue,
+        priority: VoicePriority,
+        time_secs: f64,
+    ) {
+        let mut events = self
+            .scheduled_events
+            .lock()
+            .expect("scheduled_events lock poisoned");
+        events.push(ScheduledEvent::PlayAt {
+            buffer,
+            category,
+            priority,
+            time_secs,
+        });
+    }
+
+    pub fn schedule_stop(&self, voice_id: VoiceId, time_secs: f64) {
+        let mut events = self
+            .scheduled_events
+            .lock()
+            .expect("scheduled_events lock poisoned");
+        events.push(ScheduledEvent::StopAt {
+            voice_id,
+            time_secs,
+        });
+    }
+
+    pub fn schedule_volume_change(&self, voice_id: VoiceId, volume: f32, time_secs: f64) {
+        let mut events = self
+            .scheduled_events
+            .lock()
+            .expect("scheduled_events lock poisoned");
+        events.push(ScheduledEvent::SetVolumeAt {
+            voice_id,
+            volume,
+            time_secs,
+        });
+    }
+
     pub fn play_streaming(
         &self,
         decoder: crate::streaming::StreamingDecoder,
@@ -756,6 +812,10 @@ impl AudioMixer {
     }
 
     pub fn render(&self, output: &mut [f32]) {
+        let frames = output.len() as u64 / self.channels as u64;
+
+        self.process_scheduled_events();
+
         {
             let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
             Self::process_commands(&mut state, &self.command_queue);
@@ -879,6 +939,48 @@ impl AudioMixer {
 
         for sample in output.iter_mut() {
             *sample = sample.clamp(-1.0, 1.0);
+        }
+
+        self.clock.advance(frames);
+    }
+
+    fn process_scheduled_events(&self) {
+        let current_time = self.clock.time_secs();
+        let mut events = self
+            .scheduled_events
+            .lock()
+            .expect("scheduled_events lock poisoned");
+        let mut i = 0;
+        while i < events.len() {
+            let time = match &events[i] {
+                ScheduledEvent::PlayAt { time_secs, .. } => *time_secs,
+                ScheduledEvent::StopAt { time_secs, .. } => *time_secs,
+                ScheduledEvent::SetVolumeAt { time_secs, .. } => *time_secs,
+            };
+            if time <= current_time {
+                let event = events.swap_remove(i);
+                match event {
+                    ScheduledEvent::PlayAt {
+                        buffer,
+                        category,
+                        priority,
+                        ..
+                    } => {
+                        self.play_internal(buffer, false, category, priority);
+                    }
+                    ScheduledEvent::StopAt { voice_id, .. } => {
+                        self.stop(voice_id);
+                    }
+                    ScheduledEvent::SetVolumeAt {
+                        voice_id, volume, ..
+                    } => {
+                        let state = self.state.lock().expect("AudioMixer state lock poisoned");
+                        state.set_voice_volume(voice_id, volume);
+                    }
+                }
+            } else {
+                i += 1;
+            }
         }
     }
 }

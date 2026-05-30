@@ -29,6 +29,7 @@ use super::texture::MetalTextureView;
 pub(crate) struct MetalDepthPrepass {
     pipeline: Option<MetalGraphicsPipeline>,
     pipeline_skinned: Option<MetalGraphicsPipeline>,
+    pipeline_billboard: Option<MetalGraphicsPipeline>,
 }
 
 impl MetalDepthPrepass {
@@ -36,6 +37,7 @@ impl MetalDepthPrepass {
         Self {
             pipeline: None,
             pipeline_skinned: None,
+            pipeline_billboard: None,
         }
     }
 
@@ -91,17 +93,46 @@ impl MetalDepthPrepass {
         self.pipeline_skinned = Some(pipeline);
         Ok(())
     }
+
+    /// Create the billboard depth prepass pipeline.
+    ///
+    /// Uses the PBR vertex descriptor with alpha discard for camera-facing quads.
+    /// Double-sided, no culling, writes depth.
+    pub(crate) fn create_pipeline_billboard(
+        &mut self,
+        context: &MetalContext,
+        vertex_function: &ProtocolObject<dyn MTLFunction>,
+    ) -> Result<(), RendererError> {
+        let pipeline = context.create_graphics_pipeline(
+            vertex_function,
+            None,
+            &[],
+            Some(objc2_metal::MTLPixelFormat::Depth32Float_Stencil8),
+            true,
+            CompareOp::GreaterOrEqual,
+            objc2_metal::MTLCullMode::None,
+            objc2_metal::MTLWinding::Clockwise,
+        )?;
+
+        self.pipeline_billboard = Some(pipeline);
+        Ok(())
+    }
+
+    pub(crate) fn pipeline_billboard(&self) -> Option<&MetalGraphicsPipeline> {
+        self.pipeline_billboard.as_ref()
+    }
 }
 
 /// Render the depth prepass.
 ///
 /// Creates a depth-only render pass and draws all opaque geometry to populate the depth buffer.
-/// Switches between non-skinned and skinned pipelines based on draw call skeleton state.
+/// Switches between non-skinned, skinned, and billboard pipelines based on draw call properties.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_depth_prepass(
     cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
     depth_pipeline: &MetalGraphicsPipeline,
     depth_pipeline_skinned: Option<&MetalGraphicsPipeline>,
+    depth_pipeline_billboard: Option<&MetalGraphicsPipeline>,
     depth_view: &MetalTextureView,
     width: u32,
     height: u32,
@@ -135,7 +166,15 @@ pub(crate) fn render_depth_prepass(
     encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
     encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
 
-    let mut current_is_skinned = false;
+    /// Pipeline variant currently bound.
+    #[derive(Clone, Copy, PartialEq)]
+    enum PipelineVariant {
+        Regular,
+        Skinned,
+        Billboard,
+    }
+
+    let mut current_variant = PipelineVariant::Regular;
 
     for draw in &draw_list.draws {
         let Some(mesh) = meshes.get(draw.mesh.index()) else {
@@ -149,18 +188,28 @@ pub(crate) fn render_depth_prepass(
         };
 
         let is_skinned = !draw.skeleton.is_none() && depth_pipeline_skinned.is_some();
+        let is_billboard = draw.is_billboard && depth_pipeline_billboard.is_some();
 
-        if is_skinned != current_is_skinned {
-            if is_skinned {
-                encoder.bind_graphics_pipeline(depth_pipeline_skinned.unwrap());
-                encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
-                encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
-            } else {
-                encoder.bind_graphics_pipeline(depth_pipeline);
+        let target_variant = if is_skinned {
+            PipelineVariant::Skinned
+        } else if is_billboard {
+            PipelineVariant::Billboard
+        } else {
+            PipelineVariant::Regular
+        };
+
+        if target_variant != current_variant {
+            let (pipeline, need_rebind) = match target_variant {
+                PipelineVariant::Skinned => (depth_pipeline_skinned.unwrap(), true),
+                PipelineVariant::Billboard => (depth_pipeline_billboard.unwrap(), true),
+                PipelineVariant::Regular => (depth_pipeline, false),
+            };
+            encoder.bind_graphics_pipeline(pipeline);
+            if need_rebind {
                 encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
                 encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
             }
-            current_is_skinned = is_skinned;
+            current_variant = target_variant;
         }
 
         if is_skinned && let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton.index()) {
@@ -184,5 +233,6 @@ mod tests {
         let prepass = MetalDepthPrepass::new();
         assert!(prepass.pipeline.is_none());
         assert!(prepass.pipeline_skinned.is_none());
+        assert!(prepass.pipeline_billboard.is_none());
     }
 }
