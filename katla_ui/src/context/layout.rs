@@ -81,7 +81,7 @@ impl UiContext {
     /// # Example
     /// ```ignore
     /// let bounds = Rect2D::from_origin_size(ui.cursor(), Vec2::new(100.0, 28.0));
-    /// ui.add(ImageButton::new('X').bounds(bounds));
+    /// ui.image_button("btn", 'X', bounds, true);
     /// ui.advance_cursor(Vec2::new(100.0, 28.0)); // Move to next position
     /// ```
     pub fn advance_cursor(&mut self, size: Vec2) {
@@ -277,7 +277,7 @@ impl UiContext {
     /// ui.begin_grid(3, 200.0, 24.0, 8.0);
     /// for item in items {
     ///     let bounds = ui.grid_item(item.size());
-    ///     ui.add(ImageButton::new('X').bounds(bounds));
+    ///     ui.image_button("btn", 'X', bounds, true);
     /// }
     /// ui.end_grid();
     /// ```
@@ -315,7 +315,7 @@ impl UiContext {
     /// ui.begin_grid(4, 100.0, 24.0, 8.0);
     /// for item in items {
     ///     let bounds = ui.grid_item(Vec2::new(100.0, 24.0));
-    ///     ui.add(ImageButton::new('X').bounds(bounds));
+    ///     ui.image_button("btn", 'X', bounds, true);
     /// }
     /// ui.end_grid();
     /// ```

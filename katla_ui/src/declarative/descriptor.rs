@@ -2,7 +2,6 @@ use std::ops::RangeInclusive;
 
 use katla_math::{Color, Rect2D, Vec2};
 
-use crate::context::UiContext;
 use crate::style::FontSize;
 use crate::types::TextureId;
 
@@ -181,8 +180,6 @@ pub enum ViewDescriptor {
     Modal(Box<ModalDescriptor>),
 
     ContextMenu(Box<ContextMenuDescriptor>),
-
-    Custom(CustomDrawFn),
 }
 
 #[derive(Clone, Debug)]
@@ -458,8 +455,6 @@ impl Default for FlexProps {
 #[derive(Clone, Debug)]
 pub struct Callback(pub u32);
 
-pub type CustomDrawFn = fn(&mut UiContext, Rect2D);
-
 impl std::fmt::Debug for ViewDescriptor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -650,7 +645,6 @@ impl std::fmt::Debug for ViewDescriptor {
             ViewDescriptor::TransitionContainer { child, .. } => {
                 f.debug_tuple("TransitionContainer").field(child).finish()
             }
-            ViewDescriptor::Custom(_) => f.debug_tuple("Custom").field(&"..").finish(),
         }
     }
 }

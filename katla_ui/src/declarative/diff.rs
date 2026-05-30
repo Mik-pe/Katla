@@ -41,8 +41,6 @@ pub fn diff_descriptor(old: &ViewDescriptor, new: &ViewDescriptor) -> DiffAction
         (ViewDescriptor::Section { .. }, ViewDescriptor::Section { .. }) => {
             DiffAction::RecurseChildren
         }
-        (ViewDescriptor::Custom(_), ViewDescriptor::Custom(_)) => DiffAction::Update,
-
         // TransitionContainer -> RecurseChildren (has single child)
         (
             ViewDescriptor::TransitionContainer { .. },
@@ -165,14 +163,6 @@ mod tests {
     fn test_diff_same_progress_is_update() {
         let a = progress(0.5, 0.0..=1.0);
         let b = progress(0.8, 0.0..=1.0);
-        assert_eq!(diff_descriptor(&a, &b), DiffAction::Update);
-    }
-
-    #[test]
-    fn test_diff_same_custom_is_update() {
-        fn noop(_: &mut crate::UiContext, _: katla_math::Rect2D) {}
-        let a = ViewDescriptor::Custom(noop);
-        let b = ViewDescriptor::Custom(noop);
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Update);
     }
 

@@ -1156,10 +1156,6 @@ pub(crate) fn draw_descriptor_with_id(
                 );
             }
         }
-
-        ViewDescriptor::Custom(draw_fn) => {
-            draw_fn(ui, bounds);
-        }
     }
 }
 

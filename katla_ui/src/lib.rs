@@ -55,8 +55,7 @@
 //!
 //! The [`widgets`] module provides immediate-mode builder widgets used internally
 //! by the declarative draw pipeline. Use these only when a declarative equivalent
-//! does not yet exist or for complex custom rendering via
-//! [`ViewDescriptor::Custom`](declarative::ViewDescriptor::Custom).
+//! does not yet exist.
 //!
 //! # Example
 //!
@@ -114,8 +113,8 @@ mod widget;
 pub mod widgets;
 
 pub use context::{
-    CloseBehavior, Popup, PopupPosition, PopupStyle, ScrollArea, ScrollAreaState, TextInputState,
-    UiContext, z_index,
+    CloseBehavior, Popup, PopupPosition, PopupStyle, ScrollArea, ScrollAreaState, UiContext,
+    z_index,
 };
 pub use draw_list::DrawList;
 pub use icons::ForkAwesome;

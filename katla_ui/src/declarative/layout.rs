@@ -369,8 +369,6 @@ fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> S
             ..Style::default()
         },
 
-        ViewDescriptor::Custom(_) => Style::default(),
-
         ViewDescriptor::TransitionContainer { .. } => Style::default(),
 
         ViewDescriptor::Separator { direction, .. } => {

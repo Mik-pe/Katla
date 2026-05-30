@@ -1168,22 +1168,18 @@ fn test_scroll_blocked_by_floating_panel() {
 /// subsequent widgets don't overlap.
 #[test]
 fn test_add_advances_cursor() {
-    use crate::widgets::ImageButton;
-
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
     ctx.set_cursor(Vec2::new(10.0, 10.0));
 
     let cursor_before = ctx.cursor();
-    let _response = ctx.add(ImageButton::new('X').bounds(Rect2D::from_origin_size(
-        Vec2::new(10.0, 10.0),
-        Vec2::new(100.0, 30.0),
-    )));
+    let bounds = Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(100.0, 30.0));
+    let _response = ctx.add(|ui: &mut UiContext| ui.image_button("btn", 'X', bounds, true));
     let cursor_after = ctx.cursor();
 
     assert!(
         cursor_after.y() > cursor_before.y(),
-        "Cursor should advance vertically after ui.add(ImageButton): before.y()={}, after.y()={}",
+        "Cursor should advance vertically after ui.add(): before.y()={}, after.y()={}",
         cursor_before.y(),
         cursor_after.y()
     );
@@ -1194,23 +1190,17 @@ fn test_add_advances_cursor() {
 /// Test that multiple widgets added via ui.add() stack vertically.
 #[test]
 fn test_add_stacks_widgets_vertically() {
-    use crate::widgets::ImageButton;
-
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
     ctx.set_cursor(Vec2::new(10.0, 10.0));
 
     let h = 30.0;
-    let _r1 = ctx.add(ImageButton::new('X').bounds(Rect2D::from_origin_size(
-        Vec2::new(10.0, 10.0),
-        Vec2::new(100.0, h),
-    )));
+    let b1 = Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(100.0, h));
+    let _r1 = ctx.add(|ui: &mut UiContext| ui.image_button("a", 'A', b1, true));
     let cursor_after_first = ctx.cursor();
 
-    let _r2 = ctx.add(ImageButton::new('X').bounds(Rect2D::from_origin_size(
-        cursor_after_first,
-        Vec2::new(100.0, h),
-    )));
+    let b2 = Rect2D::from_origin_size(cursor_after_first, Vec2::new(100.0, h));
+    let _r2 = ctx.add(|ui: &mut UiContext| ui.image_button("b", 'B', b2, true));
     let cursor_after_second = ctx.cursor();
 
     assert!(
@@ -1226,24 +1216,18 @@ fn test_add_stacks_widgets_vertically() {
 /// Test that cursor advancement works correctly inside a column layout.
 #[test]
 fn test_add_advances_cursor_in_column_layout() {
-    use crate::widgets::ImageButton;
-
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
     ctx.set_cursor(Vec2::new(10.0, 10.0));
     ctx.begin_column();
 
     let cursor_before = ctx.cursor();
-    let _r1 = ctx.add(ImageButton::new('X').bounds(Rect2D::from_origin_size(
-        cursor_before,
-        Vec2::new(100.0, 30.0),
-    )));
+    let b1 = Rect2D::from_origin_size(cursor_before, Vec2::new(100.0, 30.0));
+    let _r1 = ctx.add(|ui: &mut UiContext| ui.image_button("a", 'A', b1, true));
     let cursor_after_first = ctx.cursor();
 
-    let _r2 = ctx.add(ImageButton::new('X').bounds(Rect2D::from_origin_size(
-        cursor_after_first,
-        Vec2::new(100.0, 30.0),
-    )));
+    let b2 = Rect2D::from_origin_size(cursor_after_first, Vec2::new(100.0, 30.0));
+    let _r2 = ctx.add(|ui: &mut UiContext| ui.image_button("b", 'B', b2, true));
     let cursor_after_second = ctx.cursor();
 
     assert!(
@@ -1258,18 +1242,14 @@ fn test_add_advances_cursor_in_column_layout() {
 /// Test that cursor advancement works correctly inside a row layout.
 #[test]
 fn test_add_advances_cursor_in_row_layout() {
-    use crate::widgets::ImageButton;
-
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
     ctx.set_cursor(Vec2::new(10.0, 10.0));
     ctx.begin_row();
 
     let cursor_before = ctx.cursor();
-    let _r1 = ctx.add(ImageButton::new('X').bounds(Rect2D::from_origin_size(
-        cursor_before,
-        Vec2::new(80.0, 30.0),
-    )));
+    let b1 = Rect2D::from_origin_size(cursor_before, Vec2::new(80.0, 30.0));
+    let _r1 = ctx.add(|ui: &mut UiContext| ui.image_button("x", 'X', b1, true));
     let cursor_after_first = ctx.cursor();
 
     assert!(
@@ -1288,13 +1268,13 @@ fn test_add_advances_cursor_in_row_layout() {
 /// Test that at_cursor() + ui.add() positions and advances correctly.
 #[test]
 fn test_at_cursor_positions_and_advances() {
-    use crate::widgets::ImageButton;
-
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
     ctx.set_cursor(Vec2::new(50.0, 50.0));
 
-    let r1 = ctx.add(ImageButton::new('X').at_cursor(&ctx));
+    let s = ctx.style().icon_button_size;
+    let b1 = Rect2D::from_origin_size(Vec2::new(50.0, 50.0), Vec2::new(s, s));
+    let r1 = ctx.add(|ui: &mut UiContext| ui.image_button("x", 'X', b1, true));
     assert_eq!(r1.bounds.min.x(), 50.0);
     assert_eq!(r1.bounds.min.y(), 50.0);
 
@@ -1304,7 +1284,8 @@ fn test_at_cursor_positions_and_advances() {
         "Cursor should advance after widget at_cursor"
     );
 
-    let r2 = ctx.add(ImageButton::new('X').at_cursor(&ctx));
+    let b2 = Rect2D::from_origin_size(cursor_after_first, Vec2::new(s, s));
+    let r2 = ctx.add(|ui: &mut UiContext| ui.image_button("y", 'Y', b2, true));
     assert_eq!(r2.bounds.min.x(), cursor_after_first.x());
     assert_eq!(r2.bounds.min.y(), cursor_after_first.y());
 
