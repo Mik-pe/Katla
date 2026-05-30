@@ -27,7 +27,7 @@ pub use constructors::{
     labeled_slider, menu_entry, menu_entry_disabled, menu_group, menubar, modal, overlay, panel,
     progress, property_row, radio, scroll, section, selectable, separator, separator_horizontal,
     separator_vertical, slider, statusbar, tab_bar, tab_item, text, textfield, toggle, tree_view,
-    vec3_slider, vstack, vstack_keyed, zstack, zstack_keyed,
+    vec3_slider, vstack, vstack_keyed, vu_meter, zstack, zstack_keyed,
 };
 pub use descriptor::{
     Alignment, Anchor, Callback, ChildDescriptor, ContextMenuDescriptor, ContextMenuEntry,
@@ -35,7 +35,7 @@ pub use descriptor::{
     GridDescriptor, MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor, OverlayDescriptor,
     Padding, PanelDescriptor, ScrollDescriptor, SeparatorDirection, StackDescriptor,
     StatusBarDescriptor, TabBarDescriptor, TabItem, TreeItem, TreeViewDescriptor, ViewDescriptor,
-    ZStackDescriptor,
+    VuMeterDescriptor, ZStackDescriptor,
 };
 pub use diff::{DiffAction, Patch, diff_descriptor};
 pub use focus::{Direction, FocusManager, GamepadNavigator};

@@ -54,9 +54,9 @@ pub(super) struct ParticleDescriptors {
     pub(super) compute_sets: [Option<vk::DescriptorSet>; 2],
     pub(super) draw_command_set: Option<vk::DescriptorSet>,
     pub(super) render_sets: [Option<vk::DescriptorSet>; 2],
-    pub(super) _compute_pools: [vk::DescriptorPool; 2],
-    pub(super) _draw_command_pool: vk::DescriptorPool,
-    pub(super) _render_pools: [vk::DescriptorPool; 2],
+    pub(super) _compute_pools: [Option<vk::DescriptorPool>; 2],
+    pub(super) _draw_command_pool: Option<vk::DescriptorPool>,
+    pub(super) _render_pools: [Option<vk::DescriptorPool>; 2],
 }
 
 pub(super) struct ParticleBuffers {
@@ -130,9 +130,9 @@ impl GlobalParticleSystem {
                 compute_sets: [None, None],
                 draw_command_set: None,
                 render_sets: [None, None],
-                _compute_pools: [vk::DescriptorPool::null(), vk::DescriptorPool::null()],
-                _draw_command_pool: vk::DescriptorPool::null(),
-                _render_pools: [vk::DescriptorPool::null(), vk::DescriptorPool::null()],
+                _compute_pools: [None, None],
+                _draw_command_pool: None,
+                _render_pools: [None, None],
             },
             buffers: ParticleBuffers {
                 frame_data: [None, None],
@@ -158,21 +158,21 @@ impl GlobalParticleSystem {
         system.create_descriptor_layouts(context)?;
 
         let mut compute_descriptor_sets = [None, None];
-        let mut compute_descriptor_pools = [vk::DescriptorPool::null(), vk::DescriptorPool::null()];
+        let mut compute_descriptor_pools: [Option<vk::DescriptorPool>; 2] = [None, None];
         for fi in 0..2 {
             let (ds, pool) = system.create_compute_descriptor_set()?;
             compute_descriptor_sets[fi] = Some(ds);
-            compute_descriptor_pools[fi] = pool;
+            compute_descriptor_pools[fi] = Some(pool);
         }
         system.descriptors.compute_sets = compute_descriptor_sets;
         system.descriptors._compute_pools = compute_descriptor_pools;
 
         let mut render_descriptor_sets = [None, None];
-        let mut render_descriptor_pools = [vk::DescriptorPool::null(), vk::DescriptorPool::null()];
+        let mut render_descriptor_pools: [Option<vk::DescriptorPool>; 2] = [None, None];
         for fi in 0..2 {
             let (ds, pool) = system.create_render_descriptor_set()?;
             render_descriptor_sets[fi] = Some(ds);
-            render_descriptor_pools[fi] = pool;
+            render_descriptor_pools[fi] = Some(pool);
         }
         system.descriptors.render_sets = render_descriptor_sets;
         system.descriptors._render_pools = render_descriptor_pools;
@@ -314,21 +314,15 @@ impl GlobalParticleSystem {
 
         info!("  destroying descriptor pools");
         for fi in 0..2 {
-            if self.descriptors._compute_pools[fi] != vk::DescriptorPool::null() {
+            if let Some(pool) = self.descriptors._compute_pools[fi].take() {
                 unsafe {
-                    self.context
-                        .device
-                        .destroy_descriptor_pool(self.descriptors._compute_pools[fi], None);
+                    self.context.device.destroy_descriptor_pool(pool, None);
                 }
-                self.descriptors._compute_pools[fi] = vk::DescriptorPool::null();
             }
-            if self.descriptors._render_pools[fi] != vk::DescriptorPool::null() {
+            if let Some(pool) = self.descriptors._render_pools[fi].take() {
                 unsafe {
-                    self.context
-                        .device
-                        .destroy_descriptor_pool(self.descriptors._render_pools[fi], None);
+                    self.context.device.destroy_descriptor_pool(pool, None);
                 }
-                self.descriptors._render_pools[fi] = vk::DescriptorPool::null();
             }
         }
 

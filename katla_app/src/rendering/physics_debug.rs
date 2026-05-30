@@ -138,6 +138,9 @@ pub fn generate_collider_wireframe(
                     &mut draws,
                 );
             }
+            ColliderShape::Trimesh(_)
+            | ColliderShape::ConvexHull(_)
+            | ColliderShape::Heightfield(_) => {}
         }
     }
 

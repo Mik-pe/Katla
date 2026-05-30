@@ -2413,6 +2413,7 @@ name = "katla_physics"
 version = "0.1.0"
 dependencies = [
  "katla_ecs",
+ "katla_gfx",
  "katla_math",
  "rapier3d",
  "serde",

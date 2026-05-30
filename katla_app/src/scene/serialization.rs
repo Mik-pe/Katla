@@ -20,8 +20,8 @@ use crate::components::{
     TransformComponent, VelocityComponent,
 };
 use katla_physics::{
-    BodyType, BoxShape, CapsuleShape, ColliderShape, CollisionFilter, PhysicsMaterial, RigidBody,
-    SphereShape, TriggerVolume,
+    BodyType, BoxShape, CapsuleShape, ColliderShape, CollisionFilter, HeightfieldShape,
+    PhysicsMaterial, RigidBody, SphereShape, TriggerVolume,
 };
 use katla_script::ScriptComponent;
 
@@ -265,6 +265,17 @@ impl SceneManager {
                     ColliderShape::Capsule(c) => ColliderShapeDescriptor::Capsule {
                         half_height: c.half_height,
                         radius: c.radius,
+                    },
+                    ColliderShape::Trimesh(handle) => ColliderShapeDescriptor::Trimesh {
+                        mesh_handle_index: handle.index(),
+                    },
+                    ColliderShape::ConvexHull(handle) => ColliderShapeDescriptor::ConvexHull {
+                        mesh_handle_index: handle.index(),
+                    },
+                    ColliderShape::Heightfield(h) => ColliderShapeDescriptor::Heightfield {
+                        rows: h.rows,
+                        cols: h.cols,
+                        heights: h.heights.clone(),
                     },
                 });
 
@@ -800,6 +811,19 @@ impl SceneManager {
                     half_height,
                     radius,
                 } => ColliderShape::Capsule(CapsuleShape::new(*half_height, *radius)),
+                ColliderShapeDescriptor::Trimesh { mesh_handle_index } => {
+                    ColliderShape::Trimesh(katla_gfx::MeshHandle::new(*mesh_handle_index))
+                }
+                ColliderShapeDescriptor::ConvexHull { mesh_handle_index } => {
+                    ColliderShape::ConvexHull(katla_gfx::MeshHandle::new(*mesh_handle_index))
+                }
+                ColliderShapeDescriptor::Heightfield {
+                    rows,
+                    cols,
+                    heights,
+                } => {
+                    ColliderShape::Heightfield(HeightfieldShape::new(*rows, *cols, heights.clone()))
+                }
             };
             app.world.add_component(entity_id, shape);
         }

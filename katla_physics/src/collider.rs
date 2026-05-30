@@ -1,6 +1,7 @@
 //! ECS components for collision detection.
 
 use katla_ecs::Component;
+use katla_gfx::MeshHandle;
 use katla_math::{AABB, Transform};
 use serde::{Deserialize, Serialize};
 
@@ -10,11 +11,126 @@ use crate::shape::SphereShape;
 ///
 /// Defines the local-space geometry used for collision detection.
 /// The shape is transformed to world space using the entity's `TransformComponent`.
-#[derive(Component, Debug, Clone, Serialize, Deserialize)]
+#[derive(Component, Debug, Clone)]
 pub enum ColliderShape {
     Sphere(SphereShape),
     Box(crate::shape::BoxShape),
     Capsule(crate::shape::CapsuleShape),
+    Trimesh(MeshHandle),
+    ConvexHull(MeshHandle),
+    Heightfield(crate::shape::HeightfieldShape),
+}
+
+impl Serialize for ColliderShape {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(tag = "type")]
+        enum ShapeRepr<'a> {
+            Sphere {
+                radius: f32,
+            },
+            Box {
+                half_extents: [f32; 3],
+            },
+            Capsule {
+                half_height: f32,
+                radius: f32,
+            },
+            Trimesh {
+                mesh_handle_index: u32,
+            },
+            #[serde(rename = "ConvexHull")]
+            ConvexHull {
+                mesh_handle_index: u32,
+            },
+            Heightfield {
+                rows: u32,
+                cols: u32,
+                heights: &'a [f32],
+            },
+        }
+
+        match self {
+            ColliderShape::Sphere(s) => ShapeRepr::Sphere { radius: s.radius },
+            ColliderShape::Box(b) => ShapeRepr::Box {
+                half_extents: b.half_extents,
+            },
+            ColliderShape::Capsule(c) => ShapeRepr::Capsule {
+                half_height: c.half_height,
+                radius: c.radius,
+            },
+            ColliderShape::Trimesh(h) => ShapeRepr::Trimesh {
+                mesh_handle_index: h.index(),
+            },
+            ColliderShape::ConvexHull(h) => ShapeRepr::ConvexHull {
+                mesh_handle_index: h.index(),
+            },
+            ColliderShape::Heightfield(h) => ShapeRepr::Heightfield {
+                rows: h.rows,
+                cols: h.cols,
+                heights: &h.heights,
+            },
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ColliderShape {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(tag = "type")]
+        enum ShapeRepr {
+            Sphere {
+                radius: f32,
+            },
+            Box {
+                half_extents: [f32; 3],
+            },
+            Capsule {
+                half_height: f32,
+                radius: f32,
+            },
+            Trimesh {
+                mesh_handle_index: u32,
+            },
+            #[serde(rename = "ConvexHull")]
+            ConvexHull {
+                mesh_handle_index: u32,
+            },
+            Heightfield {
+                rows: u32,
+                cols: u32,
+                heights: Vec<f32>,
+            },
+        }
+
+        match ShapeRepr::deserialize(deserializer)? {
+            ShapeRepr::Sphere { radius } => Ok(ColliderShape::Sphere(SphereShape::new(radius))),
+            ShapeRepr::Box { half_extents } => {
+                Ok(ColliderShape::Box(crate::shape::BoxShape { half_extents }))
+            }
+            ShapeRepr::Capsule {
+                half_height,
+                radius,
+            } => Ok(ColliderShape::Capsule(crate::shape::CapsuleShape::new(
+                half_height,
+                radius,
+            ))),
+            ShapeRepr::Trimesh { mesh_handle_index } => {
+                Ok(ColliderShape::Trimesh(MeshHandle::new(mesh_handle_index)))
+            }
+            ShapeRepr::ConvexHull { mesh_handle_index } => Ok(ColliderShape::ConvexHull(
+                MeshHandle::new(mesh_handle_index),
+            )),
+            ShapeRepr::Heightfield {
+                rows,
+                cols,
+                heights,
+            } => Ok(ColliderShape::Heightfield(
+                crate::shape::HeightfieldShape::new(rows, cols, heights),
+            )),
+        }
+    }
 }
 
 impl ColliderShape {
@@ -40,6 +156,20 @@ impl ColliderShape {
                 katla_math::Vec3::new(-c.radius, -c.half_height - c.radius, -c.radius),
                 katla_math::Vec3::new(c.radius, c.half_height + c.radius, c.radius),
             ),
+            ColliderShape::Trimesh(_) | ColliderShape::ConvexHull(_) => AABB::from_min_max(
+                katla_math::Vec3::new(0.0, 0.0, 0.0),
+                katla_math::Vec3::new(0.0, 0.0, 0.0),
+            ),
+            ColliderShape::Heightfield(h) => {
+                let min_h = h.heights.iter().copied().fold(f32::INFINITY, f32::min);
+                let max_h = h.heights.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                let half_rows = h.rows as f32 * 0.5;
+                let half_cols = h.cols as f32 * 0.5;
+                AABB::from_min_max(
+                    katla_math::Vec3::new(-half_cols, min_h, -half_rows),
+                    katla_math::Vec3::new(half_cols, max_h, half_rows),
+                )
+            }
         }
     }
 }

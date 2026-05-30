@@ -81,6 +81,7 @@ fn is_interactive(descriptor: &ViewDescriptor) -> bool {
         ViewDescriptor::Empty
         | ViewDescriptor::Text { .. }
         | ViewDescriptor::Progress { .. }
+        | ViewDescriptor::VuMeter { .. }
         | ViewDescriptor::Image { .. }
         | ViewDescriptor::PropertyRow { .. }
         | ViewDescriptor::Separator { .. }

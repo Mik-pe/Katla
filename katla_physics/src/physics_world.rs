@@ -598,6 +598,11 @@ fn collider_shape_to_rapier(shape: &ColliderShape) -> rapier3d::geometry::Shared
         ColliderShape::Capsule(c) => {
             rapier3d::geometry::SharedShape::capsule_y(c.half_height, c.radius)
         }
+        ColliderShape::Trimesh(_)
+        | ColliderShape::ConvexHull(_)
+        | ColliderShape::Heightfield(_) => {
+            unimplemented!("Trimesh/ConvexHull/Heightfield rapier conversion not yet implemented")
+        }
     }
 }
 

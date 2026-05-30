@@ -32,6 +32,7 @@
 //! - [`RadioButton`](declarative::ViewDescriptor::RadioButton) — single-selection radio group
 //! - [`Image`](declarative::ViewDescriptor::Image) — textured image display
 //! - [`PropertyRow`](declarative::ViewDescriptor::PropertyRow) — read-only label:value row
+//! - [`VuMeter`](declarative::ViewDescriptor::VuMeter) — vertical audio level meter with peak/RMS
 //!
 //! **Layout containers:**
 //! - [`HStack`](declarative::ViewDescriptor::HStack) — horizontal flex layout

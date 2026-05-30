@@ -192,7 +192,21 @@ pub enum RigidBodyDescriptor {
 pub enum ColliderShapeDescriptor {
     Sphere(f32),
     Box([f32; 3]),
-    Capsule { half_height: f32, radius: f32 },
+    Capsule {
+        half_height: f32,
+        radius: f32,
+    },
+    Trimesh {
+        mesh_handle_index: u32,
+    },
+    ConvexHull {
+        mesh_handle_index: u32,
+    },
+    Heightfield {
+        rows: u32,
+        cols: u32,
+        heights: Vec<f32>,
+    },
 }
 
 /// Physics material properties for serialization.

@@ -319,6 +319,14 @@ fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> S
             ..Style::default()
         },
 
+        ViewDescriptor::VuMeter { .. } => Style {
+            size: Size {
+                width: Dimension::Length(12.0),
+                height: Dimension::Length(120.0),
+            },
+            ..Style::default()
+        },
+
         ViewDescriptor::Vec3Slider { label, .. } => {
             let text_size = measure(label, None);
             Style {

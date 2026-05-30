@@ -8,6 +8,7 @@ editor = []
 
 [dependencies]
 katla_ecs = { workspace = true }
+katla_gfx = { workspace = true }
 katla_math = { workspace = true }
 rapier3d = { workspace = true }
 serde = { workspace = true }
