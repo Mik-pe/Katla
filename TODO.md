@@ -96,7 +96,7 @@ Individual tasks should be small enough to complete in a single focused session.
 
 ### Phase 8: Collider mesh fitting, shape types, and prefabs
 
-- [ ] **Add geometry data cache for mesh vertex positions** — CPU-side vertex/index data exists in `GLTFModel` at load time but is discarded after GPU upload. `MeshHandle` has no readback path. Add a geometry cache (e.g. `HashMap<MeshHandle, Arc<MeshGeometryData>>`) that retains vertex positions and triangle indices alongside `MeshHandle`, populated during mesh loading before GPU upload discards the data. This is a prerequisite for trimesh, convex hull, and any mesh-derived collider generation.
+- [x] **Add geometry data cache for mesh vertex positions** — Added GeometryCache (HashMap<MeshHandle, Arc<MeshGeometryData>>) populated during mesh loading.
 - [ ] **Extend `ColliderShape` enum with mesh-derived variants** — Add `ColliderShape::Trimesh`, `ColliderShape::ConvexHull`, and `ColliderShape::Heightfield` variants alongside existing Sphere/Box/Capsule. Trimesh stores vertex positions + triangle indices (for static environment geometry). ConvexHull stores vertex positions (for dynamic props). Heightfield stores a 2D height grid (for terrain). All three reference data from the geometry cache rather than duplicating it.
 - [ ] **Wire new `ColliderShape` variants through `collider_shape_to_rapier()`** — In `physics_world.rs`, add Rapier `SharedShape` construction for Trimesh (via `SharedShape::trimesh`), ConvexHull (via `SharedShape::convex_hull`), and Heightfield (via `SharedShape::heightfield`). Wire the geometry cache lookup so the system can resolve the mesh data at spawn time.
 - [ ] **Implement trimesh collider generation for static environment meshes** — For static environment geometry (floors, walls, level architecture), generate exact trimesh colliders from the mesh's vertex/index data. Add an editor action or auto-detection: when a static `RigidBody` entity has a mesh, default to trimesh collider. Trimesh colliders only work with static bodies in Rapier.
@@ -449,9 +449,9 @@ hstack(children).spacing(2.0).padding_all(10.0)
   - [x] Remove `RadioButton` — callers use `radio()`
   - [x] Remove `ImageButton` — callers use `ui.image_button()` directly
   - [x] Remove `Panel` — callers use `panel()`
-- [ ] Add `ViewDescriptor` construction tests — unit tests for the builder constructors, diff correctness (including keyed children), and layout for each new container variant.
+- [x] Add `ViewDescriptor` construction tests — Added 19 tests for constructors and modifiers.
 - [ ] **Add declarative integration tests** — frame-level tests that build a descriptor tree, run `ViewTree::frame()`, assert bounds, actions, and state mutations:
-  - [ ] Add tests for `diff_descriptor` — verify keyed and unkeyed children diff correctly (insert, remove, reorder, type change)
+  - [x] Add tests for `diff_descriptor` — 8 integration tests for keyed/unkeyed insert/remove/reorder.
   - [ ] Add tests for `ViewTree::sync_tree` — verify tree sync preserves state across descriptor changes, handles mount/unmount
   - [ ] Add tests for `TransitionContainer` — verify enter/exit transitions fire correctly, animation state management
   - [ ] Add tests for `DockArea` — verify tab/panel docking, splitting, and layout computation
@@ -569,7 +569,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] **Fix unresolved doc link to `ParallelIterator`** — `world.rs:265` and other locations reference `rayon::iter::ParallelIterator` which needs proper intra-doc linking with `rayon` crate
 - [x] **Address test clippy warnings** — 6 warnings in tests: unused fields (`value`, `dx`, `dy`), identity function map, always-true assertion, loop variable usage. These indicate potential logic issues
 - [ ] **Improve parallel query safety documentation** — `par_query` and parallel iterators need clearer safety guarantees and usage documentation for users
-- [ ] **Add World state validation** — No validation that `World` is in consistent state after operations (e.g., entity existence checks, component type registration)
+- [x] **Add World state validation** — Added World::validate() and validate_entities() methods.
 
 ### katla_ecs - Architecture & Soundness (Production Readiness Review)
 
