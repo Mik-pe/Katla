@@ -386,16 +386,16 @@ fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) 
                 "message": result.message,
                 "entities": result.affected_entities.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
             });
-            if let Some(data) = result.data {
-                json.as_object_mut()
-                    .unwrap()
-                    .insert("data".to_string(), data);
+            if let Some(data) = result.data
+                && let Some(obj) = json.as_object_mut()
+            {
+                obj.insert("data".to_string(), data);
             }
             if is_hierarchy_query {
                 let hierarchy = build_hierarchy_json(app);
-                json.as_object_mut()
-                    .unwrap()
-                    .insert("hierarchy".to_string(), hierarchy);
+                if let Some(obj) = json.as_object_mut() {
+                    obj.insert("hierarchy".to_string(), hierarchy);
+                }
             }
             serde_json::to_string(&json).unwrap_or(result.message)
         }
@@ -892,7 +892,8 @@ fn execute_write_resource(app: &super::super::Application, path: &str, content: 
                 "message": format!("Wrote {} bytes to {path}", content.len()),
                 "path": path,
             });
-            serde_json::to_string(&json).unwrap()
+            serde_json::to_string(&json)
+                .unwrap_or_else(|_| format!("Wrote {} bytes to {path}", content.len()))
         }
         Err(e) => format!("Error writing file: {e}"),
     }
@@ -932,7 +933,8 @@ fn execute_create_resource(
                 "message": format!("Created {path} ({} bytes)", body.len()),
                 "path": path,
             });
-            serde_json::to_string(&json).unwrap()
+            serde_json::to_string(&json)
+                .unwrap_or_else(|_| format!("Created {path} ({} bytes)", body.len()))
         }
         Err(e) => format!("Error creating file: {e}"),
     }
@@ -996,7 +998,8 @@ fn execute_generate_resource(
                 "path": path,
                 "resource_type": resource_type,
             });
-            serde_json::to_string(&json).unwrap()
+            serde_json::to_string(&json)
+                .unwrap_or_else(|_| format!("Generated {path} as {resource_type}"))
         }
         Err(e) => format!("Error creating file: {e}"),
     }

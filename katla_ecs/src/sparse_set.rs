@@ -130,11 +130,8 @@ where
             if page_idx >= self.pages.len() {
                 self.pages.resize_with(page_idx + 1, || None);
             }
-            let page = &mut self.pages[page_idx];
-            if page.is_none() {
-                *page = Some(new_page());
-            }
-            page.as_mut().unwrap()[offset] = Some(dense_idx);
+            let page = self.pages[page_idx].get_or_insert_with(new_page);
+            page[offset] = Some(dense_idx);
         }
     }
 
