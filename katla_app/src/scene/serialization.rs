@@ -1,7 +1,9 @@
 use super::descriptors::{
-    AnimationDescriptor, AudioEmitterDescriptor, DirectionalLightDescriptor, DrawableDescriptor,
-    EntityDescriptor, ParticleEmitterDescriptor, PerspectiveDescriptor, PointLightDescriptor,
-    Scene, ScriptDescriptor, TransformDescriptor, VelocityDescriptor,
+    AnimationDescriptor, AudioEmitterDescriptor, ColliderShapeDescriptor,
+    CollisionFilterDescriptor, DirectionalLightDescriptor, DrawableDescriptor, EntityDescriptor,
+    ParticleEmitterDescriptor, PerspectiveDescriptor, PhysicsMaterialDescriptor,
+    PointLightDescriptor, RigidBodyDescriptor, Scene, ScriptDescriptor, TransformDescriptor,
+    TriggerVolumeDescriptor, VelocityDescriptor,
 };
 use super::entity_source::EntitySource;
 use log::{info, warn};
@@ -16,6 +18,10 @@ use crate::components::ParticleEmitterComponent;
 use crate::components::{
     DirectionalLight, DrawableComponent, NameComponent, PerspectiveComponent, PointLight,
     TransformComponent, VelocityComponent,
+};
+use katla_physics::{
+    BodyType, BoxShape, CapsuleShape, ColliderShape, CollisionFilter, PhysicsMaterial, RigidBody,
+    SphereShape, TriggerVolume,
 };
 use katla_script::ScriptComponent;
 
@@ -241,6 +247,49 @@ impl SceneManager {
                     distance_model: a.distance_model,
                 });
 
+            let rigid_body =
+                app.world
+                    .get_component::<RigidBody>(entity_id)
+                    .map(|rb| match rb.body_type {
+                        BodyType::Static => RigidBodyDescriptor::Static,
+                        BodyType::Dynamic => RigidBodyDescriptor::Dynamic,
+                        BodyType::Kinematic => RigidBodyDescriptor::Kinematic,
+                    });
+
+            let collider_shape = app
+                .world
+                .get_component::<ColliderShape>(entity_id)
+                .map(|cs| match cs {
+                    ColliderShape::Sphere(s) => ColliderShapeDescriptor::Sphere(s.radius),
+                    ColliderShape::Box(b) => ColliderShapeDescriptor::Box(b.half_extents),
+                    ColliderShape::Capsule(c) => ColliderShapeDescriptor::Capsule {
+                        half_height: c.half_height,
+                        radius: c.radius,
+                    },
+                });
+
+            let physics_material =
+                app.world
+                    .get_component::<PhysicsMaterial>(entity_id)
+                    .map(|pm| PhysicsMaterialDescriptor {
+                        friction: pm.friction,
+                        restitution: pm.restitution,
+                        density: pm.density,
+                    });
+
+            let trigger_volume = app
+                .world
+                .get_component::<TriggerVolume>(entity_id)
+                .map(|_| TriggerVolumeDescriptor);
+
+            let collision_filter =
+                app.world
+                    .get_component::<CollisionFilter>(entity_id)
+                    .map(|cf| CollisionFilterDescriptor {
+                        layers: cf.layers,
+                        mask: cf.mask,
+                    });
+
             scene.entities.push(EntityDescriptor {
                 name,
                 parent,
@@ -255,11 +304,11 @@ impl SceneManager {
                 perspective,
                 directional_light,
                 audio_emitter,
-                rigid_body: None,
-                collider_shape: None,
-                physics_material: None,
-                trigger_volume: None,
-                collision_filter: None,
+                rigid_body,
+                collider_shape,
+                physics_material,
+                trigger_volume,
+                collision_filter,
             });
         }
 
@@ -725,6 +774,54 @@ impl SceneManager {
                     rolloff_factor: audio_desc.rolloff_factor,
                     distance_model: audio_desc.distance_model,
                 },
+            );
+        }
+
+        // Apply rigid body
+        if let Some(ref rb_desc) = desc.rigid_body {
+            let rb = match rb_desc {
+                RigidBodyDescriptor::Static => RigidBody::static_body(),
+                RigidBodyDescriptor::Dynamic => RigidBody::dynamic(),
+                RigidBodyDescriptor::Kinematic => RigidBody::kinematic(),
+            };
+            app.world.add_component(entity_id, rb);
+        }
+
+        // Apply collider shape
+        if let Some(ref cs_desc) = desc.collider_shape {
+            let shape = match cs_desc {
+                ColliderShapeDescriptor::Sphere(radius) => {
+                    ColliderShape::Sphere(SphereShape::new(*radius))
+                }
+                ColliderShapeDescriptor::Box(half_extents) => ColliderShape::Box(BoxShape {
+                    half_extents: *half_extents,
+                }),
+                ColliderShapeDescriptor::Capsule {
+                    half_height,
+                    radius,
+                } => ColliderShape::Capsule(CapsuleShape::new(*half_height, *radius)),
+            };
+            app.world.add_component(entity_id, shape);
+        }
+
+        // Apply physics material
+        if let Some(ref pm_desc) = desc.physics_material {
+            app.world.add_component(
+                entity_id,
+                PhysicsMaterial::new(pm_desc.friction, pm_desc.restitution, pm_desc.density),
+            );
+        }
+
+        // Apply trigger volume
+        if desc.trigger_volume.is_some() {
+            app.world.add_component(entity_id, TriggerVolume::new());
+        }
+
+        // Apply collision filter
+        if let Some(ref cf_desc) = desc.collision_filter {
+            app.world.add_component(
+                entity_id,
+                CollisionFilter::new(cf_desc.layers, cf_desc.mask),
             );
         }
 

@@ -123,6 +123,10 @@ pub struct EntityInfo {
     pub directional_light: Option<DirectionalLightInfo>,
     /// Audio emitter data (if entity has AudioEmitter)
     pub audio_emitter: Option<AudioEmitterInfo>,
+    /// Audio source data (if entity has AudioSource)
+    pub audio_source: Option<AudioSourceInfo>,
+    /// Whether entity has AudioListener
+    pub has_audio_listener: bool,
     /// Collider shape data (if entity has ColliderShape)
     pub collider_shape: Option<ColliderShapeInfo>,
     /// Rigid body data (if entity has RigidBody)
@@ -163,6 +167,15 @@ pub struct DirectionalLightInfo {
     pub direction: [f32; 3],
     pub color: [f32; 3],
     pub intensity: f32,
+}
+
+/// Audio source inspector data.
+#[derive(Debug, Clone)]
+pub struct AudioSourceInfo {
+    pub path: String,
+    pub sample_rate: Option<u32>,
+    pub channels: Option<u16>,
+    pub duration_secs: Option<f64>,
 }
 
 /// Audio emitter inspector data.
@@ -560,6 +573,8 @@ pub struct InspectorEditState {
     pub physics_friction: f32,
     pub physics_restitution: f32,
     pub physics_density: f32,
+    /// Cached audio metadata for the selected entity's AudioSource path.
+    pub audio_source_metadata: Option<katla_audio::AudioMetadata>,
     /// Cached script variables from the current frame's script instance.
     pub script_vars: Vec<(String, katla_script::ScriptVarValue)>,
 }
@@ -605,6 +620,7 @@ impl Default for InspectorEditState {
             physics_friction: 0.5,
             physics_restitution: 0.0,
             physics_density: 1.0,
+            audio_source_metadata: None,
             script_vars: Vec::new(),
         }
     }

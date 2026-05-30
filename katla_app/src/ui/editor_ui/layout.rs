@@ -228,6 +228,11 @@ impl EditorUI {
             add_component_open: self.add_component_open,
             add_component_filter: self.add_component_filter.clone(),
             focus_script_input: self.focus_script_input,
+            audio_listener_count: params
+                .entities
+                .iter()
+                .filter(|e| e.has_audio_listener)
+                .count(),
         });
 
         let resize_handle_width = 5.0;
