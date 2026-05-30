@@ -1085,7 +1085,9 @@ impl ViewTree {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::constructors::{keyed, text, vstack, vstack_keyed};
+    use crate::declarative::constructors::{
+        button, empty, hstack, keyed, panel, text, vstack, vstack_keyed,
+    };
 
     struct StaticDescriptor(ViewDescriptor);
 
@@ -1179,5 +1181,295 @@ mod tests {
             ids_a[1], ids_b[0],
             "key=2 survives from first to second build"
         );
+    }
+
+    fn transition_container(child: ViewDescriptor, transition: Transition) -> ViewDescriptor {
+        ViewDescriptor::TransitionContainer {
+            child: Box::new(child),
+            transition,
+        }
+    }
+
+    fn first_child_id(tree: &ViewTree) -> Option<ViewId> {
+        let root = tree.root()?;
+        let root_node = tree.get(root)?;
+        root_node.children.first().copied()
+    }
+
+    #[test]
+    fn test_transition_container_insert_starts_animation() {
+        let mut tree = ViewTree::new();
+        let transition = Transition::fade(0.3);
+
+        build_tree(
+            &mut tree,
+            transition_container(text("hello"), transition.clone()),
+        );
+
+        let child_id = first_child_id(&tree).expect("should have a child");
+        let child = tree.get(child_id).expect("child node should exist");
+        assert!(
+            !child.animations.is_empty(),
+            "child should have insert animation"
+        );
+        assert_eq!(child.animations.len(), 1);
+        assert!(
+            matches!(child.animations[0].property, AnimatedProperty::Opacity),
+            "animation property should be Opacity for fade transition"
+        );
+        assert_eq!(child.animations[0].tween.from, 0.0);
+        assert_eq!(child.animations[0].tween.to, 1.0);
+        assert!((child.animations[0].tween.duration - 0.3).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_transition_container_removal_starts_remove_animation() {
+        let mut tree = ViewTree::new();
+        let transition = Transition::fade(0.3);
+
+        build_tree(
+            &mut tree,
+            transition_container(text("hello"), transition.clone()),
+        );
+
+        let child_id = first_child_id(&tree).expect("should have a child");
+
+        build_tree(&mut tree, ViewDescriptor::Empty);
+
+        let child = tree
+            .get(child_id)
+            .expect("child should still exist during removal animation");
+        assert!(
+            child.pending_remove,
+            "child should be marked pending_remove"
+        );
+        let remove_anim = child
+            .animations
+            .iter()
+            .find(|a| a.tween.from == 1.0 && a.tween.to == 0.0);
+        assert!(
+            remove_anim.is_some(),
+            "child should have a remove animation (from=1.0 to=0.0)"
+        );
+        assert!(
+            matches!(remove_anim.unwrap().property, AnimatedProperty::Opacity),
+            "remove animation should use Opacity for fade transition"
+        );
+    }
+
+    #[test]
+    fn test_transition_container_child_descriptor_updated() {
+        let mut tree = ViewTree::new();
+        let transition = Transition::fade(0.3);
+
+        build_tree(
+            &mut tree,
+            transition_container(text("A"), transition.clone()),
+        );
+
+        let child_id = first_child_id(&tree).expect("should have a child");
+        let child = tree.get(child_id).unwrap();
+        let matches_a =
+            matches!(&child.descriptor, ViewDescriptor::Text { content, .. } if content == "A");
+        assert!(matches_a, "initial child should be Text(\"A\")");
+
+        build_tree(
+            &mut tree,
+            transition_container(text("B"), transition.clone()),
+        );
+
+        let child = tree.get(child_id).expect("same child should persist");
+        let matches_b =
+            matches!(&child.descriptor, ViewDescriptor::Text { content, .. } if content == "B");
+        assert!(matches_b, "child descriptor should now be Text(\"B\")");
+    }
+
+    #[test]
+    fn test_transition_container_non_transition_to_transition() {
+        let mut tree = ViewTree::new();
+
+        build_tree(&mut tree, text("hello"));
+
+        let root = tree.root().unwrap();
+        let old_children = tree.get(root).unwrap().children.clone();
+        assert!(old_children.is_empty(), "Text leaf should have no children");
+
+        let transition = Transition::fade(0.3);
+        build_tree(
+            &mut tree,
+            transition_container(text("hello"), transition.clone()),
+        );
+
+        let root = tree.root().unwrap();
+        let root_node = tree.get(root).unwrap();
+        assert!(
+            matches!(
+                root_node.descriptor,
+                ViewDescriptor::TransitionContainer { .. }
+            ),
+            "root should now be TransitionContainer"
+        );
+
+        let child_id = root_node
+            .children
+            .first()
+            .copied()
+            .expect("should have child");
+        let child = tree.get(child_id).unwrap();
+        assert!(
+            !child.animations.is_empty(),
+            "child should have insert animation"
+        );
+        assert!(
+            matches!(child.animations[0].property, AnimatedProperty::Opacity),
+            "insert animation should be Opacity for fade transition"
+        );
+    }
+
+    #[test]
+    fn test_transition_container_preserves_child_across_rebuilds() {
+        let mut tree = ViewTree::new();
+        let transition = Transition::fade(0.3);
+
+        build_tree(
+            &mut tree,
+            transition_container(text("first"), transition.clone()),
+        );
+
+        let child_id_first = first_child_id(&tree).expect("should have child after first build");
+
+        build_tree(
+            &mut tree,
+            transition_container(text("second"), transition.clone()),
+        );
+
+        let child_id_second = first_child_id(&tree).expect("should have child after second build");
+        assert_eq!(
+            child_id_first, child_id_second,
+            "child ViewId should be stable across rebuilds"
+        );
+    }
+
+    #[test]
+    fn test_sync_tree_update_preserves_state() {
+        let mut tree = ViewTree::new();
+
+        build_tree(&mut tree, vstack([text("hello")]));
+        let root = tree.root().unwrap();
+        let text_id = tree.get(root).unwrap().children[0];
+
+        let state_id = tree.state_arena_mut().get_or_create(text_id, 42_i32);
+
+        build_tree(&mut tree, vstack([text("world")]));
+
+        let root_after = tree.root().unwrap();
+        let text_id_after = tree.get(root_after).unwrap().children[0];
+        assert_eq!(root, root_after);
+        assert_eq!(text_id, text_id_after);
+        assert_eq!(tree.state_arena().get::<i32>(state_id), 42);
+    }
+
+    #[test]
+    fn test_sync_tree_replace_replaces_node() {
+        let mut tree = ViewTree::new();
+
+        build_tree(&mut tree, text("hello"));
+        let root = tree.root().unwrap();
+        let v0 = tree.get(root).unwrap().state_version;
+
+        build_tree(&mut tree, button("hello"));
+        let root_after = tree.root().unwrap();
+        assert_eq!(root, root_after);
+
+        let node = tree.get(root).unwrap();
+        assert!(matches!(node.descriptor, ViewDescriptor::Button { .. }));
+        assert!(node.state_version > v0);
+    }
+
+    #[test]
+    fn test_sync_tree_mount_unmount_children() {
+        let mut tree = ViewTree::new();
+
+        build_tree(&mut tree, vstack([text("a"), text("b"), text("c")]));
+        let root = tree.root().unwrap();
+        assert_eq!(tree.get(root).unwrap().children.len(), 3);
+
+        build_tree(&mut tree, vstack([text("a"), text("b")]));
+        assert_eq!(tree.get(root).unwrap().children.len(), 2);
+
+        build_tree(
+            &mut tree,
+            vstack([text("a"), text("b"), text("c"), text("d")]),
+        );
+        assert_eq!(tree.get(root).unwrap().children.len(), 4);
+    }
+
+    #[test]
+    fn test_sync_tree_nested_containers() {
+        let mut tree = ViewTree::new();
+
+        build_tree(&mut tree, vstack([hstack([text("hello")])]));
+        let root = tree.root().unwrap();
+        let hstack_id = tree.get(root).unwrap().children[0];
+
+        build_tree(&mut tree, vstack([hstack([button("click")])]));
+        let root_after = tree.root().unwrap();
+        let hstack_id_after = tree.get(root_after).unwrap().children[0];
+
+        assert_eq!(root, root_after);
+        assert_eq!(hstack_id, hstack_id_after);
+
+        let inner_id = tree.get(hstack_id_after).unwrap().children[0];
+        assert!(matches!(
+            tree.get(inner_id).unwrap().descriptor,
+            ViewDescriptor::Button { .. }
+        ));
+    }
+
+    #[test]
+    fn test_sync_tree_empty_to_content_and_back() {
+        let mut tree = ViewTree::new();
+
+        build_tree(&mut tree, empty());
+        let root = tree.root().unwrap();
+        assert!(matches!(
+            tree.get(root).unwrap().descriptor,
+            ViewDescriptor::Empty
+        ));
+
+        build_tree(&mut tree, text("hello"));
+        assert_eq!(tree.root().unwrap(), root);
+        assert!(matches!(
+            tree.get(root).unwrap().descriptor,
+            ViewDescriptor::Text { .. }
+        ));
+
+        build_tree(&mut tree, empty());
+        assert!(matches!(
+            tree.get(root).unwrap().descriptor,
+            ViewDescriptor::Empty
+        ));
+    }
+
+    #[test]
+    fn test_sync_tree_preserves_node_identity_on_recurse() {
+        let mut tree = ViewTree::new();
+
+        build_tree(&mut tree, panel("My Panel", text("content")));
+        let root = tree.root().unwrap();
+        let child_id = tree.get(root).unwrap().children[0];
+
+        build_tree(&mut tree, panel("My Panel", text("updated")));
+        let root_after = tree.root().unwrap();
+        let child_id_after = tree.get(root_after).unwrap().children[0];
+
+        assert_eq!(root, root_after, "Panel should keep same ViewId");
+        assert_eq!(child_id, child_id_after, "Text should keep same ViewId");
+
+        let ViewDescriptor::Text { content, .. } = &tree.get(child_id_after).unwrap().descriptor
+        else {
+            panic!("expected Text descriptor");
+        };
+        assert_eq!(content, "updated");
     }
 }

@@ -170,3 +170,296 @@ pub fn resolve_descriptor(
         ViewDescriptorData::Empty => ViewDescriptor::Empty,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    struct NoopResolver;
+
+    impl BindingResolver for NoopResolver {
+        fn resolve_f32(&self, _key: &str) -> Option<f32> {
+            None
+        }
+        fn resolve_u32(&self, _key: &str) -> Option<u32> {
+            None
+        }
+        fn resolve_string(&self, _key: &str) -> Option<String> {
+            None
+        }
+        fn resolve_bool(&self, _key: &str) -> Option<bool> {
+            None
+        }
+    }
+
+    struct HashMapResolver {
+        f32s: HashMap<String, f32>,
+        u32s: HashMap<String, u32>,
+        strings: HashMap<String, String>,
+        bools: HashMap<String, bool>,
+    }
+
+    impl HashMapResolver {
+        fn new() -> Self {
+            Self {
+                f32s: HashMap::new(),
+                u32s: HashMap::new(),
+                strings: HashMap::new(),
+                bools: HashMap::new(),
+            }
+        }
+    }
+
+    impl BindingResolver for HashMapResolver {
+        fn resolve_f32(&self, key: &str) -> Option<f32> {
+            self.f32s.get(key).copied()
+        }
+        fn resolve_u32(&self, key: &str) -> Option<u32> {
+            self.u32s.get(key).copied()
+        }
+        fn resolve_string(&self, key: &str) -> Option<String> {
+            self.strings.get(key).cloned()
+        }
+        fn resolve_bool(&self, key: &str) -> Option<bool> {
+            self.bools.get(key).copied()
+        }
+    }
+
+    fn noop_lookup(_path: &str) -> Option<TextureId> {
+        None
+    }
+
+    #[test]
+    fn test_resolve_text_basic() {
+        let data = ViewDescriptorData::Text {
+            content: "Hello".to_string(),
+            color: None,
+            font_size: None,
+        };
+        let resolver = NoopResolver;
+        let result = resolve_descriptor(&data, &resolver, &noop_lookup);
+
+        let ViewDescriptor::Text {
+            content,
+            color,
+            font_size,
+        } = result
+        else {
+            panic!("expected Text");
+        };
+        assert_eq!(content, "Hello");
+        assert!(color.is_none());
+        assert!(font_size.is_none());
+    }
+
+    #[test]
+    fn test_resolve_text_with_color_and_font_size() {
+        let data = ViewDescriptorData::Text {
+            content: "Colored".to_string(),
+            color: Some([1.0, 0.0, 0.0, 1.0]),
+            font_size: Some("Large".to_string()),
+        };
+        let resolver = NoopResolver;
+        let result = resolve_descriptor(&data, &resolver, &noop_lookup);
+
+        let ViewDescriptor::Text {
+            content,
+            color,
+            font_size,
+        } = result
+        else {
+            panic!("expected Text");
+        };
+        assert_eq!(content, "Colored");
+        let c = color.expect("expected Some(color)");
+        assert_eq!(c.r, 1.0);
+        assert_eq!(c.g, 0.0);
+        assert_eq!(c.b, 0.0);
+        assert_eq!(c.a, 1.0);
+        assert_eq!(font_size, Some(FontSize::Large));
+    }
+
+    #[test]
+    fn test_resolve_button_basic() {
+        let data = ViewDescriptorData::Button {
+            label: "Click".to_string(),
+            fill_color: Some([0.0, 0.0, 1.0, 1.0]),
+        };
+        let resolver = NoopResolver;
+        let result = resolve_descriptor(&data, &resolver, &noop_lookup);
+
+        let ViewDescriptor::Button {
+            label,
+            fill_color,
+            on_click,
+            ..
+        } = result
+        else {
+            panic!("expected Button");
+        };
+        assert_eq!(label, "Click");
+        let c = fill_color.expect("expected Some(fill_color)");
+        assert_eq!(c.b, 1.0);
+        assert!(on_click.is_none());
+    }
+
+    #[test]
+    fn test_resolve_progress() {
+        let data = ViewDescriptorData::Progress {
+            value: 0.5,
+            range: [0.0, 1.0],
+        };
+        let resolver = NoopResolver;
+        let result = resolve_descriptor(&data, &resolver, &noop_lookup);
+
+        let ViewDescriptor::Progress { value, range, .. } = result else {
+            panic!("expected Progress");
+        };
+        assert!((value - 0.5).abs() < f32::EPSILON);
+        assert_eq!(range, 0.0..=1.0);
+    }
+
+    #[test]
+    fn test_resolve_hstack_with_children() {
+        let data = ViewDescriptorData::HStack {
+            children: vec![
+                ViewDescriptorData::Text {
+                    content: "A".to_string(),
+                    color: None,
+                    font_size: None,
+                },
+                ViewDescriptorData::Text {
+                    content: "B".to_string(),
+                    color: None,
+                    font_size: None,
+                },
+            ],
+            spacing: 8.0,
+            padding: [4.0, 4.0, 4.0, 4.0],
+        };
+        let resolver = NoopResolver;
+        let result = resolve_descriptor(&data, &resolver, &noop_lookup);
+
+        let ViewDescriptor::HStack(desc) = result else {
+            panic!("expected HStack");
+        };
+        assert!((desc.spacing - 8.0).abs() < f32::EPSILON);
+        assert_eq!(desc.padding.top, 4.0);
+        assert_eq!(desc.padding.right, 4.0);
+        assert_eq!(desc.padding.bottom, 4.0);
+        assert_eq!(desc.padding.left, 4.0);
+        assert_eq!(desc.children.len(), 2);
+    }
+
+    #[test]
+    fn test_resolve_vstack_with_children() {
+        let data = ViewDescriptorData::VStack {
+            children: vec![ViewDescriptorData::Text {
+                content: "Only".to_string(),
+                color: None,
+                font_size: None,
+            }],
+            spacing: 4.0,
+            padding: [0.0; 4],
+        };
+        let resolver = NoopResolver;
+        let result = resolve_descriptor(&data, &resolver, &noop_lookup);
+
+        let ViewDescriptor::VStack(desc) = result else {
+            panic!("expected VStack");
+        };
+        assert!((desc.spacing - 4.0).abs() < f32::EPSILON);
+        assert_eq!(desc.padding, Padding::zero());
+        assert_eq!(desc.children.len(), 1);
+    }
+
+    #[test]
+    fn test_resolve_zstack_with_children() {
+        let data = ViewDescriptorData::ZStack {
+            children: vec![
+                ViewDescriptorData::Text {
+                    content: "A".to_string(),
+                    color: None,
+                    font_size: None,
+                },
+                ViewDescriptorData::Text {
+                    content: "B".to_string(),
+                    color: None,
+                    font_size: None,
+                },
+            ],
+        };
+        let resolver = NoopResolver;
+        let result = resolve_descriptor(&data, &resolver, &noop_lookup);
+
+        let ViewDescriptor::ZStack(desc) = result else {
+            panic!("expected ZStack");
+        };
+        assert_eq!(desc.children.len(), 2);
+    }
+
+    #[test]
+    fn test_resolve_empty() {
+        let data = ViewDescriptorData::Empty;
+        let resolver = NoopResolver;
+        let result = resolve_descriptor(&data, &resolver, &noop_lookup);
+        assert!(matches!(result, ViewDescriptor::Empty));
+    }
+
+    #[test]
+    fn test_resolve_image_with_texture_lookup() {
+        let data = ViewDescriptorData::Image {
+            texture_path: "test.png".to_string(),
+        };
+        let resolver = NoopResolver;
+        let result = resolve_descriptor(&data, &resolver, &|path| {
+            if path == "test.png" {
+                Some(TextureId(42))
+            } else {
+                None
+            }
+        });
+
+        let ViewDescriptor::Image { texture, .. } = result else {
+            panic!("expected Image");
+        };
+        assert_eq!(texture.0, 42);
+    }
+
+    #[test]
+    fn test_resolve_image_missing_texture() {
+        let data = ViewDescriptorData::Image {
+            texture_path: "missing.png".to_string(),
+        };
+        let resolver = NoopResolver;
+        let result = resolve_descriptor(&data, &resolver, &noop_lookup);
+
+        let ViewDescriptor::Image { texture, .. } = result else {
+            panic!("expected Image");
+        };
+        assert_eq!(texture.0, 0);
+    }
+
+    #[test]
+    fn test_binding_resolver_returns_none_for_missing_keys() {
+        let resolver = NoopResolver;
+        assert!(resolver.resolve_f32("anything").is_none());
+        assert!(resolver.resolve_u32("anything").is_none());
+        assert!(resolver.resolve_string("anything").is_none());
+        assert!(resolver.resolve_bool("anything").is_none());
+    }
+
+    #[test]
+    fn test_binding_resolver_returns_values() {
+        let mut resolver = HashMapResolver::new();
+        resolver.f32s.insert("volume".to_string(), 0.8);
+        resolver
+            .strings
+            .insert("name".to_string(), "test".to_string());
+
+        assert_eq!(resolver.resolve_f32("volume"), Some(0.8));
+        assert_eq!(resolver.resolve_string("name"), Some("test".to_string()));
+        assert_eq!(resolver.resolve_f32("missing"), None);
+    }
+}
