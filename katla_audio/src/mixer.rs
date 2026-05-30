@@ -8,12 +8,33 @@ use crate::clock::AudioClock;
 use crate::command_queue::{AudioCategoryValue, AudioCommand, CommandQueue};
 use crate::effect::zone_reverb::ZoneReverbEffect;
 use crate::effect::{AuxBus, EffectChain};
+use crate::levels::{ChannelLevels, LevelsBuffer, LevelsSnapshot};
 use crate::scheduled_event::ScheduledEvent;
 use crate::streaming_voice::StreamingVoice;
 use crate::voice::{AuxBusId, CategoryVolumes, Voice, VoiceId, VoicePriority, VoiceState};
 
 const MAX_VOICES: usize = 64;
 const MAX_STREAMING_VOICES: usize = 8;
+const NUM_CATEGORIES: usize = 3;
+
+fn compute_levels(buffer: &[f32]) -> ChannelLevels {
+    if buffer.is_empty() {
+        return ChannelLevels::default();
+    }
+    let mut peak = 0.0f32;
+    let mut sum_sq = 0.0f32;
+    for &s in buffer {
+        let abs = s.abs();
+        if abs > peak {
+            peak = abs;
+        }
+        sum_sq += s * s;
+    }
+    ChannelLevels {
+        peak,
+        rms: (sum_sq / buffer.len() as f32).sqrt(),
+    }
+}
 
 fn f32_to_bits(v: f32) -> u32 {
     v.to_bits()
@@ -40,6 +61,7 @@ struct MixerState {
     sample_rate: u32,
     channels: u16,
     scratch_buffer: Vec<f32>,
+    category_buffers: [Vec<f32>; NUM_CATEGORIES],
     next_aux_bus_id: u32,
 }
 
@@ -436,6 +458,7 @@ pub struct AudioMixer {
     zone_reverb_dampening: Arc<AtomicU32>,
     clock: AudioClock,
     scheduled_events: Mutex<Vec<ScheduledEvent>>,
+    levels_buffer: LevelsBuffer,
     sample_rate: u32,
     channels: u16,
 }
@@ -475,6 +498,7 @@ impl AudioMixer {
                 sample_rate,
                 channels,
                 scratch_buffer: Vec::new(),
+                category_buffers: Default::default(),
                 next_aux_bus_id: 1,
             }),
             command_queue: Arc::new(CommandQueue::new()),
@@ -486,6 +510,7 @@ impl AudioMixer {
             zone_reverb_dampening,
             clock: AudioClock::new(sample_rate),
             scheduled_events: Mutex::new(Vec::new()),
+            levels_buffer: LevelsBuffer::new(),
             sample_rate,
             channels,
         }
@@ -646,6 +671,10 @@ impl AudioMixer {
 
     pub fn channels(&self) -> u16 {
         self.channels
+    }
+
+    pub fn read_levels(&self) -> LevelsSnapshot {
+        self.levels_buffer.read()
     }
 
     pub fn add_master_effect(&self, effect: Box<dyn crate::effect::AudioEffect + Send>) {
@@ -816,6 +845,8 @@ impl AudioMixer {
 
         self.process_scheduled_events();
 
+        let mut snapshot = LevelsSnapshot::default();
+
         {
             let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
             Self::process_commands(&mut state, &self.command_queue);
@@ -833,6 +864,7 @@ impl AudioMixer {
                 sample_rate,
                 channels,
                 scratch_buffer,
+                category_buffers,
                 next_aux_bus_id: _,
             } = &mut *state;
 
@@ -858,6 +890,12 @@ impl AudioMixer {
             if scratch_buffer.len() != output.len() {
                 scratch_buffer.resize(output.len(), 0.0);
             }
+            for buf in category_buffers.iter_mut() {
+                if buf.len() != output.len() {
+                    buf.resize(output.len(), 0.0);
+                }
+                buf.fill(0.0);
+            }
 
             for voice in voices.iter().flatten() {
                 if voice.is_finished() {
@@ -867,6 +905,10 @@ impl AudioMixer {
                 voice.mix_into(scratch_buffer, channels, sample_rate);
                 for (o, v) in output.iter_mut().zip(scratch_buffer.iter()) {
                     *o += v;
+                }
+                let cat_buf = &mut category_buffers[category_index(voice.category())];
+                for (d, &s) in cat_buf.iter_mut().zip(scratch_buffer.iter()) {
+                    *d += s;
                 }
                 for bus in aux_buses.iter_mut() {
                     let level = voice.aux_send_level(bus.id).unwrap_or(bus.send_level);
@@ -883,6 +925,10 @@ impl AudioMixer {
                 for (o, v) in output.iter_mut().zip(scratch_buffer.iter()) {
                     *o += v;
                 }
+                let cat_buf = &mut category_buffers[category_index(voice.category())];
+                for (d, &s) in cat_buf.iter_mut().zip(scratch_buffer.iter()) {
+                    *d += s;
+                }
                 for bus in aux_buses.iter_mut() {
                     let level = voice.aux_send_level(bus.id).unwrap_or(bus.send_level);
                     bus.accumulate_voice(scratch_buffer, level);
@@ -895,6 +941,10 @@ impl AudioMixer {
             }
 
             master_effects.process(output, channels);
+
+            snapshot.sfx = compute_levels(&category_buffers[0]);
+            snapshot.music = compute_levels(&category_buffers[1]);
+            snapshot.ambient = compute_levels(&category_buffers[2]);
 
             let mut finished_voice_count = 0usize;
             let mut finished_voices: [(usize, VoiceId); MAX_VOICES] = [(0, VoiceId(0)); MAX_VOICES];
@@ -940,6 +990,9 @@ impl AudioMixer {
         for sample in output.iter_mut() {
             *sample = sample.clamp(-1.0, 1.0);
         }
+
+        snapshot.master = compute_levels(output);
+        self.levels_buffer.write(&snapshot);
 
         self.clock.advance(frames);
     }

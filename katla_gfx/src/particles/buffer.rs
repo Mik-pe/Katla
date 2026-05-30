@@ -142,15 +142,15 @@ pub struct GlobalParticleBuffer {
     context: Rc<VulkanContext>,
 
     /// Main particle storage buffer
-    particle_buffer: vk::Buffer,
+    particle_buffer: Option<vk::Buffer>,
     particle_allocation: ManuallyDrop<Allocation>,
 
     /// Per-frame atomic counters [frames_in_flight]
-    counters_buffers: [vk::Buffer; 2],
+    counters_buffers: [Option<vk::Buffer>; 2],
     counters_allocations: [ManuallyDrop<Allocation>; 2],
 
     /// Per-frame indirect draw command buffers [frames_in_flight]
-    indirect_draw_buffers: [vk::Buffer; 2],
+    indirect_draw_buffers: [Option<vk::Buffer>; 2],
     indirect_draw_allocations: [ManuallyDrop<Allocation>; 2],
 
     /// Maximum particles
@@ -241,7 +241,7 @@ impl GlobalParticleBuffer {
 
         // Create per-frame counters buffers (CPU-visible for readback, double-buffered)
         let counters_size = std::mem::size_of::<ParticleCounters>();
-        let mut counters_buffers = [vk::Buffer::null(); 2];
+        let mut counters_buffers = [None; 2];
         let mut counters_allocations_build: [Option<Allocation>; 2] = [None, None];
 
         for frame_idx in 0..2 {
@@ -255,19 +255,19 @@ impl GlobalParticleBuffer {
                 )
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            counters_buffers[frame_idx] = unsafe {
+            counters_buffers[frame_idx] = Some(unsafe {
                 context
                     .device
                     .create_buffer(&counters_buffer_info, None)
                     .map_err(|e| {
                         format!("Failed to create counters buffer[{}]: {:?}", frame_idx, e)
                     })?
-            };
+            });
 
             let counters_requirements = unsafe {
                 context
                     .device
-                    .get_buffer_memory_requirements(counters_buffers[frame_idx])
+                    .get_buffer_memory_requirements(counters_buffers[frame_idx].unwrap())
             };
 
             counters_allocations_build[frame_idx] = Some(
@@ -291,7 +291,7 @@ impl GlobalParticleBuffer {
                 context
                     .device
                     .bind_buffer_memory(
-                        counters_buffers[frame_idx],
+                        counters_buffers[frame_idx].unwrap(),
                         counters_allocations_build[frame_idx]
                             .as_ref()
                             .unwrap()
@@ -340,7 +340,7 @@ impl GlobalParticleBuffer {
 
         // Create per-frame indirect draw command buffers (16 bytes each, double-buffered)
         let indirect_draw_size: u64 = 16;
-        let mut indirect_draw_buffers = [vk::Buffer::null(); 2];
+        let mut indirect_draw_buffers = [None; 2];
         let mut indirect_draw_allocations_build: [Option<Allocation>; 2] = [None, None];
 
         for frame_idx in 0..2 {
@@ -353,7 +353,7 @@ impl GlobalParticleBuffer {
                 )
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            indirect_draw_buffers[frame_idx] = unsafe {
+            indirect_draw_buffers[frame_idx] = Some(unsafe {
                 context
                     .device
                     .create_buffer(&indirect_draw_buffer_info, None)
@@ -363,12 +363,12 @@ impl GlobalParticleBuffer {
                             frame_idx, e
                         )
                     })?
-            };
+            });
 
             let indirect_draw_requirements = unsafe {
                 context
                     .device
-                    .get_buffer_memory_requirements(indirect_draw_buffers[frame_idx])
+                    .get_buffer_memory_requirements(indirect_draw_buffers[frame_idx].unwrap())
             };
 
             indirect_draw_allocations_build[frame_idx] = Some(
@@ -395,7 +395,7 @@ impl GlobalParticleBuffer {
                 context
                     .device
                     .bind_buffer_memory(
-                        indirect_draw_buffers[frame_idx],
+                        indirect_draw_buffers[frame_idx].unwrap(),
                         indirect_draw_allocations_build[frame_idx]
                             .as_ref()
                             .unwrap()
@@ -456,7 +456,7 @@ impl GlobalParticleBuffer {
 
         Ok(Self {
             context,
-            particle_buffer,
+            particle_buffer: Some(particle_buffer),
             particle_allocation: ManuallyDrop::new(particle_allocation),
             counters_buffers,
             counters_allocations,
@@ -479,7 +479,7 @@ impl GlobalParticleBuffer {
         unsafe {
             self.context.device.cmd_fill_buffer(
                 cmd.vk_command_buffer(),
-                self.particle_buffer,
+                self.particle_buffer(),
                 0,
                 self.layout.particles_size,
                 0,
@@ -563,7 +563,7 @@ impl GlobalParticleBuffer {
             self.context.device.cmd_copy_buffer(
                 cmd.vk_command_buffer(),
                 staging_buffer,
-                self.particle_buffer,
+                self.particle_buffer(),
                 std::slice::from_ref(&copy_region),
             );
         }
@@ -590,7 +590,7 @@ impl GlobalParticleBuffer {
             for frame_idx in 0..2 {
                 self.context.device.cmd_fill_buffer(
                     cmd.vk_command_buffer(),
-                    self.particle_buffer,
+                    self.particle_buffer(),
                     self.layout.alive_frame_offset[frame_idx],
                     self.layout.alive_list_size,
                     0,
@@ -692,7 +692,7 @@ impl GlobalParticleBuffer {
                     .size(counters_bytes.len() as u64);
                 self.context.device.cmd_copy_buffer(
                     cmd.vk_command_buffer(),
-                    self.counters_buffers[frame_idx],
+                    self.counters_buffer(frame_idx),
                     staging_buffer,
                     std::slice::from_ref(&copy_region),
                 );
@@ -769,15 +769,15 @@ impl GlobalParticleBuffer {
     }
 
     pub fn particle_buffer(&self) -> vk::Buffer {
-        self.particle_buffer
+        self.particle_buffer.unwrap_or_default()
     }
 
     pub fn counters_buffer(&self, frame_index: usize) -> vk::Buffer {
-        self.counters_buffers[frame_index % 2]
+        self.counters_buffers[frame_index % 2].unwrap_or_default()
     }
 
     pub fn indirect_draw_buffer(&self, frame_index: usize) -> vk::Buffer {
-        self.indirect_draw_buffers[frame_index % 2]
+        self.indirect_draw_buffers[frame_index % 2].unwrap_or_default()
     }
 
     /// Destroy all resources.
@@ -806,32 +806,23 @@ impl GlobalParticleBuffer {
                 self.context.allocator.free(alloc, "particle indirect draw");
             }
             log::info!("  buffer destroy: destroying particle buffer");
-            if self.particle_buffer != vk::Buffer::null() {
-                self.context
-                    .device
-                    .destroy_buffer(self.particle_buffer, None);
-                self.particle_buffer = vk::Buffer::null();
+            if let Some(buffer) = self.particle_buffer.take() {
+                self.context.device.destroy_buffer(buffer, None);
             }
             for frame_idx in 0..2 {
                 log::info!(
                     "  buffer destroy: destroying counters buffer[{}]",
                     frame_idx
                 );
-                if self.counters_buffers[frame_idx] != vk::Buffer::null() {
-                    self.context
-                        .device
-                        .destroy_buffer(self.counters_buffers[frame_idx], None);
-                    self.counters_buffers[frame_idx] = vk::Buffer::null();
+                if let Some(buffer) = self.counters_buffers[frame_idx].take() {
+                    self.context.device.destroy_buffer(buffer, None);
                 }
                 log::info!(
                     "  buffer destroy: destroying indirect draw buffer[{}]",
                     frame_idx
                 );
-                if self.indirect_draw_buffers[frame_idx] != vk::Buffer::null() {
-                    self.context
-                        .device
-                        .destroy_buffer(self.indirect_draw_buffers[frame_idx], None);
-                    self.indirect_draw_buffers[frame_idx] = vk::Buffer::null();
+                if let Some(buffer) = self.indirect_draw_buffers[frame_idx].take() {
+                    self.context.device.destroy_buffer(buffer, None);
                 }
             }
         }

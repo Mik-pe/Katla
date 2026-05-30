@@ -8,6 +8,7 @@ use crate::buffer::AudioBuffer;
 use crate::command_queue::AudioCategoryValue;
 use crate::effect::{AudioEffect, AuxBus};
 use crate::error::AudioError;
+use crate::levels::LevelsSnapshot;
 use crate::mixer::AudioMixer;
 use crate::streaming::StreamingDecoder;
 use crate::streaming_voice::StreamingVoiceHandle;
@@ -454,6 +455,10 @@ impl AudioEngine {
 
     pub fn clock_time_after_samples(&self, n: u64) -> f64 {
         self.mixer.clock_time_after_samples(n)
+    }
+
+    pub fn read_levels(&self) -> LevelsSnapshot {
+        self.mixer.read_levels()
     }
 
     pub fn schedule_play(
