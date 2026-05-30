@@ -990,10 +990,59 @@ mod tests {
 
     #[test]
     fn test_color_picker_constructor() {
-        let id = dummy_state_id();
+        let id = StateId::test_id();
+        let ViewDescriptor::ColorPicker { label, value_id } = color_picker("Pick color", id) else {
+            panic!("expected ColorPicker");
+        };
+        assert_eq!(label, "Pick color");
+        assert_eq!(value_id, id);
+    }
+
+    #[test]
+    fn test_color_picker_diff_update() {
+        use crate::declarative::diff::{DiffAction, diff_descriptor};
+        let id = StateId::test_id();
+        let a = color_picker("Color A", id);
+        let b = color_picker("Color B", id);
+        assert_eq!(diff_descriptor(&a, &b), DiffAction::Update);
+    }
+
+    #[test]
+    fn test_color_picker_diff_replace() {
+        use crate::declarative::diff::{DiffAction, diff_descriptor};
+        let id = StateId::test_id();
+        let a = color_picker("Color", id);
+        let b = text("Not a color picker");
+        assert_eq!(diff_descriptor(&a, &b), DiffAction::Replace);
+    }
+
+    #[test]
+    fn test_color_picker_state_round_trip() {
+        let mut arena = StateArena::new();
+        let view_id = ViewId::default();
+        let state_id = arena.get_or_create(view_id, 0.5f32);
+        let _picker = color_picker("Color", state_id);
+        arena.set(state_id, 0.8f32);
+        let value: f32 = arena.get(state_id);
+        assert!((value - 0.8).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_color_picker_in_container() {
+        let id = StateId::test_id();
+        let picker = color_picker("Color", id);
+        let label = text("Label");
+        let ViewDescriptor::VStack(desc) = vstack([picker, label]) else {
+            panic!("expected VStack");
+        };
+        assert_eq!(desc.children.len(), 2);
         assert!(matches!(
-            color_picker("bg", id),
+            desc.children[0].descriptor,
             ViewDescriptor::ColorPicker { .. }
+        ));
+        assert!(matches!(
+            desc.children[1].descriptor,
+            ViewDescriptor::Text { .. }
         ));
     }
 
