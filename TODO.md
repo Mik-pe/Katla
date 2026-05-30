@@ -414,7 +414,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 #### Prerequisites: Environment injection pattern
 
-- [ ] Standardize Environment injection pattern across all declarative panels — migrate remaining panels (AssetBrowser) from `thread_local!` RefCell bridges to `ctx.env::<PanelState>()` injection pattern used by ParticleInspector. Preferences, CoCreator, Hierarchy, Inspector, and Console are done.
+- [x] Standardize Environment injection pattern across all declarative panels — Already complete. All 10 panels use ctx.env() pattern; no thread_local bridges remain.
 
 #### Phase 1: Migrate simple panels (build confidence)
 
@@ -488,7 +488,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### katla_app - Critical Issues (Block Production)
 
 - [x] **Remove all `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. Remove unused code instead. Locations: `ui/editor_ui/types.rs:316,516`, `ui/particle_inspector.rs:46`, `ui/renderer.rs:1`, `util/background_loader.rs:1,39,61,118`
-- [ ] **Eliminate `unwrap()` in `rapier_physics_system.rs`** — 35 unwraps. Convert Mutex/RwLock locks and Rapier handle lookups to proper error returns with `AppResult`
+- [x] **Eliminate `unwrap()` in `rapier_physics_system.rs`** — 2 production unwraps removed (1 in prev batch, 1 in this batch); remaining ~33 are test code
 - ~~**Eliminate `unwrap()` in `editor/mod.rs`**~~ — False positive. All 12 unwraps are in test code.
 - [x] **Eliminate `unwrap()` in `stl_parser.rs`** — 9 unwraps. Parsing code should return `Result` instead of unwrapping on malformed input
 - ~~**Eliminate `unwrap()` in `spawner.rs`**~~ — False positive. All unwraps are in test code.
@@ -533,8 +533,8 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### katla_script - Critical Issues (Block Production)
 
-- [ ] **Eliminate `unwrap()`/`expect()` in `sandbox.rs`** — 35 unwraps + 1 expect. Script sandbox initialization and evaluation should return `ScriptError` instead of panicking
-- [ ] **Eliminate `expect()` in `system.rs`** — 1 expect. Script system execution should propagate errors
+- ~~**Eliminate `unwrap()`/`expect()` in `sandbox.rs`**~~ — False positive. Production code already returns Result<_, ScriptError>; all unwraps are in test code.
+- [x] **Eliminate `expect()` in `system.rs`** — Removed unused Default impl containing the expect; callers use ScriptSystem::new() which returns Result
 - ~~**Eliminate 18 `panic!()` calls**~~ — False positive. All 18 are in test assertion code (`tests.rs`), which is standard Rust test practice.
 - [x] **Remove unused mutable variable** — Clippy warning: "variable does not need to be mutable" blocks `-D warnings` builds
 - [x] **Fix clippy warnings blocking `-D warnings` builds** — 5 warnings prevent clean builds. Run `cargo clippy -p katla_script -- -D warnings`
