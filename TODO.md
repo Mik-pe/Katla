@@ -6,14 +6,21 @@ Individual tasks should be small enough to complete in a single focused session.
 
 ## Backend Abstraction Cleanup
 
+### B. Design backend-agnostic texture view type
+
+- [x] **Explore backend-agnostic texture view type** — Evaluated three approaches: (1) wgpu-hal-style Api trait with associated types (already used internally, doesn't solve the AnyFrameGraph boundary), (2) enum wrapper `AnyTextureView` with `Vulkan(VkImageView)` / `Metal(MetalTextureView)` variants, (3) `dyn Trait` object (requires new non-generic trait, overengineered). **Decision: enum wrapper** — consistent with existing `AnyRenderer`/`AnyFrameGraph` enum dispatch pattern, no architectural changes needed.
+
+- [ ] Create `AnyTextureView` enum in `katla_gfx/src/render_graph/any_texture_view.rs` — `Vulkan(VkImageView)` and `Metal(MetalTextureView)` variants, `Send + Sync`, expose basic accessors (format, dimensions) via the existing `GpuImageView` trait or simple delegated methods
+- [ ] Add `transient_image_view(name, frame_idx) -> Option<AnyTextureView>` to `AnyFrameGraph` — replaces `transient_image_view_metal()`
+- [ ] Add `transient_texture(name, frame_idx) -> Option<&AnyTransientTexture>` to `AnyFrameGraph` — replaces `transient_texture_metal()`
+- [ ] Remove `transient_image_view_metal()` and `transient_texture_metal()` Metal-only methods from `AnyFrameGraph`
+- [ ] Update `AnyRenderer` to add `set_geometry_hdr_view` / `set_tonemap_output_view` taking `AnyTextureView` — dispatch to Vulkan (no-op or forward) / Metal (unwrap and call concrete method)
+- [ ] Update `katla_app` callers (`builder.rs`, `renderer.rs`) to use new backend-agnostic methods instead of Metal-specific ones
+- [ ] Remove `#[cfg(target_os = "macos")]` gates from `AnyFrameGraph` / `AnyFrame` that are now handled by the enum variants
+
 ### C. Unify pipeline initialization — eliminate Metal-specific methods on AnyRenderer
 
-- [ ] Add `set_geometry_hdr_view` and `set_tonemap_output_view` to `GpuRenderer` trait — needs backend-agnostic texture view type
-
-### D. Clean up `cfg(target_os = "macos")` gating in AnyFrameGraph / AnyFrame
-
-- [ ] Remove `transient_image_view_metal()` and `transient_texture_metal()` Metal-only methods from `AnyFrameGraph` — requires backend-agnostic texture view type
-- [ ] Audit `AnyFrameGraph` for all `#[cfg(target_os = "macos")]` branches that could be collapsed — verified: only enum variants, match arms, and two Metal-specific accessors (`transient_image_view_metal`, `transient_texture_metal`) remain; the accessors require a backend-agnostic texture view type to remove (same blocker as D item above)
+- [ ] ~~Add `set_geometry_hdr_view` and `set_tonemap_output_view` to `GpuRenderer` trait~~ — superseded by B items above; the enum wrapper approach keeps these on `AnyRenderer` rather than the trait
 
 ### E. Align Metal backend with shared FrameGraph<B> execution path
 
@@ -130,8 +137,8 @@ Individual tasks should be small enough to complete in a single focused session.
 
 ### Metal rendering bugs
 - [x] Billboard icons don't show in Metal
-- [ ] Animated fox (skinned mesh) doesn't show in Metal
-- [ ] Particle systems don't show in Metal
+- [ ] **Investigate animated fox (skinned mesh) not showing in Metal** — Determine root cause (missing joint buffer bind, shader mismatch, pipeline state) before scoping fix. Could be trivial or require significant plumbing.
+- [ ] **Investigate particle systems not showing in Metal** — Determine root cause (compute dispatch path, particle buffer upload, draw call) before scoping fix. Could be trivial or require significant plumbing.
 
 ### Post-processing pipeline
 - [ ] Add post-process pass infrastructure — reusable fullscreen-quad pass builder in the render graph that takes an input color texture and outputs a processed color texture
@@ -452,11 +459,11 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] Add `ViewDescriptor` construction tests — Added 19 tests for constructors and modifiers.
 - [ ] **Add declarative integration tests** — frame-level tests that build a descriptor tree, run `ViewTree::frame()`, assert bounds, actions, and state mutations:
   - [x] Add tests for `diff_descriptor` — 8 integration tests for keyed/unkeyed insert/remove/reorder.
-  - [ ] Add tests for `ViewTree::sync_tree` — verify tree sync preserves state across descriptor changes, handles mount/unmount
-  - [ ] Add tests for `TransitionContainer` — verify enter/exit transitions fire correctly, animation state management
+  - [x] Add tests for `ViewTree::sync_tree` — verify tree sync preserves state across descriptor changes, handles mount/unmount
+  - [x] Add tests for `TransitionContainer` — verify enter/exit transitions fire correctly, animation state management
   - [ ] Add tests for `DockArea` — verify tab/panel docking, splitting, and layout computation
-  - [ ] Add tests for `ColorPicker` — verify color selection, HSV state, and callback invocation
-  - [ ] Add tests for `BindingResolver` — verify state binding resolution, nested bindings, and error handling for missing keys
+  - [x] Add tests for `ColorPicker` — verify color selection, HSV state, and callback invocation
+  - [x] Add tests for `BindingResolver` — verify state binding resolution, nested bindings, and error handling for missing keys
 - [x] Add integration tests for new widget descriptors — add tests for `Section`, `TabBar`, `Grid`, `Separator`, `Icon`, `Selectable` descriptors to ensure they build, diff, layout, and render correctly.
 
 ## Developer Experience
@@ -632,8 +639,8 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] **Explore frame lifecycle unification across backends** — Vulkan uses frame graph via `render()`, Metal uses hardcoded `render_frame()`. Research how to route Metal through `FrameGraph<B>::execute()`, identify which passes need `RenderGraphBackend` dispatch implementations on Metal. Produce concrete implementation TODO items.
 - [ ] **Implement `recompile_materials_for_shader()` for Metal** — Currently no-op (inherited default). Metal backend needs real implementation
 - [ ] **Implement `init_animation_pipeline()` for Metal** — Currently no-op (inherited default). Metal backend needs real implementation
-- [ ] **Remove `render_frame()` from Metal backend** — Replace with frame graph execution through `render()` method once parity is achieved
-- [ ] **Remove Metal-specific methods from `AnyRenderer`** — `set_geometry_hdr_view()`, `set_tonemap_output_view()`, `queue_metal_picking_readback()`, `check_metal_picking_readback()`, `has_pending_metal_picking_readback()` should be in `GpuRenderer` trait or removed
+- [ ] **Remove `render_frame()` from Metal backend** — Replace with frame graph execution through `render()` method once parity is achieved. **Depends on:** section E completion + frame lifecycle unification exploration.
+- [ ] **Remove Metal-specific methods from `AnyRenderer`** — `queue_metal_picking_readback()`, `check_metal_picking_readback()`, `has_pending_metal_picking_readback()` should be moved to `GpuRenderer` trait or removed. `set_geometry_hdr_view()` / `set_tonemap_output_view()` are covered by section B. **Depends on:** section B completion.
 
 ### P2 - Resource Management
 - [x] **Fix pending readback cleanup** — Upgraded warn to error log level in `VulkanRenderer::destroy()` and fixed stale comment referencing nonexistent `cleanup_on_exit()`.
@@ -671,8 +678,3 @@ hstack(children).spacing(2.0).padding_all(10.0)
   - [ ] Document resource creation methods — texture, buffer, pipeline creation methods
   - [ ] Document drawing methods — draw, dispatch, and pass-related methods
   - [ ] Document query/state methods — timestamp queries, readback, synchronization
-
-### Metal Backend Specific
-- [x] **Fix billboard icons rendering** — Billboard icons don't show in Metal backend
-- [ ] **Fix animated fox (skinned mesh) rendering** — Skinned mesh doesn't show in Metal backend
-- [ ] **Fix particle systems rendering** — Particle systems don't show in Metal backend
