@@ -4,7 +4,7 @@ use katla_ui::{UiContext, mouse_button};
 
 use super::*;
 use crate::ui::editor_ui::declarative::{
-    EditorRootView, HierarchyDrawCtx, PreferencesDrawCtx, PreferencesPanelSync,
+    EditorOverlayView, HierarchyDrawCtx, PreferencesDrawCtx, PreferencesPanelSync,
 };
 use crate::ui::editor_ui::types::PreferencesTab;
 use katla_ui::declarative::DraggablePanelVisibility;
@@ -37,7 +37,7 @@ fn test_preferences_tab_click_does_not_close_panel() {
         llm_config: katla_agent::LlmConfig::default(),
     });
 
-    let _ = view_tree.frame(&mut ui, &EditorRootView, Vec2::new(800.0, 600.0));
+    let _ = view_tree.frame(&mut ui, &EditorOverlayView, Vec2::new(800.0, 600.0));
 
     ui.end();
 
@@ -56,7 +56,7 @@ fn test_preferences_tab_click_does_not_close_panel() {
         llm_config: katla_agent::LlmConfig::default(),
     });
 
-    let _ = view_tree.frame(&mut ui, &EditorRootView, Vec2::new(800.0, 600.0));
+    let _ = view_tree.frame(&mut ui, &EditorOverlayView, Vec2::new(800.0, 600.0));
 
     let syncs: Vec<PreferencesPanelSync> = view_tree.actions_mut().drain();
     if let Some(sync) = syncs.into_iter().next() {
@@ -156,7 +156,7 @@ fn test_hierarchy_entity_selection_works() {
 
     let mut view_tree = ViewTree::default();
     view_tree.env_mut().set(hierarchy_ctx);
-    let _ = view_tree.frame(&mut ui, &EditorRootView, Vec2::new(800.0, 600.0));
+    let _ = view_tree.frame(&mut ui, &EditorOverlayView, Vec2::new(800.0, 600.0));
 
     // TODO: Implement proper sync - for now, we're not syncing state back
     // This test will need to be updated once HierarchySync emission is implemented

@@ -46,7 +46,7 @@ pub(crate) enum ToolbarAction {
 
 pub(crate) struct ToolbarView;
 
-const TOOLBAR_HEIGHT: f32 = 36.0;
+pub(crate) const TOOLBAR_HEIGHT: f32 = 36.0;
 
 impl Build for ToolbarView {
     fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {

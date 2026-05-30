@@ -839,6 +839,22 @@ impl ViewDescriptor {
         }
         self
     }
+
+    pub fn flex_grow(mut self, grow: f32) -> ViewDescriptor {
+        match &mut self {
+            ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => {
+                desc.flex.flex_grow = grow
+            }
+            ViewDescriptor::ZStack(desc) => desc.flex.flex_grow = grow,
+            ViewDescriptor::Panel(desc) => desc.flex.flex_grow = grow,
+            ViewDescriptor::Grid(desc) => desc.flex.flex_grow = grow,
+            ViewDescriptor::ScrollView(desc) => desc.flex.flex_grow = grow,
+            _ => {
+                debug_assert!(false, "flex_grow() modifier applied to unsupported variant");
+            }
+        }
+        self
+    }
 }
 
 // ---------------------------------------------------------------------------
