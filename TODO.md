@@ -437,18 +437,18 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 #### Cleanup: remove legacy code
 
-- [ ] Remove all thread-local `RefCell<Option<DrawCtx>>` bridges — `set_*_ctx`/`take_*_ctx` functions for every migrated panel. Verify no remaining `thread_local!` blocks in `editor_ui/`.
-- [ ] Remove or gate `ViewDescriptor::Custom` escape hatch — make it `#[cfg(test)]` or remove entirely once all panels are migrated. If kept for extensibility, document the constraints (no diffing, no state, no layout).
+- [x] Remove all thread-local `RefCell<Option<DrawCtx>>` bridges — Confirmed none remain; all panels use Environment injection.
+- [x] Remove `ViewDescriptor::Custom` escape hatch — removed entirely since all panels migrated to declarative trees. Also removed `CustomDrawFn` type alias, `scratch_data`/`set_scratch`/`get_scratch` infrastructure from `UiContext`, and `test_diff_same_custom_is_update` test.
 - [ ] **Remove immediate-mode builder widgets that have declarative equivalents** — Remove from `widgets/mod.rs` public API and update all callers. Keep only widgets with no declarative counterpart (e.g. `DockArea`). Remove one at a time:
   - [x] Remove `Button` — callers use `button_with_colors()` directly
   - [x] Remove `Slider` — callers use `ui.slider()` directly
   - [x] Remove `LabeledSlider` — callers use inline `draw_labeled_slider()` helper
-  - [ ] Remove `Vec3Slider` — callers use `vec3_slider()`
-  - [ ] Remove `ToggleButton` — callers use `toggle()`
-  - [ ] Remove `TextInput` — callers use `textfield()`
-  - [ ] Remove `RadioButton` — callers use `radio()`
-  - [ ] Remove `ImageButton` — callers use `image_button()`
-  - [ ] Remove `Panel` — callers use `panel()`
+  - [x] Remove `Vec3Slider` — callers use `vec3_slider()`
+  - [x] Remove `ToggleButton` — callers use `toggle()`
+  - [x] Remove `TextInput` — callers use `textfield()`
+  - [x] Remove `RadioButton` — callers use `radio()`
+  - [x] Remove `ImageButton` — callers use `ui.image_button()` directly
+  - [x] Remove `Panel` — callers use `panel()`
 - [ ] Add `ViewDescriptor` construction tests — unit tests for the builder constructors, diff correctness (including keyed children), and layout for each new container variant.
 - [ ] **Add declarative integration tests** — frame-level tests that build a descriptor tree, run `ViewTree::frame()`, assert bounds, actions, and state mutations:
   - [ ] Add tests for `diff_descriptor` — verify keyed and unkeyed children diff correctly (insert, remove, reorder, type change)
@@ -545,7 +545,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] **Improve error messages from Lua** — Script errors should provide more context (which script, which function, stack traces where available)
 - [x] **Add script timeout protection** — Long-running scripts can block the main thread. Add execution time limits or yield points
 - [x] **Sandbox script capabilities** — Scripts currently have full access. Need safe subset of Lua APIs for production (restrict file I/O, network, etc.)
-- [ ] **Add script state serialization** — Script component state should serialize/deserialize for scene save/load
+- [x] **Add script state serialization** — Already implemented. ScriptDescriptor in EntityDescriptor with save/load paths.
 
 ### katla_script - Documentation
 
