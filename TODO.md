@@ -70,8 +70,8 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] Add peak/RMS level computation in `AudioMixer::render()` — Per-category and master peak/RMS computed during render, written to LevelsBuffer.
 - [x] Add atomic double-buffered level snapshots — LevelsBuffer with AtomicUsize index, fetch_xor(1) swap, lock-free audio→UI communication.
 - [x] Add VU meter widget to katla_ui — Added VuMeter ViewDescriptor with color-graded RMS bar and peak hold indicator.
-- [ ] Add mixer panel layout — dockable panel with master bus fader + VU meter, SFX/Music/Ambient sub-buses with faders + VU meters, aux bus sends with wet/dry controls
-- [ ] Add voice pool status display — show active voice count, peak voice count, and which voices are playing (with name/category/volume) in the mixer panel or a debug overlay
+- [x] Add mixer panel layout — dockable panel with master bus fader + VU meter, SFX/Music/Ambient sub-buses with faders + VU meters, aux bus sends with wet/dry controls
+- [x] Add voice pool status display — show active voice count, peak voice count, and which voices are playing (with name/category/volume) in the mixer panel or a debug overlay
 - [x] Add reverb zone visualizer — `ReverbZone` components exist but are invisible in the editor. Draw wireframe boxes/spheres showing reverb zone extents with color-coding for decay/wet parameters, similar to physics collider visualization.
 
 ## Physics
@@ -461,7 +461,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
   - [x] Add tests for `diff_descriptor` — 8 integration tests for keyed/unkeyed insert/remove/reorder.
   - [x] Add tests for `ViewTree::sync_tree` — verify tree sync preserves state across descriptor changes, handles mount/unmount
   - [x] Add tests for `TransitionContainer` — verify enter/exit transitions fire correctly, animation state management
-  - [ ] Add tests for `DockArea` — verify tab/panel docking, splitting, and layout computation
+  - [x] Add tests for `DockArea` — verify tab/panel docking, splitting, and layout computation
   - [x] Add tests for `ColorPicker` — verify color selection, HSV state, and callback invocation
   - [x] Add tests for `BindingResolver` — verify state binding resolution, nested bindings, and error handling for missing keys
 - [x] Add integration tests for new widget descriptors — add tests for `Section`, `TabBar`, `Grid`, `Separator`, `Icon`, `Selectable` descriptors to ensure they build, diff, layout, and render correctly.
