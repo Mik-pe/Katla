@@ -62,7 +62,7 @@ Individual tasks should be small enough to complete in a single focused session.
 ### Phase 18: Audio mixer UI
 - [x] Add peak/RMS level computation in `AudioMixer::render()` — Per-category and master peak/RMS computed during render, written to LevelsBuffer.
 - [x] Add atomic double-buffered level snapshots — LevelsBuffer with AtomicUsize index, fetch_xor(1) swap, lock-free audio→UI communication.
-- [ ] Add VU meter widget to katla_ui — vertical bar showing peak/RMS with peak hold falloff, color-graded (green/yellow/red)
+- [x] Add VU meter widget to katla_ui — Added VuMeter ViewDescriptor with color-graded RMS bar and peak hold indicator.
 - [ ] Add mixer panel layout — dockable panel with master bus fader + VU meter, SFX/Music/Ambient sub-buses with faders + VU meters, aux bus sends with wet/dry controls
 - [ ] Add voice pool status display — show active voice count, peak voice count, and which voices are playing (with name/category/volume) in the mixer panel or a debug overlay
 - [x] Add reverb zone visualizer — `ReverbZone` components exist but are invisible in the editor. Draw wireframe boxes/spheres showing reverb zone extents with color-coding for decay/wet parameters, similar to physics collider visualization.
@@ -97,7 +97,7 @@ Individual tasks should be small enough to complete in a single focused session.
 ### Phase 8: Collider mesh fitting, shape types, and prefabs
 
 - [x] **Add geometry data cache for mesh vertex positions** — Added GeometryCache (HashMap<MeshHandle, Arc<MeshGeometryData>>) populated during mesh loading.
-- [ ] **Extend `ColliderShape` enum with mesh-derived variants** — Add `ColliderShape::Trimesh`, `ColliderShape::ConvexHull`, and `ColliderShape::Heightfield` variants alongside existing Sphere/Box/Capsule. Trimesh stores vertex positions + triangle indices (for static environment geometry). ConvexHull stores vertex positions (for dynamic props). Heightfield stores a 2D height grid (for terrain). All three reference data from the geometry cache rather than duplicating it.
+- [x] **Extend `ColliderShape` enum with mesh-derived variants** — Added Trimesh(MeshHandle), ConvexHull(MeshHandle), Heightfield(HeightfieldShape) with serde support.
 - [ ] **Wire new `ColliderShape` variants through `collider_shape_to_rapier()`** — In `physics_world.rs`, add Rapier `SharedShape` construction for Trimesh (via `SharedShape::trimesh`), ConvexHull (via `SharedShape::convex_hull`), and Heightfield (via `SharedShape::heightfield`). Wire the geometry cache lookup so the system can resolve the mesh data at spawn time.
 - [ ] **Implement trimesh collider generation for static environment meshes** — For static environment geometry (floors, walls, level architecture), generate exact trimesh colliders from the mesh's vertex/index data. Add an editor action or auto-detection: when a static `RigidBody` entity has a mesh, default to trimesh collider. Trimesh colliders only work with static bodies in Rapier.
 - [ ] **Implement convex hull collider generation for dynamic props** — For dynamic/kinematic objects with complex meshes, compute a convex hull from vertex positions using Rapier's `SharedShape::convex_hull`. Convex hulls support dynamic simulation (unlike trimesh) but are approximate — they enclose the mesh but may have gaps. Add editor action to convert a mesh entity's collider to convex hull.
@@ -575,14 +575,14 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 - [ ] **Fix unsound parallel system access to World** — `update_parallel()` hands `UnsafeWorldCell` to all systems in a group. Systems get `&mut World` simultaneously. If a system accesses `resources`, `entity_events`, `component_events`, or `entity_allocator` (all shared World fields), it creates data races. The scheduler only tracks `ComponentAccess` but World has much more mutable state.
   - [ ] Audit all systems for `World` field access beyond `ComponentAccess` — enumerate which systems touch `resources`, `entity_events`, `component_events`, `entity_allocator` during `update_parallel()`
-  - [ ] Add `ResourceAccess` declaration to the `System` trait — similar to `ComponentAccess`, systems declare which resources they read/write
+  - [x] Add `ResourceAccess` declaration to the `System` trait — similar to `ComponentAccess`, systems declare which resources they read/write
   - [ ] Extend scheduler `conflicts()` to check resource access — add resource read/write conflict detection alongside existing component conflict detection
   - [ ] Validate with existing systems — update all system implementations to declare their resource access, verify no false conflicts
   - [ ] Add tests for resource-conflicting system scheduling — verify the scheduler correctly detects and prevents concurrent access to shared resources
 - [ ] **Fix lifetime transmute in par_query** — `par_query.rs` uses `std::mem::transmute` to erase lifetimes to `'static` on `&ComponentStorage` and `&[(EntityId, T)]`. While bounded by the return type, this is fragile. Replace with a safer pattern (e.g. `UnsafeWorldCell`-style wrapper with explicit lifetime scoping, similar to Bevy's `WorldBorrow`).
 - [ ] **Add `Send + Sync` bounds to `Component` trait** — `Component: Any {}` carries no thread-safety bounds. This means `ComponentStorage<T>` cannot be `Send`, limiting future parallel strategies. Add `Component: Any + Send + Sync` and update all downstream types.
 - [ ] **Track resource access in parallel scheduler** — The `SystemScheduler` DAG only checks `ComponentAccess` conflicts. Systems that access `World::get_resource_mut()` concurrently in the same group cause data races.
-  - [ ] Add `ResourceAccess` struct mirroring `ComponentAccess` — track resource type IDs with read/write flags
+  - [x] Add `ResourceAccess` struct mirroring `ComponentAccess` — track resource type IDs with read/write flags
   - [ ] Add `fn resource_access() -> ResourceAccess` to the `System` trait — default to empty, systems override
   - [ ] Extend `SystemScheduler::conflicts()` to check both `ComponentAccess` and `ResourceAccess` — union the conflict sets
   - [ ] Update all system implementations to declare resource access — audit each system's `update()` for `world.get_resource()` / `world.get_resource_mut()` calls
