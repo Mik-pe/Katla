@@ -199,7 +199,9 @@ fn cleanup_destroyed_bodies(world: &mut World) {
         return;
     }
 
-    let physics = world.get_resource_mut::<PhysicsWorld>().unwrap();
+    let Some(physics) = world.get_resource_mut::<PhysicsWorld>() else {
+        return;
+    };
     for (collider_handle, body_handle) in orphaned {
         if let Some(body) = body_handle {
             physics.remove_body(body, collider_handle);
