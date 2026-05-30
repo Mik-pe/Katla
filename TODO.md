@@ -80,10 +80,10 @@ Individual tasks should be small enough to complete in a single focused session.
 
 ### Phase 6: Physics component scene serialization
 
-- [ ] **Add `RigidBodyDescriptor`** — enum with Static, Dynamic, Kinematic variants; add to `EntityDescriptor`
-- [ ] **Add `ColliderShapeDescriptor`** — enum with Sphere(radius), Box(half_extents), Capsule { half_height, radius } variants; add to `EntityDescriptor`
-- [ ] **Add `PhysicsMaterialDescriptor`** — struct with friction, restitution, density fields; add to `EntityDescriptor`
-- [ ] **Add `TriggerVolumeDescriptor` and `CollisionFilterDescriptor`** — trigger volume as unit struct; collision filter with layers/mask; add both to `EntityDescriptor`
+- [x] **Add `RigidBodyDescriptor`** — enum with Static, Dynamic, Kinematic variants; added to EntityDescriptor
+- [x] **Add `ColliderShapeDescriptor`** — enum with Sphere(radius), Box(half_extents), Capsule { half_height, radius } variants; added to EntityDescriptor
+- [x] **Add `PhysicsMaterialDescriptor`** — struct with friction, restitution, density fields; added to EntityDescriptor
+- [x] **Add `TriggerVolumeDescriptor` and `CollisionFilterDescriptor`** — trigger volume as unit struct; collision filter with layers/mask; added both to EntityDescriptor
 - [ ] **Implement save path for Rapier physics components** — In `serialization.rs` scene save, read `RigidBody`, `ColliderShape`, `PhysicsMaterial`, `TriggerVolume`, `CollisionFilter` from ECS entities and convert to their descriptor types. Skip runtime-only fields (handles, velocities, overlapping_entities).
 - [ ] **Implement load path for Rapier physics components** — In `serialization.rs` scene load, create ECS components from physics descriptors and add them to spawned entities. The RapierPhysicsSystem will then auto-discover and spawn them in Rapier.
 - [ ] **Remove hardcoded `spawn_physics_demo_objects()`** — Once physics components serialize to scene files, replace the hardcoded init spawn with physics objects in the default `.katla` scene. The demo objects currently have no mesh/drawable, making them invisible. The scene-file objects should have visible meshes (cube/sphere primitives) alongside their colliders.
@@ -124,7 +124,7 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] **Expose `apply_force` / `apply_impulse` to Luau scripts** — Scripts can raycast but cannot apply forces or impulses to physics bodies. Add `world:apply_force(entity_id, force: Vec3)` and `world:apply_impulse(entity_id, impulse: Vec3)` script bindings.
 - [x] **Expose body velocity read/write to scripts** — Add `world:get_velocity(entity_id) -> Vec3` and `world:set_velocity(entity_id, velocity: Vec3)` for script-driven physics control.
 - [x] **Expose trigger volume queries to scripts** — Scripts should be able to check if an entity with a `TriggerVolume` is currently overlapping with specific entities, not just receive enter/exit events.
-- [ ] **Add physics collision event scripting** — Wire `PendingPhysicsEvents` into the script event system so scripts can subscribe to collision events via `world:on_event("collision_enter", callback)` instead of needing a separate resource.
+- [x] **Add physics collision event scripting** — Already wired. Fixed one-frame delay in event dispatch order.
 
 ## Rendering
 
@@ -440,9 +440,9 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] Remove all thread-local `RefCell<Option<DrawCtx>>` bridges — `set_*_ctx`/`take_*_ctx` functions for every migrated panel. Verify no remaining `thread_local!` blocks in `editor_ui/`.
 - [ ] Remove or gate `ViewDescriptor::Custom` escape hatch — make it `#[cfg(test)]` or remove entirely once all panels are migrated. If kept for extensibility, document the constraints (no diffing, no state, no layout).
 - [ ] **Remove immediate-mode builder widgets that have declarative equivalents** — Remove from `widgets/mod.rs` public API and update all callers. Keep only widgets with no declarative counterpart (e.g. `DockArea`). Remove one at a time:
-  - [ ] Remove `Button` — callers use `button()`
-  - [ ] Remove `Slider` — callers use `slider()`
-  - [ ] Remove `LabeledSlider` — callers use `labeled_slider()`
+  - [x] Remove `Button` — callers use `button_with_colors()` directly
+  - [x] Remove `Slider` — callers use `ui.slider()` directly
+  - [x] Remove `LabeledSlider` — callers use inline `draw_labeled_slider()` helper
   - [ ] Remove `Vec3Slider` — callers use `vec3_slider()`
   - [ ] Remove `ToggleButton` — callers use `toggle()`
   - [ ] Remove `TextInput` — callers use `textfield()`
@@ -610,7 +610,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### katla_agent - Major Issues (Should Fix Before Production)
 
-- [ ] **Add LLM feature availability checks** — Code using `async-openai`, `tokio` should gracefully handle cases where `llm-assistant` feature is disabled
+- [x] **Add LLM feature availability checks** — Already properly feature-gated with #[cfg(feature = "llm-assistant")] and #[cfg(feature = "mcp-server")]
 - [x] **Add co-creator tool error handling** — Tools in `co_creator/` module should return `Result` instead of using `unwrap()`/`expect()`
 - [x] **Improve configuration validation** — `config.rs` should validate configuration on load and provide clear error messages
 - [x] **Add rate limiting for LLM calls** — Prevent rapid successive LLM calls from overwhelming API rate limits or causing excessive costs
