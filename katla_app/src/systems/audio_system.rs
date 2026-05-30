@@ -22,6 +22,8 @@ pub struct AudioSystem {
     cues: HashMap<String, SoundCue>,
     active_voices: HashMap<katla_ecs::EntityId, VoiceHandle>,
     prev_listener_pos: Option<Vec3>,
+    prev_listener_forward: Option<Vec3>,
+    prev_listener_up: Option<Vec3>,
     prev_emitter_positions: HashMap<katla_ecs::EntityId, Vec3>,
     started: bool,
 }
@@ -36,6 +38,8 @@ impl AudioSystem {
             cues: HashMap::new(),
             active_voices: HashMap::new(),
             prev_listener_pos: None,
+            prev_listener_forward: None,
+            prev_listener_up: None,
             prev_emitter_positions: HashMap::new(),
             started: false,
         })
@@ -98,11 +102,15 @@ impl AudioSystem {
             self.started = true;
         }
 
+        self.engine.poll_device_change();
+
         let (listener_pos, listener_forward, listener_up) = Self::find_listener(world);
         let listener_vel = self
             .prev_listener_pos
             .map_or(Vec3::ZERO, |prev| (listener_pos - prev) / dt.max(0.001));
         self.prev_listener_pos = Some(listener_pos);
+        self.prev_listener_forward = Some(listener_forward);
+        self.prev_listener_up = Some(listener_up);
 
         // Update reverb zones — blend parameters from all zones containing the listener
         self.update_reverb_zones(world, listener_pos);
@@ -276,7 +284,7 @@ impl AudioSystem {
                 }
                 katla_script::ScriptCommand::PlaySoundAt {
                     path,
-                    position: _,
+                    position,
                     volume,
                     looping,
                 } => {
@@ -286,9 +294,27 @@ impl AudioSystem {
                         } else {
                             self.engine.play(&buffer)
                         };
-                        handle.set_volume(volume);
-                        // TODO: spatial positioning will be applied once
-                        // play_sound_at creates a tracked AudioEmitter
+
+                        if let (Some(listener_pos), Some(listener_forward), Some(listener_up)) = (
+                            self.prev_listener_pos,
+                            self.prev_listener_forward,
+                            self.prev_listener_up,
+                        ) {
+                            let (spatial_volume, pan) = compute_spatialization(
+                                position,
+                                listener_pos,
+                                listener_forward,
+                                listener_up,
+                                1.0,
+                                100.0,
+                                1.0,
+                                DistanceModel::InverseClamped,
+                            );
+                            handle.set_volume(volume * spatial_volume);
+                            handle.set_pan(pan);
+                        } else {
+                            handle.set_volume(volume);
+                        }
                     }
                 }
                 katla_script::ScriptCommand::PlaySoundCue { cue_name } => {

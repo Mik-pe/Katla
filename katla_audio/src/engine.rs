@@ -39,12 +39,18 @@ impl AudioCategory {
 /// Opens the default output device via cpal and owns the [`AudioMixer`] and output stream.
 /// Created paused; call [`resume()`](AudioEngine::resume) to start playback.
 ///
+/// Device hot-swap is handled automatically: call [`poll_device_change()`](AudioEngine::poll_device_change)
+/// each frame (or periodically) to detect when the output device changes (headphones unplugged,
+/// Bluetooth disconnected, default device switched) and recreate the stream on the new device.
+/// Existing voices continue playing through the transition.
+///
 /// All methods are safe to call from the main thread. See the [crate-level documentation](crate)
 /// for thread safety details.
 pub struct AudioEngine {
     mixer: Arc<AudioMixer>,
     stream: Option<cpal::Stream>,
     stream_error_flag: Arc<AtomicBool>,
+    device_id: Option<cpal::DeviceId>,
     recovery_count: u32,
     was_playing: bool,
 }
@@ -54,7 +60,17 @@ impl AudioEngine {
         let stream_error_flag = Arc::new(AtomicBool::new(false));
         let flag_clone = stream_error_flag.clone();
 
-        let (mixer, stream) = Self::build_stream(move || flag_clone.clone())?;
+        let host = cpal::default_host();
+        let device = host.default_output_device().ok_or_else(|| {
+            let host_id = host.id().name();
+            AudioError::DeviceNotFound(format!(
+                "No default output device available on host '{host_id}'. \
+                 Check that an audio device is connected and enabled in system settings."
+            ))
+        })?;
+
+        let device_id = device.id().ok();
+        let (mixer, stream) = Self::build_stream_for_device(&device, move || flag_clone.clone())?;
 
         stream
             .pause()
@@ -64,24 +80,24 @@ impl AudioEngine {
             mixer,
             stream: Some(stream),
             stream_error_flag,
+            device_id,
             recovery_count: 0,
             was_playing: false,
         })
     }
 
-    fn build_stream(
+    fn build_stream_for_device(
+        device: &cpal::Device,
         error_flag_factory: impl FnOnce() -> Arc<AtomicBool>,
     ) -> Result<(Arc<AudioMixer>, cpal::Stream), AudioError> {
-        let host = cpal::default_host();
+        Self::build_stream_for_device_with_mixer(device, None, error_flag_factory)
+    }
 
-        let device = host.default_output_device().ok_or_else(|| {
-            let host_id = host.id().name();
-            AudioError::DeviceNotFound(format!(
-                "No default output device available on host '{host_id}'. \
-                 Check that an audio device is connected and enabled in system settings."
-            ))
-        })?;
-
+    fn build_stream_for_device_with_mixer(
+        device: &cpal::Device,
+        existing_mixer: Option<Arc<AudioMixer>>,
+        error_flag_factory: impl FnOnce() -> Arc<AtomicBool>,
+    ) -> Result<(Arc<AudioMixer>, cpal::Stream), AudioError> {
         let device_name = device
             .description()
             .map(|d| d.name().to_string())
@@ -123,7 +139,8 @@ impl AudioEngine {
         let sample_rate = config.sample_rate;
         let channels = config.channels;
 
-        let mixer = Arc::new(AudioMixer::new(sample_rate, channels));
+        let mixer =
+            existing_mixer.unwrap_or_else(|| Arc::new(AudioMixer::new(sample_rate, channels)));
 
         let mixer_clone = mixer.clone();
         let error_flag = error_flag_factory();
@@ -267,27 +284,98 @@ impl AudioEngine {
             MAX_RECOVERY_ATTEMPTS
         );
 
-        let flag_clone = self.stream_error_flag.clone();
-        match Self::build_stream(move || flag_clone) {
-            Ok((_mixer, new_stream)) => {
-                self.stream_error_flag.store(false, Ordering::Relaxed);
-                self.stream = Some(new_stream);
-
-                if self.was_playing
-                    && let Some(ref stream) = self.stream
-                    && let Err(e) = stream.play()
-                {
-                    log::error!("Failed to resume recovered stream: {e}");
-                    return Ok(false);
-                }
-
+        match self.rebuild_stream() {
+            Ok(()) => {
                 self.recovery_count = 0;
-                log::info!("Stream recovery succeeded");
                 Ok(true)
             }
             Err(e) => {
                 log::error!("Stream recovery failed: {e}");
                 Ok(false)
+            }
+        }
+    }
+
+    fn rebuild_stream(&mut self) -> Result<(), AudioError> {
+        let host = cpal::default_host();
+        let device = host.default_output_device().ok_or_else(|| {
+            let host_id = host.id().name();
+            AudioError::DeviceNotFound(format!(
+                "No default output device available on host '{host_id}'."
+            ))
+        })?;
+
+        self.device_id = device.id().ok();
+
+        let flag_clone = self.stream_error_flag.clone();
+        let (_, new_stream) = Self::build_stream_for_device_with_mixer(
+            &device,
+            Some(self.mixer.clone()),
+            move || flag_clone,
+        )?;
+
+        self.stream_error_flag.store(false, Ordering::Relaxed);
+        self.stream = Some(new_stream);
+
+        if self.was_playing
+            && let Some(ref stream) = self.stream
+            && let Err(e) = stream.play()
+        {
+            log::error!("Failed to resume recovered stream: {e}");
+            return Err(AudioError::StreamError(format!(
+                "Failed to resume recovered stream: {e}"
+            )));
+        }
+
+        log::info!("Stream rebuilt on new device");
+        Ok(())
+    }
+
+    /// Poll for output device changes and hot-swap the stream if needed.
+    ///
+    /// Call this once per frame (or periodically). Detects two scenarios:
+    /// - The stream reported an error (device disconnected) — handled by the existing
+    ///   error recovery mechanism.
+    /// - The default output device changed without an error (e.g., user switched
+    ///   default device in system settings) — detected by comparing device IDs.
+    ///
+    /// Returns `true` if a device change was detected and the stream was rebuilt,
+    /// `false` if nothing changed. Existing voices continue playing through transitions.
+    pub fn poll_device_change(&mut self) -> bool {
+        let error_triggered = self.stream_error_flag.load(Ordering::Relaxed);
+
+        let current_default_id = cpal::default_host()
+            .default_output_device()
+            .and_then(|d| d.id().ok());
+
+        let device_changed = match (&self.device_id, &current_default_id) {
+            (Some(stored), Some(current)) => stored != current,
+            (None, Some(_)) => true,
+            _ => false,
+        };
+
+        if !error_triggered && !device_changed {
+            return false;
+        }
+
+        if device_changed {
+            let name = cpal::default_host()
+                .default_output_device()
+                .and_then(|d| d.description().ok())
+                .map(|d| d.name().to_string())
+                .unwrap_or_else(|| "<unknown>".into());
+            log::info!("Audio device changed, rebuilding stream on '{name}'");
+        }
+
+        match self.rebuild_stream() {
+            Ok(()) => {
+                self.recovery_count = 0;
+                self.was_playing = self.stream.is_some();
+                true
+            }
+            Err(e) => {
+                log::warn!("Failed to rebuild stream on new device: {e}");
+                false
             }
         }
     }
