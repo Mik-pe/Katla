@@ -41,7 +41,7 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] Add voice pooling — voices are allocated and deallocated every time a sound plays/stops, causing allocation pressure in the audio thread's Mutex. Pre-allocate a fixed pool of Voice objects and reuse slots.
 - [x] Improve resampling quality — both `Voice` and `StreamingVoice` use linear interpolation for sample rate conversion and pitch shifting. For production quality, add at least cubic (Catmull-Rom) interpolation, optionally sinc for offline/bounce. Linear interpolation causes audible artifacts with high-frequency content.
 - [x] Add proper reverb stereo decorrelation — `ReverbEffect` processes a mono sum of the input and applies the same mono reverb to both channels, collapsing stereo image. Use separate delay lines for left/right with slightly different delay times, or process L/R independently with decorrelation filters.
-- [ ] Add audio device hot-swap — when the output device disconnects (headphones unplugged, Bluetooth disconnected), `cpal` fires the error callback but there is no recovery. Detect device changes via cpal's device change events and recreate the audio stream on the new default device.
+- [x] Add audio device hot-swap — Added poll_device_change() with cpal device ID tracking, rebuilds stream on device change.
  - [x] Add silence detection for streaming voices — `StreamingVoice::mix_into()` processes the full output buffer even when volume is 0.0 (only skips when `voice_volume == 0.0`, but tweening can make this check imprecise). Add an early-out when the voice has been silent for multiple consecutive frames.
 
 ### Phase 16: Feature parity with production audio engines
@@ -54,7 +54,7 @@ Individual tasks should be small enough to complete in a single focused session.
 
 ### Phase 17: Audio system activation and global settings
 - [x] Add AudioSettings to Preferences — Added AudioSettings struct with master/sfx/music/ambient volumes, defaults to 1.0.
-- [ ] Add Audio tab to preferences panel — currently only General, Viewport, and AI tabs exist. Add an Audio tab with: master volume slider, SFX volume slider, music volume slider, ambient volume slider. Changes should apply immediately (live preview) and persist to `preferences.toml` on save.
+- [x] Add Audio tab to preferences panel — Added Audio tab with master/SFX/music/ambient volume sliders with live preview.
 - [x] Apply saved audio settings on startup — Calls set_master_volume and set_category_volume after AudioSystem init.
 - [x] Add AudioSource inspector UI — Read-only section with path, sample rate, channels, duration, and Play Preview button.
 - [x] Add AudioListener indicator in inspector — Shows active listener entity, warns if multiple AudioListener components exist.
@@ -86,7 +86,7 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] **Add `TriggerVolumeDescriptor` and `CollisionFilterDescriptor`** — trigger volume as unit struct; collision filter with layers/mask; added both to EntityDescriptor
 - [x] **Implement save path for Rapier physics components** — Reads all 5 physics components from ECS entities, converts to descriptor types, skips runtime-only fields.
 - [x] **Implement load path for Rapier physics components** — Creates ECS components from physics descriptors and adds them to spawned entities.
-- [ ] **Remove hardcoded `spawn_physics_demo_objects()`** — Once physics components serialize to scene files, replace the hardcoded init spawn with physics objects in the default `.katla` scene. The demo objects currently have no mesh/drawable, making them invisible. The scene-file objects should have visible meshes (cube/sphere primitives) alongside their colliders.
+- [x] **Remove hardcoded `spawn_physics_demo_objects()`** — Removed function and call site; physics entities now serialize to scene files.
 - [ ] **Add physics entities to default.katla scene** — Add a static floor plane with box collider + PBR material, and several dynamic spheres/cubes with colliders + PBR materials at various heights. These should be visible (have drawable + mesh) and demonstrate physics on scene load.
 
 ### Phase 7: Physics entity lifecycle
@@ -503,7 +503,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### katla_app - Major Issues (Should Fix Before Production)
 
 - [x] **Improve error handling in Preferences** — `preferences.rs:load()` silently returns defaults on error. Should propagate errors or at minimum log with `error!` level
-- [ ] **Complete audio spatial positioning** — `systems/audio_system.rs:290` has TODO comment. Spatial audio is needed for production-quality audio experience
+- [x] **Complete audio spatial positioning** — Implemented distance-based attenuation and stereo panning for PlaySoundAt voices.
 - [x] **Make resource path discovery more robust** — `resources/mod.rs` uses multiple fallback paths that depend on runtime context. Consider using `CARGO_MANIFEST_DIR` as primary with explicit override via environment variable
 - [x] **Add retry logic for background loading** — `util/background_loader.rs` has no retry mechanism for transient failures (network timeouts, disk I/O errors)
 - [ ] **Add GPU resource health checks** — No validation that GPU resources (textures, buffers, pipelines) are in good state after initialization or during runtime
@@ -524,7 +524,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [x] **Improve device error handling** — `AudioEngine::new()` returns `Result` but callers may not handle all error cases properly. Add better recovery/error messages for common failures (no device, permissions, etc.)
 - [x] **Add stream error recovery** — Audio stream errors (device disconnection, underrun) should attempt recovery rather than failing permanently
 - [x] **Document thread safety guarantees** — Real-time audio thread constraints should be documented for API users to avoid deadlocks
-- [ ] **Add audio device hot-swap** — When output device disconnects, there is no automatic recovery path (see also TODO.md Audio Phase 17)
+- [x] **Add audio device hot-swap** — Implemented poll_device_change() in AudioEngine, called each frame from AudioSystem.
 
 ### katla_audio - Documentation
 
