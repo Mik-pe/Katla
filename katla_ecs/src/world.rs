@@ -684,6 +684,71 @@ impl World {
         // mutable references exist. The returned cell must not outlive this borrow.
         unsafe { crate::unsafe_world_cell::UnsafeWorldCell::new(self as *mut World) }
     }
+
+    /// Validates the internal consistency of the world state.
+    ///
+    /// Checks entity allocator consistency, component storage integrity,
+    /// and verifies no orphaned component data exists for deleted entities.
+    ///
+    /// Returns `Ok(())` if all checks pass, or `Err` with descriptions of
+    /// inconsistencies found. Does not panic — callers decide how to handle errors.
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+        self.validate_entity_allocator(&mut errors);
+        self.validate_component_integrity(&mut errors);
+
+        #[cfg(debug_assertions)]
+        self.validate_no_duplicate_entities(&mut errors);
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
+    /// Verifies a list of entities still exist in the world.
+    ///
+    /// Returns `true` only if every entity in the slice is currently live.
+    pub fn validate_entities(&self, entities: &[EntityId]) -> bool {
+        entities.iter().all(|&id| self.entity_exists(id))
+    }
+
+    fn validate_entity_allocator(&self, errors: &mut Vec<String>) {
+        let actual_live = self.entities.iter_live().count();
+        let reported_live = self.entities.live_count();
+        if actual_live != reported_live {
+            errors.push(format!(
+                "Entity live_count ({reported_live}) doesn't match iter_live count ({actual_live})"
+            ));
+        }
+
+        for id in self.entities.iter_live() {
+            if !self.entities.is_valid(id) {
+                errors.push(format!("Live entity {id} failed is_valid check"));
+            }
+        }
+    }
+
+    fn validate_component_integrity(&self, errors: &mut Vec<String>) {
+        let entities_with_components = unsafe { (*self.storage.get()).entities_with_components() };
+        for id in &entities_with_components {
+            if !self.entities.is_valid(*id) {
+                errors.push(format!("Orphaned component data for deleted entity {id}"));
+            }
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn validate_no_duplicate_entities(&self, errors: &mut Vec<String>) {
+        let mut seen = HashSet::new();
+        for id in self.entities.iter_live() {
+            if !seen.insert(id) {
+                errors.push(format!("Duplicate entity ID {id} in live iteration"));
+            }
+        }
+    }
 }
 
 impl Default for World {
@@ -2325,5 +2390,136 @@ mod tests {
         assert_eq!(world.get_component::<Level0>(e).unwrap().value, 10);
         assert_eq!(world.get_component::<Level1>(e).unwrap().value, 15);
         assert_eq!(world.get_component::<Level2>(e).unwrap().value, 30);
+    }
+
+    // --- Validation tests ---
+
+    #[test]
+    fn test_validate_empty_world() {
+        let world = World::new();
+        assert!(world.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_with_entities_and_components() {
+        let mut world = World::new();
+
+        let id1 = world.create_entity();
+        world.add_component(id1, TestComponent { value: 1 });
+
+        let id2 = world.create_entity();
+        world.add_component(id2, TestComponent { value: 2 });
+
+        assert!(world.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_after_entity_destruction() {
+        let mut world = World::new();
+
+        let id1 = world.create_entity();
+        world.add_component(id1, TestComponent { value: 1 });
+
+        let id2 = world.create_entity();
+        world.add_component(id2, TestComponent { value: 2 });
+
+        world.destroy_entity(id1);
+
+        assert!(world.validate().is_ok());
+        assert!(!world.entity_exists(id1));
+        assert!(world.entity_exists(id2));
+    }
+
+    #[test]
+    fn test_validate_after_clear_entities() {
+        let mut world = World::new();
+
+        for i in 0..20 {
+            let id = world.create_entity();
+            world.add_component(id, TestComponent { value: i });
+        }
+
+        world.clear_entities();
+        assert!(world.validate().is_ok());
+        assert_eq!(world.entity_count(), 0);
+    }
+
+    #[test]
+    fn test_validate_after_stress_create_destroy() {
+        let mut world = World::new();
+        let mut ids = Vec::new();
+
+        for i in 0..200 {
+            let id = world.create_entity();
+            world.add_component(id, TestComponent { value: i });
+            ids.push(id);
+        }
+
+        // Destroy every other entity
+        for (i, id) in ids.iter().enumerate() {
+            if i % 2 == 0 {
+                world.destroy_entity(*id);
+            }
+        }
+
+        assert!(world.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_entities_all_valid() {
+        let mut world = World::new();
+
+        let id1 = world.create_entity();
+        let id2 = world.create_entity();
+        let id3 = world.create_entity();
+
+        assert!(world.validate_entities(&[id1, id2, id3]));
+    }
+
+    #[test]
+    fn test_validate_entities_some_invalid() {
+        let mut world = World::new();
+
+        let id1 = world.create_entity();
+        let id2 = world.create_entity();
+        world.destroy_entity(id2);
+
+        assert!(!world.validate_entities(&[id1, id2]));
+    }
+
+    #[test]
+    fn test_validate_entities_empty_slice() {
+        let world = World::new();
+        assert!(world.validate_entities(&[]));
+    }
+
+    #[test]
+    fn test_validate_entities_all_destroyed() {
+        let mut world = World::new();
+
+        let id1 = world.create_entity();
+        let id2 = world.create_entity();
+        world.destroy_entity(id1);
+        world.destroy_entity(id2);
+
+        assert!(!world.validate_entities(&[id1, id2]));
+    }
+
+    #[test]
+    fn test_validate_after_component_operations() {
+        let mut world = World::new();
+
+        let id = world.create_entity();
+        world.add_component(id, TestComponent { value: 1 });
+        assert!(world.validate().is_ok());
+
+        world.remove_component::<TestComponent>(id);
+        assert!(world.validate().is_ok());
+
+        world.add_component(id, TestComponent { value: 2 });
+        assert!(world.validate().is_ok());
+
+        world.destroy_entity(id);
+        assert!(world.validate().is_ok());
     }
 }

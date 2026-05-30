@@ -275,4 +275,219 @@ mod tests {
         let cd_nokey: ChildDescriptor = ChildDescriptor::from(text("hello"));
         assert_eq!(cd_nokey.key, None);
     }
+
+    // -- Integration tests: ViewTree reconciliation via diff_descriptor --
+
+    struct StaticDescriptor(ViewDescriptor);
+
+    impl crate::declarative::build::Build for StaticDescriptor {
+        fn build(&self, _ctx: &mut crate::declarative::build::BuildContext) -> ViewDescriptor {
+            self.0.clone()
+        }
+    }
+
+    fn build_tree(tree: &mut crate::declarative::ViewTree, descriptor: ViewDescriptor) {
+        tree.build_from(&StaticDescriptor(descriptor));
+    }
+
+    fn collect_child_labels(
+        tree: &crate::declarative::ViewTree,
+        parent: crate::declarative::ViewId,
+    ) -> Vec<String> {
+        let node = tree.get(parent).expect("parent node");
+        let mut labels = Vec::new();
+        for &child_id in &node.children {
+            if let Some(child) = tree.get(child_id) {
+                if let ViewDescriptor::Text { content, .. } = &child.descriptor {
+                    labels.push(content.clone());
+                } else {
+                    labels.push(format!("{:?}", child.descriptor));
+                }
+            }
+        }
+        labels
+    }
+
+    fn collect_child_keys(
+        tree: &crate::declarative::ViewTree,
+        parent: crate::declarative::ViewId,
+    ) -> Vec<Option<u64>> {
+        let node = tree.get(parent).expect("parent node");
+        node.children
+            .iter()
+            .map(|&id| tree.get(id).and_then(|n| n.key))
+            .collect()
+    }
+
+    #[test]
+    fn test_same_descriptor_is_update() {
+        let mut tree = crate::declarative::ViewTree::new();
+        let desc = text("hello");
+        build_tree(&mut tree, desc.clone());
+        let root = tree.root().unwrap();
+        let v0 = tree.get(root).unwrap().state_version;
+
+        build_tree(&mut tree, desc.clone());
+        let v1 = tree.get(root).unwrap().state_version;
+
+        assert!(
+            v1 > v0,
+            "same descriptor should increment state_version (Update)"
+        );
+    }
+
+    #[test]
+    fn test_different_variant_is_replace() {
+        let mut tree = crate::declarative::ViewTree::new();
+        build_tree(&mut tree, text("hello"));
+        let root = tree.root().unwrap();
+
+        build_tree(&mut tree, button("hello"));
+        assert!(matches!(
+            tree.get(root).unwrap().descriptor,
+            ViewDescriptor::Button { .. }
+        ));
+        assert!(tree.get(root).unwrap().children.is_empty());
+    }
+
+    #[test]
+    fn test_vstack_insert_child_at_end() {
+        let mut tree = crate::declarative::ViewTree::new();
+        build_tree(&mut tree, vstack([text("a"), text("b")]));
+        let root = tree.root().unwrap();
+
+        build_tree(&mut tree, vstack([text("a"), text("b"), text("c")]));
+        let labels = collect_child_labels(&tree, root);
+        assert_eq!(labels, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_vstack_remove_child_from_middle() {
+        let mut tree = crate::declarative::ViewTree::new();
+        build_tree(&mut tree, vstack([text("a"), text("b"), text("c")]));
+        let root = tree.root().unwrap();
+
+        build_tree(&mut tree, vstack([text("a"), text("c")]));
+        let labels = collect_child_labels(&tree, root);
+        assert_eq!(labels, vec!["a", "c"]);
+    }
+
+    #[test]
+    fn test_vstack_reorder_children() {
+        let mut tree = crate::declarative::ViewTree::new();
+        build_tree(&mut tree, vstack([text("a"), text("b"), text("c")]));
+        let root = tree.root().unwrap();
+        let old_ids: Vec<_> = tree.get(root).unwrap().children.clone();
+
+        build_tree(&mut tree, vstack([text("c"), text("a"), text("b")]));
+
+        let labels = collect_child_labels(&tree, root);
+        assert_eq!(labels, vec!["c", "a", "b"]);
+
+        // Unkeyed: nodes are matched by index, not value
+        let new_ids: Vec<_> = tree.get(root).unwrap().children.clone();
+        assert_eq!(old_ids[0], new_ids[0], "unkeyed: index 0 reused");
+        assert_eq!(old_ids[1], new_ids[1], "unkeyed: index 1 reused");
+        assert_eq!(old_ids[2], new_ids[2], "unkeyed: index 2 reused");
+    }
+
+    #[test]
+    fn test_keyed_insert_with_stable_keys() {
+        use crate::declarative::constructors::{keyed, vstack_keyed};
+        let mut tree = crate::declarative::ViewTree::new();
+        build_tree(
+            &mut tree,
+            vstack_keyed(vec![keyed(1, text("a")), keyed(2, text("b"))]),
+        );
+        let root = tree.root().unwrap();
+        let old_ids: Vec<_> = tree.get(root).unwrap().children.clone();
+        assert_eq!(collect_child_keys(&tree, root), vec![Some(1), Some(2)]);
+
+        build_tree(
+            &mut tree,
+            vstack_keyed(vec![
+                keyed(1, text("a")),
+                keyed(2, text("b")),
+                keyed(3, text("c")),
+            ]),
+        );
+
+        let new_ids: Vec<_> = tree.get(root).unwrap().children.clone();
+        assert_eq!(old_ids[0], new_ids[0], "key=1 should reuse same node");
+        assert_eq!(old_ids[1], new_ids[1], "key=2 should reuse same node");
+        assert_eq!(collect_child_labels(&tree, root), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_keyed_remove_with_stable_keys() {
+        use crate::declarative::constructors::{keyed, vstack_keyed};
+        let mut tree = crate::declarative::ViewTree::new();
+        build_tree(
+            &mut tree,
+            vstack_keyed(vec![
+                keyed(1, text("a")),
+                keyed(2, text("b")),
+                keyed(3, text("c")),
+            ]),
+        );
+        let root = tree.root().unwrap();
+        let old_ids: Vec<_> = tree.get(root).unwrap().children.clone();
+
+        build_tree(
+            &mut tree,
+            vstack_keyed(vec![keyed(1, text("a")), keyed(3, text("c"))]),
+        );
+
+        let new_ids: Vec<_> = tree.get(root).unwrap().children.clone();
+        assert_eq!(old_ids[0], new_ids[0], "key=1 should reuse same node");
+        assert_eq!(
+            old_ids[2], new_ids[1],
+            "key=3 should reuse same node (now at index 1)"
+        );
+        assert_eq!(collect_child_labels(&tree, root), vec!["a", "c"]);
+    }
+
+    #[test]
+    fn test_keyed_reorder_matches_by_key_not_index() {
+        use crate::declarative::constructors::{keyed, vstack_keyed};
+        let mut tree = crate::declarative::ViewTree::new();
+        build_tree(
+            &mut tree,
+            vstack_keyed(vec![
+                keyed(1, text("a")),
+                keyed(2, text("b")),
+                keyed(3, text("c")),
+            ]),
+        );
+        let root = tree.root().unwrap();
+        let old_ids: Vec<_> = tree.get(root).unwrap().children.clone();
+
+        build_tree(
+            &mut tree,
+            vstack_keyed(vec![
+                keyed(3, text("c")),
+                keyed(1, text("a")),
+                keyed(2, text("b")),
+            ]),
+        );
+
+        let new_ids: Vec<_> = tree.get(root).unwrap().children.clone();
+        assert_eq!(
+            old_ids[2], new_ids[0],
+            "key=3 should be reused at new position 0"
+        );
+        assert_eq!(
+            old_ids[0], new_ids[1],
+            "key=1 should be reused at new position 1"
+        );
+        assert_eq!(
+            old_ids[1], new_ids[2],
+            "key=2 should be reused at new position 2"
+        );
+        assert_eq!(collect_child_labels(&tree, root), vec!["c", "a", "b"]);
+        assert_eq!(
+            collect_child_keys(&tree, root),
+            vec![Some(3), Some(1), Some(2)]
+        );
+    }
 }
