@@ -397,6 +397,20 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
                     undo_count: app.editor.undo_stack.len(),
                     redo_count: app.editor.redo_stack.len(),
                     agent_undo_count: app.editor.agent_undo_stack.len(),
+                    audio_levels: app
+                        .audio_system
+                        .as_ref()
+                        .map_or(katla_audio::LevelsSnapshot::default(), |a| {
+                            a.engine().read_levels()
+                        }),
+                    audio_active_voices: app
+                        .audio_system
+                        .as_ref()
+                        .map_or(0, |a| a.engine().active_voice_count()),
+                    audio_peak_voices: app
+                        .audio_system
+                        .as_ref()
+                        .map_or(0, |a| a.engine().peak_voice_count()),
                 },
             )
             .clone()

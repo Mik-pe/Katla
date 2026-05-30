@@ -10,7 +10,7 @@ use crate::context::UiContext;
 use super::actions::ActionStream;
 use super::animation::{AnimatedProperty, Animation, AnimationState, KeyframeAnimation, Tween};
 use super::build::{Build as BuildTrait, BuildContext, CallbackTable, Environment};
-use super::descriptor::{Anchor, Callback, ChildDescriptor, ViewDescriptor};
+use super::descriptor::{Alignment, Anchor, Callback, ChildDescriptor, ViewDescriptor};
 use super::diff::{DiffAction, Patch, diff_descriptor};
 use super::draw::draw_descriptor_with_id;
 use super::focus::{self, FocusManager};
@@ -33,6 +33,7 @@ pub struct ViewNode {
     pub state_version: u32,
     pub taffy_id: Option<TaffyNodeId>,
     pub key: Option<u64>,
+    pub zstack_alignment: Option<Alignment>,
 }
 
 /// Tracks interactive state across frames for the declarative view tree.
@@ -100,7 +101,7 @@ impl ViewTree {
                 node.descriptor = descriptor;
             }
         } else {
-            let root_id = self.insert_node(None, ViewDescriptor::Empty, None);
+            let root_id = self.insert_node(None, ViewDescriptor::Empty, None, None);
             self.root = Some(root_id);
             self.sync_tree(root_id, &descriptor);
         }
@@ -449,6 +450,11 @@ impl ViewTree {
             child_bounds = anim_state.apply_to_bounds(child_bounds);
         }
 
+        // Handle ZStack alignment positioning
+        if let Some(alignment) = child_node.zstack_alignment {
+            child_bounds = Self::resolve_zstack_alignment(alignment, parent_bounds, child_bounds);
+        }
+
         // Clip children to parent for ScrollView and apply scroll offset
         let is_scroll_content = matches!(parent_descriptor, ViewDescriptor::ScrollView(_));
         if is_scroll_content {
@@ -542,6 +548,54 @@ impl ViewTree {
         Rect2D::new(origin, Vec2::new(origin.x() + cw, origin.y() + ch))
     }
 
+    fn resolve_zstack_alignment(
+        alignment: Alignment,
+        parent_bounds: Rect2D,
+        child_bounds: Rect2D,
+    ) -> Rect2D {
+        let pw = parent_bounds.width();
+        let ph = parent_bounds.height();
+        let cw = child_bounds.width();
+        let ch = child_bounds.height();
+
+        let pos = match alignment {
+            Alignment::TopLeading => parent_bounds.min,
+            Alignment::Top => Vec2::new(
+                parent_bounds.min.x() + (pw - cw) * 0.5,
+                parent_bounds.min.y(),
+            ),
+            Alignment::TopTrailing => Vec2::new(parent_bounds.max.x() - cw, parent_bounds.min.y()),
+            Alignment::Leading => Vec2::new(
+                parent_bounds.min.x(),
+                parent_bounds.min.y() + (ph - ch) * 0.5,
+            ),
+            Alignment::Center => Vec2::new(
+                parent_bounds.min.x() + (pw - cw) * 0.5,
+                parent_bounds.min.y() + (ph - ch) * 0.5,
+            ),
+            Alignment::Trailing => Vec2::new(
+                parent_bounds.max.x() - cw,
+                parent_bounds.min.y() + (ph - ch) * 0.5,
+            ),
+            Alignment::BottomLeading => {
+                Vec2::new(parent_bounds.min.x(), parent_bounds.max.y() - ch)
+            }
+            Alignment::Bottom => Vec2::new(
+                parent_bounds.min.x() + (pw - cw) * 0.5,
+                parent_bounds.max.y() - ch,
+            ),
+            Alignment::BottomCenter => Vec2::new(
+                parent_bounds.min.x() + (pw - cw) * 0.5,
+                parent_bounds.max.y() - ch,
+            ),
+            Alignment::BottomTrailing => {
+                Vec2::new(parent_bounds.max.x() - cw, parent_bounds.max.y() - ch)
+            }
+        };
+
+        Rect2D::new(pos, Vec2::new(pos.x() + cw, pos.y() + ch))
+    }
+
     pub fn build_from<B: BuildTrait + ?Sized>(&mut self, builder: &B) {
         self.callbacks.clear();
         self.state.reset_slots();
@@ -562,6 +616,7 @@ impl ViewTree {
                 state_version: 0,
                 taffy_id: None,
                 key: None,
+                zstack_alignment: None,
             });
             self.root = Some(id);
             id
@@ -586,6 +641,7 @@ impl ViewTree {
         parent: Option<ViewId>,
         descriptor: ViewDescriptor,
         key: Option<u64>,
+        zstack_alignment: Option<Alignment>,
     ) -> ViewId {
         let id = self.nodes.insert(ViewNode {
             descriptor,
@@ -602,6 +658,7 @@ impl ViewTree {
             state_version: 0,
             taffy_id: None,
             key,
+            zstack_alignment,
         });
         if let Some(pid) = parent
             && let Some(p) = self.nodes.get_mut(pid)
@@ -762,7 +819,7 @@ impl ViewTree {
                 self.sync_tree(old_id, new_desc);
                 new_child_ids.push(old_id);
             } else {
-                let child_id = self.insert_node(Some(node_id), (*new_desc).clone(), *key);
+                let child_id = self.insert_node(Some(node_id), (*new_desc).clone(), *key, None);
                 self.sync_tree(child_id, new_desc);
                 new_child_ids.push(child_id);
             }
@@ -791,7 +848,7 @@ impl ViewTree {
             if i < old_children.len() {
                 self.sync_tree(old_children[i], child_desc);
             } else {
-                let child_id = self.insert_node(Some(node_id), (*child_desc).clone(), *key);
+                let child_id = self.insert_node(Some(node_id), (*child_desc).clone(), *key, None);
                 self.sync_tree(child_id, child_desc);
             }
         }
@@ -857,7 +914,8 @@ impl ViewTree {
                         }
                     } else {
                         // No old child — insert new child with insert animation
-                        let child_id = self.insert_node(Some(node_id), new_child.clone(), None);
+                        let child_id =
+                            self.insert_node(Some(node_id), new_child.clone(), None, None);
                         self.sync_tree(child_id, new_child);
                         if let Some(node) = self.nodes.get_mut(child_id) {
                             Self::start_insert_animation(
@@ -897,7 +955,8 @@ impl ViewTree {
                     if let Some(&child_id) = old_children.first() {
                         self.sync_tree(child_id, new_child);
                     } else {
-                        let child_id = self.insert_node(Some(node_id), new_child.clone(), None);
+                        let child_id =
+                            self.insert_node(Some(node_id), new_child.clone(), None, None);
                         self.sync_tree(child_id, new_child);
                     }
                     return;
@@ -918,6 +977,17 @@ impl ViewTree {
                         .map(|(_, cd)| (cd.key, &cd.descriptor))
                         .collect();
                     self.sync_keyed_children(node_id, &old_children, &new_children);
+                    // Propagate alignment to each child node
+                    if let Some(node) = self.nodes.get(node_id) {
+                        let child_ids: Vec<ViewId> = node.children.clone();
+                        for (i, &child_id) in child_ids.iter().enumerate() {
+                            if i < zstack.children.len() {
+                                if let Some(child) = self.nodes.get_mut(child_id) {
+                                    child.zstack_alignment = Some(zstack.children[i].0);
+                                }
+                            }
+                        }
+                    }
                     return;
                 }
 
@@ -969,7 +1039,8 @@ impl ViewTree {
                         node.state_version += 1;
                     }
                     if let Some(new_child) = Self::get_single_child(descriptor) {
-                        let child_id = self.insert_node(Some(node_id), new_child.clone(), None);
+                        let child_id =
+                            self.insert_node(Some(node_id), new_child.clone(), None, None);
                         self.sync_tree(child_id, new_child);
                         if let Some(node) = self.nodes.get_mut(child_id) {
                             Self::start_insert_animation(node, transition, self.current_time);
@@ -998,21 +1069,23 @@ impl ViewTree {
                         Some(node_id),
                         child_desc.descriptor.clone(),
                         child_desc.key,
+                        None,
                     );
                     self.sync_tree(child_id, &child_desc.descriptor);
                 }
 
                 if let Some(new_child) = Self::get_single_child(descriptor) {
-                    let child_id = self.insert_node(Some(node_id), new_child.clone(), None);
+                    let child_id = self.insert_node(Some(node_id), new_child.clone(), None, None);
                     self.sync_tree(child_id, new_child);
                 }
 
                 if let ViewDescriptor::ZStack(zstack) = descriptor {
-                    for (_, child_desc) in &zstack.children {
+                    for (alignment, child_desc) in &zstack.children {
                         let child_id = self.insert_node(
                             Some(node_id),
                             child_desc.descriptor.clone(),
                             child_desc.key,
+                            Some(*alignment),
                         );
                         self.sync_tree(child_id, &child_desc.descriptor);
                     }
@@ -1066,7 +1139,7 @@ impl ViewTree {
                     index: _,
                     descriptor,
                 } => {
-                    self.insert_node(*parent, descriptor.clone(), None);
+                    self.insert_node(*parent, descriptor.clone(), None, None);
                 }
                 Patch::Update { node, descriptor } => {
                     if let Some(n) = self.nodes.get_mut(*node) {

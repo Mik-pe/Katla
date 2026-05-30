@@ -52,7 +52,20 @@ impl TaffyNodeMap {
             return;
         };
 
-        let style = descriptor_to_style(&node.descriptor, measure);
+        let mut style = descriptor_to_style(&node.descriptor, measure);
+
+        // ZStack children need absolute positioning so they stack rather than
+        // participate in flex flow.
+        if node.zstack_alignment.is_some() {
+            style.position = taffy::Position::Absolute;
+            style.inset = taffy::Rect {
+                top: taffy::LengthPercentageAuto::Percent(0.0),
+                right: taffy::LengthPercentageAuto::Percent(0.0),
+                bottom: taffy::LengthPercentageAuto::Percent(0.0),
+                left: taffy::LengthPercentageAuto::Percent(0.0),
+            };
+        }
+
         let children = &node.children;
 
         if children.is_empty() {

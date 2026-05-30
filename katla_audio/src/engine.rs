@@ -397,6 +397,14 @@ impl AudioEngine {
         self.mixer.active_voice_count()
     }
 
+    pub fn peak_voice_count(&self) -> usize {
+        self.mixer.peak_voice_count()
+    }
+
+    pub fn reset_peak_voice_count(&self) -> usize {
+        self.mixer.reset_peak_voice_count()
+    }
+
     pub fn set_master_volume(&self, volume: f32) {
         self.mixer.set_master_volume(volume);
     }

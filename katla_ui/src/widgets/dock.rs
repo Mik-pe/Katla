@@ -664,3 +664,271 @@ impl DockLayout {
         Err("DockLayout::from_string — serde not enabled for katla_ui".into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_leaf_creates_leaf_with_tab_and_active_zero() {
+        let node = DockNode::leaf(42);
+        match node {
+            DockNode::Leaf { tabs, active_tab } => {
+                assert_eq!(tabs, vec![42]);
+                assert_eq!(active_tab, 0);
+            }
+            _ => panic!("expected Leaf"),
+        }
+    }
+
+    #[test]
+    fn test_split_creates_split_with_clamped_ratio() {
+        let left = DockNode::leaf(1);
+        let right = DockNode::leaf(2);
+        let node = DockNode::split(SplitDirection::Horizontal, 0.5, left, right);
+        match node {
+            DockNode::Split {
+                direction,
+                ratio,
+                children,
+            } => {
+                assert_eq!(direction, SplitDirection::Horizontal);
+                assert!((ratio - 0.5f32).abs() < f32::EPSILON);
+                assert!(matches!(&children[0], DockNode::Leaf { tabs, .. } if tabs == &[1]));
+                assert!(matches!(&children[1], DockNode::Leaf { tabs, .. } if tabs == &[2]));
+            }
+            _ => panic!("expected Split"),
+        }
+    }
+
+    #[test]
+    fn test_find_leaf_with_panel_nested_tree() {
+        let tree = DockNode::split(
+            SplitDirection::Horizontal,
+            0.5,
+            DockNode::leaf(10),
+            DockNode::leaf(20),
+        );
+
+        let found = tree.find_leaf_with_panel(10).expect("should find panel 10");
+        match found {
+            DockNode::Leaf { tabs, .. } => assert!(tabs.contains(&10)),
+            _ => panic!("expected Leaf"),
+        }
+
+        let found = tree.find_leaf_with_panel(20).expect("should find panel 20");
+        match found {
+            DockNode::Leaf { tabs, .. } => assert!(tabs.contains(&20)),
+            _ => panic!("expected Leaf"),
+        }
+
+        assert!(tree.find_leaf_with_panel(99).is_none());
+    }
+
+    #[test]
+    fn test_find_leaf_with_panel_mut_allows_mutation() {
+        let mut tree = DockNode::split(
+            SplitDirection::Horizontal,
+            0.5,
+            DockNode::leaf(10),
+            DockNode::leaf(20),
+        );
+
+        {
+            let leaf = tree
+                .find_leaf_with_panel_mut(10)
+                .expect("should find panel 10");
+            if let DockNode::Leaf { active_tab, .. } = leaf {
+                *active_tab = 42;
+            }
+        }
+
+        match tree
+            .find_leaf_with_panel(10)
+            .expect("should still find panel 10")
+        {
+            DockNode::Leaf { active_tab, .. } => assert_eq!(*active_tab, 42),
+            _ => panic!("expected Leaf"),
+        }
+    }
+
+    #[test]
+    fn test_remove_panel_from_leaf() {
+        let mut node = DockNode::Leaf {
+            tabs: vec![1, 2, 3],
+            active_tab: 2,
+        };
+        assert!(node.remove_panel(3));
+        match &node {
+            DockNode::Leaf { tabs, active_tab } => {
+                assert_eq!(*tabs, vec![1, 2]);
+                assert_eq!(*active_tab, 1);
+            }
+            _ => panic!("expected Leaf"),
+        }
+    }
+
+    #[test]
+    fn test_remove_panel_from_split_collapse() {
+        let mut tree = DockNode::split(
+            SplitDirection::Horizontal,
+            0.5,
+            DockNode::leaf(10),
+            DockNode::leaf(20),
+        );
+
+        assert!(tree.remove_panel(10));
+
+        match &tree {
+            DockNode::Leaf { tabs, .. } => assert!(tabs.contains(&20)),
+            _ => panic!("expected collapse to a single leaf"),
+        }
+    }
+
+    #[test]
+    fn test_collapse_empty_splits_double() {
+        let mut tree = DockNode::split(
+            SplitDirection::Horizontal,
+            0.5,
+            DockNode::split(
+                SplitDirection::Vertical,
+                0.5,
+                DockNode::Leaf {
+                    tabs: vec![1],
+                    active_tab: 0,
+                },
+                DockNode::Leaf {
+                    tabs: vec![],
+                    active_tab: 0,
+                },
+            ),
+            DockNode::split(
+                SplitDirection::Vertical,
+                0.5,
+                DockNode::Leaf {
+                    tabs: vec![],
+                    active_tab: 0,
+                },
+                DockNode::Leaf {
+                    tabs: vec![2],
+                    active_tab: 0,
+                },
+            ),
+        );
+
+        tree.remove_panel(1);
+        tree.remove_panel(2);
+
+        match &tree {
+            DockNode::Leaf { tabs, .. } => assert!(tabs.is_empty()),
+            _ => panic!("expected fully collapsed to empty leaf"),
+        }
+    }
+
+    #[test]
+    fn test_add_tab_to_leaf() {
+        let mut node = DockNode::leaf(10);
+        assert!(node.add_tab_to_leaf(10, 20));
+        match &node {
+            DockNode::Leaf { tabs, active_tab } => {
+                assert_eq!(*tabs, vec![10, 20]);
+                assert_eq!(*active_tab, 1);
+            }
+            _ => panic!("expected Leaf"),
+        }
+    }
+
+    #[test]
+    fn test_add_tab_to_leaf_missing_target() {
+        let mut node = DockNode::leaf(10);
+        assert!(!node.add_tab_to_leaf(99, 20));
+        match &node {
+            DockNode::Leaf { tabs, .. } => assert_eq!(*tabs, vec![10]),
+            _ => panic!("expected Leaf"),
+        }
+    }
+
+    #[test]
+    fn test_is_empty_leaf() {
+        let empty = DockNode::Leaf {
+            tabs: vec![],
+            active_tab: 0,
+        };
+        assert!(empty.is_empty_leaf());
+
+        let with_tabs = DockNode::leaf(1);
+        assert!(!with_tabs.is_empty_leaf());
+
+        let split = DockNode::split(
+            SplitDirection::Horizontal,
+            0.5,
+            DockNode::leaf(1),
+            DockNode::leaf(2),
+        );
+        assert!(!split.is_empty_leaf());
+    }
+
+    #[test]
+    fn test_dock_layout_new() {
+        let root = DockNode::leaf(42);
+        let layout = DockLayout::new(root.clone());
+        assert!(matches!(layout.root, DockNode::Leaf { .. }));
+        assert!(layout.floating.is_empty());
+    }
+
+    #[test]
+    fn test_dock_layout_single() {
+        let layout = DockLayout::single(7);
+        match &layout.root {
+            DockNode::Leaf { tabs, active_tab } => {
+                assert_eq!(*tabs, vec![7]);
+                assert_eq!(*active_tab, 0);
+            }
+            _ => panic!("expected Leaf"),
+        }
+        assert!(layout.floating.is_empty());
+    }
+
+    #[test]
+    fn test_remove_all_tabs_from_leaf() {
+        let mut node = DockNode::Leaf {
+            tabs: vec![1, 2, 3],
+            active_tab: 0,
+        };
+        assert!(node.remove_panel(1));
+        assert!(node.remove_panel(2));
+        assert!(node.remove_panel(3));
+        match &node {
+            DockNode::Leaf { tabs, active_tab } => {
+                assert!(tabs.is_empty());
+                assert_eq!(*active_tab, 0);
+            }
+            _ => panic!("expected Leaf"),
+        }
+    }
+
+    #[test]
+    fn test_split_ratio_clamping() {
+        let node_lo = DockNode::split(
+            SplitDirection::Horizontal,
+            0.0,
+            DockNode::leaf(1),
+            DockNode::leaf(2),
+        );
+        match node_lo {
+            DockNode::Split { ratio, .. } => assert!((ratio - 0.1f32).abs() < f32::EPSILON),
+            _ => panic!("expected Split"),
+        }
+
+        let node_hi = DockNode::split(
+            SplitDirection::Horizontal,
+            1.0,
+            DockNode::leaf(1),
+            DockNode::leaf(2),
+        );
+        match node_hi {
+            DockNode::Split { ratio, .. } => assert!((ratio - 0.9f32).abs() < f32::EPSILON),
+            _ => panic!("expected Split"),
+        }
+    }
+}
