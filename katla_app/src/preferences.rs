@@ -6,6 +6,27 @@ use log::{error, warn};
 
 use crate::ui::ColorScheme;
 
+/// Audio volume settings.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct AudioSettings {
+    pub master_volume: f32,
+    pub sfx_volume: f32,
+    pub music_volume: f32,
+    pub ambient_volume: f32,
+}
+
+impl Default for AudioSettings {
+    fn default() -> Self {
+        Self {
+            master_volume: 1.0,
+            sfx_volume: 1.0,
+            music_volume: 1.0,
+            ambient_volume: 1.0,
+        }
+    }
+}
+
 /// Application preferences that persist between sessions.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -22,6 +43,8 @@ pub struct Preferences {
     pub show_reverb_debug: bool,
     /// Font scale multiplier (1.0 = 100%, 1.25 = 125%, etc.)
     pub font_scale: f32,
+    #[serde(default)]
+    pub audio: AudioSettings,
 }
 
 impl Default for Preferences {
@@ -33,6 +56,7 @@ impl Default for Preferences {
             show_physics_debug: false,
             show_reverb_debug: false,
             font_scale: 1.0,
+            audio: AudioSettings::default(),
         }
     }
 }
@@ -107,11 +131,18 @@ font_scale = 1.25
             show_physics_debug: false,
             show_reverb_debug: false,
             font_scale: 1.5,
+            audio: AudioSettings {
+                master_volume: 0.8,
+                sfx_volume: 1.0,
+                music_volume: 0.5,
+                ambient_volume: 1.0,
+            },
         };
         let toml = toml::to_string_pretty(&prefs).unwrap();
         assert!(toml.contains("theme = \"dracula\""));
         assert!(toml.contains("show_grid = false"));
         assert!(toml.contains("font_scale = 1.5"));
+        assert!(toml.contains("master_volume = 0.8"));
     }
 
     #[test]

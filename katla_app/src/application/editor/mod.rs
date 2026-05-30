@@ -692,6 +692,7 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         physics_friction,
         physics_restitution,
         physics_density,
+        audio_source_metadata: _,
         script_vars: _,
     } = &app.editor.editor_ui.inspector_edit;
 
@@ -1850,6 +1851,8 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         Option<PerspectiveInfo>,
         Option<DirectionalLightInfo>,
         Option<crate::ui::AudioEmitterInfo>,
+        Option<crate::ui::AudioSourceInfo>,
+        bool,
         Option<ColliderShapeInfo>,
         Option<RigidBodyInfo>,
         Option<PhysicsMaterialInfo>,
@@ -1970,6 +1973,34 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
             components.push("AudioEmitter");
         }
 
+        let audio_source_info = app
+            .world
+            .get_component::<crate::components::AudioSource>(entity_id)
+            .map(|src| {
+                let (sample_rate, channels, duration_secs) =
+                    katla_audio::audio_metadata(std::path::Path::new(&src.path))
+                        .map(|m| (Some(m.sample_rate), Some(m.channels), Some(m.duration_secs)))
+                        .unwrap_or((None, None, None));
+                crate::ui::AudioSourceInfo {
+                    path: src.path.clone(),
+                    sample_rate,
+                    channels,
+                    duration_secs,
+                }
+            });
+
+        let has_audio_listener = app
+            .world
+            .get_component::<crate::components::AudioListener>(entity_id)
+            .is_some();
+
+        if audio_source_info.is_some() {
+            components.push("AudioSource");
+        }
+        if has_audio_listener {
+            components.push("AudioListener");
+        }
+
         let collider_shape_info = app
             .world
             .get_component::<katla_physics::ColliderShape>(entity_id)
@@ -2071,6 +2102,8 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 perspective_info,
                 directional_info,
                 audio_emitter_info,
+                audio_source_info,
+                has_audio_listener,
                 collider_shape_info,
                 rigid_body_info,
                 physics_material_info,
@@ -2115,6 +2148,8 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 perspective,
                 directional_light,
                 audio_emitter,
+                audio_source,
+                has_audio_listener,
                 collider_shape,
                 rigid_body,
                 physics_material,
@@ -2141,6 +2176,8 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 perspective: perspective.clone(),
                 directional_light: directional_light.clone(),
                 audio_emitter: audio_emitter.clone(),
+                audio_source: audio_source.clone(),
+                has_audio_listener: *has_audio_listener,
                 collider_shape: collider_shape.clone(),
                 rigid_body: rigid_body.clone(),
                 physics_material: physics_material.clone(),

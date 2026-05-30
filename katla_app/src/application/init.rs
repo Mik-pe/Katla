@@ -22,6 +22,20 @@ impl Application {
         match crate::systems::AudioSystem::new() {
             Ok(audio) => {
                 info!("Audio system initialized");
+                let engine = audio.engine();
+                engine.set_master_volume(self.preferences.audio.master_volume);
+                engine.set_category_volume(
+                    katla_audio::AudioCategory::Sfx,
+                    self.preferences.audio.sfx_volume,
+                );
+                engine.set_category_volume(
+                    katla_audio::AudioCategory::Music,
+                    self.preferences.audio.music_volume,
+                );
+                engine.set_category_volume(
+                    katla_audio::AudioCategory::Ambient,
+                    self.preferences.audio.ambient_volume,
+                );
                 self.audio_system = Some(audio);
             }
             Err(katla_audio::AudioError::DeviceAccessDenied(ref msg)) => {
