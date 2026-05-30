@@ -84,7 +84,7 @@ impl SubpixelBin {
     #[inline]
     pub fn new(pos: f32) -> (i32, Self) {
         let floor = pos.floor() as i32;
-        let frac = pos - pos.floor();
+        let frac = pos - floor as f32;
 
         let bin = match (frac * 4.0) as u32 {
             0 => SubpixelBin::Zero,
@@ -269,10 +269,6 @@ pub enum FontError {
     LoadFailed(String),
     /// Font not found.
     NotFound(FontId),
-    /// Glyph not available.
-    GlyphMissing(char),
-    /// Atlas is full.
-    AtlasFull,
 }
 
 impl std::fmt::Display for FontError {
@@ -280,8 +276,6 @@ impl std::fmt::Display for FontError {
         match self {
             FontError::LoadFailed(msg) => write!(f, "Failed to load font: {}", msg),
             FontError::NotFound(id) => write!(f, "Font not found: {:?}", id),
-            FontError::GlyphMissing(c) => write!(f, "Glyph not available: '{}'", c),
-            FontError::AtlasFull => write!(f, "Font atlas is full"),
         }
     }
 }

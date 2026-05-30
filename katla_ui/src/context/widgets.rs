@@ -48,8 +48,15 @@ impl UiContext {
     /// Call this for any interactive widget that should participate in
     /// keyboard Tab/Shift+Tab focus cycling. Widgets are navigated in
     /// the order they are registered during the frame.
-    pub(crate) fn register_focusable(&mut self, id: super::WidgetId, bounds: Rect2D) {
+    pub(crate) fn register_focusable(&mut self, id: super::WidgetId, bounds: Rect2D, label: &str) {
         self.focusable_widgets.push((id, bounds));
+
+        if let Some(ref pending) = self.pending_focus_label
+            && pending == label
+        {
+            self.focused_id = Some(id);
+            self.pending_focus_label = None;
+        }
     }
 
     /// Check if a widget is being hovered.

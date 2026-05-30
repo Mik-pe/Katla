@@ -162,11 +162,22 @@ pub(crate) fn process_input(
 
     // --- Hit test for new interactions ---
     let Some(hit) = hit_test(tree, input.mouse_pos, bounds_map) else {
-        // No hover target — but keep active drag alive
+        // No hover target — close any DraggablePanel with close_on_outside_click
+        if input.mouse_clicked(mouse_button::LEFT) {
+            close_outside_draggable_panels(tree, bounds_map, input.mouse_pos);
+        }
         return result;
     };
 
     result.hovered_id = Some(hit.id);
+
+    // Close DraggablePanels with close_on_outside_click if click landed on something else
+    if input.mouse_clicked(mouse_button::LEFT) {
+        let is_panel = matches!(tree.get(hit.id), Some(n) if matches!(&n.descriptor, ViewDescriptor::DraggablePanel(_)));
+        if !is_panel {
+            close_outside_draggable_panels(tree, bounds_map, input.mouse_pos);
+        }
+    }
 
     let Some(node) = tree.get(hit.id) else {
         return result;
@@ -274,9 +285,7 @@ pub(crate) fn process_input(
             }
         }
 
-        ViewDescriptor::ColorPicker { value_id, .. } if input.mouse_clicked(mouse_button::LEFT) => {
-            let current = tree.state_arena().get::<bool>(*value_id);
-            tree.state_arena_mut().set(*value_id, !current);
+        ViewDescriptor::ColorPicker { .. } if input.mouse_clicked(mouse_button::LEFT) => {
             result.input_consumed = true;
             result.clicked_id = Some(hit.id);
         }
@@ -767,4 +776,40 @@ fn compute_visible_tree_items_input(
 fn measure_menu_label(label: &str, font_size: f32) -> f32 {
     let char_width = font_size * 0.6;
     label.chars().count() as f32 * char_width
+}
+
+/// Close any DraggablePanel with `close_on_outside_click` if the click position
+/// is outside its bounds.
+fn close_outside_draggable_panels(
+    tree: &mut ViewTree,
+    bounds_map: &HashMap<ViewId, Rect2D>,
+    mouse_pos: Vec2,
+) {
+    let ids_to_close: Vec<super::state::StateId> = tree
+        .iter_nodes()
+        .filter_map(|(id, node)| {
+            if let ViewDescriptor::DraggablePanel(desc) = &node.descriptor {
+                if !desc.close_on_outside_click {
+                    return None;
+                }
+                let state: DraggablePanelState = tree.state_arena().get(desc.state_id);
+                if !state.visibility.is_visible() {
+                    return None;
+                }
+                let bounds = bounds_map.get(&id)?;
+                if bounds.contains(mouse_pos) {
+                    return None;
+                }
+                Some(desc.state_id)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    for state_id in ids_to_close {
+        let mut state: DraggablePanelState = tree.state_arena().get(state_id);
+        state.visibility = DraggablePanelVisibility::Hidden;
+        tree.state_arena_mut().set(state_id, state);
+    }
 }

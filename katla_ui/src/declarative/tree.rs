@@ -121,6 +121,10 @@ impl ViewTree {
         self.nodes.get_mut(id)
     }
 
+    pub fn iter_nodes(&self) -> impl Iterator<Item = (ViewId, &ViewNode)> {
+        self.nodes.iter()
+    }
+
     pub fn state_arena(&self) -> &StateArena {
         &self.state
     }

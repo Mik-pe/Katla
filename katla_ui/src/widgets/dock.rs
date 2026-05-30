@@ -327,7 +327,7 @@ impl DockTabBar<'_> {
             );
             let tab_id = ui.generate_id(&format!("{}_{}", id_prefix, i));
 
-            ui.register_focusable(tab_id, tab_bounds);
+            ui.register_focusable(tab_id, tab_bounds, &format!("{}_{}", id_prefix, i));
             let tab_hovered = ui.update_hover(tab_id, tab_bounds);
             let is_active = i == self.active;
 
@@ -386,7 +386,11 @@ impl DockTabBar<'_> {
                     Vec2::new(close_btn_width, tab_bounds.height()),
                 );
                 let close_id = ui.generate_id(&format!("{}_close_{}", id_prefix, i));
-                ui.register_focusable(close_id, close_bounds);
+                ui.register_focusable(
+                    close_id,
+                    close_bounds,
+                    &format!("{}_close_{}", id_prefix, i),
+                );
                 let close_hovered = ui.update_hover(close_id, close_bounds);
 
                 let close_text_color = if close_hovered {
@@ -505,7 +509,7 @@ fn render_node<F: FnMut(&mut UiContext, Rect2D, DockPanelId)>(
             ratio,
             children,
         } => {
-            let (first_bounds, second_bounds) = match direction {
+            let (first_bounds, _second_bounds) = match direction {
                 SplitDirection::Horizontal => {
                     let split_x = bounds.min.x() + bounds.width() * *ratio;
                     let first = Rect2D::from_origin_size(
@@ -571,6 +575,30 @@ fn render_node<F: FnMut(&mut UiContext, Rect2D, DockPanelId)>(
                 }
             };
             *ratio = new_ratio;
+
+            // Recompute second_bounds with the updated ratio
+            let second_bounds = match direction {
+                SplitDirection::Horizontal => {
+                    let split_x = bounds.min.x() + bounds.width() * new_ratio;
+                    Rect2D::from_origin_size(
+                        Vec2::new(split_x + SPLITTER_THICKNESS, bounds.min.y()),
+                        Vec2::new(
+                            (bounds.width() * (1.0 - new_ratio) - SPLITTER_THICKNESS).max(0.0),
+                            bounds.height(),
+                        ),
+                    )
+                }
+                SplitDirection::Vertical => {
+                    let split_y = bounds.min.y() + bounds.height() * new_ratio;
+                    Rect2D::from_origin_size(
+                        Vec2::new(bounds.min.x(), split_y + SPLITTER_THICKNESS),
+                        Vec2::new(
+                            bounds.width(),
+                            (bounds.height() * (1.0 - new_ratio) - SPLITTER_THICKNESS).max(0.0),
+                        ),
+                    )
+                }
+            };
 
             match direction {
                 SplitDirection::Horizontal => {

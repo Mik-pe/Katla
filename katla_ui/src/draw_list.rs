@@ -328,7 +328,7 @@ impl DrawList {
         ]);
     }
 
-    /// Add a circle outline.
+    /// Add a filled circle.
     pub fn add_circle(&mut self, center: Vec2, radius: f32, color: Color, segments: u32) {
         if segments < 3 {
             return;

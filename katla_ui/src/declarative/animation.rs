@@ -58,15 +58,14 @@ impl Easing {
 }
 
 /// Approximate cubic bezier easing using Newton's method on the x-curve.
-fn cubic_bezier_ease(x1: f32, y1: f32, _x2: f32, y2: f32, t: f32) -> f32 {
-    // Sample the bezier x(t) to find the parameter for a given x value
+fn cubic_bezier_ease(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
     let x = t.clamp(0.0, 1.0);
 
     // Newton-Raphson to solve bezier_x(s) = x
-    let mut s = x; // Initial guess
+    let mut s = x;
     for _ in 0..8 {
-        let bs = bezier_sample(s, x1);
-        let bs_prime = bezier_sample_derivative(s, x1);
+        let bs = bezier_coord(s, x1, x2);
+        let bs_prime = bezier_coord_derivative(s, x1, x2);
         if bs_prime.abs() < 1e-6 {
             break;
         }
@@ -74,17 +73,21 @@ fn cubic_bezier_ease(x1: f32, y1: f32, _x2: f32, y2: f32, t: f32) -> f32 {
         s = s.clamp(0.0, 1.0);
     }
 
-    bezier_sample(s, y2 * y1 + (1.0 - y2) * y1) // Approximate: just use y-bezier at s
+    bezier_coord(s, y1, y2)
 }
 
-fn bezier_sample(t: f32, p1: f32) -> f32 {
+/// Evaluate one coordinate of a cubic bezier curve with control points (p1, p2).
+/// Curve goes from (0,0) to (1,1) with control points at (p1, p1) and (p2, p2)
+/// for each axis independently.
+fn bezier_coord(t: f32, p1: f32, p2: f32) -> f32 {
     let t2 = 1.0 - t;
-    3.0 * t2 * t2 * t * p1 + 3.0 * t2 * t * t * (1.0 - p1) + t * t * t // Approximation using p1 as single control
+    3.0 * t2 * t2 * t * p1 + 3.0 * t2 * t * t * p2 + t * t * t
 }
 
-fn bezier_sample_derivative(t: f32, p1: f32) -> f32 {
+/// Derivative of bezier_coord with respect to t.
+fn bezier_coord_derivative(t: f32, p1: f32, p2: f32) -> f32 {
     let t2 = 1.0 - t;
-    3.0 * t2 * t2 * p1 + 6.0 * t2 * t * (1.0 - 2.0 * p1) + 3.0 * t * t * (2.0 * p1 - 1.0)
+    3.0 * t2 * t2 * p1 + 6.0 * t2 * t * (p2 - 2.0 * p1) + 3.0 * t * t * (1.0 - 2.0 * p2 + p1)
 }
 
 /// A tween from one value to another over time.

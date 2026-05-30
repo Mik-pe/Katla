@@ -24,7 +24,7 @@ impl UiContext {
         border_color: Option<Color>,
     ) -> Response {
         let widget_id = self.generate_id(id);
-        self.register_focusable(widget_id, bounds);
+        self.register_focusable(widget_id, bounds, id);
 
         let hovered = self.update_hover(widget_id, bounds);
         let click_result = self.click_interaction(
@@ -107,7 +107,7 @@ impl UiContext {
     ) -> Response {
         let widget_id = self.generate_id(id);
         if enabled {
-            self.register_focusable(widget_id, bounds);
+            self.register_focusable(widget_id, bounds, id);
         }
 
         let hovered = self.update_hover(widget_id, bounds) && enabled;
@@ -179,7 +179,7 @@ impl UiContext {
         value_precision: usize,
     ) -> Response {
         let widget_id = self.generate_id(id);
-        self.register_focusable(widget_id, bounds);
+        self.register_focusable(widget_id, bounds, id);
 
         let hovered = self.update_hover(widget_id, bounds);
         let active = self.active_id == Some(widget_id);
@@ -212,7 +212,11 @@ impl UiContext {
         self.draw_rounded_rect(track_bounds, self.style.slider_track, track_height * 0.5);
 
         // Draw filled portion of the track
-        let t = (*value - min) / (max - min);
+        let t = if (max - min).abs() > 1e-6 {
+            (*value - min) / (max - min)
+        } else {
+            0.0
+        };
         let fill_width = t * bounds.width();
         if fill_width > 0.0 {
             let fill_bounds =

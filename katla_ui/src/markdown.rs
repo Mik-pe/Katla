@@ -77,10 +77,6 @@ impl HeaderLevel {
             HeaderLevel::H4 => 2.0,
         }
     }
-
-    pub fn is_bold(self) -> bool {
-        matches!(self, HeaderLevel::H4)
-    }
 }
 
 /// Color scheme for markdown rendering.
@@ -195,6 +191,20 @@ pub fn parse_markdown_line(line: &str) -> Vec<TextSegment> {
         if inline.len() > 1 || (inline.len() == 1 && inline[0].kind != TextSegmentKind::Normal) {
             segments = inline;
         }
+        // Ensure the blockquote sentinel is present for the renderer to
+        // detect this line as a blockquote (draws left border + indentation).
+        if !segments
+            .iter()
+            .any(|s| s.kind == TextSegmentKind::Blockquote)
+        {
+            segments.insert(
+                0,
+                TextSegment {
+                    text: String::new(),
+                    kind: TextSegmentKind::Blockquote,
+                },
+            );
+        }
         return segments;
     }
     // Standalone > (empty blockquote line)
@@ -255,13 +265,13 @@ pub fn parse_markdown_line(line: &str) -> Vec<TextSegment> {
         return segments;
     }
 
-    // Numbered lists: 1. item
+    // Numbered lists: 1. item (prefix must be all digits followed by ". ")
     if let Some(pos) = trimmed.find(". ") {
-        let prefix = &trimmed[..=pos];
-        if prefix.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        let prefix = &trimmed[..pos];
+        if !prefix.is_empty() && prefix.chars().all(|c| c.is_ascii_digit()) {
             let rest = &trimmed[pos + 2..];
             let mut segments = vec![TextSegment {
-                text: format!("{}{}", " ".repeat(indent), prefix),
+                text: format!("{}{}{}. ", " ".repeat(indent), prefix, "."),
                 kind: TextSegmentKind::Bullet,
             }];
             segments.extend(parse_inline_markdown(rest));
@@ -332,7 +342,6 @@ pub fn parse_inline_markdown(text: &str) -> Vec<TextSegment> {
                 kind: TextSegmentKind::Bold,
             });
             i = end + 2;
-            prev_consumed_was_asterisk = true;
             continue;
         }
 

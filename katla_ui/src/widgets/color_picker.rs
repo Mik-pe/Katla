@@ -107,7 +107,7 @@ impl<'a> Widget for ColorPickerButton<'a> {
         let id = self.id.unwrap_or(self.label);
         let widget_id = ui.generate_id(id);
 
-        ui.register_focusable(widget_id, self.bounds);
+        ui.register_focusable(widget_id, self.bounds, id);
         let hovered = ui.update_hover(widget_id, self.bounds);
         let clicked = ui
             .click_interaction(
@@ -130,6 +130,7 @@ impl<'a> Widget for ColorPickerButton<'a> {
             }
         }
 
+        let color_before = [self.color[0], self.color[1], self.color[2]];
         let current_color = Color::rgb(self.color[0], self.color[1], self.color[2]);
         let bg_color = if self.state.open || hovered {
             ui.style.combo_hovered
@@ -194,7 +195,9 @@ impl<'a> Widget for ColorPickerButton<'a> {
             &ui.input,
             Some(widget_id),
         );
-        response.changed = false;
+        response.changed = self.color[0] != color_before[0]
+            || self.color[1] != color_before[1]
+            || self.color[2] != color_before[2];
         response
     }
 }
