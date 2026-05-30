@@ -606,10 +606,9 @@ impl Application {
 
     /// Forward mouse motion delta to the ECS input state for orbit/pan camera.
     fn forward_mouse_delta(&mut self, dx: f32, dy: f32) {
-        let input = self
-            .world
-            .get_resource::<crate::input::InputState>()
-            .unwrap();
+        let Some(input) = self.world.get_resource::<crate::input::InputState>() else {
+            return;
+        };
         let should_track = input.is_action_pressed(Action::LookEnable)
             || input.is_action_pressed(Action::PanEnable);
         if should_track {

@@ -107,10 +107,11 @@ fn spawn_new_bodies(world: &mut World) {
 
         let collision_filter = world.get_component::<CollisionFilter>(entity).copied();
 
-        let (body_handle, collider_handle) = world
-            .get_resource_mut::<PhysicsWorld>()
-            .unwrap()
-            .create_body_ex(
+        let (body_handle, collider_handle) = {
+            let Some(physics) = world.get_resource_mut::<PhysicsWorld>() else {
+                continue;
+            };
+            physics.create_body_ex(
                 &shape,
                 &transform,
                 body_type,
@@ -120,7 +121,8 @@ fn spawn_new_bodies(world: &mut World) {
                 gravity_scale,
                 ccd_enabled,
                 collision_filter.as_ref(),
-            );
+            )
+        };
 
         if let Some(rb) = world.get_component_mut::<RigidBody>(entity) {
             rb.body_handle = Some(body_handle);
@@ -149,11 +151,12 @@ fn spawn_new_joints(world: &mut World) {
         let body_b = find_rigid_body_handle(world, joint.entity_b);
 
         if let (Some(ha), Some(hb)) = (body_a, body_b) {
-            let joint_handle = world
-                .get_resource_mut::<PhysicsWorld>()
-                .unwrap()
-                .create_joint(&joint, ha, hb)
-                .ok();
+            let joint_handle = {
+                let Some(physics) = world.get_resource_mut::<PhysicsWorld>() else {
+                    continue;
+                };
+                physics.create_joint(&joint, ha, hb).ok()
+            };
 
             // Find the Joint component for entity_b (joints are typically owned by entity_b)
             let target_entity = EntityId::from_raw(joint.entity_b);

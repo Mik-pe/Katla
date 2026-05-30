@@ -21,22 +21,32 @@ impl Application {
 
         let unlit_shader_path = self.resources.shader_path("unlit.wgsl");
         let material = match &mut self.renderer {
-            katla_gfx::AnyRenderer::Vulkan(r) => r
-                .compile_material(
-                    &unlit_shader_path,
-                    katla_gfx::MaterialOptions {
-                        vertex_type: katla_gfx::VertexType::Pbr,
-                        color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
-                        depth_test: false,
-                        ..Default::default()
-                    },
-                )
-                .expect("Failed to create gizmo unlit material"),
+            katla_gfx::AnyRenderer::Vulkan(r) => match r.compile_material(
+                &unlit_shader_path,
+                katla_gfx::MaterialOptions {
+                    vertex_type: katla_gfx::VertexType::Pbr,
+                    color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
+                    depth_test: false,
+                    ..Default::default()
+                },
+            ) {
+                Ok(m) => m,
+                Err(e) => {
+                    log::error!("Failed to create gizmo unlit material: {e}");
+                    return;
+                }
+            },
             #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => self
+            katla_gfx::AnyRenderer::Metal(_) => match self
                 .renderer
                 .compile_material(&unlit_shader_path.to_string_lossy(), "pbr")
-                .expect("Failed to create gizmo unlit material"),
+            {
+                Ok(m) => m,
+                Err(e) => {
+                    log::error!("Failed to create gizmo unlit material: {e}");
+                    return;
+                }
+            },
         };
 
         self.gpu_resource_tracker.set_protected_material(material);
@@ -327,16 +337,13 @@ impl Application {
                                                 GizmoAxis::Y => 1,
                                                 GizmoAxis::Z => 2,
                                             };
-                                            if self.editor.gizmo_state.drag_start_world.is_none() {
-                                                self.editor.gizmo_state.drag_start_world = Some(
-                                                    katla_math::Vec3::new(axis_dist, 0.0, 0.0),
-                                                );
-                                            }
                                             let initial_dist = self
                                                 .editor
                                                 .gizmo_state
                                                 .drag_start_world
-                                                .unwrap()
+                                                .get_or_insert(katla_math::Vec3::new(
+                                                    axis_dist, 0.0, 0.0,
+                                                ))
                                                 .x();
 
                                             let scale_factor = if initial_dist.abs() > 1e-6 {
@@ -367,12 +374,11 @@ impl Application {
                                                 GizmoAxis::Z => 2,
                                             };
 
-                                            if self.editor.gizmo_state.drag_start_world.is_none() {
-                                                self.editor.gizmo_state.drag_start_world =
-                                                    Some(katla_math::Vec3::new(d1, d2, 0.0));
-                                            }
-                                            let init =
-                                                self.editor.gizmo_state.drag_start_world.unwrap();
+                                            let init = self
+                                                .editor
+                                                .gizmo_state
+                                                .drag_start_world
+                                                .get_or_insert(katla_math::Vec3::new(d1, d2, 0.0));
 
                                             let f1 = if init.x().abs() > 1e-6 {
                                                 d1 / init.x()

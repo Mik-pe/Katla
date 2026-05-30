@@ -456,9 +456,12 @@ impl Application {
         ) {
             for (name, slot) in recreated_textures {
                 if name == "hdr_color" {
-                    self.frame_graph
+                    if let Err(e) = self
+                        .frame_graph
                         .set_tonemap_texture_index(self.pass_ids.tonemap, slot)
-                        .expect("Failed to update tonemap texture index");
+                    {
+                        log::warn!("Failed to update tonemap texture index on resize: {e}");
+                    }
                 } else if name == "viewport_0" {
                     self.on_viewport_texture_recreated(slot);
                 }

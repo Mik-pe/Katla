@@ -427,18 +427,18 @@ impl World {
         // Guard that restores systems on panic so self.systems isn't left empty.
         struct Guard<'a> {
             dest: *mut Vec<OrderedSystem>,
-            systems: Option<Vec<OrderedSystem>>,
+            systems: Vec<OrderedSystem>,
+            restored: bool,
             _marker: std::marker::PhantomData<&'a mut Vec<OrderedSystem>>,
         }
 
         impl Drop for Guard<'_> {
             fn drop(&mut self) {
-                if let Some(systems) = self.systems.take() {
+                if !self.restored {
                     // SAFETY: Guard holds a mutable reference to self.systems.
-                    // We only run this on panic (unwind) or if the normal path
-                    // didn't consume systems.
+                    // We only run this on panic (unwind) to restore systems.
                     unsafe {
-                        *self.dest = systems;
+                        *self.dest = std::mem::take(&mut self.systems);
                     }
                 }
             }
@@ -446,19 +446,12 @@ impl World {
 
         let mut guard = Guard {
             dest: &mut self.systems as *mut _,
-            systems: Some(systems),
+            systems,
+            restored: false,
             _marker: std::marker::PhantomData,
         };
 
-        // SAFETY: We have exclusive access to self.systems via the raw pointer in guard.
-        // The systems vec is temporarily in guard.systems. If a panic occurs, the
-        // Guard's Drop restores them. If no panic, we restore manually below.
-        let systems = guard
-            .systems
-            .as_mut()
-            .expect("systems should be in guard during update");
-
-        for ordered_system in systems.iter_mut() {
+        for ordered_system in guard.systems.iter_mut() {
             if !ordered_system.system.is_enabled() {
                 continue;
             }
@@ -467,11 +460,8 @@ impl World {
         }
 
         // Normal path: take systems out of guard and restore to self.systems
-        let systems = guard
-            .systems
-            .take()
-            .expect("systems should still be in guard after update loop");
-        self.systems = systems;
+        self.systems = std::mem::take(&mut guard.systems);
+        guard.restored = true;
 
         // Flush per-frame events
         self.entity_events.clear();
@@ -508,15 +498,16 @@ impl World {
 
         struct Guard<'a> {
             dest: *mut Vec<OrderedSystem>,
-            systems: Option<Vec<OrderedSystem>>,
+            systems: Vec<OrderedSystem>,
+            restored: bool,
             _marker: std::marker::PhantomData<&'a mut Vec<OrderedSystem>>,
         }
 
         impl Drop for Guard<'_> {
             fn drop(&mut self) {
-                if let Some(systems) = self.systems.take() {
+                if !self.restored {
                     unsafe {
-                        *self.dest = systems;
+                        *self.dest = std::mem::take(&mut self.systems);
                     }
                 }
             }
@@ -524,26 +515,19 @@ impl World {
 
         let mut guard = Guard {
             dest: &mut self.systems as *mut _,
-            systems: Some(systems),
+            systems,
+            restored: false,
             _marker: std::marker::PhantomData,
         };
-
-        let systems = guard
-            .systems
-            .as_mut()
-            .expect("systems should be in guard during update_parallel");
 
         let world_cell = unsafe { self.as_unsafe_world_cell() };
         self.scheduler_cache
             .as_ref()
             .expect("scheduler should be cached")
-            .execute_parallel(systems, world_cell, delta_time);
+            .execute_parallel(&mut guard.systems, world_cell, delta_time);
 
-        let systems = guard
-            .systems
-            .take()
-            .expect("systems should still be in guard after parallel update");
-        self.systems = systems;
+        self.systems = std::mem::take(&mut guard.systems);
+        guard.restored = true;
 
         self.entity_events.clear();
         self.component_events.clear();
