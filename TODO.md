@@ -53,11 +53,11 @@ Individual tasks should be small enough to complete in a single focused session.
 - [ ] **Explore audio recording/bounce design** — Research offline render patterns: capturing the final mix to WAV, non-realtime rendering, cutscene bounce workflows. Produce concrete implementation TODO items.
 
 ### Phase 17: Audio system activation and global settings
-- [ ] Add AudioSettings to Preferences — `Preferences` struct has no audio fields. Add: `master_volume: f32`, `sfx_volume: f32`, `music_volume: f32`, `ambient_volume: f32`. Serialize to `preferences.toml`. Apply to `AudioEngine` on startup and on change.
+- [x] Add AudioSettings to Preferences — Added AudioSettings struct with master/sfx/music/ambient volumes, defaults to 1.0.
 - [ ] Add Audio tab to preferences panel — currently only General, Viewport, and AI tabs exist. Add an Audio tab with: master volume slider, SFX volume slider, music volume slider, ambient volume slider. Changes should apply immediately (live preview) and persist to `preferences.toml` on save.
-- [ ] Apply saved audio settings on startup — after `AudioSystem::new()`, read `Preferences::audio_settings` and call `engine.set_master_volume()`, `engine.set_category_volume()` for each category. Currently all volumes reset to 1.0 every launch.
-- [ ] Add AudioSource inspector UI — `AudioSource` component exists but has no inspector section. Add a read-only section showing: source file path, sample rate, channel count, duration. Add a "Play Preview" button to audition the clip.
-- [ ] Add AudioListener indicator in inspector — `AudioListener` component exists but has no UI. Add a minimal inspector section showing which entity is the active listener (there should be only one). Warn if multiple AudioListener components exist.
+- [x] Apply saved audio settings on startup — Calls set_master_volume and set_category_volume after AudioSystem init.
+- [x] Add AudioSource inspector UI — Read-only section with path, sample rate, channels, duration, and Play Preview button.
+- [x] Add AudioListener indicator in inspector — Shows active listener entity, warns if multiple AudioListener components exist.
 
 ### Phase 18: Audio mixer UI
 - [ ] Add peak/RMS level computation in `AudioMixer::render()` — compute per-category and master peak and RMS levels during the render callback
@@ -84,8 +84,8 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] **Add `ColliderShapeDescriptor`** — enum with Sphere(radius), Box(half_extents), Capsule { half_height, radius } variants; added to EntityDescriptor
 - [x] **Add `PhysicsMaterialDescriptor`** — struct with friction, restitution, density fields; added to EntityDescriptor
 - [x] **Add `TriggerVolumeDescriptor` and `CollisionFilterDescriptor`** — trigger volume as unit struct; collision filter with layers/mask; added both to EntityDescriptor
-- [ ] **Implement save path for Rapier physics components** — In `serialization.rs` scene save, read `RigidBody`, `ColliderShape`, `PhysicsMaterial`, `TriggerVolume`, `CollisionFilter` from ECS entities and convert to their descriptor types. Skip runtime-only fields (handles, velocities, overlapping_entities).
-- [ ] **Implement load path for Rapier physics components** — In `serialization.rs` scene load, create ECS components from physics descriptors and add them to spawned entities. The RapierPhysicsSystem will then auto-discover and spawn them in Rapier.
+- [x] **Implement save path for Rapier physics components** — Reads all 5 physics components from ECS entities, converts to descriptor types, skips runtime-only fields.
+- [x] **Implement load path for Rapier physics components** — Creates ECS components from physics descriptors and adds them to spawned entities.
 - [ ] **Remove hardcoded `spawn_physics_demo_objects()`** — Once physics components serialize to scene files, replace the hardcoded init spawn with physics objects in the default `.katla` scene. The demo objects currently have no mesh/drawable, making them invisible. The scene-file objects should have visible meshes (cube/sphere primitives) alongside their colliders.
 - [ ] **Add physics entities to default.katla scene** — Add a static floor plane with box collider + PBR material, and several dynamic spheres/cubes with colliders + PBR materials at various heights. These should be visible (have drawable + mesh) and demonstrate physics on scene load.
 
