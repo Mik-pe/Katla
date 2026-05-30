@@ -61,6 +61,9 @@ pub struct EditorRenderParams<'a> {
     #[expect(dead_code)]
     pub redo_count: usize,
     pub agent_undo_count: usize,
+    pub audio_levels: katla_audio::LevelsSnapshot,
+    pub audio_active_voices: usize,
+    pub audio_peak_voices: usize,
 }
 
 /// Game Engine Editor UI state.

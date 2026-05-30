@@ -509,17 +509,23 @@ pub enum BottomPanelTab {
     #[default]
     AssetBrowser,
     Console,
+    Mixer,
 }
 
 impl BottomPanelTab {
     pub fn all() -> &'static [BottomPanelTab] {
-        &[BottomPanelTab::AssetBrowser, BottomPanelTab::Console]
+        &[
+            BottomPanelTab::AssetBrowser,
+            BottomPanelTab::Console,
+            BottomPanelTab::Mixer,
+        ]
     }
 
     pub fn label(self) -> &'static str {
         match self {
             BottomPanelTab::AssetBrowser => "Assets",
             BottomPanelTab::Console => "Console",
+            BottomPanelTab::Mixer => "Mixer",
         }
     }
 }

@@ -7,9 +7,9 @@ use katla_ui::{
 
 use super::declarative::{
     AssetBrowserAction, AssetBrowserDrawCtx, AssetRenderData, ConsoleDrawCtx, EditorRootView,
-    GizmoDrawCtx, GizmoModeChanged, HierarchyDrawCtx, InspectorDrawCtx, ParticleInspectorDrawCtx,
-    ParticleInspectorPanelSync, PreferencesDrawCtx, PreferencesPanelSync, StatusBarData,
-    ToolbarAction, ToolbarDrawCtx, ViewportGridDrawCtx, process_asset_actions,
+    GizmoDrawCtx, GizmoModeChanged, HierarchyDrawCtx, InspectorDrawCtx, MixerDrawCtx,
+    ParticleInspectorDrawCtx, ParticleInspectorPanelSync, PreferencesDrawCtx, PreferencesPanelSync,
+    StatusBarData, ToolbarAction, ToolbarDrawCtx, ViewportGridDrawCtx, process_asset_actions,
     process_declarative_actions,
 };
 use super::{
@@ -406,6 +406,15 @@ impl EditorUI {
                     filter_levels: self.console_state.filter_levels,
                     search_filter: self.console_state.search_filter.clone(),
                     log_buffer: self.log_buffer.clone(),
+                });
+            }
+            BottomPanelTab::Mixer => {
+                self.view_tree.env_mut().set(MixerDrawCtx {
+                    levels: params.audio_levels,
+                    active_voices: params.audio_active_voices,
+                    peak_voices: params.audio_peak_voices,
+                    preferences: params.preferences.clone(),
+                    theme: self.theme.clone(),
                 });
             }
         }

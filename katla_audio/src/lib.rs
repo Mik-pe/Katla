@@ -143,6 +143,7 @@ pub use engine::{AudioCategory, AudioEngine};
 pub use error::AudioError;
 pub use levels::{ChannelLevels, LevelsSnapshot};
 pub use metadata::{AudioMetadata, audio_metadata};
+pub use mixer::MAX_VOICES;
 pub use sound_cue::{CuePlayMode, SoundCue};
 pub use streaming::StreamingDecoder;
 pub use streaming_voice::StreamingVoiceHandle;

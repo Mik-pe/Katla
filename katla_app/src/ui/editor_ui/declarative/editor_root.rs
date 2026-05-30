@@ -6,6 +6,7 @@ use super::console::ConsoleView;
 use super::gizmo::GizmoButtonsView;
 use super::hierarchy::HierarchyView;
 use super::inspector::InspectorView;
+use super::mixer::MixerView;
 use super::particle_inspector::ParticleInspectorView;
 use super::preferences::PreferencesView;
 use super::status_bar::StatusBarView;
@@ -27,6 +28,7 @@ impl Build for EditorRootView {
         let preferences = PreferencesView.build(ctx);
         let asset_browser = AssetBrowserView.build(ctx);
         let console = ConsoleView.build(ctx);
+        let mixer = MixerView.build(ctx);
 
         zstack([
             (Alignment::TopLeading, viewport_grid),
@@ -40,6 +42,7 @@ impl Build for EditorRootView {
             (Alignment::TopLeading, preferences),
             (Alignment::TopLeading, asset_browser),
             (Alignment::TopLeading, console),
+            (Alignment::TopLeading, mixer),
         ])
     }
 }

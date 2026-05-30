@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -13,7 +13,7 @@ use crate::scheduled_event::ScheduledEvent;
 use crate::streaming_voice::StreamingVoice;
 use crate::voice::{AuxBusId, CategoryVolumes, Voice, VoiceId, VoicePriority, VoiceState};
 
-const MAX_VOICES: usize = 64;
+pub const MAX_VOICES: usize = 64;
 const MAX_STREAMING_VOICES: usize = 8;
 const NUM_CATEGORIES: usize = 3;
 
@@ -459,6 +459,7 @@ pub struct AudioMixer {
     clock: AudioClock,
     scheduled_events: Mutex<Vec<ScheduledEvent>>,
     levels_buffer: LevelsBuffer,
+    peak_voice_count: AtomicUsize,
     sample_rate: u32,
     channels: u16,
 }
@@ -511,6 +512,7 @@ impl AudioMixer {
             clock: AudioClock::new(sample_rate),
             scheduled_events: Mutex::new(Vec::new()),
             levels_buffer: LevelsBuffer::new(),
+            peak_voice_count: AtomicUsize::new(0),
             sample_rate,
             channels,
         }
@@ -663,6 +665,14 @@ impl AudioMixer {
     pub fn active_voice_count(&self) -> usize {
         let state = self.state.lock().expect("AudioMixer state lock poisoned");
         state.active_voice_count()
+    }
+
+    pub fn peak_voice_count(&self) -> usize {
+        self.peak_voice_count.load(Ordering::Relaxed)
+    }
+
+    pub fn reset_peak_voice_count(&self) -> usize {
+        self.peak_voice_count.swap(0, Ordering::Relaxed)
     }
 
     pub fn sample_rate(&self) -> u32 {
@@ -846,10 +856,12 @@ impl AudioMixer {
         self.process_scheduled_events();
 
         let mut snapshot = LevelsSnapshot::default();
+        let active_count;
 
         {
             let mut state = self.state.lock().expect("AudioMixer state lock poisoned");
             Self::process_commands(&mut state, &self.command_queue);
+            active_count = state.voice_index.len();
 
             output.fill(0.0f32);
 
@@ -981,6 +993,8 @@ impl AudioMixer {
         }
 
         let master = self.master_volume();
+        self.peak_voice_count
+            .fetch_max(active_count, Ordering::Relaxed);
         if master != 1.0 {
             for sample in output.iter_mut() {
                 *sample *= master;
