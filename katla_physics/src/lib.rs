@@ -15,7 +15,7 @@ mod trigger;
 
 pub use error::PhysicsError;
 
-pub use collider::{ColliderShape, CollisionFilter};
+pub use collider::{ColliderShape, CollisionFilter, MeshColliderData};
 pub use joint::{Joint, JointLimits, JointType};
 pub use material::PhysicsMaterial;
 pub use physics_world::{PhysicsWorld, RayHit};

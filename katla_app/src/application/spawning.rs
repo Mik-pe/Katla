@@ -340,17 +340,29 @@ impl super::Application {
         } else {
             model.vertex_data.iter().map(|v| v.position).collect()
         };
-        let triangles = indices
+        let triangles: Vec<[u32; 3]> = indices
             .chunks_exact(3)
             .map(|c| [c[0], c[1], c[2]])
             .collect();
         self.geometry_cache.insert(
             mesh_handle,
             crate::geometry_cache::MeshGeometryData {
-                positions,
-                triangles,
+                positions: positions.clone(),
+                triangles: triangles.clone(),
             },
         );
+        if let Some(cache) = self
+            .world
+            .get_resource_mut::<crate::geometry_cache::GeometryCache>()
+        {
+            cache.insert(
+                mesh_handle,
+                crate::geometry_cache::MeshGeometryData {
+                    positions,
+                    triangles,
+                },
+            );
+        }
 
         // 4. Create material (skinned or regular)
         let shader_path = if model.has_skinning {

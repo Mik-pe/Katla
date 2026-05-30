@@ -7,6 +7,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::shape::SphereShape;
 
+/// CPU-side mesh geometry used to construct Rapier trimesh/convex-hull colliders.
+///
+/// Populated by the app-layer physics system from the geometry cache before
+/// calling `PhysicsWorld` methods that need mesh data.
+#[derive(Debug, Clone)]
+pub struct MeshColliderData {
+    pub positions: Vec<[f32; 3]>,
+    pub triangles: Vec<[u32; 3]>,
+}
+
 /// A collision shape attached to an entity.
 ///
 /// Defines the local-space geometry used for collision detection.

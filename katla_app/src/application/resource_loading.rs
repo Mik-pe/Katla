@@ -140,17 +140,29 @@ impl super::Application {
         } else {
             model.vertex_data.iter().map(|v| v.position).collect()
         };
-        let triangles = indices
+        let triangles: Vec<[u32; 3]> = indices
             .chunks_exact(3)
             .map(|c| [c[0], c[1], c[2]])
             .collect();
         self.geometry_cache.insert(
             mesh_handle,
             crate::geometry_cache::MeshGeometryData {
-                positions,
-                triangles,
+                positions: positions.clone(),
+                triangles: triangles.clone(),
             },
         );
+        if let Some(cache) = self
+            .world
+            .get_resource_mut::<crate::geometry_cache::GeometryCache>()
+        {
+            cache.insert(
+                mesh_handle,
+                crate::geometry_cache::MeshGeometryData {
+                    positions,
+                    triangles,
+                },
+            );
+        }
 
         info!(
             "Loaded mesh '{}' ({} vertices, {} indices, skinned={}) -> handle {}",
@@ -291,7 +303,7 @@ impl super::Application {
                 .unwrap_vulkan()
                 .create_mesh_soa(&attributes, vertex_count, &indices);
 
-        let triangles = indices
+        let triangles: Vec<[u32; 3]> = indices
             .chunks_exact(3)
             .map(|c| [c[0], c[1], c[2]])
             .collect();
@@ -299,9 +311,21 @@ impl super::Application {
             mesh_handle,
             crate::geometry_cache::MeshGeometryData {
                 positions: positions.clone(),
-                triangles,
+                triangles: triangles.clone(),
             },
         );
+        if let Some(cache) = self
+            .world
+            .get_resource_mut::<crate::geometry_cache::GeometryCache>()
+        {
+            cache.insert(
+                mesh_handle,
+                crate::geometry_cache::MeshGeometryData {
+                    positions,
+                    triangles,
+                },
+            );
+        }
 
         info!(
             "Loaded STL mesh '{}' ({} vertices, {} triangles) -> handle {}",
