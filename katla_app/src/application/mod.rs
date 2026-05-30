@@ -58,14 +58,15 @@ use winit::{
 
 use self::camera::Camera;
 use crate::util::GltfCache;
-#[cfg(feature = "editor")]
-use crate::{gui_state::GuiState, util::BackgroundLoader};
 use crate::{
+    geometry_cache::GeometryCache,
     input::{Action, InputBinding, InputMapper, KeyCombo, MouseCombo},
     preferences::Preferences,
     resources::ResourceManager,
     util::Timer,
 };
+#[cfg(feature = "editor")]
+use crate::{gui_state::GuiState, util::BackgroundLoader};
 
 pub struct ApplicationInfo {
     name: String,
@@ -353,6 +354,8 @@ pub struct Application {
     pub(crate) needs_swapchain_recreate: bool,
     /// Tracks GPU resource reference counts for automatic cleanup on entity/component destruction.
     pub(crate) gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker,
+    /// CPU-side geometry data cache keyed by MeshHandle for collider generation etc.
+    pub(crate) geometry_cache: GeometryCache,
     /// Reusable buffer for collecting point lights each frame. Cleared and refilled
     /// in collect_and_upload_lights to avoid per-frame Vec allocation.
     #[expect(dead_code)]
@@ -602,6 +605,14 @@ impl Application {
     /// Get the default PBR material handle.
     pub fn default_material(&self) -> katla_gfx::MaterialHandle {
         self.default_material_handle
+    }
+
+    /// Look up cached CPU-side geometry for a mesh handle.
+    pub fn mesh_geometry(
+        &self,
+        handle: katla_gfx::MeshHandle,
+    ) -> Option<&std::sync::Arc<crate::geometry_cache::MeshGeometryData>> {
+        self.geometry_cache.get(handle)
     }
 
     /// Forward mouse motion delta to the ECS input state for orbit/pan camera.

@@ -331,6 +331,27 @@ impl super::Application {
             self.renderer
                 .create_mesh_dynamic(vertex_bytes, vertex_count as u32, &indices);
 
+        let positions: Vec<[f32; 3]> = if model.has_skinning {
+            model
+                .skinned_vertex_data
+                .iter()
+                .map(|v| v.position)
+                .collect()
+        } else {
+            model.vertex_data.iter().map(|v| v.position).collect()
+        };
+        let triangles = indices
+            .chunks_exact(3)
+            .map(|c| [c[0], c[1], c[2]])
+            .collect();
+        self.geometry_cache.insert(
+            mesh_handle,
+            crate::geometry_cache::MeshGeometryData {
+                positions,
+                triangles,
+            },
+        );
+
         // 4. Create material (skinned or regular)
         let shader_path = if model.has_skinning {
             self.resources.shader_path("model_pbr_skinned.wgsl")

@@ -1580,6 +1580,217 @@ mod tests {
         assert_eq!(label, Some("50%".to_string()));
     }
 
-    // Misapplied modifiers fire debug_assert! in debug builds, which is the
-    // intended behavior. No unit test for this — it's a development-time guard.
+    // -- on_click modifier on Button / ImageButton --
+
+    #[test]
+    fn test_on_click_modifier_button() {
+        let vd = button("ok").on_click(Callback(1));
+        let ViewDescriptor::Button { on_click, .. } = vd else {
+            panic!("expected Button")
+        };
+        assert!(on_click.is_some());
+    }
+
+    #[test]
+    fn test_on_click_modifier_image_button() {
+        let vd = image_button('X').on_click(Callback(2));
+        let ViewDescriptor::ImageButton { on_click, .. } = vd else {
+            panic!("expected ImageButton")
+        };
+        assert!(on_click.is_some());
+    }
+
+    // -- on_submit modifier on TextField --
+
+    #[test]
+    fn test_on_submit_modifier() {
+        let id = dummy_state_id();
+        let vd = textfield("ph", id).on_submit(Callback(3));
+        let ViewDescriptor::TextField { on_submit, .. } = vd else {
+            panic!("expected TextField")
+        };
+        assert!(on_submit.is_some());
+    }
+
+    // -- on_select / on_right_click on TreeView --
+
+    #[test]
+    fn test_on_select_modifier() {
+        let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
+        let vd = tree_view(vec![], e, s, sc).on_select(Callback(10));
+        let ViewDescriptor::TreeView(desc) = vd else {
+            panic!("expected TreeView")
+        };
+        assert!(desc.on_select.is_some());
+    }
+
+    #[test]
+    fn test_on_right_click_modifier() {
+        let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
+        let vd = tree_view(vec![], e, s, sc).on_right_click(Callback(11));
+        let ViewDescriptor::TreeView(desc) = vd else {
+            panic!("expected TreeView")
+        };
+        assert!(desc.on_right_click.is_some());
+    }
+
+    // -- Keyed constructor tests --
+
+    #[test]
+    fn test_keyed_helper() {
+        let cd = keyed(42, text("k"));
+        assert_eq!(cd.key, Some(42));
+        assert!(matches!(cd.descriptor, ViewDescriptor::Text { .. }));
+    }
+
+    #[test]
+    fn test_hstack_keyed_constructor() {
+        let children = vec![keyed(1, text("a")), keyed(2, text("b"))];
+        let ViewDescriptor::HStack(desc) = hstack_keyed(children) else {
+            panic!("expected HStack")
+        };
+        assert_eq!(desc.children.len(), 2);
+        assert_eq!(desc.children[0].key, Some(1));
+        assert_eq!(desc.children[1].key, Some(2));
+    }
+
+    #[test]
+    fn test_vstack_keyed_constructor() {
+        let children = vec![keyed(10, text("x"))];
+        let ViewDescriptor::VStack(desc) = vstack_keyed(children) else {
+            panic!("expected VStack")
+        };
+        assert_eq!(desc.children.len(), 1);
+        assert_eq!(desc.children[0].key, Some(10));
+    }
+
+    #[test]
+    fn test_zstack_keyed_constructor() {
+        let children = vec![(Alignment::Center, keyed(5, text("z")))];
+        let ViewDescriptor::ZStack(desc) = zstack_keyed(children) else {
+            panic!("expected ZStack")
+        };
+        assert_eq!(desc.children.len(), 1);
+        assert_eq!(desc.children[0].0, Alignment::Center);
+        assert_eq!(desc.children[0].1.key, Some(5));
+    }
+
+    #[test]
+    fn test_grid_keyed_constructor() {
+        let children = vec![keyed(1, text("a")), keyed(2, text("b"))];
+        let ViewDescriptor::Grid(desc) = grid_keyed(2, Vec2::new(50.0, 50.0), children) else {
+            panic!("expected Grid")
+        };
+        assert_eq!(desc.columns, 2);
+        assert_eq!(desc.children.len(), 2);
+        assert_eq!(desc.children[0].key, Some(1));
+    }
+
+    // -- Menu helper tests --
+
+    #[test]
+    fn test_menu_group_constructor() {
+        let id = dummy_state_id();
+        let mg = menu_group("File", id, vec![menu_entry("Open"), menu_entry("Save")]);
+        assert_eq!(mg.label, "File");
+        assert_eq!(mg.open_id, id);
+        assert_eq!(mg.items.len(), 2);
+        assert_eq!(mg.items[0].label, "Open");
+        assert!(mg.items[0].on_click.is_none());
+        assert!(!mg.items[0].disabled);
+    }
+
+    #[test]
+    fn test_menu_entry_disabled() {
+        let me = menu_entry_disabled("Greyed");
+        assert!(me.disabled);
+        assert!(me.on_click.is_none());
+    }
+
+    #[test]
+    fn test_menu_entry_on_click() {
+        let me = menu_entry("Click").on_click(Callback(7));
+        assert!(me.on_click.is_some());
+        assert!(!me.disabled);
+    }
+
+    // -- ContextMenuEntry helper tests --
+
+    #[test]
+    fn test_context_entry_constructor() {
+        let ce = context_entry("Copy");
+        assert_eq!(ce.label, "Copy");
+        assert!(ce.on_click.is_none());
+        assert!(!ce.disabled);
+    }
+
+    #[test]
+    fn test_context_entry_disabled() {
+        let ce = context_entry_disabled("Paste");
+        assert!(ce.disabled);
+    }
+
+    #[test]
+    fn test_context_entry_on_click() {
+        let ce = context_entry("Cut").on_click(Callback(8));
+        assert!(ce.on_click.is_some());
+    }
+
+    // -- Misapplied modifier no-op tests (release only) --
+    // In debug builds, misapplied modifiers fire debug_assert! (intentional panic).
+    // In release builds, they silently no-op. Verify the descriptor is unchanged.
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn test_color_on_hstack_is_noop() {
+        let vd = hstack([text("a")]).color(Color::RED);
+        let ViewDescriptor::HStack(desc) = vd else {
+            panic!("expected HStack")
+        };
+        assert_eq!(desc.children.len(), 1);
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn test_fill_on_text_is_noop() {
+        let vd = text("hi").fill(Color::BLUE);
+        let ViewDescriptor::Text {
+            color, font_size, ..
+        } = vd
+        else {
+            panic!("expected Text")
+        };
+        assert!(color.is_none());
+        assert!(font_size.is_none());
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn test_spacing_on_text_is_noop() {
+        let vd = text("hi").spacing(10.0);
+        assert!(matches!(vd, ViewDescriptor::Text { .. }));
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn test_padding_all_on_button_is_noop() {
+        let vd = button("ok").padding_all(5.0);
+        let ViewDescriptor::Button {
+            fill_color,
+            on_click,
+            ..
+        } = vd
+        else {
+            panic!("expected Button")
+        };
+        assert!(fill_color.is_none());
+        assert!(on_click.is_none());
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn test_font_size_on_button_is_noop() {
+        let vd = button("ok").font_size(FontSize::Small);
+        assert!(matches!(vd, ViewDescriptor::Button { .. }));
+    }
 }

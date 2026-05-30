@@ -131,6 +131,27 @@ impl super::Application {
             )
         };
 
+        let positions: Vec<[f32; 3]> = if model.has_skinning {
+            model
+                .skinned_vertex_data
+                .iter()
+                .map(|v| v.position)
+                .collect()
+        } else {
+            model.vertex_data.iter().map(|v| v.position).collect()
+        };
+        let triangles = indices
+            .chunks_exact(3)
+            .map(|c| [c[0], c[1], c[2]])
+            .collect();
+        self.geometry_cache.insert(
+            mesh_handle,
+            crate::geometry_cache::MeshGeometryData {
+                positions,
+                triangles,
+            },
+        );
+
         info!(
             "Loaded mesh '{}' ({} vertices, {} indices, skinned={}) -> handle {}",
             path_ref.display(),
@@ -269,6 +290,18 @@ impl super::Application {
             self.renderer
                 .unwrap_vulkan()
                 .create_mesh_soa(&attributes, vertex_count, &indices);
+
+        let triangles = indices
+            .chunks_exact(3)
+            .map(|c| [c[0], c[1], c[2]])
+            .collect();
+        self.geometry_cache.insert(
+            mesh_handle,
+            crate::geometry_cache::MeshGeometryData {
+                positions: positions.clone(),
+                triangles,
+            },
+        );
 
         info!(
             "Loaded STL mesh '{}' ({} vertices, {} triangles) -> handle {}",
