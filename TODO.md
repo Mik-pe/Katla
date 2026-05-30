@@ -446,7 +446,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 - [x] Remove all thread-local `RefCell<Option<DrawCtx>>` bridges — Confirmed none remain; all panels use Environment injection.
 - [x] Remove `ViewDescriptor::Custom` escape hatch — removed entirely since all panels migrated to declarative trees. Also removed `CustomDrawFn` type alias, `scratch_data`/`set_scratch`/`get_scratch` infrastructure from `UiContext`, and `test_diff_same_custom_is_update` test.
-- [ ] **Remove immediate-mode builder widgets that have declarative equivalents** — Remove from `widgets/mod.rs` public API and update all callers. Keep only widgets with no declarative counterpart (e.g. `DockArea`). Remove one at a time:
+- [x] **Remove immediate-mode builder widgets that have declarative equivalents** — Remove from `widgets/mod.rs` public API and update all callers. Keep only widgets with no declarative counterpart (e.g. `DockArea`). Remove one at a time:
   - [x] Remove `Button` — callers use `button_with_colors()` directly
   - [x] Remove `Slider` — callers use `ui.slider()` directly
   - [x] Remove `LabeledSlider` — callers use inline `draw_labeled_slider()` helper
@@ -457,7 +457,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
   - [x] Remove `ImageButton` — callers use `ui.image_button()` directly
   - [x] Remove `Panel` — callers use `panel()`
 - [x] Add `ViewDescriptor` construction tests — Added 19 tests for constructors and modifiers.
-- [ ] **Add declarative integration tests** — frame-level tests that build a descriptor tree, run `ViewTree::frame()`, assert bounds, actions, and state mutations:
+- [x] **Add declarative integration tests** — frame-level tests that build a descriptor tree, run `ViewTree::frame()`, assert bounds, actions, and state mutations:
   - [x] Add tests for `diff_descriptor` — 8 integration tests for keyed/unkeyed insert/remove/reorder.
   - [x] Add tests for `ViewTree::sync_tree` — verify tree sync preserves state across descriptor changes, handles mount/unmount
   - [x] Add tests for `TransitionContainer` — verify enter/exit transitions fire correctly, animation state management
@@ -585,9 +585,9 @@ hstack(children).spacing(2.0).padding_all(10.0)
   - [x] Add `ResourceAccess` declaration to the `System` trait — similar to `ComponentAccess`, systems declare which resources they read/write
   - [x] Extend scheduler `conflicts()` to check resource access — added resource_conflicts() with 7 tests
   - [ ] Validate with existing systems — update all system implementations to declare their resource access, verify no false conflicts
-  - [ ] Add tests for resource-conflicting system scheduling — verify the scheduler correctly detects and prevents concurrent access to shared resources
-- [ ] **Fix lifetime transmute in par_query** — `par_query.rs` uses `std::mem::transmute` to erase lifetimes to `'static` on `&ComponentStorage` and `&[(EntityId, T)]`. While bounded by the return type, this is fragile. Replace with a safer pattern (e.g. `UnsafeWorldCell`-style wrapper with explicit lifetime scoping, similar to Bevy's `WorldBorrow`).
-- [ ] **Add `Send + Sync` bounds to `Component` trait** — `Component: Any {}` carries no thread-safety bounds. This means `ComponentStorage<T>` cannot be `Send`, limiting future parallel strategies. Add `Component: Any + Send + Sync` and update all downstream types.
+  - [x] Add tests for resource-conflicting system scheduling — Added 6 integration tests verifying scheduler grouping with resource-only conflicts, mixed component+resource conflicts, and sequential ready-system ordering.
+- [x] **Fix lifetime transmute in par_query** — Replaced `std::mem::transmute` lifetime erasure with `UnsafeStorageCell` wrapper (same pattern as `UnsafeWorldCell`), concentrating unsafe access in a well-documented cell type.
+- [x] **Add `Send + Sync` bounds to `Component` trait** — Added `Component: Any + Send + Sync {}` to ensure component storages are thread-safe for parallel strategies.
 - [x] **Track resource access in parallel scheduler** — Extended SystemScheduler with ResourceAccess conflict detection alongside ComponentAccess.
   - [x] Add `ResourceAccess` struct mirroring `ComponentAccess` — track resource type IDs with read/write flags
   - [ ] Add `fn resource_access() -> ResourceAccess` to the `System` trait — default to empty, systems override
