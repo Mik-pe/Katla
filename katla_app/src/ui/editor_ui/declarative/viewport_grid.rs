@@ -91,7 +91,10 @@ impl Build for ViewportGridView {
             }
         }
 
-        grid(cols, cell_size, grid_children).grid_spacing(0.0)
+        grid(cols, cell_size, grid_children)
+            .grid_spacing(0.0)
+            .flex_width(draw_ctx.bounds.width())
+            .flex_height(draw_ctx.bounds.height())
     }
 }
 

@@ -188,6 +188,7 @@ fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> S
                 ..Style::default()
             };
             apply_alignment_to_style(&mut style, stack.alignment);
+            apply_flex_props(&mut style, &stack.flex);
             style
         }
 
@@ -202,6 +203,7 @@ fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> S
                 ..Style::default()
             };
             apply_alignment_to_style(&mut style, stack.alignment);
+            apply_flex_props(&mut style, &stack.flex);
             style
         }
 
@@ -210,18 +212,26 @@ fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> S
             ..Style::default()
         },
 
-        ViewDescriptor::ScrollView(_) => Style {
-            overflow: taffy::Point {
-                x: taffy::Overflow::Scroll,
-                y: taffy::Overflow::Scroll,
-            },
-            ..Style::default()
-        },
+        ViewDescriptor::ScrollView(desc) => {
+            let mut style = Style {
+                overflow: taffy::Point {
+                    x: taffy::Overflow::Scroll,
+                    y: taffy::Overflow::Scroll,
+                },
+                ..Style::default()
+            };
+            apply_flex_props(&mut style, &desc.flex);
+            style
+        }
 
-        ViewDescriptor::Panel(_) => Style {
-            flex_direction: FlexDirection::Column,
-            ..Style::default()
-        },
+        ViewDescriptor::Panel(desc) => {
+            let mut style = Style {
+                flex_direction: FlexDirection::Column,
+                ..Style::default()
+            };
+            apply_flex_props(&mut style, &desc.flex);
+            style
+        }
 
         ViewDescriptor::Overlay(_) => Style {
             position: taffy::Position::Absolute,
@@ -457,7 +467,7 @@ fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> S
             let col_width = desc.cell_size.x();
             let row_height = desc.cell_size.y();
             let rows = (desc.children.len().max(1) + desc.columns - 1) / desc.columns.max(1);
-            Style {
+            let mut style = Style {
                 size: Size {
                     width: Dimension::Length(
                         col_width * desc.columns as f32
@@ -474,7 +484,9 @@ fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> S
                     height: LengthPercentage::Length(desc.spacing),
                 },
                 ..Style::default()
-            }
+            };
+            apply_flex_props(&mut style, &desc.flex);
+            style
         }
     }
 }
@@ -613,6 +625,7 @@ mod tests {
             spacing: 10.0,
             padding: Padding::all(8.0),
             alignment: Alignment::Leading,
+            flex: FlexProps::default(),
         }));
 
         build_tree(&mut tree, descriptor);
@@ -650,6 +663,7 @@ mod tests {
             spacing: 4.0,
             padding: Padding::zero(),
             alignment: Alignment::Leading,
+            flex: FlexProps::default(),
         }));
 
         build_tree(&mut tree, descriptor);
@@ -699,6 +713,7 @@ mod tests {
             spacing: 0.0,
             padding: Padding::zero(),
             alignment: Alignment::Leading,
+            flex: FlexProps::default(),
         }));
 
         build_tree(&mut tree, descriptor);
@@ -742,6 +757,7 @@ mod tests {
             spacing: 0.0,
             padding: Padding::all(20.0),
             alignment: Alignment::Leading,
+            flex: FlexProps::default(),
         }));
 
         build_tree(&mut tree, descriptor);

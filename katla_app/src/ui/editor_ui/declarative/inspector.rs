@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use katla_ecs::EntityId;
+use katla_math::Rect2D;
 use katla_ui::FontSize;
 use katla_ui::declarative::{Build, BuildContext, StateId, ViewDescriptor};
 
@@ -10,6 +11,7 @@ use crate::ui::editor_ui::types::{EntityInfo, InspectorEditState};
 /// Environment data injected before each frame for the inspector panel.
 #[derive(Clone)]
 pub(crate) struct InspectorDrawCtx {
+    pub bounds: Rect2D,
     pub selected_entity: Option<EntityId>,
     pub entities: Vec<EntityInfo>,
     #[expect(dead_code)]
@@ -115,6 +117,9 @@ impl Build for InspectorView {
 
         let panel_content = scroll(content, scroll_id);
 
-        panel(header_text, panel_content).header_height(24.0)
+        panel(header_text, panel_content)
+            .header_height(24.0)
+            .flex_width(draw_ctx.bounds.width())
+            .flex_height(draw_ctx.bounds.height())
     }
 }

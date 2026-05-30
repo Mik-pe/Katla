@@ -1,4 +1,5 @@
 use katla_ecs::EntityId;
+use katla_math::Rect2D;
 use katla_ui::FontSize;
 use katla_ui::declarative::{Build, BuildContext, Padding, StateId, ViewDescriptor};
 
@@ -8,6 +9,7 @@ use crate::ui::editor_ui::types::{EntityInfo, HierarchyState, is_entity_visible_
 /// Environment data injected before each frame for the hierarchy panel.
 #[derive(Clone)]
 pub(crate) struct HierarchyDrawCtx {
+    pub bounds: Rect2D,
     pub entities: Vec<EntityInfo>,
     pub hierarchy_state: HierarchyState,
     pub theme: ColorScheme,
@@ -90,6 +92,9 @@ impl Build for HierarchyView {
             .spacing(4.0)
             .padding(Padding::all(4.0));
 
-        panel(header_text, content).header_height(24.0)
+        panel(header_text, content)
+            .header_height(24.0)
+            .flex_width(draw_ctx.bounds.width())
+            .flex_height(draw_ctx.bounds.height())
     }
 }

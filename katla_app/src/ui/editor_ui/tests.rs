@@ -147,6 +147,7 @@ fn test_hierarchy_entity_selection_works() {
     ui.input_mut().mouse_down[mouse_button::LEFT] = true;
 
     let hierarchy_ctx = HierarchyDrawCtx {
+        bounds: Rect2D::from_origin_size(Vec2::new(0.0, 36.0), Vec2::new(250.0, 500.0)),
         entities: entities.clone(),
         hierarchy_state: std::mem::take(&mut state),
         theme: theme.clone(),

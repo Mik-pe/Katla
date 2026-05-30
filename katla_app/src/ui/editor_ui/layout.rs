@@ -1,150 +1,72 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
+
 use katla_ecs::EntityId;
 use katla_math::{Rect2D, Vec2, Vec3};
 use katla_ui::{
-    FontSize, ForkAwesome, UiContext, mouse_button,
-    widgets::{DockArea, ResizeHandle},
+    UiContext, mouse_button,
+    widgets::{DockArea, DockZone},
 };
 
 use super::declarative::{
-    AssetBrowserAction, AssetBrowserDrawCtx, AssetRenderData, ConsoleDrawCtx, EditorRootView,
-    GizmoDrawCtx, GizmoModeChanged, HierarchyDrawCtx, InspectorDrawCtx, MixerDrawCtx,
-    ParticleInspectorDrawCtx, ParticleInspectorPanelSync, PreferencesDrawCtx, PreferencesPanelSync,
-    StatusBarData, ToolbarAction, ToolbarDrawCtx, ViewportGridDrawCtx, process_asset_actions,
+    AssetBrowserAction, AssetBrowserDrawCtx, AssetRenderData, ConsoleDrawCtx, GizmoDrawCtx,
+    GizmoModeChanged, HierarchyDrawCtx, InspectorDrawCtx, MixerDrawCtx, ParticleInspectorDrawCtx,
+    ParticleInspectorPanelSync, PreferencesDrawCtx, PreferencesPanelSync, StatusBarData,
+    ToolbarAction, ToolbarDrawCtx, ViewportGridDrawCtx, process_asset_actions,
     process_declarative_actions,
 };
 use super::{
     EditorAction, EditorRenderParams, EditorUI,
     asset_browser::AssetType,
     co_creator,
-    types::{self as editor_types, BottomPanelTab, PreferencesAction},
+    types::{self as editor_types, EditorPanel, PreferencesAction},
 };
 
-const BOTTOM_TAB_HEIGHT: f32 = 28.0;
-
-/// Draw the bottom panel tab bar and return the content bounds below it.
-fn draw_bottom_tab_bar(
-    ui: &mut UiContext,
-    bottom_bounds: Rect2D,
-    active_tab: BottomPanelTab,
-    theme: &katla_ui::ColorScheme,
-    collapsed: bool,
-) -> (Rect2D, Option<BottomPanelTab>) {
-    let tab_bar_bounds = Rect2D::from_origin_size(
-        bottom_bounds.min,
-        Vec2::new(bottom_bounds.width(), BOTTOM_TAB_HEIGHT),
-    );
-    ui.draw_rect(tab_bar_bounds, theme.panel_header);
-
-    // Bottom border on tab bar
-    ui.draw_line(
-        Vec2::new(tab_bar_bounds.min.x(), tab_bar_bounds.max.y()),
-        Vec2::new(tab_bar_bounds.max.x(), tab_bar_bounds.max.y()),
-        theme.border,
-        1.0,
-    );
-
-    let mut new_tab = None;
-    let padding = ui.style().panel_padding;
-    let spacing = ui.style().item_inner_spacing;
-    let font_size = ui.scaled_font_size(FontSize::Medium);
-    let tab_height = 24.0;
-
-    // Collapse toggle (left side)
-    let toggle_size = 20.0;
-    let toggle_bounds = Rect2D::from_origin_size(
-        Vec2::new(
-            bottom_bounds.min.x() + spacing,
-            bottom_bounds.min.y() + (BOTTOM_TAB_HEIGHT - toggle_size) * 0.5,
-        ),
-        Vec2::new(toggle_size, toggle_size),
-    );
-    let toggle_icon = if collapsed {
-        ForkAwesome::CHEVRON_UP
-    } else {
-        ForkAwesome::CHEVRON_DOWN
-    };
-    if ui
-        .image_button("toggle_collapse", toggle_icon, toggle_bounds, true)
-        .clicked
-    {
-        // Collapse/expand handled by caller via AssetBrowserState
-    }
-
-    // Tab buttons after the toggle
-    let mut x = toggle_bounds.max.x() + spacing;
-    for tab in BottomPanelTab::all() {
-        let label = tab.label();
-        let label_size = ui.measure_text(label, font_size);
-        let tab_w = label_size.x() + padding * 3.0;
-        let tab_bounds = Rect2D::from_origin_size(
-            Vec2::new(
-                x,
-                bottom_bounds.min.y() + (BOTTOM_TAB_HEIGHT - tab_height) * 0.5,
-            ),
-            Vec2::new(tab_w, tab_height),
-        );
-
-        let is_active = *tab == active_tab;
-        if is_active {
-            ui.draw_rect(tab_bounds, theme.panel_bg);
-            // Active tab highlight bar at bottom
-            ui.draw_rect(
-                Rect2D::from_origin_size(
-                    Vec2::new(tab_bounds.min.x(), tab_bounds.max.y() - 2.0),
-                    Vec2::new(tab_bounds.width(), 2.0),
-                ),
-                theme.highlight,
-            );
-        }
-
-        let text_color = if is_active {
-            theme.text_primary
-        } else {
-            theme.text_secondary
-        };
-
-        ui.draw_text(
-            label,
-            Vec2::new(
-                tab_bounds.min.x() + padding,
-                tab_bounds.min.y() + (tab_height - label_size.y()) * 0.5,
-            ),
-            text_color,
-            font_size,
-        );
-
-        if ui.is_hovered(tab_bounds) && ui.mouse_clicked(mouse_button::LEFT) {
-            new_tab = Some(*tab);
-        }
-
-        x += tab_w + spacing;
-    }
-
-    // Content area below the tab bar
-    let content_bounds = if collapsed {
-        Rect2D::from_origin_size(bottom_bounds.min, Vec2::new(bottom_bounds.width(), 0.0))
-    } else {
-        Rect2D::from_origin_size(
-            Vec2::new(
-                bottom_bounds.min.x(),
-                bottom_bounds.min.y() + BOTTOM_TAB_HEIGHT,
-            ),
-            Vec2::new(
-                bottom_bounds.width(),
-                bottom_bounds.height() - BOTTOM_TAB_HEIGHT,
-            ),
-        )
-    };
-
-    (content_bounds, new_tab)
-}
+const TOOLBAR_HEIGHT: f32 = 36.0;
+const STATUS_BAR_HEIGHT: f32 = 22.0;
 
 impl EditorUI {
-    /// Build the editor UI.
     pub(super) fn build(&mut self, ui: &mut UiContext, params: &mut EditorRenderParams) {
         let screen_size = ui.screen_size();
+        let mouse_pos = ui.mouse_pos();
+        let toolbar_bottom = TOOLBAR_HEIGHT;
+        let status_top = screen_size.y() - STATUS_BAR_HEIGHT;
 
-        let status_bar_height = 22.0;
+        // Snapshot mutable state
+        let inspector_edit = std::mem::take(&mut self.inspector_edit);
+        let hierarchy_state = std::mem::take(&mut self.hierarchy_state);
+        let entities: Vec<editor_types::EntityInfo> = params.entities.to_vec();
+
+        // ── Phase 1: Compute dock layout bounds (no rendering) ──
+        let dock_bounds = Rect2D::from_origin_size(
+            Vec2::new(0.0, toolbar_bottom),
+            Vec2::new(screen_size.x(), status_top - toolbar_bottom),
+        );
+        let panel_bounds = DockArea::compute_leaf_bounds(&mut self.dock_layout, ui, dock_bounds);
+
+        // Track viewport bounds from dock
+        let mut dock_viewport_bounds = None;
+        for &(panel_id, content_bounds) in &panel_bounds {
+            if EditorPanel::from_id(panel_id) == Some(EditorPanel::Viewport) {
+                dock_viewport_bounds = Some(content_bounds);
+                self.last_viewport_size = (
+                    content_bounds.width().max(1.0) as u32,
+                    content_bounds.height().max(1.0) as u32,
+                );
+                self.last_viewport_bounds = content_bounds;
+
+                if content_bounds.contains(mouse_pos) {
+                    crate::input::update_active_viewport(
+                        &mut self.viewport_grid_state,
+                        mouse_pos,
+                        content_bounds.min,
+                        content_bounds.max,
+                    );
+                }
+            }
+        }
+
+        // ── Phase 2: Set ALL env contexts ──
         let selected_count = if self.asset_browser.selected_indices.is_empty() {
             if self.asset_browser.selected_index.is_some() {
                 1
@@ -154,24 +76,23 @@ impl EditorUI {
         } else {
             self.asset_browser.selected_indices.len()
         };
-        let total_assets = self.asset_browser.assets.len();
 
-        let status_data = StatusBarData {
-            height: status_bar_height,
+        // Status bar
+        self.view_tree.env_mut().set(StatusBarData {
+            height: STATUS_BAR_HEIGHT,
             fps: params.fps,
             frame_time_ms: params.frame_time_ms,
             frame_count: params.frame_count,
             entity_count: params.entities.len(),
             draw_call_count: self.last_draw_call_count,
             selected_count,
-            total_assets,
+            total_assets: self.asset_browser.assets.len(),
             is_playing: self.is_playing,
             theme: self.theme.clone(),
             save_confirmation_timer: self.save_confirmation_timer,
-        };
-        self.view_tree.env_mut().set(status_data);
+        });
 
-        let toolbar_height = 36.0;
+        // Toolbar
         self.view_tree.env_mut().set(ToolbarDrawCtx {
             show_grid: params.preferences.show_grid,
             show_stats: params.preferences.show_stats,
@@ -184,253 +105,112 @@ impl EditorUI {
             success: self.theme.success,
             warning: self.theme.warning,
         });
+
+        // Gizmo
         self.view_tree.env_mut().set(GizmoDrawCtx {
             gizmo_mode: self.gizmo_mode,
         });
 
-        self.view_tree.env_mut().set(ViewportGridDrawCtx {
-            bounds: self.last_viewport_bounds,
-            state: self.viewport_grid_state.clone(),
-            texture_ids: self.viewport_texture_ids,
-            theme: self.theme.clone(),
-            mouse_pos: ui.mouse_pos(),
-        });
-
-        let right_panel_x = screen_size.x() - self.right_panel_width;
-
-        // Compute bottom panel height early so side panels don't overlap it
-        let bottom_panel_height = if self.asset_browser.collapsed {
-            BOTTOM_TAB_HEIGHT
-        } else {
-            self.asset_browser.panel_height
-        };
-        let panel_top = toolbar_height;
-        let panel_bottom = screen_size.y() - status_bar_height - bottom_panel_height;
-        let panel_height = panel_bottom - panel_top;
-
-        let _left_panel_bounds_for_hierarchy = Rect2D::from_origin_size(
-            Vec2::new(0.0, toolbar_height),
-            Vec2::new(self.left_panel_width, panel_height),
-        );
-        self.view_tree.env_mut().set(HierarchyDrawCtx {
-            entities: params.entities.to_vec(),
-            hierarchy_state: std::mem::take(&mut self.hierarchy_state),
-            theme: self.theme.clone(),
-            search_filter: self.hierarchy_search_filter.clone(),
-        });
-
-        self.view_tree.env_mut().set(InspectorDrawCtx {
-            selected_entity: self.selected_entity,
-            entities: params.entities.to_vec(),
-            edit: std::mem::take(&mut self.inspector_edit),
-            theme: self.theme.clone(),
-            available_components: self.available_components.clone(),
-            add_component_open: self.add_component_open,
-            add_component_filter: self.add_component_filter.clone(),
-            focus_script_input: self.focus_script_input,
-            audio_listener_count: params
-                .entities
-                .iter()
-                .filter(|e| e.has_audio_listener)
-                .count(),
-        });
-
-        let resize_handle_width = 5.0;
-        let min_panel_width = 150.0;
-        let min_viewport_width = 200.0;
-        let min_asset_browser_height = 100.0;
-
-        let left_resize_bounds = Rect2D::from_origin_size(
-            Vec2::new(self.left_panel_width - resize_handle_width / 2.0, panel_top),
-            Vec2::new(resize_handle_width, panel_height),
-        );
-
-        let right_resize_bounds = Rect2D::from_origin_size(
-            Vec2::new(right_panel_x - resize_handle_width / 2.0, panel_top),
-            Vec2::new(resize_handle_width, panel_height),
-        );
-
-        let asset_resize_bounds = Rect2D::from_origin_size(
-            Vec2::new(0.0, panel_bottom - resize_handle_width / 2.0),
-            Vec2::new(screen_size.x(), resize_handle_width),
-        );
-
-        let max_left_width =
-            (screen_size.x() - self.right_panel_width - min_viewport_width).max(min_panel_width);
-        self.left_panel_width = ResizeHandle::horizontal(left_resize_bounds, self.left_panel_width)
-            .min_value(min_panel_width)
-            .max_value(max_left_width)
-            .show(ui);
-
-        let max_right_width =
-            (screen_size.x() - self.left_panel_width - min_viewport_width).max(min_panel_width);
-        self.right_panel_width =
-            ResizeHandle::horizontal(right_resize_bounds, self.right_panel_width)
-                .inverted()
-                .min_value(min_panel_width)
-                .max_value(max_right_width)
-                .show(ui);
-
-        if !self.asset_browser.collapsed {
-            let max_height =
-                (screen_size.y() - status_bar_height - toolbar_height - min_viewport_width)
-                    .max(min_asset_browser_height);
-            self.asset_browser.panel_height =
-                ResizeHandle::vertical(asset_resize_bounds, self.asset_browser.panel_height)
-                    .inverted()
-                    .min_value(min_asset_browser_height + BOTTOM_TAB_HEIGHT)
-                    .max_value(max_height)
-                    .show(ui);
-        }
-
-        let left_panel_bounds = Rect2D::from_origin_size(
-            Vec2::new(0.0, panel_top),
-            Vec2::new(self.left_panel_width, panel_height),
-        );
-        ui.register_panel(1, left_panel_bounds);
-
-        ui.draw_rect(
-            Rect2D::from_origin_size(
-                Vec2::new(self.left_panel_width, panel_top),
-                Vec2::new(1.0, panel_height),
-            ),
-            ui.style().separator,
-        );
-
-        let right_panel_bounds = Rect2D::from_origin_size(
-            Vec2::new(right_panel_x, panel_top),
-            Vec2::new(self.right_panel_width, panel_height),
-        );
-        ui.register_panel(2, right_panel_bounds);
-
-        ui.draw_rect(
-            Rect2D::from_origin_size(
-                Vec2::new(right_panel_x - 1.0, panel_top),
-                Vec2::new(1.0, panel_height),
-            ),
-            ui.style().separator,
-        );
-
-        let viewport_bounds = Rect2D::new(
-            Vec2::new(self.left_panel_width + 1.0, panel_top),
-            Vec2::new(right_panel_x - 1.0, panel_bottom),
-        );
-
-        self.last_viewport_size = (
-            viewport_bounds.width().max(1.0) as u32,
-            viewport_bounds.height().max(1.0) as u32,
-        );
-        self.last_viewport_bounds = viewport_bounds;
-        self.last_screen_size = screen_size;
-
-        ui.register_panel(3, viewport_bounds);
-
-        // Update active viewport based on mouse position within viewport bounds.
-        // This replaces the old two-phase scratch read-back where the Custom draw
-        // function computed hovered_slot and layout.rs read it back after the frame.
-        let mouse_pos = ui.mouse_pos();
-        if viewport_bounds.contains(mouse_pos) {
-            crate::input::update_active_viewport(
-                &mut self.viewport_grid_state,
+        // Viewport grid (uses bounds from dock)
+        if let Some(vp_bounds) = dock_viewport_bounds {
+            self.view_tree.env_mut().set(ViewportGridDrawCtx {
+                bounds: vp_bounds,
+                state: self.viewport_grid_state.clone(),
+                texture_ids: self.viewport_texture_ids,
+                theme: self.theme.clone(),
                 mouse_pos,
-                viewport_bounds.min,
-                viewport_bounds.max,
-            );
+            });
         }
 
-        let bottom_bounds = Rect2D::from_origin_size(
-            Vec2::new(0.0, panel_bottom),
-            Vec2::new(screen_size.x(), bottom_panel_height),
-        );
-        ui.register_panel(4, bottom_bounds);
-
-        // Draw tab bar and get content bounds for the active tab
-        let (bottom_content_bounds, clicked_tab) = draw_bottom_tab_bar(
-            ui,
-            bottom_bounds,
-            self.bottom_panel_tab,
-            &self.theme,
-            self.asset_browser.collapsed,
-        );
-
-        if let Some(tab) = clicked_tab {
-            self.bottom_panel_tab = tab;
-        }
-
-        // Handle collapse toggle from tab bar
-        let toggle_bounds_x = bottom_bounds.min.x() + ui.style().item_inner_spacing;
-        let toggle_bounds_y = bottom_bounds.min.y() + (BOTTOM_TAB_HEIGHT - 20.0) * 0.5;
-        let toggle_bounds = Rect2D::from_origin_size(
-            Vec2::new(toggle_bounds_x, toggle_bounds_y),
-            Vec2::new(20.0, 20.0),
-        );
-        if ui.is_hovered(toggle_bounds) && ui.mouse_clicked(katla_ui::mouse_button::LEFT) {
-            self.asset_browser.collapsed = !self.asset_browser.collapsed;
-        }
-
-        // Only set context for the active bottom tab
-        match self.bottom_panel_tab {
-            BottomPanelTab::AssetBrowser => {
-                let ab = &self.asset_browser;
-                let context_menu_is_asset = ab.context_menu_asset.is_some();
-                let assets: Vec<AssetRenderData> = ab
-                    .assets
-                    .iter()
-                    .map(|a| AssetRenderData {
-                        name: a.name.clone(),
-                        path: a.path.clone(),
-                        asset_type: a.asset_type,
-                        thumbnail_state: a.thumbnail_state.clone(),
-                    })
-                    .collect();
-
-                self.view_tree.env_mut().set(AssetBrowserDrawCtx {
-                    bounds: bottom_content_bounds,
-                    theme: self.theme.clone(),
-                    assets,
-                    selected_index: ab.selected_index,
-                    path_segments: ab.path_segments(),
-                    can_go_back: ab.can_go_back(),
-                    can_go_forward: ab.can_go_forward(),
-                    search_filter: ab.search_filter.clone(),
-                    context_menu_open: ab.context_menu_open,
-                    context_menu_is_asset,
-                    confirm_dialog_open: ab.confirm_dialog_open,
-                    confirm_dialog_message: ab.confirm_dialog_message.clone(),
-                    collapsed: ab.collapsed,
-                });
-            }
-            BottomPanelTab::Console => {
-                self.view_tree.env_mut().set(ConsoleDrawCtx {
-                    theme: self.theme.clone(),
-                    filter_levels: self.console_state.filter_levels,
-                    search_filter: self.console_state.search_filter.clone(),
-                    log_buffer: self.log_buffer.clone(),
-                });
-            }
-            BottomPanelTab::Mixer => {
-                self.view_tree.env_mut().set(MixerDrawCtx {
-                    levels: params.audio_levels,
-                    active_voices: params.audio_active_voices,
-                    peak_voices: params.audio_peak_voices,
-                    preferences: params.preferences.clone(),
-                    theme: self.theme.clone(),
-                });
+        // Set docked panel envs using computed bounds
+        for &(panel_id, content_bounds) in &panel_bounds {
+            match EditorPanel::from_id(panel_id) {
+                Some(EditorPanel::Hierarchy) => {
+                    self.view_tree.env_mut().set(HierarchyDrawCtx {
+                        bounds: content_bounds,
+                        entities: entities.clone(),
+                        hierarchy_state: hierarchy_state.clone(),
+                        theme: self.theme.clone(),
+                        search_filter: self.hierarchy_search_filter.clone(),
+                    });
+                }
+                Some(EditorPanel::Inspector) => {
+                    self.view_tree.env_mut().set(InspectorDrawCtx {
+                        bounds: content_bounds,
+                        selected_entity: self.selected_entity,
+                        entities: entities.clone(),
+                        edit: inspector_edit.clone(),
+                        theme: self.theme.clone(),
+                        available_components: self.available_components.clone(),
+                        add_component_open: self.add_component_open,
+                        add_component_filter: self.add_component_filter.clone(),
+                        focus_script_input: self.focus_script_input,
+                        audio_listener_count: params
+                            .entities
+                            .iter()
+                            .filter(|e| e.has_audio_listener)
+                            .count(),
+                    });
+                }
+                Some(EditorPanel::AssetBrowser) => {
+                    let ab = &self.asset_browser;
+                    self.view_tree.env_mut().set(AssetBrowserDrawCtx {
+                        bounds: content_bounds,
+                        theme: self.theme.clone(),
+                        assets: ab
+                            .assets
+                            .iter()
+                            .map(|a| AssetRenderData {
+                                name: a.name.clone(),
+                                path: a.path.clone(),
+                                asset_type: a.asset_type,
+                                thumbnail_state: a.thumbnail_state.clone(),
+                            })
+                            .collect(),
+                        selected_index: ab.selected_index,
+                        path_segments: ab.path_segments(),
+                        can_go_back: ab.can_go_back(),
+                        can_go_forward: ab.can_go_forward(),
+                        search_filter: ab.search_filter.clone(),
+                        context_menu_open: ab.context_menu_open,
+                        context_menu_is_asset: ab.context_menu_asset.is_some(),
+                        confirm_dialog_open: ab.confirm_dialog_open,
+                        confirm_dialog_message: ab.confirm_dialog_message.clone(),
+                        collapsed: false,
+                    });
+                }
+                Some(EditorPanel::Console) => {
+                    self.view_tree.env_mut().set(ConsoleDrawCtx {
+                        bounds: content_bounds,
+                        theme: self.theme.clone(),
+                        filter_levels: self.console_state.filter_levels,
+                        search_filter: self.console_state.search_filter.clone(),
+                        log_buffer: self.log_buffer.clone(),
+                    });
+                }
+                Some(EditorPanel::Mixer) => {
+                    self.view_tree.env_mut().set(MixerDrawCtx {
+                        bounds: content_bounds,
+                        levels: params.audio_levels,
+                        active_voices: params.audio_active_voices,
+                        peak_voices: params.audio_peak_voices,
+                        preferences: params.preferences.clone(),
+                        theme: self.theme.clone(),
+                    });
+                }
+                _ => {}
             }
         }
 
-        // Set contexts for panels that need them before the view tree frame
-        let prefs_is_open = self.preferences_panel_state.panel.is_visible();
-        let prefs_llm_config = self.preferences_panel_state.llm_config.clone();
-        let prefs_theme_key = self.theme_key().to_string();
-
+        // Floating panel contexts
+        let theme_key = self.theme_key().to_string();
         self.view_tree.env_mut().set(PreferencesDrawCtx {
-            is_open: prefs_is_open,
+            is_open: self.preferences_panel_state.panel.is_visible(),
             preferences: params.preferences.clone(),
             editor_settings: self.editor_settings.clone(),
             theme: self.theme.clone(),
-            theme_key: prefs_theme_key,
-            llm_config: prefs_llm_config,
+            theme_key,
+            llm_config: params.llm_config.clone(),
         });
 
         self.view_tree.env_mut().set(ParticleInspectorDrawCtx {
@@ -461,75 +241,38 @@ impl EditorUI {
                 });
         }
 
-        let input_consumed = self.view_tree.frame(ui, &EditorRootView, screen_size);
+        // ── Phase 3: Run the FULL view tree (all panels) ──
+        let input_consumed =
+            self.view_tree
+                .frame(ui, &super::declarative::EditorOverlayView, screen_size);
         ui.set_declarative_input_consumed(input_consumed);
-        for action in self.view_tree.actions_mut().drain::<EditorAction>() {
-            self.pending_actions.push(action);
+
+        // ── Phase 4: Render dock chrome on top (tabs, splitters, drag overlay) ──
+        let response = DockArea::new(&mut self.dock_layout, &mut self.dock_drag)
+            .bounds(dock_bounds)
+            .panel_labels(&|id| EditorPanel::from_id(id).map(|p| p.name()).unwrap_or("?"))
+            .show_chrome(ui);
+
+        // ── Process dock interactions ──
+        if let Some(closed_panel) = response.closed_panel {
+            self.dock_layout.root.remove_panel(closed_panel);
         }
 
-        // Process asset browser declarative actions and post-frame handling
-        let entities = params.entities;
-        let loader = &mut *params.loader;
-        let thumbnail_texture_handles = params.thumbnail_texture_handles;
-
-        if self.bottom_panel_tab == BottomPanelTab::AssetBrowser {
-            // Auto-rescan
-            if self.asset_browser.needs_rescan() {
-                self.asset_browser.scan_directory(thumbnail_texture_handles);
+        if let Some((panel_id, zone, target_id)) = response.dropped {
+            if self.dock_drag.torn_off {
+                self.dock_layout.root.remove_panel(panel_id);
             }
-
-            // Request thumbnails for visible assets
-            {
-                let scroll_offset = self.asset_browser.scroll_state.scroll_offset;
-                let content_height = bottom_content_bounds.height();
-                let item_size = 64.0;
-                let row_height = item_size + 24.0;
-                let col_count = self.asset_browser.last_col_count.max(1);
-
-                let mut thumbs_to_request: Vec<(usize, std::path::PathBuf)> = Vec::new();
-                for (i, asset) in self.asset_browser.assets.iter().enumerate() {
-                    if asset.asset_type != AssetType::Image {
-                        continue;
-                    }
-                    let row = i / col_count;
-                    let item_y = row as f32 * row_height - scroll_offset;
-                    if item_y + row_height < 0.0 || item_y > content_height {
-                        continue;
-                    }
-                    if matches!(
-                        asset.thumbnail_state,
-                        super::asset_browser::ThumbnailState::Pending
-                    ) && !loader.is_loading(&asset.path)
-                    {
-                        thumbs_to_request.push((i, asset.path.clone()));
-                    }
+            match zone {
+                DockZone::Center => {
+                    self.dock_layout.root.add_tab_to_leaf(target_id, panel_id);
                 }
-                for (idx, path) in thumbs_to_request.into_iter().take(4) {
-                    loader.request_thumbnail(path, item_size as u32);
-                    self.asset_browser.assets[idx].thumbnail_state =
-                        super::asset_browser::ThumbnailState::Loading;
+                _ => {
+                    self.dock_layout.root.split_leaf(target_id, panel_id, zone);
                 }
             }
-
-            // Process declarative actions
-            let ab_actions: Vec<AssetBrowserAction> = self.view_tree.actions_mut().drain();
-            let asset_actions = process_declarative_actions(
-                &mut self.asset_browser,
-                thumbnail_texture_handles,
-                viewport_bounds,
-                ab_actions,
-            );
-            self.pending_actions.extend(asset_actions);
-
-            // Process remaining pending actions from drag/drop etc.
-            let remaining = process_asset_actions(
-                &mut self.asset_browser,
-                thumbnail_texture_handles,
-                viewport_bounds,
-            );
-            self.pending_actions.extend(remaining);
         }
 
+        // ── Process declarative actions ──
         for action in self.view_tree.actions_mut().drain::<ToolbarAction>() {
             self.pending_actions.push(match action {
                 ToolbarAction::NewScene => EditorAction::NewScene,
@@ -539,18 +282,16 @@ impl EditorUI {
                 ToolbarAction::Undo => EditorAction::Undo,
                 ToolbarAction::Redo => EditorAction::Redo,
                 ToolbarAction::OpenPreferences => {
-                    EditorAction::OpenPanel(crate::ui::editor_ui::Panel::Preferences)
+                    EditorAction::OpenPanel(super::Panel::Preferences)
                 }
                 ToolbarAction::ToggleGrid => EditorAction::ToggleGrid,
                 ToolbarAction::ToggleStats => EditorAction::ToggleStats,
                 ToolbarAction::TogglePhysicsDebug => EditorAction::TogglePhysicsDebug,
                 ToolbarAction::ToggleReverbDebug => EditorAction::ToggleReverbDebug,
                 ToolbarAction::OpenParticleInspector => {
-                    EditorAction::OpenPanel(crate::ui::editor_ui::Panel::ParticleInspector)
+                    EditorAction::OpenPanel(super::Panel::ParticleInspector)
                 }
-                ToolbarAction::OpenCoCreator => {
-                    EditorAction::OpenPanel(crate::ui::editor_ui::Panel::CoCreator)
-                }
+                ToolbarAction::OpenCoCreator => EditorAction::OpenPanel(super::Panel::CoCreator),
                 ToolbarAction::SpawnModel(model) => {
                     EditorAction::SpawnModel(model, Vec3::new(0.0, 0.0, 0.0))
                 }
@@ -564,10 +305,6 @@ impl EditorUI {
             self.pending_actions
                 .push(EditorAction::SetGizmoMode(action.0));
         }
-
-        // TODO: Implement InspectorSync action emission to sync state back from declarative panel
-
-        // TODO: Implement HierarchySync action emission to sync state back from declarative panel
 
         for sync in self
             .view_tree
@@ -590,7 +327,7 @@ impl EditorUI {
         for action in self
             .view_tree
             .actions_mut()
-            .drain::<crate::ui::ParticleInspectorAction>()
+            .drain::<super::ParticleInspectorAction>()
         {
             self.apply_particle_inspector_action(action);
         }
@@ -617,11 +354,10 @@ impl EditorUI {
             .actions_mut()
             .drain::<super::declarative::CoCreatorSubmitAction>()
         {
-            let text = action.text;
-            if !text.trim().is_empty() {
-                self.co_creator.submit_message(&text);
+            if !action.text.trim().is_empty() {
+                self.co_creator.submit_message(&action.text);
                 self.pending_actions
-                    .push(EditorAction::CoCreatorRequest(text));
+                    .push(EditorAction::CoCreatorRequest(action.text));
             }
         }
         for _ in self
@@ -649,148 +385,78 @@ impl EditorUI {
             self.apply_preferences_action(action);
         }
 
-        // TODO: Implement ConsoleSync action emission to sync state back from declarative panel
-
-        self.preferences_panel_state.llm_config = params.llm_config.clone();
-
-        use std::collections::HashMap;
-        let parent_map: HashMap<EntityId, Option<EntityId>> =
-            entities.iter().map(|e| (e.id, e.parent_id)).collect();
-
-        let visible_entities: Vec<EntityId> = entities
-            .iter()
-            .filter(|e| {
-                editor_types::is_entity_visible_fast(
-                    e,
-                    &parent_map,
-                    &self.hierarchy_state.expanded_entities,
-                )
-            })
-            .map(|e| e.id)
-            .collect();
-
-        if ui.key_pressed(katla_ui::input::KeyCode::Delete)
-            && let Some(entity_id) = self.selected_entity
-            && entities.iter().any(|e| e.id == entity_id)
-        {
-            self.pending_actions
-                .push(EditorAction::DeleteEntity(entity_id));
-            self.selected_entity = None;
+        // ── Process asset browser ──
+        if self.asset_browser.needs_rescan() {
+            self.asset_browser
+                .scan_directory(params.thumbnail_texture_handles);
         }
+        self.request_visible_thumbnails(params);
 
-        if ui.key_pressed(katla_ui::input::KeyCode::ArrowUp) {
-            if let Some(current_id) = self.selected_entity {
-                if let Some(pos) = visible_entities.iter().position(|id| *id == current_id)
-                    && pos > 0
-                {
-                    self.selected_entity = Some(visible_entities[pos - 1]);
-                }
-            } else if let Some(&last) = visible_entities.last() {
-                self.selected_entity = Some(last);
-            }
-        }
-
-        if ui.key_pressed(katla_ui::input::KeyCode::ArrowDown) {
-            if let Some(current_id) = self.selected_entity {
-                if let Some(pos) = visible_entities.iter().position(|id| *id == current_id)
-                    && pos < visible_entities.len() - 1
-                {
-                    self.selected_entity = Some(visible_entities[pos + 1]);
-                }
-            } else if !visible_entities.is_empty() {
-                self.selected_entity = Some(visible_entities[0]);
-            }
-        }
-
-        if ui.key_pressed(katla_ui::input::KeyCode::ArrowRight)
-            && let Some(entity_id) = self.selected_entity
-            && !self.hierarchy_state.expanded_entities.contains(&entity_id)
-        {
-            self.hierarchy_state.expanded_entities.insert(entity_id);
-        }
-
-        if ui.key_pressed(katla_ui::input::KeyCode::ArrowLeft)
-            && let Some(entity_id) = self.selected_entity
-        {
-            if self.hierarchy_state.expanded_entities.contains(&entity_id) {
-                self.hierarchy_state.expanded_entities.remove(&entity_id);
-            } else if let Some(entity) = entities.iter().find(|e| e.id == entity_id)
-                && let Some(parent_id) = entity.parent_id
-            {
-                self.selected_entity = Some(parent_id);
-            }
-        }
-
-        if ui.key_pressed(katla_ui::input::KeyCode::Escape) {
-            self.selected_entity = None;
-        }
-
-        ui.draw_rect(
-            Rect2D::from_origin_size(
-                Vec2::new(0.0, panel_bottom),
-                Vec2::new(screen_size.x(), 1.0),
-            ),
-            ui.style().separator,
+        let ab_actions: Vec<AssetBrowserAction> = self.view_tree.actions_mut().drain();
+        let viewport_bounds = self.last_viewport_bounds;
+        let asset_actions = process_declarative_actions(
+            &mut self.asset_browser,
+            params.thumbnail_texture_handles,
+            viewport_bounds,
+            ab_actions,
         );
+        self.pending_actions.extend(asset_actions);
+        let remaining = process_asset_actions(
+            &mut self.asset_browser,
+            params.thumbnail_texture_handles,
+            viewport_bounds,
+        );
+        self.pending_actions.extend(remaining);
 
-        if let Some(panel_id) = ui.focused_panel() {
-            self.focused_panel = match panel_id {
-                1 => super::FocusedPanel::Hierarchy,
-                2 => super::FocusedPanel::Inspector,
-                3 => super::FocusedPanel::Viewport,
-                4 => super::FocusedPanel::AssetBrowser,
-                _ => self.focused_panel,
-            };
+        // ── Update focused panel ──
+        for &(panel_id, bounds) in &response.visible_panels {
+            if bounds.contains(mouse_pos) && ui.mouse_clicked(mouse_button::LEFT) {
+                self.focused_panel = match EditorPanel::from_id(panel_id) {
+                    Some(EditorPanel::Viewport) => super::FocusedPanel::Viewport,
+                    Some(EditorPanel::Hierarchy) => super::FocusedPanel::Hierarchy,
+                    Some(EditorPanel::Inspector) => super::FocusedPanel::Inspector,
+                    Some(EditorPanel::AssetBrowser) => super::FocusedPanel::AssetBrowser,
+                    _ => self.focused_panel,
+                };
+            }
         }
 
-        // Dockable layout skeleton — renders alongside the hardcoded layout for
-        // visual verification. Toggle via `use_dock_layout` on EditorUI.
-        if self.use_dock_layout {
-            let dock_bounds = Rect2D::from_origin_size(
-                Vec2::new(0.0, toolbar_height),
-                Vec2::new(screen_size.x(), screen_size.y() - toolbar_height),
-            );
+        // ── Restore state ──
+        self.inspector_edit = inspector_edit;
+        self.hierarchy_state = hierarchy_state;
+        self.last_screen_size = screen_size;
+        self.preferences_panel_state.llm_config = params.llm_config.clone();
+    }
 
-            let theme = &self.theme;
-            let entities_ref = entities;
+    fn request_visible_thumbnails(&mut self, params: &mut EditorRenderParams) {
+        let scroll_offset = self.asset_browser.scroll_state.scroll_offset;
+        let content_height = self.last_viewport_bounds.height();
+        let item_size = 64.0;
+        let row_height = item_size + 24.0;
+        let col_count = self.asset_browser.last_col_count.max(1);
 
-            ui.add(
-                DockArea::new(&mut self.dock_layout, |ui, content_bounds, panel_id| {
-                    let Some(panel) = super::EditorPanel::from_id(panel_id) else {
-                        return;
-                    };
-
-                    let label = panel.name();
-                    let text_size = ui.measure_text(label, ui.scaled_font_size(FontSize::Medium));
-                    let text_pos =
-                        Vec2::new(content_bounds.min.x() + 8.0, content_bounds.min.y() + 8.0);
-                    ui.draw_text(
-                        label,
-                        text_pos,
-                        theme.text_primary,
-                        ui.scaled_font_size(FontSize::Medium),
-                    );
-
-                    let dims = format!(
-                        "{:.0} x {:.0}",
-                        content_bounds.width(),
-                        content_bounds.height()
-                    );
-                    let _dims_size = ui.measure_text(&dims, ui.scaled_font_size(FontSize::XSmall));
-                    let dims_pos = Vec2::new(
-                        content_bounds.min.x() + 8.0,
-                        text_pos.y() + text_size.y() + 4.0,
-                    );
-                    ui.draw_text(
-                        &dims,
-                        dims_pos,
-                        theme.text_secondary,
-                        ui.scaled_font_size(FontSize::XSmall),
-                    );
-                    let _ = entities_ref;
-                })
-                .bounds(dock_bounds),
-            );
+        let mut thumbs: Vec<(usize, PathBuf)> = Vec::new();
+        for (i, asset) in self.asset_browser.assets.iter().enumerate() {
+            if asset.asset_type != AssetType::Image {
+                continue;
+            }
+            let row = i / col_count;
+            let item_y = row as f32 * row_height - scroll_offset;
+            if item_y + row_height < 0.0 || item_y > content_height {
+                continue;
+            }
+            if matches!(
+                asset.thumbnail_state,
+                super::asset_browser::ThumbnailState::Pending
+            ) && !params.loader.is_loading(&asset.path)
+            {
+                thumbs.push((i, asset.path.clone()));
+            }
+        }
+        for (idx, path) in thumbs.into_iter().take(4) {
+            params.loader.request_thumbnail(path, item_size as u32);
+            self.asset_browser.assets[idx].thumbnail_state =
+                super::asset_browser::ThumbnailState::Loading;
         }
     }
 }

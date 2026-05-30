@@ -7,7 +7,7 @@ use crate::types::TextureId;
 
 use super::descriptor::{
     Alignment, Anchor, Callback, ChildDescriptor, ContextMenuDescriptor, ContextMenuEntry,
-    DraggablePanelDescriptor, MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor,
+    DraggablePanelDescriptor, FlexProps, MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor,
     OverlayDescriptor, Padding, PanelDescriptor, ScrollDescriptor, StackDescriptor,
     StatusBarDescriptor, TreeItem, TreeViewDescriptor, ViewDescriptor, ZStackDescriptor,
 };
@@ -229,6 +229,7 @@ pub fn grid(
         cell_size,
         spacing: 0.0,
         children: children.into_iter().map(ChildDescriptor::from).collect(),
+        flex: FlexProps::default(),
     }))
 }
 
@@ -242,6 +243,7 @@ pub fn hstack(children: impl IntoIterator<Item = ViewDescriptor>) -> ViewDescrip
         spacing: 0.0,
         padding: Padding::zero(),
         alignment: Alignment::Leading,
+        flex: FlexProps::default(),
     }))
 }
 
@@ -251,6 +253,7 @@ pub fn vstack(children: impl IntoIterator<Item = ViewDescriptor>) -> ViewDescrip
         spacing: 0.0,
         padding: Padding::zero(),
         alignment: Alignment::Leading,
+        flex: FlexProps::default(),
     }))
 }
 
@@ -269,6 +272,7 @@ pub fn panel(title: impl Into<String>, content: ViewDescriptor) -> ViewDescripto
         title: title.into(),
         content: Box::new(content),
         header_height: 24.0,
+        flex: FlexProps::default(),
     }))
 }
 
@@ -276,6 +280,7 @@ pub fn scroll(content: ViewDescriptor, scroll_state_id: StateId) -> ViewDescript
     ViewDescriptor::ScrollView(Box::new(ScrollDescriptor {
         content: Box::new(content),
         scroll_state_id,
+        flex: FlexProps::default(),
     }))
 }
 
@@ -367,6 +372,7 @@ pub fn hstack_keyed(children: Vec<ChildDescriptor>) -> ViewDescriptor {
         spacing: 0.0,
         padding: Padding::zero(),
         alignment: Alignment::Leading,
+        flex: FlexProps::default(),
     }))
 }
 
@@ -376,6 +382,7 @@ pub fn vstack_keyed(children: Vec<ChildDescriptor>) -> ViewDescriptor {
         spacing: 0.0,
         padding: Padding::zero(),
         alignment: Alignment::Leading,
+        flex: FlexProps::default(),
     }))
 }
 
@@ -396,6 +403,7 @@ pub fn grid_keyed(
         cell_size,
         spacing: 0.0,
         children,
+        flex: FlexProps::default(),
     }))
 }
 
@@ -750,6 +758,42 @@ impl ViewDescriptor {
             desc.spacing = spacing;
         } else {
             debug_assert!(false, "grid_spacing() modifier applied to non-Grid variant");
+        }
+        self
+    }
+
+    pub fn flex_width(mut self, w: f32) -> ViewDescriptor {
+        match &mut self {
+            ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => {
+                desc.flex.width = Some(w)
+            }
+            ViewDescriptor::Panel(desc) => desc.flex.width = Some(w),
+            ViewDescriptor::Grid(desc) => desc.flex.width = Some(w),
+            ViewDescriptor::ScrollView(desc) => desc.flex.width = Some(w),
+            _ => {
+                debug_assert!(
+                    false,
+                    "flex_width() modifier applied to unsupported variant"
+                );
+            }
+        }
+        self
+    }
+
+    pub fn flex_height(mut self, h: f32) -> ViewDescriptor {
+        match &mut self {
+            ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => {
+                desc.flex.height = Some(h)
+            }
+            ViewDescriptor::Panel(desc) => desc.flex.height = Some(h),
+            ViewDescriptor::Grid(desc) => desc.flex.height = Some(h),
+            ViewDescriptor::ScrollView(desc) => desc.flex.height = Some(h),
+            _ => {
+                debug_assert!(
+                    false,
+                    "flex_height() modifier applied to unsupported variant"
+                );
+            }
         }
         self
     }

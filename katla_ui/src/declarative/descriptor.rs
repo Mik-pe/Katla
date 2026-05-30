@@ -205,6 +205,7 @@ pub struct StackDescriptor {
     pub spacing: f32,
     pub padding: Padding,
     pub alignment: Alignment,
+    pub flex: FlexProps,
 }
 
 #[derive(Clone, Debug)]
@@ -217,6 +218,7 @@ pub struct ZStackDescriptor {
 pub struct ScrollDescriptor {
     pub content: Box<ViewDescriptor>,
     pub scroll_state_id: StateId,
+    pub flex: FlexProps,
 }
 
 #[derive(Clone, Debug)]
@@ -224,6 +226,7 @@ pub struct PanelDescriptor {
     pub title: String,
     pub content: Box<ViewDescriptor>,
     pub header_height: f32,
+    pub flex: FlexProps,
 }
 
 #[derive(Clone, Debug)]
@@ -367,6 +370,7 @@ pub struct GridDescriptor {
     pub cell_size: Vec2,
     pub spacing: f32,
     pub children: Vec<ChildDescriptor>,
+    pub flex: FlexProps,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -431,7 +435,7 @@ pub enum Alignment {
     BottomCenter,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FlexProps {
     pub width: Option<f32>,
     pub height: Option<f32>,
