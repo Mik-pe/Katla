@@ -494,8 +494,8 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - ~~**Eliminate `unwrap()` in `spawner.rs`**~~ — False positive. All unwraps are in test code.
 - [x] **Eliminate `unwrap()` in `editor/agent.rs`** — 5 production unwraps replaced with if-let/unwrap_or_else
 - [x] **Eliminate `unwrap()` in `builder.rs`** — 6 unwraps. Application builder should propagate initialization failures
-- [ ] **Eliminate `unwrap()` in remaining katla_app files** — ~12 unwraps across `editor/component_registry.rs` (5), `preferences.rs` (3), `gizmo.rs` (2), `asset_watcher.rs` (1), `layout.rs` (1), `viewport_grid.rs` (1), `application/mod.rs` (1), `editor/mcp.rs` (1), `animation/gltf_loader.rs` (1)
-- [ ] **Eliminate `expect()` in katla_app production code** — ~30 expects across `init.rs` (15), `builder.rs` (8), `gltf_loader.rs` (5), `modelcache.rs` (4), `background_loader.rs` (4), `gizmo.rs` (2), `game_state.rs` (2), `billboard_icons.rs` (1), `renderer.rs` (1). Convert to proper error propagation
+- [x] **Eliminate `unwrap()` in remaining katla_app files** — 6 production unwraps removed across mcp, layout, viewport_grid, mod, physics_system; rest were test code
+- [x] **Eliminate `expect()` in katla_app production code** — 19 expects replaced with error propagation in init.rs (15), gizmo.rs (2), billboard_icons.rs (1), renderer.rs (1); kept 6 genuine invariants in game_state.rs (2) and background_loader.rs (4)
 - [x] **Eliminate 10 `panic!()` calls** — Uncontrolled crashes. Replace with proper error handling and propagation
 - [x] **Fix clippy warnings blocking `-D warnings` builds** — Run `cargo clippy -p katla_app -- -D warnings` to identify and fix all warnings
 - [x] **Fix `ViewportManager` cross-crate doc link** — `resources/viewport_state.rs:86` references `ViewportManager` (in katla_gfx, not katla_app). The other doc links in `resource_loading.rs` have been fixed.
@@ -555,12 +555,12 @@ hstack(children).spacing(2.0).padding_all(10.0)
 ### katla_ecs - Critical Issues (Block Production)
 
 - [x] **Remove all 7 `#[allow(dead_code)]` violations** — Project rule: never suppress dead code warnings. `scene_tool/command.rs:127,399` (`type_name`, `position_offset` fields), `unsafe_world_cell.rs:42,55,67,79,94` (methods: `storage`, `storage_mut`, `entities`, `world`, `storage_cell`). Either use these fields/methods or remove them
-- [ ] **Eliminate `unwrap()` in `scheduler.rs`** — 21 unwraps. System scheduling should propagate errors for invalid system configurations
-- [ ] **Eliminate `unwrap()` in `world.rs`** — 18 unwraps. World operations (entity spawn, component access) should return `Result` for missing entities/components
+- ~~**Eliminate `unwrap()` in `scheduler.rs`**~~ — False positive. All 21 unwraps are in test code; production code already returns Result<_, SchedulerError>.
+- ~~**Eliminate `unwrap()` in `world.rs`**~~ — False positive. All 16 unwraps are in test code; production code already returns Option<T>.
 - ~~**Eliminate `unwrap()` in `resource.rs`**~~ — False positive. All 11 unwraps are in test code; production code already returns Option<T>.
 - ~~**Eliminate `unwrap()` in `storage.rs`**~~ — False positive. All 6 unwraps are in test code or doc examples; production code already uses Option/expect-with-invariant.
 - [x] **Eliminate `unwrap()` in remaining katla_ecs files** — 4 production unwraps removed across sparse_set.rs (1), executor.rs (2), harness.rs (1); 2 were test code
-- [ ] **Eliminate `expect()` in katla_ecs production code** — 9 expects across `world.rs` (6), `storage.rs` (3). Convert to proper error returns
+- [x] **Eliminate `expect()` in katla_ecs production code** — 4 expects removed in world.rs Guard refactor; 5 kept as genuine invariants (TypeId downcasts, scheduler cache)
 - ~~**Eliminate 8 `panic!()` calls**~~ — 6 of 8 are in test code (test assertions are fine as panics). The 2 production panics: scheduler cycle detection converted to `Result<_, SchedulerError>`, filter/query disjoint assertion kept as panic (invariant violation in generic iterator-returning API with no Result propagation path).
 - ~~**Implement `std::error::Error` for `SceneToolError`**~~ — Already implemented at `scene_tool/mod.rs:181`.
 
