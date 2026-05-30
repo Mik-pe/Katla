@@ -48,6 +48,11 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // PBR material grid (5x5) -- metallic (Y) x roughness (X)
@@ -90,6 +95,11 @@ pub fn build_default_scene() -> Scene {
                 perspective: None,
                 directional_light: None,
                 audio_emitter: None,
+                rigid_body: None,
+                collider_shape: None,
+                physics_material: None,
+                trigger_volume: None,
+                collision_filter: None,
             });
         }
     }
@@ -120,6 +130,11 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Cyan sphere
@@ -150,6 +165,11 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Magenta cylinder
@@ -180,6 +200,11 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Lime torus
@@ -211,6 +236,11 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Backdrop plane
@@ -240,6 +270,11 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Fox with animation
@@ -278,6 +313,11 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // DamagedHelmet
@@ -301,6 +341,11 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Fire particle emitter
@@ -340,6 +385,11 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Ethereal particle emitter
@@ -379,6 +429,11 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Sparkle particle emitter
@@ -418,6 +473,11 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Point lights
@@ -469,6 +529,11 @@ pub fn build_default_scene() -> Scene {
             perspective: None,
             directional_light: None,
             audio_emitter: None,
+            rigid_body: None,
+            collider_shape: None,
+            physics_material: None,
+            trigger_volume: None,
+            collision_filter: None,
         });
     }
 

@@ -706,8 +706,8 @@ impl System for ScriptSystem {
 
         self.apply_commands(all_commands, world);
 
-        self.process_events();
         self.dispatch_physics_events(world);
+        self.process_events();
         self.process_destroyed(world);
         self.apply_script_var_edits(world);
         self.populate_inspector_data(world);

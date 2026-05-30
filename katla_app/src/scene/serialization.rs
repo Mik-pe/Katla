@@ -255,6 +255,11 @@ impl SceneManager {
                 perspective,
                 directional_light,
                 audio_emitter,
+                rigid_body: None,
+                collider_shape: None,
+                physics_material: None,
+                trigger_volume: None,
+                collision_filter: None,
             });
         }
 
