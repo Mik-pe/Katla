@@ -2,7 +2,6 @@ use katla_math::{Color, Rect2D, Vec2};
 
 use crate::input::mouse_button;
 use crate::style::DEFAULTS;
-use crate::widgets::LabeledSlider;
 use crate::{Response, UiContext, Widget, z_index};
 
 pub fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [f32; 3] {
@@ -200,6 +199,73 @@ impl<'a> Widget for ColorPickerButton<'a> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn draw_labeled_slider(
+    ui: &mut UiContext,
+    id: &str,
+    value: &mut f32,
+    range_start: f32,
+    range_end: f32,
+    bounds: Rect2D,
+    label: &str,
+    label_width: f32,
+    show_value: bool,
+    precision: usize,
+) -> Response {
+    let font_size = ui.style.font_size;
+    let text_color = ui.style.text_color;
+    let label_text_size = ui.measure_text(label, font_size);
+
+    let label_x = bounds.min.x();
+    let label_y = bounds.center().y() - label_text_size.y() * 0.5;
+    ui.draw_text(label, Vec2::new(label_x, label_y), text_color, font_size);
+
+    let value_text_width = if show_value {
+        let value_text = format!("{:.1$}", *value, precision);
+        let size = ui.measure_text(&value_text, font_size);
+        size.x() + 8.0
+    } else {
+        0.0
+    };
+
+    let slider_x = bounds.min.x() + label_width;
+    let slider_width = (bounds.max.x() - value_text_width) - slider_x;
+    let slider_bounds = Rect2D::from_origin_size(
+        Vec2::new(slider_x, bounds.min.y()),
+        Vec2::new(slider_width.max(0.0), bounds.height()),
+    );
+
+    let response = ui.slider(
+        id,
+        value,
+        range_start,
+        range_end,
+        slider_bounds,
+        false,
+        precision,
+    );
+
+    if show_value {
+        let value_text = format!("{:.1$}", *value, precision);
+        let value_text_size = ui.measure_text(&value_text, font_size);
+        let value_x = bounds.max.x() - value_text_size.x();
+        let value_y = bounds.center().y() - value_text_size.y() * 0.5;
+        ui.draw_text(
+            &value_text,
+            Vec2::new(value_x, value_y),
+            text_color,
+            font_size,
+        );
+    }
+
+    let mut result = Response::new(bounds);
+    result.changed = response.changed;
+    result.hovered = response.hovered;
+    result.active = response.active;
+    result.clicked = response.clicked;
+    result
+}
+
 fn render_color_picker_popup(
     ui: &mut UiContext,
     color: &mut [f32; 3],
@@ -368,27 +434,12 @@ fn render_color_picker_popup(
             Vec2::new(slider_width, slider_height),
         );
 
-        let r_resp = ui.add_overlay(
-            LabeledSlider::new("R", &mut r_val, 0.0..=1.0)
-                .bounds(r_bounds)
-                .label_width(16.0)
-                .show_value(true)
-                .precision(2),
-        );
-        let g_resp = ui.add_overlay(
-            LabeledSlider::new("G", &mut g_val, 0.0..=1.0)
-                .bounds(g_bounds)
-                .label_width(16.0)
-                .show_value(true)
-                .precision(2),
-        );
-        let b_resp = ui.add_overlay(
-            LabeledSlider::new("B", &mut b_val, 0.0..=1.0)
-                .bounds(b_bounds)
-                .label_width(16.0)
-                .show_value(true)
-                .precision(2),
-        );
+        let r_resp =
+            draw_labeled_slider(ui, "R", &mut r_val, 0.0, 1.0, r_bounds, "R", 16.0, true, 2);
+        let g_resp =
+            draw_labeled_slider(ui, "G", &mut g_val, 0.0, 1.0, g_bounds, "G", 16.0, true, 2);
+        let b_resp =
+            draw_labeled_slider(ui, "B", &mut b_val, 0.0, 1.0, b_bounds, "B", 16.0, true, 2);
 
         if r_resp.changed || g_resp.changed || b_resp.changed {
             color[0] = r_val;

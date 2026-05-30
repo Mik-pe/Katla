@@ -576,7 +576,6 @@ fn test_modal_buttons_within_bounds() {
 #[test]
 fn test_modal_button_click_works() {
     use crate::input::mouse_button;
-    use crate::widgets::Button;
 
     let mut ctx = UiContext::new();
     let mut modal_open = true;
@@ -613,7 +612,7 @@ fn test_modal_button_click_works() {
                 Vec2::new(btn_width, btn_height),
             );
 
-            let response = ui.add(Button::new("No").bounds(no_btn_bounds));
+            let response = ui.button_with_colors("No", "No", no_btn_bounds, None, None, None);
             if response.clicked {
                 button_clicked = true;
             }
@@ -644,7 +643,7 @@ fn test_modal_button_click_works() {
                 Vec2::new(btn_width, btn_height),
             );
 
-            let response = ui.add(Button::new("No").bounds(no_btn_bounds));
+            let response = ui.button_with_colors("No", "No", no_btn_bounds, None, None, None);
             if response.clicked {
                 button_clicked = true;
             }
@@ -710,8 +709,6 @@ fn test_modal_button_hover_works() {
 /// This tests the actual Button widget's hovered response, not just raw input.
 #[test]
 fn test_modal_button_widget_hover_visual_works() {
-    use crate::widgets::Button;
-
     let mut ctx = UiContext::new();
     let mut modal_open = true;
     let modal_width = 320.0;
@@ -747,7 +744,7 @@ fn test_modal_button_widget_hover_visual_works() {
             );
 
             // Add the button and check its hover state
-            let response = ui.add(Button::new("No").bounds(no_btn_bounds));
+            let response = ui.button_with_colors("No", "No", no_btn_bounds, None, None, None);
             assert!(
                 response.hovered,
                 "Button widget should report hovered=true when mouse is over it inside modal"
@@ -956,7 +953,6 @@ fn test_layouts_dont_interfere() {
 #[test]
 fn test_click_behavior_press_inside_release_outside() {
     use crate::input::mouse_button;
-    use crate::widgets::Button;
 
     let mut ctx = UiContext::new();
     let button_bounds = Rect2D::from_origin_size(Vec2::new(100.0, 100.0), Vec2::new(80.0, 30.0));
@@ -967,11 +963,9 @@ fn test_click_behavior_press_inside_release_outside() {
     ctx.input.set_mouse_button(mouse_button::LEFT, true);
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
     {
-        let response = ctx.add(Button::new("Test").bounds(button_bounds));
+        let response = ctx.button_with_colors("Test", "Test", button_bounds, None, None, None);
         assert!(response.hovered, "Button should be hovered");
         assert!(!response.clicked, "Button should not be clicked on press");
-        // active_id is set during this frame's click processing, but the response
-        // captures the state before the click handler ran
     }
     ctx.end();
 
@@ -981,7 +975,7 @@ fn test_click_behavior_press_inside_release_outside() {
     ctx.input.set_mouse_button(mouse_button::LEFT, false);
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
     {
-        let response = ctx.add(Button::new("Test").bounds(button_bounds));
+        let response = ctx.button_with_colors("Test", "Test", button_bounds, None, None, None);
         if response.clicked {
             button_clicked = true;
         }
@@ -1003,7 +997,6 @@ fn test_click_behavior_press_inside_release_outside() {
 #[test]
 fn test_popup_blocks_click_underneath() {
     use crate::input::mouse_button;
-    use crate::widgets::Button;
 
     let mut ctx = UiContext::new();
     let mut popup_open = true;
@@ -1029,7 +1022,7 @@ fn test_popup_blocks_click_underneath() {
 
     // Try to click the button underneath the popup
     {
-        let response = ctx.add(Button::new("Test").bounds(button_bounds));
+        let response = ctx.button_with_colors("Test", "Test", button_bounds, None, None, None);
         if response.clicked {
             button_clicked = true;
         }
@@ -1053,7 +1046,7 @@ fn test_popup_blocks_click_underneath() {
     );
 
     {
-        let response = ctx.add(Button::new("Test").bounds(button_bounds));
+        let response = ctx.button_with_colors("Test", "Test", button_bounds, None, None, None);
         if response.clicked {
             button_clicked = true;
         }
@@ -1175,14 +1168,14 @@ fn test_scroll_blocked_by_floating_panel() {
 /// subsequent widgets don't overlap.
 #[test]
 fn test_add_advances_cursor() {
-    use crate::widgets::Button;
+    use crate::widgets::ImageButton;
 
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
     ctx.set_cursor(Vec2::new(10.0, 10.0));
 
     let cursor_before = ctx.cursor();
-    let _response = ctx.add(Button::new("Test").bounds(Rect2D::from_origin_size(
+    let _response = ctx.add(ImageButton::new('X').bounds(Rect2D::from_origin_size(
         Vec2::new(10.0, 10.0),
         Vec2::new(100.0, 30.0),
     )));
@@ -1190,7 +1183,7 @@ fn test_add_advances_cursor() {
 
     assert!(
         cursor_after.y() > cursor_before.y(),
-        "Cursor should advance vertically after ui.add(Button): before.y()={}, after.y()={}",
+        "Cursor should advance vertically after ui.add(ImageButton): before.y()={}, after.y()={}",
         cursor_before.y(),
         cursor_after.y()
     );
@@ -1201,20 +1194,20 @@ fn test_add_advances_cursor() {
 /// Test that multiple widgets added via ui.add() stack vertically.
 #[test]
 fn test_add_stacks_widgets_vertically() {
-    use crate::widgets::Button;
+    use crate::widgets::ImageButton;
 
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
     ctx.set_cursor(Vec2::new(10.0, 10.0));
 
     let h = 30.0;
-    let _r1 = ctx.add(Button::new("A").bounds(Rect2D::from_origin_size(
+    let _r1 = ctx.add(ImageButton::new('X').bounds(Rect2D::from_origin_size(
         Vec2::new(10.0, 10.0),
         Vec2::new(100.0, h),
     )));
     let cursor_after_first = ctx.cursor();
 
-    let _r2 = ctx.add(Button::new("B").bounds(Rect2D::from_origin_size(
+    let _r2 = ctx.add(ImageButton::new('X').bounds(Rect2D::from_origin_size(
         cursor_after_first,
         Vec2::new(100.0, h),
     )));
@@ -1233,7 +1226,7 @@ fn test_add_stacks_widgets_vertically() {
 /// Test that cursor advancement works correctly inside a column layout.
 #[test]
 fn test_add_advances_cursor_in_column_layout() {
-    use crate::widgets::Button;
+    use crate::widgets::ImageButton;
 
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
@@ -1241,13 +1234,13 @@ fn test_add_advances_cursor_in_column_layout() {
     ctx.begin_column();
 
     let cursor_before = ctx.cursor();
-    let _r1 = ctx.add(Button::new("A").bounds(Rect2D::from_origin_size(
+    let _r1 = ctx.add(ImageButton::new('X').bounds(Rect2D::from_origin_size(
         cursor_before,
         Vec2::new(100.0, 30.0),
     )));
     let cursor_after_first = ctx.cursor();
 
-    let _r2 = ctx.add(Button::new("B").bounds(Rect2D::from_origin_size(
+    let _r2 = ctx.add(ImageButton::new('X').bounds(Rect2D::from_origin_size(
         cursor_after_first,
         Vec2::new(100.0, 30.0),
     )));
@@ -1265,7 +1258,7 @@ fn test_add_advances_cursor_in_column_layout() {
 /// Test that cursor advancement works correctly inside a row layout.
 #[test]
 fn test_add_advances_cursor_in_row_layout() {
-    use crate::widgets::Button;
+    use crate::widgets::ImageButton;
 
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
@@ -1273,7 +1266,7 @@ fn test_add_advances_cursor_in_row_layout() {
     ctx.begin_row();
 
     let cursor_before = ctx.cursor();
-    let _r1 = ctx.add(Button::new("A").bounds(Rect2D::from_origin_size(
+    let _r1 = ctx.add(ImageButton::new('X').bounds(Rect2D::from_origin_size(
         cursor_before,
         Vec2::new(80.0, 30.0),
     )));
@@ -1295,30 +1288,30 @@ fn test_add_advances_cursor_in_row_layout() {
 /// Test that at_cursor() + ui.add() positions and advances correctly.
 #[test]
 fn test_at_cursor_positions_and_advances() {
-    use crate::widgets::Button;
+    use crate::widgets::ImageButton;
 
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
     ctx.set_cursor(Vec2::new(50.0, 50.0));
 
-    let r1 = ctx.add(Button::new("First").at_cursor(&ctx));
+    let r1 = ctx.add(ImageButton::new('X').at_cursor(&ctx));
     assert_eq!(r1.bounds.min.x(), 50.0);
     assert_eq!(r1.bounds.min.y(), 50.0);
 
     let cursor_after_first = ctx.cursor();
     assert!(
         cursor_after_first.y() > 50.0,
-        "Cursor should advance after Button at_cursor"
+        "Cursor should advance after widget at_cursor"
     );
 
-    let r2 = ctx.add(Button::new("Second").at_cursor(&ctx));
+    let r2 = ctx.add(ImageButton::new('X').at_cursor(&ctx));
     assert_eq!(r2.bounds.min.x(), cursor_after_first.x());
     assert_eq!(r2.bounds.min.y(), cursor_after_first.y());
 
     let cursor_after_second = ctx.cursor();
     assert!(
         cursor_after_second.y() > cursor_after_first.y(),
-        "Cursor should advance after second Button at_cursor"
+        "Cursor should advance after second widget at_cursor"
     );
 
     ctx.end();
@@ -1333,24 +1326,25 @@ fn test_at_cursor_positions_and_advances() {
 /// across the builder and the internal method.
 #[test]
 fn test_button_border_drawn_in_button_with_colors() {
-    use crate::widgets::Button;
-
     let button_bounds = Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(80.0, 30.0));
     let border_color = Color::from_rgb_hex(0xFF0000);
 
     // Button without border
     let mut ctx_no_border = UiContext::new();
     ctx_no_border.begin(Vec2::new(800.0, 600.0), 1.0);
-    ctx_no_border.add(Button::new("NoBorder").bounds(button_bounds));
+    ctx_no_border.button_with_colors("NoBorder", "NoBorder", button_bounds, None, None, None);
     let draw_list_no_border = ctx_no_border.end();
 
     // Button with border
     let mut ctx_with_border = UiContext::new();
     ctx_with_border.begin(Vec2::new(800.0, 600.0), 1.0);
-    ctx_with_border.add(
-        Button::new("WithBorder")
-            .bounds(button_bounds)
-            .border(border_color),
+    ctx_with_border.button_with_colors(
+        "WithBorder",
+        "WithBorder",
+        button_bounds,
+        None,
+        None,
+        Some(border_color),
     );
     let draw_list_with_border = ctx_with_border.end();
 
@@ -1370,18 +1364,18 @@ fn test_button_border_drawn_in_button_with_colors() {
 /// button_with_colors(), confirming no border drawing happens in the builder layer.
 #[test]
 fn test_button_border_forwarded_to_internal_method() {
-    use crate::widgets::Button;
-
     let button_bounds = Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(80.0, 30.0));
     let custom_border = Color::from_rgb_hex(0x00FF00);
 
-    // Render button with border via the public builder API
     let mut ctx = UiContext::new();
     ctx.begin(Vec2::new(800.0, 600.0), 1.0);
-    ctx.add(
-        Button::new("Test")
-            .bounds(button_bounds)
-            .border(custom_border),
+    ctx.button_with_colors(
+        "Test",
+        "Test",
+        button_bounds,
+        None,
+        None,
+        Some(custom_border),
     );
     let draw_list = ctx.end();
 

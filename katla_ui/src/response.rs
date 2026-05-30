@@ -10,9 +10,7 @@ use crate::input::{UiInputState, mouse_button};
 ///
 /// # Example
 /// ```ignore
-/// use katla_ui::widgets::Button;
-///
-/// let resp = ui.add(Button::new("Click").bounds(my_bounds));
+/// let resp = ui.button_with_colors("Click", "Click", my_bounds, None, None, None);
 /// if resp.clicked {
 ///     // Handle click
 /// }

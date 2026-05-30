@@ -441,7 +441,7 @@ impl UiContext {
         response
     }
 
-    /// Draw a slider (internal - use `widgets::Slider` instead).
+    /// Draw a slider (internal - used by declarative draw pipeline and Vec3Slider).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn slider(
         &mut self,
@@ -881,7 +881,7 @@ impl UiContext {
         response
     }
 
-    /// Draw a radio button (internal - use `widgets::RadioButton` instead).
+    /// Draw a radio button (internal - used by declarative draw pipeline).
     pub(crate) fn radio_button(
         &mut self,
         id: &str,

@@ -46,6 +46,11 @@ fn test_scene_with_entities_round_trip() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Player".to_string()),
@@ -75,6 +80,11 @@ fn test_scene_with_entities_round_trip() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     let loaded: Scene = round_trip(&scene);
@@ -144,6 +154,11 @@ fn test_all_entity_source_variants_round_trip() {
             perspective: None,
             directional_light: None,
             audio_emitter: None,
+            rigid_body: None,
+            collider_shape: None,
+            physics_material: None,
+            trigger_volume: None,
+            collision_filter: None,
         };
         let loaded: EntityDescriptor = round_trip(&desc);
         assert_eq!(loaded.source, desc.source);
@@ -179,6 +194,11 @@ fn test_point_light_descriptor_round_trip() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     };
 
     let loaded: EntityDescriptor = round_trip(&desc);
@@ -226,6 +246,11 @@ fn test_particle_emitter_descriptor_round_trip() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     };
 
     let loaded: EntityDescriptor = round_trip(&desc);
@@ -266,6 +291,11 @@ fn test_gltf_entity_with_animation_round_trip() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     };
 
     let loaded: EntityDescriptor = round_trip(&desc);
@@ -307,6 +337,11 @@ fn test_parent_child_relationships_round_trip() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Child".to_string()),
@@ -330,6 +365,11 @@ fn test_parent_child_relationships_round_trip() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     let loaded: Scene = round_trip(&scene);
@@ -426,6 +466,11 @@ fn test_scene_serialized_output_is_human_readable() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     let ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
@@ -477,6 +522,11 @@ fn test_full_default_scene_like_serialization() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // PBR spheres (5x5 grid = 25 entities, but we'll do a few)
@@ -511,6 +561,11 @@ fn test_full_default_scene_like_serialization() {
                 perspective: None,
                 directional_light: None,
                 audio_emitter: None,
+                rigid_body: None,
+                collider_shape: None,
+                physics_material: None,
+                trigger_volume: None,
+                collision_filter: None,
             });
         }
     }
@@ -541,6 +596,11 @@ fn test_full_default_scene_like_serialization() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Fox with animation
@@ -571,6 +631,11 @@ fn test_full_default_scene_like_serialization() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Point light
@@ -601,6 +666,11 @@ fn test_full_default_scene_like_serialization() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Particle emitter
@@ -640,6 +710,11 @@ fn test_full_default_scene_like_serialization() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     assert_eq!(scene.entities.len(), entity_count);
@@ -1260,6 +1335,11 @@ fn test_primitive_round_trip() {
             perspective: None,
             directional_light: None,
             audio_emitter: None,
+            rigid_body: None,
+            collider_shape: None,
+            physics_material: None,
+            trigger_volume: None,
+            collision_filter: None,
         },
         EntityDescriptor {
             name: Some("MySphere".to_string()),
@@ -1288,6 +1368,11 @@ fn test_primitive_round_trip() {
             perspective: None,
             directional_light: None,
             audio_emitter: None,
+            rigid_body: None,
+            collider_shape: None,
+            physics_material: None,
+            trigger_volume: None,
+            collision_filter: None,
         },
         EntityDescriptor {
             name: Some("MyPlane".to_string()),
@@ -1315,6 +1400,11 @@ fn test_primitive_round_trip() {
             perspective: None,
             directional_light: None,
             audio_emitter: None,
+            rigid_body: None,
+            collider_shape: None,
+            physics_material: None,
+            trigger_volume: None,
+            collision_filter: None,
         },
         EntityDescriptor {
             name: Some("MyCylinder".to_string()),
@@ -1343,6 +1433,11 @@ fn test_primitive_round_trip() {
             perspective: None,
             directional_light: None,
             audio_emitter: None,
+            rigid_body: None,
+            collider_shape: None,
+            physics_material: None,
+            trigger_volume: None,
+            collision_filter: None,
         },
         EntityDescriptor {
             name: Some("MyTorus".to_string()),
@@ -1372,6 +1467,11 @@ fn test_primitive_round_trip() {
             perspective: None,
             directional_light: None,
             audio_emitter: None,
+            rigid_body: None,
+            collider_shape: None,
+            physics_material: None,
+            trigger_volume: None,
+            collision_filter: None,
         },
     ];
 
@@ -1443,6 +1543,11 @@ fn test_gltf_round_trip() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     };
 
     let loaded: EntityDescriptor = round_trip(&desc);
@@ -1493,6 +1598,11 @@ fn test_point_light_round_trip() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     };
 
     let loaded: EntityDescriptor = round_trip(&desc);
@@ -1553,6 +1663,11 @@ fn test_particle_emitter_round_trip() {
             perspective: None,
             directional_light: None,
             audio_emitter: None,
+            rigid_body: None,
+            collider_shape: None,
+            physics_material: None,
+            trigger_volume: None,
+            collision_filter: None,
         };
 
         let loaded: EntityDescriptor = round_trip(&desc);
@@ -1652,6 +1767,11 @@ fn test_animation_round_trip() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     };
     let loaded_desc: EntityDescriptor = round_trip(&desc);
     let loaded_anim = loaded_desc.animation.unwrap();
@@ -1681,6 +1801,11 @@ fn test_hierarchy_preservation() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("ChildA".to_string()),
@@ -1704,6 +1829,11 @@ fn test_hierarchy_preservation() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Grandchild".to_string()),
@@ -1725,6 +1855,11 @@ fn test_hierarchy_preservation() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     let loaded: Scene = round_trip(&scene);
@@ -1759,6 +1894,11 @@ fn test_entity_count_preservation() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Sphere1".to_string()),
@@ -1778,6 +1918,11 @@ fn test_entity_count_preservation() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Plane1".to_string()),
@@ -1796,6 +1941,11 @@ fn test_entity_count_preservation() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Cylinder1".to_string()),
@@ -1815,6 +1965,11 @@ fn test_entity_count_preservation() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Torus1".to_string()),
@@ -1835,6 +1990,11 @@ fn test_entity_count_preservation() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Model1".to_string()),
@@ -1852,6 +2012,11 @@ fn test_entity_count_preservation() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Emitter1".to_string()),
@@ -1867,6 +2032,11 @@ fn test_entity_count_preservation() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Light1".to_string()),
@@ -1882,6 +2052,11 @@ fn test_entity_count_preservation() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     assert_eq!(scene.entities.len(), 8);
@@ -2005,6 +2180,11 @@ fn test_velocity_round_trip() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     };
 
     let loaded: EntityDescriptor = round_trip(&desc);
@@ -2032,6 +2212,11 @@ fn test_velocity_round_trip() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     };
     let loaded_zero: EntityDescriptor = round_trip(&desc_zero);
     let vel_zero = loaded_zero.velocity.unwrap();
@@ -2145,6 +2330,11 @@ fn test_load_spawn_integration() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     scene.entities.push(EntityDescriptor {
@@ -2174,6 +2364,11 @@ fn test_load_spawn_integration() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     scene.entities.push(EntityDescriptor {
@@ -2202,6 +2397,11 @@ fn test_load_spawn_integration() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     scene.entities.push(EntityDescriptor {
@@ -2231,6 +2431,11 @@ fn test_load_spawn_integration() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     scene.entities.push(EntityDescriptor {
@@ -2261,6 +2466,11 @@ fn test_load_spawn_integration() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // GLTF model with animation (VAL-CROSS-005: animated model state round-trip)
@@ -2299,6 +2509,11 @@ fn test_load_spawn_integration() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Particle emitter
@@ -2338,6 +2553,11 @@ fn test_load_spawn_integration() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Point light
@@ -2368,6 +2588,11 @@ fn test_load_spawn_integration() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Parent-child hierarchy (VAL-CROSS-006)
@@ -2391,6 +2616,11 @@ fn test_load_spawn_integration() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("ChildA".to_string()),
@@ -2414,6 +2644,11 @@ fn test_load_spawn_integration() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Grandchild".to_string()),
@@ -2435,6 +2670,11 @@ fn test_load_spawn_integration() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     assert_eq!(scene.entities.len(), 11, "Scene must have 11 entities");
@@ -2566,6 +2806,11 @@ fn test_transform_persistence() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Simulate editing: modify the transform values
@@ -2928,6 +3173,11 @@ fn test_full_editor_workflow() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Add a light entity
@@ -2958,6 +3208,11 @@ fn test_full_editor_workflow() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     // Add a sphere with velocity
@@ -2991,6 +3246,11 @@ fn test_full_editor_workflow() {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
+        rigid_body: None,
+        collider_shape: None,
+        physics_material: None,
+        trigger_volume: None,
+        collision_filter: None,
     });
 
     assert_eq!(

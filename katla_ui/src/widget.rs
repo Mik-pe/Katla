@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use katla_ui::{Widget, UiContext, Response, widgets::Button};
+//! use katla_ui::{Widget, UiContext, Response};
 //!
 //! struct MyWidget {
 //!     label: &'static str,
@@ -20,7 +20,7 @@
 //!
 //! impl Widget for MyWidget {
 //!     fn ui(self, ui: &mut UiContext) -> Response {
-//!         ui.add(Button::new(self.label).bounds(Default::default()))
+//!         ui.button_with_colors(self.label, self.label, Default::default(), None, None, None)
 //!     }
 //! }
 //!

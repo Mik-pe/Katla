@@ -1,7 +1,6 @@
 use katla_math::{Rect2D, Vec2};
 
 use crate::input::mouse_button;
-use crate::widgets::Button;
 use crate::{FontSize, UiContext, z_index};
 
 /// Visibility state for a floating panel.
@@ -305,7 +304,7 @@ impl DraggablePanel {
                 Vec2::new(close_size, close_size),
             );
             close_clicked = ui
-                .add(Button::new("\u{00d7}").bounds(close_bounds).id("\x00close"))
+                .button_with_colors("\x00close", "\u{00d7}", close_bounds, None, None, None)
                 .clicked;
 
             let frame = DraggablePanelFrame { panel_bounds };

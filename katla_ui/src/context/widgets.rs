@@ -9,7 +9,7 @@
 //! ## Two-Layer Widget System
 //!
 //! 1. **Public Builder Widgets** (`crate::widgets`)
-//!    - User-facing builder pattern: `Button::new("Click").bounds(my_bounds)`
+//!    - User-facing builder pattern: `ImageButton::new(icon).bounds(my_bounds)`
 //!    - Ergonomic, composable, discoverable API
 //!
 //! 2. **Internal Implementations** (submodules here)
@@ -21,10 +21,10 @@
 //!
 //! ```ignore
 //! // User code (layer 1)
-//! ui.add(Button::new("Click").bounds(my_bounds))
+//! ui.add(ImageButton::new('X').bounds(my_bounds))
 //!
-//! // Button::ui() calls (layer 2)
-//! ui.button_with_colors("Click", my_bounds, None, None)
+//! // ImageButton::ui() calls (layer 2)
+//! ui.image_button("image_btn", 'X', my_bounds, true)
 //! ```
 
 mod basic;

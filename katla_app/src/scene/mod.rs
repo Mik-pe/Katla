@@ -8,8 +8,10 @@ mod tests;
 
 pub use default_scene::{DEFAULT_SCENE_PATH, build_default_scene};
 pub use descriptors::{
-    AnimationDescriptor, DrawableDescriptor, EntityDescriptor, ParticleEmitterDescriptor,
-    PointLightDescriptor, Scene, ScriptDescriptor, TransformDescriptor, VelocityDescriptor,
+    AnimationDescriptor, ColliderShapeDescriptor, CollisionFilterDescriptor, DrawableDescriptor,
+    EntityDescriptor, ParticleEmitterDescriptor, PerspectiveDescriptor, PhysicsMaterialDescriptor,
+    PointLightDescriptor, RigidBodyDescriptor, Scene, ScriptDescriptor, TransformDescriptor,
+    TriggerVolumeDescriptor, VelocityDescriptor,
 };
 pub use entity_source::EntitySource;
 pub use serialization::{SCENE_VERSION, SceneManager, ron_pretty_config};

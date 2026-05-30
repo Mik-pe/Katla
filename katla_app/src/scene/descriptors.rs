@@ -179,6 +179,41 @@ fn default_rolloff() -> f32 {
     1.0
 }
 
+/// Rigid body type for serialization.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RigidBodyDescriptor {
+    Static,
+    Dynamic,
+    Kinematic,
+}
+
+/// Collider shape data for serialization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ColliderShapeDescriptor {
+    Sphere(f32),
+    Box([f32; 3]),
+    Capsule { half_height: f32, radius: f32 },
+}
+
+/// Physics material properties for serialization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PhysicsMaterialDescriptor {
+    pub friction: f32,
+    pub restitution: f32,
+    pub density: f32,
+}
+
+/// Trigger volume marker for serialization.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TriggerVolumeDescriptor;
+
+/// Collision filter layers for serialization.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollisionFilterDescriptor {
+    pub layers: u32,
+    pub mask: u32,
+}
+
 /// Descriptor for a single entity in a scene file.
 ///
 /// Uses `#[serde(deny_unknown_fields)] = false` (the default) so that
@@ -203,6 +238,16 @@ pub struct EntityDescriptor {
     pub directional_light: Option<DirectionalLightDescriptor>,
     #[serde(default)]
     pub audio_emitter: Option<AudioEmitterDescriptor>,
+    #[serde(default)]
+    pub rigid_body: Option<RigidBodyDescriptor>,
+    #[serde(default)]
+    pub collider_shape: Option<ColliderShapeDescriptor>,
+    #[serde(default)]
+    pub physics_material: Option<PhysicsMaterialDescriptor>,
+    #[serde(default)]
+    pub trigger_volume: Option<TriggerVolumeDescriptor>,
+    #[serde(default)]
+    pub collision_filter: Option<CollisionFilterDescriptor>,
 }
 
 /// Top-level scene file structure.
