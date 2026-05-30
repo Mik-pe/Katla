@@ -1,7 +1,5 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
-use katla_ecs::EntityId;
 use katla_math::{Rect2D, Vec2, Vec3};
 use katla_ui::{
     UiContext, mouse_button,
@@ -22,7 +20,8 @@ use super::{
     types::{self as editor_types, EditorPanel, PreferencesAction},
 };
 
-const TOOLBAR_HEIGHT: f32 = 36.0;
+use super::declarative::toolbar::TOOLBAR_HEIGHT;
+
 const STATUS_BAR_HEIGHT: f32 = 22.0;
 
 impl EditorUI {

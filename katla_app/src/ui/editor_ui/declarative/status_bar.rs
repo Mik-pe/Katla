@@ -95,7 +95,8 @@ impl Build for StatusBarView {
             hstack(right_items)
                 .spacing(8.0)
                 .padding(Padding::horizontal(16.0))
-                .align(Alignment::Trailing),
+                .align(Alignment::Trailing)
+                .flex_grow(1.0),
         );
 
         statusbar(data.height, hstack(content_children))

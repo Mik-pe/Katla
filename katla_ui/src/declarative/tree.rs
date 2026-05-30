@@ -10,7 +10,9 @@ use crate::context::UiContext;
 use super::actions::ActionStream;
 use super::animation::{AnimatedProperty, Animation, AnimationState, KeyframeAnimation, Tween};
 use super::build::{Build as BuildTrait, BuildContext, CallbackTable, Environment};
-use super::descriptor::{Alignment, Anchor, Callback, ChildDescriptor, ViewDescriptor};
+use super::descriptor::{
+    Alignment, Anchor, Callback, ChildDescriptor, DraggablePanelState, ViewDescriptor,
+};
 use super::diff::{DiffAction, Patch, diff_descriptor};
 use super::draw::draw_descriptor_with_id;
 use super::focus::{self, FocusManager};
@@ -62,7 +64,11 @@ pub struct ViewTree {
     env: Environment,
     focus: FocusManager,
     taffy: TaffyNodeMap,
+    /// Raw taffy layout output — positions before ZStack/Overlay/DraggablePanel repositioning.
     bounds_map: HashMap<ViewId, Rect2D>,
+    /// Final resolved positions after animation, ZStack alignment, Overlay anchors, and
+    /// DraggablePanel offsets. Used for hit testing and drawing.
+    resolved_bounds: HashMap<ViewId, Rect2D>,
     interaction: InteractionState,
     current_time: f64,
 }
@@ -80,6 +86,7 @@ impl Default for ViewTree {
             focus: FocusManager::new(),
             taffy: TaffyNodeMap::new(),
             bounds_map: HashMap::new(),
+            resolved_bounds: HashMap::new(),
             interaction: InteractionState::default(),
             current_time: 0.0,
         }
@@ -176,7 +183,14 @@ impl ViewTree {
         };
 
         match &node.descriptor {
-            ViewDescriptor::TextField { .. } => ImeRequest::at_cursor(node.bounds),
+            ViewDescriptor::TextField { .. } => {
+                let bounds = self
+                    .resolved_bounds
+                    .get(&focused_id)
+                    .copied()
+                    .unwrap_or(node.bounds);
+                ImeRequest::at_cursor(bounds)
+            }
             _ => ImeRequest::inactive(),
         }
     }
@@ -216,7 +230,10 @@ impl ViewTree {
         // 4. Tick all animations and compute AnimationState per node
         self.tick_animations(ui.time);
 
-        // 5. Rebuild focus chain and process Tab navigation
+        // 5. Resolve final positions (animation + ZStack + Overlay + DraggablePanel)
+        self.resolve_positions();
+
+        // 6. Rebuild focus chain and process Tab navigation
         let chain = focus::collect_focus_chain(self);
         self.focus.set_focus_chain(chain);
         if ui.input.key_pressed(crate::input::KeyCode::Tab) {
@@ -227,21 +244,24 @@ impl ViewTree {
             }
         }
 
-        // 6. Process input (hit test, dispatch callbacks)
+        // 7. Process input (hit test, dispatch callbacks) using resolved bounds
         let mut callbacks = std::mem::take(&mut self.callbacks);
-        let bounds_map = self.bounds_map.clone();
-        let input_result = input::process_input(self, &ui.input, &mut callbacks, &bounds_map);
+        let resolved = self.resolved_bounds.clone();
+        let input_result = input::process_input(self, &ui.input, &mut callbacks, &resolved);
         let input_consumed = input_result.input_consumed;
         self.interaction.hovered_id = input_result.hovered_id;
         self.interaction.focused_id = self.focus.focused();
         self.callbacks = callbacks;
 
-        // 7. Walk tree and draw each node
+        // 8. Patch DraggablePanel bounds that moved during input processing
+        self.update_draggable_bounds();
+
+        // 9. Walk tree and draw each node using resolved bounds
         if let Some(rid) = self.root {
             self.draw_recursive(rid, ui);
         }
 
-        // 8. Clear dirty flags
+        // 10. Clear dirty flags
         self.clear_dirty();
 
         input_consumed
@@ -364,6 +384,148 @@ impl ViewTree {
         }
     }
 
+    // ── Position resolution ──────────────────────────────────────────────
+    //
+    // Separates position computation from drawing.  Runs after taffy layout
+    // and animation ticks, producing `resolved_bounds` that draw and hit-test
+    // consume directly — no repositioning logic in the draw path.
+
+    /// Walk the tree and compute final resolved positions for every node.
+    fn resolve_positions(&mut self) {
+        let Some(root_id) = self.root else { return };
+        self.resolved_bounds.clear();
+
+        let root_bounds = self
+            .nodes
+            .get(root_id)
+            .map(|n| n.animation_state.apply_to_bounds(n.bounds))
+            .unwrap_or_default();
+        self.resolved_bounds.insert(root_id, root_bounds);
+
+        let children = self
+            .nodes
+            .get(root_id)
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
+        for &child_id in &children {
+            Self::resolve_child_bounds(
+                &self.nodes,
+                &self.state,
+                &mut self.resolved_bounds,
+                child_id,
+                root_bounds,
+                Vec2::new(0.0, 0.0),
+            );
+        }
+    }
+
+    /// Recursive helper: compute and store resolved bounds for one node and
+    /// all its descendants.
+    fn resolve_child_bounds(
+        nodes: &SlotMap<ViewId, ViewNode>,
+        state: &StateArena,
+        resolved: &mut HashMap<ViewId, Rect2D>,
+        node_id: ViewId,
+        parent_bounds: Rect2D,
+        accumulated_translation: Vec2,
+    ) {
+        let Some(node) = nodes.get(node_id) else {
+            return;
+        };
+
+        let mut bounds = node.animation_state.apply_to_bounds(node.bounds);
+        bounds = bounds.translate(accumulated_translation);
+
+        let delta = Self::compute_position_delta(
+            &node.descriptor,
+            node.zstack_alignment,
+            bounds,
+            parent_bounds,
+            &node.animation_state,
+            state,
+        );
+        bounds = bounds.translate(delta);
+
+        resolved.insert(node_id, bounds);
+
+        let children = node.children.clone();
+        let child_translation = accumulated_translation + delta;
+        for &child_id in &children {
+            Self::resolve_child_bounds(nodes, state, resolved, child_id, bounds, child_translation);
+        }
+    }
+
+    /// Determine how much a node's taffy-bounds need to shift due to
+    /// Overlay anchors, ZStack alignment, or DraggablePanel stored positions.
+    fn compute_position_delta(
+        descriptor: &ViewDescriptor,
+        zstack_alignment: Option<Alignment>,
+        bounds: Rect2D,
+        parent_bounds: Rect2D,
+        anim_state: &AnimationState,
+        state: &StateArena,
+    ) -> Vec2 {
+        // Overlay: absolute anchor+offset positioning
+        if let ViewDescriptor::Overlay(desc) = descriptor {
+            let resolved =
+                Self::resolve_overlay_bounds(desc.anchor, desc.offset, parent_bounds, bounds);
+            let resolved = anim_state.apply_to_bounds(resolved);
+            return resolved.min - bounds.min;
+        }
+
+        let mut resolved_min = bounds.min;
+
+        // ZStack alignment
+        if let Some(alignment) = zstack_alignment {
+            let aligned = Self::resolve_zstack_alignment(alignment, parent_bounds, bounds);
+            resolved_min = aligned.min;
+        }
+
+        // DraggablePanel stored position
+        if let ViewDescriptor::DraggablePanel(desc) = descriptor {
+            let panel_state: DraggablePanelState = state.get(desc.state_id);
+            if panel_state.visibility.is_visible() {
+                resolved_min = panel_state.position.unwrap_or_else(|| {
+                    Vec2::new(
+                        parent_bounds.min.x() + (parent_bounds.width() - bounds.width()) * 0.5,
+                        parent_bounds.min.y() + 60.0,
+                    )
+                });
+            }
+        }
+
+        resolved_min - bounds.min
+    }
+
+    /// After input processing, patch resolved bounds for DraggablePanels
+    /// that were moved during drag operations so the draw pass is up-to-date.
+    fn update_draggable_bounds(&mut self) {
+        let patches: Vec<(ViewId, Vec2)> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                let ViewDescriptor::DraggablePanel(desc) = &node.descriptor else {
+                    return None;
+                };
+                let panel_state: DraggablePanelState = self.state.get(desc.state_id);
+                if panel_state.visibility.is_visible() {
+                    panel_state.position.map(|pos| (id, pos))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for (id, pos) in patches {
+            if let Some(bounds) = self.resolved_bounds.get_mut(&id) {
+                let size = Vec2::new(bounds.width(), bounds.height());
+                *bounds = Rect2D::new(pos, pos + size);
+            }
+        }
+    }
+
+    // ── Drawing ─────────────────────────────────────────────────────────
+
     fn draw_recursive(&self, node_id: ViewId, ui: &mut UiContext) {
         let Some(node) = self.nodes.get(node_id) else {
             return;
@@ -372,22 +534,22 @@ impl ViewTree {
         let children: Vec<ViewId> = node.children.clone();
         let anim_state = node.animation_state.clone();
 
-        // Apply animation state to bounds
-        let bounds = anim_state.apply_to_bounds(node.bounds);
+        let bounds = self
+            .resolved_bounds
+            .get(&node_id)
+            .copied()
+            .unwrap_or_default();
 
-        // Collect children bounds for container draw calls
         let children_bounds: Vec<Rect2D> = children
             .iter()
-            .filter_map(|&id| self.bounds_map.get(&id).copied())
+            .filter_map(|&id| self.resolved_bounds.get(&id).copied())
             .collect();
 
-        // Handle ScrollView clipping
         let is_scroll_view = matches!(descriptor, ViewDescriptor::ScrollView(_));
         if is_scroll_view {
             ui.push_clip(bounds);
         }
 
-        // Draw this node
         draw_descriptor_with_id(
             descriptor,
             ui,
@@ -399,14 +561,12 @@ impl ViewTree {
             &anim_state,
         );
 
-        // Compute scroll offset for children
         let scroll_offset = if let ViewDescriptor::ScrollView(desc) = descriptor {
             Some(self.state.get::<f32>(desc.scroll_state_id))
         } else {
             None
         };
 
-        // Skip drawing children for collapsed Section
         let skip_children = if let ViewDescriptor::Section { expanded_id, .. } = descriptor {
             let expanded: bool = self.state.get(*expanded_id);
             !expanded
@@ -414,17 +574,9 @@ impl ViewTree {
             false
         };
 
-        // Draw children
         if !skip_children {
             for &child_id in &children {
-                self.draw_child_recursive(
-                    child_id,
-                    ui,
-                    bounds,
-                    descriptor,
-                    scroll_offset,
-                    Vec2::new(0.0, 0.0),
-                );
+                self.draw_child_recursive(child_id, ui, bounds, descriptor, scroll_offset);
             }
         }
 
@@ -440,70 +592,51 @@ impl ViewTree {
         parent_bounds: Rect2D,
         parent_descriptor: &ViewDescriptor,
         scroll_offset: Option<f32>,
-        translation: Vec2,
     ) {
         let Some(child_node) = self.nodes.get(child_id) else {
             return;
         };
-
         let anim_state = child_node.animation_state.clone();
-        let mut child_bounds = anim_state.apply_to_bounds(child_node.bounds);
 
-        // Apply accumulated overlay translation from ancestor overlays
-        child_bounds = child_bounds.translate(translation);
+        // Use pre-resolved bounds (animation + ZStack + Overlay + DraggablePanel)
+        let child_bounds = self
+            .resolved_bounds
+            .get(&child_id)
+            .copied()
+            .unwrap_or_default();
 
-        // Handle Overlay positioning — takes precedence over ZStack alignment.
-        // Overlays compute their own position via anchor + offset, so ZStack
-        // alignment must not override them.
-        let overlay_delta = if let ViewDescriptor::Overlay(overlay_desc) = &child_node.descriptor {
-            let base_bounds = child_bounds;
-            child_bounds = Self::resolve_overlay_bounds(
-                overlay_desc.anchor,
-                overlay_desc.offset,
-                parent_bounds,
-                base_bounds,
-            );
-            child_bounds = anim_state.apply_to_bounds(child_bounds);
-            child_bounds.min - base_bounds.min
+        // ScrollView content clipping
+        let is_scroll_content = matches!(parent_descriptor, ViewDescriptor::ScrollView(_));
+        let draw_bounds = if is_scroll_content {
+            child_bounds
+                .intersection(&parent_bounds)
+                .unwrap_or(Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)))
         } else {
-            // Handle ZStack alignment positioning (non-Overlay only)
-            if let Some(alignment) = child_node.zstack_alignment {
-                child_bounds =
-                    Self::resolve_zstack_alignment(alignment, parent_bounds, child_bounds);
-            }
-            Vec2::new(0.0, 0.0)
+            child_bounds
         };
 
-        let child_translation = translation + overlay_delta;
-
-        // Clip children to parent for ScrollView and apply scroll offset
-        let is_scroll_content = matches!(parent_descriptor, ViewDescriptor::ScrollView(_));
-        if is_scroll_content {
-            child_bounds = child_bounds
-                .intersection(&parent_bounds)
-                .unwrap_or(Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)));
-        }
-
         // Apply inherited scroll offset from ancestor ScrollView
-        if let Some(offset) = scroll_offset {
-            child_bounds = child_bounds.translate(Vec2::new(0.0, -offset));
-        }
+        let draw_bounds = if let Some(offset) = scroll_offset {
+            draw_bounds.translate(Vec2::new(0.0, -offset))
+        } else {
+            draw_bounds
+        };
 
         let grandchildren: Vec<ViewId> = child_node.children.clone();
         let grandchildren_bounds: Vec<Rect2D> = grandchildren
             .iter()
-            .filter_map(|&id| self.bounds_map.get(&id).copied())
+            .filter_map(|&id| self.resolved_bounds.get(&id).copied())
             .collect();
 
         let is_scroll_view = matches!(child_node.descriptor, ViewDescriptor::ScrollView(_));
         if is_scroll_view {
-            ui.push_clip(child_bounds);
+            ui.push_clip(draw_bounds);
         }
 
         draw_descriptor_with_id(
             &child_node.descriptor,
             ui,
-            child_bounds,
+            draw_bounds,
             &self.state,
             &grandchildren_bounds,
             &self.interaction,
@@ -511,22 +644,29 @@ impl ViewTree {
             &anim_state,
         );
 
-        // Compute scroll offset for this node's children
         let child_scroll = if let ViewDescriptor::ScrollView(desc) = &child_node.descriptor {
             Some(self.state.get::<f32>(desc.scroll_state_id))
         } else {
             scroll_offset
         };
 
-        for &grandchild_id in &grandchildren {
-            self.draw_child_recursive(
-                grandchild_id,
-                ui,
-                child_bounds,
-                &child_node.descriptor,
-                child_scroll,
-                child_translation,
-            );
+        let skip_children =
+            if let ViewDescriptor::Section { expanded_id, .. } = &child_node.descriptor {
+                !self.state.get::<bool>(*expanded_id)
+            } else {
+                false
+            };
+
+        if !skip_children {
+            for &grandchild_id in &grandchildren {
+                self.draw_child_recursive(
+                    grandchild_id,
+                    ui,
+                    draw_bounds,
+                    &child_node.descriptor,
+                    child_scroll,
+                );
+            }
         }
 
         if is_scroll_view {

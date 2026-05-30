@@ -18,7 +18,7 @@ use super::mixer::MixerView;
 use super::particle_inspector::ParticleInspectorView;
 use super::preferences::PreferencesView;
 use super::status_bar::StatusBarView;
-use super::toolbar::ToolbarView;
+use super::toolbar::{TOOLBAR_HEIGHT, ToolbarView};
 use super::viewport_grid::ViewportGridDrawCtx;
 use super::viewport_grid::ViewportGridView;
 
@@ -73,7 +73,11 @@ impl Build for EditorOverlayView {
         // Overlay panels: use ZStack alignment
         let toolbar = ToolbarView.build(ctx);
         let status_bar = StatusBarView.build(ctx);
-        let gizmo = GizmoButtonsView.build(ctx);
+        let gizmo = overlay(
+            Anchor::TopLeft,
+            Vec2::new(0.0, TOOLBAR_HEIGHT),
+            GizmoButtonsView.build(ctx),
+        );
         let co_creator = CoCreatorView.build(ctx);
         let particle_inspector = ParticleInspectorView.build(ctx);
         let preferences = PreferencesView.build(ctx);
@@ -93,41 +97,6 @@ impl Build for EditorOverlayView {
             (Alignment::TopLeading, co_creator),
             (Alignment::TopLeading, particle_inspector),
             (Alignment::TopLeading, preferences),
-        ])
-    }
-}
-
-/// Legacy root view used by tests.
-pub(crate) struct EditorRootView;
-
-impl Build for EditorRootView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
-        let toolbar = ToolbarView.build(ctx);
-        let status_bar = StatusBarView.build(ctx);
-        let gizmo = GizmoButtonsView.build(ctx);
-        let viewport_grid = ViewportGridView.build(ctx);
-        let hierarchy = HierarchyView.build(ctx);
-        let inspector = InspectorView.build(ctx);
-        let co_creator = CoCreatorView.build(ctx);
-        let particle_inspector = ParticleInspectorView.build(ctx);
-        let preferences = PreferencesView.build(ctx);
-        let asset_browser = AssetBrowserView.build(ctx);
-        let console = ConsoleView.build(ctx);
-        let mixer = MixerView.build(ctx);
-
-        zstack([
-            (Alignment::TopLeading, viewport_grid),
-            (Alignment::TopLeading, hierarchy),
-            (Alignment::TopLeading, toolbar),
-            (Alignment::BottomLeading, status_bar),
-            (Alignment::TopLeading, gizmo),
-            (Alignment::TopLeading, inspector),
-            (Alignment::TopLeading, co_creator),
-            (Alignment::TopLeading, particle_inspector),
-            (Alignment::TopLeading, preferences),
-            (Alignment::TopLeading, asset_browser),
-            (Alignment::TopLeading, console),
-            (Alignment::TopLeading, mixer),
         ])
     }
 }

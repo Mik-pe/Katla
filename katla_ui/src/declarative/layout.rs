@@ -557,10 +557,6 @@ fn apply_alignment_to_style(style: &mut Style, alignment: Alignment) {
             style.align_items = Some(taffy::AlignItems::End);
             style.justify_content = Some(taffy::JustifyContent::Center);
         }
-        Alignment::BottomCenter => {
-            style.align_items = Some(taffy::AlignItems::End);
-            style.justify_content = Some(taffy::JustifyContent::Center);
-        }
     }
 }
 
