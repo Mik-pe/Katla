@@ -75,7 +75,9 @@ impl SceneToolExecutor {
         let mut cmd = SpawnEntityCommand::new(position, rotation, scale, name.clone());
         cmd.execute(world)?;
 
-        let entity = cmd.entity().unwrap();
+        let entity = cmd
+            .entity()
+            .ok_or_else(|| SceneToolError::WorldError("entity not set after spawn".to_string()))?;
         let desc = cmd.description();
 
         // Add default components to the new entity via registry entries.
@@ -302,7 +304,9 @@ impl SceneToolExecutor {
         let mut cmd = DuplicateEntityCommand::new(source, position_offset);
         cmd.execute(world)?;
 
-        let duplicate = cmd.duplicate().unwrap();
+        let duplicate = cmd.duplicate().ok_or_else(|| {
+            SceneToolError::WorldError("duplicate entity not set after duplication".to_string())
+        })?;
 
         // Copy component fields from source to duplicate via registry
         for entry in registry.entries() {

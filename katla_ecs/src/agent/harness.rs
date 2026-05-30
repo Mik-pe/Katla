@@ -96,8 +96,9 @@ impl AgentHarness {
                 }
             }
 
-            let action_ref = self.session.actions().last().unwrap().clone();
-            agent.on_result(&action_ref);
+            if let Some(action) = self.session.actions().last() {
+                agent.on_result(action);
+            }
         }
     }
 
