@@ -60,8 +60,8 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] Add AudioListener indicator in inspector — Shows active listener entity, warns if multiple AudioListener components exist.
 
 ### Phase 18: Audio mixer UI
-- [ ] Add peak/RMS level computation in `AudioMixer::render()` — compute per-category and master peak and RMS levels during the render callback
-- [ ] Add atomic double-buffered level snapshots — write levels in audio thread, read in UI thread without locking; one write buffer, one read buffer, swap on read
+- [x] Add peak/RMS level computation in `AudioMixer::render()` — Per-category and master peak/RMS computed during render, written to LevelsBuffer.
+- [x] Add atomic double-buffered level snapshots — LevelsBuffer with AtomicUsize index, fetch_xor(1) swap, lock-free audio→UI communication.
 - [ ] Add VU meter widget to katla_ui — vertical bar showing peak/RMS with peak hold falloff, color-graded (green/yellow/red)
 - [ ] Add mixer panel layout — dockable panel with master bus fader + VU meter, SFX/Music/Ambient sub-buses with faders + VU meters, aux bus sends with wet/dry controls
 - [ ] Add voice pool status display — show active voice count, peak voice count, and which voices are playing (with name/category/volume) in the mixer panel or a debug overlay
@@ -637,7 +637,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### P2 - Resource Management
 - [x] **Fix pending readback cleanup** — Upgraded warn to error log level in `VulkanRenderer::destroy()` and fixed stale comment referencing nonexistent `cleanup_on_exit()`.
-- [ ] **Use `Option` for nullable Vulkan handles** — Replace manual null checks (`!= vk::DescriptorPool::null()`) with `Option<vk::DescriptorPool>` throughout. ComputePass and OutlineSubsystem converted; remaining structs need same treatment.
+- [x] **Use `Option` for nullable Vulkan handles** — GlobalParticleBuffer converted to Option<vk::Buffer>; remaining structs still need conversion.
 - [x] **Add runtime bindless texture limit warnings** — `MAX_BINDLESS_TEXTURES = 4096` has no runtime check. Add warning when approaching limit, error when exceeded
 
 ### P3 - Error Handling
@@ -647,7 +647,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### P4 - Performance
 - [x] **Reduce `Rc<VulkanContext>` cloning in initialization** — `VulkanRenderer::init()` clones context 8+ times. Pass `&Rc<VulkanContext>` where possible
-- [ ] **Cache frame graph barrier compilation** — Currently recompiles barriers every frame. Cache compilation results where possible
+- [x] **Cache frame graph barrier compilation** — Added PassBarrierCache with dirty flag, only recompiles when graph structure changes.
 - [ ] **Batch single-time commands** — `begin_single_time_commands()` creates new command buffer each call. Batch operations where possible
 
 ### P5 - API Design
