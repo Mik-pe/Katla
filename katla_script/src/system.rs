@@ -182,12 +182,6 @@ pub struct ScriptSystem {
     shared_event_bus: Rc<RefCell<crate::bindings::script_world::SharedEventBus>>,
 }
 
-impl Default for ScriptSystem {
-    fn default() -> Self {
-        Self::new().expect("failed to create script system")
-    }
-}
-
 impl ScriptSystem {
     pub fn new() -> Result<Self, ScriptError> {
         Ok(Self {
