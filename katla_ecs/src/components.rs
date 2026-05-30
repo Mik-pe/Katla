@@ -19,4 +19,4 @@ pub use katla_derive::Component;
 ///     max: f32,
 /// }
 /// ```
-pub trait Component: Any {}
+pub trait Component: Any + Send + Sync {}

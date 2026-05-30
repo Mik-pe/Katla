@@ -11,6 +11,73 @@ use crate::components::Component;
 use crate::storage::{ComponentStorage, ComponentStorageManager};
 use std::any::TypeId;
 
+/// Wrapper that holds a raw pointer to `ComponentStorageManager` with an erased lifetime.
+///
+/// Similar to [`UnsafeWorldCell`](crate::unsafe_world_cell::UnsafeWorldCell) — the actual
+/// lifetime is bounded by the scope that creates this cell. The caller must ensure the
+/// underlying `ComponentStorageManager` outlives all usage of this cell and that no mutable
+/// access to the storage occurs while the cell is in use.
+///
+/// This is the building block for parallel query iteration: rayon's `ParallelIterator` needs
+/// `'static` items, so we erase the lifetime through a raw pointer. The `'static` lifetime on
+/// the returned references is a fiction — the real lifetime is the duration of the
+/// `impl ParallelIterator` returned by `par_fetch`, which borrows the storage manager for
+/// the duration of iteration.
+#[derive(Copy, Clone)]
+struct UnsafeStorageCell(*const ComponentStorageManager);
+
+impl UnsafeStorageCell {
+    /// Create a new cell from a shared storage reference.
+    ///
+    /// The returned cell borrows from `storage` for its entire useful lifetime, even
+    /// though this is not expressed in the type system. The caller must ensure no
+    /// `&mut ComponentStorageManager` exists while the cell (or anything derived from it)
+    /// is in use.
+    #[inline]
+    fn new(storage: &ComponentStorageManager) -> Self {
+        Self(storage as *const ComponentStorageManager)
+    }
+
+    /// Returns the dense `(EntityId, T)` slice from the component storage, or an empty
+    /// slice if the component type has no storage.
+    ///
+    /// # Safety (caller-side)
+    ///
+    /// The returned `&'static` reference is valid for as long as the `ComponentStorageManager`
+    /// that produced this cell remains borrowed by the enclosing `par_fetch` call. No
+    /// mutable access to that storage may occur during that window.
+    #[inline]
+    fn dense_slice<T: Component + 'static>(&self) -> &'static [(EntityId, T)] {
+        // SAFETY: The caller guarantees `self.0` is a valid pointer to a
+        // `ComponentStorageManager` that outlives the returned reference's actual
+        // use. We reborrow through the raw pointer instead of using `transmute`,
+        // making the lifetime erasure explicit and concentrated here.
+        unsafe {
+            match (*self.0).get_storage::<T>() {
+                Some(s) => s.components_vec().as_slice(),
+                None => &[],
+            }
+        }
+    }
+
+    /// Returns a reference to a `ComponentStorage<T>`, or `None` if no storage exists.
+    ///
+    /// # Safety (caller-side)
+    ///
+    /// Same invariant as [`UnsafeStorageCell::dense_slice`].
+    #[inline]
+    fn storage_ref<T: Component + 'static>(&self) -> Option<&'static ComponentStorage<T>> {
+        // SAFETY: Same as dense_slice — pointer dereference with caller-guaranteed lifetime.
+        unsafe { (*self.0).get_storage::<T>() }
+    }
+}
+
+// SAFETY: UnsafeStorageCell is designed for concurrent read-only access from rayon
+// worker threads. The caller is responsible for ensuring no mutable access to the
+// underlying storage occurs while the cell is in use.
+unsafe impl Send for UnsafeStorageCell {}
+unsafe impl Sync for UnsafeStorageCell {}
+
 /// Trait for parallel querying of components from storage.
 ///
 /// This is the parallel counterpart to [`QueryData`](super::QueryData).
@@ -25,34 +92,6 @@ pub trait ParQueryData {
     -> impl ParallelIterator<Item = Self::Item<'_>>;
 }
 
-/// Returns the dense slice from a component storage, or an empty slice if none exists.
-///
-/// The `'static` lifetime is a fiction to unify match-arm types. The real lifetime
-/// is bounded by the caller's return type (`impl ParallelIterator`), which borrows
-/// from storage for the duration of iteration.
-fn dense_slice<T: Component + 'static>(
-    storage: &ComponentStorageManager,
-) -> &'static [(EntityId, T)] {
-    match storage.get_storage::<T>() {
-        Some(s) => {
-            let slice: &[(EntityId, T)] = s.components_vec().as_slice();
-            unsafe { std::mem::transmute::<&[(EntityId, T)], &[(EntityId, T)]>(slice) }
-        }
-        None => &[],
-    }
-}
-
-/// Returns a reference to a component storage, transmuted to `'static` lifetime.
-///
-/// Same soundness rationale as [`dense_slice`].
-fn storage_ref<T: Component + 'static>(
-    storage: &ComponentStorageManager,
-) -> Option<&'static ComponentStorage<T>> {
-    storage
-        .get_storage::<T>()
-        .map(|s| unsafe { std::mem::transmute::<&ComponentStorage<T>, &ComponentStorage<T>>(s) })
-}
-
 // ── Arity 1: single component ──────────────────────────────────────────────
 
 impl<T: Component + Sync + 'static> ParQueryData for &T {
@@ -61,7 +100,8 @@ impl<T: Component + Sync + 'static> ParQueryData for &T {
     fn par_fetch(
         storage: &ComponentStorageManager,
     ) -> impl ParallelIterator<Item = Self::Item<'_>> {
-        dense_slice::<T>(storage).par_iter().map(|(id, c)| (*id, c))
+        let cell = UnsafeStorageCell::new(storage);
+        cell.dense_slice::<T>().par_iter().map(|(id, c)| (*id, c))
     }
 }
 
@@ -78,8 +118,9 @@ impl<T1: Component + Sync + 'static, T2: Component + Sync + 'static> ParQueryDat
             TypeId::of::<T2>(),
             "Cannot query the same component type twice"
         );
-        let s2 = storage_ref::<T2>(storage);
-        dense_slice::<T1>(storage)
+        let cell = UnsafeStorageCell::new(storage);
+        let s2 = cell.storage_ref::<T2>();
+        cell.dense_slice::<T1>()
             .par_iter()
             .filter_map(move |(id, c1)| {
                 let c2 = s2.as_ref()?.get(*id)?;
@@ -114,9 +155,10 @@ impl<T1: Component + Sync + 'static, T2: Component + Sync + 'static, T3: Compone
             "Cannot query the same component type twice"
         );
 
-        let s2 = storage_ref::<T2>(storage);
-        let s3 = storage_ref::<T3>(storage);
-        dense_slice::<T1>(storage)
+        let cell = UnsafeStorageCell::new(storage);
+        let s2 = cell.storage_ref::<T2>();
+        let s3 = cell.storage_ref::<T3>();
+        cell.dense_slice::<T1>()
             .par_iter()
             .filter_map(move |(id, c1)| {
                 let c2 = s2.as_ref()?.get(*id)?;
@@ -171,10 +213,11 @@ impl<
             "Cannot query the same component type twice"
         );
 
-        let s2 = storage_ref::<T2>(storage);
-        let s3 = storage_ref::<T3>(storage);
-        let s4 = storage_ref::<T4>(storage);
-        dense_slice::<T1>(storage)
+        let cell = UnsafeStorageCell::new(storage);
+        let s2 = cell.storage_ref::<T2>();
+        let s3 = cell.storage_ref::<T3>();
+        let s4 = cell.storage_ref::<T4>();
+        cell.dense_slice::<T1>()
             .par_iter()
             .filter_map(move |(id, c1)| {
                 let c2 = s2.as_ref()?.get(*id)?;
