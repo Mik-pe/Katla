@@ -120,9 +120,10 @@ pub fn rasterize_icon(icon: BillboardIcon, size: u32) -> RasterizedIcon {
 
     // Build the outline path with Y-flipped coordinates.
     let mut pen = OutlineToPath::new(0.0);
-    outline_glyph
-        .draw(settings, &mut pen)
-        .expect("Failed to draw glyph outline");
+    if let Err(e) = outline_glyph.draw(settings, &mut pen) {
+        log::error!("Failed to draw glyph outline: {e}");
+        return empty_icon(size);
+    }
     let path = pen.path;
 
     // Compute bounds with padding for antialiased edges.

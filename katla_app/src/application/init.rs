@@ -4,8 +4,9 @@ use katla_gfx::GpuRenderer;
 use katla_gfx::primitives;
 
 use crate::application::Application;
+use crate::error::AppError;
 impl Application {
-    pub fn init(&mut self) {
+    pub fn init(&mut self) -> Result<(), AppError> {
         info!("Application::init() called");
 
         // Register scene resources
@@ -13,9 +14,9 @@ impl Application {
             .insert_resource(crate::resources::AmbientLight::default());
 
         match &mut self.renderer {
-            katla_gfx::AnyRenderer::Vulkan(_) => self.init_vulkan(),
+            katla_gfx::AnyRenderer::Vulkan(_) => self.init_vulkan()?,
             #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => self.init_metal(),
+            katla_gfx::AnyRenderer::Metal(_) => self.init_metal()?,
         }
 
         match crate::systems::AudioSystem::new() {
@@ -52,6 +53,7 @@ impl Application {
         self.spawn_physics_demo_objects();
 
         info!("Application::init() completed");
+        Ok(())
     }
 
     fn spawn_physics_demo_objects(&mut self) {
@@ -114,7 +116,7 @@ impl Application {
 }
 
 impl Application {
-    fn init_vulkan(&mut self) {
+    fn init_vulkan(&mut self) -> Result<(), AppError> {
         // Initialize default PBR material
         let shader_path = self.resources.shader_path("model_pbr.wgsl");
         info!(
@@ -134,7 +136,9 @@ impl Application {
                     ..Default::default()
                 },
             )
-            .expect("Failed to create default HDR PBR material");
+            .map_err(|e| AppError::RendererInitFailed {
+                reason: format!("Failed to create default HDR PBR material: {e}"),
+            })?;
 
         info!("Default HDR PBR material loaded successfully");
 
@@ -154,7 +158,9 @@ impl Application {
         self.renderer
             .unwrap_vulkan()
             .init_particle_emit_pipeline(&particle_emit_shader_path)
-            .expect("Failed to initialize particle emit pipeline");
+            .map_err(|e| AppError::RendererInitFailed {
+                reason: format!("Failed to initialize particle emit pipeline: {e}"),
+            })?;
 
         // Initialize particle simulate pipeline
         let particle_simulate_shader_path = self
@@ -163,7 +169,9 @@ impl Application {
         self.renderer
             .unwrap_vulkan()
             .init_particle_simulate_pipeline(&particle_simulate_shader_path)
-            .expect("Failed to initialize particle simulate pipeline");
+            .map_err(|e| AppError::RendererInitFailed {
+                reason: format!("Failed to initialize particle simulate pipeline: {e}"),
+            })?;
 
         // Initialize particle draw command pipeline (writes indirect draw buffer after simulate)
         let particle_draw_command_shader_path = self
@@ -172,17 +180,24 @@ impl Application {
         self.renderer
             .unwrap_vulkan()
             .init_particle_draw_command_pipeline(&particle_draw_command_shader_path)
-            .expect("Failed to initialize particle draw command pipeline");
+            .map_err(|e| AppError::RendererInitFailed {
+                reason: format!("Failed to initialize particle draw command pipeline: {e}"),
+            })?;
 
         // Add particle compute passes to frame graph
         // These must be added after particle pipelines are initialized
         if let Some(ref particle_system) = self.renderer.unwrap_vulkan().particle_system {
-            let emit_pipeline = particle_system
-                .emit_pipeline_handle()
-                .expect("Particle emit pipeline not initialized");
-            let simulate_pipeline = particle_system
-                .simulate_pipeline_handle()
-                .expect("Particle simulate pipeline not initialized");
+            let emit_pipeline = particle_system.emit_pipeline_handle().ok_or_else(|| {
+                AppError::RendererInitFailed {
+                    reason: "Particle emit pipeline not initialized".to_string(),
+                }
+            })?;
+            let simulate_pipeline =
+                particle_system.simulate_pipeline_handle().ok_or_else(|| {
+                    AppError::RendererInitFailed {
+                        reason: "Particle simulate pipeline not initialized".to_string(),
+                    }
+                })?;
 
             use katla_gfx::render_graph::PassDesc;
             use katla_gfx::render_graph::PassType;
@@ -432,13 +447,17 @@ impl Application {
         // Initialize transient textures and register with bindless system
         self.frame_graph
             .initialize_transient_textures(&mut self.renderer)
-            .expect("Failed to initialize transient textures");
+            .map_err(|e| AppError::RendererInitFailed {
+                reason: format!("Failed to initialize transient textures: {e}"),
+            })?;
 
         // Register HDR texture with bindless system for tonemapping
         let hdr_bindless_index = self
             .frame_graph
             .register_transient_texture_bindless(&mut self.renderer, "hdr_color")
-            .expect("Failed to register HDR texture with bindless system");
+            .map_err(|e| AppError::RendererInitFailed {
+                reason: format!("Failed to register HDR texture with bindless system: {e}"),
+            })?;
 
         info!(
             "HDR texture registered with bindless system at index {}",
@@ -448,13 +467,17 @@ impl Application {
         // Set HDR texture index on tonemap pass
         self.frame_graph
             .set_tonemap_texture_index(self.pass_ids.tonemap, hdr_bindless_index)
-            .expect("Failed to set tonemap texture index");
+            .map_err(|e| AppError::RendererInitFailed {
+                reason: format!("Failed to set tonemap texture index: {e}"),
+            })?;
 
         // Register viewport texture with bindless system for viewport rendering
         let viewport_bindless_index = self
             .frame_graph
             .register_transient_texture_bindless(&mut self.renderer, "viewport_0")
-            .expect("Failed to register viewport texture with bindless system");
+            .map_err(|e| AppError::RendererInitFailed {
+                reason: format!("Failed to register viewport texture with bindless system: {e}"),
+            })?;
 
         info!(
             "Viewport texture registered with bindless system at index {}",
@@ -476,7 +499,11 @@ impl Application {
             let stencil_indicator_index = self
                 .frame_graph
                 .register_transient_texture_bindless(&mut self.renderer, "stencil_indicator")
-                .expect("Failed to register stencil indicator texture with bindless system");
+                .map_err(|e| AppError::RendererInitFailed {
+                    reason: format!(
+                        "Failed to register stencil indicator texture with bindless system: {e}"
+                    ),
+                })?;
 
             info!(
                 "Stencil indicator texture registered with bindless at index {}",
@@ -492,21 +519,27 @@ impl Application {
                     viewport_bindless_index,
                     stencil_indicator_index,
                 )
-                .expect("Failed to set wallhack overlay texture indices");
+                .map_err(|e| AppError::RendererInitFailed {
+                    reason: format!("Failed to set wallhack overlay texture indices: {e}"),
+                })?;
         }
+
+        Ok(())
     }
 }
 
 #[cfg(target_os = "macos")]
 impl Application {
-    fn init_metal(&mut self) {
+    fn init_metal(&mut self) -> Result<(), AppError> {
         // Initialize default PBR material via GpuRenderer trait
         let shader_path = self.resources.shader_path("model_pbr.wgsl");
         let shader_str = shader_path.to_string_lossy();
-        self.default_material_handle = self
-            .renderer
-            .compile_material(&shader_str, "pbr")
-            .expect("Failed to create default PBR material");
+        self.default_material_handle =
+            self.renderer
+                .compile_material(&shader_str, "pbr")
+                .map_err(|e| AppError::RendererInitFailed {
+                    reason: format!("Failed to create default PBR material: {e}"),
+                })?;
 
         self.gpu_resource_tracker
             .set_protected_material(self.default_material_handle);
@@ -669,6 +702,8 @@ impl Application {
                 self.editor.editor_ui.set_viewport_bindless_index(vp_idx);
             }
         }
+
+        Ok(())
     }
 }
 
@@ -683,24 +718,34 @@ impl Application {
 
         let shader_path = self.resources.shader_path("billboard.wgsl");
         let material = match &mut self.renderer {
-            katla_gfx::AnyRenderer::Vulkan(r) => r
-                .compile_material(
-                    &shader_path,
-                    katla_gfx::MaterialOptions {
-                        vertex_type: katla_gfx::VertexType::Pbr,
-                        color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
-                        alpha_blended: true,
-                        depth_test: true,
-                        double_sided: true,
-                        ..Default::default()
-                    },
-                )
-                .expect("Failed to create billboard material"),
+            katla_gfx::AnyRenderer::Vulkan(r) => match r.compile_material(
+                &shader_path,
+                katla_gfx::MaterialOptions {
+                    vertex_type: katla_gfx::VertexType::Pbr,
+                    color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
+                    alpha_blended: true,
+                    depth_test: true,
+                    double_sided: true,
+                    ..Default::default()
+                },
+            ) {
+                Ok(m) => m,
+                Err(e) => {
+                    log::error!("Failed to create billboard material: {e}");
+                    return;
+                }
+            },
             #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => self
+            katla_gfx::AnyRenderer::Metal(_) => match self
                 .renderer
                 .compile_material(&shader_path.to_string_lossy(), "billboard")
-                .expect("Failed to create billboard material"),
+            {
+                Ok(m) => m,
+                Err(e) => {
+                    log::error!("Failed to create billboard material: {e}");
+                    return;
+                }
+            },
         };
 
         self.gpu_resource_tracker.set_protected_material(material);

@@ -6,7 +6,7 @@ use katla_app::input::{Action, InputState};
 use katla_app::systems::{OrbitCameraSystem, RapierPhysicsSystem, TransformHierarchySystem};
 use katla_ecs::SystemExecutionOrder;
 use katla_script::{InputSnapshot, ScriptSystem};
-use log::info;
+use log::{error, info};
 
 /// Katla 3D Engine - Command line arguments
 #[derive(Parser, Debug)]
@@ -177,7 +177,10 @@ fn main() {
 
     match result {
         Ok((mut application, event_loop)) => {
-            application.init();
+            if let Err(e) = application.init() {
+                error!("Application init failed: {e}");
+                return;
+            }
             info!("About to enter event loop");
             event_loop.run_app(&mut application).unwrap();
             info!("Event loop exited");

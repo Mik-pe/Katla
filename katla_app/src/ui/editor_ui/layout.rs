@@ -671,8 +671,8 @@ impl EditorUI {
                 {
                     self.selected_entity = Some(visible_entities[pos - 1]);
                 }
-            } else if !visible_entities.is_empty() {
-                self.selected_entity = Some(*visible_entities.last().unwrap());
+            } else if let Some(&last) = visible_entities.last() {
+                self.selected_entity = Some(last);
             }
         }
 

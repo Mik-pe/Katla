@@ -1042,7 +1042,7 @@ impl ApplicationBuilder {
     /// Returns on error during build; panics if the event loop itself fails.
     pub fn run(self) -> AppResult<()> {
         let (mut application, event_loop) = self.build()?;
-        application.init();
+        application.init()?;
 
         // Run the on_init hook after initialization, before the event loop
         if let Some(hook) = application.on_init.take() {

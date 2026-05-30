@@ -39,7 +39,9 @@ impl Build for ViewportGridView {
 
         for row in 0..rows {
             for col in 0..cols {
-                let slot_index = draw_ctx.state.layout.slot_index(row, col).unwrap();
+                let Some(slot_index) = draw_ctx.state.layout.slot_index(row, col) else {
+                    continue;
+                };
                 let is_active = draw_ctx.state.active_viewport == Some(slot_index);
                 let _is_hovered = hovered_slot == Some(slot_index);
 

@@ -101,9 +101,9 @@ fn execute_scene_op(
                 "affected_entities": tool_result.affected_entities.iter().map(|id| id.id()).collect::<Vec<u64>>(),
             });
             if let Some(data) = tool_result.data {
-                json.as_object_mut()
-                    .unwrap()
-                    .insert("data".to_string(), data);
+                if let Some(map) = json.as_object_mut() {
+                    map.insert("data".to_string(), data);
+                }
             }
             McpResponse { result: Ok(json) }
         }
