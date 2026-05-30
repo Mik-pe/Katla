@@ -157,6 +157,7 @@ pub fn resolve_descriptor(
                     })
                     .collect(),
                 padding: Padding::zero(),
+                flex: super::descriptor::FlexProps::default(),
             }))
         }
 
@@ -166,6 +167,8 @@ pub fn resolve_descriptor(
                 texture,
                 uv: None,
                 tint: Color::WHITE,
+                width: None,
+                height: None,
             }
         }
 

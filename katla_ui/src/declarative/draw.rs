@@ -699,7 +699,9 @@ pub(crate) fn draw_descriptor_with_id(
             }
         }
 
-        ViewDescriptor::Image { texture, uv, tint } => {
+        ViewDescriptor::Image {
+            texture, uv, tint, ..
+        } => {
             let uv_rect =
                 uv.unwrap_or_else(|| Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)));
             ui.draw_image(bounds, uv_rect.min, uv_rect.max, *tint, *texture);

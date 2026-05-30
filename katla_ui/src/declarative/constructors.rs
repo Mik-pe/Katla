@@ -106,6 +106,8 @@ pub fn image(texture: TextureId, tint: katla_math::Color) -> ViewDescriptor {
         texture,
         uv: None,
         tint,
+        width: None,
+        height: None,
     }
 }
 
@@ -224,11 +226,32 @@ pub fn grid(
     cell_size: katla_math::Vec2,
     children: impl IntoIterator<Item = ViewDescriptor>,
 ) -> ViewDescriptor {
+    let cw = cell_size.x();
+    let ch = cell_size.y();
+    let sized_children: Vec<ChildDescriptor> = children
+        .into_iter()
+        .map(|child| {
+            let sized = ViewDescriptor::VStack(Box::new(StackDescriptor {
+                children: vec![ChildDescriptor::from(child)],
+                spacing: 0.0,
+                padding: Padding::zero(),
+                alignment: Alignment::Leading,
+                flex: FlexProps {
+                    width: Some(cw),
+                    height: Some(ch),
+                    flex_grow: 0.0,
+                    flex_shrink: 0.0,
+                    ..FlexProps::default()
+                },
+            }));
+            ChildDescriptor::from(sized)
+        })
+        .collect();
     ViewDescriptor::Grid(Box::new(super::descriptor::GridDescriptor {
         columns,
         cell_size,
         spacing: 0.0,
-        children: children.into_iter().map(ChildDescriptor::from).collect(),
+        children: sized_children,
         flex: FlexProps::default(),
     }))
 }
@@ -264,6 +287,7 @@ pub fn zstack(children: impl IntoIterator<Item = (Alignment, ViewDescriptor)>) -
             .map(|(a, d)| (a, ChildDescriptor::from(d)))
             .collect(),
         padding: Padding::zero(),
+        flex: FlexProps::default(),
     }))
 }
 
@@ -390,6 +414,7 @@ pub fn zstack_keyed(children: Vec<(Alignment, ChildDescriptor)>) -> ViewDescript
     ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
         children,
         padding: Padding::zero(),
+        flex: FlexProps::default(),
     }))
 }
 
@@ -739,7 +764,22 @@ impl ViewDescriptor {
         self
     }
 
-    // -- Progress / Grid modifiers --
+    // -- Progress / Grid / Image modifiers --
+
+    pub fn image_size(mut self, width: f32, height: f32) -> ViewDescriptor {
+        if let ViewDescriptor::Image {
+            width: w,
+            height: h,
+            ..
+        } = &mut self
+        {
+            *w = Some(width);
+            *h = Some(height);
+        } else {
+            debug_assert!(false, "image_size() modifier applied to non-Image variant");
+        }
+        self
+    }
 
     pub fn progress_label(mut self, label: impl Into<String>) -> ViewDescriptor {
         if let ViewDescriptor::Progress { label: l, .. } = &mut self {
@@ -767,6 +807,7 @@ impl ViewDescriptor {
             ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => {
                 desc.flex.width = Some(w)
             }
+            ViewDescriptor::ZStack(desc) => desc.flex.width = Some(w),
             ViewDescriptor::Panel(desc) => desc.flex.width = Some(w),
             ViewDescriptor::Grid(desc) => desc.flex.width = Some(w),
             ViewDescriptor::ScrollView(desc) => desc.flex.width = Some(w),
@@ -785,6 +826,7 @@ impl ViewDescriptor {
             ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => {
                 desc.flex.height = Some(h)
             }
+            ViewDescriptor::ZStack(desc) => desc.flex.height = Some(h),
             ViewDescriptor::Panel(desc) => desc.flex.height = Some(h),
             ViewDescriptor::Grid(desc) => desc.flex.height = Some(h),
             ViewDescriptor::ScrollView(desc) => desc.flex.height = Some(h),
@@ -1115,7 +1157,10 @@ mod tests {
     #[test]
     fn test_image_constructor() {
         let vd = image(TextureId(42), Color::WHITE);
-        let ViewDescriptor::Image { texture, uv, tint } = vd else {
+        let ViewDescriptor::Image {
+            texture, uv, tint, ..
+        } = vd
+        else {
             panic!("expected Image")
         };
         assert_eq!(texture.0, 42);
