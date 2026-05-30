@@ -207,6 +207,7 @@ impl UiInputState {
     pub fn add_key_release(&mut self, key: KeyCode) {
         self.keys_released.push(key);
         self.held_keys.remove(&key);
+        self.any_key_down = !self.held_keys.is_empty();
     }
 
     /// Clear per-frame state.
