@@ -298,6 +298,8 @@ impl Build for AssetBrowserView {
         let confirm_modal = modal(320.0, 120.0, confirm_open_id, modal_content);
 
         vstack([content, ctx_menu, confirm_modal])
+            .flex_width(draw_ctx.bounds.width())
+            .flex_height(draw_ctx.bounds.height())
     }
 }
 

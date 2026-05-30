@@ -127,6 +127,7 @@ pub fn resolve_descriptor(
             spacing: *spacing,
             padding: padding_from_array(*padding),
             alignment: super::descriptor::Alignment::Leading,
+            flex: super::descriptor::FlexProps::default(),
         })),
 
         ViewDescriptorData::VStack {
@@ -141,6 +142,7 @@ pub fn resolve_descriptor(
             spacing: *spacing,
             padding: padding_from_array(*padding),
             alignment: super::descriptor::Alignment::Leading,
+            flex: super::descriptor::FlexProps::default(),
         })),
 
         ViewDescriptorData::ZStack { children } => {

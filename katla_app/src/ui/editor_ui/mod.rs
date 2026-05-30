@@ -156,8 +156,8 @@ pub struct EditorUI {
     hierarchy_search_filter: String,
     /// Dockable panel layout.
     dock_layout: katla_ui::widgets::DockLayout,
-    /// Enable the dockable panel layout (skeleton for visual verification).
-    use_dock_layout: bool,
+    /// Tab drag state for the dock system.
+    dock_drag: katla_ui::widgets::DockDragState,
     /// Declarative view tree for migrated panels.
     view_tree: ViewTree,
     /// Console panel state.
@@ -212,7 +212,7 @@ impl EditorUI {
             available_components: Vec::new(),
             hierarchy_search_filter: String::new(),
             dock_layout: Self::default_dock_layout(),
-            use_dock_layout: false,
+            dock_drag: katla_ui::widgets::DockDragState::default(),
             view_tree: ViewTree::default(),
             console_state: declarative::ConsoleState::default(),
             log_buffer: Arc::new(Mutex::new(LogBuffer::new())),
@@ -620,12 +620,15 @@ impl EditorUI {
         let hierarchy = DockNode::leaf(EditorPanel::Hierarchy.id());
         let viewport = DockNode::leaf(EditorPanel::Viewport.id());
         let inspector = DockNode::leaf(EditorPanel::Inspector.id());
-        let asset_browser = DockNode::leaf(EditorPanel::AssetBrowser.id());
+        let bottom_tabs = DockNode::leaf_with_tabs(vec![
+            EditorPanel::AssetBrowser.id(),
+            EditorPanel::Console.id(),
+            EditorPanel::Mixer.id(),
+        ]);
 
-        let right_bottom =
-            DockNode::split(SplitDirection::Horizontal, 0.5, inspector, asset_browser);
-        let right = DockNode::split(SplitDirection::Vertical, 0.7, viewport, right_bottom);
-        let root = DockNode::split(SplitDirection::Horizontal, 0.2, hierarchy, right);
+        let right = DockNode::split(SplitDirection::Horizontal, 0.6, viewport, inspector);
+        let main = DockNode::split(SplitDirection::Horizontal, 0.2, hierarchy, right);
+        let root = DockNode::split(SplitDirection::Vertical, 0.72, main, bottom_tabs);
 
         DockLayout::new(root)
     }

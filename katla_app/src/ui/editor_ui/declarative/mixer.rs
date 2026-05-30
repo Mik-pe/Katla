@@ -1,4 +1,5 @@
 use katla_audio::{LevelsSnapshot, linear_to_db};
+use katla_math::Rect2D;
 use katla_ui::declarative::{
     Alignment, Build, BuildContext, ViewDescriptor, hstack, labeled_slider, text, vstack, vu_meter,
 };
@@ -9,6 +10,7 @@ use super::super::types::PreferencesAction;
 
 #[derive(Clone)]
 pub(crate) struct MixerDrawCtx {
+    pub bounds: Rect2D,
     pub levels: LevelsSnapshot,
     pub active_voices: usize,
     pub peak_voices: usize,
@@ -102,5 +104,7 @@ impl Build for MixerView {
             .spacing(4.0)
             .padding_all(4.0)
             .align(Alignment::Leading)
+            .flex_width(draw_ctx.bounds.width())
+            .flex_height(draw_ctx.bounds.height())
     }
 }

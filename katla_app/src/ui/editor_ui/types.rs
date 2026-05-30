@@ -18,6 +18,7 @@ pub enum EditorPanel {
     Preferences,
     ParticleInspector,
     Console,
+    Mixer,
 }
 
 impl EditorPanel {
@@ -31,6 +32,7 @@ impl EditorPanel {
             EditorPanel::Preferences => 6,
             EditorPanel::ParticleInspector => 7,
             EditorPanel::Console => 8,
+            EditorPanel::Mixer => 9,
         }
     }
 
@@ -44,6 +46,7 @@ impl EditorPanel {
             EditorPanel::Preferences => "Preferences",
             EditorPanel::ParticleInspector => "Particle Inspector",
             EditorPanel::Console => "Console",
+            EditorPanel::Mixer => "Mixer",
         }
     }
 
@@ -57,6 +60,7 @@ impl EditorPanel {
             6 => Some(EditorPanel::Preferences),
             7 => Some(EditorPanel::ParticleInspector),
             8 => Some(EditorPanel::Console),
+            9 => Some(EditorPanel::Mixer),
             _ => None,
         }
     }

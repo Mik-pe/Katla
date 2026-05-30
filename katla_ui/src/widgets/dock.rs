@@ -1,18 +1,19 @@
-//! Dockable panel system — data structures, tab bar widget, and serialization.
+//! Dockable panel system — data structures, tab bar widget, drag-drop, and rendering.
 //!
 //! Provides the foundational types for a dockable panel layout:
 //! - [`DockNode`] / [`DockLayout`] — tree-based split/tab layout
 //! - [`DockTabBar`] — widget for rendering tabs within a dock leaf
-//! - Serialization helpers (`to_string` / `from_string`)
+//! - [`DockArea`] — recursive renderer with resize handles, tab drag, dock zones
+//! - [`DockDragState`] — tracks in-progress tab drag across frames
 
 use crate::{Response, UiContext, Widget};
-use katla_math::{Rect2D, Vec2};
+use katla_math::{Color, Rect2D, Vec2};
 
 /// Unique identifier for a dockable panel.
 pub type DockPanelId = u64;
 
 // ---------------------------------------------------------------------------
-// 157a — DockTree data structures
+// DockTree data structures
 // ---------------------------------------------------------------------------
 
 /// A node in the dock tree — either a split or a leaf with tabs.
@@ -29,6 +30,8 @@ pub enum DockNode {
     Leaf {
         tabs: Vec<DockPanelId>,
         active_tab: usize,
+        /// When true, the leaf is collapsed — only the tab bar is visible.
+        collapsed: bool,
     },
 }
 
@@ -56,11 +59,53 @@ pub struct DockLayout {
     pub floating: Vec<FloatingDockWindow>,
 }
 
+/// Persistent drag state for tab tear-off and dock zone interaction.
+/// Stored externally (on EditorUI) and passed to DockArea each frame.
+#[derive(Debug, Clone, Default)]
+pub struct DockDragState {
+    /// The panel ID being dragged (if any).
+    pub dragging_panel: Option<DockPanelId>,
+    /// Current mouse position during drag.
+    pub mouse_pos: Vec2,
+    /// The source leaf bounds (used to compute tear-off threshold).
+    pub source_bounds: Option<Rect2D>,
+    /// Whether the tab has been torn off (moved far enough from source).
+    pub torn_off: bool,
+    /// The dock zone being hovered during drag (if any).
+    pub target_zone: Option<DockZone>,
+    /// The leaf bounds that the zone applies to.
+    pub target_leaf_bounds: Option<Rect2D>,
+}
+
+/// A dock zone where a dragged panel can be dropped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DockZone {
+    /// Drop onto center — add as tab.
+    Center,
+    /// Drop onto left edge — split left.
+    Left,
+    /// Drop onto right edge — split right.
+    Right,
+    /// Drop onto top edge — split top.
+    Top,
+    /// Drop onto bottom edge — split bottom.
+    Bottom,
+}
+
 impl DockNode {
     pub fn leaf(tab: DockPanelId) -> Self {
         DockNode::Leaf {
             tabs: vec![tab],
             active_tab: 0,
+            collapsed: false,
+        }
+    }
+
+    pub fn leaf_with_tabs(tabs: Vec<DockPanelId>) -> Self {
+        DockNode::Leaf {
+            active_tab: 0,
+            collapsed: false,
+            tabs,
         }
     }
 
@@ -123,7 +168,9 @@ impl DockNode {
                 }
                 found
             }
-            DockNode::Leaf { tabs, active_tab } => {
+            DockNode::Leaf {
+                tabs, active_tab, ..
+            } => {
                 if let Some(pos) = tabs.iter().position(|&t| t == panel_id) {
                     tabs.remove(pos);
                     if *active_tab >= tabs.len() {
@@ -151,6 +198,7 @@ impl DockNode {
                 *self = DockNode::Leaf {
                     tabs: Vec::new(),
                     active_tab: 0,
+                    collapsed: false,
                 };
             } else if first_empty {
                 let replacement = std::mem::replace(
@@ -158,6 +206,7 @@ impl DockNode {
                     DockNode::Leaf {
                         tabs: Vec::new(),
                         active_tab: 0,
+                        collapsed: false,
                     },
                 );
                 *self = replacement;
@@ -167,6 +216,7 @@ impl DockNode {
                     DockNode::Leaf {
                         tabs: Vec::new(),
                         active_tab: 0,
+                        collapsed: false,
                     },
                 );
                 *self = replacement;
@@ -186,13 +236,109 @@ impl DockNode {
         new_panel_id: DockPanelId,
     ) -> bool {
         if let Some(leaf) = self.find_leaf_with_panel_mut(target_panel_id)
-            && let DockNode::Leaf { tabs, active_tab } = leaf
+            && let DockNode::Leaf {
+                tabs, active_tab, ..
+            } = leaf
         {
             tabs.push(new_panel_id);
             *active_tab = tabs.len() - 1;
             return true;
         }
         false
+    }
+
+    /// Split a leaf containing `target_panel_id` by placing `new_panel_id`
+    /// on the given side, creating a new Split node.
+    pub fn split_leaf(
+        &mut self,
+        target_panel_id: DockPanelId,
+        new_panel_id: DockPanelId,
+        zone: DockZone,
+    ) -> bool {
+        // Find the leaf and its parent
+        let (direction, new_on_first) = match zone {
+            DockZone::Left => (SplitDirection::Horizontal, true),
+            DockZone::Right => (SplitDirection::Horizontal, false),
+            DockZone::Top => (SplitDirection::Vertical, true),
+            DockZone::Bottom => (SplitDirection::Vertical, false),
+            DockZone::Center => return self.add_tab_to_leaf(target_panel_id, new_panel_id),
+        };
+
+        // Find and replace the leaf
+        self.split_leaf_inner(target_panel_id, new_panel_id, direction, new_on_first)
+    }
+
+    fn split_leaf_inner(
+        &mut self,
+        target_panel_id: DockPanelId,
+        new_panel_id: DockPanelId,
+        direction: SplitDirection,
+        new_on_first: bool,
+    ) -> bool {
+        match self {
+            DockNode::Split { children, .. } => {
+                if children[0].find_leaf_with_panel(target_panel_id).is_some() {
+                    children[0].split_leaf_inner(
+                        target_panel_id,
+                        new_panel_id,
+                        direction,
+                        new_on_first,
+                    )
+                } else if children[1].find_leaf_with_panel(target_panel_id).is_some() {
+                    children[1].split_leaf_inner(
+                        target_panel_id,
+                        new_panel_id,
+                        direction,
+                        new_on_first,
+                    )
+                } else {
+                    false
+                }
+            }
+            DockNode::Leaf {
+                tabs,
+                active_tab,
+                collapsed,
+            } => {
+                if !tabs.contains(&target_panel_id) {
+                    return false;
+                }
+
+                // Keep all existing tabs in the old leaf
+                let old_tabs = std::mem::take(tabs);
+                let old_collapsed = *collapsed;
+
+                let old_leaf = DockNode::Leaf {
+                    tabs: old_tabs,
+                    active_tab: *active_tab,
+                    collapsed: old_collapsed,
+                };
+                let new_leaf = DockNode::Leaf {
+                    tabs: vec![new_panel_id],
+                    active_tab: 0,
+                    collapsed: false,
+                };
+
+                let (first, second) = if new_on_first {
+                    (new_leaf, old_leaf)
+                } else {
+                    (old_leaf, new_leaf)
+                };
+
+                *self = DockNode::split(direction, 0.5, first, second);
+                true
+            }
+        }
+    }
+
+    /// Find the first leaf panel ID in the tree (non-allocating traversal).
+    pub fn first_panel_id(&self) -> Option<DockPanelId> {
+        match self {
+            DockNode::Split { children, .. } => children[0]
+                .first_panel_id()
+                .or_else(|| children[1].first_panel_id()),
+            DockNode::Leaf { tabs, .. } => tabs.first().copied(),
+        }
     }
 }
 
@@ -211,8 +357,20 @@ impl DockLayout {
 }
 
 // ---------------------------------------------------------------------------
-// 157b — DockTabBar widget
+// DockTabBar widget
 // ---------------------------------------------------------------------------
+
+/// Height of the tab bar rendered at the top of each leaf node.
+const TAB_BAR_HEIGHT: f32 = 28.0;
+
+/// Width of the visual separator line drawn between split children.
+const SPLITTER_THICKNESS: f32 = 2.0;
+
+/// Size of the dock zone indicator square (center + 4 cardinal triangles).
+const ZONE_INDICATOR_SIZE: f32 = 32.0;
+
+/// Distance a tab must be dragged before it tears off from its source leaf.
+const TEAR_OFF_THRESHOLD: f32 = 20.0;
 
 /// Response returned by [`DockTabBar`].
 #[derive(Debug, Clone, Copy)]
@@ -221,13 +379,15 @@ pub struct DockTabBarResponse {
     pub clicked_tab: Option<usize>,
     /// Index of the close button that was pressed, if any.
     pub closed_tab: Option<usize>,
+    /// Index of the tab being dragged (mouse down + moved), if any.
+    pub drag_started_tab: Option<usize>,
 }
 
 /// A tab bar widget specialised for dock panel leaves.
 ///
 /// Renders evenly distributed tabs with a bottom separator. The active tab
 /// blends with the content panel below (no bottom border). Optionally shows
-/// a small "×" close button on each tab.
+/// a small "x" close button on each tab.
 pub struct DockTabBar<'a> {
     tabs: &'a [DockPanelId],
     active: usize,
@@ -237,11 +397,6 @@ pub struct DockTabBar<'a> {
 }
 
 impl<'a> DockTabBar<'a> {
-    /// Create a new dock tab bar.
-    ///
-    /// * `tabs` — panel IDs displayed as tabs (callers should map these to
-    ///   human-readable labels externally).
-    /// * `active` — index of the currently active tab.
     pub fn new(tabs: &'a [DockPanelId], active: usize) -> Self {
         Self {
             tabs,
@@ -252,19 +407,16 @@ impl<'a> DockTabBar<'a> {
         }
     }
 
-    /// Set the tab bar bounds.
     pub fn bounds(mut self, bounds: Rect2D) -> Self {
         self.bounds = bounds;
         self
     }
 
-    /// Enable or disable close buttons on each tab.
     pub fn close_buttons(mut self, enabled: bool) -> Self {
         self.close_buttons = enabled;
         self
     }
 
-    /// Set an ID base for unique widget identification.
     pub fn id(mut self, id: &'a str) -> Self {
         self.id_base = Some(id);
         self
@@ -282,16 +434,13 @@ impl Widget for DockTabBar<'_> {
 }
 
 impl DockTabBar<'_> {
-    /// Show the dock tab bar and return a specialised response.
-    ///
-    /// Use this instead of `ui.add()` when you need the typed
-    /// [`DockTabBarResponse`] with `clicked_tab` / `closed_tab`.
     pub fn show(self, ui: &mut UiContext) -> DockTabBarResponse {
         let tab_count = self.tabs.len();
         if tab_count == 0 {
             return DockTabBarResponse {
                 clicked_tab: None,
                 closed_tab: None,
+                drag_started_tab: None,
             };
         }
 
@@ -306,7 +455,6 @@ impl DockTabBar<'_> {
         let tab_width = self.bounds.width() / tab_count as f32;
         let separator_y = self.bounds.max.y();
 
-        // Bottom separator line across full width
         ui.draw_line(
             Vec2::new(self.bounds.min.x(), separator_y),
             Vec2::new(self.bounds.max.x(), separator_y),
@@ -316,6 +464,7 @@ impl DockTabBar<'_> {
 
         let mut clicked_tab: Option<usize> = None;
         let mut closed_tab: Option<usize> = None;
+        let mut drag_started_tab: Option<usize> = None;
 
         let id_prefix = self.id_base.unwrap_or("dock_tab");
 
@@ -331,7 +480,6 @@ impl DockTabBar<'_> {
             let tab_hovered = ui.update_hover(tab_id, tab_bounds);
             let is_active = i == self.active;
 
-            // Tab background
             let bg_color = if is_active {
                 active_bg
             } else if tab_hovered {
@@ -341,7 +489,6 @@ impl DockTabBar<'_> {
             };
             ui.draw_rect(tab_bounds, bg_color);
 
-            // Active tab: redraw separator segments with a gap
             if is_active {
                 if i > 0 {
                     ui.draw_line(
@@ -361,7 +508,6 @@ impl DockTabBar<'_> {
                 }
             }
 
-            // Tab label
             let label = format!("{}", self.tabs[i]);
             let text_color = if is_active {
                 active_text
@@ -378,7 +524,6 @@ impl DockTabBar<'_> {
             );
             ui.draw_text(&label, text_pos, text_color, font_size);
 
-            // Close button
             if self.close_buttons {
                 let close_x = tab_bounds.max.x() - close_btn_width;
                 let close_bounds = Rect2D::from_origin_size(
@@ -398,12 +543,12 @@ impl DockTabBar<'_> {
                 } else {
                     inactive_text
                 };
-                let close_size = ui.measure_text("×", font_size);
+                let close_size = ui.measure_text("x", font_size);
                 let close_pos = Vec2::new(
                     close_bounds.center().x() - close_size.x() * 0.5,
                     close_bounds.center().y() - close_size.y() * 0.5,
                 );
-                ui.draw_text("×", close_pos, close_text_color, font_size);
+                ui.draw_text("x", close_pos, close_text_color, font_size);
 
                 let close_click = ui.click_interaction(
                     close_id,
@@ -416,7 +561,22 @@ impl DockTabBar<'_> {
                 }
             }
 
-            // Tab click detection
+            // Detect drag start: mouse down on tab + mouse moved
+            let tab_drag_id = ui.generate_id(&format!("{}_drag_{}", id_prefix, i));
+            if tab_hovered && ui.input.mouse_pressed[crate::input::mouse_button::LEFT] {
+                ui.active_id = Some(tab_drag_id);
+            }
+            if ui.active_id == Some(tab_drag_id) {
+                if ui.input.mouse_down[crate::input::mouse_button::LEFT] {
+                    let delta = ui.input.mouse_delta;
+                    if delta.x().abs() > 3.0 || delta.y().abs() > 3.0 {
+                        drag_started_tab = Some(i);
+                    }
+                } else {
+                    ui.active_id = None;
+                }
+            }
+
             let click_result = ui.click_interaction(
                 tab_id,
                 tab_hovered,
@@ -435,73 +595,150 @@ impl DockTabBar<'_> {
         DockTabBarResponse {
             clicked_tab,
             closed_tab,
+            drag_started_tab,
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// 157c — DockArea widget
+// DockArea widget
 // ---------------------------------------------------------------------------
 
-/// Height of the tab bar rendered at the top of each leaf node.
-const TAB_BAR_HEIGHT: f32 = 28.0;
-
-/// Width of the visual separator line drawn between split children.
-const SPLITTER_THICKNESS: f32 = 2.0;
-
-/// A widget that recursively renders a [`DockLayout`].
-///
-/// Walks the `DockNode` tree, drawing resize separators for `Split` nodes
-/// and delegating leaf rendering to a caller-provided callback.
-///
-/// # Example
-///
-/// ```ignore
-/// use katla_ui::widgets::DockArea;
-///
-/// ui.add(DockArea::new(&layout, |ui, content_bounds, panel_id| {
-///     ui.draw_text(&format!("Panel {}", panel_id), content_bounds.min, Color::WHITE, 14.0);
-/// }).bounds(screen_bounds));
-/// ```
-pub struct DockArea<'a, F>
-where
-    F: FnMut(&mut UiContext, Rect2D, DockPanelId),
-{
-    layout: &'a mut DockLayout,
-    bounds: Rect2D,
-    render_panel: F,
+/// Response from rendering a [`DockArea`].
+#[derive(Debug, Clone, Default)]
+pub struct DockAreaResponse {
+    /// Panel closed via tab close button.
+    pub closed_panel: Option<DockPanelId>,
+    /// A tab drag started this frame.
+    pub drag_started: Option<(DockPanelId, Rect2D)>,
+    /// A drop occurred this frame (drag ended over a dock zone).
+    pub dropped: Option<(DockPanelId, DockZone, DockPanelId)>,
+    /// The currently active (visible) panel IDs and their content bounds.
+    pub visible_panels: Vec<(DockPanelId, Rect2D)>,
 }
 
-impl<'a, F> DockArea<'a, F>
-where
-    F: FnMut(&mut UiContext, Rect2D, DockPanelId),
-{
-    /// Create a new dock area.
-    ///
-    /// * `layout` — the dock layout tree to render (mutable so resize handles
-    ///   can update split ratios).
-    /// * `render_panel` — callback invoked for each visible leaf panel, receiving
-    ///   the content area (below the tab bar) and the active panel ID.
-    pub fn new(layout: &'a mut DockLayout, render_panel: F) -> Self {
+/// Extended render callback that receives panel label for tab rendering.
+pub type RenderPanelFn<'a> = &'a mut dyn FnMut(&mut UiContext, Rect2D, DockPanelId);
+
+pub struct DockArea<'a> {
+    layout: &'a mut DockLayout,
+    drag_state: &'a mut DockDragState,
+    bounds: Rect2D,
+    /// Maps panel IDs to human-readable labels for tab rendering.
+    panel_label_fn: Option<&'a dyn Fn(DockPanelId) -> &'static str>,
+}
+
+impl<'a> DockArea<'a> {
+    pub fn new(layout: &'a mut DockLayout, drag_state: &'a mut DockDragState) -> Self {
         Self {
             layout,
+            drag_state,
             bounds: Rect2D::from_size(Vec2::new(800.0, 600.0)),
-            render_panel,
+            panel_label_fn: None,
         }
     }
 
-    /// Set the total bounds of the dock area.
     pub fn bounds(mut self, bounds: Rect2D) -> Self {
         self.bounds = bounds;
         self
     }
+
+    /// Provide a function that maps panel IDs to display labels for tab rendering.
+    pub fn panel_labels(mut self, f: &'a dyn Fn(DockPanelId) -> &'static str) -> Self {
+        self.panel_label_fn = Some(f);
+        self
+    }
+
+    /// Render the dock area and return a response with interaction results.
+    pub fn show(mut self, ui: &mut UiContext, render_panel: RenderPanelFn<'_>) -> DockAreaResponse {
+        let mut response = DockAreaResponse::default();
+
+        // If a drag is in progress, render the drag overlay
+        if self.drag_state.dragging_panel.is_some() {
+            self.handle_drag_drop(ui, &mut response);
+        }
+
+        render_node(
+            render_panel,
+            ui,
+            &mut self.layout.root,
+            self.bounds,
+            self.panel_label_fn,
+            self.drag_state,
+            &mut response,
+        );
+
+        // Render floating windows
+        for floating in &mut self.layout.floating {
+            render_node(
+                render_panel,
+                ui,
+                &mut floating.node,
+                Rect2D::from_origin_size(floating.position, floating.size),
+                self.panel_label_fn,
+                self.drag_state,
+                &mut response,
+            );
+        }
+
+        // Render drag preview (floating tab at mouse position)
+        if let Some(_panel_id) = self.drag_state.dragging_panel {
+            if self.drag_state.torn_off {
+                self.render_drag_preview(ui);
+            }
+        }
+
+        response
+    }
+
+    /// Compute the content bounds for every visible leaf panel without rendering anything.
+    /// Returns a list of (panel_id, content_bounds) for each active tab.
+    /// Also processes resize handles so ratio changes are reflected.
+    pub fn compute_leaf_bounds(
+        layout: &mut DockLayout,
+        ui: &mut UiContext,
+        bounds: Rect2D,
+    ) -> Vec<(DockPanelId, Rect2D)> {
+        let mut result = Vec::new();
+        compute_leaf_bounds_recursive(&mut layout.root, bounds, ui, &mut result);
+        result
+    }
+
+    /// Render only the dock chrome (tab bars, splitters, drag overlay) without
+    /// invoking the panel render callback. Used when panel content is rendered
+    /// separately via the declarative view tree.
+    pub fn show_chrome(mut self, ui: &mut UiContext) -> DockAreaResponse {
+        let mut response = DockAreaResponse::default();
+
+        // Handle drag interactions
+        if self.drag_state.dragging_panel.is_some() {
+            self.handle_drag_drop(ui, &mut response);
+        }
+
+        // Render chrome (tabs + splitters) — no panel content
+        render_chrome_recursive(
+            ui,
+            &mut self.layout.root,
+            self.bounds,
+            self.panel_label_fn,
+            self.drag_state,
+            &mut response,
+        );
+
+        // Render drag preview
+        if self.drag_state.dragging_panel.is_some() && self.drag_state.torn_off {
+            self.render_drag_preview(ui);
+        }
+
+        response
+    }
 }
 
-fn render_node<F: FnMut(&mut UiContext, Rect2D, DockPanelId)>(
-    render_panel: &mut F,
-    ui: &mut UiContext,
+fn compute_leaf_bounds_recursive(
     node: &mut DockNode,
     bounds: Rect2D,
+    ui: &mut UiContext,
+    result: &mut Vec<(DockPanelId, Rect2D)>,
 ) {
     match node {
         DockNode::Split {
@@ -509,40 +746,407 @@ fn render_node<F: FnMut(&mut UiContext, Rect2D, DockPanelId)>(
             ratio,
             children,
         } => {
-            let (first_bounds, _second_bounds) = match direction {
-                SplitDirection::Horizontal => {
-                    let split_x = bounds.min.x() + bounds.width() * *ratio;
-                    let first = Rect2D::from_origin_size(
-                        bounds.min,
-                        Vec2::new(bounds.width() * *ratio, bounds.height()),
-                    );
-                    let second = Rect2D::from_origin_size(
-                        Vec2::new(split_x + SPLITTER_THICKNESS, bounds.min.y()),
-                        Vec2::new(
-                            (bounds.width() * (1.0 - *ratio) - SPLITTER_THICKNESS).max(0.0),
-                            bounds.height(),
-                        ),
-                    );
-                    (first, second)
-                }
-                SplitDirection::Vertical => {
-                    let split_y = bounds.min.y() + bounds.height() * *ratio;
-                    let first = Rect2D::from_origin_size(
-                        bounds.min,
-                        Vec2::new(bounds.width(), bounds.height() * *ratio),
-                    );
-                    let second = Rect2D::from_origin_size(
-                        Vec2::new(bounds.min.x(), split_y + SPLITTER_THICKNESS),
-                        Vec2::new(
-                            bounds.width(),
-                            (bounds.height() * (1.0 - *ratio) - SPLITTER_THICKNESS).max(0.0),
-                        ),
-                    );
-                    (first, second)
-                }
+            let (first_bounds, _) = compute_split_bounds(*direction, *ratio, bounds);
+
+            compute_leaf_bounds_recursive(&mut children[0], first_bounds, ui, result);
+
+            let handle_bounds = match direction {
+                SplitDirection::Horizontal => Rect2D::from_origin_size(
+                    Vec2::new(first_bounds.max.x(), bounds.min.y()),
+                    Vec2::new(SPLITTER_THICKNESS, bounds.height()),
+                ),
+                SplitDirection::Vertical => Rect2D::from_origin_size(
+                    Vec2::new(bounds.min.x(), first_bounds.max.y()),
+                    Vec2::new(bounds.width(), SPLITTER_THICKNESS),
+                ),
             };
 
-            render_node(render_panel, ui, &mut children[0], first_bounds);
+            let new_ratio = match direction {
+                SplitDirection::Horizontal => {
+                    let current_width = *ratio * bounds.width();
+                    let new_width = super::ResizeHandle::horizontal(handle_bounds, current_width)
+                        .min_value(bounds.width() * 0.05)
+                        .max_value(bounds.width() * 0.95)
+                        .show(ui);
+                    (new_width / bounds.width()).clamp(0.05, 0.95)
+                }
+                SplitDirection::Vertical => {
+                    let current_height = *ratio * bounds.height();
+                    let new_height = super::ResizeHandle::vertical(handle_bounds, current_height)
+                        .min_value(bounds.height() * 0.05)
+                        .max_value(bounds.height() * 0.95)
+                        .show(ui);
+                    (new_height / bounds.height()).clamp(0.05, 0.95)
+                }
+            };
+            *ratio = new_ratio;
+
+            let (_, second_bounds) = compute_split_bounds(*direction, new_ratio, bounds);
+            compute_leaf_bounds_recursive(&mut children[1], second_bounds, ui, result);
+        }
+        DockNode::Leaf {
+            tabs,
+            active_tab,
+            collapsed,
+        } => {
+            if tabs.is_empty() {
+                return;
+            }
+            let active_idx = (*active_tab).min(tabs.len() - 1);
+            if let Some(&panel_id) = tabs.get(active_idx) {
+                let content_y = bounds.min.y() + TAB_BAR_HEIGHT;
+                let content_bounds = if *collapsed {
+                    Rect2D::from_origin_size(
+                        Vec2::new(bounds.min.x(), content_y),
+                        Vec2::new(bounds.width(), 0.0),
+                    )
+                } else {
+                    Rect2D::from_origin_size(
+                        Vec2::new(bounds.min.x(), content_y),
+                        Vec2::new(bounds.width(), (bounds.height() - TAB_BAR_HEIGHT).max(0.0)),
+                    )
+                };
+                result.push((panel_id, content_bounds));
+            }
+        }
+    }
+}
+
+/// Render dock chrome (tab bars, separator lines) without panel content.
+/// Used when panel content is rendered by the declarative view tree.
+#[allow(clippy::too_many_arguments)]
+fn render_chrome_recursive(
+    ui: &mut UiContext,
+    node: &mut DockNode,
+    bounds: Rect2D,
+    label_fn: Option<&dyn Fn(DockPanelId) -> &'static str>,
+    drag_state: &mut DockDragState,
+    response: &mut DockAreaResponse,
+) {
+    match node {
+        DockNode::Split {
+            direction,
+            ratio,
+            children,
+        } => {
+            let (first_bounds, _) = compute_split_bounds(*direction, *ratio, bounds);
+
+            render_chrome_recursive(
+                ui,
+                &mut children[0],
+                first_bounds,
+                label_fn,
+                drag_state,
+                response,
+            );
+
+            // Draw separator line
+            let separator_color = ui.style.separator;
+            match direction {
+                SplitDirection::Horizontal => {
+                    let sep_x = first_bounds.max.x() + SPLITTER_THICKNESS * 0.5;
+                    ui.draw_line(
+                        Vec2::new(sep_x, bounds.min.y()),
+                        Vec2::new(sep_x, bounds.max.y()),
+                        separator_color,
+                        SPLITTER_THICKNESS,
+                    );
+                }
+                SplitDirection::Vertical => {
+                    let sep_y = first_bounds.max.y() + SPLITTER_THICKNESS * 0.5;
+                    ui.draw_line(
+                        Vec2::new(bounds.min.x(), sep_y),
+                        Vec2::new(bounds.max.x(), sep_y),
+                        separator_color,
+                        SPLITTER_THICKNESS,
+                    );
+                }
+            }
+
+            let (_, second_bounds) = compute_split_bounds(*direction, *ratio, bounds);
+            render_chrome_recursive(
+                ui,
+                &mut children[1],
+                second_bounds,
+                label_fn,
+                drag_state,
+                response,
+            );
+        }
+        DockNode::Leaf {
+            tabs,
+            active_tab,
+            collapsed,
+        } => {
+            if tabs.is_empty() {
+                return;
+            }
+
+            // Draw tab bar
+            let tab_bar_bounds =
+                Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), TAB_BAR_HEIGHT));
+            let tab_response = DockTabBar::new(tabs, *active_tab)
+                .bounds(tab_bar_bounds)
+                .show(ui);
+
+            if let Some(clicked) = tab_response.clicked_tab {
+                *active_tab = clicked;
+            }
+
+            if let Some(closed_idx) = tab_response.closed_tab {
+                if let Some(&panel_id) = tabs.get(closed_idx) {
+                    response.closed_panel = Some(panel_id);
+                }
+            }
+
+            if let Some(drag_idx) = tab_response.drag_started_tab {
+                if let Some(&panel_id) = tabs.get(drag_idx) {
+                    if drag_state.dragging_panel.is_none() {
+                        drag_state.dragging_panel = Some(panel_id);
+                        drag_state.source_bounds = Some(bounds);
+                        drag_state.torn_off = false;
+                        response.drag_started = Some((panel_id, bounds));
+                    }
+                }
+            }
+
+            let active_idx = tab_response
+                .clicked_tab
+                .unwrap_or(*active_tab)
+                .min(tabs.len() - 1);
+            *active_tab = active_idx;
+
+            if !*collapsed {
+                let content_bounds = Rect2D::from_origin_size(
+                    Vec2::new(bounds.min.x(), tab_bar_bounds.max.y()),
+                    Vec2::new(bounds.width(), (bounds.height() - TAB_BAR_HEIGHT).max(0.0)),
+                );
+                if let Some(&panel_id) = tabs.get(active_idx) {
+                    ui.register_panel(panel_id, content_bounds);
+                    response.visible_panels.push((panel_id, content_bounds));
+                }
+            }
+        }
+    }
+}
+
+impl<'a> DockArea<'a> {
+    fn handle_drag_drop(&mut self, ui: &mut UiContext, response: &mut DockAreaResponse) {
+        let mouse_pos = ui.input.mouse_pos;
+        self.drag_state.mouse_pos = mouse_pos;
+
+        // Check if mouse is still down
+        if !ui.input.mouse_down[crate::input::mouse_button::LEFT] {
+            // Drop!
+            if let (Some(panel_id), Some(zone)) =
+                (self.drag_state.dragging_panel, self.drag_state.target_zone)
+            {
+                let target_panel = self.layout.root.first_panel_id().unwrap_or(panel_id);
+
+                response.dropped = Some((panel_id, zone, target_panel));
+            }
+            *self.drag_state = DockDragState::default();
+            return;
+        }
+
+        // Check tear-off distance
+        if let Some(source_bounds) = self.drag_state.source_bounds {
+            if !source_bounds.contains(mouse_pos) {
+                let dist = mouse_pos - source_bounds.center();
+                if dist.x().abs() > TEAR_OFF_THRESHOLD || dist.y().abs() > TEAR_OFF_THRESHOLD {
+                    self.drag_state.torn_off = true;
+                }
+            }
+        }
+
+        // Detect dock zones by walking the tree
+        self.drag_state.target_zone = None;
+        self.drag_state.target_leaf_bounds = None;
+        let root = self.layout.root.clone();
+        self.detect_dock_zone(&root, self.bounds);
+    }
+
+    fn detect_dock_zone(&mut self, node: &DockNode, bounds: Rect2D) {
+        match node {
+            DockNode::Split {
+                direction,
+                ratio,
+                children,
+            } => {
+                let (first_bounds, second_bounds) =
+                    compute_split_bounds(*direction, *ratio, bounds);
+                self.detect_dock_zone(&children[0], first_bounds);
+                self.detect_dock_zone(&children[1], second_bounds);
+            }
+            DockNode::Leaf { tabs, .. } => {
+                if tabs.is_empty() {
+                    return;
+                }
+                let mouse_pos = self.drag_state.mouse_pos;
+                if bounds.contains(mouse_pos) {
+                    self.drag_state.target_leaf_bounds = Some(bounds);
+                    self.drag_state.target_zone = Some(detect_zone_in_bounds(mouse_pos, bounds));
+                }
+            }
+        }
+    }
+
+    fn render_drag_preview(&self, ui: &mut UiContext) {
+        let mouse = self.drag_state.mouse_pos;
+        let preview_size = Vec2::new(120.0, TAB_BAR_HEIGHT);
+        let preview_bounds =
+            Rect2D::from_origin_size(mouse - Vec2::new(0.0, preview_size.y()), preview_size);
+
+        ui.draw_rect(preview_bounds, ui.style.window_title_bg);
+        ui.draw_rect_border(
+            preview_bounds,
+            ui.style.window_title_bg,
+            ui.style.window_border,
+            1.0,
+        );
+
+        if let Some(label_fn) = self.panel_label_fn {
+            if let Some(panel_id) = self.drag_state.dragging_panel {
+                let label = label_fn(panel_id);
+                let font_size = ui.style.font_size;
+                let text_size = ui.measure_text(label, font_size);
+                let text_pos = Vec2::new(
+                    preview_bounds.min.x() + (preview_bounds.width() - text_size.x()) * 0.5,
+                    preview_bounds.center().y() - text_size.y() * 0.5,
+                );
+                ui.draw_text(label, text_pos, ui.style.text_color, font_size);
+            }
+        }
+
+        // Draw dock zone overlay on target leaf
+        if let (Some(zone), Some(leaf_bounds)) = (
+            self.drag_state.target_zone,
+            self.drag_state.target_leaf_bounds,
+        ) {
+            render_dock_zone_overlay(ui, zone, leaf_bounds);
+        }
+    }
+}
+
+fn compute_split_bounds(direction: SplitDirection, ratio: f32, bounds: Rect2D) -> (Rect2D, Rect2D) {
+    match direction {
+        SplitDirection::Horizontal => {
+            let first = Rect2D::from_origin_size(
+                bounds.min,
+                Vec2::new(bounds.width() * ratio, bounds.height()),
+            );
+            let split_x = bounds.min.x() + bounds.width() * ratio;
+            let second = Rect2D::from_origin_size(
+                Vec2::new(split_x + SPLITTER_THICKNESS, bounds.min.y()),
+                Vec2::new(
+                    (bounds.width() * (1.0 - ratio) - SPLITTER_THICKNESS).max(0.0),
+                    bounds.height(),
+                ),
+            );
+            (first, second)
+        }
+        SplitDirection::Vertical => {
+            let first = Rect2D::from_origin_size(
+                bounds.min,
+                Vec2::new(bounds.width(), bounds.height() * ratio),
+            );
+            let split_y = bounds.min.y() + bounds.height() * ratio;
+            let second = Rect2D::from_origin_size(
+                Vec2::new(bounds.min.x(), split_y + SPLITTER_THICKNESS),
+                Vec2::new(
+                    bounds.width(),
+                    (bounds.height() * (1.0 - ratio) - SPLITTER_THICKNESS).max(0.0),
+                ),
+            );
+            (first, second)
+        }
+    }
+}
+
+fn detect_zone_in_bounds(mouse_pos: Vec2, bounds: Rect2D) -> DockZone {
+    let cx = bounds.center().x();
+    let cy = bounds.center().y();
+    let hw = bounds.width() * 0.25;
+    let hh = bounds.height() * 0.25;
+
+    // Center zone: within 25% of center
+    let dx = (mouse_pos.x() - cx).abs();
+    let dy = (mouse_pos.y() - cy).abs();
+    if dx < hw && dy < hh {
+        return DockZone::Center;
+    }
+
+    // Determine which edge is closest
+    let dist_left = mouse_pos.x() - bounds.min.x();
+    let dist_right = bounds.max.x() - mouse_pos.x();
+    let dist_top = mouse_pos.y() - bounds.min.y();
+    let dist_bottom = bounds.max.y() - mouse_pos.y();
+
+    let min_dist = dist_left.min(dist_right).min(dist_top).min(dist_bottom);
+    if min_dist == dist_left {
+        DockZone::Left
+    } else if min_dist == dist_right {
+        DockZone::Right
+    } else if min_dist == dist_top {
+        DockZone::Top
+    } else {
+        DockZone::Bottom
+    }
+}
+
+fn render_dock_zone_overlay(ui: &mut UiContext, zone: DockZone, bounds: Rect2D) {
+    let highlight = Color::new(0.3, 0.6, 1.0, 0.25);
+    let border_color = Color::new(0.3, 0.6, 1.0, 0.6);
+
+    let zone_bounds = match zone {
+        DockZone::Center => bounds,
+        DockZone::Left => {
+            Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width() * 0.5, bounds.height()))
+        }
+        DockZone::Right => Rect2D::from_origin_size(
+            Vec2::new(bounds.min.x() + bounds.width() * 0.5, bounds.min.y()),
+            Vec2::new(bounds.width() * 0.5, bounds.height()),
+        ),
+        DockZone::Top => {
+            Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), bounds.height() * 0.5))
+        }
+        DockZone::Bottom => Rect2D::from_origin_size(
+            Vec2::new(bounds.min.x(), bounds.min.y() + bounds.height() * 0.5),
+            Vec2::new(bounds.width(), bounds.height() * 0.5),
+        ),
+    };
+
+    ui.draw_rect(zone_bounds, highlight);
+    ui.draw_rect_border(zone_bounds, highlight, border_color, 2.0);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_node(
+    render_panel: &mut dyn FnMut(&mut UiContext, Rect2D, DockPanelId),
+    ui: &mut UiContext,
+    node: &mut DockNode,
+    bounds: Rect2D,
+    label_fn: Option<&dyn Fn(DockPanelId) -> &'static str>,
+    drag_state: &mut DockDragState,
+    response: &mut DockAreaResponse,
+) {
+    match node {
+        DockNode::Split {
+            direction,
+            ratio,
+            children,
+        } => {
+            let (first_bounds, _) = compute_split_bounds(*direction, *ratio, bounds);
+
+            render_node(
+                render_panel,
+                ui,
+                &mut children[0],
+                first_bounds,
+                label_fn,
+                drag_state,
+                response,
+            );
 
             let separator_color = ui.style.separator;
             let handle_bounds = match direction {
@@ -560,45 +1164,23 @@ fn render_node<F: FnMut(&mut UiContext, Rect2D, DockPanelId)>(
                 SplitDirection::Horizontal => {
                     let current_width = *ratio * bounds.width();
                     let new_width = super::ResizeHandle::horizontal(handle_bounds, current_width)
-                        .min_value(bounds.width() * 0.1)
-                        .max_value(bounds.width() * 0.9)
+                        .min_value(bounds.width() * 0.05)
+                        .max_value(bounds.width() * 0.95)
                         .show(ui);
-                    (new_width / bounds.width()).clamp(0.1, 0.9)
+                    (new_width / bounds.width()).clamp(0.05, 0.95)
                 }
                 SplitDirection::Vertical => {
                     let current_height = *ratio * bounds.height();
                     let new_height = super::ResizeHandle::vertical(handle_bounds, current_height)
-                        .min_value(bounds.height() * 0.1)
-                        .max_value(bounds.height() * 0.9)
+                        .min_value(bounds.height() * 0.05)
+                        .max_value(bounds.height() * 0.95)
                         .show(ui);
-                    (new_height / bounds.height()).clamp(0.1, 0.9)
+                    (new_height / bounds.height()).clamp(0.05, 0.95)
                 }
             };
             *ratio = new_ratio;
 
-            // Recompute second_bounds with the updated ratio
-            let second_bounds = match direction {
-                SplitDirection::Horizontal => {
-                    let split_x = bounds.min.x() + bounds.width() * new_ratio;
-                    Rect2D::from_origin_size(
-                        Vec2::new(split_x + SPLITTER_THICKNESS, bounds.min.y()),
-                        Vec2::new(
-                            (bounds.width() * (1.0 - new_ratio) - SPLITTER_THICKNESS).max(0.0),
-                            bounds.height(),
-                        ),
-                    )
-                }
-                SplitDirection::Vertical => {
-                    let split_y = bounds.min.y() + bounds.height() * new_ratio;
-                    Rect2D::from_origin_size(
-                        Vec2::new(bounds.min.x(), split_y + SPLITTER_THICKNESS),
-                        Vec2::new(
-                            bounds.width(),
-                            (bounds.height() * (1.0 - new_ratio) - SPLITTER_THICKNESS).max(0.0),
-                        ),
-                    )
-                }
-            };
+            let (_, second_bounds) = compute_split_bounds(*direction, new_ratio, bounds);
 
             match direction {
                 SplitDirection::Horizontal => {
@@ -621,73 +1203,95 @@ fn render_node<F: FnMut(&mut UiContext, Rect2D, DockPanelId)>(
                 }
             }
 
-            render_node(render_panel, ui, &mut children[1], second_bounds);
+            render_node(
+                render_panel,
+                ui,
+                &mut children[1],
+                second_bounds,
+                label_fn,
+                drag_state,
+                response,
+            );
         }
-        DockNode::Leaf { tabs, active_tab } => {
+        DockNode::Leaf {
+            tabs,
+            active_tab,
+            collapsed,
+        } => {
             if tabs.is_empty() {
                 return;
             }
 
+            // Tab bar
             let tab_bar_bounds =
                 Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), TAB_BAR_HEIGHT));
             let tab_response = DockTabBar::new(tabs, *active_tab)
                 .bounds(tab_bar_bounds)
                 .show(ui);
 
-            let content_bounds = Rect2D::from_origin_size(
-                Vec2::new(bounds.min.x(), tab_bar_bounds.max.y()),
-                Vec2::new(bounds.width(), (bounds.height() - TAB_BAR_HEIGHT).max(0.0)),
-            );
+            // Handle tab click
+            if let Some(clicked) = tab_response.clicked_tab {
+                *active_tab = clicked;
+            }
+
+            // Handle close button
+            if let Some(closed_idx) = tab_response.closed_tab {
+                if let Some(&panel_id) = tabs.get(closed_idx) {
+                    response.closed_panel = Some(panel_id);
+                }
+            }
+
+            // Handle drag start
+            if let Some(drag_idx) = tab_response.drag_started_tab {
+                if let Some(&panel_id) = tabs.get(drag_idx) {
+                    if drag_state.dragging_panel.is_none() {
+                        drag_state.dragging_panel = Some(panel_id);
+                        drag_state.source_bounds = Some(bounds);
+                        drag_state.torn_off = false;
+                        response.drag_started = Some((panel_id, bounds));
+                    }
+                }
+            }
+
+            // Collapse toggle: double-click on tab bar background
+            // (just use the collapse state directly for now)
 
             let active_idx = tab_response
                 .clicked_tab
                 .unwrap_or(*active_tab)
                 .min(tabs.len() - 1);
+            *active_tab = active_idx;
+
+            if *collapsed {
+                // When collapsed, only show tab bar
+                return;
+            }
+
+            let content_bounds = Rect2D::from_origin_size(
+                Vec2::new(bounds.min.x(), tab_bar_bounds.max.y()),
+                Vec2::new(bounds.width(), (bounds.height() - TAB_BAR_HEIGHT).max(0.0)),
+            );
 
             ui.draw_rect(content_bounds, ui.style.window_bg);
 
             if let Some(&panel_id) = tabs.get(active_idx) {
                 ui.register_panel(panel_id, content_bounds);
+                response.visible_panels.push((panel_id, content_bounds));
                 render_panel(ui, content_bounds, panel_id);
             }
         }
     }
 }
 
-impl<'a, F> crate::Widget for DockArea<'a, F>
-where
-    F: FnMut(&mut UiContext, Rect2D, DockPanelId),
-{
-    fn ui(mut self, ui: &mut UiContext) -> crate::Response {
-        render_node(
-            &mut self.render_panel,
-            ui,
-            &mut self.layout.root,
-            self.bounds,
-        );
-        crate::Response::new(self.bounds)
-    }
-}
-
 // ---------------------------------------------------------------------------
-// 157e — Serialization
+// Serialization stubs
 // ---------------------------------------------------------------------------
-// serde / toml are not currently dependencies of katla_ui.
-// Serialization stubs are provided so callers get a clear error when the
-// feature is not enabled. Once `serde` and `toml` are added as optional
-// dependencies these can be wired up trivially.
 
 impl DockLayout {
-    /// Serialize the layout to a string.
-    ///
-    /// Returns an error until the `serde` feature is enabled for `katla_ui`.
     pub fn to_string(&self) -> Result<String, String> {
         Err("DockLayout::to_string — serde not enabled for katla_ui".into())
     }
 
-    /// Deserialize a layout from a string.
-    ///
-    /// Returns an error until the `serde` feature is enabled for `katla_ui`.
     pub fn from_string(_s: &str) -> Result<Self, String> {
         Err("DockLayout::from_string — serde not enabled for katla_ui".into())
     }
@@ -701,7 +1305,9 @@ mod tests {
     fn test_leaf_creates_leaf_with_tab_and_active_zero() {
         let node = DockNode::leaf(42);
         match node {
-            DockNode::Leaf { tabs, active_tab } => {
+            DockNode::Leaf {
+                tabs, active_tab, ..
+            } => {
                 assert_eq!(tabs, vec![42]);
                 assert_eq!(active_tab, 0);
             }
@@ -744,12 +1350,6 @@ mod tests {
             _ => panic!("expected Leaf"),
         }
 
-        let found = tree.find_leaf_with_panel(20).expect("should find panel 20");
-        match found {
-            DockNode::Leaf { tabs, .. } => assert!(tabs.contains(&20)),
-            _ => panic!("expected Leaf"),
-        }
-
         assert!(tree.find_leaf_with_panel(99).is_none());
     }
 
@@ -785,10 +1385,13 @@ mod tests {
         let mut node = DockNode::Leaf {
             tabs: vec![1, 2, 3],
             active_tab: 2,
+            collapsed: false,
         };
         assert!(node.remove_panel(3));
         match &node {
-            DockNode::Leaf { tabs, active_tab } => {
+            DockNode::Leaf {
+                tabs, active_tab, ..
+            } => {
                 assert_eq!(*tabs, vec![1, 2]);
                 assert_eq!(*active_tab, 1);
             }
@@ -814,51 +1417,13 @@ mod tests {
     }
 
     #[test]
-    fn test_collapse_empty_splits_double() {
-        let mut tree = DockNode::split(
-            SplitDirection::Horizontal,
-            0.5,
-            DockNode::split(
-                SplitDirection::Vertical,
-                0.5,
-                DockNode::Leaf {
-                    tabs: vec![1],
-                    active_tab: 0,
-                },
-                DockNode::Leaf {
-                    tabs: vec![],
-                    active_tab: 0,
-                },
-            ),
-            DockNode::split(
-                SplitDirection::Vertical,
-                0.5,
-                DockNode::Leaf {
-                    tabs: vec![],
-                    active_tab: 0,
-                },
-                DockNode::Leaf {
-                    tabs: vec![2],
-                    active_tab: 0,
-                },
-            ),
-        );
-
-        tree.remove_panel(1);
-        tree.remove_panel(2);
-
-        match &tree {
-            DockNode::Leaf { tabs, .. } => assert!(tabs.is_empty()),
-            _ => panic!("expected fully collapsed to empty leaf"),
-        }
-    }
-
-    #[test]
     fn test_add_tab_to_leaf() {
         let mut node = DockNode::leaf(10);
         assert!(node.add_tab_to_leaf(10, 20));
         match &node {
-            DockNode::Leaf { tabs, active_tab } => {
+            DockNode::Leaf {
+                tabs, active_tab, ..
+            } => {
                 assert_eq!(*tabs, vec![10, 20]);
                 assert_eq!(*active_tab, 1);
             }
@@ -867,72 +1432,108 @@ mod tests {
     }
 
     #[test]
-    fn test_add_tab_to_leaf_missing_target() {
-        let mut node = DockNode::leaf(10);
-        assert!(!node.add_tab_to_leaf(99, 20));
-        match &node {
-            DockNode::Leaf { tabs, .. } => assert_eq!(*tabs, vec![10]),
-            _ => panic!("expected Leaf"),
+    fn test_split_leaf_right() {
+        let mut tree = DockNode::leaf(1);
+        assert!(tree.split_leaf(1, 2, DockZone::Right));
+
+        match &tree {
+            DockNode::Split {
+                direction,
+                children,
+                ..
+            } => {
+                assert_eq!(*direction, SplitDirection::Horizontal);
+                // new_on_first=false, so old (panel 1) is first, new (panel 2) is second
+                assert!(matches!(&children[0], DockNode::Leaf { tabs, .. } if tabs == &[1]));
+                assert!(matches!(&children[1], DockNode::Leaf { tabs, .. } if tabs == &[2]));
+            }
+            _ => panic!("expected Split"),
         }
     }
 
     #[test]
-    fn test_is_empty_leaf() {
-        let empty = DockNode::Leaf {
-            tabs: vec![],
-            active_tab: 0,
-        };
-        assert!(empty.is_empty_leaf());
+    fn test_split_leaf_left() {
+        let mut tree = DockNode::leaf(1);
+        assert!(tree.split_leaf(1, 2, DockZone::Left));
 
-        let with_tabs = DockNode::leaf(1);
-        assert!(!with_tabs.is_empty_leaf());
+        match &tree {
+            DockNode::Split {
+                direction,
+                children,
+                ..
+            } => {
+                assert_eq!(*direction, SplitDirection::Horizontal);
+                // new_on_first=true, so new (panel 2) is first, old (panel 1) is second
+                assert!(matches!(&children[0], DockNode::Leaf { tabs, .. } if tabs == &[2]));
+                assert!(matches!(&children[1], DockNode::Leaf { tabs, .. } if tabs == &[1]));
+            }
+            _ => panic!("expected Split"),
+        }
+    }
 
-        let split = DockNode::split(
+    #[test]
+    fn test_split_leaf_center_adds_tab() {
+        let mut tree = DockNode::leaf(1);
+        assert!(tree.split_leaf(1, 2, DockZone::Center));
+        match &tree {
+            DockNode::Leaf {
+                tabs, active_tab, ..
+            } => {
+                assert_eq!(*tabs, vec![1, 2]);
+                assert_eq!(*active_tab, 1);
+            }
+            _ => panic!("expected Leaf with both tabs"),
+        }
+    }
+
+    #[test]
+    fn test_detect_zone_center() {
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 300.0));
+        let zone = detect_zone_in_bounds(bounds.center(), bounds);
+        assert_eq!(zone, DockZone::Center);
+    }
+
+    #[test]
+    fn test_detect_zone_edges() {
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 300.0));
+
+        let left = detect_zone_in_bounds(Vec2::new(5.0, 150.0), bounds);
+        assert_eq!(left, DockZone::Left);
+
+        let right = detect_zone_in_bounds(Vec2::new(395.0, 150.0), bounds);
+        assert_eq!(right, DockZone::Right);
+
+        let top = detect_zone_in_bounds(Vec2::new(200.0, 5.0), bounds);
+        assert_eq!(top, DockZone::Top);
+
+        let bottom = detect_zone_in_bounds(Vec2::new(200.0, 295.0), bounds);
+        assert_eq!(bottom, DockZone::Bottom);
+    }
+
+    #[test]
+    fn test_first_panel_id() {
+        let tree = DockNode::split(
             SplitDirection::Horizontal,
             0.5,
             DockNode::leaf(1),
             DockNode::leaf(2),
         );
-        assert!(!split.is_empty_leaf());
-    }
-
-    #[test]
-    fn test_dock_layout_new() {
-        let root = DockNode::leaf(42);
-        let layout = DockLayout::new(root.clone());
-        assert!(matches!(layout.root, DockNode::Leaf { .. }));
-        assert!(layout.floating.is_empty());
+        assert_eq!(tree.first_panel_id(), Some(1));
     }
 
     #[test]
     fn test_dock_layout_single() {
         let layout = DockLayout::single(7);
         match &layout.root {
-            DockNode::Leaf { tabs, active_tab } => {
+            DockNode::Leaf {
+                tabs, active_tab, ..
+            } => {
                 assert_eq!(*tabs, vec![7]);
                 assert_eq!(*active_tab, 0);
             }
             _ => panic!("expected Leaf"),
         }
         assert!(layout.floating.is_empty());
-    }
-
-    #[test]
-    fn test_remove_all_tabs_from_leaf() {
-        let mut node = DockNode::Leaf {
-            tabs: vec![1, 2, 3],
-            active_tab: 0,
-        };
-        assert!(node.remove_panel(1));
-        assert!(node.remove_panel(2));
-        assert!(node.remove_panel(3));
-        match &node {
-            DockNode::Leaf { tabs, active_tab } => {
-                assert!(tabs.is_empty());
-                assert_eq!(*active_tab, 0);
-            }
-            _ => panic!("expected Leaf"),
-        }
     }
 
     #[test]

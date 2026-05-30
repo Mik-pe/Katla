@@ -20,7 +20,7 @@ pub(super) use co_creator::{
     CoCreatorDrawCtx, CoCreatorPanelSync, CoCreatorSubmitAction, CoCreatorUndoAction,
 };
 pub(super) use console::{ConsoleDrawCtx, ConsoleState};
-pub(super) use editor_root::EditorRootView;
+pub(super) use editor_root::{EditorOverlayView, EditorRootView};
 pub(super) use gizmo::{GizmoDrawCtx, GizmoModeChanged};
 pub(super) use hierarchy::HierarchyDrawCtx;
 pub(super) use inspector::InspectorDrawCtx;

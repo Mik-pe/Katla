@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use katla_math::Color;
+use katla_math::{Color, Rect2D};
 use katla_ui::declarative::{Build, BuildContext, Padding, StateId, ViewDescriptor};
 use katla_ui::{FontSize, ScrollAreaState};
 
@@ -10,6 +10,7 @@ use crate::ui::editor_ui::ColorScheme;
 /// Environment data injected before each frame for the console panel.
 #[derive(Clone)]
 pub(crate) struct ConsoleDrawCtx {
+    pub bounds: Rect2D,
     pub theme: ColorScheme,
     pub filter_levels: [bool; 5],
     pub search_filter: String,
@@ -121,7 +122,10 @@ impl Build for ConsoleView {
             .spacing(4.0)
             .padding(Padding::all(4.0));
 
-        panel("Console".to_string(), content).header_height(24.0)
+        panel("Console".to_string(), content)
+            .header_height(24.0)
+            .flex_width(draw_ctx.bounds.width())
+            .flex_height(draw_ctx.bounds.height())
     }
 }
 
