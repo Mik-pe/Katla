@@ -14,6 +14,7 @@ pub mod serialize;
 pub mod state;
 pub mod transition;
 pub mod tree;
+pub mod widget;
 
 pub use actions::ActionStream;
 pub use animation::{
@@ -46,3 +47,4 @@ pub use serialize::{BindingResolver, ViewDescriptorData, resolve_descriptor};
 pub use state::{Binding, BindingRef, StateArena, StateId, ViewId};
 pub use transition::{Transition, TweenConfig};
 pub use tree::{InteractionState, ViewNode, ViewTree};
+pub use widget::{InputContext, InputResult, Widget};

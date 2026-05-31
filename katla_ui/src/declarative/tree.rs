@@ -21,10 +21,11 @@ use super::input;
 use super::layout::TaffyNodeMap;
 use super::state::{StateArena, ViewId};
 use super::transition::Transition;
+use super::widget::{DescriptorWidget, Widget};
 use crate::style::FontSize;
 
 pub struct ViewNode {
-    pub descriptor: ViewDescriptor,
+    pub widget: Box<dyn Widget>,
     pub children: Vec<ViewId>,
     pub parent: Option<ViewId>,
     pub animations: Vec<Animation>,
@@ -36,6 +37,26 @@ pub struct ViewNode {
     pub taffy_id: Option<TaffyNodeId>,
     pub key: Option<u64>,
     pub zstack_alignment: Option<Alignment>,
+}
+
+impl ViewNode {
+    /// Access the inner `ViewDescriptor` from the widget bridge.
+    ///
+    /// During migration, all widgets are `DescriptorWidget` instances wrapping
+    /// a `ViewDescriptor`. This method provides convenient access for pipeline
+    /// code that still operates on the enum.
+    pub fn descriptor(&self) -> &ViewDescriptor {
+        self.widget
+            .as_any()
+            .downcast_ref::<DescriptorWidget>()
+            .expect("expected DescriptorWidget")
+            .descriptor()
+    }
+
+    /// Replace the widget with a new `DescriptorWidget` wrapping the given descriptor.
+    pub fn set_descriptor(&mut self, descriptor: ViewDescriptor) {
+        self.widget = Box::new(DescriptorWidget::new(descriptor));
+    }
 }
 
 /// Tracks interactive state across frames for the declarative view tree.
@@ -105,7 +126,7 @@ impl ViewTree {
             let patches = self.diff_against(root_id, &descriptor);
             self.apply_patches(&patches);
             if let Some(node) = self.nodes.get_mut(root_id) {
-                node.descriptor = descriptor;
+                node.set_descriptor(descriptor);
             }
         } else {
             let root_id = self.insert_node(None, ViewDescriptor::Empty, None, None);
@@ -182,7 +203,7 @@ impl ViewTree {
             None => return ImeRequest::inactive(),
         };
 
-        match &node.descriptor {
+        match node.descriptor() {
             ViewDescriptor::TextField { .. } => {
                 let bounds = self
                     .resolved_bounds
@@ -246,12 +267,13 @@ impl ViewTree {
 
         // 7. Process input (hit test, dispatch callbacks) using resolved bounds
         let mut callbacks = std::mem::take(&mut self.callbacks);
-        let resolved = self.resolved_bounds.clone();
+        let resolved = std::mem::take(&mut self.resolved_bounds);
         let input_result = input::process_input(self, &ui.input, &mut callbacks, &resolved);
         let input_consumed = input_result.input_consumed;
         self.interaction.hovered_id = input_result.hovered_id;
         self.interaction.focused_id = self.focus.focused();
         self.callbacks = callbacks;
+        self.resolved_bounds = resolved;
 
         // 8. Patch DraggablePanel bounds that moved during input processing
         self.update_draggable_bounds();
@@ -287,50 +309,54 @@ impl ViewTree {
             // Collect on_complete callbacks from completed animations
             let mut completed_callbacks: Vec<u32> = Vec::new();
 
-            // Tick simple animations
-            let animations = if let Some(node) = self.nodes.get(id) {
-                node.animations.clone()
-            } else {
-                continue;
-            };
+            // Collect animation tick data in a single borrow — avoids cloning the
+            // full Animation/KeyframeAnimation vecs (which contain Tween + Easing).
+            let anim_ticks: Vec<(bool, AnimatedProperty, f32, Option<u32>)> = self
+                .nodes
+                .get(id)
+                .map(|node| {
+                    let simple: Vec<_> = node
+                        .animations
+                        .iter()
+                        .map(|a| {
+                            (
+                                a.is_complete(current_time),
+                                a.property(),
+                                a.value_at(current_time),
+                                a.on_complete_id(),
+                            )
+                        })
+                        .collect();
+                    let keyframe: Vec<_> = node
+                        .keyframe_animations
+                        .iter()
+                        .map(|a| {
+                            (
+                                a.is_complete(current_time),
+                                a.property(),
+                                a.value_at(current_time),
+                                a.on_complete_id(),
+                            )
+                        })
+                        .collect();
+                    let mut combined = simple;
+                    combined.extend(keyframe);
+                    combined
+                })
+                .unwrap_or_default();
 
-            for anim in &animations {
-                if anim.is_complete(current_time) {
-                    if let Some(ref cb) = anim.on_complete {
-                        completed_callbacks.push(cb.0);
+            for (is_complete, property, value, cb_id) in &anim_ticks {
+                if *is_complete {
+                    if let Some(cb) = cb_id {
+                        completed_callbacks.push(*cb);
                     }
                 } else {
-                    let value = anim.value_at(current_time);
-                    match anim.property {
-                        AnimatedProperty::Opacity => opacity = Some(value),
-                        AnimatedProperty::OffsetX => offset_x = Some(value),
-                        AnimatedProperty::OffsetY => offset_y = Some(value),
-                        AnimatedProperty::Scale => scale = Some(value),
-                        AnimatedProperty::CornerRadius => corner_radius = Some(value),
-                    }
-                }
-            }
-
-            // Tick keyframe animations
-            let kf_animations = if let Some(node) = self.nodes.get(id) {
-                node.keyframe_animations.clone()
-            } else {
-                continue;
-            };
-
-            for kf_anim in &kf_animations {
-                if kf_anim.is_complete(current_time) {
-                    if let Some(ref cb) = kf_anim.on_complete {
-                        completed_callbacks.push(cb.0);
-                    }
-                } else {
-                    let value = kf_anim.value_at(current_time);
-                    match kf_anim.property {
-                        AnimatedProperty::Opacity => opacity = Some(value),
-                        AnimatedProperty::OffsetX => offset_x = Some(value),
-                        AnimatedProperty::OffsetY => offset_y = Some(value),
-                        AnimatedProperty::Scale => scale = Some(value),
-                        AnimatedProperty::CornerRadius => corner_radius = Some(value),
+                    match property {
+                        AnimatedProperty::Opacity => opacity = Some(*value),
+                        AnimatedProperty::OffsetX => offset_x = Some(*value),
+                        AnimatedProperty::OffsetY => offset_y = Some(*value),
+                        AnimatedProperty::Scale => scale = Some(*value),
+                        AnimatedProperty::CornerRadius => corner_radius = Some(*value),
                     }
                 }
             }
@@ -395,6 +421,25 @@ impl ViewTree {
         let Some(root_id) = self.root else { return };
         self.resolved_bounds.clear();
 
+        // Pre-collect traversal order (pre-order DFS) and parent mapping.
+        // This avoids cloning children vectors during recursive traversal.
+        let (traversal, parent_map) = {
+            let mut order = Vec::new();
+            let mut parents = HashMap::new();
+            let mut stack = vec![(root_id, root_id)];
+            while let Some((id, parent_id)) = stack.pop() {
+                order.push(id);
+                parents.insert(id, parent_id);
+                if let Some(node) = self.nodes.get(id) {
+                    for &child in node.children.iter().rev() {
+                        stack.push((child, id));
+                    }
+                }
+            }
+            (order, parents)
+        };
+
+        // Process root
         let root_bounds = self
             .nodes
             .get(root_id)
@@ -402,56 +447,41 @@ impl ViewTree {
             .unwrap_or_default();
         self.resolved_bounds.insert(root_id, root_bounds);
 
-        let children = self
-            .nodes
-            .get(root_id)
-            .map(|n| n.children.clone())
-            .unwrap_or_default();
-        for &child_id in &children {
-            Self::resolve_child_bounds(
-                &self.nodes,
-                &self.state,
-                &mut self.resolved_bounds,
-                child_id,
-                root_bounds,
-                Vec2::new(0.0, 0.0),
+        // Track accumulated translations per node (children inherit parent's accumulated + delta)
+        let mut translations: HashMap<ViewId, Vec2> = HashMap::new();
+        translations.insert(root_id, Vec2::new(0.0, 0.0));
+
+        // Process remaining nodes using split borrows — no cloning needed
+        let nodes = &self.nodes;
+        let state = &self.state;
+        let resolved = &mut self.resolved_bounds;
+
+        for &node_id in traversal.iter().skip(1) {
+            let Some(&parent_id) = parent_map.get(&node_id) else {
+                continue;
+            };
+            let accumulated_translation = translations.get(&parent_id).copied().unwrap_or_default();
+            let parent_bounds = resolved.get(&parent_id).copied().unwrap_or_default();
+
+            let Some(node) = nodes.get(node_id) else {
+                continue;
+            };
+
+            let mut bounds = node.animation_state.apply_to_bounds(node.bounds);
+            bounds = bounds.translate(accumulated_translation);
+
+            let delta = Self::compute_position_delta(
+                node.descriptor(),
+                node.zstack_alignment,
+                bounds,
+                parent_bounds,
+                &node.animation_state,
+                state,
             );
-        }
-    }
+            bounds = bounds.translate(delta);
 
-    /// Recursive helper: compute and store resolved bounds for one node and
-    /// all its descendants.
-    fn resolve_child_bounds(
-        nodes: &SlotMap<ViewId, ViewNode>,
-        state: &StateArena,
-        resolved: &mut HashMap<ViewId, Rect2D>,
-        node_id: ViewId,
-        parent_bounds: Rect2D,
-        accumulated_translation: Vec2,
-    ) {
-        let Some(node) = nodes.get(node_id) else {
-            return;
-        };
-
-        let mut bounds = node.animation_state.apply_to_bounds(node.bounds);
-        bounds = bounds.translate(accumulated_translation);
-
-        let delta = Self::compute_position_delta(
-            &node.descriptor,
-            node.zstack_alignment,
-            bounds,
-            parent_bounds,
-            &node.animation_state,
-            state,
-        );
-        bounds = bounds.translate(delta);
-
-        resolved.insert(node_id, bounds);
-
-        let children = node.children.clone();
-        let child_translation = accumulated_translation + delta;
-        for &child_id in &children {
-            Self::resolve_child_bounds(nodes, state, resolved, child_id, bounds, child_translation);
+            resolved.insert(node_id, bounds);
+            translations.insert(node_id, accumulated_translation + delta);
         }
     }
 
@@ -473,6 +503,18 @@ impl ViewTree {
             return resolved.min - bounds.min;
         }
 
+        // Modal: center on screen
+        if let ViewDescriptor::Modal(desc) = descriptor {
+            let is_open: bool = state.get(desc.open_id).unwrap_or_default();
+            if is_open {
+                let cx = (parent_bounds.width() - desc.width) * 0.5;
+                let cy = (parent_bounds.height() - desc.height) * 0.5;
+                let centered = parent_bounds.min + Vec2::new(cx, cy);
+                return centered - bounds.min;
+            }
+            return Vec2::new(0.0, 0.0);
+        }
+
         let mut resolved_min = bounds.min;
 
         // ZStack alignment
@@ -483,7 +525,7 @@ impl ViewTree {
 
         // DraggablePanel stored position
         if let ViewDescriptor::DraggablePanel(desc) = descriptor {
-            let panel_state: DraggablePanelState = state.get(desc.state_id);
+            let panel_state: DraggablePanelState = state.get(desc.state_id).unwrap_or_default();
             if panel_state.visibility.is_visible() {
                 resolved_min = panel_state.position.unwrap_or_else(|| {
                     Vec2::new(
@@ -504,10 +546,11 @@ impl ViewTree {
             .nodes
             .iter()
             .filter_map(|(id, node)| {
-                let ViewDescriptor::DraggablePanel(desc) = &node.descriptor else {
+                let ViewDescriptor::DraggablePanel(desc) = node.descriptor() else {
                     return None;
                 };
-                let panel_state: DraggablePanelState = self.state.get(desc.state_id);
+                let panel_state: DraggablePanelState =
+                    self.state.get(desc.state_id).unwrap_or_default();
                 if panel_state.visibility.is_visible() {
                     panel_state.position.map(|pos| (id, pos))
                 } else {
@@ -530,9 +573,9 @@ impl ViewTree {
         let Some(node) = self.nodes.get(node_id) else {
             return;
         };
-        let descriptor = &node.descriptor;
+        let descriptor = node.descriptor();
         let children: Vec<ViewId> = node.children.clone();
-        let anim_state = node.animation_state.clone();
+        let anim_state = node.animation_state;
 
         let bounds = self
             .resolved_bounds
@@ -564,14 +607,21 @@ impl ViewTree {
         );
 
         let scroll_offset = if let ViewDescriptor::ScrollView(desc) = descriptor {
-            Some(self.state.get::<f32>(desc.scroll_state_id))
+            Some(
+                self.state
+                    .get::<f32>(desc.scroll_state_id)
+                    .unwrap_or_default(),
+            )
         } else {
             None
         };
 
         let skip_children = if let ViewDescriptor::Section { expanded_id, .. } = descriptor {
-            let expanded: bool = self.state.get(*expanded_id);
+            let expanded: bool = self.state.get(*expanded_id).unwrap_or_default();
             !expanded
+        } else if let ViewDescriptor::Modal(desc) = descriptor {
+            let is_open: bool = self.state.get(desc.open_id).unwrap_or_default();
+            !is_open
         } else {
             false
         };
@@ -598,7 +648,7 @@ impl ViewTree {
         let Some(child_node) = self.nodes.get(child_id) else {
             return;
         };
-        let anim_state = child_node.animation_state.clone();
+        let anim_state = child_node.animation_state;
 
         // Use pre-resolved bounds (animation + ZStack + Overlay + DraggablePanel)
         let child_bounds = self
@@ -630,13 +680,13 @@ impl ViewTree {
             .filter_map(|&id| self.resolved_bounds.get(&id).copied())
             .collect();
 
-        let is_scroll_view = matches!(child_node.descriptor, ViewDescriptor::ScrollView(_));
+        let is_scroll_view = matches!(child_node.descriptor(), ViewDescriptor::ScrollView(_));
         if is_scroll_view {
             ui.push_clip(draw_bounds);
         }
 
         draw_descriptor_with_id(
-            &child_node.descriptor,
+            child_node.descriptor(),
             ui,
             draw_bounds,
             &self.state,
@@ -646,15 +696,19 @@ impl ViewTree {
             &anim_state,
         );
 
-        let child_scroll = if let ViewDescriptor::ScrollView(desc) = &child_node.descriptor {
-            Some(self.state.get::<f32>(desc.scroll_state_id))
+        let child_scroll = if let ViewDescriptor::ScrollView(desc) = child_node.descriptor() {
+            Some(
+                self.state
+                    .get::<f32>(desc.scroll_state_id)
+                    .unwrap_or_default(),
+            )
         } else {
             scroll_offset
         };
 
         let skip_children =
-            if let ViewDescriptor::Section { expanded_id, .. } = &child_node.descriptor {
-                !self.state.get::<bool>(*expanded_id)
+            if let ViewDescriptor::Section { expanded_id, .. } = child_node.descriptor() {
+                !self.state.get::<bool>(*expanded_id).unwrap_or_default()
             } else {
                 false
             };
@@ -665,7 +719,7 @@ impl ViewTree {
                     grandchild_id,
                     ui,
                     draw_bounds,
-                    &child_node.descriptor,
+                    child_node.descriptor(),
                     child_scroll,
                 );
             }
@@ -766,7 +820,7 @@ impl ViewTree {
 
         let root_id = self.root.unwrap_or_else(|| {
             let id = self.nodes.insert(ViewNode {
-                descriptor: ViewDescriptor::Empty,
+                widget: Box::new(DescriptorWidget::new(ViewDescriptor::Empty)),
                 children: Vec::new(),
                 parent: None,
                 animations: Vec::new(),
@@ -808,7 +862,7 @@ impl ViewTree {
         zstack_alignment: Option<Alignment>,
     ) -> ViewId {
         let id = self.nodes.insert(ViewNode {
-            descriptor,
+            widget: Box::new(DescriptorWidget::new(descriptor)),
             children: Vec::new(),
             parent,
             animations: Vec::new(),
@@ -1029,7 +1083,7 @@ impl ViewTree {
 
     fn sync_tree(&mut self, node_id: ViewId, descriptor: &ViewDescriptor) {
         let old_descriptor = if let Some(node) = self.nodes.get(node_id) {
-            node.descriptor.clone()
+            node.descriptor().clone()
         } else {
             return;
         };
@@ -1039,13 +1093,13 @@ impl ViewTree {
         match action {
             DiffAction::Update => {
                 if let Some(node) = self.nodes.get_mut(node_id) {
-                    node.descriptor = descriptor.clone();
+                    node.set_descriptor(descriptor.clone());
                     node.state_version += 1;
                 }
             }
             DiffAction::RecurseChildren => {
                 if let Some(node) = self.nodes.get_mut(node_id) {
-                    node.descriptor = descriptor.clone();
+                    node.set_descriptor(descriptor.clone());
                 }
 
                 // Handle TransitionContainer single-child with animation support
@@ -1180,7 +1234,7 @@ impl ViewTree {
                     }
                     // Update descriptor but keep child alive for animation
                     if let Some(node) = self.nodes.get_mut(node_id) {
-                        node.descriptor = descriptor.clone();
+                        node.set_descriptor(descriptor.clone());
                         node.state_version += 1;
                     }
                     return;
@@ -1198,7 +1252,7 @@ impl ViewTree {
                         self.remove_node_recursive(*child_id);
                     }
                     if let Some(node) = self.nodes.get_mut(node_id) {
-                        node.descriptor = descriptor.clone();
+                        node.set_descriptor(descriptor.clone());
                         node.children.clear();
                         node.state_version += 1;
                     }
@@ -1222,7 +1276,7 @@ impl ViewTree {
                     self.remove_node_recursive(*child_id);
                 }
                 if let Some(node) = self.nodes.get_mut(node_id) {
-                    node.descriptor = descriptor.clone();
+                    node.set_descriptor(descriptor.clone());
                     node.children.clear();
                     node.state_version += 1;
                 }
@@ -1266,7 +1320,7 @@ impl ViewTree {
 
     fn diff_recursive(&self, node_id: ViewId, new: &ViewDescriptor, patches: &mut Vec<Patch>) {
         let old = match self.nodes.get(node_id) {
-            Some(n) => &n.descriptor,
+            Some(n) => n.descriptor(),
             None => return,
         };
 
@@ -1307,7 +1361,7 @@ impl ViewTree {
                 }
                 Patch::Update { node, descriptor } => {
                     if let Some(n) = self.nodes.get_mut(*node) {
-                        n.descriptor = descriptor.clone();
+                        n.set_descriptor(descriptor.clone());
                         n.state_version += 1;
                     }
                 }
@@ -1507,7 +1561,7 @@ mod tests {
         let child_id = first_child_id(&tree).expect("should have a child");
         let child = tree.get(child_id).unwrap();
         let matches_a =
-            matches!(&child.descriptor, ViewDescriptor::Text { content, .. } if content == "A");
+            matches!(child.descriptor(), ViewDescriptor::Text { content, .. } if content == "A");
         assert!(matches_a, "initial child should be Text(\"A\")");
 
         build_tree(
@@ -1517,7 +1571,7 @@ mod tests {
 
         let child = tree.get(child_id).expect("same child should persist");
         let matches_b =
-            matches!(&child.descriptor, ViewDescriptor::Text { content, .. } if content == "B");
+            matches!(child.descriptor(), ViewDescriptor::Text { content, .. } if content == "B");
         assert!(matches_b, "child descriptor should now be Text(\"B\")");
     }
 
@@ -1541,7 +1595,7 @@ mod tests {
         let root_node = tree.get(root).unwrap();
         assert!(
             matches!(
-                root_node.descriptor,
+                root_node.descriptor(),
                 ViewDescriptor::TransitionContainer { .. }
             ),
             "root should now be TransitionContainer"
@@ -1603,7 +1657,7 @@ mod tests {
         let text_id_after = tree.get(root_after).unwrap().children[0];
         assert_eq!(root, root_after);
         assert_eq!(text_id, text_id_after);
-        assert_eq!(tree.state_arena().get::<i32>(state_id), 42);
+        assert_eq!(tree.state_arena().get::<i32>(state_id).unwrap(), 42);
     }
 
     #[test]
@@ -1619,7 +1673,7 @@ mod tests {
         assert_eq!(root, root_after);
 
         let node = tree.get(root).unwrap();
-        assert!(matches!(node.descriptor, ViewDescriptor::Button { .. }));
+        assert!(matches!(node.descriptor(), ViewDescriptor::Button { .. }));
         assert!(node.state_version > v0);
     }
 
@@ -1658,7 +1712,7 @@ mod tests {
 
         let inner_id = tree.get(hstack_id_after).unwrap().children[0];
         assert!(matches!(
-            tree.get(inner_id).unwrap().descriptor,
+            tree.get(inner_id).unwrap().descriptor(),
             ViewDescriptor::Button { .. }
         ));
     }
@@ -1670,20 +1724,20 @@ mod tests {
         build_tree(&mut tree, empty());
         let root = tree.root().unwrap();
         assert!(matches!(
-            tree.get(root).unwrap().descriptor,
+            tree.get(root).unwrap().descriptor(),
             ViewDescriptor::Empty
         ));
 
         build_tree(&mut tree, text("hello"));
         assert_eq!(tree.root().unwrap(), root);
         assert!(matches!(
-            tree.get(root).unwrap().descriptor,
+            tree.get(root).unwrap().descriptor(),
             ViewDescriptor::Text { .. }
         ));
 
         build_tree(&mut tree, empty());
         assert!(matches!(
-            tree.get(root).unwrap().descriptor,
+            tree.get(root).unwrap().descriptor(),
             ViewDescriptor::Empty
         ));
     }
@@ -1703,7 +1757,7 @@ mod tests {
         assert_eq!(root, root_after, "Panel should keep same ViewId");
         assert_eq!(child_id, child_id_after, "Text should keep same ViewId");
 
-        let ViewDescriptor::Text { content, .. } = &tree.get(child_id_after).unwrap().descriptor
+        let ViewDescriptor::Text { content, .. } = tree.get(child_id_after).unwrap().descriptor()
         else {
             panic!("expected Text descriptor");
         };

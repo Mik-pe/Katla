@@ -41,6 +41,14 @@ fn hit_test_recursive(
         return None;
     }
 
+    // Skip Modal children when modal is closed
+    if let ViewDescriptor::Modal(desc) = node.descriptor() {
+        let is_open: bool = tree.state_arena().get(desc.open_id).unwrap_or_default();
+        if !is_open {
+            return None;
+        }
+    }
+
     // Walk children in reverse order (topmost first for Z-ordering)
     for &child_id in node.children.iter().rev() {
         if let Some(hit) = hit_test_recursive(tree, child_id, mouse_pos, bounds_map) {
@@ -49,7 +57,7 @@ fn hit_test_recursive(
     }
 
     // No child hit — check if this node itself is interactive
-    let is_interactive = is_interactive(&node.descriptor);
+    let is_interactive = is_interactive(node.descriptor());
     if is_interactive {
         Some(HitResult { id: node_id })
     } else {
@@ -124,22 +132,23 @@ pub(crate) fn process_input(
     // Extract data from the active node before mutating the tree.
     let active_slider_info: Option<(super::state::StateId, f32, f32)> =
         if let Some(active_id) = tree.interaction().active_id {
-            tree.get(active_id).and_then(|node| match &node.descriptor {
-                ViewDescriptor::Slider {
-                    value_id, range, ..
-                }
-                | ViewDescriptor::LabeledSlider {
-                    value_id, range, ..
-                } => Some((*value_id, *range.start(), *range.end())),
-                ViewDescriptor::Vec3Slider {
-                    value_ids, range, ..
-                } => {
-                    let axis = tree.interaction().drag_axis.unwrap_or(0);
-                    let value_id = value_ids[axis.min(2)];
-                    Some((value_id, *range.start(), *range.end()))
-                }
-                _ => None,
-            })
+            tree.get(active_id)
+                .and_then(|node| match node.descriptor() {
+                    ViewDescriptor::Slider {
+                        value_id, range, ..
+                    }
+                    | ViewDescriptor::LabeledSlider {
+                        value_id, range, ..
+                    } => Some((*value_id, *range.start(), *range.end())),
+                    ViewDescriptor::Vec3Slider {
+                        value_ids, range, ..
+                    } => {
+                        let axis = tree.interaction().drag_axis.unwrap_or(0);
+                        let value_id = value_ids[axis.min(2)];
+                        Some((value_id, *range.start(), *range.end()))
+                    }
+                    _ => None,
+                })
         } else {
             None
         };
@@ -173,7 +182,7 @@ pub(crate) fn process_input(
 
     // Close DraggablePanels with close_on_outside_click if click landed on something else
     if input.mouse_clicked(mouse_button::LEFT) {
-        let is_panel = matches!(tree.get(hit.id), Some(n) if matches!(&n.descriptor, ViewDescriptor::DraggablePanel(_)));
+        let is_panel = matches!(tree.get(hit.id), Some(n) if matches!(n.descriptor(), ViewDescriptor::DraggablePanel(_)));
         if !is_panel {
             close_outside_draggable_panels(tree, bounds_map, input.mouse_pos);
         }
@@ -182,7 +191,7 @@ pub(crate) fn process_input(
     let Some(node) = tree.get(hit.id) else {
         return result;
     };
-    let descriptor = node.descriptor.clone();
+    let descriptor = node.descriptor().clone();
 
     match &descriptor {
         ViewDescriptor::Button { .. } | ViewDescriptor::ImageButton { .. }
@@ -259,7 +268,10 @@ pub(crate) fn process_input(
         }
 
         ViewDescriptor::Toggle { value_id, .. } if input.mouse_clicked(mouse_button::LEFT) => {
-            let current = tree.state_arena().get::<bool>(*value_id);
+            let current = tree
+                .state_arena()
+                .get::<bool>(*value_id)
+                .unwrap_or_default();
             tree.state_arena_mut().set(*value_id, !current);
             result.input_consumed = true;
             result.clicked_id = Some(hit.id);
@@ -294,7 +306,8 @@ pub(crate) fn process_input(
             let Some(node_bounds) = bounds_map.get(&hit.id).copied() else {
                 return result;
             };
-            let mut state: DraggablePanelState = tree.state_arena().get(desc.state_id);
+            let mut state: DraggablePanelState =
+                tree.state_arena().get(desc.state_id).unwrap_or_default();
 
             if !state.visibility.is_visible() {
                 return result;
@@ -363,13 +376,13 @@ pub(crate) fn process_input(
 
                 if group_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT)
                 {
-                    let is_open: bool = tree.state_arena().get(group.open_id);
+                    let is_open: bool = tree.state_arena().get(group.open_id).unwrap_or_default();
                     tree.state_arena_mut().set(group.open_id, !is_open);
                     result.input_consumed = true;
                     break;
                 }
 
-                let is_open: bool = tree.state_arena().get(group.open_id);
+                let is_open: bool = tree.state_arena().get(group.open_id).unwrap_or_default();
                 if is_open {
                     let dropdown_y = group_bounds.max.y();
                     let dropdown_width = 180.0_f32;
@@ -420,8 +433,9 @@ pub(crate) fn process_input(
 
             let visible_indices =
                 compute_visible_tree_items_input(&desc.items, tree, desc.expanded_id);
-            let scroll_offset: f32 = tree.state_arena().get(desc.scroll_id);
-            let selected: Option<u64> = tree.state_arena().get(desc.selected_id);
+            let scroll_offset: f32 = tree.state_arena().get(desc.scroll_id).unwrap_or_default();
+            let selected: Option<u64> =
+                tree.state_arena().get(desc.selected_id).unwrap_or_default();
 
             let visible_count = visible_indices.len();
             let first_row =
@@ -453,7 +467,8 @@ pub(crate) fn process_input(
                         && chevron_bounds.contains(input.mouse_pos)
                         && input.mouse_clicked(mouse_button::LEFT)
                     {
-                        let mut expanded: HashSet<u64> = tree.state_arena().get(desc.expanded_id);
+                        let mut expanded: HashSet<u64> =
+                            tree.state_arena().get(desc.expanded_id).unwrap_or_default();
                         if expanded.contains(&item.id) {
                             expanded.remove(&item.id);
                         } else {
@@ -505,14 +520,16 @@ pub(crate) fn process_input(
                     );
                     result.input_consumed = true;
                 } else if input.key_pressed(KeyCode::ArrowRight) && item.has_children {
-                    let mut expanded: HashSet<u64> = tree.state_arena().get(desc.expanded_id);
+                    let mut expanded: HashSet<u64> =
+                        tree.state_arena().get(desc.expanded_id).unwrap_or_default();
                     if !expanded.contains(&item.id) {
                         expanded.insert(item.id);
                         tree.state_arena_mut().set(desc.expanded_id, expanded);
                         result.input_consumed = true;
                     }
                 } else if input.key_pressed(KeyCode::ArrowLeft) && item.has_children {
-                    let mut expanded: HashSet<u64> = tree.state_arena().get(desc.expanded_id);
+                    let mut expanded: HashSet<u64> =
+                        tree.state_arena().get(desc.expanded_id).unwrap_or_default();
                     if expanded.contains(&item.id) {
                         expanded.remove(&item.id);
                         tree.state_arena_mut().set(desc.expanded_id, expanded);
@@ -523,7 +540,7 @@ pub(crate) fn process_input(
         }
 
         ViewDescriptor::Modal(desc) => {
-            let is_open: bool = tree.state_arena().get(desc.open_id);
+            let is_open: bool = tree.state_arena().get(desc.open_id).unwrap_or_default();
             if !is_open {
                 return result;
             }
@@ -534,18 +551,24 @@ pub(crate) fn process_input(
 
             if !node_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT) {
                 tree.state_arena_mut().set(desc.open_id, false);
+                if let Some(ref cb) = desc.on_close {
+                    callbacks.invoke(cb, tree.actions_mut());
+                }
                 result.input_consumed = true;
                 return result;
             }
 
             if input.key_pressed(KeyCode::Escape) {
                 tree.state_arena_mut().set(desc.open_id, false);
+                if let Some(ref cb) = desc.on_close {
+                    callbacks.invoke(cb, tree.actions_mut());
+                }
                 result.input_consumed = true;
             }
         }
 
         ViewDescriptor::ContextMenu(desc) => {
-            let is_open: bool = tree.state_arena().get(desc.open_id);
+            let is_open: bool = tree.state_arena().get(desc.open_id).unwrap_or_default();
             if !is_open {
                 return result;
             }
@@ -584,7 +607,10 @@ pub(crate) fn process_input(
         ViewDescriptor::ScrollView(desc)
             if input.scroll_delta.y() != 0.0 && bounds_map.get(&hit.id).is_some() =>
         {
-            let mut offset: f32 = tree.state_arena().get(desc.scroll_state_id);
+            let mut offset: f32 = tree
+                .state_arena()
+                .get(desc.scroll_state_id)
+                .unwrap_or_default();
             offset -= input.scroll_delta.y() * 30.0;
             offset = offset.max(0.0);
             tree.state_arena_mut().set(desc.scroll_state_id, offset);
@@ -633,7 +659,7 @@ pub(crate) fn process_input(
                 Vec2::new(node_bounds.width(), header_height),
             );
             if header_bounds.contains(input.mouse_pos) && input.mouse_clicked(mouse_button::LEFT) {
-                let expanded: bool = tree.state_arena().get(*expanded_id);
+                let expanded: bool = tree.state_arena().get(*expanded_id).unwrap_or_default();
                 tree.state_arena_mut().set(*expanded_id, !expanded);
                 result.input_consumed = true;
             }
@@ -664,7 +690,7 @@ pub(crate) fn process_input(
         && let Some(active) = tree.interaction().active_id
         && let Some(node) = tree.get(active)
         && !matches!(
-            node.descriptor,
+            node.descriptor(),
             ViewDescriptor::Slider { .. }
                 | ViewDescriptor::LabeledSlider { .. }
                 | ViewDescriptor::Vec3Slider { .. }
@@ -685,7 +711,10 @@ fn handle_text_field_input(
     callbacks: &mut CallbackTable,
     input: &crate::input::UiInputState,
 ) {
-    let mut text: String = tree.state_arena().get::<String>(value_id);
+    let mut text: String = tree
+        .state_arena()
+        .get::<String>(value_id)
+        .unwrap_or_default();
     let mut changed = false;
 
     // Backspace
@@ -746,7 +775,7 @@ fn compute_visible_tree_items_input(
     tree: &ViewTree,
     expanded_id: super::state::StateId,
 ) -> Vec<usize> {
-    let expanded: HashSet<u64> = tree.state_arena().get(expanded_id);
+    let expanded: HashSet<u64> = tree.state_arena().get(expanded_id).unwrap_or_default();
     let mut visible = Vec::new();
     let mut parent_stack: Vec<u64> = Vec::new();
 
@@ -788,11 +817,12 @@ fn close_outside_draggable_panels(
     let ids_to_close: Vec<super::state::StateId> = tree
         .iter_nodes()
         .filter_map(|(id, node)| {
-            if let ViewDescriptor::DraggablePanel(desc) = &node.descriptor {
+            if let ViewDescriptor::DraggablePanel(desc) = node.descriptor() {
                 if !desc.close_on_outside_click {
                     return None;
                 }
-                let state: DraggablePanelState = tree.state_arena().get(desc.state_id);
+                let state: DraggablePanelState =
+                    tree.state_arena().get(desc.state_id).unwrap_or_default();
                 if !state.visibility.is_visible() {
                     return None;
                 }
@@ -808,7 +838,7 @@ fn close_outside_draggable_panels(
         .collect();
 
     for state_id in ids_to_close {
-        let mut state: DraggablePanelState = tree.state_arena().get(state_id);
+        let mut state: DraggablePanelState = tree.state_arena().get(state_id).unwrap_or_default();
         state.visibility = DraggablePanelVisibility::Hidden;
         tree.state_arena_mut().set(state_id, state);
     }

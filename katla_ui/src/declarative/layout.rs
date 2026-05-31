@@ -52,7 +52,7 @@ impl TaffyNodeMap {
             return;
         };
 
-        let mut style = descriptor_to_style(&node.descriptor, measure);
+        let mut style = descriptor_to_style(node.descriptor(), measure);
 
         // ZStack children need absolute positioning so they stack rather than
         // participate in flex flow.  Do NOT set all-four insets to 0% — that
