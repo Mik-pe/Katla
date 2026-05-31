@@ -1,12 +1,12 @@
 use std::any::Any;
 
 use katla_math::{Color, Rect2D, Vec2};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub(crate) struct VuMeter {
@@ -31,8 +31,14 @@ impl Widget for VuMeter {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+        Style {
+            size: Size {
+                width: Dimension::Length(12.0),
+                height: Dimension::Length(120.0),
+            },
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -52,6 +58,9 @@ impl Widget for VuMeter {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let track_color = ctx.style().slider_track;
 

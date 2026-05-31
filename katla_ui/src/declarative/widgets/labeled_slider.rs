@@ -2,7 +2,7 @@ use std::any::Any;
 use std::ops::RangeInclusive;
 
 use katla_math::{Rect2D, Vec2};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use crate::context::UiContext;
 use crate::input::mouse_button;
@@ -10,7 +10,7 @@ use crate::input::mouse_button;
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
 pub(crate) struct LabeledSlider {
     pub label: String,
@@ -38,8 +38,15 @@ impl Widget for LabeledSlider {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
+        let text_size = measure(&self.label, None);
+        Style {
+            size: Size {
+                width: Dimension::Length((text_size.x() + 120.0).max(200.0)),
+                height: Dimension::Length(text_size.y() + 12.0),
+            },
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -77,6 +84,9 @@ impl Widget for LabeledSlider {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let value: f32 = state.get(self.value_id).unwrap_or_default();
         let t = if *self.range.end() > *self.range.start() {
@@ -163,8 +173,10 @@ impl Widget for LabeledSlider {
 mod tests {
     use super::*;
     use crate::declarative::diff::DiffAction;
+    use crate::declarative::layout::measure_text_descriptor;
     use crate::declarative::state::StateArena;
     use crate::declarative::widget::{InputResult, Widget};
+
     use crate::input::UiInputState;
 
     fn make_slider() -> LabeledSlider {
@@ -201,8 +213,12 @@ mod tests {
     #[test]
     fn test_labeled_slider_layout_default() {
         let slider = make_slider();
-        let style = slider.layout_style();
-        assert_eq!(style, Style::default());
+        let style = slider.layout_style(&measure_text_descriptor);
+        let default_size: taffy::Size<taffy::Dimension> = taffy::Size {
+            width: taffy::Dimension::Length(0.0),
+            height: taffy::Dimension::Length(0.0),
+        };
+        assert!(style.size.width != default_size.width || style.size.height != default_size.height);
     }
 
     #[test]

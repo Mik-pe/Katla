@@ -1,8 +1,10 @@
+use std::boxed::Box;
+
 use katla_ecs::EntityId;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId,
-    ViewDescriptor, draggable_panel, hstack, labeled_slider, property_row, radio, scroll, text,
+    Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId, Widget,
+    WidgetExt, draggable_panel, empty, hstack, labeled_slider, property_row, radio, scroll, text,
     toggle, vstack,
 };
 
@@ -27,15 +29,15 @@ pub(crate) struct ParticleInspectorPanelSync {
 pub(crate) struct ParticleInspectorView;
 
 impl Build for ParticleInspectorView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<ParticleInspectorDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return ViewDescriptor::Empty;
+            return empty();
         };
 
         let panel_id: StateId = ctx.state(DraggablePanelState::default());
         let scroll_id: StateId = ctx.state(0.0f32);
-        let mut panel_state: DraggablePanelState = ctx.get_state(panel_id);
+        let mut panel_state: DraggablePanelState = ctx.get_state(panel_id).unwrap();
 
         // Sync open state from app
         if draw_ctx.is_open && !panel_state.visibility.is_visible() {
@@ -47,7 +49,7 @@ impl Build for ParticleInspectorView {
         }
 
         // Always emit panel sync
-        let current_panel: DraggablePanelState = ctx.get_state(panel_id);
+        let current_panel: DraggablePanelState = ctx.get_state(panel_id).unwrap();
         ctx.emit(ParticleInspectorPanelSync {
             position: current_panel.position,
             visibility: current_panel.visibility,
@@ -59,12 +61,12 @@ impl Build for ParticleInspectorView {
         }
 
         if !current_panel.visibility.is_visible() {
-            return ViewDescriptor::Empty;
+            return empty();
         }
 
         let theme = &draw_ctx.theme;
         let data = &draw_ctx.data;
-        let mut children: Vec<ViewDescriptor> = Vec::new();
+        let mut children: Vec<Box<dyn Widget>> = Vec::new();
 
         // Emitter label
         children.push(
@@ -86,7 +88,7 @@ impl Build for ParticleInspectorView {
                 .and_then(|e| data.emitter_entities.iter().position(|&id| id == e))
                 .unwrap_or(0);
             let emitter_sel_id: StateId = ctx.state(selected_idx);
-            let current_sel: usize = ctx.get_state(emitter_sel_id);
+            let current_sel: usize = ctx.get_state(emitter_sel_id).unwrap();
 
             // Detect emitter selection change
             if current_sel != selected_idx && current_sel < data.emitter_entities.len() {
@@ -115,7 +117,7 @@ impl Build for ParticleInspectorView {
                     .position(|&s| s == config.shape_name)
                     .unwrap_or(0);
                 let shape_sel_id: StateId = ctx.state(shape_idx);
-                let current_shape: usize = ctx.get_state(shape_sel_id);
+                let current_shape: usize = ctx.get_state(shape_sel_id).unwrap();
 
                 if current_shape != shape_idx {
                     let field = match current_shape {
@@ -129,7 +131,7 @@ impl Build for ParticleInspectorView {
                 }
                 ctx.set_state(shape_sel_id, shape_idx);
 
-                let shape_buttons: Vec<ViewDescriptor> = shape_names
+                let shape_buttons: Vec<Box<dyn Widget>> = shape_names
                     .iter()
                     .enumerate()
                     .map(|(i, name)| radio(shape_sel_id, i, *name))
@@ -339,7 +341,7 @@ impl Build for ParticleInspectorView {
                 config_children.push(heading("Controls", theme));
 
                 let active_id: StateId = ctx.state(config.active);
-                let active_val: bool = ctx.get_state(active_id);
+                let active_val: bool = ctx.get_state(active_id).unwrap();
                 if active_val != config.active {
                     ctx.emit(ParticleInspectorAction::ToggleEmitter);
                     ctx.set_state(active_id, config.active);
@@ -350,7 +352,7 @@ impl Build for ParticleInspectorView {
                 ));
 
                 let reset_id: StateId = ctx.state(false);
-                let reset_val: bool = ctx.get_state(reset_id);
+                let reset_val: bool = ctx.get_state(reset_id).unwrap();
                 if reset_val {
                     ctx.emit(ParticleInspectorAction::ResetSystem);
                     ctx.set_state(reset_id, false);
@@ -383,7 +385,7 @@ impl Build for ParticleInspectorView {
     }
 }
 
-fn heading(label: &str, theme: &ColorScheme) -> ViewDescriptor {
+fn heading(label: &str, theme: &ColorScheme) -> Box<dyn Widget> {
     text(label)
         .color(theme.text_accent)
         .font_size(FontSize::Small)
@@ -396,9 +398,9 @@ fn scalar_slider(
     range: std::ops::RangeInclusive<f32>,
     entity: EntityId,
     field: fn(f32) -> EmitterField,
-) -> ViewDescriptor {
+) -> Box<dyn Widget> {
     let value_id: StateId = ctx.state(config_value);
-    let current: f32 = ctx.get_state(value_id);
+    let current: f32 = ctx.get_state(value_id).unwrap();
     if (current - config_value).abs() > 1e-4 {
         ctx.emit(ParticleInspectorAction::SetEmitterField(
             entity,
@@ -411,7 +413,7 @@ fn scalar_slider(
         .precision(2)
 }
 
-fn statistics_section(stats: &ParticleStats) -> ViewDescriptor {
+fn statistics_section(stats: &ParticleStats) -> Box<dyn Widget> {
     let mut children = Vec::new();
 
     children.push(text("Statistics").font_size(FontSize::Small));

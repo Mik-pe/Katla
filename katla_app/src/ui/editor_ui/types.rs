@@ -4,7 +4,7 @@ use katla_ecs::EntityId;
 use katla_math::Vec3;
 use katla_ui::ForkAwesome;
 use katla_ui::ScrollAreaState;
-use katla_ui::widgets::{ColorPickerState, DraggablePanelState};
+use katla_ui::declarative::DraggablePanelState;
 
 /// Panel IDs for the dockable panel system.
 /// Each variant maps to a unique u64 ID used by the dock layout.
@@ -564,7 +564,6 @@ pub struct InspectorEditState {
     pub lifetime: f32,
     pub gravity: f32,
     pub particle_scale: f32,
-    pub light_color_picker: ColorPickerState,
     pub script_path: String,
     pub fov: f32,
     pub near: f32,
@@ -572,7 +571,6 @@ pub struct InspectorEditState {
     pub directional_direction: [f32; 3],
     pub directional_color: [f32; 3],
     pub directional_intensity: f32,
-    pub directional_color_picker: ColorPickerState,
     pub audio_source_path: String,
     pub audio_volume: f32,
     pub audio_looping: bool,
@@ -611,7 +609,6 @@ impl Default for InspectorEditState {
             lifetime: 2.0,
             gravity: -9.81,
             particle_scale: 0.1,
-            light_color_picker: ColorPickerState::new(),
             script_path: String::new(),
             fov: 60.0,
             near: 0.001,
@@ -619,7 +616,6 @@ impl Default for InspectorEditState {
             directional_direction: [0.0, -1.0, 0.0],
             directional_color: [1.0; 3],
             directional_intensity: 1.0,
-            directional_color_picker: ColorPickerState::new(),
             audio_source_path: String::new(),
             audio_volume: 1.0,
             audio_looping: false,

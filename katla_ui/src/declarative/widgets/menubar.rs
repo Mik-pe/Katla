@@ -7,7 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::MenuGroup;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
@@ -46,7 +46,7 @@ impl Widget for MenuBar {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             size: Size {
                 width: Dimension::Percent(1.0),
@@ -132,6 +132,9 @@ impl Widget for MenuBar {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         ctx.draw_rect(bounds, ctx.style().menu_bg);
         ctx.draw_line(
@@ -240,7 +243,6 @@ mod tests {
     use crate::declarative::build::CallbackTable;
     use crate::declarative::descriptor::MenuEntry;
     use crate::declarative::state::StateId;
-    use crate::declarative::widget::DescriptorWidget;
 
     fn make_menubar() -> MenuBar {
         MenuBar::new(vec![], None, 28.0)
@@ -278,7 +280,7 @@ mod tests {
     #[test]
     fn test_menubar_diff_different_type() {
         let mb = make_menubar();
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(mb.diff_against(&other), DiffAction::Replace);
     }
 

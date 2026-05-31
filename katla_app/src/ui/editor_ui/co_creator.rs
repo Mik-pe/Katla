@@ -1,7 +1,7 @@
 use katla_agent::MessageRole;
 use katla_math::Color;
 use katla_ui::ScrollAreaState;
-use katla_ui::widgets::DraggablePanelState;
+use katla_ui::declarative::DraggablePanelState;
 
 use super::ColorScheme;
 

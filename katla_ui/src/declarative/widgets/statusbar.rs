@@ -6,7 +6,7 @@ use taffy::{Dimension, FlexDirection, LengthPercentage, Size, Style};
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub(crate) struct StatusBar {
@@ -40,7 +40,7 @@ impl Widget for StatusBar {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             size: Size {
                 width: Dimension::Percent(1.0),
@@ -74,6 +74,9 @@ impl Widget for StatusBar {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         ctx.draw_line(
             Vec2::new(bounds.min.x(), bounds.min.y()),
@@ -100,7 +103,6 @@ impl Widget for StatusBar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::widget::DescriptorWidget;
 
     #[test]
     fn test_statusbar_diff_same_type() {
@@ -112,7 +114,7 @@ mod tests {
     #[test]
     fn test_statusbar_diff_different_type() {
         let sb = StatusBar::new(24.0);
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(sb.diff_against(&other), DiffAction::Replace);
     }
 
@@ -128,7 +130,7 @@ mod tests {
     #[test]
     fn test_statusbar_layout_style() {
         let sb = StatusBar::new(24.0);
-        let style = sb.layout_style();
+        let style = sb.layout_style(&crate::declarative::layout::measure_text_descriptor);
         assert!(matches!(style.size.width, Dimension::Percent(1.0)));
         assert!(matches!(style.size.height, Dimension::Length(24.0)));
     }

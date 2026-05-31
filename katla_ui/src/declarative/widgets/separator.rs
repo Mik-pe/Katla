@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use katla_math::{Color, Rect2D, Vec2};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use crate::context::UiContext;
 
@@ -9,7 +9,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::SeparatorDirection;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
 pub(crate) struct Separator {
     pub direction: SeparatorDirection,
@@ -33,8 +33,24 @@ impl Widget for Separator {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+        let thickness = 1.0;
+        match self.direction {
+            SeparatorDirection::Horizontal => Style {
+                size: Size {
+                    width: Dimension::Percent(1.0),
+                    height: Dimension::Length(thickness),
+                },
+                ..Style::default()
+            },
+            SeparatorDirection::Vertical => Style {
+                size: Size {
+                    width: Dimension::Length(thickness),
+                    height: Dimension::Percent(1.0),
+                },
+                ..Style::default()
+            },
+        }
     }
 
     fn handle_input(
@@ -54,6 +70,9 @@ impl Widget for Separator {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let line_color = self.color.unwrap_or(ctx.style().separator);
         match self.direction {
@@ -87,7 +106,6 @@ impl Widget for Separator {
 mod tests {
     use super::*;
     use crate::declarative::constructors::text;
-    use crate::declarative::widget::DescriptorWidget;
 
     #[test]
     fn test_separator_diff() {
@@ -101,7 +119,7 @@ mod tests {
         };
         assert_eq!(b.diff_against(&a), DiffAction::Update);
 
-        let other = DescriptorWidget::new(text("hello"));
+        let other = text("hello");
         assert_eq!(a.diff_against(&other), DiffAction::Replace);
     }
 
@@ -111,7 +129,8 @@ mod tests {
             direction: SeparatorDirection::Horizontal,
             color: None,
         };
-        let style = sep.layout_style();
-        assert_eq!(style, Style::default());
+        let style = sep.layout_style(&crate::declarative::layout::measure_text_descriptor);
+        assert!(matches!(style.size.width, Dimension::Percent(1.0)));
+        assert!(matches!(style.size.height, Dimension::Length(1.0)));
     }
 }

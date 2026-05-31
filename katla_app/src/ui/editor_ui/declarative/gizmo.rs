@@ -1,4 +1,6 @@
-use katla_ui::declarative::{Build, BuildContext, StateId, ViewDescriptor, hstack, radio};
+use std::boxed::Box;
+
+use katla_ui::declarative::{Build, BuildContext, StateId, Widget, WidgetExt, hstack, radio};
 
 #[derive(Clone)]
 pub(crate) struct GizmoDrawCtx {
@@ -11,7 +13,7 @@ pub(crate) struct GizmoModeChanged(pub u8);
 pub struct GizmoButtonsView;
 
 impl Build for GizmoButtonsView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let mode_id: StateId = ctx.state(0usize);
 
         let mode_from_env = ctx
@@ -19,7 +21,7 @@ impl Build for GizmoButtonsView {
             .map(|c| c.gizmo_mode as usize)
             .unwrap_or(0);
 
-        let current: usize = ctx.get_state(mode_id);
+        let current: usize = ctx.get_state(mode_id).unwrap();
 
         // If the state arena differs from what the app set, the radio buttons
         // were clicked during the previous frame's input pass. Emit the change.
@@ -32,9 +34,10 @@ impl Build for GizmoButtonsView {
 
         let modes: [(usize, &str); 3] = [(0, "W:Move"), (1, "E:Rotate"), (2, "R:Scale")];
 
-        let children: Vec<ViewDescriptor> = modes
-            .map(|(index, label)| radio(mode_id, index, label))
-            .to_vec();
+        let children: Vec<Box<dyn Widget>> = modes
+            .iter()
+            .map(|&(index, label)| radio(mode_id, index, label))
+            .collect();
 
         hstack(children).spacing(2.0).padding_all(10.0)
     }

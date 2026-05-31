@@ -1,9 +1,14 @@
+use std::boxed::Box;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use katla_gfx::TextureHandle;
 use katla_math::{Rect2D, Vec2};
-use katla_ui::declarative::{Build, BuildContext, Padding, StateId, ViewDescriptor};
+use katla_ui::declarative::{
+    Build, BuildContext, Padding, StateId, Widget, WidgetExt, button, context_entry, context_menu,
+    empty, grid, hstack, icon, image, image_button, modal, scroll, selectable,
+    separator_horizontal, text, textfield, vstack,
+};
 use katla_ui::{FontSize, ForkAwesome, TextureId};
 
 use crate::ui::ColorScheme;
@@ -61,28 +66,24 @@ pub(crate) enum AssetBrowserAction {
 pub(crate) struct AssetBrowserView;
 
 impl Build for AssetBrowserView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
-        use katla_ui::declarative::{
-            button, context_entry, context_menu, grid, hstack, icon, image, image_button, modal,
-            scroll, selectable, separator_horizontal, text, textfield, vstack,
-        };
-
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<AssetBrowserDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return ViewDescriptor::Empty;
+            return empty();
         };
 
         if draw_ctx.collapsed {
-            return ViewDescriptor::Empty;
+            return empty();
         }
 
         let search_id: StateId = ctx.state(draw_ctx.search_filter.clone());
         let scroll_id: StateId = ctx.state(0.0f32);
         let context_open_id: StateId = ctx.state(draw_ctx.context_menu_open);
         let confirm_open_id: StateId = ctx.state(draw_ctx.confirm_dialog_open);
+        ctx.set_state(confirm_open_id, draw_ctx.confirm_dialog_open);
 
         // Breadcrumbs
-        let mut breadcrumb_items: Vec<ViewDescriptor> = Vec::new();
+        let mut breadcrumb_items: Vec<Box<dyn Widget>> = Vec::new();
         for (i, segment) in draw_ctx.path_segments.iter().enumerate() {
             if i > 0 {
                 breadcrumb_items.push(
@@ -295,7 +296,10 @@ impl Build for AssetBrowserView {
         .spacing(8.0)
         .padding_all(8.0);
 
-        let confirm_modal = modal(320.0, 120.0, confirm_open_id, modal_content);
+        let confirm_modal =
+            modal(320.0, 120.0, confirm_open_id, modal_content).on_close(ctx.on_click(|actions| {
+                actions.emit(AssetBrowserAction::CancelDelete);
+            }));
 
         vstack([content, ctx_menu, confirm_modal])
             .flex_width(draw_ctx.bounds.width())

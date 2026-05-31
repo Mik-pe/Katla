@@ -10,7 +10,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::{Callback, TreeItem};
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub(crate) struct TreeView {
@@ -94,7 +94,7 @@ impl Widget for TreeView {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             flex_grow: 1.0,
             flex_shrink: 1.0,
@@ -224,6 +224,9 @@ impl Widget for TreeView {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let font_size = ctx.style().font_size;
         let row_height = self.row_height;
@@ -319,7 +322,6 @@ impl Widget for TreeView {
 mod tests {
     use super::*;
     use crate::declarative::build::CallbackTable;
-    use crate::declarative::widget::DescriptorWidget;
 
     fn make_tree_view() -> TreeView {
         let mut arena = StateArena::new();
@@ -349,7 +351,7 @@ mod tests {
     #[test]
     fn test_tree_view_diff_different_type() {
         let tv = make_tree_view();
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(tv.diff_against(&other), DiffAction::Replace);
     }
 

@@ -1,9 +1,13 @@
+use std::boxed::Box;
 use std::path::PathBuf;
 
 use katla_ecs::EntityId;
 use katla_math::Rect2D;
 use katla_ui::FontSize;
-use katla_ui::declarative::{Build, BuildContext, StateId, ViewDescriptor};
+use katla_ui::declarative::{
+    Build, BuildContext, StateId, Widget, WidgetExt, button, empty, panel, scroll,
+    separator_horizontal, text, vstack,
+};
 
 use crate::ui::editor_ui::ColorScheme;
 use crate::ui::editor_ui::types::{EntityInfo, InspectorEditState};
@@ -31,12 +35,10 @@ pub(crate) struct InspectorDrawCtx {
 pub(crate) struct InspectorView;
 
 impl Build for InspectorView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
-        use katla_ui::declarative::{button, panel, scroll, separator_horizontal, text, vstack};
-
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<InspectorDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return ViewDescriptor::Empty;
+            return empty();
         };
 
         let scroll_id: StateId = ctx.state(0.0f32);

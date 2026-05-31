@@ -7,7 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::FlexProps;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub(crate) struct ScrollView {
@@ -43,7 +43,7 @@ impl Widget for ScrollView {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         let mut style = Style {
             overflow: taffy::Point {
                 x: taffy::Overflow::Scroll,
@@ -79,6 +79,9 @@ impl Widget for ScrollView {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let bg = ctx.style().window_bg;
         ctx.draw_rect(bounds, bg);
@@ -100,7 +103,6 @@ impl Widget for ScrollView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::widget::DescriptorWidget;
 
     fn make_scroll() -> ScrollView {
         let mut arena = StateArena::new();
@@ -119,7 +121,7 @@ mod tests {
     #[test]
     fn test_scroll_view_diff_different_type() {
         let scroll = make_scroll();
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(scroll.diff_against(&other), DiffAction::Replace);
     }
 

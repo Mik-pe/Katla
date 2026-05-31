@@ -1,12 +1,12 @@
 use std::any::Any;
 
 use katla_math::{Color, Rect2D, Vec2};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 use crate::types::TextureId;
 
@@ -35,8 +35,16 @@ impl Widget for Image {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+        let w = self.width.unwrap_or(64.0);
+        let h = self.height.unwrap_or(64.0);
+        Style {
+            size: Size {
+                width: Dimension::Length(w),
+                height: Dimension::Length(h),
+            },
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -56,6 +64,9 @@ impl Widget for Image {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let uv_rect = self
             .uv
@@ -112,7 +123,8 @@ mod tests {
     #[test]
     fn test_image_layout_style_default() {
         let image = make_image(1);
-        let style = image.layout_style();
-        assert_eq!(style, Style::default());
+        let style = image.layout_style(&crate::declarative::layout::measure_text_descriptor);
+        assert!(matches!(style.size.width, Dimension::Length(64.0)));
+        assert!(matches!(style.size.height, Dimension::Length(64.0)));
     }
 }

@@ -1,6 +1,8 @@
+use std::boxed::Box;
+
 use katla_ui::ColorScheme;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, Padding, ViewDescriptor, hstack, statusbar, text,
+    Alignment, Build, BuildContext, Padding, Widget, WidgetExt, empty, hstack, statusbar, text,
 };
 
 /// Snapshot of data needed to render the status bar each frame.
@@ -22,9 +24,9 @@ pub(crate) struct StatusBarData {
 pub(crate) struct StatusBarView;
 
 impl Build for StatusBarView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let Some(data) = ctx.env::<StatusBarData>() else {
-            return ViewDescriptor::Empty;
+            return empty();
         };
 
         let fps_color = if data.fps >= 55.0 {

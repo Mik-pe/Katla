@@ -2,7 +2,7 @@
 
 use super::ParticleStats;
 use katla_ecs::EntityId;
-use katla_ui::widgets::DraggablePanelState;
+use katla_ui::declarative::DraggablePanelState;
 
 /// State for the particle inspector floating panel.
 #[derive(Debug, Clone, Default)]

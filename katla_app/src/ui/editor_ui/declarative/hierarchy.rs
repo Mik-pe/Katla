@@ -1,7 +1,12 @@
+use std::boxed::Box;
+
 use katla_ecs::EntityId;
 use katla_math::Rect2D;
 use katla_ui::FontSize;
-use katla_ui::declarative::{Build, BuildContext, Padding, StateId, ViewDescriptor};
+use katla_ui::declarative::{
+    Build, BuildContext, Padding, StateId, Widget, WidgetExt, empty, hstack, icon, panel, scroll,
+    selectable, text, textfield, vstack,
+};
 
 use crate::ui::editor_ui::ColorScheme;
 use crate::ui::editor_ui::types::{EntityInfo, HierarchyState, is_entity_visible_fast};
@@ -14,17 +19,22 @@ pub(crate) struct HierarchyDrawCtx {
     pub hierarchy_state: HierarchyState,
     pub theme: ColorScheme,
     pub search_filter: String,
+    pub selected_entity: Option<EntityId>,
+}
+
+/// Actions emitted by the hierarchy panel.
+#[derive(Clone, Debug)]
+pub(crate) enum HierarchyAction {
+    SelectEntity(EntityId),
 }
 
 pub(crate) struct HierarchyView;
 
 impl Build for HierarchyView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
-        use katla_ui::declarative::{hstack, panel, scroll, text, textfield, vstack};
-
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<HierarchyDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return ViewDescriptor::Empty;
+            return empty();
         };
 
         let search_id: StateId = ctx.state(draw_ctx.search_filter.clone());
@@ -56,36 +66,40 @@ impl Build for HierarchyView {
 
         let header_text = format!("Hierarchy ({} entities)", visible_count);
 
-        // Search field
         let search_field = textfield("Filter entities...", search_id);
 
-        // Tree view - build a list of entity rows
         let mut tree_children = Vec::new();
         for entity in filtered_entities.iter() {
-            let badge_color = match entity.entity_type.as_str() {
-                "Mesh" => draw_ctx.theme.entity_mesh,
-                "Particle Emitter" => draw_ctx.theme.entity_particle,
-                "Directional Light" | "Point Light" => draw_ctx.theme.entity_light,
-                _ => draw_ctx.theme.entity_empty,
-            };
+            let is_selected = draw_ctx.selected_entity == Some(entity.id);
 
-            let badge_text = &entity.entity_type;
+            let (entity_icon, icon_color) =
+                entity_icon_for_type(&entity.entity_type, &draw_ctx.theme);
 
-            // Build a row with type badge and name
-            let children = vec![
-                text(format!("{} ", badge_text))
-                    .color(badge_color)
-                    .font_size(FontSize::XSmall),
-                text(&entity.name).color(draw_ctx.theme.text_secondary),
-            ];
+            let entity_id = entity.id;
+            let row = hstack([
+                icon(entity_icon)
+                    .color(icon_color)
+                    .icon_size(FontSize::Small),
+                text(&entity.name)
+                    .color(draw_ctx.theme.text_secondary)
+                    .font_size(FontSize::Small),
+            ])
+            .spacing(6.0)
+            .padding(Padding::all(4.0));
 
-            tree_children.push(hstack(children).spacing(8.0).padding_all(2.0));
+            tree_children.push(selectable(row).selected(is_selected).on_click(ctx.on_click(
+                move |actions| {
+                    actions.emit(HierarchyAction::SelectEntity(entity_id));
+                },
+            )));
         }
 
         let tree_content = if tree_children.is_empty() {
-            text("No entities in scene").color(draw_ctx.theme.text_muted)
+            text("No entities in scene")
+                .color(draw_ctx.theme.text_muted)
+                .font_size(FontSize::Small)
         } else {
-            vstack(tree_children)
+            vstack(tree_children).spacing(2.0)
         };
 
         let content = vstack([search_field, scroll(tree_content, scroll_id).flex_grow(1.0)])
@@ -96,5 +110,18 @@ impl Build for HierarchyView {
         panel(header_text, content)
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
+    }
+}
+
+fn entity_icon_for_type(entity_type: &str, theme: &ColorScheme) -> (char, katla_math::Color) {
+    match entity_type {
+        "Mesh" => (katla_ui::ForkAwesome::CUBE, theme.entity_mesh),
+        "Particle Emitter" => (katla_ui::ForkAwesome::FIRE, theme.entity_particle),
+        "Directional Light" => (katla_ui::ForkAwesome::SUN, theme.entity_light),
+        "Point Light" => (katla_ui::ForkAwesome::LIGHTBULB, theme.entity_light),
+        "Audio Source" | "AudioListener" => (katla_ui::ForkAwesome::VOLUME_UP, theme.highlight),
+        "Camera" | "PerspectiveCamera" => (katla_ui::ForkAwesome::CAMERA, theme.highlight),
+        "Script" => (katla_ui::ForkAwesome::FILE_CODE, theme.success),
+        _ => (katla_ui::ForkAwesome::CIRCLE_OUTLINE, theme.entity_empty),
     }
 }

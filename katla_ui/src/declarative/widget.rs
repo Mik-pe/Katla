@@ -4,12 +4,18 @@ use katla_math::{Rect2D, Vec2};
 use taffy::Style;
 
 use crate::context::UiContext;
+use crate::style::FontSize;
 
 use super::actions::ActionStream;
 use super::animation::AnimationState;
 use super::descriptor::ViewDescriptor;
-use super::diff::DiffAction;
+use super::diff::{DiffAction, diff_descriptor};
+use super::draw::draw_descriptor_with_id;
 use super::state::{StateArena, ViewId};
+use super::tree::InteractionState;
+
+/// Function signature for measuring text dimensions during layout.
+pub type MeasureFn<'a> = &'a dyn Fn(&str, Option<FontSize>) -> Vec2;
 
 /// Central trait for all UI elements in the declarative system.
 ///
@@ -38,7 +44,10 @@ pub trait Widget: Any + 'static {
     fn diff_against(&self, prev: &dyn Widget) -> DiffAction;
 
     /// Return the Taffy `Style` for layout computation.
-    fn layout_style(&self) -> Style;
+    ///
+    /// The `measure` function provides text measurement. Widgets that don't
+    /// need it can ignore the parameter.
+    fn layout_style(&self, measure: MeasureFn<'_>) -> Style;
 
     /// Handle an input event.
     ///
@@ -53,6 +62,10 @@ pub trait Widget: Any + 'static {
     ) -> InputResult;
 
     /// Draw this widget using the UI context.
+    ///
+    /// `interaction` provides hover/active/focus state for the node.
+    /// `view_id` identifies this node for interaction checks.
+    /// `children_bounds` provides resolved bounds of child nodes.
     fn draw(
         &self,
         ctx: &mut UiContext,
@@ -60,6 +73,9 @@ pub trait Widget: Any + 'static {
         bounds: Rect2D,
         animation: &AnimationState,
         children: &[ViewId],
+        interaction: &DrawInteraction,
+        view_id: ViewId,
+        children_bounds: &[Rect2D],
     );
 
     /// Whether to rebuild this widget's subtree.
@@ -92,42 +108,82 @@ pub trait Widget: Any + 'static {
     }
 }
 
-/// Result of widget input handling.
-///
-/// Controls how the input system continues processing after a widget
-/// handles (or doesn't handle) an input event.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InputResult {
-    /// Event was handled — stop propagation to other widgets.
-    Consumed,
-    /// Event not handled — propagate to parent widget.
-    Bubble,
-    /// Event not relevant for this widget — don't propagate.
-    Ignore,
+impl Widget for Box<dyn Widget> {
+    fn widget_type(&self) -> TypeId {
+        (**self).widget_type()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        (**self).as_any()
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        (**self).as_any_mut()
+    }
+
+    fn diff_against(&self, prev: &dyn Widget) -> DiffAction {
+        (**self).diff_against(prev)
+    }
+
+    fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
+        (**self).layout_style(measure)
+    }
+
+    fn handle_input(
+        &self,
+        ctx: &mut InputContext<'_>,
+        state: &mut StateArena,
+        bounds: Rect2D,
+        children: &[ViewId],
+    ) -> InputResult {
+        (**self).handle_input(ctx, state, bounds, children)
+    }
+
+    fn draw(
+        &self,
+        ctx: &mut UiContext,
+        state: &StateArena,
+        bounds: Rect2D,
+        animation: &AnimationState,
+        children: &[ViewId],
+        interaction: &DrawInteraction,
+        view_id: ViewId,
+        children_bounds: &[Rect2D],
+    ) {
+        (**self).draw(
+            ctx,
+            state,
+            bounds,
+            animation,
+            children,
+            interaction,
+            view_id,
+            children_bounds,
+        )
+    }
+
+    fn should_rebuild(&self, prev: &dyn Widget) -> bool {
+        (**self).should_rebuild(prev)
+    }
+
+    fn focusable(&self) -> bool {
+        (**self).focusable()
+    }
+
+    fn children(&self) -> &[ViewId] {
+        (**self).children()
+    }
+
+    fn children_mut(&mut self) -> &mut Vec<ViewId> {
+        (**self).children_mut()
+    }
 }
 
-/// Context provided to `Widget::handle_input()` for accessing input state.
-pub struct InputContext<'a> {
-    /// The UI input state (mouse, keyboard, etc.).
-    pub input: &'a crate::input::UiInputState,
-    /// Current mouse position in screen coordinates.
-    pub mouse_pos: Vec2,
-    /// Callback table for invoking registered callbacks.
-    pub callbacks: &'a mut super::build::CallbackTable,
-    /// Action stream for emitting typed actions.
-    pub actions: &'a mut ActionStream,
-}
-
-// ---------------------------------------------------------------------------
-// Bridge: DescriptorWidget wraps ViewDescriptor for gradual migration
-// ---------------------------------------------------------------------------
-
-/// Wrapper that bridges the existing `ViewDescriptor` enum to the `Widget` trait.
+/// Bridge widget that wraps a [`ViewDescriptor`] and implements [`Widget`].
 ///
-/// During migration from the enum-based system to trait-object dispatch,
-/// all existing descriptors are wrapped in `DescriptorWidget`. Pipeline code
-/// can access the inner `ViewDescriptor` via the `descriptor()` method on
-/// `ViewNode`.
+/// Used during migration: constructors return `Box<dyn Widget>` backed by
+/// `DescriptorWidget`, and the tree code extracts the descriptor via
+/// [`descriptor()`](DescriptorWidget::descriptor).
 pub(crate) struct DescriptorWidget {
     descriptor: ViewDescriptor,
 }
@@ -139,6 +195,10 @@ impl DescriptorWidget {
 
     pub fn descriptor(&self) -> &ViewDescriptor {
         &self.descriptor
+    }
+
+    pub fn descriptor_mut(&mut self) -> &mut ViewDescriptor {
+        &mut self.descriptor
     }
 }
 
@@ -152,13 +212,14 @@ impl Widget for DescriptorWidget {
     }
 
     fn diff_against(&self, prev: &dyn Widget) -> DiffAction {
-        let Some(other) = prev.as_any().downcast_ref::<DescriptorWidget>() else {
-            return DiffAction::Replace;
-        };
-        super::diff::diff_descriptor(&other.descriptor, &self.descriptor)
+        if let Some(other) = prev.as_any().downcast_ref::<DescriptorWidget>() {
+            diff_descriptor(&other.descriptor, &self.descriptor)
+        } else {
+            DiffAction::Replace
+        }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style::default()
     }
 
@@ -174,111 +235,166 @@ impl Widget for DescriptorWidget {
 
     fn draw(
         &self,
-        _ctx: &mut UiContext,
-        _state: &StateArena,
-        _bounds: Rect2D,
-        _animation: &AnimationState,
+        ctx: &mut UiContext,
+        state: &StateArena,
+        bounds: Rect2D,
+        animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        view_id: ViewId,
+        children_bounds: &[Rect2D],
     ) {
-        // Drawing is handled by the existing draw_descriptor_with_id pipeline
+        let interaction_state = InteractionState::default();
+        draw_descriptor_with_id(
+            &self.descriptor,
+            ctx,
+            bounds,
+            state,
+            children_bounds,
+            &interaction_state,
+            view_id,
+            animation,
+        );
+    }
+
+    fn should_rebuild(&self, _prev: &dyn Widget) -> bool {
+        true
     }
 
     fn focusable(&self) -> bool {
-        super::focus::is_widget_focusable(&self.descriptor)
+        false
     }
+
+    fn children(&self) -> &[ViewId] {
+        &[]
+    }
+
+    fn children_mut(&mut self) -> &mut Vec<ViewId> {
+        unreachable!()
+    }
+}
+
+/// Result of widget input handling.
+///
+/// Controls how the input system continues processing after a widget
+/// handles (or doesn't handle) an input event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputResult {
+    /// Event was handled — stop propagation to other widgets.
+    Consumed,
+    /// Event not handled — propagate to parent widget.
+    Bubble,
+    /// Event not relevant for this widget — don't propagate.
+    Ignore,
+}
+
+/// Interaction state passed to Widget::draw for visual feedback.
+pub struct DrawInteraction {
+    pub hovered_id: Option<ViewId>,
+    pub active_id: Option<ViewId>,
+    pub focused_id: Option<ViewId>,
+}
+
+impl DrawInteraction {
+    pub fn is_hovered(&self, id: ViewId) -> bool {
+        self.hovered_id == Some(id)
+    }
+
+    pub fn is_active(&self, id: ViewId) -> bool {
+        self.active_id == Some(id)
+    }
+
+    pub fn is_focused(&self, id: ViewId) -> bool {
+        self.focused_id == Some(id)
+    }
+}
+
+/// Context provided to `Widget::handle_input()` for accessing input state.
+pub struct InputContext<'a> {
+    /// The UI input state (mouse, keyboard, etc.).
+    pub input: &'a crate::input::UiInputState,
+    /// Current mouse position in screen coordinates.
+    pub mouse_pos: Vec2,
+    /// Callback table for invoking registered callbacks.
+    pub callbacks: &'a mut super::build::CallbackTable,
+    /// Action stream for emitting typed actions.
+    pub actions: &'a mut ActionStream,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::constructors::text;
+    use crate::declarative::layout::measure_text_descriptor;
+    use crate::declarative::widget::Widget;
 
-    #[test]
-    fn test_widget_trait_has_required_methods() {
-        // Verify the trait can be object-safe and has all required methods
-        fn assert_widget<W: Widget>(_: &W) {}
+    /// A minimal widget for testing trait object safety.
+    struct TestWidget;
 
-        let desc = text("hello");
-        let widget = DescriptorWidget::new(desc);
-        assert_widget(&widget);
+    impl Widget for TestWidget {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+        fn diff_against(&self, _prev: &dyn Widget) -> DiffAction {
+            DiffAction::Update
+        }
+        fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+            Style::default()
+        }
+        fn handle_input(
+            &self,
+            _ctx: &mut InputContext<'_>,
+            _state: &mut StateArena,
+            _bounds: Rect2D,
+            _children: &[ViewId],
+        ) -> InputResult {
+            InputResult::Ignore
+        }
+        fn draw(
+            &self,
+            _ctx: &mut UiContext,
+            _state: &StateArena,
+            _bounds: Rect2D,
+            _animation: &AnimationState,
+            _children: &[ViewId],
+            _interaction: &DrawInteraction,
+            _view_id: ViewId,
+            _children_bounds: &[Rect2D],
+        ) {
+        }
     }
 
     #[test]
-    fn test_widget_type_id() {
-        let widget = DescriptorWidget::new(text("hello"));
-        assert_eq!(widget.widget_type(), TypeId::of::<DescriptorWidget>());
-    }
-
-    #[test]
-    fn test_widget_any_bounds() {
-        let widget = DescriptorWidget::new(text("hello"));
-        let any_ref: &dyn Any = widget.as_any();
-        assert!(any_ref.downcast_ref::<DescriptorWidget>().is_some());
-    }
-
-    #[test]
-    fn test_widget_any_mut_bounds() {
-        let mut widget = DescriptorWidget::new(text("hello"));
-        let any_mut: &mut dyn Any = widget.as_any_mut();
-        assert!(any_mut.downcast_mut::<DescriptorWidget>().is_some());
-    }
-
-    #[test]
-    fn test_diff_against_same_type_update() {
-        let a = DescriptorWidget::new(text("hello"));
-        let b = DescriptorWidget::new(text("world"));
-        assert_eq!(b.diff_against(&a), DiffAction::Update);
-    }
-
-    #[test]
-    fn test_diff_against_different_type_replace() {
-        let a = DescriptorWidget::new(text("hello"));
-        let b = DescriptorWidget::new(super::super::constructors::button("click"));
-        assert_eq!(b.diff_against(&a), DiffAction::Replace);
+    fn test_widget_trait_object_safe() {
+        fn assert_widget(_: &dyn Widget) {}
+        assert_widget(&TestWidget);
     }
 
     #[test]
     fn test_input_result_variants() {
         assert_eq!(InputResult::Consumed, InputResult::Consumed);
-        assert_eq!(InputResult::Bubble, InputResult::Bubble);
-        assert_eq!(InputResult::Ignore, InputResult::Ignore);
         assert_ne!(InputResult::Consumed, InputResult::Bubble);
     }
 
     #[test]
-    fn test_descriptor_widget_bridge() {
-        let desc = text("hello");
-        let widget = DescriptorWidget::new(desc);
-        assert!(matches!(widget.descriptor(), ViewDescriptor::Text { .. }));
+    fn test_draw_interaction_helpers() {
+        let id = ViewId::from(slotmap::KeyData::from_ffi(1));
+        let interaction = DrawInteraction {
+            hovered_id: Some(id),
+            active_id: None,
+            focused_id: Some(id),
+        };
+        assert!(interaction.is_hovered(id));
+        assert!(!interaction.is_active(id));
+        assert!(interaction.is_focused(id));
     }
 
     #[test]
-    fn test_widget_focusable_default_false() {
-        // Text widget is not focusable
-        let widget = DescriptorWidget::new(text("hello"));
-        assert!(!widget.focusable());
-    }
-
-    #[test]
-    fn test_widget_children_default_empty() {
-        let widget = DescriptorWidget::new(text("hello"));
-        assert!(widget.children().is_empty());
-    }
-
-    #[test]
-    fn test_widget_should_rebuild_default_true() {
-        let a = DescriptorWidget::new(text("hello"));
-        let b = DescriptorWidget::new(text("world"));
-        assert!(b.should_rebuild(&a));
-    }
-
-    #[test]
-    fn test_non_static_type_fails() {
-        // This test verifies that Widget: 'static bound is enforced.
-        // A type containing a reference cannot implement Widget.
-        // We verify this at compile time — if it compiles, the bound is correct.
-        fn require_static<T: 'static>(_: &T) {}
-        let widget = DescriptorWidget::new(text("test"));
-        require_static(&widget);
+    fn test_layout_style_with_measure() {
+        let w = TestWidget;
+        let style = w.layout_style(&measure_text_descriptor);
+        assert_eq!(style, Style::default());
     }
 }

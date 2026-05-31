@@ -7,7 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 use crate::input::{KeyCode, mouse_button};
 
@@ -48,7 +48,7 @@ impl Widget for Modal {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             position: Position::Absolute,
             size: taffy::Size {
@@ -99,6 +99,9 @@ impl Widget for Modal {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let is_open: bool = state.get(self.open_id).unwrap_or_default();
         if !is_open {
@@ -134,7 +137,6 @@ impl Widget for Modal {
 mod tests {
     use super::*;
     use crate::declarative::build::CallbackTable;
-    use crate::declarative::widget::DescriptorWidget;
 
     fn make_modal(open: bool) -> (Modal, StateArena) {
         let mut arena = StateArena::new();
@@ -164,7 +166,7 @@ mod tests {
     #[test]
     fn test_modal_diff_different_type() {
         let (modal, _) = make_modal(true);
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(modal.diff_against(&other), DiffAction::Replace);
     }
 

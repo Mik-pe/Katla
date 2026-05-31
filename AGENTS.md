@@ -139,7 +139,7 @@ git commit -m "Summary line
 - **Tests**: Prefix with `test_` (`test_entity_id_creation`)
 - **Modules**: Prefer splitting into multiple files/private rust modules over large modules
 - **Complexity**: Avoid overly complex types, Result<Rc<Option<RefCell<Option<T>>>>
-- **Error Handling**: `Option<T>`, `Result<T, E>`, avoid `unwrap()` in production
+- **Error Handling**: `Option<T>`, `Result<T, E>`, avoid `unwrap()` in production code. Using `unwrap()` and `expect()` in test code (`#[test]` functions, test helper modules) is fine and idiomatic.
 - **Documentation**: `///` for public APIs, `//!` for module-level
 - **Visibility**: Prefer `pub(crate)` until we know something should be part of the public API. Only promote to `pub` when there's a clear external use case. Keep the public API surface small and intentional.
 - **Performance**: Mark hot path functions with `#[inline]`, prefer stack allocation

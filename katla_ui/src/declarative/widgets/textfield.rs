@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use katla_math::{Rect2D, Vec2};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use crate::context::UiContext;
 use crate::input::KeyCode;
@@ -11,7 +11,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
 pub(crate) struct TextField {
     pub placeholder: String,
@@ -36,8 +36,15 @@ impl Widget for TextField {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
+        let text_size = measure(&self.placeholder, None);
+        Style {
+            size: Size {
+                width: Dimension::Length(text_size.x() + 16.0),
+                height: Dimension::Length(text_size.y() + 12.0),
+            },
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -95,6 +102,9 @@ impl Widget for TextField {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let text: String = state.get(self.value_id).unwrap_or_default();
 
@@ -171,7 +181,9 @@ mod tests {
     #[test]
     fn test_textfield_layout_default() {
         let tf = make_textfield();
-        assert_eq!(tf.layout_style(), Style::default());
+        let style = tf.layout_style(&crate::declarative::layout::measure_text_descriptor);
+        let default_width = taffy::Dimension::Length(0.0);
+        assert!(style.size.width != default_width);
     }
 
     #[test]

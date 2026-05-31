@@ -2,13 +2,13 @@ use std::any::Any;
 
 use katla_icons::ForkAwesome;
 use katla_math::{Rect2D, Vec2};
-use taffy::Style;
+use taffy::{FlexDirection, Style};
 
 use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
@@ -36,8 +36,11 @@ impl Widget for Section {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+        Style {
+            flex_direction: FlexDirection::Column,
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -87,6 +90,9 @@ impl Widget for Section {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let expanded: bool = state.get(self.expanded_id).unwrap_or_default();
         let font_size = ctx.style().font_size;

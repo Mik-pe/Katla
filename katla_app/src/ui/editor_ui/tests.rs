@@ -152,6 +152,7 @@ fn test_hierarchy_entity_selection_works() {
         hierarchy_state: std::mem::take(&mut state),
         theme: theme.clone(),
         search_filter: String::new(),
+        selected_entity: None,
     };
 
     let mut view_tree = ViewTree::default();

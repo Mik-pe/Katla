@@ -281,6 +281,37 @@ impl DraggablePanelVisibility {
     }
 }
 
+impl DraggablePanelState {
+    pub fn is_visible(&self) -> bool {
+        self.visibility.is_visible()
+    }
+
+    pub fn open(&mut self) {
+        self.visibility = DraggablePanelVisibility::JustOpened;
+    }
+
+    pub fn close(&mut self) {
+        self.visibility = DraggablePanelVisibility::Hidden;
+    }
+
+    pub fn mark_shown(&mut self) {
+        if self.visibility == DraggablePanelVisibility::JustOpened {
+            self.visibility = DraggablePanelVisibility::Visible;
+        }
+    }
+
+    pub fn bounds(&self, width: f32, height: f32, screen: Vec2) -> Option<Rect2D> {
+        let pos = self.position?;
+        Some(Rect2D::from_origin_size(
+            pos,
+            Vec2::new(
+                width.min(screen.x() - pos.x()),
+                height.min(screen.y() - pos.y()),
+            ),
+        ))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct MenuBarDescriptor {
     pub groups: Vec<MenuGroup>,
@@ -328,6 +359,7 @@ pub struct ModalDescriptor {
     pub height: f32,
     pub open_id: StateId,
     pub content: Box<ViewDescriptor>,
+    pub on_close: Option<Callback>,
 }
 
 #[derive(Clone, Debug)]

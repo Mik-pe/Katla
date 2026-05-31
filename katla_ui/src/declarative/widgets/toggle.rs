@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use katla_math::{Rect2D, Vec2};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use crate::context::UiContext;
 use crate::input::mouse_button;
@@ -9,7 +9,7 @@ use crate::input::mouse_button;
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
 pub(crate) struct Toggle {
     pub label: String,
@@ -33,8 +33,15 @@ impl Widget for Toggle {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
+        let text_size = measure(&self.label, None);
+        Style {
+            size: Size {
+                width: Dimension::Length(text_size.x() + 28.0),
+                height: Dimension::Length(text_size.y() + 8.0),
+            },
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -59,6 +66,9 @@ impl Widget for Toggle {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let checked: bool = state.get(self.value_id).unwrap_or(false);
 
@@ -111,7 +121,6 @@ mod tests {
     use crate::declarative::build::CallbackTable;
     use crate::declarative::constructors::text;
     use crate::declarative::state::ViewId;
-    use crate::declarative::widget::DescriptorWidget;
     use crate::input::UiInputState;
 
     fn make_state_id(arena: &mut StateArena) -> StateId {
@@ -166,7 +175,7 @@ mod tests {
         };
         assert_eq!(b.diff_against(&a), DiffAction::Update);
 
-        let other = DescriptorWidget::new(text("hello"));
+        let other = text("hello");
         assert_eq!(a.diff_against(&other), DiffAction::Replace);
     }
 }

@@ -7,7 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::ContextMenuEntry;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
@@ -44,7 +44,7 @@ impl Widget for ContextMenu {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             position: Position::Absolute,
             ..Style::default()
@@ -95,6 +95,9 @@ impl Widget for ContextMenu {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let is_open: bool = state.get(self.open_id).unwrap_or_default();
         if !is_open {
@@ -165,7 +168,6 @@ impl Widget for ContextMenu {
 mod tests {
     use super::*;
     use crate::declarative::build::CallbackTable;
-    use crate::declarative::widget::DescriptorWidget;
 
     fn make_context_menu(open: bool) -> (ContextMenu, StateArena) {
         let mut arena = StateArena::new();
@@ -199,7 +201,7 @@ mod tests {
     #[test]
     fn test_context_menu_diff_different_type() {
         let (menu, _) = make_context_menu(true);
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(menu.diff_against(&other), DiffAction::Replace);
     }
 

@@ -607,14 +607,21 @@ mod tests {
     struct StaticDescriptor(ViewDescriptor);
 
     impl Build for StaticDescriptor {
-        fn build(&self, _ctx: &mut BuildContext) -> ViewDescriptor {
-            self.0.clone()
+        fn build(&self, _ctx: &mut BuildContext) -> Box<dyn crate::declarative::widget::Widget> {
+            crate::declarative::constructors::into_descriptor_owned(self.0.clone())
         }
     }
 
-    fn build_tree(tree: &mut ViewTree, descriptor: ViewDescriptor) {
+    fn build_tree_from_descriptor(tree: &mut ViewTree, descriptor: ViewDescriptor) {
         tree.build_from(&StaticDescriptor(descriptor));
     }
+
+    fn build_tree(tree: &mut ViewTree, widget: Box<dyn crate::declarative::widget::Widget>) {
+        let descriptor = crate::declarative::constructors::into_descriptor(widget);
+        tree.build_from(&StaticDescriptor(descriptor));
+    }
+
+    use crate::declarative::constructors::WidgetExt;
 
     #[test]
     fn test_measure_text() {
@@ -645,7 +652,7 @@ mod tests {
             flex: FlexProps::default(),
         }));
 
-        build_tree(&mut tree, descriptor);
+        build_tree_from_descriptor(&mut tree, descriptor);
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -683,7 +690,7 @@ mod tests {
             flex: FlexProps::default(),
         }));
 
-        build_tree(&mut tree, descriptor);
+        build_tree_from_descriptor(&mut tree, descriptor);
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -733,7 +740,7 @@ mod tests {
             flex: FlexProps::default(),
         }));
 
-        build_tree(&mut tree, descriptor);
+        build_tree_from_descriptor(&mut tree, descriptor);
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -777,7 +784,7 @@ mod tests {
             flex: FlexProps::default(),
         }));
 
-        build_tree(&mut tree, descriptor);
+        build_tree_from_descriptor(&mut tree, descriptor);
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -983,7 +990,10 @@ mod tests {
             height: Some(cell_h),
         };
 
-        let inner_zstack = zstack([(Alignment::Center, img)]);
+        let inner_zstack = zstack([(
+            Alignment::Center,
+            crate::declarative::constructors::into_descriptor_owned(img),
+        )]);
         let sel = selectable(inner_zstack);
         let desc = grid(1, cell_size, [sel])
             .flex_width(cell_w)

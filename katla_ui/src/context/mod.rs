@@ -6,21 +6,15 @@
 mod clipping;
 mod drawing;
 mod frame;
-mod helpers;
 mod id;
 mod input;
 pub(crate) mod interaction;
-mod layout;
-use layout::LayoutState;
-mod popup;
 mod widgets;
 pub mod z_index;
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-#[cfg(test)]
-use katla_math::Color;
 use katla_math::{Rect2D, Vec2};
 
 use crate::draw_list::DrawList;
@@ -29,8 +23,7 @@ use crate::style::UiStyle;
 use crate::text::{FontId, FontSystem};
 use crate::widget::ClipboardProvider;
 
-pub use popup::{CloseBehavior, Popup, PopupPosition, PopupStyle};
-pub use widgets::{ScrollArea, ScrollAreaState};
+pub use widgets::ScrollAreaState;
 
 /// ID type for UI elements.
 pub type WidgetId = u64;
@@ -76,22 +69,6 @@ pub struct UiContext {
     pub(super) in_frame: bool,
     /// Layout cursor for automatic positioning.
     pub(crate) cursor: Vec2,
-    /// Current row height for layout.
-    pub(super) row_height: f32,
-    /// Layout stack for nested layouts.
-    pub(crate) layout_stack: Vec<LayoutState>,
-    /// Currently open popup ID.
-    popup_id: Option<WidgetId>,
-    /// ID of the menu bar dropdown to close (set during hover-to-switch).
-    /// When hover-to-switch happens, this is set to the ID of the dropdown
-    /// that should close itself.
-    menu_bar_close_id: Option<WidgetId>,
-    /// Captured position for the current popup (set when first opened).
-    popup_position: Option<Vec2>,
-    /// Bounds of the current popup (for click-outside detection).
-    pub(crate) popup_bounds: Option<Rect2D>,
-    /// Whether a popup was opened this frame (prevents immediate close).
-    popup_opened_this_frame: bool,
     /// Current time in seconds (for cursor blink animation).
     pub(crate) time: f64,
     /// Current Z-index for rendering (higher = on top).
@@ -107,20 +84,6 @@ pub struct UiContext {
     /// This prevents e.g. a popup's hover-z from being lost on the first
     /// frame after begin() clears hover_z_index.
     prev_hover_z_index: u32,
-    /// Tracked bounding box of all popup content (auto-expanded as items are drawn).
-    pub(crate) popup_content_bounds: Option<Rect2D>,
-    /// Current popup cursor position for automatic layout.
-    popup_cursor: Vec2,
-    /// Popup width for automatic layout.
-    popup_width: f32,
-    /// Scroll area bounds (for end_scroll_area).
-    scroll_area_bounds: Option<Rect2D>,
-    /// Scroll area content bounds.
-    scroll_area_content_bounds: Option<Rect2D>,
-    /// Scroll area state (temporary copy).
-    scroll_area_state: Option<widgets::ScrollAreaState>,
-    /// Whether to show scrollbar for current scroll area.
-    scroll_area_show_scrollbar: bool,
     /// Clipboard provider for copy/cut/paste.
     clipboard: Option<Box<dyn ClipboardProvider>>,
     /// Focusable widgets registered during this frame's layout pass.
@@ -157,24 +120,10 @@ impl UiContext {
             pending_focus_label: None,
             in_frame: false,
             cursor: Vec2::new(0.0, 0.0),
-            row_height: 0.0,
-            layout_stack: Vec::new(),
-            popup_id: None,
-            menu_bar_close_id: None,
-            popup_position: None,
-            popup_bounds: None,
-            popup_opened_this_frame: false,
             z_index: z_index::DEFAULT,
             z_stack: Vec::new(),
             hover_z_index: z_index::DEFAULT,
             prev_hover_z_index: z_index::DEFAULT,
-            popup_content_bounds: None,
-            popup_cursor: Vec2::new(0.0, 0.0),
-            popup_width: 0.0,
-            scroll_area_bounds: None,
-            scroll_area_content_bounds: None,
-            scroll_area_state: None,
-            scroll_area_show_scrollbar: false,
             time: 0.0,
             clipboard: None,
             focusable_widgets: Vec::new(),
@@ -259,44 +208,6 @@ impl UiContext {
     pub fn set_declarative_input_consumed(&mut self, consumed: bool) {
         self.declarative_input_consumed = consumed;
     }
-
-    // -------------------------------------------------------------------------
-    // Widget Trait
-    // -------------------------------------------------------------------------
-
-    /// Add a widget to the UI.
-    ///
-    /// This method accepts any type implementing `Widget` and renders it.
-    /// This enables custom widgets and composition patterns.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Using a closure as a widget
-    /// ui.add(|ui: &mut UiContext| {
-    ///     ui.label("Hello", bounds);
-    ///     Response::new(bounds)
-    /// });
-    ///
-    /// // Using a custom widget type
-    /// ui.add(MyCustomWidget::new("label"));
-    /// ```
-    pub fn add<W: crate::Widget>(&mut self, widget: W) -> crate::Response {
-        let response = widget.ui(self);
-        self.advance_cursor(katla_math::Vec2::new(
-            response.bounds.width(),
-            response.bounds.height(),
-        ));
-        response
-    }
-
-    pub fn add_overlay<W: crate::Widget>(&mut self, widget: W) -> crate::Response {
-        widget.ui(self)
-    }
-
-    // -------------------------------------------------------------------------
-    // Z-Index Management
-    // -------------------------------------------------------------------------
 
     /// Defer a tooltip for rendering during `end()`.
     pub fn defer_tooltip(&mut self, text: impl Into<String>) {

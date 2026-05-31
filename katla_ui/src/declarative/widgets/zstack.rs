@@ -7,7 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::{FlexProps, Padding};
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub(crate) struct ZStack {
@@ -43,7 +43,7 @@ impl Widget for ZStack {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         let mut style = Style {
             size: Size {
                 width: Dimension::Percent(1.0),
@@ -73,6 +73,9 @@ impl Widget for ZStack {
         _bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
     }
 
@@ -92,7 +95,6 @@ impl Widget for ZStack {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::widget::DescriptorWidget;
 
     #[test]
     fn test_zstack_diff_same_type() {
@@ -104,7 +106,7 @@ mod tests {
     #[test]
     fn test_zstack_diff_different_type() {
         let zstack = ZStack::new(Padding::zero(), FlexProps::default());
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(zstack.diff_against(&other), DiffAction::Replace);
     }
 
@@ -121,7 +123,7 @@ mod tests {
     #[test]
     fn test_zstack_layout_style_fills_parent() {
         let zstack = ZStack::new(Padding::zero(), FlexProps::default());
-        let style = zstack.layout_style();
+        let style = zstack.layout_style(&crate::declarative::layout::measure_text_descriptor);
         assert!(matches!(style.size.width, Dimension::Percent(1.0)));
         assert!(matches!(style.size.height, Dimension::Percent(1.0)));
     }

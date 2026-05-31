@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use katla_math::{Color, Rect2D};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use crate::context::UiContext;
 use crate::style::FontSize;
@@ -9,7 +9,7 @@ use crate::style::FontSize;
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
 pub(crate) struct Text {
     pub content: String,
@@ -34,8 +34,15 @@ impl Widget for Text {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
+        let size = measure(&self.content, self.font_size);
+        Style {
+            size: Size {
+                width: Dimension::Length(size.x()),
+                height: Dimension::Length(size.y()),
+            },
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -55,6 +62,9 @@ impl Widget for Text {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let text_color = self.color.unwrap_or(ctx.style().text_color);
         let size = self
@@ -78,7 +88,6 @@ impl Widget for Text {
 mod tests {
     use super::*;
     use crate::declarative::constructors::text;
-    use crate::declarative::widget::DescriptorWidget;
 
     #[test]
     fn test_text_diff_same_type() {
@@ -102,7 +111,7 @@ mod tests {
             color: None,
             font_size: None,
         };
-        let other = DescriptorWidget::new(text("other"));
+        let other = text("other");
         assert_eq!(widget.diff_against(&other), DiffAction::Replace);
     }
 
@@ -120,6 +129,19 @@ mod tests {
             katla_math::Vec2::new(0.0, 0.0),
             katla_math::Vec2::new(100.0, 20.0),
         );
-        widget.draw(&mut ctx, &state, bounds, &anim, &[]);
+        widget.draw(
+            &mut ctx,
+            &state,
+            bounds,
+            &anim,
+            &[],
+            &DrawInteraction {
+                hovered_id: None,
+                active_id: None,
+                focused_id: None,
+            },
+            ViewId::default(),
+            &[],
+        );
     }
 }

@@ -57,17 +57,21 @@ mod tests {
 
     // -- Same variant → Update --
 
+    fn vd(w: Box<dyn crate::declarative::widget::Widget>) -> ViewDescriptor {
+        crate::declarative::constructors::into_descriptor(w)
+    }
+
     #[test]
     fn test_diff_same_text_is_update() {
-        let a = text("hello");
-        let b = text("world");
+        let a = vd(text("hello"));
+        let b = vd(text("world"));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Update);
     }
 
     #[test]
     fn test_diff_same_button_is_update() {
-        let a = button("ok");
-        let b = button("cancel");
+        let a = vd(button("ok"));
+        let b = vd(button("cancel"));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Update);
     }
 
@@ -87,35 +91,38 @@ mod tests {
 
     #[test]
     fn test_diff_same_empty_is_update() {
-        assert_eq!(diff_descriptor(&empty(), &empty()), DiffAction::Update);
+        assert_eq!(
+            diff_descriptor(&vd(empty()), &vd(empty())),
+            DiffAction::Update
+        );
     }
 
     #[test]
     fn test_diff_same_image_is_update() {
         use katla_math::Color;
-        let a = image(TextureId(1), Color::WHITE);
-        let b = image(TextureId(2), Color::BLACK);
+        let a = vd(image(TextureId(1), Color::WHITE));
+        let b = vd(image(TextureId(2), Color::BLACK));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Update);
     }
 
     #[test]
     fn test_diff_same_separator_is_update() {
-        let a = separator_horizontal();
-        let b = separator_vertical();
+        let a = vd(separator_horizontal());
+        let b = vd(separator_vertical());
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Update);
     }
 
     #[test]
     fn test_diff_same_icon_is_update() {
-        let a = icon('A');
-        let b = icon('B');
+        let a = vd(icon('A'));
+        let b = vd(icon('B'));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Update);
     }
 
     #[test]
     fn test_diff_same_progress_is_update() {
-        let a = progress(0.5, 0.0..=1.0);
-        let b = progress(0.8, 0.0..=1.0);
+        let a = vd(progress(0.5, 0.0..=1.0));
+        let b = vd(progress(0.8, 0.0..=1.0));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Update);
     }
 
@@ -123,53 +130,53 @@ mod tests {
 
     #[test]
     fn test_diff_same_hstack_is_recurse() {
-        let a = hstack([text("a")]);
-        let b = hstack([text("b")]);
+        let a = vd(hstack([text("a")]));
+        let b = vd(hstack([text("b")]));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::RecurseChildren);
     }
 
     #[test]
     fn test_diff_same_vstack_is_recurse() {
-        let a = vstack([text("a")]);
-        let b = vstack([text("b")]);
+        let a = vd(vstack([text("a")]));
+        let b = vd(vstack([text("b")]));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::RecurseChildren);
     }
 
     #[test]
     fn test_diff_same_zstack_is_recurse() {
         use super::super::descriptor::Alignment;
-        let a = zstack([(Alignment::Center, text("a"))]);
-        let b = zstack([(Alignment::Center, text("b"))]);
+        let a = vd(zstack([(Alignment::Center, text("a"))]));
+        let b = vd(zstack([(Alignment::Center, text("b"))]));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::RecurseChildren);
     }
 
     #[test]
     fn test_diff_same_grid_is_recurse() {
-        let a = grid(2, katla_math::Vec2::new(100.0, 100.0), [text("a")]);
-        let b = grid(2, katla_math::Vec2::new(100.0, 100.0), [text("b")]);
+        let a = vd(grid(2, katla_math::Vec2::new(100.0, 100.0), [text("a")]));
+        let b = vd(grid(2, katla_math::Vec2::new(100.0, 100.0), [text("b")]));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::RecurseChildren);
     }
 
     #[test]
     fn test_diff_same_selectable_is_recurse() {
-        let a = selectable(text("a"));
-        let b = selectable(text("b"));
+        let a = vd(selectable(text("a")));
+        let b = vd(selectable(text("b")));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::RecurseChildren);
     }
 
     #[test]
     fn test_diff_same_section_is_recurse() {
         let sid = StateId::test_id();
-        let a = section("title", vstack([text("a")]), sid);
-        let b = section("title", vstack([text("b")]), sid);
+        let a = vd(section("title", vstack([text("a")]), sid));
+        let b = vd(section("title", vstack([text("b")]), sid));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::RecurseChildren);
     }
 
     #[test]
     fn test_diff_same_tab_bar_is_recurse() {
         let sid = StateId::test_id();
-        let a = tab_bar(vec![tab_item("A"), tab_item("B")], sid, empty());
-        let b = tab_bar(vec![tab_item("C"), tab_item("D")], sid, empty());
+        let a = vd(tab_bar(vec![tab_item("A"), tab_item("B")], sid, empty()));
+        let b = vd(tab_bar(vec![tab_item("C"), tab_item("D")], sid, empty()));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::RecurseChildren);
     }
 
@@ -177,8 +184,8 @@ mod tests {
 
     #[test]
     fn test_diff_same_menubar_is_update() {
-        let a = menubar(vec![]);
-        let b = menubar(vec![]);
+        let a = vd(menubar(vec![]));
+        let b = vd(menubar(vec![]));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Update);
     }
 
@@ -186,37 +193,37 @@ mod tests {
 
     #[test]
     fn test_diff_text_to_button_is_replace() {
-        let a = text("hello");
-        let b = button("hello");
+        let a = vd(text("hello"));
+        let b = vd(button("hello"));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Replace);
     }
 
     #[test]
     fn test_diff_hstack_to_vstack_is_replace() {
-        let a = hstack([text("a")]);
-        let b = vstack([text("a")]);
+        let a = vd(hstack([text("a")]));
+        let b = vd(vstack([text("a")]));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Replace);
     }
 
     #[test]
     fn test_diff_empty_to_text_is_replace() {
-        let a = empty();
-        let b = text("hello");
+        let a = vd(empty());
+        let b = vd(text("hello"));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Replace);
     }
 
     #[test]
     fn test_diff_text_to_empty_is_replace() {
-        let a = text("hello");
-        let b = empty();
+        let a = vd(text("hello"));
+        let b = vd(empty());
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Replace);
     }
 
     #[test]
     fn test_diff_image_to_icon_is_replace() {
         use katla_math::Color;
-        let a = image(TextureId(1), Color::WHITE);
-        let b = icon('X');
+        let a = vd(image(TextureId(1), Color::WHITE));
+        let b = vd(icon('X'));
         assert_eq!(diff_descriptor(&a, &b), DiffAction::Replace);
     }
 
@@ -225,7 +232,8 @@ mod tests {
         use super::super::descriptor::ChildDescriptor;
         let cd = super::super::constructors::keyed(42, text("hello"));
         assert_eq!(cd.key, Some(42));
-        let cd_nokey: ChildDescriptor = ChildDescriptor::from(text("hello"));
+        let desc = super::super::constructors::into_descriptor(text("hello"));
+        let cd_nokey: ChildDescriptor = ChildDescriptor::from(desc);
         assert_eq!(cd_nokey.key, None);
     }
 
@@ -234,12 +242,19 @@ mod tests {
     struct StaticDescriptor(ViewDescriptor);
 
     impl crate::declarative::build::Build for StaticDescriptor {
-        fn build(&self, _ctx: &mut crate::declarative::build::BuildContext) -> ViewDescriptor {
-            self.0.clone()
+        fn build(
+            &self,
+            _ctx: &mut crate::declarative::build::BuildContext,
+        ) -> Box<dyn crate::declarative::widget::Widget> {
+            crate::declarative::constructors::into_descriptor_owned(self.0.clone())
         }
     }
 
-    fn build_tree(tree: &mut crate::declarative::ViewTree, descriptor: ViewDescriptor) {
+    fn build_tree(
+        tree: &mut crate::declarative::ViewTree,
+        widget: Box<dyn crate::declarative::widget::Widget>,
+    ) {
+        let descriptor = crate::declarative::constructors::into_descriptor(widget);
         tree.build_from(&StaticDescriptor(descriptor));
     }
 
@@ -276,11 +291,18 @@ mod tests {
     fn test_same_descriptor_is_update() {
         let mut tree = crate::declarative::ViewTree::new();
         let desc = text("hello");
-        build_tree(&mut tree, desc.clone());
+        let desc_vd = crate::declarative::constructors::into_descriptor(desc);
+        build_tree(
+            &mut tree,
+            crate::declarative::constructors::into_descriptor_owned(desc_vd.clone()),
+        );
         let root = tree.root().unwrap();
         let v0 = tree.get(root).unwrap().state_version;
 
-        build_tree(&mut tree, desc.clone());
+        build_tree(
+            &mut tree,
+            crate::declarative::constructors::into_descriptor_owned(desc_vd.clone()),
+        );
         let v1 = tree.get(root).unwrap().state_version;
 
         assert!(

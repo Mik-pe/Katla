@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use katla_math::{Color, Rect2D, Vec2};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use crate::context::UiContext;
 use crate::style::FontSize;
@@ -9,7 +9,7 @@ use crate::style::FontSize;
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
 pub(crate) struct Icon {
     pub icon: char,
@@ -34,8 +34,17 @@ impl Widget for Icon {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+        let font_size = self.size.unwrap_or(FontSize::Medium);
+        let h = font_size.to_pixels();
+        let w = h;
+        Style {
+            size: Size {
+                width: Dimension::Length(w),
+                height: Dimension::Length(h),
+            },
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -55,6 +64,9 @@ impl Widget for Icon {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let font_size = self
             .size
@@ -83,7 +95,6 @@ impl Widget for Icon {
 mod tests {
     use super::*;
     use crate::declarative::constructors::text;
-    use crate::declarative::widget::DescriptorWidget;
 
     #[test]
     fn test_icon_diff() {
@@ -99,7 +110,7 @@ mod tests {
         };
         assert_eq!(b.diff_against(&a), DiffAction::Update);
 
-        let other = DescriptorWidget::new(text("hello"));
+        let other = text("hello");
         assert_eq!(a.diff_against(&other), DiffAction::Replace);
     }
 }

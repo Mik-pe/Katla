@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use katla_math::{Color, Rect2D, Vec2};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use crate::context::UiContext;
 use crate::input::mouse_button;
@@ -10,7 +10,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
 pub(crate) struct ImageButton {
     pub icon: char,
@@ -36,8 +36,14 @@ impl Widget for ImageButton {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+        Style {
+            size: Size {
+                width: Dimension::Length(28.0),
+                height: Dimension::Length(28.0),
+            },
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -68,6 +74,9 @@ impl Widget for ImageButton {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let bg = self.fill_color.unwrap_or(ctx.style().button_normal);
         let bg = animation.apply_to_color(bg);
