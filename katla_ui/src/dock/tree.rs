@@ -1138,4 +1138,196 @@ mod tests {
         let unique_set: std::collections::HashSet<&DockPath> = paths.into_iter().collect();
         assert_eq!(unique_count, unique_set.len(), "All paths must be unique");
     }
+
+    // VAL-CROSS-012: DockTree leaf_bounds is O(n) efficient
+    #[test]
+    fn test_leaf_bounds_efficiency_100_leaves() {
+        use std::time::Instant;
+
+        // Build a tree with 100 leaves (50 horizontal splits)
+        let mut root = make_leaf(vec![0]);
+        for i in 1..100 {
+            let old = std::mem::replace(&mut root, DockNode::Empty);
+            root = make_split(SplitDirection::Horizontal, 0.5, old, make_leaf(vec![i]));
+        }
+        let tree = DockTree::new(root);
+
+        let area = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(1920.0, 1080.0));
+
+        let start = Instant::now();
+        let bounds = tree.leaf_bounds(area);
+        let elapsed = start.elapsed();
+
+        assert_eq!(bounds.len(), 100, "should have 100 leaf bounds");
+        assert!(
+            elapsed.as_millis() < 1,
+            "leaf_bounds for 100 leaves should be sub-millisecond, took {:?}",
+            elapsed
+        );
+
+        // Verify all bounds are within the screen area
+        for (_, rect) in &bounds {
+            assert!(rect.min.x() >= 0.0);
+            assert!(rect.min.y() >= 0.0);
+            assert!(rect.max.x() <= 1920.0 + 1.0); // floating point tolerance
+            assert!(rect.max.y() <= 1080.0 + 1.0);
+        }
+    }
+
+    // VAL-CROSS-036: DockTree with single tab has no splitter
+    #[test]
+    fn test_single_tab_no_splitter() {
+        let tree = DockTree::new(make_leaf(vec![1]));
+        assert!(
+            matches!(tree.root(), DockNode::Leaf { .. }),
+            "single tab should be a Leaf, not a Split"
+        );
+
+        let area = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(1920.0, 1080.0));
+        let bounds = tree.leaf_bounds(area);
+        assert_eq!(bounds.len(), 1, "single leaf should produce one bound");
+
+        // Verify the leaf fills the entire space
+        assert_rect_eq(bounds[0].1, (0.0, 0.0), (1920.0, 1080.0));
+    }
+
+    #[test]
+    fn test_single_tab_after_collapse() {
+        // Start with two tabs, remove one — should end as single leaf
+        let mut tree = DockTree::new(make_split(
+            SplitDirection::Horizontal,
+            0.5,
+            make_leaf(vec![1]),
+            make_leaf(vec![2]),
+        ));
+        tree.remove_tab(&path(&[0]), &1).unwrap();
+
+        assert!(
+            matches!(tree.root(), DockNode::Leaf { .. }),
+            "after removing one of two tabs, tree should collapse to a Leaf"
+        );
+
+        // No splitter means one leaf bound covering full area
+        let area = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(1920.0, 1080.0));
+        let bounds = tree.leaf_bounds(area);
+        assert_eq!(bounds.len(), 1);
+    }
+
+    // VAL-CROSS-037: DockTree collapse produces valid tree
+    #[test]
+    fn test_collapse_produces_valid_tree_no_empty_splits() {
+        let mut tree = DockTree::new(make_split(
+            SplitDirection::Horizontal,
+            0.5,
+            make_leaf(vec![1]),
+            make_leaf(vec![2, 3]),
+        ));
+
+        // Remove the tab from the left leaf
+        tree.remove_tab(&path(&[0]), &1).unwrap();
+
+        // Should collapse to just the right leaf
+        assert_eq!(
+            *tree.root(),
+            DockNode::Leaf {
+                tabs: vec![2, 3],
+                active: 0,
+            }
+        );
+
+        // Verify it's a valid tree — no splits with Empty children
+        fn assert_no_empty_splits(node: &DockNode<u32>) {
+            match node {
+                DockNode::Split { children, .. } => {
+                    // Neither child should be Empty or empty Leaf
+                    for child in children {
+                        match &**child {
+                            DockNode::Empty => {
+                                panic!("collapsed tree should not have Empty children in splits")
+                            }
+                            DockNode::Leaf { tabs, .. } if tabs.is_empty() => {
+                                panic!("collapsed tree should not have empty Leaf children")
+                            }
+                            _ => assert_no_empty_splits(child),
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert_no_empty_splits(tree.root());
+    }
+
+    #[test]
+    fn test_collapse_deeply_nested_produces_valid_tree() {
+        let mut tree = DockTree::new(make_split(
+            SplitDirection::Horizontal,
+            0.5,
+            make_split(
+                SplitDirection::Vertical,
+                0.5,
+                make_leaf(vec![1]),
+                make_leaf(vec![2]),
+            ),
+            make_split(
+                SplitDirection::Vertical,
+                0.5,
+                make_leaf(vec![3]),
+                make_leaf(vec![4]),
+            ),
+        ));
+
+        // Remove tab 1 from [0, 0] — left inner leaf collapses,
+        // parent [0] becomes Leaf([2])
+        tree.remove_tab(&path(&[0, 0]), &1).unwrap();
+
+        // Now tree: Split(H, 0.5, [Leaf([2]), Split(V, 0.5, [Leaf([3]), Leaf([4])])])
+        assert!(
+            matches!(tree.get(&path(&[0])), Some(DockNode::Leaf { tabs, .. }) if tabs == &[2]),
+            "after removing tab 1, left side should be Leaf([2])"
+        );
+
+        // Remove tab 2 from [0] — now root collapses to right side
+        tree.remove_tab(&path(&[0]), &2).unwrap();
+
+        // Root should now be the right split
+        if let DockNode::Split { children, .. } = tree.root() {
+            assert!(
+                matches!(&*children[0], DockNode::Leaf { tabs, .. } if tabs == &[3]),
+                "left child should be Leaf([3])"
+            );
+            assert!(
+                matches!(&*children[1], DockNode::Leaf { tabs, .. } if tabs == &[4]),
+                "right child should be Leaf([4])"
+            );
+        } else {
+            panic!("Expected remaining Split with tabs 3 and 4");
+        }
+    }
+
+    #[test]
+    fn test_collapse_preserves_non_empty_siblings() {
+        let mut tree = DockTree::new(make_split(
+            SplitDirection::Horizontal,
+            0.5,
+            make_leaf(vec![1, 2]),
+            make_leaf(vec![3]),
+        ));
+
+        // Remove just one tab from left — should NOT collapse (still has tabs)
+        tree.remove_tab(&path(&[0]), &1).unwrap();
+
+        if let DockNode::Split { children, .. } = tree.root() {
+            assert!(
+                matches!(&*children[0], DockNode::Leaf { tabs, .. } if tabs == &[2]),
+                "left leaf should still exist with remaining tab"
+            );
+            assert!(
+                matches!(&*children[1], DockNode::Leaf { tabs, .. } if tabs == &[3]),
+                "right leaf should be unchanged"
+            );
+        } else {
+            panic!("Expected Split — should not collapse when both sides have tabs");
+        }
+    }
 }

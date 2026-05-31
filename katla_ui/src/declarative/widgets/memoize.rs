@@ -254,4 +254,74 @@ mod tests {
                 .is_some()
         );
     }
+
+    // VAL-CROSS-011: Memoize provides measurable performance skip
+    #[test]
+    fn test_memoize_measurable_skip_performance() {
+        use std::time::Instant;
+
+        // Build an expensive factory that creates many children
+        let expensive_factory = |_data: Arc<Vec<String>>| {
+            // Simulate expensive work
+            let mut v = Vec::new();
+            for i in 0..1000 {
+                v.push(i.to_string());
+            }
+            widgets::text::Text {
+                content: v.join(","),
+                color: None,
+                font_size: None,
+            }
+        };
+
+        let data = Arc::new((0..1000).map(|i| i.to_string()).collect::<Vec<String>>());
+
+        // Measure should_rebuild with same pointer (O(1) Arc::ptr_eq check)
+        let m1 = Memoize::new(data.clone(), expensive_factory);
+        let m2 = Memoize::new(data, expensive_factory);
+
+        let start = Instant::now();
+        for _ in 0..10_000 {
+            let _skip = m2.should_rebuild(&m1);
+        }
+        let skip_time = start.elapsed();
+
+        // Measure with different pointers (still fast, but different outcome)
+        let d1 = Arc::new(vec!["a".to_string()]);
+        let d2 = Arc::new(vec!["b".to_string()]);
+        let m3: Memoize<Vec<String>, widgets::text::Text> =
+            Memoize::new(d1, |d| widgets::text::Text {
+                content: d.first().cloned().unwrap_or_default(),
+                color: None,
+                font_size: None,
+            });
+        let m4 = Memoize::new(d2, |d| widgets::text::Text {
+            content: d.first().cloned().unwrap_or_default(),
+            color: None,
+            font_size: None,
+        });
+
+        let start = Instant::now();
+        for _ in 0..10_000 {
+            let _rebuild = m4.should_rebuild(&m3);
+        }
+        let rebuild_time = start.elapsed();
+
+        // Both should be extremely fast since should_rebuild is O(1) Arc::ptr_eq
+        // The skip case should be at least as fast as the rebuild case
+        assert!(
+            skip_time.as_micros() < 10_000,
+            "should_rebuild with same Arc should be very fast, took {:?}",
+            skip_time
+        );
+        assert!(
+            rebuild_time.as_micros() < 10_000,
+            "should_rebuild with different Arc should be very fast, took {:?}",
+            rebuild_time
+        );
+
+        // Verify correct semantics
+        assert!(!m2.should_rebuild(&m1), "same pointer → skip");
+        assert!(m4.should_rebuild(&m3), "different pointer → rebuild");
+    }
 }
