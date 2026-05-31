@@ -286,12 +286,20 @@ fn split_handle_rect(
 /// Reads the `DockTree<T>` from `StateArena` via `dock_state_id`.
 /// Draws children (panel content) first, then chrome (tab bars, splitters)
 /// on top via `draw_after_children`.
+///
+/// When placed in a full-screen ZStack, use `content_inset_top` and
+/// `content_inset_bottom` to exclude regions occupied by overlays like
+/// toolbar and status bar.
 pub struct DockSpace<T: Clone + PartialEq + 'static> {
     pub dock_state_id: StateId,
     pub drag_state_id: StateId,
     pub panel_labels: Vec<(T, String)>,
     pub tab_bar_height: f32,
     pub splitter_width: f32,
+    /// Pixels to exclude from the top of the widget's bounds (e.g. toolbar).
+    pub content_inset_top: f32,
+    /// Pixels to exclude from the bottom of the widget's bounds (e.g. status bar).
+    pub content_inset_bottom: f32,
     pub flex: FlexProps,
     pub(crate) child_widgets: Vec<Option<Box<dyn Widget>>>,
     children: Vec<ViewId>,
@@ -311,10 +319,20 @@ impl<T: Clone + PartialEq + std::fmt::Debug + 'static> DockSpace<T> {
             panel_labels,
             tab_bar_height: 28.0,
             splitter_width: 4.0,
+            content_inset_top: 0.0,
+            content_inset_bottom: 0.0,
             flex,
             child_widgets: child_widgets.into_iter().map(Some).collect(),
             children: Vec::new(),
         }
+    }
+
+    /// Compute the effective dock bounds after applying content insets.
+    pub fn effective_bounds(&self, bounds: Rect2D) -> Rect2D {
+        Rect2D::new(
+            bounds.min + Vec2::new(0.0, self.content_inset_top),
+            bounds.max - Vec2::new(0.0, self.content_inset_bottom),
+        )
     }
 
     fn get_label(&self, tab_val: &T) -> String {
@@ -385,15 +403,16 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
             return InputResult::Ignore;
         }
 
+        let dock_bounds = self.effective_bounds(bounds);
         let mut drag_state: DockDragState<T> = state.get(self.drag_state_id).unwrap_or_default();
 
         // Handle active drag
         if drag_state.dragging {
-            return self.handle_drag(ctx, state, bounds, &tree, &mut drag_state);
+            return self.handle_drag(ctx, state, dock_bounds, &tree, &mut drag_state);
         }
 
         // Check for splitter handle click
-        let splits = compute_split_info(tree.root(), bounds, self.splitter_width);
+        let splits = compute_split_info(tree.root(), dock_bounds, self.splitter_width);
         for split in &splits {
             if split.handle_rect.contains(ctx.mouse_pos)
                 && ctx.input.mouse_clicked(mouse_button::LEFT)
@@ -406,7 +425,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
         }
 
         // Check for tab click
-        let leaf_info = compute_leaf_info(tree.root(), bounds, self.tab_bar_height);
+        let leaf_info = compute_leaf_info(tree.root(), dock_bounds, self.tab_bar_height);
         for leaf in &leaf_info {
             if leaf.tabs.is_empty() {
                 continue;
@@ -465,9 +484,11 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
             return;
         }
 
+        let dock_bounds = self.effective_bounds(bounds);
+
         // Draw panel content area backgrounds
         if let Some(tree) = self.read_tree(state) {
-            let leaf_info = compute_leaf_info(tree.root(), bounds, self.tab_bar_height);
+            let leaf_info = compute_leaf_info(tree.root(), dock_bounds, self.tab_bar_height);
             for leaf in &leaf_info {
                 if !leaf.tabs.is_empty() {
                     ctx.draw_rect(leaf.content_bounds, ctx.style().window_bg);
@@ -493,8 +514,10 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
             return;
         }
 
-        let leaf_info = compute_leaf_info(tree.root(), bounds, self.tab_bar_height);
-        let splits = compute_split_info(tree.root(), bounds, self.splitter_width);
+        let dock_bounds = self.effective_bounds(bounds);
+
+        let leaf_info = compute_leaf_info(tree.root(), dock_bounds, self.tab_bar_height);
+        let splits = compute_split_info(tree.root(), dock_bounds, self.splitter_width);
 
         // Draw tab bars for each leaf
         for leaf in &leaf_info {

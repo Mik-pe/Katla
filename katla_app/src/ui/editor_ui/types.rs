@@ -64,6 +64,17 @@ impl EditorPanel {
             _ => None,
         }
     }
+
+    pub fn all_editor_panels() -> &'static [EditorPanel] {
+        &[
+            EditorPanel::Hierarchy,
+            EditorPanel::Viewport,
+            EditorPanel::Inspector,
+            EditorPanel::AssetBrowser,
+            EditorPanel::Console,
+            EditorPanel::Mixer,
+        ]
+    }
 }
 
 /// Model types that can be spawned.
