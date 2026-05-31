@@ -506,7 +506,7 @@ fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> S
     }
 }
 
-fn padding_to_taffy(padding: &Padding) -> taffy::Rect<LengthPercentage> {
+pub fn padding_to_taffy(padding: &Padding) -> taffy::Rect<LengthPercentage> {
     taffy::Rect {
         top: LengthPercentage::Length(padding.top),
         right: LengthPercentage::Length(padding.right),
@@ -515,7 +515,7 @@ fn padding_to_taffy(padding: &Padding) -> taffy::Rect<LengthPercentage> {
     }
 }
 
-fn apply_alignment_to_style(style: &mut Style, alignment: Alignment) {
+pub fn apply_alignment_to_style(style: &mut Style, alignment: Alignment) {
     match alignment {
         // Single-axis alignments: only set the relevant property.
         // Leading/Trailing affect justify_content (main axis) without
