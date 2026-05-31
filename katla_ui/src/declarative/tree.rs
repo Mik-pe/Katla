@@ -259,6 +259,13 @@ impl ViewTree {
             self.draw_recursive(rid, ui);
         }
 
+        // Step 8: GC — clean orphaned StateArena entries
+        {
+            let live_ids: std::collections::HashSet<ViewId> =
+                self.nodes.iter().map(|(id, _)| id).collect();
+            self.state.gc(&live_ids);
+        }
+
         self.clear_dirty();
 
         input_consumed
@@ -1306,5 +1313,68 @@ mod tests {
             .downcast_ref::<super::super::widgets::text::Text>()
             .expect("should be Text widget");
         assert_eq!(text_widget.content, "updated");
+    }
+
+    #[test]
+    fn test_gc_removes_orphaned_state_after_node_removal() {
+        let mut tree = ViewTree::new();
+
+        tree.set_root(vstack([text("a").boxed(), text("b").boxed(), text("c").boxed()]).boxed());
+        let root = tree.root().unwrap();
+        let children = tree.get(root).unwrap().children.clone();
+        assert_eq!(children.len(), 3);
+
+        // Create state for all three children
+        let sid_a = tree.state_arena_mut().get_or_create(children[0], 1_i32);
+        let sid_b = tree.state_arena_mut().get_or_create(children[1], 2_i32);
+        let sid_c = tree.state_arena_mut().get_or_create(children[2], 3_i32);
+
+        // Remove two children by rebuilding with only one
+        tree.set_root(vstack([text("a").boxed()]).boxed());
+
+        // Run GC manually (set_root doesn't trigger frame)
+        let live_ids: std::collections::HashSet<ViewId> =
+            tree.nodes.iter().map(|(id, _)| id).collect();
+        tree.state.gc(&live_ids);
+
+        // Only surviving child's state should remain
+        let root_after = tree.root().unwrap();
+        let surviving_children = tree.get(root_after).unwrap().children.clone();
+        assert_eq!(surviving_children.len(), 1);
+        assert_eq!(surviving_children[0], children[0]);
+
+        assert!(tree.state.get::<i32>(sid_a).is_some(), "a survives");
+        assert!(tree.state.get::<i32>(sid_b).is_none(), "b orphaned");
+        assert!(tree.state.get::<i32>(sid_c).is_none(), "c orphaned");
+    }
+
+    #[test]
+    fn test_gc_no_leak_over_1000_frames() {
+        let mut tree = ViewTree::new();
+
+        for i in 0..1000 {
+            if i % 2 == 0 {
+                tree.set_root(
+                    vstack([text("a").boxed(), text("b").boxed(), text("c").boxed()]).boxed(),
+                );
+            } else {
+                tree.set_root(vstack([text("a").boxed()]).boxed());
+            }
+
+            // Run GC
+            let live_ids: std::collections::HashSet<ViewId> =
+                tree.nodes.iter().map(|(id, _)| id).collect();
+            tree.state.gc(&live_ids);
+        }
+
+        let live_ids: std::collections::HashSet<ViewId> =
+            tree.nodes.iter().map(|(id, _)| id).collect();
+        let live_count = live_ids.len();
+        assert!(
+            tree.state.cell_count() <= live_count * 2,
+            "arena should stay bounded, got {} cells for {} live nodes",
+            tree.state.cell_count(),
+            live_count
+        );
     }
 }

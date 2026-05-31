@@ -9,6 +9,7 @@ pub mod icon;
 pub mod image;
 pub mod image_button;
 pub mod labeled_slider;
+pub mod memoize;
 pub mod menubar;
 pub mod modal;
 pub mod overlay;
