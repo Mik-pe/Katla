@@ -21,7 +21,8 @@ use std::sync::{Arc, Mutex};
 use katla_ecs::EntityId;
 use katla_gfx::TextureHandle;
 use katla_math::{Rect2D, Vec2};
-use katla_ui::declarative::ViewTree;
+use katla_ui::declarative::{StateId, ViewTree};
+use katla_ui::dock::DockTree;
 use katla_ui::{ColorScheme, DrawList, UiContext};
 
 use crate::ui::console::LogBuffer;
@@ -154,10 +155,11 @@ pub struct EditorUI {
     available_components: Vec<&'static str>,
     /// Search/filter text for the hierarchy panel.
     hierarchy_search_filter: String,
-    /// Dockable panel layout.
-    dock_layout: katla_ui::widgets::DockLayout,
-    /// Tab drag state for the dock system.
-    dock_drag: katla_ui::widgets::DockDragState,
+    /// Dockable panel layout tree.
+    dock_tree: DockTree<u64>,
+    /// State IDs for the DockSpace widget (set after first frame).
+    dock_state_id: Option<StateId>,
+    drag_state_id: Option<StateId>,
     /// Declarative view tree for migrated panels.
     view_tree: ViewTree,
     /// Console panel state.
@@ -211,8 +213,9 @@ impl EditorUI {
             focus_script_input: false,
             available_components: Vec::new(),
             hierarchy_search_filter: String::new(),
-            dock_layout: Self::default_dock_layout(),
-            dock_drag: katla_ui::widgets::DockDragState::default(),
+            dock_tree: Self::default_dock_tree(),
+            dock_state_id: None,
+            drag_state_id: None,
             view_tree: ViewTree::default(),
             console_state: declarative::ConsoleState::default(),
             log_buffer: Arc::new(Mutex::new(LogBuffer::new())),
@@ -614,23 +617,47 @@ impl EditorUI {
         &self.editor_settings
     }
 
-    fn default_dock_layout() -> katla_ui::widgets::DockLayout {
-        use katla_ui::widgets::{DockLayout, DockNode, SplitDirection};
+    fn default_dock_tree() -> DockTree<u64> {
+        use katla_ui::dock::{DockNode, SplitDirection};
 
-        let hierarchy = DockNode::leaf(EditorPanel::Hierarchy.id());
-        let viewport = DockNode::leaf(EditorPanel::Viewport.id());
-        let inspector = DockNode::leaf(EditorPanel::Inspector.id());
-        let bottom_tabs = DockNode::leaf_with_tabs(vec![
-            EditorPanel::AssetBrowser.id(),
-            EditorPanel::Console.id(),
-            EditorPanel::Mixer.id(),
-        ]);
+        let hierarchy = DockNode::Leaf {
+            tabs: vec![EditorPanel::Hierarchy.id()],
+            active: 0,
+        };
+        let viewport = DockNode::Leaf {
+            tabs: vec![EditorPanel::Viewport.id()],
+            active: 0,
+        };
+        let inspector = DockNode::Leaf {
+            tabs: vec![EditorPanel::Inspector.id()],
+            active: 0,
+        };
+        let bottom_tabs = DockNode::Leaf {
+            tabs: vec![
+                EditorPanel::AssetBrowser.id(),
+                EditorPanel::Console.id(),
+                EditorPanel::Mixer.id(),
+            ],
+            active: 0,
+        };
 
-        let right = DockNode::split(SplitDirection::Horizontal, 0.7, viewport, inspector);
-        let main = DockNode::split(SplitDirection::Horizontal, 0.18, hierarchy, right);
-        let root = DockNode::split(SplitDirection::Vertical, 0.75, main, bottom_tabs);
+        let right = DockNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.7,
+            children: [Box::new(viewport), Box::new(inspector)],
+        };
+        let main = DockNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.18,
+            children: [Box::new(hierarchy), Box::new(right)],
+        };
+        let root = DockNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.75,
+            children: [Box::new(main), Box::new(bottom_tabs)],
+        };
 
-        DockLayout::new(root)
+        DockTree::new(root)
     }
 }
 

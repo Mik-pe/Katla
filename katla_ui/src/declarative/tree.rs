@@ -514,13 +514,29 @@ impl ViewTree {
             .nodes
             .iter()
             .filter_map(|(id, node)| {
-                let ds = node.widget.as_any().downcast_ref::<DockSpace<u32>>()?;
-
-                let tree: DockTree<u32> = self.state.get(ds.dock_state_id)?;
+                // Try DockSpace<u64> first (editor), then DockSpace<u32>
                 let dock_bounds = self.resolved_bounds.get(&id).copied()?;
-
-                let leaf_info = compute_leaf_info(tree.root(), dock_bounds, ds.tab_bar_height);
+                let effective_bounds;
                 let child_ids: Vec<ViewId> = node.children.clone();
+
+                if let Some(ds) = node.widget.as_any().downcast_ref::<DockSpace<u64>>() {
+                    let tree: DockTree<u64> = self.state.get(ds.dock_state_id)?;
+                    effective_bounds = ds.effective_bounds(dock_bounds);
+                    let leaf_info =
+                        compute_leaf_info(tree.root(), effective_bounds, ds.tab_bar_height);
+                    if child_ids.len() != leaf_info.len() {
+                        return None;
+                    }
+                    let child_rects: Vec<katla_math::Rect2D> =
+                        leaf_info.iter().map(|info| info.content_bounds).collect();
+                    return Some((child_ids, child_rects));
+                }
+
+                let ds = node.widget.as_any().downcast_ref::<DockSpace<u32>>()?;
+                let tree: DockTree<u32> = self.state.get(ds.dock_state_id)?;
+                effective_bounds = ds.effective_bounds(dock_bounds);
+
+                let leaf_info = compute_leaf_info(tree.root(), effective_bounds, ds.tab_bar_height);
                 if child_ids.len() != leaf_info.len() {
                     return None;
                 }

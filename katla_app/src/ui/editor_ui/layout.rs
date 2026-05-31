@@ -1,10 +1,7 @@
 use std::path::PathBuf;
 
 use katla_math::{Rect2D, Vec2, Vec3};
-use katla_ui::{
-    UiContext, mouse_button,
-    widgets::{DockArea, DockZone},
-};
+use katla_ui::{UiContext, declarative::widgets::dock_space::DockAction, mouse_button};
 
 use super::declarative::{
     AssetBrowserAction, AssetBrowserDrawCtx, AssetRenderData, ConsoleDrawCtx, GizmoDrawCtx,
@@ -36,36 +33,42 @@ impl EditorUI {
         let hierarchy_state = std::mem::take(&mut self.hierarchy_state);
         let entities: Vec<editor_types::EntityInfo> = params.entities.to_vec();
 
-        // ── Phase 1: Compute dock layout bounds (no rendering) ──
+        // ── Compute dock layout bounds from DockTree ──
         let dock_bounds = Rect2D::from_origin_size(
             Vec2::new(0.0, toolbar_bottom),
             Vec2::new(screen_size.x(), status_top - toolbar_bottom),
         );
-        let panel_bounds = DockArea::compute_leaf_bounds(&mut self.dock_layout, ui, dock_bounds);
+        let panel_bounds = self.dock_tree.leaf_bounds(dock_bounds);
 
         // Track viewport bounds from dock
         let mut dock_viewport_bounds = None;
-        for &(panel_id, content_bounds) in &panel_bounds {
-            if EditorPanel::from_id(panel_id) == Some(EditorPanel::Viewport) {
-                dock_viewport_bounds = Some(content_bounds);
-                self.last_viewport_size = (
-                    content_bounds.width().max(1.0) as u32,
-                    content_bounds.height().max(1.0) as u32,
-                );
-                self.last_viewport_bounds = content_bounds;
-
-                if content_bounds.contains(mouse_pos) {
-                    crate::input::update_active_viewport(
-                        &mut self.viewport_grid_state,
-                        mouse_pos,
-                        content_bounds.min,
-                        content_bounds.max,
+        for (path, content_bounds) in &panel_bounds {
+            // Get the active tab for this leaf to identify which panel it is
+            if let Some(node) = self.dock_tree.get(path)
+                && let katla_ui::dock::DockNode::Leaf { tabs, active } = node
+                && let Some(&panel_id) = tabs.get(*active)
+            {
+                if EditorPanel::from_id(panel_id) == Some(EditorPanel::Viewport) {
+                    dock_viewport_bounds = Some(*content_bounds);
+                    self.last_viewport_size = (
+                        content_bounds.width().max(1.0) as u32,
+                        content_bounds.height().max(1.0) as u32,
                     );
+                    self.last_viewport_bounds = *content_bounds;
+
+                    if content_bounds.contains(mouse_pos) {
+                        crate::input::update_active_viewport(
+                            &mut self.viewport_grid_state,
+                            mouse_pos,
+                            content_bounds.min,
+                            content_bounds.max,
+                        );
+                    }
                 }
             }
         }
 
-        // ── Phase 2: Set ALL env contexts ──
+        // ── Set ALL env contexts ──
         let selected_count = if self.asset_browser.selected_indices.is_empty() {
             if self.asset_browser.selected_index.is_some() {
                 1
@@ -75,6 +78,9 @@ impl EditorUI {
         } else {
             self.asset_browser.selected_indices.len()
         };
+
+        // DockTree (for DockSpace widget to read from Environment for initial value)
+        self.view_tree.env_mut().set(self.dock_tree.clone());
 
         // Status bar
         self.view_tree.env_mut().set(StatusBarData {
@@ -122,83 +128,88 @@ impl EditorUI {
         }
 
         // Set docked panel envs using computed bounds
-        for &(panel_id, content_bounds) in &panel_bounds {
-            match EditorPanel::from_id(panel_id) {
-                Some(EditorPanel::Hierarchy) => {
-                    self.view_tree.env_mut().set(HierarchyDrawCtx {
-                        bounds: content_bounds,
-                        entities: entities.clone(),
-                        hierarchy_state: hierarchy_state.clone(),
-                        theme: self.theme.clone(),
-                        search_filter: self.hierarchy_search_filter.clone(),
-                        selected_entity: self.selected_entity,
-                    });
+        for (path, content_bounds) in &panel_bounds {
+            if let Some(node) = self.dock_tree.get(path)
+                && let katla_ui::dock::DockNode::Leaf { tabs, active } = node
+                && let Some(&panel_id) = tabs.get(*active)
+            {
+                match EditorPanel::from_id(panel_id) {
+                    Some(EditorPanel::Hierarchy) => {
+                        self.view_tree.env_mut().set(HierarchyDrawCtx {
+                            bounds: *content_bounds,
+                            entities: entities.clone(),
+                            hierarchy_state: hierarchy_state.clone(),
+                            theme: self.theme.clone(),
+                            search_filter: self.hierarchy_search_filter.clone(),
+                            selected_entity: self.selected_entity,
+                        });
+                    }
+                    Some(EditorPanel::Inspector) => {
+                        self.view_tree.env_mut().set(InspectorDrawCtx {
+                            bounds: *content_bounds,
+                            selected_entity: self.selected_entity,
+                            entities: entities.clone(),
+                            edit: inspector_edit.clone(),
+                            theme: self.theme.clone(),
+                            available_components: self.available_components.clone(),
+                            add_component_open: self.add_component_open,
+                            add_component_filter: self.add_component_filter.clone(),
+                            focus_script_input: self.focus_script_input,
+                            audio_listener_count: params
+                                .entities
+                                .iter()
+                                .filter(|e| e.has_audio_listener)
+                                .count(),
+                        });
+                    }
+                    Some(EditorPanel::AssetBrowser) => {
+                        let ab = &self.asset_browser;
+                        self.view_tree.env_mut().set(AssetBrowserDrawCtx {
+                            bounds: *content_bounds,
+                            theme: self.theme.clone(),
+                            assets: ab
+                                .assets
+                                .iter()
+                                .map(|a| AssetRenderData {
+                                    name: a.name.clone(),
+                                    path: a.path.clone(),
+                                    asset_type: a.asset_type,
+                                    thumbnail_state: a.thumbnail_state.clone(),
+                                })
+                                .collect(),
+                            selected_index: ab.selected_index,
+                            path_segments: ab.path_segments(),
+                            can_go_back: ab.can_go_back(),
+                            can_go_forward: ab.can_go_forward(),
+                            search_filter: ab.search_filter.clone(),
+                            context_menu_open: ab.context_menu_open,
+                            context_menu_is_asset: ab.context_menu_asset.is_some(),
+                            confirm_dialog_open: ab.confirm_dialog_open,
+                            confirm_dialog_message: ab.confirm_dialog_message.clone(),
+                            collapsed: false,
+                        });
+                    }
+                    Some(EditorPanel::Console) => {
+                        self.view_tree.env_mut().set(ConsoleDrawCtx {
+                            bounds: *content_bounds,
+                            theme: self.theme.clone(),
+                            filter_levels: self.console_state.filter_levels,
+                            search_filter: self.console_state.search_filter.clone(),
+                            log_buffer: self.log_buffer.clone(),
+                        });
+                    }
+                    Some(EditorPanel::Mixer) => {
+                        self.view_tree.env_mut().set(MixerDrawCtx {
+                            bounds: *content_bounds,
+                            levels: params.audio_levels,
+                            active_voices: params.audio_active_voices,
+                            peak_voices: params.audio_peak_voices,
+                            preferences: params.preferences.clone(),
+                            theme: self.theme.clone(),
+                        });
+                    }
+                    _ => {}
                 }
-                Some(EditorPanel::Inspector) => {
-                    self.view_tree.env_mut().set(InspectorDrawCtx {
-                        bounds: content_bounds,
-                        selected_entity: self.selected_entity,
-                        entities: entities.clone(),
-                        edit: inspector_edit.clone(),
-                        theme: self.theme.clone(),
-                        available_components: self.available_components.clone(),
-                        add_component_open: self.add_component_open,
-                        add_component_filter: self.add_component_filter.clone(),
-                        focus_script_input: self.focus_script_input,
-                        audio_listener_count: params
-                            .entities
-                            .iter()
-                            .filter(|e| e.has_audio_listener)
-                            .count(),
-                    });
-                }
-                Some(EditorPanel::AssetBrowser) => {
-                    let ab = &self.asset_browser;
-                    self.view_tree.env_mut().set(AssetBrowserDrawCtx {
-                        bounds: content_bounds,
-                        theme: self.theme.clone(),
-                        assets: ab
-                            .assets
-                            .iter()
-                            .map(|a| AssetRenderData {
-                                name: a.name.clone(),
-                                path: a.path.clone(),
-                                asset_type: a.asset_type,
-                                thumbnail_state: a.thumbnail_state.clone(),
-                            })
-                            .collect(),
-                        selected_index: ab.selected_index,
-                        path_segments: ab.path_segments(),
-                        can_go_back: ab.can_go_back(),
-                        can_go_forward: ab.can_go_forward(),
-                        search_filter: ab.search_filter.clone(),
-                        context_menu_open: ab.context_menu_open,
-                        context_menu_is_asset: ab.context_menu_asset.is_some(),
-                        confirm_dialog_open: ab.confirm_dialog_open,
-                        confirm_dialog_message: ab.confirm_dialog_message.clone(),
-                        collapsed: false,
-                    });
-                }
-                Some(EditorPanel::Console) => {
-                    self.view_tree.env_mut().set(ConsoleDrawCtx {
-                        bounds: content_bounds,
-                        theme: self.theme.clone(),
-                        filter_levels: self.console_state.filter_levels,
-                        search_filter: self.console_state.search_filter.clone(),
-                        log_buffer: self.log_buffer.clone(),
-                    });
-                }
-                Some(EditorPanel::Mixer) => {
-                    self.view_tree.env_mut().set(MixerDrawCtx {
-                        bounds: content_bounds,
-                        levels: params.audio_levels,
-                        active_voices: params.audio_active_voices,
-                        peak_voices: params.audio_peak_voices,
-                        preferences: params.preferences.clone(),
-                        theme: self.theme.clone(),
-                    });
-                }
-                _ => {}
             }
         }
 
@@ -241,36 +252,21 @@ impl EditorUI {
                 });
         }
 
-        // ── Phase 3: Run the FULL view tree (all panels) ──
+        // ── Sync DockTree to StateArena and run frame ──
+        self.sync_dock_state_to_arena();
+
         let input_consumed =
             self.view_tree
                 .frame(ui, &super::declarative::EditorOverlayView, screen_size);
         ui.set_declarative_input_consumed(input_consumed);
 
-        // ── Phase 4: Render dock chrome on top (tabs, splitters, drag overlay) ──
-        let response = DockArea::new(&mut self.dock_layout, &mut self.dock_drag)
-            .bounds(dock_bounds)
-            .panel_labels(&|id| EditorPanel::from_id(id).map(|p| p.name()).unwrap_or("?"))
-            .show_chrome(ui);
-
-        // ── Process dock interactions ──
-        if let Some(closed_panel) = response.closed_panel {
-            self.dock_layout.root.remove_panel(closed_panel);
+        // ── Discover DockSpace state IDs on first frame ──
+        if self.dock_state_id.is_none() {
+            self.discover_dock_state_ids();
         }
 
-        if let Some((panel_id, zone, target_id)) = response.dropped {
-            if self.dock_drag.torn_off {
-                self.dock_layout.root.remove_panel(panel_id);
-            }
-            match zone {
-                DockZone::Center => {
-                    self.dock_layout.root.add_tab_to_leaf(target_id, panel_id);
-                }
-                _ => {
-                    self.dock_layout.root.split_leaf(target_id, panel_id, zone);
-                }
-            }
-        }
+        // ── Process DockActions from DockSpace widget ──
+        self.process_dock_actions();
 
         // ── Process declarative actions ──
         for action in self.view_tree.actions_mut().drain::<ToolbarAction>() {
@@ -387,16 +383,22 @@ impl EditorUI {
         );
         self.pending_actions.extend(remaining);
 
-        // ── Update focused panel ──
-        for &(panel_id, bounds) in &response.visible_panels {
-            if bounds.contains(mouse_pos) && ui.mouse_clicked(mouse_button::LEFT) {
-                self.focused_panel = match EditorPanel::from_id(panel_id) {
-                    Some(EditorPanel::Viewport) => super::FocusedPanel::Viewport,
-                    Some(EditorPanel::Hierarchy) => super::FocusedPanel::Hierarchy,
-                    Some(EditorPanel::Inspector) => super::FocusedPanel::Inspector,
-                    Some(EditorPanel::AssetBrowser) => super::FocusedPanel::AssetBrowser,
-                    _ => self.focused_panel,
-                };
+        // ── Update focused panel from mouse position ──
+        if ui.mouse_clicked(mouse_button::LEFT) {
+            for (path, bounds) in &panel_bounds {
+                if bounds.contains(mouse_pos)
+                    && let Some(node) = self.dock_tree.get(path)
+                    && let katla_ui::dock::DockNode::Leaf { tabs, active } = node
+                    && let Some(&panel_id) = tabs.get(*active)
+                {
+                    self.focused_panel = match EditorPanel::from_id(panel_id) {
+                        Some(EditorPanel::Viewport) => super::FocusedPanel::Viewport,
+                        Some(EditorPanel::Hierarchy) => super::FocusedPanel::Hierarchy,
+                        Some(EditorPanel::Inspector) => super::FocusedPanel::Inspector,
+                        Some(EditorPanel::AssetBrowser) => super::FocusedPanel::AssetBrowser,
+                        _ => self.focused_panel,
+                    };
+                }
             }
         }
 
@@ -405,6 +407,55 @@ impl EditorUI {
         self.hierarchy_state = hierarchy_state;
         self.last_screen_size = screen_size;
         self.preferences_panel_state.llm_config = params.llm_config.clone();
+    }
+
+    /// Sync the DockTree from EditorUI to StateArena so the DockSpace widget can read it.
+    fn sync_dock_state_to_arena(&mut self) {
+        if let Some(dock_state_id) = self.dock_state_id {
+            self.view_tree
+                .state_arena_mut()
+                .set(dock_state_id, self.dock_tree.clone());
+        }
+    }
+
+    /// Find the DockSpace<u64> node in the view tree and cache its StateIds.
+    fn discover_dock_state_ids(&mut self) {
+        use katla_ui::declarative::widgets::dock_space::DockSpace;
+
+        for (_, node) in self.view_tree.iter_nodes() {
+            if let Some(ds) = node.widget.as_any().downcast_ref::<DockSpace<u64>>() {
+                self.dock_state_id = Some(ds.dock_state_id);
+                self.drag_state_id = Some(ds.drag_state_id);
+                break;
+            }
+        }
+    }
+
+    /// Drain DockAction<u64> from the ActionStream and apply mutations to the DockTree.
+    fn process_dock_actions(&mut self) {
+        let actions: Vec<DockAction<u64>> = self.view_tree.actions_mut().drain();
+        for action in actions {
+            match action {
+                DockAction::TabMoved {
+                    from_path,
+                    to_path,
+                    zone,
+                    tab,
+                } => {
+                    let _ = self.dock_tree.move_tab(&from_path, &to_path, zone);
+                    let _ = tab; // used by move_tab
+                }
+                DockAction::TabClosed { path, tab } => {
+                    let _ = self.dock_tree.remove_tab(&path, &tab);
+                }
+                DockAction::SplitResized { path, ratio } => {
+                    let _ = self.dock_tree.set_ratio(&path, ratio);
+                }
+                DockAction::TabActivated { path, tab } => {
+                    let _ = self.dock_tree.activate_tab(&path, &tab);
+                }
+            }
+        }
     }
 
     fn request_visible_thumbnails(&mut self, params: &mut EditorRenderParams) {
