@@ -1,4 +1,5 @@
 use std::ops::RangeInclusive;
+use std::sync::Arc;
 
 use katla_math::Vec2;
 
@@ -536,6 +537,23 @@ pub(crate) fn wrap_transition_container(
 // ---------------------------------------------------------------------------
 
 pub use super::widget::WidgetBox;
+
+// ---------------------------------------------------------------------------
+// Memoize — wrapper widget for skipping subtree rebuild
+// ---------------------------------------------------------------------------
+
+/// Create a `Memoize<T, W>` widget that skips subtree rebuild when the
+/// `Arc<T>` data pointer is unchanged between frames.
+///
+/// The `factory` closure is called to produce the inner widget when the data
+/// changes. When the data is the same (via `Arc::ptr_eq`), the inner subtree
+/// is reused without rebuild.
+pub fn memoize<T: 'static, W: Widget>(
+    data: Arc<T>,
+    factory: fn(Arc<T>) -> W,
+) -> widgets::memoize::Memoize<T, W> {
+    widgets::memoize::Memoize::new(data, factory)
+}
 
 #[cfg(test)]
 mod tests {

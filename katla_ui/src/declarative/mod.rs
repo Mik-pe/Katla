@@ -26,8 +26,8 @@ pub use build::{Build, BuildContext, CallbackTable, Environment};
 pub use constructors::{
     KeyedChild, button, color_picker, context_entry, context_entry_disabled, context_menu,
     draggable_panel, empty, grid, grid_keyed, hstack, hstack_keyed, icon, image, image_button,
-    keyed, labeled_slider, menu_entry, menu_entry_disabled, menu_group, menubar, modal, overlay,
-    panel, progress, property_row, radio, scroll, section, selectable, separator,
+    keyed, labeled_slider, memoize, menu_entry, menu_entry_disabled, menu_group, menubar, modal,
+    overlay, panel, progress, property_row, radio, scroll, section, selectable, separator,
     separator_horizontal, separator_vertical, slider, statusbar, tab_bar, tab_item, text,
     textfield, toggle, tree_view, vec3_slider, vstack, vstack_keyed, vu_meter, zstack,
     zstack_keyed,
