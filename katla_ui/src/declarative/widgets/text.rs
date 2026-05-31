@@ -111,7 +111,8 @@ mod tests {
             color: None,
             font_size: None,
         };
-        let other = text("other");
+        // Use a different widget type (Button) to test Replace
+        let other = crate::declarative::constructors::button("other");
         assert_eq!(widget.diff_against(&other), DiffAction::Replace);
     }
 

@@ -16,16 +16,24 @@ pub(crate) struct Modal {
     pub height: f32,
     pub open_id: StateId,
     pub on_close: Option<Callback>,
+    pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
     children: Vec<ViewId>,
 }
 
 impl Modal {
-    pub fn new(width: f32, height: f32, open_id: StateId, on_close: Option<Callback>) -> Self {
+    pub fn new(
+        width: f32,
+        height: f32,
+        open_id: StateId,
+        on_close: Option<Callback>,
+        child_widget: Option<Box<dyn super::super::widget::Widget>>,
+    ) -> Self {
         Self {
             width,
             height,
             open_id,
             on_close,
+            child_widget,
             children: Vec::new(),
         }
     }
@@ -142,7 +150,7 @@ mod tests {
         let mut arena = StateArena::new();
         let view_id = ViewId::from(slotmap::KeyData::from_ffi(0));
         let open_id = arena.get_or_create(view_id, open);
-        let modal = Modal::new(400.0, 300.0, open_id, None);
+        let modal = Modal::new(400.0, 300.0, open_id, None, None);
         (modal, arena)
     }
 
@@ -152,7 +160,7 @@ mod tests {
         let open_id = arena.get_or_create(view_id, true);
         let mut callbacks = CallbackTable::new();
         let cb = callbacks.push(|_actions| {});
-        let modal = Modal::new(400.0, 300.0, open_id, Some(cb));
+        let modal = Modal::new(400.0, 300.0, open_id, Some(cb), None);
         (modal, arena, callbacks)
     }
 

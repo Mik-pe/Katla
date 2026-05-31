@@ -15,16 +15,24 @@ pub(crate) struct Grid {
     pub cell_size: Vec2,
     pub spacing: f32,
     pub flex: FlexProps,
+    pub child_widgets: Vec<super::super::constructors::KeyedChild>,
     children: Vec<ViewId>,
 }
 
 impl Grid {
-    pub fn new(columns: usize, cell_size: Vec2, spacing: f32, flex: FlexProps) -> Self {
+    pub fn new(
+        columns: usize,
+        cell_size: Vec2,
+        spacing: f32,
+        flex: FlexProps,
+        child_widgets: Vec<super::super::constructors::KeyedChild>,
+    ) -> Self {
         Self {
             columns,
             cell_size,
             spacing,
             flex,
+            child_widgets,
             children: Vec::new(),
         }
     }
@@ -114,21 +122,21 @@ mod tests {
 
     #[test]
     fn test_grid_diff_same_type() {
-        let a = Grid::new(3, Vec2::new(100.0, 50.0), 0.0, FlexProps::default());
-        let b = Grid::new(4, Vec2::new(80.0, 40.0), 8.0, FlexProps::default());
+        let a = Grid::new(3, Vec2::new(100.0, 50.0), 0.0, FlexProps::default(), vec![]);
+        let b = Grid::new(4, Vec2::new(80.0, 40.0), 8.0, FlexProps::default(), vec![]);
         assert_eq!(b.diff_against(&a), DiffAction::RecurseChildren);
     }
 
     #[test]
     fn test_grid_diff_different_type() {
-        let grid = Grid::new(3, Vec2::new(100.0, 50.0), 0.0, FlexProps::default());
+        let grid = Grid::new(3, Vec2::new(100.0, 50.0), 0.0, FlexProps::default(), vec![]);
         let other = crate::declarative::constructors::text("hello");
         assert_eq!(grid.diff_against(&other), DiffAction::Replace);
     }
 
     #[test]
     fn test_grid_children() {
-        let mut grid = Grid::new(3, Vec2::new(100.0, 50.0), 0.0, FlexProps::default());
+        let mut grid = Grid::new(3, Vec2::new(100.0, 50.0), 0.0, FlexProps::default(), vec![]);
         assert!(grid.children().is_empty());
         let view_id = ViewId::from(slotmap::KeyData::from_ffi(1));
         grid.children_mut().push(view_id);
@@ -137,7 +145,7 @@ mod tests {
 
     #[test]
     fn test_grid_layout_style() {
-        let grid = Grid::new(3, Vec2::new(100.0, 50.0), 8.0, FlexProps::default());
+        let grid = Grid::new(3, Vec2::new(100.0, 50.0), 8.0, FlexProps::default(), vec![]);
         let style = grid.layout_style(&crate::declarative::layout::measure_text_descriptor);
         assert_eq!(style.flex_direction, FlexDirection::Row);
         assert_eq!(style.flex_wrap, FlexWrap::Wrap);

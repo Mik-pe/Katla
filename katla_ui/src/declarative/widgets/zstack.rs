@@ -4,7 +4,7 @@ use katla_math::Rect2D;
 use taffy::{Dimension, Size, Style};
 
 use super::super::animation::AnimationState;
-use super::super::descriptor::{FlexProps, Padding};
+use super::super::descriptor::{Alignment, FlexProps, Padding};
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
@@ -13,14 +13,20 @@ use crate::context::UiContext;
 pub(crate) struct ZStack {
     pub padding: Padding,
     pub flex: FlexProps,
+    pub child_widgets: Vec<(Alignment, super::super::constructors::KeyedChild)>,
     children: Vec<ViewId>,
 }
 
 impl ZStack {
-    pub fn new(padding: Padding, flex: FlexProps) -> Self {
+    pub fn new(
+        padding: Padding,
+        flex: FlexProps,
+        child_widgets: Vec<(Alignment, super::super::constructors::KeyedChild)>,
+    ) -> Self {
         Self {
             padding,
             flex,
+            child_widgets,
             children: Vec::new(),
         }
     }
@@ -98,21 +104,21 @@ mod tests {
 
     #[test]
     fn test_zstack_diff_same_type() {
-        let a = ZStack::new(Padding::zero(), FlexProps::default());
-        let b = ZStack::new(Padding::all(4.0), FlexProps::default());
+        let a = ZStack::new(Padding::zero(), FlexProps::default(), vec![]);
+        let b = ZStack::new(Padding::all(4.0), FlexProps::default(), vec![]);
         assert_eq!(b.diff_against(&a), DiffAction::RecurseChildren);
     }
 
     #[test]
     fn test_zstack_diff_different_type() {
-        let zstack = ZStack::new(Padding::zero(), FlexProps::default());
+        let zstack = ZStack::new(Padding::zero(), FlexProps::default(), vec![]);
         let other = crate::declarative::constructors::text("hello");
         assert_eq!(zstack.diff_against(&other), DiffAction::Replace);
     }
 
     #[test]
     fn test_zstack_children() {
-        let mut zstack = ZStack::new(Padding::zero(), FlexProps::default());
+        let mut zstack = ZStack::new(Padding::zero(), FlexProps::default(), vec![]);
         assert!(zstack.children().is_empty());
 
         let view_id = ViewId::from(slotmap::KeyData::from_ffi(1));
@@ -122,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_zstack_layout_style_fills_parent() {
-        let zstack = ZStack::new(Padding::zero(), FlexProps::default());
+        let zstack = ZStack::new(Padding::zero(), FlexProps::default(), vec![]);
         let style = zstack.layout_style(&crate::declarative::layout::measure_text_descriptor);
         assert!(matches!(style.size.width, Dimension::Percent(1.0)));
         assert!(matches!(style.size.height, Dimension::Percent(1.0)));

@@ -12,13 +12,18 @@ use crate::context::UiContext;
 
 pub(crate) struct TransitionContainer {
     pub transition: Transition,
+    pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
     children: Vec<ViewId>,
 }
 
 impl TransitionContainer {
-    pub fn new(transition: Transition) -> Self {
+    pub fn new(
+        transition: Transition,
+        child_widget: Option<Box<dyn super::super::widget::Widget>>,
+    ) -> Self {
         Self {
             transition,
+            child_widget,
             children: Vec::new(),
         }
     }
@@ -92,7 +97,7 @@ mod tests {
     use super::*;
 
     fn make_transition() -> TransitionContainer {
-        TransitionContainer::new(Transition::fade(0.3))
+        TransitionContainer::new(Transition::fade(0.3), None)
     }
 
     #[test]

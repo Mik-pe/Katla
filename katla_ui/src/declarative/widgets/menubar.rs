@@ -13,13 +13,17 @@ use crate::input::mouse_button;
 
 pub(crate) struct MenuBar {
     pub groups: Vec<MenuGroup>,
-    pub right_content: Option<Box<ViewId>>,
+    pub right_content: Option<Box<dyn super::super::widget::Widget>>,
     pub height: f32,
     children: Vec<ViewId>,
 }
 
 impl MenuBar {
-    pub fn new(groups: Vec<MenuGroup>, right_content: Option<Box<ViewId>>, height: f32) -> Self {
+    pub fn new(
+        groups: Vec<MenuGroup>,
+        right_content: Option<Box<dyn super::super::widget::Widget>>,
+        height: f32,
+    ) -> Self {
         Self {
             groups,
             right_content,

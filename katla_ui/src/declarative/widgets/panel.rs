@@ -14,15 +14,22 @@ pub(crate) struct Panel {
     pub title: String,
     pub header_height: f32,
     pub flex: FlexProps,
+    pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
     children: Vec<ViewId>,
 }
 
 impl Panel {
-    pub fn new(title: String, header_height: f32, flex: FlexProps) -> Self {
+    pub fn new(
+        title: String,
+        header_height: f32,
+        flex: FlexProps,
+        child_widget: Option<Box<dyn super::super::widget::Widget>>,
+    ) -> Self {
         Self {
             title,
             header_height,
             flex,
+            child_widget,
             children: Vec::new(),
         }
     }
@@ -98,21 +105,21 @@ mod tests {
 
     #[test]
     fn test_panel_diff_same_type() {
-        let a = Panel::new("A".into(), 24.0, FlexProps::default());
-        let b = Panel::new("B".into(), 32.0, FlexProps::default());
+        let a = Panel::new("A".into(), 24.0, FlexProps::default(), None);
+        let b = Panel::new("B".into(), 32.0, FlexProps::default(), None);
         assert_eq!(b.diff_against(&a), DiffAction::RecurseChildren);
     }
 
     #[test]
     fn test_panel_diff_different_type() {
-        let panel = Panel::new("Title".into(), 24.0, FlexProps::default());
+        let panel = Panel::new("Title".into(), 24.0, FlexProps::default(), None);
         let other = crate::declarative::constructors::text("hello");
         assert_eq!(panel.diff_against(&other), DiffAction::Replace);
     }
 
     #[test]
     fn test_panel_children() {
-        let mut panel = Panel::new("Title".into(), 24.0, FlexProps::default());
+        let mut panel = Panel::new("Title".into(), 24.0, FlexProps::default(), None);
         assert!(panel.children().is_empty());
         let view_id = ViewId::from(slotmap::KeyData::from_ffi(1));
         panel.children_mut().push(view_id);
@@ -121,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_panel_layout_style_column() {
-        let panel = Panel::new("Title".into(), 24.0, FlexProps::default());
+        let panel = Panel::new("Title".into(), 24.0, FlexProps::default(), None);
         let style = panel.layout_style(&crate::declarative::layout::measure_text_descriptor);
         assert_eq!(style.flex_direction, FlexDirection::Column);
     }
