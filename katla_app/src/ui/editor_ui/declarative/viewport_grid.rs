@@ -111,6 +111,7 @@ impl Build for ViewportGridView {
     }
 }
 
+#[cfg(test)]
 fn get_viewport_bounds(
     bounds: Rect2D,
     state: &ViewportGridState,
