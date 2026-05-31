@@ -88,12 +88,12 @@ impl Build for HierarchyView {
             vstack(tree_children)
         };
 
-        let content = vstack([search_field, scroll(tree_content, scroll_id)])
+        let content = vstack([search_field, scroll(tree_content, scroll_id).flex_grow(1.0)])
             .spacing(4.0)
-            .padding(Padding::all(4.0));
+            .padding(Padding::all(4.0))
+            .flex_grow(1.0);
 
         panel(header_text, content)
-            .header_height(24.0)
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
     }

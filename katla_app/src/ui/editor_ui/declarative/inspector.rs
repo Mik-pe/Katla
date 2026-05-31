@@ -115,10 +115,9 @@ impl Build for InspectorView {
             text("No entity selected").color(draw_ctx.theme.text_muted)
         };
 
-        let panel_content = scroll(content, scroll_id);
+        let panel_content = scroll(content, scroll_id).flex_grow(1.0);
 
         panel(header_text, panel_content)
-            .header_height(24.0)
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
     }

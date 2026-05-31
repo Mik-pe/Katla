@@ -118,12 +118,12 @@ impl Build for ConsoleView {
             vstack(log_entries)
         };
 
-        let content = vstack([toolbar, scroll(log_content, scroll_id)])
+        let content = vstack([toolbar, scroll(log_content, scroll_id).flex_grow(1.0)])
             .spacing(4.0)
-            .padding(Padding::all(4.0));
+            .padding(Padding::all(4.0))
+            .flex_grow(1.0);
 
         panel("Console".to_string(), content)
-            .header_height(24.0)
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
     }
