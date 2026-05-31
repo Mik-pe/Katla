@@ -73,8 +73,8 @@ impl Widget for Button {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
+        interaction: &DrawInteraction,
+        view_id: ViewId,
         _children_bounds: &[Rect2D],
     ) {
         let bg = self.fill_color.unwrap_or(ctx.style().button_normal);
@@ -84,6 +84,10 @@ impl Widget for Button {
 
         if let Some(border) = self.border_color {
             ctx.draw_rounded_selection_border(bounds, border, 1.0, radius);
+        }
+
+        if interaction.is_focused(view_id) {
+            ctx.draw_rounded_selection_border(bounds, ctx.style().selectable_selected, 2.0, radius);
         }
 
         let font_size = ctx.style().font_size;

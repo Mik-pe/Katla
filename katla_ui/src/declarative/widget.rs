@@ -165,6 +165,23 @@ pub trait Widget: Any + 'static {
         false
     }
 
+    /// Whether this widget creates an isolated focus scope.
+    ///
+    /// Focus scope widgets (Panel, Modal, DraggablePanel) limit Tab/Shift+Tab
+    /// navigation to their descendants only.
+    fn is_focus_scope(&self) -> bool {
+        false
+    }
+
+    /// Whether this focus scope traps focus when active.
+    ///
+    /// Returns `true` when the scope should prevent focus from escaping.
+    /// Modal returns `true` when open. Regular scopes (Panel, DraggablePanel)
+    /// return `false` — focus can leave via mouse click.
+    fn focus_scope_trap(&self, _state: &StateArena) -> bool {
+        false
+    }
+
     /// Access the transition config if this is a TransitionContainer.
     fn as_transition(&self) -> Option<&super::transition::Transition> {
         None
@@ -281,6 +298,14 @@ impl Widget for Box<dyn Widget> {
 
     fn interactive(&self) -> bool {
         (**self).interactive()
+    }
+
+    fn is_focus_scope(&self) -> bool {
+        (**self).is_focus_scope()
+    }
+
+    fn focus_scope_trap(&self, state: &StateArena) -> bool {
+        (**self).focus_scope_trap(state)
     }
 
     fn as_transition(&self) -> Option<&super::transition::Transition> {

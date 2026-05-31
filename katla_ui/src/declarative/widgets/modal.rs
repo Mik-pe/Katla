@@ -175,6 +175,14 @@ impl Widget for Modal {
     fn interactive(&self) -> bool {
         true
     }
+
+    fn is_focus_scope(&self) -> bool {
+        true
+    }
+
+    fn focus_scope_trap(&self, state: &StateArena) -> bool {
+        state.get(self.open_id).unwrap_or_default()
+    }
 }
 
 impl Modal {

@@ -102,17 +102,27 @@ impl Widget for TextField {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
+        interaction: &DrawInteraction,
+        view_id: ViewId,
         _children_bounds: &[Rect2D],
     ) {
         let text: String = state.get(self.value_id).unwrap_or_default();
 
         ctx.draw_rounded_rect(bounds, ctx.style().input_bg, ctx.style().input_rounding);
+
+        let border_color = if interaction.is_focused(view_id) {
+            ctx.style().selectable_selected
+        } else {
+            ctx.style().input_border
+        };
         ctx.draw_rounded_selection_border(
             bounds,
-            ctx.style().input_border,
-            1.0,
+            border_color,
+            if interaction.is_focused(view_id) {
+                2.0
+            } else {
+                1.0
+            },
             ctx.style().input_rounding,
         );
 

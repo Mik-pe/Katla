@@ -111,6 +111,10 @@ impl Widget for Panel {
     fn needs_clip_children(&self) -> bool {
         true
     }
+
+    fn is_focus_scope(&self) -> bool {
+        true
+    }
 }
 
 impl Panel {
