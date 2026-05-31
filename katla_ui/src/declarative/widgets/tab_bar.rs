@@ -7,7 +7,9 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::TabItem;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{
+    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+};
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
@@ -154,6 +156,18 @@ impl Widget for TabBar {
     fn children_mut(&mut self) -> &mut Vec<ViewId> {
         &mut self.children
     }
+
+    fn take_children(&mut self) -> ChildWidgets {
+        if let Some(child) = self.child_widget.take() {
+            ChildWidgets::Single(child)
+        } else {
+            ChildWidgets::None
+        }
+    }
+
+    fn interactive(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -228,6 +242,8 @@ mod tests {
             mouse_pos: katla_math::Vec2::new(150.0, 10.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let bounds = Rect2D::new(

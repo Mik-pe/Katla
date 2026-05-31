@@ -103,6 +103,10 @@ impl Widget for Button {
     fn focusable(&self) -> bool {
         self.on_click.is_some()
     }
+
+    fn interactive(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -138,6 +142,8 @@ mod tests {
             mouse_pos: Vec2::new(50.0, 15.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let result = button.handle_input(&mut ctx, &mut state, bounds, &[]);

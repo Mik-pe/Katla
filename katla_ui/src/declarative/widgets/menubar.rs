@@ -232,6 +232,10 @@ impl Widget for MenuBar {
     fn children_mut(&mut self) -> &mut Vec<ViewId> {
         &mut self.children
     }
+
+    fn interactive(&self) -> bool {
+        true
+    }
 }
 
 fn measure_menu_label(label: &str, font_size: f32) -> f32 {
@@ -324,6 +328,8 @@ mod tests {
             mouse_pos: katla_math::Vec2::new(30.0, 10.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let bounds = Rect2D::new(

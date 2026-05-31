@@ -112,8 +112,11 @@ impl Widget for Toggle {
     fn focusable(&self) -> bool {
         true
     }
-}
 
+    fn interactive(&self) -> bool {
+        true
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +154,8 @@ mod tests {
             mouse_pos: Vec2::new(50.0, 10.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let result = toggle.handle_input(&mut ctx, &mut state, bounds, &[]);

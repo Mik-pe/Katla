@@ -461,8 +461,7 @@ pub(crate) fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureF
             ..Style::default()
         },
 
-        ViewDescriptor::TabBar(desc) => {
-            let _tab_count = desc.tabs.len().max(1);
+        ViewDescriptor::TabBar(_desc) => {
             let tab_height = 28.0_f32;
             Style {
                 size: Size {

@@ -7,7 +7,9 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::{Alignment, FlexProps, Padding};
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{
+    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+};
 use crate::context::UiContext;
 
 pub(crate) struct ZStack {
@@ -95,6 +97,19 @@ impl Widget for ZStack {
 
     fn children_mut(&mut self) -> &mut Vec<ViewId> {
         &mut self.children
+    }
+
+    fn take_children(&mut self) -> ChildWidgets {
+        let children: Vec<(
+            super::super::descriptor::Alignment,
+            Option<u64>,
+            Box<dyn Widget>,
+        )> = self
+            .child_widgets
+            .drain(..)
+            .map(|(alignment, kc)| (alignment, kc.key, kc.widget))
+            .collect();
+        ChildWidgets::ZStack(children)
     }
 }
 

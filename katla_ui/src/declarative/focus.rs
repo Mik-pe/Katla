@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use katla_math::Rect2D;
 
-use super::descriptor::ViewDescriptor;
 use super::state::ViewId;
 use super::tree::ViewTree;
 
@@ -104,7 +103,7 @@ impl FocusManager {
             return;
         };
 
-        if is_focusable(node.descriptor()) {
+        if node.widget.focusable() {
             self.focus_chain.push(node_id);
         }
 
@@ -117,24 +116,6 @@ impl FocusManager {
 impl Default for FocusManager {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-pub(crate) fn is_widget_focusable(descriptor: &ViewDescriptor) -> bool {
-    is_focusable(descriptor)
-}
-
-fn is_focusable(descriptor: &ViewDescriptor) -> bool {
-    match descriptor {
-        ViewDescriptor::Button { on_click, .. } => on_click.is_some(),
-        ViewDescriptor::Toggle { .. } => true,
-        ViewDescriptor::TextField { .. } => true,
-        ViewDescriptor::Slider { .. } => true,
-        ViewDescriptor::ColorPicker { .. } => true,
-        ViewDescriptor::Selectable { on_click, .. } => on_click.is_some(),
-        ViewDescriptor::Section { .. } => true,
-        ViewDescriptor::TabBar(_) => true,
-        _ => false,
     }
 }
 
@@ -152,7 +133,7 @@ fn collect_focusable_recursive(tree: &ViewTree, node_id: ViewId, chain: &mut Vec
         return;
     };
 
-    if is_focusable(node.descriptor()) {
+    if node.widget.focusable() {
         chain.push(node_id);
     }
 

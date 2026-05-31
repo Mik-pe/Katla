@@ -33,20 +33,19 @@ pub use constructors::{
     widget_to_descriptor, zstack, zstack_keyed,
 };
 pub use descriptor::{
-    Alignment, Anchor, Callback, ChildDescriptor, ContextMenuDescriptor, ContextMenuEntry,
-    DraggablePanelDescriptor, DraggablePanelState, DraggablePanelVisibility, FlexProps,
-    GridDescriptor, MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor, OverlayDescriptor,
-    Padding, PanelDescriptor, ScrollDescriptor, SeparatorDirection, StackDescriptor,
-    StatusBarDescriptor, TabBarDescriptor, TabItem, TreeItem, TreeViewDescriptor, ViewDescriptor,
-    VuMeterDescriptor, ZStackDescriptor,
+    Alignment, Anchor, Callback, ContextMenuEntry, DraggablePanelState, DraggablePanelVisibility,
+    FlexProps, MenuEntry, MenuGroup, Padding, SeparatorDirection, TabItem, TreeItem,
+    ViewDescriptor,
 };
 pub use diff::{DiffAction, Patch, diff_descriptor};
 pub use focus::{Direction, FocusManager, GamepadNavigator};
 pub use helpers::{delete_button, section_header, show_if, show_if_else, show_if_with_transition};
 pub use ime::ImeRequest;
 pub use layout::{TaffyNodeMap, apply_flex_props, measure_text_descriptor};
-pub use serialize::{BindingResolver, ViewDescriptorData, resolve_descriptor};
+pub use serialize::{BindingResolver, ViewDescriptorData};
 pub use state::{Binding, BindingRef, StateArena, StateId, ViewId};
 pub use transition::{Transition, TweenConfig};
-pub use tree::{InteractionState, ViewNode, ViewTree};
-pub use widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+pub use tree::{ViewNode, ViewTree};
+pub use widget::{
+    ChildWidgets, DrawInteraction, InputContext, InputResult, InteractionState, MeasureFn, Widget,
+};

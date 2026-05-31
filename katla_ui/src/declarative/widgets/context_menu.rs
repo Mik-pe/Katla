@@ -162,6 +162,10 @@ impl Widget for ContextMenu {
     fn children_mut(&mut self) -> &mut Vec<ViewId> {
         &mut self.children
     }
+
+    fn interactive(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -241,6 +245,8 @@ mod tests {
             mouse_pos: Vec2::new(50.0, 10.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let bounds = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(200.0, 28.0));
@@ -266,6 +272,8 @@ mod tests {
             mouse_pos: Vec2::new(500.0, 500.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let bounds = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(200.0, 100.0));

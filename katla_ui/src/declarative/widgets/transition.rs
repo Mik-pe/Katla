@@ -7,7 +7,9 @@ use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
 use super::super::transition::Transition;
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{
+    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+};
 use crate::context::UiContext;
 
 pub(crate) struct TransitionContainer {
@@ -89,6 +91,21 @@ impl Widget for TransitionContainer {
 
     fn children_mut(&mut self) -> &mut Vec<ViewId> {
         &mut self.children
+    }
+
+    fn take_children(&mut self) -> ChildWidgets {
+        if let Some(child) = self.child_widget.take() {
+            ChildWidgets::Transition {
+                child,
+                transition: self.transition.clone(),
+            }
+        } else {
+            ChildWidgets::None
+        }
+    }
+
+    fn as_transition(&self) -> Option<&Transition> {
+        Some(&self.transition)
     }
 }
 

@@ -7,7 +7,9 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::Anchor;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{
+    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+};
 use crate::context::UiContext;
 
 pub(crate) struct Overlay {
@@ -125,6 +127,25 @@ impl Widget for Overlay {
 
     fn children_mut(&mut self) -> &mut Vec<ViewId> {
         &mut self.children
+    }
+
+    fn take_children(&mut self) -> ChildWidgets {
+        if let Some(child) = self.child_widget.take() {
+            ChildWidgets::Single(child)
+        } else {
+            ChildWidgets::None
+        }
+    }
+
+    fn resolve_position_delta(
+        &self,
+        bounds: Rect2D,
+        parent_bounds: Rect2D,
+        _zstack_alignment: Option<super::super::descriptor::Alignment>,
+        _state: &StateArena,
+    ) -> Vec2 {
+        let resolved = Self::resolve_position(self.anchor, self.offset, parent_bounds, bounds);
+        resolved.min - bounds.min
     }
 }
 

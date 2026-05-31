@@ -9,13 +9,31 @@ use crate::style::FontSize;
 use super::actions::ActionStream;
 use super::animation::AnimationState;
 use super::descriptor::ViewDescriptor;
-use super::diff::{DiffAction, diff_descriptor};
-use super::draw::draw_descriptor_with_id;
+use super::diff::DiffAction;
 use super::state::{StateArena, ViewId};
-use super::tree::InteractionState;
 
 /// Function signature for measuring text dimensions during layout.
 pub type MeasureFn<'a> = &'a dyn Fn(&str, Option<FontSize>) -> Vec2;
+
+/// Extracted children from a container widget.
+///
+/// Container widgets return their children via [`Widget::take_children()`].
+/// The tree uses this during `sync_tree` to discover and recurse into children.
+pub enum ChildWidgets {
+    /// Leaf widget with no children.
+    None,
+    /// Single-child container (Panel, ScrollView, Overlay, etc.).
+    Single(Box<dyn Widget>),
+    /// Multi-child container with optional keys (HStack, VStack, Grid).
+    Multi(Vec<(Option<u64>, Box<dyn Widget>)>),
+    /// ZStack with per-child alignment.
+    ZStack(Vec<(super::descriptor::Alignment, Option<u64>, Box<dyn Widget>)>),
+    /// TransitionContainer wrapping a single child with transition config.
+    Transition {
+        child: Box<dyn Widget>,
+        transition: super::transition::Transition,
+    },
+}
 
 /// Central trait for all UI elements in the declarative system.
 ///
@@ -106,6 +124,52 @@ pub trait Widget: Any + 'static {
     fn children_mut(&mut self) -> &mut Vec<ViewId> {
         unreachable!()
     }
+
+    /// Extract child widgets from this container during tree sync.
+    ///
+    /// Container widgets take their child widgets out and return them.
+    /// Leaf widgets return [`ChildWidgets::None`].
+    fn take_children(&mut self) -> ChildWidgets {
+        ChildWidgets::None
+    }
+
+    /// Compute position delta for special positioning (Overlay, Modal, DraggablePanel).
+    ///
+    /// Returns the offset to apply to the taffy-computed bounds.
+    fn resolve_position_delta(
+        &self,
+        _bounds: Rect2D,
+        _parent_bounds: Rect2D,
+        _zstack_alignment: Option<super::descriptor::Alignment>,
+        _state: &StateArena,
+    ) -> Vec2 {
+        Vec2::ZERO
+    }
+
+    /// Whether this node should clip its children to its bounds.
+    fn needs_clip_children(&self) -> bool {
+        false
+    }
+
+    /// Whether children should be drawn (e.g. collapsed Section, closed Modal).
+    fn should_draw_children(&self, _state: &StateArena) -> bool {
+        true
+    }
+
+    /// Scroll offset for ScrollView content.
+    fn scroll_offset(&self, _state: &StateArena) -> f32 {
+        0.0
+    }
+
+    /// Whether this widget participates in hit testing for input.
+    fn interactive(&self) -> bool {
+        false
+    }
+
+    /// Access the transition config if this is a TransitionContainer.
+    fn as_transition(&self) -> Option<&super::transition::Transition> {
+        None
+    }
 }
 
 impl Widget for Box<dyn Widget> {
@@ -177,13 +241,43 @@ impl Widget for Box<dyn Widget> {
     fn children_mut(&mut self) -> &mut Vec<ViewId> {
         (**self).children_mut()
     }
+
+    fn take_children(&mut self) -> ChildWidgets {
+        (**self).take_children()
+    }
+
+    fn resolve_position_delta(
+        &self,
+        bounds: Rect2D,
+        parent_bounds: Rect2D,
+        zstack_alignment: Option<super::descriptor::Alignment>,
+        state: &StateArena,
+    ) -> Vec2 {
+        (**self).resolve_position_delta(bounds, parent_bounds, zstack_alignment, state)
+    }
+
+    fn needs_clip_children(&self) -> bool {
+        (**self).needs_clip_children()
+    }
+
+    fn should_draw_children(&self, state: &StateArena) -> bool {
+        (**self).should_draw_children(state)
+    }
+
+    fn scroll_offset(&self, state: &StateArena) -> f32 {
+        (**self).scroll_offset(state)
+    }
+
+    fn interactive(&self) -> bool {
+        (**self).interactive()
+    }
+
+    fn as_transition(&self) -> Option<&super::transition::Transition> {
+        (**self).as_transition()
+    }
 }
 
-/// Bridge widget that wraps a [`ViewDescriptor`] and implements [`Widget`].
-///
-/// Used during migration: constructors return `Box<dyn Widget>` backed by
-/// `DescriptorWidget`, and the tree code extracts the descriptor via
-/// [`descriptor()`](DescriptorWidget::descriptor).
+/// Bridge widget that wraps a [`ViewDescriptor`] for test compatibility.
 pub(crate) struct DescriptorWidget {
     descriptor: ViewDescriptor,
 }
@@ -195,10 +289,6 @@ impl DescriptorWidget {
 
     pub fn descriptor(&self) -> &ViewDescriptor {
         &self.descriptor
-    }
-
-    pub fn descriptor_mut(&mut self) -> &mut ViewDescriptor {
-        &mut self.descriptor
     }
 }
 
@@ -213,7 +303,7 @@ impl Widget for DescriptorWidget {
 
     fn diff_against(&self, prev: &dyn Widget) -> DiffAction {
         if let Some(other) = prev.as_any().downcast_ref::<DescriptorWidget>() {
-            diff_descriptor(&other.descriptor, &self.descriptor)
+            super::diff::diff_descriptor(&other.descriptor, &self.descriptor)
         } else {
             DiffAction::Replace
         }
@@ -235,30 +325,15 @@ impl Widget for DescriptorWidget {
 
     fn draw(
         &self,
-        ctx: &mut UiContext,
-        state: &StateArena,
-        bounds: Rect2D,
-        animation: &AnimationState,
+        _ctx: &mut UiContext,
+        _state: &StateArena,
+        _bounds: Rect2D,
+        _animation: &AnimationState,
         _children: &[ViewId],
         _interaction: &DrawInteraction,
-        view_id: ViewId,
-        children_bounds: &[Rect2D],
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
-        let interaction_state = InteractionState::default();
-        draw_descriptor_with_id(
-            &self.descriptor,
-            ctx,
-            bounds,
-            state,
-            children_bounds,
-            &interaction_state,
-            view_id,
-            animation,
-        );
-    }
-
-    fn should_rebuild(&self, _prev: &dyn Widget) -> bool {
-        true
     }
 
     fn focusable(&self) -> bool {
@@ -271,6 +346,193 @@ impl Widget for DescriptorWidget {
 
     fn children_mut(&mut self) -> &mut Vec<ViewId> {
         unreachable!()
+    }
+
+    fn take_children(&mut self) -> ChildWidgets {
+        use super::descriptor::ViewDescriptor;
+        match &self.descriptor {
+            ViewDescriptor::HStack(s) | ViewDescriptor::VStack(s) => {
+                let children: Vec<(Option<u64>, Box<dyn Widget>)> = s
+                    .children
+                    .iter()
+                    .map(|cd| {
+                        (
+                            cd.key,
+                            Box::new(DescriptorWidget::new(cd.descriptor.clone()))
+                                as Box<dyn Widget>,
+                        )
+                    })
+                    .collect();
+                ChildWidgets::Multi(children)
+            }
+            ViewDescriptor::Grid(s) => {
+                let children: Vec<(Option<u64>, Box<dyn Widget>)> = s
+                    .children
+                    .iter()
+                    .map(|cd| {
+                        (
+                            cd.key,
+                            Box::new(DescriptorWidget::new(cd.descriptor.clone()))
+                                as Box<dyn Widget>,
+                        )
+                    })
+                    .collect();
+                ChildWidgets::Multi(children)
+            }
+            ViewDescriptor::ZStack(s) => {
+                let children: Vec<(super::descriptor::Alignment, Option<u64>, Box<dyn Widget>)> = s
+                    .children
+                    .iter()
+                    .map(|(alignment, cd)| {
+                        (
+                            *alignment,
+                            cd.key,
+                            Box::new(DescriptorWidget::new(cd.descriptor.clone()))
+                                as Box<dyn Widget>,
+                        )
+                    })
+                    .collect();
+                ChildWidgets::ZStack(children)
+            }
+            ViewDescriptor::TransitionContainer { child, transition } => {
+                let child_widget =
+                    Box::new(DescriptorWidget::new((**child).clone())) as Box<dyn Widget>;
+                ChildWidgets::Transition {
+                    child: child_widget,
+                    transition: transition.clone(),
+                }
+            }
+            _ => {
+                // Single-child containers
+                let single = match &self.descriptor {
+                    ViewDescriptor::ScrollView(s) => Some(&s.content),
+                    ViewDescriptor::Panel(s) => Some(&s.content),
+                    ViewDescriptor::Overlay(s) => Some(&s.content),
+                    ViewDescriptor::StatusBar(s) => Some(&s.content),
+                    ViewDescriptor::DraggablePanel(s) => Some(&s.content),
+                    ViewDescriptor::Modal(s) => Some(&s.content),
+                    ViewDescriptor::Selectable { child, .. } => Some(child),
+                    ViewDescriptor::Section { child, .. } => Some(child),
+                    ViewDescriptor::TabBar(s) => Some(&s.content),
+                    _ => None,
+                };
+                match single {
+                    Some(desc) => {
+                        ChildWidgets::Single(Box::new(DescriptorWidget::new((**desc).clone())))
+                    }
+                    None => ChildWidgets::None,
+                }
+            }
+        }
+    }
+
+    fn resolve_position_delta(
+        &self,
+        bounds: Rect2D,
+        parent_bounds: Rect2D,
+        _zstack_alignment: Option<super::descriptor::Alignment>,
+        state: &StateArena,
+    ) -> Vec2 {
+        use super::descriptor::ViewDescriptor;
+        match &self.descriptor {
+            ViewDescriptor::Overlay(desc) => {
+                let resolved = super::widgets::overlay::Overlay::resolve_position(
+                    desc.anchor,
+                    desc.offset,
+                    parent_bounds,
+                    bounds,
+                );
+                resolved.min - bounds.min
+            }
+            ViewDescriptor::Modal(desc) => {
+                let is_open: bool = state.get(desc.open_id).unwrap_or_default();
+                if is_open {
+                    let cx = (parent_bounds.width() - desc.width) * 0.5;
+                    let cy = (parent_bounds.height() - desc.height) * 0.5;
+                    let centered = parent_bounds.min + Vec2::new(cx, cy);
+                    centered - bounds.min
+                } else {
+                    Vec2::ZERO
+                }
+            }
+            ViewDescriptor::DraggablePanel(desc) => {
+                let panel_state: super::descriptor::DraggablePanelState =
+                    state.get(desc.state_id).unwrap_or_default();
+                if panel_state.visibility.is_visible() {
+                    let pos = panel_state.position.unwrap_or_else(|| {
+                        Vec2::new(
+                            parent_bounds.min.x() + (parent_bounds.width() - bounds.width()) * 0.5,
+                            parent_bounds.min.y() + 60.0,
+                        )
+                    });
+                    pos - bounds.min
+                } else {
+                    Vec2::ZERO
+                }
+            }
+            _ => Vec2::ZERO,
+        }
+    }
+
+    fn needs_clip_children(&self) -> bool {
+        use super::descriptor::ViewDescriptor;
+        matches!(
+            &self.descriptor,
+            ViewDescriptor::ScrollView(_) | ViewDescriptor::Panel(_)
+        )
+    }
+
+    fn should_draw_children(&self, state: &StateArena) -> bool {
+        use super::descriptor::ViewDescriptor;
+        match &self.descriptor {
+            ViewDescriptor::Section { expanded_id, .. } => {
+                state.get::<bool>(*expanded_id).unwrap_or_default()
+            }
+            ViewDescriptor::Modal(desc) => state.get::<bool>(desc.open_id).unwrap_or_default(),
+            _ => true,
+        }
+    }
+
+    fn scroll_offset(&self, state: &StateArena) -> f32 {
+        use super::descriptor::ViewDescriptor;
+        match &self.descriptor {
+            ViewDescriptor::ScrollView(desc) => state.get(desc.scroll_state_id).unwrap_or_default(),
+            _ => 0.0,
+        }
+    }
+
+    fn interactive(&self) -> bool {
+        use super::descriptor::ViewDescriptor;
+        matches!(
+            &self.descriptor,
+            ViewDescriptor::Button { .. }
+                | ViewDescriptor::LabeledSlider { .. }
+                | ViewDescriptor::Slider { .. }
+                | ViewDescriptor::Vec3Slider { .. }
+                | ViewDescriptor::Toggle { .. }
+                | ViewDescriptor::TextField { .. }
+                | ViewDescriptor::ColorPicker { .. }
+                | ViewDescriptor::ImageButton { .. }
+                | ViewDescriptor::RadioButton { .. }
+                | ViewDescriptor::DraggablePanel { .. }
+                | ViewDescriptor::MenuBar { .. }
+                | ViewDescriptor::TreeView { .. }
+                | ViewDescriptor::Modal { .. }
+                | ViewDescriptor::ContextMenu { .. }
+                | ViewDescriptor::ScrollView(_)
+                | ViewDescriptor::Selectable { .. }
+                | ViewDescriptor::Section { .. }
+                | ViewDescriptor::TabBar(_)
+        )
+    }
+
+    fn as_transition(&self) -> Option<&super::transition::Transition> {
+        match &self.descriptor {
+            super::descriptor::ViewDescriptor::TransitionContainer { transition, .. } => {
+                Some(transition)
+            }
+            _ => None,
+        }
     }
 }
 
@@ -309,6 +571,22 @@ impl DrawInteraction {
     }
 }
 
+/// Tracks interactive state across frames for the declarative view tree.
+///
+/// Analogous to the immediate mode `active_id`/`hovered_id`/`focused_id` pattern,
+/// but stored on the retained tree for cross-frame interactions like slider drags.
+#[derive(Default)]
+pub struct InteractionState {
+    /// Node being actively pressed/dragged (e.g. slider thumb mid-drag).
+    pub active_id: Option<ViewId>,
+    /// Node currently under the mouse cursor.
+    pub hovered_id: Option<ViewId>,
+    /// Node with keyboard focus (synced with FocusManager).
+    pub focused_id: Option<ViewId>,
+    /// For Vec3Slider: which axis (0, 1, 2) is being dragged.
+    pub drag_axis: Option<usize>,
+}
+
 /// Context provided to `Widget::handle_input()` for accessing input state.
 pub struct InputContext<'a> {
     /// The UI input state (mouse, keyboard, etc.).
@@ -319,15 +597,17 @@ pub struct InputContext<'a> {
     pub callbacks: &'a mut super::build::CallbackTable,
     /// Action stream for emitting typed actions.
     pub actions: &'a mut ActionStream,
+    /// The view ID of the widget receiving input.
+    pub view_id: ViewId,
+    /// The currently active widget (e.g. slider being dragged), if any.
+    pub active_id: Option<ViewId>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::declarative::layout::measure_text_descriptor;
-    use crate::declarative::widget::Widget;
 
-    /// A minimal widget for testing trait object safety.
     struct TestWidget;
 
     impl Widget for TestWidget {
@@ -396,5 +676,25 @@ mod tests {
         let w = TestWidget;
         let style = w.layout_style(&measure_text_descriptor);
         assert_eq!(style, Style::default());
+    }
+
+    #[test]
+    fn test_default_trait_methods() {
+        let mut w = TestWidget;
+        assert!(matches!(w.take_children(), ChildWidgets::None));
+        assert_eq!(
+            w.resolve_position_delta(
+                Rect2D::default(),
+                Rect2D::default(),
+                None,
+                &StateArena::new()
+            ),
+            Vec2::ZERO
+        );
+        assert!(!w.needs_clip_children());
+        assert!(w.should_draw_children(&StateArena::new()));
+        assert_eq!(w.scroll_offset(&StateArena::new()), 0.0);
+        assert!(!w.interactive());
+        assert!(w.as_transition().is_none());
     }
 }
