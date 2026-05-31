@@ -2,14 +2,14 @@ use std::any::Any;
 use std::ops::RangeInclusive;
 
 use katla_math::{Color, Rect2D, Vec2};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use crate::context::UiContext;
 
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
 pub(crate) struct Progress {
     pub value: f32,
@@ -35,8 +35,14 @@ impl Widget for Progress {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+        Style {
+            size: Size {
+                width: Dimension::Length(100.0),
+                height: Dimension::Length(8.0),
+            },
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -56,6 +62,9 @@ impl Widget for Progress {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let t = if *self.range.end() > *self.range.start() {
             (self.value - *self.range.start()) / (*self.range.end() - *self.range.start())

@@ -1,12 +1,12 @@
 use std::any::Any;
 
 use katla_math::{Rect2D, Vec2};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub(crate) struct PropertyRow {
@@ -31,8 +31,16 @@ impl Widget for PropertyRow {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
+        let label_size = measure(&self.label, None);
+        let value_size = measure(&self.value, None);
+        Style {
+            size: Size {
+                width: Dimension::Length(label_size.x() + value_size.x() + 16.0),
+                height: Dimension::Length(label_size.y().max(value_size.y()) + 4.0),
+            },
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -52,6 +60,9 @@ impl Widget for PropertyRow {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let font_size = ctx.style().font_size;
 

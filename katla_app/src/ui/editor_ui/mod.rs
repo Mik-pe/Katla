@@ -626,9 +626,9 @@ impl EditorUI {
             EditorPanel::Mixer.id(),
         ]);
 
-        let right = DockNode::split(SplitDirection::Horizontal, 0.6, viewport, inspector);
-        let main = DockNode::split(SplitDirection::Horizontal, 0.2, hierarchy, right);
-        let root = DockNode::split(SplitDirection::Vertical, 0.72, main, bottom_tabs);
+        let right = DockNode::split(SplitDirection::Horizontal, 0.7, viewport, inspector);
+        let main = DockNode::split(SplitDirection::Horizontal, 0.18, hierarchy, right);
+        let root = DockNode::split(SplitDirection::Vertical, 0.75, main, bottom_tabs);
 
         DockLayout::new(root)
     }

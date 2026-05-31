@@ -8,9 +8,9 @@ use katla_ui::{
 
 use super::declarative::{
     AssetBrowserAction, AssetBrowserDrawCtx, AssetRenderData, ConsoleDrawCtx, GizmoDrawCtx,
-    GizmoModeChanged, HierarchyDrawCtx, InspectorDrawCtx, MixerDrawCtx, ParticleInspectorDrawCtx,
-    ParticleInspectorPanelSync, PreferencesDrawCtx, PreferencesPanelSync, StatusBarData,
-    ToolbarAction, ToolbarDrawCtx, ViewportGridDrawCtx, process_asset_actions,
+    GizmoModeChanged, HierarchyAction, HierarchyDrawCtx, InspectorDrawCtx, MixerDrawCtx,
+    ParticleInspectorDrawCtx, ParticleInspectorPanelSync, PreferencesDrawCtx, PreferencesPanelSync,
+    StatusBarData, ToolbarAction, ToolbarDrawCtx, ViewportGridDrawCtx, process_asset_actions,
     process_declarative_actions,
 };
 use super::{
@@ -131,6 +131,7 @@ impl EditorUI {
                         hierarchy_state: hierarchy_state.clone(),
                         theme: self.theme.clone(),
                         search_filter: self.hierarchy_search_filter.clone(),
+                        selected_entity: self.selected_entity,
                     });
                 }
                 Some(EditorPanel::Inspector) => {
@@ -305,23 +306,22 @@ impl EditorUI {
                 .push(EditorAction::SetGizmoMode(action.0));
         }
 
+        for action in self.view_tree.actions_mut().drain::<HierarchyAction>() {
+            match action {
+                HierarchyAction::SelectEntity(id) => {
+                    self.selected_entity = Some(id);
+                    self.pending_actions.push(EditorAction::SelectEntity(id));
+                }
+            }
+        }
+
         for sync in self
             .view_tree
             .actions_mut()
             .drain::<ParticleInspectorPanelSync>()
         {
             self.particle_inspector_state.panel.position = sync.position;
-            self.particle_inspector_state.panel.visibility = match sync.visibility {
-                katla_ui::declarative::DraggablePanelVisibility::Hidden => {
-                    katla_ui::widgets::PanelState::Hidden
-                }
-                katla_ui::declarative::DraggablePanelVisibility::JustOpened => {
-                    katla_ui::widgets::PanelState::JustOpened
-                }
-                katla_ui::declarative::DraggablePanelVisibility::Visible => {
-                    katla_ui::widgets::PanelState::Visible
-                }
-            };
+            self.particle_inspector_state.panel.visibility = sync.visibility;
         }
         for action in self
             .view_tree
@@ -336,17 +336,7 @@ impl EditorUI {
             .actions_mut()
             .drain::<super::declarative::CoCreatorPanelSync>()
         {
-            self.co_creator.panel.visibility = match sync.visibility {
-                katla_ui::declarative::DraggablePanelVisibility::Hidden => {
-                    katla_ui::widgets::PanelState::Hidden
-                }
-                katla_ui::declarative::DraggablePanelVisibility::JustOpened => {
-                    katla_ui::widgets::PanelState::JustOpened
-                }
-                katla_ui::declarative::DraggablePanelVisibility::Visible => {
-                    katla_ui::widgets::PanelState::Visible
-                }
-            };
+            self.co_creator.panel.visibility = sync.visibility;
         }
         for action in self
             .view_tree
@@ -368,17 +358,7 @@ impl EditorUI {
         }
 
         for sync in self.view_tree.actions_mut().drain::<PreferencesPanelSync>() {
-            self.preferences_panel_state.panel.visibility = match sync.visibility {
-                katla_ui::declarative::DraggablePanelVisibility::Hidden => {
-                    katla_ui::widgets::PanelState::Hidden
-                }
-                katla_ui::declarative::DraggablePanelVisibility::JustOpened => {
-                    katla_ui::widgets::PanelState::JustOpened
-                }
-                katla_ui::declarative::DraggablePanelVisibility::Visible => {
-                    katla_ui::widgets::PanelState::Visible
-                }
-            };
+            self.preferences_panel_state.panel.visibility = sync.visibility;
         }
         for action in self.view_tree.actions_mut().drain::<PreferencesAction>() {
             self.apply_preferences_action(action);

@@ -6,8 +6,114 @@
 //! - [`DockArea`] — recursive renderer with resize handles, tab drag, dock zones
 //! - [`DockDragState`] — tracks in-progress tab drag across frames
 
-use crate::{Response, UiContext, Widget};
+use crate::context::UiContext;
 use katla_math::{Color, Rect2D, Vec2};
+
+// ---------------------------------------------------------------------------
+// ResizeHandle Widget (internal, used by DockArea)
+// ---------------------------------------------------------------------------
+
+/// Direction of resize for a [`ResizeHandle`].
+pub(crate) enum ResizeDirection {
+    Horizontal,
+    Vertical,
+}
+
+/// A thin invisible hit-region that drives panel-edge resizing.
+///
+/// Returns the new clamped dimension after each frame. Cursor changes and
+/// drag tracking are handled internally so callers only need to feed the
+/// returned value back into their layout.
+pub(crate) struct ResizeHandle {
+    bounds: Rect2D,
+    direction: ResizeDirection,
+    current_value: f32,
+    min_value: f32,
+    max_value: f32,
+    inverted: bool,
+}
+
+impl ResizeHandle {
+    /// Create a horizontal resize handle (left/right drag changes width).
+    pub(crate) fn horizontal(bounds: Rect2D, current_value: f32) -> Self {
+        Self {
+            bounds,
+            direction: ResizeDirection::Horizontal,
+            current_value,
+            min_value: 0.0,
+            max_value: f32::MAX,
+            inverted: false,
+        }
+    }
+
+    /// Create a vertical resize handle (up/down drag changes height).
+    pub(crate) fn vertical(bounds: Rect2D, current_value: f32) -> Self {
+        Self {
+            bounds,
+            direction: ResizeDirection::Vertical,
+            current_value,
+            min_value: 0.0,
+            max_value: f32::MAX,
+            inverted: false,
+        }
+    }
+
+    /// Set the minimum allowed value.
+    pub(crate) fn min_value(mut self, min: f32) -> Self {
+        self.min_value = min;
+        self
+    }
+
+    /// Set the maximum allowed value.
+    pub(crate) fn max_value(mut self, max: f32) -> Self {
+        self.max_value = max;
+        self
+    }
+
+    /// Process the resize interaction and return the new clamped dimension.
+    pub(crate) fn show(self, ui: &mut UiContext) -> f32 {
+        let id = ui.generate_id("resize_handle");
+        let hovered = ui.input.is_hovered(self.bounds);
+
+        if hovered {
+            match self.direction {
+                ResizeDirection::Horizontal => {
+                    ui.set_mouse_cursor(crate::input::MouseCursor::ResizeHorizontal)
+                }
+                ResizeDirection::Vertical => {
+                    ui.set_mouse_cursor(crate::input::MouseCursor::ResizeVertical)
+                }
+            }
+        }
+
+        let is_active = ui.active_id == Some(id);
+
+        if hovered && ui.input.mouse_pressed[crate::input::mouse_button::LEFT] && !is_active {
+            ui.active_id = Some(id);
+        }
+
+        if is_active {
+            let raw_delta = match self.direction {
+                ResizeDirection::Horizontal => ui.input.mouse_delta.x(),
+                ResizeDirection::Vertical => ui.input.mouse_delta.y(),
+            };
+            let delta = if self.inverted { -raw_delta } else { raw_delta };
+            let new_value = (self.current_value + delta).clamp(self.min_value, self.max_value);
+
+            if !ui.input.mouse_down[crate::input::mouse_button::LEFT] {
+                ui.active_id = None;
+            }
+
+            new_value
+        } else {
+            self.current_value
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dock system
+// ---------------------------------------------------------------------------
 
 /// Unique identifier for a dockable panel.
 pub type DockPanelId = u64;
@@ -367,8 +473,6 @@ const TAB_BAR_HEIGHT: f32 = 28.0;
 const SPLITTER_THICKNESS: f32 = 2.0;
 
 /// Size of the dock zone indicator square (center + 4 cardinal triangles).
-const ZONE_INDICATOR_SIZE: f32 = 32.0;
-
 /// Distance a tab must be dragged before it tears off from its source leaf.
 const TEAR_OFF_THRESHOLD: f32 = 20.0;
 
@@ -427,16 +531,6 @@ impl<'a> DockTabBar<'a> {
     pub fn labels(mut self, f: &'a dyn Fn(DockPanelId) -> &'static str) -> Self {
         self.label_fn = Some(f);
         self
-    }
-}
-
-impl Widget for DockTabBar<'_> {
-    fn ui(self, ui: &mut UiContext) -> Response {
-        let bounds = self.bounds;
-        let result = self.show(ui);
-        let mut response = Response::new(bounds);
-        response.clicked = result.clicked_tab.is_some() || result.closed_tab.is_some();
-        response
     }
 }
 
@@ -774,7 +868,7 @@ fn compute_leaf_bounds_recursive(
             let new_ratio = match direction {
                 SplitDirection::Horizontal => {
                     let current_width = *ratio * bounds.width();
-                    let new_width = super::ResizeHandle::horizontal(handle_bounds, current_width)
+                    let new_width = ResizeHandle::horizontal(handle_bounds, current_width)
                         .min_value(bounds.width() * 0.05)
                         .max_value(bounds.width() * 0.95)
                         .show(ui);
@@ -782,7 +876,7 @@ fn compute_leaf_bounds_recursive(
                 }
                 SplitDirection::Vertical => {
                     let current_height = *ratio * bounds.height();
-                    let new_height = super::ResizeHandle::vertical(handle_bounds, current_height)
+                    let new_height = ResizeHandle::vertical(handle_bounds, current_height)
                         .min_value(bounds.height() * 0.05)
                         .max_value(bounds.height() * 0.95)
                         .show(ui);
@@ -1174,7 +1268,7 @@ fn render_node(
             let new_ratio = match direction {
                 SplitDirection::Horizontal => {
                     let current_width = *ratio * bounds.width();
-                    let new_width = super::ResizeHandle::horizontal(handle_bounds, current_width)
+                    let new_width = ResizeHandle::horizontal(handle_bounds, current_width)
                         .min_value(bounds.width() * 0.05)
                         .max_value(bounds.width() * 0.95)
                         .show(ui);
@@ -1182,7 +1276,7 @@ fn render_node(
                 }
                 SplitDirection::Vertical => {
                     let current_height = *ratio * bounds.height();
-                    let new_height = super::ResizeHandle::vertical(handle_bounds, current_height)
+                    let new_height = ResizeHandle::vertical(handle_bounds, current_height)
                         .min_value(bounds.height() * 0.05)
                         .max_value(bounds.height() * 0.95)
                         .show(ui);

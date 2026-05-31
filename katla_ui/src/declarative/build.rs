@@ -2,8 +2,9 @@ use std::any::Any;
 use std::collections::HashMap;
 
 use super::actions::ActionStream;
-use super::descriptor::{Callback, ViewDescriptor};
+use super::descriptor::Callback;
 use super::state::{StateArena, StateId, ViewId};
+use super::widget::Widget;
 
 #[derive(Default)]
 pub struct Environment {
@@ -66,7 +67,7 @@ impl Default for CallbackTable {
 /// Context provided during [`Build::build()`] for accessing state, callbacks, and environment data.
 ///
 /// - `ctx.state(initial)` — get or create persistent state scoped to this view node
-/// - `ctx.get_state(id)` / `ctx.set_state(id, value)` — read/write state by [`StateId`]
+/// - `ctx.get_state(id)` / `ctx.set_state(id, value)` — read/write state by [`StateId`] (get returns `Option`)
 /// - `ctx.env::<T>()` — read typed data injected by the application before the frame
 /// - `ctx.on_click(f)` — register a click callback, returns a `Callback` handle
 /// - `ctx.emit(action)` — emit a typed action that can be drained after the frame
@@ -100,13 +101,14 @@ impl<'a> BuildContext<'a> {
     }
 
     /// Read a value from the state arena by its [`StateId`].
-    pub fn get_state<T: Clone + 'static>(&self, id: StateId) -> T {
+    pub fn get_state<T: Clone + 'static>(&self, id: StateId) -> Option<T> {
         self.state_arena.get(id)
     }
 
     /// Write a value to the state arena by its [`StateId`].
-    pub fn set_state<T: PartialEq + 'static>(&mut self, id: StateId, value: T) {
-        self.state_arena.set(id, value);
+    /// Returns `true` if the value was updated, `false` if the ID was not found or the type didn't match.
+    pub fn set_state<T: PartialEq + 'static>(&mut self, id: StateId, value: T) -> bool {
+        self.state_arena.set(id, value)
     }
 
     pub fn env<T: Clone + 'static>(&self) -> Option<&T> {
@@ -122,7 +124,7 @@ impl<'a> BuildContext<'a> {
     }
 }
 
-/// Trait for types that produce a [`ViewDescriptor`](super::descriptor::ViewDescriptor) tree.
+/// Trait for types that produce a [`Box<dyn Widget>`](super::widget::Widget) tree.
 ///
 /// Implement this on a struct (unit struct is fine) and use [`BuildContext`]
 /// to access state, environment data, register callbacks, and emit actions.
@@ -133,24 +135,19 @@ impl<'a> BuildContext<'a> {
 /// struct MyView;
 ///
 /// impl Build for MyView {
-///     fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+///     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
 ///         let count = ctx.state(0u32);
-///         ViewDescriptor::Button {
-///             label: format!("Count: {}", count),
-///             fill_color: None,
-///             hover_color: None,
-///             border_color: None,
-///             on_click: Some(ctx.on_click(|| println!("clicked"))),
-///         }
+///         button(format!("Count: {}", count))
+///             .on_click(ctx.on_click(|| println!("clicked")))
 ///     }
 /// }
 /// ```
 pub trait Build {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor;
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget>;
 }
 
-impl<F: Fn(&mut BuildContext) -> ViewDescriptor + 'static> Build for F {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+impl<F: Fn(&mut BuildContext) -> Box<dyn Widget> + 'static> Build for F {
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         self(ctx)
     }
 }

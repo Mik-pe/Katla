@@ -7,7 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::Anchor;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub(crate) struct Overlay {
@@ -79,7 +79,7 @@ impl Widget for Overlay {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             position: Position::Absolute,
             ..Style::default()
@@ -103,6 +103,9 @@ impl Widget for Overlay {
         _bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
     }
 
@@ -122,7 +125,6 @@ impl Widget for Overlay {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::widget::DescriptorWidget;
 
     #[test]
     fn test_overlay_diff_same_type() {
@@ -134,7 +136,7 @@ mod tests {
     #[test]
     fn test_overlay_diff_different_type() {
         let overlay = Overlay::new(Anchor::Center, Vec2::ZERO);
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(overlay.diff_against(&other), DiffAction::Replace);
     }
 
@@ -170,7 +172,7 @@ mod tests {
     #[test]
     fn test_overlay_layout_style_absolute() {
         let overlay = Overlay::new(Anchor::TopLeft, Vec2::ZERO);
-        let style = overlay.layout_style();
+        let style = overlay.layout_style(&crate::declarative::layout::measure_text_descriptor);
         assert_eq!(style.position, Position::Absolute);
     }
 }

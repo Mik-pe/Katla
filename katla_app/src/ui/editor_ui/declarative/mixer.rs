@@ -1,7 +1,10 @@
+use std::boxed::Box;
+
 use katla_audio::{LevelsSnapshot, linear_to_db};
 use katla_math::Rect2D;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, ViewDescriptor, hstack, labeled_slider, text, vstack, vu_meter,
+    Alignment, Build, BuildContext, Widget, WidgetExt, empty, hstack, labeled_slider, text, vstack,
+    vu_meter,
 };
 
 use crate::Preferences;
@@ -25,10 +28,10 @@ fn clamp_db(db: f32) -> f32 {
 pub(crate) struct MixerView;
 
 impl Build for MixerView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<MixerDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return ViewDescriptor::Empty;
+            return empty();
         };
 
         let theme = &draw_ctx.theme;
@@ -45,7 +48,7 @@ impl Build for MixerView {
         let master_db_peak = clamp_db(linear_to_db(levels.master.peak));
         let master_db_rms = clamp_db(linear_to_db(levels.master.rms));
         let master_id = ctx.state(draw_ctx.preferences.audio.master_volume);
-        let current_master: f32 = ctx.get_state(master_id);
+        let current_master: f32 = ctx.get_state(master_id).unwrap();
         if (current_master - draw_ctx.preferences.audio.master_volume).abs() > 1e-4 {
             ctx.emit(PreferencesAction::SetMasterVolume(current_master));
         }
@@ -55,7 +58,7 @@ impl Build for MixerView {
         let sfx_db_peak = clamp_db(linear_to_db(levels.sfx.peak));
         let sfx_db_rms = clamp_db(linear_to_db(levels.sfx.rms));
         let sfx_id = ctx.state(draw_ctx.preferences.audio.sfx_volume);
-        let current_sfx: f32 = ctx.get_state(sfx_id);
+        let current_sfx: f32 = ctx.get_state(sfx_id).unwrap();
         if (current_sfx - draw_ctx.preferences.audio.sfx_volume).abs() > 1e-4 {
             ctx.emit(PreferencesAction::SetSfxVolume(current_sfx));
         }
@@ -65,7 +68,7 @@ impl Build for MixerView {
         let music_db_peak = clamp_db(linear_to_db(levels.music.peak));
         let music_db_rms = clamp_db(linear_to_db(levels.music.rms));
         let music_id = ctx.state(draw_ctx.preferences.audio.music_volume);
-        let current_music: f32 = ctx.get_state(music_id);
+        let current_music: f32 = ctx.get_state(music_id).unwrap();
         if (current_music - draw_ctx.preferences.audio.music_volume).abs() > 1e-4 {
             ctx.emit(PreferencesAction::SetMusicVolume(current_music));
         }
@@ -75,7 +78,7 @@ impl Build for MixerView {
         let ambient_db_peak = clamp_db(linear_to_db(levels.ambient.peak));
         let ambient_db_rms = clamp_db(linear_to_db(levels.ambient.rms));
         let ambient_id = ctx.state(draw_ctx.preferences.audio.ambient_volume);
-        let current_ambient: f32 = ctx.get_state(ambient_id);
+        let current_ambient: f32 = ctx.get_state(ambient_id).unwrap();
         if (current_ambient - draw_ctx.preferences.audio.ambient_volume).abs() > 1e-4 {
             ctx.emit(PreferencesAction::SetAmbientVolume(current_ambient));
         }

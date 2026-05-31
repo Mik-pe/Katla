@@ -116,7 +116,7 @@ impl Tween {
 }
 
 /// Properties that can be animated on a view node.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum AnimatedProperty {
     Opacity,
     OffsetX,
@@ -145,6 +145,14 @@ impl Animation {
     pub fn value_at(&self, current_time: f64) -> f32 {
         let elapsed = current_time - self.start_time;
         self.tween.value_at(elapsed)
+    }
+
+    pub fn property(&self) -> AnimatedProperty {
+        self.property
+    }
+
+    pub fn on_complete_id(&self) -> Option<u32> {
+        self.on_complete.as_ref().map(|cb| cb.0)
     }
 }
 
@@ -226,6 +234,14 @@ impl KeyframeAnimation {
 
         prev.value + (next.value - prev.value) * eased_t
     }
+
+    pub fn property(&self) -> AnimatedProperty {
+        self.property
+    }
+
+    pub fn on_complete_id(&self) -> Option<u32> {
+        self.on_complete.as_ref().map(|cb| cb.0)
+    }
 }
 
 /// Trait for types that support linear interpolation.
@@ -240,7 +256,7 @@ impl Interpolate for f32 {
 }
 
 /// Resolved animation values for a single view node, computed each frame.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct AnimationState {
     pub opacity: Option<f32>,
     pub offset: Option<Vec2>,

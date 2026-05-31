@@ -7,7 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
 use super::super::transition::Transition;
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub(crate) struct TransitionContainer {
@@ -45,7 +45,7 @@ impl Widget for TransitionContainer {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style::default()
     }
 
@@ -66,6 +66,9 @@ impl Widget for TransitionContainer {
         _bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         // TransitionContainer has no visual chrome — animations are applied
         // via the AnimationState on the child node during the draw pipeline
@@ -87,7 +90,6 @@ impl Widget for TransitionContainer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::widget::DescriptorWidget;
 
     fn make_transition() -> TransitionContainer {
         TransitionContainer::new(Transition::fade(0.3))
@@ -103,7 +105,7 @@ mod tests {
     #[test]
     fn test_transition_diff_different_type() {
         let tc = make_transition();
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(tc.diff_against(&other), DiffAction::Replace);
     }
 

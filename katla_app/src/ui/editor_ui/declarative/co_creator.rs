@@ -1,8 +1,11 @@
+use std::boxed::Box;
+
 use katla_agent::MessageRole;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId,
-    ViewDescriptor, button, draggable_panel, hstack, image_button, scroll, text, textfield, vstack,
+    Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId, Widget,
+    WidgetExt, button, draggable_panel, empty, hstack, image_button, scroll, text, textfield,
+    vstack,
 };
 
 #[derive(Clone)]
@@ -34,14 +37,14 @@ pub(crate) struct CoCreatorPanelSync {
 pub(crate) struct CoCreatorView;
 
 impl Build for CoCreatorView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<CoCreatorDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return ViewDescriptor::Empty;
+            return empty();
         };
 
         let panel_id: StateId = ctx.state(DraggablePanelState::default());
-        let mut panel_state: DraggablePanelState = ctx.get_state(panel_id);
+        let mut panel_state: DraggablePanelState = ctx.get_state(panel_id).unwrap();
 
         if draw_ctx.is_open && !panel_state.visibility.is_visible() {
             panel_state.visibility = DraggablePanelVisibility::JustOpened;
@@ -51,16 +54,16 @@ impl Build for CoCreatorView {
             ctx.set_state(panel_id, panel_state);
         }
 
-        let current_panel: DraggablePanelState = ctx.get_state(panel_id);
+        let current_panel: DraggablePanelState = ctx.get_state(panel_id).unwrap();
         ctx.emit(CoCreatorPanelSync {
             visibility: current_panel.visibility,
         });
 
         if !current_panel.visibility.is_visible() {
-            return ViewDescriptor::Empty;
+            return empty();
         }
 
-        let mut children: Vec<ViewDescriptor> = Vec::new();
+        let mut children: Vec<Box<dyn Widget>> = Vec::new();
 
         // Undo button
         if draw_ctx.agent_undo_count > 0 {
@@ -72,7 +75,7 @@ impl Build for CoCreatorView {
         }
 
         // Message area
-        let mut msg_children: Vec<ViewDescriptor> = Vec::new();
+        let mut msg_children: Vec<Box<dyn Widget>> = Vec::new();
 
         if draw_ctx.messages.is_empty() {
             msg_children.push(
@@ -114,7 +117,7 @@ impl Build for CoCreatorView {
 
         // Input area
         let input_id: StateId = ctx.state(String::new());
-        let current_input: String = ctx.get_state(input_id);
+        let current_input: String = ctx.get_state(input_id).unwrap();
         let input_clone = current_input.clone();
         let input_field =
             textfield("Ask the AI...", input_id).on_submit(ctx.on_click(move |actions| {

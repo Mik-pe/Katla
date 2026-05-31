@@ -7,7 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::{Alignment, FlexProps, Padding};
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub(crate) struct VStack {
@@ -47,7 +47,7 @@ impl Widget for VStack {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         let mut style = Style {
             flex_direction: FlexDirection::Column,
             gap: Size {
@@ -79,6 +79,9 @@ impl Widget for VStack {
         _bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
     }
 
@@ -98,7 +101,6 @@ impl Widget for VStack {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::widget::DescriptorWidget;
 
     #[test]
     fn test_vstack_diff_same_type() {
@@ -125,7 +127,7 @@ mod tests {
             Alignment::Leading,
             FlexProps::default(),
         );
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(vstack.diff_against(&other), DiffAction::Replace);
     }
 
@@ -152,7 +154,7 @@ mod tests {
             Alignment::Leading,
             FlexProps::default(),
         );
-        let style = vstack.layout_style();
+        let style = vstack.layout_style(&crate::declarative::layout::measure_text_descriptor);
         assert_eq!(style.flex_direction, FlexDirection::Column);
     }
 

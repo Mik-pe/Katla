@@ -1,7 +1,7 @@
+use std::boxed::Box;
+
 use katla_math::Vec2;
-use katla_ui::declarative::{
-    Alignment, Anchor, Build, BuildContext, ViewDescriptor, overlay, zstack,
-};
+use katla_ui::declarative::{Alignment, Anchor, Build, BuildContext, Widget, overlay, zstack};
 
 use super::asset_browser::AssetBrowserDrawCtx;
 use super::asset_browser::AssetBrowserView;
@@ -28,7 +28,7 @@ use super::viewport_grid::ViewportGridView;
 pub(crate) struct EditorOverlayView;
 
 impl Build for EditorOverlayView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         // Docked panels: read bounds.min from their specific env context, wrap in Overlay
         let viewport_offset = ctx
             .env::<ViewportGridDrawCtx>()

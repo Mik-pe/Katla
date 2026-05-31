@@ -1,6 +1,8 @@
+use std::boxed::Box;
+
 use katla_math::Color;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, StateId, ViewDescriptor, hstack, image_button, menu_entry,
+    Alignment, Build, BuildContext, StateId, Widget, WidgetExt, hstack, image_button, menu_entry,
     menu_group, menubar, text, zstack,
 };
 use katla_ui::{FontSize, ForkAwesome};
@@ -49,10 +51,10 @@ pub(crate) struct ToolbarView;
 pub(crate) const TOOLBAR_HEIGHT: f32 = 36.0;
 
 impl Build for ToolbarView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<ToolbarDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return ViewDescriptor::Empty;
+            return katla_ui::declarative::empty();
         };
 
         let file_open_id: StateId = ctx.state(false);
@@ -189,7 +191,7 @@ fn build_create_menu(ctx: &mut BuildContext) -> Vec<katla_ui::declarative::MenuE
         .collect()
 }
 
-fn build_title(draw_ctx: &ToolbarDrawCtx) -> ViewDescriptor {
+fn build_title(draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
     let title = if draw_ctx.is_playing && !draw_ctx.is_paused {
         "Katla Engine [PLAYING]"
     } else if draw_ctx.is_paused {
@@ -205,7 +207,7 @@ fn build_title(draw_ctx: &ToolbarDrawCtx) -> ViewDescriptor {
     text(title).color(title_color).font_size(FontSize::Medium)
 }
 
-fn build_controls(ctx: &mut BuildContext, draw_ctx: &ToolbarDrawCtx) -> ViewDescriptor {
+fn build_controls(ctx: &mut BuildContext, draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
     let stop_color = Color::from_rgb_hex(0xe06c75);
 
     if !draw_ctx.is_playing && !draw_ctx.is_paused {

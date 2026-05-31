@@ -8,144 +8,186 @@ use crate::types::TextureId;
 use super::descriptor::{
     Alignment, Anchor, Callback, ChildDescriptor, ContextMenuDescriptor, ContextMenuEntry,
     DraggablePanelDescriptor, FlexProps, MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor,
-    OverlayDescriptor, Padding, PanelDescriptor, ScrollDescriptor, StackDescriptor,
-    StatusBarDescriptor, TreeItem, TreeViewDescriptor, ViewDescriptor, ZStackDescriptor,
+    OverlayDescriptor, Padding, PanelDescriptor, ScrollDescriptor, SeparatorDirection,
+    StackDescriptor, StatusBarDescriptor, TreeItem, TreeViewDescriptor, ViewDescriptor,
+    ZStackDescriptor,
 };
 use super::state::StateId;
+use super::widget::{DescriptorWidget, Widget};
+
+// ---------------------------------------------------------------------------
+// KeyedChild — replaces ChildDescriptor in the public API
+// ---------------------------------------------------------------------------
+
+/// A child widget with an optional stable key for diffing.
+pub struct KeyedChild {
+    pub key: Option<u64>,
+    pub widget: Box<dyn Widget>,
+}
+
+impl From<Box<dyn Widget>> for KeyedChild {
+    fn from(widget: Box<dyn Widget>) -> Self {
+        Self { key: None, widget }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+fn wrap(descriptor: ViewDescriptor) -> Box<dyn Widget> {
+    Box::new(DescriptorWidget::new(descriptor))
+}
+
+fn extract_descriptor(widget: &Box<dyn Widget>) -> ViewDescriptor {
+    widget
+        .as_any()
+        .downcast_ref::<DescriptorWidget>()
+        .expect("expected DescriptorWidget")
+        .descriptor()
+        .clone()
+}
+
+fn extract_descriptor_mut(widget: &mut Box<dyn Widget>) -> &mut ViewDescriptor {
+    widget
+        .as_any_mut()
+        .downcast_mut::<DescriptorWidget>()
+        .expect("expected DescriptorWidget")
+        .descriptor_mut()
+}
 
 // ---------------------------------------------------------------------------
 // Leaf constructors
 // ---------------------------------------------------------------------------
 
-pub fn empty() -> ViewDescriptor {
-    ViewDescriptor::Empty
+pub fn empty() -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Empty)
 }
 
-pub fn text(content: impl Into<String>) -> ViewDescriptor {
-    ViewDescriptor::Text {
+pub fn text(content: impl Into<String>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Text {
         content: content.into(),
         color: None,
         font_size: None,
-    }
+    })
 }
 
-pub fn button(label: impl Into<String>) -> ViewDescriptor {
-    ViewDescriptor::Button {
+pub fn button(label: impl Into<String>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Button {
         label: label.into(),
         fill_color: None,
         hover_color: None,
         border_color: None,
         on_click: None,
-    }
+    })
 }
 
-pub fn image_button(icon: char) -> ViewDescriptor {
-    ViewDescriptor::ImageButton {
+pub fn image_button(icon: char) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::ImageButton {
         icon,
         enabled: true,
         fill_color: None,
         on_click: None,
-    }
+    })
 }
 
 pub fn slider(
     label: impl Into<String>,
     value_id: StateId,
     range: RangeInclusive<f32>,
-) -> ViewDescriptor {
-    ViewDescriptor::Slider {
+) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Slider {
         label: label.into(),
         value_id,
         range,
         show_value: false,
         precision: 2,
-    }
+    })
 }
 
 pub fn labeled_slider(
     label: impl Into<String>,
     value_id: StateId,
     range: RangeInclusive<f32>,
-) -> ViewDescriptor {
-    ViewDescriptor::LabeledSlider {
+) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::LabeledSlider {
         label: label.into(),
         value_id,
         range,
         label_width: 0.0,
         show_value: false,
         precision: 2,
-    }
+    })
 }
 
-pub fn textfield(placeholder: impl Into<String>, value_id: StateId) -> ViewDescriptor {
-    ViewDescriptor::TextField {
+pub fn textfield(placeholder: impl Into<String>, value_id: StateId) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::TextField {
         placeholder: placeholder.into(),
         value_id,
         on_submit: None,
-    }
+    })
 }
 
-pub fn progress(value: f32, range: RangeInclusive<f32>) -> ViewDescriptor {
-    ViewDescriptor::Progress {
+pub fn progress(value: f32, range: RangeInclusive<f32>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Progress {
         value,
         range,
         fill_color: None,
         label: None,
-    }
+    })
 }
 
-pub fn vu_meter(peak_db: f32, rms_db: f32) -> ViewDescriptor {
-    ViewDescriptor::VuMeter(Box::new(super::descriptor::VuMeterDescriptor {
-        peak_db,
-        rms_db,
-    }))
+pub fn vu_meter(peak_db: f32, rms_db: f32) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::VuMeter(Box::new(
+        super::descriptor::VuMeterDescriptor { peak_db, rms_db },
+    )))
 }
 
-pub fn image(texture: TextureId, tint: katla_math::Color) -> ViewDescriptor {
-    ViewDescriptor::Image {
+pub fn image(texture: TextureId, tint: katla_math::Color) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Image {
         texture,
         uv: None,
         tint,
         width: None,
         height: None,
-    }
+    })
 }
 
-pub fn toggle(label: impl Into<String>, value_id: StateId) -> ViewDescriptor {
-    ViewDescriptor::Toggle {
+pub fn toggle(label: impl Into<String>, value_id: StateId) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Toggle {
         label: label.into(),
         value_id,
-    }
+    })
 }
 
-pub fn radio(value_id: StateId, index: usize, label: impl Into<String>) -> ViewDescriptor {
-    ViewDescriptor::RadioButton {
+pub fn radio(value_id: StateId, index: usize, label: impl Into<String>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::RadioButton {
         value_id,
         index,
         label: label.into(),
-    }
+    })
 }
 
-pub fn property_row(label: impl Into<String>, value: impl Into<String>) -> ViewDescriptor {
-    ViewDescriptor::PropertyRow {
+pub fn property_row(label: impl Into<String>, value: impl Into<String>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::PropertyRow {
         label: label.into(),
         value: value.into(),
-    }
+    })
 }
 
-pub fn color_picker(label: impl Into<String>, value_id: StateId) -> ViewDescriptor {
-    ViewDescriptor::ColorPicker {
+pub fn color_picker(label: impl Into<String>, value_id: StateId) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::ColorPicker {
         label: label.into(),
         value_id,
-    }
+    })
 }
 
 pub fn vec3_slider(
     label: impl Into<String>,
     value_ids: [StateId; 3],
     range: RangeInclusive<f32>,
-) -> ViewDescriptor {
-    ViewDescriptor::Vec3Slider {
+) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Vec3Slider {
         label: label.into(),
         value_ids,
         range,
@@ -156,63 +198,65 @@ pub fn vec3_slider(
             katla_math::Color::BLUE,
         ],
         precision: 2,
-    }
+    })
 }
 
-pub fn separator(direction: super::descriptor::SeparatorDirection) -> ViewDescriptor {
-    ViewDescriptor::Separator {
+pub fn separator(direction: SeparatorDirection) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Separator {
         direction,
         color: None,
-    }
+    })
 }
 
-pub fn separator_horizontal() -> ViewDescriptor {
-    separator(super::descriptor::SeparatorDirection::Horizontal)
+pub fn separator_horizontal() -> Box<dyn Widget> {
+    separator(SeparatorDirection::Horizontal)
 }
 
-pub fn separator_vertical() -> ViewDescriptor {
-    separator(super::descriptor::SeparatorDirection::Vertical)
+pub fn separator_vertical() -> Box<dyn Widget> {
+    separator(SeparatorDirection::Vertical)
 }
 
-pub fn icon(icon: char) -> ViewDescriptor {
-    ViewDescriptor::Icon {
+pub fn icon(icon: char) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Icon {
         icon,
         size: None,
         color: None,
-    }
+    })
 }
 
-pub fn selectable(child: ViewDescriptor) -> ViewDescriptor {
-    ViewDescriptor::Selectable {
-        child: Box::new(child),
+pub fn selectable(child: Box<dyn Widget>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Selectable {
+        child: Box::new(extract_descriptor(&child)),
         on_click: None,
         selected: false,
-    }
+    })
 }
 
 pub fn section(
     title: impl Into<String>,
-    child: ViewDescriptor,
+    child: Box<dyn Widget>,
     expanded_id: StateId,
-) -> ViewDescriptor {
-    ViewDescriptor::Section {
+) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Section {
         title: title.into(),
-        child: Box::new(child),
+        child: Box::new(extract_descriptor(&child)),
         expanded_id,
         on_remove: None,
-    }
+    })
 }
 
 pub fn tab_bar(
     tabs: Vec<super::descriptor::TabItem>,
     selected_id: StateId,
-    content: ViewDescriptor,
-) -> ViewDescriptor {
-    ViewDescriptor::TabBar(Box::new(super::descriptor::TabBarDescriptor {
-        tabs,
-        selected_id,
-        content: Box::new(content),
-    }))
+    content: Box<dyn Widget>,
+) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::TabBar(Box::new(
+        super::descriptor::TabBarDescriptor {
+            tabs,
+            selected_id,
+            content: Box::new(extract_descriptor(&content)),
+        },
+    )))
 }
 
 pub fn tab_item(label: impl Into<String>) -> super::descriptor::TabItem {
@@ -224,15 +268,15 @@ pub fn tab_item(label: impl Into<String>) -> super::descriptor::TabItem {
 pub fn grid(
     columns: usize,
     cell_size: katla_math::Vec2,
-    children: impl IntoIterator<Item = ViewDescriptor>,
-) -> ViewDescriptor {
+    children: impl IntoIterator<Item = Box<dyn Widget>>,
+) -> Box<dyn Widget> {
     let cw = cell_size.x();
     let ch = cell_size.y();
     let sized_children: Vec<ChildDescriptor> = children
         .into_iter()
         .map(|child| {
             let sized = ViewDescriptor::VStack(Box::new(StackDescriptor {
-                children: vec![ChildDescriptor::from(child)],
+                children: vec![ChildDescriptor::from(extract_descriptor(&child))],
                 spacing: 0.0,
                 padding: Padding::zero(),
                 alignment: Alignment::Leading,
@@ -247,105 +291,115 @@ pub fn grid(
             ChildDescriptor::from(sized)
         })
         .collect();
-    ViewDescriptor::Grid(Box::new(super::descriptor::GridDescriptor {
-        columns,
-        cell_size,
-        spacing: 0.0,
-        children: sized_children,
-        flex: FlexProps::default(),
-    }))
+    wrap(ViewDescriptor::Grid(Box::new(
+        super::descriptor::GridDescriptor {
+            columns,
+            cell_size,
+            spacing: 0.0,
+            children: sized_children,
+            flex: FlexProps::default(),
+        },
+    )))
 }
 
 // ---------------------------------------------------------------------------
 // Container constructors
 // ---------------------------------------------------------------------------
 
-pub fn hstack(children: impl IntoIterator<Item = ViewDescriptor>) -> ViewDescriptor {
-    ViewDescriptor::HStack(Box::new(StackDescriptor {
-        children: children.into_iter().map(ChildDescriptor::from).collect(),
-        spacing: 0.0,
-        padding: Padding::zero(),
-        alignment: Alignment::Leading,
-        flex: FlexProps::default(),
-    }))
-}
-
-pub fn vstack(children: impl IntoIterator<Item = ViewDescriptor>) -> ViewDescriptor {
-    ViewDescriptor::VStack(Box::new(StackDescriptor {
-        children: children.into_iter().map(ChildDescriptor::from).collect(),
-        spacing: 0.0,
-        padding: Padding::zero(),
-        alignment: Alignment::Leading,
-        flex: FlexProps::default(),
-    }))
-}
-
-pub fn zstack(children: impl IntoIterator<Item = (Alignment, ViewDescriptor)>) -> ViewDescriptor {
-    ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
+pub fn hstack(children: impl IntoIterator<Item = Box<dyn Widget>>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::HStack(Box::new(StackDescriptor {
         children: children
             .into_iter()
-            .map(|(a, d)| (a, ChildDescriptor::from(d)))
+            .map(|c| ChildDescriptor::from(extract_descriptor(&c)))
+            .collect(),
+        spacing: 0.0,
+        padding: Padding::zero(),
+        alignment: Alignment::Leading,
+        flex: FlexProps::default(),
+    })))
+}
+
+pub fn vstack(children: impl IntoIterator<Item = Box<dyn Widget>>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::VStack(Box::new(StackDescriptor {
+        children: children
+            .into_iter()
+            .map(|c| ChildDescriptor::from(extract_descriptor(&c)))
+            .collect(),
+        spacing: 0.0,
+        padding: Padding::zero(),
+        alignment: Alignment::Leading,
+        flex: FlexProps::default(),
+    })))
+}
+
+pub fn zstack(children: impl IntoIterator<Item = (Alignment, Box<dyn Widget>)>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
+        children: children
+            .into_iter()
+            .map(|(a, w)| (a, ChildDescriptor::from(extract_descriptor(&w))))
             .collect(),
         padding: Padding::zero(),
         flex: FlexProps::default(),
-    }))
+    })))
 }
 
-pub fn panel(title: impl Into<String>, content: ViewDescriptor) -> ViewDescriptor {
-    ViewDescriptor::Panel(Box::new(PanelDescriptor {
+pub fn panel(title: impl Into<String>, content: Box<dyn Widget>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Panel(Box::new(PanelDescriptor {
         title: title.into(),
-        content: Box::new(content),
+        content: Box::new(extract_descriptor(&content)),
         header_height: 24.0,
         flex: FlexProps::default(),
-    }))
+    })))
 }
 
-pub fn scroll(content: ViewDescriptor, scroll_state_id: StateId) -> ViewDescriptor {
-    ViewDescriptor::ScrollView(Box::new(ScrollDescriptor {
-        content: Box::new(content),
+pub fn scroll(content: Box<dyn Widget>, scroll_state_id: StateId) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::ScrollView(Box::new(ScrollDescriptor {
+        content: Box::new(extract_descriptor(&content)),
         scroll_state_id,
         flex: FlexProps::default(),
-    }))
+    })))
 }
 
-pub fn overlay(anchor: Anchor, offset: Vec2, content: ViewDescriptor) -> ViewDescriptor {
-    ViewDescriptor::Overlay(Box::new(OverlayDescriptor {
+pub fn overlay(anchor: Anchor, offset: Vec2, content: Box<dyn Widget>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Overlay(Box::new(OverlayDescriptor {
         anchor,
         offset,
-        content: Box::new(content),
-    }))
+        content: Box::new(extract_descriptor(&content)),
+    })))
 }
 
-pub fn statusbar(height: f32, content: ViewDescriptor) -> ViewDescriptor {
-    ViewDescriptor::StatusBar(Box::new(StatusBarDescriptor {
+pub fn statusbar(height: f32, content: Box<dyn Widget>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::StatusBar(Box::new(StatusBarDescriptor {
         height,
-        content: Box::new(content),
-    }))
+        content: Box::new(extract_descriptor(&content)),
+    })))
 }
 
 pub fn draggable_panel(
     title: impl Into<String>,
     width: f32,
     height: f32,
-    content: ViewDescriptor,
+    content: Box<dyn Widget>,
     state_id: StateId,
-) -> ViewDescriptor {
-    ViewDescriptor::DraggablePanel(Box::new(DraggablePanelDescriptor {
-        title: title.into(),
-        width,
-        height,
-        content: Box::new(content),
-        state_id,
-        close_on_outside_click: false,
-    }))
+) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::DraggablePanel(Box::new(
+        DraggablePanelDescriptor {
+            title: title.into(),
+            width,
+            height,
+            content: Box::new(extract_descriptor(&content)),
+            state_id,
+            close_on_outside_click: false,
+        },
+    )))
 }
 
-pub fn menubar(groups: Vec<MenuGroup>) -> ViewDescriptor {
-    ViewDescriptor::MenuBar(Box::new(MenuBarDescriptor {
+pub fn menubar(groups: Vec<MenuGroup>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::MenuBar(Box::new(MenuBarDescriptor {
         groups,
         right_content: None,
         height: 28.0,
-    }))
+    })))
 }
 
 pub fn tree_view(
@@ -353,8 +407,8 @@ pub fn tree_view(
     expanded_id: StateId,
     selected_id: StateId,
     scroll_id: StateId,
-) -> ViewDescriptor {
-    ViewDescriptor::TreeView(Box::new(TreeViewDescriptor {
+) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::TreeView(Box::new(TreeViewDescriptor {
         items,
         expanded_id,
         selected_id,
@@ -363,85 +417,173 @@ pub fn tree_view(
         indent_per_level: 16.0,
         on_select: None,
         on_right_click: None,
-    }))
+    })))
 }
 
-pub fn modal(width: f32, height: f32, open_id: StateId, content: ViewDescriptor) -> ViewDescriptor {
-    ViewDescriptor::Modal(Box::new(ModalDescriptor {
+pub fn modal(
+    width: f32,
+    height: f32,
+    open_id: StateId,
+    content: Box<dyn Widget>,
+) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Modal(Box::new(ModalDescriptor {
         width,
         height,
         open_id,
-        content: Box::new(content),
-    }))
+        content: Box::new(extract_descriptor(&content)),
+        on_close: None,
+    })))
 }
 
-pub fn context_menu(items: Vec<ContextMenuEntry>, open_id: StateId) -> ViewDescriptor {
-    ViewDescriptor::ContextMenu(Box::new(ContextMenuDescriptor { items, open_id }))
+pub fn context_menu(items: Vec<ContextMenuEntry>, open_id: StateId) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::ContextMenu(Box::new(
+        ContextMenuDescriptor { items, open_id },
+    )))
 }
 
 // ---------------------------------------------------------------------------
 // Keyed child helper
 // ---------------------------------------------------------------------------
 
-pub fn keyed(key: u64, descriptor: ViewDescriptor) -> ChildDescriptor {
-    ChildDescriptor {
+pub fn keyed(key: u64, widget: Box<dyn Widget>) -> KeyedChild {
+    KeyedChild {
         key: Some(key),
-        descriptor,
+        widget,
     }
 }
 
-pub fn hstack_keyed(children: Vec<ChildDescriptor>) -> ViewDescriptor {
-    ViewDescriptor::HStack(Box::new(StackDescriptor {
-        children,
+pub fn hstack_keyed(children: Vec<KeyedChild>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::HStack(Box::new(StackDescriptor {
+        children: children
+            .into_iter()
+            .map(|kc| ChildDescriptor {
+                key: kc.key,
+                descriptor: extract_descriptor(&kc.widget),
+            })
+            .collect(),
         spacing: 0.0,
         padding: Padding::zero(),
         alignment: Alignment::Leading,
         flex: FlexProps::default(),
-    }))
+    })))
 }
 
-pub fn vstack_keyed(children: Vec<ChildDescriptor>) -> ViewDescriptor {
-    ViewDescriptor::VStack(Box::new(StackDescriptor {
-        children,
+pub fn vstack_keyed(children: Vec<KeyedChild>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::VStack(Box::new(StackDescriptor {
+        children: children
+            .into_iter()
+            .map(|kc| ChildDescriptor {
+                key: kc.key,
+                descriptor: extract_descriptor(&kc.widget),
+            })
+            .collect(),
         spacing: 0.0,
         padding: Padding::zero(),
         alignment: Alignment::Leading,
         flex: FlexProps::default(),
-    }))
+    })))
 }
 
-pub fn zstack_keyed(children: Vec<(Alignment, ChildDescriptor)>) -> ViewDescriptor {
-    ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
-        children,
+pub fn zstack_keyed(children: Vec<(Alignment, KeyedChild)>) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
+        children: children
+            .into_iter()
+            .map(|(a, kc)| {
+                (
+                    a,
+                    ChildDescriptor {
+                        key: kc.key,
+                        descriptor: extract_descriptor(&kc.widget),
+                    },
+                )
+            })
+            .collect(),
         padding: Padding::zero(),
         flex: FlexProps::default(),
-    }))
+    })))
 }
 
 pub fn grid_keyed(
     columns: usize,
     cell_size: katla_math::Vec2,
-    children: Vec<ChildDescriptor>,
-) -> ViewDescriptor {
-    ViewDescriptor::Grid(Box::new(super::descriptor::GridDescriptor {
-        columns,
-        cell_size,
-        spacing: 0.0,
-        children,
-        flex: FlexProps::default(),
-    }))
+    children: Vec<KeyedChild>,
+) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::Grid(Box::new(
+        super::descriptor::GridDescriptor {
+            columns,
+            cell_size,
+            spacing: 0.0,
+            children: children
+                .into_iter()
+                .map(|kc| ChildDescriptor {
+                    key: kc.key,
+                    descriptor: extract_descriptor(&kc.widget),
+                })
+                .collect(),
+            flex: FlexProps::default(),
+        },
+    )))
 }
 
 // ---------------------------------------------------------------------------
-// ViewDescriptor modifier methods
+// Box<dyn Widget> modifier methods
 // ---------------------------------------------------------------------------
 
-impl ViewDescriptor {
+/// Extension trait providing builder-pattern modifier methods on `Box<dyn Widget>`.
+///
+/// Import [`WidgetExt`] to chain modifiers like `.color(...)`, `.fill(...)`, etc.
+pub trait WidgetExt {
+    // -- Leaf modifiers --
+    fn color(self, color: impl Into<katla_math::Color>) -> Box<dyn Widget>;
+    fn font_size(self, fs: FontSize) -> Box<dyn Widget>;
+    fn fill(self, color: impl Into<katla_math::Color>) -> Box<dyn Widget>;
+    fn hover(self, color: impl Into<katla_math::Color>) -> Box<dyn Widget>;
+    fn border(self, color: impl Into<katla_math::Color>) -> Box<dyn Widget>;
+    fn on_click(self, cb: Callback) -> Box<dyn Widget>;
+    fn on_close(self, cb: Callback) -> Box<dyn Widget>;
+    fn enabled(self, e: bool) -> Box<dyn Widget>;
+    fn on_submit(self, cb: Callback) -> Box<dyn Widget>;
+    fn show_value(self, show: bool) -> Box<dyn Widget>;
+    fn precision(self, p: usize) -> Box<dyn Widget>;
+    fn label_width(self, w: f32) -> Box<dyn Widget>;
+    fn uv(self, rect: katla_math::Rect2D) -> Box<dyn Widget>;
+
+    // -- Container modifiers --
+    fn spacing(self, s: f32) -> Box<dyn Widget>;
+    fn padding(self, p: Padding) -> Box<dyn Widget>;
+    fn padding_all(self, v: f32) -> Box<dyn Widget>;
+    fn align(self, a: Alignment) -> Box<dyn Widget>;
+    fn header_height(self, h: f32) -> Box<dyn Widget>;
+    fn close_on_outside(self, close: bool) -> Box<dyn Widget>;
+    fn right_content(self, content: Box<dyn Widget>) -> Box<dyn Widget>;
+    fn menubar_height(self, h: f32) -> Box<dyn Widget>;
+    fn row_height(self, h: f32) -> Box<dyn Widget>;
+    fn indent(self, i: f32) -> Box<dyn Widget>;
+    fn on_select(self, cb: Callback) -> Box<dyn Widget>;
+    fn on_right_click(self, cb: Callback) -> Box<dyn Widget>;
+
+    // -- Separator / Icon / Selectable / Section modifiers --
+    fn separator_color(self, color: impl Into<katla_math::Color>) -> Box<dyn Widget>;
+    fn icon_size(self, size: FontSize) -> Box<dyn Widget>;
+    fn selected(self, sel: bool) -> Box<dyn Widget>;
+    fn on_remove(self, cb: Callback) -> Box<dyn Widget>;
+
+    // -- Progress / Grid / Image modifiers --
+    fn image_size(self, width: f32, height: f32) -> Box<dyn Widget>;
+    fn progress_label(self, label: impl Into<String>) -> Box<dyn Widget>;
+    fn grid_spacing(self, spacing: f32) -> Box<dyn Widget>;
+    fn flex_width(self, w: f32) -> Box<dyn Widget>;
+    fn flex_height(self, h: f32) -> Box<dyn Widget>;
+    fn flex_grow(self, grow: f32) -> Box<dyn Widget>;
+}
+
+impl WidgetExt for Box<dyn Widget> {
     // -- Leaf modifiers --
 
-    pub fn color(mut self, color: impl Into<katla_math::Color>) -> ViewDescriptor {
+    fn color(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
         let c = color.into();
-        match &mut self {
+        let d = extract_descriptor_mut(&mut self);
+        match d {
             ViewDescriptor::Text { color: co, .. } | ViewDescriptor::Icon { color: co, .. } => {
                 *co = Some(c)
             }
@@ -452,8 +594,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn font_size(mut self, fs: FontSize) -> ViewDescriptor {
-        if let ViewDescriptor::Text { font_size: f, .. } = &mut self {
+    fn font_size(mut self, fs: FontSize) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::Text { font_size: f, .. } = d {
             *f = Some(fs);
         } else {
             debug_assert!(false, "font_size() modifier applied to non-Text variant");
@@ -461,9 +604,10 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn fill(mut self, color: impl Into<katla_math::Color>) -> ViewDescriptor {
+    fn fill(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
         let c = color.into();
-        match &mut self {
+        let d = extract_descriptor_mut(&mut self);
+        match d {
             ViewDescriptor::Button { fill_color: f, .. }
             | ViewDescriptor::ImageButton { fill_color: f, .. }
             | ViewDescriptor::Progress { fill_color: f, .. } => *f = Some(c),
@@ -474,9 +618,10 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn hover(mut self, color: impl Into<katla_math::Color>) -> ViewDescriptor {
+    fn hover(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
         let c = color.into();
-        if let ViewDescriptor::Button { hover_color: h, .. } = &mut self {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::Button { hover_color: h, .. } = d {
             *h = Some(c);
         } else {
             debug_assert!(false, "hover() modifier applied to non-Button variant");
@@ -484,11 +629,12 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn border(mut self, color: impl Into<katla_math::Color>) -> ViewDescriptor {
+    fn border(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
         let c = color.into();
+        let d = extract_descriptor_mut(&mut self);
         if let ViewDescriptor::Button {
             border_color: b, ..
-        } = &mut self
+        } = d
         {
             *b = Some(c);
         } else {
@@ -497,8 +643,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn on_click(mut self, cb: Callback) -> ViewDescriptor {
-        match &mut self {
+    fn on_click(mut self, cb: Callback) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        match d {
             ViewDescriptor::Button { on_click: c, .. }
             | ViewDescriptor::ImageButton { on_click: c, .. }
             | ViewDescriptor::Selectable { on_click: c, .. } => *c = Some(cb),
@@ -509,8 +656,19 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn enabled(mut self, e: bool) -> ViewDescriptor {
-        if let ViewDescriptor::ImageButton { enabled: en, .. } = &mut self {
+    fn on_close(mut self, cb: Callback) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::Modal(desc) = d {
+            desc.on_close = Some(cb);
+        } else {
+            debug_assert!(false, "on_close() modifier applied to non-Modal variant");
+        }
+        self
+    }
+
+    fn enabled(mut self, e: bool) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::ImageButton { enabled: en, .. } = d {
             *en = e;
         } else {
             debug_assert!(
@@ -521,8 +679,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn on_submit(mut self, cb: Callback) -> ViewDescriptor {
-        if let ViewDescriptor::TextField { on_submit: c, .. } = &mut self {
+    fn on_submit(mut self, cb: Callback) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::TextField { on_submit: c, .. } = d {
             *c = Some(cb);
         } else {
             debug_assert!(
@@ -533,8 +692,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn show_value(mut self, show: bool) -> ViewDescriptor {
-        match &mut self {
+    fn show_value(mut self, show: bool) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        match d {
             ViewDescriptor::Slider { show_value: s, .. }
             | ViewDescriptor::LabeledSlider { show_value: s, .. } => *s = show,
             _ => {
@@ -547,8 +707,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn precision(mut self, p: usize) -> ViewDescriptor {
-        match &mut self {
+    fn precision(mut self, p: usize) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        match d {
             ViewDescriptor::Slider { precision: pr, .. }
             | ViewDescriptor::LabeledSlider { precision: pr, .. } => *pr = p,
             _ => {
@@ -558,10 +719,11 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn label_width(mut self, w: f32) -> ViewDescriptor {
+    fn label_width(mut self, w: f32) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
         if let ViewDescriptor::LabeledSlider {
             label_width: lw, ..
-        } = &mut self
+        } = d
         {
             *lw = w;
         } else {
@@ -573,8 +735,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn uv(mut self, rect: katla_math::Rect2D) -> ViewDescriptor {
-        if let ViewDescriptor::Image { uv: u, .. } = &mut self {
+    fn uv(mut self, rect: katla_math::Rect2D) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::Image { uv: u, .. } = d {
             *u = Some(rect);
         } else {
             debug_assert!(false, "uv() modifier applied to non-Image variant");
@@ -584,8 +747,9 @@ impl ViewDescriptor {
 
     // -- Container modifiers --
 
-    pub fn spacing(mut self, s: f32) -> ViewDescriptor {
-        match &mut self {
+    fn spacing(mut self, s: f32) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        match d {
             ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => desc.spacing = s,
             _ => {
                 debug_assert!(false, "spacing() modifier applied to non-stack variant");
@@ -594,8 +758,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn padding(mut self, p: Padding) -> ViewDescriptor {
-        match &mut self {
+    fn padding(mut self, p: Padding) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        match d {
             ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => desc.padding = p,
             ViewDescriptor::ZStack(desc) => desc.padding = p,
             _ => {
@@ -605,9 +770,10 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn padding_all(mut self, v: f32) -> ViewDescriptor {
+    fn padding_all(mut self, v: f32) -> Box<dyn Widget> {
         let p = Padding::all(v);
-        match &mut self {
+        let d = extract_descriptor_mut(&mut self);
+        match d {
             ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => desc.padding = p,
             ViewDescriptor::ZStack(desc) => desc.padding = p,
             _ => {
@@ -617,8 +783,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn align(mut self, a: Alignment) -> ViewDescriptor {
-        match &mut self {
+    fn align(mut self, a: Alignment) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        match d {
             ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => desc.alignment = a,
             _ => {
                 debug_assert!(false, "align() modifier applied to non-stack variant");
@@ -627,8 +794,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn header_height(mut self, h: f32) -> ViewDescriptor {
-        if let ViewDescriptor::Panel(desc) = &mut self {
+    fn header_height(mut self, h: f32) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::Panel(desc) = d {
             desc.header_height = h;
         } else {
             debug_assert!(
@@ -639,8 +807,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn close_on_outside(mut self, close: bool) -> ViewDescriptor {
-        if let ViewDescriptor::DraggablePanel(desc) = &mut self {
+    fn close_on_outside(mut self, close: bool) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::DraggablePanel(desc) = d {
             desc.close_on_outside_click = close;
         } else {
             debug_assert!(
@@ -651,9 +820,10 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn right_content(mut self, content: ViewDescriptor) -> ViewDescriptor {
-        if let ViewDescriptor::MenuBar(desc) = &mut self {
-            desc.right_content = Some(Box::new(content));
+    fn right_content(mut self, content: Box<dyn Widget>) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::MenuBar(desc) = d {
+            desc.right_content = Some(Box::new(extract_descriptor(&content)));
         } else {
             debug_assert!(
                 false,
@@ -663,8 +833,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn menubar_height(mut self, h: f32) -> ViewDescriptor {
-        if let ViewDescriptor::MenuBar(desc) = &mut self {
+    fn menubar_height(mut self, h: f32) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::MenuBar(desc) = d {
             desc.height = h;
         } else {
             debug_assert!(
@@ -675,8 +846,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn row_height(mut self, h: f32) -> ViewDescriptor {
-        if let ViewDescriptor::TreeView(desc) = &mut self {
+    fn row_height(mut self, h: f32) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::TreeView(desc) = d {
             desc.row_height = h;
         } else {
             debug_assert!(
@@ -687,8 +859,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn indent(mut self, i: f32) -> ViewDescriptor {
-        if let ViewDescriptor::TreeView(desc) = &mut self {
+    fn indent(mut self, i: f32) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::TreeView(desc) = d {
             desc.indent_per_level = i;
         } else {
             debug_assert!(false, "indent() modifier applied to non-TreeView variant");
@@ -696,8 +869,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn on_select(mut self, cb: Callback) -> ViewDescriptor {
-        if let ViewDescriptor::TreeView(desc) = &mut self {
+    fn on_select(mut self, cb: Callback) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::TreeView(desc) = d {
             desc.on_select = Some(cb);
         } else {
             debug_assert!(
@@ -708,8 +882,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn on_right_click(mut self, cb: Callback) -> ViewDescriptor {
-        if let ViewDescriptor::TreeView(desc) = &mut self {
+    fn on_right_click(mut self, cb: Callback) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::TreeView(desc) = d {
             desc.on_right_click = Some(cb);
         } else {
             debug_assert!(
@@ -722,8 +897,9 @@ impl ViewDescriptor {
 
     // -- Separator / Icon / Selectable / Section modifiers --
 
-    pub fn separator_color(mut self, color: impl Into<katla_math::Color>) -> ViewDescriptor {
-        if let ViewDescriptor::Separator { color: c, .. } = &mut self {
+    fn separator_color(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::Separator { color: c, .. } = d {
             *c = Some(color.into());
         } else {
             debug_assert!(
@@ -734,8 +910,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn icon_size(mut self, size: crate::style::FontSize) -> ViewDescriptor {
-        if let ViewDescriptor::Icon { size: s, .. } = &mut self {
+    fn icon_size(mut self, size: FontSize) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::Icon { size: s, .. } = d {
             *s = Some(size);
         } else {
             debug_assert!(false, "icon_size() modifier applied to non-Icon variant");
@@ -743,8 +920,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn selected(mut self, sel: bool) -> ViewDescriptor {
-        if let ViewDescriptor::Selectable { selected: s, .. } = &mut self {
+    fn selected(mut self, sel: bool) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::Selectable { selected: s, .. } = d {
             *s = sel;
         } else {
             debug_assert!(
@@ -755,8 +933,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn on_remove(mut self, cb: Callback) -> ViewDescriptor {
-        if let ViewDescriptor::Section { on_remove: r, .. } = &mut self {
+    fn on_remove(mut self, cb: Callback) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::Section { on_remove: r, .. } = d {
             *r = Some(cb);
         } else {
             debug_assert!(false, "on_remove() modifier applied to non-Section variant");
@@ -766,12 +945,13 @@ impl ViewDescriptor {
 
     // -- Progress / Grid / Image modifiers --
 
-    pub fn image_size(mut self, width: f32, height: f32) -> ViewDescriptor {
+    fn image_size(mut self, width: f32, height: f32) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
         if let ViewDescriptor::Image {
             width: w,
             height: h,
             ..
-        } = &mut self
+        } = d
         {
             *w = Some(width);
             *h = Some(height);
@@ -781,8 +961,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn progress_label(mut self, label: impl Into<String>) -> ViewDescriptor {
-        if let ViewDescriptor::Progress { label: l, .. } = &mut self {
+    fn progress_label(mut self, label: impl Into<String>) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::Progress { label: l, .. } = d {
             *l = Some(label.into());
         } else {
             debug_assert!(
@@ -793,8 +974,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn grid_spacing(mut self, spacing: f32) -> ViewDescriptor {
-        if let ViewDescriptor::Grid(desc) = &mut self {
+    fn grid_spacing(mut self, spacing: f32) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        if let ViewDescriptor::Grid(desc) = d {
             desc.spacing = spacing;
         } else {
             debug_assert!(false, "grid_spacing() modifier applied to non-Grid variant");
@@ -802,8 +984,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn flex_width(mut self, w: f32) -> ViewDescriptor {
-        match &mut self {
+    fn flex_width(mut self, w: f32) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        match d {
             ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => {
                 desc.flex.width = Some(w)
             }
@@ -821,8 +1004,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn flex_height(mut self, h: f32) -> ViewDescriptor {
-        match &mut self {
+    fn flex_height(mut self, h: f32) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        match d {
             ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => {
                 desc.flex.height = Some(h)
             }
@@ -840,8 +1024,9 @@ impl ViewDescriptor {
         self
     }
 
-    pub fn flex_grow(mut self, grow: f32) -> ViewDescriptor {
-        match &mut self {
+    fn flex_grow(mut self, grow: f32) -> Box<dyn Widget> {
+        let d = extract_descriptor_mut(&mut self);
+        match d {
             ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => {
                 desc.flex.flex_grow = grow
             }
@@ -919,22 +1104,55 @@ impl ContextMenuEntry {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Descriptor access utility
+// ---------------------------------------------------------------------------
+
+/// Extract the [`ViewDescriptor`] from a `Box<dyn Widget>` that was produced
+/// by a constructor. Panics if the widget is not a `DescriptorWidget`.
+pub fn into_descriptor(widget: Box<dyn Widget>) -> ViewDescriptor {
+    extract_descriptor(&widget)
+}
+
+/// Wrap a [`ViewDescriptor`] in a [`DescriptorWidget`] and return it as `Box<dyn Widget>`.
+pub fn into_descriptor_owned(descriptor: ViewDescriptor) -> Box<dyn Widget> {
+    wrap(descriptor)
+}
+
+/// Wrap a child widget in a transition container.
+pub(crate) fn wrap_transition_container(
+    child: Box<dyn Widget>,
+    transition: super::transition::Transition,
+) -> Box<dyn Widget> {
+    wrap(ViewDescriptor::TransitionContainer {
+        child: Box::new(extract_descriptor(&child)),
+        transition,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::state::{StateArena, ViewId};
     use super::*;
-    use katla_math::{Color, Vec2};
 
     fn dummy_state_id() -> StateId {
         let mut arena = StateArena::default();
         arena.get_or_create(ViewId::default(), 0usize)
     }
 
+    fn desc(w: Box<dyn Widget>) -> ViewDescriptor {
+        w.as_any()
+            .downcast_ref::<DescriptorWidget>()
+            .expect("expected DescriptorWidget")
+            .descriptor()
+            .clone()
+    }
+
     // -- Leaf constructor tests --
 
     #[test]
     fn test_empty() {
-        assert!(matches!(empty(), ViewDescriptor::Empty));
+        assert!(matches!(desc(empty()), ViewDescriptor::Empty));
     }
 
     #[test]
@@ -943,7 +1161,7 @@ mod tests {
             content,
             color,
             font_size,
-        } = text("hello")
+        } = desc(text("hello"))
         else {
             panic!("expected Text");
         };
@@ -960,7 +1178,7 @@ mod tests {
             hover_color,
             border_color,
             on_click,
-        } = button("ok")
+        } = desc(button("ok"))
         else {
             panic!("expected Button");
         };
@@ -978,7 +1196,7 @@ mod tests {
             enabled,
             fill_color,
             on_click,
-        } = image_button('X')
+        } = desc(image_button('X'))
         else {
             panic!("expected ImageButton");
         };
@@ -997,7 +1215,7 @@ mod tests {
             range: _,
             show_value,
             precision,
-        } = slider("vol", id, 0.0..=1.0)
+        } = desc(slider("vol", id, 0.0..=1.0))
         else {
             panic!("expected Slider")
         };
@@ -1017,7 +1235,7 @@ mod tests {
             label_width,
             show_value,
             precision,
-        } = labeled_slider("vol", id, 0.0..=1.0)
+        } = desc(labeled_slider("vol", id, 0.0..=1.0))
         else {
             panic!("expected LabeledSlider")
         };
@@ -1034,7 +1252,7 @@ mod tests {
             placeholder,
             value_id: _,
             on_submit,
-        } = textfield("type here", id)
+        } = desc(textfield("type here", id))
         else {
             panic!("expected TextField")
         };
@@ -1049,7 +1267,7 @@ mod tests {
             range: _,
             fill_color,
             ..
-        } = progress(0.5, 0.0..=1.0)
+        } = desc(progress(0.5, 0.0..=1.0))
         else {
             panic!("expected Progress")
         };
@@ -1060,7 +1278,7 @@ mod tests {
     #[test]
     fn test_toggle_constructor() {
         let id = dummy_state_id();
-        let ViewDescriptor::Toggle { label, value_id: _ } = toggle("on", id) else {
+        let ViewDescriptor::Toggle { label, value_id: _ } = desc(toggle("on", id)) else {
             panic!("expected Toggle");
         };
         assert_eq!(label, "on");
@@ -1073,7 +1291,7 @@ mod tests {
             value_id: _,
             index,
             label,
-        } = radio(id, 2, "opt")
+        } = desc(radio(id, 2, "opt"))
         else {
             panic!("expected RadioButton");
         };
@@ -1083,7 +1301,7 @@ mod tests {
 
     #[test]
     fn test_property_row_constructor() {
-        let ViewDescriptor::PropertyRow { label, value } = property_row("key", "val") else {
+        let ViewDescriptor::PropertyRow { label, value } = desc(property_row("key", "val")) else {
             panic!("expected PropertyRow");
         };
         assert_eq!(label, "key");
@@ -1093,7 +1311,8 @@ mod tests {
     #[test]
     fn test_color_picker_constructor() {
         let id = StateId::test_id();
-        let ViewDescriptor::ColorPicker { label, value_id } = color_picker("Pick color", id) else {
+        let ViewDescriptor::ColorPicker { label, value_id } = desc(color_picker("Pick color", id))
+        else {
             panic!("expected ColorPicker");
         };
         assert_eq!(label, "Pick color");
@@ -1106,7 +1325,7 @@ mod tests {
         let id = StateId::test_id();
         let a = color_picker("Color A", id);
         let b = color_picker("Color B", id);
-        assert_eq!(diff_descriptor(&a, &b), DiffAction::Update);
+        assert_eq!(diff_descriptor(&desc(a), &desc(b)), DiffAction::Update);
     }
 
     #[test]
@@ -1115,7 +1334,7 @@ mod tests {
         let id = StateId::test_id();
         let a = color_picker("Color", id);
         let b = text("Not a color picker");
-        assert_eq!(diff_descriptor(&a, &b), DiffAction::Replace);
+        assert_eq!(diff_descriptor(&desc(a), &desc(b)), DiffAction::Replace);
     }
 
     #[test]
@@ -1125,27 +1344,8 @@ mod tests {
         let state_id = arena.get_or_create(view_id, 0.5f32);
         let _picker = color_picker("Color", state_id);
         arena.set(state_id, 0.8f32);
-        let value: f32 = arena.get(state_id);
+        let value: f32 = arena.get(state_id).unwrap();
         assert!((value - 0.8).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn test_color_picker_in_container() {
-        let id = StateId::test_id();
-        let picker = color_picker("Color", id);
-        let label = text("Label");
-        let ViewDescriptor::VStack(desc) = vstack([picker, label]) else {
-            panic!("expected VStack");
-        };
-        assert_eq!(desc.children.len(), 2);
-        assert!(matches!(
-            desc.children[0].descriptor,
-            ViewDescriptor::ColorPicker { .. }
-        ));
-        assert!(matches!(
-            desc.children[1].descriptor,
-            ViewDescriptor::Text { .. }
-        ));
     }
 
     #[test]
@@ -1158,7 +1358,7 @@ mod tests {
             axis_labels,
             axis_colors,
             precision,
-        } = vec3_slider("position", ids, -10.0..=10.0)
+        } = desc(vec3_slider("position", ids, -10.0..=10.0))
         else {
             panic!("expected Vec3Slider");
         };
@@ -1166,69 +1366,76 @@ mod tests {
         assert_eq!(value_ids, ids);
         assert_eq!(range, -10.0..=10.0);
         assert_eq!(axis_labels, ["X", "Y", "Z"]);
-        assert_eq!(axis_colors, [Color::RED, Color::GREEN, Color::BLUE]);
+        assert_eq!(
+            axis_colors,
+            [
+                katla_math::Color::RED,
+                katla_math::Color::GREEN,
+                katla_math::Color::BLUE
+            ]
+        );
         assert_eq!(precision, 2);
     }
 
     #[test]
     fn test_image_constructor() {
-        let vd = image(TextureId(42), Color::WHITE);
+        let vd = image(TextureId(42), katla_math::Color::WHITE);
         let ViewDescriptor::Image {
             texture, uv, tint, ..
-        } = vd
+        } = desc(vd)
         else {
             panic!("expected Image")
         };
         assert_eq!(texture.0, 42);
         assert!(uv.is_none());
-        assert_eq!(tint, Color::WHITE);
+        assert_eq!(tint, katla_math::Color::WHITE);
     }
 
     // -- Container constructor tests --
 
     #[test]
     fn test_hstack_defaults() {
-        let ViewDescriptor::HStack(desc) = hstack([text("a"), text("b")]) else {
+        let ViewDescriptor::HStack(d) = desc(hstack([text("a"), text("b")])) else {
             panic!("expected HStack");
         };
-        assert_eq!(desc.children.len(), 2);
-        assert_eq!(desc.spacing, 0.0);
-        assert_eq!(desc.padding, Padding::zero());
-        assert_eq!(desc.alignment, Alignment::Leading);
+        assert_eq!(d.children.len(), 2);
+        assert_eq!(d.spacing, 0.0);
+        assert_eq!(d.padding, Padding::zero());
+        assert_eq!(d.alignment, Alignment::Leading);
     }
 
     #[test]
     fn test_vstack_defaults() {
-        let ViewDescriptor::VStack(desc) = vstack([text("a")]) else {
+        let ViewDescriptor::VStack(d) = desc(vstack([text("a")])) else {
             panic!("expected VStack");
         };
-        assert_eq!(desc.children.len(), 1);
+        assert_eq!(d.children.len(), 1);
     }
 
     #[test]
     fn test_zstack_defaults() {
         let vd = zstack([(Alignment::Center, text("c"))]);
-        let ViewDescriptor::ZStack(desc) = vd else {
+        let ViewDescriptor::ZStack(d) = desc(vd) else {
             panic!("expected ZStack")
         };
-        assert_eq!(desc.children.len(), 1);
-        assert_eq!(desc.padding, Padding::zero());
+        assert_eq!(d.children.len(), 1);
+        assert_eq!(d.padding, Padding::zero());
     }
 
     #[test]
     fn test_panel_defaults() {
-        let ViewDescriptor::Panel(desc) = panel("title", text("body")) else {
+        let ViewDescriptor::Panel(d) = desc(panel("title", text("body"))) else {
             panic!("expected Panel");
         };
-        assert_eq!(desc.title, "title");
-        assert_eq!(desc.header_height, 24.0);
+        assert_eq!(d.title, "title");
+        assert_eq!(d.header_height, 24.0);
     }
 
     #[test]
     fn test_scroll_constructor() {
         let id = dummy_state_id();
         assert!(matches!(
-            scroll(text("c"), id),
+            desc(scroll(text("c"), id)),
             ViewDescriptor::ScrollView(_)
         ));
     }
@@ -1236,7 +1443,7 @@ mod tests {
     #[test]
     fn test_overlay_constructor() {
         assert!(matches!(
-            overlay(Anchor::TopLeft, Vec2::ZERO, text("o")),
+            desc(overlay(Anchor::TopLeft, Vec2::ZERO, text("o"))),
             ViewDescriptor::Overlay(_)
         ));
     }
@@ -1244,7 +1451,7 @@ mod tests {
     #[test]
     fn test_statusbar_constructor() {
         assert!(matches!(
-            statusbar(24.0, text("s")),
+            desc(statusbar(24.0, text("s"))),
             ViewDescriptor::StatusBar(_)
         ));
     }
@@ -1252,42 +1459,42 @@ mod tests {
     #[test]
     fn test_draggable_panel_defaults() {
         let id = dummy_state_id();
-        let ViewDescriptor::DraggablePanel(desc) =
-            draggable_panel("p", 200.0, 300.0, text("c"), id)
+        let ViewDescriptor::DraggablePanel(d) =
+            desc(draggable_panel("p", 200.0, 300.0, text("c"), id))
         else {
             panic!("expected DraggablePanel");
         };
-        assert_eq!(desc.title, "p");
-        assert_eq!(desc.width, 200.0);
-        assert!(!desc.close_on_outside_click);
+        assert_eq!(d.title, "p");
+        assert_eq!(d.width, 200.0);
+        assert!(!d.close_on_outside_click);
     }
 
     #[test]
     fn test_menubar_defaults() {
-        let ViewDescriptor::MenuBar(desc) = menubar(vec![]) else {
+        let ViewDescriptor::MenuBar(d) = desc(menubar(vec![])) else {
             panic!("expected MenuBar");
         };
-        assert!(desc.right_content.is_none());
-        assert_eq!(desc.height, 28.0);
+        assert!(d.right_content.is_none());
+        assert_eq!(d.height, 28.0);
     }
 
     #[test]
     fn test_tree_view_defaults() {
         let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
-        let ViewDescriptor::TreeView(desc) = tree_view(vec![], e, s, sc) else {
+        let ViewDescriptor::TreeView(d) = desc(tree_view(vec![], e, s, sc)) else {
             panic!("expected TreeView");
         };
-        assert_eq!(desc.row_height, 20.0);
-        assert_eq!(desc.indent_per_level, 16.0);
-        assert!(desc.on_select.is_none());
-        assert!(desc.on_right_click.is_none());
+        assert_eq!(d.row_height, 20.0);
+        assert_eq!(d.indent_per_level, 16.0);
+        assert!(d.on_select.is_none());
+        assert!(d.on_right_click.is_none());
     }
 
     #[test]
     fn test_modal_constructor() {
         let id = dummy_state_id();
         assert!(matches!(
-            modal(400.0, 300.0, id, text("m")),
+            desc(modal(400.0, 300.0, id, text("m"))),
             ViewDescriptor::Modal(_)
         ));
     }
@@ -1296,26 +1503,26 @@ mod tests {
     fn test_context_menu_constructor() {
         let id = dummy_state_id();
         assert!(matches!(
-            context_menu(vec![], id),
+            desc(context_menu(vec![], id)),
             ViewDescriptor::ContextMenu(_)
         ));
     }
 
-    // -- Modifier tests --
+    // -- Modifier tests (via WidgetExt) --
 
     #[test]
     fn test_color_modifier() {
-        let vd = text("hi").color(Color::RED);
-        let ViewDescriptor::Text { color, .. } = vd else {
+        let vd = text("hi").color(katla_math::Color::RED);
+        let ViewDescriptor::Text { color, .. } = desc(vd) else {
             panic!("expected Text")
         };
-        assert_eq!(color, Some(Color::RED));
+        assert_eq!(color, Some(katla_math::Color::RED));
     }
 
     #[test]
     fn test_font_size_modifier() {
         let vd = text("hi").font_size(FontSize::Small);
-        let ViewDescriptor::Text { font_size, .. } = vd else {
+        let ViewDescriptor::Text { font_size, .. } = desc(vd) else {
             panic!("expected Text")
         };
         assert_eq!(font_size, Some(FontSize::Small));
@@ -1323,53 +1530,53 @@ mod tests {
 
     #[test]
     fn test_fill_modifier_button() {
-        let vd = button("ok").fill(Color::BLUE);
-        let ViewDescriptor::Button { fill_color, .. } = vd else {
+        let vd = button("ok").fill(katla_math::Color::BLUE);
+        let ViewDescriptor::Button { fill_color, .. } = desc(vd) else {
             panic!("expected Button")
         };
-        assert_eq!(fill_color, Some(Color::BLUE));
+        assert_eq!(fill_color, Some(katla_math::Color::BLUE));
     }
 
     #[test]
     fn test_fill_modifier_image_button() {
-        let vd = image_button('X').fill(Color::GREEN);
-        let ViewDescriptor::ImageButton { fill_color, .. } = vd else {
+        let vd = image_button('X').fill(katla_math::Color::GREEN);
+        let ViewDescriptor::ImageButton { fill_color, .. } = desc(vd) else {
             panic!("expected ImageButton")
         };
-        assert_eq!(fill_color, Some(Color::GREEN));
+        assert_eq!(fill_color, Some(katla_math::Color::GREEN));
     }
 
     #[test]
     fn test_fill_modifier_progress() {
-        let vd = progress(0.5, 0.0..=1.0).fill(Color::WHITE);
-        let ViewDescriptor::Progress { fill_color, .. } = vd else {
+        let vd = progress(0.5, 0.0..=1.0).fill(katla_math::Color::WHITE);
+        let ViewDescriptor::Progress { fill_color, .. } = desc(vd) else {
             panic!("expected Progress")
         };
-        assert_eq!(fill_color, Some(Color::WHITE));
+        assert_eq!(fill_color, Some(katla_math::Color::WHITE));
     }
 
     #[test]
     fn test_hover_modifier() {
-        let vd = button("ok").hover(Color::RED);
-        let ViewDescriptor::Button { hover_color, .. } = vd else {
+        let vd = button("ok").hover(katla_math::Color::RED);
+        let ViewDescriptor::Button { hover_color, .. } = desc(vd) else {
             panic!("expected Button")
         };
-        assert_eq!(hover_color, Some(Color::RED));
+        assert_eq!(hover_color, Some(katla_math::Color::RED));
     }
 
     #[test]
     fn test_border_modifier() {
-        let vd = button("ok").border(Color::BLACK);
-        let ViewDescriptor::Button { border_color, .. } = vd else {
+        let vd = button("ok").border(katla_math::Color::BLACK);
+        let ViewDescriptor::Button { border_color, .. } = desc(vd) else {
             panic!("expected Button")
         };
-        assert_eq!(border_color, Some(Color::BLACK));
+        assert_eq!(border_color, Some(katla_math::Color::BLACK));
     }
 
     #[test]
     fn test_enabled_modifier() {
         let vd = image_button('X').enabled(false);
-        let ViewDescriptor::ImageButton { enabled, .. } = vd else {
+        let ViewDescriptor::ImageButton { enabled, .. } = desc(vd) else {
             panic!("expected ImageButton")
         };
         assert!(!enabled);
@@ -1379,7 +1586,7 @@ mod tests {
     fn test_show_value_modifier_slider() {
         let id = dummy_state_id();
         let vd = slider("s", id, 0.0..=1.0).show_value(true);
-        let ViewDescriptor::Slider { show_value, .. } = vd else {
+        let ViewDescriptor::Slider { show_value, .. } = desc(vd) else {
             panic!("expected Slider")
         };
         assert!(show_value);
@@ -1389,7 +1596,7 @@ mod tests {
     fn test_show_value_modifier_labeled_slider() {
         let id = dummy_state_id();
         let vd = labeled_slider("s", id, 0.0..=1.0).show_value(true);
-        let ViewDescriptor::LabeledSlider { show_value, .. } = vd else {
+        let ViewDescriptor::LabeledSlider { show_value, .. } = desc(vd) else {
             panic!("expected LabeledSlider")
         };
         assert!(show_value);
@@ -1399,7 +1606,7 @@ mod tests {
     fn test_precision_modifier() {
         let id = dummy_state_id();
         let vd = slider("s", id, 0.0..=1.0).precision(4);
-        let ViewDescriptor::Slider { precision, .. } = vd else {
+        let ViewDescriptor::Slider { precision, .. } = desc(vd) else {
             panic!("expected Slider")
         };
         assert_eq!(precision, 4);
@@ -1409,7 +1616,7 @@ mod tests {
     fn test_label_width_modifier() {
         let id = dummy_state_id();
         let vd = labeled_slider("s", id, 0.0..=1.0).label_width(120.0);
-        let ViewDescriptor::LabeledSlider { label_width, .. } = vd else {
+        let ViewDescriptor::LabeledSlider { label_width, .. } = desc(vd) else {
             panic!("expected LabeledSlider")
         };
         assert_eq!(label_width, 120.0);
@@ -1417,9 +1624,9 @@ mod tests {
 
     #[test]
     fn test_uv_modifier() {
-        let vd = image(TextureId(1), Color::WHITE)
+        let vd = image(TextureId(1), katla_math::Color::WHITE)
             .uv(katla_math::Rect2D::new(Vec2::ZERO, Vec2::new(1.0, 1.0)));
-        let ViewDescriptor::Image { uv, .. } = vd else {
+        let ViewDescriptor::Image { uv, .. } = desc(vd) else {
             panic!("expected Image")
         };
         assert!(uv.is_some());
@@ -1430,94 +1637,94 @@ mod tests {
     #[test]
     fn test_spacing_modifier() {
         let vd = hstack([text("a")]).spacing(8.0);
-        let ViewDescriptor::HStack(desc) = vd else {
+        let ViewDescriptor::HStack(d) = desc(vd) else {
             panic!("expected HStack")
         };
-        assert_eq!(desc.spacing, 8.0);
+        assert_eq!(d.spacing, 8.0);
     }
 
     #[test]
     fn test_padding_modifier() {
         let vd = vstack([text("a")]).padding(Padding::all(10.0));
-        let ViewDescriptor::VStack(desc) = vd else {
+        let ViewDescriptor::VStack(d) = desc(vd) else {
             panic!("expected VStack")
         };
-        assert_eq!(desc.padding, Padding::all(10.0));
+        assert_eq!(d.padding, Padding::all(10.0));
     }
 
     #[test]
     fn test_padding_all_modifier() {
         let vd = zstack([]).padding_all(12.0);
-        let ViewDescriptor::ZStack(desc) = vd else {
+        let ViewDescriptor::ZStack(d) = desc(vd) else {
             panic!("expected ZStack")
         };
-        assert_eq!(desc.padding, Padding::all(12.0));
+        assert_eq!(d.padding, Padding::all(12.0));
     }
 
     #[test]
     fn test_align_modifier() {
         let vd = hstack([]).align(Alignment::Center);
-        let ViewDescriptor::HStack(desc) = vd else {
+        let ViewDescriptor::HStack(d) = desc(vd) else {
             panic!("expected HStack")
         };
-        assert_eq!(desc.alignment, Alignment::Center);
+        assert_eq!(d.alignment, Alignment::Center);
     }
 
     #[test]
     fn test_header_height_modifier() {
         let vd = panel("t", text("c")).header_height(32.0);
-        let ViewDescriptor::Panel(desc) = vd else {
+        let ViewDescriptor::Panel(d) = desc(vd) else {
             panic!("expected Panel")
         };
-        assert_eq!(desc.header_height, 32.0);
+        assert_eq!(d.header_height, 32.0);
     }
 
     #[test]
     fn test_close_on_outside_modifier() {
         let id = dummy_state_id();
         let vd = draggable_panel("p", 200.0, 300.0, text("c"), id).close_on_outside(true);
-        let ViewDescriptor::DraggablePanel(desc) = vd else {
+        let ViewDescriptor::DraggablePanel(d) = desc(vd) else {
             panic!("expected DraggablePanel")
         };
-        assert!(desc.close_on_outside_click);
+        assert!(d.close_on_outside_click);
     }
 
     #[test]
     fn test_right_content_modifier() {
         let vd = menubar(vec![]).right_content(text("r"));
-        let ViewDescriptor::MenuBar(desc) = vd else {
+        let ViewDescriptor::MenuBar(d) = desc(vd) else {
             panic!("expected MenuBar")
         };
-        assert!(desc.right_content.is_some());
+        assert!(d.right_content.is_some());
     }
 
     #[test]
     fn test_menubar_height_modifier() {
         let vd = menubar(vec![]).menubar_height(40.0);
-        let ViewDescriptor::MenuBar(desc) = vd else {
+        let ViewDescriptor::MenuBar(d) = desc(vd) else {
             panic!("expected MenuBar")
         };
-        assert_eq!(desc.height, 40.0);
+        assert_eq!(d.height, 40.0);
     }
 
     #[test]
     fn test_row_height_modifier() {
         let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
         let vd = tree_view(vec![], e, s, sc).row_height(30.0);
-        let ViewDescriptor::TreeView(desc) = vd else {
+        let ViewDescriptor::TreeView(d) = desc(vd) else {
             panic!("expected TreeView")
         };
-        assert_eq!(desc.row_height, 30.0);
+        assert_eq!(d.row_height, 30.0);
     }
 
     #[test]
     fn test_indent_modifier() {
         let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
         let vd = tree_view(vec![], e, s, sc).indent(24.0);
-        let ViewDescriptor::TreeView(desc) = vd else {
+        let ViewDescriptor::TreeView(d) = desc(vd) else {
             panic!("expected TreeView")
         };
-        assert_eq!(desc.indent_per_level, 24.0);
+        assert_eq!(d.indent_per_level, 24.0);
     }
 
     // -- Chained modifier test --
@@ -1529,13 +1736,13 @@ mod tests {
             .padding_all(4.0)
             .align(Alignment::Center);
 
-        let ViewDescriptor::HStack(desc) = vd else {
+        let ViewDescriptor::HStack(d) = desc(vd) else {
             panic!("expected HStack")
         };
-        assert_eq!(desc.spacing, 8.0);
-        assert_eq!(desc.padding, Padding::all(4.0));
-        assert_eq!(desc.alignment, Alignment::Center);
-        assert_eq!(desc.children.len(), 2);
+        assert_eq!(d.spacing, 8.0);
+        assert_eq!(d.padding, Padding::all(4.0));
+        assert_eq!(d.alignment, Alignment::Center);
+        assert_eq!(d.children.len(), 2);
     }
 
     // -- Separator tests --
@@ -1543,53 +1750,44 @@ mod tests {
     #[test]
     fn test_separator_defaults() {
         let ViewDescriptor::Separator { direction, color } =
-            separator(super::super::descriptor::SeparatorDirection::Horizontal)
+            desc(separator(SeparatorDirection::Horizontal))
         else {
             panic!("expected Separator")
         };
-        assert_eq!(
-            direction,
-            super::super::descriptor::SeparatorDirection::Horizontal
-        );
+        assert_eq!(direction, SeparatorDirection::Horizontal);
         assert!(color.is_none());
     }
 
     #[test]
     fn test_separator_horizontal_shortcut() {
-        let ViewDescriptor::Separator { direction, .. } = separator_horizontal() else {
+        let ViewDescriptor::Separator { direction, .. } = desc(separator_horizontal()) else {
             panic!("expected Separator")
         };
-        assert_eq!(
-            direction,
-            super::super::descriptor::SeparatorDirection::Horizontal
-        );
+        assert_eq!(direction, SeparatorDirection::Horizontal);
     }
 
     #[test]
     fn test_separator_vertical_shortcut() {
-        let ViewDescriptor::Separator { direction, .. } = separator_vertical() else {
+        let ViewDescriptor::Separator { direction, .. } = desc(separator_vertical()) else {
             panic!("expected Separator")
         };
-        assert_eq!(
-            direction,
-            super::super::descriptor::SeparatorDirection::Vertical
-        );
+        assert_eq!(direction, SeparatorDirection::Vertical);
     }
 
     #[test]
     fn test_separator_color_modifier() {
-        let vd = separator_horizontal().separator_color(Color::RED);
-        let ViewDescriptor::Separator { color, .. } = vd else {
+        let vd = separator_horizontal().separator_color(katla_math::Color::RED);
+        let ViewDescriptor::Separator { color, .. } = desc(vd) else {
             panic!("expected Separator")
         };
-        assert_eq!(color, Some(Color::RED));
+        assert_eq!(color, Some(katla_math::Color::RED));
     }
 
     // -- Icon tests --
 
     #[test]
     fn test_icon_defaults() {
-        let ViewDescriptor::Icon { icon, size, color } = icon('X') else {
+        let ViewDescriptor::Icon { icon, size, color } = desc(super::icon('X')) else {
             panic!("expected Icon")
         };
         assert_eq!(icon, 'X');
@@ -1599,20 +1797,20 @@ mod tests {
 
     #[test]
     fn test_icon_size_modifier() {
-        let vd = icon('A').icon_size(crate::style::FontSize::Large);
-        let ViewDescriptor::Icon { size, .. } = vd else {
+        let vd = super::icon('A').icon_size(FontSize::Large);
+        let ViewDescriptor::Icon { size, .. } = desc(vd) else {
             panic!("expected Icon")
         };
-        assert_eq!(size, Some(crate::style::FontSize::Large));
+        assert_eq!(size, Some(FontSize::Large));
     }
 
     #[test]
     fn test_icon_color_modifier() {
-        let vd = icon('B').color(Color::GREEN);
-        let ViewDescriptor::Icon { color, .. } = vd else {
+        let vd = super::icon('B').color(katla_math::Color::GREEN);
+        let ViewDescriptor::Icon { color, .. } = desc(vd) else {
             panic!("expected Icon")
         };
-        assert_eq!(color, Some(Color::GREEN));
+        assert_eq!(color, Some(katla_math::Color::GREEN));
     }
 
     // -- Selectable tests --
@@ -1623,7 +1821,7 @@ mod tests {
             on_click,
             selected,
             child,
-        } = selectable(text("item"))
+        } = desc(selectable(text("item")))
         else {
             panic!("expected Selectable")
         };
@@ -1635,7 +1833,7 @@ mod tests {
     #[test]
     fn test_selectable_selected_modifier() {
         let vd = selectable(text("x")).selected(true);
-        let ViewDescriptor::Selectable { selected, .. } = vd else {
+        let ViewDescriptor::Selectable { selected, .. } = desc(vd) else {
             panic!("expected Selectable")
         };
         assert!(selected);
@@ -1644,7 +1842,7 @@ mod tests {
     #[test]
     fn test_selectable_on_click_modifier() {
         let vd = selectable(text("x")).on_click(Callback(42));
-        let ViewDescriptor::Selectable { on_click, .. } = vd else {
+        let ViewDescriptor::Selectable { on_click, .. } = desc(vd) else {
             panic!("expected Selectable")
         };
         assert!(on_click.is_some());
@@ -1660,7 +1858,7 @@ mod tests {
             expanded_id,
             on_remove,
             child,
-        } = section("My Section", text("content"), id)
+        } = desc(section("My Section", text("content"), id))
         else {
             panic!("expected Section")
         };
@@ -1674,7 +1872,7 @@ mod tests {
     fn test_section_on_remove_modifier() {
         let id = dummy_state_id();
         let vd = section("s", text("c"), id).on_remove(Callback(99));
-        let ViewDescriptor::Section { on_remove, .. } = vd else {
+        let ViewDescriptor::Section { on_remove, .. } = desc(vd) else {
             panic!("expected Section")
         };
         assert!(on_remove.is_some());
@@ -1685,15 +1883,17 @@ mod tests {
     #[test]
     fn test_tab_bar_defaults() {
         let id = dummy_state_id();
-        let ViewDescriptor::TabBar(desc) =
-            tab_bar(vec![tab_item("A"), tab_item("B")], id, text("content"))
-        else {
+        let ViewDescriptor::TabBar(d) = desc(tab_bar(
+            vec![tab_item("A"), tab_item("B")],
+            id,
+            text("content"),
+        )) else {
             panic!("expected TabBar")
         };
-        assert_eq!(desc.tabs.len(), 2);
-        assert_eq!(desc.tabs[0].label, "A");
-        assert_eq!(desc.selected_id, id);
-        assert!(matches!(*desc.content, ViewDescriptor::Text { .. }));
+        assert_eq!(d.tabs.len(), 2);
+        assert_eq!(d.tabs[0].label, "A");
+        assert_eq!(d.selected_id, id);
+        assert!(matches!(*d.content, ViewDescriptor::Text { .. }));
     }
 
     // -- Grid tests --
@@ -1701,32 +1901,33 @@ mod tests {
     #[test]
     fn test_grid_defaults() {
         let vd = grid(3, Vec2::new(100.0, 50.0), [text("a"), text("b"), text("c")]);
-        let ViewDescriptor::Grid(desc) = vd else {
+        let ViewDescriptor::Grid(d) = desc(vd) else {
             panic!("expected Grid")
         };
-        assert_eq!(desc.columns, 3);
-        assert_eq!(desc.cell_size, Vec2::new(100.0, 50.0));
-        assert_eq!(desc.spacing, 0.0);
-        assert_eq!(desc.children.len(), 3);
+        assert_eq!(d.columns, 3);
+        assert_eq!(d.cell_size, Vec2::new(100.0, 50.0));
+        assert_eq!(d.spacing, 0.0);
+        assert_eq!(d.children.len(), 3);
     }
 
     #[test]
     fn test_grid_spacing_modifier() {
         let vd = grid(2, Vec2::new(50.0, 50.0), []).grid_spacing(8.0);
-        let ViewDescriptor::Grid { .. } = vd else {
+        let d = desc(vd);
+        let ViewDescriptor::Grid { .. } = d else {
             panic!("expected Grid")
         };
-        let ViewDescriptor::Grid(desc) = vd else {
+        let ViewDescriptor::Grid(d) = d else {
             panic!("expected Grid")
         };
-        assert_eq!(desc.spacing, 8.0);
+        assert_eq!(d.spacing, 8.0);
     }
 
     // -- Progress label tests --
 
     #[test]
     fn test_progress_defaults_no_label() {
-        let ViewDescriptor::Progress { label, .. } = progress(0.5, 0.0..=1.0) else {
+        let ViewDescriptor::Progress { label, .. } = desc(progress(0.5, 0.0..=1.0)) else {
             panic!("expected Progress")
         };
         assert!(label.is_none());
@@ -1735,7 +1936,7 @@ mod tests {
     #[test]
     fn test_progress_label_modifier() {
         let vd = progress(0.5, 0.0..=1.0).progress_label("50%");
-        let ViewDescriptor::Progress { label, .. } = vd else {
+        let ViewDescriptor::Progress { label, .. } = desc(vd) else {
             panic!("expected Progress")
         };
         assert_eq!(label, Some("50%".to_string()));
@@ -1746,7 +1947,7 @@ mod tests {
     #[test]
     fn test_on_click_modifier_button() {
         let vd = button("ok").on_click(Callback(1));
-        let ViewDescriptor::Button { on_click, .. } = vd else {
+        let ViewDescriptor::Button { on_click, .. } = desc(vd) else {
             panic!("expected Button")
         };
         assert!(on_click.is_some());
@@ -1755,7 +1956,7 @@ mod tests {
     #[test]
     fn test_on_click_modifier_image_button() {
         let vd = image_button('X').on_click(Callback(2));
-        let ViewDescriptor::ImageButton { on_click, .. } = vd else {
+        let ViewDescriptor::ImageButton { on_click, .. } = desc(vd) else {
             panic!("expected ImageButton")
         };
         assert!(on_click.is_some());
@@ -1767,7 +1968,7 @@ mod tests {
     fn test_on_submit_modifier() {
         let id = dummy_state_id();
         let vd = textfield("ph", id).on_submit(Callback(3));
-        let ViewDescriptor::TextField { on_submit, .. } = vd else {
+        let ViewDescriptor::TextField { on_submit, .. } = desc(vd) else {
             panic!("expected TextField")
         };
         assert!(on_submit.is_some());
@@ -1779,72 +1980,72 @@ mod tests {
     fn test_on_select_modifier() {
         let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
         let vd = tree_view(vec![], e, s, sc).on_select(Callback(10));
-        let ViewDescriptor::TreeView(desc) = vd else {
+        let ViewDescriptor::TreeView(d) = desc(vd) else {
             panic!("expected TreeView")
         };
-        assert!(desc.on_select.is_some());
+        assert!(d.on_select.is_some());
     }
 
     #[test]
     fn test_on_right_click_modifier() {
         let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
         let vd = tree_view(vec![], e, s, sc).on_right_click(Callback(11));
-        let ViewDescriptor::TreeView(desc) = vd else {
+        let ViewDescriptor::TreeView(d) = desc(vd) else {
             panic!("expected TreeView")
         };
-        assert!(desc.on_right_click.is_some());
+        assert!(d.on_right_click.is_some());
     }
 
     // -- Keyed constructor tests --
 
     #[test]
     fn test_keyed_helper() {
-        let cd = keyed(42, text("k"));
-        assert_eq!(cd.key, Some(42));
-        assert!(matches!(cd.descriptor, ViewDescriptor::Text { .. }));
+        let kc = keyed(42, text("k"));
+        assert_eq!(kc.key, Some(42));
+        assert!(matches!(desc(kc.widget), ViewDescriptor::Text { .. }));
     }
 
     #[test]
     fn test_hstack_keyed_constructor() {
         let children = vec![keyed(1, text("a")), keyed(2, text("b"))];
-        let ViewDescriptor::HStack(desc) = hstack_keyed(children) else {
+        let ViewDescriptor::HStack(d) = desc(hstack_keyed(children)) else {
             panic!("expected HStack")
         };
-        assert_eq!(desc.children.len(), 2);
-        assert_eq!(desc.children[0].key, Some(1));
-        assert_eq!(desc.children[1].key, Some(2));
+        assert_eq!(d.children.len(), 2);
+        assert_eq!(d.children[0].key, Some(1));
+        assert_eq!(d.children[1].key, Some(2));
     }
 
     #[test]
     fn test_vstack_keyed_constructor() {
         let children = vec![keyed(10, text("x"))];
-        let ViewDescriptor::VStack(desc) = vstack_keyed(children) else {
+        let ViewDescriptor::VStack(d) = desc(vstack_keyed(children)) else {
             panic!("expected VStack")
         };
-        assert_eq!(desc.children.len(), 1);
-        assert_eq!(desc.children[0].key, Some(10));
+        assert_eq!(d.children.len(), 1);
+        assert_eq!(d.children[0].key, Some(10));
     }
 
     #[test]
     fn test_zstack_keyed_constructor() {
         let children = vec![(Alignment::Center, keyed(5, text("z")))];
-        let ViewDescriptor::ZStack(desc) = zstack_keyed(children) else {
+        let ViewDescriptor::ZStack(d) = desc(zstack_keyed(children)) else {
             panic!("expected ZStack")
         };
-        assert_eq!(desc.children.len(), 1);
-        assert_eq!(desc.children[0].0, Alignment::Center);
-        assert_eq!(desc.children[0].1.key, Some(5));
+        assert_eq!(d.children.len(), 1);
+        assert_eq!(d.children[0].0, Alignment::Center);
+        assert_eq!(d.children[0].1.key, Some(5));
     }
 
     #[test]
     fn test_grid_keyed_constructor() {
         let children = vec![keyed(1, text("a")), keyed(2, text("b"))];
-        let ViewDescriptor::Grid(desc) = grid_keyed(2, Vec2::new(50.0, 50.0), children) else {
+        let ViewDescriptor::Grid(d) = desc(grid_keyed(2, Vec2::new(50.0, 50.0), children)) else {
             panic!("expected Grid")
         };
-        assert_eq!(desc.columns, 2);
-        assert_eq!(desc.children.len(), 2);
-        assert_eq!(desc.children[0].key, Some(1));
+        assert_eq!(d.columns, 2);
+        assert_eq!(d.children.len(), 2);
+        assert_eq!(d.children[0].key, Some(1));
     }
 
     // -- Menu helper tests --
@@ -1898,26 +2099,24 @@ mod tests {
     }
 
     // -- Misapplied modifier no-op tests (release only) --
-    // In debug builds, misapplied modifiers fire debug_assert! (intentional panic).
-    // In release builds, they silently no-op. Verify the descriptor is unchanged.
 
     #[cfg(not(debug_assertions))]
     #[test]
     fn test_color_on_hstack_is_noop() {
-        let vd = hstack([text("a")]).color(Color::RED);
-        let ViewDescriptor::HStack(desc) = vd else {
+        let vd = hstack([text("a")]).color(katla_math::Color::RED);
+        let ViewDescriptor::HStack(d) = desc(vd) else {
             panic!("expected HStack")
         };
-        assert_eq!(desc.children.len(), 1);
+        assert_eq!(d.children.len(), 1);
     }
 
     #[cfg(not(debug_assertions))]
     #[test]
     fn test_fill_on_text_is_noop() {
-        let vd = text("hi").fill(Color::BLUE);
+        let vd = text("hi").fill(katla_math::Color::BLUE);
         let ViewDescriptor::Text {
             color, font_size, ..
-        } = vd
+        } = desc(vd)
         else {
             panic!("expected Text")
         };
@@ -1929,7 +2128,7 @@ mod tests {
     #[test]
     fn test_spacing_on_text_is_noop() {
         let vd = text("hi").spacing(10.0);
-        assert!(matches!(vd, ViewDescriptor::Text { .. }));
+        assert!(matches!(desc(vd), ViewDescriptor::Text { .. }));
     }
 
     #[cfg(not(debug_assertions))]
@@ -1940,7 +2139,7 @@ mod tests {
             fill_color,
             on_click,
             ..
-        } = vd
+        } = desc(vd)
         else {
             panic!("expected Button")
         };
@@ -1952,6 +2151,6 @@ mod tests {
     #[test]
     fn test_font_size_on_button_is_noop() {
         let vd = button("ok").font_size(FontSize::Small);
-        assert!(matches!(vd, ViewDescriptor::Button { .. }));
+        assert!(matches!(desc(vd), ViewDescriptor::Button { .. }));
     }
 }

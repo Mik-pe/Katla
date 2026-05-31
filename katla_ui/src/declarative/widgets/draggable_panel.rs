@@ -7,7 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::{DraggablePanelState, DraggablePanelVisibility};
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
@@ -56,7 +56,7 @@ impl Widget for DraggablePanel {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             position: Position::Absolute,
             size: taffy::Size {
@@ -132,6 +132,9 @@ impl Widget for DraggablePanel {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let panel_state: DraggablePanelState = state.get(self.state_id).unwrap_or_default();
 
@@ -218,7 +221,6 @@ impl Widget for DraggablePanel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::widget::DescriptorWidget;
 
     fn make_panel() -> DraggablePanel {
         let mut arena = StateArena::new();
@@ -249,7 +251,7 @@ mod tests {
     #[test]
     fn test_draggable_panel_diff_different_type() {
         let panel = make_panel();
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(panel.diff_against(&other), DiffAction::Replace);
     }
 

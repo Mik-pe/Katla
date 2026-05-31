@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use katla_math::{Color, Rect2D};
-use katla_ui::declarative::{Build, BuildContext, Padding, StateId, ViewDescriptor};
+use katla_ui::declarative::{Build, BuildContext, Padding, StateId, Widget, WidgetExt};
 use katla_ui::{FontSize, ScrollAreaState};
 
 use crate::ui::console::LogBuffer;
@@ -47,12 +47,14 @@ impl Default for ConsoleState {
 pub(crate) struct ConsoleView;
 
 impl Build for ConsoleView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
-        use katla_ui::declarative::{button, hstack, panel, scroll, text, textfield, vstack};
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
+        use katla_ui::declarative::{
+            button, empty, hstack, panel, scroll, text, textfield, vstack,
+        };
 
         let draw_ctx = ctx.env::<ConsoleDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return ViewDescriptor::Empty;
+            return empty();
         };
 
         let search_id: StateId = ctx.state(draw_ctx.search_filter.clone());

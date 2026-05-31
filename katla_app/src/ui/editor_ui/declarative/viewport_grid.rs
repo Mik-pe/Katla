@@ -1,5 +1,9 @@
+use std::boxed::Box;
+
 use katla_math::{Color, Rect2D, Vec2};
-use katla_ui::declarative::{Alignment, Build, BuildContext, ViewDescriptor};
+use katla_ui::declarative::{
+    Alignment, Build, BuildContext, Widget, WidgetExt, empty, grid, image, selectable, text, zstack,
+};
 use katla_ui::{FontSize, TextureId};
 
 use crate::resources::viewport_state::{ViewportGridState, ViewportLayout};
@@ -19,12 +23,10 @@ pub(crate) struct ViewportGridDrawCtx {
 pub(crate) struct ViewportGridView;
 
 impl Build for ViewportGridView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
-        use katla_ui::declarative::{grid, image, text, zstack};
-
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<ViewportGridDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return ViewDescriptor::Empty;
+            return empty();
         };
 
         let (rows, cols) = draw_ctx.state.layout.grid_dimensions();

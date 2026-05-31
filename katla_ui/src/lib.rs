@@ -106,22 +106,18 @@ mod draw_list;
 mod icons;
 pub mod input;
 pub mod markdown;
-pub mod response;
 mod style;
 mod text;
 mod types;
 mod widget;
 pub mod widgets;
 
-pub use context::{
-    CloseBehavior, Popup, PopupPosition, PopupStyle, ScrollArea, ScrollAreaState, UiContext,
-    z_index,
-};
+// Core types that katla_app needs for integration
+pub use context::{ScrollAreaState, UiContext, z_index};
 pub use draw_list::DrawList;
 pub use icons::ForkAwesome;
 pub use input::{KeyCode, MouseCursor, UiInputState, mouse_button};
-pub use response::Response;
 pub use style::{ColorScheme, DEFAULTS, FontSize, UiStyle};
 pub use text::FontId;
 pub use types::{DrawCmd, TextureId, Vertex};
-pub use widget::{ClipboardProvider, Widget};
+pub use widget::ClipboardProvider;

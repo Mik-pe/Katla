@@ -848,7 +848,13 @@ impl ViewTree {
             &self.env,
         );
 
-        let descriptor = builder.build(&mut ctx);
+        let widget = builder.build(&mut ctx);
+        let descriptor = widget
+            .as_any()
+            .downcast_ref::<DescriptorWidget>()
+            .expect("expected DescriptorWidget")
+            .descriptor()
+            .clone();
 
         self.sync_tree(root_id, &descriptor);
         self.dirty = false;
@@ -1383,12 +1389,16 @@ mod tests {
     struct StaticDescriptor(ViewDescriptor);
 
     impl super::super::build::Build for StaticDescriptor {
-        fn build(&self, _ctx: &mut super::super::build::BuildContext) -> ViewDescriptor {
-            self.0.clone()
+        fn build(
+            &self,
+            _ctx: &mut super::super::build::BuildContext,
+        ) -> Box<dyn super::super::widget::Widget> {
+            super::super::constructors::into_descriptor_owned(self.0.clone())
         }
     }
 
-    fn build_tree(tree: &mut ViewTree, descriptor: ViewDescriptor) {
+    fn build_tree(tree: &mut ViewTree, widget: Box<dyn crate::declarative::widget::Widget>) {
+        let descriptor = crate::declarative::constructors::into_descriptor(widget);
         tree.build_from(&StaticDescriptor(descriptor));
     }
 
@@ -1474,11 +1484,11 @@ mod tests {
         );
     }
 
-    fn transition_container(child: ViewDescriptor, transition: Transition) -> ViewDescriptor {
-        ViewDescriptor::TransitionContainer {
-            child: Box::new(child),
-            transition,
-        }
+    fn transition_container(
+        child: Box<dyn crate::declarative::widget::Widget>,
+        transition: Transition,
+    ) -> Box<dyn crate::declarative::widget::Widget> {
+        crate::declarative::constructors::wrap_transition_container(child, transition)
     }
 
     fn first_child_id(tree: &ViewTree) -> Option<ViewId> {
@@ -1525,7 +1535,7 @@ mod tests {
 
         let child_id = first_child_id(&tree).expect("should have a child");
 
-        build_tree(&mut tree, ViewDescriptor::Empty);
+        build_tree(&mut tree, crate::declarative::constructors::empty());
 
         let child = tree
             .get(child_id)

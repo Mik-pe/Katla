@@ -7,7 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::FlexProps;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub(crate) struct Grid {
@@ -47,7 +47,7 @@ impl Widget for Grid {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         let col_width = self.cell_size.x();
         let row_height = self.cell_size.y();
         let rows = (self.children.len().max(1) + self.columns - 1) / self.columns.max(1);
@@ -89,6 +89,9 @@ impl Widget for Grid {
         _bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
     }
 
@@ -108,7 +111,6 @@ impl Widget for Grid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::widget::DescriptorWidget;
 
     #[test]
     fn test_grid_diff_same_type() {
@@ -120,7 +122,7 @@ mod tests {
     #[test]
     fn test_grid_diff_different_type() {
         let grid = Grid::new(3, Vec2::new(100.0, 50.0), 0.0, FlexProps::default());
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(grid.diff_against(&other), DiffAction::Replace);
     }
 
@@ -136,7 +138,7 @@ mod tests {
     #[test]
     fn test_grid_layout_style() {
         let grid = Grid::new(3, Vec2::new(100.0, 50.0), 8.0, FlexProps::default());
-        let style = grid.layout_style();
+        let style = grid.layout_style(&crate::declarative::layout::measure_text_descriptor);
         assert_eq!(style.flex_direction, FlexDirection::Row);
         assert_eq!(style.flex_wrap, FlexWrap::Wrap);
     }

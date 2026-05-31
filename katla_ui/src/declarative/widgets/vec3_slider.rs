@@ -2,7 +2,7 @@ use std::any::Any;
 use std::ops::RangeInclusive;
 
 use katla_math::{Color, Rect2D, Vec2};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use crate::context::UiContext;
 use crate::input::mouse_button;
@@ -10,7 +10,7 @@ use crate::input::mouse_button;
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
 pub(crate) struct Vec3Slider {
     pub label: String,
@@ -38,8 +38,15 @@ impl Widget for Vec3Slider {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
+        let text_size = measure(&self.label, None);
+        Style {
+            size: Size {
+                width: Dimension::Length((text_size.x() + 120.0).max(200.0)),
+                height: Dimension::Length(text_size.y() * 3.0 + 20.0),
+            },
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -81,6 +88,9 @@ impl Widget for Vec3Slider {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let font_size = ctx.style().font_size;
         let text_color = animation.apply_to_color(ctx.style().text_color);
@@ -202,7 +212,9 @@ mod tests {
     #[test]
     fn test_vec3_slider_layout_default() {
         let slider = make_vec3_slider();
-        assert_eq!(slider.layout_style(), Style::default());
+        let style = slider.layout_style(&crate::declarative::layout::measure_text_descriptor);
+        let default_width = taffy::Dimension::Length(0.0);
+        assert!(style.size.width != default_width);
     }
 
     #[test]

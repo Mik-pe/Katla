@@ -1,7 +1,7 @@
 use katla_ui::FontSize;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId,
-    ViewDescriptor, draggable_panel, grid, labeled_slider, selectable, tab_bar, tab_item, text,
+    Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId, Widget,
+    WidgetExt, draggable_panel, grid, labeled_slider, selectable, tab_bar, tab_item, text,
     textfield, toggle, vstack,
 };
 
@@ -28,14 +28,16 @@ pub(crate) struct PreferencesPanelSync {
 pub(crate) struct PreferencesView;
 
 impl Build for PreferencesView {
-    fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+    fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
+        use katla_ui::declarative::empty;
+
         let draw_ctx = ctx.env::<PreferencesDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return ViewDescriptor::Empty;
+            return empty();
         };
 
         let panel_id: StateId = ctx.state(DraggablePanelState::default());
-        let mut panel_state: DraggablePanelState = ctx.get_state(panel_id);
+        let mut panel_state: DraggablePanelState = ctx.get_state(panel_id).unwrap();
 
         if draw_ctx.is_open && !panel_state.visibility.is_visible() {
             panel_state.visibility = DraggablePanelVisibility::JustOpened;
@@ -45,18 +47,18 @@ impl Build for PreferencesView {
             ctx.set_state(panel_id, panel_state);
         }
 
-        let current_panel: DraggablePanelState = ctx.get_state(panel_id);
+        let current_panel: DraggablePanelState = ctx.get_state(panel_id).unwrap();
         ctx.emit(PreferencesPanelSync {
             visibility: current_panel.visibility,
         });
 
         if !current_panel.visibility.is_visible() {
-            return ViewDescriptor::Empty;
+            return empty();
         }
 
         let theme = &draw_ctx.theme;
         let tab_sel_id: StateId = ctx.state(0usize);
-        let current_tab: usize = ctx.get_state(tab_sel_id);
+        let current_tab: usize = ctx.get_state(tab_sel_id).unwrap();
         let active_tab = match current_tab {
             0 => PreferencesTab::General,
             1 => PreferencesTab::Viewport,
@@ -100,8 +102,8 @@ fn build_general_tab(
     ctx: &mut BuildContext,
     theme: &ColorScheme,
     draw_ctx: &PreferencesDrawCtx,
-) -> ViewDescriptor {
-    let mut children: Vec<ViewDescriptor> = Vec::new();
+) -> Box<dyn Widget> {
+    let mut children: Vec<Box<dyn Widget>> = Vec::new();
 
     // Color theme grid
     children.push(
@@ -126,7 +128,7 @@ fn build_general_tab(
         ("solarized_dark", "Solarized Dark"),
     ];
 
-    let theme_buttons: Vec<ViewDescriptor> = theme_names
+    let theme_buttons: Vec<Box<dyn Widget>> = theme_names
         .iter()
         .map(|(key, display_name)| {
             let is_selected = *key == draw_ctx.theme_key;
@@ -149,7 +151,7 @@ fn build_general_tab(
     );
 
     let scale_id: StateId = ctx.state(draw_ctx.preferences.font_scale);
-    let current_scale: f32 = ctx.get_state(scale_id);
+    let current_scale: f32 = ctx.get_state(scale_id).unwrap();
     if (current_scale - draw_ctx.preferences.font_scale).abs() > 1e-4 {
         ctx.emit(PreferencesAction::SetFontScale(current_scale));
     }
@@ -168,8 +170,8 @@ fn build_viewport_tab(
     ctx: &mut BuildContext,
     theme: &ColorScheme,
     draw_ctx: &PreferencesDrawCtx,
-) -> ViewDescriptor {
-    let mut children: Vec<ViewDescriptor> = Vec::new();
+) -> Box<dyn Widget> {
+    let mut children: Vec<Box<dyn Widget>> = Vec::new();
 
     // Display section
     children.push(
@@ -179,14 +181,14 @@ fn build_viewport_tab(
     );
 
     let grid_toggle_id: StateId = ctx.state(draw_ctx.preferences.show_grid);
-    let current_show_grid: bool = ctx.get_state(grid_toggle_id);
+    let current_show_grid: bool = ctx.get_state(grid_toggle_id).unwrap();
     if current_show_grid != draw_ctx.preferences.show_grid {
         ctx.emit(PreferencesAction::ToggleGrid);
     }
     children.push(toggle("Show Grid", grid_toggle_id));
 
     let stats_toggle_id: StateId = ctx.state(draw_ctx.preferences.show_stats);
-    let current_show_stats: bool = ctx.get_state(stats_toggle_id);
+    let current_show_stats: bool = ctx.get_state(stats_toggle_id).unwrap();
     if current_show_stats != draw_ctx.preferences.show_stats {
         ctx.emit(PreferencesAction::ToggleStats);
     }
@@ -200,7 +202,7 @@ fn build_viewport_tab(
     );
 
     let sizes = [0.5, 1.0, 2.0, 5.0, 10.0];
-    let grid_buttons: Vec<ViewDescriptor> = sizes
+    let grid_buttons: Vec<Box<dyn Widget>> = sizes
         .iter()
         .map(|&size| {
             let is_selected = (draw_ctx.editor_settings.grid_size - size).abs() < 0.01;
@@ -214,7 +216,7 @@ fn build_viewport_tab(
     children.push(grid(5, katla_math::Vec2::new(70.0, 28.0), grid_buttons).grid_spacing(8.0));
 
     let snap_id: StateId = ctx.state(draw_ctx.editor_settings.snap_to_grid);
-    let current_snap: bool = ctx.get_state(snap_id);
+    let current_snap: bool = ctx.get_state(snap_id).unwrap();
     if current_snap != draw_ctx.editor_settings.snap_to_grid {
         ctx.emit(PreferencesAction::SetSnapToGrid(current_snap));
     }
@@ -228,7 +230,7 @@ fn build_viewport_tab(
     );
 
     let speed_id: StateId = ctx.state(draw_ctx.editor_settings.camera_speed);
-    let current_speed: f32 = ctx.get_state(speed_id);
+    let current_speed: f32 = ctx.get_state(speed_id).unwrap();
     if (current_speed - draw_ctx.editor_settings.camera_speed).abs() > 1e-4 {
         ctx.emit(PreferencesAction::SetCameraSpeed(current_speed));
     }
@@ -246,8 +248,8 @@ fn build_audio_tab(
     ctx: &mut BuildContext,
     theme: &ColorScheme,
     draw_ctx: &PreferencesDrawCtx,
-) -> ViewDescriptor {
-    let mut children: Vec<ViewDescriptor> = Vec::new();
+) -> Box<dyn Widget> {
+    let mut children: Vec<Box<dyn Widget>> = Vec::new();
 
     children.push(
         text("VOLUME")
@@ -256,7 +258,7 @@ fn build_audio_tab(
     );
 
     let master_id: StateId = ctx.state(draw_ctx.preferences.audio.master_volume);
-    let current_master: f32 = ctx.get_state(master_id);
+    let current_master: f32 = ctx.get_state(master_id).unwrap();
     if (current_master - draw_ctx.preferences.audio.master_volume).abs() > 1e-4 {
         ctx.emit(PreferencesAction::SetMasterVolume(current_master));
     }
@@ -268,7 +270,7 @@ fn build_audio_tab(
     );
 
     let sfx_id: StateId = ctx.state(draw_ctx.preferences.audio.sfx_volume);
-    let current_sfx: f32 = ctx.get_state(sfx_id);
+    let current_sfx: f32 = ctx.get_state(sfx_id).unwrap();
     if (current_sfx - draw_ctx.preferences.audio.sfx_volume).abs() > 1e-4 {
         ctx.emit(PreferencesAction::SetSfxVolume(current_sfx));
     }
@@ -280,7 +282,7 @@ fn build_audio_tab(
     );
 
     let music_id: StateId = ctx.state(draw_ctx.preferences.audio.music_volume);
-    let current_music: f32 = ctx.get_state(music_id);
+    let current_music: f32 = ctx.get_state(music_id).unwrap();
     if (current_music - draw_ctx.preferences.audio.music_volume).abs() > 1e-4 {
         ctx.emit(PreferencesAction::SetMusicVolume(current_music));
     }
@@ -292,7 +294,7 @@ fn build_audio_tab(
     );
 
     let ambient_id: StateId = ctx.state(draw_ctx.preferences.audio.ambient_volume);
-    let current_ambient: f32 = ctx.get_state(ambient_id);
+    let current_ambient: f32 = ctx.get_state(ambient_id).unwrap();
     if (current_ambient - draw_ctx.preferences.audio.ambient_volume).abs() > 1e-4 {
         ctx.emit(PreferencesAction::SetAmbientVolume(current_ambient));
     }
@@ -310,11 +312,11 @@ fn build_ai_tab(
     ctx: &mut BuildContext,
     theme: &ColorScheme,
     draw_ctx: &PreferencesDrawCtx,
-) -> ViewDescriptor {
+) -> Box<dyn Widget> {
     use katla_agent::config::LlmProviderKind;
 
     let llm_config = &draw_ctx.llm_config;
-    let mut children: Vec<ViewDescriptor> = Vec::new();
+    let mut children: Vec<Box<dyn Widget>> = Vec::new();
 
     // Provider section
     children.push(
@@ -333,7 +335,7 @@ fn build_ai_tab(
         ),
     ];
 
-    let provider_buttons: Vec<ViewDescriptor> = providers
+    let provider_buttons: Vec<Box<dyn Widget>> = providers
         .iter()
         .map(|(kind, label, key)| {
             let is_selected = llm_config.provider == *kind;
@@ -379,7 +381,7 @@ fn build_ai_tab(
     );
 
     let api_key_id: StateId = ctx.state(llm_config.api_key.clone());
-    let current_api_key: String = ctx.get_state(api_key_id);
+    let current_api_key: String = ctx.get_state(api_key_id).unwrap();
     if current_api_key != llm_config.api_key {
         ctx.emit(PreferencesAction::SetLlmApiKey(current_api_key));
         ctx.emit(PreferencesAction::SaveLlmConfig);
@@ -394,7 +396,7 @@ fn build_ai_tab(
     );
 
     let model_id: StateId = ctx.state(llm_config.model.clone());
-    let current_model: String = ctx.get_state(model_id);
+    let current_model: String = ctx.get_state(model_id).unwrap();
     if current_model != llm_config.model {
         ctx.emit(PreferencesAction::SetLlmModel(current_model));
         ctx.emit(PreferencesAction::SaveLlmConfig);
@@ -403,7 +405,7 @@ fn build_ai_tab(
 
     if llm_config.provider == LlmProviderKind::OpenAiCompatible {
         let base_url_id: StateId = ctx.state(llm_config.base_url.clone().unwrap_or_default());
-        let current_base_url: String = ctx.get_state(base_url_id);
+        let current_base_url: String = ctx.get_state(base_url_id).unwrap();
         let expected = llm_config.base_url.clone().unwrap_or_default();
         if current_base_url != expected {
             ctx.emit(PreferencesAction::SetLlmBaseUrl(current_base_url));
@@ -414,7 +416,7 @@ fn build_ai_tab(
 
     // Temperature
     let temp_id: StateId = ctx.state(llm_config.temperature);
-    let current_temp: f32 = ctx.get_state(temp_id);
+    let current_temp: f32 = ctx.get_state(temp_id).unwrap();
     if (current_temp - llm_config.temperature).abs() > 1e-4 {
         ctx.emit(PreferencesAction::SetLlmTemperature(current_temp));
         ctx.emit(PreferencesAction::SaveLlmConfig);
@@ -428,7 +430,7 @@ fn build_ai_tab(
 
     // Max tokens
     let token_sizes = [1024, 2048, 4096, 8192];
-    let token_buttons: Vec<ViewDescriptor> = token_sizes
+    let token_buttons: Vec<Box<dyn Widget>> = token_sizes
         .iter()
         .map(|&tokens| {
             let is_selected = llm_config.max_tokens == tokens;

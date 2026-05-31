@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use katla_math::{Color, Rect2D, Vec2};
-use taffy::Style;
+use taffy::{Dimension, Size, Style};
 
 use crate::context::UiContext;
 use crate::input::mouse_button;
@@ -10,7 +10,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
 pub(crate) struct Button {
     pub label: String,
@@ -37,8 +37,17 @@ impl Widget for Button {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
+        let text_size = measure(&self.label, None);
+        let h_padding = 16.0;
+        let v_padding = 8.0;
+        Style {
+            size: Size {
+                width: Dimension::Length(text_size.x() + h_padding),
+                height: Dimension::Length(text_size.y() + v_padding),
+            },
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -64,6 +73,9 @@ impl Widget for Button {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let bg = self.fill_color.unwrap_or(ctx.style().button_normal);
         let bg = animation.apply_to_color(bg);
@@ -99,7 +111,6 @@ mod tests {
     use crate::declarative::actions::ActionStream;
     use crate::declarative::build::CallbackTable;
     use crate::declarative::constructors::text;
-    use crate::declarative::widget::DescriptorWidget;
     use crate::input::UiInputState;
 
     #[test]
@@ -151,7 +162,7 @@ mod tests {
         };
         assert_eq!(b.diff_against(&a), DiffAction::Update);
 
-        let other = DescriptorWidget::new(text("hello"));
+        let other = text("hello");
         assert_eq!(a.diff_against(&other), DiffAction::Replace);
     }
 

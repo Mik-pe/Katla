@@ -3,14 +3,13 @@
 //! This module contains rendering logic for utility widgets like tooltips.
 //! These are private implementation details.
 
-use crate::types::TextureId;
-use katla_math::{Color, Rect2D, Vec2};
+use katla_math::{Rect2D, Vec2};
 
 use super::super::UiContext;
 
 impl UiContext {
     /// Draw a tooltip at the current mouse position.
-    pub fn tooltip(&mut self, text: &str) {
+    pub(crate) fn tooltip(&mut self, text: &str) {
         let padding = 6.0;
         let line_spacing = 2.0;
         let font_size = self.style.font_size;
@@ -19,11 +18,9 @@ impl UiContext {
         let line_count = lines.len();
 
         let mut max_width = 0.0f32;
-        let mut line_widths = Vec::with_capacity(line_count);
         for line in &lines {
             let w = self.measure_text(line, font_size).x();
             max_width = max_width.max(w);
-            line_widths.push(w);
         }
 
         let single_line_height = self.measure_text("Ay", font_size).y();
@@ -60,45 +57,5 @@ impl UiContext {
             );
             text_y += single_line_height + line_spacing;
         }
-    }
-
-    /// Draw a status bar label at the current cursor position and advance the cursor.
-    pub fn status_label(&mut self, text: &str, color: Color) {
-        let text_size = self.measure_text(text, self.style.font_size);
-        let pos = self.cursor();
-        self.draw_text(text, pos, color, self.style.font_size);
-        self.set_cursor(Vec2::new(
-            pos.x() + text_size.x() + self.style.item_spacing,
-            pos.y(),
-        ));
-    }
-
-    /// Draw a vertical separator line for status bars at the current cursor position.
-    pub fn status_separator(&mut self) {
-        let pos = self.cursor();
-        let height = self.style.font_size;
-        let x = pos.x() + self.style.item_spacing * 0.5;
-        self.draw_line(
-            Vec2::new(x, pos.y()),
-            Vec2::new(x, pos.y() + height),
-            self.style.separator,
-            1.0,
-        );
-        self.set_cursor(Vec2::new(pos.x() + self.style.item_spacing, pos.y()));
-    }
-
-    /// Draw an image.
-    pub fn image(
-        &mut self,
-        texture: TextureId,
-        bounds: Rect2D,
-        uv: Option<Rect2D>,
-        tint: Option<Color>,
-    ) {
-        let uv_rect = uv.unwrap_or(Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)));
-        let color = tint.unwrap_or(Color::WHITE);
-        self.draw_list.set_clip(self.clip_rect());
-        self.draw_list
-            .add_textured_rect(bounds, uv_rect, color, texture);
     }
 }

@@ -65,28 +65,24 @@ impl StateArena {
         id
     }
 
-    pub fn get<T: Clone + 'static>(&self, id: StateId) -> T {
-        let cell = self
-            .cells
-            .get(&id)
-            .expect("StateArena::get: invalid StateId");
-        cell.value
-            .downcast_ref::<T>()
-            .cloned()
-            .expect("StateArena::get: type mismatch")
+    pub fn get<T: Clone + 'static>(&self, id: StateId) -> Option<T> {
+        let cell = self.cells.get(&id)?;
+        cell.value.downcast_ref::<T>().cloned()
     }
 
-    pub fn set<T: PartialEq + 'static>(&mut self, id: StateId, value: T) {
-        if let Some(cell) = self.cells.get_mut(&id) {
-            let changed = cell
-                .value
-                .downcast_ref::<T>()
-                .is_none_or(|old| *old != value);
-            if changed {
-                cell.value = Box::new(value);
-                cell.dirty = true;
-            }
+    pub fn set<T: PartialEq + 'static>(&mut self, id: StateId, value: T) -> bool {
+        let Some(cell) = self.cells.get_mut(&id) else {
+            return false;
+        };
+        let changed = cell
+            .value
+            .downcast_ref::<T>()
+            .is_none_or(|old| *old != value);
+        if changed {
+            cell.value = Box::new(value);
+            cell.dirty = true;
         }
+        changed
     }
 
     pub fn is_dirty(&self) -> bool {

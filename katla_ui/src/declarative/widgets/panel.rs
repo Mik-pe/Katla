@@ -7,7 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::FlexProps;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub(crate) struct Panel {
@@ -45,7 +45,7 @@ impl Widget for Panel {
         }
     }
 
-    fn layout_style(&self) -> Style {
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         let mut style = Style {
             flex_direction: FlexDirection::Column,
             ..Style::default()
@@ -71,6 +71,9 @@ impl Widget for Panel {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let bg = ctx.style().window_bg;
         ctx.draw_rect(bounds, bg);
@@ -92,7 +95,6 @@ impl Widget for Panel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::widget::DescriptorWidget;
 
     #[test]
     fn test_panel_diff_same_type() {
@@ -104,7 +106,7 @@ mod tests {
     #[test]
     fn test_panel_diff_different_type() {
         let panel = Panel::new("Title".into(), 24.0, FlexProps::default());
-        let other = DescriptorWidget::new(crate::declarative::constructors::text("hello"));
+        let other = crate::declarative::constructors::text("hello");
         assert_eq!(panel.diff_against(&other), DiffAction::Replace);
     }
 
@@ -120,7 +122,7 @@ mod tests {
     #[test]
     fn test_panel_layout_style_column() {
         let panel = Panel::new("Title".into(), 24.0, FlexProps::default());
-        let style = panel.layout_style();
+        let style = panel.layout_style(&crate::declarative::layout::measure_text_descriptor);
         assert_eq!(style.flex_direction, FlexDirection::Column);
     }
 }

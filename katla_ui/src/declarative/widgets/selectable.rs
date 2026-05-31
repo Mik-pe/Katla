@@ -1,13 +1,13 @@
 use std::any::Any;
 
 use katla_math::Rect2D;
-use taffy::Style;
+use taffy::{FlexDirection, Style};
 
 use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{InputContext, InputResult, Widget};
+use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
@@ -34,8 +34,12 @@ impl Widget for Selectable {
         }
     }
 
-    fn layout_style(&self) -> Style {
-        Style::default()
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+        Style {
+            flex_direction: FlexDirection::Column,
+            flex_grow: 1.0,
+            ..Style::default()
+        }
     }
 
     fn handle_input(
@@ -61,6 +65,9 @@ impl Widget for Selectable {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
+        _interaction: &DrawInteraction,
+        _view_id: ViewId,
+        _children_bounds: &[Rect2D],
     ) {
         let radius = bounds.height() * 0.4;
         if self.selected {

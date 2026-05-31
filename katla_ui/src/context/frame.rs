@@ -16,7 +16,7 @@ impl UiContext {
     }
 
     /// Convert a FontSize to scaled pixels using current font_scale.
-    pub fn scaled_font_size(&self, size: crate::style::FontSize) -> f32 {
+    pub(crate) fn scaled_font_size(&self, size: crate::style::FontSize) -> f32 {
         size.to_pixels_scaled(self.font_scale)
     }
 
@@ -40,14 +40,6 @@ impl UiContext {
         self.id_counter = 0;
         self.hovered_id = None;
         self.cursor = Vec2::new(0.0, 0.0);
-        self.row_height = 0.0;
-        self.layout_stack.clear();
-
-        if self.popup_id.is_none() {
-            self.popup_bounds = None;
-        }
-
-        self.popup_opened_this_frame = false;
 
         self.clip_stack.clear();
         self.clip_stack

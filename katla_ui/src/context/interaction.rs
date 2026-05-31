@@ -2,8 +2,6 @@
 //!
 //! This module provides shared interaction logic for widgets to reduce code duplication.
 
-// WidgetId is defined in context module and re-exported from crate root
-
 /// Configuration for click interaction behavior.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ClickConfig {
@@ -20,10 +18,6 @@ impl ClickConfig {
     /// Popup-aware click: release hover uses the pre-computed hovered state.
     /// Used by checkboxes, radio buttons, toggle buttons, image buttons.
     pub const POPUP_AWARE: Self = Self { popup_aware: true };
-
-    /// Popup-bypassing click: release hover uses raw input hover check.
-    /// Used by buttons and menu items.
-    pub const POPUP_BYPASS: Self = Self { popup_aware: false };
 }
 
 /// Result of click behavior processing.
@@ -43,10 +37,5 @@ impl ClickResult {
     /// Whether this result represents a click.
     pub fn is_clicked(&self) -> bool {
         matches!(self, Self::Clicked)
-    }
-
-    /// Whether the button is currently active (pressed or clicked).
-    pub fn is_active(&self) -> bool {
-        matches!(self, Self::Pressed | Self::Clicked)
     }
 }
