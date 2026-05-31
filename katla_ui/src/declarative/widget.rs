@@ -186,6 +186,21 @@ pub trait Widget: Any + 'static {
     fn as_transition(&self) -> Option<&super::transition::Transition> {
         None
     }
+
+    /// Draw overlay elements after children have been drawn.
+    ///
+    /// Called by the pipeline after all children are drawn. Widgets that need
+    /// to render elements on top of their children (e.g., DockSpace chrome)
+    /// override this method.
+    fn draw_after_children(
+        &self,
+        _ctx: &mut UiContext,
+        _state: &StateArena,
+        _bounds: Rect2D,
+        _children: &[ViewId],
+        _children_bounds: &[Rect2D],
+    ) {
+    }
 }
 
 /// Extension trait providing `.boxed()` on all widget types.
@@ -310,6 +325,17 @@ impl Widget for Box<dyn Widget> {
 
     fn as_transition(&self) -> Option<&super::transition::Transition> {
         (**self).as_transition()
+    }
+
+    fn draw_after_children(
+        &self,
+        ctx: &mut UiContext,
+        state: &StateArena,
+        bounds: Rect2D,
+        children: &[ViewId],
+        children_bounds: &[Rect2D],
+    ) {
+        (**self).draw_after_children(ctx, state, bounds, children, children_bounds)
     }
 }
 

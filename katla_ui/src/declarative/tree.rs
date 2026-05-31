@@ -286,6 +286,7 @@ impl ViewTree {
         self.resolved_bounds = resolved;
 
         self.update_draggable_bounds();
+        self.update_dock_child_bounds();
 
         if let Some(rid) = self.root {
             self.draw_recursive(rid, ui);
@@ -505,6 +506,41 @@ impl ViewTree {
         }
     }
 
+    fn update_dock_child_bounds(&mut self) {
+        use super::widgets::dock_space::{DockSpace, compute_leaf_info};
+        use crate::dock::DockTree;
+
+        let patches: Vec<(Vec<ViewId>, Vec<katla_math::Rect2D>)> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                let ds = node.widget.as_any().downcast_ref::<DockSpace<u32>>()?;
+
+                let tree: DockTree<u32> = self.state.get(ds.dock_state_id)?;
+                let dock_bounds = self.resolved_bounds.get(&id).copied()?;
+
+                let leaf_info = compute_leaf_info(tree.root(), dock_bounds, ds.tab_bar_height);
+                let child_ids: Vec<ViewId> = node.children.clone();
+                if child_ids.len() != leaf_info.len() {
+                    return None;
+                }
+
+                let child_rects: Vec<katla_math::Rect2D> =
+                    leaf_info.iter().map(|info| info.content_bounds).collect();
+
+                Some((child_ids, child_rects))
+            })
+            .collect();
+
+        for (child_ids, child_rects) in patches {
+            for (child_id, rect) in child_ids.iter().zip(child_rects.iter()) {
+                if let Some(bounds) = self.resolved_bounds.get_mut(child_id) {
+                    *bounds = *rect;
+                }
+            }
+        }
+    }
+
     // ── Drawing ─────────────────────────────────────────────────────────
 
     fn draw_recursive(&self, node_id: ViewId, ui: &mut UiContext) {
@@ -555,6 +591,9 @@ impl ViewTree {
                 self.draw_child_recursive(child_id, ui, bounds, scroll_offset);
             }
         }
+
+        node.widget
+            .draw_after_children(ui, &self.state, bounds, &children, &children_bounds);
 
         if needs_clip {
             ui.pop_clip();
