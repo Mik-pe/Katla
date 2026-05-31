@@ -66,8 +66,8 @@ impl Widget for Toggle {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
+        interaction: &DrawInteraction,
+        view_id: ViewId,
         _children_bounds: &[Rect2D],
     ) {
         let checked: bool = state.get(self.value_id).unwrap_or(false);
@@ -80,6 +80,10 @@ impl Widget for Toggle {
         let bg_color = animation.apply_to_color(bg_color);
         let radius = animation.apply_to_corner_radius(ctx.style().button_rounding);
         ctx.draw_rounded_rect(bounds, bg_color, radius);
+
+        if interaction.is_focused(view_id) {
+            ctx.draw_rounded_selection_border(bounds, ctx.style().selectable_selected, 2.0, radius);
+        }
 
         let indicator_size = bounds.height() * 0.5;
         let indicator_center = if checked {

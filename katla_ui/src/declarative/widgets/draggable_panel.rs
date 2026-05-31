@@ -254,6 +254,10 @@ impl Widget for DraggablePanel {
     fn interactive(&self) -> bool {
         true
     }
+
+    fn is_focus_scope(&self) -> bool {
+        true
+    }
 }
 
 impl DraggablePanel {

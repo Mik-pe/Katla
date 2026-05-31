@@ -12,7 +12,7 @@ use super::animation::{AnimatedProperty, Animation, AnimationState, KeyframeAnim
 use super::build::{Build as BuildTrait, BuildContext, CallbackTable, Environment};
 use super::descriptor::{Alignment, DraggablePanelState};
 use super::diff::DiffAction;
-use super::focus;
+use super::focus::{self, Direction, GamepadNavigator};
 use super::ime::ImeRequest;
 use super::input;
 use super::layout::TaffyNodeMap;
@@ -44,6 +44,7 @@ pub struct ViewTree {
     actions: ActionStream,
     env: Environment,
     focus: super::focus::FocusManager,
+    gamepad: GamepadNavigator,
     taffy: TaffyNodeMap,
     bounds_map: HashMap<ViewId, Rect2D>,
     resolved_bounds: HashMap<ViewId, Rect2D>,
@@ -62,6 +63,7 @@ impl Default for ViewTree {
             actions: ActionStream::new(),
             env: Environment::new(),
             focus: super::focus::FocusManager::new(),
+            gamepad: GamepadNavigator::new(),
             taffy: TaffyNodeMap::new(),
             bounds_map: HashMap::new(),
             resolved_bounds: HashMap::new(),
@@ -234,14 +236,35 @@ impl ViewTree {
 
         self.resolve_positions();
 
-        let chain = focus::collect_focus_chain(self);
-        self.focus.set_focus_chain(chain);
+        let (chain, traps) = focus::collect_focus_chain(self, &self.state);
+        self.focus.set_focus_chain(chain, traps);
         if ui.input.key_pressed(crate::input::KeyCode::Tab) {
             if ui.input.is_key_down(crate::input::KeyCode::Shift) {
                 self.focus.focus_prev();
             } else {
                 self.focus.focus_next();
             }
+            self.gamepad.set_focused(self.focus.focused());
+        }
+
+        // Gamepad directional navigation via arrow keys
+        let direction = if ui.input.key_pressed(crate::input::KeyCode::ArrowUp) {
+            Some(Direction::Up)
+        } else if ui.input.key_pressed(crate::input::KeyCode::ArrowDown) {
+            Some(Direction::Down)
+        } else if ui.input.key_pressed(crate::input::KeyCode::ArrowLeft) {
+            Some(Direction::Left)
+        } else if ui.input.key_pressed(crate::input::KeyCode::ArrowRight) {
+            Some(Direction::Right)
+        } else {
+            None
+        };
+        if let Some(dir) = direction {
+            let chain_ids = self.focus.focus_chain_ids();
+            let _ = self.gamepad.navigate(dir, &chain_ids, &self.bounds_map);
+            self.focus.set_focused(self.gamepad.focused());
+        } else {
+            self.gamepad.set_focused(self.focus.focused());
         }
 
         let mut callbacks = std::mem::take(&mut self.callbacks);
@@ -1375,6 +1398,218 @@ mod tests {
             "arena should stay bounded, got {} cells for {} live nodes",
             tree.state.cell_count(),
             live_count
+        );
+    }
+
+    // ── Focus chain integration tests ──────────────────────────────────
+
+    #[test]
+    fn test_focus_chain_collects_from_widget_tree() {
+        let mut tree = ViewTree::new();
+        let mut callbacks = crate::declarative::build::CallbackTable::new();
+        let cb1 = callbacks.push(|_| {});
+        let cb2 = callbacks.push(|_| {});
+
+        tree.set_root(
+            vstack([
+                button("A").on_click(cb1).boxed(),
+                text("label").boxed(),
+                button("B").on_click(cb2).boxed(),
+            ])
+            .boxed(),
+        );
+
+        let (chain, _) = super::super::focus::collect_focus_chain(&tree, tree.state_arena());
+        assert_eq!(chain.len(), 2, "only buttons should be focusable");
+    }
+
+    #[test]
+    fn test_focus_chain_panel_creates_scope() {
+        let mut tree = ViewTree::new();
+        let mut callbacks = crate::declarative::build::CallbackTable::new();
+        let cb1 = callbacks.push(|_| {});
+        let cb2 = callbacks.push(|_| {});
+        let cb3 = callbacks.push(|_| {});
+
+        tree.set_root(
+            vstack([
+                button("Outside").on_click(cb1).boxed(),
+                panel(
+                    "MyPanel",
+                    vstack([
+                        button("Inside1").on_click(cb2).boxed(),
+                        button("Inside2").on_click(cb3).boxed(),
+                    ])
+                    .boxed(),
+                )
+                .boxed(),
+            ])
+            .boxed(),
+        );
+
+        let (chain, traps) = super::super::focus::collect_focus_chain(&tree, tree.state_arena());
+        assert_eq!(chain.len(), 3, "three focusable buttons total");
+        assert!(traps.is_empty(), "panels should not trap");
+
+        let outside_scope = chain
+            .iter()
+            .find(|(id, _)| {
+                tree.get(*id)
+                    .unwrap()
+                    .widget
+                    .as_any()
+                    .downcast_ref::<super::super::widgets::button::Button>()
+                    .map(|b| b.label == "Outside")
+                    .unwrap_or(false)
+            })
+            .unwrap();
+        assert!(outside_scope.1.is_none(), "outside button has no scope");
+
+        let inside_buttons: Vec<_> = chain
+            .iter()
+            .filter(|(id, _)| {
+                tree.get(*id)
+                    .unwrap()
+                    .widget
+                    .as_any()
+                    .downcast_ref::<super::super::widgets::button::Button>()
+                    .map(|b| b.label.starts_with("Inside"))
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(inside_buttons.len(), 2);
+        assert!(
+            inside_buttons[0].1.is_some(),
+            "buttons inside panel should have a scope"
+        );
+    }
+
+    #[test]
+    fn test_focus_chain_modal_creates_trap_when_open() {
+        let mut tree = ViewTree::new();
+        let mut callbacks = crate::declarative::build::CallbackTable::new();
+        let cb1 = callbacks.push(|_| {});
+        let cb2 = callbacks.push(|_| {});
+        let cb3 = callbacks.push(|_| {});
+
+        let root_id = ViewId::from(slotmap::KeyData::from_ffi(0));
+        let open_id = tree.state_arena_mut().get_or_create(root_id, true);
+
+        tree.set_root(
+            vstack([
+                button("Background").on_click(cb1).boxed(),
+                modal(
+                    400.0,
+                    300.0,
+                    open_id,
+                    vstack([
+                        button("ModalBtn1").on_click(cb2).boxed(),
+                        button("ModalBtn2").on_click(cb3).boxed(),
+                    ])
+                    .boxed(),
+                )
+                .boxed(),
+            ])
+            .boxed(),
+        );
+
+        let (chain, traps) = super::super::focus::collect_focus_chain(&tree, tree.state_arena());
+        assert_eq!(chain.len(), 3, "three focusable buttons total");
+        assert_eq!(traps.len(), 1, "modal should be a trap when open");
+
+        let modal_btns: Vec<_> = chain
+            .iter()
+            .filter(|(id, _)| {
+                tree.get(*id)
+                    .unwrap()
+                    .widget
+                    .as_any()
+                    .downcast_ref::<super::super::widgets::button::Button>()
+                    .map(|b| b.label.starts_with("ModalBtn"))
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(modal_btns.len(), 2);
+        let scope_id = modal_btns[0].1.unwrap();
+        assert!(traps.contains(&scope_id), "modal scope should be in traps");
+    }
+
+    #[test]
+    fn test_focus_chain_modal_no_trap_when_closed() {
+        let mut tree = ViewTree::new();
+        let mut callbacks = crate::declarative::build::CallbackTable::new();
+        let cb1 = callbacks.push(|_| {});
+        let cb2 = callbacks.push(|_| {});
+
+        let root_id = ViewId::from(slotmap::KeyData::from_ffi(0));
+        let open_id = tree.state_arena_mut().get_or_create(root_id, false);
+
+        tree.set_root(
+            vstack([
+                button("Background").on_click(cb1).boxed(),
+                modal(
+                    400.0,
+                    300.0,
+                    open_id,
+                    button("ModalBtn").on_click(cb2).boxed(),
+                )
+                .boxed(),
+            ])
+            .boxed(),
+        );
+
+        let (chain, traps) = super::super::focus::collect_focus_chain(&tree, tree.state_arena());
+        assert_eq!(chain.len(), 2);
+        assert!(traps.is_empty(), "closed modal should not trap");
+    }
+
+    #[test]
+    fn test_focus_chain_draggable_panel_creates_scope() {
+        let mut tree = ViewTree::new();
+        let mut callbacks = crate::declarative::build::CallbackTable::new();
+        let cb1 = callbacks.push(|_| {});
+        let cb2 = callbacks.push(|_| {});
+
+        let root_id = ViewId::from(slotmap::KeyData::from_ffi(0));
+        let state_id = tree.state_arena_mut().get_or_create(
+            root_id,
+            super::super::descriptor::DraggablePanelState::default(),
+        );
+
+        tree.set_root(
+            vstack([
+                button("Outside").on_click(cb1).boxed(),
+                draggable_panel(
+                    "Float",
+                    200.0,
+                    300.0,
+                    button("Inside").on_click(cb2).boxed(),
+                    state_id,
+                )
+                .boxed(),
+            ])
+            .boxed(),
+        );
+
+        let (chain, traps) = super::super::focus::collect_focus_chain(&tree, tree.state_arena());
+        assert_eq!(chain.len(), 2);
+        assert!(traps.is_empty(), "draggable panel should not trap");
+
+        let inside = chain
+            .iter()
+            .find(|(id, _)| {
+                tree.get(*id)
+                    .unwrap()
+                    .widget
+                    .as_any()
+                    .downcast_ref::<super::super::widgets::button::Button>()
+                    .map(|b| b.label == "Inside")
+                    .unwrap_or(false)
+            })
+            .unwrap();
+        assert!(
+            inside.1.is_some(),
+            "button inside draggable panel should have scope"
         );
     }
 }
