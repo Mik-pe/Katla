@@ -856,6 +856,34 @@ impl ViewTree {
         self.recurse_children(node_id, child_info);
     }
 
+    fn start_remove_animation(node: &mut ViewNode, transition: &Transition, start_time: f64) {
+        if let Some(ref config) = transition.remove {
+            let (from, to) = Self::remove_animation_range(&transition.property);
+            node.animations.push(Animation {
+                property: transition.property,
+                tween: Tween {
+                    from,
+                    to,
+                    duration: config.duration,
+                    easing: config.easing.clone(),
+                },
+                start_time,
+                on_complete: None,
+            });
+            node.pending_remove = true;
+        }
+    }
+
+    fn remove_animation_range(property: &AnimatedProperty) -> (f32, f32) {
+        match property {
+            AnimatedProperty::Opacity => (1.0, 0.0),
+            AnimatedProperty::OffsetY => (0.0, 20.0),
+            AnimatedProperty::OffsetX => (0.0, 20.0),
+            AnimatedProperty::Scale => (1.0, 0.8),
+            AnimatedProperty::CornerRadius => (1.0, 0.0),
+        }
+    }
+
     /// Recurse children extracted from a node's widget into the tree.
     fn recurse_children(&mut self, node_id: ViewId, child_info: ChildWidgets) {
         let old_children: Vec<ViewId> = self
@@ -866,11 +894,34 @@ impl ViewTree {
 
         match child_info {
             ChildWidgets::None => {
-                for child_id in &old_children {
-                    self.remove_node_recursive(*child_id);
-                }
-                if let Some(node) = self.nodes.get_mut(node_id) {
-                    node.children.clear();
+                // Check if this node is a TransitionContainer with a remove animation
+                let transition = self
+                    .nodes
+                    .get(node_id)
+                    .and_then(|n| n.widget.as_transition())
+                    .cloned();
+
+                let has_remove_anim = transition.as_ref().is_some_and(|t| t.remove.is_some());
+
+                if has_remove_anim {
+                    if let Some(&child_id) = old_children.first()
+                        && let Some(node) = self.nodes.get_mut(child_id)
+                    {
+                        Self::start_remove_animation(
+                            node,
+                            transition.as_ref().unwrap(),
+                            self.current_time,
+                        );
+                    }
+                    // Don't clear children — the child will be removed once
+                    // its remove animation completes in tick_animations.
+                } else {
+                    for child_id in &old_children {
+                        self.remove_node_recursive(*child_id);
+                    }
+                    if let Some(node) = self.nodes.get_mut(node_id) {
+                        node.children.clear();
+                    }
                 }
             }
             ChildWidgets::Single(child) => {

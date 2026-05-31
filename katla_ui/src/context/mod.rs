@@ -8,7 +8,6 @@ mod drawing;
 mod frame;
 mod id;
 mod input;
-pub(crate) mod interaction;
 mod widgets;
 pub mod z_index;
 

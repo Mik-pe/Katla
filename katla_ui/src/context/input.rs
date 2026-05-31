@@ -9,12 +9,6 @@ impl UiContext {
         self.screen_size
     }
 
-    /// Set the mouse cursor type.
-    #[inline]
-    pub(crate) fn set_mouse_cursor(&mut self, cursor: crate::input::MouseCursor) {
-        self.input.set_cursor(cursor);
-    }
-
     /// Check if a mouse button was clicked this frame.
     #[inline]
     pub fn mouse_clicked(&self, button: usize) -> bool {

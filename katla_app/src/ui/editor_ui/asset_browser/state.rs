@@ -19,10 +19,8 @@ pub struct AssetBrowserState {
     pub selected_indices: std::collections::HashSet<usize>,
     /// Scroll state for the content area
     pub scroll_state: ScrollAreaState,
-    /// Panel height in pixels (when not collapsed)
+    /// Panel height in pixels
     pub panel_height: f32,
-    /// Whether panel is collapsed
-    pub collapsed: bool,
     /// Last time directory was scanned
     pub last_scan: Option<Instant>,
     /// Search/filter text
@@ -66,7 +64,6 @@ impl AssetBrowserState {
             selected_indices: std::collections::HashSet::new(),
             scroll_state: ScrollAreaState::default(),
             panel_height: 150.0,
-            collapsed: false,
             last_scan: None,
             search_filter: String::new(),
             context_menu_open: false,

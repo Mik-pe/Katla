@@ -464,11 +464,6 @@ impl BackgroundLoader {
         self.thumbnail_cache.get_mut(path)
     }
 
-    /// Check if a thumbnail is cached (may not be uploaded to GPU yet).
-    pub fn has_thumbnail(&self, path: &PathBuf) -> bool {
-        self.thumbnail_cache.contains_key(path)
-    }
-
     /// Check if a load is pending for the given path.
     pub fn is_loading(&self, path: &PathBuf) -> bool {
         self.pending_loads.values().any(|p| p == path)

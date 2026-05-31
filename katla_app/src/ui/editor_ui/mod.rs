@@ -166,8 +166,6 @@ pub struct EditorUI {
     pub(crate) console_state: declarative::ConsoleState,
     /// Shared log buffer backing the console panel.
     pub(crate) log_buffer: Arc<Mutex<LogBuffer>>,
-    /// Active tab in the bottom panel strip.
-    pub(crate) bottom_panel_tab: types::BottomPanelTab,
 }
 
 impl EditorUI {
@@ -219,7 +217,6 @@ impl EditorUI {
             view_tree: ViewTree::default(),
             console_state: declarative::ConsoleState::default(),
             log_buffer: Arc::new(Mutex::new(LogBuffer::new())),
-            bottom_panel_tab: types::BottomPanelTab::default(),
         }
     }
 
