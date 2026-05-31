@@ -6,8 +6,6 @@ use super::*;
 use crate::ui::editor_ui::declarative::{
     EditorOverlayView, HierarchyDrawCtx, PreferencesDrawCtx, PreferencesPanelSync,
 };
-use crate::ui::editor_ui::types::PreferencesTab;
-use katla_ui::declarative::DraggablePanelVisibility;
 
 /// Test that clicking a tab in the preferences panel doesn't dismiss the window.
 #[test]
@@ -74,7 +72,7 @@ fn test_hierarchy_entity_selection_works() {
     ui.begin(Vec2::new(800.0, 600.0), 1.0);
 
     let mut state = HierarchyState::default();
-    let mut selected_entity: Option<EntityId> = None;
+    let selected_entity: Option<EntityId> = None;
 
     let mut world = katla_ecs::World::new();
     let entity1 = world.create_entity();
@@ -129,7 +127,7 @@ fn test_hierarchy_entity_selection_works() {
         },
     ];
 
-    let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(200.0, 400.0));
+    let _bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(200.0, 400.0));
     let theme = ColorScheme::default();
 
     let header_height = 24.0;
