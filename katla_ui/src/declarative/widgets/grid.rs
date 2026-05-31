@@ -12,7 +12,7 @@ use super::super::widget::{
 };
 use crate::context::UiContext;
 
-pub(crate) struct Grid {
+pub struct Grid {
     pub columns: usize,
     pub cell_size: Vec2,
     pub spacing: f32,
@@ -124,6 +124,25 @@ impl Widget for Grid {
             .map(|kc| (kc.key, kc.widget))
             .collect();
         ChildWidgets::Multi(children)
+    }
+}
+
+impl Grid {
+    pub fn grid_spacing(mut self, spacing: f32) -> Self {
+        self.spacing = spacing;
+        self
+    }
+    pub fn flex_width(mut self, w: f32) -> Self {
+        self.flex.width = Some(w);
+        self
+    }
+    pub fn flex_height(mut self, h: f32) -> Self {
+        self.flex.height = Some(h);
+        self
+    }
+    pub fn flex_grow(mut self, grow: f32) -> Self {
+        self.flex.flex_grow = grow;
+        self
     }
 }
 

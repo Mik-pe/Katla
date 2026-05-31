@@ -10,7 +10,7 @@ use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
-pub(crate) struct RadioButton {
+pub struct RadioButton {
     pub value_id: StateId,
     pub index: usize,
     pub label: String,

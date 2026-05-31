@@ -12,7 +12,7 @@ use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
-pub(crate) struct ImageButton {
+pub struct ImageButton {
     pub icon: char,
     pub enabled: bool,
     pub fill_color: Option<Color>,
@@ -108,6 +108,20 @@ impl Widget for ImageButton {
 
     fn interactive(&self) -> bool {
         true
+    }
+}
+impl ImageButton {
+    pub fn fill(mut self, color: impl Into<katla_math::Color>) -> Self {
+        self.fill_color = Some(color.into());
+        self
+    }
+    pub fn on_click(mut self, cb: super::super::descriptor::Callback) -> Self {
+        self.on_click = Some(cb);
+        self
+    }
+    pub fn enabled(mut self, e: bool) -> Self {
+        self.enabled = e;
+        self
     }
 }
 #[cfg(test)]

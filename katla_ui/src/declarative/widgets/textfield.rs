@@ -13,7 +13,7 @@ use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
-pub(crate) struct TextField {
+pub struct TextField {
     pub placeholder: String,
     pub value_id: StateId,
     pub on_submit: Option<Callback>,
@@ -142,6 +142,12 @@ impl Widget for TextField {
 
     fn interactive(&self) -> bool {
         true
+    }
+}
+impl TextField {
+    pub fn on_submit(mut self, cb: super::super::descriptor::Callback) -> Self {
+        self.on_submit = Some(cb);
+        self
     }
 }
 #[cfg(test)]

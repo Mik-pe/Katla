@@ -12,7 +12,7 @@ use super::super::widget::{
 };
 use crate::context::UiContext;
 
-pub(crate) struct ZStack {
+pub struct ZStack {
     pub padding: Padding,
     pub flex: FlexProps,
     pub child_widgets: Vec<(Alignment, super::super::constructors::KeyedChild)>,
@@ -110,6 +110,29 @@ impl Widget for ZStack {
             .map(|(alignment, kc)| (alignment, kc.key, kc.widget))
             .collect();
         ChildWidgets::ZStack(children)
+    }
+}
+
+impl ZStack {
+    pub fn padding(mut self, p: super::super::descriptor::Padding) -> Self {
+        self.padding = p;
+        self
+    }
+    pub fn padding_all(mut self, v: f32) -> Self {
+        self.padding = super::super::descriptor::Padding::all(v);
+        self
+    }
+    pub fn flex_width(mut self, w: f32) -> Self {
+        self.flex.width = Some(w);
+        self
+    }
+    pub fn flex_height(mut self, h: f32) -> Self {
+        self.flex.height = Some(h);
+        self
+    }
+    pub fn flex_grow(mut self, grow: f32) -> Self {
+        self.flex.flex_grow = grow;
+        self
     }
 }
 

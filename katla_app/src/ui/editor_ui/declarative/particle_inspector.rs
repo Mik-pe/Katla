@@ -4,7 +4,7 @@ use katla_ecs::EntityId;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
     Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId, Widget,
-    WidgetExt, draggable_panel, empty, hstack, labeled_slider, property_row, radio, scroll, text,
+    WidgetBox, draggable_panel, empty, hstack, labeled_slider, property_row, radio, scroll, text,
     toggle, vstack,
 };
 
@@ -32,7 +32,7 @@ impl Build for ParticleInspectorView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<ParticleInspectorDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return empty();
+            return empty().boxed();
         };
 
         let panel_id: StateId = ctx.state(DraggablePanelState::default());
@@ -61,7 +61,7 @@ impl Build for ParticleInspectorView {
         }
 
         if !current_panel.visibility.is_visible() {
-            return empty();
+            return empty().boxed();
         }
 
         let theme = &draw_ctx.theme;
@@ -72,7 +72,8 @@ impl Build for ParticleInspectorView {
         children.push(
             text("Emitter:")
                 .color(theme.text_primary)
-                .font_size(FontSize::Small),
+                .font_size(FontSize::Small)
+                .boxed(),
         );
 
         // Emitter selector via RadioButton group
@@ -80,7 +81,8 @@ impl Build for ParticleInspectorView {
             children.push(
                 text("No particle emitters in scene")
                     .color(theme.text_muted)
-                    .font_size(FontSize::Small),
+                    .font_size(FontSize::Small)
+                    .boxed(),
             );
         } else {
             let selected_idx = data
@@ -99,7 +101,7 @@ impl Build for ParticleInspectorView {
             ctx.set_state(emitter_sel_id, selected_idx);
 
             for (idx, _) in data.emitter_entities.iter().enumerate() {
-                children.push(radio(emitter_sel_id, idx, format!("Emitter {}", idx)));
+                children.push(radio(emitter_sel_id, idx, format!("Emitter {}", idx)).boxed());
             }
         }
 
@@ -134,9 +136,9 @@ impl Build for ParticleInspectorView {
                 let shape_buttons: Vec<Box<dyn Widget>> = shape_names
                     .iter()
                     .enumerate()
-                    .map(|(i, name)| radio(shape_sel_id, i, *name))
+                    .map(|(i, name)| radio(shape_sel_id, i, *name).boxed())
                     .collect();
-                config_children.push(hstack(shape_buttons).spacing(2.0));
+                config_children.push(hstack(shape_buttons).spacing(2.0).boxed());
 
                 // Shape params
                 match config.shape_name {
@@ -149,7 +151,7 @@ impl Build for ParticleInspectorView {
                             entity,
                             EmitterField::ShapeParam0,
                         ));
-                        config_children.push(property_row("Axis:", "Y (vertical)"));
+                        config_children.push(property_row("Axis:", "Y (vertical)").boxed());
                     }
                     "Circle" => {
                         config_children.push(scalar_slider(
@@ -160,7 +162,7 @@ impl Build for ParticleInspectorView {
                             entity,
                             EmitterField::ShapeParam0,
                         ));
-                        config_children.push(property_row("Plane:", "XZ (horizontal)"));
+                        config_children.push(property_row("Plane:", "XZ (horizontal)").boxed());
                     }
                     "Sphere" => {
                         config_children.push(scalar_slider(
@@ -268,13 +270,16 @@ impl Build for ParticleInspectorView {
 
                 // Color
                 config_children.push(heading("Color", theme));
-                config_children.push(property_row(
-                    "Color:",
-                    format!(
-                        "R:{:.2} G:{:.2} B:{:.2} A:{:.2}",
-                        config.color[0], config.color[1], config.color[2], config.color[3]
-                    ),
-                ));
+                config_children.push(
+                    property_row(
+                        "Color:",
+                        format!(
+                            "R:{:.2} G:{:.2} B:{:.2} A:{:.2}",
+                            config.color[0], config.color[1], config.color[2], config.color[3]
+                        ),
+                    )
+                    .boxed(),
+                );
                 config_children.push(scalar_slider(
                     ctx,
                     "Color Var",
@@ -283,16 +288,19 @@ impl Build for ParticleInspectorView {
                     entity,
                     EmitterField::ColorVariation,
                 ));
-                config_children.push(property_row(
-                    "Color End:",
-                    format!(
-                        "R:{:.2} G:{:.2} B:{:.2} A:{:.2}",
-                        config.color_end[0],
-                        config.color_end[1],
-                        config.color_end[2],
-                        config.color_end[3]
-                    ),
-                ));
+                config_children.push(
+                    property_row(
+                        "Color End:",
+                        format!(
+                            "R:{:.2} G:{:.2} B:{:.2} A:{:.2}",
+                            config.color_end[0],
+                            config.color_end[1],
+                            config.color_end[2],
+                            config.color_end[3]
+                        ),
+                    )
+                    .boxed(),
+                );
 
                 // Size Over Lifetime
                 config_children.push(heading("Size Over Lifetime", theme));
@@ -346,10 +354,9 @@ impl Build for ParticleInspectorView {
                     ctx.emit(ParticleInspectorAction::ToggleEmitter);
                     ctx.set_state(active_id, config.active);
                 }
-                config_children.push(toggle(
-                    if config.active { "Disable" } else { "Enable" },
-                    active_id,
-                ));
+                config_children.push(
+                    toggle(if config.active { "Disable" } else { "Enable" }, active_id).boxed(),
+                );
 
                 let reset_id: StateId = ctx.state(false);
                 let reset_val: bool = ctx.get_state(reset_id).unwrap();
@@ -357,7 +364,7 @@ impl Build for ParticleInspectorView {
                     ctx.emit(ParticleInspectorAction::ResetSystem);
                     ctx.set_state(reset_id, false);
                 }
-                config_children.push(toggle("Reset System", reset_id));
+                config_children.push(toggle("Reset System", reset_id).boxed());
 
                 children.extend(config_children);
             }
@@ -365,7 +372,8 @@ impl Build for ParticleInspectorView {
             children.push(
                 text("Selected emitter not found")
                     .color(theme.text_muted)
-                    .font_size(FontSize::Small),
+                    .font_size(FontSize::Small)
+                    .boxed(),
             );
         }
 
@@ -377,11 +385,14 @@ impl Build for ParticleInspectorView {
                 vstack(children)
                     .spacing(4.0)
                     .padding_all(8.0)
-                    .align(Alignment::Leading),
+                    .align(Alignment::Leading)
+                    .boxed(),
                 scroll_id,
-            ),
+            )
+            .boxed(),
             panel_id,
         )
+        .boxed()
     }
 }
 
@@ -389,6 +400,7 @@ fn heading(label: &str, theme: &ColorScheme) -> Box<dyn Widget> {
     text(label)
         .color(theme.text_accent)
         .font_size(FontSize::Small)
+        .boxed()
 }
 
 fn scalar_slider(
@@ -411,48 +423,40 @@ fn scalar_slider(
         .label_width(100.0)
         .show_value(true)
         .precision(2)
+        .boxed()
 }
 
 fn statistics_section(stats: &ParticleStats) -> Box<dyn Widget> {
     let mut children = Vec::new();
 
-    children.push(text("Statistics").font_size(FontSize::Small));
-    children.push(property_row(
-        "Alive:",
-        format!("{} / {}", stats.current_alive_count, stats.max_alive_count),
-    ));
-    children.push(property_row("Dead:", format!("{}", stats.dead_count)));
-    children.push(property_row(
-        "Buffer:",
-        format!("{:.1}%", stats.buffer_utilization * 100.0),
-    ));
-    children.push(property_row(
-        "Memory:",
-        format!("{:.2} MB", stats.memory_used_mb),
-    ));
+    children.push(text("Statistics").font_size(FontSize::Small).boxed());
+    children.push(
+        property_row(
+            "Alive:",
+            format!("{} / {}", stats.current_alive_count, stats.max_alive_count),
+        )
+        .boxed(),
+    );
+    children.push(property_row("Dead:", format!("{}", stats.dead_count)).boxed());
+    children.push(
+        property_row(
+            "Buffer:",
+            format!("{:.1}%", stats.buffer_utilization * 100.0),
+        )
+        .boxed(),
+    );
+    children.push(property_row("Memory:", format!("{:.2} MB", stats.memory_used_mb)).boxed());
 
-    children.push(text("Performance").font_size(FontSize::Small));
-    children.push(property_row(
-        "Compute:",
-        format!("{:.3} ms", stats.compute_time_ms),
-    ));
-    children.push(property_row(
-        "Avg:",
-        format!("{:.3} ms", stats.avg_compute_time_ms),
-    ));
-    children.push(property_row(
-        "Peak:",
-        format!("{:.3} ms", stats.peak_compute_time_ms),
-    ));
+    children.push(text("Performance").font_size(FontSize::Small).boxed());
+    children.push(property_row("Compute:", format!("{:.3} ms", stats.compute_time_ms)).boxed());
+    children.push(property_row("Avg:", format!("{:.3} ms", stats.avg_compute_time_ms)).boxed());
+    children.push(property_row("Peak:", format!("{:.3} ms", stats.peak_compute_time_ms)).boxed());
 
-    children.push(text("Lifetime").font_size(FontSize::Small));
-    children.push(property_row("Emitted:", format!("{}", stats.total_emitted)));
-    children.push(property_row("Died:", format!("{}", stats.total_died)));
-    children.push(property_row("Frames:", format!("{}", stats.frame_count)));
-    children.push(property_row(
-        "Dispatches:",
-        format!("{}", stats.total_dispatches),
-    ));
+    children.push(text("Lifetime").font_size(FontSize::Small).boxed());
+    children.push(property_row("Emitted:", format!("{}", stats.total_emitted)).boxed());
+    children.push(property_row("Died:", format!("{}", stats.total_died)).boxed());
+    children.push(property_row("Frames:", format!("{}", stats.frame_count)).boxed());
+    children.push(property_row("Dispatches:", format!("{}", stats.total_dispatches)).boxed());
 
-    vstack(children).spacing(4.0)
+    vstack(children).spacing(4.0).boxed()
 }

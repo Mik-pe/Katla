@@ -12,7 +12,7 @@ use super::super::widget::{
 };
 use crate::context::UiContext;
 
-pub(crate) struct ScrollView {
+pub struct ScrollView {
     pub scroll_state_id: StateId,
     pub flex: FlexProps,
     pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
@@ -125,6 +125,21 @@ impl Widget for ScrollView {
 
     fn interactive(&self) -> bool {
         true
+    }
+}
+
+impl ScrollView {
+    pub fn flex_width(mut self, w: f32) -> Self {
+        self.flex.width = Some(w);
+        self
+    }
+    pub fn flex_height(mut self, h: f32) -> Self {
+        self.flex.height = Some(h);
+        self
+    }
+    pub fn flex_grow(mut self, grow: f32) -> Self {
+        self.flex.flex_grow = grow;
+        self
     }
 }
 

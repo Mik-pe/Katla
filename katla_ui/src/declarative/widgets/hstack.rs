@@ -12,7 +12,7 @@ use super::super::widget::{
 };
 use crate::context::UiContext;
 
-pub(crate) struct HStack {
+pub struct HStack {
     pub spacing: f32,
     pub padding: Padding,
     pub alignment: Alignment,
@@ -115,6 +115,37 @@ impl Widget for HStack {
             .map(|kc| (kc.key, kc.widget))
             .collect();
         ChildWidgets::Multi(children)
+    }
+}
+
+impl HStack {
+    pub fn spacing(mut self, s: f32) -> Self {
+        self.spacing = s;
+        self
+    }
+    pub fn padding(mut self, p: super::super::descriptor::Padding) -> Self {
+        self.padding = p;
+        self
+    }
+    pub fn padding_all(mut self, v: f32) -> Self {
+        self.padding = super::super::descriptor::Padding::all(v);
+        self
+    }
+    pub fn align(mut self, a: super::super::descriptor::Alignment) -> Self {
+        self.alignment = a;
+        self
+    }
+    pub fn flex_width(mut self, w: f32) -> Self {
+        self.flex.width = Some(w);
+        self
+    }
+    pub fn flex_height(mut self, h: f32) -> Self {
+        self.flex.height = Some(h);
+        self
+    }
+    pub fn flex_grow(mut self, grow: f32) -> Self {
+        self.flex.flex_grow = grow;
+        self
     }
 }
 

@@ -11,7 +11,7 @@ use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
-pub(crate) struct ContextMenu {
+pub struct ContextMenu {
     pub items: Vec<ContextMenuEntry>,
     pub open_id: StateId,
     children: Vec<ViewId>,

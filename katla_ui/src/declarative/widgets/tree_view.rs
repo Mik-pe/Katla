@@ -13,7 +13,7 @@ use super::super::state::{StateArena, StateId, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
-pub(crate) struct TreeView {
+pub struct TreeView {
     pub items: Vec<TreeItem>,
     pub expanded_id: StateId,
     pub selected_id: StateId,
@@ -319,6 +319,25 @@ impl Widget for TreeView {
 
     fn interactive(&self) -> bool {
         true
+    }
+}
+
+impl TreeView {
+    pub fn row_height(mut self, h: f32) -> Self {
+        self.row_height = h;
+        self
+    }
+    pub fn indent(mut self, i: f32) -> Self {
+        self.indent_per_level = i;
+        self
+    }
+    pub fn on_select(mut self, cb: super::super::descriptor::Callback) -> Self {
+        self.on_select = Some(cb);
+        self
+    }
+    pub fn on_right_click(mut self, cb: super::super::descriptor::Callback) -> Self {
+        self.on_right_click = Some(cb);
+        self
     }
 }
 

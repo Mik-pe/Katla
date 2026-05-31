@@ -9,7 +9,7 @@ use super::super::state::{StateArena, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
-pub(crate) struct VuMeter {
+pub struct VuMeter {
     pub peak_db: f32,
     pub rms_db: f32,
 }

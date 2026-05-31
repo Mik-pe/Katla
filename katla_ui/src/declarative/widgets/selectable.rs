@@ -13,7 +13,7 @@ use super::super::widget::{
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
-pub(crate) struct Selectable {
+pub struct Selectable {
     pub on_click: Option<Callback>,
     pub selected: bool,
     pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
@@ -104,6 +104,17 @@ impl Widget for Selectable {
 
     fn interactive(&self) -> bool {
         true
+    }
+}
+
+impl Selectable {
+    pub fn on_click(mut self, cb: super::super::descriptor::Callback) -> Self {
+        self.on_click = Some(cb);
+        self
+    }
+    pub fn selected(mut self, sel: bool) -> Self {
+        self.selected = sel;
+        self
     }
 }
 

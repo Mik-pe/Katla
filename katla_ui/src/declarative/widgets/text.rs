@@ -11,7 +11,7 @@ use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
-pub(crate) struct Text {
+pub struct Text {
     pub content: String,
     pub color: Option<Color>,
     pub font_size: Option<FontSize>,
@@ -84,10 +84,20 @@ impl Widget for Text {
     }
 }
 
+impl Text {
+    pub fn color(mut self, color: impl Into<katla_math::Color>) -> Self {
+        self.color = Some(color.into());
+        self
+    }
+    pub fn font_size(mut self, fs: crate::style::FontSize) -> Self {
+        self.font_size = Some(fs);
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::constructors::text;
 
     #[test]
     fn test_text_diff_same_type() {

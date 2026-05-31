@@ -1,6 +1,6 @@
 use std::boxed::Box;
 
-use katla_ui::declarative::{Build, BuildContext, StateId, Widget, WidgetExt, hstack, radio};
+use katla_ui::declarative::{Build, BuildContext, StateId, Widget, WidgetBox, hstack, radio};
 
 #[derive(Clone)]
 pub(crate) struct GizmoDrawCtx {
@@ -36,9 +36,9 @@ impl Build for GizmoButtonsView {
 
         let children: Vec<Box<dyn Widget>> = modes
             .iter()
-            .map(|&(index, label)| radio(mode_id, index, label))
+            .map(|&(index, label)| radio(mode_id, index, label).boxed())
             .collect();
 
-        hstack(children).spacing(2.0).padding_all(10.0)
+        hstack(children).spacing(2.0).padding_all(10.0).boxed()
     }
 }

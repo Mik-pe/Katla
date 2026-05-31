@@ -11,7 +11,7 @@ use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
-pub(crate) struct Icon {
+pub struct Icon {
     pub icon: char,
     pub size: Option<FontSize>,
     pub color: Option<Color>,
@@ -88,6 +88,17 @@ impl Widget for Icon {
 
     fn focusable(&self) -> bool {
         false
+    }
+}
+
+impl Icon {
+    pub fn color(mut self, color: impl Into<katla_math::Color>) -> Self {
+        self.color = Some(color.into());
+        self
+    }
+    pub fn icon_size(mut self, size: crate::style::FontSize) -> Self {
+        self.size = Some(size);
+        self
     }
 }
 

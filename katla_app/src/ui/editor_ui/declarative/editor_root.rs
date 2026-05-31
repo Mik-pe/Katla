@@ -1,7 +1,9 @@
 use std::boxed::Box;
 
 use katla_math::Vec2;
-use katla_ui::declarative::{Alignment, Anchor, Build, BuildContext, Widget, overlay, zstack};
+use katla_ui::declarative::{
+    Alignment, Anchor, Build, BuildContext, Widget, WidgetBox, overlay, zstack,
+};
 
 use super::asset_browser::AssetBrowserDrawCtx;
 use super::asset_browser::AssetBrowserView;
@@ -84,19 +86,20 @@ impl Build for EditorOverlayView {
 
         zstack([
             // Docked panels — positioned via Overlay offset
-            (Alignment::TopLeading, viewport_grid),
-            (Alignment::TopLeading, hierarchy),
-            (Alignment::TopLeading, inspector),
-            (Alignment::TopLeading, asset_browser),
-            (Alignment::TopLeading, console),
-            (Alignment::TopLeading, mixer),
+            (Alignment::TopLeading, viewport_grid.boxed()),
+            (Alignment::TopLeading, hierarchy.boxed()),
+            (Alignment::TopLeading, inspector.boxed()),
+            (Alignment::TopLeading, asset_browser.boxed()),
+            (Alignment::TopLeading, console.boxed()),
+            (Alignment::TopLeading, mixer.boxed()),
             // Overlay panels — positioned via ZStack alignment
             (Alignment::TopLeading, toolbar),
             (Alignment::BottomLeading, status_bar),
-            (Alignment::TopLeading, gizmo),
+            (Alignment::TopLeading, gizmo.boxed()),
             (Alignment::TopLeading, co_creator),
             (Alignment::TopLeading, particle_inspector),
             (Alignment::TopLeading, preferences),
         ])
+        .boxed()
     }
 }

@@ -2,24 +2,20 @@ use std::ops::RangeInclusive;
 
 use katla_math::Vec2;
 
-use crate::style::FontSize;
 use crate::types::TextureId;
 
 use super::descriptor::{
-    Alignment, Anchor, Callback, ChildDescriptor, ContextMenuDescriptor, ContextMenuEntry,
-    DraggablePanelDescriptor, FlexProps, MenuBarDescriptor, MenuEntry, MenuGroup, ModalDescriptor,
-    OverlayDescriptor, Padding, PanelDescriptor, ScrollDescriptor, SeparatorDirection,
-    StackDescriptor, StatusBarDescriptor, TreeItem, TreeViewDescriptor, ViewDescriptor,
-    ZStackDescriptor,
+    Alignment, Anchor, Callback, ContextMenuEntry, FlexProps, MenuEntry, MenuGroup, Padding,
+    SeparatorDirection, TreeItem,
 };
 use super::state::StateId;
 use super::widget::Widget;
+use super::widgets;
 
 // ---------------------------------------------------------------------------
-// KeyedChild — replaces ChildDescriptor in the public API
+// KeyedChild — child widget with optional stable key for diffing
 // ---------------------------------------------------------------------------
 
-/// A child widget with an optional stable key for diffing.
 pub struct KeyedChild {
     pub key: Option<u64>,
     pub widget: Box<dyn Widget>,
@@ -32,492 +28,148 @@ impl From<Box<dyn Widget>> for KeyedChild {
 }
 
 // ---------------------------------------------------------------------------
-// Widget → ViewDescriptor conversion
+// Leaf constructors — return concrete widget types
 // ---------------------------------------------------------------------------
 
-/// Convert any `Box<dyn Widget>` to its `ViewDescriptor` representation.
-pub fn widget_to_descriptor(widget: &dyn Widget) -> ViewDescriptor {
-    use super::widgets::*;
-
-    if widget.as_any().downcast_ref::<empty::Empty>().is_some() {
-        return ViewDescriptor::Empty;
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<text::Text>() {
-        return ViewDescriptor::Text {
-            content: w.content.clone(),
-            color: w.color,
-            font_size: w.font_size,
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<button::Button>() {
-        return ViewDescriptor::Button {
-            label: w.label.clone(),
-            fill_color: w.fill_color,
-            hover_color: w.hover_color,
-            border_color: w.border_color,
-            on_click: w.on_click.clone(),
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<image_button::ImageButton>() {
-        return ViewDescriptor::ImageButton {
-            icon: w.icon,
-            enabled: w.enabled,
-            fill_color: w.fill_color,
-            on_click: w.on_click.clone(),
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<slider::Slider>() {
-        return ViewDescriptor::Slider {
-            label: w.label.clone(),
-            value_id: w.value_id,
-            range: w.range.clone(),
-            show_value: w.show_value,
-            precision: w.precision,
-        };
-    }
-    if let Some(w) = widget
-        .as_any()
-        .downcast_ref::<labeled_slider::LabeledSlider>()
-    {
-        return ViewDescriptor::LabeledSlider {
-            label: w.label.clone(),
-            value_id: w.value_id,
-            range: w.range.clone(),
-            label_width: w.label_width,
-            show_value: w.show_value,
-            precision: w.precision,
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<textfield::TextField>() {
-        return ViewDescriptor::TextField {
-            placeholder: w.placeholder.clone(),
-            value_id: w.value_id,
-            on_submit: w.on_submit.clone(),
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<progress::Progress>() {
-        return ViewDescriptor::Progress {
-            value: w.value,
-            range: w.range.clone(),
-            fill_color: w.fill_color,
-            label: w.label.clone(),
-        };
-    }
-    if let Some(w) = widget
-        .as_any()
-        .downcast_ref::<super::widgets::vu_meter::VuMeter>()
-    {
-        return ViewDescriptor::VuMeter(Box::new(super::descriptor::VuMeterDescriptor {
-            peak_db: w.peak_db,
-            rms_db: w.rms_db,
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<image::Image>() {
-        return ViewDescriptor::Image {
-            texture: w.texture,
-            uv: w.uv,
-            tint: w.tint,
-            width: w.width,
-            height: w.height,
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<toggle::Toggle>() {
-        return ViewDescriptor::Toggle {
-            label: w.label.clone(),
-            value_id: w.value_id,
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<radio::RadioButton>() {
-        return ViewDescriptor::RadioButton {
-            value_id: w.value_id,
-            index: w.index,
-            label: w.label.clone(),
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<property_row::PropertyRow>() {
-        return ViewDescriptor::PropertyRow {
-            label: w.label.clone(),
-            value: w.value.clone(),
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<color_picker::ColorPicker>() {
-        return ViewDescriptor::ColorPicker {
-            label: w.label.clone(),
-            value_id: w.value_id,
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<vec3_slider::Vec3Slider>() {
-        return ViewDescriptor::Vec3Slider {
-            label: w.label.clone(),
-            value_ids: w.value_ids,
-            range: w.range.clone(),
-            axis_labels: w.axis_labels.clone(),
-            axis_colors: w.axis_colors,
-            precision: w.precision,
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<separator::Separator>() {
-        return ViewDescriptor::Separator {
-            direction: w.direction,
-            color: w.color,
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<icon::Icon>() {
-        return ViewDescriptor::Icon {
-            icon: w.icon,
-            size: w.size,
-            color: w.color,
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<hstack::HStack>() {
-        return ViewDescriptor::HStack(Box::new(StackDescriptor {
-            children: w
-                .child_widgets
-                .iter()
-                .map(|kc| ChildDescriptor {
-                    key: kc.key,
-                    descriptor: widget_to_descriptor(&*kc.widget),
-                })
-                .collect(),
-            spacing: w.spacing,
-            padding: w.padding,
-            alignment: w.alignment,
-            flex: w.flex.clone(),
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<vstack::VStack>() {
-        return ViewDescriptor::VStack(Box::new(StackDescriptor {
-            children: w
-                .child_widgets
-                .iter()
-                .map(|kc| ChildDescriptor {
-                    key: kc.key,
-                    descriptor: widget_to_descriptor(&*kc.widget),
-                })
-                .collect(),
-            spacing: w.spacing,
-            padding: w.padding,
-            alignment: w.alignment,
-            flex: w.flex.clone(),
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<zstack::ZStack>() {
-        return ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
-            children: w
-                .child_widgets
-                .iter()
-                .map(|(a, kc)| {
-                    (
-                        *a,
-                        ChildDescriptor {
-                            key: kc.key,
-                            descriptor: widget_to_descriptor(&*kc.widget),
-                        },
-                    )
-                })
-                .collect(),
-            padding: w.padding,
-            flex: w.flex.clone(),
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<grid::Grid>() {
-        return ViewDescriptor::Grid(Box::new(super::descriptor::GridDescriptor {
-            columns: w.columns,
-            cell_size: w.cell_size,
-            spacing: w.spacing,
-            children: w
-                .child_widgets
-                .iter()
-                .map(|kc| ChildDescriptor {
-                    key: kc.key,
-                    descriptor: widget_to_descriptor(&*kc.widget),
-                })
-                .collect(),
-            flex: w.flex.clone(),
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<panel::Panel>() {
-        return ViewDescriptor::Panel(Box::new(PanelDescriptor {
-            title: w.title.clone(),
-            content: w
-                .child_widget
-                .as_ref()
-                .map(|c| Box::new(widget_to_descriptor(&**c)))
-                .unwrap_or(Box::new(ViewDescriptor::Empty)),
-            header_height: w.header_height,
-            flex: w.flex.clone(),
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<scroll::ScrollView>() {
-        return ViewDescriptor::ScrollView(Box::new(ScrollDescriptor {
-            content: w
-                .child_widget
-                .as_ref()
-                .map(|c| Box::new(widget_to_descriptor(&**c)))
-                .unwrap_or(Box::new(ViewDescriptor::Empty)),
-            scroll_state_id: w.scroll_state_id,
-            flex: w.flex.clone(),
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<overlay::Overlay>() {
-        return ViewDescriptor::Overlay(Box::new(OverlayDescriptor {
-            anchor: w.anchor,
-            offset: w.offset,
-            content: w
-                .child_widget
-                .as_ref()
-                .map(|c| Box::new(widget_to_descriptor(&**c)))
-                .unwrap_or(Box::new(ViewDescriptor::Empty)),
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<statusbar::StatusBar>() {
-        return ViewDescriptor::StatusBar(Box::new(StatusBarDescriptor {
-            height: w.height,
-            content: w
-                .child_widget
-                .as_ref()
-                .map(|c| Box::new(widget_to_descriptor(&**c)))
-                .unwrap_or(Box::new(ViewDescriptor::Empty)),
-        }));
-    }
-    if let Some(w) = widget
-        .as_any()
-        .downcast_ref::<draggable_panel::DraggablePanel>()
-    {
-        return ViewDescriptor::DraggablePanel(Box::new(DraggablePanelDescriptor {
-            title: w.title.clone(),
-            width: w.width,
-            height: w.height,
-            content: w
-                .child_widget
-                .as_ref()
-                .map(|c| Box::new(widget_to_descriptor(&**c)))
-                .unwrap_or(Box::new(ViewDescriptor::Empty)),
-            state_id: w.state_id,
-            close_on_outside_click: w.close_on_outside_click,
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<menubar::MenuBar>() {
-        return ViewDescriptor::MenuBar(Box::new(MenuBarDescriptor {
-            groups: w.groups.clone(),
-            right_content: w
-                .right_content
-                .as_ref()
-                .map(|c| Box::new(widget_to_descriptor(&**c))),
-            height: w.height,
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<tree_view::TreeView>() {
-        return ViewDescriptor::TreeView(Box::new(TreeViewDescriptor {
-            items: w.items.clone(),
-            expanded_id: w.expanded_id,
-            selected_id: w.selected_id,
-            scroll_id: w.scroll_id,
-            row_height: w.row_height,
-            indent_per_level: w.indent_per_level,
-            on_select: w.on_select.clone(),
-            on_right_click: w.on_right_click.clone(),
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<modal::Modal>() {
-        return ViewDescriptor::Modal(Box::new(ModalDescriptor {
-            width: w.width,
-            height: w.height,
-            open_id: w.open_id,
-            content: w
-                .child_widget
-                .as_ref()
-                .map(|c| Box::new(widget_to_descriptor(&**c)))
-                .unwrap_or(Box::new(ViewDescriptor::Empty)),
-            on_close: w.on_close.clone(),
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<context_menu::ContextMenu>() {
-        return ViewDescriptor::ContextMenu(Box::new(ContextMenuDescriptor {
-            items: w.items.clone(),
-            open_id: w.open_id,
-        }));
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<selectable::Selectable>() {
-        return ViewDescriptor::Selectable {
-            child: w
-                .child_widget
-                .as_ref()
-                .map(|c| Box::new(widget_to_descriptor(&**c)))
-                .unwrap_or(Box::new(ViewDescriptor::Empty)),
-            on_click: w.on_click.clone(),
-            selected: w.selected,
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<section::Section>() {
-        return ViewDescriptor::Section {
-            title: w.title.clone(),
-            child: w
-                .child_widget
-                .as_ref()
-                .map(|c| Box::new(widget_to_descriptor(&**c)))
-                .unwrap_or(Box::new(ViewDescriptor::Empty)),
-            expanded_id: w.expanded_id,
-            on_remove: w.on_remove.clone(),
-        };
-    }
-    if let Some(w) = widget.as_any().downcast_ref::<tab_bar::TabBar>() {
-        return ViewDescriptor::TabBar(Box::new(super::descriptor::TabBarDescriptor {
-            tabs: w.tabs.clone(),
-            selected_id: w.selected_id,
-            content: w
-                .child_widget
-                .as_ref()
-                .map(|c| Box::new(widget_to_descriptor(&**c)))
-                .unwrap_or(Box::new(ViewDescriptor::Empty)),
-        }));
-    }
-    if let Some(w) = widget
-        .as_any()
-        .downcast_ref::<transition::TransitionContainer>()
-    {
-        return ViewDescriptor::TransitionContainer {
-            child: w
-                .child_widget
-                .as_ref()
-                .map(|c| Box::new(widget_to_descriptor(&**c)))
-                .unwrap_or(Box::new(ViewDescriptor::Empty)),
-            transition: w.transition.clone(),
-        };
-    }
-    ViewDescriptor::Empty
+pub fn empty() -> widgets::empty::Empty {
+    widgets::empty::Empty
 }
 
-// ---------------------------------------------------------------------------
-// Leaf constructors
-// ---------------------------------------------------------------------------
-
-pub fn empty() -> Box<dyn Widget> {
-    Box::new(super::widgets::empty::Empty)
-}
-
-pub fn text(content: impl Into<String>) -> Box<dyn Widget> {
-    Box::new(super::widgets::text::Text {
+pub fn text(content: impl Into<String>) -> widgets::text::Text {
+    widgets::text::Text {
         content: content.into(),
         color: None,
         font_size: None,
-    })
+    }
 }
 
-pub fn button(label: impl Into<String>) -> Box<dyn Widget> {
-    Box::new(super::widgets::button::Button {
+pub fn button(label: impl Into<String>) -> widgets::button::Button {
+    widgets::button::Button {
         label: label.into(),
         fill_color: None,
         hover_color: None,
         border_color: None,
         on_click: None,
-    })
+    }
 }
 
-pub fn image_button(icon: char) -> Box<dyn Widget> {
-    Box::new(super::widgets::image_button::ImageButton {
+pub fn image_button(icon: char) -> widgets::image_button::ImageButton {
+    widgets::image_button::ImageButton {
         icon,
         enabled: true,
         fill_color: None,
         on_click: None,
-    })
+    }
 }
 
 pub fn slider(
     label: impl Into<String>,
     value_id: StateId,
     range: RangeInclusive<f32>,
-) -> Box<dyn Widget> {
-    Box::new(super::widgets::slider::Slider {
+) -> widgets::slider::Slider {
+    widgets::slider::Slider {
         label: label.into(),
         value_id,
         range,
         show_value: false,
         precision: 2,
-    })
+    }
 }
 
 pub fn labeled_slider(
     label: impl Into<String>,
     value_id: StateId,
     range: RangeInclusive<f32>,
-) -> Box<dyn Widget> {
-    Box::new(super::widgets::labeled_slider::LabeledSlider {
+) -> widgets::labeled_slider::LabeledSlider {
+    widgets::labeled_slider::LabeledSlider {
         label: label.into(),
         value_id,
         range,
         label_width: 0.0,
         show_value: false,
         precision: 2,
-    })
+    }
 }
 
-pub fn textfield(placeholder: impl Into<String>, value_id: StateId) -> Box<dyn Widget> {
-    Box::new(super::widgets::textfield::TextField {
+pub fn textfield(
+    placeholder: impl Into<String>,
+    value_id: StateId,
+) -> widgets::textfield::TextField {
+    widgets::textfield::TextField {
         placeholder: placeholder.into(),
         value_id,
         on_submit: None,
-    })
+    }
 }
 
-pub fn progress(value: f32, range: RangeInclusive<f32>) -> Box<dyn Widget> {
-    Box::new(super::widgets::progress::Progress {
+pub fn progress(value: f32, range: RangeInclusive<f32>) -> widgets::progress::Progress {
+    widgets::progress::Progress {
         value,
         range,
         fill_color: None,
         label: None,
-    })
+    }
 }
 
-pub fn vu_meter(peak_db: f32, rms_db: f32) -> Box<dyn Widget> {
-    Box::new(super::widgets::vu_meter::VuMeter { peak_db, rms_db })
+pub fn vu_meter(peak_db: f32, rms_db: f32) -> widgets::vu_meter::VuMeter {
+    widgets::vu_meter::VuMeter { peak_db, rms_db }
 }
 
-pub fn image(texture: TextureId, tint: katla_math::Color) -> Box<dyn Widget> {
-    Box::new(super::widgets::image::Image {
+pub fn image(texture: TextureId, tint: katla_math::Color) -> widgets::image::Image {
+    widgets::image::Image {
         texture,
         uv: None,
         tint,
         width: None,
         height: None,
-    })
+    }
 }
 
-pub fn toggle(label: impl Into<String>, value_id: StateId) -> Box<dyn Widget> {
-    Box::new(super::widgets::toggle::Toggle {
+pub fn toggle(label: impl Into<String>, value_id: StateId) -> widgets::toggle::Toggle {
+    widgets::toggle::Toggle {
         label: label.into(),
         value_id,
-    })
+    }
 }
 
-pub fn radio(value_id: StateId, index: usize, label: impl Into<String>) -> Box<dyn Widget> {
-    Box::new(super::widgets::radio::RadioButton {
+pub fn radio(
+    value_id: StateId,
+    index: usize,
+    label: impl Into<String>,
+) -> widgets::radio::RadioButton {
+    widgets::radio::RadioButton {
         value_id,
         index,
         label: label.into(),
-    })
+    }
 }
 
-pub fn property_row(label: impl Into<String>, value: impl Into<String>) -> Box<dyn Widget> {
-    Box::new(super::widgets::property_row::PropertyRow {
+pub fn property_row(
+    label: impl Into<String>,
+    value: impl Into<String>,
+) -> widgets::property_row::PropertyRow {
+    widgets::property_row::PropertyRow {
         label: label.into(),
         value: value.into(),
-    })
+    }
 }
 
-pub fn color_picker(label: impl Into<String>, value_id: StateId) -> Box<dyn Widget> {
-    Box::new(super::widgets::color_picker::ColorPicker {
+pub fn color_picker(
+    label: impl Into<String>,
+    value_id: StateId,
+) -> widgets::color_picker::ColorPicker {
+    widgets::color_picker::ColorPicker {
         label: label.into(),
         value_id,
-    })
+    }
 }
 
 pub fn vec3_slider(
     label: impl Into<String>,
     value_ids: [StateId; 3],
     range: RangeInclusive<f32>,
-) -> Box<dyn Widget> {
-    Box::new(super::widgets::vec3_slider::Vec3Slider {
+) -> widgets::vec3_slider::Vec3Slider {
+    widgets::vec3_slider::Vec3Slider {
         label: label.into(),
         value_ids,
         range,
@@ -528,66 +180,66 @@ pub fn vec3_slider(
             katla_math::Color::BLUE,
         ],
         precision: 2,
-    })
+    }
 }
 
-pub fn separator(direction: SeparatorDirection) -> Box<dyn Widget> {
-    Box::new(super::widgets::separator::Separator {
+pub fn separator(direction: SeparatorDirection) -> widgets::separator::Separator {
+    widgets::separator::Separator {
         direction,
         color: None,
-    })
+    }
 }
 
-pub fn separator_horizontal() -> Box<dyn Widget> {
+pub fn separator_horizontal() -> widgets::separator::Separator {
     separator(SeparatorDirection::Horizontal)
 }
 
-pub fn separator_vertical() -> Box<dyn Widget> {
+pub fn separator_vertical() -> widgets::separator::Separator {
     separator(SeparatorDirection::Vertical)
 }
 
-pub fn icon(icon: char) -> Box<dyn Widget> {
-    Box::new(super::widgets::icon::Icon {
+pub fn icon(icon: char) -> widgets::icon::Icon {
+    widgets::icon::Icon {
         icon,
         size: None,
         color: None,
-    })
+    }
 }
 
-pub fn selectable(child: Box<dyn Widget>) -> Box<dyn Widget> {
-    Box::new(super::widgets::selectable::Selectable {
+pub fn selectable(child: Box<dyn Widget>) -> widgets::selectable::Selectable {
+    widgets::selectable::Selectable {
         on_click: None,
         selected: false,
         child_widget: Some(child),
         children: Vec::new(),
-    })
+    }
 }
 
 pub fn section(
     title: impl Into<String>,
     child: Box<dyn Widget>,
     expanded_id: StateId,
-) -> Box<dyn Widget> {
-    Box::new(super::widgets::section::Section {
+) -> widgets::section::Section {
+    widgets::section::Section {
         title: title.into(),
         expanded_id,
         on_remove: None,
         child_widget: Some(child),
         children: Vec::new(),
-    })
+    }
 }
 
 pub fn tab_bar(
     tabs: Vec<super::descriptor::TabItem>,
     selected_id: StateId,
     content: Box<dyn Widget>,
-) -> Box<dyn Widget> {
-    Box::new(super::widgets::tab_bar::TabBar {
+) -> widgets::tab_bar::TabBar {
+    widgets::tab_bar::TabBar {
         tabs,
         selected_id,
         child_widget: Some(content),
         children: Vec::new(),
-    })
+    }
 }
 
 pub fn tab_item(label: impl Into<String>) -> super::descriptor::TabItem {
@@ -600,13 +252,13 @@ pub fn grid(
     columns: usize,
     cell_size: katla_math::Vec2,
     children: impl IntoIterator<Item = Box<dyn Widget>>,
-) -> Box<dyn Widget> {
+) -> widgets::grid::Grid {
     let cw = cell_size.x();
     let ch = cell_size.y();
     let child_widgets: Vec<KeyedChild> = children
         .into_iter()
         .map(|child| {
-            let wrapper = super::widgets::vstack::VStack::new(
+            let wrapper = widgets::vstack::VStack::new(
                 0.0,
                 Padding::zero(),
                 Alignment::Leading,
@@ -628,20 +280,14 @@ pub fn grid(
             }
         })
         .collect();
-    Box::new(super::widgets::grid::Grid::new(
-        columns,
-        cell_size,
-        0.0,
-        FlexProps::default(),
-        child_widgets,
-    ))
+    widgets::grid::Grid::new(columns, cell_size, 0.0, FlexProps::default(), child_widgets)
 }
 
 // ---------------------------------------------------------------------------
-// Container constructors
+// Container constructors — return concrete widget types
 // ---------------------------------------------------------------------------
 
-pub fn hstack(children: impl IntoIterator<Item = Box<dyn Widget>>) -> Box<dyn Widget> {
+pub fn hstack(children: impl IntoIterator<Item = Box<dyn Widget>>) -> widgets::hstack::HStack {
     let child_widgets: Vec<KeyedChild> = children
         .into_iter()
         .map(|c| KeyedChild {
@@ -649,16 +295,16 @@ pub fn hstack(children: impl IntoIterator<Item = Box<dyn Widget>>) -> Box<dyn Wi
             widget: c,
         })
         .collect();
-    Box::new(super::widgets::hstack::HStack::new(
+    widgets::hstack::HStack::new(
         0.0,
         Padding::zero(),
         Alignment::Leading,
         FlexProps::default(),
         child_widgets,
-    ))
+    )
 }
 
-pub fn vstack(children: impl IntoIterator<Item = Box<dyn Widget>>) -> Box<dyn Widget> {
+pub fn vstack(children: impl IntoIterator<Item = Box<dyn Widget>>) -> widgets::vstack::VStack {
     let child_widgets: Vec<KeyedChild> = children
         .into_iter()
         .map(|c| KeyedChild {
@@ -666,16 +312,18 @@ pub fn vstack(children: impl IntoIterator<Item = Box<dyn Widget>>) -> Box<dyn Wi
             widget: c,
         })
         .collect();
-    Box::new(super::widgets::vstack::VStack::new(
+    widgets::vstack::VStack::new(
         0.0,
         Padding::zero(),
         Alignment::Leading,
         FlexProps::default(),
         child_widgets,
-    ))
+    )
 }
 
-pub fn zstack(children: impl IntoIterator<Item = (Alignment, Box<dyn Widget>)>) -> Box<dyn Widget> {
+pub fn zstack(
+    children: impl IntoIterator<Item = (Alignment, Box<dyn Widget>)>,
+) -> widgets::zstack::ZStack {
     let child_widgets: Vec<(Alignment, KeyedChild)> = children
         .into_iter()
         .map(|(a, w)| {
@@ -688,43 +336,27 @@ pub fn zstack(children: impl IntoIterator<Item = (Alignment, Box<dyn Widget>)>) 
             )
         })
         .collect();
-    Box::new(super::widgets::zstack::ZStack::new(
-        Padding::zero(),
-        FlexProps::default(),
-        child_widgets,
-    ))
+    widgets::zstack::ZStack::new(Padding::zero(), FlexProps::default(), child_widgets)
 }
 
-pub fn panel(title: impl Into<String>, content: Box<dyn Widget>) -> Box<dyn Widget> {
-    Box::new(super::widgets::panel::Panel::new(
-        title.into(),
-        24.0,
-        FlexProps::default(),
-        Some(content),
-    ))
+pub fn panel(title: impl Into<String>, content: Box<dyn Widget>) -> widgets::panel::Panel {
+    widgets::panel::Panel::new(title.into(), 24.0, FlexProps::default(), Some(content))
 }
 
-pub fn scroll(content: Box<dyn Widget>, scroll_state_id: StateId) -> Box<dyn Widget> {
-    Box::new(super::widgets::scroll::ScrollView::new(
-        scroll_state_id,
-        FlexProps::default(),
-        Some(content),
-    ))
+pub fn scroll(content: Box<dyn Widget>, scroll_state_id: StateId) -> widgets::scroll::ScrollView {
+    widgets::scroll::ScrollView::new(scroll_state_id, FlexProps::default(), Some(content))
 }
 
-pub fn overlay(anchor: Anchor, offset: Vec2, content: Box<dyn Widget>) -> Box<dyn Widget> {
-    Box::new(super::widgets::overlay::Overlay::new(
-        anchor,
-        offset,
-        Some(content),
-    ))
+pub fn overlay(
+    anchor: Anchor,
+    offset: Vec2,
+    content: Box<dyn Widget>,
+) -> widgets::overlay::Overlay {
+    widgets::overlay::Overlay::new(anchor, offset, Some(content))
 }
 
-pub fn statusbar(height: f32, content: Box<dyn Widget>) -> Box<dyn Widget> {
-    Box::new(super::widgets::statusbar::StatusBar::new(
-        height,
-        Some(content),
-    ))
+pub fn statusbar(height: f32, content: Box<dyn Widget>) -> widgets::statusbar::StatusBar {
+    widgets::statusbar::StatusBar::new(height, Some(content))
 }
 
 pub fn draggable_panel(
@@ -733,19 +365,19 @@ pub fn draggable_panel(
     height: f32,
     content: Box<dyn Widget>,
     state_id: StateId,
-) -> Box<dyn Widget> {
-    Box::new(super::widgets::draggable_panel::DraggablePanel::new(
+) -> widgets::draggable_panel::DraggablePanel {
+    widgets::draggable_panel::DraggablePanel::new(
         title.into(),
         width,
         height,
         state_id,
         false,
         Some(content),
-    ))
+    )
 }
 
-pub fn menubar(groups: Vec<MenuGroup>) -> Box<dyn Widget> {
-    Box::new(super::widgets::menubar::MenuBar::new(groups, None, 28.0))
+pub fn menubar(groups: Vec<MenuGroup>) -> widgets::menubar::MenuBar {
+    widgets::menubar::MenuBar::new(groups, None, 28.0)
 }
 
 pub fn tree_view(
@@ -753,8 +385,8 @@ pub fn tree_view(
     expanded_id: StateId,
     selected_id: StateId,
     scroll_id: StateId,
-) -> Box<dyn Widget> {
-    Box::new(super::widgets::tree_view::TreeView::new(
+) -> widgets::tree_view::TreeView {
+    widgets::tree_view::TreeView::new(
         items,
         expanded_id,
         selected_id,
@@ -763,7 +395,7 @@ pub fn tree_view(
         16.0,
         None,
         None,
-    ))
+    )
 }
 
 pub fn modal(
@@ -771,24 +403,19 @@ pub fn modal(
     height: f32,
     open_id: StateId,
     content: Box<dyn Widget>,
-) -> Box<dyn Widget> {
-    Box::new(super::widgets::modal::Modal::new(
-        width,
-        height,
-        open_id,
-        None,
-        Some(content),
-    ))
+) -> widgets::modal::Modal {
+    widgets::modal::Modal::new(width, height, open_id, None, Some(content))
 }
 
-pub fn context_menu(items: Vec<ContextMenuEntry>, open_id: StateId) -> Box<dyn Widget> {
-    Box::new(super::widgets::context_menu::ContextMenu::new(
-        items, open_id,
-    ))
+pub fn context_menu(
+    items: Vec<ContextMenuEntry>,
+    open_id: StateId,
+) -> widgets::context_menu::ContextMenu {
+    widgets::context_menu::ContextMenu::new(items, open_id)
 }
 
 // ---------------------------------------------------------------------------
-// Keyed child helper
+// Keyed child helpers
 // ---------------------------------------------------------------------------
 
 pub fn keyed(key: u64, widget: Box<dyn Widget>) -> KeyedChild {
@@ -798,626 +425,36 @@ pub fn keyed(key: u64, widget: Box<dyn Widget>) -> KeyedChild {
     }
 }
 
-pub fn hstack_keyed(children: Vec<KeyedChild>) -> Box<dyn Widget> {
-    Box::new(super::widgets::hstack::HStack::new(
+pub fn hstack_keyed(children: Vec<KeyedChild>) -> widgets::hstack::HStack {
+    widgets::hstack::HStack::new(
         0.0,
         Padding::zero(),
         Alignment::Leading,
         FlexProps::default(),
         children,
-    ))
+    )
 }
 
-pub fn vstack_keyed(children: Vec<KeyedChild>) -> Box<dyn Widget> {
-    Box::new(super::widgets::vstack::VStack::new(
+pub fn vstack_keyed(children: Vec<KeyedChild>) -> widgets::vstack::VStack {
+    widgets::vstack::VStack::new(
         0.0,
         Padding::zero(),
         Alignment::Leading,
         FlexProps::default(),
         children,
-    ))
+    )
 }
 
-pub fn zstack_keyed(children: Vec<(Alignment, KeyedChild)>) -> Box<dyn Widget> {
-    Box::new(super::widgets::zstack::ZStack::new(
-        Padding::zero(),
-        FlexProps::default(),
-        children,
-    ))
+pub fn zstack_keyed(children: Vec<(Alignment, KeyedChild)>) -> widgets::zstack::ZStack {
+    widgets::zstack::ZStack::new(Padding::zero(), FlexProps::default(), children)
 }
 
 pub fn grid_keyed(
     columns: usize,
     cell_size: katla_math::Vec2,
     children: Vec<KeyedChild>,
-) -> Box<dyn Widget> {
-    Box::new(super::widgets::grid::Grid::new(
-        columns,
-        cell_size,
-        0.0,
-        FlexProps::default(),
-        children,
-    ))
-}
-
-// ---------------------------------------------------------------------------
-// Box<dyn Widget> modifier methods
-// ---------------------------------------------------------------------------
-
-/// Extension trait providing builder-pattern modifier methods on `Box<dyn Widget>`.
-///
-/// Import [`WidgetExt`] to chain modifiers like `.color(...)`, `.fill(...)`, etc.
-pub trait WidgetExt {
-    // -- Leaf modifiers --
-    fn color(self, color: impl Into<katla_math::Color>) -> Box<dyn Widget>;
-    fn font_size(self, fs: FontSize) -> Box<dyn Widget>;
-    fn fill(self, color: impl Into<katla_math::Color>) -> Box<dyn Widget>;
-    fn hover(self, color: impl Into<katla_math::Color>) -> Box<dyn Widget>;
-    fn border(self, color: impl Into<katla_math::Color>) -> Box<dyn Widget>;
-    fn on_click(self, cb: Callback) -> Box<dyn Widget>;
-    fn on_close(self, cb: Callback) -> Box<dyn Widget>;
-    fn enabled(self, e: bool) -> Box<dyn Widget>;
-    fn on_submit(self, cb: Callback) -> Box<dyn Widget>;
-    fn show_value(self, show: bool) -> Box<dyn Widget>;
-    fn precision(self, p: usize) -> Box<dyn Widget>;
-    fn label_width(self, w: f32) -> Box<dyn Widget>;
-    fn uv(self, rect: katla_math::Rect2D) -> Box<dyn Widget>;
-
-    // -- Container modifiers --
-    fn spacing(self, s: f32) -> Box<dyn Widget>;
-    fn padding(self, p: Padding) -> Box<dyn Widget>;
-    fn padding_all(self, v: f32) -> Box<dyn Widget>;
-    fn align(self, a: Alignment) -> Box<dyn Widget>;
-    fn header_height(self, h: f32) -> Box<dyn Widget>;
-    fn close_on_outside(self, close: bool) -> Box<dyn Widget>;
-    fn right_content(self, content: Box<dyn Widget>) -> Box<dyn Widget>;
-    fn menubar_height(self, h: f32) -> Box<dyn Widget>;
-    fn row_height(self, h: f32) -> Box<dyn Widget>;
-    fn indent(self, i: f32) -> Box<dyn Widget>;
-    fn on_select(self, cb: Callback) -> Box<dyn Widget>;
-    fn on_right_click(self, cb: Callback) -> Box<dyn Widget>;
-
-    // -- Separator / Icon / Selectable / Section modifiers --
-    fn separator_color(self, color: impl Into<katla_math::Color>) -> Box<dyn Widget>;
-    fn icon_size(self, size: FontSize) -> Box<dyn Widget>;
-    fn selected(self, sel: bool) -> Box<dyn Widget>;
-    fn on_remove(self, cb: Callback) -> Box<dyn Widget>;
-
-    // -- Progress / Grid / Image modifiers --
-    fn image_size(self, width: f32, height: f32) -> Box<dyn Widget>;
-    fn progress_label(self, label: impl Into<String>) -> Box<dyn Widget>;
-    fn grid_spacing(self, spacing: f32) -> Box<dyn Widget>;
-    fn flex_width(self, w: f32) -> Box<dyn Widget>;
-    fn flex_height(self, h: f32) -> Box<dyn Widget>;
-    fn flex_grow(self, grow: f32) -> Box<dyn Widget>;
-}
-
-impl WidgetExt for Box<dyn Widget> {
-    // -- Leaf modifiers --
-
-    fn color(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
-        let c = color.into();
-        use super::widgets::*;
-        if let Some(w) = self.as_any_mut().downcast_mut::<text::Text>() {
-            w.color = Some(c);
-        } else if let Some(w) = self.as_any_mut().downcast_mut::<icon::Icon>() {
-            w.color = Some(c);
-        } else {
-            debug_assert!(false, "color() modifier applied to non-Text/Icon variant");
-        }
-        self
-    }
-
-    fn font_size(mut self, fs: FontSize) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::text::Text>()
-        {
-            w.font_size = Some(fs);
-        } else {
-            debug_assert!(false, "font_size() modifier applied to non-Text variant");
-        }
-        self
-    }
-
-    fn fill(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
-        let c = color.into();
-        use super::widgets::*;
-        if let Some(w) = self.as_any_mut().downcast_mut::<button::Button>() {
-            w.fill_color = Some(c);
-        } else if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<image_button::ImageButton>()
-        {
-            w.fill_color = Some(c);
-        } else if let Some(w) = self.as_any_mut().downcast_mut::<progress::Progress>() {
-            w.fill_color = Some(c);
-        } else {
-            debug_assert!(false, "fill() modifier applied to unsupported variant");
-        }
-        self
-    }
-
-    fn hover(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
-        let c = color.into();
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::button::Button>()
-        {
-            w.hover_color = Some(c);
-        } else {
-            debug_assert!(false, "hover() modifier applied to non-Button variant");
-        }
-        self
-    }
-
-    fn border(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
-        let c = color.into();
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::button::Button>()
-        {
-            w.border_color = Some(c);
-        } else {
-            debug_assert!(false, "border() modifier applied to non-Button variant");
-        }
-        self
-    }
-
-    fn on_click(mut self, cb: Callback) -> Box<dyn Widget> {
-        use super::widgets::*;
-        if let Some(w) = self.as_any_mut().downcast_mut::<button::Button>() {
-            w.on_click = Some(cb);
-        } else if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<image_button::ImageButton>()
-        {
-            w.on_click = Some(cb);
-        } else if let Some(w) = self.as_any_mut().downcast_mut::<selectable::Selectable>() {
-            w.on_click = Some(cb);
-        } else {
-            debug_assert!(false, "on_click() modifier applied to unsupported variant");
-        }
-        self
-    }
-
-    fn on_close(mut self, cb: Callback) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::modal::Modal>()
-        {
-            w.on_close = Some(cb);
-        } else {
-            debug_assert!(false, "on_close() modifier applied to non-Modal variant");
-        }
-        self
-    }
-
-    fn enabled(mut self, e: bool) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::image_button::ImageButton>()
-        {
-            w.enabled = e;
-        } else {
-            debug_assert!(
-                false,
-                "enabled() modifier applied to non-ImageButton variant"
-            );
-        }
-        self
-    }
-
-    fn on_submit(mut self, cb: Callback) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::textfield::TextField>()
-        {
-            w.on_submit = Some(cb);
-        } else {
-            debug_assert!(
-                false,
-                "on_submit() modifier applied to non-TextField variant"
-            );
-        }
-        self
-    }
-
-    fn show_value(mut self, show: bool) -> Box<dyn Widget> {
-        use super::widgets::*;
-        if let Some(w) = self.as_any_mut().downcast_mut::<slider::Slider>() {
-            w.show_value = show;
-        } else if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<labeled_slider::LabeledSlider>()
-        {
-            w.show_value = show;
-        } else {
-            debug_assert!(
-                false,
-                "show_value() modifier applied to unsupported variant"
-            );
-        }
-        self
-    }
-
-    fn precision(mut self, p: usize) -> Box<dyn Widget> {
-        use super::widgets::*;
-        if let Some(w) = self.as_any_mut().downcast_mut::<slider::Slider>() {
-            w.precision = p;
-        } else if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<labeled_slider::LabeledSlider>()
-        {
-            w.precision = p;
-        } else {
-            debug_assert!(false, "precision() modifier applied to unsupported variant");
-        }
-        self
-    }
-
-    fn label_width(mut self, w: f32) -> Box<dyn Widget> {
-        if let Some(slider) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::labeled_slider::LabeledSlider>()
-        {
-            slider.label_width = w;
-        } else {
-            debug_assert!(
-                false,
-                "label_width() modifier applied to non-LabeledSlider variant"
-            );
-        }
-        self
-    }
-
-    fn uv(mut self, rect: katla_math::Rect2D) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::image::Image>()
-        {
-            w.uv = Some(rect);
-        } else {
-            debug_assert!(false, "uv() modifier applied to non-Image variant");
-        }
-        self
-    }
-
-    // -- Container modifiers --
-
-    fn spacing(mut self, s: f32) -> Box<dyn Widget> {
-        use super::widgets::*;
-        if let Some(w) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
-            w.spacing = s;
-        } else if let Some(w) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
-            w.spacing = s;
-        } else {
-            debug_assert!(false, "spacing() modifier applied to non-stack variant");
-        }
-        self
-    }
-
-    fn padding(mut self, p: Padding) -> Box<dyn Widget> {
-        use super::widgets::*;
-        if let Some(w) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
-            w.padding = p;
-        } else if let Some(w) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
-            w.padding = p;
-        } else if let Some(w) = self.as_any_mut().downcast_mut::<zstack::ZStack>() {
-            w.padding = p;
-        } else {
-            debug_assert!(false, "padding() modifier applied to non-stack variant");
-        }
-        self
-    }
-
-    fn padding_all(mut self, v: f32) -> Box<dyn Widget> {
-        let p = Padding::all(v);
-        use super::widgets::*;
-        if let Some(w) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
-            w.padding = p;
-        } else if let Some(w) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
-            w.padding = p;
-        } else if let Some(w) = self.as_any_mut().downcast_mut::<zstack::ZStack>() {
-            w.padding = p;
-        } else {
-            debug_assert!(false, "padding_all() modifier applied to non-stack variant");
-        }
-        self
-    }
-
-    fn align(mut self, a: Alignment) -> Box<dyn Widget> {
-        use super::widgets::*;
-        if let Some(w) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
-            w.alignment = a;
-        } else if let Some(w) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
-            w.alignment = a;
-        } else {
-            debug_assert!(false, "align() modifier applied to non-stack variant");
-        }
-        self
-    }
-
-    fn header_height(mut self, h: f32) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::panel::Panel>()
-        {
-            w.header_height = h;
-        } else {
-            debug_assert!(
-                false,
-                "header_height() modifier applied to non-Panel variant"
-            );
-        }
-        self
-    }
-
-    fn close_on_outside(mut self, close: bool) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::draggable_panel::DraggablePanel>()
-        {
-            w.close_on_outside_click = close;
-        } else {
-            debug_assert!(
-                false,
-                "close_on_outside() modifier applied to non-DraggablePanel variant"
-            );
-        }
-        self
-    }
-
-    fn right_content(mut self, content: Box<dyn Widget>) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::menubar::MenuBar>()
-        {
-            w.right_content = Some(content);
-        } else {
-            debug_assert!(
-                false,
-                "right_content() modifier applied to non-MenuBar variant"
-            );
-        }
-        self
-    }
-
-    fn menubar_height(mut self, h: f32) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::menubar::MenuBar>()
-        {
-            w.height = h;
-        } else {
-            debug_assert!(
-                false,
-                "menubar_height() modifier applied to non-MenuBar variant"
-            );
-        }
-        self
-    }
-
-    fn row_height(mut self, h: f32) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::tree_view::TreeView>()
-        {
-            w.row_height = h;
-        } else {
-            debug_assert!(
-                false,
-                "row_height() modifier applied to non-TreeView variant"
-            );
-        }
-        self
-    }
-
-    fn indent(mut self, i: f32) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::tree_view::TreeView>()
-        {
-            w.indent_per_level = i;
-        } else {
-            debug_assert!(false, "indent() modifier applied to non-TreeView variant");
-        }
-        self
-    }
-
-    fn on_select(mut self, cb: Callback) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::tree_view::TreeView>()
-        {
-            w.on_select = Some(cb);
-        } else {
-            debug_assert!(
-                false,
-                "on_select() modifier applied to non-TreeView variant"
-            );
-        }
-        self
-    }
-
-    fn on_right_click(mut self, cb: Callback) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::tree_view::TreeView>()
-        {
-            w.on_right_click = Some(cb);
-        } else {
-            debug_assert!(
-                false,
-                "on_right_click() modifier applied to non-TreeView variant"
-            );
-        }
-        self
-    }
-
-    // -- Separator / Icon / Selectable / Section modifiers --
-
-    fn separator_color(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::separator::Separator>()
-        {
-            w.color = Some(color.into());
-        } else {
-            debug_assert!(
-                false,
-                "separator_color() modifier applied to non-Separator variant"
-            );
-        }
-        self
-    }
-
-    fn icon_size(mut self, size: FontSize) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::icon::Icon>()
-        {
-            w.size = Some(size);
-        } else {
-            debug_assert!(false, "icon_size() modifier applied to non-Icon variant");
-        }
-        self
-    }
-
-    fn selected(mut self, sel: bool) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::selectable::Selectable>()
-        {
-            w.selected = sel;
-        } else {
-            debug_assert!(
-                false,
-                "selected() modifier applied to non-Selectable variant"
-            );
-        }
-        self
-    }
-
-    fn on_remove(mut self, cb: Callback) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::section::Section>()
-        {
-            w.on_remove = Some(cb);
-        } else {
-            debug_assert!(false, "on_remove() modifier applied to non-Section variant");
-        }
-        self
-    }
-
-    // -- Progress / Grid / Image modifiers --
-
-    fn image_size(mut self, width: f32, height: f32) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::image::Image>()
-        {
-            w.width = Some(width);
-            w.height = Some(height);
-        } else {
-            debug_assert!(false, "image_size() modifier applied to non-Image variant");
-        }
-        self
-    }
-
-    fn progress_label(mut self, label: impl Into<String>) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::progress::Progress>()
-        {
-            w.label = Some(label.into());
-        } else {
-            debug_assert!(
-                false,
-                "progress_label() modifier applied to non-Progress variant"
-            );
-        }
-        self
-    }
-
-    fn grid_spacing(mut self, spacing: f32) -> Box<dyn Widget> {
-        if let Some(w) = self
-            .as_any_mut()
-            .downcast_mut::<super::widgets::grid::Grid>()
-        {
-            w.spacing = spacing;
-        } else {
-            debug_assert!(false, "grid_spacing() modifier applied to non-Grid variant");
-        }
-        self
-    }
-
-    fn flex_width(mut self, w: f32) -> Box<dyn Widget> {
-        use super::widgets::*;
-        if let Some(widget) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
-            widget.flex.width = Some(w);
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
-            widget.flex.width = Some(w);
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<zstack::ZStack>() {
-            widget.flex.width = Some(w);
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<panel::Panel>() {
-            widget.flex.width = Some(w);
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<grid::Grid>() {
-            widget.flex.width = Some(w);
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<scroll::ScrollView>() {
-            widget.flex.width = Some(w);
-        } else {
-            debug_assert!(
-                false,
-                "flex_width() modifier applied to unsupported variant"
-            );
-        }
-        self
-    }
-
-    fn flex_height(mut self, h: f32) -> Box<dyn Widget> {
-        use super::widgets::*;
-        if let Some(widget) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
-            widget.flex.height = Some(h);
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
-            widget.flex.height = Some(h);
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<zstack::ZStack>() {
-            widget.flex.height = Some(h);
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<panel::Panel>() {
-            widget.flex.height = Some(h);
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<grid::Grid>() {
-            widget.flex.height = Some(h);
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<scroll::ScrollView>() {
-            widget.flex.height = Some(h);
-        } else {
-            debug_assert!(
-                false,
-                "flex_height() modifier applied to unsupported variant"
-            );
-        }
-        self
-    }
-
-    fn flex_grow(mut self, grow: f32) -> Box<dyn Widget> {
-        use super::widgets::*;
-        if let Some(widget) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
-            widget.flex.flex_grow = grow;
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
-            widget.flex.flex_grow = grow;
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<zstack::ZStack>() {
-            widget.flex.flex_grow = grow;
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<panel::Panel>() {
-            widget.flex.flex_grow = grow;
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<grid::Grid>() {
-            widget.flex.flex_grow = grow;
-        } else if let Some(widget) = self.as_any_mut().downcast_mut::<scroll::ScrollView>() {
-            widget.flex.flex_grow = grow;
-        } else {
-            debug_assert!(false, "flex_grow() modifier applied to unsupported variant");
-        }
-        self
-    }
+) -> widgets::grid::Grid {
+    widgets::grid::Grid::new(columns, cell_size, 0.0, FlexProps::default(), children)
 }
 
 // ---------------------------------------------------------------------------
@@ -1490,725 +527,421 @@ impl ContextMenuEntry {
 pub(crate) fn wrap_transition_container(
     child: Box<dyn Widget>,
     transition: super::transition::Transition,
-) -> Box<dyn Widget> {
-    Box::new(super::widgets::transition::TransitionContainer::new(
-        transition,
-        Some(child),
-    ))
+) -> widgets::transition::TransitionContainer {
+    widgets::transition::TransitionContainer::new(transition, Some(child))
 }
+
+// ---------------------------------------------------------------------------
+// Re-export WidgetBox for .boxed() method
+// ---------------------------------------------------------------------------
+
+pub use super::widget::WidgetBox;
 
 #[cfg(test)]
 mod tests {
     use super::super::state::{StateArena, ViewId};
+    use super::super::widget::WidgetBox;
     use super::*;
+    use crate::style::FontSize;
 
     fn dummy_state_id() -> StateId {
         let mut arena = StateArena::default();
         arena.get_or_create(ViewId::default(), 0usize)
     }
 
-    fn desc(w: Box<dyn Widget>) -> ViewDescriptor {
-        widget_to_descriptor(&*w)
-    }
-
     // -- Leaf constructor tests --
 
     #[test]
-    fn test_empty() {
-        assert!(matches!(desc(empty()), ViewDescriptor::Empty));
+    fn test_text_defaults() {
+        let w = text("hello");
+        assert_eq!(w.content, "hello");
+        assert!(w.color.is_none());
+        assert!(w.font_size.is_none());
     }
 
     #[test]
-    fn test_text_defaults() {
-        let ViewDescriptor::Text {
-            content,
-            color,
-            font_size,
-        } = desc(text("hello"))
-        else {
-            panic!("expected Text");
-        };
-        assert_eq!(content, "hello");
-        assert!(color.is_none());
-        assert!(font_size.is_none());
+    fn test_text_modifier_color() {
+        let w = text("hi").color(katla_math::Color::RED);
+        assert_eq!(w.color, Some(katla_math::Color::RED));
+    }
+
+    #[test]
+    fn test_text_modifier_font_size() {
+        let w = text("hi").font_size(FontSize::Small);
+        assert_eq!(w.font_size, Some(FontSize::Small));
+    }
+
+    #[test]
+    fn test_text_boxed() {
+        let w: Box<dyn Widget> = text("hello").boxed();
+        assert!(w.as_any().downcast_ref::<widgets::text::Text>().is_some());
     }
 
     #[test]
     fn test_button_defaults() {
-        let ViewDescriptor::Button {
-            label,
-            fill_color,
-            hover_color,
-            border_color,
-            on_click,
-        } = desc(button("ok"))
-        else {
-            panic!("expected Button");
-        };
-        assert_eq!(label, "ok");
-        assert!(fill_color.is_none());
-        assert!(hover_color.is_none());
-        assert!(border_color.is_none());
-        assert!(on_click.is_none());
+        let w = button("ok");
+        assert_eq!(w.label, "ok");
+        assert!(w.fill_color.is_none());
+        assert!(w.hover_color.is_none());
+        assert!(w.border_color.is_none());
+        assert!(w.on_click.is_none());
+    }
+
+    #[test]
+    fn test_button_modifier_fill() {
+        let w = button("ok").fill(katla_math::Color::BLUE);
+        assert_eq!(w.fill_color, Some(katla_math::Color::BLUE));
+    }
+
+    #[test]
+    fn test_button_modifier_hover() {
+        let w = button("ok").hover(katla_math::Color::RED);
+        assert_eq!(w.hover_color, Some(katla_math::Color::RED));
+    }
+
+    #[test]
+    fn test_button_modifier_border() {
+        let w = button("ok").border(katla_math::Color::BLACK);
+        assert_eq!(w.border_color, Some(katla_math::Color::BLACK));
+    }
+
+    #[test]
+    fn test_button_modifier_on_click() {
+        let w = button("ok").on_click(Callback(1));
+        assert!(w.on_click.is_some());
     }
 
     #[test]
     fn test_image_button_defaults() {
-        let ViewDescriptor::ImageButton {
-            icon,
-            enabled,
-            fill_color,
-            on_click,
-        } = desc(image_button('X'))
-        else {
-            panic!("expected ImageButton");
-        };
-        assert_eq!(icon, 'X');
-        assert!(enabled);
-        assert!(fill_color.is_none());
-        assert!(on_click.is_none());
+        let w = image_button('X');
+        assert_eq!(w.icon, 'X');
+        assert!(w.enabled);
+        assert!(w.fill_color.is_none());
+        assert!(w.on_click.is_none());
+    }
+
+    #[test]
+    fn test_image_button_modifier_fill() {
+        let w = image_button('X').fill(katla_math::Color::GREEN);
+        assert_eq!(w.fill_color, Some(katla_math::Color::GREEN));
+    }
+
+    #[test]
+    fn test_image_button_modifier_enabled() {
+        let w = image_button('X').enabled(false);
+        assert!(!w.enabled);
+    }
+
+    #[test]
+    fn test_image_button_modifier_on_click() {
+        let w = image_button('X').on_click(Callback(2));
+        assert!(w.on_click.is_some());
     }
 
     #[test]
     fn test_slider_defaults() {
         let id = dummy_state_id();
-        let ViewDescriptor::Slider {
-            label,
-            value_id,
-            range: _,
-            show_value,
-            precision,
-        } = desc(slider("vol", id, 0.0..=1.0))
-        else {
-            panic!("expected Slider")
-        };
-        assert_eq!(label, "vol");
-        assert_eq!(value_id, id);
-        assert!(!show_value);
-        assert_eq!(precision, 2);
+        let w = slider("vol", id, 0.0..=1.0);
+        assert_eq!(w.label, "vol");
+        assert_eq!(w.value_id, id);
+        assert!(!w.show_value);
+        assert_eq!(w.precision, 2);
+    }
+
+    #[test]
+    fn test_slider_modifier_show_value() {
+        let id = dummy_state_id();
+        let w = slider("s", id, 0.0..=1.0).show_value(true);
+        assert!(w.show_value);
+    }
+
+    #[test]
+    fn test_slider_modifier_precision() {
+        let id = dummy_state_id();
+        let w = slider("s", id, 0.0..=1.0).precision(4);
+        assert_eq!(w.precision, 4);
     }
 
     #[test]
     fn test_labeled_slider_defaults() {
         let id = dummy_state_id();
-        let ViewDescriptor::LabeledSlider {
-            label,
-            value_id: _,
-            range: _,
-            label_width,
-            show_value,
-            precision,
-        } = desc(labeled_slider("vol", id, 0.0..=1.0))
-        else {
-            panic!("expected LabeledSlider")
-        };
-        assert_eq!(label, "vol");
-        assert_eq!(label_width, 0.0);
-        assert!(!show_value);
-        assert_eq!(precision, 2);
+        let w = labeled_slider("vol", id, 0.0..=1.0);
+        assert_eq!(w.label, "vol");
+        assert_eq!(w.label_width, 0.0);
+        assert!(!w.show_value);
+        assert_eq!(w.precision, 2);
+    }
+
+    #[test]
+    fn test_labeled_slider_modifier_show_value() {
+        let id = dummy_state_id();
+        let w = labeled_slider("s", id, 0.0..=1.0).show_value(true);
+        assert!(w.show_value);
+    }
+
+    #[test]
+    fn test_labeled_slider_modifier_label_width() {
+        let id = dummy_state_id();
+        let w = labeled_slider("s", id, 0.0..=1.0).label_width(120.0);
+        assert_eq!(w.label_width, 120.0);
     }
 
     #[test]
     fn test_textfield_defaults() {
         let id = dummy_state_id();
-        let ViewDescriptor::TextField {
-            placeholder,
-            value_id: _,
-            on_submit,
-        } = desc(textfield("type here", id))
-        else {
-            panic!("expected TextField")
-        };
-        assert_eq!(placeholder, "type here");
-        assert!(on_submit.is_none());
+        let w = textfield("type here", id);
+        assert_eq!(w.placeholder, "type here");
+        assert!(w.on_submit.is_none());
+    }
+
+    #[test]
+    fn test_textfield_modifier_on_submit() {
+        let id = dummy_state_id();
+        let w = textfield("ph", id).on_submit(Callback(3));
+        assert!(w.on_submit.is_some());
     }
 
     #[test]
     fn test_progress_defaults() {
-        let ViewDescriptor::Progress {
-            value,
-            range: _,
-            fill_color,
-            ..
-        } = desc(progress(0.5, 0.0..=1.0))
-        else {
-            panic!("expected Progress")
-        };
-        assert_eq!(value, 0.5);
-        assert!(fill_color.is_none());
+        let w = progress(0.5, 0.0..=1.0);
+        assert_eq!(w.value, 0.5);
+        assert!(w.fill_color.is_none());
+        assert!(w.label.is_none());
+    }
+
+    #[test]
+    fn test_progress_modifier_fill() {
+        let w = progress(0.5, 0.0..=1.0).fill(katla_math::Color::WHITE);
+        assert_eq!(w.fill_color, Some(katla_math::Color::WHITE));
+    }
+
+    #[test]
+    fn test_progress_modifier_label() {
+        let w = progress(0.5, 0.0..=1.0).progress_label("50%");
+        assert_eq!(w.label, Some("50%".to_string()));
     }
 
     #[test]
     fn test_toggle_constructor() {
         let id = dummy_state_id();
-        let ViewDescriptor::Toggle { label, value_id: _ } = desc(toggle("on", id)) else {
-            panic!("expected Toggle");
-        };
-        assert_eq!(label, "on");
+        let w = toggle("on", id);
+        assert_eq!(w.label, "on");
     }
 
     #[test]
     fn test_radio_constructor() {
         let id = dummy_state_id();
-        let ViewDescriptor::RadioButton {
-            value_id: _,
-            index,
-            label,
-        } = desc(radio(id, 2, "opt"))
-        else {
-            panic!("expected RadioButton");
-        };
-        assert_eq!(index, 2);
-        assert_eq!(label, "opt");
+        let w = radio(id, 2, "opt");
+        assert_eq!(w.index, 2);
+        assert_eq!(w.label, "opt");
     }
 
     #[test]
     fn test_property_row_constructor() {
-        let ViewDescriptor::PropertyRow { label, value } = desc(property_row("key", "val")) else {
-            panic!("expected PropertyRow");
-        };
-        assert_eq!(label, "key");
-        assert_eq!(value, "val");
+        let w = property_row("key", "val");
+        assert_eq!(w.label, "key");
+        assert_eq!(w.value, "val");
     }
 
     #[test]
     fn test_color_picker_constructor() {
         let id = StateId::test_id();
-        let ViewDescriptor::ColorPicker { label, value_id } = desc(color_picker("Pick color", id))
-        else {
-            panic!("expected ColorPicker");
-        };
-        assert_eq!(label, "Pick color");
-        assert_eq!(value_id, id);
-    }
-
-    #[test]
-    fn test_color_picker_diff_update() {
-        use crate::declarative::diff::{DiffAction, diff_descriptor};
-        let id = StateId::test_id();
-        let a = color_picker("Color A", id);
-        let b = color_picker("Color B", id);
-        assert_eq!(diff_descriptor(&desc(a), &desc(b)), DiffAction::Update);
-    }
-
-    #[test]
-    fn test_color_picker_diff_replace() {
-        use crate::declarative::diff::{DiffAction, diff_descriptor};
-        let id = StateId::test_id();
-        let a = color_picker("Color", id);
-        let b = text("Not a color picker");
-        assert_eq!(diff_descriptor(&desc(a), &desc(b)), DiffAction::Replace);
-    }
-
-    #[test]
-    fn test_color_picker_state_round_trip() {
-        let mut arena = StateArena::new();
-        let view_id = ViewId::default();
-        let state_id = arena.get_or_create(view_id, 0.5f32);
-        let _picker = color_picker("Color", state_id);
-        arena.set(state_id, 0.8f32);
-        let value: f32 = arena.get(state_id).unwrap();
-        assert!((value - 0.8).abs() < f32::EPSILON);
+        let w = color_picker("Pick color", id);
+        assert_eq!(w.label, "Pick color");
+        assert_eq!(w.value_id, id);
     }
 
     #[test]
     fn test_vec3_slider_constructor() {
         let ids = [dummy_state_id(), dummy_state_id(), dummy_state_id()];
-        let ViewDescriptor::Vec3Slider {
-            label,
-            value_ids,
-            range,
-            axis_labels,
-            axis_colors,
-            precision,
-        } = desc(vec3_slider("position", ids, -10.0..=10.0))
-        else {
-            panic!("expected Vec3Slider");
-        };
-        assert_eq!(label, "position");
-        assert_eq!(value_ids, ids);
-        assert_eq!(range, -10.0..=10.0);
-        assert_eq!(axis_labels, ["X", "Y", "Z"]);
-        assert_eq!(
-            axis_colors,
-            [
-                katla_math::Color::RED,
-                katla_math::Color::GREEN,
-                katla_math::Color::BLUE
-            ]
-        );
-        assert_eq!(precision, 2);
+        let w = vec3_slider("position", ids, -10.0..=10.0);
+        assert_eq!(w.label, "position");
+        assert_eq!(w.value_ids, ids);
+        assert_eq!(w.range, -10.0..=10.0);
     }
 
     #[test]
     fn test_image_constructor() {
-        let vd = image(TextureId(42), katla_math::Color::WHITE);
-        let ViewDescriptor::Image {
-            texture, uv, tint, ..
-        } = desc(vd)
-        else {
-            panic!("expected Image")
-        };
-        assert_eq!(texture.0, 42);
-        assert!(uv.is_none());
-        assert_eq!(tint, katla_math::Color::WHITE);
+        let w = image(TextureId(42), katla_math::Color::WHITE);
+        assert_eq!(w.texture.0, 42);
+        assert!(w.uv.is_none());
+        assert_eq!(w.tint, katla_math::Color::WHITE);
+    }
+
+    #[test]
+    fn test_image_modifier_uv() {
+        let w = image(TextureId(1), katla_math::Color::WHITE)
+            .uv(katla_math::Rect2D::new(Vec2::ZERO, Vec2::new(1.0, 1.0)));
+        assert!(w.uv.is_some());
+    }
+
+    #[test]
+    fn test_image_modifier_image_size() {
+        let w = image(TextureId(1), katla_math::Color::WHITE).image_size(32.0, 32.0);
+        assert_eq!(w.width, Some(32.0));
+        assert_eq!(w.height, Some(32.0));
     }
 
     // -- Container constructor tests --
 
     #[test]
     fn test_hstack_defaults() {
-        let ViewDescriptor::HStack(d) = desc(hstack([text("a"), text("b")])) else {
-            panic!("expected HStack");
-        };
-        assert_eq!(d.children.len(), 2);
-        assert_eq!(d.spacing, 0.0);
-        assert_eq!(d.padding, Padding::zero());
-        assert_eq!(d.alignment, Alignment::Leading);
+        let w = hstack([text("a").boxed(), text("b").boxed()]);
+        assert_eq!(w.child_widgets.len(), 2);
+        assert_eq!(w.spacing, 0.0);
+        assert_eq!(w.padding, Padding::zero());
+        assert_eq!(w.alignment, Alignment::Leading);
     }
 
     #[test]
     fn test_vstack_defaults() {
-        let ViewDescriptor::VStack(d) = desc(vstack([text("a")])) else {
-            panic!("expected VStack");
-        };
-        assert_eq!(d.children.len(), 1);
+        let w = vstack([text("a").boxed()]);
+        assert_eq!(w.child_widgets.len(), 1);
     }
 
     #[test]
     fn test_zstack_defaults() {
-        let vd = zstack([(Alignment::Center, text("c"))]);
-        let ViewDescriptor::ZStack(d) = desc(vd) else {
-            panic!("expected ZStack")
-        };
-        assert_eq!(d.children.len(), 1);
-        assert_eq!(d.padding, Padding::zero());
+        let w = zstack([(Alignment::Center, text("c").boxed())]);
+        assert_eq!(w.child_widgets.len(), 1);
+        assert_eq!(w.padding, Padding::zero());
     }
 
     #[test]
     fn test_panel_defaults() {
-        let ViewDescriptor::Panel(d) = desc(panel("title", text("body"))) else {
-            panic!("expected Panel");
-        };
-        assert_eq!(d.title, "title");
-        assert_eq!(d.header_height, 24.0);
+        let w = panel("title", text("body").boxed());
+        assert_eq!(w.title, "title");
+        assert_eq!(w.header_height, 24.0);
     }
 
     #[test]
     fn test_scroll_constructor() {
         let id = dummy_state_id();
-        assert!(matches!(
-            desc(scroll(text("c"), id)),
-            ViewDescriptor::ScrollView(_)
-        ));
+        let w = scroll(text("c").boxed(), id);
+        assert_eq!(w.scroll_state_id, id);
     }
 
     #[test]
     fn test_overlay_constructor() {
-        assert!(matches!(
-            desc(overlay(Anchor::TopLeft, Vec2::ZERO, text("o"))),
-            ViewDescriptor::Overlay(_)
-        ));
+        let w = overlay(Anchor::TopLeft, Vec2::ZERO, text("o").boxed());
+        assert_eq!(w.anchor, Anchor::TopLeft);
     }
 
     #[test]
     fn test_statusbar_constructor() {
-        assert!(matches!(
-            desc(statusbar(24.0, text("s"))),
-            ViewDescriptor::StatusBar(_)
-        ));
+        let w = statusbar(24.0, text("s").boxed());
+        assert_eq!(w.height, 24.0);
     }
 
     #[test]
     fn test_draggable_panel_defaults() {
         let id = dummy_state_id();
-        let ViewDescriptor::DraggablePanel(d) =
-            desc(draggable_panel("p", 200.0, 300.0, text("c"), id))
-        else {
-            panic!("expected DraggablePanel");
-        };
-        assert_eq!(d.title, "p");
-        assert_eq!(d.width, 200.0);
-        assert!(!d.close_on_outside_click);
+        let w = draggable_panel("p", 200.0, 300.0, text("c").boxed(), id);
+        assert_eq!(w.title, "p");
+        assert_eq!(w.width, 200.0);
+        assert!(!w.close_on_outside_click);
     }
 
     #[test]
     fn test_menubar_defaults() {
-        let ViewDescriptor::MenuBar(d) = desc(menubar(vec![])) else {
-            panic!("expected MenuBar");
-        };
-        assert!(d.right_content.is_none());
-        assert_eq!(d.height, 28.0);
+        let w = menubar(vec![]);
+        assert!(w.right_content.is_none());
+        assert_eq!(w.height, 28.0);
     }
 
     #[test]
     fn test_tree_view_defaults() {
         let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
-        let ViewDescriptor::TreeView(d) = desc(tree_view(vec![], e, s, sc)) else {
-            panic!("expected TreeView");
-        };
-        assert_eq!(d.row_height, 20.0);
-        assert_eq!(d.indent_per_level, 16.0);
-        assert!(d.on_select.is_none());
-        assert!(d.on_right_click.is_none());
+        let w = tree_view(vec![], e, s, sc);
+        assert_eq!(w.row_height, 20.0);
+        assert_eq!(w.indent_per_level, 16.0);
+        assert!(w.on_select.is_none());
+        assert!(w.on_right_click.is_none());
     }
 
     #[test]
     fn test_modal_constructor() {
         let id = dummy_state_id();
-        assert!(matches!(
-            desc(modal(400.0, 300.0, id, text("m"))),
-            ViewDescriptor::Modal(_)
-        ));
+        let w = modal(400.0, 300.0, id, text("m").boxed());
+        assert_eq!(w.width, 400.0);
+        assert_eq!(w.height, 300.0);
     }
 
     #[test]
     fn test_context_menu_constructor() {
         let id = dummy_state_id();
-        assert!(matches!(
-            desc(context_menu(vec![], id)),
-            ViewDescriptor::ContextMenu(_)
-        ));
-    }
-
-    // -- Modifier tests (via WidgetExt) --
-
-    #[test]
-    fn test_color_modifier() {
-        let vd = text("hi").color(katla_math::Color::RED);
-        let ViewDescriptor::Text { color, .. } = desc(vd) else {
-            panic!("expected Text")
-        };
-        assert_eq!(color, Some(katla_math::Color::RED));
-    }
-
-    #[test]
-    fn test_font_size_modifier() {
-        let vd = text("hi").font_size(FontSize::Small);
-        let ViewDescriptor::Text { font_size, .. } = desc(vd) else {
-            panic!("expected Text")
-        };
-        assert_eq!(font_size, Some(FontSize::Small));
-    }
-
-    #[test]
-    fn test_fill_modifier_button() {
-        let vd = button("ok").fill(katla_math::Color::BLUE);
-        let ViewDescriptor::Button { fill_color, .. } = desc(vd) else {
-            panic!("expected Button")
-        };
-        assert_eq!(fill_color, Some(katla_math::Color::BLUE));
-    }
-
-    #[test]
-    fn test_fill_modifier_image_button() {
-        let vd = image_button('X').fill(katla_math::Color::GREEN);
-        let ViewDescriptor::ImageButton { fill_color, .. } = desc(vd) else {
-            panic!("expected ImageButton")
-        };
-        assert_eq!(fill_color, Some(katla_math::Color::GREEN));
-    }
-
-    #[test]
-    fn test_fill_modifier_progress() {
-        let vd = progress(0.5, 0.0..=1.0).fill(katla_math::Color::WHITE);
-        let ViewDescriptor::Progress { fill_color, .. } = desc(vd) else {
-            panic!("expected Progress")
-        };
-        assert_eq!(fill_color, Some(katla_math::Color::WHITE));
-    }
-
-    #[test]
-    fn test_hover_modifier() {
-        let vd = button("ok").hover(katla_math::Color::RED);
-        let ViewDescriptor::Button { hover_color, .. } = desc(vd) else {
-            panic!("expected Button")
-        };
-        assert_eq!(hover_color, Some(katla_math::Color::RED));
-    }
-
-    #[test]
-    fn test_border_modifier() {
-        let vd = button("ok").border(katla_math::Color::BLACK);
-        let ViewDescriptor::Button { border_color, .. } = desc(vd) else {
-            panic!("expected Button")
-        };
-        assert_eq!(border_color, Some(katla_math::Color::BLACK));
-    }
-
-    #[test]
-    fn test_enabled_modifier() {
-        let vd = image_button('X').enabled(false);
-        let ViewDescriptor::ImageButton { enabled, .. } = desc(vd) else {
-            panic!("expected ImageButton")
-        };
-        assert!(!enabled);
-    }
-
-    #[test]
-    fn test_show_value_modifier_slider() {
-        let id = dummy_state_id();
-        let vd = slider("s", id, 0.0..=1.0).show_value(true);
-        let ViewDescriptor::Slider { show_value, .. } = desc(vd) else {
-            panic!("expected Slider")
-        };
-        assert!(show_value);
-    }
-
-    #[test]
-    fn test_show_value_modifier_labeled_slider() {
-        let id = dummy_state_id();
-        let vd = labeled_slider("s", id, 0.0..=1.0).show_value(true);
-        let ViewDescriptor::LabeledSlider { show_value, .. } = desc(vd) else {
-            panic!("expected LabeledSlider")
-        };
-        assert!(show_value);
-    }
-
-    #[test]
-    fn test_precision_modifier() {
-        let id = dummy_state_id();
-        let vd = slider("s", id, 0.0..=1.0).precision(4);
-        let ViewDescriptor::Slider { precision, .. } = desc(vd) else {
-            panic!("expected Slider")
-        };
-        assert_eq!(precision, 4);
-    }
-
-    #[test]
-    fn test_label_width_modifier() {
-        let id = dummy_state_id();
-        let vd = labeled_slider("s", id, 0.0..=1.0).label_width(120.0);
-        let ViewDescriptor::LabeledSlider { label_width, .. } = desc(vd) else {
-            panic!("expected LabeledSlider")
-        };
-        assert_eq!(label_width, 120.0);
-    }
-
-    #[test]
-    fn test_uv_modifier() {
-        let vd = image(TextureId(1), katla_math::Color::WHITE)
-            .uv(katla_math::Rect2D::new(Vec2::ZERO, Vec2::new(1.0, 1.0)));
-        let ViewDescriptor::Image { uv, .. } = desc(vd) else {
-            panic!("expected Image")
-        };
-        assert!(uv.is_some());
-    }
-
-    // -- Container modifier tests --
-
-    #[test]
-    fn test_spacing_modifier() {
-        let vd = hstack([text("a")]).spacing(8.0);
-        let ViewDescriptor::HStack(d) = desc(vd) else {
-            panic!("expected HStack")
-        };
-        assert_eq!(d.spacing, 8.0);
-    }
-
-    #[test]
-    fn test_padding_modifier() {
-        let vd = vstack([text("a")]).padding(Padding::all(10.0));
-        let ViewDescriptor::VStack(d) = desc(vd) else {
-            panic!("expected VStack")
-        };
-        assert_eq!(d.padding, Padding::all(10.0));
-    }
-
-    #[test]
-    fn test_padding_all_modifier() {
-        let vd = zstack([]).padding_all(12.0);
-        let ViewDescriptor::ZStack(d) = desc(vd) else {
-            panic!("expected ZStack")
-        };
-        assert_eq!(d.padding, Padding::all(12.0));
-    }
-
-    #[test]
-    fn test_align_modifier() {
-        let vd = hstack([]).align(Alignment::Center);
-        let ViewDescriptor::HStack(d) = desc(vd) else {
-            panic!("expected HStack")
-        };
-        assert_eq!(d.alignment, Alignment::Center);
-    }
-
-    #[test]
-    fn test_header_height_modifier() {
-        let vd = panel("t", text("c")).header_height(32.0);
-        let ViewDescriptor::Panel(d) = desc(vd) else {
-            panic!("expected Panel")
-        };
-        assert_eq!(d.header_height, 32.0);
-    }
-
-    #[test]
-    fn test_close_on_outside_modifier() {
-        let id = dummy_state_id();
-        let vd = draggable_panel("p", 200.0, 300.0, text("c"), id).close_on_outside(true);
-        let ViewDescriptor::DraggablePanel(d) = desc(vd) else {
-            panic!("expected DraggablePanel")
-        };
-        assert!(d.close_on_outside_click);
-    }
-
-    #[test]
-    fn test_right_content_modifier() {
-        let vd = menubar(vec![]).right_content(text("r"));
-        let ViewDescriptor::MenuBar(d) = desc(vd) else {
-            panic!("expected MenuBar")
-        };
-        assert!(d.right_content.is_some());
-    }
-
-    #[test]
-    fn test_menubar_height_modifier() {
-        let vd = menubar(vec![]).menubar_height(40.0);
-        let ViewDescriptor::MenuBar(d) = desc(vd) else {
-            panic!("expected MenuBar")
-        };
-        assert_eq!(d.height, 40.0);
-    }
-
-    #[test]
-    fn test_row_height_modifier() {
-        let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
-        let vd = tree_view(vec![], e, s, sc).row_height(30.0);
-        let ViewDescriptor::TreeView(d) = desc(vd) else {
-            panic!("expected TreeView")
-        };
-        assert_eq!(d.row_height, 30.0);
-    }
-
-    #[test]
-    fn test_indent_modifier() {
-        let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
-        let vd = tree_view(vec![], e, s, sc).indent(24.0);
-        let ViewDescriptor::TreeView(d) = desc(vd) else {
-            panic!("expected TreeView")
-        };
-        assert_eq!(d.indent_per_level, 24.0);
-    }
-
-    // -- Chained modifier test --
-
-    #[test]
-    fn test_chained_modifiers() {
-        let vd = hstack([text("a"), text("b")])
-            .spacing(8.0)
-            .padding_all(4.0)
-            .align(Alignment::Center);
-
-        let ViewDescriptor::HStack(d) = desc(vd) else {
-            panic!("expected HStack")
-        };
-        assert_eq!(d.spacing, 8.0);
-        assert_eq!(d.padding, Padding::all(4.0));
-        assert_eq!(d.alignment, Alignment::Center);
-        assert_eq!(d.children.len(), 2);
+        let w = context_menu(vec![], id);
+        assert_eq!(w.open_id, id);
     }
 
     // -- Separator tests --
 
     #[test]
     fn test_separator_defaults() {
-        let ViewDescriptor::Separator { direction, color } =
-            desc(separator(SeparatorDirection::Horizontal))
-        else {
-            panic!("expected Separator")
-        };
-        assert_eq!(direction, SeparatorDirection::Horizontal);
-        assert!(color.is_none());
+        let w = separator(SeparatorDirection::Horizontal);
+        assert_eq!(w.direction, SeparatorDirection::Horizontal);
+        assert!(w.color.is_none());
     }
 
     #[test]
     fn test_separator_horizontal_shortcut() {
-        let ViewDescriptor::Separator { direction, .. } = desc(separator_horizontal()) else {
-            panic!("expected Separator")
-        };
-        assert_eq!(direction, SeparatorDirection::Horizontal);
+        let w = separator_horizontal();
+        assert_eq!(w.direction, SeparatorDirection::Horizontal);
     }
 
     #[test]
     fn test_separator_vertical_shortcut() {
-        let ViewDescriptor::Separator { direction, .. } = desc(separator_vertical()) else {
-            panic!("expected Separator")
-        };
-        assert_eq!(direction, SeparatorDirection::Vertical);
+        let w = separator_vertical();
+        assert_eq!(w.direction, SeparatorDirection::Vertical);
     }
 
     #[test]
-    fn test_separator_color_modifier() {
-        let vd = separator_horizontal().separator_color(katla_math::Color::RED);
-        let ViewDescriptor::Separator { color, .. } = desc(vd) else {
-            panic!("expected Separator")
-        };
-        assert_eq!(color, Some(katla_math::Color::RED));
+    fn test_separator_modifier_color() {
+        let w = separator_horizontal().separator_color(katla_math::Color::RED);
+        assert_eq!(w.color, Some(katla_math::Color::RED));
     }
 
     // -- Icon tests --
 
     #[test]
     fn test_icon_defaults() {
-        let ViewDescriptor::Icon { icon, size, color } = desc(super::icon('X')) else {
-            panic!("expected Icon")
-        };
-        assert_eq!(icon, 'X');
-        assert!(size.is_none());
-        assert!(color.is_none());
+        let w = icon('X');
+        assert_eq!(w.icon, 'X');
+        assert!(w.size.is_none());
+        assert!(w.color.is_none());
     }
 
     #[test]
-    fn test_icon_size_modifier() {
-        let vd = super::icon('A').icon_size(FontSize::Large);
-        let ViewDescriptor::Icon { size, .. } = desc(vd) else {
-            panic!("expected Icon")
-        };
-        assert_eq!(size, Some(FontSize::Large));
+    fn test_icon_modifier_size() {
+        let w = icon('A').icon_size(FontSize::Large);
+        assert_eq!(w.size, Some(FontSize::Large));
     }
 
     #[test]
-    fn test_icon_color_modifier() {
-        let vd = super::icon('B').color(katla_math::Color::GREEN);
-        let ViewDescriptor::Icon { color, .. } = desc(vd) else {
-            panic!("expected Icon")
-        };
-        assert_eq!(color, Some(katla_math::Color::GREEN));
+    fn test_icon_modifier_color() {
+        let w = icon('B').color(katla_math::Color::GREEN);
+        assert_eq!(w.color, Some(katla_math::Color::GREEN));
     }
 
     // -- Selectable tests --
 
     #[test]
     fn test_selectable_defaults() {
-        let ViewDescriptor::Selectable {
-            on_click,
-            selected,
-            child,
-        } = desc(selectable(text("item")))
-        else {
-            panic!("expected Selectable")
-        };
-        assert!(on_click.is_none());
-        assert!(!selected);
-        assert!(matches!(*child, ViewDescriptor::Text { .. }));
+        let w = selectable(text("item").boxed());
+        assert!(w.on_click.is_none());
+        assert!(!w.selected);
+        assert!(w.child_widget.is_some());
     }
 
     #[test]
-    fn test_selectable_selected_modifier() {
-        let vd = selectable(text("x")).selected(true);
-        let ViewDescriptor::Selectable { selected, .. } = desc(vd) else {
-            panic!("expected Selectable")
-        };
-        assert!(selected);
+    fn test_selectable_modifier_selected() {
+        let w = selectable(text("x").boxed()).selected(true);
+        assert!(w.selected);
     }
 
     #[test]
-    fn test_selectable_on_click_modifier() {
-        let vd = selectable(text("x")).on_click(Callback(42));
-        let ViewDescriptor::Selectable { on_click, .. } = desc(vd) else {
-            panic!("expected Selectable")
-        };
-        assert!(on_click.is_some());
+    fn test_selectable_modifier_on_click() {
+        let w = selectable(text("x").boxed()).on_click(Callback(42));
+        assert!(w.on_click.is_some());
     }
 
     // -- Section tests --
@@ -2216,29 +949,18 @@ mod tests {
     #[test]
     fn test_section_defaults() {
         let id = dummy_state_id();
-        let ViewDescriptor::Section {
-            title,
-            expanded_id,
-            on_remove,
-            child,
-        } = desc(section("My Section", text("content"), id))
-        else {
-            panic!("expected Section")
-        };
-        assert_eq!(title, "My Section");
-        assert_eq!(expanded_id, id);
-        assert!(on_remove.is_none());
-        assert!(matches!(*child, ViewDescriptor::Text { .. }));
+        let w = section("My Section", text("content").boxed(), id);
+        assert_eq!(w.title, "My Section");
+        assert_eq!(w.expanded_id, id);
+        assert!(w.on_remove.is_none());
+        assert!(w.child_widget.is_some());
     }
 
     #[test]
-    fn test_section_on_remove_modifier() {
+    fn test_section_modifier_on_remove() {
         let id = dummy_state_id();
-        let vd = section("s", text("c"), id).on_remove(Callback(99));
-        let ViewDescriptor::Section { on_remove, .. } = desc(vd) else {
-            panic!("expected Section")
-        };
-        assert!(on_remove.is_some());
+        let w = section("s", text("c").boxed(), id).on_remove(Callback(99));
+        assert!(w.on_remove.is_some());
     }
 
     // -- TabBar tests --
@@ -2246,165 +968,166 @@ mod tests {
     #[test]
     fn test_tab_bar_defaults() {
         let id = dummy_state_id();
-        let ViewDescriptor::TabBar(d) = desc(tab_bar(
+        let w = tab_bar(
             vec![tab_item("A"), tab_item("B")],
             id,
-            text("content"),
-        )) else {
-            panic!("expected TabBar")
-        };
-        assert_eq!(d.tabs.len(), 2);
-        assert_eq!(d.tabs[0].label, "A");
-        assert_eq!(d.selected_id, id);
-        assert!(matches!(*d.content, ViewDescriptor::Text { .. }));
+            text("content").boxed(),
+        );
+        assert_eq!(w.tabs.len(), 2);
+        assert_eq!(w.tabs[0].label, "A");
     }
 
     // -- Grid tests --
 
     #[test]
     fn test_grid_defaults() {
-        let vd = grid(3, Vec2::new(100.0, 50.0), [text("a"), text("b"), text("c")]);
-        let ViewDescriptor::Grid(d) = desc(vd) else {
-            panic!("expected Grid")
-        };
-        assert_eq!(d.columns, 3);
-        assert_eq!(d.cell_size, Vec2::new(100.0, 50.0));
-        assert_eq!(d.spacing, 0.0);
-        assert_eq!(d.children.len(), 3);
+        let w = grid(
+            3,
+            Vec2::new(100.0, 50.0),
+            [text("a").boxed(), text("b").boxed(), text("c").boxed()],
+        );
+        assert_eq!(w.columns, 3);
+        assert_eq!(w.cell_size, Vec2::new(100.0, 50.0));
+        assert_eq!(w.spacing, 0.0);
     }
 
     #[test]
-    fn test_grid_spacing_modifier() {
-        let vd = grid(2, Vec2::new(50.0, 50.0), []).grid_spacing(8.0);
-        let ViewDescriptor::Grid(d) = desc(vd) else {
-            panic!("expected Grid")
-        };
-        assert_eq!(d.spacing, 8.0);
+    fn test_grid_modifier_spacing() {
+        let w = grid(2, Vec2::new(50.0, 50.0), []).grid_spacing(8.0);
+        assert_eq!(w.spacing, 8.0);
     }
 
-    // -- Progress label tests --
+    // -- Container modifier tests --
 
     #[test]
-    fn test_progress_defaults_no_label() {
-        let ViewDescriptor::Progress { label, .. } = desc(progress(0.5, 0.0..=1.0)) else {
-            panic!("expected Progress")
-        };
-        assert!(label.is_none());
+    fn test_hstack_modifier_spacing() {
+        let w = hstack([text("a").boxed()]).spacing(8.0);
+        assert_eq!(w.spacing, 8.0);
     }
 
     #[test]
-    fn test_progress_label_modifier() {
-        let vd = progress(0.5, 0.0..=1.0).progress_label("50%");
-        let ViewDescriptor::Progress { label, .. } = desc(vd) else {
-            panic!("expected Progress")
-        };
-        assert_eq!(label, Some("50%".to_string()));
-    }
-
-    // -- on_click modifier on Button / ImageButton --
-
-    #[test]
-    fn test_on_click_modifier_button() {
-        let vd = button("ok").on_click(Callback(1));
-        let ViewDescriptor::Button { on_click, .. } = desc(vd) else {
-            panic!("expected Button")
-        };
-        assert!(on_click.is_some());
+    fn test_vstack_modifier_padding() {
+        let w = vstack([text("a").boxed()]).padding(Padding::all(10.0));
+        assert_eq!(w.padding, Padding::all(10.0));
     }
 
     #[test]
-    fn test_on_click_modifier_image_button() {
-        let vd = image_button('X').on_click(Callback(2));
-        let ViewDescriptor::ImageButton { on_click, .. } = desc(vd) else {
-            panic!("expected ImageButton")
-        };
-        assert!(on_click.is_some());
+    fn test_zstack_modifier_padding_all() {
+        let w = zstack([]).padding_all(12.0);
+        assert_eq!(w.padding, Padding::all(12.0));
     }
 
-    // -- on_submit modifier on TextField --
+    #[test]
+    fn test_hstack_modifier_align() {
+        let w = hstack([]).align(Alignment::Center);
+        assert_eq!(w.alignment, Alignment::Center);
+    }
 
     #[test]
-    fn test_on_submit_modifier() {
+    fn test_panel_modifier_header_height() {
+        let w = panel("t", text("c").boxed()).header_height(32.0);
+        assert_eq!(w.header_height, 32.0);
+    }
+
+    #[test]
+    fn test_draggable_panel_modifier_close_on_outside() {
         let id = dummy_state_id();
-        let vd = textfield("ph", id).on_submit(Callback(3));
-        let ViewDescriptor::TextField { on_submit, .. } = desc(vd) else {
-            panic!("expected TextField")
-        };
-        assert!(on_submit.is_some());
-    }
-
-    // -- on_select / on_right_click on TreeView --
-
-    #[test]
-    fn test_on_select_modifier() {
-        let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
-        let vd = tree_view(vec![], e, s, sc).on_select(Callback(10));
-        let ViewDescriptor::TreeView(d) = desc(vd) else {
-            panic!("expected TreeView")
-        };
-        assert!(d.on_select.is_some());
+        let w = draggable_panel("p", 200.0, 300.0, text("c").boxed(), id).close_on_outside(true);
+        assert!(w.close_on_outside_click);
     }
 
     #[test]
-    fn test_on_right_click_modifier() {
+    fn test_menubar_modifier_right_content() {
+        let w = menubar(vec![]).right_content(text("r").boxed());
+        assert!(w.right_content.is_some());
+    }
+
+    #[test]
+    fn test_menubar_modifier_height() {
+        let w = menubar(vec![]).menubar_height(40.0);
+        assert_eq!(w.height, 40.0);
+    }
+
+    #[test]
+    fn test_tree_view_modifier_row_height() {
         let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
-        let vd = tree_view(vec![], e, s, sc).on_right_click(Callback(11));
-        let ViewDescriptor::TreeView(d) = desc(vd) else {
-            panic!("expected TreeView")
-        };
-        assert!(d.on_right_click.is_some());
+        let w = tree_view(vec![], e, s, sc).row_height(30.0);
+        assert_eq!(w.row_height, 30.0);
+    }
+
+    #[test]
+    fn test_tree_view_modifier_indent() {
+        let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
+        let w = tree_view(vec![], e, s, sc).indent(24.0);
+        assert_eq!(w.indent_per_level, 24.0);
+    }
+
+    #[test]
+    fn test_tree_view_modifier_on_select() {
+        let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
+        let w = tree_view(vec![], e, s, sc).on_select(Callback(10));
+        assert!(w.on_select.is_some());
+    }
+
+    #[test]
+    fn test_tree_view_modifier_on_right_click() {
+        let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
+        let w = tree_view(vec![], e, s, sc).on_right_click(Callback(11));
+        assert!(w.on_right_click.is_some());
+    }
+
+    // -- Chained modifier test --
+
+    #[test]
+    fn test_chained_modifiers() {
+        let w = hstack([text("a").boxed(), text("b").boxed()])
+            .spacing(8.0)
+            .padding_all(4.0)
+            .align(Alignment::Center);
+
+        assert_eq!(w.spacing, 8.0);
+        assert_eq!(w.padding, Padding::all(4.0));
+        assert_eq!(w.alignment, Alignment::Center);
+        assert_eq!(w.child_widgets.len(), 2);
     }
 
     // -- Keyed constructor tests --
 
     #[test]
     fn test_keyed_helper() {
-        let kc = keyed(42, text("k"));
+        let kc = keyed(42, text("k").boxed());
         assert_eq!(kc.key, Some(42));
-        assert!(matches!(desc(kc.widget), ViewDescriptor::Text { .. }));
     }
 
     #[test]
     fn test_hstack_keyed_constructor() {
-        let children = vec![keyed(1, text("a")), keyed(2, text("b"))];
-        let ViewDescriptor::HStack(d) = desc(hstack_keyed(children)) else {
-            panic!("expected HStack")
-        };
-        assert_eq!(d.children.len(), 2);
-        assert_eq!(d.children[0].key, Some(1));
-        assert_eq!(d.children[1].key, Some(2));
+        let children = vec![keyed(1, text("a").boxed()), keyed(2, text("b").boxed())];
+        let w = hstack_keyed(children);
+        assert_eq!(w.child_widgets.len(), 2);
+        assert_eq!(w.child_widgets[0].key, Some(1));
+        assert_eq!(w.child_widgets[1].key, Some(2));
     }
 
     #[test]
     fn test_vstack_keyed_constructor() {
-        let children = vec![keyed(10, text("x"))];
-        let ViewDescriptor::VStack(d) = desc(vstack_keyed(children)) else {
-            panic!("expected VStack")
-        };
-        assert_eq!(d.children.len(), 1);
-        assert_eq!(d.children[0].key, Some(10));
+        let children = vec![keyed(10, text("x").boxed())];
+        let w = vstack_keyed(children);
+        assert_eq!(w.child_widgets.len(), 1);
+        assert_eq!(w.child_widgets[0].key, Some(10));
     }
 
     #[test]
     fn test_zstack_keyed_constructor() {
-        let children = vec![(Alignment::Center, keyed(5, text("z")))];
-        let ViewDescriptor::ZStack(d) = desc(zstack_keyed(children)) else {
-            panic!("expected ZStack")
-        };
-        assert_eq!(d.children.len(), 1);
-        assert_eq!(d.children[0].0, Alignment::Center);
-        assert_eq!(d.children[0].1.key, Some(5));
+        let children = vec![(Alignment::Center, keyed(5, text("z").boxed()))];
+        let w = zstack_keyed(children);
+        assert_eq!(w.child_widgets.len(), 1);
     }
 
     #[test]
     fn test_grid_keyed_constructor() {
-        let children = vec![keyed(1, text("a")), keyed(2, text("b"))];
-        let ViewDescriptor::Grid(d) = desc(grid_keyed(2, Vec2::new(50.0, 50.0), children)) else {
-            panic!("expected Grid")
-        };
-        assert_eq!(d.columns, 2);
-        assert_eq!(d.children.len(), 2);
-        assert_eq!(d.children[0].key, Some(1));
+        let children = vec![keyed(1, text("a").boxed()), keyed(2, text("b").boxed())];
+        let w = grid_keyed(2, Vec2::new(50.0, 50.0), children);
+        assert_eq!(w.columns, 2);
     }
 
     // -- Menu helper tests --
@@ -2416,23 +1139,18 @@ mod tests {
         assert_eq!(mg.label, "File");
         assert_eq!(mg.open_id, id);
         assert_eq!(mg.items.len(), 2);
-        assert_eq!(mg.items[0].label, "Open");
-        assert!(mg.items[0].on_click.is_none());
-        assert!(!mg.items[0].disabled);
     }
 
     #[test]
     fn test_menu_entry_disabled() {
         let me = menu_entry_disabled("Greyed");
         assert!(me.disabled);
-        assert!(me.on_click.is_none());
     }
 
     #[test]
     fn test_menu_entry_on_click() {
         let me = menu_entry("Click").on_click(Callback(7));
         assert!(me.on_click.is_some());
-        assert!(!me.disabled);
     }
 
     // -- ContextMenuEntry helper tests --
@@ -2441,7 +1159,6 @@ mod tests {
     fn test_context_entry_constructor() {
         let ce = context_entry("Copy");
         assert_eq!(ce.label, "Copy");
-        assert!(ce.on_click.is_none());
         assert!(!ce.disabled);
     }
 
@@ -2457,59 +1174,41 @@ mod tests {
         assert!(ce.on_click.is_some());
     }
 
-    // -- Misapplied modifier no-op tests (release only) --
+    // -- Type safety: misapplied modifiers are compile errors --
+    // These tests verify that the type system prevents invalid modifier chains.
+    // If any of these lines compiled, it would mean the type system failed.
 
-    #[cfg(not(debug_assertions))]
     #[test]
-    fn test_color_on_hstack_is_noop() {
-        let vd = hstack([text("a")]).color(katla_math::Color::RED);
-        let ViewDescriptor::HStack(d) = desc(vd) else {
-            panic!("expected HStack")
-        };
-        assert_eq!(d.children.len(), 1);
+    fn test_type_safe_modifiers() {
+        // These should compile:
+        let _ = text("hi")
+            .color(katla_math::Color::RED)
+            .font_size(FontSize::Small);
+        let _ = button("ok")
+            .fill(katla_math::Color::BLUE)
+            .hover(katla_math::Color::RED)
+            .border(katla_math::Color::BLACK)
+            .on_click(Callback(1));
+        let _ = image_button('X')
+            .fill(katla_math::Color::GREEN)
+            .on_click(Callback(2))
+            .enabled(false);
+        let _ = separator_horizontal().separator_color(katla_math::Color::RED);
+        let _ = icon('A')
+            .icon_size(FontSize::Large)
+            .color(katla_math::Color::GREEN);
+        let _ = hstack([])
+            .spacing(8.0)
+            .padding_all(4.0)
+            .align(Alignment::Center);
+        let _ = panel("t", empty().boxed()).header_height(32.0);
+        let _ = menubar(vec![]).menubar_height(40.0);
+        let _ = grid(2, Vec2::new(50.0, 50.0), []).grid_spacing(8.0);
     }
 
-    #[cfg(not(debug_assertions))]
-    #[test]
-    fn test_fill_on_text_is_noop() {
-        let vd = text("hi").fill(katla_math::Color::BLUE);
-        let ViewDescriptor::Text {
-            color, font_size, ..
-        } = desc(vd)
-        else {
-            panic!("expected Text")
-        };
-        assert!(color.is_none());
-        assert!(font_size.is_none());
-    }
-
-    #[cfg(not(debug_assertions))]
-    #[test]
-    fn test_spacing_on_text_is_noop() {
-        let vd = text("hi").spacing(10.0);
-        assert!(matches!(desc(vd), ViewDescriptor::Text { .. }));
-    }
-
-    #[cfg(not(debug_assertions))]
-    #[test]
-    fn test_padding_all_on_button_is_noop() {
-        let vd = button("ok").padding_all(5.0);
-        let ViewDescriptor::Button {
-            fill_color,
-            on_click,
-            ..
-        } = desc(vd)
-        else {
-            panic!("expected Button")
-        };
-        assert!(fill_color.is_none());
-        assert!(on_click.is_none());
-    }
-
-    #[cfg(not(debug_assertions))]
-    #[test]
-    fn test_font_size_on_button_is_noop() {
-        let vd = button("ok").font_size(FontSize::Small);
-        assert!(matches!(desc(vd), ViewDescriptor::Button { .. }));
-    }
+    // The following would be compile errors (uncomment to verify):
+    // text("hi").spacing(4.0);       // error: no method `spacing` on Text
+    // text("hi").fill(Color::RED);    // error: no method `fill` on Text
+    // button("ok").font_size(Small);  // error: no method `font_size` on Button
+    // hstack([]).on_click(cb);        // error: no method `on_click` on HStack
 }

@@ -13,7 +13,7 @@ use super::super::widget::{
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
-pub(crate) struct DraggablePanel {
+pub struct DraggablePanel {
     pub title: String,
     pub width: f32,
     pub height: f32,
@@ -253,6 +253,13 @@ impl Widget for DraggablePanel {
 
     fn interactive(&self) -> bool {
         true
+    }
+}
+
+impl DraggablePanel {
+    pub fn close_on_outside(mut self, close: bool) -> Self {
+        self.close_on_outside_click = close;
+        self
     }
 }
 

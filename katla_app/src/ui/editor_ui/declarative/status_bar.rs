@@ -2,7 +2,7 @@ use std::boxed::Box;
 
 use katla_ui::ColorScheme;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, Padding, Widget, WidgetExt, empty, hstack, statusbar, text,
+    Alignment, Build, BuildContext, Padding, Widget, WidgetBox, empty, hstack, statusbar, text,
 };
 
 /// Snapshot of data needed to render the status bar each frame.
@@ -26,7 +26,7 @@ pub(crate) struct StatusBarView;
 impl Build for StatusBarView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let Some(data) = ctx.env::<StatusBarData>() else {
-            return empty();
+            return empty().boxed();
         };
 
         let fps_color = if data.fps >= 55.0 {
@@ -69,28 +69,41 @@ impl Build for StatusBarView {
         };
 
         let left_items = vec![
-            text(format!("FPS: {:.0}", data.fps)).color(fps_color),
-            text(format!("{:.2} ms", data.frame_time_ms)).color(frame_time_color),
-            text(format!("Frame: {}", data.frame_count)).color(data.theme.text_secondary),
-            text(format!("Entities: {}", data.entity_count)).color(data.theme.text_secondary),
-            text(format!("Draws: {}", data.draw_call_count)).color(data.theme.text_secondary),
-            text(selection_text).color(selection_color),
+            text(format!("FPS: {:.0}", data.fps))
+                .color(fps_color)
+                .boxed(),
+            text(format!("{:.2} ms", data.frame_time_ms))
+                .color(frame_time_color)
+                .boxed(),
+            text(format!("Frame: {}", data.frame_count))
+                .color(data.theme.text_secondary)
+                .boxed(),
+            text(format!("Entities: {}", data.entity_count))
+                .color(data.theme.text_secondary)
+                .boxed(),
+            text(format!("Draws: {}", data.draw_call_count))
+                .color(data.theme.text_secondary)
+                .boxed(),
+            text(selection_text).color(selection_color).boxed(),
         ];
 
         let right_items = vec![
-            text(format!("ColorScheme: {}", data.theme.name)).color(data.theme.text_muted),
-            text(mode_text).color(mode_color),
+            text(format!("ColorScheme: {}", data.theme.name))
+                .color(data.theme.text_muted)
+                .boxed(),
+            text(mode_text).color(mode_color).boxed(),
         ];
 
         let mut content_children = vec![
             hstack(left_items)
                 .spacing(8.0)
                 .padding_all(4.0)
-                .align(Alignment::Center),
+                .align(Alignment::Center)
+                .boxed(),
         ];
 
         if data.save_confirmation_timer > 0.0 {
-            content_children.push(text("✓ Scene saved").color(data.theme.success));
+            content_children.push(text("✓ Scene saved").color(data.theme.success).boxed());
         }
 
         content_children.push(
@@ -98,9 +111,10 @@ impl Build for StatusBarView {
                 .spacing(8.0)
                 .padding(Padding::horizontal(16.0))
                 .align(Alignment::Trailing)
-                .flex_grow(1.0),
+                .flex_grow(1.0)
+                .boxed(),
         );
 
-        statusbar(data.height, hstack(content_children))
+        statusbar(data.height, hstack(content_children).boxed()).boxed()
     }
 }

@@ -1,7 +1,7 @@
 use katla_ui::FontSize;
 use katla_ui::declarative::{
     Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId, Widget,
-    WidgetExt, draggable_panel, grid, labeled_slider, selectable, tab_bar, tab_item, text,
+    WidgetBox, draggable_panel, grid, labeled_slider, selectable, tab_bar, tab_item, text,
     textfield, toggle, vstack,
 };
 
@@ -29,11 +29,11 @@ pub(crate) struct PreferencesView;
 
 impl Build for PreferencesView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
-        use katla_ui::declarative::empty;
+        use katla_ui::declarative::{WidgetBox, empty};
 
         let draw_ctx = ctx.env::<PreferencesDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return empty();
+            return empty().boxed();
         };
 
         let panel_id: StateId = ctx.state(DraggablePanelState::default());
@@ -53,7 +53,7 @@ impl Build for PreferencesView {
         });
 
         if !current_panel.visibility.is_visible() {
-            return empty();
+            return empty().boxed();
         }
 
         let theme = &draw_ctx.theme;
@@ -88,13 +88,16 @@ impl Build for PreferencesView {
                 ],
                 tab_sel_id,
                 content,
-            )])
+            )
+            .boxed()])
             .spacing(4.0)
             .padding_all(8.0)
-            .align(Alignment::Leading),
+            .align(Alignment::Leading)
+            .boxed(),
             panel_id,
         )
         .close_on_outside(false)
+        .boxed()
     }
 }
 
@@ -109,7 +112,8 @@ fn build_general_tab(
     children.push(
         text("COLOR THEME")
             .color(theme.text_secondary)
-            .font_size(FontSize::Small),
+            .font_size(FontSize::Small)
+            .boxed(),
     );
 
     let theme_names = [
@@ -133,21 +137,27 @@ fn build_general_tab(
         .map(|(key, display_name)| {
             let is_selected = *key == draw_ctx.theme_key;
             let key_owned = key.to_string();
-            selectable(text(*display_name))
+            selectable(text(*display_name).boxed())
                 .selected(is_selected)
                 .on_click(ctx.on_click(move |actions| {
                     actions.emit(PreferencesAction::SetTheme(key_owned.clone()));
                 }))
+                .boxed()
         })
         .collect();
 
-    children.push(grid(3, katla_math::Vec2::new(130.0, 28.0), theme_buttons).grid_spacing(8.0));
+    children.push(
+        grid(3, katla_math::Vec2::new(130.0, 28.0), theme_buttons)
+            .grid_spacing(8.0)
+            .boxed(),
+    );
 
     // Font scale
     children.push(
         text("FONT SCALE")
             .color(theme.text_secondary)
-            .font_size(FontSize::Small),
+            .font_size(FontSize::Small)
+            .boxed(),
     );
 
     let scale_id: StateId = ctx.state(draw_ctx.preferences.font_scale);
@@ -160,10 +170,11 @@ fn build_general_tab(
         labeled_slider("Scale:", scale_id, 0.75..=2.0)
             .label_width(60.0)
             .show_value(true)
-            .precision(0),
+            .precision(0)
+            .boxed(),
     );
 
-    vstack(children).spacing(8.0)
+    vstack(children).spacing(8.0).boxed()
 }
 
 fn build_viewport_tab(
@@ -177,7 +188,8 @@ fn build_viewport_tab(
     children.push(
         text("DISPLAY")
             .color(theme.text_secondary)
-            .font_size(FontSize::Small),
+            .font_size(FontSize::Small)
+            .boxed(),
     );
 
     let grid_toggle_id: StateId = ctx.state(draw_ctx.preferences.show_grid);
@@ -185,20 +197,21 @@ fn build_viewport_tab(
     if current_show_grid != draw_ctx.preferences.show_grid {
         ctx.emit(PreferencesAction::ToggleGrid);
     }
-    children.push(toggle("Show Grid", grid_toggle_id));
+    children.push(toggle("Show Grid", grid_toggle_id).boxed());
 
     let stats_toggle_id: StateId = ctx.state(draw_ctx.preferences.show_stats);
     let current_show_stats: bool = ctx.get_state(stats_toggle_id).unwrap();
     if current_show_stats != draw_ctx.preferences.show_stats {
         ctx.emit(PreferencesAction::ToggleStats);
     }
-    children.push(toggle("Show Stats Panel", stats_toggle_id));
+    children.push(toggle("Show Stats Panel", stats_toggle_id).boxed());
 
     // Grid section
     children.push(
         text("GRID")
             .color(theme.text_secondary)
-            .font_size(FontSize::Small),
+            .font_size(FontSize::Small)
+            .boxed(),
     );
 
     let sizes = [0.5, 1.0, 2.0, 5.0, 10.0];
@@ -206,27 +219,33 @@ fn build_viewport_tab(
         .iter()
         .map(|&size| {
             let is_selected = (draw_ctx.editor_settings.grid_size - size).abs() < 0.01;
-            selectable(text(format!("{:.1}", size)))
+            selectable(text(format!("{:.1}", size)).boxed())
                 .selected(is_selected)
                 .on_click(ctx.on_click(move |actions| {
                     actions.emit(PreferencesAction::SetGridSize(size));
                 }))
+                .boxed()
         })
         .collect();
-    children.push(grid(5, katla_math::Vec2::new(70.0, 28.0), grid_buttons).grid_spacing(8.0));
+    children.push(
+        grid(5, katla_math::Vec2::new(70.0, 28.0), grid_buttons)
+            .grid_spacing(8.0)
+            .boxed(),
+    );
 
     let snap_id: StateId = ctx.state(draw_ctx.editor_settings.snap_to_grid);
     let current_snap: bool = ctx.get_state(snap_id).unwrap();
     if current_snap != draw_ctx.editor_settings.snap_to_grid {
         ctx.emit(PreferencesAction::SetSnapToGrid(current_snap));
     }
-    children.push(toggle("Snap to Grid", snap_id));
+    children.push(toggle("Snap to Grid", snap_id).boxed());
 
     // Camera section
     children.push(
         text("CAMERA")
             .color(theme.text_secondary)
-            .font_size(FontSize::Small),
+            .font_size(FontSize::Small)
+            .boxed(),
     );
 
     let speed_id: StateId = ctx.state(draw_ctx.editor_settings.camera_speed);
@@ -238,10 +257,11 @@ fn build_viewport_tab(
         labeled_slider("Speed:", speed_id, 5.0..=200.0)
             .label_width(60.0)
             .show_value(true)
-            .precision(0),
+            .precision(0)
+            .boxed(),
     );
 
-    vstack(children).spacing(8.0)
+    vstack(children).spacing(8.0).boxed()
 }
 
 fn build_audio_tab(
@@ -254,7 +274,8 @@ fn build_audio_tab(
     children.push(
         text("VOLUME")
             .color(theme.text_secondary)
-            .font_size(FontSize::Small),
+            .font_size(FontSize::Small)
+            .boxed(),
     );
 
     let master_id: StateId = ctx.state(draw_ctx.preferences.audio.master_volume);
@@ -266,7 +287,8 @@ fn build_audio_tab(
         labeled_slider("Master:", master_id, 0.0..=1.0)
             .label_width(70.0)
             .show_value(true)
-            .precision(0),
+            .precision(0)
+            .boxed(),
     );
 
     let sfx_id: StateId = ctx.state(draw_ctx.preferences.audio.sfx_volume);
@@ -278,7 +300,8 @@ fn build_audio_tab(
         labeled_slider("SFX:", sfx_id, 0.0..=1.0)
             .label_width(70.0)
             .show_value(true)
-            .precision(0),
+            .precision(0)
+            .boxed(),
     );
 
     let music_id: StateId = ctx.state(draw_ctx.preferences.audio.music_volume);
@@ -290,7 +313,8 @@ fn build_audio_tab(
         labeled_slider("Music:", music_id, 0.0..=1.0)
             .label_width(70.0)
             .show_value(true)
-            .precision(0),
+            .precision(0)
+            .boxed(),
     );
 
     let ambient_id: StateId = ctx.state(draw_ctx.preferences.audio.ambient_volume);
@@ -302,10 +326,11 @@ fn build_audio_tab(
         labeled_slider("Ambient:", ambient_id, 0.0..=1.0)
             .label_width(70.0)
             .show_value(true)
-            .precision(0),
+            .precision(0)
+            .boxed(),
     );
 
-    vstack(children).spacing(8.0)
+    vstack(children).spacing(8.0).boxed()
 }
 
 fn build_ai_tab(
@@ -322,7 +347,8 @@ fn build_ai_tab(
     children.push(
         text("PROVIDER")
             .color(theme.text_secondary)
-            .font_size(FontSize::Small),
+            .font_size(FontSize::Small)
+            .boxed(),
     );
 
     let providers = [
@@ -340,23 +366,29 @@ fn build_ai_tab(
         .map(|(kind, label, key)| {
             let is_selected = llm_config.provider == *kind;
             let key_owned = key.to_string();
-            selectable(text(*label))
+            selectable(text(*label).boxed())
                 .selected(is_selected)
                 .on_click(ctx.on_click(move |actions| {
                     actions.emit(PreferencesAction::SetLlmProvider(key_owned.clone()));
                     actions.emit(PreferencesAction::SaveLlmConfig);
                 }))
+                .boxed()
         })
         .collect();
-    children.push(grid(3, katla_math::Vec2::new(130.0, 28.0), provider_buttons).grid_spacing(8.0));
+    children.push(
+        grid(3, katla_math::Vec2::new(130.0, 28.0), provider_buttons)
+            .grid_spacing(8.0)
+            .boxed(),
+    );
 
     if llm_config.provider == LlmProviderKind::Disabled {
         children.push(
             text("Configure an LLM provider to enable AI-powered scene building")
                 .color(theme.text_muted)
-                .font_size(FontSize::Small),
+                .font_size(FontSize::Small)
+                .boxed(),
         );
-        return vstack(children).spacing(8.0);
+        return vstack(children).spacing(8.0).boxed();
     }
 
     let provider_name = match llm_config.provider {
@@ -370,14 +402,16 @@ fn build_ai_tab(
             provider_name, llm_config.model
         ))
         .color(theme.success)
-        .font_size(FontSize::Small),
+        .font_size(FontSize::Small)
+        .boxed(),
     );
 
     // Credentials section
     children.push(
         text("CREDENTIALS")
             .color(theme.text_secondary)
-            .font_size(FontSize::Small),
+            .font_size(FontSize::Small)
+            .boxed(),
     );
 
     let api_key_id: StateId = ctx.state(llm_config.api_key.clone());
@@ -386,13 +420,14 @@ fn build_ai_tab(
         ctx.emit(PreferencesAction::SetLlmApiKey(current_api_key));
         ctx.emit(PreferencesAction::SaveLlmConfig);
     }
-    children.push(textfield("Enter API key...", api_key_id));
+    children.push(textfield("Enter API key...", api_key_id).boxed());
 
     // Model settings section
     children.push(
         text("MODEL SETTINGS")
             .color(theme.text_secondary)
-            .font_size(FontSize::Small),
+            .font_size(FontSize::Small)
+            .boxed(),
     );
 
     let model_id: StateId = ctx.state(llm_config.model.clone());
@@ -401,7 +436,7 @@ fn build_ai_tab(
         ctx.emit(PreferencesAction::SetLlmModel(current_model));
         ctx.emit(PreferencesAction::SaveLlmConfig);
     }
-    children.push(textfield("gpt-4o", model_id));
+    children.push(textfield("gpt-4o", model_id).boxed());
 
     if llm_config.provider == LlmProviderKind::OpenAiCompatible {
         let base_url_id: StateId = ctx.state(llm_config.base_url.clone().unwrap_or_default());
@@ -411,7 +446,7 @@ fn build_ai_tab(
             ctx.emit(PreferencesAction::SetLlmBaseUrl(current_base_url));
             ctx.emit(PreferencesAction::SaveLlmConfig);
         }
-        children.push(textfield("http://localhost:11434/v1", base_url_id));
+        children.push(textfield("http://localhost:11434/v1", base_url_id).boxed());
     }
 
     // Temperature
@@ -425,7 +460,8 @@ fn build_ai_tab(
         labeled_slider("Temperature:", temp_id, 0.0..=2.0)
             .label_width(100.0)
             .show_value(true)
-            .precision(2),
+            .precision(2)
+            .boxed(),
     );
 
     // Max tokens
@@ -434,15 +470,20 @@ fn build_ai_tab(
         .iter()
         .map(|&tokens| {
             let is_selected = llm_config.max_tokens == tokens;
-            selectable(text(format!("{}", tokens)))
+            selectable(text(format!("{}", tokens)).boxed())
                 .selected(is_selected)
                 .on_click(ctx.on_click(move |actions| {
                     actions.emit(PreferencesAction::SetLlmMaxTokens(tokens));
                     actions.emit(PreferencesAction::SaveLlmConfig);
                 }))
+                .boxed()
         })
         .collect();
-    children.push(grid(4, katla_math::Vec2::new(90.0, 28.0), token_buttons).grid_spacing(8.0));
+    children.push(
+        grid(4, katla_math::Vec2::new(90.0, 28.0), token_buttons)
+            .grid_spacing(8.0)
+            .boxed(),
+    );
 
-    vstack(children).spacing(8.0)
+    vstack(children).spacing(8.0).boxed()
 }

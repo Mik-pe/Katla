@@ -408,7 +408,7 @@ pub struct GridDescriptor {
     pub flex: FlexProps,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Anchor {
     TopLeft,
     TopRight,

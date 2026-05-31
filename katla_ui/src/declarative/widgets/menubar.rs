@@ -11,7 +11,7 @@ use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
-pub(crate) struct MenuBar {
+pub struct MenuBar {
     pub groups: Vec<MenuGroup>,
     pub right_content: Option<Box<dyn super::super::widget::Widget>>,
     pub height: f32,
@@ -245,6 +245,17 @@ fn measure_menu_label(label: &str, font_size: f32) -> f32 {
 
 use taffy::Size;
 
+impl MenuBar {
+    pub fn right_content(mut self, content: Box<dyn super::super::widget::Widget>) -> Self {
+        self.right_content = Some(content);
+        self
+    }
+    pub fn menubar_height(mut self, h: f32) -> Self {
+        self.height = h;
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,7 +314,7 @@ mod tests {
 
     #[test]
     fn test_menubar_toggle_dropdown() {
-        let (menubar, open_id, mut callbacks) = make_menubar_with_groups();
+        let (_menubar, _open_id, mut callbacks) = make_menubar_with_groups();
         let mut arena = StateArena::new();
         let view_id = ViewId::from(slotmap::KeyData::from_ffi(0));
         let open_id = arena.get_or_create(view_id, false);

@@ -12,7 +12,7 @@ use super::super::widget::{
 };
 use crate::context::UiContext;
 
-pub(crate) struct Overlay {
+pub struct Overlay {
     pub anchor: Anchor,
     pub offset: Vec2,
     pub child_widget: Option<Box<dyn super::super::widget::Widget>>,

@@ -11,7 +11,7 @@ use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
-pub(crate) struct Separator {
+pub struct Separator {
     pub direction: SeparatorDirection,
     pub color: Option<Color>,
 }
@@ -99,6 +99,13 @@ impl Widget for Separator {
 
     fn focusable(&self) -> bool {
         false
+    }
+}
+
+impl Separator {
+    pub fn separator_color(mut self, color: impl Into<katla_math::Color>) -> Self {
+        self.color = Some(color.into());
+        self
     }
 }
 

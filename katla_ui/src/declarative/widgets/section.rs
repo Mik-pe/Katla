@@ -14,7 +14,7 @@ use super::super::widget::{
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
-pub(crate) struct Section {
+pub struct Section {
     pub title: String,
     pub expanded_id: StateId,
     pub on_remove: Option<Callback>,
@@ -163,6 +163,13 @@ impl Widget for Section {
 
     fn interactive(&self) -> bool {
         true
+    }
+}
+
+impl Section {
+    pub fn on_remove(mut self, cb: super::super::descriptor::Callback) -> Self {
+        self.on_remove = Some(cb);
+        self
     }
 }
 

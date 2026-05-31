@@ -11,7 +11,7 @@ use super::super::widget::{
 };
 use crate::context::UiContext;
 
-pub(crate) struct StatusBar {
+pub struct StatusBar {
     pub height: f32,
     pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
     children: Vec<ViewId>,

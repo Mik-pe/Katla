@@ -11,7 +11,7 @@ use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
-pub(crate) struct Progress {
+pub struct Progress {
     pub value: f32,
     pub range: RangeInclusive<f32>,
     pub fill_color: Option<Color>,
@@ -101,6 +101,17 @@ impl Widget for Progress {
 
     fn focusable(&self) -> bool {
         false
+    }
+}
+
+impl Progress {
+    pub fn fill(mut self, color: impl Into<katla_math::Color>) -> Self {
+        self.fill_color = Some(color.into());
+        self
+    }
+    pub fn progress_label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
     }
 }
 

@@ -4,7 +4,7 @@ use katla_agent::MessageRole;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
     Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId, Widget,
-    WidgetExt, button, draggable_panel, empty, hstack, image_button, scroll, text, textfield,
+    WidgetBox, button, draggable_panel, empty, hstack, image_button, scroll, text, textfield,
     vstack,
 };
 
@@ -40,7 +40,7 @@ impl Build for CoCreatorView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<CoCreatorDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return empty();
+            return empty().boxed();
         };
 
         let panel_id: StateId = ctx.state(DraggablePanelState::default());
@@ -60,7 +60,7 @@ impl Build for CoCreatorView {
         });
 
         if !current_panel.visibility.is_visible() {
-            return empty();
+            return empty().boxed();
         }
 
         let mut children: Vec<Box<dyn Widget>> = Vec::new();
@@ -68,9 +68,11 @@ impl Build for CoCreatorView {
         // Undo button
         if draw_ctx.agent_undo_count > 0 {
             children.push(
-                image_button(katla_ui::ForkAwesome::UNDO).on_click(ctx.on_click(|actions| {
-                    actions.emit(CoCreatorUndoAction);
-                })),
+                image_button(katla_ui::ForkAwesome::UNDO)
+                    .on_click(ctx.on_click(|actions| {
+                        actions.emit(CoCreatorUndoAction);
+                    }))
+                    .boxed(),
             );
         }
 
@@ -81,7 +83,8 @@ impl Build for CoCreatorView {
             msg_children.push(
                 text(&draw_ctx.status_message)
                     .color(draw_ctx.text_muted)
-                    .font_size(FontSize::Small),
+                    .font_size(FontSize::Small)
+                    .boxed(),
             );
         } else {
             for (role, msg_text) in &draw_ctx.messages {
@@ -93,7 +96,8 @@ impl Build for CoCreatorView {
                 msg_children.push(
                     text(format!("{prefix}{msg_text}"))
                         .color(color)
-                        .font_size(FontSize::Small),
+                        .font_size(FontSize::Small)
+                        .boxed(),
                 );
             }
         }
@@ -102,7 +106,8 @@ impl Build for CoCreatorView {
             msg_children.push(
                 text("Processing...")
                     .color(draw_ctx.text_muted)
-                    .font_size(FontSize::Small),
+                    .font_size(FontSize::Small)
+                    .boxed(),
             );
         }
 
@@ -111,7 +116,8 @@ impl Build for CoCreatorView {
             vstack(msg_children)
                 .spacing(4.0)
                 .padding_all(4.0)
-                .align(Alignment::Leading),
+                .align(Alignment::Leading)
+                .boxed(),
             scroll_id,
         );
 
@@ -119,22 +125,25 @@ impl Build for CoCreatorView {
         let input_id: StateId = ctx.state(String::new());
         let current_input: String = ctx.get_state(input_id).unwrap();
         let input_clone = current_input.clone();
-        let input_field =
-            textfield("Ask the AI...", input_id).on_submit(ctx.on_click(move |actions| {
+        let input_field = textfield("Ask the AI...", input_id)
+            .on_submit(ctx.on_click(move |actions| {
                 actions.emit(CoCreatorSubmitAction {
                     text: input_clone.clone(),
                 });
-            }));
+            }))
+            .boxed();
 
-        let send_btn = button("Send").on_click(ctx.on_click(move |actions| {
-            actions.emit(CoCreatorSubmitAction {
-                text: current_input.clone(),
-            });
-        }));
+        let send_btn = button("Send")
+            .on_click(ctx.on_click(move |actions| {
+                actions.emit(CoCreatorSubmitAction {
+                    text: current_input.clone(),
+                });
+            }))
+            .boxed();
 
-        let input_row = hstack([input_field, send_btn]).spacing(4.0);
+        let input_row = hstack([input_field, send_btn]).spacing(4.0).boxed();
 
-        children.push(msg_area);
+        children.push(msg_area.boxed());
         children.push(input_row);
 
         draggable_panel(
@@ -144,9 +153,11 @@ impl Build for CoCreatorView {
             vstack(children)
                 .spacing(4.0)
                 .padding_all(4.0)
-                .align(Alignment::Leading),
+                .align(Alignment::Leading)
+                .boxed(),
             panel_id,
         )
         .close_on_outside(false)
+        .boxed()
     }
 }

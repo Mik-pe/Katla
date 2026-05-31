@@ -2,7 +2,7 @@ use std::boxed::Box;
 
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, Widget, WidgetExt, empty, grid, image, selectable, text, zstack,
+    Alignment, Build, BuildContext, Widget, WidgetBox, empty, grid, image, text, zstack,
 };
 use katla_ui::{FontSize, TextureId};
 
@@ -26,7 +26,7 @@ impl Build for ViewportGridView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<ViewportGridDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return empty();
+            return empty().boxed();
         };
 
         let (rows, cols) = draw_ctx.state.layout.grid_dimensions();
@@ -78,21 +78,28 @@ impl Build for ViewportGridView {
                 if let Some(texture) = texture {
                     cell_content.push((
                         Alignment::Center,
-                        image(texture, Color::WHITE).image_size(cell_width, cell_height),
+                        image(texture, Color::WHITE)
+                            .image_size(cell_width, cell_height)
+                            .boxed(),
                     ));
                 }
 
                 let label_text = text(label)
                     .color(Color::WHITE.with_alpha(0.8))
-                    .font_size(FontSize::Small);
+                    .font_size(FontSize::Small)
+                    .boxed();
 
                 cell_content.push((Alignment::Leading, label_text));
 
-                let content = zstack(cell_content);
+                let content = zstack(cell_content).boxed();
 
                 // Use selectable for visual feedback (hover/active highlighting)
                 // The actual selection is handled in layout.rs via update_active_viewport
-                grid_children.push(katla_ui::declarative::selectable(content).selected(is_active));
+                grid_children.push(
+                    katla_ui::declarative::selectable(content)
+                        .selected(is_active)
+                        .boxed(),
+                );
             }
         }
 
@@ -100,6 +107,7 @@ impl Build for ViewportGridView {
             .grid_spacing(0.0)
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
+            .boxed()
     }
 }
 

@@ -13,7 +13,7 @@ use super::super::widget::{
 use crate::context::UiContext;
 use crate::input::{KeyCode, mouse_button};
 
-pub(crate) struct Modal {
+pub struct Modal {
     pub width: f32,
     pub height: f32,
     pub open_id: StateId,
@@ -174,6 +174,13 @@ impl Widget for Modal {
 
     fn interactive(&self) -> bool {
         true
+    }
+}
+
+impl Modal {
+    pub fn on_close(mut self, cb: super::super::descriptor::Callback) -> Self {
+        self.on_close = Some(cb);
+        self
     }
 }
 
