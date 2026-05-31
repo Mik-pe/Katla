@@ -25,7 +25,7 @@ struct MultiFieldComponent {
 
 #[derive(Component)]
 #[allow(dead_code)]
-struct GenericComponent<T: 'static> {
+struct GenericComponent<T: Send + Sync + 'static> {
     data: T,
 }
 
