@@ -52,7 +52,7 @@ impl TaffyNodeMap {
             return;
         };
 
-        let mut style = descriptor_to_style(node.descriptor(), measure);
+        let mut style = node.widget.layout_style(measure);
 
         // ZStack children need absolute positioning so they stack rather than
         // participate in flex flow.  Do NOT set all-four insets to 0% — that
@@ -145,7 +145,7 @@ impl TaffyNodeMap {
     }
 }
 
-fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> Style {
+pub(crate) fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> Style {
     match descriptor {
         ViewDescriptor::Empty => Style::default(),
 
