@@ -518,33 +518,6 @@ pub enum PhysicsMaterialField {
     Density,
 }
 
-/// Active tab in the bottom panel strip.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum BottomPanelTab {
-    #[default]
-    AssetBrowser,
-    Console,
-    Mixer,
-}
-
-impl BottomPanelTab {
-    pub fn all() -> &'static [BottomPanelTab] {
-        &[
-            BottomPanelTab::AssetBrowser,
-            BottomPanelTab::Console,
-            BottomPanelTab::Mixer,
-        ]
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            BottomPanelTab::AssetBrowser => "Assets",
-            BottomPanelTab::Console => "Console",
-            BottomPanelTab::Mixer => "Mixer",
-        }
-    }
-}
-
 /// Which panel is currently focused (receives input).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FocusedPanel {

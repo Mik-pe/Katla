@@ -8,6 +8,7 @@ use crate::style::FontSize;
 
 use super::actions::ActionStream;
 use super::animation::AnimationState;
+use super::descriptor::Alignment;
 use super::diff::DiffAction;
 use super::state::{StateArena, ViewId};
 
@@ -26,7 +27,7 @@ pub enum ChildWidgets {
     /// Multi-child container with optional keys (HStack, VStack, Grid).
     Multi(Vec<(Option<u64>, Box<dyn Widget>)>),
     /// ZStack with per-child alignment.
-    ZStack(Vec<(super::descriptor::Alignment, Option<u64>, Box<dyn Widget>)>),
+    ZStack(Vec<(Alignment, Option<u64>, Box<dyn Widget>)>),
     /// TransitionContainer wrapping a single child with transition config.
     Transition {
         child: Box<dyn Widget>,
@@ -139,7 +140,7 @@ pub trait Widget: Any + 'static {
         &self,
         _bounds: Rect2D,
         _parent_bounds: Rect2D,
-        _zstack_alignment: Option<super::descriptor::Alignment>,
+        _zstack_alignment: Option<Alignment>,
         _state: &StateArena,
     ) -> Vec2 {
         Vec2::ZERO
@@ -293,7 +294,7 @@ impl Widget for Box<dyn Widget> {
         &self,
         bounds: Rect2D,
         parent_bounds: Rect2D,
-        zstack_alignment: Option<super::descriptor::Alignment>,
+        zstack_alignment: Option<Alignment>,
         state: &StateArena,
     ) -> Vec2 {
         (**self).resolve_position_delta(bounds, parent_bounds, zstack_alignment, state)
@@ -336,134 +337,6 @@ impl Widget for Box<dyn Widget> {
         children_bounds: &[Rect2D],
     ) {
         (**self).draw_after_children(ctx, state, bounds, children, children_bounds)
-    }
-}
-
-/// Bridge widget that wraps a [`ViewDescriptor`] for layout test compatibility.
-#[cfg(test)]
-pub(crate) struct DescriptorWidget {
-    descriptor: super::descriptor::ViewDescriptor,
-}
-
-#[cfg(test)]
-impl DescriptorWidget {
-    pub fn new(descriptor: super::descriptor::ViewDescriptor) -> Self {
-        Self { descriptor }
-    }
-}
-
-#[cfg(test)]
-impl Widget for DescriptorWidget {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn diff_against(&self, prev: &dyn Widget) -> DiffAction {
-        if let Some(other) = prev.as_any().downcast_ref::<DescriptorWidget>() {
-            super::diff::diff_descriptor(&other.descriptor, &self.descriptor)
-        } else {
-            DiffAction::Replace
-        }
-    }
-
-    fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
-        super::layout::descriptor_to_style(&self.descriptor, measure)
-    }
-
-    fn handle_input(
-        &self,
-        _ctx: &mut InputContext<'_>,
-        _state: &mut StateArena,
-        _bounds: Rect2D,
-        _children: &[ViewId],
-    ) -> InputResult {
-        InputResult::Ignore
-    }
-
-    fn draw(
-        &self,
-        _ctx: &mut UiContext,
-        _state: &StateArena,
-        _bounds: Rect2D,
-        _animation: &AnimationState,
-        _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
-    ) {
-    }
-
-    fn take_children(&mut self) -> ChildWidgets {
-        use super::descriptor::ViewDescriptor;
-        match &self.descriptor {
-            ViewDescriptor::HStack(s) | ViewDescriptor::VStack(s) => {
-                let children: Vec<(Option<u64>, Box<dyn Widget>)> = s
-                    .children
-                    .iter()
-                    .map(|cd| {
-                        (
-                            cd.key,
-                            Box::new(DescriptorWidget::new(cd.descriptor.clone()))
-                                as Box<dyn Widget>,
-                        )
-                    })
-                    .collect();
-                ChildWidgets::Multi(children)
-            }
-            ViewDescriptor::Grid(s) => {
-                let children: Vec<(Option<u64>, Box<dyn Widget>)> = s
-                    .children
-                    .iter()
-                    .map(|cd| {
-                        (
-                            cd.key,
-                            Box::new(DescriptorWidget::new(cd.descriptor.clone()))
-                                as Box<dyn Widget>,
-                        )
-                    })
-                    .collect();
-                ChildWidgets::Multi(children)
-            }
-            ViewDescriptor::ZStack(s) => {
-                let children: Vec<(super::descriptor::Alignment, Option<u64>, Box<dyn Widget>)> = s
-                    .children
-                    .iter()
-                    .map(|(alignment, cd)| {
-                        (
-                            *alignment,
-                            cd.key,
-                            Box::new(DescriptorWidget::new(cd.descriptor.clone()))
-                                as Box<dyn Widget>,
-                        )
-                    })
-                    .collect();
-                ChildWidgets::ZStack(children)
-            }
-            _ => {
-                let single = match &self.descriptor {
-                    ViewDescriptor::ScrollView(s) => Some(&s.content),
-                    ViewDescriptor::Panel(s) => Some(&s.content),
-                    ViewDescriptor::Overlay(s) => Some(&s.content),
-                    ViewDescriptor::StatusBar(s) => Some(&s.content),
-                    ViewDescriptor::DraggablePanel(s) => Some(&s.content),
-                    ViewDescriptor::Modal(s) => Some(&s.content),
-                    ViewDescriptor::Selectable { child, .. } => Some(child),
-                    ViewDescriptor::Section { child, .. } => Some(child),
-                    ViewDescriptor::TabBar(s) => Some(&s.content),
-                    _ => None,
-                };
-                match single {
-                    Some(desc) => {
-                        ChildWidgets::Single(Box::new(DescriptorWidget::new((**desc).clone())))
-                    }
-                    None => ChildWidgets::None,
-                }
-            }
-        }
     }
 }
 

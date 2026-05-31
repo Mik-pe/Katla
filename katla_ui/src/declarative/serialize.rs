@@ -4,7 +4,7 @@ use crate::style::FontSize;
 
 use super::descriptor::Padding;
 
-/// Serializable subset of ViewDescriptor with no callbacks or fn pointers.
+/// Serializable subset of a widget tree with no callbacks or fn pointers.
 ///
 /// This is a plain data type suitable for serialization. Users can derive
 /// `Serialize`/`Deserialize` on it themselves, or add serde later.

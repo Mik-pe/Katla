@@ -1,14 +1,10 @@
 use std::collections::HashMap;
 
 use katla_math::{Rect2D, Vec2};
-#[cfg(test)]
-use taffy::FlexDirection;
 use taffy::{Dimension, LengthPercentage, NodeId as TaffyNodeId, Size, Style, TaffyTree};
 
 use crate::style::FontSize;
 
-#[cfg(test)]
-use super::descriptor::ViewDescriptor;
 use super::descriptor::{Alignment, FlexProps, Padding};
 use super::state::ViewId;
 use super::tree::ViewTree;
@@ -147,367 +143,6 @@ impl TaffyNodeMap {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> Style {
-    match descriptor {
-        ViewDescriptor::Empty => Style::default(),
-
-        ViewDescriptor::Text {
-            content, font_size, ..
-        } => {
-            let size = measure(content, *font_size);
-            Style {
-                size: Size {
-                    width: Dimension::Length(size.x()),
-                    height: Dimension::Length(size.y()),
-                },
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::Button { label, .. } => {
-            let text_size = measure(label, None);
-            let h_padding = 16.0;
-            let v_padding = 8.0;
-            Style {
-                size: Size {
-                    width: Dimension::Length(text_size.x() + h_padding),
-                    height: Dimension::Length(text_size.y() + v_padding),
-                },
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::HStack(stack) => {
-            let mut style = Style {
-                flex_direction: FlexDirection::Row,
-                gap: Size {
-                    width: LengthPercentage::Length(stack.spacing),
-                    height: LengthPercentage::Length(0.0),
-                },
-                padding: padding_to_taffy(&stack.padding),
-                ..Style::default()
-            };
-            apply_alignment_to_style(&mut style, stack.alignment);
-            apply_flex_props(&mut style, &stack.flex);
-            style
-        }
-
-        ViewDescriptor::VStack(stack) => {
-            let mut style = Style {
-                flex_direction: FlexDirection::Column,
-                gap: Size {
-                    width: LengthPercentage::Length(0.0),
-                    height: LengthPercentage::Length(stack.spacing),
-                },
-                padding: padding_to_taffy(&stack.padding),
-                ..Style::default()
-            };
-            apply_alignment_to_style(&mut style, stack.alignment);
-            apply_flex_props(&mut style, &stack.flex);
-            style
-        }
-
-        ViewDescriptor::ZStack(zstack) => {
-            let mut style = Style {
-                size: Size {
-                    width: Dimension::Percent(1.0),
-                    height: Dimension::Percent(1.0),
-                },
-                padding: padding_to_taffy(&zstack.padding),
-                ..Style::default()
-            };
-            apply_flex_props(&mut style, &zstack.flex);
-            style
-        }
-
-        ViewDescriptor::ScrollView(desc) => {
-            let mut style = Style {
-                overflow: taffy::Point {
-                    x: taffy::Overflow::Scroll,
-                    y: taffy::Overflow::Scroll,
-                },
-                ..Style::default()
-            };
-            apply_flex_props(&mut style, &desc.flex);
-            style
-        }
-
-        ViewDescriptor::Panel(desc) => {
-            let mut style = Style {
-                flex_direction: FlexDirection::Column,
-                ..Style::default()
-            };
-            apply_flex_props(&mut style, &desc.flex);
-            style
-        }
-
-        ViewDescriptor::Overlay(desc) => {
-            let content_style = descriptor_to_style(&desc.content, measure);
-            Style {
-                position: taffy::Position::Absolute,
-                size: content_style.size,
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::StatusBar(desc) => Style {
-            size: Size {
-                width: Dimension::Percent(1.0),
-                height: Dimension::Length(desc.height),
-            },
-            flex_direction: FlexDirection::Column,
-            padding: taffy::Rect {
-                top: LengthPercentage::Length(0.0),
-                right: LengthPercentage::Length(0.0),
-                bottom: LengthPercentage::Length(0.0),
-                left: LengthPercentage::Length(0.0),
-            },
-            ..Style::default()
-        },
-
-        ViewDescriptor::DraggablePanel(desc) => Style {
-            position: taffy::Position::Absolute,
-            size: Size {
-                width: Dimension::Length(desc.width),
-                height: Dimension::Length(desc.height),
-            },
-            ..Style::default()
-        },
-
-        ViewDescriptor::MenuBar(desc) => Style {
-            size: Size {
-                width: Dimension::Percent(1.0),
-                height: Dimension::Length(desc.height),
-            },
-            ..Style::default()
-        },
-
-        ViewDescriptor::TreeView(_) => Style {
-            flex_grow: 1.0,
-            flex_shrink: 1.0,
-            ..Style::default()
-        },
-
-        ViewDescriptor::Modal(desc) => Style {
-            position: taffy::Position::Absolute,
-            size: Size {
-                width: Dimension::Length(desc.width),
-                height: Dimension::Length(desc.height),
-            },
-            ..Style::default()
-        },
-
-        ViewDescriptor::ContextMenu(_) => Style {
-            position: taffy::Position::Absolute,
-            ..Style::default()
-        },
-
-        ViewDescriptor::LabeledSlider { label, .. } => {
-            let text_size = measure(label, None);
-            Style {
-                size: Size {
-                    width: Dimension::Length((text_size.x() + 120.0).max(200.0)),
-                    height: Dimension::Length(text_size.y() + 12.0),
-                },
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::Slider { label, .. } | ViewDescriptor::ColorPicker { label, .. } => {
-            let text_size = measure(label, None);
-            Style {
-                size: Size {
-                    width: Dimension::Length((text_size.x() + 40.0).max(100.0)),
-                    height: Dimension::Length(text_size.y() + 12.0),
-                },
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::Toggle { label, .. } => {
-            let text_size = measure(label, None);
-            Style {
-                size: Size {
-                    width: Dimension::Length(text_size.x() + 28.0),
-                    height: Dimension::Length(text_size.y() + 8.0),
-                },
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::TextField { placeholder, .. } => {
-            let text_size = measure(placeholder, None);
-            Style {
-                size: Size {
-                    width: Dimension::Length(text_size.x() + 16.0),
-                    height: Dimension::Length(text_size.y() + 12.0),
-                },
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::Progress { .. } => Style {
-            size: Size {
-                width: Dimension::Length(100.0),
-                height: Dimension::Length(8.0),
-            },
-            ..Style::default()
-        },
-
-        ViewDescriptor::VuMeter { .. } => Style {
-            size: Size {
-                width: Dimension::Length(12.0),
-                height: Dimension::Length(120.0),
-            },
-            ..Style::default()
-        },
-
-        ViewDescriptor::Vec3Slider { label, .. } => {
-            let text_size = measure(label, None);
-            Style {
-                size: Size {
-                    width: Dimension::Length((text_size.x() + 120.0).max(200.0)),
-                    height: Dimension::Length(text_size.y() * 3.0 + 20.0),
-                },
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::ImageButton { .. } => Style {
-            size: Size {
-                width: Dimension::Length(28.0),
-                height: Dimension::Length(28.0),
-            },
-            ..Style::default()
-        },
-
-        ViewDescriptor::RadioButton { label, .. } => {
-            let text_size = measure(label, None);
-            Style {
-                size: Size {
-                    width: Dimension::Length(text_size.x() + 24.0),
-                    height: Dimension::Length(text_size.y() + 8.0),
-                },
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::PropertyRow { label, value } => {
-            let label_size = measure(label, None);
-            let value_size = measure(value, None);
-            Style {
-                size: Size {
-                    width: Dimension::Length(label_size.x() + value_size.x() + 16.0),
-                    height: Dimension::Length(label_size.y().max(value_size.y()) + 4.0),
-                },
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::Image { width, height, .. } => {
-            let w = width.unwrap_or(64.0);
-            let h = height.unwrap_or(64.0);
-            Style {
-                size: Size {
-                    width: Dimension::Length(w),
-                    height: Dimension::Length(h),
-                },
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::TransitionContainer { .. } => Style::default(),
-
-        ViewDescriptor::Separator { direction, .. } => {
-            let thickness = 1.0;
-            match direction {
-                super::descriptor::SeparatorDirection::Horizontal => Style {
-                    size: Size {
-                        width: Dimension::Percent(1.0),
-                        height: Dimension::Length(thickness),
-                    },
-                    ..Style::default()
-                },
-                super::descriptor::SeparatorDirection::Vertical => Style {
-                    size: Size {
-                        width: Dimension::Length(thickness),
-                        height: Dimension::Percent(1.0),
-                    },
-                    ..Style::default()
-                },
-            }
-        }
-
-        ViewDescriptor::Icon { icon, size, .. } => {
-            let font_size = size.unwrap_or(FontSize::Medium);
-            let h = font_size.to_pixels();
-            let w = h;
-            let _ = icon;
-            Style {
-                size: Size {
-                    width: Dimension::Length(w),
-                    height: Dimension::Length(h),
-                },
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::Selectable { .. } => Style {
-            flex_direction: FlexDirection::Column,
-            flex_grow: 1.0,
-            ..Style::default()
-        },
-
-        ViewDescriptor::Section { .. } => Style {
-            flex_direction: FlexDirection::Column,
-            ..Style::default()
-        },
-
-        ViewDescriptor::TabBar(_desc) => {
-            let tab_height = 28.0_f32;
-            Style {
-                size: Size {
-                    width: Dimension::Percent(1.0),
-                    height: Dimension::Length(tab_height),
-                },
-                flex_direction: FlexDirection::Row,
-                gap: Size {
-                    width: LengthPercentage::Length(0.0),
-                    height: LengthPercentage::Length(0.0),
-                },
-                ..Style::default()
-            }
-        }
-
-        ViewDescriptor::Grid(desc) => {
-            let col_width = desc.cell_size.x();
-            let row_height = desc.cell_size.y();
-            let rows = (desc.children.len().max(1) + desc.columns - 1) / desc.columns.max(1);
-            let mut style = Style {
-                size: Size {
-                    width: Dimension::Length(
-                        col_width * desc.columns as f32
-                            + desc.spacing * (desc.columns as f32 - 1.0),
-                    ),
-                    height: Dimension::Length(
-                        row_height * rows as f32 + desc.spacing * (rows as f32 - 1.0),
-                    ),
-                },
-                flex_direction: FlexDirection::Row,
-                flex_wrap: taffy::FlexWrap::Wrap,
-                gap: Size {
-                    width: LengthPercentage::Length(desc.spacing),
-                    height: LengthPercentage::Length(desc.spacing),
-                },
-                ..Style::default()
-            };
-            apply_flex_props(&mut style, &desc.flex);
-            style
-        }
-    }
-}
-
 pub fn padding_to_taffy(padding: &Padding) -> taffy::Rect<LengthPercentage> {
     taffy::Rect {
         top: LengthPercentage::Length(padding.top),
@@ -597,33 +232,17 @@ pub fn measure_text_descriptor(content: &str, font_size: Option<FontSize>) -> Ve
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::declarative::build::{Build, BuildContext};
-    use crate::declarative::descriptor::{ChildDescriptor, StackDescriptor, ViewDescriptor};
-    use crate::declarative::tree::ViewTree;
+    use crate::declarative::constructors::*;
+    use crate::declarative::widget::WidgetBox;
     use katla_math::Vec2;
 
     fn approx_eq(a: f32, b: f32) -> bool {
         (a - b).abs() < 1.0
     }
 
-    struct StaticDescriptor(ViewDescriptor);
-
-    impl Build for StaticDescriptor {
-        fn build(&self, _ctx: &mut BuildContext) -> Box<dyn crate::declarative::widget::Widget> {
-            use crate::declarative::widget::DescriptorWidget;
-            Box::new(DescriptorWidget::new(self.0.clone()))
-        }
-    }
-
-    fn build_tree_from_descriptor(tree: &mut ViewTree, descriptor: ViewDescriptor) {
-        tree.build_from(&StaticDescriptor(descriptor));
-    }
-
     fn build_tree(tree: &mut ViewTree, widget: Box<dyn crate::declarative::widget::Widget>) {
         tree.set_root(widget);
     }
-
-    use crate::declarative::constructors::WidgetBox;
 
     #[test]
     fn test_measure_text() {
@@ -635,26 +254,12 @@ mod tests {
     #[test]
     fn test_hstack_layout() {
         let mut tree = ViewTree::new();
-        let descriptor = ViewDescriptor::HStack(Box::new(StackDescriptor {
-            children: vec![
-                ChildDescriptor::from(ViewDescriptor::Text {
-                    content: "A".into(),
-                    color: None,
-                    font_size: None,
-                }),
-                ChildDescriptor::from(ViewDescriptor::Text {
-                    content: "B".into(),
-                    color: None,
-                    font_size: None,
-                }),
-            ],
-            spacing: 10.0,
-            padding: Padding::all(8.0),
-            alignment: Alignment::Leading,
-            flex: FlexProps::default(),
-        }));
+        let descriptor = hstack([text("A").boxed(), text("B").boxed()])
+            .spacing(10.0)
+            .padding(Padding::all(8.0))
+            .align(Alignment::Leading);
 
-        build_tree_from_descriptor(&mut tree, descriptor);
+        build_tree(&mut tree, descriptor.boxed());
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -673,26 +278,12 @@ mod tests {
     #[test]
     fn test_vstack_layout() {
         let mut tree = ViewTree::new();
-        let descriptor = ViewDescriptor::VStack(Box::new(StackDescriptor {
-            children: vec![
-                ChildDescriptor::from(ViewDescriptor::Text {
-                    content: "Line 1".into(),
-                    color: None,
-                    font_size: None,
-                }),
-                ChildDescriptor::from(ViewDescriptor::Text {
-                    content: "Line 2".into(),
-                    color: None,
-                    font_size: None,
-                }),
-            ],
-            spacing: 4.0,
-            padding: Padding::zero(),
-            alignment: Alignment::Leading,
-            flex: FlexProps::default(),
-        }));
+        let descriptor = vstack([text("Line 1").boxed(), text("Line 2").boxed()])
+            .spacing(4.0)
+            .padding(Padding::zero())
+            .align(Alignment::Leading);
 
-        build_tree_from_descriptor(&mut tree, descriptor);
+        build_tree(&mut tree, descriptor.boxed());
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -723,26 +314,12 @@ mod tests {
     #[test]
     fn test_bounds_accumulation() {
         let mut tree = ViewTree::new();
-        let descriptor = ViewDescriptor::VStack(Box::new(StackDescriptor {
-            children: vec![
-                ChildDescriptor::from(ViewDescriptor::Text {
-                    content: "Top".into(),
-                    color: None,
-                    font_size: None,
-                }),
-                ChildDescriptor::from(ViewDescriptor::Text {
-                    content: "Bottom".into(),
-                    color: None,
-                    font_size: None,
-                }),
-            ],
-            spacing: 0.0,
-            padding: Padding::zero(),
-            alignment: Alignment::Leading,
-            flex: FlexProps::default(),
-        }));
+        let descriptor = vstack([text("Top").boxed(), text("Bottom").boxed()])
+            .spacing(0.0)
+            .padding(Padding::zero())
+            .align(Alignment::Leading);
 
-        build_tree_from_descriptor(&mut tree, descriptor);
+        build_tree(&mut tree, descriptor.boxed());
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -774,19 +351,12 @@ mod tests {
     #[test]
     fn test_padding_applied() {
         let mut tree = ViewTree::new();
-        let descriptor = ViewDescriptor::HStack(Box::new(StackDescriptor {
-            children: vec![ChildDescriptor::from(ViewDescriptor::Text {
-                content: "X".into(),
-                color: None,
-                font_size: None,
-            })],
-            spacing: 0.0,
-            padding: Padding::all(20.0),
-            alignment: Alignment::Leading,
-            flex: FlexProps::default(),
-        }));
+        let descriptor = hstack([text("X").boxed()])
+            .spacing(0.0)
+            .padding(Padding::all(20.0))
+            .align(Alignment::Leading);
 
-        build_tree_from_descriptor(&mut tree, descriptor);
+        build_tree(&mut tree, descriptor.boxed());
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -819,7 +389,6 @@ mod tests {
 
     #[test]
     fn test_section_layout() {
-        use crate::declarative::constructors::{section, text};
         use crate::declarative::state::{StateArena, ViewId};
 
         let mut tree = ViewTree::new();
@@ -845,7 +414,6 @@ mod tests {
 
     #[test]
     fn test_tab_bar_layout() {
-        use crate::declarative::constructors::{tab_bar, tab_item, text};
         use crate::declarative::state::{StateArena, ViewId};
 
         let mut tree = ViewTree::new();
@@ -872,8 +440,6 @@ mod tests {
 
     #[test]
     fn test_grid_layout() {
-        use crate::declarative::constructors::{grid, text};
-
         let mut tree = ViewTree::new();
         let descriptor = grid(
             2,
@@ -899,8 +465,6 @@ mod tests {
 
     #[test]
     fn test_separator_layout() {
-        use crate::declarative::constructors::separator_horizontal;
-
         let mut tree = ViewTree::new();
         let descriptor = separator_horizontal();
 
@@ -917,14 +481,11 @@ mod tests {
             .unwrap_or_default();
 
         assert!(root_bounds.width() > 0.0);
-        // Separator should have minimal height
         assert!(root_bounds.height() >= 0.0);
     }
 
     #[test]
     fn test_icon_layout() {
-        use crate::declarative::constructors::icon;
-
         let mut tree = ViewTree::new();
         let descriptor = icon('X');
 
@@ -946,8 +507,6 @@ mod tests {
 
     #[test]
     fn test_selectable_layout() {
-        use crate::declarative::constructors::{selectable, text};
-
         let mut tree = ViewTree::new();
         let descriptor = selectable(text("Select me").boxed());
 
@@ -969,19 +528,14 @@ mod tests {
 
     #[test]
     fn test_zstack_in_selectable_fills_parent() {
-        use crate::declarative::constructors::{grid, image, selectable, zstack};
-        use crate::declarative::descriptor::Alignment;
         use crate::types::TextureId;
         use katla_math::Color;
 
-        // Reproduce the viewport grid cell layout:
-        // grid(1, cell_size, [selectable(zstack([(Center, image)]))])
         let cell_w = 800.0;
         let cell_h = 600.0;
         let cell_size = Vec2::new(cell_w, cell_h);
 
         let img = image(TextureId(0), Color::WHITE);
-        // Manually set image_size like viewport_grid.rs does
         let img = img.image_size(cell_w, cell_h);
 
         let inner_zstack = zstack([(Alignment::Center, img.boxed())]);
@@ -999,33 +553,18 @@ mod tests {
         let screen = Vec2::new(1200.0, 800.0);
         let bounds = layout.compute(tree.root().unwrap(), screen, &tree);
 
-        // Find the ZStack node and check its bounds
         let root = tree.root().unwrap();
         let root_node = tree.get(root).unwrap();
-        // root = Grid
-        // root.children[0] = VStack wrapper (from grid constructor)
         let vstack_id = root_node.children[0];
         let vstack_node = tree.get(vstack_id).unwrap();
-        // vstack.children[0] = Selectable
         let selectable_id = vstack_node.children[0];
         let selectable_node = tree.get(selectable_id).unwrap();
-        // selectable.children[0] = ZStack
         let zstack_id = selectable_node.children[0];
         let zstack_node = tree.get(zstack_id).unwrap();
-        // zstack.children[0] = Image
-        let image_id = zstack_node.children[0];
+        let _image_id = zstack_node.children[0];
 
         let zstack_bounds = bounds.get(&zstack_id).copied().unwrap_or_default();
-        let selectable_bounds = bounds.get(&selectable_id).copied().unwrap_or_default();
-        let image_bounds = bounds.get(&image_id).copied().unwrap_or_default();
-        let grid_bounds = bounds.get(&root).copied().unwrap_or_default();
 
-        eprintln!("grid_bounds: {:?}", grid_bounds);
-        eprintln!("selectable_bounds: {:?}", selectable_bounds);
-        eprintln!("zstack_bounds: {:?}", zstack_bounds);
-        eprintln!("image_bounds: {:?}", image_bounds);
-
-        // ZStack should fill the entire cell (800x600), not be 50% size
         assert!(
             approx_eq(zstack_bounds.width(), cell_w),
             "ZStack width should be {} but got {}",

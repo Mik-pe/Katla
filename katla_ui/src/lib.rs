@@ -11,46 +11,30 @@
 //!
 //! The primary API is the **declarative system** ([`declarative`] module):
 //!
-//! 1. Implement [`Build`] to produce a [`ViewDescriptor`] tree each frame
-//! 2. Drive rendering with [`ViewTree::frame()`] which handles build, diff, layout,
+//! 1. Implement [`Build`](declarative::Build) to produce a `Box<dyn Widget>` tree each frame
+//! 2. Drive rendering with [`ViewTree::frame()`](declarative::ViewTree::frame) which handles build, diff, layout,
 //!    input, and drawing in one call
-//! 3. Drain typed actions from [`ViewTree::actions_mut()`]
+//! 3. Drain typed actions from [`ViewTree::actions_mut()`](declarative::ViewTree::actions_mut)
 //!
-//! ## Available ViewDescriptor widgets
+//! ## Available widgets
 //!
-//! **Leaf widgets:**
-//! - [`Text`](declarative::ViewDescriptor::Text) — labeled text display
-//! - [`Button`](declarative::ViewDescriptor::Button) — clickable button with callback
-//! - [`Slider`](declarative::ViewDescriptor::Slider) — basic numeric slider
-//! - [`LabeledSlider`](declarative::ViewDescriptor::LabeledSlider) — slider with label prefix and value display
-//! - [`Vec3Slider`](declarative::ViewDescriptor::Vec3Slider) — three-axis slider with colored labels
-//! - [`Toggle`](declarative::ViewDescriptor::Toggle) — on/off toggle switch
-//! - [`TextField`](declarative::ViewDescriptor::TextField) — text input with placeholder
-//! - [`Progress`](declarative::ViewDescriptor::Progress) — progress bar
-//! - [`ColorPicker`](declarative::ViewDescriptor::ColorPicker) — color swatch picker
-//! - [`ImageButton`](declarative::ViewDescriptor::ImageButton) — icon-only clickable button
-//! - [`RadioButton`](declarative::ViewDescriptor::RadioButton) — single-selection radio group
-//! - [`Image`](declarative::ViewDescriptor::Image) — textured image display
-//! - [`PropertyRow`](declarative::ViewDescriptor::PropertyRow) — read-only label:value row
-//! - [`VuMeter`](declarative::ViewDescriptor::VuMeter) — vertical audio level meter with peak/RMS
+//! **Leaf widgets:** Text, Button, Slider, LabeledSlider, Vec3Slider, Toggle,
+//! TextField, Progress, ColorPicker, ImageButton, RadioButton, Image,
+//! PropertyRow, VuMeter, Separator, Icon, Selectable, Section
 //!
-//! **Layout containers:**
-//! - [`HStack`](declarative::ViewDescriptor::HStack) — horizontal flex layout
-//! - [`VStack`](declarative::ViewDescriptor::VStack) — vertical flex layout
-//! - [`ZStack`](declarative::ViewDescriptor::ZStack) — layered (z-order) layout
-//! - [`ScrollView`](declarative::ViewDescriptor::ScrollView) — scrollable content area
-//! - [`Panel`](declarative::ViewDescriptor::Panel) — titled panel with header
-//! - [`Overlay`](declarative::ViewDescriptor::Overlay) — anchored overlay positioning
+//! **Layout containers:** HStack, VStack, ZStack, ScrollView, Panel, Overlay,
+//! StatusBar, DraggablePanel, MenuBar, TreeView, Modal, ContextMenu, TabBar, Grid,
+//! DockSpace, Memoize, TransitionContainer
 //!
 //! ## State management
 //!
-//! Use [`BuildContext::state()`] to create persistent state scoped to each view node.
+//! Use [`BuildContext::state()`](declarative::BuildContext::state) to create persistent state scoped to each view node.
 //! State survives across frames and is automatically cleaned up when nodes are removed.
 //!
 //! ## Actions
 //!
-//! Use [`BuildContext::emit()`] to send typed actions from any widget.
-//! Drain them after the frame via [`ViewTree::actions_mut()`].
+//! Use [`BuildContext::emit()`](declarative::BuildContext::emit) to send typed actions from any widget.
+//! Drain them after the frame via [`ViewTree::actions_mut()`](declarative::ViewTree::actions_mut).
 //!
 //! # Lower-level API
 //!
@@ -62,34 +46,23 @@
 //!
 //! ```ignore
 //! use katla_ui::declarative::{
-//!     Build, BuildContext, ViewDescriptor, ViewTree,
-//!     StackDescriptor, Padding, Alignment,
+//!     Build, BuildContext, ViewTree, Widget,
+//!     text, slider, hstack, Padding, Alignment,
 //! };
 //!
 //! struct MyHud;
 //!
 //! impl Build for MyHud {
-//!     fn build(&self, ctx: &mut BuildContext) -> ViewDescriptor {
+//!     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
 //!         let health = ctx.state(100.0f32);
-//!         ViewDescriptor::HStack(Box::new(StackDescriptor {
-//!             children: vec![
-//!                 ViewDescriptor::Text {
-//!                     content: "Health".into(),
-//!                     color: None,
-//!                     font_size: None,
-//!                 },
-//!                 ViewDescriptor::Slider {
-//!                     label: String::new(),
-//!                     value_id: health,
-//!                     range: 0.0..=100.0,
-//!                     show_value: true,
-//!                     precision: 0,
-//!                 },
-//!             ],
-//!             spacing: 8.0,
-//!             padding: Padding::all(10.0),
-//!             alignment: Alignment::Leading,
-//!         }))
+//!         hstack([
+//!             text("Health").boxed(),
+//!             slider("", health, 0.0..=100.0).show_value().precision(0).boxed(),
+//!         ])
+//!         .spacing(8.0)
+//!         .padding(Padding::all(10.0))
+//!         .align(Alignment::Leading)
+//!         .boxed()
 //!     }
 //! }
 //!

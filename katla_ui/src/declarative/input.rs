@@ -563,14 +563,12 @@ mod tests {
     #[test]
     fn test_slider_drag_continuation_across_frames() {
         use super::super::constructors;
-        use super::super::state::StateId;
         use super::super::widget::WidgetBox;
 
         let mut tree = ViewTree::new();
-        let mut arena = tree.state_arena_mut();
+        let arena = tree.state_arena_mut();
         let vid = ViewId::from(slotmap::KeyData::from_ffi(1));
         let value_id = arena.get_or_create(vid, 0.0f32);
-        drop(arena);
 
         let slider = constructors::slider("vol", value_id, 0.0..=100.0);
         tree.set_root(slider.boxed());
