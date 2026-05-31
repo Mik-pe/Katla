@@ -2442,6 +2442,8 @@ dependencies = [
  "katla_icons",
  "katla_math",
  "log",
+ "serde",
+ "serde_json",
  "skrifa",
  "slotmap",
  "taffy",

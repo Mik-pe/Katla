@@ -112,6 +112,8 @@ mod types;
 mod widget;
 pub mod widgets;
 
+pub mod dock;
+
 // Core types that katla_app needs for integration
 pub use context::{ScrollAreaState, UiContext, z_index};
 pub use draw_list::DrawList;
