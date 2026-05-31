@@ -15,6 +15,7 @@ pub mod state;
 pub mod transition;
 pub mod tree;
 pub mod widget;
+pub mod widgets;
 
 pub use actions::ActionStream;
 pub use animation::{
