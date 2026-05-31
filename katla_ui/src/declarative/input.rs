@@ -154,57 +154,68 @@ pub(crate) fn process_input(
         }
     }
 
-    // Extract widget data and tree state needed for dispatch
-    let (children, bounds, active_id) = {
-        let Some(node) = tree.get(hit.id) else {
-            return result;
-        };
-        (
-            node.children.clone(),
-            bounds_map.get(&hit.id).copied().unwrap_or_default(),
-            tree.interaction().active_id,
-        )
-    };
-
-    // Take actions out temporarily
+    // Take actions and state out for the dispatch loop
     let mut actions = std::mem::take(tree.actions_mut());
     let mut state_arena = std::mem::take(tree.state_arena_mut());
+    let mut new_active_id = tree.interaction().active_id;
 
-    // Dispatch input to the widget via handle_input
-    let mut ctx = InputContext {
-        input,
-        mouse_pos: input.mouse_pos,
-        callbacks,
-        actions: &mut actions,
-        view_id: hit.id,
-        active_id,
-    };
+    // Bubbling dispatch loop: start at the hit widget, propagate to parents
+    // on Bubble, stop on Consumed or Ignore.
+    let mut current_id = hit.id;
 
-    let widget_result = {
-        let Some(node) = tree.get(hit.id) else {
-            *tree.state_arena_mut() = state_arena;
-            *tree.actions_mut() = actions;
-            return result;
+    loop {
+        let (children, bounds, parent) = {
+            let Some(node) = tree.get(current_id) else {
+                break;
+            };
+            (
+                node.children.clone(),
+                bounds_map.get(&current_id).copied().unwrap_or_default(),
+                node.parent,
+            )
         };
-        node.widget
-            .handle_input(&mut ctx, &mut state_arena, bounds, &children)
-    };
 
-    // Extract what we need from ctx before moving actions back
-    let new_active_id = ctx.active_id;
+        let mut ctx = InputContext {
+            input,
+            mouse_pos: input.mouse_pos,
+            callbacks: &mut *callbacks,
+            actions: &mut actions,
+            view_id: current_id,
+            active_id: new_active_id,
+        };
+
+        let widget_result = tree
+            .get(current_id)
+            .map(|n| {
+                n.widget
+                    .handle_input(&mut ctx, &mut state_arena, bounds, &children)
+            })
+            .unwrap_or(WidgetInputResult::Ignore);
+
+        new_active_id = ctx.active_id;
+
+        match widget_result {
+            WidgetInputResult::Consumed => {
+                result.input_consumed = true;
+                result.clicked_id = Some(current_id);
+                break;
+            }
+            WidgetInputResult::Bubble => {
+                current_id = match parent {
+                    Some(id) => id,
+                    None => break,
+                };
+            }
+            WidgetInputResult::Ignore => {
+                break;
+            }
+        }
+    }
 
     // Put state back
     *tree.state_arena_mut() = state_arena;
     *tree.actions_mut() = actions;
     tree.interaction_mut().active_id = new_active_id;
-
-    match widget_result {
-        WidgetInputResult::Consumed => {
-            result.input_consumed = true;
-            result.clicked_id = Some(hit.id);
-        }
-        WidgetInputResult::Bubble | WidgetInputResult::Ignore => {}
-    }
 
     // Clear active if mouse released and not a slider
     if !input.mouse_down[mouse_button::LEFT]
@@ -278,4 +289,272 @@ pub(crate) struct ProcessInputResult {
     pub input_consumed: bool,
     pub hovered_id: Option<ViewId>,
     pub clicked_id: Option<ViewId>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::any::Any;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use katla_math::{Rect2D, Vec2};
+    use taffy::Style;
+
+    use super::*;
+    use crate::context::UiContext;
+    use crate::declarative::animation::AnimationState;
+    use crate::declarative::build::CallbackTable;
+    use crate::declarative::diff::DiffAction;
+    use crate::declarative::state::{StateArena, ViewId};
+    use crate::declarative::tree::ViewTree;
+    use crate::declarative::widget::{
+        ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget, WidgetBox,
+    };
+    use crate::input::UiInputState;
+
+    /// Test widget that returns a configured `InputResult` and tracks calls.
+    struct StubWidget {
+        result: InputResult,
+        called: Rc<Cell<bool>>,
+        child: Option<Box<dyn Widget>>,
+    }
+
+    impl StubWidget {
+        fn new(result: InputResult) -> (Self, Rc<Cell<bool>>) {
+            let called = Rc::new(Cell::new(false));
+            (
+                Self {
+                    result,
+                    called: called.clone(),
+                    child: None,
+                },
+                called,
+            )
+        }
+
+        fn with_child(mut self, child: impl Widget + 'static) -> Self {
+            self.child = Some(Box::new(child));
+            self
+        }
+    }
+
+    impl Widget for StubWidget {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+        fn diff_against(&self, _prev: &dyn Widget) -> DiffAction {
+            DiffAction::Update
+        }
+        fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+            Style::default()
+        }
+        fn handle_input(
+            &self,
+            _ctx: &mut InputContext<'_>,
+            _state: &mut StateArena,
+            _bounds: Rect2D,
+            _children: &[ViewId],
+        ) -> InputResult {
+            self.called.set(true);
+            self.result
+        }
+        fn draw(
+            &self,
+            _ctx: &mut UiContext,
+            _state: &StateArena,
+            _bounds: Rect2D,
+            _animation: &AnimationState,
+            _children: &[ViewId],
+            _interaction: &DrawInteraction,
+            _view_id: ViewId,
+            _children_bounds: &[Rect2D],
+        ) {
+        }
+        fn interactive(&self) -> bool {
+            true
+        }
+        fn take_children(&mut self) -> ChildWidgets {
+            self.child
+                .take()
+                .map(ChildWidgets::Single)
+                .unwrap_or(ChildWidgets::None)
+        }
+    }
+
+    fn build_parent_child_tree(
+        parent_result: InputResult,
+        child_result: InputResult,
+    ) -> (ViewTree, Rc<Cell<bool>>, Rc<Cell<bool>>) {
+        let (child_widget, child_called) = StubWidget::new(child_result);
+        let (parent_widget, parent_called) = StubWidget::new(parent_result);
+        let parent_with_child = parent_widget.with_child(child_widget);
+
+        let mut tree = ViewTree::new();
+        tree.set_root(parent_with_child.boxed());
+
+        (tree, parent_called, child_called)
+    }
+
+    fn make_bounds(tree: &ViewTree) -> HashMap<ViewId, Rect2D> {
+        let root_id = tree.root().unwrap();
+        let child_id = tree.get(root_id).unwrap().children[0];
+
+        let mut bounds = HashMap::new();
+        bounds.insert(
+            root_id,
+            Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(800.0, 600.0)),
+        );
+        bounds.insert(
+            child_id,
+            Rect2D::new(Vec2::new(100.0, 100.0), Vec2::new(300.0, 200.0)),
+        );
+        bounds
+    }
+
+    #[test]
+    fn test_consumed_stops_propagation() {
+        let (mut tree, parent_called, child_called) =
+            build_parent_child_tree(InputResult::Ignore, InputResult::Consumed);
+        let bounds = make_bounds(&tree);
+
+        let mut input = UiInputState::new();
+        input.mouse_pos = Vec2::new(150.0, 150.0);
+
+        let mut callbacks = CallbackTable::new();
+        let result = process_input(&mut tree, &input, &mut callbacks, &bounds);
+
+        assert!(child_called.get(), "child handle_input should be called");
+        assert!(
+            !parent_called.get(),
+            "parent handle_input should NOT be called when child returns Consumed"
+        );
+        assert!(result.input_consumed);
+    }
+
+    #[test]
+    fn test_bubble_propagates_to_parent() {
+        let (mut tree, parent_called, child_called) =
+            build_parent_child_tree(InputResult::Consumed, InputResult::Bubble);
+        let bounds = make_bounds(&tree);
+
+        let mut input = UiInputState::new();
+        input.mouse_pos = Vec2::new(150.0, 150.0);
+
+        let mut callbacks = CallbackTable::new();
+        let result = process_input(&mut tree, &input, &mut callbacks, &bounds);
+
+        assert!(child_called.get(), "child handle_input should be called");
+        assert!(
+            parent_called.get(),
+            "parent handle_input should be called when child returns Bubble"
+        );
+        assert!(result.input_consumed, "parent consumed the bubbled event");
+    }
+
+    #[test]
+    fn test_ignore_does_not_propagate() {
+        let (mut tree, parent_called, child_called) =
+            build_parent_child_tree(InputResult::Consumed, InputResult::Ignore);
+        let bounds = make_bounds(&tree);
+
+        let mut input = UiInputState::new();
+        input.mouse_pos = Vec2::new(150.0, 150.0);
+
+        let mut callbacks = CallbackTable::new();
+        let result = process_input(&mut tree, &input, &mut callbacks, &bounds);
+
+        assert!(child_called.get(), "child handle_input should be called");
+        assert!(
+            !parent_called.get(),
+            "parent handle_input should NOT be called when child returns Ignore"
+        );
+        assert!(
+            !result.input_consumed,
+            "Ignore should not mark the event as consumed"
+        );
+    }
+
+    #[test]
+    fn test_bubble_chain_propagates_through_multiple_ancestors() {
+        // Grandparent (Consumed) → Parent (Bubble) → Child (Bubble)
+        let (grandchild, gc_called) = StubWidget::new(InputResult::Bubble);
+        let (mut parent, parent_called) = StubWidget::new(InputResult::Bubble);
+        parent.child = Some(grandchild.boxed());
+
+        let (mut grandparent, gp_called) = StubWidget::new(InputResult::Consumed);
+        grandparent.child = Some(parent.boxed());
+
+        let mut tree = ViewTree::new();
+        tree.set_root(grandparent.boxed());
+
+        let root_id = tree.root().unwrap();
+        let parent_id = tree.get(root_id).unwrap().children[0];
+        let child_id = tree.get(parent_id).unwrap().children[0];
+
+        let mut bounds = HashMap::new();
+        bounds.insert(
+            root_id,
+            Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(800.0, 600.0)),
+        );
+        bounds.insert(
+            parent_id,
+            Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(800.0, 600.0)),
+        );
+        bounds.insert(
+            child_id,
+            Rect2D::new(Vec2::new(100.0, 100.0), Vec2::new(300.0, 200.0)),
+        );
+
+        let mut input = UiInputState::new();
+        input.mouse_pos = Vec2::new(150.0, 150.0);
+
+        let mut callbacks = CallbackTable::new();
+        let result = process_input(&mut tree, &input, &mut callbacks, &bounds);
+
+        assert!(gc_called.get(), "grandchild should be called");
+        assert!(parent_called.get(), "parent should receive bubbled event");
+        assert!(gp_called.get(), "grandparent should receive bubbled event");
+        assert!(result.input_consumed);
+    }
+
+    #[test]
+    fn test_bubble_stops_at_root_with_no_parent() {
+        // Parent (Bubble) → Child (Bubble)
+        // Parent has no parent, so Bubble from parent should just stop
+        let (child, child_called) = StubWidget::new(InputResult::Bubble);
+        let (parent, parent_called) = StubWidget::new(InputResult::Bubble);
+        let parent_with_child = parent.with_child(child);
+
+        let mut tree = ViewTree::new();
+        tree.set_root(parent_with_child.boxed());
+
+        let root_id = tree.root().unwrap();
+        let child_id = tree.get(root_id).unwrap().children[0];
+
+        let mut bounds = HashMap::new();
+        bounds.insert(
+            root_id,
+            Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(800.0, 600.0)),
+        );
+        bounds.insert(
+            child_id,
+            Rect2D::new(Vec2::new(100.0, 100.0), Vec2::new(300.0, 200.0)),
+        );
+
+        let mut input = UiInputState::new();
+        input.mouse_pos = Vec2::new(150.0, 150.0);
+
+        let mut callbacks = CallbackTable::new();
+        let result = process_input(&mut tree, &input, &mut callbacks, &bounds);
+
+        assert!(child_called.get());
+        assert!(parent_called.get());
+        assert!(
+            !result.input_consumed,
+            "Bubble to root with no parent should not consume"
+        );
+    }
 }
