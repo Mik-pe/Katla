@@ -394,6 +394,7 @@ pub struct DockTabBar<'a> {
     bounds: Rect2D,
     close_buttons: bool,
     id_base: Option<&'a str>,
+    label_fn: Option<&'a dyn Fn(DockPanelId) -> &'static str>,
 }
 
 impl<'a> DockTabBar<'a> {
@@ -404,6 +405,7 @@ impl<'a> DockTabBar<'a> {
             bounds: Rect2D::from_size(Vec2::new(200.0, 28.0)),
             close_buttons: false,
             id_base: None,
+            label_fn: None,
         }
     }
 
@@ -419,6 +421,11 @@ impl<'a> DockTabBar<'a> {
 
     pub fn id(mut self, id: &'a str) -> Self {
         self.id_base = Some(id);
+        self
+    }
+
+    pub fn labels(mut self, f: &'a dyn Fn(DockPanelId) -> &'static str) -> Self {
+        self.label_fn = Some(f);
         self
     }
 }
@@ -508,7 +515,10 @@ impl DockTabBar<'_> {
                 }
             }
 
-            let label = format!("{}", self.tabs[i]);
+            let label = self
+                .label_fn
+                .map(|f| f(self.tabs[i]))
+                .unwrap_or_else(|| "?");
             let text_color = if is_active {
                 active_text
             } else {
@@ -887,6 +897,7 @@ fn render_chrome_recursive(
                 Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), TAB_BAR_HEIGHT));
             let tab_response = DockTabBar::new(tabs, *active_tab)
                 .bounds(tab_bar_bounds)
+                .labels(label_fn.unwrap_or(&|_| "?"))
                 .show(ui);
 
             if let Some(clicked) = tab_response.clicked_tab {
@@ -1227,6 +1238,7 @@ fn render_node(
                 Rect2D::from_origin_size(bounds.min, Vec2::new(bounds.width(), TAB_BAR_HEIGHT));
             let tab_response = DockTabBar::new(tabs, *active_tab)
                 .bounds(tab_bar_bounds)
+                .labels(label_fn.unwrap_or(&|_| "?"))
                 .show(ui);
 
             // Handle tab click

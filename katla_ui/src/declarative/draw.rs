@@ -866,37 +866,9 @@ pub(crate) fn draw_descriptor_with_id(
             ui.draw_rect(bounds, bg);
         }
 
-        ViewDescriptor::Panel(desc) => {
+        ViewDescriptor::Panel(_) => {
             let bg = ui.style().window_bg;
             ui.draw_rect(bounds, bg);
-
-            let header_bounds = Rect2D::new(
-                bounds.min,
-                Vec2::new(bounds.max.x(), bounds.min.y() + desc.header_height),
-            );
-            ui.draw_rect(header_bounds, ui.style().window_title_bg);
-
-            let font_size = ui.style().font_size;
-            let padding = ui.style().window_padding;
-            let text_pos = Vec2::new(
-                header_bounds.min.x() + padding,
-                header_bounds.min.y() + (desc.header_height - font_size) * 0.5,
-            );
-            ui.draw_text(
-                &desc.title,
-                text_pos,
-                ui.style().window_title_text,
-                font_size,
-            );
-
-            if children_bounds.len() > 1 {
-                ui.draw_line(
-                    Vec2::new(bounds.min.x(), header_bounds.max.y()),
-                    Vec2::new(bounds.max.x(), header_bounds.max.y()),
-                    ui.style().window_border,
-                    1.0,
-                );
-            }
         }
 
         ViewDescriptor::Overlay(_) => {}

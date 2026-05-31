@@ -546,7 +546,9 @@ impl ViewTree {
             .collect();
 
         let is_scroll_view = matches!(descriptor, ViewDescriptor::ScrollView(_));
-        if is_scroll_view {
+        let is_panel = matches!(descriptor, ViewDescriptor::Panel(_));
+        let needs_clip = is_scroll_view || is_panel;
+        if needs_clip {
             ui.push_clip(bounds);
         }
 
@@ -580,7 +582,7 @@ impl ViewTree {
             }
         }
 
-        if is_scroll_view {
+        if needs_clip {
             ui.pop_clip();
         }
     }
