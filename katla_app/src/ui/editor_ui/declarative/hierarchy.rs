@@ -4,7 +4,7 @@ use katla_ecs::EntityId;
 use katla_math::Rect2D;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
-    Build, BuildContext, Padding, StateId, Widget, WidgetExt, empty, hstack, icon, panel, scroll,
+    Build, BuildContext, Padding, StateId, Widget, WidgetBox, empty, hstack, icon, panel, scroll,
     selectable, text, textfield, vstack,
 };
 
@@ -34,7 +34,7 @@ impl Build for HierarchyView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<HierarchyDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return empty();
+            return empty().boxed();
         };
 
         let search_id: StateId = ctx.state(draw_ctx.search_filter.clone());
@@ -66,7 +66,7 @@ impl Build for HierarchyView {
 
         let header_text = format!("Hierarchy ({} entities)", visible_count);
 
-        let search_field = textfield("Filter entities...", search_id);
+        let search_field = textfield("Filter entities...", search_id).boxed();
 
         let mut tree_children = Vec::new();
         for entity in filtered_entities.iter() {
@@ -79,37 +79,48 @@ impl Build for HierarchyView {
             let row = hstack([
                 icon(entity_icon)
                     .color(icon_color)
-                    .icon_size(FontSize::Small),
+                    .icon_size(FontSize::Small)
+                    .boxed(),
                 text(&entity.name)
                     .color(draw_ctx.theme.text_secondary)
-                    .font_size(FontSize::Small),
+                    .font_size(FontSize::Small)
+                    .boxed(),
             ])
             .spacing(6.0)
             .padding(Padding::all(4.0));
 
-            tree_children.push(selectable(row).selected(is_selected).on_click(ctx.on_click(
-                move |actions| {
-                    actions.emit(HierarchyAction::SelectEntity(entity_id));
-                },
-            )));
+            tree_children.push(
+                selectable(row.boxed())
+                    .selected(is_selected)
+                    .on_click(ctx.on_click(move |actions| {
+                        actions.emit(HierarchyAction::SelectEntity(entity_id));
+                    }))
+                    .boxed(),
+            );
         }
 
         let tree_content = if tree_children.is_empty() {
             text("No entities in scene")
                 .color(draw_ctx.theme.text_muted)
                 .font_size(FontSize::Small)
+                .boxed()
         } else {
-            vstack(tree_children).spacing(2.0)
+            vstack(tree_children).spacing(2.0).boxed()
         };
 
-        let content = vstack([search_field, scroll(tree_content, scroll_id).flex_grow(1.0)])
-            .spacing(4.0)
-            .padding(Padding::all(4.0))
-            .flex_grow(1.0);
+        let content = vstack([
+            search_field,
+            scroll(tree_content, scroll_id).flex_grow(1.0).boxed(),
+        ])
+        .spacing(4.0)
+        .padding(Padding::all(4.0))
+        .flex_grow(1.0)
+        .boxed();
 
         panel(header_text, content)
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
+            .boxed()
     }
 }
 

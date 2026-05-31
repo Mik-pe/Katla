@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use katla_math::{Color, Rect2D};
-use katla_ui::declarative::{Build, BuildContext, Padding, StateId, Widget, WidgetExt};
+use katla_ui::declarative::{Build, BuildContext, Padding, StateId, Widget, WidgetBox};
 use katla_ui::{FontSize, ScrollAreaState};
 
 use crate::ui::console::LogBuffer;
@@ -54,7 +54,7 @@ impl Build for ConsoleView {
 
         let draw_ctx = ctx.env::<ConsoleDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return empty();
+            return empty().boxed();
         };
 
         let search_id: StateId = ctx.state(draw_ctx.search_filter.clone());
@@ -72,25 +72,28 @@ impl Build for ConsoleView {
                     0.0,
                     if is_active { 0.15 } else { 0.0 },
                 ))
-                .border(draw_ctx.theme.border);
+                .border(draw_ctx.theme.border)
+                .boxed();
             filter_toggles.push(toggle);
         }
 
         // Search field
-        let search_field = textfield("Filter...", search_id);
+        let search_field = textfield("Filter...", search_id).boxed();
 
         // Clear button
         let clear_button = button("Clear")
             .fill(draw_ctx.theme.button_bg)
-            .border(draw_ctx.theme.border);
+            .border(draw_ctx.theme.border)
+            .boxed();
 
         let toolbar = hstack([
-            hstack(filter_toggles).spacing(4.0),
+            hstack(filter_toggles).spacing(4.0).boxed(),
             search_field,
             clear_button,
         ])
         .spacing(8.0)
-        .padding(Padding::all(4.0));
+        .padding(Padding::all(4.0))
+        .boxed();
 
         // Build log entries
         let log_entries = {
@@ -106,28 +109,43 @@ impl Build for ConsoleView {
                     };
                     let level_badge = text(format!("{} ", log_level_badge(entry.level)))
                         .color(level_color)
-                        .font_size(FontSize::XSmall);
-                    let message = text(&entry.message).color(draw_ctx.theme.text_primary);
-                    entries.push(hstack([level_badge, message]).spacing(8.0).padding_all(2.0));
+                        .font_size(FontSize::XSmall)
+                        .boxed();
+                    let message = text(&entry.message)
+                        .color(draw_ctx.theme.text_primary)
+                        .boxed();
+                    entries.push(
+                        hstack([level_badge, message])
+                            .spacing(8.0)
+                            .padding_all(2.0)
+                            .boxed(),
+                    );
                 }
             }
             entries
         };
 
         let log_content = if log_entries.is_empty() {
-            text("No log entries").color(draw_ctx.theme.text_muted)
+            text("No log entries")
+                .color(draw_ctx.theme.text_muted)
+                .boxed()
         } else {
-            vstack(log_entries)
+            vstack(log_entries).boxed()
         };
 
-        let content = vstack([toolbar, scroll(log_content, scroll_id).flex_grow(1.0)])
-            .spacing(4.0)
-            .padding(Padding::all(4.0))
-            .flex_grow(1.0);
+        let content = vstack([
+            toolbar,
+            scroll(log_content, scroll_id).flex_grow(1.0).boxed(),
+        ])
+        .spacing(4.0)
+        .padding(Padding::all(4.0))
+        .flex_grow(1.0)
+        .boxed();
 
         panel("Console".to_string(), content)
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
+            .boxed()
     }
 }
 

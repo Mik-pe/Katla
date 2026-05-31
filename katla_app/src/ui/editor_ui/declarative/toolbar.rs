@@ -2,7 +2,7 @@ use std::boxed::Box;
 
 use katla_math::Color;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, StateId, Widget, WidgetExt, hstack, image_button, menu_entry,
+    Alignment, Build, BuildContext, StateId, Widget, WidgetBox, hstack, image_button, menu_entry,
     menu_group, menubar, text, zstack,
 };
 use katla_ui::{FontSize, ForkAwesome};
@@ -54,7 +54,7 @@ impl Build for ToolbarView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<ToolbarDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return katla_ui::declarative::empty();
+            return katla_ui::declarative::empty().boxed();
         };
 
         let file_open_id: StateId = ctx.state(false);
@@ -79,11 +79,12 @@ impl Build for ToolbarView {
         let controls = build_controls(ctx, &draw_ctx);
 
         zstack([
-            (Alignment::TopLeading, bar),
+            (Alignment::TopLeading, bar.boxed()),
             (Alignment::Center, title),
             (Alignment::TopTrailing, controls),
         ])
         .flex_height(TOOLBAR_HEIGHT)
+        .boxed()
     }
 }
 
@@ -204,7 +205,10 @@ fn build_title(draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
     } else {
         draw_ctx.text_muted
     };
-    text(title).color(title_color).font_size(FontSize::Medium)
+    text(title)
+        .color(title_color)
+        .font_size(FontSize::Medium)
+        .boxed()
 }
 
 fn build_controls(ctx: &mut BuildContext, draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
@@ -216,7 +220,7 @@ fn build_controls(ctx: &mut BuildContext, draw_ctx: &ToolbarDrawCtx) -> Box<dyn 
             .on_click(ctx.on_click(|actions| {
                 actions.emit(ToolbarAction::PlayStart);
             }));
-        hstack([play]).spacing(4.0).padding_all(6.0)
+        hstack([play.boxed()]).spacing(4.0).padding_all(6.0).boxed()
     } else if draw_ctx.is_playing && !draw_ctx.is_paused {
         let pause = image_button(ForkAwesome::PAUSE)
             .fill(draw_ctx.warning)
@@ -228,7 +232,10 @@ fn build_controls(ctx: &mut BuildContext, draw_ctx: &ToolbarDrawCtx) -> Box<dyn 
             .on_click(ctx.on_click(|actions| {
                 actions.emit(ToolbarAction::PlayStop);
             }));
-        hstack([pause, stop]).spacing(4.0).padding_all(6.0)
+        hstack([pause.boxed(), stop.boxed()])
+            .spacing(4.0)
+            .padding_all(6.0)
+            .boxed()
     } else {
         let play = image_button(ForkAwesome::PLAY)
             .fill(draw_ctx.success)
@@ -240,6 +247,9 @@ fn build_controls(ctx: &mut BuildContext, draw_ctx: &ToolbarDrawCtx) -> Box<dyn 
             .on_click(ctx.on_click(|actions| {
                 actions.emit(ToolbarAction::PlayStop);
             }));
-        hstack([play, stop]).spacing(4.0).padding_all(6.0)
+        hstack([play.boxed(), stop.boxed()])
+            .spacing(4.0)
+            .padding_all(6.0)
+            .boxed()
     }
 }

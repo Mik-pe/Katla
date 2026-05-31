@@ -24,13 +24,13 @@ pub use animation::{
 };
 pub use build::{Build, BuildContext, CallbackTable, Environment};
 pub use constructors::{
-    KeyedChild, WidgetExt, button, color_picker, context_entry, context_entry_disabled,
-    context_menu, draggable_panel, empty, grid, grid_keyed, hstack, hstack_keyed, icon, image,
-    image_button, keyed, labeled_slider, menu_entry, menu_entry_disabled, menu_group, menubar,
-    modal, overlay, panel, progress, property_row, radio, scroll, section, selectable, separator,
+    KeyedChild, button, color_picker, context_entry, context_entry_disabled, context_menu,
+    draggable_panel, empty, grid, grid_keyed, hstack, hstack_keyed, icon, image, image_button,
+    keyed, labeled_slider, menu_entry, menu_entry_disabled, menu_group, menubar, modal, overlay,
+    panel, progress, property_row, radio, scroll, section, selectable, separator,
     separator_horizontal, separator_vertical, slider, statusbar, tab_bar, tab_item, text,
-    textfield, toggle, tree_view, vec3_slider, vstack, vstack_keyed, vu_meter,
-    widget_to_descriptor, zstack, zstack_keyed,
+    textfield, toggle, tree_view, vec3_slider, vstack, vstack_keyed, vu_meter, zstack,
+    zstack_keyed,
 };
 pub use descriptor::{
     Alignment, Anchor, Callback, ContextMenuEntry, DraggablePanelState, DraggablePanelVisibility,
@@ -48,4 +48,5 @@ pub use transition::{Transition, TweenConfig};
 pub use tree::{ViewNode, ViewTree};
 pub use widget::{
     ChildWidgets, DrawInteraction, InputContext, InputResult, InteractionState, MeasureFn, Widget,
+    WidgetBox,
 };

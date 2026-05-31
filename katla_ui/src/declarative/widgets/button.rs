@@ -12,7 +12,7 @@ use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
-pub(crate) struct Button {
+pub struct Button {
     pub label: String,
     pub fill_color: Option<Color>,
     pub hover_color: Option<Color>,
@@ -106,6 +106,25 @@ impl Widget for Button {
 
     fn interactive(&self) -> bool {
         true
+    }
+}
+
+impl Button {
+    pub fn fill(mut self, color: impl Into<katla_math::Color>) -> Self {
+        self.fill_color = Some(color.into());
+        self
+    }
+    pub fn hover(mut self, color: impl Into<katla_math::Color>) -> Self {
+        self.hover_color = Some(color.into());
+        self
+    }
+    pub fn border(mut self, color: impl Into<katla_math::Color>) -> Self {
+        self.border_color = Some(color.into());
+        self
+    }
+    pub fn on_click(mut self, cb: super::super::descriptor::Callback) -> Self {
+        self.on_click = Some(cb);
+        self
     }
 }
 

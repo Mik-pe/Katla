@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use katla_gfx::TextureHandle;
 use katla_math::{Rect2D, Vec2};
 use katla_ui::declarative::{
-    Build, BuildContext, Padding, StateId, Widget, WidgetExt, button, context_entry, context_menu,
+    Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, context_entry, context_menu,
     empty, grid, hstack, icon, image, image_button, modal, scroll, selectable,
     separator_horizontal, text, textfield, vstack,
 };
@@ -69,11 +69,11 @@ impl Build for AssetBrowserView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<AssetBrowserDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return empty();
+            return empty().boxed();
         };
 
         if draw_ctx.collapsed {
-            return empty();
+            return empty().boxed();
         }
 
         let search_id: StateId = ctx.state(draw_ctx.search_filter.clone());
@@ -89,7 +89,8 @@ impl Build for AssetBrowserView {
                 breadcrumb_items.push(
                     text(" / ")
                         .color(draw_ctx.theme.text_muted)
-                        .font_size(FontSize::Small),
+                        .font_size(FontSize::Small)
+                        .boxed(),
                 );
             }
             let is_last = i == draw_ctx.path_segments.len() - 1;
@@ -97,7 +98,8 @@ impl Build for AssetBrowserView {
                 breadcrumb_items.push(
                     text(segment)
                         .color(draw_ctx.theme.text_primary)
-                        .font_size(FontSize::Small),
+                        .font_size(FontSize::Small)
+                        .boxed(),
                 );
             } else {
                 let seg_index = i;
@@ -108,7 +110,8 @@ impl Build for AssetBrowserView {
                         .border(katla_math::Color::TRANSPARENT)
                         .on_click(ctx.on_click(move |actions| {
                             actions.emit(AssetBrowserAction::NavigateToSegment(seg_index));
-                        })),
+                        }))
+                        .boxed(),
                 );
             }
         }
@@ -125,18 +128,23 @@ impl Build for AssetBrowserView {
         });
 
         let toolbar = hstack([
-            hstack(breadcrumb_items).spacing(2.0),
-            textfield("Filter...", search_id),
+            hstack(breadcrumb_items).spacing(2.0).boxed(),
+            textfield("Filter...", search_id).boxed(),
             image_button(ForkAwesome::ARROW_LEFT)
                 .enabled(draw_ctx.can_go_back)
-                .on_click(back_cb),
+                .on_click(back_cb)
+                .boxed(),
             image_button(ForkAwesome::ARROW_RIGHT)
                 .enabled(draw_ctx.can_go_forward)
-                .on_click(forward_cb),
-            image_button(ForkAwesome::REFRESH).on_click(refresh_cb),
+                .on_click(forward_cb)
+                .boxed(),
+            image_button(ForkAwesome::REFRESH)
+                .on_click(refresh_cb)
+                .boxed(),
         ])
         .spacing(4.0)
-        .padding(Padding::all(4.0));
+        .padding(Padding::all(4.0))
+        .boxed();
 
         // Grid of assets
         let item_size = 64.0;
@@ -155,16 +163,17 @@ impl Build for AssetBrowserView {
                 ThumbnailState::Loaded { texture_handle } => image(
                     TextureId::from_handle_index(texture_handle.index()),
                     katla_math::Color::WHITE,
-                ),
-                ThumbnailState::Loading => {
-                    icon(ForkAwesome::CIRCLE_OUTLINE).color(draw_ctx.theme.text_secondary)
-                }
-                ThumbnailState::Failed => {
-                    icon(ForkAwesome::TIMES_CIRCLE).color(draw_ctx.theme.error)
-                }
-                ThumbnailState::Pending => {
-                    icon(asset.asset_type.icon()).color(asset.asset_type.color(&draw_ctx.theme))
-                }
+                )
+                .boxed(),
+                ThumbnailState::Loading => icon(ForkAwesome::CIRCLE_OUTLINE)
+                    .color(draw_ctx.theme.text_secondary)
+                    .boxed(),
+                ThumbnailState::Failed => icon(ForkAwesome::TIMES_CIRCLE)
+                    .color(draw_ctx.theme.error)
+                    .boxed(),
+                ThumbnailState::Pending => icon(asset.asset_type.icon())
+                    .color(asset.asset_type.color(&draw_ctx.theme))
+                    .boxed(),
             };
 
             let display_name = truncate_name(&asset.name, 12);
@@ -173,7 +182,8 @@ impl Build for AssetBrowserView {
                 icon_content,
                 text(display_name)
                     .color(draw_ctx.theme.text_secondary)
-                    .font_size(FontSize::XSmall),
+                    .font_size(FontSize::XSmall)
+                    .boxed(),
             ])
             .spacing(2.0)
             .padding_all(2.0);
@@ -183,7 +193,7 @@ impl Build for AssetBrowserView {
             let click_type = asset.asset_type;
 
             grid_children.push(
-                selectable(cell)
+                selectable(cell.boxed())
                     .selected(is_selected)
                     .on_click(ctx.on_click(move |actions| {
                         actions.emit(AssetBrowserAction::AssetClicked(click_index));
@@ -191,7 +201,8 @@ impl Build for AssetBrowserView {
                             path: click_path.clone(),
                             asset_type: click_type,
                         });
-                    })),
+                    }))
+                    .boxed(),
             );
         }
 
@@ -204,15 +215,19 @@ impl Build for AssetBrowserView {
             text(empty_text)
                 .color(draw_ctx.theme.text_muted)
                 .font_size(FontSize::Small)
+                .boxed()
         } else {
-            grid(col_count, cell_size, grid_children).grid_spacing(4.0)
+            grid(col_count, cell_size, grid_children)
+                .grid_spacing(4.0)
+                .boxed()
         };
 
         let content = vstack([
             toolbar,
-            separator_horizontal(),
-            scroll(grid_content, scroll_id),
-        ]);
+            separator_horizontal().boxed(),
+            scroll(grid_content, scroll_id).boxed(),
+        ])
+        .boxed();
 
         // Context menu
         let context_items: Vec<katla_ui::declarative::ContextMenuEntry> =
@@ -272,7 +287,7 @@ impl Build for AssetBrowserView {
                 ]
             };
 
-        let ctx_menu = context_menu(context_items, context_open_id);
+        let ctx_menu = context_menu(context_items, context_open_id).boxed();
 
         // Confirmation modal
         let no_btn = button("No")
@@ -280,30 +295,38 @@ impl Build for AssetBrowserView {
             .border(draw_ctx.theme.border)
             .on_click(ctx.on_click(|actions| {
                 actions.emit(AssetBrowserAction::CancelDelete);
-            }));
+            }))
+            .boxed();
         let yes_btn = button("Yes")
             .fill(katla_math::Color::new(0.4, 0.1, 0.1, 1.0))
             .border(katla_math::Color::new(1.0, 0.3, 0.3, 0.2))
             .on_click(ctx.on_click(|actions| {
                 actions.emit(AssetBrowserAction::ConfirmDelete(PathBuf::new()));
-            }));
+            }))
+            .boxed();
 
         let modal_content = vstack([
-            text("Confirm Delete").color(draw_ctx.theme.text_primary),
-            text(&draw_ctx.confirm_dialog_message).color(draw_ctx.theme.text_secondary),
-            hstack([no_btn, yes_btn]).spacing(8.0),
+            text("Confirm Delete")
+                .color(draw_ctx.theme.text_primary)
+                .boxed(),
+            text(&draw_ctx.confirm_dialog_message)
+                .color(draw_ctx.theme.text_secondary)
+                .boxed(),
+            hstack([no_btn, yes_btn]).spacing(8.0).boxed(),
         ])
         .spacing(8.0)
         .padding_all(8.0);
 
-        let confirm_modal =
-            modal(320.0, 120.0, confirm_open_id, modal_content).on_close(ctx.on_click(|actions| {
+        let confirm_modal = modal(320.0, 120.0, confirm_open_id, modal_content.boxed()).on_close(
+            ctx.on_click(|actions| {
                 actions.emit(AssetBrowserAction::CancelDelete);
-            }));
+            }),
+        );
 
-        vstack([content, ctx_menu, confirm_modal])
+        vstack([content, ctx_menu, confirm_modal.boxed()])
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
+            .boxed()
     }
 }
 

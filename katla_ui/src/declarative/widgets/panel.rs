@@ -12,7 +12,7 @@ use super::super::widget::{
 };
 use crate::context::UiContext;
 
-pub(crate) struct Panel {
+pub struct Panel {
     pub title: String,
     pub header_height: f32,
     pub flex: FlexProps,
@@ -110,6 +110,25 @@ impl Widget for Panel {
 
     fn needs_clip_children(&self) -> bool {
         true
+    }
+}
+
+impl Panel {
+    pub fn header_height(mut self, h: f32) -> Self {
+        self.header_height = h;
+        self
+    }
+    pub fn flex_width(mut self, w: f32) -> Self {
+        self.flex.width = Some(w);
+        self
+    }
+    pub fn flex_height(mut self, h: f32) -> Self {
+        self.flex.height = Some(h);
+        self
+    }
+    pub fn flex_grow(mut self, grow: f32) -> Self {
+        self.flex.flex_grow = grow;
+        self
     }
 }
 

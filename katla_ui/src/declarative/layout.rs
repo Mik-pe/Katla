@@ -617,11 +617,10 @@ mod tests {
     }
 
     fn build_tree(tree: &mut ViewTree, widget: Box<dyn crate::declarative::widget::Widget>) {
-        let descriptor = crate::declarative::constructors::widget_to_descriptor(&*widget);
-        tree.build_from(&StaticDescriptor(descriptor));
+        tree.set_root(widget);
     }
 
-    use crate::declarative::constructors::WidgetExt;
+    use crate::declarative::constructors::WidgetBox;
 
     #[test]
     fn test_measure_text() {
@@ -823,9 +822,9 @@ mod tests {
         let mut tree = ViewTree::new();
         let mut arena = StateArena::default();
         let state_id = arena.get_or_create(ViewId::default(), false);
-        let descriptor = section("My Section", text("content"), state_id);
+        let descriptor = section("My Section", text("content").boxed(), state_id);
 
-        build_tree(&mut tree, descriptor);
+        build_tree(&mut tree, descriptor.boxed());
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -850,9 +849,9 @@ mod tests {
         let mut arena = StateArena::default();
         let state_id = arena.get_or_create(ViewId::default(), 0usize);
         let tabs = vec![tab_item("Tab 1"), tab_item("Tab 2")];
-        let descriptor = tab_bar(tabs, state_id, text("content"));
+        let descriptor = tab_bar(tabs, state_id, text("content").boxed());
 
-        build_tree(&mut tree, descriptor);
+        build_tree(&mut tree, descriptor.boxed());
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -876,10 +875,10 @@ mod tests {
         let descriptor = grid(
             2,
             Vec2::new(100.0, 50.0),
-            vec![text("A"), text("B"), text("C")],
+            vec![text("A").boxed(), text("B").boxed(), text("C").boxed()],
         );
 
-        build_tree(&mut tree, descriptor);
+        build_tree(&mut tree, descriptor.boxed());
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -902,7 +901,7 @@ mod tests {
         let mut tree = ViewTree::new();
         let descriptor = separator_horizontal();
 
-        build_tree(&mut tree, descriptor);
+        build_tree(&mut tree, descriptor.boxed());
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -926,7 +925,7 @@ mod tests {
         let mut tree = ViewTree::new();
         let descriptor = icon('X');
 
-        build_tree(&mut tree, descriptor);
+        build_tree(&mut tree, descriptor.boxed());
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -947,9 +946,9 @@ mod tests {
         use crate::declarative::constructors::{selectable, text};
 
         let mut tree = ViewTree::new();
-        let descriptor = selectable(text("Select me"));
+        let descriptor = selectable(text("Select me").boxed());
 
-        build_tree(&mut tree, descriptor);
+        build_tree(&mut tree, descriptor.boxed());
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);
@@ -984,14 +983,14 @@ mod tests {
         // Manually set image_size like viewport_grid.rs does
         let img = img.image_size(cell_w, cell_h);
 
-        let inner_zstack = zstack([(Alignment::Center, img)]);
-        let sel = selectable(inner_zstack);
-        let desc = grid(1, cell_size, [sel])
+        let inner_zstack = zstack([(Alignment::Center, img.boxed())]);
+        let sel = selectable(inner_zstack.boxed());
+        let desc = grid(1, cell_size, [sel.boxed()])
             .flex_width(cell_w)
             .flex_height(cell_h);
 
         let mut tree = ViewTree::new();
-        build_tree(&mut tree, desc);
+        build_tree(&mut tree, desc.boxed());
 
         let mut layout = TaffyNodeMap::new();
         layout.sync(&tree, &measure_text_descriptor);

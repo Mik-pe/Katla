@@ -9,7 +9,7 @@ use super::super::state::{StateArena, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
-pub(crate) struct Empty;
+pub struct Empty;
 
 impl Widget for Empty {
     fn as_any(&self) -> &dyn Any {

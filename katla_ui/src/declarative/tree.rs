@@ -988,27 +988,7 @@ impl ViewTree {
 mod tests {
     use super::*;
     use crate::declarative::constructors::*;
-
-    fn build_tree(tree: &mut ViewTree, widget: Box<dyn crate::declarative::widget::Widget>) {
-        tree.build_from(&StaticBuild(widget));
-    }
-
-    struct StaticBuild(Box<dyn crate::declarative::widget::Widget>);
-
-    impl super::super::build::Build for StaticBuild {
-        fn build(
-            &self,
-            _ctx: &mut super::super::build::BuildContext,
-        ) -> Box<dyn super::super::widget::Widget> {
-            // We need to clone here because build() is called but we own the widget
-            // For tests, this is OK because widgets in tests are simple
-            // Actually, this won't work because Box<dyn Widget> isn't Clone
-            // Instead, let's take a different approach for tests
-            panic!(
-                "StaticBuild should not be called via build_from in tests - use set_root instead"
-            )
-        }
-    }
+    use crate::declarative::widget::WidgetBox;
 
     fn child_ids(tree: &ViewTree) -> Vec<ViewId> {
         let root = tree.root().unwrap();
@@ -1021,14 +1001,22 @@ mod tests {
     fn test_sync_tree_mount_unmount_children() {
         let mut tree = ViewTree::new();
 
-        tree.set_root(vstack([text("a"), text("b"), text("c")]));
+        tree.set_root(vstack([text("a").boxed(), text("b").boxed(), text("c").boxed()]).boxed());
         let root = tree.root().unwrap();
         assert_eq!(tree.get(root).unwrap().children.len(), 3);
 
-        tree.set_root(vstack([text("a"), text("b")]));
+        tree.set_root(vstack([text("a").boxed(), text("b").boxed()]).boxed());
         assert_eq!(tree.get(root).unwrap().children.len(), 2);
 
-        tree.set_root(vstack([text("a"), text("b"), text("c"), text("d")]));
+        tree.set_root(
+            vstack([
+                text("a").boxed(),
+                text("b").boxed(),
+                text("c").boxed(),
+                text("d").boxed(),
+            ])
+            .boxed(),
+        );
         assert_eq!(tree.get(root).unwrap().children.len(), 4);
     }
 
@@ -1036,19 +1024,25 @@ mod tests {
     fn test_keyed_reorder_preserves_identity() {
         let mut tree = ViewTree::new();
 
-        tree.set_root(vstack_keyed(vec![
-            keyed(1, text("first")),
-            keyed(2, text("second")),
-            keyed(3, text("third")),
-        ]));
+        tree.set_root(
+            vstack_keyed(vec![
+                keyed(1, text("first").boxed()),
+                keyed(2, text("second").boxed()),
+                keyed(3, text("third").boxed()),
+            ])
+            .boxed(),
+        );
         let ids_before = child_ids(&tree);
         assert_eq!(ids_before.len(), 3);
 
-        tree.set_root(vstack_keyed(vec![
-            keyed(3, text("third")),
-            keyed(1, text("first")),
-            keyed(2, text("second")),
-        ]));
+        tree.set_root(
+            vstack_keyed(vec![
+                keyed(3, text("third").boxed()),
+                keyed(1, text("first").boxed()),
+                keyed(2, text("second").boxed()),
+            ])
+            .boxed(),
+        );
         let ids_after = child_ids(&tree);
         assert_eq!(ids_after.len(), 3);
 
@@ -1061,11 +1055,25 @@ mod tests {
     fn test_unkeyed_children_use_index_matching() {
         let mut tree = ViewTree::new();
 
-        tree.set_root(vstack([text("first"), text("second"), text("third")]));
+        tree.set_root(
+            vstack([
+                text("first").boxed(),
+                text("second").boxed(),
+                text("third").boxed(),
+            ])
+            .boxed(),
+        );
         let ids_before = child_ids(&tree);
         assert_eq!(ids_before.len(), 3);
 
-        tree.set_root(vstack([text("third"), text("first"), text("second")]));
+        tree.set_root(
+            vstack([
+                text("third").boxed(),
+                text("first").boxed(),
+                text("second").boxed(),
+            ])
+            .boxed(),
+        );
         let ids_after = child_ids(&tree);
         assert_eq!(ids_after.len(), 3);
 
@@ -1087,11 +1095,23 @@ mod tests {
     fn test_keyed_add_and_remove() {
         let mut tree = ViewTree::new();
 
-        tree.set_root(vstack_keyed(vec![keyed(1, text("a")), keyed(2, text("b"))]));
+        tree.set_root(
+            vstack_keyed(vec![
+                keyed(1, text("a").boxed()),
+                keyed(2, text("b").boxed()),
+            ])
+            .boxed(),
+        );
         let ids_a = child_ids(&tree);
         assert_eq!(ids_a.len(), 2);
 
-        tree.set_root(vstack_keyed(vec![keyed(2, text("b")), keyed(3, text("c"))]));
+        tree.set_root(
+            vstack_keyed(vec![
+                keyed(2, text("b").boxed()),
+                keyed(3, text("c").boxed()),
+            ])
+            .boxed(),
+        );
         let ids_b = child_ids(&tree);
         assert_eq!(ids_b.len(), 2);
 
@@ -1105,7 +1125,7 @@ mod tests {
         child: Box<dyn crate::declarative::widget::Widget>,
         transition: Transition,
     ) -> Box<dyn crate::declarative::widget::Widget> {
-        crate::declarative::constructors::wrap_transition_container(child, transition)
+        crate::declarative::constructors::wrap_transition_container(child, transition).boxed()
     }
 
     fn first_child_id(tree: &ViewTree) -> Option<ViewId> {
@@ -1119,7 +1139,7 @@ mod tests {
         let mut tree = ViewTree::new();
         let transition = Transition::fade(0.3);
 
-        tree.set_root(transition_container(text("hello"), transition));
+        tree.set_root(transition_container(text("hello").boxed(), transition));
 
         let child_id = first_child_id(&tree).expect("should have a child");
         let child = tree.get(child_id).expect("child node should exist");
@@ -1142,7 +1162,7 @@ mod tests {
         let mut tree = ViewTree::new();
         let transition = Transition::fade(0.3);
 
-        tree.set_root(transition_container(text("A"), transition.clone()));
+        tree.set_root(transition_container(text("A").boxed(), transition.clone()));
 
         let child_id = first_child_id(&tree).expect("should have a child");
         let child = tree.get(child_id).unwrap();
@@ -1153,7 +1173,7 @@ mod tests {
             .expect("should be Text widget");
         assert_eq!(text_widget.content, "A");
 
-        tree.set_root(transition_container(text("B"), transition));
+        tree.set_root(transition_container(text("B").boxed(), transition));
 
         let child = tree.get(child_id).expect("same child should persist");
         let text_widget = child
@@ -1169,11 +1189,14 @@ mod tests {
         let mut tree = ViewTree::new();
         let transition = Transition::fade(0.3);
 
-        tree.set_root(transition_container(text("first"), transition.clone()));
+        tree.set_root(transition_container(
+            text("first").boxed(),
+            transition.clone(),
+        ));
 
         let child_id_first = first_child_id(&tree).expect("should have child after first build");
 
-        tree.set_root(transition_container(text("second"), transition));
+        tree.set_root(transition_container(text("second").boxed(), transition));
 
         let child_id_second = first_child_id(&tree).expect("should have child after second build");
         assert_eq!(
@@ -1186,13 +1209,13 @@ mod tests {
     fn test_sync_tree_update_preserves_state() {
         let mut tree = ViewTree::new();
 
-        tree.set_root(vstack([text("hello")]));
+        tree.set_root(vstack([text("hello").boxed()]).boxed());
         let root = tree.root().unwrap();
         let text_id = tree.get(root).unwrap().children[0];
 
         let state_id = tree.state_arena_mut().get_or_create(text_id, 42_i32);
 
-        tree.set_root(vstack([text("world")]));
+        tree.set_root(vstack([text("world").boxed()]).boxed());
 
         let root_after = tree.root().unwrap();
         let text_id_after = tree.get(root_after).unwrap().children[0];
@@ -1205,11 +1228,11 @@ mod tests {
     fn test_sync_tree_replace_replaces_node() {
         let mut tree = ViewTree::new();
 
-        tree.set_root(text("hello"));
+        tree.set_root(text("hello").boxed());
         let root = tree.root().unwrap();
         let v0 = tree.get(root).unwrap().state_version;
 
-        tree.set_root(button("hello"));
+        tree.set_root(button("hello").boxed());
         let root_after = tree.root().unwrap();
         assert_eq!(root, root_after);
 
@@ -1227,7 +1250,7 @@ mod tests {
     fn test_sync_tree_empty_to_content_and_back() {
         let mut tree = ViewTree::new();
 
-        tree.set_root(empty());
+        tree.set_root(empty().boxed());
         let root = tree.root().unwrap();
         assert!(
             tree.get(root)
@@ -1238,7 +1261,7 @@ mod tests {
                 .is_some()
         );
 
-        tree.set_root(text("hello"));
+        tree.set_root(text("hello").boxed());
         assert_eq!(tree.root().unwrap(), root);
         assert!(
             tree.get(root)
@@ -1249,7 +1272,7 @@ mod tests {
                 .is_some()
         );
 
-        tree.set_root(empty());
+        tree.set_root(empty().boxed());
         assert!(
             tree.get(root)
                 .unwrap()
@@ -1264,11 +1287,11 @@ mod tests {
     fn test_sync_tree_preserves_node_identity_on_recurse() {
         let mut tree = ViewTree::new();
 
-        tree.set_root(panel("My Panel", text("content")));
+        tree.set_root(panel("My Panel", text("content").boxed()).boxed());
         let root = tree.root().unwrap();
         let child_id = tree.get(root).unwrap().children[0];
 
-        tree.set_root(panel("My Panel", text("updated")));
+        tree.set_root(panel("My Panel", text("updated").boxed()).boxed());
         let root_after = tree.root().unwrap();
         let child_id_after = tree.get(root_after).unwrap().children[0];
 

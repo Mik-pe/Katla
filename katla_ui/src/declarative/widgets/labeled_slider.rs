@@ -12,7 +12,7 @@ use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
-pub(crate) struct LabeledSlider {
+pub struct LabeledSlider {
     pub label: String,
     pub value_id: StateId,
     pub range: RangeInclusive<f32>,
@@ -170,6 +170,20 @@ impl Widget for LabeledSlider {
 
     fn interactive(&self) -> bool {
         true
+    }
+}
+impl LabeledSlider {
+    pub fn show_value(mut self, show: bool) -> Self {
+        self.show_value = show;
+        self
+    }
+    pub fn precision(mut self, p: usize) -> Self {
+        self.precision = p;
+        self
+    }
+    pub fn label_width(mut self, w: f32) -> Self {
+        self.label_width = w;
+        self
     }
 }
 #[cfg(test)]

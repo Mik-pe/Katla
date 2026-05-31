@@ -13,7 +13,7 @@ use super::super::widget::{
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
-pub(crate) struct TabBar {
+pub struct TabBar {
     pub tabs: Vec<TabItem>,
     pub selected_id: StateId,
     pub child_widget: Option<Box<dyn super::super::widget::Widget>>,

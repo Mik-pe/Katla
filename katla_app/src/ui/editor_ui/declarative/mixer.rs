@@ -3,7 +3,7 @@ use std::boxed::Box;
 use katla_audio::{LevelsSnapshot, linear_to_db};
 use katla_math::Rect2D;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, Widget, WidgetExt, empty, hstack, labeled_slider, text, vstack,
+    Alignment, Build, BuildContext, Widget, WidgetBox, empty, hstack, labeled_slider, text, vstack,
     vu_meter,
 };
 
@@ -31,7 +31,7 @@ impl Build for MixerView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let draw_ctx = ctx.env::<MixerDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
-            return empty();
+            return empty().boxed();
         };
 
         let theme = &draw_ctx.theme;
@@ -43,7 +43,8 @@ impl Build for MixerView {
             katla_audio::MAX_VOICES,
             draw_ctx.peak_voices
         ))
-        .color(theme.text_secondary);
+        .color(theme.text_secondary)
+        .boxed();
 
         let master_db_peak = clamp_db(linear_to_db(levels.master.peak));
         let master_db_rms = clamp_db(linear_to_db(levels.master.rms));
@@ -86,28 +87,33 @@ impl Build for MixerView {
         let ambient_meter = vu_meter(ambient_db_peak, ambient_db_rms);
 
         let bus_row = hstack([
-            vstack([master_fader, master_meter])
+            vstack([master_fader.boxed(), master_meter.boxed()])
                 .spacing(2.0)
-                .align(Alignment::Center),
-            vstack([sfx_fader, sfx_meter])
+                .align(Alignment::Center)
+                .boxed(),
+            vstack([sfx_fader.boxed(), sfx_meter.boxed()])
                 .spacing(2.0)
-                .align(Alignment::Center),
-            vstack([music_fader, music_meter])
+                .align(Alignment::Center)
+                .boxed(),
+            vstack([music_fader.boxed(), music_meter.boxed()])
                 .spacing(2.0)
-                .align(Alignment::Center),
-            vstack([ambient_fader, ambient_meter])
+                .align(Alignment::Center)
+                .boxed(),
+            vstack([ambient_fader.boxed(), ambient_meter.boxed()])
                 .spacing(2.0)
-                .align(Alignment::Center),
+                .align(Alignment::Center)
+                .boxed(),
         ])
         .spacing(16.0)
         .padding_all(8.0)
         .align(Alignment::Center);
 
-        vstack([voice_status, bus_row])
+        vstack([voice_status, bus_row.boxed()])
             .spacing(4.0)
             .padding_all(4.0)
             .align(Alignment::Leading)
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
+            .boxed()
     }
 }

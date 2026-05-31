@@ -10,7 +10,7 @@ use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn
 use crate::context::UiContext;
 use crate::types::TextureId;
 
-pub(crate) struct Image {
+pub struct Image {
     pub texture: TextureId,
     pub uv: Option<Rect2D>,
     pub tint: Color,
@@ -76,6 +76,18 @@ impl Widget for Image {
 
     fn focusable(&self) -> bool {
         false
+    }
+}
+
+impl Image {
+    pub fn uv(mut self, rect: katla_math::Rect2D) -> Self {
+        self.uv = Some(rect);
+        self
+    }
+    pub fn image_size(mut self, width: f32, height: f32) -> Self {
+        self.width = Some(width);
+        self.height = Some(height);
+        self
     }
 }
 

@@ -12,7 +12,7 @@ use super::super::widget::{
 };
 use crate::context::UiContext;
 
-pub(crate) struct TransitionContainer {
+pub struct TransitionContainer {
     pub transition: Transition,
     pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
     children: Vec<ViewId>,

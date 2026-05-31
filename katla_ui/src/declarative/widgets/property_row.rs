@@ -9,7 +9,7 @@ use super::super::state::{StateArena, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
-pub(crate) struct PropertyRow {
+pub struct PropertyRow {
     pub label: String,
     pub value: String,
 }

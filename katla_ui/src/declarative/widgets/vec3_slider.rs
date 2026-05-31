@@ -12,7 +12,7 @@ use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
-pub(crate) struct Vec3Slider {
+pub struct Vec3Slider {
     pub label: String,
     pub value_ids: [StateId; 3],
     pub range: RangeInclusive<f32>,

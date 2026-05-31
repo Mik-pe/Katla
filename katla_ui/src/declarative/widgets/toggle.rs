@@ -11,7 +11,7 @@ use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
-pub(crate) struct Toggle {
+pub struct Toggle {
     pub label: String,
     pub value_id: StateId,
 }

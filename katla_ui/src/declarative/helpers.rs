@@ -4,9 +4,9 @@ use katla_math::Color;
 
 use super::actions::ActionStream;
 use super::build::BuildContext;
-use super::constructors::{WidgetExt, button, text};
+use super::constructors::{button, text};
 use super::transition::Transition;
-use super::widget::Widget;
+use super::widget::{Widget, WidgetBox};
 
 /// Create a section header as a Text view with separator styling.
 ///
@@ -15,6 +15,7 @@ pub fn section_header(label: &str, theme: &ColorScheme) -> Box<dyn Widget> {
     text(format!("── {} ──", label))
         .color(theme.separator)
         .font_size(FontSize::Small)
+        .boxed()
 }
 
 /// Create a delete button with error styling.
@@ -27,16 +28,17 @@ pub fn delete_button(
         .hover(Color::new(0.5, 0.15, 0.15, 1.0))
         .border(Color::new(1.0, 0.3, 0.3, 0.2))
         .on_click(ctx.on_click(on_click))
+        .boxed()
 }
 
 /// Conditionally show a child view.
 ///
-/// Returns `child` when `visible` is true, `empty()` otherwise.
+/// Returns `child` when `visible` is true, `empty().boxed()` otherwise.
 pub fn show_if(visible: bool, child: Box<dyn Widget>) -> Box<dyn Widget> {
     if visible {
         child
     } else {
-        super::constructors::empty()
+        super::constructors::empty().boxed()
     }
 }
 
@@ -52,9 +54,9 @@ pub fn show_if_with_transition(
     transition: Transition,
 ) -> Box<dyn Widget> {
     if visible {
-        super::constructors::wrap_transition_container(child, transition)
+        super::constructors::wrap_transition_container(child, transition).boxed()
     } else {
-        super::constructors::empty()
+        super::constructors::empty().boxed()
     }
 }
 

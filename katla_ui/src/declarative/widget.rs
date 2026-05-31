@@ -8,7 +8,6 @@ use crate::style::FontSize;
 
 use super::actions::ActionStream;
 use super::animation::AnimationState;
-use super::descriptor::ViewDescriptor;
 use super::diff::DiffAction;
 use super::state::{StateArena, ViewId};
 
@@ -172,6 +171,18 @@ pub trait Widget: Any + 'static {
     }
 }
 
+/// Extension trait providing `.boxed()` on all widget types.
+///
+/// Converts a concrete widget type into `Box<dyn Widget>` for use in
+/// container constructors and the `Build` trait.
+pub trait WidgetBox: Widget + Sized {
+    fn boxed(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl<W: Widget> WidgetBox for W {}
+
 impl Widget for Box<dyn Widget> {
     fn widget_type(&self) -> TypeId {
         (**self).widget_type()
@@ -277,21 +288,20 @@ impl Widget for Box<dyn Widget> {
     }
 }
 
-/// Bridge widget that wraps a [`ViewDescriptor`] for test compatibility.
+/// Bridge widget that wraps a [`ViewDescriptor`] for layout test compatibility.
+#[cfg(test)]
 pub(crate) struct DescriptorWidget {
-    descriptor: ViewDescriptor,
+    descriptor: super::descriptor::ViewDescriptor,
 }
 
+#[cfg(test)]
 impl DescriptorWidget {
-    pub fn new(descriptor: ViewDescriptor) -> Self {
+    pub fn new(descriptor: super::descriptor::ViewDescriptor) -> Self {
         Self { descriptor }
     }
-
-    pub fn descriptor(&self) -> &ViewDescriptor {
-        &self.descriptor
-    }
 }
 
+#[cfg(test)]
 impl Widget for DescriptorWidget {
     fn as_any(&self) -> &dyn Any {
         self
@@ -334,18 +344,6 @@ impl Widget for DescriptorWidget {
         _view_id: ViewId,
         _children_bounds: &[Rect2D],
     ) {
-    }
-
-    fn focusable(&self) -> bool {
-        false
-    }
-
-    fn children(&self) -> &[ViewId] {
-        &[]
-    }
-
-    fn children_mut(&mut self) -> &mut Vec<ViewId> {
-        unreachable!()
     }
 
     fn take_children(&mut self) -> ChildWidgets {
@@ -394,16 +392,7 @@ impl Widget for DescriptorWidget {
                     .collect();
                 ChildWidgets::ZStack(children)
             }
-            ViewDescriptor::TransitionContainer { child, transition } => {
-                let child_widget =
-                    Box::new(DescriptorWidget::new((**child).clone())) as Box<dyn Widget>;
-                ChildWidgets::Transition {
-                    child: child_widget,
-                    transition: transition.clone(),
-                }
-            }
             _ => {
-                // Single-child containers
                 let single = match &self.descriptor {
                     ViewDescriptor::ScrollView(s) => Some(&s.content),
                     ViewDescriptor::Panel(s) => Some(&s.content),
@@ -423,115 +412,6 @@ impl Widget for DescriptorWidget {
                     None => ChildWidgets::None,
                 }
             }
-        }
-    }
-
-    fn resolve_position_delta(
-        &self,
-        bounds: Rect2D,
-        parent_bounds: Rect2D,
-        _zstack_alignment: Option<super::descriptor::Alignment>,
-        state: &StateArena,
-    ) -> Vec2 {
-        use super::descriptor::ViewDescriptor;
-        match &self.descriptor {
-            ViewDescriptor::Overlay(desc) => {
-                let resolved = super::widgets::overlay::Overlay::resolve_position(
-                    desc.anchor,
-                    desc.offset,
-                    parent_bounds,
-                    bounds,
-                );
-                resolved.min - bounds.min
-            }
-            ViewDescriptor::Modal(desc) => {
-                let is_open: bool = state.get(desc.open_id).unwrap_or_default();
-                if is_open {
-                    let cx = (parent_bounds.width() - desc.width) * 0.5;
-                    let cy = (parent_bounds.height() - desc.height) * 0.5;
-                    let centered = parent_bounds.min + Vec2::new(cx, cy);
-                    centered - bounds.min
-                } else {
-                    Vec2::ZERO
-                }
-            }
-            ViewDescriptor::DraggablePanel(desc) => {
-                let panel_state: super::descriptor::DraggablePanelState =
-                    state.get(desc.state_id).unwrap_or_default();
-                if panel_state.visibility.is_visible() {
-                    let pos = panel_state.position.unwrap_or_else(|| {
-                        Vec2::new(
-                            parent_bounds.min.x() + (parent_bounds.width() - bounds.width()) * 0.5,
-                            parent_bounds.min.y() + 60.0,
-                        )
-                    });
-                    pos - bounds.min
-                } else {
-                    Vec2::ZERO
-                }
-            }
-            _ => Vec2::ZERO,
-        }
-    }
-
-    fn needs_clip_children(&self) -> bool {
-        use super::descriptor::ViewDescriptor;
-        matches!(
-            &self.descriptor,
-            ViewDescriptor::ScrollView(_) | ViewDescriptor::Panel(_)
-        )
-    }
-
-    fn should_draw_children(&self, state: &StateArena) -> bool {
-        use super::descriptor::ViewDescriptor;
-        match &self.descriptor {
-            ViewDescriptor::Section { expanded_id, .. } => {
-                state.get::<bool>(*expanded_id).unwrap_or_default()
-            }
-            ViewDescriptor::Modal(desc) => state.get::<bool>(desc.open_id).unwrap_or_default(),
-            _ => true,
-        }
-    }
-
-    fn scroll_offset(&self, state: &StateArena) -> f32 {
-        use super::descriptor::ViewDescriptor;
-        match &self.descriptor {
-            ViewDescriptor::ScrollView(desc) => state.get(desc.scroll_state_id).unwrap_or_default(),
-            _ => 0.0,
-        }
-    }
-
-    fn interactive(&self) -> bool {
-        use super::descriptor::ViewDescriptor;
-        matches!(
-            &self.descriptor,
-            ViewDescriptor::Button { .. }
-                | ViewDescriptor::LabeledSlider { .. }
-                | ViewDescriptor::Slider { .. }
-                | ViewDescriptor::Vec3Slider { .. }
-                | ViewDescriptor::Toggle { .. }
-                | ViewDescriptor::TextField { .. }
-                | ViewDescriptor::ColorPicker { .. }
-                | ViewDescriptor::ImageButton { .. }
-                | ViewDescriptor::RadioButton { .. }
-                | ViewDescriptor::DraggablePanel { .. }
-                | ViewDescriptor::MenuBar { .. }
-                | ViewDescriptor::TreeView { .. }
-                | ViewDescriptor::Modal { .. }
-                | ViewDescriptor::ContextMenu { .. }
-                | ViewDescriptor::ScrollView(_)
-                | ViewDescriptor::Selectable { .. }
-                | ViewDescriptor::Section { .. }
-                | ViewDescriptor::TabBar(_)
-        )
-    }
-
-    fn as_transition(&self) -> Option<&super::transition::Transition> {
-        match &self.descriptor {
-            super::descriptor::ViewDescriptor::TransitionContainer { transition, .. } => {
-                Some(transition)
-            }
-            _ => None,
         }
     }
 }
