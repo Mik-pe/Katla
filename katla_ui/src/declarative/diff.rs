@@ -8,75 +8,27 @@ pub enum DiffAction {
 }
 
 pub fn diff_descriptor(old: &ViewDescriptor, new: &ViewDescriptor) -> DiffAction {
-    match (old, new) {
-        // Same leaf variants -> Update
-        (ViewDescriptor::Empty, ViewDescriptor::Empty) => DiffAction::Update,
-        (ViewDescriptor::Text { .. }, ViewDescriptor::Text { .. }) => DiffAction::Update,
-        (ViewDescriptor::Button { .. }, ViewDescriptor::Button { .. }) => DiffAction::Update,
-        (ViewDescriptor::LabeledSlider { .. }, ViewDescriptor::LabeledSlider { .. }) => {
-            DiffAction::Update
-        }
-        (ViewDescriptor::Slider { .. }, ViewDescriptor::Slider { .. }) => DiffAction::Update,
-        (ViewDescriptor::Vec3Slider { .. }, ViewDescriptor::Vec3Slider { .. }) => {
-            DiffAction::Update
-        }
-        (ViewDescriptor::Toggle { .. }, ViewDescriptor::Toggle { .. }) => DiffAction::Update,
-        (ViewDescriptor::TextField { .. }, ViewDescriptor::TextField { .. }) => DiffAction::Update,
-        (ViewDescriptor::Progress { .. }, ViewDescriptor::Progress { .. }) => DiffAction::Update,
-        (ViewDescriptor::ColorPicker { .. }, ViewDescriptor::ColorPicker { .. }) => {
-            DiffAction::Update
-        }
-        (ViewDescriptor::ImageButton { .. }, ViewDescriptor::ImageButton { .. }) => {
-            DiffAction::Update
-        }
-        (ViewDescriptor::RadioButton { .. }, ViewDescriptor::RadioButton { .. }) => {
-            DiffAction::Update
-        }
-        (ViewDescriptor::Image { .. }, ViewDescriptor::Image { .. }) => DiffAction::Update,
-        (ViewDescriptor::PropertyRow { .. }, ViewDescriptor::PropertyRow { .. }) => {
-            DiffAction::Update
-        }
-        (ViewDescriptor::Separator { .. }, ViewDescriptor::Separator { .. }) => DiffAction::Update,
-        (ViewDescriptor::Icon { .. }, ViewDescriptor::Icon { .. }) => DiffAction::Update,
-        (ViewDescriptor::Section { .. }, ViewDescriptor::Section { .. }) => {
-            DiffAction::RecurseChildren
-        }
-        // TransitionContainer -> RecurseChildren (has single child)
-        (
-            ViewDescriptor::TransitionContainer { .. },
-            ViewDescriptor::TransitionContainer { .. },
-        ) => DiffAction::RecurseChildren,
+    if std::mem::discriminant(old) != std::mem::discriminant(new) {
+        return DiffAction::Replace;
+    }
 
-        // Container variants -> RecurseChildren
-        (ViewDescriptor::HStack(_), ViewDescriptor::HStack(_)) => DiffAction::RecurseChildren,
-        (ViewDescriptor::VStack(_), ViewDescriptor::VStack(_)) => DiffAction::RecurseChildren,
-        (ViewDescriptor::ZStack(_), ViewDescriptor::ZStack(_)) => DiffAction::RecurseChildren,
-        (ViewDescriptor::ScrollView(_), ViewDescriptor::ScrollView(_)) => {
-            DiffAction::RecurseChildren
-        }
-        (ViewDescriptor::Panel(_), ViewDescriptor::Panel(_)) => DiffAction::RecurseChildren,
-        (ViewDescriptor::Overlay(_), ViewDescriptor::Overlay(_)) => DiffAction::RecurseChildren,
-        (ViewDescriptor::StatusBar(_), ViewDescriptor::StatusBar(_)) => DiffAction::RecurseChildren,
-        (ViewDescriptor::DraggablePanel(_), ViewDescriptor::DraggablePanel(_)) => {
-            DiffAction::RecurseChildren
-        }
-        (ViewDescriptor::Selectable { .. }, ViewDescriptor::Selectable { .. }) => {
-            DiffAction::RecurseChildren
-        }
+    match new {
+        ViewDescriptor::HStack(_)
+        | ViewDescriptor::VStack(_)
+        | ViewDescriptor::ZStack(_)
+        | ViewDescriptor::ScrollView(_)
+        | ViewDescriptor::Panel(_)
+        | ViewDescriptor::Overlay(_)
+        | ViewDescriptor::DraggablePanel(_)
+        | ViewDescriptor::Selectable { .. }
+        | ViewDescriptor::Section { .. }
+        | ViewDescriptor::TabBar(_)
+        | ViewDescriptor::Grid(_)
+        | ViewDescriptor::Modal(_)
+        | ViewDescriptor::TransitionContainer { .. }
+        | ViewDescriptor::StatusBar(_) => DiffAction::RecurseChildren,
 
-        // Self-managed rendering -> Update
-        (ViewDescriptor::MenuBar(_), ViewDescriptor::MenuBar(_)) => DiffAction::Update,
-        (ViewDescriptor::TreeView(_), ViewDescriptor::TreeView(_)) => DiffAction::Update,
-        (ViewDescriptor::ContextMenu(_), ViewDescriptor::ContextMenu(_)) => DiffAction::Update,
-        (ViewDescriptor::VuMeter { .. }, ViewDescriptor::VuMeter { .. }) => DiffAction::Update,
-        (ViewDescriptor::TabBar(_), ViewDescriptor::TabBar(_)) => DiffAction::RecurseChildren,
-        (ViewDescriptor::Grid(_), ViewDescriptor::Grid(_)) => DiffAction::RecurseChildren,
-
-        // Container with single child -> RecurseChildren
-        (ViewDescriptor::Modal(_), ViewDescriptor::Modal(_)) => DiffAction::RecurseChildren,
-
-        // Different variants -> Replace
-        _ => DiffAction::Replace,
+        _ => DiffAction::Update,
     }
 }
 
@@ -299,10 +251,10 @@ mod tests {
         let mut labels = Vec::new();
         for &child_id in &node.children {
             if let Some(child) = tree.get(child_id) {
-                if let ViewDescriptor::Text { content, .. } = &child.descriptor {
+                if let ViewDescriptor::Text { content, .. } = child.descriptor() {
                     labels.push(content.clone());
                 } else {
-                    labels.push(format!("{:?}", child.descriptor));
+                    labels.push(format!("{:?}", child.descriptor()));
                 }
             }
         }
@@ -345,7 +297,7 @@ mod tests {
 
         build_tree(&mut tree, button("hello"));
         assert!(matches!(
-            tree.get(root).unwrap().descriptor,
+            tree.get(root).unwrap().descriptor(),
             ViewDescriptor::Button { .. }
         ));
         assert!(tree.get(root).unwrap().children.is_empty());

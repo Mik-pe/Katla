@@ -104,7 +104,7 @@ impl FocusManager {
             return;
         };
 
-        if is_focusable(&node.descriptor) {
+        if is_focusable(node.descriptor()) {
             self.focus_chain.push(node_id);
         }
 
@@ -118,6 +118,10 @@ impl Default for FocusManager {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub(crate) fn is_widget_focusable(descriptor: &ViewDescriptor) -> bool {
+    is_focusable(descriptor)
 }
 
 fn is_focusable(descriptor: &ViewDescriptor) -> bool {
@@ -148,7 +152,7 @@ fn collect_focusable_recursive(tree: &ViewTree, node_id: ViewId, chain: &mut Vec
         return;
     };
 
-    if is_focusable(&node.descriptor) {
+    if is_focusable(node.descriptor()) {
         chain.push(node_id);
     }
 
