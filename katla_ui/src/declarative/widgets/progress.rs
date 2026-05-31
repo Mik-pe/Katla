@@ -195,6 +195,7 @@ mod tests {
             actions: &mut actions,
             view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
             active_id: None,
+            focused_id: None,
         };
 
         let result = p.handle_input(&mut ctx, &mut state, bounds, &[]);

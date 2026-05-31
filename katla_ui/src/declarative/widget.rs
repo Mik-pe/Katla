@@ -506,6 +506,8 @@ pub struct InputContext<'a> {
     pub view_id: ViewId,
     /// The currently active widget (e.g. slider being dragged), if any.
     pub active_id: Option<ViewId>,
+    /// The currently focused widget, if any.
+    pub focused_id: Option<ViewId>,
 }
 
 #[cfg(test)]

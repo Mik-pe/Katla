@@ -272,6 +272,15 @@ impl ViewTree {
         let input_result = input::process_input(self, &ui.input, &mut callbacks, &resolved);
         let input_consumed = input_result.input_consumed;
         self.interaction.hovered_id = input_result.hovered_id;
+
+        // Set focus when a focusable widget is clicked
+        if let Some(clicked_id) = input_result.clicked_id {
+            if let Some(node) = self.nodes.get(clicked_id) {
+                if node.widget.focusable() {
+                    self.focus.set_focused(Some(clicked_id));
+                }
+            }
+        }
         self.interaction.focused_id = self.focus.focused();
         self.callbacks = callbacks;
         self.resolved_bounds = resolved;

@@ -158,6 +158,7 @@ pub(crate) fn process_input(
     let mut actions = std::mem::take(tree.actions_mut());
     let mut state_arena = std::mem::take(tree.state_arena_mut());
     let mut new_active_id = tree.interaction().active_id;
+    let focused_id = tree.interaction().focused_id;
 
     // Bubbling dispatch loop: start at the hit widget, propagate to parents
     // on Bubble, stop on Consumed or Ignore.
@@ -182,6 +183,7 @@ pub(crate) fn process_input(
             actions: &mut actions,
             view_id: current_id,
             active_id: new_active_id,
+            focused_id,
         };
 
         let widget_result = tree
@@ -555,6 +557,57 @@ mod tests {
         assert!(
             !result.input_consumed,
             "Bubble to root with no parent should not consume"
+        );
+    }
+
+    #[test]
+    fn test_slider_drag_continuation_across_frames() {
+        use super::super::constructors;
+        use super::super::state::StateId;
+        use super::super::widget::WidgetBox;
+
+        let mut tree = ViewTree::new();
+        let mut arena = tree.state_arena_mut();
+        let vid = ViewId::from(slotmap::KeyData::from_ffi(1));
+        let value_id = arena.get_or_create(vid, 0.0f32);
+        drop(arena);
+
+        let slider = constructors::slider("vol", value_id, 0.0..=100.0);
+        tree.set_root(slider.boxed());
+
+        let root_id = tree.root().unwrap();
+        let mut bounds = HashMap::new();
+        bounds.insert(
+            root_id,
+            Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(200.0, 20.0)),
+        );
+
+        // Frame 1: Press on slider
+        let mut input1 = UiInputState::new();
+        input1.mouse_pos = Vec2::new(100.0, 10.0);
+        input1.set_mouse_button(mouse_button::LEFT, true);
+        input1.mouse_down[mouse_button::LEFT] = true;
+
+        let mut callbacks = CallbackTable::new();
+        let result1 = process_input(&mut tree, &input1, &mut callbacks, &bounds);
+        assert!(result1.input_consumed);
+        assert_eq!(result1.hovered_id, Some(root_id));
+
+        // Frame 2: Drag outside bounds (mouse at x=250 which is outside the 200px slider)
+        let mut input2 = UiInputState::new();
+        input2.mouse_pos = Vec2::new(250.0, 10.0);
+        input2.mouse_down[mouse_button::LEFT] = true;
+
+        let result2 = process_input(&mut tree, &input2, &mut callbacks, &bounds);
+        assert!(
+            result2.input_consumed,
+            "slider drag should continue outside bounds"
+        );
+
+        let value: f32 = tree.state_arena().get(value_id).unwrap_or_default();
+        assert!(
+            value > 95.0,
+            "dragging beyond right edge should clamp to max, got {value}"
         );
     }
 }

@@ -334,6 +334,7 @@ mod tests {
             actions: &mut actions,
             view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
             active_id: None,
+            focused_id: None,
         };
 
         let result = panel.handle_input(&mut ctx, &mut arena, bounds, &[]);
@@ -362,6 +363,7 @@ mod tests {
             actions: &mut actions,
             view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
             active_id: None,
+            focused_id: None,
         };
 
         let result = panel.handle_input(&mut ctx, &mut arena, bounds, &[]);
