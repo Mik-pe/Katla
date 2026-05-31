@@ -13,7 +13,7 @@ use super::descriptor::{
     ZStackDescriptor,
 };
 use super::state::StateId;
-use super::widget::{DescriptorWidget, Widget};
+use super::widget::Widget;
 
 // ---------------------------------------------------------------------------
 // KeyedChild — replaces ChildDescriptor in the public API
@@ -32,28 +32,382 @@ impl From<Box<dyn Widget>> for KeyedChild {
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Widget → ViewDescriptor conversion
 // ---------------------------------------------------------------------------
 
-fn wrap(descriptor: ViewDescriptor) -> Box<dyn Widget> {
-    Box::new(DescriptorWidget::new(descriptor))
-}
+/// Convert any `Box<dyn Widget>` to its `ViewDescriptor` representation.
+pub fn widget_to_descriptor(widget: &dyn Widget) -> ViewDescriptor {
+    use super::widgets::*;
 
-fn extract_descriptor(widget: &Box<dyn Widget>) -> ViewDescriptor {
-    widget
+    if let Some(_) = widget.as_any().downcast_ref::<empty::Empty>() {
+        return ViewDescriptor::Empty;
+    }
+
+    if let Some(w) = widget.as_any().downcast_ref::<text::Text>() {
+        return ViewDescriptor::Text {
+            content: w.content.clone(),
+            color: w.color,
+            font_size: w.font_size,
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<button::Button>() {
+        return ViewDescriptor::Button {
+            label: w.label.clone(),
+            fill_color: w.fill_color,
+            hover_color: w.hover_color,
+            border_color: w.border_color,
+            on_click: w.on_click.clone(),
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<image_button::ImageButton>() {
+        return ViewDescriptor::ImageButton {
+            icon: w.icon,
+            enabled: w.enabled,
+            fill_color: w.fill_color,
+            on_click: w.on_click.clone(),
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<slider::Slider>() {
+        return ViewDescriptor::Slider {
+            label: w.label.clone(),
+            value_id: w.value_id,
+            range: w.range.clone(),
+            show_value: w.show_value,
+            precision: w.precision,
+        };
+    }
+    if let Some(w) = widget
         .as_any()
-        .downcast_ref::<DescriptorWidget>()
-        .expect("expected DescriptorWidget")
-        .descriptor()
-        .clone()
-}
+        .downcast_ref::<labeled_slider::LabeledSlider>()
+    {
+        return ViewDescriptor::LabeledSlider {
+            label: w.label.clone(),
+            value_id: w.value_id,
+            range: w.range.clone(),
+            label_width: w.label_width,
+            show_value: w.show_value,
+            precision: w.precision,
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<textfield::TextField>() {
+        return ViewDescriptor::TextField {
+            placeholder: w.placeholder.clone(),
+            value_id: w.value_id,
+            on_submit: w.on_submit.clone(),
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<progress::Progress>() {
+        return ViewDescriptor::Progress {
+            value: w.value,
+            range: w.range.clone(),
+            fill_color: w.fill_color,
+            label: w.label.clone(),
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<vu_meter::VuMeter>() {
+        return ViewDescriptor::VuMeter(Box::new(super::descriptor::VuMeterDescriptor {
+            peak_db: w.peak_db,
+            rms_db: w.rms_db,
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<image::Image>() {
+        return ViewDescriptor::Image {
+            texture: w.texture,
+            uv: w.uv,
+            tint: w.tint,
+            width: w.width,
+            height: w.height,
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<toggle::Toggle>() {
+        return ViewDescriptor::Toggle {
+            label: w.label.clone(),
+            value_id: w.value_id,
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<radio::RadioButton>() {
+        return ViewDescriptor::RadioButton {
+            value_id: w.value_id,
+            index: w.index,
+            label: w.label.clone(),
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<property_row::PropertyRow>() {
+        return ViewDescriptor::PropertyRow {
+            label: w.label.clone(),
+            value: w.value.clone(),
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<color_picker::ColorPicker>() {
+        return ViewDescriptor::ColorPicker {
+            label: w.label.clone(),
+            value_id: w.value_id,
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<vec3_slider::Vec3Slider>() {
+        return ViewDescriptor::Vec3Slider {
+            label: w.label.clone(),
+            value_ids: w.value_ids,
+            range: w.range.clone(),
+            axis_labels: w.axis_labels.clone(),
+            axis_colors: w.axis_colors,
+            precision: w.precision,
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<separator::Separator>() {
+        return ViewDescriptor::Separator {
+            direction: w.direction,
+            color: w.color,
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<icon::Icon>() {
+        return ViewDescriptor::Icon {
+            icon: w.icon,
+            size: w.size,
+            color: w.color,
+        };
+    }
 
-fn extract_descriptor_mut(widget: &mut Box<dyn Widget>) -> &mut ViewDescriptor {
-    widget
-        .as_any_mut()
-        .downcast_mut::<DescriptorWidget>()
-        .expect("expected DescriptorWidget")
-        .descriptor_mut()
+    // Container widgets
+    if let Some(w) = widget.as_any().downcast_ref::<hstack::HStack>() {
+        let children = w
+            .child_widgets
+            .iter()
+            .map(|kc| ChildDescriptor {
+                key: kc.key,
+                descriptor: widget_to_descriptor(&*kc.widget),
+            })
+            .collect();
+        return ViewDescriptor::HStack(Box::new(StackDescriptor {
+            children,
+            spacing: w.spacing,
+            padding: w.padding,
+            alignment: w.alignment,
+            flex: w.flex.clone(),
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<vstack::VStack>() {
+        let children = w
+            .child_widgets
+            .iter()
+            .map(|kc| ChildDescriptor {
+                key: kc.key,
+                descriptor: widget_to_descriptor(&*kc.widget),
+            })
+            .collect();
+        return ViewDescriptor::VStack(Box::new(StackDescriptor {
+            children,
+            spacing: w.spacing,
+            padding: w.padding,
+            alignment: w.alignment,
+            flex: w.flex.clone(),
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<zstack::ZStack>() {
+        let children = w
+            .child_widgets
+            .iter()
+            .map(|(alignment, kc)| {
+                (
+                    *alignment,
+                    ChildDescriptor {
+                        key: kc.key,
+                        descriptor: widget_to_descriptor(&*kc.widget),
+                    },
+                )
+            })
+            .collect();
+        return ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
+            children,
+            padding: w.padding,
+            flex: w.flex.clone(),
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<grid::Grid>() {
+        let children = w
+            .child_widgets
+            .iter()
+            .map(|kc| ChildDescriptor {
+                key: kc.key,
+                descriptor: widget_to_descriptor(&*kc.widget),
+            })
+            .collect();
+        return ViewDescriptor::Grid(Box::new(super::descriptor::GridDescriptor {
+            columns: w.columns,
+            cell_size: w.cell_size,
+            spacing: w.spacing,
+            children,
+            flex: w.flex.clone(),
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<panel::Panel>() {
+        let content = w
+            .child_widget
+            .as_ref()
+            .map(|c| Box::new(widget_to_descriptor(&**c)))
+            .unwrap_or(Box::new(ViewDescriptor::Empty));
+        return ViewDescriptor::Panel(Box::new(PanelDescriptor {
+            title: w.title.clone(),
+            content,
+            header_height: w.header_height,
+            flex: w.flex.clone(),
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<scroll::ScrollView>() {
+        let content = w
+            .child_widget
+            .as_ref()
+            .map(|c| Box::new(widget_to_descriptor(&**c)))
+            .unwrap_or(Box::new(ViewDescriptor::Empty));
+        return ViewDescriptor::ScrollView(Box::new(ScrollDescriptor {
+            content,
+            scroll_state_id: w.scroll_state_id,
+            flex: w.flex.clone(),
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<overlay::Overlay>() {
+        let content = w
+            .child_widget
+            .as_ref()
+            .map(|c| Box::new(widget_to_descriptor(&**c)))
+            .unwrap_or(Box::new(ViewDescriptor::Empty));
+        return ViewDescriptor::Overlay(Box::new(OverlayDescriptor {
+            anchor: w.anchor,
+            offset: w.offset,
+            content,
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<statusbar::StatusBar>() {
+        let content = w
+            .child_widget
+            .as_ref()
+            .map(|c| Box::new(widget_to_descriptor(&**c)))
+            .unwrap_or(Box::new(ViewDescriptor::Empty));
+        return ViewDescriptor::StatusBar(Box::new(StatusBarDescriptor {
+            height: w.height,
+            content,
+        }));
+    }
+    if let Some(w) = widget
+        .as_any()
+        .downcast_ref::<draggable_panel::DraggablePanel>()
+    {
+        let content = w
+            .child_widget
+            .as_ref()
+            .map(|c| Box::new(widget_to_descriptor(&**c)))
+            .unwrap_or(Box::new(ViewDescriptor::Empty));
+        return ViewDescriptor::DraggablePanel(Box::new(DraggablePanelDescriptor {
+            title: w.title.clone(),
+            width: w.width,
+            height: w.height,
+            content,
+            state_id: w.state_id,
+            close_on_outside_click: w.close_on_outside_click,
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<menubar::MenuBar>() {
+        let right_content = w
+            .right_content
+            .as_ref()
+            .map(|c| Box::new(widget_to_descriptor(&**c)));
+        return ViewDescriptor::MenuBar(Box::new(MenuBarDescriptor {
+            groups: w.groups.clone(),
+            right_content,
+            height: w.height,
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<tree_view::TreeView>() {
+        return ViewDescriptor::TreeView(Box::new(TreeViewDescriptor {
+            items: w.items.clone(),
+            expanded_id: w.expanded_id,
+            selected_id: w.selected_id,
+            scroll_id: w.scroll_id,
+            row_height: w.row_height,
+            indent_per_level: w.indent_per_level,
+            on_select: w.on_select.clone(),
+            on_right_click: w.on_right_click.clone(),
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<modal::Modal>() {
+        let content = w
+            .child_widget
+            .as_ref()
+            .map(|c| Box::new(widget_to_descriptor(&**c)))
+            .unwrap_or(Box::new(ViewDescriptor::Empty));
+        return ViewDescriptor::Modal(Box::new(ModalDescriptor {
+            width: w.width,
+            height: w.height,
+            open_id: w.open_id,
+            content,
+            on_close: w.on_close.clone(),
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<context_menu::ContextMenu>() {
+        return ViewDescriptor::ContextMenu(Box::new(ContextMenuDescriptor {
+            items: w.items.clone(),
+            open_id: w.open_id,
+        }));
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<selectable::Selectable>() {
+        let child = w
+            .child_widget
+            .as_ref()
+            .map(|c| Box::new(widget_to_descriptor(&**c)))
+            .unwrap_or(Box::new(ViewDescriptor::Empty));
+        return ViewDescriptor::Selectable {
+            child,
+            on_click: w.on_click.clone(),
+            selected: w.selected,
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<section::Section>() {
+        let child = w
+            .child_widget
+            .as_ref()
+            .map(|c| Box::new(widget_to_descriptor(&**c)))
+            .unwrap_or(Box::new(ViewDescriptor::Empty));
+        return ViewDescriptor::Section {
+            title: w.title.clone(),
+            child,
+            expanded_id: w.expanded_id,
+            on_remove: w.on_remove.clone(),
+        };
+    }
+    if let Some(w) = widget.as_any().downcast_ref::<tab_bar::TabBar>() {
+        let content = w
+            .child_widget
+            .as_ref()
+            .map(|c| Box::new(widget_to_descriptor(&**c)))
+            .unwrap_or(Box::new(ViewDescriptor::Empty));
+        return ViewDescriptor::TabBar(Box::new(super::descriptor::TabBarDescriptor {
+            tabs: w.tabs.clone(),
+            selected_id: w.selected_id,
+            content,
+        }));
+    }
+    if let Some(w) = widget
+        .as_any()
+        .downcast_ref::<transition::TransitionContainer>()
+    {
+        let child = w
+            .child_widget
+            .as_ref()
+            .map(|c| Box::new(widget_to_descriptor(&**c)))
+            .unwrap_or(Box::new(ViewDescriptor::Empty));
+        return ViewDescriptor::TransitionContainer {
+            child,
+            transition: w.transition.clone(),
+        };
+    }
+    if let Some(w) = widget
+        .as_any()
+        .downcast_ref::<super::widget::DescriptorWidget>()
+    {
+        return w.descriptor().clone();
+    }
+
+    ViewDescriptor::Empty
 }
 
 // ---------------------------------------------------------------------------
@@ -61,11 +415,11 @@ fn extract_descriptor_mut(widget: &mut Box<dyn Widget>) -> &mut ViewDescriptor {
 // ---------------------------------------------------------------------------
 
 pub fn empty() -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Empty)
+    Box::new(super::widgets::empty::Empty)
 }
 
 pub fn text(content: impl Into<String>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Text {
+    Box::new(super::widgets::text::Text {
         content: content.into(),
         color: None,
         font_size: None,
@@ -73,7 +427,7 @@ pub fn text(content: impl Into<String>) -> Box<dyn Widget> {
 }
 
 pub fn button(label: impl Into<String>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Button {
+    Box::new(super::widgets::button::Button {
         label: label.into(),
         fill_color: None,
         hover_color: None,
@@ -83,7 +437,7 @@ pub fn button(label: impl Into<String>) -> Box<dyn Widget> {
 }
 
 pub fn image_button(icon: char) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::ImageButton {
+    Box::new(super::widgets::image_button::ImageButton {
         icon,
         enabled: true,
         fill_color: None,
@@ -96,7 +450,7 @@ pub fn slider(
     value_id: StateId,
     range: RangeInclusive<f32>,
 ) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Slider {
+    Box::new(super::widgets::slider::Slider {
         label: label.into(),
         value_id,
         range,
@@ -110,7 +464,7 @@ pub fn labeled_slider(
     value_id: StateId,
     range: RangeInclusive<f32>,
 ) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::LabeledSlider {
+    Box::new(super::widgets::labeled_slider::LabeledSlider {
         label: label.into(),
         value_id,
         range,
@@ -121,7 +475,7 @@ pub fn labeled_slider(
 }
 
 pub fn textfield(placeholder: impl Into<String>, value_id: StateId) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::TextField {
+    Box::new(super::widgets::textfield::TextField {
         placeholder: placeholder.into(),
         value_id,
         on_submit: None,
@@ -129,7 +483,7 @@ pub fn textfield(placeholder: impl Into<String>, value_id: StateId) -> Box<dyn W
 }
 
 pub fn progress(value: f32, range: RangeInclusive<f32>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Progress {
+    Box::new(super::widgets::progress::Progress {
         value,
         range,
         fill_color: None,
@@ -138,13 +492,11 @@ pub fn progress(value: f32, range: RangeInclusive<f32>) -> Box<dyn Widget> {
 }
 
 pub fn vu_meter(peak_db: f32, rms_db: f32) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::VuMeter(Box::new(
-        super::descriptor::VuMeterDescriptor { peak_db, rms_db },
-    )))
+    Box::new(super::widgets::vu_meter::VuMeter { peak_db, rms_db })
 }
 
 pub fn image(texture: TextureId, tint: katla_math::Color) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Image {
+    Box::new(super::widgets::image::Image {
         texture,
         uv: None,
         tint,
@@ -154,14 +506,14 @@ pub fn image(texture: TextureId, tint: katla_math::Color) -> Box<dyn Widget> {
 }
 
 pub fn toggle(label: impl Into<String>, value_id: StateId) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Toggle {
+    Box::new(super::widgets::toggle::Toggle {
         label: label.into(),
         value_id,
     })
 }
 
 pub fn radio(value_id: StateId, index: usize, label: impl Into<String>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::RadioButton {
+    Box::new(super::widgets::radio::RadioButton {
         value_id,
         index,
         label: label.into(),
@@ -169,14 +521,14 @@ pub fn radio(value_id: StateId, index: usize, label: impl Into<String>) -> Box<d
 }
 
 pub fn property_row(label: impl Into<String>, value: impl Into<String>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::PropertyRow {
+    Box::new(super::widgets::property_row::PropertyRow {
         label: label.into(),
         value: value.into(),
     })
 }
 
 pub fn color_picker(label: impl Into<String>, value_id: StateId) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::ColorPicker {
+    Box::new(super::widgets::color_picker::ColorPicker {
         label: label.into(),
         value_id,
     })
@@ -187,7 +539,7 @@ pub fn vec3_slider(
     value_ids: [StateId; 3],
     range: RangeInclusive<f32>,
 ) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Vec3Slider {
+    Box::new(super::widgets::vec3_slider::Vec3Slider {
         label: label.into(),
         value_ids,
         range,
@@ -202,7 +554,7 @@ pub fn vec3_slider(
 }
 
 pub fn separator(direction: SeparatorDirection) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Separator {
+    Box::new(super::widgets::separator::Separator {
         direction,
         color: None,
     })
@@ -217,7 +569,7 @@ pub fn separator_vertical() -> Box<dyn Widget> {
 }
 
 pub fn icon(icon: char) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Icon {
+    Box::new(super::widgets::icon::Icon {
         icon,
         size: None,
         color: None,
@@ -225,10 +577,11 @@ pub fn icon(icon: char) -> Box<dyn Widget> {
 }
 
 pub fn selectable(child: Box<dyn Widget>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Selectable {
-        child: Box::new(extract_descriptor(&child)),
+    Box::new(super::widgets::selectable::Selectable {
         on_click: None,
         selected: false,
+        child_widget: Some(child),
+        children: Vec::new(),
     })
 }
 
@@ -237,11 +590,12 @@ pub fn section(
     child: Box<dyn Widget>,
     expanded_id: StateId,
 ) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Section {
+    Box::new(super::widgets::section::Section {
         title: title.into(),
-        child: Box::new(extract_descriptor(&child)),
         expanded_id,
         on_remove: None,
+        child_widget: Some(child),
+        children: Vec::new(),
     })
 }
 
@@ -250,13 +604,12 @@ pub fn tab_bar(
     selected_id: StateId,
     content: Box<dyn Widget>,
 ) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::TabBar(Box::new(
-        super::descriptor::TabBarDescriptor {
-            tabs,
-            selected_id,
-            content: Box::new(extract_descriptor(&content)),
-        },
-    )))
+    Box::new(super::widgets::tab_bar::TabBar {
+        tabs,
+        selected_id,
+        child_widget: Some(content),
+        children: Vec::new(),
+    })
 }
 
 pub fn tab_item(label: impl Into<String>) -> super::descriptor::TabItem {
@@ -272,34 +625,38 @@ pub fn grid(
 ) -> Box<dyn Widget> {
     let cw = cell_size.x();
     let ch = cell_size.y();
-    let sized_children: Vec<ChildDescriptor> = children
+    let child_widgets: Vec<KeyedChild> = children
         .into_iter()
         .map(|child| {
-            let sized = ViewDescriptor::VStack(Box::new(StackDescriptor {
-                children: vec![ChildDescriptor::from(extract_descriptor(&child))],
-                spacing: 0.0,
-                padding: Padding::zero(),
-                alignment: Alignment::Leading,
-                flex: FlexProps {
+            let wrapper = super::widgets::vstack::VStack::new(
+                0.0,
+                Padding::zero(),
+                Alignment::Leading,
+                FlexProps {
                     width: Some(cw),
                     height: Some(ch),
                     flex_grow: 0.0,
                     flex_shrink: 0.0,
                     ..FlexProps::default()
                 },
-            }));
-            ChildDescriptor::from(sized)
+                vec![KeyedChild {
+                    key: None,
+                    widget: child,
+                }],
+            );
+            KeyedChild {
+                key: None,
+                widget: Box::new(wrapper),
+            }
         })
         .collect();
-    wrap(ViewDescriptor::Grid(Box::new(
-        super::descriptor::GridDescriptor {
-            columns,
-            cell_size,
-            spacing: 0.0,
-            children: sized_children,
-            flex: FlexProps::default(),
-        },
-    )))
+    Box::new(super::widgets::grid::Grid::new(
+        columns,
+        cell_size,
+        0.0,
+        FlexProps::default(),
+        child_widgets,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -307,72 +664,89 @@ pub fn grid(
 // ---------------------------------------------------------------------------
 
 pub fn hstack(children: impl IntoIterator<Item = Box<dyn Widget>>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::HStack(Box::new(StackDescriptor {
-        children: children
-            .into_iter()
-            .map(|c| ChildDescriptor::from(extract_descriptor(&c)))
-            .collect(),
-        spacing: 0.0,
-        padding: Padding::zero(),
-        alignment: Alignment::Leading,
-        flex: FlexProps::default(),
-    })))
+    let child_widgets: Vec<KeyedChild> = children
+        .into_iter()
+        .map(|c| KeyedChild {
+            key: None,
+            widget: c,
+        })
+        .collect();
+    Box::new(super::widgets::hstack::HStack::new(
+        0.0,
+        Padding::zero(),
+        Alignment::Leading,
+        FlexProps::default(),
+        child_widgets,
+    ))
 }
 
 pub fn vstack(children: impl IntoIterator<Item = Box<dyn Widget>>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::VStack(Box::new(StackDescriptor {
-        children: children
-            .into_iter()
-            .map(|c| ChildDescriptor::from(extract_descriptor(&c)))
-            .collect(),
-        spacing: 0.0,
-        padding: Padding::zero(),
-        alignment: Alignment::Leading,
-        flex: FlexProps::default(),
-    })))
+    let child_widgets: Vec<KeyedChild> = children
+        .into_iter()
+        .map(|c| KeyedChild {
+            key: None,
+            widget: c,
+        })
+        .collect();
+    Box::new(super::widgets::vstack::VStack::new(
+        0.0,
+        Padding::zero(),
+        Alignment::Leading,
+        FlexProps::default(),
+        child_widgets,
+    ))
 }
 
 pub fn zstack(children: impl IntoIterator<Item = (Alignment, Box<dyn Widget>)>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
-        children: children
-            .into_iter()
-            .map(|(a, w)| (a, ChildDescriptor::from(extract_descriptor(&w))))
-            .collect(),
-        padding: Padding::zero(),
-        flex: FlexProps::default(),
-    })))
+    let child_widgets: Vec<(Alignment, KeyedChild)> = children
+        .into_iter()
+        .map(|(a, w)| {
+            (
+                a,
+                KeyedChild {
+                    key: None,
+                    widget: w,
+                },
+            )
+        })
+        .collect();
+    Box::new(super::widgets::zstack::ZStack::new(
+        Padding::zero(),
+        FlexProps::default(),
+        child_widgets,
+    ))
 }
 
 pub fn panel(title: impl Into<String>, content: Box<dyn Widget>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Panel(Box::new(PanelDescriptor {
-        title: title.into(),
-        content: Box::new(extract_descriptor(&content)),
-        header_height: 24.0,
-        flex: FlexProps::default(),
-    })))
+    Box::new(super::widgets::panel::Panel::new(
+        title.into(),
+        24.0,
+        FlexProps::default(),
+        Some(content),
+    ))
 }
 
 pub fn scroll(content: Box<dyn Widget>, scroll_state_id: StateId) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::ScrollView(Box::new(ScrollDescriptor {
-        content: Box::new(extract_descriptor(&content)),
+    Box::new(super::widgets::scroll::ScrollView::new(
         scroll_state_id,
-        flex: FlexProps::default(),
-    })))
+        FlexProps::default(),
+        Some(content),
+    ))
 }
 
 pub fn overlay(anchor: Anchor, offset: Vec2, content: Box<dyn Widget>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Overlay(Box::new(OverlayDescriptor {
+    Box::new(super::widgets::overlay::Overlay::new(
         anchor,
         offset,
-        content: Box::new(extract_descriptor(&content)),
-    })))
+        Some(content),
+    ))
 }
 
 pub fn statusbar(height: f32, content: Box<dyn Widget>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::StatusBar(Box::new(StatusBarDescriptor {
+    Box::new(super::widgets::statusbar::StatusBar::new(
         height,
-        content: Box::new(extract_descriptor(&content)),
-    })))
+        Some(content),
+    ))
 }
 
 pub fn draggable_panel(
@@ -382,24 +756,18 @@ pub fn draggable_panel(
     content: Box<dyn Widget>,
     state_id: StateId,
 ) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::DraggablePanel(Box::new(
-        DraggablePanelDescriptor {
-            title: title.into(),
-            width,
-            height,
-            content: Box::new(extract_descriptor(&content)),
-            state_id,
-            close_on_outside_click: false,
-        },
-    )))
+    Box::new(super::widgets::draggable_panel::DraggablePanel::new(
+        title.into(),
+        width,
+        height,
+        state_id,
+        false,
+        Some(content),
+    ))
 }
 
 pub fn menubar(groups: Vec<MenuGroup>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::MenuBar(Box::new(MenuBarDescriptor {
-        groups,
-        right_content: None,
-        height: 28.0,
-    })))
+    Box::new(super::widgets::menubar::MenuBar::new(groups, None, 28.0))
 }
 
 pub fn tree_view(
@@ -408,16 +776,16 @@ pub fn tree_view(
     selected_id: StateId,
     scroll_id: StateId,
 ) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::TreeView(Box::new(TreeViewDescriptor {
+    Box::new(super::widgets::tree_view::TreeView::new(
         items,
         expanded_id,
         selected_id,
         scroll_id,
-        row_height: 20.0,
-        indent_per_level: 16.0,
-        on_select: None,
-        on_right_click: None,
-    })))
+        20.0,
+        16.0,
+        None,
+        None,
+    ))
 }
 
 pub fn modal(
@@ -426,19 +794,19 @@ pub fn modal(
     open_id: StateId,
     content: Box<dyn Widget>,
 ) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Modal(Box::new(ModalDescriptor {
+    Box::new(super::widgets::modal::Modal::new(
         width,
         height,
         open_id,
-        content: Box::new(extract_descriptor(&content)),
-        on_close: None,
-    })))
+        None,
+        Some(content),
+    ))
 }
 
 pub fn context_menu(items: Vec<ContextMenuEntry>, open_id: StateId) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::ContextMenu(Box::new(
-        ContextMenuDescriptor { items, open_id },
-    )))
+    Box::new(super::widgets::context_menu::ContextMenu::new(
+        items, open_id,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -453,54 +821,31 @@ pub fn keyed(key: u64, widget: Box<dyn Widget>) -> KeyedChild {
 }
 
 pub fn hstack_keyed(children: Vec<KeyedChild>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::HStack(Box::new(StackDescriptor {
-        children: children
-            .into_iter()
-            .map(|kc| ChildDescriptor {
-                key: kc.key,
-                descriptor: extract_descriptor(&kc.widget),
-            })
-            .collect(),
-        spacing: 0.0,
-        padding: Padding::zero(),
-        alignment: Alignment::Leading,
-        flex: FlexProps::default(),
-    })))
+    Box::new(super::widgets::hstack::HStack::new(
+        0.0,
+        Padding::zero(),
+        Alignment::Leading,
+        FlexProps::default(),
+        children,
+    ))
 }
 
 pub fn vstack_keyed(children: Vec<KeyedChild>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::VStack(Box::new(StackDescriptor {
-        children: children
-            .into_iter()
-            .map(|kc| ChildDescriptor {
-                key: kc.key,
-                descriptor: extract_descriptor(&kc.widget),
-            })
-            .collect(),
-        spacing: 0.0,
-        padding: Padding::zero(),
-        alignment: Alignment::Leading,
-        flex: FlexProps::default(),
-    })))
+    Box::new(super::widgets::vstack::VStack::new(
+        0.0,
+        Padding::zero(),
+        Alignment::Leading,
+        FlexProps::default(),
+        children,
+    ))
 }
 
 pub fn zstack_keyed(children: Vec<(Alignment, KeyedChild)>) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
-        children: children
-            .into_iter()
-            .map(|(a, kc)| {
-                (
-                    a,
-                    ChildDescriptor {
-                        key: kc.key,
-                        descriptor: extract_descriptor(&kc.widget),
-                    },
-                )
-            })
-            .collect(),
-        padding: Padding::zero(),
-        flex: FlexProps::default(),
-    })))
+    Box::new(super::widgets::zstack::ZStack::new(
+        Padding::zero(),
+        FlexProps::default(),
+        children,
+    ))
 }
 
 pub fn grid_keyed(
@@ -508,21 +853,13 @@ pub fn grid_keyed(
     cell_size: katla_math::Vec2,
     children: Vec<KeyedChild>,
 ) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::Grid(Box::new(
-        super::descriptor::GridDescriptor {
-            columns,
-            cell_size,
-            spacing: 0.0,
-            children: children
-                .into_iter()
-                .map(|kc| ChildDescriptor {
-                    key: kc.key,
-                    descriptor: extract_descriptor(&kc.widget),
-                })
-                .collect(),
-            flex: FlexProps::default(),
-        },
-    )))
+    Box::new(super::widgets::grid::Grid::new(
+        columns,
+        cell_size,
+        0.0,
+        FlexProps::default(),
+        children,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -582,22 +919,23 @@ impl WidgetExt for Box<dyn Widget> {
 
     fn color(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
         let c = color.into();
-        let d = extract_descriptor_mut(&mut self);
-        match d {
-            ViewDescriptor::Text { color: co, .. } | ViewDescriptor::Icon { color: co, .. } => {
-                *co = Some(c)
-            }
-            _ => {
-                debug_assert!(false, "color() modifier applied to non-Text/Icon variant");
-            }
+        use super::widgets::*;
+        if let Some(w) = self.as_any_mut().downcast_mut::<text::Text>() {
+            w.color = Some(c);
+        } else if let Some(w) = self.as_any_mut().downcast_mut::<icon::Icon>() {
+            w.color = Some(c);
+        } else {
+            debug_assert!(false, "color() modifier applied to non-Text/Icon variant");
         }
         self
     }
 
     fn font_size(mut self, fs: FontSize) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Text { font_size: f, .. } = d {
-            *f = Some(fs);
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::text::Text>()
+        {
+            w.font_size = Some(fs);
         } else {
             debug_assert!(false, "font_size() modifier applied to non-Text variant");
         }
@@ -606,23 +944,29 @@ impl WidgetExt for Box<dyn Widget> {
 
     fn fill(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
         let c = color.into();
-        let d = extract_descriptor_mut(&mut self);
-        match d {
-            ViewDescriptor::Button { fill_color: f, .. }
-            | ViewDescriptor::ImageButton { fill_color: f, .. }
-            | ViewDescriptor::Progress { fill_color: f, .. } => *f = Some(c),
-            _ => {
-                debug_assert!(false, "fill() modifier applied to unsupported variant");
-            }
+        use super::widgets::*;
+        if let Some(w) = self.as_any_mut().downcast_mut::<button::Button>() {
+            w.fill_color = Some(c);
+        } else if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<image_button::ImageButton>()
+        {
+            w.fill_color = Some(c);
+        } else if let Some(w) = self.as_any_mut().downcast_mut::<progress::Progress>() {
+            w.fill_color = Some(c);
+        } else {
+            debug_assert!(false, "fill() modifier applied to unsupported variant");
         }
         self
     }
 
     fn hover(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
         let c = color.into();
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Button { hover_color: h, .. } = d {
-            *h = Some(c);
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::button::Button>()
+        {
+            w.hover_color = Some(c);
         } else {
             debug_assert!(false, "hover() modifier applied to non-Button variant");
         }
@@ -631,12 +975,11 @@ impl WidgetExt for Box<dyn Widget> {
 
     fn border(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
         let c = color.into();
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Button {
-            border_color: b, ..
-        } = d
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::button::Button>()
         {
-            *b = Some(c);
+            w.border_color = Some(c);
         } else {
             debug_assert!(false, "border() modifier applied to non-Button variant");
         }
@@ -644,22 +987,28 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn on_click(mut self, cb: Callback) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        match d {
-            ViewDescriptor::Button { on_click: c, .. }
-            | ViewDescriptor::ImageButton { on_click: c, .. }
-            | ViewDescriptor::Selectable { on_click: c, .. } => *c = Some(cb),
-            _ => {
-                debug_assert!(false, "on_click() modifier applied to unsupported variant");
-            }
+        use super::widgets::*;
+        if let Some(w) = self.as_any_mut().downcast_mut::<button::Button>() {
+            w.on_click = Some(cb);
+        } else if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<image_button::ImageButton>()
+        {
+            w.on_click = Some(cb);
+        } else if let Some(w) = self.as_any_mut().downcast_mut::<selectable::Selectable>() {
+            w.on_click = Some(cb);
+        } else {
+            debug_assert!(false, "on_click() modifier applied to unsupported variant");
         }
         self
     }
 
     fn on_close(mut self, cb: Callback) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Modal(desc) = d {
-            desc.on_close = Some(cb);
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::modal::Modal>()
+        {
+            w.on_close = Some(cb);
         } else {
             debug_assert!(false, "on_close() modifier applied to non-Modal variant");
         }
@@ -667,9 +1016,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn enabled(mut self, e: bool) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::ImageButton { enabled: en, .. } = d {
-            *en = e;
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::image_button::ImageButton>()
+        {
+            w.enabled = e;
         } else {
             debug_assert!(
                 false,
@@ -680,9 +1031,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn on_submit(mut self, cb: Callback) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::TextField { on_submit: c, .. } = d {
-            *c = Some(cb);
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::textfield::TextField>()
+        {
+            w.on_submit = Some(cb);
         } else {
             debug_assert!(
                 false,
@@ -693,39 +1046,44 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn show_value(mut self, show: bool) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        match d {
-            ViewDescriptor::Slider { show_value: s, .. }
-            | ViewDescriptor::LabeledSlider { show_value: s, .. } => *s = show,
-            _ => {
-                debug_assert!(
-                    false,
-                    "show_value() modifier applied to unsupported variant"
-                );
-            }
+        use super::widgets::*;
+        if let Some(w) = self.as_any_mut().downcast_mut::<slider::Slider>() {
+            w.show_value = show;
+        } else if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<labeled_slider::LabeledSlider>()
+        {
+            w.show_value = show;
+        } else {
+            debug_assert!(
+                false,
+                "show_value() modifier applied to unsupported variant"
+            );
         }
         self
     }
 
     fn precision(mut self, p: usize) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        match d {
-            ViewDescriptor::Slider { precision: pr, .. }
-            | ViewDescriptor::LabeledSlider { precision: pr, .. } => *pr = p,
-            _ => {
-                debug_assert!(false, "precision() modifier applied to unsupported variant");
-            }
+        use super::widgets::*;
+        if let Some(w) = self.as_any_mut().downcast_mut::<slider::Slider>() {
+            w.precision = p;
+        } else if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<labeled_slider::LabeledSlider>()
+        {
+            w.precision = p;
+        } else {
+            debug_assert!(false, "precision() modifier applied to unsupported variant");
         }
         self
     }
 
     fn label_width(mut self, w: f32) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::LabeledSlider {
-            label_width: lw, ..
-        } = d
+        if let Some(slider) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::labeled_slider::LabeledSlider>()
         {
-            *lw = w;
+            slider.label_width = w;
         } else {
             debug_assert!(
                 false,
@@ -736,9 +1094,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn uv(mut self, rect: katla_math::Rect2D) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Image { uv: u, .. } = d {
-            *u = Some(rect);
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::image::Image>()
+        {
+            w.uv = Some(rect);
         } else {
             debug_assert!(false, "uv() modifier applied to non-Image variant");
         }
@@ -748,56 +1108,64 @@ impl WidgetExt for Box<dyn Widget> {
     // -- Container modifiers --
 
     fn spacing(mut self, s: f32) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        match d {
-            ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => desc.spacing = s,
-            _ => {
-                debug_assert!(false, "spacing() modifier applied to non-stack variant");
-            }
+        use super::widgets::*;
+        if let Some(w) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
+            w.spacing = s;
+        } else if let Some(w) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
+            w.spacing = s;
+        } else {
+            debug_assert!(false, "spacing() modifier applied to non-stack variant");
         }
         self
     }
 
     fn padding(mut self, p: Padding) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        match d {
-            ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => desc.padding = p,
-            ViewDescriptor::ZStack(desc) => desc.padding = p,
-            _ => {
-                debug_assert!(false, "padding() modifier applied to non-stack variant");
-            }
+        use super::widgets::*;
+        if let Some(w) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
+            w.padding = p;
+        } else if let Some(w) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
+            w.padding = p;
+        } else if let Some(w) = self.as_any_mut().downcast_mut::<zstack::ZStack>() {
+            w.padding = p;
+        } else {
+            debug_assert!(false, "padding() modifier applied to non-stack variant");
         }
         self
     }
 
     fn padding_all(mut self, v: f32) -> Box<dyn Widget> {
         let p = Padding::all(v);
-        let d = extract_descriptor_mut(&mut self);
-        match d {
-            ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => desc.padding = p,
-            ViewDescriptor::ZStack(desc) => desc.padding = p,
-            _ => {
-                debug_assert!(false, "padding_all() modifier applied to non-stack variant");
-            }
+        use super::widgets::*;
+        if let Some(w) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
+            w.padding = p;
+        } else if let Some(w) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
+            w.padding = p;
+        } else if let Some(w) = self.as_any_mut().downcast_mut::<zstack::ZStack>() {
+            w.padding = p;
+        } else {
+            debug_assert!(false, "padding_all() modifier applied to non-stack variant");
         }
         self
     }
 
     fn align(mut self, a: Alignment) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        match d {
-            ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => desc.alignment = a,
-            _ => {
-                debug_assert!(false, "align() modifier applied to non-stack variant");
-            }
+        use super::widgets::*;
+        if let Some(w) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
+            w.alignment = a;
+        } else if let Some(w) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
+            w.alignment = a;
+        } else {
+            debug_assert!(false, "align() modifier applied to non-stack variant");
         }
         self
     }
 
     fn header_height(mut self, h: f32) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Panel(desc) = d {
-            desc.header_height = h;
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::panel::Panel>()
+        {
+            w.header_height = h;
         } else {
             debug_assert!(
                 false,
@@ -808,9 +1176,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn close_on_outside(mut self, close: bool) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::DraggablePanel(desc) = d {
-            desc.close_on_outside_click = close;
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::draggable_panel::DraggablePanel>()
+        {
+            w.close_on_outside_click = close;
         } else {
             debug_assert!(
                 false,
@@ -821,9 +1191,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn right_content(mut self, content: Box<dyn Widget>) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::MenuBar(desc) = d {
-            desc.right_content = Some(Box::new(extract_descriptor(&content)));
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::menubar::MenuBar>()
+        {
+            w.right_content = Some(content);
         } else {
             debug_assert!(
                 false,
@@ -834,9 +1206,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn menubar_height(mut self, h: f32) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::MenuBar(desc) = d {
-            desc.height = h;
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::menubar::MenuBar>()
+        {
+            w.height = h;
         } else {
             debug_assert!(
                 false,
@@ -847,9 +1221,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn row_height(mut self, h: f32) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::TreeView(desc) = d {
-            desc.row_height = h;
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::tree_view::TreeView>()
+        {
+            w.row_height = h;
         } else {
             debug_assert!(
                 false,
@@ -860,9 +1236,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn indent(mut self, i: f32) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::TreeView(desc) = d {
-            desc.indent_per_level = i;
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::tree_view::TreeView>()
+        {
+            w.indent_per_level = i;
         } else {
             debug_assert!(false, "indent() modifier applied to non-TreeView variant");
         }
@@ -870,9 +1248,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn on_select(mut self, cb: Callback) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::TreeView(desc) = d {
-            desc.on_select = Some(cb);
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::tree_view::TreeView>()
+        {
+            w.on_select = Some(cb);
         } else {
             debug_assert!(
                 false,
@@ -883,9 +1263,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn on_right_click(mut self, cb: Callback) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::TreeView(desc) = d {
-            desc.on_right_click = Some(cb);
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::tree_view::TreeView>()
+        {
+            w.on_right_click = Some(cb);
         } else {
             debug_assert!(
                 false,
@@ -898,9 +1280,11 @@ impl WidgetExt for Box<dyn Widget> {
     // -- Separator / Icon / Selectable / Section modifiers --
 
     fn separator_color(mut self, color: impl Into<katla_math::Color>) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Separator { color: c, .. } = d {
-            *c = Some(color.into());
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::separator::Separator>()
+        {
+            w.color = Some(color.into());
         } else {
             debug_assert!(
                 false,
@@ -911,9 +1295,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn icon_size(mut self, size: FontSize) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Icon { size: s, .. } = d {
-            *s = Some(size);
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::icon::Icon>()
+        {
+            w.size = Some(size);
         } else {
             debug_assert!(false, "icon_size() modifier applied to non-Icon variant");
         }
@@ -921,9 +1307,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn selected(mut self, sel: bool) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Selectable { selected: s, .. } = d {
-            *s = sel;
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::selectable::Selectable>()
+        {
+            w.selected = sel;
         } else {
             debug_assert!(
                 false,
@@ -934,9 +1322,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn on_remove(mut self, cb: Callback) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Section { on_remove: r, .. } = d {
-            *r = Some(cb);
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::section::Section>()
+        {
+            w.on_remove = Some(cb);
         } else {
             debug_assert!(false, "on_remove() modifier applied to non-Section variant");
         }
@@ -946,15 +1336,12 @@ impl WidgetExt for Box<dyn Widget> {
     // -- Progress / Grid / Image modifiers --
 
     fn image_size(mut self, width: f32, height: f32) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Image {
-            width: w,
-            height: h,
-            ..
-        } = d
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::image::Image>()
         {
-            *w = Some(width);
-            *h = Some(height);
+            w.width = Some(width);
+            w.height = Some(height);
         } else {
             debug_assert!(false, "image_size() modifier applied to non-Image variant");
         }
@@ -962,9 +1349,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn progress_label(mut self, label: impl Into<String>) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Progress { label: l, .. } = d {
-            *l = Some(label.into());
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::progress::Progress>()
+        {
+            w.label = Some(label.into());
         } else {
             debug_assert!(
                 false,
@@ -975,9 +1364,11 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn grid_spacing(mut self, spacing: f32) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        if let ViewDescriptor::Grid(desc) = d {
-            desc.spacing = spacing;
+        if let Some(w) = self
+            .as_any_mut()
+            .downcast_mut::<super::widgets::grid::Grid>()
+        {
+            w.spacing = spacing;
         } else {
             debug_assert!(false, "grid_spacing() modifier applied to non-Grid variant");
         }
@@ -985,58 +1376,67 @@ impl WidgetExt for Box<dyn Widget> {
     }
 
     fn flex_width(mut self, w: f32) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        match d {
-            ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => {
-                desc.flex.width = Some(w)
-            }
-            ViewDescriptor::ZStack(desc) => desc.flex.width = Some(w),
-            ViewDescriptor::Panel(desc) => desc.flex.width = Some(w),
-            ViewDescriptor::Grid(desc) => desc.flex.width = Some(w),
-            ViewDescriptor::ScrollView(desc) => desc.flex.width = Some(w),
-            _ => {
-                debug_assert!(
-                    false,
-                    "flex_width() modifier applied to unsupported variant"
-                );
-            }
+        use super::widgets::*;
+        if let Some(widget) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
+            widget.flex.width = Some(w);
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
+            widget.flex.width = Some(w);
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<zstack::ZStack>() {
+            widget.flex.width = Some(w);
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<panel::Panel>() {
+            widget.flex.width = Some(w);
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<grid::Grid>() {
+            widget.flex.width = Some(w);
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<scroll::ScrollView>() {
+            widget.flex.width = Some(w);
+        } else {
+            debug_assert!(
+                false,
+                "flex_width() modifier applied to unsupported variant"
+            );
         }
         self
     }
 
     fn flex_height(mut self, h: f32) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        match d {
-            ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => {
-                desc.flex.height = Some(h)
-            }
-            ViewDescriptor::ZStack(desc) => desc.flex.height = Some(h),
-            ViewDescriptor::Panel(desc) => desc.flex.height = Some(h),
-            ViewDescriptor::Grid(desc) => desc.flex.height = Some(h),
-            ViewDescriptor::ScrollView(desc) => desc.flex.height = Some(h),
-            _ => {
-                debug_assert!(
-                    false,
-                    "flex_height() modifier applied to unsupported variant"
-                );
-            }
+        use super::widgets::*;
+        if let Some(widget) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
+            widget.flex.height = Some(h);
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
+            widget.flex.height = Some(h);
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<zstack::ZStack>() {
+            widget.flex.height = Some(h);
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<panel::Panel>() {
+            widget.flex.height = Some(h);
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<grid::Grid>() {
+            widget.flex.height = Some(h);
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<scroll::ScrollView>() {
+            widget.flex.height = Some(h);
+        } else {
+            debug_assert!(
+                false,
+                "flex_height() modifier applied to unsupported variant"
+            );
         }
         self
     }
 
     fn flex_grow(mut self, grow: f32) -> Box<dyn Widget> {
-        let d = extract_descriptor_mut(&mut self);
-        match d {
-            ViewDescriptor::HStack(desc) | ViewDescriptor::VStack(desc) => {
-                desc.flex.flex_grow = grow
-            }
-            ViewDescriptor::ZStack(desc) => desc.flex.flex_grow = grow,
-            ViewDescriptor::Panel(desc) => desc.flex.flex_grow = grow,
-            ViewDescriptor::Grid(desc) => desc.flex.flex_grow = grow,
-            ViewDescriptor::ScrollView(desc) => desc.flex.flex_grow = grow,
-            _ => {
-                debug_assert!(false, "flex_grow() modifier applied to unsupported variant");
-            }
+        use super::widgets::*;
+        if let Some(widget) = self.as_any_mut().downcast_mut::<hstack::HStack>() {
+            widget.flex.flex_grow = grow;
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<vstack::VStack>() {
+            widget.flex.flex_grow = grow;
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<zstack::ZStack>() {
+            widget.flex.flex_grow = grow;
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<panel::Panel>() {
+            widget.flex.flex_grow = grow;
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<grid::Grid>() {
+            widget.flex.flex_grow = grow;
+        } else if let Some(widget) = self.as_any_mut().downcast_mut::<scroll::ScrollView>() {
+            widget.flex.flex_grow = grow;
+        } else {
+            debug_assert!(false, "flex_grow() modifier applied to unsupported variant");
         }
         self
     }
@@ -1105,29 +1505,18 @@ impl ContextMenuEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Descriptor access utility
+// Transition container wrapper
 // ---------------------------------------------------------------------------
-
-/// Extract the [`ViewDescriptor`] from a `Box<dyn Widget>` that was produced
-/// by a constructor. Panics if the widget is not a `DescriptorWidget`.
-pub fn into_descriptor(widget: Box<dyn Widget>) -> ViewDescriptor {
-    extract_descriptor(&widget)
-}
-
-/// Wrap a [`ViewDescriptor`] in a [`DescriptorWidget`] and return it as `Box<dyn Widget>`.
-pub fn into_descriptor_owned(descriptor: ViewDescriptor) -> Box<dyn Widget> {
-    wrap(descriptor)
-}
 
 /// Wrap a child widget in a transition container.
 pub(crate) fn wrap_transition_container(
     child: Box<dyn Widget>,
     transition: super::transition::Transition,
 ) -> Box<dyn Widget> {
-    wrap(ViewDescriptor::TransitionContainer {
-        child: Box::new(extract_descriptor(&child)),
+    Box::new(super::widgets::transition::TransitionContainer::new(
         transition,
-    })
+        Some(child),
+    ))
 }
 
 #[cfg(test)]
@@ -1141,11 +1530,7 @@ mod tests {
     }
 
     fn desc(w: Box<dyn Widget>) -> ViewDescriptor {
-        w.as_any()
-            .downcast_ref::<DescriptorWidget>()
-            .expect("expected DescriptorWidget")
-            .descriptor()
-            .clone()
+        widget_to_descriptor(&*w)
     }
 
     // -- Leaf constructor tests --
@@ -1913,11 +2298,7 @@ mod tests {
     #[test]
     fn test_grid_spacing_modifier() {
         let vd = grid(2, Vec2::new(50.0, 50.0), []).grid_spacing(8.0);
-        let d = desc(vd);
-        let ViewDescriptor::Grid { .. } = d else {
-            panic!("expected Grid")
-        };
-        let ViewDescriptor::Grid(d) = d else {
+        let ViewDescriptor::Grid(d) = desc(vd) else {
             panic!("expected Grid")
         };
         assert_eq!(d.spacing, 8.0);

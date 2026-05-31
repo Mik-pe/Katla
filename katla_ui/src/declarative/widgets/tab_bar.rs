@@ -14,14 +14,20 @@ use crate::input::mouse_button;
 pub(crate) struct TabBar {
     pub tabs: Vec<TabItem>,
     pub selected_id: StateId,
-    children: Vec<ViewId>,
+    pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
+    pub(crate) children: Vec<ViewId>,
 }
 
 impl TabBar {
-    pub fn new(tabs: Vec<TabItem>, selected_id: StateId) -> Self {
+    pub fn new(
+        tabs: Vec<TabItem>,
+        selected_id: StateId,
+        child_widget: Option<Box<dyn super::super::widget::Widget>>,
+    ) -> Self {
         Self {
             tabs,
             selected_id,
+            child_widget,
             children: Vec::new(),
         }
     }
@@ -168,6 +174,7 @@ mod tests {
                 },
             ],
             selected_id,
+            None,
         )
     }
 
@@ -207,6 +214,7 @@ mod tests {
                 TabItem { label: "C".into() },
             ],
             selected_id,
+            None,
         );
 
         let mut input = crate::input::UiInputState::default();

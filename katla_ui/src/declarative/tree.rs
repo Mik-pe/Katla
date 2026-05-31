@@ -849,12 +849,11 @@ impl ViewTree {
         );
 
         let widget = builder.build(&mut ctx);
-        let descriptor = widget
-            .as_any()
-            .downcast_ref::<DescriptorWidget>()
-            .expect("expected DescriptorWidget")
-            .descriptor()
-            .clone();
+        let descriptor = if let Some(dw) = widget.as_any().downcast_ref::<DescriptorWidget>() {
+            dw.descriptor().clone()
+        } else {
+            super::constructors::widget_to_descriptor(&*widget)
+        };
 
         self.sync_tree(root_id, &descriptor);
         self.dirty = false;
@@ -1393,12 +1392,12 @@ mod tests {
             &self,
             _ctx: &mut super::super::build::BuildContext,
         ) -> Box<dyn super::super::widget::Widget> {
-            super::super::constructors::into_descriptor_owned(self.0.clone())
+            Box::new(super::super::widget::DescriptorWidget::new(self.0.clone()))
         }
     }
 
     fn build_tree(tree: &mut ViewTree, widget: Box<dyn crate::declarative::widget::Widget>) {
-        let descriptor = crate::declarative::constructors::into_descriptor(widget);
+        let descriptor = crate::declarative::constructors::widget_to_descriptor(&*widget);
         tree.build_from(&StaticDescriptor(descriptor));
     }
 

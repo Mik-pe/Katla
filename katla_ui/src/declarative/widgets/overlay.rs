@@ -13,14 +13,20 @@ use crate::context::UiContext;
 pub(crate) struct Overlay {
     pub anchor: Anchor,
     pub offset: Vec2,
+    pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
     children: Vec<ViewId>,
 }
 
 impl Overlay {
-    pub fn new(anchor: Anchor, offset: Vec2) -> Self {
+    pub fn new(
+        anchor: Anchor,
+        offset: Vec2,
+        child_widget: Option<Box<dyn super::super::widget::Widget>>,
+    ) -> Self {
         Self {
             anchor,
             offset,
+            child_widget,
             children: Vec::new(),
         }
     }
@@ -128,21 +134,21 @@ mod tests {
 
     #[test]
     fn test_overlay_diff_same_type() {
-        let a = Overlay::new(Anchor::TopLeft, Vec2::ZERO);
-        let b = Overlay::new(Anchor::TopRight, Vec2::new(10.0, 5.0));
+        let a = Overlay::new(Anchor::TopLeft, Vec2::ZERO, None);
+        let b = Overlay::new(Anchor::TopRight, Vec2::new(10.0, 5.0), None);
         assert_eq!(b.diff_against(&a), DiffAction::RecurseChildren);
     }
 
     #[test]
     fn test_overlay_diff_different_type() {
-        let overlay = Overlay::new(Anchor::Center, Vec2::ZERO);
+        let overlay = Overlay::new(Anchor::Center, Vec2::ZERO, None);
         let other = crate::declarative::constructors::text("hello");
         assert_eq!(overlay.diff_against(&other), DiffAction::Replace);
     }
 
     #[test]
     fn test_overlay_children() {
-        let mut overlay = Overlay::new(Anchor::TopLeft, Vec2::ZERO);
+        let mut overlay = Overlay::new(Anchor::TopLeft, Vec2::ZERO, None);
         assert!(overlay.children().is_empty());
         let view_id = ViewId::from(slotmap::KeyData::from_ffi(1));
         overlay.children_mut().push(view_id);
@@ -171,7 +177,7 @@ mod tests {
 
     #[test]
     fn test_overlay_layout_style_absolute() {
-        let overlay = Overlay::new(Anchor::TopLeft, Vec2::ZERO);
+        let overlay = Overlay::new(Anchor::TopLeft, Vec2::ZERO, None);
         let style = overlay.layout_style(&crate::declarative::layout::measure_text_descriptor);
         assert_eq!(style.position, Position::Absolute);
     }

@@ -17,6 +17,7 @@ pub(crate) struct DraggablePanel {
     pub height: f32,
     pub state_id: StateId,
     pub close_on_outside_click: bool,
+    pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
     children: Vec<ViewId>,
 }
 
@@ -27,6 +28,7 @@ impl DraggablePanel {
         height: f32,
         state_id: StateId,
         close_on_outside_click: bool,
+        child_widget: Option<Box<dyn super::super::widget::Widget>>,
     ) -> Self {
         Self {
             title,
@@ -34,6 +36,7 @@ impl DraggablePanel {
             height,
             state_id,
             close_on_outside_click,
+            child_widget,
             children: Vec::new(),
         }
     }
@@ -226,7 +229,7 @@ mod tests {
         let mut arena = StateArena::new();
         let view_id = ViewId::from(slotmap::KeyData::from_ffi(0));
         let state_id = arena.get_or_create(view_id, DraggablePanelState::default());
-        DraggablePanel::new("Panel".into(), 200.0, 300.0, state_id, false)
+        DraggablePanel::new("Panel".into(), 200.0, 300.0, state_id, false, None)
     }
 
     fn make_visible_panel() -> (DraggablePanel, StateArena) {
@@ -237,7 +240,7 @@ mod tests {
         panel_state.visibility = DraggablePanelVisibility::Visible;
         panel_state.position = Some(Vec2::new(100.0, 100.0));
         arena.set(state_id, panel_state);
-        let panel = DraggablePanel::new("Panel".into(), 200.0, 300.0, state_id, false);
+        let panel = DraggablePanel::new("Panel".into(), 200.0, 300.0, state_id, false, None);
         (panel, arena)
     }
 

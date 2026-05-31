@@ -2,6 +2,7 @@ pub(crate) mod button;
 pub(crate) mod color_picker;
 pub(crate) mod context_menu;
 pub(crate) mod draggable_panel;
+pub(crate) mod empty;
 pub(crate) mod grid;
 pub(crate) mod hstack;
 pub(crate) mod icon;

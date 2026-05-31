@@ -58,7 +58,7 @@ mod tests {
     // -- Same variant → Update --
 
     fn vd(w: Box<dyn crate::declarative::widget::Widget>) -> ViewDescriptor {
-        crate::declarative::constructors::into_descriptor(w)
+        crate::declarative::constructors::widget_to_descriptor(&*w)
     }
 
     #[test]
@@ -232,7 +232,7 @@ mod tests {
         use super::super::descriptor::ChildDescriptor;
         let cd = super::super::constructors::keyed(42, text("hello"));
         assert_eq!(cd.key, Some(42));
-        let desc = super::super::constructors::into_descriptor(text("hello"));
+        let desc = crate::declarative::constructors::widget_to_descriptor(&*text("hello"));
         let cd_nokey: ChildDescriptor = ChildDescriptor::from(desc);
         assert_eq!(cd_nokey.key, None);
     }
@@ -246,7 +246,8 @@ mod tests {
             &self,
             _ctx: &mut crate::declarative::build::BuildContext,
         ) -> Box<dyn crate::declarative::widget::Widget> {
-            crate::declarative::constructors::into_descriptor_owned(self.0.clone())
+            use super::super::widget::DescriptorWidget;
+            Box::new(DescriptorWidget::new(self.0.clone()))
         }
     }
 
@@ -254,7 +255,7 @@ mod tests {
         tree: &mut crate::declarative::ViewTree,
         widget: Box<dyn crate::declarative::widget::Widget>,
     ) {
-        let descriptor = crate::declarative::constructors::into_descriptor(widget);
+        let descriptor = crate::declarative::constructors::widget_to_descriptor(&*widget);
         tree.build_from(&StaticDescriptor(descriptor));
     }
 
@@ -291,18 +292,14 @@ mod tests {
     fn test_same_descriptor_is_update() {
         let mut tree = crate::declarative::ViewTree::new();
         let desc = text("hello");
-        let desc_vd = crate::declarative::constructors::into_descriptor(desc);
-        build_tree(
-            &mut tree,
-            crate::declarative::constructors::into_descriptor_owned(desc_vd.clone()),
-        );
+        let desc_vd = crate::declarative::constructors::widget_to_descriptor(&*desc);
+        let desc2 = text("hello");
+        build_tree(&mut tree, desc2);
         let root = tree.root().unwrap();
         let v0 = tree.get(root).unwrap().state_version;
 
-        build_tree(
-            &mut tree,
-            crate::declarative::constructors::into_descriptor_owned(desc_vd.clone()),
-        );
+        let desc3 = text("hello");
+        build_tree(&mut tree, desc3);
         let v1 = tree.get(root).unwrap().state_version;
 
         assert!(

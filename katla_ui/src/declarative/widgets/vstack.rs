@@ -15,16 +15,24 @@ pub(crate) struct VStack {
     pub padding: Padding,
     pub alignment: Alignment,
     pub flex: FlexProps,
+    pub child_widgets: Vec<super::super::constructors::KeyedChild>,
     children: Vec<ViewId>,
 }
 
 impl VStack {
-    pub fn new(spacing: f32, padding: Padding, alignment: Alignment, flex: FlexProps) -> Self {
+    pub fn new(
+        spacing: f32,
+        padding: Padding,
+        alignment: Alignment,
+        flex: FlexProps,
+        child_widgets: Vec<super::super::constructors::KeyedChild>,
+    ) -> Self {
         Self {
             spacing,
             padding,
             alignment,
             flex,
+            child_widgets,
             children: Vec::new(),
         }
     }
@@ -109,12 +117,14 @@ mod tests {
             Padding::zero(),
             Alignment::Leading,
             FlexProps::default(),
+            vec![],
         );
         let b = VStack::new(
             8.0,
             Padding::all(4.0),
             Alignment::Center,
             FlexProps::default(),
+            vec![],
         );
         assert_eq!(b.diff_against(&a), DiffAction::RecurseChildren);
     }
@@ -126,6 +136,7 @@ mod tests {
             Padding::zero(),
             Alignment::Leading,
             FlexProps::default(),
+            vec![],
         );
         let other = crate::declarative::constructors::text("hello");
         assert_eq!(vstack.diff_against(&other), DiffAction::Replace);
@@ -138,6 +149,7 @@ mod tests {
             Padding::zero(),
             Alignment::Leading,
             FlexProps::default(),
+            vec![],
         );
         assert!(vstack.children().is_empty());
 
@@ -153,6 +165,7 @@ mod tests {
             Padding::zero(),
             Alignment::Leading,
             FlexProps::default(),
+            vec![],
         );
         let style = vstack.layout_style(&crate::declarative::layout::measure_text_descriptor);
         assert_eq!(style.flex_direction, FlexDirection::Column);
@@ -165,6 +178,7 @@ mod tests {
             Padding::zero(),
             Alignment::Leading,
             FlexProps::default(),
+            vec![],
         );
         assert!(!vstack.focusable());
     }

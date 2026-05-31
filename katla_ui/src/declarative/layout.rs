@@ -608,7 +608,8 @@ mod tests {
 
     impl Build for StaticDescriptor {
         fn build(&self, _ctx: &mut BuildContext) -> Box<dyn crate::declarative::widget::Widget> {
-            crate::declarative::constructors::into_descriptor_owned(self.0.clone())
+            use crate::declarative::widget::DescriptorWidget;
+            Box::new(DescriptorWidget::new(self.0.clone()))
         }
     }
 
@@ -617,7 +618,7 @@ mod tests {
     }
 
     fn build_tree(tree: &mut ViewTree, widget: Box<dyn crate::declarative::widget::Widget>) {
-        let descriptor = crate::declarative::constructors::into_descriptor(widget);
+        let descriptor = crate::declarative::constructors::widget_to_descriptor(&*widget);
         tree.build_from(&StaticDescriptor(descriptor));
     }
 
@@ -982,18 +983,9 @@ mod tests {
 
         let img = image(TextureId(0), Color::WHITE);
         // Manually set image_size like viewport_grid.rs does
-        let img = ViewDescriptor::Image {
-            texture: TextureId(0),
-            uv: None,
-            tint: Color::WHITE,
-            width: Some(cell_w),
-            height: Some(cell_h),
-        };
+        let img = img.image_size(cell_w, cell_h);
 
-        let inner_zstack = zstack([(
-            Alignment::Center,
-            crate::declarative::constructors::into_descriptor_owned(img),
-        )]);
+        let inner_zstack = zstack([(Alignment::Center, img)]);
         let sel = selectable(inner_zstack);
         let desc = grid(1, cell_size, [sel])
             .flex_width(cell_w)

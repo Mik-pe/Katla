@@ -14,7 +14,8 @@ use crate::input::mouse_button;
 pub(crate) struct Selectable {
     pub on_click: Option<Callback>,
     pub selected: bool,
-    children: Vec<ViewId>,
+    pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
+    pub(crate) children: Vec<ViewId>,
 }
 
 impl Widget for Selectable {
@@ -100,6 +101,7 @@ mod tests {
         Selectable {
             on_click: None,
             selected,
+            child_widget: None,
             children: Vec::new(),
         }
     }
@@ -111,6 +113,7 @@ mod tests {
             Selectable {
                 on_click: Some(cb),
                 selected: false,
+                child_widget: None,
                 children: Vec::new(),
             },
             table,

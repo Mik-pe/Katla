@@ -13,14 +13,20 @@ use crate::context::UiContext;
 pub(crate) struct ScrollView {
     pub scroll_state_id: StateId,
     pub flex: FlexProps,
+    pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
     children: Vec<ViewId>,
 }
 
 impl ScrollView {
-    pub fn new(scroll_state_id: StateId, flex: FlexProps) -> Self {
+    pub fn new(
+        scroll_state_id: StateId,
+        flex: FlexProps,
+        child_widget: Option<Box<dyn super::super::widget::Widget>>,
+    ) -> Self {
         Self {
             scroll_state_id,
             flex,
+            child_widget,
             children: Vec::new(),
         }
     }
@@ -108,7 +114,7 @@ mod tests {
         let mut arena = StateArena::new();
         let view_id = ViewId::from(slotmap::KeyData::from_ffi(0));
         let state_id = arena.get_or_create(view_id, 0.0f32);
-        ScrollView::new(state_id, FlexProps::default())
+        ScrollView::new(state_id, FlexProps::default(), None)
     }
 
     #[test]
@@ -140,7 +146,7 @@ mod tests {
         let view_id = ViewId::from(slotmap::KeyData::from_ffi(0));
         let state_id = arena.get_or_create(view_id, 0.0f32);
 
-        let scroll = ScrollView::new(state_id, FlexProps::default());
+        let scroll = ScrollView::new(state_id, FlexProps::default(), None);
 
         let mut input = crate::input::UiInputState::default();
         input.set_mouse_pos(katla_math::Vec2::new(50.0, 50.0));

@@ -16,7 +16,8 @@ pub(crate) struct Section {
     pub title: String,
     pub expanded_id: StateId,
     pub on_remove: Option<Callback>,
-    children: Vec<ViewId>,
+    pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
+    pub(crate) children: Vec<ViewId>,
 }
 
 impl Widget for Section {
@@ -156,6 +157,7 @@ mod tests {
             title: title.to_string(),
             expanded_id: StateId::test_id(),
             on_remove: None,
+            child_widget: None,
             children: Vec::new(),
         }
     }
@@ -168,6 +170,7 @@ mod tests {
                 title: "Test".to_string(),
                 expanded_id: StateId::test_id(),
                 on_remove: Some(cb),
+                child_widget: None,
                 children: Vec::new(),
             },
             table,
@@ -183,6 +186,7 @@ mod tests {
             title: "Test".to_string(),
             expanded_id,
             on_remove: None,
+            child_widget: None,
             children: Vec::new(),
         };
 
