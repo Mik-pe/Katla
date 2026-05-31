@@ -1,3 +1,4 @@
+#[cfg(test)]
 use super::descriptor::ViewDescriptor;
 use super::state::ViewId;
 
@@ -8,6 +9,7 @@ pub enum DiffAction {
     Replace,
 }
 
+#[cfg(test)]
 pub fn diff_descriptor(old: &ViewDescriptor, new: &ViewDescriptor) -> DiffAction {
     if std::mem::discriminant(old) != std::mem::discriminant(new) {
         return DiffAction::Replace;

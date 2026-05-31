@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 
 use katla_math::{Rect2D, Vec2};
-use taffy::{
-    Dimension, FlexDirection, LengthPercentage, NodeId as TaffyNodeId, Size, Style, TaffyTree,
-};
+#[cfg(test)]
+use taffy::FlexDirection;
+use taffy::{Dimension, LengthPercentage, NodeId as TaffyNodeId, Size, Style, TaffyTree};
 
 use crate::style::FontSize;
 
-use super::descriptor::{Alignment, FlexProps, Padding, ViewDescriptor};
+#[cfg(test)]
+use super::descriptor::ViewDescriptor;
+use super::descriptor::{Alignment, FlexProps, Padding};
 use super::state::ViewId;
 use super::tree::ViewTree;
 
@@ -145,6 +147,7 @@ impl TaffyNodeMap {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn descriptor_to_style(descriptor: &ViewDescriptor, measure: MeasureFn<'_>) -> Style {
     match descriptor {
         ViewDescriptor::Empty => Style::default(),
@@ -966,9 +969,7 @@ mod tests {
 
     #[test]
     fn test_zstack_in_selectable_fills_parent() {
-        use crate::declarative::constructors::{
-            grid, image, menubar, overlay, selectable, statusbar, text, zstack,
-        };
+        use crate::declarative::constructors::{grid, image, selectable, zstack};
         use crate::declarative::descriptor::Alignment;
         use crate::types::TextureId;
         use katla_math::Color;

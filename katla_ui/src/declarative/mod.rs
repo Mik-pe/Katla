@@ -37,7 +37,9 @@ pub use descriptor::{
     FlexProps, MenuEntry, MenuGroup, Padding, SeparatorDirection, TabItem, TreeItem,
     ViewDescriptor,
 };
-pub use diff::{DiffAction, Patch, diff_descriptor};
+#[cfg(test)]
+pub use diff::diff_descriptor;
+pub use diff::{DiffAction, Patch};
 pub use focus::{Direction, FocusManager, GamepadNavigator};
 pub use helpers::{delete_button, section_header, show_if, show_if_else, show_if_with_transition};
 pub use ime::ImeRequest;
