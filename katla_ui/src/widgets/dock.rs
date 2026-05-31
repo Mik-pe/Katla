@@ -621,12 +621,12 @@ impl DockTabBar<'_> {
 
             let close_btn_width = if self.close_buttons { 16.0 } else { 0.0 };
             let label_area_width = (tab_width - close_btn_width).max(0.0);
-            let text_size = ui.measure_text(&label, font_size);
+            let text_size = ui.measure_text(label, font_size);
             let text_pos = Vec2::new(
                 tab_bounds.min.x() + (label_area_width - text_size.x()) * 0.5,
                 tab_bounds.center().y() - text_size.y() * 0.5,
             );
-            ui.draw_text(&label, text_pos, text_color, font_size);
+            ui.draw_text(label, text_pos, text_color, font_size);
 
             if self.close_buttons {
                 let close_x = tab_bounds.max.x() - close_btn_width;
@@ -786,10 +786,10 @@ impl<'a> DockArea<'a> {
         }
 
         // Render drag preview (floating tab at mouse position)
-        if let Some(_panel_id) = self.drag_state.dragging_panel {
-            if self.drag_state.torn_off {
-                self.render_drag_preview(ui);
-            }
+        if let Some(_panel_id) = self.drag_state.dragging_panel
+            && self.drag_state.torn_off
+        {
+            self.render_drag_preview(ui);
         }
 
         response
@@ -998,21 +998,20 @@ fn render_chrome_recursive(
                 *active_tab = clicked;
             }
 
-            if let Some(closed_idx) = tab_response.closed_tab {
-                if let Some(&panel_id) = tabs.get(closed_idx) {
-                    response.closed_panel = Some(panel_id);
-                }
+            if let Some(closed_idx) = tab_response.closed_tab
+                && let Some(&panel_id) = tabs.get(closed_idx)
+            {
+                response.closed_panel = Some(panel_id);
             }
 
-            if let Some(drag_idx) = tab_response.drag_started_tab {
-                if let Some(&panel_id) = tabs.get(drag_idx) {
-                    if drag_state.dragging_panel.is_none() {
-                        drag_state.dragging_panel = Some(panel_id);
-                        drag_state.source_bounds = Some(bounds);
-                        drag_state.torn_off = false;
-                        response.drag_started = Some((panel_id, bounds));
-                    }
-                }
+            if let Some(drag_idx) = tab_response.drag_started_tab
+                && let Some(&panel_id) = tabs.get(drag_idx)
+                && drag_state.dragging_panel.is_none()
+            {
+                drag_state.dragging_panel = Some(panel_id);
+                drag_state.source_bounds = Some(bounds);
+                drag_state.torn_off = false;
+                response.drag_started = Some((panel_id, bounds));
             }
 
             let active_idx = tab_response
@@ -1055,12 +1054,12 @@ impl<'a> DockArea<'a> {
         }
 
         // Check tear-off distance
-        if let Some(source_bounds) = self.drag_state.source_bounds {
-            if !source_bounds.contains(mouse_pos) {
-                let dist = mouse_pos - source_bounds.center();
-                if dist.x().abs() > TEAR_OFF_THRESHOLD || dist.y().abs() > TEAR_OFF_THRESHOLD {
-                    self.drag_state.torn_off = true;
-                }
+        if let Some(source_bounds) = self.drag_state.source_bounds
+            && !source_bounds.contains(mouse_pos)
+        {
+            let dist = mouse_pos - source_bounds.center();
+            if dist.x().abs() > TEAR_OFF_THRESHOLD || dist.y().abs() > TEAR_OFF_THRESHOLD {
+                self.drag_state.torn_off = true;
             }
         }
 
@@ -1110,17 +1109,17 @@ impl<'a> DockArea<'a> {
             1.0,
         );
 
-        if let Some(label_fn) = self.panel_label_fn {
-            if let Some(panel_id) = self.drag_state.dragging_panel {
-                let label = label_fn(panel_id);
-                let font_size = ui.style.font_size;
-                let text_size = ui.measure_text(label, font_size);
-                let text_pos = Vec2::new(
-                    preview_bounds.min.x() + (preview_bounds.width() - text_size.x()) * 0.5,
-                    preview_bounds.center().y() - text_size.y() * 0.5,
-                );
-                ui.draw_text(label, text_pos, ui.style.text_color, font_size);
-            }
+        if let Some(label_fn) = self.panel_label_fn
+            && let Some(panel_id) = self.drag_state.dragging_panel
+        {
+            let label = label_fn(panel_id);
+            let font_size = ui.style.font_size;
+            let text_size = ui.measure_text(label, font_size);
+            let text_pos = Vec2::new(
+                preview_bounds.min.x() + (preview_bounds.width() - text_size.x()) * 0.5,
+                preview_bounds.center().y() - text_size.y() * 0.5,
+            );
+            ui.draw_text(label, text_pos, ui.style.text_color, font_size);
         }
 
         // Draw dock zone overlay on target leaf
@@ -1341,22 +1340,21 @@ fn render_node(
             }
 
             // Handle close button
-            if let Some(closed_idx) = tab_response.closed_tab {
-                if let Some(&panel_id) = tabs.get(closed_idx) {
-                    response.closed_panel = Some(panel_id);
-                }
+            if let Some(closed_idx) = tab_response.closed_tab
+                && let Some(&panel_id) = tabs.get(closed_idx)
+            {
+                response.closed_panel = Some(panel_id);
             }
 
             // Handle drag start
-            if let Some(drag_idx) = tab_response.drag_started_tab {
-                if let Some(&panel_id) = tabs.get(drag_idx) {
-                    if drag_state.dragging_panel.is_none() {
-                        drag_state.dragging_panel = Some(panel_id);
-                        drag_state.source_bounds = Some(bounds);
-                        drag_state.torn_off = false;
-                        response.drag_started = Some((panel_id, bounds));
-                    }
-                }
+            if let Some(drag_idx) = tab_response.drag_started_tab
+                && let Some(&panel_id) = tabs.get(drag_idx)
+                && drag_state.dragging_panel.is_none()
+            {
+                drag_state.dragging_panel = Some(panel_id);
+                drag_state.source_bounds = Some(bounds);
+                drag_state.torn_off = false;
+                response.drag_started = Some((panel_id, bounds));
             }
 
             // Collapse toggle: double-click on tab bar background

@@ -6,7 +6,9 @@ use taffy::{Dimension, FlexDirection, LengthPercentage, Size, Style};
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{
+    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+};
 use crate::context::UiContext;
 
 pub(crate) struct StatusBar {
@@ -99,6 +101,14 @@ impl Widget for StatusBar {
 
     fn children_mut(&mut self) -> &mut Vec<ViewId> {
         &mut self.children
+    }
+
+    fn take_children(&mut self) -> ChildWidgets {
+        if let Some(child) = self.child_widget.take() {
+            ChildWidgets::Single(child)
+        } else {
+            ChildWidgets::None
+        }
     }
 }
 

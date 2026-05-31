@@ -105,8 +105,11 @@ impl Widget for ImageButton {
     fn focusable(&self) -> bool {
         self.on_click.is_some() && self.enabled
     }
-}
 
+    fn interactive(&self) -> bool {
+        true
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,6 +161,8 @@ mod tests {
             mouse_pos: input.mouse_pos,
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let result = btn.handle_input(&mut ctx, &mut state, bounds, &[]);
@@ -188,6 +193,8 @@ mod tests {
             mouse_pos: input.mouse_pos,
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let result = btn.handle_input(&mut ctx, &mut state, bounds, &[]);
@@ -265,6 +272,8 @@ mod tests {
             mouse_pos: input.mouse_pos,
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let result = btn.handle_input(&mut ctx, &mut state, bounds, &[]);

@@ -7,7 +7,9 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{
+    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+};
 use crate::context::UiContext;
 use crate::input::{KeyCode, mouse_button};
 
@@ -139,6 +141,40 @@ impl Widget for Modal {
     fn children_mut(&mut self) -> &mut Vec<ViewId> {
         &mut self.children
     }
+
+    fn take_children(&mut self) -> ChildWidgets {
+        if let Some(child) = self.child_widget.take() {
+            ChildWidgets::Single(child)
+        } else {
+            ChildWidgets::None
+        }
+    }
+
+    fn resolve_position_delta(
+        &self,
+        bounds: Rect2D,
+        parent_bounds: Rect2D,
+        _zstack_alignment: Option<super::super::descriptor::Alignment>,
+        state: &StateArena,
+    ) -> Vec2 {
+        let is_open: bool = state.get(self.open_id).unwrap_or_default();
+        if is_open {
+            let cx = (parent_bounds.width() - self.width) * 0.5;
+            let cy = (parent_bounds.height() - self.height) * 0.5;
+            let centered = parent_bounds.min + Vec2::new(cx, cy);
+            centered - bounds.min
+        } else {
+            Vec2::ZERO
+        }
+    }
+
+    fn should_draw_children(&self, state: &StateArena) -> bool {
+        state.get(self.open_id).unwrap_or_default()
+    }
+
+    fn interactive(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -200,6 +236,8 @@ mod tests {
             mouse_pos: Vec2::new(500.0, 500.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let bounds = Rect2D::new(Vec2::new(200.0, 150.0), Vec2::new(600.0, 450.0));
@@ -224,6 +262,8 @@ mod tests {
             mouse_pos: Vec2::new(10.0, 10.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let bounds = Rect2D::new(Vec2::new(200.0, 150.0), Vec2::new(600.0, 450.0));
@@ -248,6 +288,8 @@ mod tests {
             mouse_pos: Vec2::new(500.0, 500.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let bounds = Rect2D::new(Vec2::new(200.0, 150.0), Vec2::new(600.0, 450.0));

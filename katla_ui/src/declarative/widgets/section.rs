@@ -8,7 +8,9 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{
+    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+};
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
@@ -146,6 +148,22 @@ impl Widget for Section {
     fn children_mut(&mut self) -> &mut Vec<ViewId> {
         &mut self.children
     }
+
+    fn take_children(&mut self) -> ChildWidgets {
+        if let Some(child) = self.child_widget.take() {
+            ChildWidgets::Single(child)
+        } else {
+            ChildWidgets::None
+        }
+    }
+
+    fn should_draw_children(&self, state: &StateArena) -> bool {
+        state.get(self.expanded_id).unwrap_or_default()
+    }
+
+    fn interactive(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -201,6 +219,8 @@ mod tests {
             mouse_pos: Vec2::new(50.0, 5.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let bounds = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(200.0, 100.0));
@@ -232,6 +252,8 @@ mod tests {
             mouse_pos: click_pos,
             callbacks: &mut table,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let result = section.handle_input(&mut ctx, &mut state, bounds, &[]);

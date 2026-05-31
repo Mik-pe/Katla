@@ -39,10 +39,9 @@ impl From<Box<dyn Widget>> for KeyedChild {
 pub fn widget_to_descriptor(widget: &dyn Widget) -> ViewDescriptor {
     use super::widgets::*;
 
-    if let Some(_) = widget.as_any().downcast_ref::<empty::Empty>() {
+    if widget.as_any().downcast_ref::<empty::Empty>().is_some() {
         return ViewDescriptor::Empty;
     }
-
     if let Some(w) = widget.as_any().downcast_ref::<text::Text>() {
         return ViewDescriptor::Text {
             content: w.content.clone(),
@@ -104,7 +103,10 @@ pub fn widget_to_descriptor(widget: &dyn Widget) -> ViewDescriptor {
             label: w.label.clone(),
         };
     }
-    if let Some(w) = widget.as_any().downcast_ref::<vu_meter::VuMeter>() {
+    if let Some(w) = widget
+        .as_any()
+        .downcast_ref::<super::widgets::vu_meter::VuMeter>()
+    {
         return ViewDescriptor::VuMeter(Box::new(super::descriptor::VuMeterDescriptor {
             peak_db: w.peak_db,
             rms_db: w.rms_db,
@@ -167,19 +169,16 @@ pub fn widget_to_descriptor(widget: &dyn Widget) -> ViewDescriptor {
             color: w.color,
         };
     }
-
-    // Container widgets
     if let Some(w) = widget.as_any().downcast_ref::<hstack::HStack>() {
-        let children = w
-            .child_widgets
-            .iter()
-            .map(|kc| ChildDescriptor {
-                key: kc.key,
-                descriptor: widget_to_descriptor(&*kc.widget),
-            })
-            .collect();
         return ViewDescriptor::HStack(Box::new(StackDescriptor {
-            children,
+            children: w
+                .child_widgets
+                .iter()
+                .map(|kc| ChildDescriptor {
+                    key: kc.key,
+                    descriptor: widget_to_descriptor(&*kc.widget),
+                })
+                .collect(),
             spacing: w.spacing,
             padding: w.padding,
             alignment: w.alignment,
@@ -187,16 +186,15 @@ pub fn widget_to_descriptor(widget: &dyn Widget) -> ViewDescriptor {
         }));
     }
     if let Some(w) = widget.as_any().downcast_ref::<vstack::VStack>() {
-        let children = w
-            .child_widgets
-            .iter()
-            .map(|kc| ChildDescriptor {
-                key: kc.key,
-                descriptor: widget_to_descriptor(&*kc.widget),
-            })
-            .collect();
         return ViewDescriptor::VStack(Box::new(StackDescriptor {
-            children,
+            children: w
+                .child_widgets
+                .iter()
+                .map(|kc| ChildDescriptor {
+                    key: kc.key,
+                    descriptor: widget_to_descriptor(&*kc.widget),
+                })
+                .collect(),
             spacing: w.spacing,
             padding: w.padding,
             alignment: w.alignment,
@@ -204,116 +202,108 @@ pub fn widget_to_descriptor(widget: &dyn Widget) -> ViewDescriptor {
         }));
     }
     if let Some(w) = widget.as_any().downcast_ref::<zstack::ZStack>() {
-        let children = w
-            .child_widgets
-            .iter()
-            .map(|(alignment, kc)| {
-                (
-                    *alignment,
-                    ChildDescriptor {
-                        key: kc.key,
-                        descriptor: widget_to_descriptor(&*kc.widget),
-                    },
-                )
-            })
-            .collect();
         return ViewDescriptor::ZStack(Box::new(ZStackDescriptor {
-            children,
+            children: w
+                .child_widgets
+                .iter()
+                .map(|(a, kc)| {
+                    (
+                        *a,
+                        ChildDescriptor {
+                            key: kc.key,
+                            descriptor: widget_to_descriptor(&*kc.widget),
+                        },
+                    )
+                })
+                .collect(),
             padding: w.padding,
             flex: w.flex.clone(),
         }));
     }
     if let Some(w) = widget.as_any().downcast_ref::<grid::Grid>() {
-        let children = w
-            .child_widgets
-            .iter()
-            .map(|kc| ChildDescriptor {
-                key: kc.key,
-                descriptor: widget_to_descriptor(&*kc.widget),
-            })
-            .collect();
         return ViewDescriptor::Grid(Box::new(super::descriptor::GridDescriptor {
             columns: w.columns,
             cell_size: w.cell_size,
             spacing: w.spacing,
-            children,
+            children: w
+                .child_widgets
+                .iter()
+                .map(|kc| ChildDescriptor {
+                    key: kc.key,
+                    descriptor: widget_to_descriptor(&*kc.widget),
+                })
+                .collect(),
             flex: w.flex.clone(),
         }));
     }
     if let Some(w) = widget.as_any().downcast_ref::<panel::Panel>() {
-        let content = w
-            .child_widget
-            .as_ref()
-            .map(|c| Box::new(widget_to_descriptor(&**c)))
-            .unwrap_or(Box::new(ViewDescriptor::Empty));
         return ViewDescriptor::Panel(Box::new(PanelDescriptor {
             title: w.title.clone(),
-            content,
+            content: w
+                .child_widget
+                .as_ref()
+                .map(|c| Box::new(widget_to_descriptor(&**c)))
+                .unwrap_or(Box::new(ViewDescriptor::Empty)),
             header_height: w.header_height,
             flex: w.flex.clone(),
         }));
     }
     if let Some(w) = widget.as_any().downcast_ref::<scroll::ScrollView>() {
-        let content = w
-            .child_widget
-            .as_ref()
-            .map(|c| Box::new(widget_to_descriptor(&**c)))
-            .unwrap_or(Box::new(ViewDescriptor::Empty));
         return ViewDescriptor::ScrollView(Box::new(ScrollDescriptor {
-            content,
+            content: w
+                .child_widget
+                .as_ref()
+                .map(|c| Box::new(widget_to_descriptor(&**c)))
+                .unwrap_or(Box::new(ViewDescriptor::Empty)),
             scroll_state_id: w.scroll_state_id,
             flex: w.flex.clone(),
         }));
     }
     if let Some(w) = widget.as_any().downcast_ref::<overlay::Overlay>() {
-        let content = w
-            .child_widget
-            .as_ref()
-            .map(|c| Box::new(widget_to_descriptor(&**c)))
-            .unwrap_or(Box::new(ViewDescriptor::Empty));
         return ViewDescriptor::Overlay(Box::new(OverlayDescriptor {
             anchor: w.anchor,
             offset: w.offset,
-            content,
+            content: w
+                .child_widget
+                .as_ref()
+                .map(|c| Box::new(widget_to_descriptor(&**c)))
+                .unwrap_or(Box::new(ViewDescriptor::Empty)),
         }));
     }
     if let Some(w) = widget.as_any().downcast_ref::<statusbar::StatusBar>() {
-        let content = w
-            .child_widget
-            .as_ref()
-            .map(|c| Box::new(widget_to_descriptor(&**c)))
-            .unwrap_or(Box::new(ViewDescriptor::Empty));
         return ViewDescriptor::StatusBar(Box::new(StatusBarDescriptor {
             height: w.height,
-            content,
+            content: w
+                .child_widget
+                .as_ref()
+                .map(|c| Box::new(widget_to_descriptor(&**c)))
+                .unwrap_or(Box::new(ViewDescriptor::Empty)),
         }));
     }
     if let Some(w) = widget
         .as_any()
         .downcast_ref::<draggable_panel::DraggablePanel>()
     {
-        let content = w
-            .child_widget
-            .as_ref()
-            .map(|c| Box::new(widget_to_descriptor(&**c)))
-            .unwrap_or(Box::new(ViewDescriptor::Empty));
         return ViewDescriptor::DraggablePanel(Box::new(DraggablePanelDescriptor {
             title: w.title.clone(),
             width: w.width,
             height: w.height,
-            content,
+            content: w
+                .child_widget
+                .as_ref()
+                .map(|c| Box::new(widget_to_descriptor(&**c)))
+                .unwrap_or(Box::new(ViewDescriptor::Empty)),
             state_id: w.state_id,
             close_on_outside_click: w.close_on_outside_click,
         }));
     }
     if let Some(w) = widget.as_any().downcast_ref::<menubar::MenuBar>() {
-        let right_content = w
-            .right_content
-            .as_ref()
-            .map(|c| Box::new(widget_to_descriptor(&**c)));
         return ViewDescriptor::MenuBar(Box::new(MenuBarDescriptor {
             groups: w.groups.clone(),
-            right_content,
+            right_content: w
+                .right_content
+                .as_ref()
+                .map(|c| Box::new(widget_to_descriptor(&**c))),
             height: w.height,
         }));
     }
@@ -330,16 +320,15 @@ pub fn widget_to_descriptor(widget: &dyn Widget) -> ViewDescriptor {
         }));
     }
     if let Some(w) = widget.as_any().downcast_ref::<modal::Modal>() {
-        let content = w
-            .child_widget
-            .as_ref()
-            .map(|c| Box::new(widget_to_descriptor(&**c)))
-            .unwrap_or(Box::new(ViewDescriptor::Empty));
         return ViewDescriptor::Modal(Box::new(ModalDescriptor {
             width: w.width,
             height: w.height,
             open_id: w.open_id,
-            content,
+            content: w
+                .child_widget
+                .as_ref()
+                .map(|c| Box::new(widget_to_descriptor(&**c)))
+                .unwrap_or(Box::new(ViewDescriptor::Empty)),
             on_close: w.on_close.clone(),
         }));
     }
@@ -350,63 +339,52 @@ pub fn widget_to_descriptor(widget: &dyn Widget) -> ViewDescriptor {
         }));
     }
     if let Some(w) = widget.as_any().downcast_ref::<selectable::Selectable>() {
-        let child = w
-            .child_widget
-            .as_ref()
-            .map(|c| Box::new(widget_to_descriptor(&**c)))
-            .unwrap_or(Box::new(ViewDescriptor::Empty));
         return ViewDescriptor::Selectable {
-            child,
+            child: w
+                .child_widget
+                .as_ref()
+                .map(|c| Box::new(widget_to_descriptor(&**c)))
+                .unwrap_or(Box::new(ViewDescriptor::Empty)),
             on_click: w.on_click.clone(),
             selected: w.selected,
         };
     }
     if let Some(w) = widget.as_any().downcast_ref::<section::Section>() {
-        let child = w
-            .child_widget
-            .as_ref()
-            .map(|c| Box::new(widget_to_descriptor(&**c)))
-            .unwrap_or(Box::new(ViewDescriptor::Empty));
         return ViewDescriptor::Section {
             title: w.title.clone(),
-            child,
+            child: w
+                .child_widget
+                .as_ref()
+                .map(|c| Box::new(widget_to_descriptor(&**c)))
+                .unwrap_or(Box::new(ViewDescriptor::Empty)),
             expanded_id: w.expanded_id,
             on_remove: w.on_remove.clone(),
         };
     }
     if let Some(w) = widget.as_any().downcast_ref::<tab_bar::TabBar>() {
-        let content = w
-            .child_widget
-            .as_ref()
-            .map(|c| Box::new(widget_to_descriptor(&**c)))
-            .unwrap_or(Box::new(ViewDescriptor::Empty));
         return ViewDescriptor::TabBar(Box::new(super::descriptor::TabBarDescriptor {
             tabs: w.tabs.clone(),
             selected_id: w.selected_id,
-            content,
+            content: w
+                .child_widget
+                .as_ref()
+                .map(|c| Box::new(widget_to_descriptor(&**c)))
+                .unwrap_or(Box::new(ViewDescriptor::Empty)),
         }));
     }
     if let Some(w) = widget
         .as_any()
         .downcast_ref::<transition::TransitionContainer>()
     {
-        let child = w
-            .child_widget
-            .as_ref()
-            .map(|c| Box::new(widget_to_descriptor(&**c)))
-            .unwrap_or(Box::new(ViewDescriptor::Empty));
         return ViewDescriptor::TransitionContainer {
-            child,
+            child: w
+                .child_widget
+                .as_ref()
+                .map(|c| Box::new(widget_to_descriptor(&**c)))
+                .unwrap_or(Box::new(ViewDescriptor::Empty)),
             transition: w.transition.clone(),
         };
     }
-    if let Some(w) = widget
-        .as_any()
-        .downcast_ref::<super::widget::DescriptorWidget>()
-    {
-        return w.descriptor().clone();
-    }
-
     ViewDescriptor::Empty
 }
 

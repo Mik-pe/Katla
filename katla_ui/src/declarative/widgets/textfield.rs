@@ -71,10 +71,10 @@ impl Widget for TextField {
             changed = true;
         }
 
-        if ctx.input.key_pressed(KeyCode::Enter) {
-            if let Some(ref callback) = self.on_submit {
-                ctx.callbacks.invoke(callback, ctx.actions);
-            }
+        if ctx.input.key_pressed(KeyCode::Enter)
+            && let Some(ref callback) = self.on_submit
+        {
+            ctx.callbacks.invoke(callback, ctx.actions);
         }
 
         if ctx.input.key_pressed(KeyCode::Escape) {
@@ -139,8 +139,11 @@ impl Widget for TextField {
     fn focusable(&self) -> bool {
         true
     }
-}
 
+    fn interactive(&self) -> bool {
+        true
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,6 +211,8 @@ mod tests {
             mouse_pos: Vec2::new(50.0, 12.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let result = tf.handle_input(&mut ctx, &mut state, bounds, &[]);
@@ -235,6 +240,8 @@ mod tests {
             mouse_pos: input.mouse_pos,
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let result = tf.handle_input(&mut ctx, &mut state, bounds, &[]);
@@ -263,6 +270,8 @@ mod tests {
             mouse_pos: Vec2::new(50.0, 12.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let _ = tf.handle_input(&mut ctx, &mut state, bounds, &[]);

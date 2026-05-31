@@ -182,6 +182,8 @@ mod tests {
             mouse_pos: Vec2::new(100.0, 10.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let result = p.handle_input(&mut ctx, &mut state, bounds, &[]);

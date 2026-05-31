@@ -163,8 +163,11 @@ impl Widget for Vec3Slider {
     fn focusable(&self) -> bool {
         true
     }
-}
 
+    fn interactive(&self) -> bool {
+        true
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,6 +238,8 @@ mod tests {
             mouse_pos: input.mouse_pos,
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let result = slider.handle_input(&mut ctx, &mut state, bounds, &[]);
@@ -259,6 +264,8 @@ mod tests {
             mouse_pos: input.mouse_pos,
             callbacks: &mut callbacks,
             actions: &mut actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            active_id: None,
         };
 
         let result = slider.handle_input(&mut ctx, &mut state, bounds, &[]);
