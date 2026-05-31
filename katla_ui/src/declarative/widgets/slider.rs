@@ -63,6 +63,7 @@ impl Widget for Slider {
             };
             let value = *self.range.start() + t * (*self.range.end() - *self.range.start());
             state.set(self.value_id, value);
+            ctx.active_id = Some(ctx.view_id);
             return InputResult::Consumed;
         }
         InputResult::Ignore
@@ -207,6 +208,7 @@ mod tests {
             actions: &mut actions,
             view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
             active_id: None,
+            focused_id: None,
         };
 
         let result = slider.handle_input(&mut ctx, &mut state, bounds, &[]);

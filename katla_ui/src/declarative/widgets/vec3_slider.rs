@@ -77,6 +77,7 @@ impl Widget for Vec3Slider {
         };
         let new_val = *self.range.start() + t * (*self.range.end() - *self.range.start());
         state.set(self.value_ids[axis], new_val);
+        ctx.active_id = Some(ctx.view_id);
 
         InputResult::Consumed
     }
@@ -240,6 +241,7 @@ mod tests {
             actions: &mut actions,
             view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
             active_id: None,
+            focused_id: None,
         };
 
         let result = slider.handle_input(&mut ctx, &mut state, bounds, &[]);
@@ -266,6 +268,7 @@ mod tests {
             actions: &mut actions,
             view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
             active_id: None,
+            focused_id: None,
         };
 
         let result = slider.handle_input(&mut ctx, &mut state, bounds, &[]);

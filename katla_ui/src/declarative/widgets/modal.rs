@@ -253,6 +253,7 @@ mod tests {
             actions: &mut actions,
             view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
             active_id: None,
+            focused_id: None,
         };
 
         let bounds = Rect2D::new(Vec2::new(200.0, 150.0), Vec2::new(600.0, 450.0));
@@ -279,6 +280,7 @@ mod tests {
             actions: &mut actions,
             view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
             active_id: None,
+            focused_id: None,
         };
 
         let bounds = Rect2D::new(Vec2::new(200.0, 150.0), Vec2::new(600.0, 450.0));
@@ -305,6 +307,7 @@ mod tests {
             actions: &mut actions,
             view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
             active_id: None,
+            focused_id: None,
         };
 
         let bounds = Rect2D::new(Vec2::new(200.0, 150.0), Vec2::new(600.0, 450.0));

@@ -58,6 +58,11 @@ impl Widget for TextField {
             return InputResult::Consumed;
         }
 
+        let is_focused = ctx.focused_id == Some(ctx.view_id);
+        if !is_focused {
+            return InputResult::Ignore;
+        }
+
         let mut text: String = state.get(self.value_id).unwrap_or_default();
         let mut changed = false;
 
@@ -215,6 +220,8 @@ mod tests {
             on_submit: None,
         };
 
+        let view_id = ViewId::from(slotmap::KeyData::from_ffi(0));
+
         let mut input = UiInputState::new();
         input.characters = vec!['H', 'i'];
 
@@ -227,8 +234,9 @@ mod tests {
             mouse_pos: Vec2::new(50.0, 12.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
-            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            view_id,
             active_id: None,
+            focused_id: Some(view_id),
         };
 
         let result = tf.handle_input(&mut ctx, &mut state, bounds, &[]);
@@ -258,6 +266,7 @@ mod tests {
             actions: &mut actions,
             view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
             active_id: None,
+            focused_id: None,
         };
 
         let result = tf.handle_input(&mut ctx, &mut state, bounds, &[]);
@@ -274,6 +283,8 @@ mod tests {
             on_submit: None,
         };
 
+        let view_id = ViewId::from(slotmap::KeyData::from_ffi(0));
+
         let mut input = UiInputState::new();
         input.keys_pressed.push(KeyCode::Backspace);
 
@@ -286,12 +297,52 @@ mod tests {
             mouse_pos: Vec2::new(50.0, 12.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
-            view_id: ViewId::from(slotmap::KeyData::from_ffi(0)),
+            view_id,
             active_id: None,
+            focused_id: Some(view_id),
         };
 
         let _ = tf.handle_input(&mut ctx, &mut state, bounds, &[]);
         let text: String = state.get(tf.value_id).unwrap();
         assert_eq!(text, "Hell");
+    }
+
+    #[test]
+    fn test_textfield_ignores_keyboard_when_not_focused() {
+        let mut state = StateArena::new();
+        let value_id = state.get_or_create(ViewId::default(), String::new());
+        let tf = TextField {
+            placeholder: "Enter text...".into(),
+            value_id,
+            on_submit: None,
+        };
+
+        let view_id = ViewId::from(slotmap::KeyData::from_ffi(0));
+
+        let mut input = UiInputState::new();
+        input.characters = vec!['H', 'i'];
+
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(200.0, 24.0));
+
+        let mut callbacks = crate::declarative::build::CallbackTable::new();
+        let mut actions = crate::declarative::actions::ActionStream::new();
+        let mut ctx = InputContext {
+            input: &input,
+            mouse_pos: Vec2::new(50.0, 12.0),
+            callbacks: &mut callbacks,
+            actions: &mut actions,
+            view_id,
+            active_id: None,
+            focused_id: None,
+        };
+
+        let result = tf.handle_input(&mut ctx, &mut state, bounds, &[]);
+        assert_eq!(result, InputResult::Ignore);
+
+        let text: String = state.get(tf.value_id).unwrap();
+        assert_eq!(
+            text, "",
+            "non-focused TextField should not accept keyboard input"
+        );
     }
 }
