@@ -219,8 +219,8 @@ impl Widget for DescriptorWidget {
         }
     }
 
-    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
-        Style::default()
+    fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
+        super::layout::descriptor_to_style(&self.descriptor, measure)
     }
 
     fn handle_input(

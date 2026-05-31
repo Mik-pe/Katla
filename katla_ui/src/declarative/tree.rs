@@ -595,15 +595,21 @@ impl ViewTree {
             ui.push_clip(bounds);
         }
 
-        draw_descriptor_with_id(
-            descriptor,
+        let draw_interaction = super::widget::DrawInteraction {
+            hovered_id: self.interaction.hovered_id,
+            active_id: self.interaction.active_id,
+            focused_id: self.interaction.focused_id,
+        };
+
+        node.widget.draw(
             ui,
-            bounds,
             &self.state,
-            &children_bounds,
-            &self.interaction,
-            node_id,
+            bounds,
             &anim_state,
+            &children,
+            &draw_interaction,
+            node_id,
+            &children_bounds,
         );
 
         let scroll_offset = if let ViewDescriptor::ScrollView(desc) = descriptor {
@@ -685,15 +691,21 @@ impl ViewTree {
             ui.push_clip(draw_bounds);
         }
 
-        draw_descriptor_with_id(
-            child_node.descriptor(),
+        let draw_interaction = super::widget::DrawInteraction {
+            hovered_id: self.interaction.hovered_id,
+            active_id: self.interaction.active_id,
+            focused_id: self.interaction.focused_id,
+        };
+
+        child_node.widget.draw(
             ui,
-            draw_bounds,
             &self.state,
-            &grandchildren_bounds,
-            &self.interaction,
-            child_id,
+            draw_bounds,
             &anim_state,
+            &grandchildren,
+            &draw_interaction,
+            child_id,
+            &grandchildren_bounds,
         );
 
         let child_scroll = if let ViewDescriptor::ScrollView(desc) = child_node.descriptor() {
