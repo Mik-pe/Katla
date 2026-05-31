@@ -503,4 +503,121 @@ mod tests {
         assert!(!w.interactive());
         assert!(w.as_transition().is_none());
     }
+
+    // VAL-CROSS-021: Widget trait downcasting works for various widget types
+    #[test]
+    fn test_widget_downcast_button() {
+        use crate::declarative::widgets::button::Button;
+        let w: Box<dyn Widget> = Box::new(Button {
+            label: "Click".into(),
+            fill_color: None,
+            hover_color: None,
+            border_color: None,
+            on_click: None,
+        });
+        assert!(
+            w.as_any().downcast_ref::<Button>().is_some(),
+            "should downcast to Button"
+        );
+        assert_eq!(w.as_any().downcast_ref::<Button>().unwrap().label, "Click");
+        assert!(
+            w.as_any()
+                .downcast_ref::<crate::declarative::widgets::text::Text>()
+                .is_none(),
+            "Button should not downcast to Text"
+        );
+    }
+
+    #[test]
+    fn test_widget_downcast_text() {
+        use crate::declarative::widgets::text::Text;
+        let w: Box<dyn Widget> = Box::new(Text {
+            content: "Hello".into(),
+            color: None,
+            font_size: None,
+        });
+        assert!(
+            w.as_any().downcast_ref::<Text>().is_some(),
+            "should downcast to Text"
+        );
+        assert_eq!(w.as_any().downcast_ref::<Text>().unwrap().content, "Hello");
+    }
+
+    #[test]
+    fn test_widget_downcast_slider() {
+        use crate::declarative::state::StateId;
+        use crate::declarative::widgets::slider::Slider;
+        let sid = StateId::test_id();
+        let w: Box<dyn Widget> = Box::new(Slider {
+            label: "Vol".into(),
+            value_id: sid,
+            range: 0.0..=1.0,
+            show_value: false,
+            precision: 2,
+        });
+        assert!(
+            w.as_any().downcast_ref::<Slider>().is_some(),
+            "should downcast to Slider"
+        );
+        assert_eq!(w.as_any().downcast_ref::<Slider>().unwrap().label, "Vol");
+    }
+
+    #[test]
+    fn test_widget_downcast_toggle() {
+        use crate::declarative::widgets::toggle::Toggle;
+        let sid = crate::declarative::state::StateId::test_id();
+        let w: Box<dyn Widget> = Box::new(Toggle {
+            label: "On".into(),
+            value_id: sid,
+        });
+        assert!(
+            w.as_any().downcast_ref::<Toggle>().is_some(),
+            "should downcast to Toggle"
+        );
+    }
+
+    #[test]
+    fn test_widget_downcast_empty() {
+        use crate::declarative::widgets::button::Button;
+        use crate::declarative::widgets::empty::Empty;
+        let w: Box<dyn Widget> = Box::new(Empty);
+        assert!(
+            w.as_any().downcast_ref::<Empty>().is_some(),
+            "should downcast to Empty"
+        );
+        assert!(
+            w.as_any().downcast_ref::<Button>().is_none(),
+            "Empty should not downcast to Button"
+        );
+    }
+
+    #[test]
+    fn test_widget_downcast_box_dyn_widget() {
+        use crate::declarative::widgets::text::Text;
+        let inner: Box<dyn Widget> = Box::new(Text {
+            content: "inner".into(),
+            color: None,
+            font_size: None,
+        });
+        // Box<dyn Widget> delegates as_any to inner
+        assert!(
+            inner.as_any().downcast_ref::<Text>().is_some(),
+            "boxed widget should downcast to concrete type"
+        );
+    }
+
+    #[test]
+    fn test_widget_downcast_mut() {
+        use crate::declarative::widgets::text::Text;
+        let mut w: Box<dyn Widget> = Box::new(Text {
+            content: "Hello".into(),
+            color: None,
+            font_size: None,
+        });
+        {
+            let text_ref = w.as_any_mut().downcast_mut::<Text>().unwrap();
+            text_ref.content = "World".into();
+        }
+        assert_eq!(w.as_any().downcast_ref::<Text>().unwrap().content, "World");
+    }
 }
