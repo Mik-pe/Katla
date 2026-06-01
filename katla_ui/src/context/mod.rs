@@ -6,7 +6,6 @@
 mod clipping;
 mod drawing;
 mod frame;
-mod id;
 mod input;
 mod widgets;
 pub mod z_index;
@@ -62,8 +61,6 @@ pub struct UiContext {
     pub(crate) active_id: Option<WidgetId>,
     /// Currently focused widget (for text input).
     pub(crate) focused_id: Option<WidgetId>,
-    /// Label of a text input that should receive focus when next encountered.
-    pending_focus_label: Option<String>,
     /// Whether we're inside a begin()/end() pair.
     pub(super) in_frame: bool,
     /// Layout cursor for automatic positioning.
@@ -116,7 +113,6 @@ impl UiContext {
             hovered_id: None,
             active_id: None,
             focused_id: None,
-            pending_focus_label: None,
             in_frame: false,
             cursor: Vec2::new(0.0, 0.0),
             z_index: z_index::DEFAULT,
@@ -187,15 +183,6 @@ impl UiContext {
     /// Get the currently focused panel ID, if any.
     pub fn focused_panel(&self) -> Option<u64> {
         self.focused_panel_id
-    }
-
-    /// Request focus for a text input by label.
-    ///
-    /// The label must match the label passed to the widget's constructor
-    /// The label must match the label passed to the widget's constructor.
-    /// The next widget with a matching label will receive focus automatically.
-    pub fn request_focus(&mut self, label: &str) {
-        self.pending_focus_label = Some(label.to_string());
     }
 
     /// Whether the declarative view tree consumed input this frame.

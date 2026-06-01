@@ -25,7 +25,6 @@ pub fn delete_button(
 ) -> Box<dyn Widget> {
     button("Delete Entity")
         .fill(Color::new(0.4, 0.1, 0.1, 1.0))
-        .hover(Color::new(0.5, 0.15, 0.15, 1.0))
         .border(Color::new(1.0, 0.3, 0.3, 0.2))
         .on_click(ctx.on_click(on_click))
         .boxed()

@@ -15,7 +15,6 @@ use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn
 pub struct Button {
     pub label: String,
     pub fill_color: Option<Color>,
-    pub hover_color: Option<Color>,
     pub border_color: Option<Color>,
     pub on_click: Option<Callback>,
 }
@@ -118,10 +117,6 @@ impl Button {
         self.fill_color = Some(color.into());
         self
     }
-    pub fn hover(mut self, color: impl Into<katla_math::Color>) -> Self {
-        self.hover_color = Some(color.into());
-        self
-    }
     pub fn border(mut self, color: impl Into<katla_math::Color>) -> Self {
         self.border_color = Some(color.into());
         self
@@ -147,7 +142,6 @@ mod tests {
         let button = Button {
             label: "click".into(),
             fill_color: None,
-            hover_color: None,
             border_color: None,
             on_click: Some(cb),
         };
@@ -179,14 +173,12 @@ mod tests {
         let a = Button {
             label: "ok".into(),
             fill_color: None,
-            hover_color: None,
             border_color: None,
             on_click: None,
         };
         let b = Button {
             label: "cancel".into(),
             fill_color: None,
-            hover_color: None,
             border_color: None,
             on_click: None,
         };
@@ -203,7 +195,6 @@ mod tests {
         let with_cb = Button {
             label: "click".into(),
             fill_color: None,
-            hover_color: None,
             border_color: None,
             on_click: Some(cb),
         };
@@ -212,7 +203,6 @@ mod tests {
         let without_cb = Button {
             label: "label".into(),
             fill_color: None,
-            hover_color: None,
             border_color: None,
             on_click: None,
         };
