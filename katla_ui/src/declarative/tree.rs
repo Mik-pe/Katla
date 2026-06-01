@@ -276,12 +276,11 @@ impl ViewTree {
         self.interaction.hovered_id = input_result.hovered_id;
 
         // Set focus when a focusable widget is clicked
-        if let Some(clicked_id) = input_result.clicked_id {
-            if let Some(node) = self.nodes.get(clicked_id) {
-                if node.widget.focusable() {
-                    self.focus.set_focused(Some(clicked_id));
-                }
-            }
+        if let Some(clicked_id) = input_result.clicked_id
+            && let Some(node) = self.nodes.get(clicked_id)
+            && node.widget.focusable()
+        {
+            self.focus.set_focused(Some(clicked_id));
         }
         self.interaction.focused_id = self.focus.focused();
         self.callbacks = callbacks;

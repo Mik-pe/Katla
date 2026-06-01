@@ -1219,7 +1219,7 @@ mod tests {
             .get(&tree.root().unwrap())
             .copied()
             .unwrap_or_default();
-        let root_bounds1 = bounds1
+        let _root_bounds1 = bounds1
             .get(&tree.root().unwrap())
             .copied()
             .unwrap_or_default();
