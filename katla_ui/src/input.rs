@@ -98,11 +98,6 @@ pub struct UiInputState {
     pub want_capture_keyboard: bool,
     /// Requested mouse cursor type.
     pub cursor: MouseCursor,
-    /// Whether scroll wheel input was consumed this frame.
-    pub(crate) scroll_consumed: bool,
-    /// The widget that was active (pressed/dragged) in the previous frame.
-    /// Set by UiContext at the start of each frame.
-    pub(crate) prev_active_id: Option<u64>,
 }
 
 impl UiInputState {
@@ -127,8 +122,6 @@ impl UiInputState {
             want_capture_mouse: false,
             want_capture_keyboard: false,
             cursor: MouseCursor::Arrow,
-            scroll_consumed: false,
-            prev_active_id: None,
         }
     }
 
@@ -224,9 +217,8 @@ impl UiInputState {
         self.keys_released.clear();
         self.want_capture_mouse = false;
         self.want_capture_keyboard = false;
-        self.any_key_down = false;
+        self.any_key_down = !self.held_keys.is_empty();
         self.cursor = MouseCursor::Arrow;
-        self.scroll_consumed = false;
     }
 
     /// Set the mouse cursor type.
@@ -322,6 +314,10 @@ pub enum KeyCode {
     C,
     X,
     V,
+
+    // Undo/Redo shortcuts (checked with Ctrl held)
+    Y,
+    Z,
 
     // Other common keys
     Space,

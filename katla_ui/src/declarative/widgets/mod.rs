@@ -1,4 +1,5 @@
 pub mod button;
+pub mod code_editor;
 pub mod color_picker;
 pub mod context_menu;
 pub mod dock_space;
