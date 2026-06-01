@@ -7,7 +7,9 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::MenuGroup;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{
+    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+};
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
@@ -58,6 +60,13 @@ impl Widget for MenuBar {
             },
             ..Style::default()
         }
+    }
+
+    fn take_children(&mut self) -> ChildWidgets {
+        self.right_content
+            .take()
+            .map(ChildWidgets::Single)
+            .unwrap_or(ChildWidgets::None)
     }
 
     fn handle_input(

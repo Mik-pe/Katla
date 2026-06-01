@@ -60,7 +60,7 @@ impl Widget for Grid {
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         let col_width = self.cell_size.x();
         let row_height = self.cell_size.y();
-        let rows = (self.children.len().max(1) + self.columns - 1) / self.columns.max(1);
+        let rows = (self.child_widgets.len().max(1) + self.columns - 1) / self.columns.max(1);
         let mut style = Style {
             size: Size {
                 width: Dimension::Length(

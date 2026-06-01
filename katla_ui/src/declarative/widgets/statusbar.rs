@@ -82,13 +82,13 @@ impl Widget for StatusBar {
         _view_id: ViewId,
         _children_bounds: &[Rect2D],
     ) {
+        ctx.draw_rect(bounds, ctx.style().window_bg);
         ctx.draw_line(
             Vec2::new(bounds.min.x(), bounds.min.y()),
             Vec2::new(bounds.max.x(), bounds.min.y()),
             ctx.style().separator,
             1.0,
         );
-        ctx.draw_rect(bounds, ctx.style().window_bg);
     }
 
     fn focusable(&self) -> bool {
