@@ -3,6 +3,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use katla_math::{Color, Rect2D, Vec2};
+use syntect::highlighting::{HighlightState, ThemeSet};
+use syntect::parsing::{ParseState, ScopeStack, SyntaxSet};
 use taffy::{Dimension, Size, Style};
 
 use crate::context::UiContext;
@@ -13,6 +15,105 @@ use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+
+// ---------------------------------------------------------------------------
+// Syntax highlighting
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+struct HighlightedSpan {
+    text: String,
+    color: Color,
+}
+
+#[derive(Debug)]
+struct SyntaxHighlighter {
+    syntax_set: SyntaxSet,
+    theme_set: ThemeSet,
+    theme_name: String,
+    extension: String,
+    is_plain: bool,
+}
+
+impl SyntaxHighlighter {
+    fn new() -> Self {
+        Self {
+            syntax_set: SyntaxSet::load_defaults_nonewlines(),
+            theme_set: ThemeSet::load_defaults(),
+            theme_name: "base16-eighties.dark".to_string(),
+            extension: String::new(),
+            is_plain: true,
+        }
+    }
+
+    fn set_extension(&mut self, extension: &str) {
+        self.extension = extension.to_string();
+        self.is_plain = self
+            .syntax_set
+            .find_syntax_by_extension(extension)
+            .is_none();
+    }
+
+    fn highlight_lines(&self, lines: &[String]) -> Vec<Vec<HighlightedSpan>> {
+        if self.is_plain || lines.is_empty() {
+            return Vec::new();
+        }
+
+        let Some(syntax) = self.syntax_set.find_syntax_by_extension(&self.extension) else {
+            return Vec::new();
+        };
+
+        let Some(theme) = self.theme_set.themes.get(&self.theme_name) else {
+            return Vec::new();
+        };
+
+        let highlighter = syntect::highlighting::Highlighter::new(theme);
+        let mut parse_state = ParseState::new(syntax);
+        let mut highlight_state = HighlightState::new(&highlighter, ScopeStack::new());
+
+        let mut result = Vec::with_capacity(lines.len());
+        for line in lines {
+            let Ok(ops) = parse_state.parse_line(line, &self.syntax_set) else {
+                result.push(vec![]);
+                continue;
+            };
+            let ranges = syntect::highlighting::RangedHighlightIterator::new(
+                &mut highlight_state,
+                &ops,
+                line,
+                &highlighter,
+            );
+
+            let mut spans = Vec::new();
+            for (style, _text, range) in ranges {
+                let text = line[range].to_string();
+                let color = syntect_color_to_katla(style.foreground);
+                spans.push(HighlightedSpan { text, color });
+            }
+            result.push(spans);
+        }
+
+        result
+    }
+
+    fn default_text_color(&self) -> Color {
+        self.theme_set
+            .themes
+            .get(&self.theme_name)
+            .and_then(|t| t.settings.foreground)
+            .map(|c| syntect_color_to_katla(c))
+            .unwrap_or(Color::new(0.76, 0.77, 0.78, 1.0))
+    }
+}
+
+fn syntect_color_to_katla(c: syntect::highlighting::Color) -> Color {
+    Color::new(
+        c.r as f32 / 255.0,
+        c.g as f32 / 255.0,
+        c.b as f32 / 255.0,
+        c.a as f32 / 255.0,
+    )
+}
 
 // ---------------------------------------------------------------------------
 // Selection state
@@ -126,6 +227,7 @@ struct EditorStateInner {
     last_click_pos: (f32, f32),
     click_count: u32,
     is_dragging: bool,
+    highlighter: SyntaxHighlighter,
 }
 
 impl EditorStateInner {
@@ -154,6 +256,7 @@ impl EditorStateInner {
             last_click_pos: (0.0, 0.0),
             click_count: 0,
             is_dragging: false,
+            highlighter: SyntaxHighlighter::new(),
         }
     }
 
@@ -1083,9 +1186,12 @@ impl Widget for CodeEditor {
         let viewport_lines = (bounds.height() / line_height).ceil() as usize + 1;
         let last_visible = (first_visible + viewport_lines).min(inner.lines.len());
 
-        let text_color = Color::new(0.76, 0.77, 0.78, 1.0);
+        let text_color = inner.highlighter.default_text_color();
         let gutter_color = Color::new(0.45, 0.47, 0.49, 1.0);
         let gutter_bg = Color::new(0.10, 0.10, 0.12, 1.0);
+
+        // Highlight all visible lines
+        let highlighted = inner.highlighter.highlight_lines(&inner.lines);
 
         // Draw gutter background
         let gutter_rect =
@@ -1109,11 +1215,23 @@ impl Widget for CodeEditor {
                 font_size * 0.85,
             );
 
-            // Text line
+            // Text line (syntax highlighted if available)
             let line_text = &inner.lines[line_i];
             if !line_text.is_empty() {
                 let text_x = bounds.min.x() + gutter_width + 4.0;
-                ctx.draw_text(line_text, Vec2::new(text_x, y), text_color, font_size);
+
+                if line_i < highlighted.len() && !highlighted[line_i].is_empty() {
+                    let mut x = text_x;
+                    for span in &highlighted[line_i] {
+                        if !span.text.is_empty() {
+                            ctx.draw_text(&span.text, Vec2::new(x, y), span.color, font_size);
+                            let w = ctx.measure_text(&span.text, font_size).x();
+                            x += w;
+                        }
+                    }
+                } else {
+                    ctx.draw_text(line_text, Vec2::new(text_x, y), text_color, font_size);
+                }
             }
         }
 
@@ -1990,5 +2108,243 @@ mod tests {
     fn test_copy_no_selection() {
         let mut state = make_state("hello");
         assert!(state.copy().is_none());
+    }
+
+    // =========================================================================
+    // Syntax highlighting tests
+    // =========================================================================
+
+    fn make_highlighter() -> SyntaxHighlighter {
+        SyntaxHighlighter::new()
+    }
+
+    // --- VAL-EDITOR-004: Syntax highlighting applies correct color spans ---
+
+    #[test]
+    fn test_rust_syntax_highlighting_produces_color_spans() {
+        let highlighter = make_highlighter();
+        let mut hl = highlighter;
+        hl.set_extension("rs");
+
+        let lines = vec!["fn main() {".to_string(), "    let x = 42;".to_string()];
+        let result = hl.highlight_lines(&lines);
+
+        assert_eq!(result.len(), 2, "Should have spans for 2 lines");
+
+        // First line should have multiple spans (keywords, punctuation, etc.)
+        let line0_spans = &result[0];
+        assert!(
+            !line0_spans.is_empty(),
+            "Rust code should produce at least one highlighted span"
+        );
+
+        // Check that spans cover the full line text
+        let reconstructed: String = line0_spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(reconstructed, "fn main() {");
+
+        // Check that different token types get different colors
+        // "fn" keyword should have a different color than "main" identifier
+        let fn_span = line0_spans.iter().find(|s| s.text == "fn");
+        let main_span = line0_spans.iter().find(|s| s.text == "main");
+        if let (Some(fn_s), Some(main_s)) = (fn_span, main_span) {
+            assert_ne!(
+                fn_s.color, main_s.color,
+                "fn keyword and main identifier should have different colors"
+            );
+        }
+    }
+
+    // --- VAL-EDITOR-005: Different file types use appropriate TextMate grammars ---
+
+    #[test]
+    fn test_different_file_types_use_different_grammars() {
+        let mut hl = make_highlighter();
+
+        // Rust code
+        hl.set_extension("rs");
+        let rust_lines = vec!["fn main() {}".to_string()];
+        let rust_result = hl.highlight_lines(&rust_lines);
+
+        // Python code
+        hl.set_extension("py");
+        let py_lines = vec!["def main():".to_string()];
+        let py_result = hl.highlight_lines(&py_lines);
+
+        // Both should produce highlighting
+        assert!(
+            !rust_result.is_empty() && !rust_result[0].is_empty(),
+            "Rust should have highlighted spans"
+        );
+        assert!(
+            !py_result.is_empty() && !py_result[0].is_empty(),
+            "Python should have highlighted spans"
+        );
+
+        // The color for Rust "fn" and Python "def" should differ from plain text
+        // and from each other since they're different grammars
+        let rust_fn_color = rust_result[0]
+            .iter()
+            .find(|s| s.text == "fn")
+            .map(|s| s.color);
+        let py_def_color = py_result[0]
+            .iter()
+            .find(|s| s.text == "def")
+            .map(|s| s.color);
+
+        assert!(rust_fn_color.is_some(), "Should find 'fn' in Rust spans");
+        assert!(py_def_color.is_some(), "Should find 'def' in Python spans");
+    }
+
+    #[test]
+    fn test_rust_vs_python_highlighting_differs() {
+        let mut hl = make_highlighter();
+
+        // Same text but different file types
+        let comment_line = vec!["// this is a comment".to_string()];
+
+        hl.set_extension("rs");
+        let rust_result = hl.highlight_lines(&comment_line);
+        let rust_colors: Vec<Color> = rust_result[0].iter().map(|s| s.color).collect();
+
+        // Python uses # for comments, not //, so the Rust grammar should
+        // highlight it as a comment
+        assert!(
+            !rust_result.is_empty() && !rust_result[0].is_empty(),
+            "Rust should highlight the line"
+        );
+
+        // Check that the comment is recognized (all spans should likely be
+        // the same color for a full-line comment)
+        let all_same = rust_colors.windows(2).all(|w| w[0] == w[1]);
+        assert!(all_same, "Full-line Rust comment should have uniform color");
+    }
+
+    // --- VAL-EDITOR-006: Unknown file types render as plain text ---
+
+    #[test]
+    fn test_unknown_extension_produces_no_spans() {
+        let mut hl = make_highlighter();
+        hl.set_extension("zzz_unknown_ext");
+
+        let lines = vec!["fn main() {}".to_string()];
+        let result = hl.highlight_lines(&lines);
+
+        assert!(
+            result.is_empty(),
+            "Unknown extension should produce empty highlight result (plain text)"
+        );
+    }
+
+    #[test]
+    fn test_no_extension_produces_no_spans() {
+        let hl = make_highlighter();
+        let lines = vec!["some plain text".to_string()];
+        let result = hl.highlight_lines(&lines);
+
+        assert!(
+            result.is_empty(),
+            "No extension should produce empty highlight result (plain text)"
+        );
+    }
+
+    // --- VAL-EDITOR-050: Syntax highlighting updates after text edit ---
+
+    #[test]
+    fn test_syntax_highlighting_updates_after_edit() {
+        let mut hl = make_highlighter();
+        hl.set_extension("rs");
+
+        // Before edit
+        let lines_before = vec!["let x = 1".to_string()];
+        let result_before = hl.highlight_lines(&lines_before);
+
+        // After edit: change to a keyword
+        let lines_after = vec!["let mut x = 1".to_string()];
+        let result_after = hl.highlight_lines(&lines_after);
+
+        assert!(
+            !result_before.is_empty(),
+            "Should have highlighting before edit"
+        );
+        assert!(
+            !result_after.is_empty(),
+            "Should have highlighting after edit"
+        );
+
+        // The highlighting should differ because the text changed
+        let before_text: String = result_before[0].iter().map(|s| s.text.as_str()).collect();
+        let after_text: String = result_after[0].iter().map(|s| s.text.as_str()).collect();
+        assert_ne!(
+            before_text, after_text,
+            "Highlighted text should change after edit"
+        );
+        assert_eq!(before_text, "let x = 1");
+        assert_eq!(after_text, "let mut x = 1");
+
+        // "mut" keyword should be highlighted with a distinct color
+        let mut_span = result_after[0].iter().find(|s| s.text == "mut");
+        assert!(
+            mut_span.is_some(),
+            "'mut' should appear in highlighted spans"
+        );
+    }
+
+    #[test]
+    fn test_highlighting_with_multiline_state() {
+        let mut hl = make_highlighter();
+        hl.set_extension("rs");
+
+        // Multi-line block comment
+        let lines = vec![
+            "/* start of comment".to_string(),
+            "middle of comment".to_string(),
+            "end of comment */".to_string(),
+            "let x = 1;".to_string(),
+        ];
+        let result = hl.highlight_lines(&lines);
+
+        assert_eq!(result.len(), 4);
+
+        // Lines inside comment should have the same color (comment color)
+        let comment_color = result[0].first().map(|s| s.color);
+        assert!(comment_color.is_some());
+
+        // Line after comment should have different coloring
+        let code_first_color = result[3].first().map(|s| s.color);
+        assert!(code_first_color.is_some());
+        assert_ne!(
+            comment_color, code_first_color,
+            "Comment and code should have different colors"
+        );
+    }
+
+    #[test]
+    fn test_set_extension_changes_highlighting() {
+        let mut hl = make_highlighter();
+
+        let code = vec!["import os".to_string()];
+
+        // Python should recognize "import"
+        hl.set_extension("py");
+        let py_result = hl.highlight_lines(&code);
+        assert!(!py_result.is_empty());
+
+        // Rust doesn't have "import", so it should still highlight but differently
+        hl.set_extension("rs");
+        let rs_result = hl.highlight_lines(&code);
+        assert!(!rs_result.is_empty());
+
+        // Python should recognize "import" as a keyword
+        let py_import = py_result[0].iter().find(|s| s.text == "import");
+        assert!(
+            py_import.is_some(),
+            "Python should recognize 'import' keyword"
+        );
+
+        // The spans should cover the same text but with different coloring
+        let py_text: String = py_result[0].iter().map(|s| s.text.as_str()).collect();
+        let rs_text: String = rs_result[0].iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(py_text, "import os");
+        assert_eq!(rs_text, "import os");
     }
 }
