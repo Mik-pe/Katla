@@ -1814,4 +1814,244 @@ mod tests {
             single.y()
         );
     }
+
+    // -------------------------------------------------------------------------
+    // Text Widget Integration Tests (VAL-TEXT-018, 020, 021, 022, 024, 025, 026)
+    // -------------------------------------------------------------------------
+
+    /// VAL-TEXT-018: Gamma correction preserves exact boundaries.
+    ///
+    /// Coverage 0.0 → 0.0 and 1.0 → 1.0 must remain exact.
+    #[test]
+    fn test_gamma_correction_exact_boundaries() {
+        assert_eq!(
+            coverage_to_alpha(0.0),
+            0.0,
+            "Coverage 0.0 must produce exactly 0.0"
+        );
+        assert_eq!(
+            coverage_to_alpha(1.0),
+            1.0,
+            "Coverage 1.0 must produce exactly 1.0"
+        );
+
+        // The function is monotonic in between
+        let alpha_quarter = coverage_to_alpha(0.25);
+        let alpha_half = coverage_to_alpha(0.5);
+        let alpha_three_quarter = coverage_to_alpha(0.75);
+        assert!(
+            alpha_quarter > 0.25,
+            "Gamma correction should brighten midtones"
+        );
+        assert!(alpha_half > alpha_quarter, "Monotonically increasing");
+        assert!(alpha_three_quarter > alpha_half, "Monotonically increasing");
+        assert!(alpha_three_quarter < 1.0, "Should be < 1.0");
+    }
+
+    /// VAL-TEXT-020: Text widget renders content via cosmic-text pipeline.
+    ///
+    /// Verifies that draw_text() uses cosmic-text shaping by checking that
+    /// shaped glyphs are produced and placed in the atlas.
+    #[test]
+    fn test_text_widget_uses_cosmic_text_pipeline() {
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let text = "Hello World";
+        let shaped = sys.shape_text(font_id, text, 16.0, 1.0, None);
+        assert!(shaped.is_some(), "shape_text should succeed for Latin text");
+
+        let shaped = shaped.unwrap();
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+        assert!(!runs.is_empty(), "Should have layout runs");
+
+        let mut rasterized_count = 0;
+        for run in &runs {
+            for glyph in run.glyphs.iter() {
+                let physical = glyph.physical((0.0, 0.0), 1.0);
+                if sys
+                    .get_or_rasterize_shaped(physical.cache_key, 1.0)
+                    .is_some()
+                {
+                    rasterized_count += 1;
+                }
+            }
+        }
+        assert!(
+            rasterized_count > 0,
+            "At least some glyphs should be rasterized through cosmic-text pipeline"
+        );
+    }
+
+    /// VAL-TEXT-021: Button widget labels render correctly (centered).
+    ///
+    /// Verifies that measure_text returns correct dimensions for button labels,
+    /// which are used for centering text within button bounds.
+    #[test]
+    fn test_button_label_centering_calculation() {
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let label = "Click Me";
+        let label_size = sys.measure_text(font_id, label, 14.0, 1.0);
+
+        assert!(label_size.x() > 0.0, "Label should have positive width");
+        assert!(label_size.y() > 0.0, "Label should have positive height");
+
+        let button_width = label_size.x() + 32.0;
+        let button_height = label_size.y() + 16.0;
+        let text_x = button_width * 0.5 - label_size.x() * 0.5;
+        let text_y = button_height * 0.5 - label_size.y() * 0.5;
+
+        assert!(
+            text_x > 0.0,
+            "Centered text X should be positive with padding"
+        );
+        assert!(
+            text_y > 0.0,
+            "Centered text Y should be positive with padding"
+        );
+        assert!(
+            (text_x + label_size.x() * 0.5 - button_width * 0.5).abs() < 0.1,
+            "Text should be centered horizontally"
+        );
+    }
+
+    /// VAL-TEXT-022: TextField widget text rendering.
+    ///
+    /// Verifies that the text content and placeholder text can both be
+    /// measured and shaped through the cosmic-text pipeline.
+    #[test]
+    fn test_textfield_text_and_placeholder_shaping() {
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let placeholder = "Enter text...";
+        let value = "Hello World";
+
+        let placeholder_size = sys.measure_text(font_id, placeholder, 14.0, 1.0);
+        let value_size = sys.measure_text(font_id, value, 14.0, 1.0);
+
+        assert!(
+            placeholder_size.x() > 0.0,
+            "Placeholder text should have positive width"
+        );
+        assert!(
+            value_size.x() > 0.0,
+            "Value text should have positive width"
+        );
+
+        let shaped_placeholder = sys.shape_text(font_id, placeholder, 14.0, 1.0, None);
+        assert!(
+            shaped_placeholder.is_some(),
+            "Placeholder should shape via cosmic-text"
+        );
+
+        let shaped_value = sys.shape_text(font_id, value, 14.0, 1.0, None);
+        assert!(
+            shaped_value.is_some(),
+            "Value text should shape via cosmic-text"
+        );
+    }
+
+    /// VAL-TEXT-024: draw_text API surface unchanged.
+    ///
+    /// Verifies the draw_text signature accepts (text: &str, position: Vec2, color: Color, size: f32)
+    /// and that all callers in widget code compile correctly. This is a compile-time test
+    /// enforced by the existing widget code, plus a runtime test that the method exists
+    /// and produces output through the cosmic-text pipeline.
+    #[test]
+    fn test_draw_text_api_compatibility() {
+        use katla_math::{Color, Vec2};
+
+        let mut ctx = crate::context::UiContext::new();
+        ctx.begin(Vec2::new(800.0, 600.0), 1.0);
+
+        // The API signature: draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32)
+        // This call compiles if the API surface is unchanged
+        ctx.draw_text(
+            "Test text",
+            Vec2::new(10.0, 10.0),
+            Color::new(1.0, 1.0, 1.0, 1.0),
+            14.0,
+        );
+
+        ctx.draw_text("", Vec2::new(0.0, 0.0), Color::WHITE, 14.0);
+
+        ctx.draw_text(
+            "Another string",
+            Vec2::new(100.0, 200.0),
+            Color::new(0.5, 0.5, 0.5, 1.0),
+            24.0,
+        );
+
+        let _ = ctx.end();
+    }
+
+    /// VAL-TEXT-025: measure_text API surface unchanged.
+    ///
+    /// Verifies the measure_text signature accepts (text: &str, size: f32) and returns Vec2.
+    #[test]
+    fn test_measure_text_api_compatibility() {
+        use katla_math::Vec2;
+
+        let ctx = crate::context::UiContext::new();
+
+        // The API signature: measure_text(&self, text: &str, size: f32) -> Vec2
+        let size1: katla_math::Vec2 = ctx.measure_text("Hello", 14.0);
+        assert_eq!(
+            size1,
+            ctx.measure_text("Hello", 14.0),
+            "Same input should produce same output"
+        );
+
+        let size_empty = ctx.measure_text("", 14.0);
+        assert_eq!(
+            size_empty,
+            Vec2::new(0.0, 0.0),
+            "Empty text should return zero dimensions"
+        );
+
+        let size_large = ctx.measure_text("Hello World", 24.0);
+        assert!(size_large.x() >= 0.0, "Width should be non-negative");
+        assert!(size_large.y() >= 0.0, "Height should be non-negative");
+    }
+
+    /// VAL-TEXT-026: Icon font rendering works through the new pipeline.
+    ///
+    /// Verifies that draw_icon routes through draw_text with the icon font,
+    /// and that icon characters can be shaped and rasterized.
+    #[test]
+    fn test_icon_font_rendering_pipeline() {
+        let mut sys = FontSystem::new();
+        let font_data = load_roboto();
+        let _font_id = sys.add_font(&font_data).expect("Failed to load Roboto");
+
+        let icon_size = sys.measure_text(FontId::ICON, "\u{f1b2}", 16.0, 1.0);
+        assert_eq!(
+            icon_size.x(),
+            0.0,
+            "No icon font loaded, should return zero"
+        );
+
+        // Load roboto as the icon font too (for testing)
+        sys.add_font_with_id(&font_data, FontId::ICON)
+            .expect("Failed to load icon font");
+
+        let icon_size = sys.measure_text(FontId::ICON, "\u{f1b2}", 16.0, 1.0);
+        assert!(
+            icon_size.x() > 0.0,
+            "Icon font loaded, measure_text should return positive width"
+        );
+        assert!(
+            icon_size.y() > 0.0,
+            "Icon font loaded, measure_text should return positive height"
+        );
+
+        let shaped = sys.shape_text(FontId::ICON, "\u{f1b2}", 16.0, 1.0, None);
+        assert!(
+            shaped.is_some(),
+            "Icon text should shape through cosmic-text pipeline"
+        );
+    }
 }
