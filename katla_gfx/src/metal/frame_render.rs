@@ -505,6 +505,7 @@ impl MetalRenderer {
                 self.ui_renderer.render_ui_commands(
                     &mut encoder,
                     &ui_draw_list,
+                    ui_pipeline,
                     self.drawable_size.width,
                     self.drawable_size.height,
                 );

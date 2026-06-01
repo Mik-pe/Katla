@@ -145,6 +145,35 @@ pub(crate) fn ui_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
     vertex_descriptor
 }
 
+/// Build the instanced UI vertex descriptor for unit quad input.
+///
+/// Layout (8 bytes stride in buffer 10, PerVertex):
+/// - location 0: local_pos Float2 @ offset 0
+///
+/// Instance data is read from a storage buffer (not vertex attributes).
+pub(crate) fn ui_instanced_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
+    let vertex_descriptor = MTLVertexDescriptor::new();
+
+    let layouts = vertex_descriptor.layouts();
+    let layout = unsafe { layouts.objectAtIndexedSubscript(10) };
+    unsafe {
+        layout.setStride(8);
+        layout.setStepFunction(MTLVertexStepFunction::PerVertex);
+        layout.setStepRate(1);
+    }
+
+    let attrs = vertex_descriptor.attributes();
+
+    let pos_attr = unsafe { attrs.objectAtIndexedSubscript(0) };
+    pos_attr.setFormat(MTLVertexFormat::Float2);
+    unsafe {
+        pos_attr.setOffset(0);
+        pos_attr.setBufferIndex(10);
+    }
+
+    vertex_descriptor
+}
+
 /// Build the skinned PBR vertex descriptor matching `VertexPBRSkinned`.
 ///
 /// Layout (72 bytes stride, interleaved in buffer 0):

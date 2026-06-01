@@ -12,7 +12,7 @@ use naga::valid::{Capabilities, ValidationFlags, Validator};
 use crate::error::RendererError;
 
 /// Shader compilation profile selecting the appropriate binding map.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum ShaderProfile {
     /// Standard graphics pipeline (bindless textures at buffer 9).
     Graphics,
@@ -70,7 +70,13 @@ pub(crate) fn katla_msl_options_ui() -> msl::Options {
         .insert("vs_main".to_string(), ui_bindings.clone());
     options
         .per_entry_point_map
-        .insert("fs_main".to_string(), ui_bindings);
+        .insert("fs_main".to_string(), ui_bindings.clone());
+    options
+        .per_entry_point_map
+        .insert("vs_instanced".to_string(), ui_bindings.clone());
+    options
+        .per_entry_point_map
+        .insert("fs_instanced".to_string(), ui_bindings);
 
     options
 }
@@ -249,6 +255,17 @@ fn create_ui_binding_map() -> msl::EntryPointResources {
             },
             msl::BindTarget {
                 buffer: Some(3),
+                ..Default::default()
+            },
+        ),
+        // Set 0, Binding 4: Instance data storage buffer
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 4,
+            },
+            msl::BindTarget {
+                buffer: Some(11),
                 ..Default::default()
             },
         ),
