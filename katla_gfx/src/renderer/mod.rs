@@ -74,10 +74,16 @@ use std::{ffi::CString, rc::Rc};
 
 /// Per-frame UI rendering resources.
 pub(crate) struct UiFrameResources {
-    /// Per-frame UI vertex buffers.
+    /// Per-frame UI vertex buffers (complex geometry).
     pub vertex_buffers: Vec<VertexBuffer>,
-    /// Per-frame UI index buffers.
+    /// Per-frame UI index buffers (complex geometry).
     pub index_buffers: Vec<IndexBuffer>,
+    /// Per-frame UI instance buffers (instanced quads).
+    pub instance_buffers: Vec<VertexBuffer>,
+    /// Per-frame unit quad vertex buffers.
+    pub unit_quad_vertex_buffers: Vec<VertexBuffer>,
+    /// Per-frame unit quad index buffers.
+    pub unit_quad_index_buffers: Vec<IndexBuffer>,
     /// Per-frame UI descriptor sets (owns both set and pool, automatic cleanup).
     pub descriptor_sets: Vec<Option<crate::vulkan::descriptor_set::DescriptorSet>>,
     /// UI uniform buffer (reused across frames).
@@ -89,19 +95,30 @@ impl UiFrameResources {
     fn new(context: &Rc<VulkanContext>) -> Self {
         let mut vertex_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut index_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut instance_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut unit_quad_vertex_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut unit_quad_index_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut descriptor_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
 
         for _ in 0..FRAMES_IN_FLIGHT {
-            vertex_buffers.push(VertexBuffer::new(
-                context.clone(),
-                1024 * 1024, // 1MB initial size
-                65536,       // Vertex count
-            ));
+            vertex_buffers.push(VertexBuffer::new(context.clone(), 1024 * 1024, 65536));
             index_buffers.push(IndexBuffer::new(
                 context.clone(),
-                1024 * 1024,       // 1MB initial size
-                IndexType::Uint32, // 32-bit indices
-                65536,             // Index count
+                1024 * 1024,
+                IndexType::Uint32,
+                65536,
+            ));
+            instance_buffers.push(VertexBuffer::new(context.clone(), 1024 * 1024, 65536));
+            unit_quad_vertex_buffers.push(VertexBuffer::new(
+                context.clone(),
+                256, // 4 vertices × 8 bytes = 32 bytes, small
+                4,
+            ));
+            unit_quad_index_buffers.push(IndexBuffer::new(
+                context.clone(),
+                256, // 6 indices × 4 bytes = 24 bytes, small
+                IndexType::Uint32,
+                6,
             ));
             descriptor_sets.push(None);
         }
@@ -122,6 +139,9 @@ impl UiFrameResources {
         Self {
             vertex_buffers,
             index_buffers,
+            instance_buffers,
+            unit_quad_vertex_buffers,
+            unit_quad_index_buffers,
             descriptor_sets,
             uniform_buffer: Some((uniform_buffer, uniform_allocation)),
         }

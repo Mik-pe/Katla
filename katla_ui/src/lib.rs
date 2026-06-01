@@ -94,5 +94,5 @@ pub use icons::ForkAwesome;
 pub use input::{KeyCode, MouseCursor, UiInputState, mouse_button};
 pub use style::{ColorScheme, DEFAULTS, FontSize, UiStyle};
 pub use text::FontId;
-pub use types::{DrawCmd, TextureId, Vertex};
+pub use types::{DrawCmd, InstanceData, TextureId, Vertex};
 pub use widget::ClipboardProvider;

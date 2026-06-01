@@ -1,35 +1,54 @@
-//! Draw list for batched UI rendering.
+//! Draw list for batched UI rendering with GPU instancing.
 //!
-//! The draw list collects all UI primitives (rectangles, text, images)
-//! into batches that can be efficiently rendered by the GPU.
+//! The draw list collects all UI primitives into batches that can be efficiently
+//! rendered by the GPU. Simple quads (rectangles, textured rects) are accumulated
+//! as per-instance data and rendered with a shared unit quad. Complex geometry
+//! (circles, rounded rects, lines, gradients) uses traditional vertex/index emission.
 
-use crate::types::{DrawCmd, TextureId, Vertex};
+use crate::types::{DrawCmd, InstanceData, TextureId, Vertex};
 use katla_math::{Color, Rect2D, Vec2};
 
-/// A list of draw commands and vertex data for UI rendering.
+/// A list of draw commands and vertex/instance data for UI rendering.
 ///
 /// This is the output of `UiContext::end()` and contains
 /// everything needed to render the UI.
 #[derive(Debug, Clone, Default)]
 pub struct DrawList {
+    /// Per-instance data for instanced quad rendering.
+    instances: Vec<InstanceData>,
+    /// Vertex data for complex geometry.
     vertices: Vec<Vertex>,
+    /// Index data for complex geometry.
     indices: Vec<u32>,
+    /// Finalized draw commands.
     commands: Vec<DrawCmd>,
     /// Current clip rectangle for new commands.
     current_clip: Rect2D,
     /// Current texture for batching.
     current_texture: TextureId,
-    /// Current Z-index for render order (used for sorting before finalization).
+    /// Current Z-index for render order.
     current_z: u32,
-    /// Scratch buffer for circle/polygon tessellation (avoids per-frame allocation).
+    /// Scratch buffer for circle/polygon tessellation.
     scratch_points: Vec<Vec2>,
-    /// Pending batches keyed by (texture, clip, z) for sorting before finalization.
-    pending_batches: Vec<PendingBatch>,
+    /// Pending instance batches before finalization.
+    pending_instance_batches: Vec<PendingInstanceBatch>,
+    /// Pending vertex batches before finalization.
+    pending_vertex_batches: Vec<PendingVertexBatch>,
 }
 
-/// Internal batch being accumulated before finalization.
+/// Internal instance batch being accumulated before finalization.
 #[derive(Debug, Clone)]
-struct PendingBatch {
+struct PendingInstanceBatch {
+    texture: TextureId,
+    clip_rect: Rect2D,
+    z_index: u32,
+    instance_start: u32,
+    instance_count: u32,
+}
+
+/// Internal vertex batch being accumulated before finalization.
+#[derive(Debug, Clone)]
+struct PendingVertexBatch {
     texture: TextureId,
     clip_rect: Rect2D,
     z_index: u32,
@@ -41,6 +60,7 @@ impl DrawList {
     /// Create a new, empty draw list.
     pub fn new() -> Self {
         Self {
+            instances: Vec::new(),
             vertices: Vec::new(),
             indices: Vec::new(),
             commands: Vec::new(),
@@ -48,12 +68,14 @@ impl DrawList {
             current_texture: TextureId::NONE,
             current_z: 0,
             scratch_points: Vec::new(),
-            pending_batches: Vec::new(),
+            pending_instance_batches: Vec::new(),
+            pending_vertex_batches: Vec::new(),
         }
     }
 
     /// Clear the draw list for a new frame.
     pub fn clear(&mut self) {
+        self.instances.clear();
         self.vertices.clear();
         self.indices.clear();
         self.commands.clear();
@@ -61,15 +83,15 @@ impl DrawList {
         self.current_texture = TextureId::NONE;
         self.current_z = 0;
         self.scratch_points.clear();
-        self.pending_batches.clear();
+        self.pending_instance_batches.clear();
+        self.pending_vertex_batches.clear();
     }
 
     /// Set the current Z-index for subsequent draw commands.
-    ///
-    /// Higher Z values are rendered on top of lower Z values.
     pub fn set_z_index(&mut self, z: u32) {
         if self.current_z != z {
-            self.flush_batch();
+            self.flush_instance_batch();
+            self.flush_vertex_batch();
             self.current_z = z;
         }
     }
@@ -80,67 +102,34 @@ impl DrawList {
     }
 
     /// Set the current clip rectangle.
-    ///
-    /// This will flush the current batch if the clip has changed.
     pub fn set_clip(&mut self, clip: Rect2D) {
         if self.current_clip != clip {
-            self.flush_batch();
+            self.flush_instance_batch();
+            self.flush_vertex_batch();
             self.current_clip = clip;
         }
     }
 
     /// Set the current texture.
-    ///
-    /// This will flush the current batch if the texture has changed.
     pub fn set_texture(&mut self, texture: TextureId) {
         if self.current_texture != texture {
-            self.flush_batch();
+            self.flush_instance_batch();
+            self.flush_vertex_batch();
             self.current_texture = texture;
         }
     }
 
-    /// Add a solid-color rectangle.
-    ///
-    /// This adds 4 vertices and 6 indices for a quad.
+    /// Add a solid-color rectangle (instanced).
     pub fn add_rect(&mut self, bounds: Rect2D, color: Color) {
         self.set_texture(TextureId::NONE);
-
-        let vertex_offset = self.vertices.len() as u32;
-        let color_arr = color.to_bytes();
-
-        // Four corners in counter-clockwise order for screen space (Y-down)
-        self.vertices.push(Vertex::position_only(
-            Vec2::new(bounds.min.x(), bounds.min.y()),
-            color_arr,
-        ));
-        self.vertices.push(Vertex::position_only(
-            Vec2::new(bounds.min.x(), bounds.max.y()),
-            color_arr,
-        ));
-        self.vertices.push(Vertex::position_only(
-            Vec2::new(bounds.max.x(), bounds.max.y()),
-            color_arr,
-        ));
-        self.vertices.push(Vertex::position_only(
-            Vec2::new(bounds.max.x(), bounds.min.y()),
-            color_arr,
-        ));
-
-        // Two triangles
-        self.indices.extend_from_slice(&[
-            vertex_offset,
-            vertex_offset + 1,
-            vertex_offset + 2,
-            vertex_offset,
-            vertex_offset + 2,
-            vertex_offset + 3,
-        ]);
+        let mut instance = InstanceData::rect(bounds, color);
+        instance.clip_rect = self.clip_to_array();
+        self.instances.push(instance);
     }
 
-    /// Add a gradient rectangle with per-corner colors.
+    /// Add a gradient rectangle with per-corner colors (vertex-based).
     ///
     /// Colors are: top-left, top-right, bottom-right, bottom-left.
-    /// GPU vertex interpolation handles the gradient automatically.
     pub fn add_gradient_rect(
         &mut self,
         bounds: Rect2D,
@@ -155,7 +144,6 @@ impl DrawList {
         let min = bounds.min;
         let max = bounds.max;
 
-        // Same vertex order as add_rect: TL, BL, BR, TR (CCW for Y-down)
         self.vertices.push(Vertex::position_only(
             Vec2::new(min.x(), min.y()),
             tl.to_bytes(),
@@ -173,7 +161,6 @@ impl DrawList {
             tr.to_bytes(),
         ));
 
-        // Two triangles
         self.indices.extend_from_slice(&[
             vertex_offset,
             vertex_offset + 1,
@@ -183,13 +170,10 @@ impl DrawList {
             vertex_offset + 3,
         ]);
 
-        // Flush to prevent gradient vertices from being batched with solid-color rects
-        self.flush_batch();
+        self.flush_vertex_batch();
     }
 
-    /// Add a textured rectangle (quad).
-    ///
-    /// The UV coordinates specify which part of the texture to use.
+    /// Add a textured rectangle (instanced).
     pub fn add_textured_rect(
         &mut self,
         bounds: Rect2D,
@@ -198,51 +182,12 @@ impl DrawList {
         texture: TextureId,
     ) {
         self.set_texture(texture);
-
-        let vertex_offset = self.vertices.len() as u32;
-        let color_arr = color.to_bytes();
-
-        // Four corners with UVs in counter-clockwise order for screen space (Y-down)
-        self.vertices.push(Vertex::new(
-            Vec2::new(bounds.min.x(), bounds.min.y()),
-            Vec2::new(uv.min.x(), uv.min.y()),
-            color_arr,
-        ));
-        self.vertices.push(Vertex::new(
-            Vec2::new(bounds.min.x(), bounds.max.y()),
-            Vec2::new(uv.min.x(), uv.max.y()),
-            color_arr,
-        ));
-        self.vertices.push(Vertex::new(
-            Vec2::new(bounds.max.x(), bounds.max.y()),
-            Vec2::new(uv.max.x(), uv.max.y()),
-            color_arr,
-        ));
-        self.vertices.push(Vertex::new(
-            Vec2::new(bounds.max.x(), bounds.min.y()),
-            Vec2::new(uv.max.x(), uv.min.y()),
-            color_arr,
-        ));
-
-        // Two triangles
-        self.indices.extend_from_slice(&[
-            vertex_offset,
-            vertex_offset + 1,
-            vertex_offset + 2,
-            vertex_offset,
-            vertex_offset + 2,
-            vertex_offset + 3,
-        ]);
+        let mut instance = InstanceData::textured(bounds, uv, color, 0);
+        instance.clip_rect = self.clip_to_array();
+        self.instances.push(instance);
     }
 
     /// Add an image with custom UV coordinates and explicit texture.
-    ///
-    /// # Arguments
-    /// * `bounds` - Screen position and size
-    /// * `uv_min` - Top-left UV coordinate (0-1 for atlas, any range for viewport)
-    /// * `uv_max` - Bottom-right UV coordinate
-    /// * `color` - Tint color (use Color::WHITE for no tint)
-    /// * `texture` - Texture ID to sample from
     pub fn add_image(
         &mut self,
         bounds: Rect2D,
@@ -255,9 +200,7 @@ impl DrawList {
         self.add_textured_rect(bounds, uv, color, texture);
     }
 
-    /// Add a convex polygon.
-    ///
-    /// Vertices should be in counter-clockwise order.
+    /// Add a convex polygon (vertex-based).
     pub fn add_convex_poly(&mut self, points: &[Vec2], color: Color) {
         if points.len() < 3 {
             return;
@@ -268,12 +211,10 @@ impl DrawList {
         let vertex_offset = self.vertices.len() as u32;
         let color_arr = color.to_bytes();
 
-        // Add all vertices
         for &point in points {
             self.vertices.push(Vertex::position_only(point, color_arr));
         }
 
-        // Triangulate using fan method
         for i in 1..(points.len() as u32 - 1) {
             self.indices.extend_from_slice(&[
                 vertex_offset,
@@ -283,7 +224,7 @@ impl DrawList {
         }
     }
 
-    /// Add a line with thickness.
+    /// Add a line with thickness (vertex-based).
     pub fn add_line(&mut self, start: Vec2, end: Vec2, color: Color, thickness: f32) {
         let dx = end.x() - start.x();
         let dy = end.y() - start.y();
@@ -300,7 +241,6 @@ impl DrawList {
         let vertex_offset = self.vertices.len() as u32;
         let color_arr = color.to_bytes();
 
-        // Two triangles with same winding as add_rect
         self.vertices.push(Vertex::position_only(
             Vec2::new(start.x() + nx, start.y() + ny),
             color_arr,
@@ -328,13 +268,12 @@ impl DrawList {
         ]);
     }
 
-    /// Add a filled circle.
+    /// Add a filled circle (vertex-based, auto segments).
     pub fn add_circle(&mut self, center: Vec2, radius: f32, color: Color, segments: u32) {
         if segments < 3 {
             return;
         }
 
-        // Use scratch buffer to avoid per-frame allocation
         self.scratch_points.clear();
         self.scratch_points.reserve(segments as usize);
 
@@ -346,7 +285,6 @@ impl DrawList {
             ));
         }
 
-        // Take ownership temporarily to avoid borrow conflict
         let points = std::mem::take(&mut self.scratch_points);
         self.add_convex_poly(&points, color);
         self.scratch_points = points;
@@ -357,10 +295,7 @@ impl DrawList {
         self.add_circle_aa(center, radius, color, segments);
     }
 
-    /// Add a filled circle with anti-aliased edges.
-    ///
-    /// Same dual-ring technique as `add_rounded_rect_aa`: inner ring at full alpha,
-    /// outer ring offset 1px outward at alpha 0, connected by quad strips.
+    /// Add a filled circle with anti-aliased edges (vertex-based).
     pub fn add_circle_aa(&mut self, center: Vec2, radius: f32, color: Color, segments: u32) {
         if segments < 3 {
             return;
@@ -374,7 +309,6 @@ impl DrawList {
 
         let seg = segments as usize;
 
-        // Inner ring: points on the circle
         for i in 0..seg {
             let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
             self.vertices.push(Vertex::position_only(
@@ -386,7 +320,6 @@ impl DrawList {
             ));
         }
 
-        // Outer ring: offset 1px outward along radial direction
         const AA_FRINGE: f32 = 1.0;
         let outer_radius = radius + AA_FRINGE;
         for i in 0..seg {
@@ -400,7 +333,6 @@ impl DrawList {
             ));
         }
 
-        // Fill interior with triangle fan from inner vertices
         for i in 1..(seg as u32 - 1) {
             self.indices.extend_from_slice(&[
                 vertex_offset,
@@ -409,7 +341,6 @@ impl DrawList {
             ]);
         }
 
-        // Anti-alias fringe: quad strips between inner and outer rings
         let outer_start = vertex_offset + seg as u32;
         for i in 0..seg {
             let j = (i + 1) % seg;
@@ -441,12 +372,7 @@ impl DrawList {
         self.scratch_points = points;
     }
 
-    /// Add a filled rounded rectangle with anti-aliased edges.
-    ///
-    /// Uses a dual-ring technique: an inner ring at full alpha and an outer ring
-    /// offset ~1px outward at alpha 0, connected by quad strips. The GPU
-    /// interpolates alpha across the 1px fringe, producing smooth edges without
-    /// requiring any shader or vertex format changes.
+    /// Add a filled rounded rectangle with anti-aliased edges (vertex-based).
     pub fn add_rounded_rect_aa(&mut self, bounds: Rect2D, color: Color, radius: f32) {
         let r = radius.min(bounds.width() * 0.5).min(bounds.height() * 0.5);
         if r < 0.5 {
@@ -456,7 +382,6 @@ impl DrawList {
 
         let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 1.5).ceil() as u32).max(2);
 
-        // Generate outline points
         generate_rounded_rect_points_into(
             bounds.min,
             bounds.max,
@@ -473,14 +398,12 @@ impl DrawList {
         let color_full = color.to_bytes();
         let color_fade = [color_full[0], color_full[1], color_full[2], 0u8];
 
-        // Compute outward normals and generate outer ring
         let mut outer_points = Vec::with_capacity(n);
         for i in 0..n {
             let prev = inner_points[(i + n - 1) % n];
             let curr = inner_points[i];
             let next = inner_points[(i + 1) % n];
 
-            // Edge directions
             let dx_in = curr.x() - prev.x();
             let dy_in = curr.y() - prev.y();
             let dx_out = next.x() - curr.x();
@@ -489,7 +412,6 @@ impl DrawList {
             let len_in = (dx_in * dx_in + dy_in * dy_in).sqrt().max(0.0001);
             let len_out = (dx_out * dx_out + dy_out * dy_out).sqrt().max(0.0001);
 
-            // Average of the two edge outward normals (CCW winding → outward normal is (-dy, dx) normalized)
             let nx = (-dy_in / len_in + -dy_out / len_out) * 0.5;
             let ny = (dx_in / len_in + dx_out / len_out) * 0.5;
             let nlen = (nx * nx + ny * ny).sqrt().max(0.0001);
@@ -501,7 +423,6 @@ impl DrawList {
             outer_points.push(Vec2::new(curr.x() + offset_x, curr.y() + offset_y));
         }
 
-        // Emit vertices: inner ring (full alpha), then outer ring (alpha 0)
         for &p in &inner_points {
             self.vertices.push(Vertex::position_only(p, color_full));
         }
@@ -509,7 +430,6 @@ impl DrawList {
             self.vertices.push(Vertex::position_only(p, color_fade));
         }
 
-        // Fill interior with triangle fan from inner vertices
         for i in 1..(n as u32 - 1) {
             self.indices.extend_from_slice(&[
                 vertex_offset,
@@ -518,7 +438,6 @@ impl DrawList {
             ]);
         }
 
-        // Anti-alias fringe: quad strips between inner and outer rings
         let outer_start = vertex_offset + n as u32;
         for i in 0..n {
             let j = (i + 1) % n;
@@ -532,10 +451,7 @@ impl DrawList {
         self.scratch_points = inner_points;
     }
 
-    /// Add a rounded rectangle border stroke.
-    ///
-    /// Draws a thick outline along the rounded path, producing smooth corners
-    /// instead of 4 sharp rectangles.
+    /// Add a rounded rectangle border stroke (vertex-based).
     pub fn add_rounded_rect_stroke(
         &mut self,
         bounds: Rect2D,
@@ -604,10 +520,7 @@ impl DrawList {
         self.scratch_points = inner_points;
     }
 
-    /// Add a rounded rectangle border stroke with anti-aliased edges.
-    ///
-    /// Uses the same dual-ring technique: the stroke outer edge fades from full
-    /// color to transparent over 1px, and the inner edge does the same.
+    /// Add a rounded rectangle border stroke with anti-aliased edges (vertex-based).
     pub fn add_rounded_rect_stroke_aa(
         &mut self,
         bounds: Rect2D,
@@ -624,7 +537,6 @@ impl DrawList {
         let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 1.5).ceil() as u32).max(2);
         let half_t = thickness * 0.5;
 
-        // For AA, we need 4 rings: outer_aa, outer, inner, inner_aa
         let outer_aa_min = Vec2::new(bounds.min.x() - half_t - 1.0, bounds.min.y() - half_t - 1.0);
         let outer_aa_max = Vec2::new(bounds.max.x() + half_t + 1.0, bounds.max.y() + half_t + 1.0);
         let outer_aa_r = r + half_t + 1.0;
@@ -668,7 +580,6 @@ impl DrawList {
         );
         let inner_points = std::mem::take(&mut self.scratch_points);
 
-        // Only generate inner AA ring if it has positive radius and valid bounds
         let has_inner_aa = inner_aa_r > 0.0
             && inner_aa_min.x() < inner_aa_max.x()
             && inner_aa_min.y() < inner_aa_max.y();
@@ -695,7 +606,6 @@ impl DrawList {
         let color_fade = [color_full[0], color_full[1], color_full[2], 0u8];
         let vertex_offset = self.vertices.len() as u32;
 
-        // Emit 4 rings: outer_aa (alpha 0), outer (full), inner (full), inner_aa (alpha 0)
         for &p in &outer_aa_points {
             self.vertices.push(Vertex::position_only(p, color_fade));
         }
@@ -725,16 +635,14 @@ impl DrawList {
             let iai = inner_aa_base + i as u32;
             let iaj = inner_aa_base + j as u32;
 
-            // Outer AA fringe: outer_aa → outer
             self.indices.extend_from_slice(&[oai, oaj, oj, oai, oj, oi]);
-            // Stroke body: outer → inner
             self.indices.extend_from_slice(&[oi, oj, ij, oi, ij, ii]);
-            // Inner AA fringe: inner → inner_aa
             self.indices.extend_from_slice(&[ii, ij, iaj, ii, iaj, iai]);
         }
 
         self.scratch_points = inner_points;
     }
+
     fn add_rect_stroke(&mut self, bounds: Rect2D, color: Color, thickness: f32) {
         let min = bounds.min;
         let max = bounds.max;
@@ -762,58 +670,98 @@ impl DrawList {
         );
     }
 
-    /// Flush the current batch into pending batches.
-    fn flush_batch(&mut self) {
-        let index_count = self.indices.len() as u32;
-
-        // Find where this batch starts
-        let index_offset = self
-            .pending_batches
+    /// Flush pending instance data into a batch.
+    fn flush_instance_batch(&mut self) {
+        let total = self.instances.len() as u32;
+        let prev_end = self
+            .pending_instance_batches
             .last()
-            .map(|b| b.index_start + b.index_count)
+            .map(|b| b.instance_start + b.instance_count)
             .unwrap_or(0);
-
-        // Only create a batch if there are new indices
-        let batch_index_count = index_count - index_offset;
-        if batch_index_count > 0 {
-            self.pending_batches.push(PendingBatch {
+        let count = total - prev_end;
+        if count > 0 {
+            self.pending_instance_batches.push(PendingInstanceBatch {
                 texture: self.current_texture,
                 clip_rect: self.current_clip,
                 z_index: self.current_z,
-                index_start: index_offset,
-                index_count: batch_index_count,
+                instance_start: prev_end,
+                instance_count: count,
+            });
+        }
+    }
+
+    /// Flush pending vertex data into a batch.
+    fn flush_vertex_batch(&mut self) {
+        let total = self.indices.len() as u32;
+        let prev_end = self
+            .pending_vertex_batches
+            .last()
+            .map(|b| b.index_start + b.index_count)
+            .unwrap_or(0);
+        let count = total - prev_end;
+        if count > 0 {
+            self.pending_vertex_batches.push(PendingVertexBatch {
+                texture: self.current_texture,
+                clip_rect: self.current_clip,
+                z_index: self.current_z,
+                index_start: prev_end,
+                index_count: count,
             });
         }
     }
 
     /// Finalize the draw list, sorting by Z-index and converting to GPU commands.
     pub fn finalize(&mut self) {
-        self.flush_batch();
+        self.flush_instance_batch();
+        self.flush_vertex_batch();
 
-        // Sort batches by Z-index (stable sort preserves order within same Z)
-        self.pending_batches.sort_by_key(|b| b.z_index);
+        // Combine all batches into a unified list for z-sorting
+        let mut all_batches: Vec<SortedBatch> = Vec::new();
+
+        for batch in &self.pending_instance_batches {
+            all_batches.push(SortedBatch {
+                z_index: batch.z_index,
+                texture: batch.texture,
+                clip_rect: batch.clip_rect,
+                is_instanced: true,
+                offset: batch.instance_start,
+                count: batch.instance_count,
+            });
+        }
+
+        for batch in &self.pending_vertex_batches {
+            all_batches.push(SortedBatch {
+                z_index: batch.z_index,
+                texture: batch.texture,
+                clip_rect: batch.clip_rect,
+                is_instanced: false,
+                offset: batch.index_start,
+                count: batch.index_count,
+            });
+        }
+
+        // Sort by z-index (stable sort preserves order within same z)
+        all_batches.sort_by_key(|b| b.z_index);
 
         // Convert to GPU commands
         self.commands.clear();
-        self.commands
-            .extend(self.pending_batches.iter().map(|batch| {
-                let clip_rect = if batch.clip_rect.min.x() < f32::MAX / 2.0 {
-                    Some(batch.clip_rect.to_clip_array())
-                } else {
-                    None
-                };
-                DrawCmd::new(
-                    batch.index_start,
-                    batch.index_count,
-                    clip_rect,
-                    batch.texture,
-                )
-            }));
+        self.commands.extend(all_batches.iter().map(|batch| {
+            let clip_rect = if batch.clip_rect.min.x() < f32::MAX / 2.0 {
+                Some(batch.clip_rect.to_clip_array())
+            } else {
+                None
+            };
+            if batch.is_instanced {
+                DrawCmd::instanced(batch.offset, batch.count, clip_rect, batch.texture)
+            } else {
+                DrawCmd::vertex(batch.offset, batch.count, clip_rect, batch.texture)
+            }
+        }));
     }
 
     /// Check if the draw list is empty.
     pub fn is_empty(&self) -> bool {
-        self.indices.is_empty()
+        self.instances.is_empty() && self.indices.is_empty()
     }
 
     /// Get the total number of vertices.
@@ -826,9 +774,19 @@ impl DrawList {
         self.indices.len()
     }
 
+    /// Get the total number of instances.
+    pub fn instance_count(&self) -> usize {
+        self.instances.len()
+    }
+
     /// Get the number of draw commands.
     pub fn command_count(&self) -> usize {
         self.commands.len()
+    }
+
+    /// Get instance data as bytes for GPU upload.
+    pub fn instance_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.instances)
     }
 
     /// Get vertex data as bytes for GPU upload.
@@ -839,6 +797,11 @@ impl DrawList {
     /// Get index data as bytes for GPU upload.
     pub fn index_bytes(&self) -> &[u8] {
         bytemuck::cast_slice(&self.indices)
+    }
+
+    /// Get the instances slice.
+    pub fn instances(&self) -> &[InstanceData] {
+        &self.instances
     }
 
     /// Get the vertices slice.
@@ -855,6 +818,25 @@ impl DrawList {
     pub fn commands(&self) -> &[DrawCmd] {
         &self.commands
     }
+
+    /// Convert the current clip rect to a [f32; 4] array for instance data.
+    fn clip_to_array(&self) -> [f32; 4] {
+        if self.current_clip.min.x() < f32::MAX / 2.0 {
+            self.current_clip.to_clip_array()
+        } else {
+            InstanceData::CLIP_NONE
+        }
+    }
+}
+
+/// Unified batch for z-sorting.
+struct SortedBatch {
+    z_index: u32,
+    texture: TextureId,
+    clip_rect: Rect2D,
+    is_instanced: bool,
+    offset: u32,
+    count: u32,
 }
 
 /// Generate the outline points of a rounded rectangle into an existing buffer.
@@ -924,9 +906,9 @@ mod tests {
         list.add_rect(bounds, Color::RED);
         list.finalize();
 
-        assert_eq!(list.vertex_count(), 4);
-        assert_eq!(list.index_count(), 6);
+        assert_eq!(list.instance_count(), 1);
         assert_eq!(list.command_count(), 1);
+        assert!(list.commands()[0].is_instanced);
     }
 
     #[test]
@@ -943,10 +925,11 @@ mod tests {
         );
         list.finalize();
 
-        assert_eq!(list.vertex_count(), 8);
-        assert_eq!(list.index_count(), 12);
-        // Should be batched together (same texture = NONE)
+        assert_eq!(list.instance_count(), 2);
         assert_eq!(list.command_count(), 1);
+        let cmd = &list.commands()[0];
+        assert!(cmd.is_instanced);
+        assert_eq!(cmd.count, 2);
     }
 
     #[test]
@@ -961,9 +944,10 @@ mod tests {
         );
         list.finalize();
 
-        // Line is rendered as a quad (4 vertices, 6 indices)
         assert_eq!(list.vertex_count(), 4);
         assert_eq!(list.index_count(), 6);
+        assert_eq!(list.command_count(), 1);
+        assert!(!list.commands()[0].is_instanced);
     }
 
     #[test]
@@ -980,8 +964,8 @@ mod tests {
 
         assert_eq!(list.vertex_count(), 4);
         assert_eq!(list.index_count(), 6);
+        assert!(!list.commands()[0].is_instanced);
 
-        // Vertical line should produce a 2px wide, 20px tall quad centered at x=50
         let xs: Vec<f32> = list.vertices().iter().map(|v| v.pos.x()).collect();
         let ys: Vec<f32> = list.vertices().iter().map(|v| v.pos.y()).collect();
         assert_eq!(
@@ -1029,5 +1013,215 @@ mod tests {
         list.clear();
 
         assert!(list.is_empty());
+    }
+
+    #[test]
+    fn test_instance_data_position() {
+        let mut list = DrawList::new();
+        let bounds = Rect2D::from_origin_size(Vec2::new(50.0, 75.0), Vec2::new(100.0, 40.0));
+        list.add_rect(bounds, Color::RED);
+        list.finalize();
+
+        let inst = &list.instances()[0];
+        assert_eq!(inst.position, [50.0, 75.0]);
+        assert_eq!(inst.size, [100.0, 40.0]);
+    }
+
+    #[test]
+    fn test_textured_rect_instance() {
+        let mut list = DrawList::new();
+        let bounds = Rect2D::from_origin_size(Vec2::new(10.0, 20.0), Vec2::new(50.0, 60.0));
+        let uv = Rect2D::from_origin_size(Vec2::new(0.1, 0.2), Vec2::new(0.5, 0.6));
+        list.add_textured_rect(bounds, uv, Color::WHITE, TextureId::FONT_ATLAS);
+        list.finalize();
+
+        let inst = &list.instances()[0];
+        assert_eq!(inst.position, [10.0, 20.0]);
+        assert_eq!(inst.size, [50.0, 60.0]);
+        assert_eq!(inst.uv_min, [0.1, 0.2]);
+        assert_eq!(inst.uv_max, [0.6, 0.8]);
+    }
+
+    #[test]
+    fn test_instance_count_100_same_batch() {
+        let mut list = DrawList::new();
+        for i in 0..100 {
+            list.add_rect(
+                Rect2D::from_origin_size(Vec2::new((i as f32) * 10.0, 0.0), Vec2::new(10.0, 10.0)),
+                Color::RED,
+            );
+        }
+        list.finalize();
+
+        assert_eq!(list.instance_count(), 100);
+        assert_eq!(list.command_count(), 1);
+        assert!(list.commands()[0].is_instanced);
+        assert_eq!(list.commands()[0].count, 100);
+    }
+
+    #[test]
+    fn test_texture_change_causes_batch_break() {
+        let mut list = DrawList::new();
+
+        for _ in 0..10 {
+            list.add_textured_rect(
+                Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0)),
+                Rect2D::from_origin_size(Vec2::ZERO, Vec2::new(1.0, 1.0)),
+                Color::WHITE,
+                TextureId::FONT_ATLAS,
+            );
+        }
+        for _ in 0..10 {
+            list.add_rect(
+                Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0)),
+                Color::RED,
+            );
+        }
+        list.finalize();
+
+        assert_eq!(list.command_count(), 2);
+    }
+
+    #[test]
+    fn test_clip_change_causes_batch_break() {
+        let mut list = DrawList::new();
+
+        list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0)),
+            Color::RED,
+        );
+        list.set_clip(Rect2D::from_origin_size(
+            Vec2::new(0.0, 0.0),
+            Vec2::new(50.0, 50.0),
+        ));
+        list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0)),
+            Color::RED,
+        );
+        list.finalize();
+
+        assert_eq!(list.command_count(), 2);
+    }
+
+    #[test]
+    fn test_empty_draw_list_no_crash() {
+        let mut list = DrawList::new();
+        list.finalize();
+        assert!(list.is_empty());
+        assert_eq!(list.command_count(), 0);
+    }
+
+    #[test]
+    fn test_10000_instances() {
+        let mut list = DrawList::new();
+        for i in 0..10_000 {
+            list.add_rect(
+                Rect2D::from_origin_size(
+                    Vec2::new((i % 100) as f32 * 10.0, (i / 100) as f32 * 10.0),
+                    Vec2::new(8.0, 8.0),
+                ),
+                Color::RED,
+            );
+        }
+        list.finalize();
+
+        assert_eq!(list.instance_count(), 10_000);
+        assert_eq!(list.command_count(), 1);
+    }
+
+    #[test]
+    fn test_z_ordering() {
+        let mut list = DrawList::new();
+
+        list.set_z_index(2);
+        list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0)),
+            Color::RED,
+        );
+        list.set_z_index(0);
+        list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0)),
+            Color::GREEN,
+        );
+        list.set_z_index(1);
+        list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0)),
+            Color::BLUE,
+        );
+        list.finalize();
+
+        assert_eq!(list.command_count(), 3);
+    }
+
+    #[test]
+    fn test_gradient_rect_uses_vertices() {
+        let mut list = DrawList::new();
+        list.add_gradient_rect(
+            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0)),
+            Color::RED,
+            Color::GREEN,
+            Color::BLUE,
+            Color::WHITE,
+        );
+        list.finalize();
+
+        assert_eq!(list.vertex_count(), 4);
+        assert_eq!(list.index_count(), 6);
+        assert_eq!(list.instance_count(), 0);
+        assert!(!list.commands()[0].is_instanced);
+    }
+
+    #[test]
+    fn test_mixed_instanced_and_vertex() {
+        let mut list = DrawList::new();
+
+        list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0)),
+            Color::RED,
+        );
+        list.add_rounded_rect_aa(
+            Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(80.0, 30.0)),
+            Color::GREEN,
+            8.0,
+        );
+        list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(200.0, 0.0), Vec2::new(100.0, 50.0)),
+            Color::BLUE,
+        );
+        list.finalize();
+
+        assert!(list.instances().len() > 0);
+        assert!(list.vertices().len() > 0);
+    }
+
+    #[test]
+    fn test_unit_quad_geometry_correct() {
+        let mut list = DrawList::new();
+        let bounds = Rect2D::from_origin_size(Vec2::new(10.0, 20.0), Vec2::new(30.0, 40.0));
+        list.add_rect(bounds, Color::RED);
+        list.finalize();
+
+        let inst = &list.instances()[0];
+        assert_eq!(inst.position, [10.0, 20.0]);
+        assert_eq!(inst.size, [30.0, 40.0]);
+        assert_eq!(inst.uv_min, [0.0, 0.0]);
+        assert_eq!(inst.uv_max, [1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_clip_rect_in_instance() {
+        let mut list = DrawList::new();
+        list.set_clip(Rect2D::from_origin_size(
+            Vec2::new(5.0, 10.0),
+            Vec2::new(100.0, 200.0),
+        ));
+        list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(200.0, 300.0)),
+            Color::RED,
+        );
+        list.finalize();
+
+        let inst = &list.instances()[0];
+        assert_eq!(inst.clip_rect, [5.0, 10.0, 100.0, 200.0]);
     }
 }

@@ -543,6 +543,61 @@ impl Vertex for VertexUI {
     }
 }
 
+/// Per-instance data for GPU-instanced UI quad rendering.
+///
+/// Each instance represents a single screen-space quad. The vertex shader
+/// transforms a shared unit quad (0-1 range) using this per-instance data.
+///
+/// # Memory Layout
+/// - `position`: 8 bytes (2 x f32, top-left screen position)
+/// - `size`: 8 bytes (2 x f32, width/height)
+/// - `uv_min`: 8 bytes (2 x f32, atlas UV top-left)
+/// - `uv_max`: 8 bytes (2 x f32, atlas UV bottom-right)
+/// - `color`: 4 bytes (4 x u8, RGBA tint)
+/// - `texture_index`: 4 bytes (u32, bindless texture slot)
+/// - `clip_rect`: 16 bytes (4 x f32, shader clip region)
+/// - Total: 56 bytes
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct VertexUIInstance {
+    pub position: [f32; 2],
+    pub size: [f32; 2],
+    pub uv_min: [f32; 2],
+    pub uv_max: [f32; 2],
+    pub color: [u8; 4],
+    pub texture_index: u32,
+    pub clip_rect: [f32; 4],
+}
+
+/// Unit quad vertex for instanced UI rendering.
+///
+/// 4 vertices at corners of a [0,1]×[0,1] quad. The instanced vertex
+/// shader scales and positions this quad using per-instance data.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct VertexUIQuad {
+    pub local_pos: [f32; 2],
+}
+
+/// Unit quad indices (CCW winding): [0,1,2, 0,2,3]
+pub const UNIT_QUAD_INDICES: [u32; 6] = [0, 1, 2, 0, 2, 3];
+
+/// Unit quad vertices.
+pub const UNIT_QUAD_VERTICES: [VertexUIQuad; 4] = [
+    VertexUIQuad {
+        local_pos: [0.0, 0.0],
+    },
+    VertexUIQuad {
+        local_pos: [0.0, 1.0],
+    },
+    VertexUIQuad {
+        local_pos: [1.0, 1.0],
+    },
+    VertexUIQuad {
+        local_pos: [1.0, 0.0],
+    },
+];
+
 // Tests
 
 #[cfg(test)]

@@ -272,7 +272,10 @@ pub use vulkan::material::compiler::{MaterialOptions, VertexType};
 pub use texture::{ImageFormat, TextureDescriptor, TextureUsage};
 
 // Vertex types (public module for discoverability and extensibility)
-pub use vertex::{VertexPBR, VertexPBRSkinned, VertexUI};
+pub use vertex::{
+    UNIT_QUAD_INDICES, UNIT_QUAD_VERTICES, VertexPBR, VertexPBRSkinned, VertexUI, VertexUIInstance,
+    VertexUIQuad,
+};
 
 // SOA vertex attribute types (shared enum definition)
 pub use vertex::AttributeType;
