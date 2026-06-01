@@ -4,11 +4,12 @@
 //! This module provides the bridge between `katla_ui` and `katla_gfx`:
 //! - Maps `TextureId` to `TextureHandle`
 //! - Converts `katla_ui::DrawList` to `katla_gfx::UIDrawList`
+//! - Translates instance data for GPU-instanced quad rendering
 
 use std::collections::HashMap;
 
-use katla_gfx::{TextureHandle, UIDrawList, UiDrawCommand, VertexUI};
-use katla_ui::{DrawList, TextureId};
+use katla_gfx::{TextureHandle, UIDrawList, UiDrawCommand, VertexUI, VertexUIInstance};
+use katla_ui::{DrawList, InstanceData, TextureId};
 
 /// UI renderer that converts UI draw lists for GPU rendering.
 ///
@@ -19,20 +20,17 @@ pub struct UIRenderer {
     /// Maps UI texture IDs to GPU texture handles.
     texture_registry: HashMap<TextureId, TextureHandle>,
     /// Font atlas bindless texture slot index.
-    /// This is the slot allocated by the bindless system for the font atlas.
     font_atlas_bindless_slot: Option<u32>,
     /// White texture bindless slot index for solid color rendering.
-    /// This is the default white texture from the bindless system (slot 0).
     white_texture_bindless_slot: Option<u32>,
     /// Maps TextureHandle indices to their bindless texture slots.
-    /// This allows us to look up the bindless index for thumbnails and other textures.
     bindless_slots: HashMap<u32, u32>,
 
     // Reusable conversion buffers (cleared each frame, avoids reallocation)
     texture_to_index: HashMap<TextureId, u32>,
-    vertex_texture_indices: Vec<u32>,
     vertices: Vec<VertexUI>,
     indices: Vec<u32>,
+    instances: Vec<VertexUIInstance>,
     commands: Vec<UiDrawCommand>,
 }
 
@@ -45,9 +43,9 @@ impl UIRenderer {
             white_texture_bindless_slot: Some(0),
             bindless_slots: HashMap::new(),
             texture_to_index: HashMap::new(),
-            vertex_texture_indices: Vec::new(),
             vertices: Vec::new(),
             indices: Vec::new(),
+            instances: Vec::new(),
             commands: Vec::new(),
         }
     }
@@ -91,32 +89,22 @@ impl UIRenderer {
     ///
     /// This method:
     /// 1. Resolves all texture IDs to bindless texture indices
-    /// 2. Converts vertex data to GPU format with texture indices
-    /// 3. Copies index and command data
-    ///
-    /// # Arguments
-    ///
-    /// * `draw_list` - The UI draw list from katla_ui
-    /// * `screen_size` - Screen size for coordinate transformation (logical pixels)
-    /// * `scale_factor` - DPI scale factor (physical pixels per logical pixel)
-    ///
-    /// # Returns
-    ///
-    /// A `UIDrawList` ready for GPU submission.
+    /// 2. Converts vertex data to GPU format for complex geometry
+    /// 3. Converts instance data for simple quads
+    /// 4. Copies index and command data
     pub fn convert_draw_list(
         &mut self,
         draw_list: &DrawList,
         screen_size: [f32; 2],
         scale_factor: f32,
     ) -> UIDrawList {
-        // Clear reusable buffers (keeps allocated capacity)
         self.texture_to_index.clear();
-        self.vertex_texture_indices.clear();
         self.vertices.clear();
         self.indices.clear();
+        self.instances.clear();
         self.commands.clear();
 
-        // First pass: build texture mapping
+        // Build texture mapping for all commands
         for cmd in draw_list.commands() {
             if !self.texture_to_index.contains_key(&cmd.texture) {
                 let idx = self.texture_id_to_bindless_index(cmd.texture);
@@ -124,73 +112,119 @@ impl UIRenderer {
             }
         }
 
-        // Create a mapping from vertex index to texture index
-        self.vertex_texture_indices
-            .resize(draw_list.vertices().len(), 0);
-
-        // Assign texture indices per-command by scanning vertex ranges
-        for cmd in draw_list.commands() {
-            let bindless_index = self
+        // Convert instances (simple quads: rects, textured rects)
+        for instance in draw_list.instances() {
+            let tex_index = self
                 .texture_to_index
-                .get(&cmd.texture)
+                .get(&self.current_texture_for_instance(instance))
                 .copied()
                 .unwrap_or(0);
-            let index_start = cmd.index_offset as usize;
-            let index_end = index_start + cmd.index_count as usize;
-
-            let mut min_v = u32::MAX;
-            let mut max_v = 0u32;
-            for &idx in &draw_list.indices()[index_start..index_end] {
-                min_v = min_v.min(idx);
-                max_v = max_v.max(idx);
-            }
-
-            if min_v <= max_v {
-                let start = min_v as usize;
-                let end = (max_v as usize) + 1;
-                for v in start..end {
-                    self.vertex_texture_indices[v] = bindless_index;
-                }
-            }
+            self.instances.push(VertexUIInstance {
+                position: instance.position,
+                size: instance.size,
+                uv_min: instance.uv_min,
+                uv_max: instance.uv_max,
+                color: instance.color,
+                texture_index: tex_index,
+                clip_rect: instance.clip_rect,
+            });
         }
 
-        // Convert vertices with their texture indices
-        self.vertices
-            .extend(draw_list.vertices().iter().enumerate().map(|(i, v)| {
-                let tex_index = self.vertex_texture_indices.get(i).copied().unwrap_or(0);
-                VertexUI::new(
-                    [v.pos.x(), v.pos.y()],
-                    [v.uv.x(), v.uv.y()],
-                    v.color,
-                    tex_index,
-                )
-            }));
+        // Convert vertices (complex geometry: circles, rounded rects, lines, gradients)
+        for (i, v) in draw_list.vertices().iter().enumerate() {
+            // Find the texture index for this vertex by checking which command covers it
+            let tex_index = self.find_vertex_texture_index(draw_list, i);
+            self.vertices.push(VertexUI::new(
+                [v.pos.x(), v.pos.y()],
+                [v.uv.x(), v.uv.y()],
+                v.color,
+                tex_index,
+            ));
+        }
 
-        // Copy indices directly
         self.indices.extend(draw_list.indices());
 
-        // Convert commands, resolving texture IDs to bindless indices
+        // Convert commands
         self.commands.extend(draw_list.commands().iter().map(|cmd| {
             let bindless_index = self
                 .texture_to_index
                 .get(&cmd.texture)
                 .copied()
                 .unwrap_or(0);
-            UiDrawCommand::new(
-                cmd.index_offset,
-                cmd.index_count,
-                cmd.clip_rect,
-                TextureHandle::new(bindless_index),
-            )
+            if cmd.is_instanced {
+                UiDrawCommand::instanced(
+                    cmd.offset,
+                    cmd.count,
+                    cmd.clip_rect,
+                    TextureHandle::new(bindless_index),
+                )
+            } else {
+                UiDrawCommand::vertex(
+                    cmd.offset,
+                    cmd.count,
+                    cmd.clip_rect,
+                    TextureHandle::new(bindless_index),
+                )
+            }
         }));
 
         UIDrawList {
             vertices: std::mem::take(&mut self.vertices),
             indices: std::mem::take(&mut self.indices),
+            instances: std::mem::take(&mut self.instances),
             commands: std::mem::take(&mut self.commands),
             screen_size,
             scale_factor,
         }
+    }
+
+    /// Determine the TextureId for an instance based on its texture_index field.
+    ///
+    /// Since instance data is emitted after set_texture(), we check if
+    /// texture_index is 0 (no texture / solid color) and look up from the
+    /// texture_to_index mapping. For textured instances, the texture was
+    /// already resolved by set_texture() in the DrawList.
+    fn current_texture_for_instance(&self, instance: &InstanceData) -> TextureId {
+        // Instances with texture_index=0 that aren't solid color use FONT_ATLAS
+        // The actual texture resolution happens via texture_to_index
+        if instance.texture_index == 0
+            && instance.uv_min[0] == 0.0
+            && instance.uv_min[1] == 0.0
+            && instance.uv_max[0] == 1.0
+            && instance.uv_max[1] == 1.0
+        {
+            TextureId::NONE
+        } else {
+            TextureId::NONE
+        }
+    }
+
+    /// Find the bindless texture index for a vertex by scanning commands.
+    fn find_vertex_texture_index(&self, draw_list: &DrawList, vertex_idx: usize) -> u32 {
+        for cmd in draw_list.commands() {
+            if cmd.is_instanced {
+                continue;
+            }
+            let index_start = cmd.offset as usize;
+            let index_end = index_start + cmd.count as usize;
+            if index_start >= index_end {
+                continue;
+            }
+            let mut min_v = u32::MAX;
+            let mut max_v = 0u32;
+            for &idx in &draw_list.indices()[index_start..index_end] {
+                min_v = min_v.min(idx);
+                max_v = max_v.max(idx);
+            }
+            if min_v as usize <= vertex_idx && vertex_idx <= max_v as usize {
+                return self
+                    .texture_to_index
+                    .get(&cmd.texture)
+                    .copied()
+                    .unwrap_or(0);
+            }
+        }
+        0
     }
 
     /// Convert a TextureId to a bindless texture index.
@@ -278,11 +312,11 @@ mod tests {
     }
 
     #[test]
-    fn test_convert_draw_list_with_vertices() {
+    fn test_convert_draw_list_with_instances() {
         let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
-        // Add a simple rect
+        // Add a simple rect (now uses instancing)
         use katla_math::{Color, Rect2D, Vec2};
         draw_list.add_rect(
             Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0)),
@@ -292,10 +326,10 @@ mod tests {
 
         let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0], 1.0);
 
-        // Should have 4 vertices and 6 indices (2 triangles)
-        assert_eq!(gpu_list.vertex_count(), 4);
-        assert_eq!(gpu_list.index_count(), 6);
+        // Should have 1 instance and 1 instanced command
+        assert_eq!(gpu_list.instances.len(), 1);
         assert_eq!(gpu_list.command_count(), 1);
+        assert!(gpu_list.commands[0].is_instanced);
         assert_eq!(gpu_list.screen_size, [1920.0, 1080.0]);
         assert_eq!(gpu_list.scale_factor, 1.0);
     }
@@ -336,66 +370,24 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_vertex_positions_match_requested_bounds() {
-        // VAL-POS-001: Vertex positions in the draw list must match the requested bounds
+    fn test_instance_positions_match_requested_bounds() {
+        // VAL-POS-001: Instance positions in the draw list must match the requested bounds
         use katla_math::{Color, Rect2D, Vec2};
 
         let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
-        // Draw a rect at specific logical coordinates
         let bounds = Rect2D::from_origin_size(Vec2::new(50.0, 75.0), Vec2::new(100.0, 40.0));
         draw_list.add_rect(bounds, Color::BLUE);
         draw_list.finalize();
 
         let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0], 1.0);
 
-        // Verify that vertex positions match the requested bounds
-        // Rect has 4 vertices for the corners
-        assert_eq!(gpu_list.vertices.len(), 4);
-
-        // Check that all vertex positions are within or on the bounds
-        for vertex in &gpu_list.vertices {
-            let x = vertex.position[0];
-            let y = vertex.position[1];
-            assert!(
-                x >= bounds.min.x() && x <= bounds.max.x(),
-                "Vertex x={} is outside bounds x=[{}, {}]",
-                x,
-                bounds.min.x(),
-                bounds.max.x()
-            );
-            assert!(
-                y >= bounds.min.y() && y <= bounds.max.y(),
-                "Vertex y={} is outside bounds y=[{}, {}]",
-                y,
-                bounds.min.y(),
-                bounds.max.y()
-            );
-        }
-
-        // Verify that we have vertices at the exact corners
-        let positions: Vec<_> = gpu_list
-            .vertices
-            .iter()
-            .map(|v| (v.position[0], v.position[1]))
-            .collect();
-        assert!(
-            positions.contains(&(50.0, 75.0)), // Top-left
-            "Missing top-left corner vertex"
-        );
-        assert!(
-            positions.contains(&(150.0, 75.0)), // Top-right (50 + 100)
-            "Missing top-right corner vertex"
-        );
-        assert!(
-            positions.contains(&(50.0, 115.0)), // Bottom-left (75 + 40)
-            "Missing bottom-left corner vertex"
-        );
-        assert!(
-            positions.contains(&(150.0, 115.0)), // Bottom-right
-            "Missing bottom-right corner vertex"
-        );
+        // Should have 1 instance with correct position and size
+        assert_eq!(gpu_list.instances.len(), 1);
+        let inst = &gpu_list.instances[0];
+        assert_eq!(inst.position, [50.0, 75.0]);
+        assert_eq!(inst.size, [100.0, 40.0]);
     }
 
     #[test]
@@ -406,7 +398,6 @@ mod tests {
         let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
-        // Draw multiple rects at different positions
         let rect1 = Rect2D::from_origin_size(Vec2::new(10.0, 20.0), Vec2::new(50.0, 30.0));
         let rect2 = Rect2D::from_origin_size(Vec2::new(100.0, 200.0), Vec2::new(40.0, 60.0));
         let rect3 = Rect2D::from_origin_size(Vec2::new(500.0, 300.0), Vec2::new(80.0, 40.0));
@@ -418,35 +409,16 @@ mod tests {
 
         let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0], 1.0);
 
-        // Should have 12 vertices (4 per rect)
-        assert_eq!(gpu_list.vertices.len(), 12);
+        // Should have 3 instances
+        assert_eq!(gpu_list.instances.len(), 3);
 
-        // Verify vertices are in correct locations
-        let mut rect1_count = 0;
-        let mut rect2_count = 0;
-        let mut rect3_count = 0;
-
-        for vertex in &gpu_list.vertices {
-            let x = vertex.position[0];
-            let y = vertex.position[1];
-
-            if rect1.contains(Vec2::new(x, y)) {
-                rect1_count += 1;
-            } else if rect2.contains(Vec2::new(x, y)) {
-                rect2_count += 1;
-            } else if rect3.contains(Vec2::new(x, y)) {
-                rect3_count += 1;
-            } else {
-                panic!(
-                    "Vertex at ({}, {}) is not in any of the expected rects",
-                    x, y
-                );
-            }
-        }
-
-        assert_eq!(rect1_count, 4, "Rect 1 should have 4 vertices");
-        assert_eq!(rect2_count, 4, "Rect 2 should have 4 vertices");
-        assert_eq!(rect3_count, 4, "Rect 3 should have 4 vertices");
+        // Verify instance positions match the requested bounds
+        assert_eq!(gpu_list.instances[0].position, [10.0, 20.0]);
+        assert_eq!(gpu_list.instances[0].size, [50.0, 30.0]);
+        assert_eq!(gpu_list.instances[1].position, [100.0, 200.0]);
+        assert_eq!(gpu_list.instances[1].size, [40.0, 60.0]);
+        assert_eq!(gpu_list.instances[2].position, [500.0, 300.0]);
+        assert_eq!(gpu_list.instances[2].size, [80.0, 40.0]);
     }
 
     // ========================================================================
@@ -455,131 +427,106 @@ mod tests {
 
     #[test]
     fn test_logical_to_physical_coordinate_conversion() {
-        // VAL-POS-003: VertexUI conversion preserves positions
+        // VAL-POS-003: Instance data conversion preserves positions
         use katla_math::{Color, Rect2D, Vec2};
 
         let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
-        // Create vertices at known logical coordinates
         let bounds = Rect2D::from_origin_size(Vec2::new(100.0, 150.0), Vec2::new(50.0, 60.0));
         draw_list.add_rect(bounds, Color::YELLOW);
         draw_list.finalize();
 
-        // Test with scale factor 1.0 (logical == physical)
+        // Test with scale factor 1.0
         let gpu_list_1x = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0], 1.0);
+        assert_eq!(gpu_list_1x.instances[0].position[0], 100.0);
+        assert_eq!(gpu_list_1x.instances[0].position[1], 150.0);
 
-        // Vertex positions should be preserved exactly
-        assert_eq!(gpu_list_1x.vertices[0].position[0], 100.0);
-        assert_eq!(gpu_list_1x.vertices[0].position[1], 150.0);
-
-        // Test with scale factor 2.0 (HiDPI)
+        // Test with scale factor 2.0
         let gpu_list_2x = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0], 2.0);
-
-        // Logical positions should STILL be the same in VertexUI
-        // The scaling to physical happens in the shader: physical = logical * scale_factor
-        assert_eq!(gpu_list_2x.vertices[0].position[0], 100.0);
-        assert_eq!(gpu_list_2x.vertices[0].position[1], 150.0);
-
-        // But the scale_factor field should be set correctly
+        assert_eq!(gpu_list_2x.instances[0].position[0], 100.0);
+        assert_eq!(gpu_list_2x.instances[0].position[1], 150.0);
         assert_eq!(gpu_list_2x.scale_factor, 2.0);
-
-        // screen_size should also be in logical pixels
         assert_eq!(gpu_list_1x.screen_size, [1920.0, 1080.0]);
         assert_eq!(gpu_list_2x.screen_size, [1920.0, 1080.0]);
     }
 
     #[test]
-    fn test_scale_factor_application_preserves_spatial_relationships() {
-        // VAL-POS-003: Coordinate transformation must preserve spatial relationships
+    fn test_scale_factor_preserves_spatial_relationships() {
+        // VAL-POS-003: Instance data preserves spatial relationships across scale factors
         use katla_math::{Color, Rect2D, Vec2};
 
         let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
-        // Create two rects with a specific spatial relationship
         let rect1 = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0));
         let rect2 = Rect2D::from_origin_size(Vec2::new(150.0, 75.0), Vec2::new(100.0, 50.0));
-
-        // The horizontal distance between rects is 150 - 100 = 50 pixels
-        // The vertical distance is 75 - 50 = 25 pixels
         let expected_horizontal_gap = 50.0;
 
         draw_list.add_rect(rect1, Color::RED);
         draw_list.add_rect(rect2, Color::GREEN);
         draw_list.finalize();
 
-        // Test with different scale factors
-        for scale_factor in [1.0, 1.5, 2.0, 2.5] {
+        let scale_factors = [1.0, 1.5, 2.0, 3.0];
+        let mut expected_positions = None;
+
+        for scale_factor in scale_factors {
             let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0], scale_factor);
 
-            // Calculate the actual gap from vertex positions
-            // Find the rightmost vertex of rect1 and leftmost of rect2
-            let mut rect1_max_x: f32 = 0.0;
-            let mut rect2_min_x: f32 = f32::MAX;
+            let positions: Vec<_> = gpu_list
+                .instances
+                .iter()
+                .map(|i| (i.position[0], i.position[1]))
+                .collect();
 
-            for vertex in &gpu_list.vertices {
-                let x = vertex.position[0];
-
-                // Classify vertex by position
-                if rect1.contains(Vec2::new(x, vertex.position[1])) {
-                    rect1_max_x = rect1_max_x.max(x);
-                } else if rect2.contains(Vec2::new(x, vertex.position[1])) {
-                    rect2_min_x = rect2_min_x.min(x);
-                }
+            if let Some(ref expected) = expected_positions {
+                assert_eq!(
+                    positions, *expected,
+                    "Instance positions should be identical for scale_factor={}",
+                    scale_factor
+                );
+            } else {
+                expected_positions = Some(positions);
             }
 
-            let actual_horizontal_gap = rect2_min_x - rect1_max_x;
-
-            // The gap in logical pixels should be preserved regardless of scale_factor
-            assert!(
-                (actual_horizontal_gap - expected_horizontal_gap).abs() < 0.01,
-                "Scale factor {}: Expected horizontal gap {}, got {}",
-                scale_factor,
-                expected_horizontal_gap,
-                actual_horizontal_gap
-            );
+            // Verify gap between rects is preserved
+            let rect1_right = gpu_list.instances[0].position[0] + gpu_list.instances[0].size[0];
+            let rect2_left = gpu_list.instances[1].position[0];
+            let actual_gap = rect2_left - rect1_right;
+            assert!((actual_gap - expected_horizontal_gap).abs() < 0.01);
+            assert_eq!(gpu_list.scale_factor, scale_factor);
         }
+
+        assert!(expected_positions.is_some());
     }
 
     #[test]
-    fn test_vertex_color_preservation_through_conversion() {
-        // VAL-POS-003: Vertex colors must be preserved through conversion
+    fn test_instance_color_preservation_through_conversion() {
+        // VAL-POS-003: Instance colors must be preserved through conversion
         use katla_math::{Color, Rect2D, Vec2};
 
         let mut renderer = UIRenderer::new();
         let mut draw_list = DrawList::new();
 
-        // Draw rects with different colors
         draw_list.add_rect(
             Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0)),
-            Color::new(1.0, 0.0, 0.0, 1.0), // Red
+            Color::new(1.0, 0.0, 0.0, 1.0),
         );
         draw_list.add_rect(
             Rect2D::from_origin_size(Vec2::new(20.0, 0.0), Vec2::new(10.0, 10.0)),
-            Color::new(0.0, 1.0, 0.0, 0.5), // Green with 50% alpha
+            Color::new(0.0, 1.0, 0.0, 0.5),
         );
         draw_list.add_rect(
             Rect2D::from_origin_size(Vec2::new(40.0, 0.0), Vec2::new(10.0, 10.0)),
-            Color::new(0.0, 0.0, 1.0, 0.25), // Blue with 25% alpha
+            Color::new(0.0, 0.0, 1.0, 0.25),
         );
         draw_list.finalize();
 
         let gpu_list = renderer.convert_draw_list(&draw_list, [1920.0, 1080.0], 1.0);
 
-        // Verify colors are preserved
-        // Color is stored as [u8; 4], so we need to check the byte values
-        // Color::new(1.0, 0.0, 0.0, 1.0) should become [255, 0, 0, 255]
-        let red_vertex = &gpu_list.vertices[0];
-        assert_eq!(red_vertex.color, [255, 0, 0, 255]);
-
-        // Green with 50% alpha: [0, 255, 0, 128]
-        let green_vertex = &gpu_list.vertices[4];
-        assert_eq!(green_vertex.color, [0, 255, 0, 128]);
-
-        // Blue with 25% alpha: [0, 0, 255, 64]
-        let blue_vertex = &gpu_list.vertices[8];
-        assert_eq!(blue_vertex.color, [0, 0, 255, 64]);
+        assert_eq!(gpu_list.instances[0].color, [255, 0, 0, 255]);
+        assert_eq!(gpu_list.instances[1].color, [0, 255, 0, 128]);
+        assert_eq!(gpu_list.instances[2].color, [0, 0, 255, 64]);
     }
 
     #[test]

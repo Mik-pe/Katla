@@ -1,18 +1,20 @@
 //! Metal-native UI rendering subsystem.
 //!
-//! Manages dynamic vertex/index buffers for
-//! immediate-mode UI rendering on the Metal backend.
+//! Manages dynamic vertex/index/instance buffers for immediate-mode UI
+//! rendering on the Metal backend with GPU instancing support.
 
 use crate::backend::command::GpuRenderEncoder;
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::renderer::types::UIDrawList;
+use crate::vertex::{UNIT_QUAD_INDICES, UNIT_QUAD_VERTICES};
 
 use super::buffer::MetalBuffer;
 use super::context::MetalContext;
 
 const INITIAL_VERTEX_BUFFER_SIZE: u64 = 1 << 20; // 1 MB
 const INITIAL_INDEX_BUFFER_SIZE: u64 = 1 << 20; // 1 MB
+const INITIAL_INSTANCE_BUFFER_SIZE: u64 = 1 << 20; // 1 MB
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -24,14 +26,18 @@ struct UiUniforms {
 
 /// Metal-native UI rendering subsystem.
 ///
-/// Owns dynamic vertex/index buffers.
+/// Owns dynamic vertex/index/instance buffers.
 /// The actual rendering is driven by `MetalRenderer::render_ui_pass()`
 /// which binds textures and pipelines from the renderer's own storage.
 pub(crate) struct MetalUIRenderer {
     vertex_buffer: Option<MetalBuffer>,
     index_buffer: Option<MetalBuffer>,
+    instance_buffer: Option<MetalBuffer>,
+    unit_quad_vertex_buffer: Option<MetalBuffer>,
+    unit_quad_index_buffer: Option<MetalBuffer>,
     vertex_buffer_capacity: u64,
     index_buffer_capacity: u64,
+    instance_buffer_capacity: u64,
     ui_material: Option<crate::handle::MaterialHandle>,
 }
 
@@ -40,8 +46,12 @@ impl MetalUIRenderer {
         Self {
             vertex_buffer: None,
             index_buffer: None,
+            instance_buffer: None,
+            unit_quad_vertex_buffer: None,
+            unit_quad_index_buffer: None,
             vertex_buffer_capacity: 0,
             index_buffer_capacity: 0,
+            instance_buffer_capacity: 0,
             ui_material: None,
         }
     }
@@ -60,6 +70,10 @@ impl MetalUIRenderer {
 
     pub(crate) fn index_buffer(&self) -> Option<&MetalBuffer> {
         self.index_buffer.as_ref()
+    }
+
+    pub(crate) fn instance_buffer(&self) -> Option<&MetalBuffer> {
+        self.instance_buffer.as_ref()
     }
 
     fn ensure_vertex_buffer(
@@ -106,10 +120,29 @@ impl MetalUIRenderer {
         Ok(())
     }
 
-    /// Upload UI draw list vertex and index data into dynamic buffers.
-    ///
-    /// Call this before `render_ui_commands()`. Returns references to the
-    /// bound buffers so the renderer can bind them to the encoder.
+    fn ensure_instance_buffer(
+        &mut self,
+        context: &MetalContext,
+        required: u64,
+    ) -> Result<(), RendererError> {
+        if self.instance_buffer_capacity >= required {
+            return Ok(());
+        }
+        let new_cap = if self.instance_buffer_capacity == 0 {
+            INITIAL_INSTANCE_BUFFER_SIZE.max(required)
+        } else {
+            let mut cap = self.instance_buffer_capacity;
+            while cap < required {
+                cap *= 2;
+            }
+            cap
+        };
+        self.instance_buffer = Some(context.create_buffer(new_cap, true)?);
+        self.instance_buffer_capacity = new_cap;
+        Ok(())
+    }
+
+    /// Upload UI draw list data into dynamic buffers.
     pub(crate) fn upload_draw_list(
         &mut self,
         context: &MetalContext,
@@ -119,37 +152,78 @@ impl MetalUIRenderer {
             return Ok(());
         }
 
-        let vertex_data = bytemuck::cast_slice(&draw_list.vertices);
-        let vertex_size = vertex_data.len() as u64;
-        let index_data = bytemuck::cast_slice(&draw_list.indices);
-        let index_size = index_data.len() as u64;
+        // Upload vertex/index data for complex geometry
+        if !draw_list.indices.is_empty() {
+            let vertex_data = bytemuck::cast_slice(&draw_list.vertices);
+            let vertex_size = vertex_data.len() as u64;
+            let index_data = bytemuck::cast_slice(&draw_list.indices);
+            let index_size = index_data.len() as u64;
 
-        self.ensure_vertex_buffer(context, vertex_size)?;
-        self.ensure_index_buffer(context, index_size)?;
+            self.ensure_vertex_buffer(context, vertex_size)?;
+            self.ensure_index_buffer(context, index_size)?;
 
-        if let Some(ref vb) = self.vertex_buffer {
-            let ptr = vb.map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(vertex_data.as_ptr(), ptr, vertex_data.len());
+            if let Some(ref vb) = self.vertex_buffer {
+                let ptr = vb.map();
+                unsafe {
+                    std::ptr::copy_nonoverlapping(vertex_data.as_ptr(), ptr, vertex_data.len());
+                }
+                vb.unmap();
             }
-            vb.unmap();
+
+            if let Some(ref ib) = self.index_buffer {
+                let ptr = ib.map();
+                unsafe {
+                    std::ptr::copy_nonoverlapping(index_data.as_ptr(), ptr, index_data.len());
+                }
+                ib.unmap();
+            }
         }
 
-        if let Some(ref ib) = self.index_buffer {
-            let ptr = ib.map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(index_data.as_ptr(), ptr, index_data.len());
+        // Upload instance data for instanced quads
+        if !draw_list.instances.is_empty() {
+            let instance_data = bytemuck::cast_slice(&draw_list.instances);
+            let instance_size = instance_data.len() as u64;
+            self.ensure_instance_buffer(context, instance_size)?;
+
+            if let Some(ref ib) = self.instance_buffer {
+                let ptr = ib.map();
+                unsafe {
+                    std::ptr::copy_nonoverlapping(instance_data.as_ptr(), ptr, instance_data.len());
+                }
+                ib.unmap();
             }
-            ib.unmap();
+        }
+
+        // Upload unit quad buffers (small, static data)
+        let quad_vb_data = bytemuck::cast_slice(&UNIT_QUAD_VERTICES);
+        let quad_ib_data = bytemuck::cast_slice(&UNIT_QUAD_INDICES);
+
+        self.ensure_instance_buffer(context, quad_vb_data.len() as u64)?;
+        // Reuse instance buffer capacity check for unit quad buffers
+        if self.unit_quad_vertex_buffer.is_none() {
+            self.unit_quad_vertex_buffer = Some(context.create_buffer(256, true)?);
+            self.unit_quad_index_buffer = Some(context.create_buffer(256, true)?);
+
+            if let Some(ref vb) = self.unit_quad_vertex_buffer {
+                let ptr = vb.map();
+                unsafe {
+                    std::ptr::copy_nonoverlapping(quad_vb_data.as_ptr(), ptr, quad_vb_data.len());
+                }
+                vb.unmap();
+            }
+            if let Some(ref ib) = self.unit_quad_index_buffer {
+                let ptr = ib.map();
+                unsafe {
+                    std::ptr::copy_nonoverlapping(quad_ib_data.as_ptr(), ptr, quad_ib_data.len());
+                }
+                ib.unmap();
+            }
         }
 
         Ok(())
     }
 
     /// Issue draw calls for all UI commands on the given encoder.
-    ///
-    /// The caller must have already bound the UI pipeline, vertex buffer,
-    /// index buffer, and viewport.
     pub(crate) fn render_ui_commands(
         &self,
         encoder: &mut super::render_encoder::MetalRenderEncoder,
@@ -182,17 +256,54 @@ impl MetalUIRenderer {
                 prev_scissor = scissor;
             }
 
-            let uniform_data = UiUniforms {
-                screen_size: [draw_list.screen_size[0], draw_list.screen_size[1]],
-                ndc_y_flip: -1.0,
-                texture_index: cmd.texture.index(),
-            };
-            encoder.set_push_constants(
-                bytemuck::cast_slice(&[uniform_data]),
-                3,
-                crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
-            );
-            encoder.draw_indexed(cmd.index_count, 1, cmd.index_offset, 0, 0);
+            if cmd.is_instanced {
+                // Instanced draw: bind instance buffer + unit quad, draw instanced
+                let uniform_data = UiUniforms {
+                    screen_size: [draw_list.screen_size[0], draw_list.screen_size[1]],
+                    ndc_y_flip: -1.0,
+                    texture_index: 0, // per-instance texture
+                };
+                encoder.set_push_constants(
+                    bytemuck::cast_slice(&[uniform_data]),
+                    3,
+                    crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
+                );
+                // Bind unit quad index buffer for instanced draws
+                if let Some(ref quad_ib) = self.unit_quad_index_buffer {
+                    encoder.bind_index_buffer(
+                        quad_ib,
+                        0,
+                        crate::backend::command::IndexType::Uint32,
+                    );
+                }
+                if let Some(ref quad_vb) = self.unit_quad_vertex_buffer {
+                    encoder.bind_vertex_buffer(quad_vb, 0, 10);
+                }
+                if let Some(ref inst_buf) = self.instance_buffer {
+                    encoder.bind_vertex_buffer(inst_buf, 0, 11);
+                }
+                encoder.draw_indexed(6, cmd.count, 0, 0, cmd.offset);
+            } else {
+                // Vertex-based draw: complex geometry
+                let uniform_data = UiUniforms {
+                    screen_size: [draw_list.screen_size[0], draw_list.screen_size[1]],
+                    ndc_y_flip: -1.0,
+                    texture_index: cmd.texture.index(),
+                };
+                encoder.set_push_constants(
+                    bytemuck::cast_slice(&[uniform_data]),
+                    3,
+                    crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
+                );
+                // Re-bind original vertex/index buffers for complex geometry
+                if let Some(ref vb) = self.vertex_buffer {
+                    encoder.bind_vertex_buffer(vb, 0, 10);
+                }
+                if let Some(ref ib) = self.index_buffer {
+                    encoder.bind_index_buffer(ib, 0, crate::backend::command::IndexType::Uint32);
+                }
+                encoder.draw_indexed(cmd.count, 1, cmd.offset, 0, 0);
+            }
         }
 
         if prev_scissor != full_scissor {

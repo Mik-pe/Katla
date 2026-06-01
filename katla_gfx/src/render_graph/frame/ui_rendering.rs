@@ -47,11 +47,57 @@ impl Frame<'_, VulkanRenderer> {
         }
 
         let frame_idx = self.renderer.current_frame();
-        let (vertex_buffer, index_buffer) =
-            self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
+        let has_instances = !ui_draw_list.instances.is_empty();
+        let has_vertices = !ui_draw_list.indices.is_empty();
 
-        cmd.bind_vertex_buffer(vertex_buffer.0, 0);
-        cmd.bind_index_buffer(index_buffer, 0, vk::IndexType::UINT32);
+        // Upload instance buffer if there are instanced commands
+        if has_instances {
+            let (instance_vb, unit_quad_ib) =
+                self.get_or_update_ui_instance_buffers(frame_idx, ui_draw_list)?;
+            // Bind instance data as vertex buffer at binding 1
+            unsafe {
+                self.renderer.context.device.cmd_bind_vertex_buffers(
+                    cmd.vk_command_buffer(),
+                    1, // binding 1 for instance data
+                    std::slice::from_ref(&instance_vb.0),
+                    &[0],
+                );
+            }
+            // Bind unit quad index buffer
+            cmd.bind_index_buffer(unit_quad_ib, 0, vk::IndexType::UINT32);
+        }
+
+        // Upload vertex/index buffers for complex geometry
+        if has_vertices {
+            let (vertex_buffer, index_buffer) =
+                self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
+
+            // Only bind vertex buffer at binding 0 if there are vertex commands
+            // We need to check if any non-instanced commands exist
+            let has_vertex_cmds = ui_draw_list.commands.iter().any(|c| !c.is_instanced);
+            if has_vertex_cmds {
+                cmd.bind_vertex_buffer(vertex_buffer.0, 0);
+                cmd.bind_index_buffer(index_buffer, 0, vk::IndexType::UINT32);
+            }
+        }
+
+        // For mixed mode, we need to bind both vertex and instance buffers
+        // Bind unit quad vertex buffer at binding 0 for instanced draws
+        if has_instances {
+            let (unit_quad_vb, _) = self.get_or_update_ui_unit_quad(frame_idx)?;
+            unsafe {
+                self.renderer.context.device.cmd_bind_vertex_buffers(
+                    cmd.vk_command_buffer(),
+                    0, // binding 0 for unit quad
+                    std::slice::from_ref(&unit_quad_vb),
+                    &[0],
+                );
+            }
+        } else if has_vertices {
+            // Re-bind the vertex buffer at binding 0
+            let (vertex_buffer, _) = self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
+            cmd.bind_vertex_buffer(vertex_buffer.0, 0);
+        }
 
         let extent = self.renderer.frame_context.swapchain.get_extent();
 
@@ -90,16 +136,30 @@ impl Frame<'_, VulkanRenderer> {
                 )]);
             }
 
-            // Draw indexed
-            unsafe {
-                self.renderer.context.device.cmd_draw_indexed(
-                    cmd.vk_command_buffer(),
-                    draw_cmd.index_count,
-                    1,
-                    draw_cmd.index_offset,
-                    0,
-                    0,
-                );
+            if draw_cmd.is_instanced {
+                // Instanced draw: unit quad + per-instance data
+                unsafe {
+                    self.renderer.context.device.cmd_draw_indexed(
+                        cmd.vk_command_buffer(),
+                        6,              // unit quad has 6 indices
+                        draw_cmd.count, // instance count
+                        0,              // first index (unit quad starts at 0)
+                        0,
+                        draw_cmd.offset, // first instance
+                    );
+                }
+            } else {
+                // Vertex-based draw: complex geometry
+                unsafe {
+                    self.renderer.context.device.cmd_draw_indexed(
+                        cmd.vk_command_buffer(),
+                        draw_cmd.count,  // index count
+                        1,               // instance count
+                        draw_cmd.offset, // first index
+                        0,
+                        0,
+                    );
+                }
             }
         }
 
@@ -134,6 +194,51 @@ impl Frame<'_, VulkanRenderer> {
         let ib_handle = ib.object();
 
         Ok((vb_handle, ib_handle))
+    }
+
+    /// Upload per-frame instance buffer and unit quad index buffer for instanced UI rendering.
+    pub(super) fn get_or_update_ui_instance_buffers(
+        &mut self,
+        frame_idx: usize,
+        ui_draw_list: &UIDrawList,
+    ) -> Result<((vk::Buffer, u32), vk::Buffer), RenderGraphError> {
+        let instance_bytes = bytemuck::cast_slice(&ui_draw_list.instances);
+        let unit_quad_index_bytes = bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_INDICES);
+
+        let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
+
+        // Upload instance data
+        let instance_ib = &mut ui_resources.instance_buffers[frame_idx];
+        instance_ib.upload_data(instance_bytes);
+        let instance_handle = (instance_ib.object(), instance_ib.count());
+
+        // Upload unit quad index buffer (same every frame, but simple to re-upload)
+        let quad_ib = &mut ui_resources.unit_quad_index_buffers[frame_idx];
+        quad_ib.upload_data(unit_quad_index_bytes);
+        let quad_ib_handle = quad_ib.object();
+
+        Ok((instance_handle, quad_ib_handle))
+    }
+
+    /// Get or create the unit quad vertex buffer for instanced UI rendering.
+    pub(super) fn get_or_update_ui_unit_quad(
+        &mut self,
+        frame_idx: usize,
+    ) -> Result<(vk::Buffer, vk::Buffer), RenderGraphError> {
+        let quad_vertex_bytes = bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_VERTICES);
+        let quad_index_bytes = bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_INDICES);
+
+        let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
+
+        let quad_vb = &mut ui_resources.unit_quad_vertex_buffers[frame_idx];
+        quad_vb.upload_data(quad_vertex_bytes);
+        let quad_vb_handle = quad_vb.object();
+
+        let quad_ib = &mut ui_resources.unit_quad_index_buffers[frame_idx];
+        quad_ib.upload_data(quad_index_bytes);
+        let quad_ib_handle = quad_ib.object();
+
+        Ok((quad_vb_handle, quad_ib_handle))
     }
 
     /// Bind UI descriptor sets (Set 0: font atlas, sampler, uniforms).

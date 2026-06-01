@@ -7,6 +7,7 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle};
 use crate::vertex::VertexUI;
+use crate::vertex::VertexUIInstance;
 
 pub use crate::handle::TextureHandle;
 
@@ -498,55 +499,75 @@ pub fn compute_distance_from_camera(model_matrix: &[f32; 16], camera_position: [
 /// A single draw command for UI rendering.
 ///
 /// Each command represents a batch of primitives that share the same texture
-/// and clipping rectangle.
+/// and clipping rectangle. Commands can be either instanced (for simple quads)
+/// or vertex-based (for complex geometry).
 #[derive(Clone, Debug, Copy)]
 pub struct UiDrawCommand {
-    /// Starting index in the index buffer.
-    pub index_offset: u32,
-    /// Number of indices to draw for this command.
-    pub index_count: u32,
+    /// Starting offset: index buffer for vertex commands, instance buffer for instanced.
+    pub offset: u32,
+    /// Count: number of indices (vertex) or instances (instanced).
+    pub count: u32,
     /// Clipping rectangle in pixels: [x, y, width, height].
     /// None = no clipping (draw to full screen).
     pub clip_rect: Option<[f32; 4]>,
     /// Texture handle for this batch.
     /// Use `TextureHandle::NONE` for solid color rendering (no texture).
     pub texture: TextureHandle,
+    /// Whether this is an instanced draw command.
+    pub is_instanced: bool,
 }
 
 impl UiDrawCommand {
-    /// Create a new UI draw command.
-    pub fn new(
+    /// Create a new instanced UI draw command.
+    pub fn instanced(
+        instance_start: u32,
+        instance_count: u32,
+        clip_rect: Option<[f32; 4]>,
+        texture: TextureHandle,
+    ) -> Self {
+        Self {
+            offset: instance_start,
+            count: instance_count,
+            clip_rect,
+            texture,
+            is_instanced: true,
+        }
+    }
+
+    /// Create a new vertex-based UI draw command.
+    pub fn vertex(
         index_offset: u32,
         index_count: u32,
         clip_rect: Option<[f32; 4]>,
         texture: TextureHandle,
     ) -> Self {
         Self {
-            index_offset,
-            index_count,
+            offset: index_offset,
+            count: index_count,
             clip_rect,
             texture,
+            is_instanced: false,
         }
     }
 }
 
 /// A complete UI draw list for rendering.
 ///
-/// Contains all vertices, indices, and draw commands needed to render
+/// Contains all vertices, indices, instances, and draw commands needed to render
 /// a UI frame. Created by katla_app by converting `katla_ui::DrawList`.
 #[derive(Clone, Debug, Default)]
 pub struct UIDrawList {
-    /// All vertices in the draw list.
+    /// All vertices for complex geometry (circles, rounded rects, lines, gradients).
     pub vertices: Vec<VertexUI>,
-    /// All indices in the draw list (triangles).
+    /// All indices for complex geometry.
     pub indices: Vec<u32>,
-    /// Draw commands (batches grouped by texture/clip).
+    /// Per-instance data for instanced quad rendering (rects, textured rects).
+    pub instances: Vec<VertexUIInstance>,
+    /// Draw commands (batches grouped by texture/clip, sorted by z).
     pub commands: Vec<UiDrawCommand>,
     /// Screen size for coordinate transformation (logical pixels, not physical).
-    /// This must match the coordinate space used by vertex positions.
     pub screen_size: [f32; 2],
     /// DPI scale factor (physical pixels per logical pixel).
-    /// Used to convert clip_rect from logical to physical pixels for Vulkan scissor.
     pub scale_factor: f32,
 }
 
@@ -558,7 +579,7 @@ impl UIDrawList {
 
     /// Check if the draw list is empty.
     pub fn is_empty(&self) -> bool {
-        self.indices.is_empty()
+        self.indices.is_empty() && self.instances.is_empty()
     }
 
     /// Get the total number of vertices.
